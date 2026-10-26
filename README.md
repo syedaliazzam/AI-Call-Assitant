@@ -48,4 +48,34 @@ Run a command in a single package with `--filter`, for example `pnpm --filter we
 
 ## Deploy
 
-Deployment uses the Vercel CLI. The exact commands are added in Day 1 Stage 4 (see [docs/implementation/day-01-setup.md](docs/implementation/day-01-setup.md)).
+Kite is deployed to Vercel with the Vercel CLI (`npm i -g vercel`, then `vercel login`). The Vercel project is `kite-call-assistant`, with **Root Directory `apps/web`**. Run every command below from the **repository root** (where `.vercel/` is), so the whole monorepo is uploaded and `@kite/shared` is available to the build.
+
+**One-time project setup** (already done for `kite-call-assistant`):
+
+```sh
+vercel link                                    # root directory: apps/web
+vercel env add ENABLE_EXPERIMENTAL_COREPACK    # value 1, all environments (see below)
+vercel env add BETTER_AUTH_URL production      # https://<production domain>
+```
+
+The other variables (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `ANTHROPIC_API_KEY`, `KITE_MODEL_FAST`, `KITE_MODEL_SMART`) are listed in [apps/web/.env.example](apps/web/.env.example). Pull them for local development with `vercel env pull apps/web/.env.local`.
+
+**Deploy:**
+
+```sh
+vercel deploy          # preview deployment: prints a unique https://…vercel.app URL
+vercel deploy --prod   # production deployment: https://<production domain>
+```
+
+**If a deploy says "Deployment Blocked":** on the Vercel Hobby plan, Vercel only deploys when the author email of the latest commit matches the email of the Vercel account. Set this repository's commit email to the Vercel account's email (repo-local, so other projects are unaffected): `git config user.email "<Vercel account email>"`, make a new commit, and deploy again.
+
+Database migrations are not run by the deploy. When `apps/web/drizzle/` gains a new migration, run `pnpm --filter web db:migrate` (it uses `DATABASE_URL` from `apps/web/.env.local`, which points at the same Neon database) before deploying the code that needs it.
+
+**Why the settings are what they are** (JSON files cannot hold comments, so the reasons live here):
+
+- [apps/web/vercel.json](apps/web/vercel.json)
+  - `"regions": ["iad1"]`: functions run in US East (Washington, D.C.), next to the Neon database (also `iad1`) and close to the Claude API, so the sign-in check and the call to Claude each cross only a short distance. Users far away pay the distance once, on their own connection to Vercel.
+  - `"installCommand": "pnpm install --frozen-lockfile"`: installs the whole pnpm workspace exactly as locked; the build fails instead of silently installing different versions.
+- `ENABLE_EXPERIMENTAL_COREPACK=1`: makes Vercel use the pnpm version pinned in the root `package.json` (`packageManager`). Without it, Vercel picks pnpm 9 or 10 from the lockfile format, which does not understand the `allowBuilds` setting in `pnpm-workspace.yaml`.
+- [.vercelignore](.vercelignore): keeps every `.env*` file except `.env.example` and the `docs/` folder out of CLI uploads.
+- Preview deployments leave `BETTER_AUTH_URL` unset and use their own `https://$VERCEL_URL` (see `apps/web/src/server/env.ts`). Previews may require a Vercel login (Deployment Protection); production does not.

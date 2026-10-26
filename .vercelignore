@@ -1,0 +1,17 @@
+# File: .vercelignore
+# Purpose: Files the Vercel CLI must NOT upload when running `vercel deploy` from the repo root.
+#          Vercel already skips node_modules, .git, .next, .vercel, .env.local and .env.*.local
+#          by default; this adds the rest.
+
+# Every environment file (they may hold secrets), except the names-only example.
+# Variables reach Vercel builds through `vercel env`, never through uploaded files.
+.env*
+**/.env*
+!apps/web/.env.example
+
+# Planning documents, diagrams and the .docx copy are not needed to build or run the app.
+docs
+
+# Local test and build output.
+coverage
+**/*.tsbuildinfo
