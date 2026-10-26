@@ -50,8 +50,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Call Sessions', href: '/' },
   { label: 'Settings', href: '/settings', disabledNote: 'Day 3' },
   { label: 'Admin', href: '/admin/users', adminOnly: true },
-  // Stage 3 adds the first dev tool page (/dev/claude-test) and removes this note.
-  { label: 'Dev tools', href: '/dev/claude-test', adminOnly: true, disabledNote: 'Soon' },
+  { label: 'Dev tools', href: '/dev/claude-test', adminOnly: true },
 ];
 
 /**

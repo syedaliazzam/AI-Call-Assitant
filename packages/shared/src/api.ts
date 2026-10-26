@@ -106,11 +106,20 @@ export interface AnswerUsage {
   cache_read_input_tokens: number;
 }
 
-/** Server-side timings for one reply, in milliseconds since the server received the request. */
+/**
+ * Server-side timings for one reply, in milliseconds. Used to see where the time to the first
+ * word goes (sign-in check, reaching Claude, Claude producing text).
+ */
 export interface AnswerTimings {
-  /** Time until the first text delta was sent. */
+  /** Sign-in check (session lookup in the accounts database): request start → session known. */
+  auth: number;
+  /** Request start → Claude's streaming response opened (HTTP response headers received). */
+  toStreamOpen: number;
+  /** Claude stream opened → first text delta (Claude's own time to the first token). */
+  streamOpenToFirstText: number;
+  /** Request start → first text delta sent. */
   toFirstText: number;
-  /** Time until the reply was complete. */
+  /** Request start → reply complete. */
   total: number;
 }
 
@@ -121,10 +130,17 @@ export interface AnswerTimings {
  * - `not_implemented`: the mode is not available yet (message names the day).
  * - `upstream_error`: the Claude API returned an error.
  * - `timeout`: Claude did not finish within the server time limit (60 s).
+ * - `refused`: Claude declined to answer (stop reason "refusal"); nothing more will follow.
  * - `internal`: any other server failure.
  */
 export type AnswerErrorCode =
-  'unauthorized' | 'bad_request' | 'not_implemented' | 'upstream_error' | 'timeout' | 'internal';
+  | 'unauthorized'
+  | 'bad_request'
+  | 'not_implemented'
+  | 'upstream_error'
+  | 'timeout'
+  | 'refused'
+  | 'internal';
 
 /**
  * One server-sent event from /api/answer. The SSE event name equals `type`; the remaining fields
