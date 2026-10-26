@@ -15,3 +15,6 @@ allowBuilds:
   # Comes with eslint-config-next. Its script only downloads a fallback binary when the prebuilt
   # one for this OS is missing; pnpm already installs the prebuilt one, so the script is not needed.
   unrs-resolver: false
+  # Used by tsx and drizzle-kit. Its script checks that the native esbuild binary for this OS
+  # is installed and working; without it, tsx and drizzle-kit can fail at run time.
+  esbuild: true

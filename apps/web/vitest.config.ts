@@ -13,6 +13,9 @@ export default defineConfig({
     // Same `@/*` → `src/*` alias as tsconfig.json, so tests import modules the way the app does.
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // `server-only` throws when imported outside a Next.js server build; in unit tests the
+      // server modules are imported directly, so replace it with an empty module.
+      'server-only': fileURLToPath(new URL('./tests/stubs/server-only.ts', import.meta.url)),
     },
   },
   test: {

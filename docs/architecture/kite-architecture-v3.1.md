@@ -1,23 +1,24 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.1"
+version: "3.1.1"
 status: "Current: the single document the team builds from"
 date: "2026-10-26"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
-header: "Kite v3.1 · architecture and build plan"
+header: "Kite v3.1.1 · architecture and build plan"
 page_breaks: "1,3,5,7,9,11,13"
 ---
 
-# Kite: Architecture and 7-Day Build Plan v3.1
+# Kite: Architecture and 7-Day Build Plan v3.1.1
 
 ## Document control
 
 | Field | Value |
 |---|---|
-| Version | 3.1, **Current**: the only document to build from |
+| Version | 3.1.1, **Current**: the only document to build from |
 | Date | 26 October 2026 |
+| Changes in 3.1.1 | §5 (Admin: users) and §8.2: the server **generates** the temporary password (14 readable random characters) when an admin creates a user or resets a password, and shows it to the admin once; the admin no longer types one in. Matches Day 1 Stage 2 and the create-admin script. |
 | Changes in 3.1 | Sign-in uses **email + password accounts created by an admin** (Better Auth, admin page, free Neon Postgres for accounts only) instead of Google/Microsoft sign-in (ADR-0022). Deployment uses the **Vercel CLI**, and the Vercel-provided `*.vercel.app` address until the company domain is connected. |
 | Replaces | v3.0; before that the v2.0 plan (desktop-only) and v1.1 (fully local), kept for reference only. |
 | Build window | 7 working days: Day 1 = Mon 26 Oct 2026 … Day 7 = Mon 2 Nov 2026 (Sunday off) |
@@ -135,7 +136,7 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 |---|---|---|
 | Sign in | `/login` | Email and password form (no sign-up link) |
 | Change password | `/change-password` | Forced on first sign-in and after an admin password reset |
-| Admin: users | `/admin/users` | Admins only: list users, create user (name, email, role, temporary password), reset password, disable or enable, change role |
+| Admin: users | `/admin/users` | Admins only: list users, create user (name, email, role; the server generates the temporary password and shows it once), reset password (new generated temporary password), disable or enable, change role |
 | Dashboard | `/` | Session cards (date, company, role, type, status), search, type filter tabs, "Create session", "Download desktop app" banner |
 | Create session | `/sessions/new` | Step 1 Details, then step 2 Preferences; Back / Create |
 | Choose platform | dialog | "Desktop app" or "Open in browser", plus "What's the difference?" (section 4 table) |
@@ -307,9 +308,10 @@ Internal approval is needed that transcript text, documents and screenshots are 
 
 ### 8.2 Sign-in
 
-- **How accounts are created:** an admin opens `/admin/users`, enters a name, email, role (`admin` or `user`) and a temporary password, and shares the temporary password with the person directly. There is no public sign-up and no email sending.
+- **How accounts are created:** an admin opens `/admin/users` and enters a name, email and role (`admin` or `user`). The server generates a temporary password (14 random characters, without look-alikes such as 0/O and 1/l) and shows it to the admin **once**; the admin shares it with the person directly. It is stored only as a hash. There is no public sign-up and no email sending.
+- **Password reset:** an admin can reset a user's password from the same page. The server generates a new temporary password (shown once), signs the user out on every device and flags the account `mustChangePassword`.
 - **First sign-in:** the account is flagged `mustChangePassword`, so the user is sent to `/change-password` before anything else. The same happens after an admin resets a password.
-- **First admin:** created once from the command line (`pnpm --filter web create-admin`), which prints a temporary password.
+- **First admin:** created once from the command line (`pnpm --filter web create-admin`), which generates and prints a temporary password the same way.
 - **Desktop app:** shows the same `/login` page inside its window. Email + password works inside an app window, so no browser hand-off is needed.
 - **Library:** Better Auth with email + password (`disableSignUp: true`) and the admin plugin (create user, list users, set role, set password, ban/unban). Sessions are stored in Postgres and use secure, HTTP-only cookies; they expire after 30 days.
 

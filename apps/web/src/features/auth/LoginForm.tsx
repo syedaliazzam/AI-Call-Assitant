@@ -1,0 +1,82 @@
+/**
+ * File: apps/web/src/features/auth/LoginForm.tsx
+ * Purpose: Email + password sign-in form. No sign-up link: accounts are created by an admin.
+ * Used by: app/login/page.tsx
+ * Depends on: src/core/auth/authClient.ts, src/ui/Button.tsx, src/ui/Input.tsx
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Sign in), §8.2
+ */
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useState, type FormEvent } from 'react';
+import { signIn } from '@/core/auth/authClient';
+import { Button } from '@/ui/Button';
+import { Input } from '@/ui/Input';
+
+/**
+ * Turns a Better Auth error code into a message for the user.
+ * Wrong email and wrong password get the same message, so the form does not reveal which
+ * emails have accounts.
+ *
+ * @param code Better Auth error code, for example 'BANNED_USER'.
+ * @returns The message to show.
+ * Called from: LoginForm's submit handler
+ */
+function messageFor(code: string | undefined): string {
+  if (code === 'BANNED_USER') return 'This account is disabled. Ask an admin to enable it.';
+  if (code === 'INVALID_EMAIL_OR_PASSWORD') return 'Email or password is incorrect.';
+  return 'Sign-in failed. Please try again.';
+}
+
+/**
+ * The sign-in form. On success it opens the dashboard; the server then sends users who still
+ * have a temporary password to /change-password.
+ *
+ * @returns The form element.
+ */
+export function LoginForm() {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  /** Sends the email and password to Better Auth and reacts to the result. */
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setPending(true);
+    setError(null);
+    const result = await signIn.email({
+      email: String(form.get('email') ?? ''),
+      password: String(form.get('password') ?? ''),
+    });
+    if (result.error) {
+      setError(messageFor(result.error.code));
+      setPending(false);
+      return;
+    }
+    // refresh() makes the server components re-read the new session cookie.
+    router.replace('/');
+    router.refresh();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+      <Input label="Email" name="email" type="email" autoComplete="email" required autoFocus />
+      <Input
+        label="Password"
+        name="password"
+        type="password"
+        autoComplete="current-password"
+        required
+      />
+      {error && (
+        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      )}
+      <Button type="submit" disabled={pending}>
+        {pending ? 'Signing in…' : 'Sign in'}
+      </Button>
+    </form>
+  );
+}

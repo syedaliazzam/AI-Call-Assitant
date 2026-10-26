@@ -15,7 +15,8 @@ coverage/
 .vercel/
 
 # Environment files hold secrets and are never committed (CLAUDE.md "Secrets never go in code").
-# .env.example lists variable names only, so it is kept.
+# .env.example lists variable names only, so it is kept. In .gitignore the LAST matching rule
+# wins, so no `.env*` line may be added below this point (`vercel link` appends one; delete it).
 .env*
 !.env.example
 

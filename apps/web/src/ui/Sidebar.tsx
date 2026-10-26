@@ -10,8 +10,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { ReactNode } from 'react';
 
-/** The signed-in user, as far as the sidebar needs to know. Filled in from Stage 2. */
+/** The signed-in user, as far as the sidebar needs to know. */
 export interface SidebarUser {
   /** Display name shown in the user box. */
   name: string;
@@ -23,8 +24,13 @@ export interface SidebarUser {
 
 /** Props for Sidebar. */
 export interface SidebarProps {
-  /** The signed-in user; undefined until sign-in exists (Stage 2). */
+  /** The signed-in user; undefined shows "Not signed in". */
   user?: SidebarUser;
+  /**
+   * Buttons under the user's name, for example the sign-out button. Passed in by the layout
+   * so this shared UI piece contains no sign-in logic itself.
+   */
+  userActions?: ReactNode;
 }
 
 /** One entry in the navigation list. */
@@ -44,18 +50,20 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Call Sessions', href: '/' },
   { label: 'Settings', href: '/settings', disabledNote: 'Day 3' },
   { label: 'Admin', href: '/admin/users', adminOnly: true },
-  { label: 'Dev tools', href: '/dev/claude-test', adminOnly: true },
+  // Stage 3 adds the first dev tool page (/dev/claude-test) and removes this note.
+  { label: 'Dev tools', href: '/dev/claude-test', adminOnly: true, disabledNote: 'Soon' },
 ];
 
 /**
  * The signed-in app's left sidebar.
  * Admin-only links are hidden unless `user.role` is 'admin'. This only tidies the menu;
- * the real access check happens on the server (requireAdmin(), Stage 2).
+ * the real access check happens on the server (requireAdmin() in src/server/guard.ts).
  *
- * @param props.user The signed-in user, or undefined before Stage 2.
+ * @param props.user        The signed-in user, or undefined when nobody is signed in.
+ * @param props.userActions Buttons shown under the user's name (sign out).
  * @returns The <aside> navigation element.
  */
-export function Sidebar({ user }: SidebarProps) {
+export function Sidebar({ user, userActions }: SidebarProps) {
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === 'admin');
 
@@ -104,12 +112,13 @@ export function Sidebar({ user }: SidebarProps) {
         </ul>
       </nav>
 
-      {/* User box. Stage 2 fills it with the signed-in user and a sign-out button. */}
+      {/* User box: who is signed in, plus the sign-out button. */}
       <div className="border-t border-slate-200 px-5 py-4 text-sm">
         {user ? (
           <>
             <p className="font-medium text-slate-900">{user.name}</p>
             <p className="truncate text-slate-500">{user.email}</p>
+            {userActions && <div className="mt-2 -ml-3">{userActions}</div>}
           </>
         ) : (
           <p className="text-slate-400">Not signed in</p>
