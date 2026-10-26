@@ -1,0 +1,17 @@
+# File: pnpm-workspace.yaml
+# Purpose: Tells pnpm which folders are workspace packages, so they can depend on each other
+#          (for example apps/web uses "@kite/shared": "workspace:*").
+# Architecture: docs/architecture/kite-architecture-v3.1.md §9.1
+
+packages:
+  # apps/web (the Next.js application) and apps/desktop (the thin Electron shell).
+  - 'apps/*'
+  # packages/shared (TypeScript types used by both apps).
+  - 'packages/*'
+
+# Which dependencies may run install scripts (pnpm blocks them by default for supply-chain safety,
+# and fails the install if one is not listed here).
+allowBuilds:
+  # Comes with eslint-config-next. Its script only downloads a fallback binary when the prebuilt
+  # one for this OS is missing; pnpm already installs the prebuilt one, so the script is not needed.
+  unrs-resolver: false

@@ -1,0 +1,6 @@
+{
+  "name": "@kite/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kite desktop shell (Electron): opens the deployed web app and adds native features via window.kiteDesktop. Placeholder until Day 1 Stage 5."
+}

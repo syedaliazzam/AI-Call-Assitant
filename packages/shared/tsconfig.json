@@ -1,0 +1,14 @@
+/**
+ * File: packages/shared/tsconfig.json
+ * Purpose: Type-check settings for @kite/shared (used by `pnpm --filter @kite/shared typecheck`).
+ * Depends on: ../../tsconfig.base.json
+ */
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // desktop-bridge.ts declares the `window.kiteDesktop` global, so the DOM types are needed.
+    // Only types are used; the package has no runtime dependency on the browser or Node.
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["src/**/*.ts"]
+}

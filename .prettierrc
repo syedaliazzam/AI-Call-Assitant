@@ -1,0 +1,14 @@
+# File: .prettierrc
+# Purpose: One code format for the whole repository (run `pnpm format` to apply it,
+#          `pnpm lint` checks it). Written in YAML so it can carry comments.
+# Architecture: docs/architecture/kite-architecture-v3.1.md §9.2 ("ESLint + Prettier, enforced in CI")
+
+# Single quotes and semicolons, matching the examples in CLAUDE.md.
+singleQuote: true
+semi: true
+# Trailing commas make diffs smaller when a line is added to a list.
+trailingComma: all
+# Wide enough for JSDoc lines and JSX without excessive wrapping.
+printWidth: 100
+tabWidth: 2
+endOfLine: lf
