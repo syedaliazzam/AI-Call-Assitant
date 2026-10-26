@@ -20,3 +20,7 @@ apps/web/public/models
 # exactly as approved; reformatting them would realign every table and hide real edits in diffs.
 docs
 CLAUDE.md
+
+# Playwright (desktop smoke test) results and HTML report.
+test-results
+playwright-report

@@ -1,16 +1,18 @@
 /**
  * File: apps/web/src/ui/Sidebar.tsx
- * Purpose: The left navigation shown on every signed-in page: Kite name, page links and the
- *          signed-in user box at the bottom.
+ * Purpose: The left navigation shown on every signed-in page: Kite name, page links, the
+ *          signed-in user box, and a footer saying whether this is the desktop app or a browser.
  * Used by: app/(app)/layout.tsx
- * Depends on: next/link, next/navigation (to highlight the current page)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (main screens)
+ * Depends on: next/link, next/navigation (to highlight the current page),
+ *             src/platform (getDesktopInfo, for the footer label only)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §4 (desktop vs browser), §5
  */
 'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useSyncExternalStore, type ReactNode } from 'react';
+import { getDesktopInfo } from '@/platform';
 
 /** The signed-in user, as far as the sidebar needs to know. */
 export interface SidebarUser {
@@ -54,6 +56,23 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 /**
+ * Builds the footer label: "Desktop app v0.1" (major.minor of the shell version) inside the
+ * desktop app, otherwise "Browser". Display only; behaviour differences live in src/platform.
+ *
+ * @returns The label text.
+ * Called from: Sidebar (as the useSyncExternalStore snapshot)
+ */
+export function runtimeLabel(): string {
+  const desktop = getDesktopInfo();
+  if (!desktop) return 'Browser';
+  const [major = '0', minor = '0'] = desktop.version.split('.');
+  return `Desktop app v${major}.${minor}`;
+}
+
+/** The label never changes while a page is open, so there is nothing to subscribe to. */
+const subscribeNever = () => () => {};
+
+/**
  * The signed-in app's left sidebar.
  * Admin-only links are hidden unless `user.role` is 'admin'. This only tidies the menu;
  * the real access check happens on the server (requireAdmin() in src/server/guard.ts).
@@ -65,6 +84,9 @@ const NAV_ITEMS: NavItem[] = [
 export function Sidebar({ user, userActions }: SidebarProps) {
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => !item.adminOnly || user?.role === 'admin');
+  // The server cannot know whether the page will run in the desktop app, so it renders no
+  // label (null); the browser fills it in after hydration. This avoids a hydration mismatch.
+  const runtime = useSyncExternalStore(subscribeNever, runtimeLabel, () => null);
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white">
@@ -122,6 +144,7 @@ export function Sidebar({ user, userActions }: SidebarProps) {
         ) : (
           <p className="text-slate-400">Not signed in</p>
         )}
+        {runtime && <p className="mt-3 text-xs text-slate-400">{runtime}</p>}
       </div>
     </aside>
   );

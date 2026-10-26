@@ -1,11 +1,11 @@
 /**
  * Tests for apps/web/src/platform/index.ts:
  * getPlatform() picks the browser platform without `window.kiteDesktop` (and on the server),
- * the desktop platform with it; isDesktop() follows the same rule.
+ * the desktop platform with it; isDesktop() and getDesktopInfo() follow the same rule.
  */
 import type { KiteDesktopApi } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
-import { getPlatform, isDesktop } from '@/platform';
+import { getDesktopInfo, getPlatform, isDesktop } from '@/platform';
 import type { DesktopPlatform } from '@/platform';
 
 /** A fake bridge, as the desktop shell's preload script would expose it. */
@@ -40,5 +40,18 @@ describe('isDesktop', () => {
   it('is true inside the desktop app', () => {
     vi.stubGlobal('window', { kiteDesktop: fakeBridge });
     expect(isDesktop()).toBe(true);
+  });
+});
+
+describe('getDesktopInfo', () => {
+  it('returns null in a browser and on the server', () => {
+    expect(getDesktopInfo()).toBeNull();
+    vi.stubGlobal('window', {});
+    expect(getDesktopInfo()).toBeNull();
+  });
+
+  it('returns the shell version and OS inside the desktop app', () => {
+    vi.stubGlobal('window', { kiteDesktop: fakeBridge });
+    expect(getDesktopInfo()).toEqual({ version: '0.1.0', os: 'windows' });
   });
 });

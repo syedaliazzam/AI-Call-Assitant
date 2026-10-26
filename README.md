@@ -33,13 +33,28 @@ pnpm dev
 
 Open http://localhost:3000. You should see the sidebar and the empty "Call Sessions" dashboard.
 
+## Run the desktop app
+
+The desktop app is a thin Electron shell around the web app (`apps/desktop`). No installer yet; it runs from source.
+
+```sh
+pnpm --filter desktop dev     # opens http://localhost:3000 (start `pnpm dev` first)
+pnpm --filter desktop start   # opens production: https://kite-call-assistant.vercel.app
+```
+
+- Set `KITE_URL` to open another address (it overrides both). Only `https://` is accepted, or `http://` on localhost.
+- The first run downloads the Electron binary (about 100 MB, verified against Electron's published checksums). `pnpm --filter desktop electron:install` does that step on its own.
+- The window only shows the Kite origin. Navigation to any other origin is blocked, and links opened in a new window go to your normal browser (http/https only). A future payment or SSO page on another origin must be added to the allowlist on purpose.
+- Started from a tool that is itself an Electron app (for example a VS Code extension)? Make sure `ELECTRON_RUN_AS_NODE` is not set, or Electron starts as plain Node.js.
+
 ## Check and test
 
 ```sh
 pnpm lint        # ESLint + Prettier check
 pnpm typecheck   # TypeScript in every package
-pnpm test        # Vitest unit tests
+pnpm test        # Vitest unit tests (web, and the desktop shell's rules)
 pnpm format      # apply Prettier formatting
+pnpm --filter desktop test   # Electron smoke test: launches the real shell against a test page
 ```
 
 All three checks must pass before every commit.

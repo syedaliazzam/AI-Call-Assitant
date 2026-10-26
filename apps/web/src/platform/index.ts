@@ -8,7 +8,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3
  */
 import { browserPlatform } from './browser';
-import { createDesktopPlatform } from './desktop';
+import { createDesktopPlatform, type DesktopPlatform } from './desktop';
 import type { Platform } from './types';
 
 export type { DesktopPlatform } from './desktop';
@@ -27,6 +27,27 @@ export type { HotkeyAction, Platform } from './types';
 export function getPlatform(): Platform {
   const bridge = typeof window === 'undefined' ? undefined : window.kiteDesktop;
   return bridge ? createDesktopPlatform(bridge) : browserPlatform;
+}
+
+/** Details of the desktop shell, for display (for example in the sidebar footer). */
+export interface DesktopInfo {
+  /** Shell version, for example '0.1.0'. */
+  version: string;
+  /** Operating system the shell runs on. */
+  os: DesktopPlatform['os'];
+}
+
+/**
+ * Returns the desktop shell's version and OS, or null in a browser (and on the server).
+ *
+ * @returns DesktopInfo inside the desktop app, otherwise null.
+ * Called from: src/ui/Sidebar.tsx (footer label)
+ */
+export function getDesktopInfo(): DesktopInfo | null {
+  const platform = getPlatform();
+  if (platform.kind !== 'desktop') return null;
+  const { version, os } = platform as DesktopPlatform;
+  return { version, os };
 }
 
 /**

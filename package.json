@@ -12,7 +12,7 @@
     "build": "pnpm -r build",
     "lint": "eslint . && prettier --check .",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "test": "pnpm --filter @kite/web test && pnpm --filter @kite/desktop test:unit",
     "format": "prettier --write ."
   },
   "devDependencies": {

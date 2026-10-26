@@ -10,6 +10,9 @@ dist/
 out/
 *.tsbuildinfo
 coverage/
+# Playwright (desktop smoke test) results and HTML report
+test-results/
+playwright-report/
 
 # Vercel CLI link data (created by `vercel link`)
 .vercel/

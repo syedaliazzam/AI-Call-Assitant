@@ -1,23 +1,24 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.1.1"
+version: "3.1.2"
 status: "Current: the single document the team builds from"
 date: "2026-10-26"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
-header: "Kite v3.1.1 · architecture and build plan"
+header: "Kite v3.1.2 · architecture and build plan"
 page_breaks: "1,3,5,7,9,11,13"
 ---
 
-# Kite: Architecture and 7-Day Build Plan v3.1.1
+# Kite: Architecture and 7-Day Build Plan v3.1.2
 
 ## Document control
 
 | Field | Value |
 |---|---|
-| Version | 3.1.1, **Current**: the only document to build from |
+| Version | 3.1.2, **Current**: the only document to build from |
 | Date | 26 October 2026 |
+| Changes in 3.1.2 | §8.3: the desktop shell allows exactly one origin (the Kite URL's). Any future payment or SSO page on another origin must be added to the allowlist on purpose. Day 1 Stage 5. |
 | Changes in 3.1.1 | §5 (Admin: users) and §8.2: the server **generates** the temporary password (14 readable random characters) when an admin creates a user or resets a password, and shows it to the admin once; the admin no longer types one in. Matches Day 1 Stage 2 and the create-admin script. |
 | Changes in 3.1 | Sign-in uses **email + password accounts created by an admin** (Better Auth, admin page, free Neon Postgres for accounts only) instead of Google/Microsoft sign-in (ADR-0022). Deployment uses the **Vercel CLI**, and the Vercel-provided `*.vercel.app` address until the company domain is connected. |
 | Replaces | v3.0; before that the v2.0 plan (desktop-only) and v1.1 (fully local), kept for reference only. |
@@ -321,7 +322,7 @@ Internal approval is needed that transcript text, documents and screenshots are 
 |---|---|
 | Strangers using the URL to spend Claude credits | Sign-in required on every page and API route; no public sign-up (admin-created accounts only); disabled accounts lose their sessions immediately; Claude Console monthly spend limit |
 | Key leakage | Key only on Vercel; never sent to the client; never logged |
-| Malicious page inside the desktop shell | Only the Kite URL can load; navigation to other origins blocked; minimal preload API |
+| Malicious page inside the desktop shell | Only the Kite URL can load; navigation to other origins blocked; minimal preload API. Every other origin is blocked, so any future payment or SSO origin must be added to the allowlist (`apps/desktop/src/config.ts` / `security.ts`) on purpose, with a review. |
 | Prompt injection from documents | Documents are placed in a clearly marked context block; the answer path has no tools and can take no actions |
 | Lost laptop | Data is in the browser profile; "Delete all local data" in settings; sign-in sessions expire after 30 days |
 
