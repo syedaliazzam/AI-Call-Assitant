@@ -1,7 +1,9 @@
 /**
  * File: apps/web/src/core/stt/wer.ts
  * Purpose: Rough word error rate (WER) for the accuracy test: compares what was said (the
- *          reference sentence) with what the model heard, word by word.
+ *          reference sentence) with what the model heard, word by word. A word heard split in
+ *          two or two words heard joined ("TO DAY" for "today", "NORTH WIND" for "Northwind") is
+ *          counted as correct: the letters are right, only the spacing differs (Day 2 decision).
  * Used by: src/features/dev/SttTest.tsx
  * Depends on: nothing (pure)
  * Architecture: ADR-0020 (accuracy check)
@@ -10,11 +12,11 @@
 /** One step of the word alignment. */
 export type AlignmentStep =
   | {
-      /** The word matches. */
+      /** The word matches (also when it was heard split or joined). */
       type: 'ok';
-      /** The word. */
+      /** The word (or two words, space-separated, when they were heard joined). */
       ref: string;
-      /** The same word as heard. */
+      /** The same word as heard (two words, space-separated, when it was heard split). */
       hyp: string;
     }
   | {
@@ -72,7 +74,9 @@ export function normalizeWords(text: string): string[] {
 }
 
 /**
- * Computes the word error rate with a minimum-edit alignment (Levenshtein over words).
+ * Computes the word error rate with a minimum-edit alignment (Levenshtein over words), plus
+ * two free steps: one reference word = two heard words joined ("today" / "to day"), and two
+ * reference words joined = one heard word ("north wind" / "northwind").
  *
  * @param reference  What was said.
  * @param hypothesis What the model produced.
@@ -86,14 +90,23 @@ export function wordErrorRate(reference: string, hypothesis: string): WerResult 
   const cost: number[][] = Array.from({ length: ref.length + 1 }, (_, i) =>
     Array.from({ length: hyp.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
   );
+  /** Reference word i-1 was heard split as heard words j-2 and j-1. */
+  const split = (i: number, j: number) =>
+    i >= 1 && j >= 2 && ref[i - 1] === `${hyp[j - 2]}${hyp[j - 1]}`;
+  /** Reference words i-2 and i-1 were heard joined as heard word j-1. */
+  const joined = (i: number, j: number) =>
+    i >= 2 && j >= 1 && `${ref[i - 2]}${ref[i - 1]}` === hyp[j - 1];
   for (let i = 1; i <= ref.length; i += 1) {
     for (let j = 1; j <= hyp.length; j += 1) {
       const same = ref[i - 1] === hyp[j - 1];
-      cost[i]![j] = Math.min(
+      let best = Math.min(
         cost[i - 1]![j - 1]! + (same ? 0 : 1),
         cost[i - 1]![j]! + 1,
         cost[i]![j - 1]! + 1,
       );
+      if (split(i, j)) best = Math.min(best, cost[i - 1]![j - 2]!);
+      if (joined(i, j)) best = Math.min(best, cost[i - 2]![j - 1]!);
+      cost[i]![j] = best;
     }
   }
 
@@ -102,7 +115,15 @@ export function wordErrorRate(reference: string, hypothesis: string): WerResult 
   let i = ref.length;
   let j = hyp.length;
   while (i > 0 || j > 0) {
-    if (
+    if (split(i, j) && cost[i]![j] === cost[i - 1]![j - 2]) {
+      alignment.push({ type: 'ok', ref: ref[i - 1]!, hyp: `${hyp[j - 2]} ${hyp[j - 1]}` });
+      i -= 1;
+      j -= 2;
+    } else if (joined(i, j) && cost[i]![j] === cost[i - 2]![j - 1]) {
+      alignment.push({ type: 'ok', ref: `${ref[i - 2]} ${ref[i - 1]}`, hyp: hyp[j - 1]! });
+      i -= 2;
+      j -= 1;
+    } else if (
       i > 0 &&
       j > 0 &&
       cost[i]![j] === cost[i - 1]![j - 1]! + (ref[i - 1] === hyp[j - 1] ? 0 : 1)

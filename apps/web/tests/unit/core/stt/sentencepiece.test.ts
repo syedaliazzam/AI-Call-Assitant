@@ -1,11 +1,11 @@
 /**
- * Tests for apps/web/scripts/sentencepiece-vocab.ts:
+ * Tests for apps/web/src/core/stt/sentencepiece.ts:
  * sentencePieceVocab() reads the pieces and scores out of a SentencePiece model (protocol
  * buffer), skips the other fields, formats scores like Python (export_bpe_vocab.py), and rejects
  * files without pieces. The real bpe.model is checked by its pinned SHA-256 in fetch-models.ts.
  */
 import { describe, expect, it } from 'vitest';
-import { sentencePieceVocab } from '../../../scripts/sentencepiece-vocab';
+import { sentencePieceVocab } from '@/core/stt/sentencepiece';
 
 /** Encodes a protocol-buffer varint. */
 function varint(value: number): number[] {

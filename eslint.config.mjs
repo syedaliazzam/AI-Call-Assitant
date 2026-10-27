@@ -46,6 +46,8 @@ export default defineConfig([
     '**/.vercel/**',
     'apps/web/next-env.d.ts',
     'apps/web/public/models/**',
+    // The official sherpa-onnx runtime (downloaded, used unmodified; never linted or reformatted).
+    'apps/web/public/stt-runtime/**',
   ]),
 
   // apps/web: the official Next.js rules (React, hooks, accessibility, Core Web Vitals, TypeScript).

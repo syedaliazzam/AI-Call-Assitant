@@ -4,7 +4,7 @@
  *          into the text sherpa-onnx expects (its hotwords "buffer"). Hotwords make the
  *          recognizer prefer the listed phrases (names of people, companies and products) during
  *          modified_beam_search decoding.
- * Used by: src/core/stt/sttClient.ts (startMicTranscription option), src/features/dev/SttTest.tsx
+ * Used by: src/core/stt/sttEngine.ts (load and setHotwords), src/features/dev/SttTest.tsx
  * Depends on: nothing (pure)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.1 (core/stt); ADR-0020
  *
@@ -52,7 +52,7 @@ const SCORE_SUFFIX = /\s:\s*(\S+)\s*$/;
  * @param text         The list as typed (one phrase per line).
  * @param defaultScore Boost for lines without their own score.
  * @returns The accepted phrases, the recognizer buffer, and the skipped line numbers.
- * Called from: SttTest.tsx (preview and Start), sttClient.ts
+ * Called from: SttTest.tsx (preview), sttEngine.ts
  */
 export function formatHotwords(
   text: string,

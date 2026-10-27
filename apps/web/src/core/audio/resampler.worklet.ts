@@ -3,7 +3,7 @@
  * Purpose: The AudioWorklet that turns microphone audio into 16 kHz mono Float32Array chunks of
  *          ~100 ms and posts them straight to the speech-to-text worker (through a MessagePort,
  *          so the main thread is not in the audio path).
- * Used by: src/core/stt/sttClient.ts (loads it with audioWorklet.addModule)
+ * Used by: src/core/stt/sttEngine.ts (loads it with audioWorklet.addModule, one node per channel)
  * Depends on: src/core/audio/resample.ts (StreamingResampler, Chunker; their source is embedded)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1, §7.1 (core/audio)
  *
@@ -66,7 +66,7 @@ registerProcessor(${JSON.stringify(WORKLET_NAME)}, KiteResamplerProcessor);
  * Creates a Blob URL for the worklet source. Revoke it after addModule().
  *
  * @returns An object URL for audioWorklet.addModule.
- * Called from: startMicTranscription() in src/core/stt/sttClient.ts
+ * Called from: ensureAudio() in src/core/stt/sttEngine.ts
  */
 export function workletModuleUrl(): string {
   return URL.createObjectURL(new Blob([buildWorkletSource()], { type: 'text/javascript' }));

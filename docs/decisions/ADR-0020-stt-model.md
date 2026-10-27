@@ -1,7 +1,7 @@
 # ADR-0020: Speech-to-text model (WebAssembly, v3.0)
 
 - **Status:** Proposed. Working engine chosen for Day 2; accuracy is above the bar (see Decision)
-- **Date:** 2026-10-24 (created); 2026-10-27 (Day 1 spike results)
+- **Date:** 2026-10-24 (created); 2026-10-27 (Day 1 spike results; Day 2 hosting and two-channel engine)
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §6, §12 Day 1
 - **Supersedes / superseded by:** none
 
@@ -79,25 +79,71 @@ The v1.13.7 WebAssembly build supports hotwords. They are passed in the recogniz
 - **Not yet measured.** macOS (Apple Silicon); Edge; two channels at once (the CPU limit is per channel, and Day 2 adds the "Them" channel). Desktop accuracy was measured on sentence 1 only.
 - **Licence.** Both models and sherpa-onnx are Apache-2.0, which is acceptable for internal company use.
 
-### Serving the model files in production (not changed on Day 1)
+### Serving the files (decided on Day 2, Stage 1)
 
-The model files (204.1 MB in total; the largest file is 187.8 MB) are kept out of git and out of Vercel uploads (`.vercelignore`: `apps/web/public/models`). The production site therefore has no model files yet, and `/dev/stt-test` works only on a developer machine after `pnpm --filter web fetch-models`.
+Day 1 kept the model files out of git and out of Vercel uploads, because a Hobby CLI deployment can upload at most **100 MB** of source files (1 GB on Pro; Vercel limits page, checked 2026-10-27). Day 2 decided how production loads them. All pins are in `apps/web/src/core/stt/models.ts`, the single source of truth for the browser and for `fetch-models`.
 
-- **Not as static files of the Vercel deployment.** Vercel limits the source files a CLI deployment can upload to **100 MB on Hobby** and 1 GB on Pro (Vercel limits page, checked 2026-10-27). Kite deploys with the CLI on Hobby, so the files cannot go in `public/`.
-- **Recommended: a public Vercel Blob store**, with the files under a versioned path such as `stt/zipformer-en-2023-06-21/…`, and the worker's base URL taken from an environment variable. Checked 2026-10-27:
-  - the maximum file size is 5 TB, and files over 100 MB should be uploaded with multipart;
-  - files up to 512 MB are cached by the CDN;
-  - the Hobby plan includes 1 GB of storage and 10 GB of data transfer a month. That is about 49 full first-time downloads; cached loads cost nothing. Above the included usage, Hobby blocks Blob access for 30 days rather than billing, so a growing team needs Pro.
+**Model files (191.2 MB): from the pinned Hugging Face commit URLs.** This was the developer's preference.
+- **Integrity:** the worker checks each file's size and SHA-256 with Web Crypto before using it (`core/stt/download.ts`). A mismatch is rejected with a typed error and never cached.
+- **Caching:** verified files go into Cache Storage (`kite-stt-v2`), keyed by their SHA-256, so later loads skip the network.
+- **CORS, checked 2026-10-27:**
+  - Hugging Face's `resolve/<commit>` answers with a 302/307 redirect that carries `Access-Control-Allow-Origin` for the requesting origin.
+  - The large files redirect to `us.aws.cdn.hf.co`, which sends `access-control-allow-origin: *` and supports byte ranges.
+  - In Chromium, from a local origin, the full load worked: 204.5 MB in 28.8 s (first load), 3.0 s from the cache.
+  - From `https://kite-call-assistant.vercel.app` (developer, DevTools, 2026-10-27): **passed**. `tokens.txt` returned status 200 after the redirect with the right SHA-256, and a range request on the encoder returned 206 (`bytes 0-0/187823992`).
 
-  Before relying on it, check two things on Day 2:
-  - the store sends CORS headers that allow the Kite origin to `fetch()` from the worker;
-  - the worker should check each file's SHA-256 after download, because the files then come from storage we upload to rather than from the build.
-- **Alternatives:**
-  - load the files straight from the pinned Hugging Face commit URLs. There is no hosting to run, but the app would depend on a third-party service at runtime;
-  - another object store or CDN, such as S3 or R2 with CloudFront or Cloudflare.
+  **Hugging Face hosting is confirmed for production.** ADR-0023 (Stage 7) records it with its limits and fallbacks.
+- **Why not Vercel Blob:** Hobby's 10 GB/month Blob transfer covers only about 49 first-time downloads. Above that, Hobby blocks Blob access for 30 days.
+- **Risk:** the app depends on Hugging Face at first load. Mitigations: files are cached after the first load; the pins are immutable commits; and the checksum check means a changed or substituted file is never used.
+- **Fallbacks if Hugging Face becomes unusable:** Vercel Blob, Cloudflare R2, or a company server. Each is only a different `url` per file in `models.ts`; the checksums stay the same. ADR-0023 (Stage 7) records this in full.
 
-  Whichever is chosen is a deploy change for a later stage, with its own note in the architecture document.
-- **Developer's preference, to decide on Day 2 (noted 2026-10-27):** load the files directly from the pinned Hugging Face commit URLs, with a SHA-256 check of each file in the worker, rather than Vercel Blob. The reason: Hobby's 10 GB/month Blob transfer allows only about 49 first-time downloads. Both options stay open until Day 2.
+**Runtime (13.3 MB: loader `.js`, `.wasm`, API `.js`): from our own origin,** `/stt-runtime/v1.13.7/`.
+- **Why our origin:** the official release ships these files only inside a 175 MB `.tar.bz2`, which a browser cannot use.
+- **How it gets there:** every build runs `pnpm run stt:runtime` before `next build`, so any machine can deploy from a fresh clone. That step:
+  1. downloads the pinned release and checks its SHA-256;
+  2. extracts only the three files and checks each one;
+  3. runs `scripts/check-stt-runtime.ts`, which fails the build if a file is missing or wrong.
+- **Vercel can run it:** the build image (Amazon Linux 2023) lists `tar`, `bsdtar` and `bzip2` as pre-installed (Vercel build-image docs, checked 2026-10-27). Locally, the step took 1 min 16 s from scratch and skips the download when the files are already present and verified.
+- **The worker runs the runtime from its verified bytes** (through Blob URLs), not from a second fetch.
+
+**Development:** `pnpm dev` loads model files from `public/models/stt/` (source `local`, works offline after `pnpm --filter web fetch-models`). Production builds use `remote`. `NEXT_PUBLIC_STT_SOURCE` overrides either.
+
+### Two channels and the energy gate (Day 2, Stage 1)
+
+One worker runs one recognizer, with one stream per channel ("you", "them"). Automated runs in Chromium (Electron 44, plugged in), with the official recordings on "Them" and synthetic text-to-speech on "You" (not a person's voice), showed two problems:
+- each channel cost a real-time factor of about **0.25 whether it carried speech or silence**, so two channels reached **0.50–0.51**, at or above the 0.5 limit;
+- a digitally silent channel produced phantom "AND" lines.
+
+Following the Day 2 order of fallbacks, an **energy gate** (`core/stt/gate.ts`) now skips decoding while a channel is idle. It is lenient by design, because a loudness threshold cut sentences on Day 1:
+- it never closes while an utterance shows text;
+- it stays open 1.5 s after the last sound;
+- it opens above max(0.004 RMS, 2.5 × the background level), where the background is the quietest chunk of the last 5 s;
+- it replays 300 ms of pre-roll when it opens.
+
+With the gate, in the same automated runs:
+- speech on both channels: combined real-time factor **0.42**;
+- speech on "Them" with a silent "You": **0.24**, and the silent channel costs nothing;
+- no phantom words.
+
+The worker's WebAssembly memory is about **537 MB**, the same with one channel or two.
+
+**Measured by the developer** (Chrome, plugged in, real microphone; details in benchmark-results.md):
+
+| Run | Combined real-time factor | Per channel |
+|---|---|---|
+| A: "Them" only | 0.232 | — |
+| B: both channels, developer silent | 0.430 | Them 0.220, You 0.210 |
+| C: both channels, developer reading | 0.344 | Them 0.219, You 0.126 |
+
+All three are under the 0.5 limit, so Stage 1's two-channel check passes. "Them" lag was 564–787 ms.
+
+**Known behaviour: nearby speech is transcribed on "You."** In run B, someone talking at a distance in the room produced 11 short "You" lines ("YEAH", "UM", …). These are real words picked up by the microphone, not phantom words, and they also kept the "You" gate open. The gate is not made stricter for this, because quiet speakers must not be cut. Instead, the Connect view (Stage 4) tells users to use headphones and a quiet room. Silero VAD, evaluated in Stage 5, may reduce it.
+
+**"You" lag of about 1.0 s in run C.** Measured offline on 59 utterances, the gate opens in the same 100 ms chunk as the speech onset (median 0 ms added, worst 100 ms) and passes 98.6–99.8% of the speech audio. It is not the cause. The likely cause was the measurement itself: the lag clock started at the *first* onset after a pause, so background speech that produced no text could start it early. The lag now starts at the **latest** onset before text appears, and each utterance also records the gate's added delay (`gateDelaysMs`, 0 ms on 6/6 utterances in an automated run). The "You" lag is re-measured in the next developer run against the 0.8 s p50 target.
+
+### Word error rate scoring (changed on Day 2)
+
+From Day 2, `wer.ts` counts a word heard split or joined ("TO DAY" for "today", "NORTH WIND" for "Northwind") as correct: the letters are right and only the spacing differs. Under this rule, Day 2 run C sentence 1 is 5% (was 16%) and sentence 2 stays 18%. Day 1 rows in benchmark-results.md keep their original scoring.
 
 ## Validation
 

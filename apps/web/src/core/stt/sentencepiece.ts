@@ -1,10 +1,12 @@
 /**
- * File: apps/web/scripts/sentencepiece-vocab.ts
+ * File: apps/web/src/core/stt/sentencepiece.ts
  * Purpose: Turns a SentencePiece model file (bpe.model) into the text vocabulary (bpe.vocab)
  *          that sherpa-onnx needs to encode hotwords. It writes exactly what the official
  *          sherpa-onnx script scripts/export_bpe_vocab.py writes (one "piece<TAB>score" line per
  *          piece), without needing Python: the model's tokenizer repositories ship bpe.model only.
- * Used by: scripts/fetch-models.ts
+ *          Runs in the browser (stt.worker.ts, after bpe.model is downloaded and verified) and in
+ *          Node (scripts/fetch-models.ts); the result is checked against BPE_VOCAB_SHA256.
+ * Used by: src/core/stt/stt.worker.ts, scripts/fetch-models.ts
  * Depends on: nothing (pure)
  * Architecture: ADR-0020 (hotwords)
  *
@@ -74,7 +76,7 @@ function formatScore(score: number): string {
  * @param model Contents of bpe.model.
  * @returns The vocabulary: one "piece\tscore\n" line per piece, in id order.
  * @throws Error if the file is truncated or not a SentencePiece model (no pieces found).
- * Called from: installBpeVocab() in scripts/fetch-models.ts
+ * Called from: loadModel() in stt.worker.ts; installBpeVocab() in scripts/fetch-models.ts
  */
 export function sentencePieceVocab(model: Uint8Array): string {
   const view = new DataView(model.buffer, model.byteOffset, model.byteLength);
