@@ -54,6 +54,24 @@ export function chunkRms(samples: Float32Array): number {
   return Math.sqrt(sum / samples.length);
 }
 
+/**
+ * Finds where the last loud frame of a chunk ends: the chunk is cut into frames (10 ms at
+ * 16 kHz) and the last frame whose RMS reaches the threshold wins.
+ *
+ * @param samples   Samples (-1…1).
+ * @param threshold Loudness (RMS) that counts as sound.
+ * @param frame     Samples per frame (default 160 = 10 ms at 16 kHz).
+ * @returns Index just after the last loud frame, or -1 when no frame is loud.
+ * Called from: ChannelDecoder in channel.ts (end of speech); tests
+ */
+export function lastLoudSampleEnd(samples: Float32Array, threshold: number, frame = 160): number {
+  for (let end = samples.length; end > 0; end -= frame) {
+    const start = Math.max(0, end - frame);
+    if (chunkRms(samples.subarray(start, end)) >= threshold) return end;
+  }
+  return -1;
+}
+
 /** One channel's energy gate. */
 export class SilenceGate {
   /** Absolute sound threshold. */
@@ -81,6 +99,8 @@ export class SilenceGate {
   private heldMs = 0;
   /** True while chunks are being passed on. */
   private open = false;
+  /** Loudness a chunk needed at the latest push(): max(minRms, background × noiseFactor). */
+  private currentThreshold: number;
 
   /** @param options See GateOptions. */
   constructor(options: GateOptions = {}) {
@@ -89,6 +109,17 @@ export class SilenceGate {
     this.hangoverMs = options.hangoverMs ?? 1_500;
     this.preRollMs = options.preRollMs ?? 300;
     this.noiseWindowChunks = options.noiseWindowChunks ?? 50;
+    this.currentThreshold = this.minRms;
+  }
+
+  /**
+   * The loudness (RMS, 0…1) that counted as sound at the latest chunk.
+   *
+   * @returns The threshold.
+   * Called from: ChannelDecoder in channel.ts (finds the end of speech within a chunk)
+   */
+  get threshold(): number {
+    return this.currentThreshold;
   }
 
   /**
@@ -105,7 +136,8 @@ export class SilenceGate {
     const rms = chunkRms(chunk.samples);
     // Background = quietest recent chunk (0 before any: then only minRms applies).
     const background = this.recentRms.length > 0 ? Math.min(...this.recentRms) : 0;
-    const loud = rms >= this.minRms && rms >= background * this.noiseFactor;
+    this.currentThreshold = Math.max(this.minRms, background * this.noiseFactor);
+    const loud = rms >= this.currentThreshold;
     this.recentRms.push(rms);
     if (this.recentRms.length > this.noiseWindowChunks) this.recentRms.shift();
     if (loud) this.msSinceSound = 0;

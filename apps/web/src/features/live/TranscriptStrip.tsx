@@ -97,7 +97,12 @@ export const TranscriptStrip = memo(function TranscriptStrip({
               {lines.flatMap(splitForDisplay).map((line) => {
                 const style = SPEAKER_STYLE[line.speaker];
                 return (
-                  <li key={line.id} className="flex gap-3 text-sm leading-6">
+                  // data-refined: the second pass replaced this line's text (no visual change).
+                  <li
+                    key={line.id}
+                    className="flex gap-3 text-sm leading-6"
+                    data-refined={line.refined ? 'true' : undefined}
+                  >
                     <span className={`w-12 shrink-0 font-medium ${style.label}`}>{style.name}</span>
                     <span className={line.final ? 'text-slate-900' : 'text-slate-400'}>
                       {line.text}

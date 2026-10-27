@@ -4,10 +4,11 @@
  * loud chunk and passes the latest 300 ms of held-back audio first, stays open for 1.5 s after
  * the last loud chunk, stays open while the caller is busy (an utterance shows text), ignores
  * steady background noise (after the 5 s background window), and opens for quiet speech above
- * the 0.004 floor.
+ * the 0.004 floor. lastLoudSampleEnd() finds where the last loud 10 ms frame ends, and the gate
+ * reports the threshold it used.
  */
 import { describe, expect, it } from 'vitest';
-import { chunkRms, SilenceGate, type GateChunk } from '@/core/stt/gate';
+import { chunkRms, lastLoudSampleEnd, SilenceGate, type GateChunk } from '@/core/stt/gate';
 
 /** A 100 ms chunk with a constant level (RMS = level) and a capture time. */
 function chunk(level: number, endTime: number): GateChunk {
@@ -57,5 +58,26 @@ describe('SilenceGate', () => {
     expect(run(noisy, new Array(20).fill(0.006)).every((n) => n === 0)).toBe(true);
     const quiet = new SilenceGate();
     expect(quiet.push(chunk(0.01, 0), 100, false).length).toBe(1);
+  });
+});
+
+describe('lastLoudSampleEnd', () => {
+  it('returns the end of the last frame at or above the threshold, or -1', () => {
+    const samples = new Float32Array(1_600);
+    samples.fill(0.2, 0, 480); // the first 30 ms are loud
+    expect(lastLoudSampleEnd(samples, 0.05)).toBe(480);
+    expect(lastLoudSampleEnd(new Float32Array(1_600), 0.05)).toBe(-1);
+    expect(lastLoudSampleEnd(new Float32Array(1_600).fill(0.2), 0.05)).toBe(1_600);
+  });
+});
+
+describe('SilenceGate threshold', () => {
+  it('is the 0.004 floor at first, then follows the background', () => {
+    const gate = new SilenceGate();
+    expect(gate.threshold).toBe(0.004);
+    const noise = (): GateChunk => ({ samples: new Float32Array(1_600).fill(0.01), endTime: 0 });
+    gate.push(noise(), 100, false);
+    gate.push(noise(), 100, false);
+    expect(gate.threshold).toBeCloseTo(0.025, 6);
   });
 });

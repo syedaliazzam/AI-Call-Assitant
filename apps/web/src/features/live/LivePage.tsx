@@ -169,10 +169,14 @@ export function LivePage({ sessionId }: LivePageProps) {
         transcript.addPartial(channel, text, tStart);
         noteHeard(channel, text);
       },
-      onFinal: ({ channel, text, tStart, tEnd }) => {
+      onFinal: ({ channel, text, tStart, tEnd, segmentId }) => {
         if (!active) return;
-        transcript.addFinal({ speaker: channel, text, tStart, tEnd });
+        transcript.addFinal({ speaker: channel, text, tStart, tEnd, segmentId });
         noteHeard(channel, text);
+      },
+      // Second pass (off until ADR-0020 adopts one): the line's text is replaced in place.
+      onRefined: ({ segmentId, text, status }) => {
+        if (active && status === 'refined') transcript.refine(segmentId, text);
       },
       onStats: (stats) => {
         if (active) monitor.current.push(stats, performance.now());

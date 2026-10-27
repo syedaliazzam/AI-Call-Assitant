@@ -4,6 +4,8 @@
  *          reference sentence) with what the model heard, word by word. A word heard split in
  *          two or two words heard joined ("TO DAY" for "today", "NORTH WIND" for "Northwind") is
  *          counted as correct: the letters are right, only the spacing differs (Day 2 decision).
+ *          Numbers written as digits ("$52", "9:30") are spelled out first, so models that write
+ *          digits are not penalised against the spelled-out test sentences (Day 2 Stage 5).
  * Used by: src/features/dev/SttTest.tsx
  * Depends on: nothing (pure)
  * Architecture: ADR-0020 (accuracy check)
@@ -56,16 +58,114 @@ export interface WerResult {
   alignment: AlignmentStep[];
 }
 
+/** Number words below twenty. */
+const SMALL_NUMBERS = [
+  'zero',
+  'one',
+  'two',
+  'three',
+  'four',
+  'five',
+  'six',
+  'seven',
+  'eight',
+  'nine',
+  'ten',
+  'eleven',
+  'twelve',
+  'thirteen',
+  'fourteen',
+  'fifteen',
+  'sixteen',
+  'seventeen',
+  'eighteen',
+  'nineteen',
+];
+
+/** Tens words (index = tens digit). */
+const TENS = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
 /**
- * Normalises text for comparison: lower case, apostrophes kept inside words, every other
- * punctuation mark and hyphen turned into a space.
+ * Spells a whole number the way it is spoken ("one hundred and fifty", as in the test
+ * sentences).
+ *
+ * @param n A whole number, 0 … 999,999,999.
+ * @returns The words.
+ * Called from: spellNumbers(); tests
+ */
+export function numberWords(n: number): string {
+  if (n < 20) return SMALL_NUMBERS[n]!;
+  if (n < 100) return `${TENS[Math.floor(n / 10)]}${n % 10 ? ` ${SMALL_NUMBERS[n % 10]}` : ''}`;
+  if (n < 1000) {
+    const rest = n % 100;
+    return `${SMALL_NUMBERS[Math.floor(n / 100)]} hundred${rest ? ` and ${numberWords(rest)}` : ''}`;
+  }
+  for (const [size, name] of [
+    [1_000_000, 'million'],
+    [1_000, 'thousand'],
+  ] as const) {
+    if (n >= size) {
+      const rest = n % size;
+      const tail =
+        rest === 0 ? '' : rest < 100 ? ` and ${numberWords(rest)}` : ` ${numberWords(rest)}`;
+      return `${numberWords(Math.floor(n / size))} ${name}${tail}`;
+    }
+  }
+  return String(n);
+}
+
+/**
+ * Writes digits as spoken words, so a model that writes "$52" or "9:30" (Moonshine) is compared
+ * fairly with one that writes "fifty two dollars" or "nine thirty" (Zipformer, and the test
+ * sentences). Handles times (9:30), money ($52, $1,500), percentages, decimals and whole numbers
+ * with thousands separators; anything else is left as it is.
+ *
+ * @param text Any text.
+ * @returns The text with those numbers spelled out.
+ * Called from: normalizeWords(); tests
+ */
+export function spellNumbers(text: string): string {
+  return text
+    .replace(/\b(\d{1,2}):(\d{2})\b/g, (_, h: string, m: string) => {
+      const minutes = Number(m);
+      const tail =
+        minutes === 0
+          ? ''
+          : minutes < 10
+            ? ` oh ${numberWords(minutes)}`
+            : ` ${numberWords(minutes)}`;
+      return ` ${numberWords(Number(h))}${tail} `;
+    })
+    .replace(/\$\s?(\d[\d,]*)(?:\.(\d{2}))?/g, (_, whole: string, cents?: string) => {
+      const dollars = Number(whole.replace(/,/g, ''));
+      const centsPart =
+        cents && Number(cents) > 0 ? ` and ${numberWords(Number(cents))} cents` : '';
+      return ` ${numberWords(dollars)} ${dollars === 1 ? 'dollar' : 'dollars'}${centsPart} `;
+    })
+    .replace(/\b(\d+)\.(\d+)\b/g, (_, whole: string, fraction: string) => {
+      const digits = fraction
+        .split('')
+        .map((digit) => SMALL_NUMBERS[Number(digit)])
+        .join(' ');
+      return ` ${numberWords(Number(whole))} point ${digits} `;
+    })
+    .replace(/\b\d{1,3}(?:,\d{3})+\b|\b\d+\b/g, (digits: string) => {
+      const value = Number(digits.replace(/,/g, ''));
+      return value < 1_000_000_000 ? ` ${numberWords(value)} ` : digits;
+    })
+    .replace(/%/g, ' percent ');
+}
+
+/**
+ * Normalises text for comparison: numbers spelled out (spellNumbers), lower case, apostrophes
+ * kept inside words, every other punctuation mark and hyphen turned into a space.
  *
  * @param text Any text.
  * @returns The words.
- * Called from: wordErrorRate()
+ * Called from: wordErrorRate(); echo.ts
  */
 export function normalizeWords(text: string): string[] {
-  return text
+  return spellNumbers(text)
     .toLowerCase()
     .replace(/[^a-z0-9'\s]+/g, ' ')
     .replace(/(^|\s)'+|'+(?=\s|$)/g, ' ')

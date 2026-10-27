@@ -1,7 +1,7 @@
 # ADR-0020: Speech-to-text model (WebAssembly, v3.0)
 
-- **Status:** Proposed. Working engine chosen for Day 2; accuracy is above the bar (see Decision)
-- **Date:** 2026-10-24 (created); 2026-10-27 (Day 1 spike results; Day 2 hosting and two-channel engine)
+- **Status:** Proposed. Working engine chosen for Day 2; accuracy is above the bar (see Decision). Day 2 Stage 5: second pass built, measurements pending; COOP/COEP headers are provisional (see "Second pass").
+- **Date:** 2026-10-24 (created); 2026-10-27 (Day 1 spike results; Day 2 hosting and two-channel engine); 2026-10-28 (Day 2 Stage 5 second pass, provisional cross-origin isolation)
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §6, §12 Day 1
 - **Supersedes / superseded by:** none
 
@@ -156,6 +156,67 @@ For display only, a new "You" line that arrives while "Them" is speaking is held
 ### Word error rate scoring (changed on Day 2)
 
 From Day 2, `wer.ts` counts a word heard split or joined ("TO DAY" for "today", "NORTH WIND" for "Northwind") as correct: the letters are right and only the spacing differs. Under this rule, Day 2 run C sentence 1 is 5% (was 16%) and sentence 2 stays 18%. Day 1 rows in benchmark-results.md keep their original scoring.
+
+### Second pass (Day 2, Stage 5): built, waiting for measurements
+
+**What it does.** The streaming model still makes the grey text and a first-pass final line, shown at once. When an utterance ends, its audio goes from the streaming worker straight to a second worker (a MessagePort; the audio never passes through the page). There Silero VAD trims the silence and a non-streaming model decodes the speech again. The page then replaces the line's text in place: same line id, marked refined. `transcript.lines()`, `window()` and `displayLines()` all return the refined text, and the echo filter checks the refined text again. It can hide a line; a hidden line never comes back. Both latencies are measured from the end of speech (the last loud 10 ms frame, never after the last text change): to the first-pass final, and to the refined text. The target is refined text 1.5 s or less at p50. Up to about 2 s is acceptable for display, and the result is reported against 1.5 s.
+
+**Audio stays in memory only.** The streaming worker keeps the current utterance's audio only when the second pass is on:
+- from 0.3 s before the detected onset (or at most 2 s before the first word when no onset was found) to 0.3 s after the end of speech;
+- at most 30 s; a longer utterance keeps its first-pass text.
+
+The buffer is transferred to the second worker. That worker queues at most 8 jobs and drops any that waited more than 6 s (those keep their first-pass text). It drops each job's audio as soon as the job is decoded. Audio is never stored, logged or sent anywhere.
+
+**Configurations to measure (developer's decision, 2026-10-28).**
+
+| Id | Grey text and first pass | Second pass | Download |
+|---|---|---|---|
+| baseline | 2023-06-21 | off | 204.5 MB |
+| config 1 | model A, 2023-06-26 | Zipformer GigaSpeech, non-streaming int8, with hotwords (Apache-2.0) | 175.4 MB |
+| config 2 | 2023-06-21 | Moonshine v2 tiny English (MIT) | 262.4 MB |
+
+The 265 MB limit applies only if config 2 is adopted. Moonshine v2 base was dropped: too slow (about 0.9 s per 4 s of speech in Node) and it has the same 9 s limit.
+
+**The second-pass runtime is a different version.** v1.13.7, our streaming runtime, has no official non-streaming English build. The second pass therefore uses the official **v1.13.2** "vad-asr" WebAssembly runtime:
+- unpacked at build time from `sherpa-onnx-wasm-simd-1.13.2-vad-asr-moonshine-v2-tiny-en.tar.bz2` (33 MB, SHA-256 pinned, matches the release digest) and served from `/stt-runtime/v1.13.2/`;
+- the developer chose this over building v1.13.7 ourselves;
+- its `sherpa-onnx-asr.js` is byte-identical to v1.13.7's;
+- Silero VAD is the official `asr-models/silero_vad.onnx` release asset (also pinned). It is the same file as the one inside the vad-asr bundles.
+
+**The v1.13.2 vad-asr runtime is a WebAssembly threads build.** Unlike v1.13.7, it:
+- creates shared WebAssembly memory (up to 2 GB; 537 MB reserved at start);
+- starts a pool of **4 worker threads** of its own.
+
+Chrome allows that only on a cross-origin-isolated page, so this stage adds, **provisionally**, `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless` on every route (next.config.ts):
+- **Why credentialless:** the developer's choice, tried first. Cross-origin requests without CORS are sent without credentials instead of being blocked. It is supported in Chrome, Edge and Electron, and it gave isolation in every check so far. `require-corp` was not needed.
+- **Why every route:** a page is isolated only from its first load, so a client-side navigation into `/live` would not be.
+- **Reversible:** if Stage 5 adopts no second pass, the headers are removed again in the same stage.
+
+The page passes the verified loader to the runtime's own threads as a Blob URL (`Module.mainScriptUrlOrBlob`). Only pinned, verified code runs. The second pass uses one sherpa-onnx thread: two threads were at most about 10% faster in Node.
+
+**Known limits and facts, checked before measuring** (Node, and the real worker in headless Chrome on an isolated page; indicative only, not benchmark rows):
+- **Moonshine v2 tiny length limit.** It throws on input longer than about 9 s: 9 s works, 9.5 s fails. The second pass cuts Moonshine input at VAD pauses into pieces of 8 s or less. On an 18.7 s recording the cut worked, but one word was lost at a cut.
+- **GigaSpeech** has no such limit (17 s checked). Its hotwords go through a hotwords *file*, because the offline config has no hotwords buffer, encoded with its own pinned `bpe.vocab`.
+- **Speed and memory in headless Chrome** (power state not checked):
+
+  | Model | 6.2 s of speech | 17.1 s of speech |
+  |---|---|---|
+  | GigaSpeech | 1.9 s decode | 4.7 s decode |
+  | Moonshine v2 tiny | 1.6 s decode | 3.2 s decode |
+
+  The VAD took about 0.45 s per 8.6 s of audio. Each worker holds 537 MB of WebAssembly memory, so about **1.07 GB across both**. This is close to the developer's 1.2 GB concern level before Chrome's own overhead.
+- **WER and digits.** Moonshine writes digits ("$52", "9:30"). `wer.ts` (and the echo check) now spell digits out before comparing, so they are scored like spelled-out words, the same for every configuration.
+
+**Adoption rule (developer).** A configuration is adopted only if all of these hold:
+- overall WER is clearly under 20% (not borderline);
+- the combined RTF of both workers is 0.5 or less with two channels, plugged in;
+- memory is acceptable.
+
+Otherwise:
+- the COOP/COEP headers are removed;
+- Kite stays streaming-only with hotwords;
+- this ADR becomes Accepted for streaming-only, with a native desktop engine as the Day 6 option;
+- work continues to Stage 6.
 
 ## Validation
 
