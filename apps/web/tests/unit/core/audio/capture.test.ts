@@ -5,7 +5,8 @@
  * 'them' and the microphone is not opened; a microphone failure becomes a CallCaptureError on
  * 'you' and releases the other side; meter levels are measured per channel; a track that ends
  * detaches its channel and emits 'channel-ended'; stop() detaches both, stops every track, the
- * timer and the meter context, once.
+ * timer and the meter context, once; a meter context that starts suspended (Chrome, background
+ * tab) is resumed, so the meters do not stay grey after Reconnect.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { CallCaptureError, startCallCapture } from '@/core/audio/capture';
@@ -52,6 +53,10 @@ function setup(options: { themError?: Error; micError?: Error } = {}) {
   let tick: (() => void) | null = null;
   const clearInterval = vi.fn();
   const context = {
+    state: 'suspended' as AudioContextState,
+    resume: vi.fn(async () => {
+      context.state = 'running';
+    }),
     createAnalyser: () => {
       const analyser = {
         fftSize: 0,
@@ -163,5 +168,14 @@ describe('startCallCapture', () => {
     // A track ending after stop() is not reported.
     s.mic.track.end();
     expect(s.onEvent).not.toHaveBeenCalled();
+  });
+
+  it('resumes a meter context that starts suspended', async () => {
+    const s = setup();
+    await s.start();
+    expect(s.context.resume).toHaveBeenCalledTimes(1);
+    s.tick();
+    // Already running now: not resumed again.
+    expect(s.context.resume).toHaveBeenCalledTimes(1);
   });
 });

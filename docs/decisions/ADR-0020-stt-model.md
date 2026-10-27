@@ -143,6 +143,14 @@ All three are under the 0.5 limit, so Stage 1's two-channel check passes. "Them"
 
 **Known behaviour: speaker leakage onto "You" (Day 2, Stage 2).** With call audio on the laptop's speakers, the microphone picked up short fragments of the other side ("ABOUT ONE ISLAND", "YOU MAY") despite echo cancellation. "Them" itself was unaffected, because it is captured separately (system loopback or tab audio). Headphones avoid it; the Connect view says so.
 
+**Echo filter (Day 2, Stage 4).** On speakers, whole "Them" sentences reappeared as "You" (for example "NINETY SIX TIMES IT RECOMMENDED…" / "…YOU'D RECOMMENDED…"). `core/transcript/echo.ts` now hides a "You" line when:
+- it has at least 4 words;
+- at least 60% of its words appear, in order, in what "Them" said from 10 s before it to 2 s after it.
+
+The developer's examples score 0.83 and 0.91, while a real answer that reuses the question's words scored 0.33. Short replies ("yes", "exactly") are never hidden, and "Them" lines are never touched. Echo lines are left out of `lines()` and `window()`, which Day 4 uses for the question, and the live view says "Hiding echo from your speakers".
+
+For display only, a new "You" line that arrives while "Them" is speaking is held for 1.5 s, so an echo does not flash up before its original reveals it. In the developer's retest, 5 echo lines were hidden and the developer's own sentence was kept.
+
 **Power-state slowdowns (Day 2, Stage 2).** In a slow power state the same laptop reached a real-time factor of 0.57–0.65 per channel (model start 5.5–6.0 s instead of ~1.9 s). Plugged in, in a normal power state, the same Chrome test gave 0.443 combined. Health stayed "ok" because its threshold is 0.8. Proposed for the Connect/Live views (not built): an earlier, gentler hint, such as "Plug in your laptop for best results" when the combined real-time factor stays above 0.5 for 10 s, with "falling behind" kept at 0.8.
 
 ### Word error rate scoring (changed on Day 2)

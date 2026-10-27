@@ -178,8 +178,13 @@ export function SttTest() {
     return null;
   }
 
-  // Stop everything when leaving the page.
-  useEffect(() => release, []);
+  // Stop everything when leaving the page. Through a ref, so the cleanup calls the latest
+  // release() (it reads state setters and refs) without re-running the effect on every render.
+  const releaseRef = useRef(release);
+  useEffect(() => {
+    releaseRef.current = release;
+  });
+  useEffect(() => () => releaseRef.current(), []);
 
   // Re-check health every second (a stalled worker sends nothing, so time must pass here).
   useEffect(() => {

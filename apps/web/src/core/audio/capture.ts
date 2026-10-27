@@ -174,6 +174,15 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
 
   // 3. Meters: an AnalyserNode per channel in an AudioContext of their own (never played back).
   const context = deps.createAudioContext();
+  // Chrome can leave a new AudioContext suspended, for example when it was created while the
+  // Kite tab was in the background (Chrome switches to the tab the user just shared). A
+  // suspended context gives the meters only silence, while transcription (in the worker) goes
+  // on: the 'Them meter stayed grey after Reconnect' report on Day 2. So it is resumed now and
+  // on every meter tick until it runs.
+  const resumeIfSuspended = () => {
+    if (context.state === 'suspended') void context.resume().catch(() => undefined);
+  };
+  resumeIfSuspended();
   const meters = {} as Record<ChannelId, Meter>;
   const current: ChannelLevels = { you: 0, them: 0 };
   for (const channel of ['you', 'them'] as const) {
@@ -187,6 +196,7 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
     };
   }
   const timer = deps.setInterval(() => {
+    resumeIfSuspended();
     for (const channel of ['you', 'them'] as const) {
       const meter = meters[channel];
       meter.analyser.getFloatTimeDomainData(meter.buffer);
