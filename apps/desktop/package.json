@@ -1,0 +1,27 @@
+{
+  "name": "@kite/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kite desktop shell (Electron): opens the deployed Kite web app in a locked-down window and adds native features via window.kiteDesktop.",
+  "main": "dist/main.js",
+  "scripts": {
+    "electron:install": "install-electron",
+    "build": "esbuild src/main.ts src/preload.ts --bundle --platform=node --format=cjs --target=node22 --external:electron --outdir=dist",
+    "dev": "pnpm electron:install && pnpm build && electron . --kite-url=http://localhost:3000",
+    "start": "pnpm electron:install && pnpm build && electron .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "pnpm electron:install && pnpm build && playwright test",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "@kite/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "^24.0.0",
+    "electron": "44.9.3",
+    "esbuild": "0.28.2",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.5"
+  }
+}

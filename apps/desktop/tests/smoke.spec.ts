@@ -1,0 +1,185 @@
+/**
+ * Smoke test for the Electron shell (apps/desktop/src/main.ts, preload.ts, security.ts).
+ * Launches the built app (dist/) with KITE_URL pointing at a local test page and checks:
+ * the window opens at 1280×820; window.kiteDesktop is exactly { version, os } and frozen;
+ * the page has no Node.js (`require`, `process`); same-origin navigation works while
+ * navigation to another origin is blocked; window.open never creates a window and only http(s)
+ * links would reach the system browser; only the microphone permission is granted.
+ *
+ * The app runs with KITE_TEST_NO_EXTERNAL_OPEN=1, so this test never launches a real browser.
+ */
+import { readFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import path from 'node:path';
+import {
+  _electron as electron,
+  expect,
+  test,
+  type ElectronApplication,
+  type Page,
+} from '@playwright/test';
+
+/** apps/desktop (the Electron app folder: package.json "main" → dist/main.js). */
+const APP_DIR = path.join(__dirname, '..');
+
+/** The fixture page served as the "Kite web app". */
+const FIXTURE_HTML = readFileSync(path.join(__dirname, 'fixtures', 'index.html'));
+
+/** A running local test server. */
+interface TestServer {
+  /** The Node HTTP server. */
+  server: Server;
+  /** Its origin, for example 'http://127.0.0.1:53211'. */
+  origin: string;
+  /** How many requests it has received so far. */
+  requests: number;
+}
+
+/**
+ * Starts a local HTTP server that answers every path with the fixture page and counts requests.
+ *
+ * @returns The running server.
+ */
+async function startServer(): Promise<TestServer> {
+  const result = { requests: 0 } as TestServer;
+  result.server = createServer((_request, response) => {
+    result.requests += 1;
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    response.end(FIXTURE_HTML);
+  });
+  await new Promise<void>((resolve) => result.server.listen(0, '127.0.0.1', resolve));
+  const { port } = result.server.address() as AddressInfo;
+  result.origin = `http://127.0.0.1:${port}`;
+  return result;
+}
+
+let kite: TestServer;
+let other: TestServer;
+let app: ElectronApplication;
+let page: Page;
+
+test.beforeAll(async () => {
+  kite = await startServer();
+  // A second server on another port = another origin, which the shell must refuse.
+  other = await startServer();
+  // ELECTRON_RUN_AS_NODE makes Electron behave as plain Node.js. Tools that are themselves
+  // Electron apps (VS Code extensions, for example) set it for their child processes, so it
+  // must not be passed on to the app under test.
+  const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
+  app = await electron.launch({
+    args: [APP_DIR],
+    env: {
+      ...parentEnv,
+      KITE_URL: `${kite.origin}/`,
+      KITE_TEST_NO_EXTERNAL_OPEN: '1',
+    },
+  });
+  page = await app.firstWindow();
+  await page.waitForLoadState('domcontentloaded');
+});
+
+test.afterAll(async () => {
+  await app?.close();
+  kite?.server.close();
+  other?.server.close();
+});
+
+test('opens one 1280×820 window on KITE_URL', async () => {
+  expect(page.url()).toBe(`${kite.origin}/`);
+  await expect(page.locator('#heading')).toHaveText('Kite smoke test page');
+  const { sizes, workArea } = await app.evaluate(({ BrowserWindow, screen }) => ({
+    sizes: BrowserWindow.getAllWindows().map((window) => window.getSize()),
+    workArea: screen.getPrimaryDisplay().workAreaSize,
+  }));
+  // Electron shrinks a window to fit the screen's work area (for example 1280×720 on a
+  // 1920×1080 laptop at 150% scaling), so compare against the size that fits.
+  expect(sizes).toEqual([[Math.min(1280, workArea.width), Math.min(820, workArea.height)]]);
+});
+
+test('exposes window.kiteDesktop as exactly { version, os }, frozen', async () => {
+  const bridge = await page.evaluate(() => ({
+    keys: Object.keys(window.kiteDesktop ?? {}).sort(),
+    version: window.kiteDesktop?.version,
+    os: window.kiteDesktop?.os,
+    frozen: Object.isFrozen(window.kiteDesktop),
+  }));
+  const appVersion = await app.evaluate(({ app: electronApp }) => electronApp.getVersion());
+  const expectedOs = { darwin: 'mac', win32: 'windows' }[process.platform as string] ?? 'linux';
+
+  expect(bridge.keys).toEqual(['os', 'version']);
+  expect(bridge.version).toBe(appVersion);
+  expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
+  expect(bridge.os).toBe(expectedOs);
+  expect(bridge.frozen).toBe(true);
+});
+
+test('gives the page no Node.js access', async () => {
+  const globals = await page.evaluate(() => ({
+    require: typeof (globalThis as { require?: unknown }).require,
+    process: typeof (globalThis as { process?: unknown }).process,
+    module: typeof (globalThis as { module?: unknown }).module,
+  }));
+  expect(globals).toEqual({ require: 'undefined', process: 'undefined', module: 'undefined' });
+});
+
+test('allows navigation on the Kite origin', async () => {
+  await page.evaluate((url) => {
+    window.location.href = url;
+  }, `${kite.origin}/second-page`);
+  await page.waitForURL(`${kite.origin}/second-page`);
+  expect(page.url()).toBe(`${kite.origin}/second-page`);
+});
+
+test('blocks navigation to another origin', async () => {
+  const before = page.url();
+  const requestsBefore = other.requests;
+  await page.evaluate((url) => {
+    window.location.href = url;
+  }, `${other.origin}/`);
+  // Give a (wrongly) allowed navigation time to happen before checking.
+  await page.waitForTimeout(1_000);
+
+  // The other origin never even received a request, and the Kite page is still there.
+  expect(other.requests).toBe(requestsBefore);
+  // Read the page with evaluate(): Playwright's locators wait for the cancelled navigation
+  // to "finish", which never happens because the shell cancelled it.
+  const state = await page.evaluate(() => ({
+    href: window.location.href,
+    heading: document.querySelector('#heading')?.textContent,
+  }));
+  expect(state).toEqual({ href: before, heading: 'Kite smoke test page' });
+});
+
+test('window.open never opens a window; only http(s) would go to the system browser', async () => {
+  await page.evaluate(() => {
+    window.open('https://example.com/help', '_blank');
+    window.open('file:///C:/Windows/System32/calc.exe', '_blank');
+    window.open('ms-settings:privacy', '_blank');
+  });
+  await page.waitForTimeout(500);
+
+  const windowCount = await app.evaluate(
+    ({ BrowserWindow }) => BrowserWindow.getAllWindows().length,
+  );
+  expect(windowCount).toBe(1);
+
+  // Test mode records instead of calling shell.openExternal, so no real browser opens.
+  const recorded = await app.evaluate(
+    () => (globalThis as { __kiteExternalOpens?: string[] }).__kiteExternalOpens ?? [],
+  );
+  expect(recorded).toEqual(['https://example.com/help']);
+});
+
+test('grants the microphone and denies the camera and notifications', async () => {
+  const states = await page.evaluate(async () => {
+    const query = async (name: string) =>
+      (await navigator.permissions.query({ name: name as PermissionName })).state;
+    return {
+      microphone: await query('microphone'),
+      camera: await query('camera'),
+      notifications: await query('notifications'),
+    };
+  });
+  expect(states).toEqual({ microphone: 'granted', camera: 'denied', notifications: 'denied' });
+});

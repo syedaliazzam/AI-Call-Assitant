@@ -1,0 +1,33 @@
+/**
+ * File: apps/web/tsconfig.json
+ * Purpose: TypeScript settings for the Next.js app: browser libs, JSX, the Next.js plugin and
+ *          the `@/*` → `src/*` path alias.
+ * Depends on: ../../tsconfig.base.json
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §9.2
+ */
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // Next.js compiles JSX itself; "react-jsx" is the setting Next.js expects.
+    "jsx": "react-jsx",
+    // Speeds up repeated `tsc` runs (cache file is git-ignored).
+    "incremental": true,
+    // Node types for config files and server code (TypeScript 6 no longer loads @types automatically).
+    "types": ["node"],
+    // Gives editors Next.js-specific checks (for example valid page exports).
+    "plugins": [{ "name": "next" }],
+    // `import { Button } from '@/ui/Button'` instead of long relative paths.
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules", "public/models"]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "kite",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kite call assistant monorepo (web app, desktop shell, shared types). See README.md and CLAUDE.md.",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @kite/web dev",
+    "build": "pnpm -r build",
+    "lint": "eslint . && prettier --check .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @kite/web test && pnpm --filter @kite/desktop test:unit",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.4.3",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.4.0",
+    "prettier": "^3.9.10",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0"
+  }
+}

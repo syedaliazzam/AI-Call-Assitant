@@ -1,0 +1,37 @@
+/**
+ * File: tsconfig.base.json
+ * Purpose: Strict TypeScript settings shared by every package. Each package's tsconfig.json
+ *          extends this file and only adds what is specific to it (DOM libs, JSX, path aliases).
+ * Used by: apps/web/tsconfig.json, packages/shared/tsconfig.json, apps/desktop (Stage 5)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §9.2 ("TypeScript strict everywhere")
+ */
+{
+  "compilerOptions": {
+    // Language level: modern runtimes only (current Chrome/Edge, Electron, Node 22+).
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    // "Bundler" matches how Next.js, Vite/Vitest and esbuild resolve imports
+    // (package.json "exports", no file extensions required).
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    // Each file must compile on its own; required by Next.js (SWC) and Vitest.
+    "isolatedModules": true,
+    // Type checking only; the bundlers produce the real output.
+    "noEmit": true,
+
+    // Strictness: "strict" plus extra checks that catch common bugs.
+    "strict": true,
+    // Array/record lookups may be undefined, so the code must handle that case.
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Do not type-check third-party .d.ts files; speeds up checks and avoids
+    // failures we cannot fix in other people's packages.
+    "skipLibCheck": true
+  }
+}
