@@ -22,7 +22,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRecordingStream, type RecordingStream } from '@/core/audio/recordingStream';
 import { clearSttCache, type DownloadProgress } from '@/core/stt/download';
-import { healthMessage, SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
+import {
+  healthMessage,
+  healthTone,
+  SttHealthMonitor,
+  type SttHealthStatus,
+} from '@/core/stt/health';
 import { formatHotwords } from '@/core/stt/hotwords';
 import { median } from '@/core/stt/metrics';
 import {
@@ -448,7 +453,14 @@ export function SttTest() {
         </p>
       )}
       {message && (
-        <p role="status" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
+        <p
+          role="status"
+          className={
+            healthTone(health) === 'hint'
+              ? 'rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600'
+              : 'rounded-md bg-red-50 px-3 py-2 text-sm text-red-800'
+          }
+        >
           {message}
         </p>
       )}

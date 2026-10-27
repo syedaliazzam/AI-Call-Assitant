@@ -1,12 +1,13 @@
 /**
  * Tests for apps/web/src/core/stt/health.ts:
- * SttHealthMonitor reports 'ok' while decoding keeps up (and before any statistics),
- * 'falling-behind' only after the per-second real-time factor stays above 0.8 for 5 s (a short
- * spike does not count), 'stalled' when statistics stop for 3 s, and returns to 'ok' when
- * decoding recovers; healthMessage() gives the user-facing text.
+ * SttHealthMonitor reports 'ok' while decoding keeps up (and before any statistics), 'slow'
+ * after the per-second real-time factor stays above 0.5 for 10 s, 'falling-behind' after it stays
+ * above 0.8 for 5 s (a short spike does not count), 'stalled' when statistics stop for 3 s, and
+ * returns to 'ok' when decoding recovers; healthMessage() and healthTone() give the text and how
+ * to show it (the 'slow' hint is grey and dismissible, the others are warnings).
  */
 import { describe, expect, it } from 'vitest';
-import { healthMessage, SttHealthMonitor } from '@/core/stt/health';
+import { healthMessage, healthTone, SttHealthMonitor } from '@/core/stt/health';
 import type { EngineStats } from '@/core/stt/protocol';
 
 /** Statistics with the given cumulative totals. */
@@ -68,10 +69,34 @@ describe('SttHealthMonitor', () => {
   });
 });
 
+describe('SttHealthMonitor slow hint', () => {
+  it('reports slow after 10 s above 0.5, but not after 9 s', () => {
+    expect(feed(new Array(9).fill(0.6)).monitor.status(9_000)).toBe('ok');
+    const { monitor, at } = feed(new Array(10).fill(0.6));
+    expect(monitor.status(at)).toBe('slow');
+  });
+
+  it('prefers falling-behind over slow, and clears slow when back under budget', () => {
+    const { monitor, at } = feed(new Array(10).fill(0.9));
+    expect(monitor.status(at)).toBe('falling-behind');
+    expect(feed([...new Array(10).fill(0.6), 0.4]).monitor.status(11_000)).toBe('ok');
+  });
+});
+
 describe('healthMessage', () => {
   it('has text for problems and nothing for ok', () => {
     expect(healthMessage('ok')).toBeNull();
+    expect(healthMessage('slow')).toBe('Plug in your laptop for best results.');
     expect(healthMessage('falling-behind')).toMatch(/plug in your laptop/);
     expect(healthMessage('stalled')).toMatch(/stopped responding/);
+  });
+});
+
+describe('healthTone', () => {
+  it('shows slow as a hint and the rest as warnings', () => {
+    expect(healthTone('ok')).toBeNull();
+    expect(healthTone('slow')).toBe('hint');
+    expect(healthTone('falling-behind')).toBe('warning');
+    expect(healthTone('stalled')).toBe('warning');
   });
 });
