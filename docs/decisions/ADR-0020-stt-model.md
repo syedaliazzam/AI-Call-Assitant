@@ -97,6 +97,7 @@ The model files (204.1 MB in total; the largest file is 187.8 MB) are kept out o
   - another object store or CDN, such as S3 or R2 with CloudFront or Cloudflare.
 
   Whichever is chosen is a deploy change for a later stage, with its own note in the architecture document.
+- **Developer's preference, to decide on Day 2 (noted 2026-10-27):** load the files directly from the pinned Hugging Face commit URLs, with a SHA-256 check of each file in the worker, rather than Vercel Blob. The reason: Hobby's 10 GB/month Blob transfer allows only about 49 first-time downloads. Both options stay open until Day 2.
 
 ## Validation
 

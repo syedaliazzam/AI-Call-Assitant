@@ -1,0 +1,170 @@
+# File: .github/workflows/ci.yml
+# Purpose: Continuous integration for Kite: lint, typecheck and unit tests for the whole
+#          workspace, plus the Electron desktop smoke test.
+# Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing); day-01-setup.md Stage 7
+#
+# When each job runs (GitHub Actions minutes are limited on this private repository, and
+# Windows minutes count 2x and macOS minutes 10x against the allowance):
+# - web (ubuntu, 1x): every pull request and every push to main.
+# - desktop-windows (2x): every pull request and every push to main.
+# - desktop-macos (10x): only when started by hand (Actions tab → CI → "Run workflow").
+#   A manual run starts ONLY this job; the other two already ran on the pull request / push.
+#
+# What CI never does: it uses no secrets, makes no real Claude calls (unit tests mock the SDK),
+# downloads no speech-to-text models (the /dev/stt-test page is not tested here; unit tests cover
+# its pure modules), and deploys nothing (Vercel deploys stay CLI-only, no preview deploys).
+#
+# Actions are pinned to the full commit SHA of an official release tag (checked against each
+# action's GitHub release on 2026-10-27), so a moved tag cannot change what runs.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only token: no job writes to the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request cancels the older run, to save minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web (lint, typecheck, unit tests)
+    # Not on manual runs: those are for the macOS job only (see the header).
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Get the code.
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Install pnpm; with no `version` input it uses the root package.json "packageManager"
+      # (pnpm@12.15.0), the same version developers and Vercel use.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # Install Node 24 (README: 22.12+, 24 recommended) and cache the pnpm store, keyed on
+      # pnpm-lock.yaml, so later runs reuse downloaded packages.
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Install exactly what the lockfile says; fail instead of changing it.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ESLint and the Prettier check, for every package.
+      - name: Lint
+        run: pnpm lint
+
+      # TypeScript in every package (web also generates Next.js route types first).
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Vitest unit tests: the web app, and the desktop shell's security rules.
+      - name: Unit tests
+        run: pnpm test
+
+  desktop-windows:
+    name: Desktop smoke test (Windows)
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      # Electron's installer (install-electron) keeps its download here. A fixed folder lets the
+      # "Cache the Electron download" step save and restore it.
+      electron_config_cache: ${{ runner.temp }}/electron-cache
+    steps:
+      # Get the code.
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Install pnpm (version from package.json "packageManager").
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # Install Node 24 and cache the pnpm store.
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Read the exact Electron version (pinned in apps/desktop/package.json) for the cache key.
+      - name: Read the Electron version
+        id: electron
+        shell: bash
+        run: echo "version=$(node -p "require('./apps/desktop/package.json').devDependencies.electron")" >> "$GITHUB_OUTPUT"
+
+      # Restore the ~100 MB Electron zip from earlier runs. The installer still checks it
+      # against Electron's published checksums before unpacking.
+      - name: Cache the Electron download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/electron-cache
+          key: electron-${{ steps.electron.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+      # Install exactly what the lockfile says.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Installs the Electron binary (from the cache when possible), builds dist/, and runs the
+      # Playwright smoke test against a local test page. The app runs with
+      # KITE_TEST_NO_EXTERNAL_OPEN=1 (set by the test), so no real browser is ever opened.
+      - name: Smoke test
+        run: pnpm --filter desktop test
+
+  desktop-macos:
+    name: Desktop smoke test (macOS, manual)
+    # Manual runs only: macOS minutes count 10x (see the header).
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      # Same fixed Electron download folder as the Windows job.
+      electron_config_cache: ${{ runner.temp }}/electron-cache
+    steps:
+      # Get the code.
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Install pnpm (version from package.json "packageManager").
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # Install Node 24 and cache the pnpm store.
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Read the exact Electron version for the cache key.
+      - name: Read the Electron version
+        id: electron
+        run: echo "version=$(node -p "require('./apps/desktop/package.json').devDependencies.electron")" >> "$GITHUB_OUTPUT"
+
+      # Restore the Electron zip from earlier runs (checked against Electron's checksums).
+      - name: Cache the Electron download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/electron-cache
+          key: electron-${{ steps.electron.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+      # Install exactly what the lockfile says.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Install Electron, build, and run the Playwright smoke test (no real browser is opened).
+      - name: Smoke test
+        run: pnpm --filter desktop test

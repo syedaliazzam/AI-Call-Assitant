@@ -19,29 +19,57 @@ It runs as a desktop app (macOS, Windows) and in Chrome or Edge. Start with [CLA
 - **pnpm 12**: run `corepack enable` once; the version is pinned in `package.json` (`packageManager`).
 - Git.
 
-## Install
+## Set up a development machine (once)
+
+Steps 1–2 are needed for everything; steps 3–5 for sign-in and Claude; step 6 only for the speech-to-text test page.
+
+**1. Install the dependencies.**
 
 ```sh
 pnpm install
 ```
 
-## Run
+**2. Get the Vercel CLI** (`npm i -g vercel`, then `vercel login`) and link this folder to the project. Run it from the **repository root**:
 
 ```sh
-pnpm dev
+vercel link        # project kite-call-assistant, root directory apps/web
 ```
 
-Open http://localhost:3000. You should see the sidebar and the empty "Call Sessions" dashboard.
+**3. Download the environment variables** into `apps/web/.env.local` (git-ignored). The variable names and what they are for are listed in [apps/web/.env.example](apps/web/.env.example).
 
-## Speech-to-text model files
+```sh
+vercel env pull apps/web/.env.local
+```
 
-The speech-to-text test page (`/dev/stt-test`, admins only) needs the model files, which are not in git (about 280 MB, both models):
+Secrets live only in Vercel. To add one, run `vercel env add NAME` and paste the value at the terminal prompt only (never in code, commits, logs or chat), then pull again.
+
+**4. Prepare the accounts database** (only for a new database; the shared Neon database is already migrated):
+
+```sh
+pnpm --filter web db:migrate
+```
+
+**5. Create the first admin** (only once per database; after that, admins add users at `/admin/users`). It prints a temporary password once; you must change it at first sign-in.
+
+```sh
+pnpm --filter web create-admin --email you@company.com --name "Your Name"
+```
+
+**6. Download the speech-to-text model files** (about 280 MB, both models). They are needed only for `/dev/stt-test` (admins only) and are not in git:
 
 ```sh
 pnpm --filter web fetch-models
 ```
 
-It downloads them from the official sherpa-onnx sources, checks every SHA-256, and puts them in `apps/web/public/models/stt/`. They are not uploaded to Vercel; see ADR-0020 for how production should serve them.
+It downloads them from the official sherpa-onnx sources (pinned versions), checks every SHA-256, and puts them in `apps/web/public/models/stt/`. Run it again at any time; files that are already correct are skipped. They are not uploaded to Vercel; see [ADR-0020](docs/decisions/ADR-0020-stt-model.md) for how production should serve them (decided on Day 2).
+
+## Run the web app
+
+```sh
+pnpm dev
+```
+
+Open http://localhost:3000 and sign in. Admins also see **Dev tools** in the sidebar: `/dev/claude-test` (streams a Claude reply and shows timings) and `/dev/stt-test` (live speech-to-text with load time, real-time factor, lag and accuracy).
 
 ## Run the desktop app
 
@@ -67,13 +95,25 @@ pnpm format      # apply Prettier formatting
 pnpm --filter desktop test   # Electron smoke test: launches the real shell against a test page
 ```
 
-All three checks must pass before every commit.
+`pnpm lint && pnpm typecheck && pnpm test` must pass before every commit. Unit tests never call the real Claude API and need no secrets.
 
 Run a command in a single package with `--filter`, for example `pnpm --filter web test`.
 
+## Continuous integration
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on GitHub Actions. Minutes are limited on this private repository (Windows minutes count 2x, macOS 10x), so:
+
+| Job                          | Runner  | Runs on                                          | What it does                                                        |
+| ---------------------------- | ------- | ------------------------------------------------ | ------------------------------------------------------------------- |
+| Web                          | Ubuntu  | every pull request and push to `main`            | `pnpm install --frozen-lockfile`, lint, typecheck, unit tests       |
+| Desktop smoke test (Windows) | Windows | every pull request and push to `main`            | installs Electron, builds the shell, runs the Playwright smoke test |
+| Desktop smoke test (macOS)   | macOS   | **manual only**: Actions tab → CI → Run workflow | the same smoke test on macOS (a manual run starts only this job)    |
+
+CI uses no secrets, makes no Claude calls, downloads no speech-to-text models and deploys nothing. The pnpm store and the Electron download are cached between runs.
+
 ## Deploy
 
-Kite is deployed to Vercel with the Vercel CLI (`npm i -g vercel`, then `vercel login`). The Vercel project is `kite-call-assistant`, with **Root Directory `apps/web`**. Run every command below from the **repository root** (where `.vercel/` is), so the whole monorepo is uploaded and `@kite/shared` is available to the build.
+Kite is deployed to Vercel **with the Vercel CLI only**: there is no Git integration, so pushes and pull requests do not create deployments. The Vercel project is `kite-call-assistant`, with **Root Directory `apps/web`**. Run every command below from the **repository root** (where `.vercel/` is), so the whole monorepo is uploaded and `@kite/shared` is available to the build.
 
 **One-time project setup** (already done for `kite-call-assistant`):
 
