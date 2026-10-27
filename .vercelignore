@@ -15,3 +15,7 @@ docs
 # Local test and build output.
 coverage
 **/*.tsbuildinfo
+
+# Speech-to-text model files (downloaded by `pnpm --filter web fetch-models`, ~85–290 MB).
+# Kept out of deploys until ADR-0020 decides how production serves them.
+apps/web/public/models

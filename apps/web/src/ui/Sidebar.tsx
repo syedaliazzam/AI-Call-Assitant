@@ -52,7 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Call Sessions', href: '/' },
   { label: 'Settings', href: '/settings', disabledNote: 'Day 3' },
   { label: 'Admin', href: '/admin/users', adminOnly: true },
-  { label: 'Dev tools', href: '/dev/claude-test', adminOnly: true },
+  { label: 'Dev tools', href: '/dev', adminOnly: true },
 ];
 
 /**

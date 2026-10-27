@@ -9,7 +9,11 @@ import type { NextConfig } from 'next';
 
 /**
  * Kite's Next.js settings.
- * Stage 6 may add COOP/COEP headers here if the speech-to-text WebAssembly build needs threads.
+ * No Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy headers: the official sherpa-onnx
+ * WebAssembly ASR build (v1.13.7) is single-threaded (no pthreads), so it needs no
+ * SharedArrayBuffer and therefore no cross-origin isolation (Day 1 Stage 6, ADR-0020).
+ * Architecture §10.1 planned these headers for WebAssembly threads; they would only be needed
+ * for a multi-threaded build.
  */
 const nextConfig: NextConfig = {
   // @kite/shared ships TypeScript source (no build step), so Next.js must compile it.

@@ -33,6 +33,16 @@ pnpm dev
 
 Open http://localhost:3000. You should see the sidebar and the empty "Call Sessions" dashboard.
 
+## Speech-to-text model files
+
+The speech-to-text test page (`/dev/stt-test`, admins only) needs the model files, which are not in git (about 280 MB, both models):
+
+```sh
+pnpm --filter web fetch-models
+```
+
+It downloads them from the official sherpa-onnx sources, checks every SHA-256, and puts them in `apps/web/public/models/stt/`. They are not uploaded to Vercel; see ADR-0020 for how production should serve them.
+
 ## Run the desktop app
 
 The desktop app is a thin Electron shell around the web app (`apps/desktop`). No installer yet; it runs from source.
