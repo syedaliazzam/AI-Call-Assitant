@@ -1,8 +1,11 @@
 /**
  * File: apps/web/src/platform/errors.ts
- * Purpose: Error thrown by platform methods that are not built yet, so callers get a clear
- *          message naming the feature and the day it arrives instead of a silent failure.
- * Used by: src/platform/browser.ts, src/platform/desktop.ts
+ * Purpose: Errors thrown by platform methods:
+ *          - NotImplementedError: the method is not built yet (names the feature and the day);
+ *          - CaptureError: capturing the other side of the call failed, with a typed reason and a
+ *            message the UI can show as it is (Day 2).
+ * Used by: src/platform/browser.ts, src/platform/desktop.ts, src/platform/media.ts; the
+ *          Connect view (Day 2 Stage 4) shows CaptureError messages
  * Depends on: nothing
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 and §12 (build plan)
  */
@@ -28,5 +31,37 @@ export class NotImplementedError extends Error {
     this.name = 'NotImplementedError';
     this.feature = feature;
     this.day = day;
+  }
+}
+
+/**
+ * Why capturing the other side ("Them") failed:
+ * - 'no-audio-track': the share has no sound (browser: "Also share tab audio" was not ticked);
+ * - 'user-cancelled': the user closed the share picker;
+ * - 'not-supported': this browser or OS cannot capture the call's sound (for example macOS 12
+ *   in the desktop app, or a browser without getDisplayMedia);
+ * - 'permission-denied': the OS or the app refused (for example macOS privacy settings).
+ */
+export type CaptureErrorCode =
+  'no-audio-track' | 'user-cancelled' | 'not-supported' | 'permission-denied';
+
+/**
+ * Thrown by getOtherSideStream(). Its message is written for the user (what happened and what to
+ * do) and contains no transcript or page content.
+ *
+ * @example throw new CaptureError('no-audio-track', 'Share again and tick "Also share tab audio".')
+ */
+export class CaptureError extends Error {
+  /** Why capture failed. */
+  readonly code: CaptureErrorCode;
+
+  /**
+   * @param code    Why capture failed.
+   * @param message What happened and what to do, for the user.
+   */
+  constructor(code: CaptureErrorCode, message: string) {
+    super(message);
+    this.name = 'CaptureError';
+    this.code = code;
   }
 }

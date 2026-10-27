@@ -12,8 +12,8 @@ import { createDesktopPlatform, type DesktopPlatform } from './desktop';
 import type { Platform } from './types';
 
 export type { DesktopPlatform } from './desktop';
-export { NotImplementedError } from './errors';
-export type { HotkeyAction, Platform } from './types';
+export { CaptureError, NotImplementedError, type CaptureErrorCode } from './errors';
+export type { HotkeyAction, OtherSideSource, OtherSideStream, Platform } from './types';
 
 /**
  * Returns the Platform for the current environment.

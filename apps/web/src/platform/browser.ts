@@ -1,15 +1,59 @@
 /**
  * File: apps/web/src/platform/browser.ts
  * Purpose: The Platform implementation used when Kite runs in Chrome or Edge (no desktop app).
- *          Day 1: only the microphone works; the other methods throw NotImplementedError naming
- *          the day they arrive.
+ *          The microphone (Day 1) and the other side through a shared tab with its audio
+ *          (Day 2) work; the other methods throw NotImplementedError naming the day they arrive.
  * Used by: src/platform/index.ts (getPlatform)
  * Depends on: src/platform/types.ts, src/platform/errors.ts, src/platform/media.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (browser column)
  */
-import { NotImplementedError } from './errors';
-import { openMicrophone } from './media';
-import type { Platform } from './types';
+import { CaptureError, NotImplementedError } from './errors';
+import {
+  openMicrophone,
+  requestDisplayMedia,
+  stopAllTracks,
+  type DisplayCaptureOptions,
+} from './media';
+import type { OtherSideSource, Platform } from './types';
+
+/**
+ * What the browser asks for when sharing the other side (Chrome's official screen-sharing
+ * controls, checked 2026-10-27):
+ * - video.displaySurface 'browser': opens the picker on the "Chrome Tab" pane, the only pane with
+ *   tab audio (the meeting usually runs in a tab);
+ * - audio.suppressLocalAudioPlayback false: the user keeps hearing the meeting while Kite listens;
+ * - preferCurrentTab false + selfBrowserSurface 'exclude': Kite's own tab is not offered;
+ * - surfaceSwitching 'include': "Share this tab instead" lets the user switch to the right tab;
+ * - systemAudio 'include' and monitorTypeSurfaces 'include': on Windows, sharing the entire
+ *   screen can carry system audio (for a meeting in a desktop app).
+ * Video is required by getDisplayMedia; the track is kept (not shown) for Day 5 screenshots.
+ */
+export const BROWSER_DISPLAY_OPTIONS: DisplayCaptureOptions = {
+  video: { displaySurface: 'browser' },
+  audio: { suppressLocalAudioPlayback: false },
+  preferCurrentTab: false,
+  selfBrowserSurface: 'exclude',
+  surfaceSwitching: 'include',
+  systemAudio: 'include',
+  monitorTypeSurfaces: 'include',
+};
+
+/** Message when the share has no sound. */
+export const NO_TAB_AUDIO_MESSAGE =
+  'Kite can’t hear the meeting: the share has no sound. Click Connect again, pick the meeting tab and tick “Also share tab audio” (Chrome or Edge).';
+
+/**
+ * Where the sound of a share comes from, from the video track's displaySurface setting.
+ *
+ * @param stream The shared stream.
+ * @returns 'tab-audio' for a tab, 'screen-audio' for a screen or window (or when unknown).
+ * Called from: browserPlatform.getOtherSideStream(); tests
+ */
+export function shareSource(stream: MediaStream): OtherSideSource {
+  const settings = stream.getVideoTracks()[0]?.getSettings() as
+    { displaySurface?: string } | undefined;
+  return settings?.displaySurface === 'browser' ? 'tab-audio' : 'screen-audio';
+}
 
 /** Platform implementation for Chrome / Edge. */
 export const browserPlatform: Platform = {
@@ -18,9 +62,18 @@ export const browserPlatform: Platform = {
   /** Opens the microphone with getUserMedia (the browser asks the user for permission). */
   getMicStream: openMicrophone,
 
-  /** Day 2: getDisplayMedia with the share picker and "Also share tab audio" guidance. */
+  /**
+   * Opens the share picker (tab pane first). The user picks the meeting tab and ticks "Also share
+   * tab audio". A share without sound is stopped and reported as 'no-audio-track'.
+   */
   async getOtherSideStream() {
-    throw new NotImplementedError('browser.getOtherSideStream', 2);
+    const stream = await requestDisplayMedia(BROWSER_DISPLAY_OPTIONS, 'browser');
+    if (stream.getAudioTracks().length === 0) {
+      // Release the share right away: without sound it is of no use.
+      stopAllTracks(stream);
+      throw new CaptureError('no-audio-track', NO_TAB_AUDIO_MESSAGE);
+    }
+    return { stream, source: shareSource(stream) };
   },
 
   /** Day 5: grab a frame from the screen or tab stream the user already shared. */

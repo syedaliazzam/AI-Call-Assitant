@@ -141,6 +141,10 @@ All three are under the 0.5 limit, so Stage 1's two-channel check passes. "Them"
 
 **"You" lag of about 1.0 s in run C.** Measured offline on 59 utterances, the gate opens in the same 100 ms chunk as the speech onset (median 0 ms added, worst 100 ms) and passes 98.6–99.8% of the speech audio. It is not the cause. The likely cause was the measurement itself: the lag clock started at the *first* onset after a pause, so background speech that produced no text could start it early. The lag now starts at the **latest** onset before text appears, and each utterance also records the gate's added delay (`gateDelaysMs`, 0 ms on 6/6 utterances in an automated run). The "You" lag is re-measured in the next developer run against the 0.8 s p50 target.
 
+**Known behaviour: speaker leakage onto "You" (Day 2, Stage 2).** With call audio on the laptop's speakers, the microphone picked up short fragments of the other side ("ABOUT ONE ISLAND", "YOU MAY") despite echo cancellation. "Them" itself was unaffected, because it is captured separately (system loopback or tab audio). Headphones avoid it; the Connect view says so.
+
+**Power-state slowdowns (Day 2, Stage 2).** In a slow power state the same laptop reached a real-time factor of 0.57–0.65 per channel (model start 5.5–6.0 s instead of ~1.9 s). Plugged in, in a normal power state, the same Chrome test gave 0.443 combined. Health stayed "ok" because its threshold is 0.8. Proposed for the Connect/Live views (not built): an earlier, gentler hint, such as "Plug in your laptop for best results" when the combined real-time factor stays above 0.5 for 10 s, with "falling behind" kept at 0.8.
+
 ### Word error rate scoring (changed on Day 2)
 
 From Day 2, `wer.ts` counts a word heard split or joined ("TO DAY" for "today", "NORTH WIND" for "Northwind") as correct: the letters are right and only the spacing differs. Under this rule, Day 2 run C sentence 1 is 5% (was 16%) and sentence 2 stays 18%. Day 1 rows in benchmark-results.md keep their original scoring.

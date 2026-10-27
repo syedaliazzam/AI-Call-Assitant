@@ -4,7 +4,8 @@
  * - only http: and https: links ever reach shell.openExternal (file:, javascript:, custom
  *   schemes and invalid URLs are refused), and test mode records instead of opening;
  * - lockNavigation() cancels navigation/redirects to other origins and denies every new window;
- * - only an audio-only 'media' request from the Kite origin is granted;
+ * - only an audio-only 'media' request and 'display-capture' (getDisplayMedia, answered by
+ *   media.ts) from the Kite origin are granted; every other origin gets neither;
  * - the web preferences keep the sandbox, context isolation and no Node.js.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +20,7 @@ const {
   isAllowedUrl,
   isExternalOpenAllowed,
   isPermissionAllowed,
+  permissionForRequest,
   lockNavigation,
   NO_EXTERNAL_OPEN_ENV,
   openInSystemBrowser,
@@ -185,15 +187,38 @@ describe('isPermissionAllowed', () => {
     ).toBe(false);
   });
 
+  it('grants display-capture to the Kite origin only (media.ts decides what is captured)', () => {
+    expect(
+      isPermissionAllowed(
+        { permission: 'display-capture', requestingUrl: `${ORIGIN}/live/1` },
+        ORIGIN,
+      ),
+    ).toBe(true);
+    expect(
+      isPermissionAllowed(
+        { permission: 'display-capture', requestingUrl: 'https://evil.example.com/' },
+        ORIGIN,
+      ),
+    ).toBe(false);
+  });
+
   it('denies every other permission, even for the Kite origin', () => {
-    for (const permission of [
-      'notifications',
-      'geolocation',
-      'clipboard-read',
-      'display-capture',
-    ]) {
+    for (const permission of ['notifications', 'geolocation', 'clipboard-read', 'usb']) {
       expect(isPermissionAllowed({ permission, requestingUrl: `${ORIGIN}/` }, ORIGIN)).toBe(false);
     }
+  });
+});
+
+describe('permissionForRequest', () => {
+  it('names a media request with no device types (getDisplayMedia) display-capture', () => {
+    expect(permissionForRequest('media', [])).toBe('display-capture');
+  });
+
+  it('keeps microphone and camera requests, unknown types and other permissions as they are', () => {
+    expect(permissionForRequest('media', ['audio'])).toBe('media');
+    expect(permissionForRequest('media', ['video'])).toBe('media');
+    expect(permissionForRequest('media', undefined)).toBe('media');
+    expect(permissionForRequest('notifications', [])).toBe('notifications');
   });
 });
 

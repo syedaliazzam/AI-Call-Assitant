@@ -2,7 +2,9 @@
  * File: apps/web/src/features/dev/SttTest.tsx
  * Purpose: Admin test screen for the speech-to-text engine (ADR-0020): loads the model with a
  *          progress bar, transcribes up to two channels at once ("You" = microphone, "Them" =
- *          the official test recordings played in a loop), and shows load time, per-channel and
+ *          the official test recordings played in a loop, or the real call audio through the
+ *          platform adapter: system sound in the desktop app, a shared tab in the browser), and
+ *          shows load time, per-channel and
  *          combined real-time factor, lag, WebAssembly memory, the engine's health, and a rough
  *          word error rate on the 3 fixed test sentences. "Copy results" copies the numbers for
  *          benchmark-results.md.
@@ -33,7 +35,7 @@ import {
 import type { ChannelId, EndpointReason, EngineStats, LoadStats } from '@/core/stt/protocol';
 import { buildModelSource, createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
 import { wordErrorRate, type WerResult } from '@/core/stt/wer';
-import { getDesktopInfo, getPlatform } from '@/platform';
+import { CaptureError, getDesktopInfo, getPlatform, type OtherSideSource } from '@/platform';
 import { Button } from '@/ui/Button';
 
 /** The 3 fixed accuracy sentences (numbers written the way they are spoken). */
@@ -52,6 +54,16 @@ export const TEST_HOTWORDS = ['Bluefin Route :2', 'Northwind Logistics :2'].join
 
 /** Display names of the channels. */
 const CHANNEL_LABEL: Record<ChannelId, string> = { you: 'You', them: 'Them' };
+
+/** Where the "Them" channel's audio comes from on this page. */
+type ThemSource = 'off' | 'recordings' | 'call';
+
+/** How the page describes each real-call source. */
+const CALL_SOURCE_LABEL: Record<OtherSideSource, string> = {
+  'system-loopback': "this computer's sound (desktop app)",
+  'tab-audio': 'the shared tab',
+  'screen-audio': 'the shared screen or window',
+};
 
 /** One final line on screen. */
 interface FinalLine {
@@ -103,7 +115,9 @@ export function SttTest() {
   const [partials, setPartials] = useState<Record<ChannelId, string>>({ you: '', them: '' });
   const [finals, setFinals] = useState<FinalLine[]>([]);
   const [micOn, setMicOn] = useState(true);
-  const [themOn, setThemOn] = useState(false);
+  const [themSource, setThemSource] = useState<ThemSource>('off');
+  // Where the real call audio comes from, once captured (shown next to the choice).
+  const [callSource, setCallSource] = useState<OtherSideSource | null>(null);
   const [hotwordsText, setHotwordsText] = useState(TEST_HOTWORDS);
   const [hotwordsUsed, setHotwordsUsed] = useState('');
   // Accuracy: which sentence is being read, and the "You" final lines heard for each sentence.
@@ -113,16 +127,50 @@ export function SttTest() {
   const engine = useRef<SttEngine | null>(null);
   const mic = useRef<MediaStream | null>(null);
   const recording = useRef<RecordingStream | null>(null);
+  // The other side of the call (platform adapter), when "Call audio" is chosen.
+  const otherSide = useRef<MediaStream | null>(null);
   const monitor = useRef(new SttHealthMonitor());
 
-  /** Releases the microphone, the recording and the engine. */
+  /** Stops whatever feeds "Them" (recording or captured call audio). */
+  function closeThem() {
+    recording.current?.stop();
+    recording.current = null;
+    for (const track of otherSide.current?.getTracks() ?? []) track.stop();
+    otherSide.current = null;
+    setCallSource(null);
+  }
+
+  /** Releases the microphone, "Them" and the engine. */
   function release() {
     for (const track of mic.current?.getTracks() ?? []) track.stop();
     mic.current = null;
-    recording.current?.stop();
-    recording.current = null;
+    closeThem();
     engine.current?.stop();
     engine.current = null;
+  }
+
+  /**
+   * Opens the chosen "Them" source.
+   * Must run straight from a click when it is the call audio: browsers only allow
+   * getDisplayMedia shortly after a user gesture.
+   *
+   * @param kind Which source ('off' opens nothing).
+   * @returns The stream, or null for 'off'.
+   * @throws CaptureError from the platform adapter (message for the user).
+   */
+  async function openThem(kind: ThemSource): Promise<MediaStream | null> {
+    if (kind === 'recordings') {
+      const urls = TEST_RECORDINGS.map((file) => testRecordingUrl(file, source, location.origin));
+      recording.current = await createRecordingStream(urls);
+      return recording.current.stream;
+    }
+    if (kind === 'call') {
+      const captured = await getPlatform().getOtherSideStream();
+      otherSide.current = captured.stream;
+      setCallSource(captured.source);
+      return captured.stream;
+    }
+    return null;
   }
 
   // Stop everything when leaving the page.
@@ -150,19 +198,20 @@ export function SttTest() {
     }
   }
 
-  /** Attaches or detaches the looped test recordings as "Them". */
-  async function setThem(on: boolean) {
-    setThemOn(on);
+  /** Switches the "Them" source (while listening: detach the old one, attach the new one). */
+  async function setThem(kind: ThemSource) {
+    setThemSource(kind);
+    setError(null);
     const current = engine.current;
     if (!current || phase !== 'listening') return;
-    if (on) {
-      const urls = TEST_RECORDINGS.map((file) => testRecordingUrl(file, source, location.origin));
-      recording.current = await createRecordingStream(urls);
-      await current.attach('them', recording.current.stream);
-    } else {
-      current.detach('them');
-      recording.current?.stop();
-      recording.current = null;
+    current.detach('them');
+    closeThem();
+    try {
+      const stream = await openThem(kind);
+      if (stream) await current.attach('them', stream);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not capture the other side');
+      setThemSource('off');
     }
   }
 
@@ -174,6 +223,15 @@ export function SttTest() {
     setStats(null);
     setHotwordsUsed(hotwordsText);
     monitor.current.reset();
+    // The call audio is captured first, while the click still counts as a user gesture.
+    let themStream: MediaStream | null = null;
+    try {
+      themStream = await openThem(themSource);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not capture the other side');
+      setPhase('idle');
+      return;
+    }
     const created = createSttEngine({
       hotwords: hotwordsText,
       onProgress: setProgress,
@@ -201,14 +259,12 @@ export function SttTest() {
         mic.current = await getPlatform().getMicStream();
         await created.attach('you', mic.current);
       }
-      if (themOn) {
-        const urls = TEST_RECORDINGS.map((file) => testRecordingUrl(file, source, location.origin));
-        recording.current = await createRecordingStream(urls);
-        await created.attach('them', recording.current.stream);
-      }
+      if (themStream) await created.attach('them', themStream);
       setPhase('listening');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not start');
+      setError(
+        cause instanceof CaptureError || cause instanceof Error ? cause.message : 'Could not start',
+      );
       release();
       setPhase('idle');
     }
@@ -267,6 +323,7 @@ export function SttTest() {
         const channel = stats!.channels[id]!;
         return `${CHANNEL_LABEL[id]}: RTF ${channel.rtf.toFixed(3)} over ${(channel.audioMs / 1000).toFixed(1)} s; chunk avg ${channel.chunkMsAvg.toFixed(1)} ms, max ${channel.chunkMsMax.toFixed(1)} ms; lag median ${formatMs(median(channel.lagsMs))} (${channel.lagsMs.join(', ') || '–'}); gate delay median ${formatMs(median(channel.gateDelaysMs))} (${channel.gateDelaysMs.join(', ') || '–'}); skipped silence ${(channel.skippedMs / 1000).toFixed(1)} s; ended by model ${channel.endpoints.model}, pause ${channel.endpoints.pause}, flush ${channel.endpoints.flush}; input ${channel.inputSampleRate} Hz`;
       }),
+      `Them source: ${themSource}${callSource ? ` (${callSource})` : ''}`,
       `Health: ${health}`,
       ...TEST_SENTENCES.map((_, i) => {
         const score = scores[i];
@@ -297,14 +354,21 @@ export function SttTest() {
           You: microphone
         </label>
         <label className="flex items-center gap-2 text-sm text-slate-800">
-          <input
-            type="checkbox"
-            checked={themOn}
+          Them:
+          <select
+            value={themSource}
             disabled={phase === 'loading'}
-            onChange={(event) => void setThem(event.target.checked)}
-          />
-          Them: test recordings (looped)
+            onChange={(event) => void setThem(event.target.value as ThemSource)}
+            className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+          >
+            <option value="off">off</option>
+            <option value="recordings">test recordings (looped)</option>
+            <option value="call">call audio ({desktop ? 'system sound' : 'share a tab'})</option>
+          </select>
         </label>
+        {callSource && (
+          <span className="text-xs text-emerald-700">Them = {CALL_SOURCE_LABEL[callSource]}</span>
+        )}
         <Button
           variant="ghost"
           onClick={clearCache}
