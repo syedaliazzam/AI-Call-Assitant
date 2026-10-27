@@ -80,10 +80,6 @@ jobs:
     if: github.event_name != 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 20
-    env:
-      # Electron's installer (install-electron) keeps its download here. A fixed folder lets the
-      # "Cache the Electron download" step save and restore it.
-      electron_config_cache: ${{ runner.temp }}/electron-cache
     steps:
       # Get the code.
       - name: Check out
@@ -123,6 +119,12 @@ jobs:
       # KITE_TEST_NO_EXTERNAL_OPEN=1 (set by the test), so no real browser is ever opened.
       - name: Smoke test
         run: pnpm --filter desktop test
+        env:
+          # Electron's installer (install-electron) keeps its download here, the folder the
+          # "Cache the Electron download" step saves and restores. Set on this step, not on the
+          # job: a job-level `env` cannot use the `runner` context, and GitHub rejects the
+          # whole workflow file if it does.
+          electron_config_cache: ${{ runner.temp }}/electron-cache
 
   desktop-macos:
     name: Desktop smoke test (macOS, manual)
@@ -130,9 +132,6 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 20
-    env:
-      # Same fixed Electron download folder as the Windows job.
-      electron_config_cache: ${{ runner.temp }}/electron-cache
     steps:
       # Get the code.
       - name: Check out
@@ -168,3 +167,6 @@ jobs:
       # Install Electron, build, and run the Playwright smoke test (no real browser is opened).
       - name: Smoke test
         run: pnpm --filter desktop test
+        env:
+          # Same Electron download folder as the Windows job (step-level: see the comment there).
+          electron_config_cache: ${{ runner.temp }}/electron-cache
