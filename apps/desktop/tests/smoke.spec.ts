@@ -4,7 +4,10 @@
  * the window opens at 1280×820; window.kiteDesktop is exactly { version, os } and frozen;
  * the page has no Node.js (`require`, `process`); same-origin navigation works while
  * navigation to another origin is blocked; window.open never creates a window and only http(s)
- * links would reach the system browser; only the microphone permission is granted.
+ * links would reach the system browser; only the microphone permission is granted;
+ * getDisplayMedia from the Kite page gets a system-audio track with no picker (Windows; macOS
+ * needs the System Audio Recording permission and is checked by hand), and getDisplayMedia from
+ * another origin (in a frame) is denied.
  *
  * The app runs with KITE_TEST_NO_EXTERNAL_OPEN=1, so this test never launches a real browser.
  */
@@ -182,4 +185,50 @@ test('grants the microphone and denies the camera and notifications', async () =
     };
   });
   expect(states).toEqual({ microphone: 'granted', camera: 'denied', notifications: 'denied' });
+});
+
+/**
+ * Clicks "Capture" in a page or frame of the test page and waits for its result.
+ *
+ * @param target The page, or a frame inside it (to test a cross-origin frame).
+ * @returns What the test page stored in window.__capture: the tracks it got, or the error.
+ */
+async function capture(target: Page | import('@playwright/test').Frame) {
+  await target.evaluate(() => {
+    (window as { __capture?: unknown }).__capture = null;
+  });
+  await target.click('#capture');
+  await target.waitForFunction(() => (window as { __capture?: unknown }).__capture !== null, null, {
+    timeout: 15_000,
+  });
+  return target.evaluate(() => (window as { __capture?: unknown }).__capture);
+}
+
+test('getDisplayMedia from the Kite page gets system audio with no picker', async () => {
+  // macOS: Apple's System Audio Recording permission (and the packaged app's Info.plist key)
+  // decide this; it is checked by hand, not on CI runners (see apps/desktop/src/media.ts).
+  test.skip(process.platform === 'darwin', 'macOS loopback is verified by hand');
+  await page.goto(`${kite.origin}/`);
+  const result = await capture(page);
+  // One audio track that is still live after the video track was stopped, and no picker
+  // (the click resolved on its own; a picker would have left __capture null until timeout).
+  expect(result).toEqual({ audioTracks: 1, videoTracks: 1, audioState: 'live' });
+});
+
+test('denies getDisplayMedia to another origin, even inside the Kite page', async () => {
+  await page.goto(`${kite.origin}/`);
+  await page.evaluate((src) => {
+    const frame = document.createElement('iframe');
+    frame.src = src;
+    // Let the frame ask at all; the shell must still say no.
+    frame.allow = 'display-capture';
+    document.body.append(frame);
+  }, `${other.origin}/framed`);
+  const frame = await expect
+    .poll(() => page.frames().find((f) => f.url().startsWith(other.origin)) ?? null)
+    .not.toBeNull()
+    .then(() => page.frames().find((f) => f.url().startsWith(other.origin))!);
+  await frame.waitForSelector('#capture');
+  const result = (await capture(frame)) as { error?: string };
+  expect(result.error).toMatch(/^(AbortError|NotAllowedError)$/);
 });

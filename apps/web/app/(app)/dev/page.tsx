@@ -3,6 +3,8 @@
  * Purpose: The /dev route (admins only, see ./layout.tsx): lists the developer test pages.
  * Used by: Next.js App Router; the sidebar's "Dev tools" link
  * Depends on: next/link
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (measured results), §12 Days 1–2
+ *               (developer test pages until the real screens exist)
  */
 import Link from 'next/link';
 
@@ -12,6 +14,12 @@ const TOOLS = [
     href: '/dev/claude-test',
     title: 'Claude streaming test',
     description: 'Streams a fixed test reply and shows timings and prompt-cache use.',
+  },
+  {
+    href: '/live/demo',
+    title: 'Live demo (Connect + transcript)',
+    description:
+      'The real live screen on a demo session: connect both sides of a call and watch the transcript. Until Day 3 adds sessions.',
   },
   {
     href: '/dev/stt-test',

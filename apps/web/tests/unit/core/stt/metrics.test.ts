@@ -2,21 +2,32 @@
  * Tests for apps/web/src/core/stt/metrics.ts:
  * OnsetDetector finds speech after at least 0.5 s of quiet (to the 10 ms frame, also across
  * chunk boundaries) and ignores speech without a quiet stretch before it; realTimeFactor and
- * median compute what the spike reports.
+ * median compute what the spike reports; percentile() uses the nearest rank (p95 of 20 values is
+ * the 19th smallest).
  */
 import { describe, expect, it } from 'vitest';
-import { median, OnsetDetector, realTimeFactor } from '@/core/stt/metrics';
+import { median, OnsetDetector, percentile, realTimeFactor } from '@/core/stt/metrics';
 
 /** 16 kHz, 100 ms chunks. */
 const RATE = 16_000;
 const CHUNK = 1_600;
 
-/** Quiet background noise (very low level). */
+/**
+ * Quiet background noise (very low level).
+ *
+ * @param count Number of samples.
+ * @returns The samples.
+ */
 function quiet(count: number): Float32Array {
   return Float32Array.from({ length: count }, (_, i) => 0.001 * Math.sin(i));
 }
 
-/** Loud "speech" (a 300 Hz tone at 0.3). */
+/**
+ * Loud "speech": a 300 Hz tone at 0.3.
+ *
+ * @param count Number of samples.
+ * @returns The samples.
+ */
 function speech(count: number): Float32Array {
   return Float32Array.from(
     { length: count },
@@ -74,5 +85,17 @@ describe('median', () => {
     expect(values).toEqual([500, 100, 300]);
     expect(median([1, 2, 3, 4])).toBe(2.5);
     expect(median([])).toBeNull();
+  });
+});
+
+describe('percentile', () => {
+  it('uses the nearest rank and leaves the input unchanged', () => {
+    const values = Array.from({ length: 20 }, (_, i) => 20 - i);
+    expect(percentile(values, 95)).toBe(19);
+    expect(percentile(values, 50)).toBe(10);
+    expect(percentile(values, 100)).toBe(20);
+    expect(percentile([7], 95)).toBe(7);
+    expect(percentile([], 95)).toBeNull();
+    expect(values[0]).toBe(20);
   });
 });

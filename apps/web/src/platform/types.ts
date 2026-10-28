@@ -13,6 +13,24 @@ import type { HotkeyAction } from '@kite/shared';
 export type { HotkeyAction };
 
 /**
+ * Where the other side's sound comes from:
+ * - 'system-loopback': everything the computer plays (desktop app);
+ * - 'tab-audio': one Chrome/Edge tab shared with "Also share tab audio" (browser);
+ * - 'screen-audio': a whole screen or window shared with its sound (browser; Windows can include
+ *   system audio when the entire screen is shared).
+ */
+export type OtherSideSource = 'system-loopback' | 'tab-audio' | 'screen-audio';
+
+/** The other side of the call, ready to transcribe as "Them". */
+export interface OtherSideStream {
+  /** A stream with exactly one live audio track (desktop: audio only; browser: plus the video
+   *  track of the shared tab or screen, kept unrendered for Day 5 screenshots). */
+  stream: MediaStream;
+  /** Where the sound comes from. */
+  source: OtherSideSource;
+}
+
+/**
  * Everything the web app needs that the desktop app and the browser do differently.
  * getPlatform() (src/platform/index.ts) returns the right implementation at start-up.
  */
@@ -32,15 +50,19 @@ export interface Platform {
   getMicStream(): Promise<MediaStream>;
 
   /**
-   * Opens the other side of the call (the "Them" channel). Kept separate from the microphone.
+   * Opens the other side of the call (the "Them" channel). Always a separate stream from the
+   * microphone: the two are never mixed.
    * - Desktop: the page calls getDisplayMedia; the shell approves it automatically with
-   *   system-audio loopback (Windows; macOS 14.2+), with no picker.
+   *   system-audio loopback, with no picker (Windows; macOS 13+, which also needs the "System
+   *   Audio Recording" permission from macOS 14.2). The video track is stopped at once.
    * - Browser: getDisplayMedia with the share picker; the user picks the meeting tab and ticks
    *   "Also share tab audio" (on Windows, sharing the entire screen can include system audio).
    *
-   * @returns A stream with an audio track carrying the other person's voice.
+   * @returns The stream and where its sound comes from.
+   * @throws CaptureError ('no-audio-track', 'user-cancelled', 'not-supported',
+   *         'permission-denied') with a message for the user.
    */
-  getOtherSideStream(): Promise<MediaStream>;
+  getOtherSideStream(): Promise<OtherSideStream>;
 
   /**
    * Takes a screenshot to answer from.

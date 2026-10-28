@@ -13,9 +13,10 @@ import { signOut } from '@/core/auth/authClient';
 import { Button } from '@/ui/Button';
 
 /**
- * Sign-out button.
+ * Sign-out button: signs out this device and returns to /login.
  *
  * @returns A small ghost-style button.
+ * Rendered by: app/(app)/layout.tsx (sidebar user box), app/change-password/page.tsx
  */
 export function SignOutButton() {
   const router = useRouter();

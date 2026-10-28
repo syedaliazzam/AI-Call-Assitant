@@ -25,6 +25,7 @@ interface RunRow {
  * The Claude streaming test.
  *
  * @returns The test panel: buttons, streamed text, error line and results table.
+ * Rendered by: app/(app)/dev/claude-test/page.tsx
  */
 export function ClaudeTest() {
   const [text, setText] = useState('');

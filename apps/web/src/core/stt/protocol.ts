@@ -1,99 +1,174 @@
 /**
  * File: apps/web/src/core/stt/protocol.ts
- * Purpose: The messages exchanged between the page (sttClient.ts) and the speech-to-text Web
+ * Purpose: The messages exchanged between the page (sttEngine.ts) and the speech-to-text Web
  *          Worker (stt.worker.ts), and the statistics they carry. Text fields hold transcript
  *          text and are never logged.
- * Used by: src/core/stt/sttClient.ts, src/core/stt/stt.worker.ts, src/features/dev/SttTest.tsx
- * Depends on: src/core/stt/models.ts (SttModelId)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §7.1 (core/stt)
+ * Used by: src/core/stt/sttEngine.ts, src/core/stt/stt.worker.ts, src/core/stt/channel.ts,
+ *          src/core/stt/health.ts, src/features/dev/SttTest.tsx
+ * Depends on: src/core/stt/models.ts (ids and download files), src/core/stt/download.ts (types)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1, §7.1 (core/stt); ADR-0020
  */
-import type { SttModelId } from './models';
+import type { DownloadErrorKind, DownloadProgress } from './download';
+import type { DownloadFile, SttModelId } from './models';
+
+/** The two call channels. "You" = microphone, "Them" = the other side. Never mixed. */
+export type ChannelId = 'you' | 'them';
+
+/** Both channel ids, in display order. */
+export const CHANNELS: readonly ChannelId[] = ['you', 'them'];
+
+/**
+ * What ended an utterance:
+ * - 'model': the recognizer's own endpoint rule (about 1 s of decoded silence after speech);
+ * - 'pause': the worker's safety net (no new words for 1.2 s of audio while text is showing);
+ * - 'flush': the channel was detached or the engine stopped while text was showing.
+ */
+export type EndpointReason = 'model' | 'pause' | 'flush';
 
 /** How long loading took, and from where. */
 export interface LoadStats {
-  /** Which candidate was loaded. */
+  /** Which model was loaded. */
   model: SttModelId;
-  /** Bytes fetched (from the network or the cache). */
+  /** Bytes of all files (runtime + model). */
   bytes: number;
-  /** True when every file came from the browser's Cache Storage. */
+  /** True when every file came from Cache Storage (no network download). */
   fromCache: boolean;
-  /** Fetching all files (network or cache), in ms. */
+  /** False when Cache Storage was unavailable: files are downloaded again on every load. */
+  cacheAvailable: boolean;
+  /** Fetching and verifying all files, in ms. */
   downloadMs: number;
   /** Compiling the WebAssembly and starting the runtime, in ms. */
   runtimeInitMs: number;
-  /** Writing model files and creating the recognizer (model initialisation), in ms. */
+  /** Writing model files, building bpe.vocab and creating the recognizer, in ms. */
   modelInitMs: number;
   /** Start of loading → recognizer ready, in ms. */
   totalMs: number;
 }
 
-/**
- * What ended an utterance:
- * - 'model': the recognizer's own endpoint rule (about 1 s of decoded silence after speech);
- * - 'pause': the worker's pause rule (no new words for 1.2 s of audio while text is showing),
- *   a safety net for when the model's rule does not fire (Day 1 retest, ADR-0020).
- */
-export type EndpointReason = 'model' | 'pause';
-
-/** Running statistics while transcribing. */
-export interface LiveStats {
-  /** Audio received so far, in ms. */
+/** Running statistics for one channel (cumulative since it was attached). */
+export interface ChannelStats {
+  /** Audio received, in ms. */
   audioMs: number;
-  /** Time spent decoding it, in ms. */
+  /** Time spent decoding it (including end-of-utterance work), in ms. */
   decodeMs: number;
-  /** Real-time factor: decodeMs ÷ audioMs (single-threaded, so also the share of one CPU core). */
+  /** decodeMs ÷ audioMs. */
   rtf: number;
-  /** Average processing time per ~100 ms chunk, in ms. */
+  /** Chunks (~100 ms each) decoded. */
+  chunks: number;
+  /** Average processing time per chunk, in ms. */
   chunkMsAvg: number;
-  /** Slowest chunk so far, in ms. */
+  /** Slowest chunk, in ms. */
   chunkMsMax: number;
-  /** Lag from detected speech onset to the first partial text, per utterance, in ms. */
+  /** Audio the energy gate did not decode because the channel was silent, in ms. */
+  skippedMs: number;
+  /** Lag from detected speech onset to first partial text, per utterance (latest 50), in ms. */
   lagsMs: number[];
-  /** Sample rate the audio arrived at before resampling (the AudioContext rate). */
-  inputSampleRate: number;
+  /**
+   * Per utterance (latest 50): how much later than the speech onset the energy gate let audio
+   * through, in ms (0 = no added delay). The gate's share of the lag above.
+   */
+  gateDelaysMs: number[];
   /** How many utterances each rule ended. */
   endpoints: Record<EndpointReason, number>;
+  /** Sample rate the audio arrived at before resampling (its AudioContext's rate). */
+  inputSampleRate: number;
+}
+
+/** Statistics for the whole engine, sent about once a second. */
+export interface EngineStats {
+  /** Per attached channel. */
+  channels: Partial<Record<ChannelId, ChannelStats>>;
+  /**
+   * Combined real-time factor: decode time of all channels ÷ the audio time of the longest-running
+   * channel. The worker is single-threaded, so this is also the share of one CPU core it uses.
+   */
+  combinedRtf: number;
+  /** Total decode time of all channels, in ms (cumulative; health.ts uses the change per second). */
+  totalDecodeMs: number;
+  /** Audio time of the longest-running channel, in ms (cumulative). */
+  totalAudioMs: number;
+  /** Size of the worker's WebAssembly memory, in bytes (the bulk of its memory use). */
+  wasmMemoryBytes: number;
 }
 
 /** Page → worker messages. */
 export type ToWorker =
   | {
-      /** Load the runtime and the chosen model. */
-      type: 'init';
-      /** Which candidate. */
+      /** Download (or read from the cache), verify, and start the recognizer. */
+      type: 'load';
+      /** Which model. */
       model: SttModelId;
-      /** Absolute URL of the /models/stt folder (workers need absolute URLs). */
-      baseUrl: string;
-      /**
-       * Hotwords buffer from formatHotwords() ('' for none). Holds names from the session
-       * (Day 3); never logged.
-       */
+      /** Runtime files, from our own origin (see models.ts). */
+      runtime: { loader: DownloadFile; wasm: DownloadFile; api: DownloadFile };
+      /** Model files (local or remote). */
+      files: {
+        /** Encoder. */
+        encoder: DownloadFile;
+        /** Decoder. */
+        decoder: DownloadFile;
+        /** Joiner. */
+        joiner: DownloadFile;
+        /** Token list. */
+        tokens: DownloadFile;
+        /** Tokenizer model (converted to bpe.vocab in the worker). */
+        bpeModel: DownloadFile;
+      };
+      /** Hotwords buffer from formatHotwords() ('' for none). Session names; never logged. */
       hotwords: string;
     }
   | {
-      /** Port the audio worklet posts 16 kHz chunks to (see resampler.worklet.ts). */
-      type: 'audio-port';
-      /** The MessagePort. */
+      /** Start decoding a channel from a worklet's MessagePort (audio skips the main thread). */
+      type: 'attach';
+      /** Which channel. */
+      channel: ChannelId;
+      /** Port the resampler worklet posts `{ samples, endTime }` chunks to. */
       port: MessagePort;
       /** Sample rate of the AudioContext feeding the worklet. */
       inputSampleRate: number;
     }
   | {
-      /** Stop decoding and release the recognizer. */
+      /** Feed one chunk directly (tests and recordings; live audio uses 'attach'). */
+      type: 'accept';
+      /** Which channel (created if not attached yet). */
+      channel: ChannelId;
+      /** 16 kHz mono samples. */
+      samples: Float32Array;
+      /** Capture time of the chunk's last sample, on the sender's audio clock, in seconds. */
+      endTime: number;
+    }
+  | {
+      /** Drop a channel's current utterance without a final line, and start fresh. */
+      type: 'reset';
+      /** Which channel. */
+      channel: ChannelId;
+    }
+  | {
+      /** Stop decoding a channel (its current text is posted as a final line first). */
+      type: 'detach';
+      /** Which channel. */
+      channel: ChannelId;
+    }
+  | {
+      /** Replace the hotwords (re-creates the recognizer; about 2 s; streams restart). */
+      type: 'set-hotwords';
+      /** Hotwords buffer from formatHotwords() ('' for none). Never logged. */
+      hotwords: string;
+    }
+  | {
+      /** Cancel any download, flush and release everything. */
       type: 'stop';
     };
+
+/** Error codes the worker reports. */
+export type EngineErrorCode = `download-${DownloadErrorKind}` | 'runtime' | 'vocab' | 'decode';
 
 /** Worker → page messages. */
 export type FromWorker =
   | {
-      /** Download progress for one file. */
+      /** Download progress across all files. */
       type: 'progress';
-      /** File name. */
-      file: string;
-      /** Bytes received. */
-      loaded: number;
-      /** Expected bytes. */
-      total: number;
+      /** The progress. */
+      progress: DownloadProgress;
     }
   | {
       /** The recognizer is ready. */
@@ -102,28 +177,51 @@ export type FromWorker =
       load: LoadStats;
     }
   | {
-      /** Current, still-changing text of the utterance being spoken. */
-      type: 'partial';
-      /** Transcript text (never logged). */
-      text: string;
+      /** New hotwords are in use (after 'set-hotwords'). */
+      type: 'hotwords-set';
+      /** How long re-creating the recognizer took, in ms. */
+      ms: number;
     }
   | {
-      /** The utterance ended (a pause; see EndpointReason). */
+      /** Current, still-changing text of a channel's utterance ('' = cleared). */
+      type: 'partial';
+      /** Which channel. */
+      channel: ChannelId;
+      /** Transcript text (never logged). */
+      text: string;
+      /** When the utterance started (Unix ms, capture time); null when the text was cleared. */
+      tStart: number | null;
+    }
+  | {
+      /** A finished utterance. */
       type: 'final';
+      /** Which channel. */
+      channel: ChannelId;
       /** Transcript text (never logged). */
       text: string;
       /** Which rule ended it. */
       reason: EndpointReason;
+      /** When it started (Unix ms, capture time of the detected speech onset or first text). */
+      tStart: number;
+      /** When its last word changed (Unix ms, capture time). */
+      tEnd: number;
+      /**
+       * End of speech (Unix ms, capture time): the end of the last loud 10 ms frame, but never
+       * after tEnd. Latencies are measured from here.
+       */
+      speechEnd: number;
     }
   | {
-      /** Updated statistics (about once a second). */
+      /** Updated statistics (about once a second while loaded). */
       type: 'stats';
       /** The statistics. */
-      stats: LiveStats;
+      stats: EngineStats;
     }
   | {
       /** Loading or decoding failed. */
       type: 'error';
-      /** What went wrong (no transcript text). */
+      /** What kind of failure. */
+      code: EngineErrorCode;
+      /** Explanation (file names and sizes only; no transcript text). */
       message: string;
     };

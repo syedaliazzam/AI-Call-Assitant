@@ -55,10 +55,12 @@ function formatDate(date: Date): string {
 }
 
 /**
- * The users table.
+ * Table of all accounts with row actions: reset the password, disable or enable, make admin
+ * or user. Actions that sign the person out ask for confirmation first.
  *
  * @param props See UsersTableProps.
  * @returns The table section.
+ * Rendered by: app/(app)/admin/users/page.tsx
  */
 export function UsersTable({ users, currentUserId, actions }: UsersTableProps) {
   const [pending, startTransition] = useTransition();
@@ -84,13 +86,21 @@ export function UsersTable({ users, currentUserId, actions }: UsersTableProps) {
     });
   }
 
-  /** Asks for confirmation, then resets the user's password. */
+  /**
+   * Asks for confirmation, then resets the user's password (it signs them out).
+   *
+   * @param user The table row.
+   */
   function handleReset(user: UserRow) {
     if (!window.confirm(`Reset the password for ${user.email}? They will be signed out.`)) return;
     runAction(user, () => actions.resetPassword(user.id));
   }
 
-  /** Asks for confirmation when disabling, then disables or enables the account. */
+  /**
+   * Asks for confirmation when disabling (it signs them out), then disables or enables.
+   *
+   * @param user The table row.
+   */
   function handleToggleDisabled(user: UserRow) {
     if (!user.disabled && !window.confirm(`Disable ${user.email}? They will be signed out.`)) {
       return;
@@ -98,7 +108,11 @@ export function UsersTable({ users, currentUserId, actions }: UsersTableProps) {
     runAction(user, () => actions.setDisabled(user.id, !user.disabled));
   }
 
-  /** Switches the account between admin and user. */
+  /**
+   * Switches the account between admin and user.
+   *
+   * @param user The table row.
+   */
   function handleToggleRole(user: UserRow) {
     runAction(user, () => actions.setRole(user.id, user.role === 'admin' ? 'user' : 'admin'));
   }

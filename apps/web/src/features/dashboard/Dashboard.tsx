@@ -12,6 +12,7 @@ import { Button } from '@/ui/Button';
  * The Call Sessions dashboard (empty state).
  *
  * @returns The page content: title, subtitle and an empty-state panel.
+ * Rendered by: app/(app)/page.tsx
  */
 export function Dashboard() {
   return (

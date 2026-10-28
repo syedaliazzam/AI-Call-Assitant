@@ -15,13 +15,13 @@ It runs as a desktop app (macOS, Windows) and in Chrome or Edge. Start with [CLA
 
 ## Prerequisites
 
-- **Node.js 22.12 or later** (Node 24 recommended). Vitest 5 does not run on Node 20.
+- **Node.js 22.22.2 or later** (Node 24 recommended). Vitest 5 does not run on Node 20; `pnpm lint` needs 22.22.2+ (eslint-plugin-jsdoc, and the header check runs a `.ts` file directly with Node).
 - **pnpm 12**: run `corepack enable` once; the version is pinned in `package.json` (`packageManager`).
 - Git.
 
 ## Set up a development machine (once)
 
-Steps 1–2 are needed for everything; steps 3–5 for sign-in and Claude; step 6 only for the speech-to-text test page.
+Steps 1–2 are needed for everything; steps 3–5 for sign-in and Claude; step 6 for speech-to-text in development (`/live/demo`, `/dev/stt-test`, `test:stt`).
 
 **1. Install the dependencies.**
 
@@ -55,13 +55,25 @@ pnpm --filter web db:migrate
 pnpm --filter web create-admin --email you@company.com --name "Your Name"
 ```
 
-**6. Download the speech-to-text model files** (about 280 MB, both models). They are needed only for `/dev/stt-test` (admins only) and are not in git:
+**6. Download the speech-to-text files** (about 205 MB of files to keep; the first run also downloads a 175 MB release archive to take the runtime from). They are not in git:
 
 ```sh
 pnpm --filter web fetch-models
 ```
 
-It downloads them from the official sherpa-onnx sources (pinned versions), checks every SHA-256, and puts them in `apps/web/public/models/stt/`. Run it again at any time; files that are already correct are skipped. They are not uploaded to Vercel; see [ADR-0020](docs/decisions/ADR-0020-stt-model.md) for how production should serve them (decided on Day 2).
+It downloads them from the official sherpa-onnx sources (pinned versions) and checks every SHA-256. Run it again at any time; files that are already correct are skipped. What goes where:
+
+- the **runtime** (13.3 MB) goes to `apps/web/public/stt-runtime/v1.13.7/`;
+- the **model** (Zipformer 2023-06-21, 191 MB) and two official test recordings go to `apps/web/public/models/stt/`.
+
+**How model files load:**
+
+- **Development** (`pnpm dev`): from `public/models/stt/` on your machine (works offline).
+- **Production:** straight from pinned Hugging Face URLs. The browser checks each file's SHA-256 and keeps it in Cache Storage, so only the first load downloads (about 205 MB, with a progress bar).
+- **Runtime:** always served from our own site. Every build fetches it (`pnpm run stt:runtime`).
+- **Override:** set `NEXT_PUBLIC_STT_SOURCE=local` or `remote`.
+
+See [ADR-0023](docs/decisions/ADR-0023-stt-model-hosting.md).
 
 ## Run the web app
 
@@ -69,7 +81,18 @@ It downloads them from the official sherpa-onnx sources (pinned versions), check
 pnpm dev
 ```
 
-Open http://localhost:3000 and sign in. Admins also see **Dev tools** in the sidebar: `/dev/claude-test` (streams a Claude reply and shows timings) and `/dev/stt-test` (live speech-to-text with load time, real-time factor, lag and accuracy).
+Open http://localhost:3000 and sign in. Admins also see **Dev tools** in the sidebar:
+
+- `/live/demo`: the real live screen on a demo session (until Day 3 adds sessions). Use headphones, so the microphone does not pick up the other side.
+  1. Click **Connect**.
+  2. Pick where the other side comes from:
+     - **desktop app:** this computer's sound, with no picker;
+     - **browser:** pick the meeting tab and turn on **"Also share tab audio"**.
+  3. Talk. Your microphone is labelled **You** and the call is labelled **Them**. Grey text is still being heard; lines become final at pauses.
+- `/dev/stt-test`: speech-to-text with load time, real-time factor, lag, end of speech → final line latency (p50/p95) and the word error rate on 3 test sentences. "Copy results" gives the text for `docs/testing/benchmark-results.md`.
+- `/dev/claude-test`: streams a Claude reply and shows timings.
+
+Speech-to-text runs on your device; audio never leaves it. Known limitation: names and technical terms are often misheard ([ADR-0020](docs/decisions/ADR-0020-stt-model.md)).
 
 ## Run the desktop app
 
@@ -88,28 +111,36 @@ pnpm --filter desktop start   # opens production: https://kite-call-assistant.ve
 ## Check and test
 
 ```sh
-pnpm lint        # ESLint + Prettier check
+pnpm lint        # ESLint (with the JSDoc rules) + file-header check + Prettier check
 pnpm typecheck   # TypeScript in every package
 pnpm test        # Vitest unit tests (web, and the desktop shell's rules)
 pnpm format      # apply Prettier formatting
 pnpm --filter desktop test   # Electron smoke test: launches the real shell against a test page
+pnpm --filter web test:stt   # speech-to-text integration test (needs step 6; see below)
 ```
 
 `pnpm lint && pnpm typecheck && pnpm test` must pass before every commit. Unit tests never call the real Claude API and need no secrets.
 
 Run a command in a single package with `--filter`, for example `pnpm --filter web test`.
 
+**Speech-to-text integration test** (`test:stt`): Chromium's fake microphone plays two official LibriSpeech recordings (`apps/web/tests/fixtures/audio/`, see its `SOURCES.md`) through the real pipeline. It checks for a final line and a word error rate of 10% or less.
+
+- **Once per machine:** `pnpm --filter web exec playwright install chromium`, plus step 6.
+- **Without the model files**, it is skipped with a message. In CI it fails instead.
+- It takes about a minute, because the recordings play in real time.
+
 ## Continuous integration
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on GitHub Actions. Minutes are limited on this private repository (Windows minutes count 2x, macOS 10x), so:
 
-| Job                          | Runner  | Runs on                                          | What it does                                                        |
-| ---------------------------- | ------- | ------------------------------------------------ | ------------------------------------------------------------------- |
-| Web                          | Ubuntu  | every pull request and push to `main`            | `pnpm install --frozen-lockfile`, lint, typecheck, unit tests       |
-| Desktop smoke test (Windows) | Windows | every pull request and push to `main`            | installs Electron, builds the shell, runs the Playwright smoke test |
-| Desktop smoke test (macOS)   | macOS   | **manual only**: Actions tab → CI → Run workflow | the same smoke test on macOS (a manual run starts only this job)    |
+| Job                          | Runner  | Runs on                                          | What it does                                                              |
+| ---------------------------- | ------- | ------------------------------------------------ | ------------------------------------------------------------------------- |
+| Web                          | Ubuntu  | every pull request and push to `main`            | `pnpm install --frozen-lockfile`, actionlint, lint, typecheck, unit tests |
+| Speech-to-text integration   | Ubuntu  | every pull request and push to `main`            | fetches the pinned STT files (SHA-256 checked, cached), runs `test:stt`   |
+| Desktop smoke test (Windows) | Windows | every pull request and push to `main`            | installs Electron, builds the shell, runs the Playwright smoke test       |
+| Desktop smoke test (macOS)   | macOS   | **manual only**: Actions tab → CI → Run workflow | the same smoke test on macOS (a manual run starts only this job)          |
 
-CI uses no secrets, makes no Claude calls, downloads no speech-to-text models and deploys nothing. The pnpm store and the Electron download are cached between runs.
+CI uses no secrets, makes no Claude calls and deploys nothing. The pnpm store, the Electron download and the speech-to-text files are cached between runs. The STT cache key is the hash of every pinned SHA-256 (`tsx scripts/fetch-models.ts --pins`), so changing a pin downloads fresh files.
 
 ## Deploy
 
@@ -133,6 +164,8 @@ vercel deploy --prod   # production deployment: https://<production domain>
 ```
 
 **If a deploy says "Deployment Blocked":** on the Vercel Hobby plan, Vercel only deploys when the author email of the latest commit matches the email of the Vercel account. Set this repository's commit email to the Vercel account's email (repo-local, so other projects are unaffected): `git config user.email "<Vercel account email>"`, make a new commit, and deploy again.
+
+Every build first runs `pnpm run stt:runtime`. It downloads the 175 MB sherpa-onnx release archive from GitHub, checks its SHA-256, and unpacks the three runtime files (13.3 MB, each checked) into `public/stt-runtime/`. A wrong checksum or a missing file fails the build with the file's name. The model files are not deployed (ADR-0023).
 
 Database migrations are not run by the deploy. When `apps/web/drizzle/` gains a new migration, run `pnpm --filter web db:migrate` (it uses `DATABASE_URL` from `apps/web/.env.local`, which points at the same Neon database) before deploying the code that needs it.
 

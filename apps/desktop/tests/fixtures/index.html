@@ -3,6 +3,9 @@
   File: apps/desktop/tests/fixtures/index.html
   Purpose: Stand-in for the Kite web app in the Electron smoke test (tests/smoke.spec.ts).
            The test serves this page from a local HTTP server and points KITE_URL at it.
+           The "Capture" button calls getDisplayMedia({ audio: true, video: true }) the way the
+           web app does for "Them" (apps/web/src/platform/desktop.ts): it stops the video track
+           straight away and records what it got in window.__capture for the test to read.
 -->
 <html lang="en">
   <head>
@@ -11,5 +14,29 @@
   </head>
   <body>
     <h1 id="heading">Kite smoke test page</h1>
+    <button id="capture" type="button">Capture</button>
+    <script>
+      // Result of the last capture: track counts and states, or the error name.
+      window.__capture = null;
+      document.getElementById('capture').addEventListener('click', async () => {
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+          const audio = stream.getAudioTracks();
+          const video = stream.getVideoTracks();
+          // Same as the web app: the video track is not needed, so it is stopped at once.
+          for (const track of video) track.stop();
+          // Give a wrongly-coupled audio track time to end with the video before checking.
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          window.__capture = {
+            audioTracks: audio.length,
+            videoTracks: video.length,
+            audioState: audio[0] ? audio[0].readyState : null,
+          };
+          for (const track of audio) track.stop();
+        } catch (error) {
+          window.__capture = { error: error.name };
+        }
+      });
+    </script>
   </body>
 </html>

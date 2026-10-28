@@ -18,6 +18,7 @@ const REPLY =
  *
  * @param chunks Body bytes, split exactly where the "network" splits them.
  * @param init   Response status (default 200).
+ * @returns A vi.fn fetch that answers with that body (it records the calls).
  */
 function fakeFetch(chunks: Uint8Array[], init: ResponseInit = { status: 200 }) {
   return vi.fn(async (_url: RequestInfo | URL, _options?: RequestInit) => {
@@ -31,14 +32,25 @@ function fakeFetch(chunks: Uint8Array[], init: ResponseInit = { status: 200 }) {
   });
 }
 
-/** Splits bytes into pieces of `size` bytes (so boundaries fall mid-event and mid-character). */
+/**
+ * Splits bytes into pieces of `size` bytes, so boundaries fall mid-event and mid-character.
+ *
+ * @param bytes The whole body.
+ * @param size  Bytes per piece.
+ * @returns The pieces, in order.
+ */
 function splitBytes(bytes: Uint8Array, size: number): Uint8Array[] {
   const pieces: Uint8Array[] = [];
   for (let i = 0; i < bytes.length; i += size) pieces.push(bytes.slice(i, i + size));
   return pieces;
 }
 
-/** Runs streamAnswer() to completion and returns what the handlers received. */
+/**
+ * Runs streamAnswer() to completion.
+ *
+ * @param fetchImpl The fake fetch to use.
+ * @returns The text deltas, and the done or error report the handlers received.
+ */
 function run(fetchImpl: ReturnType<typeof fakeFetch>) {
   const deltas: string[] = [];
   return new Promise<{ deltas: string[]; done?: unknown; error?: unknown }>((resolve) => {

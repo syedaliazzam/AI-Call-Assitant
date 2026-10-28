@@ -23,6 +23,7 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
  *
  * @param props See InputProps; `id` is generated when not given; `className` styles the <input>.
  * @returns The label, input and messages wrapped in a <div>.
+ * Rendered by: CreateUserForm.tsx, LoginForm.tsx
  */
 export function Input({ label, hint, error, id, className = '', ...rest }: InputProps) {
   const generatedId = useId();

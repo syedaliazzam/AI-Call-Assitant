@@ -1,7 +1,11 @@
 /**
- * Test helper (not a test): a fake for the Anthropic SDK's `client.messages.stream()`.
- * Used by tests/unit/server/claude.test.ts and tests/unit/api/answer.route.test.ts so no test
- * ever calls the real Claude API or needs a real key.
+ * File: apps/web/tests/helpers/fakeClaude.ts
+ * Purpose: Test helper (not a test): a fake for the Anthropic SDK's `client.messages.stream()`,
+ *          so no test ever calls the real Claude API or needs a real key (CLAUDE.md testing
+ *          rules).
+ * Used by: tests/unit/server/claude.test.ts, tests/unit/api/answer.route.test.ts
+ * Depends on: vitest (vi.fn)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing: Claude is mocked)
  */
 import { vi } from 'vitest';
 
@@ -37,6 +41,7 @@ const DEFAULT_USAGE = {
  *
  * @param options What the fake reply contains.
  * @returns The fake stream (with `abort` and `on` as vi.fn spies).
+ * Called from: tests/unit/server/claude.test.ts, tests/unit/api/answer.route.test.ts
  */
 export function fakeMessageStream(options: FakeStreamOptions = {}) {
   const pieces = options.pieces ?? ['Hello ', 'from ', 'Claude.'];

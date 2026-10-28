@@ -98,6 +98,22 @@ export function realTimeFactor(decodeMs: number, audioMs: number): number {
 }
 
 /**
+ * Percentile of a list of numbers (nearest rank: the smallest value with at least p% of the
+ * values at or below it).
+ *
+ * @param values The numbers (not modified).
+ * @param p      Percentile, 0…100 (95 for p95).
+ * @returns The value, or null for an empty list.
+ * Called from: SttTest.tsx (latency p95); tests
+ */
+export function percentile(values: readonly number[], p: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.min(sorted.length, Math.max(1, Math.ceil((p / 100) * sorted.length)));
+  return sorted[rank - 1] ?? null;
+}
+
+/**
  * Median of a list of numbers.
  *
  * @param values The numbers (not modified).

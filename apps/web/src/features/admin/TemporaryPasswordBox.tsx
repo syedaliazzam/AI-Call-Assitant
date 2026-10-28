@@ -26,6 +26,7 @@ export interface TemporaryPasswordBoxProps {
  *
  * @param props See TemporaryPasswordBoxProps.
  * @returns The box element.
+ * Rendered by: CreateUserForm.tsx (new account), UsersTable.tsx (password reset)
  */
 export function TemporaryPasswordBox({ email, password, onDismiss }: TemporaryPasswordBoxProps) {
   const [copied, setCopied] = useState(false);

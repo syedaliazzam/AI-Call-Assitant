@@ -1,67 +1,47 @@
 /**
  * File: apps/web/src/core/stt/stt.worker.ts
  * Purpose: Web Worker that runs sherpa-onnx speech-to-text (official v1.13.7 WebAssembly
- *          runtime, unmodified) off the main thread. It loads a candidate model (ADR-0020),
- *          receives 16 kHz audio chunks from the audio worklet, and posts partial and final
- *          text plus timing statistics. Audio and text never leave the device; nothing is logged
- *          except timings and sizes.
- * Used by: src/core/stt/sttClient.ts (new Worker(new URL('./stt.worker.ts', import.meta.url)))
- * Depends on: /models/stt/** files (scripts/fetch-models.ts), src/core/stt/models.ts,
- *             src/core/stt/protocol.ts, src/core/stt/metrics.ts
+ *          runtime, unmodified) off the main thread: ONE recognizer, one stream per call channel
+ *          ("you", "them"). It downloads and verifies the files (download.ts), starts the
+ *          runtime, decodes 16 kHz chunks from each channel's audio worklet, and posts partial
+ *          and final text plus statistics. Audio and text never leave the device; nothing is
+ *          logged except timings and sizes.
+ * Used by: src/core/stt/sttEngine.ts (new Worker(new URL('./stt.worker.ts', import.meta.url)))
+ * Depends on: src/core/stt/download.ts, src/core/stt/channel.ts, src/core/stt/sentencepiece.ts,
+ *             src/core/stt/models.ts, src/core/stt/protocol.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 step 2, §7.1 (core/stt); ADR-0020
  *
- * How a model is loaded (and why it depends on Emscripten internals):
+ * How the model is loaded (and why it depends on Emscripten internals):
  * the official runtime normally downloads its baked-in model package (.data, 191 MB). The
  * Emscripten hook Module.getPreloadedPackage is given an EMPTY buffer instead, so that package
- * is never fetched (its files become empty placeholders). The candidate's files are then
- * written into the runtime's in-memory file system with Module.FS_createDataFile and passed to
- * createOnlineRecognizer by path. Both hooks are Emscripten file-system APIs that a future
- * runtime build could change (recorded in ADR-0020).
+ * is never fetched. The model files are written into the runtime's in-memory file system with
+ * Module.FS_createDataFile and passed to createOnlineRecognizer by path. Both are Emscripten
+ * file-system APIs that a future runtime build could change (recorded in ADR-0020).
  *
- * How an utterance ends (a "final" line), whichever comes first:
- * 1. the recognizer's endpoint rule 2: about 1 s of decoded silence after some text;
- * 2. the pause rule here: no new words for 1.2 s of audio while text is showing. It is a safety
- *    net: on Day 1 the 2023-06-21 model never ended an utterance with live microphone audio,
- *    which could not be reproduced with recordings. Each final line says which rule ended it.
- *    It watches the text, not the microphone level: a loudness threshold cut sentences in the
- *    middle when the voice was quiet (measured on Day 1), while words keep changing for as long
- *    as someone speaks. Day 2: Silero VAD replaces the pause rule.
- *
- * Spike code: the WAV-file integration test arrives on Day 2.
+ * Only verified code runs: the runtime scripts are executed from their verified bytes (through
+ * Blob URLs), not fetched a second time by importScripts.
  */
+import { ChannelDecoder, type RecognizerLike } from './channel';
 import {
-  getSttModel,
-  RUNTIME_DIR,
-  RUNTIME_FILES,
-  RUNTIME_WASM_BYTES,
-  type SttModel,
-} from './models';
-import { OnsetDetector, realTimeFactor } from './metrics';
-import type { EndpointReason, FromWorker, LiveStats, ToWorker } from './protocol';
-import { TARGET_SAMPLE_RATE } from '../audio/resample';
-
-/** Cache Storage bucket for speech-to-text files (cleared from the test page). */
-export const STT_CACHE_NAME = 'kite-stt-v1';
+  clearSttCache,
+  downloadModelFiles,
+  ModelDownloadError,
+  OLD_STT_CACHE_NAMES,
+  sha256Hex,
+} from './download';
+import { BPE_VOCAB_NAME, BPE_VOCAB_SHA256, type DownloadFile } from './models';
+import type { ChannelId, EngineStats, FromWorker, ToWorker } from './protocol';
+import { sentencePieceVocab } from './sentencepiece';
 
 /** Endpoint rule 2: decoded silence (s) after some text that ends an utterance. */
 const MODEL_PAUSE_SECONDS = 1.0;
 
-/** Pause rule: audio (ms) with no new words, while text is showing, that ends an utterance. */
-const PAUSE_END_MS = 1_200;
+/** How often statistics are posted, in ms. */
+const STATS_INTERVAL_MS = 1_000;
 
-/** The parts of the official sherpa-onnx JS API (sherpa-onnx-asr.js) the worker uses. */
-interface OnlineStream {
-  acceptWaveform(sampleRate: number, samples: Float32Array): void;
-  inputFinished(): void;
-  free(): void;
-}
-interface OnlineRecognizer {
-  createStream(): OnlineStream;
-  isReady(stream: OnlineStream): boolean;
-  decode(stream: OnlineStream): void;
-  isEndpoint(stream: OnlineStream): boolean;
-  reset(stream: OnlineStream): void;
-  getResult(stream: OnlineStream): { text: string };
+/** A sherpa-onnx OnlineRecognizer as the worker sees it. */
+interface OnlineRecognizer extends RecognizerLike {
+  /** Releases its WebAssembly memory. */
   free(): void;
 }
 
@@ -82,13 +62,15 @@ interface EmscriptenModule {
     canWrite: boolean,
     canOwn: boolean,
   ) => void;
+  /** The WebAssembly heap as floats (its buffer's size = the worker's WebAssembly memory). */
+  HEAPF32?: Float32Array;
 }
 
 /** The worker's global scope, as far as this file needs it. */
 interface WorkerScope {
   Module?: EmscriptenModule;
   createOnlineRecognizer?: (runtime: EmscriptenModule, config: unknown) => OnlineRecognizer;
-  importScripts?: (...urls: string[]) => void;
+  importScripts: (...urls: string[]) => void;
   postMessage(message: FromWorker, transfer?: Transferable[]): void;
   onmessage: ((event: MessageEvent<ToWorker>) => void) | null;
 }
@@ -96,186 +78,182 @@ interface WorkerScope {
 /** This worker's global object. */
 const scope = globalThis as unknown as WorkerScope;
 
-/** Sends a message to the page. */
+/**
+ * Sends a message to the page.
+ *
+ * @param message The message (its transcript text is never logged).
+ */
 function send(message: FromWorker): void {
   scope.postMessage(message);
 }
 
-/** Recognizer state once loaded. */
+/** Paths of the model files inside the WebAssembly file system, once written. */
+interface ModelPaths {
+  encoder: string;
+  decoder: string;
+  joiner: string;
+  tokens: string;
+  bpeVocab: string;
+}
+
+/** Worker state. */
+let runtime: EmscriptenModule | null = null;
 let recognizer: OnlineRecognizer | null = null;
-let stream: OnlineStream | null = null;
+let modelPaths: ModelPaths | null = null;
+const channels = new Map<ChannelId, ChannelDecoder>();
+/** Cancels a download in progress (on 'stop'). */
+let loadAbort: AbortController | null = null;
+let statsTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
- * Fetches a file, using Cache Storage so later loads skip the network.
+ * Runs a verified runtime script at the worker's global scope (classic worker), so its
+ * top-level `var Module` and function declarations become globals.
  *
- * @param url      Absolute URL.
- * @param total    Expected size, for progress messages.
- * @param fileName Name shown in progress messages.
- * @returns The bytes and whether they came from the cache.
- * @throws Error when the file is missing (run `pnpm --filter web fetch-models`).
+ * @param bytes Verified script bytes.
  * Called from: loadModel()
  */
-async function fetchCached(
-  url: string,
-  total: number,
-  fileName: string,
-): Promise<{ bytes: ArrayBuffer; fromCache: boolean }> {
-  const cache = await caches.open(STT_CACHE_NAME);
-  const cached = await cache.match(url);
-  if (cached) {
-    send({ type: 'progress', file: fileName, loaded: total, total });
-    return { bytes: await cached.arrayBuffer(), fromCache: true };
+function runVerifiedScript(bytes: ArrayBuffer): void {
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'text/javascript' }));
+  try {
+    scope.importScripts(url);
+  } finally {
+    URL.revokeObjectURL(url);
   }
-  const response = await fetch(url);
-  if (!response.ok || !response.body) {
-    throw new Error(
-      `Missing model file ${fileName} (HTTP ${response.status}). Run: pnpm --filter web fetch-models`,
-    );
-  }
-  // Read the body ourselves to report progress, then store a copy in the cache.
-  const reader = response.body.getReader();
-  const parts: Uint8Array[] = [];
-  let loaded = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    parts.push(value);
-    loaded += value.length;
-    send({ type: 'progress', file: fileName, loaded, total });
-  }
-  const bytes = new Uint8Array(loaded);
-  let offset = 0;
-  for (const part of parts) {
-    bytes.set(part, offset);
-    offset += part.length;
-  }
-  await cache.put(url, new Response(bytes.slice().buffer));
-  return { bytes: bytes.buffer, fromCache: false };
 }
 
 /**
- * Runs one of the official runtime scripts at the worker's global scope, so its top-level
- * `var Module` and function declarations become globals (as in a classic worker).
- * importScripts is used when available; module workers do not have it, so the script text
- * is then evaluated with an indirect eval, which also runs at global scope.
+ * Creates the recognizer with the given hotwords.
  *
- * @param url Absolute URL of the script (same origin).
- * Called from: loadModel()
+ * @param hotwords Hotwords buffer ('' for none).
+ * @returns The recognizer.
+ * Called from: loadModel(), the 'set-hotwords' handler
  */
-async function runGlobalScript(url: string): Promise<void> {
-  if (typeof scope.importScripts === 'function') {
-    try {
-      scope.importScripts(url);
-      return;
-    } catch (error) {
-      // "Module scripts don't support importScripts()": fall through to the eval path.
-      if (!(error instanceof TypeError)) throw error;
-    }
-  }
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Could not load ${url} (HTTP ${response.status})`);
-  // Indirect eval: (0, eval)(…) evaluates in the global scope, not this function's scope.
-  (0, eval)(`${await response.text()}\n//# sourceURL=${url}`);
-}
-
-/**
- * Loads the runtime and a candidate model, then creates the recognizer.
- *
- * @param model    The candidate.
- * @param baseUrl  Absolute URL of the /models/stt folder.
- * @param hotwords Hotwords buffer from formatHotwords() ('' for none).
- * Called from: the 'init' message handler
- */
-async function loadModel(model: SttModel, baseUrl: string, hotwords: string): Promise<void> {
-  const startedAt = performance.now();
-  const runtimeUrl = `${baseUrl}/${RUNTIME_DIR}`;
-
-  // 1. Fetch everything (network the first time, Cache Storage afterwards).
-  const wasm = await fetchCached(
-    `${runtimeUrl}/${RUNTIME_FILES.wasm}`,
-    RUNTIME_WASM_BYTES,
-    RUNTIME_FILES.wasm,
-  );
-  const fetched: { name: string; bytes: ArrayBuffer; fromCache: boolean }[] = [];
-  for (const file of Object.values(model.files)) {
-    const result = await fetchCached(`${baseUrl}/${model.id}/${file.name}`, file.bytes, file.name);
-    fetched.push({ name: file.name, ...result });
-  }
-  const downloadedAt = performance.now();
-
-  // 2. Start the Emscripten runtime with our hooks, and wait for it.
-  const runtimeReady = new Promise<void>((resolve) => {
-    scope.Module = {
-      locateFile: (path) => `${runtimeUrl}/${path}`,
-      wasmBinary: wasm.bytes,
-      // An empty package means the baked-in 191 MB .data file is never fetched.
-      getPreloadedPackage: () => new ArrayBuffer(0),
-      onRuntimeInitialized: () => resolve(),
-      // The runtime prints model details; drop them (they are not timings or sizes).
-      print: () => {},
-      printErr: () => {},
-    };
-  });
-  await runGlobalScript(`${runtimeUrl}/${RUNTIME_FILES.loader}`);
-  await runtimeReady;
-  await runGlobalScript(`${runtimeUrl}/${RUNTIME_FILES.api}`);
-  const runtimeAt = performance.now();
-
-  // 3. Write the model files into the runtime's file system, then create the recognizer.
-  const runtime = scope.Module!;
-  runtime.FS_createPath!('/', 'kite-model', true, true);
-  for (const file of fetched) {
-    runtime.FS_createDataFile!(
-      '/kite-model',
-      file.name,
-      new Uint8Array(file.bytes),
-      true,
-      false,
-      true,
-    );
-  }
-  const path = (name: string) => `/kite-model/${name}`;
-  const hotwordsBytes = new TextEncoder().encode(hotwords).length;
-  recognizer = scope.createOnlineRecognizer!(runtime, {
+function createRecognizer(hotwords: string): OnlineRecognizer {
+  const paths = modelPaths!;
+  return scope.createOnlineRecognizer!(runtime!, {
     modelConfig: {
-      transducer: {
-        encoder: path(model.files.encoder.name),
-        decoder: path(model.files.decoder.name),
-        joiner: path(model.files.joiner.name),
-      },
-      tokens: path(model.files.tokens.name),
+      transducer: { encoder: paths.encoder, decoder: paths.decoder, joiner: paths.joiner },
+      tokens: paths.tokens,
       // Single-threaded build: one thread is all there is.
       numThreads: 1,
       provider: 'cpu',
       debug: 0,
-      // Hotwords are encoded with the model's BPE tokenizer (bpe.vocab, see fetch-models.ts).
+      // Hotwords are encoded with the model's BPE tokenizer (bpe.vocab).
       modelingUnit: 'bpe',
-      bpeVocab: path(model.files.bpeVocab.name),
+      bpeVocab: paths.bpeVocab,
     },
     // Hotwords need beam search; greedy search ignores them. 4 paths is sherpa-onnx's default.
     decodingMethod: 'modified_beam_search',
     maxActivePaths: 4,
     hotwordsBuf: hotwords,
     // Byte length: the C side copies exactly this many bytes from the buffer.
-    hotwordsBufSize: hotwordsBytes,
-    // No VAD in the official streaming example; the recognizer's endpoint rules turn silence
-    // into "final" lines (rule 1: 2.4 s of silence with no text; rule 2: MODEL_PAUSE_SECONDS
-    // after text; rule 3: cut at 20 s). Silero VAD is added on Day 2.
+    hotwordsBufSize: new TextEncoder().encode(hotwords).length,
+    // Endpoint rules: 1: 2.4 s of silence with no text; 2: MODEL_PAUSE_SECONDS after text;
+    // 3: cut at 20 s. channel.ts adds the pause rule as a safety net.
     enableEndpoint: 1,
     rule1MinTrailingSilence: 2.4,
     rule2MinTrailingSilence: MODEL_PAUSE_SECONDS,
     rule3MinUtteranceLength: 20,
   });
-  stream = recognizer.createStream();
+}
+
+/**
+ * Downloads and verifies every file, starts the runtime, writes the model into its file
+ * system, builds bpe.vocab and creates the recognizer.
+ *
+ * @param message The 'load' message.
+ * @throws ModelDownloadError, or Error for runtime/vocabulary failures (reported by the caller).
+ * Called from: the 'load' message handler
+ */
+async function loadModel(message: Extract<ToWorker, { type: 'load' }>): Promise<void> {
+  const startedAt = performance.now();
+  // Free the Day 1 spike's cache (about 290 MB) if it is still there. A blocked Cache Storage
+  // is not an error here (download.ts then works without a cache).
+  await clearSttCache(caches, OLD_STT_CACHE_NAMES).catch(() => false);
+
+  // 1. Fetch (network or cache) and verify everything.
+  loadAbort = new AbortController();
+  const { runtime: runtimeFiles, files } = message;
+  const order: DownloadFile[] = [
+    runtimeFiles.wasm,
+    runtimeFiles.loader,
+    runtimeFiles.api,
+    files.encoder,
+    files.decoder,
+    files.joiner,
+    files.tokens,
+    files.bpeModel,
+  ];
+  const { files: downloaded, cacheAvailable } = await downloadModelFiles(order, {
+    signal: loadAbort.signal,
+    onProgress: (progress) => send({ type: 'progress', progress }),
+  });
+  loadAbort = null;
+  const byName = new Map(downloaded.map((file) => [file.name, file]));
+  const bytesOf = (file: DownloadFile) => byName.get(file.name)!.bytes;
+  const downloadedAt = performance.now();
+
+  // 2. Start the Emscripten runtime with our hooks, and wait for it.
+  try {
+    const ready = new Promise<void>((resolve) => {
+      scope.Module = {
+        // Never used for the .wasm (wasmBinary is given); kept for any other runtime lookup.
+        locateFile: (path) => new URL(path, runtimeFiles.wasm.url).href,
+        wasmBinary: bytesOf(runtimeFiles.wasm),
+        // An empty package means the baked-in 191 MB .data file is never fetched.
+        getPreloadedPackage: () => new ArrayBuffer(0),
+        onRuntimeInitialized: () => resolve(),
+        // The runtime prints model details; drop them (they are not timings or sizes).
+        print: () => {},
+        printErr: () => {},
+      };
+    });
+    runVerifiedScript(bytesOf(runtimeFiles.loader));
+    await ready;
+    runVerifiedScript(bytesOf(runtimeFiles.api));
+  } catch (error) {
+    throw new Error(`Speech runtime failed to start: ${(error as Error).message}`);
+  }
+  runtime = scope.Module!;
+  const runtimeAt = performance.now();
+
+  // 3. bpe.vocab from the verified bpe.model, checked against its own pinned SHA-256.
+  const vocab = new TextEncoder().encode(
+    sentencePieceVocab(new Uint8Array(bytesOf(files.bpeModel))),
+  );
+  if ((await sha256Hex(vocab, crypto.subtle)) !== BPE_VOCAB_SHA256) {
+    throw Object.assign(new Error('bpe.vocab does not match its pinned SHA-256'), {
+      code: 'vocab',
+    });
+  }
+
+  // 4. Model files into the runtime's file system, then the recognizer.
+  runtime.FS_createPath!('/', 'kite-model', true, true);
+  const write = (name: string, data: Uint8Array) =>
+    runtime!.FS_createDataFile!('/kite-model', name, data, true, false, true);
+  for (const file of [files.encoder, files.decoder, files.joiner, files.tokens]) {
+    write(file.name, new Uint8Array(bytesOf(file)));
+  }
+  write(BPE_VOCAB_NAME, vocab);
+  const path = (name: string) => `/kite-model/${name}`;
+  modelPaths = {
+    encoder: path(files.encoder.name),
+    decoder: path(files.decoder.name),
+    joiner: path(files.joiner.name),
+    tokens: path(files.tokens.name),
+    bpeVocab: path(BPE_VOCAB_NAME),
+  };
+  recognizer = createRecognizer(message.hotwords);
   const readyAt = performance.now();
 
-  const all = [wasm, ...fetched];
+  statsTimer = setInterval(sendStats, STATS_INTERVAL_MS);
   send({
     type: 'ready',
     load: {
-      model: model.id,
-      bytes: all.reduce((sum, file) => sum + file.bytes.byteLength, 0),
-      fromCache: all.every((file) => file.fromCache),
+      model: message.model,
+      bytes: downloaded.reduce((sum, file) => sum + file.bytes.byteLength, 0),
+      fromCache: downloaded.every((file) => file.fromCache),
+      cacheAvailable,
       downloadMs: Math.round(downloadedAt - startedAt),
       runtimeInitMs: Math.round(runtimeAt - downloadedAt),
       modelInitMs: Math.round(readyAt - runtimeAt),
@@ -284,155 +262,129 @@ async function loadModel(model: SttModel, baseUrl: string, hotwords: string): Pr
   });
 }
 
-/** Running statistics for the current session. */
-const stats: LiveStats = {
-  audioMs: 0,
-  decodeMs: 0,
-  rtf: 0,
-  chunkMsAvg: 0,
-  chunkMsMax: 0,
-  lagsMs: [],
-  inputSampleRate: TARGET_SAMPLE_RATE,
-  endpoints: { model: 0, pause: 0 },
-};
-let chunks = 0;
-let lastStatsAt = 0;
-/** performance.now() of the detected speech onset still waiting for its first partial text. */
-let pendingOnsetAt: number | null = null;
-let lastText = '';
-/** Audio received (ms) since the text last changed (the pause rule's clock). */
-let msSinceTextChange = 0;
-const onsets = new OnsetDetector({ sampleRate: TARGET_SAMPLE_RATE });
 /**
- * Offset from the audio clock (worklet `currentTime`, ms) to this worker's performance.now().
- * The smallest (arrival − capture) seen is used: that chunk waited least in transit, so the
- * offset is closest to the true clock difference, and queueing delays then show up as lag.
- */
-let clockOffsetMs: number | null = null;
-
-/**
- * Ends the current utterance: posts its final line and starts a fresh one.
- * For the pause rule the stream is first told that input has finished, so the decoder emits
- * the last words it was still holding back, then a new stream replaces it (a finished stream
- * cannot take more audio). After the model's own rule, reset() is enough.
+ * The decoder for a channel, created on first use.
  *
- * @param reason Which rule ended the utterance.
- * @returns The final text ('' if nothing was recognized).
- * Called from: handleChunk()
+ * @param channel         Which channel.
+ * @param inputSampleRate Rate of its AudioContext (statistics only).
+ * @returns The decoder, or null before the recognizer is ready.
  */
-function endUtterance(reason: EndpointReason): string {
-  if (!recognizer || !stream) return '';
-  let text: string;
-  if (reason === 'pause') {
-    stream.inputFinished();
-    while (recognizer.isReady(stream)) recognizer.decode(stream);
-    text = recognizer.getResult(stream).text.trim();
-    stream.free();
-    stream = recognizer.createStream();
-  } else {
-    text = recognizer.getResult(stream).text.trim();
-    recognizer.reset(stream);
+function channelDecoder(channel: ChannelId, inputSampleRate?: number): ChannelDecoder | null {
+  if (!recognizer) return null;
+  let decoder = channels.get(channel);
+  if (!decoder) {
+    decoder = new ChannelDecoder(channel, recognizer, send, { inputSampleRate });
+    channels.set(channel, decoder);
   }
-  if (text !== '') {
-    stats.endpoints[reason] += 1;
-    send({ type: 'final', text, reason });
-  }
-  lastText = '';
-  msSinceTextChange = 0;
-  pendingOnsetAt = null;
-  send({ type: 'partial', text: '' });
-  return text;
+  return decoder;
 }
 
 /**
- * Decodes one ~100 ms chunk: feeds it to the recognizer, measures the time taken, posts new
- * partial text, a final line when the utterance ends, and statistics about once a second.
- * Onset time = capture time of the chunk's end (audio clock mapped to this worker's clock),
- * minus the audio after the onset inside the chunk. Lag = first partial text − onset time.
+ * Decodes a chunk, reporting failures without stopping the worker.
  *
- * @param samples 16 kHz mono samples.
- * @param endTime Audio-clock time (seconds) when the chunk's last sample was captured.
- * Called from: the audio port's message handler
+ * @param channel Which channel.
+ * @param samples 16 kHz samples.
+ * @param endTime Capture time on the sender's audio clock (s).
  */
-function handleChunk(samples: Float32Array, endTime: number): void {
-  if (!recognizer || !stream) return;
-  const arrivedAt = performance.now();
-  const offset = arrivedAt - endTime * 1000;
-  clockOffsetMs = clockOffsetMs === null ? offset : Math.min(clockOffsetMs, offset);
-  const capturedEndAt = endTime * 1000 + clockOffsetMs;
-  const onsetIndex = onsets.push(samples);
-  if (onsetIndex >= 0 && pendingOnsetAt === null && lastText === '') {
-    pendingOnsetAt = capturedEndAt - ((samples.length - onsetIndex) / TARGET_SAMPLE_RATE) * 1000;
-  }
-
-  stream.acceptWaveform(TARGET_SAMPLE_RATE, samples);
-  while (recognizer.isReady(stream)) recognizer.decode(stream);
-  const text = recognizer.getResult(stream).text.trim();
-
-  // Audio time, not wall-clock time: a slow chunk must not look like a pause.
-  msSinceTextChange += (samples.length / TARGET_SAMPLE_RATE) * 1000;
-  if (text !== lastText) {
-    msSinceTextChange = 0;
-    if (lastText === '' && text !== '' && pendingOnsetAt !== null) {
-      stats.lagsMs.push(Math.round(performance.now() - pendingOnsetAt));
-      pendingOnsetAt = null;
-    }
-    lastText = text;
-    send({ type: 'partial', text });
-  }
-  if (recognizer.isEndpoint(stream)) endUtterance('model');
-  else if (lastText !== '' && msSinceTextChange >= PAUSE_END_MS) endUtterance('pause');
-
-  // Decoding time includes the end-of-utterance work, which is part of the real cost.
-  const doneAt = performance.now();
-  const chunkMs = doneAt - arrivedAt;
-  chunks += 1;
-  stats.audioMs += (samples.length / TARGET_SAMPLE_RATE) * 1000;
-  stats.decodeMs += chunkMs;
-  stats.rtf = realTimeFactor(stats.decodeMs, stats.audioMs);
-  stats.chunkMsAvg = stats.decodeMs / chunks;
-  stats.chunkMsMax = Math.max(stats.chunkMsMax, chunkMs);
-  if (doneAt - lastStatsAt > 1000) {
-    lastStatsAt = doneAt;
-    sendStats();
+function decodeChunk(channel: ChannelId, samples: Float32Array, endTime: number): void {
+  try {
+    channelDecoder(channel)?.accept(samples, endTime);
+  } catch (error) {
+    send({
+      type: 'error',
+      code: 'decode',
+      message: error instanceof Error ? error.message : 'Decoding failed',
+    });
   }
 }
 
-/** Posts a copy of the statistics. */
+/** Posts the statistics of every channel plus the combined numbers. */
 function sendStats(): void {
-  send({
-    type: 'stats',
-    stats: { ...stats, lagsMs: [...stats.lagsMs], endpoints: { ...stats.endpoints } },
-  });
+  const stats: EngineStats = {
+    channels: {},
+    combinedRtf: 0,
+    totalDecodeMs: 0,
+    totalAudioMs: 0,
+    wasmMemoryBytes: runtime?.HEAPF32?.buffer.byteLength ?? 0,
+  };
+  for (const [id, decoder] of channels) {
+    const snapshot = decoder.snapshot();
+    stats.channels[id] = snapshot;
+    stats.totalDecodeMs += snapshot.decodeMs;
+    stats.totalAudioMs = Math.max(stats.totalAudioMs, snapshot.audioMs);
+  }
+  stats.combinedRtf = stats.totalAudioMs > 0 ? stats.totalDecodeMs / stats.totalAudioMs : 0;
+  send({ type: 'stats', stats });
+}
+
+/**
+ * Removes a channel: posts its current text as a final line, then frees its stream.
+ *
+ * @param channel Which channel.
+ */
+function detachChannel(channel: ChannelId): void {
+  const decoder = channels.get(channel);
+  if (!decoder) return;
+  decoder.flush();
+  decoder.free();
+  channels.delete(channel);
+}
+
+/**
+ * Reports a loading failure with a typed code.
+ *
+ * @param error What was thrown.
+ */
+function reportLoadError(error: unknown): void {
+  if (error instanceof ModelDownloadError) {
+    send({ type: 'error', code: `download-${error.kind}`, message: error.message });
+    return;
+  }
+  const code = (error as { code?: string }).code === 'vocab' ? 'vocab' : 'runtime';
+  send({ type: 'error', code, message: error instanceof Error ? error.message : 'Loading failed' });
 }
 
 scope.onmessage = (event: MessageEvent<ToWorker>) => {
   const message = event.data;
-  if (message.type === 'init') {
-    loadModel(getSttModel(message.model), message.baseUrl, message.hotwords).catch(
-      (error: unknown) => {
-        send({ type: 'error', message: error instanceof Error ? error.message : 'Loading failed' });
-      },
-    );
-  } else if (message.type === 'audio-port') {
-    stats.inputSampleRate = message.inputSampleRate;
-    message.port.onmessage = (
-      portEvent: MessageEvent<{ samples: Float32Array; endTime: number }>,
-    ) => {
-      try {
-        handleChunk(portEvent.data.samples, portEvent.data.endTime);
-      } catch (error) {
-        send({
-          type: 'error',
-          message: error instanceof Error ? error.message : 'Decoding failed',
-        });
-      }
-    };
-  } else if (message.type === 'stop') {
-    sendStats();
-    stream?.free();
-    recognizer?.free();
-    stream = null;
-    recognizer = null;
+  switch (message.type) {
+    case 'load':
+      loadModel(message).catch(reportLoadError);
+      break;
+    case 'attach': {
+      detachChannel(message.channel);
+      channelDecoder(message.channel, message.inputSampleRate);
+      const channel = message.channel;
+      message.port.onmessage = (port: MessageEvent<{ samples: Float32Array; endTime: number }>) =>
+        decodeChunk(channel, port.data.samples, port.data.endTime);
+      break;
+    }
+    case 'accept':
+      decodeChunk(message.channel, message.samples, message.endTime);
+      break;
+    case 'reset':
+      channels.get(message.channel)?.reset();
+      break;
+    case 'detach':
+      detachChannel(message.channel);
+      break;
+    case 'set-hotwords': {
+      if (!recognizer) break;
+      const startedAt = performance.now();
+      const next = createRecognizer(message.hotwords);
+      for (const decoder of channels.values()) decoder.useRecognizer(next);
+      recognizer.free();
+      recognizer = next;
+      send({ type: 'hotwords-set', ms: Math.round(performance.now() - startedAt) });
+      break;
+    }
+    case 'stop':
+      loadAbort?.abort();
+      if (statsTimer) clearInterval(statsTimer);
+      // Last statistics first, while the channels still exist; then flush and free them.
+      if (recognizer) sendStats();
+      for (const id of [...channels.keys()]) detachChannel(id);
+      recognizer?.free();
+      recognizer = null;
+      break;
   }
 };

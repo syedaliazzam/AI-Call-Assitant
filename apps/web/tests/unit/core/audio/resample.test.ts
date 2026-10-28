@@ -8,7 +8,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { Chunker, StreamingResampler, TARGET_SAMPLE_RATE } from '@/core/audio/resample';
 import { buildWorkletSource, CHUNK_SAMPLES, WORKLET_NAME } from '@/core/audio/resampler.worklet';
 
-/** A sine wave of `count` samples at `hz`, sampled at `rate`. */
+/**
+ * A sine wave, for checking that resampling keeps the tone.
+ *
+ * @param count Number of samples.
+ * @param hz    Tone frequency in Hz.
+ * @param rate  Sample rate in Hz.
+ * @param start Index of the first sample (default 0), to continue a wave across chunks.
+ * @returns The samples.
+ */
 function sine(count: number, hz: number, rate: number, start = 0): Float32Array {
   return Float32Array.from({ length: count }, (_, i) =>
     Math.sin((2 * Math.PI * hz * (start + i)) / rate),

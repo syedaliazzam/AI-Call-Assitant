@@ -4,6 +4,7 @@
  *          screens (sign in, change password).
  * Used by: app/login/page.tsx, app/change-password/page.tsx
  * Depends on: React
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Sign in, Change password)
  */
 import type { ReactNode } from 'react';
 
@@ -24,6 +25,7 @@ export interface AuthCardProps {
  *
  * @param props See AuthCardProps.
  * @returns The page content.
+ * Rendered by: app/login/page.tsx, app/change-password/page.tsx
  */
 export function AuthCard({ title, subtitle, children, footer }: AuthCardProps) {
   return (

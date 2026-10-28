@@ -16,6 +16,8 @@ docs
 coverage
 **/*.tsbuildinfo
 
-# Speech-to-text model files (downloaded by `pnpm --filter web fetch-models`, ~85–290 MB).
-# Kept out of deploys until ADR-0020 decides how production serves them.
+# Speech-to-text model files and test recordings (development copies, ~205 MB; over the 100 MB
+# Hobby upload limit). Production loads model files from Hugging Face (ADR-0020).
+# public/stt-runtime is NOT listed: the build fetches it anyway, and an uploaded verified copy
+# just lets the build skip the download.
 apps/web/public/models

@@ -3,7 +3,7 @@
  * Purpose: Electron main process: starts one instance of the app, opens the Kite window on
  *          KITE_URL and applies every security rule from src/security.ts.
  * Used by: Electron (package.json "main": dist/main.js, built by esbuild)
- * Depends on: electron, src/config.ts, src/security.ts
+ * Depends on: electron, src/config.ts, src/security.ts, src/media.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * Kite never hides from the taskbar, Dock or process lists, and does not try to evade
@@ -12,6 +12,7 @@
 import path from 'node:path';
 import { app, BrowserWindow, dialog, session } from 'electron';
 import { APP_NAME, loadConfig, type DesktopConfig } from './config';
+import { allowSystemAudioLoopback } from './media';
 import { allowOnlyOurPermissions, lockNavigation, secureWebPreferences } from './security';
 
 /** The single Kite window, or null before it exists / after it closes. */
@@ -94,6 +95,8 @@ function start(): void {
 
   void app.whenReady().then(() => {
     allowOnlyOurPermissions(session.defaultSession, config.allowedOrigin);
+    // "Them": the page's getDisplayMedia gets system audio with no picker (Kite origin only).
+    allowSystemAudioLoopback(session.defaultSession, config.allowedOrigin);
     mainWindow = createMainWindow(config);
     // macOS convention: clicking the Dock icon re-opens a window if none is open.
     app.on('activate', () => {

@@ -48,6 +48,7 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
  *
  * @param props See ButtonProps; `className` is appended to the built-in classes.
  * @returns The button element.
+ * Rendered by: the feature components (admin, auth, dashboard, dev, live)
  */
 export function Button({
   variant = 'primary',

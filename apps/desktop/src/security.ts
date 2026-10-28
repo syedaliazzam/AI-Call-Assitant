@@ -3,7 +3,8 @@
  * Purpose: Everything that keeps the desktop window safe:
  *          - only the Kite origin can be shown (navigation, redirects and new windows locked);
  *          - only http/https links ever reach the system browser;
- *          - only the microphone permission is granted, and only to the Kite origin;
+ *          - only the microphone and screen/system-audio capture are granted, and only to the
+ *            Kite origin (what is captured is decided in media.ts);
  *          - the renderer runs sandboxed with context isolation and no Node.js.
  * Used by: src/main.ts; tests/unit/security.test.ts
  * Depends on: electron (shell, Session, WebContents types)
@@ -144,9 +145,14 @@ export interface PermissionQuery {
 }
 
 /**
- * Decides one permission request or check. Only 'media' for audio (microphone) alone, asked
- * by the Kite origin, is allowed. Camera, screen, notifications, location and everything else
- * is denied. (Screen and system-audio capture for the other side arrive on Day 2, media.ts.)
+ * Decides one permission request or check. Allowed, and only for the Kite origin:
+ * - 'media' for audio (microphone) alone;
+ * - 'display-capture' (getDisplayMedia). Electron asks the permission handler BEFORE it calls
+ *   the display-media handler in media.ts; without a grant getDisplayMedia fails with
+ *   NotAllowedError (measured on Day 2). What is captured (screen + system audio, no picker) is
+ *   decided in media.ts; this only lets the request reach it. See permissionForRequest() for
+ *   how Electron 44 names that request.
+ * Camera, notifications, location and everything else is denied.
  *
  * @param query         The permission, requesting URL and media types.
  * @param allowedOrigin The Kite origin.
@@ -154,10 +160,29 @@ export interface PermissionQuery {
  * Called from: allowOnlyOurPermissions()
  */
 export function isPermissionAllowed(query: PermissionQuery, allowedOrigin: string): boolean {
-  if (query.permission !== 'media') return false;
   if (!isAllowedUrl(query.requestingUrl, allowedOrigin)) return false;
+  if (query.permission === 'display-capture') return true;
+  if (query.permission !== 'media') return false;
   const types = query.mediaTypes ?? [];
   return types.length > 0 && types.every((type) => type === 'audio');
+}
+
+/**
+ * The permission name to decide a REQUEST under. Electron 44 sends a getDisplayMedia() request
+ * as permission 'media' with an EMPTY mediaTypes list (measured on Day 2; not documented),
+ * whereas getUserMedia always lists 'audio' and/or 'video'. That one case is decided as
+ * 'display-capture'; everything else keeps its own name. Checks (permission queries) are not
+ * mapped, so an unknown media type there stays denied.
+ *
+ * @param permission Electron's permission name.
+ * @param mediaTypes For 'media': the requested device types.
+ * @returns The name to pass to isPermissionAllowed().
+ * Called from: the request handler in allowOnlyOurPermissions(); tests
+ */
+export function permissionForRequest(permission: string, mediaTypes?: readonly string[]): string {
+  return permission === 'media' && mediaTypes !== undefined && mediaTypes.length === 0
+    ? 'display-capture'
+    : permission;
 }
 
 /**
@@ -174,7 +199,11 @@ export function allowOnlyOurPermissions(session: Session, allowedOrigin: string)
     const mediaTypes = 'mediaTypes' in details ? details.mediaTypes : undefined;
     callback(
       isPermissionAllowed(
-        { permission, requestingUrl: details.requestingUrl, mediaTypes },
+        {
+          permission: permissionForRequest(permission, mediaTypes),
+          requestingUrl: details.requestingUrl,
+          mediaTypes,
+        },
         allowedOrigin,
       ),
     );

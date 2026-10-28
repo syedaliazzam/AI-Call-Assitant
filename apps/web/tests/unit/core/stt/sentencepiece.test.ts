@@ -1,13 +1,18 @@
 /**
- * Tests for apps/web/scripts/sentencepiece-vocab.ts:
+ * Tests for apps/web/src/core/stt/sentencepiece.ts:
  * sentencePieceVocab() reads the pieces and scores out of a SentencePiece model (protocol
  * buffer), skips the other fields, formats scores like Python (export_bpe_vocab.py), and rejects
  * files without pieces. The real bpe.model is checked by its pinned SHA-256 in fetch-models.ts.
  */
 import { describe, expect, it } from 'vitest';
-import { sentencePieceVocab } from '../../../scripts/sentencepiece-vocab';
+import { sentencePieceVocab } from '@/core/stt/sentencepiece';
 
-/** Encodes a protocol-buffer varint. */
+/**
+ * Encodes a protocol-buffer varint (7 bits per byte, high bit = more bytes follow).
+ *
+ * @param value A non-negative integer.
+ * @returns The bytes.
+ */
 function varint(value: number): number[] {
   const out: number[] = [];
   while (value >= 0x80) {
@@ -18,12 +23,24 @@ function varint(value: number): number[] {
   return out;
 }
 
-/** A length-delimited field. */
+/**
+ * A length-delimited protocol-buffer field (wire type 2).
+ *
+ * @param field   Field number.
+ * @param payload Field content.
+ * @returns The bytes: key, length, payload.
+ */
 function lengthField(field: number, payload: number[]): number[] {
   return [...varint(field * 8 + 2), ...varint(payload.length), ...payload];
 }
 
-/** One SentencePiece message: piece text, score, and a type field (varint) to be skipped. */
+/**
+ * One SentencePiece message: piece text, score, and a type field (varint) the parser must skip.
+ *
+ * @param text  The piece.
+ * @param score Its score.
+ * @returns The message bytes, as a field of the model.
+ */
 function piece(text: string, score: number): number[] {
   const scoreBytes = new Uint8Array(4);
   new DataView(scoreBytes.buffer).setFloat32(0, score, true);
