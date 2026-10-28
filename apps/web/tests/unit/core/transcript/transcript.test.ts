@@ -15,7 +15,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createTranscript, DISPLAY_HOLD_MS, THEM_ACTIVE_MS } from '@/core/transcript/transcript';
 
-/** A transcript whose clock is fixed at `now` (Unix ms). */
+/**
+ * A transcript whose clock is fixed.
+ *
+ * @param now The fixed time, Unix ms (default 100 000).
+ * @returns The transcript.
+ */
 function setup(now = 100_000) {
   return createTranscript(() => now);
 }
@@ -146,7 +151,12 @@ describe('createTranscript', () => {
   });
 
   describe('display hold', () => {
-    /** A transcript with a clock and timer the test controls. */
+    /**
+     * A transcript with a clock and timers the test controls.
+     *
+     * @param start Start time, Unix ms (default 50 000).
+     * @returns The transcript and advance() to move time on.
+     */
     function controlled(start = 50_000) {
       let now = start;
       const timers: { at: number; run: () => void }[] = [];
@@ -157,7 +167,11 @@ describe('createTranscript', () => {
           return () => timers.splice(timers.indexOf(timer), 1);
         },
       });
-      /** Moves the clock on and runs the timers that are due. */
+      /**
+       * Moves the clock on and runs the timers that are due.
+       *
+       * @param ms How far to move, in ms.
+       */
       const advance = (ms: number) => {
         now += ms;
         for (const timer of timers.filter((entry) => entry.at <= now)) {

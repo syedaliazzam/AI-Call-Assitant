@@ -78,7 +78,11 @@ interface WorkerScope {
 /** This worker's global object. */
 const scope = globalThis as unknown as WorkerScope;
 
-/** Sends a message to the page. */
+/**
+ * Sends a message to the page.
+ *
+ * @param message The message (its transcript text is never logged).
+ */
 function send(message: FromWorker): void {
   scope.postMessage(message);
 }

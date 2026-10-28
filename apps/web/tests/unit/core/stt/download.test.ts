@@ -23,7 +23,12 @@ import type { DownloadFile } from '@/core/stt/models';
 const subtle = webcrypto.subtle;
 const ORIGIN = 'http://localhost:3000';
 
-/** A small in-memory Cache Storage (only the calls download.ts makes). */
+/**
+ * A small in-memory Cache Storage (only the calls download.ts makes).
+ *
+ * @param options.putError Error every put() throws, to simulate a full or blocked cache.
+ * @returns The storage, and its buckets so the test can look inside.
+ */
 function fakeCaches(options: { putError?: Error } = {}) {
   const buckets = new Map<string, Map<string, ArrayBuffer>>();
   const storage = {
@@ -51,7 +56,13 @@ function fakeCaches(options: { putError?: Error } = {}) {
   return { storage: storage as unknown as CacheStorage, buckets };
 }
 
-/** A pinned file description for some bytes. */
+/**
+ * A pinned file description for some bytes.
+ *
+ * @param name  File name (its fake URL is built from it).
+ * @param bytes The file content; its size and SHA-256 become the pin.
+ * @returns The file description.
+ */
 async function pinned(name: string, bytes: Uint8Array): Promise<DownloadFile> {
   return {
     name,
@@ -61,7 +72,12 @@ async function pinned(name: string, bytes: Uint8Array): Promise<DownloadFile> {
   };
 }
 
-/** A fetch that serves the given bodies by URL, in two chunks each. */
+/**
+ * A fetch that serves the given bodies by URL, in two chunks each (to test progress).
+ *
+ * @param bodies Body per URL; other URLs get 404.
+ * @returns A vi.fn fetch.
+ */
 function fakeFetch(bodies: Record<string, Uint8Array>) {
   return vi.fn(async (url: string | URL | Request) => {
     const body = bodies[String(url)];

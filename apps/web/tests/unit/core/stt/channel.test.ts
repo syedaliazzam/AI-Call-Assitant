@@ -23,13 +23,22 @@ import {
 /** 100 ms of 16 kHz audio. */
 const CHUNK = 1_600;
 
-/** Quiet and loud chunks (for the onset detector). */
+/**
+ * A quiet chunk (background level, below the onset detector's threshold).
+ *
+ * @returns 100 ms of samples.
+ */
 const quiet = () => new Float32Array(CHUNK).fill(0.001);
 const loud = () => Float32Array.from({ length: CHUNK }, (_, i) => 0.3 * Math.sin(i / 3));
 
 /**
  * A fake recognizer whose text follows a script: script[n] is the text after the n-th chunk
- * (the last entry repeats). `endpointAt` lists chunk numbers where isEndpoint() is true.
+ * (the last entry repeats).
+ *
+ * @param script     Text after each chunk.
+ * @param endpointAt Chunk numbers where isEndpoint() is true (the model's own endpoint rule).
+ * @param flushText  Text the recognizer returns after inputFinished() (default: the last text).
+ * @returns The recognizer and counters of how often each method was called.
  */
 function fakeRecognizer(script: string[], endpointAt: number[] = [], flushText?: string) {
   const calls = { resets: 0, created: 0, finished: 0, freed: 0 };
@@ -70,7 +79,12 @@ function fakeRecognizer(script: string[], endpointAt: number[] = [], flushText?:
   return { recognizer, calls };
 }
 
-/** A clock that advances 1 ms per call (so decode times are small and positive). */
+/**
+ * A clock that advances 1 ms per call, so decode times are small and positive.
+ *
+ * @param start First time, in ms (default 10 000).
+ * @returns The clock, in the shape ChannelDecoder expects.
+ */
 function fakeClock(start = 10_000) {
   let now = start;
   return { now: () => (now += 1), timeOrigin: 1_700_000_000_000 };
@@ -264,15 +278,31 @@ describe('ChannelDecoder', () => {
 });
 
 describe('ChannelDecoder end of speech', () => {
-  /** A clock the test sets per chunk: 5 ms after the chunk's capture time (constant offset). */
+  /**
+   * A clock the test sets per chunk: 5 ms after the chunk's capture time (a constant offset).
+   *
+   * @returns The clock; the test sets `t` before each chunk.
+   */
   function chunkClock() {
     const clock = { t: 0, now: () => clock.t, timeOrigin: 1_700_000_000_000 };
     return clock;
   }
-  /** A quiet chunk (slightly different per n, so the fake recognizer's input is distinct). */
+  /**
+   * A quiet chunk, slightly different per n so each chunk's input is distinct.
+   *
+   * @param n Chunk number.
+   * @returns 100 ms of samples.
+   */
   const quietN = (n: number) => new Float32Array(CHUNK).fill(0.001 + n * 1e-6);
 
-  /** Feeds chunk n (100 ms) at capture time (n + 1) × 0.1 s. */
+  /**
+   * Feeds chunk n (100 ms) at capture time (n + 1) × 0.1 s.
+   *
+   * @param decoder The channel under test.
+   * @param clock   The test clock (set to 5 ms after the capture time).
+   * @param n       Chunk number.
+   * @param samples The chunk.
+   */
   function feed(decoder: ChannelDecoder, clock: { t: number }, n: number, samples: Float32Array) {
     clock.t = (n + 1) * 100 + 5;
     decoder.accept(samples, (n + 1) * 0.1);

@@ -85,6 +85,8 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
      * System audio ("Them"): getDisplayMedia, answered by the shell with loopback and no picker.
      * The video track is stopped and removed at once: it is not needed (Day 5 screenshots use
      * the shell's desktopCapturer instead), and a live screen capture would only cost CPU.
+     *
+     * @returns The audio-only stream, with source 'system-loopback'.
      */
     async getOtherSideStream() {
       const stream = await requestDisplayMedia(DESKTOP_DISPLAY_OPTIONS, 'desktop', bridge.os);
@@ -108,17 +110,29 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       throw new NotImplementedError('desktop.captureScreenshot', 5);
     },
 
-    /** Day 5: the shell opens a frameless, always-on-top live window. */
+    /**
+     * Day 5: the shell opens a frameless, always-on-top live window.
+     *
+     * @param _sessionId The session to show (unused until Day 5).
+     */
     async openCompactView(_sessionId: string) {
       throw new NotImplementedError('desktop.openCompactView', 5);
     },
 
-    /** Day 4: global shortcuts registered by the shell and forwarded to the page. */
+    /**
+     * Day 4: global shortcuts registered by the shell and forwarded to the page.
+     *
+     * @param _handler Receives each hotkey action (unused until Day 4).
+     */
     onHotkey(_handler) {
       throw new NotImplementedError('desktop.onHotkey', 4);
     },
 
-    /** Day 5: setContentProtection on the live window. */
+    /**
+     * Day 5: setContentProtection on the live window.
+     *
+     * @param _on True to hide the live window from screen sharing (unused until Day 5).
+     */
     async setShareProtection(_on: boolean) {
       throw new NotImplementedError('desktop.setShareProtection', 5);
     },

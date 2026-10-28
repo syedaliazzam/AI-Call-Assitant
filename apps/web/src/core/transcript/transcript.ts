@@ -231,7 +231,12 @@ export function createTranscript(
       .join(' ');
   };
 
-  /** Marks a final "You" line as an echo (and counts it). */
+  /**
+   * Marks a final "You" line as an echo and counts it for the "Hiding echo" notice.
+   *
+   * @param line The final "You" line.
+   * @returns A copy of the line with echo: true (the original is not changed).
+   */
   const markEcho = (line: Utterance): Utterance => {
     echoes = { count: echoes.count + 1, lastAt: Math.max(echoes.lastAt ?? 0, line.tEnd) };
     return { ...line, echo: true };

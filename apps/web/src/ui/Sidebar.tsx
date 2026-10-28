@@ -69,7 +69,11 @@ export function runtimeLabel(): string {
   return `Desktop app v${major}.${minor}`;
 }
 
-/** The label never changes while a page is open, so there is nothing to subscribe to. */
+/**
+ * No-op subscription for useSyncExternalStore: the label never changes while a page is open.
+ *
+ * @returns An unsubscribe function that does nothing.
+ */
 const subscribeNever = () => () => {};
 
 /**
@@ -80,6 +84,7 @@ const subscribeNever = () => () => {};
  * @param props.user        The signed-in user, or undefined when nobody is signed in.
  * @param props.userActions Buttons shown under the user's name (sign out).
  * @returns The <aside> navigation element.
+ * Rendered by: app/(app)/layout.tsx
  */
 export function Sidebar({ user, userActions }: SidebarProps) {
   const pathname = usePathname();

@@ -127,10 +127,12 @@ function HowToConnect({ platform }: { platform: 'desktop' | 'browser' }) {
 }
 
 /**
- * The Connect view.
+ * The Connect view: call details, how to connect on this platform, the speech-model download
+ * progress, the Connect button, audio meters with any capture error, and the sound check.
  *
  * @param props See ConnectPanelProps.
  * @returns The panel.
+ * Rendered by: LivePage.tsx (until the call is connected)
  */
 export function ConnectPanel({
   call,

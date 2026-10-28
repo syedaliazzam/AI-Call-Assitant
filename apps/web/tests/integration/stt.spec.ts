@@ -57,7 +57,11 @@ const MAX_WER = 0.1;
 /** Silence after the recording ends that the endpoint rules need (rule 2 ≈1 s, pause 1.2 s). */
 const END_WAIT_MS = 3_000;
 
-/** Every file the test page loads, with its pin and where it lives. */
+/**
+ * Every file the test page loads, with its pin and where it lives.
+ *
+ * @returns The local path of each runtime and model file, with its pinned size and SHA-256.
+ */
 function requiredFiles(): { file: string; pinned: PinnedFile }[] {
   const model = getSttModel(DEFAULT_STT_MODEL);
   const runtimeDir = path.join(PUBLIC_DIR, ...RUNTIME_PUBLIC_PATH.split('/').filter(Boolean));

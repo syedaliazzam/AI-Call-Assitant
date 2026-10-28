@@ -101,7 +101,12 @@ describe('external opens', () => {
   });
 });
 
-/** A fake WebContents that records the handlers lockNavigation() installs. */
+/**
+ * A fake WebContents that records the handlers lockNavigation() installs.
+ *
+ * @returns The fake contents, with fire() to simulate navigation events and openWindow() to
+ *          call the window-open handler.
+ */
 function fakeContents() {
   const listeners: Record<string, (event: { url?: string; preventDefault: () => void }) => void> =
     {};
@@ -113,7 +118,13 @@ function fakeContents() {
     setWindowOpenHandler: vi.fn((handler: typeof windowOpenHandler) => {
       windowOpenHandler = handler;
     }),
-    /** Fires an event and reports whether the handler cancelled it. */
+    /**
+     * Fires a navigation event and reports whether the handler cancelled it.
+     *
+     * @param name The event, for example 'will-navigate'.
+     * @param url  The URL the page tries to open.
+     * @returns True when the handler called preventDefault().
+     */
     fire(name: string, url?: string): boolean {
       const event = { url, preventDefault: vi.fn() };
       listeners[name]?.(event);

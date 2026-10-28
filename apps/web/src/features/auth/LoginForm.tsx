@@ -33,13 +33,18 @@ function messageFor(code: string | undefined): string {
  * have a temporary password to /change-password.
  *
  * @returns The form element.
+ * Rendered by: app/login/page.tsx
  */
 export function LoginForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  /** Sends the email and password to Better Auth and reacts to the result. */
+  /**
+   * Sends the email and password to Better Auth and reacts to the result.
+   *
+   * @param event The form's submit event (the browser's own page reload is prevented).
+   */
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);

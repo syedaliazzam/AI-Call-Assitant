@@ -2,6 +2,7 @@
  * File: apps/web/vitest.config.ts
  * Purpose: Unit test settings for the web app (`pnpm --filter web test`).
  *          Tests live in tests/unit/<same path as src>, for example tests/unit/platform/index.test.ts.
+ * Used by: `pnpm --filter web test`, the root `pnpm test` (and so CI's Web job)
  * Depends on: vitest
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing)
  */

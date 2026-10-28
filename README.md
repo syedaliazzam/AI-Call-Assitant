@@ -15,7 +15,7 @@ It runs as a desktop app (macOS, Windows) and in Chrome or Edge. Start with [CLA
 
 ## Prerequisites
 
-- **Node.js 22.12 or later** (Node 24 recommended). Vitest 5 does not run on Node 20.
+- **Node.js 22.22.2 or later** (Node 24 recommended). Vitest 5 does not run on Node 20; `pnpm lint` needs 22.22.2+ (eslint-plugin-jsdoc, and the header check runs a `.ts` file directly with Node).
 - **pnpm 12**: run `corepack enable` once; the version is pinned in `package.json` (`packageManager`).
 - Git.
 
@@ -111,7 +111,7 @@ pnpm --filter desktop start   # opens production: https://kite-call-assistant.ve
 ## Check and test
 
 ```sh
-pnpm lint        # ESLint + Prettier check
+pnpm lint        # ESLint (with the JSDoc rules) + file-header check + Prettier check
 pnpm typecheck   # TypeScript in every package
 pnpm test        # Vitest unit tests (web, and the desktop shell's rules)
 pnpm format      # apply Prettier formatting

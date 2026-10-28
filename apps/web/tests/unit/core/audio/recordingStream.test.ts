@@ -8,7 +8,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createRecordingStream, GAP_SECONDS, joinWithGaps } from '@/core/audio/recordingStream';
 
-/** A minimal AudioBuffer. */
+/**
+ * A minimal AudioBuffer (mono).
+ *
+ * @param samples The samples.
+ * @param rate    Sample rate in Hz (default 10, to keep the numbers small).
+ * @returns An AudioBuffer-shaped object.
+ */
 function buffer(samples: number[], rate = 10) {
   const data = Float32Array.from(samples);
   return {
@@ -18,7 +24,12 @@ function buffer(samples: number[], rate = 10) {
   } as unknown as AudioBuffer;
 }
 
-/** A fake AudioContext that records what was created and connected. */
+/**
+ * A fake AudioContext that records what was created and connected.
+ *
+ * @param rate Its sample rate in Hz (default 10).
+ * @returns The context and the fake nodes and track it hands out.
+ */
 function fakeContext(rate = 10) {
   const track = { stop: vi.fn() };
   const destination = { stream: { getTracks: () => [track] } };

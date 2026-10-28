@@ -7,7 +7,13 @@ import { describe, expect, it } from 'vitest';
 import { MAX_LINE_WORDS, splitForDisplay } from '@/core/transcript/display';
 import type { Utterance } from '@/core/transcript/transcript';
 
-/** A final "Them" line with `words` words over `ms` milliseconds. */
+/**
+ * A final "Them" line, for testing how long lines are split for display.
+ *
+ * @param words Number of words.
+ * @param ms    How long the line lasted, in ms.
+ * @returns The line.
+ */
 function line(words: number, ms: number): Utterance {
   return {
     id: 'u7',

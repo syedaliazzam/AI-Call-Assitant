@@ -379,18 +379,32 @@ export class ChannelDecoder {
     this.utteranceStartAt = null;
   }
 
-  /** Keeps the latest MAX_LAGS lag values. */
+  /**
+   * Records one utterance's lag, keeping the latest MAX_LAGS values.
+   *
+   * @param ms Speech onset → first text, in ms.
+   */
   private pushLag(ms: number): void {
     this.pushRecent(this.stats.lagsMs, ms);
   }
 
-  /** Appends to a list, keeping only the latest MAX_LAGS values. */
+  /**
+   * Appends to a statistics list, keeping only the latest MAX_LAGS values (bounded memory).
+   *
+   * @param list  The list (changed in place).
+   * @param value The new value.
+   */
   private pushRecent(list: number[], value: number): void {
     list.push(value);
     if (list.length > MAX_LAGS) list.shift();
   }
 
-  /** Worker time → Unix ms. */
+  /**
+   * Converts a worker clock time to Unix ms, so the page can compare it with its own clock.
+   *
+   * @param workerMs Time on the worker's performance.now() clock, in ms.
+   * @returns The same moment as Unix ms.
+   */
   private toUnix(workerMs: number): number {
     return Math.round(this.clock.timeOrigin + workerMs);
   }

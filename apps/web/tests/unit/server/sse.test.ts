@@ -7,7 +7,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { formatEvent, SSE_HEADERS, toEventStream } from '@/server/sse';
 
-/** Decodes one stream chunk to text. */
+/**
+ * Decodes one stream chunk to text.
+ *
+ * @param chunk The bytes (undefined when the stream had nothing left).
+ * @returns The text.
+ */
 const decode = (chunk: Uint8Array | undefined) => new TextDecoder().decode(chunk);
 
 /** Handlers that produce a fixed done event and a fixed error event. */

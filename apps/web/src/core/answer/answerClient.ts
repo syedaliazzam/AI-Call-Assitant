@@ -128,7 +128,12 @@ export function streamAnswer(
   let firstTextAt: number | null = null;
   let finished = false;
 
-  /** Calls a handler unless the answer was cancelled or already finished. */
+  /**
+   * Calls a handler unless the answer was cancelled or already finished, so the caller gets
+   * exactly one onDone or onError per answer.
+   *
+   * @param report The handler call to make.
+   */
   const finish = (report: () => void) => {
     if (finished || controller.signal.aborted) return;
     finished = true;

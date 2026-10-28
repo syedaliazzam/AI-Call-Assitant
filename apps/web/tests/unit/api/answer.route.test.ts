@@ -33,7 +33,12 @@ const { POST } = await import('../../../app/api/answer/route');
 /** A signed-in user who has already changed their password. */
 const SIGNED_IN = { user: { id: 'u1', role: 'user', mustChangePassword: false } };
 
-/** Builds a POST /api/answer request with a raw body. */
+/**
+ * Builds a POST /api/answer request with a raw body.
+ *
+ * @param body Request body exactly as sent (it may be invalid JSON on purpose).
+ * @returns The request.
+ */
 function post(body: string) {
   return new Request('http://localhost:3000/api/answer', {
     method: 'POST',

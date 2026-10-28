@@ -257,7 +257,11 @@ export function createSttEngine(
     hotwords: formatHotwords(options.hotwords ?? '').buffer,
   });
 
-  /** Creates the shared AudioContext and loads the worklet module once. */
+  /**
+   * Creates the shared AudioContext and loads the worklet module once, for both channels.
+   *
+   * @returns The running AudioContext.
+   */
   const ensureAudio = async (): Promise<AudioContext> => {
     if (!context) {
       context = deps.createAudioContext();
@@ -272,7 +276,11 @@ export function createSttEngine(
     return context;
   };
 
-  /** Disconnects a channel's graph (the worker is told separately). */
+  /**
+   * Disconnects a channel's audio graph (the worker is told separately).
+   *
+   * @param channel Which channel.
+   */
   const disconnect = (channel: ChannelId) => {
     const graph = attached.get(channel);
     if (!graph) return;

@@ -18,7 +18,13 @@ const PREVIOUS: Utterance = {
   final: true,
 };
 
-/** A new final line from `speaker` starting at `tStart`. */
+/**
+ * A new final line.
+ *
+ * @param speaker Who spoke.
+ * @param tStart  When it started (Unix ms).
+ * @returns The line, as addFinal() receives it.
+ */
 const next = (speaker: 'you' | 'them', tStart: number) => ({
   speaker,
   text: 'x',

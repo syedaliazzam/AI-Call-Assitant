@@ -24,10 +24,12 @@ export interface CreateUserFormProps {
 const INITIAL_STATE: CreateUserState = { status: 'idle' };
 
 /**
- * The create-user form.
+ * The create-user form (name, email, role). After a successful submit it shows the
+ * server-generated temporary password once, so the admin can pass it on.
  *
  * @param props.action The server action to submit to.
  * @returns The form section.
+ * Rendered by: app/(app)/admin/users/page.tsx
  */
 export function CreateUserForm({ action }: CreateUserFormProps) {
   const [state, formAction, pending] = useActionState(action, INITIAL_STATE);

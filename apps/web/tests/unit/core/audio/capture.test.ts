@@ -12,7 +12,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { CallCaptureError, startCallCapture } from '@/core/audio/capture';
 import { CaptureError } from '@/platform';
 
-/** A fake audio track that records stop() and lets the test fire 'ended'. */
+/**
+ * A fake audio track that records stop() and lets the test fire 'ended'.
+ *
+ * @returns The track, with stop() as a spy and end() to simulate the track ending.
+ */
 function fakeTrack() {
   const listeners: (() => void)[] = [];
   return {
@@ -25,14 +29,25 @@ function fakeTrack() {
   };
 }
 
-/** A fake stream around one fake track, with a level the fake analyser will report. */
+/**
+ * A fake stream around one fake track.
+ *
+ * @param level Loudness (0…1) the fake analyser reports for this stream.
+ * @returns The stream and its track.
+ */
 function fakeStream(level: number) {
   const track = fakeTrack();
   const stream = { getTracks: () => [track], getAudioTracks: () => [track], level };
   return { stream: stream as unknown as MediaStream, track };
 }
 
-/** Everything startCallCapture() needs, faked. */
+/**
+ * Everything startCallCapture() needs, faked.
+ *
+ * @param options.themError Error the "Them" capture should throw, if any.
+ * @param options.micError  Error the microphone should throw, if any.
+ * @returns The fakes, and `order`: which capture was opened first.
+ */
 function setup(options: { themError?: Error; micError?: Error } = {}) {
   const order: string[] = [];
   const them = fakeStream(0);

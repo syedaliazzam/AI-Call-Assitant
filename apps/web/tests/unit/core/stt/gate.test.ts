@@ -10,12 +10,25 @@
 import { describe, expect, it } from 'vitest';
 import { chunkRms, lastLoudSampleEnd, SilenceGate, type GateChunk } from '@/core/stt/gate';
 
-/** A 100 ms chunk with a constant level (RMS = level) and a capture time. */
+/**
+ * A 100 ms chunk with a constant level.
+ *
+ * @param level   Every sample's value, so the RMS equals it.
+ * @param endTime Capture time of its last sample, in seconds.
+ * @returns The chunk.
+ */
 function chunk(level: number, endTime: number): GateChunk {
   return { samples: new Float32Array(1_600).fill(level), endTime };
 }
 
-/** Pushes chunks of the given levels (100 ms each) and returns how many were passed per push. */
+/**
+ * Pushes chunks of the given levels (100 ms each) through the gate.
+ *
+ * @param gate   The gate under test.
+ * @param levels Level of each chunk.
+ * @param busy   True to simulate an utterance showing text (the gate must stay open).
+ * @returns How many chunks the gate passed on at each push (0 = held back).
+ */
 function run(gate: SilenceGate, levels: number[], busy = false): number[] {
   return levels.map((level, i) => gate.push(chunk(level, i * 0.1), 100, busy).length);
 }

@@ -65,6 +65,8 @@ export const browserPlatform: Platform = {
   /**
    * Opens the share picker (tab pane first). The user picks the meeting tab and ticks "Also share
    * tab audio". A share without sound is stopped and reported as 'no-audio-track'.
+   *
+   * @returns The shared stream and which kind of surface was shared.
    */
   async getOtherSideStream() {
     const stream = await requestDisplayMedia(BROWSER_DISPLAY_OPTIONS, 'browser');
@@ -81,17 +83,29 @@ export const browserPlatform: Platform = {
     throw new NotImplementedError('browser.captureScreenshot', 5);
   },
 
-  /** Day 5: Document Picture-in-Picture window. */
+  /**
+   * Day 5: Document Picture-in-Picture window.
+   *
+   * @param _sessionId The session to show (unused until Day 5).
+   */
   async openCompactView(_sessionId: string) {
     throw new NotImplementedError('browser.openCompactView', 5);
   },
 
-  /** Day 4: in-page keyboard shortcuts while the Kite tab or PiP window has focus. */
+  /**
+   * Day 4: in-page keyboard shortcuts while the Kite tab or PiP window has focus.
+   *
+   * @param _handler Receives each hotkey action (unused until Day 4).
+   */
   onHotkey(_handler) {
     throw new NotImplementedError('browser.onHotkey', 4);
   },
 
-  /** Day 5: returns false (browsers cannot hide a window from screen sharing) and the UI explains. */
+  /**
+   * Day 5: returns false (browsers cannot hide a window from screen sharing) and the UI explains.
+   *
+   * @param _on True to hide the live window from screen sharing (unused until Day 5).
+   */
   async setShareProtection(_on: boolean) {
     throw new NotImplementedError('browser.setShareProtection', 5);
   },

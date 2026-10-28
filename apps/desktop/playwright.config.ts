@@ -3,6 +3,8 @@
  * Purpose: Settings for the Electron smoke test (`pnpm --filter desktop test`), which launches
  *          the built shell (dist/) against a local test page. No browser download is needed:
  *          Playwright drives the Electron binary itself.
+ * Used by: `pnpm --filter desktop test`; the CI jobs "Desktop smoke test (Windows)" and
+ *          "(macOS, manual)" in .github/workflows/ci.yml
  * Depends on: @playwright/test
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Desktop smoke)
  */

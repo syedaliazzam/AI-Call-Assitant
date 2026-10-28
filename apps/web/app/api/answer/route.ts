@@ -27,11 +27,11 @@ import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
 import { MAX_REQUEST_BYTES, parseAnswerRequest } from '@/server/validate';
 
-// The Anthropic SDK and streaming bodies need the Node.js runtime (not Edge).
+/** Next.js route setting: the Anthropic SDK and streaming bodies need Node.js (not Edge). */
 export const runtime = 'nodejs';
-// Never cache or pre-render this route: every request is a new answer.
+/** Next.js route setting: never cache or pre-render this route; every request is a new answer. */
 export const dynamic = 'force-dynamic';
-// Vercel function limit in seconds; matches the 60 s Claude time limit.
+/** Vercel function limit in seconds; matches the 60 s Claude time limit. */
 export const maxDuration = 60;
 
 /** Which day each not-yet-built mode arrives (architecture §12.3). */

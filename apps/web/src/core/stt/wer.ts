@@ -190,10 +190,24 @@ export function wordErrorRate(reference: string, hypothesis: string): WerResult 
   const cost: number[][] = Array.from({ length: ref.length + 1 }, (_, i) =>
     Array.from({ length: hyp.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
   );
-  /** Reference word i-1 was heard split as heard words j-2 and j-1. */
+  /**
+   * Tells whether reference word i-1 was heard split in two (heard words j-2 and j-1), which
+   * counts as correct ("TO DAY" for "today").
+   *
+   * @param i Reference words consumed so far.
+   * @param j Heard words consumed so far.
+   * @returns True when the two heard words joined equal the reference word.
+   */
   const split = (i: number, j: number) =>
     i >= 1 && j >= 2 && ref[i - 1] === `${hyp[j - 2]}${hyp[j - 1]}`;
-  /** Reference words i-2 and i-1 were heard joined as heard word j-1. */
+  /**
+   * Tells whether reference words i-2 and i-1 were heard as one word (heard word j-1), which
+   * counts as correct ("NORTHWIND" for "north wind").
+   *
+   * @param i Reference words consumed so far.
+   * @param j Heard words consumed so far.
+   * @returns True when the two reference words joined equal the heard word.
+   */
   const joined = (i: number, j: number) =>
     i >= 2 && j >= 1 && `${ref[i - 2]}${ref[i - 1]}` === hyp[j - 1];
   for (let i = 1; i <= ref.length; i += 1) {

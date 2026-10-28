@@ -187,7 +187,12 @@ test('grants the microphone and denies the camera and notifications', async () =
   expect(states).toEqual({ microphone: 'granted', camera: 'denied', notifications: 'denied' });
 });
 
-/** Clicks "Capture" in a page or frame and waits for its result (window.__capture). */
+/**
+ * Clicks "Capture" in a page or frame of the test page and waits for its result.
+ *
+ * @param target The page, or a frame inside it (to test a cross-origin frame).
+ * @returns What the test page stored in window.__capture: the tracks it got, or the error.
+ */
 async function capture(target: Page | import('@playwright/test').Frame) {
   await target.evaluate(() => {
     (window as { __capture?: unknown }).__capture = null;

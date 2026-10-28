@@ -60,6 +60,7 @@ const MODELS_DIR = path.join(PUBLIC_DIR, ...LOCAL_MODELS_PATH.split('/').filter(
  *
  * @param file Path to the file.
  * @returns The hex digest.
+ * Called from: isInstalled(), download(); tests/integration/stt.spec.ts (fixture check)
  */
 export async function sha256Of(file: string): Promise<string> {
   const hash = createHash('sha256');
@@ -73,6 +74,8 @@ export async function sha256Of(file: string): Promise<string> {
  * @param file   Path to check.
  * @param pinned Expected size and checksum.
  * @returns True if present and correct.
+ * Called from: installRuntime(), installFiles(); scripts/check-stt-runtime.ts;
+ *              tests/integration/stt.spec.ts (checks the files before the test)
  */
 export async function isInstalled(
   file: string,

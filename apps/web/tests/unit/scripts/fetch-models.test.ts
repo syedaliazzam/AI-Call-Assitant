@@ -14,7 +14,12 @@ const NAMES = Object.values(RUNTIME_FILES).map((file) => file.name);
 /** The archive's top-level folder. */
 const FOLDER = RUNTIME_ARCHIVE.folder;
 
-/** A listing like the real v1.13.7 archive's, with an optional prefix on every entry. */
+/**
+ * A `tar -t` listing like the real v1.13.7 archive's.
+ *
+ * @param prefix Put before every entry: './' (the real archive) or '' (none).
+ * @returns The listing lines.
+ */
 function listing(prefix: string): string[] {
   return [
     `${prefix}${FOLDER}/`,

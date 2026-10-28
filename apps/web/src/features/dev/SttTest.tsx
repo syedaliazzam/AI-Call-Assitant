@@ -117,9 +117,11 @@ function formatMb(bytes: number): string {
 }
 
 /**
- * The speech-to-text test panel.
+ * The speech-to-text test panel: start and stop the engine, pick the "Them" source, apply
+ * hotwords, and read the measured numbers and the accuracy test.
  *
- * @returns The panel.
+ * @returns The panel: controls, live numbers, transcript and the accuracy test.
+ * Rendered by: app/(app)/dev/stt-test/page.tsx
  */
 export function SttTest() {
   const model = getSttModel(DEFAULT_STT_MODEL);
@@ -206,7 +208,11 @@ export function SttTest() {
     return () => clearInterval(timer);
   }, [phase]);
 
-  /** Attaches or detaches the microphone as "You". */
+  /**
+   * Attaches or detaches the microphone as "You".
+   *
+   * @param on True to attach; false to detach and release the microphone.
+   */
   async function setMic(on: boolean) {
     setMicOn(on);
     const current = engine.current;
@@ -221,7 +227,12 @@ export function SttTest() {
     }
   }
 
-  /** Switches the "Them" source (while listening: detach the old one, attach the new one). */
+  /**
+   * Switches the "Them" source (while listening: detach the old one, attach the new one).
+   *
+   * @param kind 'off', 'recordings' (official test recordings in a loop) or 'call' (the real
+   *             call audio through the platform adapter).
+   */
   async function setThem(kind: ThemSource) {
     setThemSource(kind);
     setError(null);
@@ -306,7 +317,11 @@ export function SttTest() {
     setHotwordsUsed(hotwordsText);
   }
 
-  /** Chooses which test sentence the next "You" final lines belong to (clears its result). */
+  /**
+   * Chooses which test sentence the next "You" final lines belong to (clears its result).
+   *
+   * @param index Position in TEST_SENTENCES (0-based).
+   */
   function chooseSentence(index: number) {
     sentenceRef.current = index;
     setSentence(index);
@@ -333,7 +348,12 @@ export function SttTest() {
     );
     return { wer: errors / words, sentences: results.length };
   })();
-  /** End of speech → final line latencies of one channel (or both, for channel null). */
+  /**
+   * End of speech → final line latencies of one channel, or of both.
+   *
+   * @param channel The channel, or null for both.
+   * @returns The latencies in ms, in the order the lines arrived.
+   */
   const latencies = (channel: ChannelId | null) =>
     finals
       .filter((line) => channel === null || line.channel === channel)
@@ -346,7 +366,12 @@ export function SttTest() {
   const message = healthMessage(health);
   const attachedChannels = (Object.keys(stats?.channels ?? {}) as ChannelId[]).sort();
 
-  /** Builds the results text (numbers, plus what was heard for the test sentences). */
+  /**
+   * Builds the "Copy results" text for benchmark-results.md: numbers, plus what was heard for
+   * the test sentences (never the call itself).
+   *
+   * @returns The text, one fact per line.
+   */
   function resultsText(): string {
     const lines = [
       `Where: ${where}; user agent: ${navigator.userAgent}`,

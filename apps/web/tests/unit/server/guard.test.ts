@@ -11,7 +11,13 @@ vi.mock('@/server/auth', () => ({ getSession: vi.fn() }));
 
 const { decideRedirect } = await import('@/server/guard');
 
-/** Builds a session for a user with the given role and password state. */
+/**
+ * Builds a session for a user with the given role and password state.
+ *
+ * @param role               'admin' or 'user'.
+ * @param mustChangePassword True while the user still has a temporary password (default false).
+ * @returns The session, in the shape decideRedirect() reads.
+ */
 function sessionFor(role: 'admin' | 'user', mustChangePassword = false) {
   return { user: { role, mustChangePassword } };
 }

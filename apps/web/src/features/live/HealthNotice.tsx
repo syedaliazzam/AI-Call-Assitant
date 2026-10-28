@@ -24,6 +24,7 @@ export interface HealthNoticeProps {
  *
  * @param props See HealthNoticeProps.
  * @returns The notice, or nothing when everything is fine (or the hint was dismissed).
+ * Rendered by: ConnectPanel.tsx, TranscriptStrip.tsx
  */
 export function HealthNotice({ status }: HealthNoticeProps) {
   const [dismissedFor, setDismissedFor] = useState<SttHealthStatus | null>(null);

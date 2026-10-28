@@ -10,7 +10,13 @@ import { describe, expect, it } from 'vitest';
 import { healthMessage, healthTone, SttHealthMonitor } from '@/core/stt/health';
 import type { EngineStats } from '@/core/stt/protocol';
 
-/** Statistics with the given cumulative totals. */
+/**
+ * Engine statistics with the given cumulative totals.
+ *
+ * @param totalDecodeMs Decode time so far, in ms.
+ * @param totalAudioMs  Audio time so far, in ms.
+ * @returns The statistics.
+ */
 function stats(totalDecodeMs: number, totalAudioMs: number): EngineStats {
   return { channels: {}, combinedRtf: 0, totalDecodeMs, totalAudioMs, wasmMemoryBytes: 0 };
 }
@@ -18,6 +24,7 @@ function stats(totalDecodeMs: number, totalAudioMs: number): EngineStats {
 /**
  * Feeds one statistics message per second with the given per-second real-time factors.
  *
+ * @param rtfs Real-time factor of each second, in order.
  * @returns The monitor and the time of the last message.
  */
 function feed(rtfs: number[]) {

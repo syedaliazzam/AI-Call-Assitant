@@ -12,12 +12,22 @@ import { median, OnsetDetector, percentile, realTimeFactor } from '@/core/stt/me
 const RATE = 16_000;
 const CHUNK = 1_600;
 
-/** Quiet background noise (very low level). */
+/**
+ * Quiet background noise (very low level).
+ *
+ * @param count Number of samples.
+ * @returns The samples.
+ */
 function quiet(count: number): Float32Array {
   return Float32Array.from({ length: count }, (_, i) => 0.001 * Math.sin(i));
 }
 
-/** Loud "speech" (a 300 Hz tone at 0.3). */
+/**
+ * Loud "speech": a 300 Hz tone at 0.3.
+ *
+ * @param count Number of samples.
+ * @returns The samples.
+ */
 function speech(count: number): Float32Array {
   return Float32Array.from(
     { length: count },

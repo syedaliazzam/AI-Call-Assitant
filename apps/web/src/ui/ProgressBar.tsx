@@ -15,10 +15,11 @@ export interface ProgressBarProps {
 }
 
 /**
- * A progress bar.
+ * A progress bar with an accessible label and value (role="progressbar").
  *
  * @param props See ProgressBarProps.
  * @returns The bar.
+ * Rendered by: ConnectPanel.tsx (speech-model download)
  */
 export function ProgressBar({ value, label }: ProgressBarProps) {
   const percent = Math.round(Math.min(1, Math.max(0, value)) * 100);

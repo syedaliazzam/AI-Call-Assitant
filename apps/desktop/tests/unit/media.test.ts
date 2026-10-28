@@ -79,7 +79,14 @@ describe('decideDisplayMedia', () => {
 });
 
 describe('allowSystemAudioLoopback', () => {
-  /** Installs the handler on a fake session and returns a function that calls it. */
+  /**
+   * Installs the display-media handler on a fake session.
+   *
+   * @param getSources Fake desktopCapturer.getSources (the screens the shell would see).
+   * @param platform   Operating system to simulate (default 'win32').
+   * @returns ask(): sends a capture request to the handler and resolves with its answer; and the
+   *          spy that recorded how the handler was installed.
+   */
   function install(getSources: ReturnType<typeof vi.fn>, platform: NodeJS.Platform = 'win32') {
     let handler: ((request: unknown, callback: (streams: unknown) => void) => void) | undefined;
     const setDisplayMediaRequestHandler = vi.fn((h: typeof handler, opts?: unknown) => {

@@ -17,6 +17,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  *
  * @param request The incoming request.
  * @returns A redirect to /login (pages), a 401 JSON response (API routes), or "continue".
+ * Called from: Next.js, before routing, for every request that config.matcher selects
  */
 export function proxy(request: NextRequest) {
   if (getSessionCookie(request)) {
@@ -31,6 +32,9 @@ export function proxy(request: NextRequest) {
   return NextResponse.redirect(new URL('/login', request.url));
 }
 
+/**
+ * Which requests Next.js runs proxy() for. Signed-out pages and files must stay reachable.
+ */
 export const config = {
   // Run on everything except: the sign-in page, Better Auth's own endpoints (sign-in must work
   // without a cookie), Next.js build files, and static files with an extension (icons, models).

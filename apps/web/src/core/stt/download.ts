@@ -207,7 +207,13 @@ export async function downloadModelFiles(
   let doneBytes = 0;
   let lastReported = -1;
 
-  /** Reports progress when it moved by at least 0.5%, or when forced (end of a file). */
+  /**
+   * Reports progress when it moved by at least 0.5% (so the page is not flooded), or when forced.
+   *
+   * @param file        Name of the file being downloaded (shown with the progress).
+   * @param loadedBytes Bytes of that file received so far.
+   * @param force       True at the end of a file, to report even a small step.
+   */
   const report = (file: string, loadedBytes: number, force: boolean) => {
     const fraction = progressFraction(loadedBytes, totalBytes);
     if (!force && fraction - lastReported < 0.005) return;

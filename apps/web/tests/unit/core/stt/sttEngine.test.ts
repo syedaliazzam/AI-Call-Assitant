@@ -11,7 +11,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSttEngine, type SttEngineDeps } from '@/core/stt/sttEngine';
 import type { FromWorker, ToWorker } from '@/core/stt/protocol';
 
-/** A fake worker that records posted messages and lets the test send replies. */
+/**
+ * A fake worker that records posted messages and lets the test send replies.
+ *
+ * @returns The worker, the messages posted to it, and reply() to answer as the worker.
+ */
 function fakeWorker() {
   const posted: { message: ToWorker; transfer: Transferable[] }[] = [];
   const worker = {
@@ -27,7 +31,11 @@ function fakeWorker() {
   return { worker, posted, reply };
 }
 
-/** A fake AudioContext. */
+/**
+ * A fake AudioContext with the calls the engine makes (worklet module, nodes, close).
+ *
+ * @returns The context.
+ */
 function fakeAudioContext() {
   return {
     sampleRate: 16_000,
@@ -49,7 +57,12 @@ class FakeWorkletNode {
   }
 }
 
-/** Builds the engine with fakes. */
+/**
+ * Builds the engine with fakes (worker, AudioContext, a fixed clock).
+ *
+ * @param options Engine options (the source is always local).
+ * @returns The engine, the fakes, and reply() to answer as the worker.
+ */
 function setup(options: Parameters<typeof createSttEngine>[0] = {}) {
   const fake = fakeWorker();
   const context = fakeAudioContext();

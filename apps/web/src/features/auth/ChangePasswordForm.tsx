@@ -28,6 +28,7 @@ const INITIAL_STATE: ChangePasswordState = {};
  *
  * @param props.action The server action to submit to.
  * @returns The form element.
+ * Rendered by: app/change-password/page.tsx
  */
 export function ChangePasswordForm({ action }: ChangePasswordFormProps) {
   const [state, formAction, pending] = useActionState(action, INITIAL_STATE);

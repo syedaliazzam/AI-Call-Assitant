@@ -57,7 +57,12 @@ export interface LivePageProps {
   sessionId: string;
 }
 
-/** No-op subscription: the platform kind never changes while the page is open. */
+/**
+ * No-op subscription for useSyncExternalStore: the platform kind never changes while the page
+ * is open.
+ *
+ * @returns An unsubscribe function that does nothing.
+ */
 const subscribeNever = () => () => {};
 
 /**
@@ -98,10 +103,12 @@ function channelEndedMessage(speaker: Speaker, platform: 'desktop' | 'browser'):
 }
 
 /**
- * The live session screen.
+ * The live session screen: the Connect view first, then the live transcript of both channels.
+ * It owns the speech-to-text engine and the call capture for the session.
  *
  * @param props See LivePageProps.
  * @returns The Connect view or the live view.
+ * Rendered by: app/(app)/live/[id]/page.tsx
  */
 export function LivePage({ sessionId }: LivePageProps) {
   // Display only (instructions and messages); behaviour differences live in src/platform.

@@ -26,7 +26,12 @@ vi.stubEnv('KITE_MODEL_SMART', 'claude-sonnet-5-5');
 
 const { describeClaudeError, streamReply } = await import('@/server/claude');
 
-/** Reads a whole streamReply() generator. */
+/**
+ * Reads a whole streamReply() generator.
+ *
+ * @param generator The generator under test.
+ * @returns The text pieces it yielded and the value it returned.
+ */
 async function collect(generator: AsyncGenerator<string, unknown>) {
   const pieces: string[] = [];
   let next = await generator.next();

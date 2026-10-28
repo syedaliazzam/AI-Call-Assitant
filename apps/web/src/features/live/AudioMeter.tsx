@@ -26,6 +26,7 @@ export interface AudioMeterProps {
  *
  * @param props See AudioMeterProps.
  * @returns The meter.
+ * Rendered by: LivePage.tsx (one per channel)
  */
 export function AudioMeter({ speaker, level, inactive = false, compact = false }: AudioMeterProps) {
   const style = SPEAKER_STYLE[speaker];
