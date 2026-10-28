@@ -152,6 +152,10 @@ export interface PermissionQuery {
  *   NotAllowedError (measured on Day 2). What is captured (screen + system audio, no picker) is
  *   decided in media.ts; this only lets the request reach it. See permissionForRequest() for
  *   how Electron 44 names that request.
+ * - 'persistent-storage' (navigator.storage.persist()): keeps Kite's local sessions and
+ *   documents (IndexedDB) from being cleared when the disk is short of space. Electron routes
+ *   persist() through these handlers (Electron session docs, checked 2026-10-28), so without
+ *   this grant it always fails in the desktop app, while Chrome may grant it. Day 3, ADR-0024.
  * Camera, notifications, location and everything else is denied.
  *
  * @param query         The permission, requesting URL and media types.
@@ -161,7 +165,9 @@ export interface PermissionQuery {
  */
 export function isPermissionAllowed(query: PermissionQuery, allowedOrigin: string): boolean {
   if (!isAllowedUrl(query.requestingUrl, allowedOrigin)) return false;
-  if (query.permission === 'display-capture') return true;
+  if (query.permission === 'display-capture' || query.permission === 'persistent-storage') {
+    return true;
+  }
   if (query.permission !== 'media') return false;
   const types = query.mediaTypes ?? [];
   return types.length > 0 && types.every((type) => type === 'audio');

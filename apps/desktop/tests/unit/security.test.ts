@@ -4,8 +4,8 @@
  * - only http: and https: links ever reach shell.openExternal (file:, javascript:, custom
  *   schemes and invalid URLs are refused), and test mode records instead of opening;
  * - lockNavigation() cancels navigation/redirects to other origins and denies every new window;
- * - only an audio-only 'media' request and 'display-capture' (getDisplayMedia, answered by
- *   media.ts) from the Kite origin are granted; every other origin gets neither;
+ * - only an audio-only 'media' request, 'display-capture' (getDisplayMedia, answered by
+ *   media.ts) and 'persistent-storage' from the Kite origin are granted; other origins get none;
  * - the web preferences keep the sandbox, context isolation and no Node.js.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -208,6 +208,21 @@ describe('isPermissionAllowed', () => {
     expect(
       isPermissionAllowed(
         { permission: 'display-capture', requestingUrl: 'https://evil.example.com/' },
+        ORIGIN,
+      ),
+    ).toBe(false);
+  });
+
+  it('grants persistent-storage (navigator.storage.persist) to the Kite origin only', () => {
+    expect(
+      isPermissionAllowed(
+        { permission: 'persistent-storage', requestingUrl: `${ORIGIN}/` },
+        ORIGIN,
+      ),
+    ).toBe(true);
+    expect(
+      isPermissionAllowed(
+        { permission: 'persistent-storage', requestingUrl: 'https://evil.example.com/' },
         ORIGIN,
       ),
     ).toBe(false);
