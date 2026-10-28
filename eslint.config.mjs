@@ -142,6 +142,46 @@ export default defineConfig([
     },
   },
 
+  // CLAUDE.md commenting standard, rule 5: every field of every interface and object-shaped type
+  // alias (exported or not, including nested object types and each object in a union) has a
+  // JSDoc comment saying what it means, its unit and any special values.
+  // The same plugin is registered a second time as "jsdoc-fields" because ESLint allows one set
+  // of options per rule: the rule-2 check above is limited to exports (publicOnly), and this
+  // one must cover every type. Inline parameter types such as `fn(options: { x: number })` are
+  // not included: the function's @param lines already describe them.
+  {
+    files: PACKAGE_FILES,
+    plugins: { 'jsdoc-fields': jsdoc },
+    settings: { jsdoc: { mode: 'typescript' } },
+    rules: {
+      'jsdoc-fields/require-jsdoc': [
+        'error',
+        {
+          publicOnly: false,
+          // Functions and classes are rule 2's job (above); only type members here.
+          require: {
+            FunctionDeclaration: false,
+            FunctionExpression: false,
+            ArrowFunctionExpression: false,
+            ClassDeclaration: false,
+            MethodDefinition: false,
+          },
+          // Members of: an interface; the object (or each object of a union / intersection) a
+          // type alias names; and a field whose own type is an object (or an object or null).
+          // Not members of method parameter/return types or generic arguments: those are
+          // described by @param / @returns where they are used.
+          contexts: [
+            'TSInterfaceBody > :matches(TSPropertySignature, TSMethodSignature)',
+            'TSTypeAliasDeclaration > TSTypeLiteral > :matches(TSPropertySignature, TSMethodSignature)',
+            'TSTypeAliasDeclaration > :matches(TSUnionType, TSIntersectionType) > TSTypeLiteral > :matches(TSPropertySignature, TSMethodSignature)',
+            'TSPropertySignature > TSTypeAnnotation > TSTypeLiteral > :matches(TSPropertySignature, TSMethodSignature)',
+            'TSPropertySignature > TSTypeAnnotation > TSUnionType > TSTypeLiteral > :matches(TSPropertySignature, TSMethodSignature)',
+          ],
+        },
+      ],
+    },
+  },
+
   // CLAUDE.md: "All desktop/browser differences live in apps/web/src/platform/".
   // Outside that folder, code must use getPlatform() / isDesktop() instead of the bridge.
   {

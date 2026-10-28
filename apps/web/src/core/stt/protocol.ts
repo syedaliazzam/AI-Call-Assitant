@@ -99,7 +99,14 @@ export type ToWorker =
       /** Which model. */
       model: SttModelId;
       /** Runtime files, from our own origin (see models.ts). */
-      runtime: { loader: DownloadFile; wasm: DownloadFile; api: DownloadFile };
+      runtime: {
+        /** Emscripten loader script (defines the global `Module`). */
+        loader: DownloadFile;
+        /** The compiled sherpa-onnx WebAssembly code. */
+        wasm: DownloadFile;
+        /** sherpa-onnx's JavaScript API (createOnlineRecognizer). */
+        api: DownloadFile;
+      };
       /** Model files (local or remote). */
       files: {
         /** Encoder. */

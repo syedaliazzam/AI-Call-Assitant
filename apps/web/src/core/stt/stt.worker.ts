@@ -47,13 +47,30 @@ interface OnlineRecognizer extends RecognizerLike {
 
 /** The parts of the Emscripten `Module` object the worker sets or calls. */
 interface EmscriptenModule {
+  /** Turns a file name the runtime asks for into a URL (next to the verified .wasm). */
   locateFile?: (path: string) => string;
+  /** The verified .wasm bytes, so the runtime does not fetch the file a second time. */
   wasmBinary?: ArrayBuffer;
+  /**
+   * Supplies the runtime's bundled data package. Kite returns an empty buffer, so the bundle's
+   * 191 MB model is never downloaded (our pinned model files are written instead).
+   */
   getPreloadedPackage?: (name: string, size: number) => ArrayBuffer;
+  /** Called once the WebAssembly runtime has started. */
   onRuntimeInitialized?: () => void;
+  /** Receives the runtime's console output (Kite drops it: model details, not timings). */
   print?: (text: string) => void;
+  /** Receives the runtime's error output (dropped, like print). */
   printErr?: (text: string) => void;
+  /**
+   * Emscripten file system: creates a folder (the model folder /kite-model). Set by the runtime
+   * once it has started.
+   */
   FS_createPath?: (parent: string, path: string, canRead: boolean, canWrite: boolean) => void;
+  /**
+   * Emscripten file system: writes a file from bytes (each verified model file). Set by the
+   * runtime once it has started.
+   */
   FS_createDataFile?: (
     parent: string,
     name: string,
@@ -68,10 +85,15 @@ interface EmscriptenModule {
 
 /** The worker's global scope, as far as this file needs it. */
 interface WorkerScope {
+  /** The Emscripten Module object; the worker sets it before running the loader script. */
   Module?: EmscriptenModule;
+  /** Defined by sherpa-onnx's API script (sherpa-onnx-asr.js) once it has run. */
   createOnlineRecognizer?: (runtime: EmscriptenModule, config: unknown) => OnlineRecognizer;
+  /** Runs scripts in this classic worker (used with Blob URLs of the verified bytes). */
   importScripts: (...urls: string[]) => void;
+  /** Sends a message to the page. */
   postMessage(message: FromWorker, transfer?: Transferable[]): void;
+  /** Handles messages from the page. */
   onmessage: ((event: MessageEvent<ToWorker>) => void) | null;
 }
 
@@ -89,10 +111,15 @@ function send(message: FromWorker): void {
 
 /** Paths of the model files inside the WebAssembly file system, once written. */
 interface ModelPaths {
+  /** Path of the encoder (.onnx) in the runtime's file system, for example /kite-model/… */
   encoder: string;
+  /** Path of the decoder (.onnx). */
   decoder: string;
+  /** Path of the joiner (.onnx). */
   joiner: string;
+  /** Path of tokens.txt (the model's vocabulary). */
   tokens: string;
+  /** Path of bpe.vocab, derived from bpe.model; needed to encode hotwords. */
   bpeVocab: string;
 }
 
