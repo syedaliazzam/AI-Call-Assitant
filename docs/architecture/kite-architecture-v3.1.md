@@ -1,23 +1,24 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.1.2"
+version: "3.2.0"
 status: "Current: the single document the team builds from"
-date: "2026-10-26"
+date: "2026-10-28"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
-header: "Kite v3.1.2 · architecture and build plan"
+header: "Kite v3.2.0 · architecture and build plan"
 page_breaks: "1,3,5,7,9,11,13"
 ---
 
-# Kite: Architecture and 7-Day Build Plan v3.1.2
+# Kite: Architecture and 7-Day Build Plan v3.2.0
 
 ## Document control
 
 | Field | Value |
 |---|---|
-| Version | 3.1.2, **Current**: the only document to build from |
-| Date | 26 October 2026 |
+| Version | 3.2.0, **Current**: the only document to build from |
+| Date | 28 October 2026 |
+| Changes in 3.2.0 | Day 2 (audio and transcript), matching what was built and measured. §6.1: speech-to-text is streaming-only (Zipformer 2023-06-21 + hotwords, energy gate instead of Silero VAD, echo filter; ADR-0020 Accepted; a second pass was tried and rejected). §6.2: measured lag and latency. §7.1: the real `core/audio`, `core/stt`, `core/transcript`, `features/live` and `platform` files. §7.3: `media.ts` and the files built so far. §9.1: STT files, tests and `next.config.ts` (no COOP/COEP). §10.1: no COOP/COEP headers; model files from Hugging Face, runtime from our origin (ADR-0023); deployment is CLI-only with no Git integration or automatic previews (as already practised since Day 1). §11: the STT integration test (Playwright, fake microphone) and its CI job. §13: battery, model size, macOS loopback and transcription accuracy (the main known limitation). The DOCX version of this document is regenerated separately. |
 | Changes in 3.1.2 | §8.3: the desktop shell allows exactly one origin (the Kite URL's). Any future payment or SSO page on another origin must be added to the allowlist on purpose. Day 1 Stage 5. |
 | Changes in 3.1.1 | §5 (Admin: users) and §8.2: the server **generates** the temporary password (14 readable random characters) when an admin creates a user or resets a password, and shows it to the admin once; the admin no longer types one in. Matches Day 1 Stage 2 and the create-admin script. |
 | Changes in 3.1 | Sign-in uses **email + password accounts created by an admin** (Better Auth, admin page, free Neon Postgres for accounts only) instead of Google/Microsoft sign-in (ADR-0022). Deployment uses the **Vercel CLI**, and the Vercel-provided `*.vercel.app` address until the company domain is connected. |
@@ -154,7 +155,7 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 ![Figure 2. Live answer flow, from audio to a streamed answer in the overlay](diagrams/v3-flow.png)
 
 1. **Capture.** Mic → "You" channel. Other side → "Them" channel. The two are never mixed.
-2. **Transcribe.** An AudioWorklet resamples each channel to 16 kHz and sends it to a Web Worker running sherpa-onnx (WebAssembly) + Silero VAD. The worker emits **partial** and **final** text. Finals are saved to IndexedDB.
+2. **Transcribe.** An AudioWorklet resamples each channel to 16 kHz and sends it straight to one Web Worker running sherpa-onnx v1.13.7 (WebAssembly, single-threaded) with the streaming Zipformer 2023-06-21 model and session **hotwords** (ADR-0020). Each channel has its own recognizer stream and an **energy gate** that skips silence (no Silero VAD). An utterance ends by the model's endpoint rule or after 1.2 s with no new words. The worker emits **partial** and **final** text; each final carries its end of speech, for latency measurement. The transcript core labels lines "You"/"Them" and hides "You" lines of 4+ words that echo "Them" through the speakers. Finals are saved to IndexedDB (Day 3). Streaming-only: a second, non-streaming pass was measured on Day 2 and rejected (ADR-0020). Model files load from pinned Hugging Face URLs with SHA-256 checks and are cached on the device (ADR-0023).
 3. **Trigger.** The user presses the hotkey or button (or auto-answer fires, section 7.5). The question is the "Them" lines since the user last spoke.
 4. **Request.** The client sends `POST /api/answer` with the session context, the last ~3 minutes of transcript and the question.
 5. **Claude.** The server builds the prompt from a **cached block** (system rules + session details + documents, marked with `cache_control` so Claude reuses it) and a **fresh block** (transcript + question). It calls Haiku with streaming and forwards each text delta to the client immediately (Server-Sent Events).
@@ -164,11 +165,13 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 
 | Stage | Target (p50) | Target (p95) | How we keep it fast |
 |---|---|---|---|
-| Speech → partial text on screen | ≤ 0.8 s | ≤ 1.5 s | Streaming STT in a worker; small model; VAD skips silence |
+| Speech → partial text on screen | ≤ 0.8 s | ≤ 1.5 s | Streaming STT in a worker; small model; energy gate skips silence |
 | Hotkey → request leaves the laptop | ≤ 50 ms | ≤ 100 ms | Context already built in memory; transcript window precomputed |
 | Hotkey → **first answer words** | **≤ 1.0 s** | **≤ 1.8 s** | Haiku; prompt-cache hit (pre-warmed at session start); no extended thinking; SSE with no buffering; Vercel function region near Anthropic (`iad1`) |
 | Hotkey → **readable headline** (~20 tokens) | **≤ 1.5 s** | **≤ 2.5 s** | Headline-first answer format; `max_tokens` ≈ 400 |
 | ParakeetAI (reference) | No published figure | — | Third-party reports of 2 to 4 s (unverified) |
+
+**Measured on Day 2** (`docs/testing/benchmark-results.md`): speech → first partial (lag) 347–973 ms in Chrome and the desktop app, plugged in and on battery (after the Day 2 lag fix); end of speech → final line p50 1.5–1.7 s (p95 1.9–2.3 s). Accuracy is the weak point: about 27% WER on the 3 test sentences, with names and technical terms often wrong in a real call (§13).
 
 These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platform (desktop macOS, desktop Windows, browser) with timestamps logged in the page, and write the measured p50/p95 into `docs/testing/benchmark-results.md`. If a target is missed, the levers are, in order:
 
@@ -192,15 +195,15 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 |---|---|---|
 | `features/dashboard` | Session list, filters, search | `Dashboard.tsx`, `SessionCard.tsx` |
 | `features/session-setup` | Two-step create/edit wizard, document upload | `SessionWizard.tsx`, `DetailsStep.tsx`, `PreferencesStep.tsx` |
-| `features/live` | Connect view, live view, compact view, answer panel, chat | `LivePage.tsx`, `ConnectPanel.tsx`, `TranscriptStrip.tsx`, `AnswerPanel.tsx`, `CompactView.tsx` |
+| `features/live` | Connect view, live view, compact view, answer panel, chat | Built on Day 2: `LivePage.tsx`, `ConnectPanel.tsx`, `TranscriptStrip.tsx`, `AudioMeter.tsx`, `HealthNotice.tsx`, `speakers.ts`, `demoHotwords.ts` (until Day 3 sessions). Later: `AnswerPanel.tsx`, `CompactView.tsx` |
 | `features/review` | Notes, transcript, delete | `SessionReview.tsx` |
-| `core/audio` | Get streams via the platform; AudioWorklet resampling to 16 kHz | `capture.ts`, `resampler.worklet.ts` |
-| `core/stt` | Web Worker with sherpa-onnx WASM + VAD; partial/final events; model loading and caching | `stt.worker.ts`, `sttClient.ts` |
-| `core/transcript` | Utterance list, last-N-minutes window, question selection | `transcript.ts`, `question.ts` |
+| `core/audio` | Get streams via the platform; AudioWorklet resampling to 16 kHz; audio levels for the meters | `capture.ts`, `resampler.worklet.ts`, `resample.ts`, `levels.ts`, `recordingStream.ts` (test recordings as a stream) |
+| `core/stt` | Engine (one worker, two channels); worker with sherpa-onnx WASM; per-channel decoding with energy gate and endpoint rules; pinned model list; verified download and caching; hotwords; health status; WER and timing helpers for the test page | `sttEngine.ts`, `stt.worker.ts`, `channel.ts`, `gate.ts`, `models.ts`, `download.ts`, `hotwords.ts`, `sentencepiece.ts`, `health.ts`, `protocol.ts`, `metrics.ts`, `wer.ts` |
+| `core/transcript` | Utterance list (You/Them), echo filter, line merging and display hold, last-N-minutes window; question selection (Day 4) | `transcript.ts`, `echo.ts`, `merge.ts`, `display.ts`; later `question.ts` |
 | `core/answer` | Calls `/api/answer`, reads SSE, cancel, retries, timings | `answerClient.ts` |
 | `core/documents` | PDF (pdf.js), DOCX (mammoth), TXT → text; size cap | `extract.ts` |
 | `core/storage` | IndexedDB via Dexie; repositories | `db.ts`, `sessions.ts`, `utterances.ts`, `answers.ts` |
-| `platform` | Platform adapter (section 3.3) | `types.ts`, `desktop.ts`, `browser.ts`, `index.ts` |
+| `platform` | Platform adapter (section 3.3); shared media helpers and capture errors | `types.ts`, `desktop.ts`, `browser.ts`, `index.ts`, `media.ts`, `errors.ts` |
 
 ### 7.2 Server (apps/web/src/server and apps/web/app/api)
 
@@ -253,12 +256,13 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 
 | File | Responsibility |
 |---|---|
-| `main.ts` | App start, single instance, workspace window loading the Kite URL (`*.vercel.app` now, `kite.company.com` later), tray |
-| `windows.ts` | Workspace window; live window (frameless, always-on-top, resizable) opened by `openCompactView` |
-| `media.ts` | `session.setDisplayMediaRequestHandler` → grants system-audio loopback for our origin only; microphone permission for our origin only |
-| `hotkeys.ts` | Global shortcuts → `webContents.send('hotkey', action)` |
-| `screenshot.ts` | `desktopCapturer` → PNG of the current display |
-| `protection.ts` | `setContentProtection(on)` on the live window; re-applied every time it is shown |
+| `main.ts` | App start, single instance, workspace window loading the Kite URL (`*.vercel.app` now, `kite.company.com` later), tray (built Day 1; tray later) |
+| `config.ts` | The Kite URL (default production; `--kite-url` or `KITE_URL` for development) and its single allowed origin (Day 1) |
+| `windows.ts` | Workspace window; live window (frameless, always-on-top, resizable) opened by `openCompactView` (Day 5) |
+| `media.ts` | `session.setDisplayMediaRequestHandler`: for the Kite origin only, approves `getDisplayMedia` with **system-audio loopback and no picker**; every other origin is denied. Permission handler: microphone for the Kite origin only; camera, notifications and everything else denied (Day 2). Windows verified; macOS loopback not yet verified (§13). |
+| `hotkeys.ts` | Global shortcuts → `webContents.send('hotkey', action)` (Day 4) |
+| `screenshot.ts` | `desktopCapturer` → PNG of the current display (Day 5) |
+| `protection.ts` | `setContentProtection(on)` on the live window; re-applied every time it is shown (Day 5) |
 | `preload.ts` | Exposes `window.kiteDesktop` (typed in `packages/shared`) with the methods in section 3.3. Nothing else. |
 | `security.ts` | Blocks navigation to any other origin; opens external links in the system browser; `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false` |
 
@@ -364,10 +368,18 @@ kite/
 │   │   │   ├── platform/             # desktop vs browser adapter
 │   │   │   ├── server/               # server-only: claude, prompt, auth, db
 │   │   │   └── ui/                   # shared buttons, dialogs, layout
-│   │   ├── scripts/create-admin.ts   # creates the first admin account
-│   │   ├── public/models/            # STT + VAD model files
-│   │   ├── tests/                    # unit, integration, e2e
-│   │   ├── next.config.ts            # COOP/COEP headers
+│   │   ├── scripts/
+│   │   │   ├── create-admin.ts       # creates the first admin account
+│   │   │   ├── fetch-models.ts       # pinned STT files: runtime (every build), model (dev, CI)
+│   │   │   └── check-stt-runtime.ts  # fails the build if a runtime file is missing or wrong
+│   │   ├── public/stt-runtime/       # STT runtime, unpacked at build time (git-ignored)
+│   │   ├── public/models/stt/        # STT model files for development and CI (git-ignored;
+│   │   │                             #   production loads them from Hugging Face, ADR-0023)
+│   │   ├── tests/
+│   │   │   ├── unit/                 # Vitest, same paths as src/ and scripts/
+│   │   │   ├── integration/          # Playwright: STT pipeline with a fake microphone
+│   │   │   └── fixtures/audio/       # official LibriSpeech test recordings + SOURCES.md
+│   │   ├── next.config.ts            # no COOP/COEP headers (single-threaded STT runtime)
 │   │   └── package.json
 │   └── desktop/                      # thin Electron shell
 │       ├── src/
@@ -418,9 +430,11 @@ kite/
 | Function region | `iad1` (US East), close to the Claude API (verify on Day 4 with timings) |
 | Function runtime | Node.js; streaming responses for `/api/answer` and `/api/notes` |
 | Environment variables | `ANTHROPIC_API_KEY`, `DATABASE_URL` (added automatically by the Neon integration), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `KITE_MODEL_FAST=claude-haiku-5-5`, `KITE_MODEL_SMART=claude-sonnet-5-5` |
-| Deployment | **Vercel CLI**: `vercel link` (once), `vercel env add` / `vercel env pull`, `vercel deploy` (preview), `vercel deploy --prod` (production). GitHub pushes also deploy automatically once the repo is connected. |
-| Headers | `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` (WebAssembly threads for STT) |
-| Previews | Every pull request gets a preview URL (Vercel Git integration) |
+| Deployment | **Vercel CLI only**: `vercel link` (once), `vercel env add` / `vercel env pull`, `vercel deploy` (preview), `vercel deploy --prod` (production). There is no Git integration: pushes and pull requests do not deploy. |
+| Build | `pnpm run stt:runtime && next build`: the STT runtime (13.3 MB) is downloaded from the pinned sherpa-onnx release (175 MB archive), checked by SHA-256 and served from `/stt-runtime/v1.13.7/` (ADR-0023) |
+| Speech-to-text model files | Not deployed. The browser loads them from pinned Hugging Face commit URLs, checks each SHA-256 and caches them in Cache Storage (ADR-0023). |
+| Headers | No COOP/COEP: the STT runtime is single-threaded and needs no cross-origin isolation (ADR-0020). |
+| Previews | `vercel deploy` by hand when needed (no automatic previews) |
 
 ### 10.2 Company domain
 
@@ -453,7 +467,8 @@ kite/
 | Level | What | Tool | When |
 |---|---|---|---|
 | Unit | Prompt builder, question selection, transcript window, document extraction, storage repositories (fake IndexedDB), SSE parser, platform adapters (mocked APIs), auto-answer rule | Vitest | Every PR |
-| Integration | `/api/answer` with a mocked Claude stream (deltas, errors, cancel); STT worker on recorded WAV files → expected text | Vitest | Every PR |
+| Integration | `/api/answer` with a mocked Claude stream (deltas, errors, cancel) | Vitest | Every PR |
+| Integration (STT) | Official LibriSpeech recordings played by Chromium's fake microphone through the real worklet → worker → recognizer → transcript; a final line and WER ≤ 10% per recording (`pnpm --filter web test:stt`) | Playwright (Chromium) | Every PR and push to `main` (`stt-integration` job; model files cached by their pinned SHA-256s) |
 | End-to-end (browser) | Sign-in (seeded test user) → create session → upload doc → live page with **fake microphone audio** (Chrome `--use-file-for-fake-audio-capture`) → transcript appears → answer (mocked Claude) appears | Playwright | Every PR |
 | Desktop smoke | Shell launches, loads the app, `window.kiteDesktop` exists, live window opens, protection toggles | Playwright for Electron | Every PR (macOS + Windows runners) |
 | Manual | Real calls in Zoom, Teams and Meet × desktop macOS, desktop Windows, browser; screen-share check; fresh installs | Checklist | Day 5 to 7 |
@@ -592,9 +607,11 @@ Release checks (all must pass):
 
 | Risk | When | Fallback |
 |---|---|---|
-| WebAssembly STT too slow on some laptops | Day 1 | Smaller model; one channel at a time; on desktop, run the same sherpa-onnx model natively in the shell (Node addon) behind the same `sttClient` interface |
-| STT model files too large for Vercel static hosting | Day 1 | Host the model in Vercel Blob storage; the browser caches it after the first load |
-| macOS system-audio loopback fails in Electron | Day 2 | Use the browser path inside the shell (share-picker with audio), or a free virtual audio device (BlackHole) |
+| **Transcription accuracy: names and technical terms often wrong** (Day 2 real call; ≈27% WER on the test sentences). The main known limitation. | Day 2 (measured) | In order: session hotwords from the session's details and documents (Day 3); the answer prompt tells Claude the transcript may contain misheard names and terms (Day 4); a native sherpa-onnx engine in the desktop app with a larger model, spiked after Day 4 (own ADR). A second pass in WebAssembly was tried and rejected (ADR-0020). |
+| WebAssembly STT too slow on some laptops, especially on battery | Day 1–2 (measured) | Two channels used 0.30–0.44 of one core plugged in, **0.86 on battery** (still keeping up; the "Plug in your laptop" hint appears above 0.5). Fallbacks: the hint; one channel at a time; the native desktop engine behind `src/platform/` |
+| STT model download size (204.5 MB first load) | Day 2 | Resolved for hosting: pinned Hugging Face URLs with SHA-256 checks and Cache Storage (ADR-0023); fallback Vercel Blob (Pro), Cloudflare R2 or a company server by changing only the URLs. Remaining: the first load takes about 30 s; Day 3 starts it when a session opens |
+| Short echoes on speakers ("OKAY SO") | Day 2 (measured) | The echo filter judges only lines of 4+ words, so short replies are never hidden by mistake. Recommend headphones in the Connect view |
+| macOS system-audio loopback fails in Electron | Day 2 (not yet verified: no Mac; deferred to Day 6/7) | Use the browser path inside the shell (share-picker with audio), or a free virtual audio device (BlackHole) |
 | Neon free-plan limits reached | Any | Upgrade the Neon plan; only accounts and sessions are stored, so data is tiny |
 | Latency above target | Day 4 | Levers in section 6.2; keep Haiku; trim context |
 | Behind schedule by Day 5 | Day 5 | Drop auto-answer (F12) and notes (F11) to v1.1; keep F1 to F10 |

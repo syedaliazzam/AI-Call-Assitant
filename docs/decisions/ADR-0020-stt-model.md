@@ -1,7 +1,7 @@
 # ADR-0020: Speech-to-text model (WebAssembly, v3.0)
 
-- **Status:** **Accepted** (2026-10-28) for streaming-only: Zipformer 2023-06-21 with hotwords, two channels with the energy gate, the echo filter, model files from Hugging Face. Accuracy is still above the 20% bar (≈27% overall). The second pass tried in Day 2 Stage 5 did not meet the bar and was removed (see "Second pass (Day 2, Stage 5): tried and rejected"). Next levers: session hotwords (Day 3), then the native desktop engine (Day 6 option).
-- **Date:** 2026-10-24 (created); 2026-10-27 (Day 1 spike results; Day 2 hosting and two-channel engine); 2026-10-28 (Day 2 Stage 5: second pass measured and rejected; Accepted for streaming-only)
+- **Status:** **Accepted** (2026-10-28) for streaming-only: Zipformer 2023-06-21 with hotwords, two channels with the energy gate, the echo filter, model files from Hugging Face. Accuracy is still above the 20% bar (≈27% overall), and in the Day 2 real call names and technical terms were often wrong (see "Real-call result"). This is Kite's main known limitation. The second pass tried in Day 2 Stage 5 did not meet the bar and was removed (see "Second pass (Day 2, Stage 5): tried and rejected"). Next levers: session hotwords (Day 3); telling Claude that the transcript is imperfect (Day 4); a native desktop engine spike after Day 4.
+- **Date:** 2026-10-24 (created); 2026-10-27 (Day 1 spike results; Day 2 hosting and two-channel engine); 2026-10-28 (Day 2 Stage 5: second pass measured and rejected; Accepted for streaming-only. Stage 7: real-call result)
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §6, §12 Day 1
 - **Supersedes / superseded by:** none
 
@@ -46,8 +46,9 @@ Both models are sherpa-onnx streaming Zipformer English (candidate 1). Both run 
 1. **Engine.** Use sherpa-onnx streaming Zipformer English **2023-06-21** with **hotwords** as the working speech-to-text engine for Day 2. It runs in a Web Worker with `modified_beam_search` (4 active paths). Hotwords are needed for names. Sources and versions are pinned with SHA-256 in `apps/web/scripts/fetch-models.ts`.
 2. **Accuracy is above the bar, and this is accepted for now (Day 2 Stage 5).** Day 1: overall WER ≈25% (sentence 1: 5%, sentence 2: 24%, sentence 3: 53%). Day 2 Stage 5 baseline: 27.5% (0%, 29%, 60%). The bar is 20%. Sentence 3 (names) is the weak point.
 3. **Two passes were tried on Day 2 and rejected.** A second, non-streaming model re-decoded each finished utterance. No configuration came clearly under 20% (see "Second pass (Day 2, Stage 5): tried and rejected"), so Kite stays streaming-only. The developer accepted this ADR for streaming-only on 2026-10-28. The next levers, in order:
-   - **session hotwords (Day 3):** names and terms from the session's details and documents. Sentence 3's errors are mostly names, which is what hotwords fix;
-   - **a native sherpa-onnx engine in the desktop app (Day 6 option)**, if accuracy is still a problem after Day 4. It is multi-threaded and faster than WebAssembly, so it could run a larger, more accurate model. It would live behind `src/platform/` and need its own ADR.
+   - **session hotwords (Day 3):** names and terms from the session's details and documents. Sentence 3's errors and the real-call errors are mostly names and terms, which is what hotwords target;
+   - **tell Claude the transcript is imperfect (Day 4):** the answer prompt says the transcript comes from live speech recognition and may contain misheard names and terms, so Claude should read through likely mishearings using the session's documents instead of repeating them;
+   - **a native sherpa-onnx engine in the desktop app (spike after Day 4; Day 6 option)**, if accuracy is still a problem after Day 4. It is multi-threaded and faster than WebAssembly, so it could run a larger, more accurate model. It would live behind `src/platform/` and need its own ADR.
 4. **Model A (2023-06-26) is rejected for accuracy.** Hotwords did not help it. It was removed from the test page's picker in Day 2 Stage 5.
 5. **Size limit raised to 250 MB, for now.** The download is 204.1 MB. Conditions:
    - it is a one-time download, then cached in the browser's Cache Storage. Cached loads measured about 2.1 s;
@@ -106,6 +107,7 @@ Day 1 kept the model files out of git and out of Vercel uploads, because a Hobby
   2. extracts only the three files and checks each one;
   3. runs `scripts/check-stt-runtime.ts`, which fails the build if a file is missing or wrong.
 - **Vercel can run it:** the build image (Amazon Linux 2023) lists `tar`, `bsdtar` and `bzip2` as pre-installed (Vercel build-image docs, checked 2026-10-27). Locally, the step took 1 min 16 s from scratch and skips the download when the files are already present and verified.
+- **GNU tar (fixed in Day 2 Stage 6):** the archive stores its files as `./<folder>/<file>`. GNU tar (Linux CI, Vercel) does not match `<folder>/<file>` against that, so the step first failed in CI. It now lists the archive and extracts the names exactly as listed. The production build on Vercel passed after the fix (Stage 7). Full hosting decision: ADR-0023.
 - **The worker runs the runtime from its verified bytes** (through Blob URLs), not from a second fetch.
 
 **Development:** `pnpm dev` loads model files from `public/models/stt/` (source `local`, works offline after `pnpm --filter web fetch-models`). Production builds use `remote`. `NEXT_PUBLIC_STT_SOURCE` overrides either.
@@ -208,6 +210,17 @@ The full implementation is kept in git history in commit **`6d3fb42`** ("wip(web
 - end-of-speech detection in each channel (the last loud 10 ms frame, never after the last text change; `gate.ts` and `channel.ts`). Every final line now carries `speechEnd`, and the engine reports end of speech → final line latency;
 - `percentile()` in `metrics.ts`;
 - `/dev/stt-test` shows the latency at p50/p95 and the overall WER across the sentences read.
+
+### Real-call result (Day 2, Stage 7): the main known limitation
+
+A real call with a colleague in the desktop app (Windows, production build). Only the outcome is recorded, not the call's text:
+- **Speakers and pauses:** "You" and "Them" were labelled correctly, and lines broke at natural pauses.
+- **Names and technical terms were often wrong.** The company name "Paramount Intelligence" came out as one invented word, and "chatbots and AI agents" as unrelated words. This matches sentence 3 of the test (names, 60% WER). The streaming model is weakest exactly where an answer assistant needs it most.
+- **Echo on speakers:** short echoes (one or two words, such as "GONE", "OKAY SO") slipped through. This is the known rule: the echo filter only judges lines of 4 words or more, so short replies are never hidden.
+
+The desktop app against production worked: no picker, both channels, and 7 echo lines hidden. The browser real call (Meet in a Chrome tab) was skipped because it uses the same engine; tab-audio capture had already been checked with a shared tab in production. macOS is deferred to Day 6/7 (no Mac available).
+
+**What this means:** answers on Day 4 must not depend on names being transcribed exactly. The levers in Decision item 3 apply in order: session hotwords (Day 3), the Day 4 prompt note, then the desktop native engine spike after Day 4.
 
 ## Validation
 
