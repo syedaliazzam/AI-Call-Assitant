@@ -15,7 +15,14 @@
  * touches IndexedDB, which only exists in the browser.
  */
 import Dexie, { type EntityTable } from 'dexie';
-import type { Session, StoredAnswer, StoredDocument, StoredNotes, StoredUtterance } from './types';
+import type {
+  Session,
+  StoredAnswer,
+  StoredDocument,
+  StoredNotes,
+  StoredSettings,
+  StoredUtterance,
+} from './types';
 
 /** Name of the IndexedDB database. Changing it would orphan every user's existing data. */
 export const DB_NAME = 'kite';
@@ -34,6 +41,8 @@ export class KiteDb extends Dexie {
   declare answers: EntityTable<StoredAnswer, 'id'>;
   /** AI notes, one per session (keyed by sessionId). Declared now; written from Day 5. */
   declare notes: EntityTable<StoredNotes, 'sessionId'>;
+  /** App settings on this device (version 2): the default preferences for new sessions. */
+  declare settings: EntityTable<StoredSettings, 'id'>;
 
   /**
    * Declares the schema. Only indexed fields are listed (Dexie stores every field of a row);
@@ -55,6 +64,12 @@ export class KiteDb extends Dexie {
       answers: 'id, sessionId',
       // One set of notes per session, so the session id is the key.
       notes: 'sessionId',
+    });
+    // Version 2 (Day 3 Stage 3): adds the settings store (default preferences for new
+    // sessions). Only the new store is listed; the version-1 stores carry over unchanged, and
+    // no upgrade() is needed because no existing row changes.
+    this.version(2).stores({
+      settings: 'id',
     });
   }
 }

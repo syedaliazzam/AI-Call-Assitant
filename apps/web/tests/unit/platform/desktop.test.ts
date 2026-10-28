@@ -1,6 +1,7 @@
 /**
  * Tests for apps/web/src/platform/desktop.ts:
- * createDesktopPlatform() reports the shell's version and OS from the bridge and opens the
+ * createDesktopPlatform() reports the shell's version and OS from the bridge, skips the Choose
+ * platform dialog (offersPlatformChoice false), and opens the
  * microphone like the browser does; getOtherSideStream() asks for audio + video, stops and
  * removes the video track at once, returns the audio as 'system-loopback', and turns the two
  * macOS failure modes into typed errors (no audio track → 'not-supported'; an audio track that
@@ -17,8 +18,9 @@ const mac = createDesktopPlatform({ version: '1.2.3', os: 'mac' });
 const windows = createDesktopPlatform({ version: '1.2.3', os: 'windows' });
 
 describe('createDesktopPlatform', () => {
-  it('reports kind, version and os from the bridge', () => {
+  it('reports kind, version and os from the bridge, and opens sessions directly', () => {
     expect(mac.kind).toBe('desktop');
+    expect(mac.offersPlatformChoice).toBe(false);
     expect(mac.version).toBe('1.2.3');
     expect(mac.os).toBe('mac');
   });

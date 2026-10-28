@@ -73,6 +73,8 @@ export interface DesktopPlatform extends Platform {
 export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
   return {
     kind: 'desktop',
+    // Already in the desktop app: sessions open directly, without the Choose platform dialog.
+    offersPlatformChoice: false,
     version: bridge.version,
     os: bridge.os,
 

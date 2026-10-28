@@ -39,6 +39,14 @@ export interface Platform {
   kind: 'desktop' | 'browser';
 
   /**
+   * Whether opening a session first shows the "Choose platform" dialog (Desktop app or Open in
+   * browser, architecture §5).
+   * - Browser: true, the user may prefer the desktop app for calls outside the browser.
+   * - Desktop: false; the session opens directly (the user has already chosen the app).
+   */
+  offersPlatformChoice: boolean;
+
+  /**
    * Opens the user's microphone (the "You" channel).
    * - Desktop: the page calls getUserMedia; the shell grants the microphone permission for the
    *   Kite origin only (apps/desktop/src/security.ts, Stage 5).

@@ -1,0 +1,76 @@
+/**
+ * Tests for apps/web/src/core/storage/settings.ts and the version-2 schema in db.ts, on an
+ * in-memory IndexedDB (fake-indexeddb): getSessionDefaults() returns the built-in defaults until
+ * defaults are saved and the saved ones after; deleteAllLocalData() resets them; and a device
+ * that still has the version-1 database keeps its sessions when version 2 adds the settings
+ * store. All data is invented.
+ */
+import 'fake-indexeddb/auto';
+import Dexie from 'dexie';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { DB_NAME, forgetDb } from '@/core/storage/db';
+import { getSession, listSessions } from '@/core/storage/sessions';
+import {
+  BUILT_IN_DEFAULTS,
+  getSessionDefaults,
+  saveSessionDefaults,
+} from '@/core/storage/settings';
+import type { SessionDefaults } from '@/core/storage/types';
+import { deleteAllLocalData } from '@/core/storage/wipe';
+import { resetDb, sessionInput } from './helpers';
+
+beforeEach(resetDb);
+
+/** Invented defaults different from the built-in ones. */
+const CUSTOM: SessionDefaults = {
+  model: 'smart',
+  style: { format: 'paragraph', length: 'medium', tone: 'professional' },
+  instructions: 'Invented instruction.',
+  saveTranscript: false,
+};
+
+describe('session defaults', () => {
+  it('are the built-in defaults until saved', async () => {
+    expect(await getSessionDefaults()).toEqual(BUILT_IN_DEFAULTS);
+  });
+
+  it('return what was saved', async () => {
+    await saveSessionDefaults(CUSTOM, 7);
+    expect(await getSessionDefaults()).toEqual(CUSTOM);
+  });
+
+  it('go back to the built-in defaults after "Delete all local data"', async () => {
+    await saveSessionDefaults(CUSTOM);
+    await deleteAllLocalData();
+    expect(await getSessionDefaults()).toEqual(BUILT_IN_DEFAULTS);
+  });
+});
+
+describe('schema version 2', () => {
+  it('keeps the sessions of a device that still has the version-1 database', async () => {
+    forgetDb();
+    // The database exactly as Day 3 Stage 1 created it (version 1, no settings store).
+    const v1 = new Dexie(DB_NAME);
+    v1.version(1).stores({
+      sessions: 'id, createdAt, type, status',
+      documents: 'id, sessionId',
+      utterances: 'id, sessionId',
+      answers: 'id, sessionId',
+      notes: 'sessionId',
+    });
+    await v1.table('sessions').add({
+      ...sessionInput(),
+      id: 'old-session',
+      createdAt: 1,
+      status: 'not-started',
+      lastActiveAt: null,
+    });
+    v1.close();
+
+    // Opening it with the current schema upgrades it to version 2.
+    expect((await getSession('old-session'))?.company).toBe('Bluefin Route');
+    expect(await listSessions()).toHaveLength(1);
+    await saveSessionDefaults(CUSTOM);
+    expect(await getSessionDefaults()).toEqual(CUSTOM);
+  });
+});

@@ -3,6 +3,8 @@
  * create/get (new sessions are 'not-started' with no activity yet; unknown ids give null);
  * listSessions() is newest first, filters by type and searches company, role and description
  * ignoring case; updateSession() keeps id and createdAt and fails for unknown ids;
+ * createSessionWithDocuments() and updateSessionWithDocuments() save a session and its document
+ * changes all-or-nothing (and never touch another session's documents);
  * markSessionActive() sets 'live' and lastActiveAt; shownStatus() shows a 'live' session with no
  * activity for over 12 hours as 'ended'; deleteSession() removes the session's documents,
  * transcript lines, answers and notes in one go and leaves other sessions alone.
@@ -13,6 +15,7 @@ import { getDb } from '@/core/storage/db';
 import { addDocument, listDocuments } from '@/core/storage/documents';
 import {
   createSession,
+  createSessionWithDocuments,
   deleteSession,
   getSession,
   listSessions,
@@ -20,6 +23,7 @@ import {
   shownStatus,
   STALE_LIVE_MS,
   updateSession,
+  updateSessionWithDocuments,
 } from '@/core/storage/sessions';
 import { listUtterances, saveUtterance } from '@/core/storage/utterances';
 import { resetDb, sessionInput } from './helpers';
@@ -146,6 +150,67 @@ describe('shownStatus', () => {
     const session = { ...(await createSession(sessionInput(), 0)), status: 'live' as const };
     expect(shownStatus(session, STALE_LIVE_MS)).toBe('live');
     expect(shownStatus(session, STALE_LIVE_MS + 1)).toBe('ended');
+  });
+});
+
+describe('createSessionWithDocuments / updateSessionWithDocuments', () => {
+  it('creates a session with its documents, in the order added', async () => {
+    const session = await createSessionWithDocuments(
+      sessionInput(),
+      [
+        { name: 'first.pdf', text: 'Invented one' },
+        { name: 'second.txt', text: 'Invented two' },
+      ],
+      100,
+    );
+    const documents = await listDocuments(session.id);
+    expect(documents.map((d) => d.name)).toEqual(['first.pdf', 'second.txt']);
+    expect(documents[0]).toMatchObject({ chars: 12, addedAt: 100 });
+  });
+
+  it('stores nothing when part of the creation fails', async () => {
+    // A document without text cannot be stored (chars needs text.length), so the transaction
+    // fails after the session was added: the session must not remain.
+    await expect(
+      createSessionWithDocuments(sessionInput(), [
+        { name: 'bad.txt', text: undefined as unknown as string },
+      ]),
+    ).rejects.toThrow();
+    expect(await listSessions()).toEqual([]);
+  });
+
+  it('saves field changes, adds new documents and removes chosen ones in one go', async () => {
+    const session = await createSessionWithDocuments(sessionInput(), [
+      { name: 'keep.txt', text: 'Keep' },
+      { name: 'drop.txt', text: 'Drop' },
+    ]);
+    const other = await createSessionWithDocuments(sessionInput(), [
+      { name: 'other.txt', text: 'Other session' },
+    ]);
+    const [keep, drop] = await listDocuments(session.id);
+    const [otherDocument] = await listDocuments(other.id);
+
+    const updated = await updateSessionWithDocuments(
+      session.id,
+      { company: 'Northwind Logistics' },
+      [{ name: 'new.txt', text: 'New' }],
+      // A document id from another session is ignored.
+      [drop!.id, otherDocument!.id],
+    );
+    expect(updated.company).toBe('Northwind Logistics');
+    expect((await listDocuments(session.id)).map((d) => d.id)).toEqual([
+      keep!.id,
+      expect.any(String),
+    ]);
+    expect((await listDocuments(session.id)).map((d) => d.name)).toEqual(['keep.txt', 'new.txt']);
+    expect(await listDocuments(other.id)).toHaveLength(1);
+  });
+
+  it('changes nothing for an unknown session', async () => {
+    await expect(
+      updateSessionWithDocuments('nope', { company: 'X' }, [{ name: 'a.txt', text: 'a' }], []),
+    ).rejects.toThrow('SESSION_NOT_FOUND');
+    expect(await getDb().documents.count()).toBe(0);
   });
 });
 

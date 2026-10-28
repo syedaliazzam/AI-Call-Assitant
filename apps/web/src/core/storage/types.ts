@@ -138,6 +138,32 @@ export interface StoredAnswer {
   createdAt: number;
 }
 
+/**
+ * Default preferences for new sessions (the Settings page). The wizard starts from these; each
+ * session then keeps its own copy, so changing the defaults never changes existing sessions.
+ * Key terms are not included: they belong to one call.
+ */
+export interface SessionDefaults {
+  /** Default model. */
+  model: AnswerModel;
+  /** Default answer style. */
+  style: AnswerStyle;
+  /** Default AI instructions ('' = none). */
+  instructions: string;
+  /** Default for "save transcript". */
+  saveTranscript: boolean;
+}
+
+/** One row of the `settings` store (database version 2). */
+export interface StoredSettings {
+  /** Which settings: only 'defaults' exists. */
+  id: 'defaults';
+  /** The default preferences for new sessions. */
+  defaults: SessionDefaults;
+  /** When they were last saved (Unix ms). */
+  updatedAt: number;
+}
+
 /** AI notes written after a call (architecture §7.4 `notes`). Written from Day 5. */
 export interface StoredNotes {
   /** The session they belong to (one set of notes per session, so it is also the key). */

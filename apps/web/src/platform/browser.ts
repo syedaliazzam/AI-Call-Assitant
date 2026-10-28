@@ -59,6 +59,9 @@ export function shareSource(stream: MediaStream): OtherSideSource {
 export const browserPlatform: Platform = {
   kind: 'browser',
 
+  // Sessions open through the Choose platform dialog (the desktop app is an alternative).
+  offersPlatformChoice: true,
+
   /** Opens the microphone with getUserMedia (the browser asks the user for permission). */
   getMicStream: openMicrophone,
 

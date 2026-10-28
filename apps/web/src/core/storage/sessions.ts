@@ -156,6 +156,92 @@ export function shownStatus(session: Session, now = Date.now()): SessionStatus {
   return now - lastActive > STALE_LIVE_MS ? 'ended' : 'live';
 }
 
+/** A document to store with a session: its file name and extracted text. */
+export interface DocumentText {
+  /** Original file name, for example 'pricing.pdf'. */
+  name: string;
+  /** The extracted plain text. */
+  text: string;
+}
+
+/**
+ * Creates a session together with its documents in one transaction: either everything is
+ * stored or nothing is (a half-created session would show up on the dashboard without its
+ * documents).
+ *
+ * @param input     Everything the wizard collected.
+ * @param documents The documents' names and extracted texts, in the order added.
+ * @param now       Creation time in Unix ms (tests pass a fixed time).
+ * @returns The stored session.
+ * Called from: the Create session wizard (Day 3 Stage 3); tests
+ */
+export async function createSessionWithDocuments(
+  input: NewSessionInput,
+  documents: readonly DocumentText[],
+  now = Date.now(),
+): Promise<Session> {
+  const db = getDb();
+  return db.transaction('rw', db.sessions, db.documents, async () => {
+    const session = await createSession(input, now);
+    // One millisecond apart, so the documents keep the order they were added in.
+    await db.documents.bulkAdd(
+      documents.map((document, i) => ({
+        id: crypto.randomUUID(),
+        sessionId: session.id,
+        name: document.name,
+        text: document.text,
+        chars: document.text.length,
+        addedAt: now + i,
+      })),
+    );
+    return session;
+  });
+}
+
+/**
+ * Saves the Edit wizard's changes in one transaction: the session's fields, new documents and
+ * removed documents.
+ *
+ * @param id        The session id.
+ * @param changes   Fields to change.
+ * @param add       Documents added in the wizard, in the order added.
+ * @param removeIds Ids of the session's documents the user removed.
+ * @param now       Time of the change in Unix ms (new documents' addedAt).
+ * @returns The session after the change.
+ * @throws Error('SESSION_NOT_FOUND') when there is no session with this id (nothing changes).
+ * Called from: the Edit session wizard (Day 3 Stage 3); tests
+ */
+export async function updateSessionWithDocuments(
+  id: string,
+  changes: SessionChanges,
+  add: readonly DocumentText[],
+  removeIds: readonly string[],
+  now = Date.now(),
+): Promise<Session> {
+  const db = getDb();
+  return db.transaction('rw', db.sessions, db.documents, async () => {
+    const session = await updateSession(id, changes);
+    // Only this session's documents can be removed, whatever ids are passed in.
+    const removable = await db.documents
+      .where('id')
+      .anyOf([...removeIds])
+      .filter((document) => document.sessionId === id)
+      .primaryKeys();
+    await db.documents.bulkDelete(removable);
+    await db.documents.bulkAdd(
+      add.map((document, i) => ({
+        id: crypto.randomUUID(),
+        sessionId: id,
+        name: document.name,
+        text: document.text,
+        chars: document.text.length,
+        addedAt: now + i,
+      })),
+    );
+    return session;
+  });
+}
+
 /**
  * Deletes a session and everything stored for it (documents, transcript lines, answers,
  * notes) in one transaction, so a failure part-way leaves nothing half-deleted.
