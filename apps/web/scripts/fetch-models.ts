@@ -9,8 +9,12 @@
  *                                                           (development, ~205 MB)
  *            pnpm --filter web fetch-models --runtime-only  runtime only (13.3 MB; run by the
  *                                                           build, on Vercel too)
+ *            tsx scripts/fetch-models.ts --pins             print every pinned SHA-256 and
+ *                                                           download nothing (the CI cache key)
  * Used by: developers (once per machine); the "fetch-models" and "stt:runtime" scripts in
- *          apps/web/package.json (stt:runtime runs before every `next build`)
+ *          apps/web/package.json (stt:runtime runs before every `next build`); the
+ *          stt-integration CI job (.github/workflows/ci.yml: --pins, then a full fetch);
+ *          tests/integration/stt.spec.ts (isInstalled, sha256Of)
  * Depends on: src/core/stt/models.ts, src/core/stt/sentencepiece.ts; Node.js (fetch, crypto, fs);
  *             the system `tar` with bzip2 support to unpack the .tar.bz2 release archive (Node
  *             has no bzip2). Windows 10+ and macOS include it; Vercel's build image (Amazon Linux
@@ -217,9 +221,35 @@ function reportStaleFolders(): void {
 }
 
 /**
+ * Every pinned file the full fetch installs, one "<sha256>  <name>" line each, in a fixed order.
+ * A change to any pin changes this text, so CI uses its hash as the cache key (a cache from old
+ * pins is never reused).
+ *
+ * @returns The lines, joined with newlines.
+ * Called from: main() with --pins
+ */
+export function pinList(): string {
+  const lines = [
+    `${RUNTIME_ARCHIVE.sha256}  runtime archive ${RUNTIME_ARCHIVE.folder}`,
+    ...Object.values(RUNTIME_FILES).map((file) => `${file.sha256}  runtime ${file.name}`),
+    ...STT_MODELS.flatMap((model) =>
+      Object.values(model.files).map((file) => `${file.sha256}  ${model.id} ${file.name}`),
+    ),
+    `${BPE_VOCAB_SHA256}  bpe.vocab (derived from bpe.model)`,
+    ...TEST_RECORDINGS.map((file) => `${file.sha256}  test recording ${file.name}`),
+  ];
+  return lines.join('\n');
+}
+
+/**
  * Entry point: the runtime always; the models and test recordings unless --runtime-only.
+ * With --pins it only prints pinList().
  */
 async function main(): Promise<void> {
+  if (process.argv.includes('--pins')) {
+    console.log(pinList());
+    return;
+  }
   const runtimeOnly = process.argv.includes('--runtime-only');
   console.log(`Installing speech-to-text files${runtimeOnly ? ' (runtime only)' : ''}`);
   await installRuntime();

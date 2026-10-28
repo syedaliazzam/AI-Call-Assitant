@@ -121,8 +121,10 @@ export interface SttEngineDeps {
  * The real browser objects.
  *
  * @returns Default dependencies.
+ * Called from: createSttEngine() (default argument); tests/integration/harness/harness.ts (which
+ *              replaces only createWorker, because it bundles the worker itself)
  */
-function defaultDeps(): SttEngineDeps {
+export function defaultSttEngineDeps(): SttEngineDeps {
   return {
     // Classic worker (no { type: 'module' }): the runtime scripts need importScripts.
     createWorker: () => new Worker(new URL('./stt.worker.ts', import.meta.url)),
@@ -168,7 +170,7 @@ interface AttachedChannel {
  */
 export function createSttEngine(
   options: SttEngineOptions = {},
-  deps: SttEngineDeps = defaultDeps(),
+  deps: SttEngineDeps = defaultSttEngineDeps(),
 ): SttEngine {
   const model = getSttModel(options.model ?? DEFAULT_STT_MODEL);
   const source = options.source ?? buildModelSource();

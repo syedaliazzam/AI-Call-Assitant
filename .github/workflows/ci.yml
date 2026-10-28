@@ -1,18 +1,20 @@
 # File: .github/workflows/ci.yml
 # Purpose: Continuous integration for Kite: lint, typecheck and unit tests for the whole
-#          workspace, plus the Electron desktop smoke test.
-# Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing); day-01-setup.md Stage 7
+#          workspace, the speech-to-text integration test, and the Electron desktop smoke test.
+# Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing); day-01-setup.md Stage 7;
+#               day-02-audio.md Stage 6
 #
 # When each job runs (GitHub Actions minutes are limited on this private repository, and
 # Windows minutes count 2x and macOS minutes 10x against the allowance):
 # - web (ubuntu, 1x): every pull request and every push to main.
+# - stt-integration (ubuntu, 1x): every pull request and every push to main.
 # - desktop-windows (2x): every pull request and every push to main.
 # - desktop-macos (10x): only when started by hand (Actions tab → CI → "Run workflow").
 #   A manual run starts ONLY this job; the other two already ran on the pull request / push.
 #
 # What CI never does: it uses no secrets, makes no real Claude calls (unit tests mock the SDK),
-# downloads no speech-to-text models (the /dev/stt-test page is not tested here; unit tests cover
-# its pure modules), and deploys nothing (Vercel deploys stay CLI-only, no preview deploys).
+# and deploys nothing (Vercel deploys stay CLI-only, no preview deploys). The only large download
+# is the speech-to-text files for stt-integration (pinned, SHA-256 checked, cached).
 #
 # Actions are pinned to the full commit SHA of an official release tag (checked against each
 # action's GitHub release on 2026-10-27), so a moved tag cannot change what runs.
@@ -90,6 +92,74 @@ jobs:
       # Vitest unit tests: the web app, and the desktop shell's security rules.
       - name: Unit tests
         run: pnpm test
+
+  stt-integration:
+    name: Speech-to-text integration test
+    # Not on manual runs: those are for the macOS job only (see the header).
+    if: github.event_name != 'workflow_dispatch'
+    # Linux minutes count 1x. The model cache below avoids downloading ~380 MB (the 175 MB
+    # runtime release archive + the 204 MB model) on every run.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Get the code (the fixture recordings are committed in apps/web/tests/fixtures/audio).
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Install pnpm (version from package.json "packageManager").
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # Install Node 24 and cache the pnpm store.
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Install exactly what the lockfile says.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Cache key = hash of every pinned SHA-256 (src/core/stt/models.ts, printed by
+      # fetch-models --pins). Changing any pin gives a new key, so files from old pins are never
+      # reused. The list is printed too, so the log shows exactly what is expected.
+      - name: Compute the speech-to-text cache key
+        id: pins
+        working-directory: apps/web
+        run: |
+          pnpm exec tsx scripts/fetch-models.ts --pins > "$RUNNER_TEMP/stt-pins.txt"
+          cat "$RUNNER_TEMP/stt-pins.txt"
+          echo "key=stt-files-$(sha256sum "$RUNNER_TEMP/stt-pins.txt" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      # Restore the runtime and model files from an earlier run with the same pins. The cache is
+      # saved only when the job succeeds, so a failed or bad download is never cached.
+      - name: Cache the speech-to-text files
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apps/web/public/stt-runtime
+            apps/web/public/models/stt
+          key: ${{ steps.pins.outputs.key }}
+
+      # Checks every restored file against its SHA-256 and downloads any missing or wrong one
+      # from its pinned source (Hugging Face model commit, GitHub release). A download that does
+      # not match its pin is deleted and fails this step with "Checksum mismatch for <file>:
+      # expected …, got …". The test checks the files again before it starts.
+      - name: Fetch and verify the speech-to-text files
+        run: pnpm --filter web fetch-models
+
+      # Playwright's Chromium and the Linux libraries it needs (official install command; the
+      # Playwright docs advise against caching the browser, as restoring takes about as long).
+      - name: Install Chromium for Playwright
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Plays the official recordings through Chromium's fake microphone into the real
+      # worklet → worker → recognizer → transcript path and checks the WER. CI=true (set by
+      # GitHub) turns missing model files into a failure instead of a skip.
+      - name: Speech-to-text integration test
+        run: pnpm --filter web test:stt
 
   desktop-windows:
     name: Desktop smoke test (Windows)
