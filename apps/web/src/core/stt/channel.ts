@@ -15,60 +15,22 @@
  * 2. the pause rule (safety net): no new words for 1.2 s of audio while text is showing. On
  *    Day 1 the model's rule did not fire with one live microphone; this rule did. It watches
  *    the text, not the microphone level: a loudness threshold cut sentences in the middle when
- *    the voice was quiet (measured on Day 1). Day 2 Stage 5 adds Silero VAD next to it.
+ *    the voice was quiet (measured on Day 1). Silero VAD was tried and rejected (ADR-0020).
  * Both rules run separately for each channel.
  *
  * Silence is not decoded: each channel has an energy gate (gate.ts) that holds back chunks while
  * the channel is idle, so a silent channel costs almost no CPU and cannot produce phantom words.
- *
- * Second pass (Day 2 Stage 5): when the worker gives an onUtteranceAudio callback, the channel
- * keeps the current utterance's decoded audio IN MEMORY ONLY (at most PRE_TEXT_AUDIO_MS before
- * the first word, at most MAX_UTTERANCE_AUDIO_MS in total) and hands it over when the utterance
- * ends; it is never stored, logged or sent off the device, and the channel drops its own copy at
- * once (the buffer is transferred to the second-pass worker, which drops it after decoding).
- * Without the callback no audio is kept.
  */
 import { TARGET_SAMPLE_RATE } from '../audio/resample';
 import { lastLoudSampleEnd, SilenceGate, type GateChunk } from './gate';
 import { OnsetDetector, realTimeFactor } from './metrics';
-import type {
-  ChannelId,
-  ChannelStats,
-  EndpointReason,
-  FromWorker,
-  SecondPassJob,
-} from './protocol';
+import type { ChannelId, ChannelStats, EndpointReason, FromWorker } from './protocol';
 
 /** Pause rule: audio (ms) with no new words, while text is showing, that ends an utterance. */
 export const PAUSE_END_MS = 1_200;
 
 /** How many recent lag values each channel keeps. */
 const MAX_LAGS = 50;
-
-/**
- * Longest utterance audio kept for the second pass, in ms. The recognizer cuts an utterance at
- * 20 s (rule 3), so this is only reached in unusual cases; then that utterance keeps its
- * first-pass text.
- */
-export const MAX_UTTERANCE_AUDIO_MS = 30_000;
-
-/**
- * Audio kept from before the first word appears, in ms. The first word shows 0.3–0.8 s after
- * speech starts (Day 2), and the gate adds up to 0.3 s of pre-roll, so 2 s always covers the
- * start of the utterance; older audio (silence or background noise) is dropped as it arrives.
- */
-export const PRE_TEXT_AUDIO_MS = 2_000;
-
-/** Audio kept after the end of speech, in ms (the closing silence is not decoded again). */
-export const POST_SPEECH_AUDIO_MS = 300;
-
-/**
- * Audio kept before a detected speech onset, in ms. The second pass's VAD and decoding cost
- * grow with the audio length (Day 2, Chrome: about 50 ms of VAD per second of audio), so
- * silence before the onset is cut. Without a detected onset (a quiet start), the whole
- * PRE_TEXT_AUDIO_MS is kept, so the first word is never cut.
- */
-export const PRE_SPEECH_AUDIO_MS = 300;
 
 /** Loudness that counts as speech for the end of speech when there is no gate (tests). */
 const DEFAULT_SPEECH_RMS = 0.004;
@@ -118,11 +80,6 @@ export interface ChannelOptions {
   inputSampleRate?: number;
   /** Energy gate (default: a new SilenceGate; null = decode every chunk, for tests). */
   gate?: SilenceGate | null;
-  /**
-   * Receives each finished utterance's audio for the second pass. When absent (second pass
-   * off), no audio is kept.
-   */
-  onUtteranceAudio?: (job: Omit<SecondPassJob, 'sentAt'>) => void;
 }
 
 /** One channel's decoder. */
@@ -155,8 +112,6 @@ export class ChannelDecoder {
   private gateOpenedAt = 0;
   /** Worker time the current utterance started (onset, or first text), or null. */
   private utteranceStartAt: number | null = null;
-  /** True when utteranceStartAt is a detected speech onset (not the first text's chunk). */
-  private utteranceStartFromOnset = false;
   /** Worker time (capture) of the chunk in which the text last changed. */
   private lastChangeAt = 0;
   /**
@@ -169,18 +124,8 @@ export class ChannelDecoder {
   private readonly gate: SilenceGate | null;
   /** Statistics since the channel was attached. */
   private readonly stats: ChannelStats;
-  /** Second-pass callback, or null when the second pass is off. */
-  private readonly onUtteranceAudio: ChannelOptions['onUtteranceAudio'] | null;
-  /** The current utterance's decoded chunks with their capture end times (worker clock). */
-  private audio: { samples: Float32Array; endAt: number }[] = [];
-  /** Audio in `audio`, in ms. */
-  private audioMs = 0;
-  /** True when the current utterance passed MAX_UTTERANCE_AUDIO_MS (no second pass for it). */
-  private audioOverflow = false;
   /** Worker time (capture) where the last loud 10 ms frame of this utterance ended, or null. */
   private lastLoudAt: number | null = null;
-  /** Utterances ended so far (for segment ids). */
-  private segmentCount = 0;
 
   /**
    * @param id         Which channel.
@@ -203,7 +148,6 @@ export class ChannelDecoder {
       timeOrigin: performance.timeOrigin,
     };
     this.gate = options.gate === undefined ? new SilenceGate() : options.gate;
-    this.onUtteranceAudio = options.onUtteranceAudio ?? null;
     const inputSampleRate = options.inputSampleRate ?? TARGET_SAMPLE_RATE;
     this.stats = {
       audioMs: 0,
@@ -273,7 +217,6 @@ export class ChannelDecoder {
     const capturedEndAt = this.capturedAt(chunk.endTime);
     const chunkAudioMs = (chunk.samples.length / TARGET_SAMPLE_RATE) * 1000;
     this.stream.acceptWaveform(TARGET_SAMPLE_RATE, chunk.samples);
-    this.keepAudio(chunk.samples, capturedEndAt, chunkAudioMs);
     const loudEnd = lastLoudSampleEnd(chunk.samples, this.gate?.threshold ?? DEFAULT_SPEECH_RMS);
     if (loudEnd >= 0) {
       this.lastLoudAt =
@@ -288,7 +231,6 @@ export class ChannelDecoder {
       this.msSinceTextChange = 0;
       this.lastChangeAt = capturedEndAt;
       if (this.lastText === '' && text !== '') {
-        this.utteranceStartFromOnset = this.pendingOnsetAt !== null;
         this.utteranceStartAt = this.pendingOnsetAt ?? capturedEndAt - chunkAudioMs;
         if (this.pendingOnsetAt !== null) {
           this.pushLag(Math.round(this.clock.now() - this.pendingOnsetAt));
@@ -351,13 +293,6 @@ export class ChannelDecoder {
       // End of speech: the last loud frame, but never after the last word changed (noise after
       // speech must not count) and never before the start.
       const speechEndAt = Math.max(start, Math.min(this.lastLoudAt ?? end, end));
-      this.segmentCount += 1;
-      const segmentId = `${this.id}-${this.segmentCount}`;
-      const samples = this.takeAudio(
-        this.utteranceStartFromOnset ? this.utteranceStartAt : null,
-        speechEndAt,
-      );
-      // The final line goes first, so the page has it before the second pass can answer.
       this.emit({
         type: 'final',
         channel: this.id,
@@ -365,18 +300,8 @@ export class ChannelDecoder {
         reason,
         tStart: this.toUnix(start),
         tEnd: this.toUnix(end),
-        segmentId,
         speechEnd: this.toUnix(speechEndAt),
-        secondPass: samples !== null,
       });
-      if (samples) {
-        this.onUtteranceAudio!({
-          segmentId,
-          channel: this.id,
-          samples,
-          speechEnd: this.toUnix(speechEndAt),
-        });
-      }
     }
     this.clearUtterance();
     this.emit({ type: 'partial', channel: this.id, text: '', tStart: null });
@@ -444,79 +369,14 @@ export class ChannelDecoder {
     this.stream.free();
   }
 
-  /**
-   * Keeps a decoded chunk for the second pass (only when it is on). Before the first word, only
-   * the latest PRE_TEXT_AUDIO_MS are kept; past MAX_UTTERANCE_AUDIO_MS the utterance gets no
-   * second pass and its audio is dropped at once.
-   *
-   * @param samples The chunk (the channel only reads it).
-   * @param endAt   Capture time of its last sample (worker clock, ms).
-   * @param ms      Its duration, in ms.
-   */
-  private keepAudio(samples: Float32Array, endAt: number, ms: number): void {
-    if (!this.onUtteranceAudio || this.audioOverflow) return;
-    this.audio.push({ samples, endAt });
-    this.audioMs += ms;
-    if (this.lastText === '') {
-      while (this.audio.length > 1) {
-        const firstMs = (this.audio[0]!.samples.length / TARGET_SAMPLE_RATE) * 1000;
-        if (this.audioMs - firstMs < PRE_TEXT_AUDIO_MS) break;
-        this.audio.shift();
-        this.audioMs -= firstMs;
-      }
-    } else if (this.audioMs > MAX_UTTERANCE_AUDIO_MS) {
-      this.audioOverflow = true;
-      this.audio = [];
-      this.audioMs = 0;
-    }
-  }
-
-  /**
-   * Joins the kept audio into one buffer from PRE_SPEECH_AUDIO_MS before the detected onset
-   * (or from the oldest kept audio) to POST_SPEECH_AUDIO_MS after the end of speech, and
-   * forgets the channel's copy.
-   *
-   * @param onsetAt     Detected speech onset (worker clock, ms), or null when none was found.
-   * @param speechEndAt End of speech (worker clock, ms).
-   * @returns The samples, or null when the second pass is off, nothing was kept, or the
-   *          utterance was too long.
-   */
-  private takeAudio(onsetAt: number | null, speechEndAt: number): Float32Array | null {
-    const chunks = this.audio;
-    this.audio = [];
-    this.audioMs = 0;
-    if (!this.onUtteranceAudio || this.audioOverflow || chunks.length === 0) return null;
-    const all = new Float32Array(chunks.reduce((sum, chunk) => sum + chunk.samples.length, 0));
-    let offset = 0;
-    for (const chunk of chunks) {
-      all.set(chunk.samples, offset);
-      offset += chunk.samples.length;
-    }
-    const first = chunks[0]!;
-    const startAt = first.endAt - (first.samples.length / TARGET_SAMPLE_RATE) * 1000;
-    /** Sample index of a worker time within the kept audio. */
-    const index = (at: number) => Math.round(((at - startAt) / 1000) * TARGET_SAMPLE_RATE);
-    const from =
-      onsetAt === null
-        ? 0
-        : Math.max(0, Math.min(all.length, index(onsetAt - PRE_SPEECH_AUDIO_MS)));
-    const to = Math.max(from, Math.min(all.length, index(speechEndAt + POST_SPEECH_AUDIO_MS)));
-    // slice() copies, so the job owns its buffer (it is transferred to the second worker).
-    return to > from ? all.slice(from, to) : null;
-  }
-
-  /** Forgets the current utterance's state (text, timers, onset, kept audio). */
+  /** Forgets the current utterance's state (text, timers, onset). */
   private clearUtterance(): void {
-    this.audio = [];
-    this.audioMs = 0;
-    this.audioOverflow = false;
     this.lastLoudAt = null;
     this.lastText = '';
     this.msSinceTextChange = 0;
     this.pendingOnsetAt = null;
     this.pendingOnsetChunkEndAt = null;
     this.utteranceStartAt = null;
-    this.utteranceStartFromOnset = false;
   }
 
   /** Keeps the latest MAX_LAGS lag values. */

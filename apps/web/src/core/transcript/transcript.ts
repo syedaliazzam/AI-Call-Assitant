@@ -7,10 +7,6 @@
  *          line that arrives while "Them" is speaking is held back for DISPLAY_HOLD_MS, so an
  *          echo is not shown for a moment before its "Them" original reveals it. The UI renders
  *          displayLines() (Stage 4); answers use lines()/window(), which are never held (Day 4).
- *          Second pass (Stage 5): refine() replaces the text of a final line in place (same id,
- *          marked refined) when the second model has decoded that utterance again; every view
- *          (lines, displayLines, window, allLines) then returns the refined text, and the echo
- *          check runs again on it.
  * Used by: the live page (Day 2 Stage 4: LivePage, TranscriptStrip); core/answer (Day 4)
  * Depends on: src/core/transcript/merge.ts, src/core/transcript/echo.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 steps 2–3, §7.1, §7.4 (utterances)
@@ -60,23 +56,6 @@ export interface Utterance {
    * line back, because "Them" was speaking when it arrived. lines() and window() ignore it.
    */
   heldUntil?: number;
-  /**
-   * Final lines only: the utterances this line is made of (one, or several after merging), in
-   * order. `text` is always their texts joined with spaces.
-   */
-  parts?: readonly LinePart[];
-  /** True when every part has the second pass's text (the line was refined in place). */
-  refined?: boolean;
-}
-
-/** One utterance inside a final line. */
-export interface LinePart {
-  /** The engine's utterance id ('you-3'), or undefined when it cannot be refined. */
-  segmentId?: string;
-  /** Its text (first pass, or the second pass's once refined). Never logged. */
-  text: string;
-  /** True once the second pass's text replaced the first-pass text. */
-  refined: boolean;
 }
 
 /** Options for createTranscript(). */
@@ -111,26 +90,9 @@ export interface Transcript {
    * echo first; a "Them" line also re-checks the "You" lines of the last few seconds (the echo
    * can arrive before the original is final). Close lines merge (merge.ts), ignoring echoes.
    *
-   * @param line.segmentId The engine's utterance id, so refine() can find it later (optional).
    * @returns The line as stored (new or merged).
    */
-  addFinal(line: {
-    speaker: Speaker;
-    text: string;
-    tStart: number;
-    tEnd: number;
-    segmentId?: string;
-  }): Utterance;
-  /**
-   * Replaces one utterance's text with the second pass's text, in place: the line keeps its id
-   * and position and is marked refined when all its parts are. The echo check runs again with
-   * the new text (it can hide a line, never show a hidden one again).
-   *
-   * @param segmentId The utterance id given to addFinal().
-   * @param text      The second pass's text ('' keeps the first-pass text).
-   * @returns The updated line, or null when the id is unknown or the text is ''.
-   */
-  refine(segmentId: string, text: string): Utterance | null;
+  addFinal(line: { speaker: Speaker; text: string; tStart: number; tEnd: number }): Utterance;
   /** Visible lines (no echoes), finals and partials, in time order. Same array until a change. */
   lines(): readonly Utterance[];
   /**
@@ -170,16 +132,6 @@ function insertionIndex(list: readonly Utterance[], tStart: number): number {
   let index = list.length;
   while (index > 0 && list[index - 1]!.tStart > tStart) index -= 1;
   return index;
-}
-
-/**
- * The parts of a final line (a line without parts counts as one part that cannot be refined).
- *
- * @param line A final line.
- * @returns Its parts.
- */
-function partsOf(line: Utterance): readonly LinePart[] {
-  return line.parts ?? [{ text: line.text, refined: false }];
 }
 
 /**
@@ -279,24 +231,6 @@ export function createTranscript(
       .join(' ');
   };
 
-  /**
-   * Re-checks the visible "You" lines near a "Them" line for echo (after that "Them" line was
-   * added or refined).
-   *
-   * @param them The "Them" line's time span.
-   */
-  const recheckYouAround = (them: { tStart: number; tEnd: number }) => {
-    finals = finals.map((candidate) =>
-      candidate.speaker === 'you' &&
-      !candidate.echo &&
-      candidate.tStart >= them.tStart - ECHO_WINDOW_BEFORE_MS &&
-      candidate.tStart <= them.tEnd + ECHO_WINDOW_AFTER_MS &&
-      isEcho(candidate.text, themTextAround(candidate.tStart, candidate.tEnd))
-        ? markEcho(candidate)
-        : candidate,
-    );
-  };
-
   /** Marks a final "You" line as an echo (and counts it). */
   const markEcho = (line: Utterance): Utterance => {
     echoes = { count: echoes.count + 1, lastAt: Math.max(echoes.lastAt ?? 0, line.tEnd) };
@@ -341,22 +275,15 @@ export function createTranscript(
       let previousIndex = index - 1;
       while (previousIndex >= 0 && finals[previousIndex]!.echo) previousIndex -= 1;
       const previous = finals[previousIndex];
-      const part: LinePart = { segmentId: line.segmentId, text: line.text, refined: false };
       if (!echo && shouldMerge(previous, line)) {
-        const parts = [...partsOf(previous!), part];
-        stored = { ...mergeLines(previous!, line), parts, refined: parts.every((p) => p.refined) };
+        stored = mergeLines(previous!, line);
         finals = [...finals.slice(0, previousIndex), stored, ...finals.slice(previousIndex + 1)];
       } else {
         const heldUntil = holdFor(line.speaker, partial?.heldUntil, partial !== undefined);
         const created: Utterance = {
           id: `u${nextId++}`,
-          speaker: line.speaker,
-          text: line.text,
-          tStart: line.tStart,
-          tEnd: line.tEnd,
+          ...line,
           final: true,
-          parts: [part],
-          refined: false,
           ...(heldUntil !== undefined ? { heldUntil } : {}),
         };
         stored = echo ? markEcho(created) : created;
@@ -365,41 +292,19 @@ export function createTranscript(
 
       // A "Them" line may reveal that a recent "You" line was its echo (the echo can be final
       // first, because both channels are decoded at the same time).
-      if (line.speaker === 'them') recheckYouAround(line);
+      if (line.speaker === 'them') {
+        finals = finals.map((candidate) =>
+          candidate.speaker === 'you' &&
+          !candidate.echo &&
+          candidate.tStart >= line.tStart - ECHO_WINDOW_BEFORE_MS &&
+          candidate.tStart <= line.tEnd + ECHO_WINDOW_AFTER_MS &&
+          isEcho(candidate.text, themTextAround(candidate.tStart, candidate.tEnd))
+            ? markEcho(candidate)
+            : candidate,
+        );
+      }
       changed();
       return stored;
-    },
-
-    refine(segmentId, text) {
-      const clean = text.trim();
-      if (clean === '') return null;
-      const index = finals.findIndex((candidate) =>
-        candidate.parts?.some((p) => p.segmentId === segmentId),
-      );
-      if (index < 0) return null;
-      const line = finals[index]!;
-      const parts = line.parts!.map((p) =>
-        p.segmentId === segmentId ? { ...p, text: clean, refined: true } : p,
-      );
-      let updated: Utterance = {
-        ...line,
-        text: parts.map((p) => p.text).join(' '),
-        parts,
-        refined: parts.every((p) => p.refined),
-      };
-      // Only ever towards hidden: a line already hidden as an echo stays hidden, so nothing
-      // pops back into view; a "You" line whose better text now repeats "Them" is hidden.
-      if (
-        updated.speaker === 'you' &&
-        !updated.echo &&
-        isEcho(updated.text, themTextAround(updated.tStart, updated.tEnd))
-      ) {
-        updated = markEcho(updated);
-      }
-      finals = [...finals.slice(0, index), updated, ...finals.slice(index + 1)];
-      if (updated.speaker === 'them') recheckYouAround(updated);
-      changed();
-      return updated;
     },
 
     lines() {

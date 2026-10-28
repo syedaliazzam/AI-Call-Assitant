@@ -20,9 +20,6 @@
  *
  * Only verified code runs: the runtime scripts are executed from their verified bytes (through
  * Blob URLs), not fetched a second time by importScripts.
- *
- * Second pass (Day 2 Stage 5): when the 'load' message carries a port to the second-pass worker,
- * each finished utterance's audio is posted to it (transferred, so this worker keeps no copy).
  */
 import { ChannelDecoder, type RecognizerLike } from './channel';
 import {
@@ -33,7 +30,7 @@ import {
   sha256Hex,
 } from './download';
 import { BPE_VOCAB_NAME, BPE_VOCAB_SHA256, type DownloadFile } from './models';
-import type { ChannelId, EngineStats, FromWorker, SecondPassJob, ToWorker } from './protocol';
+import type { ChannelId, EngineStats, FromWorker, ToWorker } from './protocol';
 import { sentencePieceVocab } from './sentencepiece';
 
 /** Endpoint rule 2: decoded silence (s) after some text that ends an utterance. */
@@ -103,20 +100,6 @@ const channels = new Map<ChannelId, ChannelDecoder>();
 /** Cancels a download in progress (on 'stop'). */
 let loadAbort: AbortController | null = null;
 let statsTimer: ReturnType<typeof setInterval> | null = null;
-/** Port to the second-pass worker, or null when the second pass is off. */
-let secondPassPort: MessagePort | null = null;
-
-/**
- * Sends one utterance's audio to the second-pass worker. The samples' buffer is transferred, so
- * the audio leaves this worker's memory (it never leaves the device).
- *
- * @param job The utterance (without the send time).
- * Called from: ChannelDecoder (onUtteranceAudio), when the second pass is on
- */
-function sendToSecondPass(job: Omit<SecondPassJob, 'sentAt'>): void {
-  const message: SecondPassJob = { ...job, sentAt: performance.timeOrigin + performance.now() };
-  secondPassPort?.postMessage(message, [job.samples.buffer]);
-}
 
 /**
  * Runs a verified runtime script at the worker's global scope (classic worker), so its
@@ -286,10 +269,7 @@ function channelDecoder(channel: ChannelId, inputSampleRate?: number): ChannelDe
   if (!recognizer) return null;
   let decoder = channels.get(channel);
   if (!decoder) {
-    decoder = new ChannelDecoder(channel, recognizer, send, {
-      inputSampleRate,
-      ...(secondPassPort ? { onUtteranceAudio: sendToSecondPass } : {}),
-    });
+    decoder = new ChannelDecoder(channel, recognizer, send, { inputSampleRate });
     channels.set(channel, decoder);
   }
   return decoder;
@@ -364,7 +344,6 @@ scope.onmessage = (event: MessageEvent<ToWorker>) => {
   const message = event.data;
   switch (message.type) {
     case 'load':
-      secondPassPort = message.secondPassPort ?? null;
       loadModel(message).catch(reportLoadError);
       break;
     case 'attach': {
@@ -402,8 +381,6 @@ scope.onmessage = (event: MessageEvent<ToWorker>) => {
       for (const id of [...channels.keys()]) detachChannel(id);
       recognizer?.free();
       recognizer = null;
-      secondPassPort?.close();
-      secondPassPort = null;
       break;
   }
 };

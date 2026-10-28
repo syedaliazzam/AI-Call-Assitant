@@ -115,7 +115,7 @@ export function numberWords(n: number): string {
 }
 
 /**
- * Writes digits as spoken words, so a model that writes "$52" or "9:30" (Moonshine) is compared
+ * Writes digits as spoken words, so a model that writes "$52" or "9:30" is compared
  * fairly with one that writes "fifty two dollars" or "nine thirty" (Zipformer, and the test
  * sentences). Handles times (9:30), money ($52, $1,500), percentages, decimals and whole numbers
  * with thousands separators; anything else is left as it is.

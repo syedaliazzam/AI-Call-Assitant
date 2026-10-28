@@ -11,10 +11,6 @@
  * "Them" lines are never hidden; an echo does not merge with real lines. Display hold (Day 2):
  * while "Them" is speaking, a new "You" line is left out of displayLines() for 1.5 s, then shown
  * unless it turned out to be an echo; when "Them" is quiet it shows at once; lines() is never held.
- * Second pass (Day 2 Stage 5): refine() replaces a line's text in place (same id, marked
- * refined) and every view returns the new text; in a merged line only that utterance's part
- * changes; an unknown id or empty text changes nothing; refined text is checked for echo again
- * (a refined "You" or "Them" line can hide an echo; a hidden line never comes back).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createTranscript, DISPLAY_HOLD_MS, THEM_ACTIVE_MS } from '@/core/transcript/transcript';
@@ -224,116 +220,6 @@ describe('createTranscript', () => {
       expect(t.displayLines().some((line) => line.speaker === 'you')).toBe(false);
       advance(DISPLAY_HOLD_MS - 500);
       expect(t.displayLines().some((line) => line.speaker === 'you')).toBe(true);
-    });
-  });
-
-  describe('refine (second pass)', () => {
-    it('replaces the text in place: same id, marked refined, in every view', () => {
-      const now = 100_000;
-      const t = setup(now);
-      t.addFinal({
-        speaker: 'them',
-        text: 'THE PROFESSIONAL PLAN',
-        tStart: 90_000,
-        tEnd: 92_000,
-        segmentId: 'them-1',
-      });
-      const before = t.displayLines();
-      const updated = t.refine('them-1', 'The professional plan costs $52.');
-      expect(updated).toMatchObject({
-        id: 'u1',
-        text: 'The professional plan costs $52.',
-        refined: true,
-      });
-      expect(t.lines()[0]).toMatchObject({ id: 'u1', refined: true });
-      expect(t.displayLines()).not.toBe(before);
-      expect(t.displayLines()[0]!.text).toBe('The professional plan costs $52.');
-      expect(t.window(1)[0]!.text).toBe('The professional plan costs $52.');
-      expect(t.allLines()[0]!.text).toBe('The professional plan costs $52.');
-    });
-
-    it('in a merged line, changes only that utterance and marks the line when all are refined', () => {
-      const t = setup();
-      t.addFinal({
-        speaker: 'them',
-        text: 'WHAT WOULD THE',
-        tStart: 1_000,
-        tEnd: 2_000,
-        segmentId: 'them-1',
-      });
-      t.addFinal({
-        speaker: 'them',
-        text: 'ROLL OUT BE',
-        tStart: 2_500,
-        tEnd: 4_000,
-        segmentId: 'them-2',
-      });
-      expect(t.refine('them-2', 'rollout timeline be')).toMatchObject({
-        id: 'u1',
-        text: 'WHAT WOULD THE rollout timeline be',
-        refined: false,
-      });
-      expect(t.refine('them-1', 'what would the')).toMatchObject({
-        text: 'what would the rollout timeline be',
-        refined: true,
-      });
-    });
-
-    it('ignores an unknown id and empty text (the first-pass text stays)', () => {
-      const t = setup();
-      t.addFinal({ speaker: 'you', text: 'HELLO', tStart: 1_000, tEnd: 2_000, segmentId: 'you-1' });
-      const lines = t.lines();
-      expect(t.refine('you-9', 'hi')).toBeNull();
-      expect(t.refine('you-1', '  ')).toBeNull();
-      expect(t.lines()).toBe(lines);
-      expect(t.lines()[0]).toMatchObject({ text: 'HELLO', refined: false });
-    });
-
-    it('hides a You line whose refined text turns out to repeat Them', () => {
-      const t = setup();
-      t.addFinal({
-        speaker: 'them',
-        text: 'NOW THIS MIGHT SOUND TRIVIAL AND NOT REALLY EXISTENTIAL AT ALL',
-        tStart: 10_000,
-        tEnd: 14_000,
-        segmentId: 'them-1',
-      });
-      // The first pass heard the echo badly, so it was not recognised as one.
-      t.addFinal({
-        speaker: 'you',
-        text: 'NOW HIS MY TRIAL IN A REAL LEGS',
-        tStart: 10_300,
-        tEnd: 14_400,
-        segmentId: 'you-1',
-      });
-      expect(t.lines().map((line) => line.speaker)).toEqual(['them', 'you']);
-      t.refine('you-1', 'Now this might sound trivial and not really existential at all.');
-      expect(t.lines().map((line) => line.speaker)).toEqual(['them']);
-      expect(t.echoStats().count).toBe(1);
-    });
-
-    it('re-checks You lines when a Them line is refined, and never shows a hidden line again', () => {
-      const t = setup();
-      t.addFinal({
-        speaker: 'them',
-        text: 'NOW HIS MY SOUND',
-        tStart: 10_000,
-        tEnd: 14_000,
-        segmentId: 'them-1',
-      });
-      t.addFinal({
-        speaker: 'you',
-        text: 'AND THIS MIGHT SOUND TRIVIAL AND NOT REALLY EXISTENTIAL AT ALL',
-        tStart: 10_300,
-        tEnd: 14_400,
-        segmentId: 'you-1',
-      });
-      expect(t.lines()).toHaveLength(2);
-      t.refine('them-1', 'Now this might sound trivial and not really existential at all.');
-      expect(t.lines().map((line) => line.speaker)).toEqual(['them']);
-      // A later refinement of the hidden line does not bring it back.
-      t.refine('you-1', 'something completely different now');
-      expect(t.lines().map((line) => line.speaker)).toEqual(['them']);
     });
   });
 });

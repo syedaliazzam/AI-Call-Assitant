@@ -1,13 +1,13 @@
 # ADR-0020: Speech-to-text model (WebAssembly, v3.0)
 
-- **Status:** Proposed. Working engine chosen for Day 2; accuracy is above the bar (see Decision). Day 2 Stage 5: second pass built, measurements pending; COOP/COEP headers are provisional (see "Second pass").
-- **Date:** 2026-10-24 (created); 2026-10-27 (Day 1 spike results; Day 2 hosting and two-channel engine); 2026-10-28 (Day 2 Stage 5 second pass, provisional cross-origin isolation)
+- **Status:** **Accepted** (2026-10-28) for streaming-only: Zipformer 2023-06-21 with hotwords, two channels with the energy gate, the echo filter, model files from Hugging Face. Accuracy is still above the 20% bar (≈27% overall). The second pass tried in Day 2 Stage 5 did not meet the bar and was removed (see "Second pass (Day 2, Stage 5): tried and rejected"). Next levers: session hotwords (Day 3), then the native desktop engine (Day 6 option).
+- **Date:** 2026-10-24 (created); 2026-10-27 (Day 1 spike results; Day 2 hosting and two-channel engine); 2026-10-28 (Day 2 Stage 5: second pass measured and rejected; Accepted for streaming-only)
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §6, §12 Day 1
 - **Supersedes / superseded by:** none
 
 ## Context
 
-Kite transcribes both call channels locally with sherpa-onnx compiled to WebAssembly (in a Web Worker) and Silero VAD. The same code runs in Chrome/Edge and in the Electron desktop shell, on macOS (Apple Silicon) and Windows x64 (v3.0, ADR-0021).
+Kite transcribes both call channels locally with sherpa-onnx compiled to WebAssembly (in a Web Worker). The v3.1 plan also listed Silero VAD; Kite uses its own energy gate instead (see "Two channels and the energy gate"), and Silero VAD was tried only as part of the rejected second pass. The same code runs in Chrome/Edge and in the Electron desktop shell, on macOS (Apple Silicon) and Windows x64 (v3.0, ADR-0021).
 
 ## Candidates (in order of preference)
 
@@ -44,9 +44,11 @@ Both models are sherpa-onnx streaming Zipformer English (candidate 1). Both run 
 ## Decision
 
 1. **Engine.** Use sherpa-onnx streaming Zipformer English **2023-06-21** with **hotwords** as the working speech-to-text engine for Day 2. It runs in a Web Worker with `modified_beam_search` (4 active paths). Hotwords are needed for names. Sources and versions are pinned with SHA-256 in `apps/web/scripts/fetch-models.ts`.
-2. **Status stays Proposed, because accuracy is above the bar.** Overall WER was ≈25% (sentence 1: 5%, sentence 2: 24%, sentence 3: 53%). The bar is 20%.
-3. **Day 2 improvement to evaluate: two passes.** Keep the fast streaming model for partial text. When a pause ends an utterance, re-check that final line with a more accurate model (an offline/non-streaming recognizer) and replace the text. Target: **under 20% WER on the same 3 sentences**. If it meets the target in Chrome and the desktop app without breaking the lag and CPU limits, this ADR becomes Accepted.
-4. **Model A (2023-06-26) is rejected for accuracy.** It stays in the `/dev/stt-test` picker only for comparison. Hotwords did not help it.
+2. **Accuracy is above the bar, and this is accepted for now (Day 2 Stage 5).** Day 1: overall WER ≈25% (sentence 1: 5%, sentence 2: 24%, sentence 3: 53%). Day 2 Stage 5 baseline: 27.5% (0%, 29%, 60%). The bar is 20%. Sentence 3 (names) is the weak point.
+3. **Two passes were tried on Day 2 and rejected.** A second, non-streaming model re-decoded each finished utterance. No configuration came clearly under 20% (see "Second pass (Day 2, Stage 5): tried and rejected"), so Kite stays streaming-only. The developer accepted this ADR for streaming-only on 2026-10-28. The next levers, in order:
+   - **session hotwords (Day 3):** names and terms from the session's details and documents. Sentence 3's errors are mostly names, which is what hotwords fix;
+   - **a native sherpa-onnx engine in the desktop app (Day 6 option)**, if accuracy is still a problem after Day 4. It is multi-threaded and faster than WebAssembly, so it could run a larger, more accurate model. It would live behind `src/platform/` and need its own ADR.
+4. **Model A (2023-06-26) is rejected for accuracy.** Hotwords did not help it. It was removed from the test page's picker in Day 2 Stage 5.
 5. **Size limit raised to 250 MB, for now.** The download is 204.1 MB. Conditions:
    - it is a one-time download, then cached in the browser's Cache Storage. Cached loads measured about 2.1 s;
    - a **download progress indicator is required** in the real UI (Day 2);
@@ -57,7 +59,7 @@ Both models are sherpa-onnx streaming Zipformer English (candidate 1). Both run 
    - the recognizer's own endpoint rule: about 1.0 s of decoded silence after text;
    - a safety net in the worker: no new words for 1.2 s of audio.
 
-   In Chrome the model rule ended the utterances. In the desktop app the safety net did (one utterance). Silero VAD is added on Day 2; it was left out of the spike because the official streaming example does not use one.
+   In Chrome the model rule ended the utterances. In the desktop app the safety net did (one utterance). Silero VAD is not used. It was left out of the spike because the official streaming example does not use one. On Day 2 the energy gate covered its job, and Silero VAD was tried only inside the rejected second pass.
 
 ### Hotwords
 
@@ -72,7 +74,7 @@ The v1.13.7 WebAssembly build supports hotwords. They are passed in the recogniz
 
 - **v1.13.7 is the last sherpa-onnx release with official ASR WebAssembly builds.** v1.13.8, 2.0.0 and 2.0.1 have none. Upgrading means either building the WebAssembly runtime ourselves from the sherpa-onnx source (Emscripten, `build-wasm-simd-asr.sh`) or staying on v1.13.7. Any upgrade must re-run the `/dev/stt-test` measurements.
 - **Dependency on Emscripten internals.** The runtime's own 191 MB `.data` package is skipped: `Module.getPreloadedPackage` returns an empty buffer. The model files are then written into its in-memory file system with `Module.FS_createPath` and `Module.FS_createDataFile`. These are Emscripten file-system APIs, not sherpa-onnx APIs, so a different runtime build could change or remove them. That would show up at once as a load error on `/dev/stt-test`.
-- **No COOP/COEP headers are needed.** The official build is single-threaded (no pthreads), so it needs no `SharedArrayBuffer` and no cross-origin isolation. Sign-in and the rest of the app are unaffected.
+- **No COOP/COEP headers are needed.** The official build is single-threaded (no pthreads), so it needs no `SharedArrayBuffer` and no cross-origin isolation. Sign-in and the rest of the app are unaffected. (The Day 2 Stage 5 second pass needed them for a threaded runtime; they were removed with it.)
 - **Known risk: battery power.** Real-time factor rose to about 0.6–0.7 on the same laptop running on battery (Windows Balanced plan, CPU held at 1.7 GHz), above the 0.5 limit. Plugged in, it was 0.24. Mitigations to evaluate later:
   - tell users to stay plugged in during calls;
   - a native sherpa-onnx engine in the desktop app (multi-threaded, faster than WebAssembly). It would live behind `src/platform/` and need its own ADR.
@@ -157,67 +159,63 @@ For display only, a new "You" line that arrives while "Them" is speaking is held
 
 From Day 2, `wer.ts` counts a word heard split or joined ("TO DAY" for "today", "NORTH WIND" for "Northwind") as correct: the letters are right and only the spacing differs. Under this rule, Day 2 run C sentence 1 is 5% (was 16%) and sentence 2 stays 18%. Day 1 rows in benchmark-results.md keep their original scoring.
 
-### Second pass (Day 2, Stage 5): built, waiting for measurements
+### Second pass (Day 2, Stage 5): tried and rejected
 
-**What it does.** The streaming model still makes the grey text and a first-pass final line, shown at once. When an utterance ends, its audio goes from the streaming worker straight to a second worker (a MessagePort; the audio never passes through the page). There Silero VAD trims the silence and a non-streaming model decodes the speech again. The page then replaces the line's text in place: same line id, marked refined. `transcript.lines()`, `window()` and `displayLines()` all return the refined text, and the echo filter checks the refined text again. It can hide a line; a hidden line never comes back. Both latencies are measured from the end of speech (the last loud 10 ms frame, never after the last text change): to the first-pass final, and to the refined text. The target is refined text 1.5 s or less at p50. Up to about 2 s is acceptable for display, and the result is reported against 1.5 s.
+**What was built.** The streaming model still made the grey text and a first-pass final line. When an utterance ended, its audio (in memory only, at most 30 s) went straight from the streaming worker to a second worker. There Silero VAD trimmed the silence and a non-streaming model decoded the speech again. The line's text was then replaced in place (same id, marked refined), and the echo filter checked the refined text again.
 
-**Audio stays in memory only.** The streaming worker keeps the current utterance's audio only when the second pass is on:
-- from 0.3 s before the detected onset (or at most 2 s before the first word when no onset was found) to 0.3 s after the end of speech;
-- at most 30 s; a longer utterance keeps its first-pass text.
+The second worker used the official sherpa-onnx **v1.13.2** "vad-asr" WebAssembly runtime (pinned by SHA-256), because v1.13.7 has no official non-streaming English build. That runtime is a WebAssembly *threads* build:
+- 537 MB of shared memory per worker;
+- 4 threads of its own;
+- it runs only on a cross-origin-isolated page.
 
-The buffer is transferred to the second worker. That worker queues at most 8 jobs and drops any that waited more than 6 s (those keep their first-pass text). It drops each job's audio as soon as the job is decoded. Audio is never stored, logged or sent anywhere.
+So the stage added `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless` on every route, provisionally. With those headers, the developer's checks passed: sign-in, `/dev/claude-test` streaming, `/live/demo`, and `crossOriginIsolated` = true.
 
-**Configurations to measure (developer's decision, 2026-10-28).**
+**Measured (2026-10-28, Chrome, plugged in, same microphone, `crossOriginIsolated` true; rows in benchmark-results.md).**
 
-| Id | Grey text and first pass | Second pass | Download |
-|---|---|---|---|
-| baseline | 2023-06-21 | off | 204.5 MB |
-| config 1 | model A, 2023-06-26 | Zipformer GigaSpeech, non-streaming int8, with hotwords (Apache-2.0) | 175.4 MB |
-| config 2 | 2023-06-21 | Moonshine v2 tiny English (MIT) | 262.4 MB |
+| Configuration | Download | Overall WER (S1 / S2 / S3) | Latency, end of speech → | RTF | WebAssembly memory |
+|---|---|---|---|---|---|
+| **Baseline:** 2023-06-21 streaming only | 204.5 MB | **27.5%** (0% / 29% / 60%) | final line: p50 1,673 / p95 1,871 ms | 0.303 | 536.9 MB |
+| **Config 1:** model A 2023-06-26 + Zipformer GigaSpeech (non-streaming int8, hotwords) | 175.4 MB | first pass 52.9% → refined **25.5%** (5% / 18% / 60%) | refined: p50 2,438 / p95 3,875 ms | 0.374 (both workers) | 1,073.7 MB |
+| **Config 2:** 2023-06-21 + Moonshine v2 tiny | 262.4 MB | first pass 68.6% → refined **88.2%** | refined: p50 2,334 ms | not recorded | 1,073.7 MB |
 
-The 265 MB limit applies only if config 2 is adopted. Moonshine v2 base was dropped: too slow (about 0.9 s per 4 s of speech in Node) and it has the same 9 s limit.
+Notes on the measurements:
+- Baseline "Them" lag was 773 ms.
+- Config 2: sentence 1 was not captured (only "UM" was heard), so that sentence is invalid for config 2. The first-pass figure (68.6%) is also above the baseline, so this run is not a clean comparison. Even so, on the same audio the second pass made the text worse. For example, it heard "This year, the end cost is $2 per c, but one hundred and fifty two cents."
 
-**The second-pass runtime is a different version.** v1.13.7, our streaming runtime, has no official non-streaming English build. The second pass therefore uses the official **v1.13.2** "vad-asr" WebAssembly runtime:
-- unpacked at build time from `sherpa-onnx-wasm-simd-1.13.2-vad-asr-moonshine-v2-tiny-en.tar.bz2` (33 MB, SHA-256 pinned, matches the release digest) and served from `/stt-runtime/v1.13.2/`;
-- the developer chose this over building v1.13.7 ourselves;
-- its `sherpa-onnx-asr.js` is byte-identical to v1.13.7's;
-- Silero VAD is the official `asr-models/silero_vad.onnx` release asset (also pinned). It is the same file as the one inside the vad-asr bundles.
-
-**The v1.13.2 vad-asr runtime is a WebAssembly threads build.** Unlike v1.13.7, it:
-- creates shared WebAssembly memory (up to 2 GB; 537 MB reserved at start);
-- starts a pool of **4 worker threads** of its own.
-
-Chrome allows that only on a cross-origin-isolated page, so this stage adds, **provisionally**, `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless` on every route (next.config.ts):
-- **Why credentialless:** the developer's choice, tried first. Cross-origin requests without CORS are sent without credentials instead of being blocked. It is supported in Chrome, Edge and Electron, and it gave isolation in every check so far. `require-corp` was not needed.
-- **Why every route:** a page is isolated only from its first load, so a client-side navigation into `/live` would not be.
-- **Reversible:** if Stage 5 adopts no second pass, the headers are removed again in the same stage.
-
-The page passes the verified loader to the runtime's own threads as a Blob URL (`Module.mainScriptUrlOrBlob`). Only pinned, verified code runs. The second pass uses one sherpa-onnx thread: two threads were at most about 10% faster in Node.
-
-**Known limits and facts, checked before measuring** (Node, and the real worker in headless Chrome on an isolated page; indicative only, not benchmark rows):
-- **Moonshine v2 tiny length limit.** It throws on input longer than about 9 s: 9 s works, 9.5 s fails. The second pass cuts Moonshine input at VAD pauses into pieces of 8 s or less. On an 18.7 s recording the cut worked, but one word was lost at a cut.
-- **GigaSpeech** has no such limit (17 s checked). Its hotwords go through a hotwords *file*, because the offline config has no hotwords buffer, encoded with its own pinned `bpe.vocab`.
-- **Speed and memory in headless Chrome** (power state not checked):
-
-  | Model | 6.2 s of speech | 17.1 s of speech |
-  |---|---|---|
-  | GigaSpeech | 1.9 s decode | 4.7 s decode |
-  | Moonshine v2 tiny | 1.6 s decode | 3.2 s decode |
-
-  The VAD took about 0.45 s per 8.6 s of audio. Each worker holds 537 MB of WebAssembly memory, so about **1.07 GB across both**. This is close to the developer's 1.2 GB concern level before Chrome's own overhead.
-- **WER and digits.** Moonshine writes digits ("$52", "9:30"). `wer.ts` (and the echo check) now spell digits out before comparing, so they are scored like spelled-out words, the same for every configuration.
-
-**Adoption rule (developer).** A configuration is adopted only if all of these hold:
+**Adoption rule (the developer's, set before measuring).** A configuration is adopted only if:
 - overall WER is clearly under 20% (not borderline);
 - the combined RTF of both workers is 0.5 or less with two channels, plugged in;
-- memory is acceptable.
+- memory is acceptable (about 1.2 GB was the serious-concern level).
 
-Otherwise:
-- the COOP/COEP headers are removed;
-- Kite stays streaming-only with hotwords;
-- this ADR becomes Accepted for streaming-only, with a native desktop engine as the Day 6 option;
-- work continues to Stage 6.
+**Why each was rejected.**
+- **Config 1:** 25.5% is not under 20%. It only matches the baseline (27.5%; the difference is within one or two words over 51). It doubles memory to 1.07 GB of WebAssembly memory before Chrome's own overhead, and the refined text arrives about 0.7 s later than the baseline's final line (p50 2,438 vs 1,673 ms; p95 3,875 ms). Sentence 3, the names, stayed at 60%.
+- **Config 2:** the second pass made accuracy worse (88.2%). It also cost the same memory and went over the 250 MB download limit.
+- **Moonshine v2 base:** dropped before measuring. In Node it took about 0.9 s per 4 s of speech, and it shares tiny's limit: input over about 9 s throws.
+
+**What was removed.** In the same stage, the following were removed from production code, `models.ts` and the build steps (`fetch-models.ts`, `check-stt-runtime.ts`):
+- the COOP/COEP headers (`next.config.ts` is back to the Day 1 "no isolation needed" note);
+- the second-pass worker and its job queue;
+- the v1.13.2 runtime and Silero VAD;
+- the GigaSpeech and Moonshine models;
+- model A;
+- the in-memory utterance audio buffer;
+- refine-in-place in the transcript.
+
+The full implementation is kept in git history in commit **`6d3fb42`** ("wip(web): stage 5 second-pass experiment, measurements pending") on branch `day-02-audio`. Use it as the starting point if a second pass is tried again, for example with a native engine.
+
+**Kept from the experiment** (not tied to the second pass):
+- WER scoring spells out digits ("$52", "9:30", "1,500", "15%") before comparing (`wer.ts`);
+- end-of-speech detection in each channel (the last loud 10 ms frame, never after the last text change; `gate.ts` and `channel.ts`). Every final line now carries `speechEnd`, and the engine reports end of speech → final line latency;
+- `percentile()` in `metrics.ts`;
+- `/dev/stt-test` shows the latency at p50/p95 and the overall WER across the sentences read.
 
 ## Validation
 
-Measured numbers are in `docs/testing/benchmark-results.md` (Day 1 Stage 6 rows). The test page is `/dev/stt-test` (admins only). It shows load time, real-time factor, lag, which rule ended each utterance, and the WER of the 3 test sentences; "Copy results" gives the text recorded there.
+Measured numbers are in `docs/testing/benchmark-results.md` (Day 1 Stage 6 and Day 2 rows). The test page is `/dev/stt-test` (admins only). It shows:
+- load time;
+- real-time factor and lag;
+- end of speech → final line latency (p50/p95);
+- which rule ended each utterance;
+- the WER of each of the 3 test sentences, and overall.
+
+"Copy results" gives the text recorded there.

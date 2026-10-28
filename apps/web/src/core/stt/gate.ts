@@ -15,7 +15,7 @@
  * Why it is lenient: on Day 1 a loudness threshold cut sentences in the middle. This gate never
  * closes while an utterance is showing text (the caller tells it), stays open 1.5 s after the
  * last loud chunk (longer than the end-of-utterance rules need), and opens at a low level.
- * Day 2 Stage 5 evaluates Silero VAD, which can replace this.
+ * Silero VAD was tried on Day 2 (Stage 5) and not adopted (ADR-0020); this gate stays.
  */
 
 /** Settings for SilenceGate. */

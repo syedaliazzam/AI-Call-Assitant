@@ -97,7 +97,7 @@ describe('numbers', () => {
     expect(words('150 seats')).toBe('one hundred and fifty seats');
   });
 
-  it('scores a Moonshine-style sentence with digits as perfect', () => {
+  it('scores a sentence written with digits as perfect', () => {
     const reference =
       'The professional plan costs fifty two dollars per seat per month for one hundred and fifty seats.';
     const heard = 'The professional plan costs $52 per seat per month for 150 seats.';

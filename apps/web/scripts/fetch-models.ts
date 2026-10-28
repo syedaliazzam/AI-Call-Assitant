@@ -5,12 +5,10 @@
  *          already present with the right checksum are skipped. All URLs and checksums come from
  *          src/core/stt/models.ts (one source of truth with the browser download).
  *          Usage:
- *            pnpm --filter web fetch-models                 runtimes + all models + test
- *                                                           recordings (development, ~400 MB)
- *            pnpm --filter web fetch-models --runtime-only  both runtimes and Silero VAD only
- *                                                           (27 MB; run by the build, on
- *                                                           Vercel too; downloads 208 MB of
- *                                                           release archives when missing)
+ *            pnpm --filter web fetch-models                 runtime + model + test recordings
+ *                                                           (development, ~205 MB)
+ *            pnpm --filter web fetch-models --runtime-only  runtime only (13.3 MB; run by the
+ *                                                           build, on Vercel too)
  * Used by: developers (once per machine); the "fetch-models" and "stt:runtime" scripts in
  *          apps/web/package.json (stt:runtime runs before every `next build`)
  * Depends on: src/core/stt/models.ts, src/core/stt/sentencepiece.ts; Node.js (fetch, crypto, fs);
@@ -20,8 +18,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.1 (core/stt), §10; ADR-0020
  *
  * Where files go:
- * - streaming runtime → apps/web/public/stt-runtime/v1.13.7/, second-pass runtime and Silero
- *   VAD → apps/web/public/stt-runtime/v1.13.2/ (served from our origin in every environment);
+ * - runtime → apps/web/public/stt-runtime/v1.13.7/ (served from our origin in every environment);
  * - model and test recordings → apps/web/public/models/stt/ (used when the source is `local`, as
  *   in `pnpm dev`; production loads model files from Hugging Face). Both folders are git-ignored.
  */
@@ -38,11 +35,6 @@ import {
   RUNTIME_ARCHIVE,
   RUNTIME_FILES,
   RUNTIME_PUBLIC_PATH,
-  SECOND_PASS_MODELS,
-  SECOND_PASS_RUNTIME_ARCHIVE,
-  SECOND_PASS_RUNTIME_FILES,
-  SECOND_PASS_RUNTIME_PUBLIC_PATH,
-  SILERO_VAD,
   STT_MODELS,
   TEST_RECORDINGS,
   TEST_RECORDINGS_DIR,
@@ -55,12 +47,6 @@ const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..',
 
 /** apps/web/public/stt-runtime/v1.13.7. */
 export const RUNTIME_DIR = path.join(PUBLIC_DIR, ...RUNTIME_PUBLIC_PATH.split('/').filter(Boolean));
-
-/** apps/web/public/stt-runtime/v1.13.2 (second-pass runtime and Silero VAD). */
-export const SECOND_PASS_RUNTIME_DIR = path.join(
-  PUBLIC_DIR,
-  ...SECOND_PASS_RUNTIME_PUBLIC_PATH.split('/').filter(Boolean),
-);
 
 /** apps/web/public/models/stt. */
 const MODELS_DIR = path.join(PUBLIC_DIR, ...LOCAL_MODELS_PATH.split('/').filter(Boolean));
@@ -128,54 +114,35 @@ function tarCommand(): string {
   return 'tar';
 }
 
-/** A release archive to unpack runtime files from. */
-interface RuntimeArchive {
-  /** Pinned URL. */
-  url: string;
-  /** SHA-256 of the archive. */
-  sha256: string;
-  /** Size in bytes. */
-  bytes: number;
-  /** Top-level folder inside the archive. */
-  folder: string;
-}
-
 /**
- * Installs runtime files from a pinned release archive (download, verify the archive, unpack
- * only those files, verify each).
+ * Installs the three runtime files from the pinned release archive (download, verify the
+ * archive, unpack only those files, verify each).
  *
- * @param label   Name printed while installing.
- * @param archive The release archive.
- * @param files   The runtime files inside it.
- * @param dir     Destination folder.
  * @throws Error on download, unpack or checksum failure.
  */
-async function installRuntime(
-  label: string,
-  archive: RuntimeArchive,
-  files: readonly PinnedFile[],
-  dir: string,
-): Promise<void> {
-  mkdirSync(dir, { recursive: true });
+async function installRuntime(): Promise<void> {
+  mkdirSync(RUNTIME_DIR, { recursive: true });
+  const files = Object.values(RUNTIME_FILES);
   const missing: PinnedFile[] = [];
   for (const file of files) {
-    if (!(await isInstalled(path.join(dir, file.name), file))) missing.push(file);
+    if (!(await isInstalled(path.join(RUNTIME_DIR, file.name), file))) missing.push(file);
   }
-  console.log(`runtime ${label}: ${files.length - missing.length}/${files.length} files present`);
+  console.log(
+    `runtime ${RUNTIME_PUBLIC_PATH}: ${files.length - missing.length}/${files.length} files present`,
+  );
   if (missing.length === 0) return;
-  const keptMb = (files.reduce((sum, file) => sum + file.bytes, 0) / 1e6).toFixed(0);
 
   const work = mkdtempSync(path.join(tmpdir(), 'kite-fetch-models-'));
   try {
-    const archiveFile = path.join(work, 'runtime.tar.bz2');
+    const archive = path.join(work, 'runtime.tar.bz2');
     console.log(
-      `  release archive: ${(archive.bytes / 1e6).toFixed(0)} MB (only ${keptMb} MB of it is kept)`,
+      `  release archive: ${(RUNTIME_ARCHIVE.bytes / 1e6).toFixed(0)} MB (only 13 MB of it is kept)`,
     );
-    await download(archive.url, archiveFile, archive.sha256);
+    await download(RUNTIME_ARCHIVE.url, archive, RUNTIME_ARCHIVE.sha256);
     // Extract only the files we need. tar runs inside the temporary folder with a relative
     // archive name: GNU tar (for example Git Bash's) reads "C:\…" as a remote "host:path".
-    const entries = missing.map((file) => `${archive.folder}/${file.name}`);
-    const result = spawnSync(tarCommand(), ['-xjf', path.basename(archiveFile), ...entries], {
+    const entries = missing.map((file) => `${RUNTIME_ARCHIVE.folder}/${file.name}`);
+    const result = spawnSync(tarCommand(), ['-xjf', path.basename(archive), ...entries], {
       cwd: work,
       stdio: 'inherit',
     });
@@ -183,8 +150,8 @@ async function installRuntime(
       throw new Error('tar failed to unpack the runtime archive (needs tar with bzip2 support)');
     }
     for (const file of missing) {
-      const target = path.join(dir, file.name);
-      await copyFile(path.join(work, archive.folder, file.name), target);
+      const target = path.join(RUNTIME_DIR, file.name);
+      await copyFile(path.join(work, RUNTIME_ARCHIVE.folder, file.name), target);
       if (!(await isInstalled(target, file))) {
         rmSync(target, { force: true });
         throw new Error(`Checksum mismatch for ${file.name} after unpacking`);
@@ -226,13 +193,12 @@ async function installFiles(
  * Checks that bpe.model turns into the pinned bpe.vocab (the same check the browser makes).
  *
  * @param bpeModelPath Path to the installed bpe.model.
- * @param expected     The pinned SHA-256 of its bpe.vocab.
- * @throws Error if the derived vocabulary does not match.
+ * @throws Error if the derived vocabulary does not match BPE_VOCAB_SHA256.
  */
-async function checkBpeVocab(bpeModelPath: string, expected: string): Promise<void> {
+async function checkBpeVocab(bpeModelPath: string): Promise<void> {
   const vocab = sentencePieceVocab(await readFile(bpeModelPath));
   const actual = createHash('sha256').update(vocab, 'utf8').digest('hex');
-  if (actual !== expected) {
+  if (actual !== BPE_VOCAB_SHA256) {
     throw new Error(`bpe.vocab derived from bpe.model does not match its pin (got ${actual})`);
   }
   console.log('hotword vocabulary: bpe.model → bpe.vocab matches its pinned SHA-256');
@@ -240,7 +206,9 @@ async function checkBpeVocab(bpeModelPath: string, expected: string): Promise<vo
 
 /** Points at Day 1 folders that are no longer used (they are only deleted by the developer). */
 function reportStaleFolders(): void {
-  const stale = ['runtime-v1.13.7'].filter((name) => existsSync(path.join(MODELS_DIR, name)));
+  const stale = ['runtime-v1.13.7', 'zipformer-en-2023-06-26'].filter((name) =>
+    existsSync(path.join(MODELS_DIR, name)),
+  );
   for (const name of stale) {
     console.log(
       `  note: public/models/stt/${name} is from Day 1 and no longer used; you can delete it`,
@@ -254,31 +222,12 @@ function reportStaleFolders(): void {
 async function main(): Promise<void> {
   const runtimeOnly = process.argv.includes('--runtime-only');
   console.log(`Installing speech-to-text files${runtimeOnly ? ' (runtime only)' : ''}`);
-  await installRuntime(
-    RUNTIME_PUBLIC_PATH,
-    RUNTIME_ARCHIVE,
-    Object.values(RUNTIME_FILES),
-    RUNTIME_DIR,
-  );
-  await installRuntime(
-    SECOND_PASS_RUNTIME_PUBLIC_PATH,
-    SECOND_PASS_RUNTIME_ARCHIVE,
-    Object.values(SECOND_PASS_RUNTIME_FILES),
-    SECOND_PASS_RUNTIME_DIR,
-  );
-  await installFiles('Silero VAD', SECOND_PASS_RUNTIME_DIR, [SILERO_VAD]);
+  await installRuntime();
   if (!runtimeOnly) {
     for (const model of STT_MODELS) {
       const dir = path.join(MODELS_DIR, model.id);
       await installFiles(model.label, dir, Object.values(model.files));
-      await checkBpeVocab(path.join(dir, model.files.bpeModel.name), BPE_VOCAB_SHA256);
-    }
-    for (const model of SECOND_PASS_MODELS) {
-      const dir = path.join(MODELS_DIR, model.id);
-      await installFiles(model.label, dir, Object.values(model.files));
-      if (model.kind === 'transducer') {
-        await checkBpeVocab(path.join(dir, model.files.bpeModel.name), model.bpeVocabSha256);
-      }
+      await checkBpeVocab(path.join(dir, model.files.bpeModel.name));
     }
     await installFiles(
       'test recordings',
