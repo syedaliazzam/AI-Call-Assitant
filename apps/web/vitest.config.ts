@@ -11,13 +11,25 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   resolve: {
-    // Same `@/*` → `src/*` alias as tsconfig.json, so tests import modules the way the app does.
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    alias: [
+      // Same `@/*` → `src/*` alias as tsconfig.json, so tests import modules the way the app does.
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
       // `server-only` throws when imported outside a Next.js server build; in unit tests the
       // server modules are imported directly, so replace it with an empty module.
-      'server-only': fileURLToPath(new URL('./tests/stubs/server-only.ts', import.meta.url)),
-    },
+      {
+        find: 'server-only',
+        replacement: fileURLToPath(new URL('./tests/stubs/server-only.ts', import.meta.url)),
+      },
+      // pdf.js: the app uses the modern build through 'pdfjs-dist/webpack.mjs' (it starts the
+      // pdf.js worker in the browser). Node 24 lacks a JavaScript feature that build needs
+      // (Uint8Array.prototype.toHex), and pdf.js asks for its legacy build in Node.js, which
+      // runs the same text extraction without a worker.
+      { find: /^pdfjs-dist\/webpack\.mjs$/, replacement: 'pdfjs-dist/legacy/build/pdf.mjs' },
+      // mammoth: in Node its default entry only reads { path } or { buffer }; the browser
+      // bundle reads { arrayBuffer }, which is what the app passes. Tests use the browser bundle
+      // so they run the same input path as the app.
+      { find: /^mammoth$/, replacement: 'mammoth/mammoth.browser.js' },
+    ],
   },
   test: {
     include: ['tests/unit/**/*.test.{ts,tsx}'],
