@@ -21,7 +21,7 @@ It runs as a desktop app (macOS, Windows) and in Chrome or Edge. Start with [CLA
 
 ## Set up a development machine (once)
 
-Steps 1–2 are needed for everything; steps 3–5 for sign-in and Claude; step 6 for speech-to-text in development (`/live/demo`, `/dev/stt-test`, `test:stt`).
+Steps 1–2 are needed for everything; steps 3–5 for sign-in and Claude; step 6 for speech-to-text in development (live sessions, `/dev/stt-test`, `test:stt`).
 
 **1. Install the dependencies.**
 
@@ -81,14 +81,16 @@ See [ADR-0023](docs/decisions/ADR-0023-stt-model-hosting.md).
 pnpm dev
 ```
 
-Open http://localhost:3000 and sign in. Admins also see **Dev tools** in the sidebar:
+Open http://localhost:3000 and sign in. To try a live call, create a session on the dashboard, then **Open** it (in the browser, choose **Open in browser**). Use headphones, so the microphone does not pick up the other side.
 
-- `/live/demo`: the real live screen on a demo session (until Day 3 adds sessions). Use headphones, so the microphone does not pick up the other side.
-  1. Click **Connect**.
-  2. Pick where the other side comes from:
-     - **desktop app:** this computer's sound, with no picker;
-     - **browser:** pick the meeting tab and turn on **"Also share tab audio"**.
-  3. Talk. Your microphone is labelled **You** and the call is labelled **Them**. Grey text is still being heard; lines become final at pauses.
+1. Click **Connect**.
+2. Pick where the other side comes from:
+   - **desktop app:** this computer's sound, with no picker;
+   - **browser:** pick the meeting tab and turn on **"Also share tab audio"**.
+3. Talk. Your microphone is labelled **You** and the call is labelled **Them**. Grey text is still being heard; lines become final at pauses.
+
+Admins also see **Dev tools** in the sidebar:
+
 - `/dev/stt-test`: speech-to-text with load time, real-time factor, lag, end of speech → final line latency (p50/p95) and the word error rate on 3 test sentences. "Copy results" gives the text for `docs/testing/benchmark-results.md`.
 - `/dev/claude-test`: streams a Claude reply and shows timings.
 

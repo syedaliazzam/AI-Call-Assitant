@@ -1,6 +1,6 @@
 /**
  * File: apps/web/src/core/storage/utterances.ts
- * Purpose: Save and list a session's final transcript lines on this device.
+ * Purpose: Save, list and remove a session's final transcript lines on this device.
  * Used by: the live screen (Day 3 Stage 4), the session review page (Day 5)
  * Depends on: src/core/storage/db.ts, src/core/storage/types.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (if "save transcript" is off,
@@ -35,4 +35,15 @@ export async function saveUtterance(utterance: StoredUtterance): Promise<void> {
  */
 export async function listUtterances(sessionId: string): Promise<StoredUtterance[]> {
   return getDb().utterances.where('sessionId').equals(sessionId).sortBy('tStart');
+}
+
+/**
+ * Removes one saved transcript line, for example a line that was saved and then recognised as
+ * an echo of the other side (echo lines are never kept).
+ *
+ * @param id The line's id.
+ * Called from: the transcript saver (core/transcript/saver.ts); tests
+ */
+export async function deleteUtterance(id: string): Promise<void> {
+  await getDb().utterances.delete(id);
 }
