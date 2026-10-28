@@ -17,8 +17,8 @@
  *          tests/integration/stt.spec.ts (isInstalled, sha256Of)
  * Depends on: src/core/stt/models.ts, src/core/stt/sentencepiece.ts; Node.js (fetch, crypto, fs);
  *             the system `tar` with bzip2 support to unpack the .tar.bz2 release archive (Node
- *             has no bzip2). Windows 10+ and macOS include it; Vercel's build image (Amazon Linux
- *             2023) lists tar, bsdtar and bzip2 as pre-installed (checked 2026-10-27).
+ *             has no bzip2). Windows 10+ and macOS include it (bsdtar); Linux (GitHub's
+ *             ubuntu-latest, Vercel's Amazon Linux 2023 build image) uses GNU tar.
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.1 (core/stt), §10; ADR-0020
  *
  * Where files go:
@@ -119,6 +119,104 @@ function tarCommand(): string {
 }
 
 /**
+ * Removes leading "./" segments from an archive member name ("./a/b" → "a/b").
+ *
+ * @param member A name as `tar -t` prints it.
+ * @returns The name without the "./" prefix.
+ * Called from: findArchiveMembers(); tests
+ */
+export function normalizeMember(member: string): string {
+  let name = member.trim();
+  while (name.startsWith('./')) name = name.slice(2);
+  return name;
+}
+
+/**
+ * Finds the exact archive member names of the files to unpack, from `tar -t`'s listing.
+ *
+ * Why: tar programs disagree on member names. The v1.13.7 runtime archive stores its files as
+ * "./<folder>/<file>". bsdtar (Windows, macOS) matches "<folder>/<file>" against that, but GNU tar
+ * (Linux: CI and Vercel builds) does not ("Not found in archive"). So the names are taken
+ * verbatim from the listing, and every tar is given the exact names it printed.
+ *
+ * Match order per file: "<folder>/<file>" after removing "./"; otherwise exactly one member with
+ * that file name anywhere in the archive (in case the release changes its folder layout).
+ *
+ * @param listing Lines of `tar -t` output.
+ * @param folder  Expected top-level folder (RUNTIME_ARCHIVE.folder).
+ * @param names   File names to find.
+ * @returns found: file name → member name as listed; missing: names not found (or found more
+ *          than once without the expected folder).
+ * Called from: extractRuntimeFiles(); tests
+ */
+export function findArchiveMembers(
+  listing: readonly string[],
+  folder: string,
+  names: readonly string[],
+): { found: Map<string, string>; missing: string[] } {
+  const members = listing.map((line) => line.trim()).filter((line) => line && !line.endsWith('/'));
+  const found = new Map<string, string>();
+  const missing: string[] = [];
+  for (const name of names) {
+    const exact = members.find((member) => normalizeMember(member) === `${folder}/${name}`);
+    const byName = members.filter((member) => normalizeMember(member).split('/').pop() === name);
+    const member = exact ?? (byName.length === 1 ? byName[0] : undefined);
+    if (member) found.set(name, member);
+    else missing.push(name);
+  }
+  return { found, missing };
+}
+
+/**
+ * Lists the archive and unpacks only the given files into a folder.
+ *
+ * @param archive Path to the downloaded (already verified) .tar.bz2.
+ * @param names   File names to unpack.
+ * @param tar     tar program (default: tarCommand(); a check script passes GNU tar on Windows).
+ * @returns file name → path of the unpacked file.
+ * @throws Error if tar cannot read the archive, a file is not in it (the message names the
+ *         missing files and shows the first entries of the listing), or unpacking fails.
+ * Called from: installRuntime()
+ */
+export function extractRuntimeFiles(
+  archive: string,
+  names: readonly string[],
+  tar: string = tarCommand(),
+): Map<string, string> {
+  const work = path.dirname(archive);
+  // tar runs inside the archive's folder with a relative archive name: GNU tar (for example
+  // Git Bash's) reads "C:\…" as a remote "host:path".
+  const list = spawnSync(tar, ['-tjf', path.basename(archive)], {
+    cwd: work,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (list.status !== 0) {
+    throw new Error(
+      `tar could not list the runtime archive (exit ${list.status}; it needs bzip2 support): ${list.stderr.trim()}`,
+    );
+  }
+  const listing = list.stdout.split(/\r?\n/).filter(Boolean);
+  const { found, missing } = findArchiveMembers(listing, RUNTIME_ARCHIVE.folder, names);
+  if (missing.length > 0) {
+    throw new Error(
+      `The runtime archive does not contain ${missing.join(', ')} (expected under ` +
+        `${RUNTIME_ARCHIVE.folder}/). First entries of the archive:\n  ` +
+        listing.slice(0, 10).join('\n  '),
+    );
+  }
+  const members = [...found.values()];
+  const result = spawnSync(tar, ['-xjf', path.basename(archive), ...members], {
+    cwd: work,
+    stdio: 'inherit',
+  });
+  if (result.status !== 0) {
+    throw new Error(`tar failed to unpack ${members.join(', ')} (exit ${result.status})`);
+  }
+  return new Map([...found].map(([name, member]) => [name, path.join(work, member)]));
+}
+
+/**
  * Installs the three runtime files from the pinned release archive (download, verify the
  * archive, unpack only those files, verify each).
  *
@@ -143,19 +241,13 @@ async function installRuntime(): Promise<void> {
       `  release archive: ${(RUNTIME_ARCHIVE.bytes / 1e6).toFixed(0)} MB (only 13 MB of it is kept)`,
     );
     await download(RUNTIME_ARCHIVE.url, archive, RUNTIME_ARCHIVE.sha256);
-    // Extract only the files we need. tar runs inside the temporary folder with a relative
-    // archive name: GNU tar (for example Git Bash's) reads "C:\…" as a remote "host:path".
-    const entries = missing.map((file) => `${RUNTIME_ARCHIVE.folder}/${file.name}`);
-    const result = spawnSync(tarCommand(), ['-xjf', path.basename(archive), ...entries], {
-      cwd: work,
-      stdio: 'inherit',
-    });
-    if (result.status !== 0) {
-      throw new Error('tar failed to unpack the runtime archive (needs tar with bzip2 support)');
-    }
+    const unpacked = extractRuntimeFiles(
+      archive,
+      missing.map((file) => file.name),
+    );
     for (const file of missing) {
       const target = path.join(RUNTIME_DIR, file.name);
-      await copyFile(path.join(work, RUNTIME_ARCHIVE.folder, file.name), target);
+      await copyFile(unpacked.get(file.name)!, target);
       if (!(await isInstalled(target, file))) {
         rmSync(target, { force: true });
         throw new Error(`Checksum mismatch for ${file.name} after unpacking`);
