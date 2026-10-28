@@ -1,13 +1,14 @@
 /**
  * Tests for apps/web/src/core/storage/utterances.ts, on an in-memory IndexedDB (fake-indexeddb):
  * saveUtterance() stores a line and replaces a line saved earlier under the same id (a merged
- * line); listUtterances() returns one session's lines in the order they were spoken. All text is
+ * line); deleteUtterance() removes one line; listUtterances() returns one session's lines in the
+ * order they were spoken. All text is
  * invented.
  */
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { StoredUtterance } from '@/core/storage/types';
-import { listUtterances, saveUtterance } from '@/core/storage/utterances';
+import { deleteUtterance, listUtterances, saveUtterance } from '@/core/storage/utterances';
 import { resetDb } from './helpers';
 
 beforeEach(resetDb);
@@ -32,6 +33,14 @@ describe('utterances', () => {
     await saveUtterance(line('x1', 's2', 500));
     expect((await listUtterances('s1')).map((u) => u.id)).toEqual(['u1', 'u2']);
     expect(await listUtterances('none')).toEqual([]);
+  });
+
+  it('deletes one saved line (a line later recognised as an echo)', async () => {
+    await saveUtterance(line('u1', 's1', 1_000));
+    await saveUtterance(line('u2', 's1', 2_000));
+    await deleteUtterance('u1');
+    await deleteUtterance('missing');
+    expect((await listUtterances('s1')).map((u) => u.id)).toEqual(['u2']);
   });
 
   it('replaces a line saved again under the same id (a merged line)', async () => {
