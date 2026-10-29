@@ -19,7 +19,7 @@ export default function ClaudeTestPage() {
         <h1 className="text-2xl font-semibold text-slate-900">Claude streaming test</h1>
         <p className="mt-1 text-sm text-slate-500">
           Sends a fixed test prompt (mode &quot;hello&quot;) with the fast model and streams the
-          reply.
+          reply. Below, &quot;Warm with session&quot; checks the session prompt cache (Day 3).
         </p>
       </header>
       <ClaudeTest />

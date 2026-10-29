@@ -2,8 +2,9 @@
  * File: packages/shared/src/api.ts
  * Purpose: Request and response types for POST /api/answer (and later /api/notes), shared by the
  *          server route and the browser answer client so both sides agree on the wire format.
- * Used by: apps/web/src/server/validate.ts, apps/web/app/api/answer/route.ts,
- *          apps/web/src/core/answer/answerClient.ts (all from Stage 3)
+ * Used by: apps/web/src/server/validate.ts, apps/web/src/server/prompt.ts,
+ *          apps/web/app/api/answer/route.ts, apps/web/src/core/answer/answerClient.ts,
+ *          apps/web/src/core/answer/warm.ts
  * Depends on: nothing (types only)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (POST /api/answer)
  */
@@ -15,7 +16,7 @@
  * - `answer`: answers the latest question from the other side (Day 4).
  * - `chat`: answers a question the user typed (Day 4).
  * - `screenshot`: answers from a screenshot of the screen (Day 5).
- * Only `hello` is accepted on Day 1; the others return "not implemented yet".
+ * `hello` and `warm` work (Day 3); the others return "not implemented yet: Day 4/5".
  */
 export type AnswerMode = 'hello' | 'warm' | 'answer' | 'chat' | 'screenshot';
 
@@ -58,6 +59,12 @@ export interface SessionContext {
   role: string;
   /** Free-text instructions from the user for how Kite should answer. */
   instructions: string;
+  /**
+   * Names and terms the user typed for this session (one per entry, in the order typed). Sent so
+   * Claude can recognise them when the transcript mishears them (Day 3; not in the §7.2 example,
+   * recorded in architecture 3.3.0).
+   */
+  keyTerms: string[];
   /** How answers should look. */
   style: AnswerStyle;
   /** Attached documents (total capped at about 150k characters by the server). */
@@ -76,8 +83,8 @@ export interface TranscriptLine {
 
 /**
  * Body of POST /api/answer.
- * On Day 1 only `{ mode: 'hello' }` is used; the optional fields are required by the later modes
- * and are checked by the server's zod schema (apps/web/src/server/validate.ts, Stage 3).
+ * `{ mode: 'hello' }` needs nothing else; `warm` needs `session`; the other fields are used by
+ * the later modes. All are checked by the server's zod schema (apps/web/src/server/validate.ts).
  */
 export interface AnswerRequest {
   /** What kind of answer is wanted. */

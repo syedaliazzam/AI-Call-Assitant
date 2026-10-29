@@ -2,7 +2,9 @@
  * Tests for apps/web/app/api/answer/route.ts (POST), with sign-in and the Anthropic SDK mocked:
  * 401 without a session (or with a temporary password), 400 for bad bodies and for modes that
  * are not built yet, and a streamed reply (delta events, then done with usage and timings);
- * a Claude refusal ends with an error event.
+ * a Claude refusal ends with an error event. Mode 'warm' (Day 3): a 400 naming the field without
+ * a session; otherwise one max_tokens 0 request with the session's cached blocks and a done event
+ * with the cache usage (no delta); session text never reaches the logs.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import type { AnswerTimings } from '@kite/shared';
@@ -11,6 +13,8 @@ import { fakeMessageStream } from '../../helpers/fakeClaude';
 
 /** Spy standing in for client.messages.stream(). */
 const streamMock = vi.fn();
+/** Spy standing in for client.messages.create() (the warm-up). */
+const createMock = vi.fn();
 /** Spy standing in for getSession() from src/server/auth.ts. */
 const getSessionMock = vi.fn();
 
@@ -18,7 +22,10 @@ vi.mock('@anthropic-ai/sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@anthropic-ai/sdk')>();
   // Subclass the real client so its static error classes stay real for instanceof.
   class FakeAnthropic extends actual.default {
-    override messages = { stream: streamMock } as unknown as Anthropic['messages'];
+    override messages = {
+      stream: streamMock,
+      create: createMock,
+    } as unknown as Anthropic['messages'];
   }
   return { ...actual, default: FakeAnthropic, Anthropic: FakeAnthropic };
 });
@@ -49,6 +56,7 @@ function post(body: string) {
 
 beforeEach(() => {
   streamMock.mockReset();
+  createMock.mockReset();
   getSessionMock.mockReset();
   vi.spyOn(console, 'info').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -167,5 +175,96 @@ describe('POST /api/answer', () => {
     expect(logged).toContain('"userId":"u1"');
     expect(logged).toMatch(/"auth":\d+,"toStreamOpen":\d+,"streamOpenToFirstText":\d+/);
     expect(logged).not.toContain('SECRET-REPLY-TEXT');
+  });
+});
+
+/** An invented session, as the browser sends it. */
+const SESSION = {
+  type: 'sales',
+  company: 'Northwind Logistics',
+  role: 'Account review',
+  instructions: 'SECRET-INSTRUCTION-TEXT',
+  keyTerms: ['Bluefin Route'],
+  style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
+  documents: [{ name: 'pricing.pdf', text: 'SECRET-DOCUMENT-TEXT' }],
+};
+
+describe('POST /api/answer, mode warm', () => {
+  it('returns 400 naming the field when the session is missing', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    const response = await POST(post('{"mode":"warm"}'));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      code: 'bad_request',
+      message: 'session: required for mode warm',
+    });
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it('writes the cache with max_tokens 0 and returns done with usage, without text', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    createMock.mockResolvedValue({
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 5, output_tokens: 0, cache_creation_input_tokens: 2100 },
+    });
+
+    const response = await POST(post(JSON.stringify({ mode: 'warm', session: SESSION })));
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).not.toContain('event: delta');
+    expect(text).toContain(
+      'event: done\ndata: {"usage":{"input_tokens":5,"output_tokens":0,"cache_creation_input_tokens":2100,"cache_read_input_tokens":0}',
+    );
+    expect(text).toMatch(/"ms":\{"auth":\d+,"toStreamOpen":\d+/);
+
+    expect(streamMock).not.toHaveBeenCalled();
+    const [params] = createMock.mock.calls[0]!;
+    expect(params.model).toBe('claude-haiku-5-5');
+    expect(params.max_tokens).toBe(0);
+    expect(params.system).toHaveLength(2);
+    expect(params.system[1].text).toContain('Company: Northwind Logistics');
+    expect(params.system[1].cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('uses the smart model and its thinking setting when asked', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    createMock.mockResolvedValue({
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 5, output_tokens: 0 },
+    });
+    await (
+      await POST(post(JSON.stringify({ mode: 'warm', model: 'smart', session: SESSION })))
+    ).text();
+    const [params] = createMock.mock.calls[0]!;
+    expect(params.model).toBe('claude-sonnet-5-5');
+    expect(params.thinking).toEqual({ type: 'between_tools' });
+  });
+
+  it('sends an error event when the warm-up fails', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    createMock.mockRejectedValue(new Anthropic.APIError(500, undefined, 'detail', new Headers()));
+    const text = await (
+      await POST(post(JSON.stringify({ mode: 'warm', session: SESSION })))
+    ).text();
+    expect(text).toContain('event: error\ndata: {"code":"upstream_error"');
+    expect(text).not.toContain('detail');
+  });
+
+  it('logs mode, timings and token counts, never session or document text', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    createMock.mockResolvedValue({
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 5, output_tokens: 0, cache_read_input_tokens: 2100 },
+    });
+    await (await POST(post(JSON.stringify({ mode: 'warm', session: SESSION })))).text();
+    const logged = JSON.stringify([
+      vi.mocked(console.info).mock.calls,
+      vi.mocked(console.error).mock.calls,
+    ]);
+    expect(logged).toContain('"mode":"warm"');
+    expect(logged).toContain('"cache_read_input_tokens":2100');
+    expect(logged).not.toContain('SECRET-INSTRUCTION-TEXT');
+    expect(logged).not.toContain('SECRET-DOCUMENT-TEXT');
+    expect(logged).not.toContain('Northwind');
   });
 });

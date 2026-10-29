@@ -1,8 +1,10 @@
 /**
  * File: apps/web/src/server/claude.ts
- * Purpose: The ONLY place Kite talks to the Claude API. Holds one SDK client and streamReply(),
- *          which streams a reply as text pieces and finishes with the token usage.
- * Used by: app/api/answer/route.ts (and app/api/notes/route.ts, Day 5)
+ * Purpose: The ONLY place Kite talks to the Claude API. Holds one SDK client; streamReply(),
+ *          which streams a reply as text pieces and finishes with the token usage; and
+ *          warmCache(), which writes the prompt cache for a session without answering (Day 3).
+ * Used by: app/api/answer/route.ts, src/server/prompt.ts (cachedBlock); app/api/notes/route.ts
+ *          (Day 5)
  * Depends on: @anthropic-ai/sdk, src/server/env.ts (ANTHROPIC_API_KEY)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3 (prompt caching), §7.2 (server rules)
  *
@@ -17,7 +19,7 @@
  */
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
-import type { AnswerErrorCode, AnswerUsage } from '@kite/shared';
+import type { AnswerErrorCode, AnswerUsage, ModelTier } from '@kite/shared';
 import { getClaudeEnv } from './env';
 
 /** Server time limit for one Claude reply (architecture §7.2: "Set a 60 s timeout"). */
@@ -44,12 +46,44 @@ export function getClaude(): Anthropic {
   return client;
 }
 
+/**
+ * The thinking setting for each model tier. Thinking is off: live answers need the first word
+ * fast, and a short answer gains little from it. The two models turn it off differently:
+ * claude-haiku-5-5 accepts `{ type: 'disabled' }`; claude-sonnet-5-5 rejects that with a 400 and
+ * uses `{ type: 'between_tools' }` instead (thinking only between tool calls, and Kite uses no
+ * tools). The warm-up must send the same setting as the answers, because it is part of the
+ * cached prompt: a different setting would write a cache entry the answers never read.
+ *
+ * @param tier The model tier the request uses.
+ * @returns The `thinking` request parameter.
+ * Called from: streamReply(), warmCache()
+ */
+export function thinkingFor(tier: ModelTier): Anthropic.ThinkingConfigParam {
+  return tier === 'smart' ? { type: 'between_tools' } : { type: 'disabled' };
+}
+
+/**
+ * Wraps a system prompt as one text block with a cache breakpoint.
+ *
+ * @param text The block's text. Keep it byte-for-byte identical between requests.
+ * @returns The block, marked `cache_control: { type: 'ephemeral' }` (5-minute cache).
+ * Called from: streamReply() (a plain-string system prompt); server/prompt.ts (buildPrompt)
+ */
+export function cachedBlock(text: string): Anthropic.TextBlockParam {
+  return { type: 'text', text, cache_control: { type: 'ephemeral' } };
+}
+
 /** Input for streamReply(). */
 export interface StreamReplyInput {
   /** Full model name, for example 'claude-haiku-5-5' (from KITE_MODEL_FAST / KITE_MODEL_SMART). */
   model: string;
-  /** System prompt. Sent as one cached block, so keep it identical between requests. */
-  system: string;
+  /** Which tier that model is; picks the thinking setting (default 'fast'). */
+  tier?: ModelTier;
+  /**
+   * System prompt: a string (sent as one cached block) or ready-made blocks from buildPrompt()
+   * (each carrying its own cache breakpoint). Keep it identical between requests.
+   */
+  system: string | Anthropic.TextBlockParam[];
   /** Conversation turns after the system prompt (not cached). */
   messages: Anthropic.MessageParam[];
   /** Most tokens Claude may write. */
@@ -94,9 +128,7 @@ function toAnswerUsage(usage: Anthropic.Usage): AnswerUsage {
  * If the caller stops reading early (for example the browser disconnected), the request to
  * Claude is aborted so no more tokens are generated or billed.
  *
- * Thinking is turned off: live answers need the first word fast, and a one-sentence reply
- * gains nothing from it. `{ type: 'disabled' }` is valid on claude-haiku-5-5 at its default
- * effort. Day 5 (notes on claude-sonnet-5-5) must change this: Sonnet 5.5 rejects 'disabled'.
+ * Thinking is turned off for the tier (see thinkingFor()).
  *
  * @param input See StreamReplyInput.
  * @returns An async generator of text pieces that finishes with a ReplyResult.
@@ -110,9 +142,9 @@ export async function* streamReply(
     {
       model: input.model,
       max_tokens: input.maxTokens,
-      system: [{ type: 'text', text: input.system, cache_control: { type: 'ephemeral' } }],
+      system: typeof input.system === 'string' ? [cachedBlock(input.system)] : input.system,
       messages: input.messages,
-      thinking: { type: 'disabled' },
+      thinking: thinkingFor(input.tier ?? 'fast'),
     },
     { signal: input.signal },
   );
@@ -133,6 +165,51 @@ export async function* streamReply(
     // Runs when the consumer stops early (generator.return()) or an error escapes.
     if (!finished) stream.abort();
   }
+}
+
+/** Input for warmCache(). */
+export interface WarmCacheInput {
+  /** Full model name; must be the model the answers will use (the cache is per model). */
+  model: string;
+  /** Which tier that model is; picks the same thinking setting the answers use. */
+  tier: ModelTier;
+  /** The cached system blocks from buildPrompt(), exactly as the answers will send them. */
+  system: Anthropic.TextBlockParam[];
+  /** A placeholder user turn (read while the cache is written, never answered). */
+  messages: Anthropic.MessageParam[];
+  /** Aborts the request (client disconnected, or the server time limit passed). */
+  signal?: AbortSignal;
+}
+
+/**
+ * Writes the prompt cache for a session without generating an answer (architecture §6.3,
+ * "Pre-warm"). Uses `max_tokens: 0`, which the official prompt-caching docs allow for exactly
+ * this: Claude reads the prompt, writes the cache at each `cache_control` breakpoint and
+ * returns at once with no content, stop reason 'max_tokens' and full usage. No output tokens
+ * are billed, only the normal cache write (or a cheap cache read when it is already warm).
+ *
+ * The docs reject `max_tokens: 0` together with `stream: true`, so this is a plain
+ * (non-streaming) request; streaming is a transport option and not part of the cached prompt,
+ * so the answers' streamed requests still read this cache entry. The `thinking` setting is part
+ * of the cached prompt, so it is the same as the answers' (thinkingFor()).
+ *
+ * @param input See WarmCacheInput.
+ * @returns Token usage (cache write or read counts) and the stop reason ('max_tokens').
+ * @throws Anthropic.APIError (and subclasses) for API failures; APIUserAbortError on abort.
+ * Called from: POST handler in app/api/answer/route.ts (mode 'warm')
+ */
+export async function warmCache(input: WarmCacheInput): Promise<ReplyResult> {
+  const message = await getClaude().messages.create(
+    {
+      model: input.model,
+      max_tokens: 0,
+      system: input.system,
+      messages: input.messages,
+      thinking: thinkingFor(input.tier),
+    },
+    { signal: input.signal },
+  );
+  return { usage: toAnswerUsage(message.usage), stopReason: message.stop_reason };
 }
 
 /**

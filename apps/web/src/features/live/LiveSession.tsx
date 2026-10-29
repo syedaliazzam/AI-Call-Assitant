@@ -1,22 +1,28 @@
 /**
  * File: apps/web/src/features/live/LiveSession.tsx
  * Purpose: Opens a session's live screen: loads the session, its documents and its saved
- *          transcript from this computer, builds the session's hotwords, then shows LivePage.
+ *          transcript from this computer, builds the session's hotwords, starts warming Claude's
+ *          prompt cache for the session (Day 3 Stage 5), then shows LivePage.
  *          A session that does not exist here gets a message and a link to the dashboard.
  * Used by: app/(app)/live/[id]/page.tsx
  * Depends on: src/core/storage (sessions, documents, utterances),
- *             src/core/stt/sessionHotwords.ts, ./LivePage.tsx
+ *             src/core/stt/sessionHotwords.ts, src/core/answer/warm.ts, ./LivePage.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §8.1
- *               (data stays on this computer); day-03-sessions.md Stage 4
+ *               (data stays on this computer), §6.3 (pre-warm); day-03-sessions.md Stages 4–5
  *
  * The session is loaded here, in the browser, because it lives in IndexedDB on this computer:
  * the server never sees it. Loading it before LivePage mounts means the speech engine starts
  * with the session's hotwords already in place.
+ *
+ * The warm-up runs every time the session is loaded here, so after the session's documents are
+ * edited (on the edit page) and the live screen is opened again, the new documents are warmed.
+ * It is not awaited: the screen never waits for it.
  */
 'use client';
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { warmSession } from '@/core/answer/warm';
 import { listDocuments } from '@/core/storage/documents';
 import { getSession } from '@/core/storage/sessions';
 import type { Session, StoredUtterance } from '@/core/storage/types';
@@ -76,6 +82,8 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
         listDocuments(session.id),
         listUtterances(session.id),
       ]);
+      // Not awaited: warmSession() never throws, and the screen does not wait for Claude.
+      if (!cancelled) void warmSession(session, documents);
       const hotwords = buildHotwords(session, documents);
       return {
         state: 'ready',

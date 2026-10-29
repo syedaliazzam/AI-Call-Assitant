@@ -1,7 +1,10 @@
 /**
- * Tests for apps/web/src/server/claude.ts, with the Anthropic SDK's messages.stream() faked:
- * streamReply() sends a cached system block with thinking off, yields only text, returns usage
- * with null cache counts as 0, and aborts the Claude request when the caller stops early;
+ * Tests for apps/web/src/server/claude.ts, with the Anthropic SDK's messages.stream() and
+ * messages.create() faked: streamReply() sends a cached system block (or the given blocks) with
+ * thinking off for the tier, yields only text, returns usage with null cache counts as 0, and
+ * aborts the Claude request when the caller stops early; warmCache() sends max_tokens 0 without
+ * streaming, with the answers' thinking setting, and returns the cache usage; thinkingFor() turns
+ * thinking off in the way each model accepts;
  * describeClaudeError() maps SDK errors to Kite error codes without leaking API text.
  */
 import Anthropic from '@anthropic-ai/sdk';
@@ -10,12 +13,17 @@ import { fakeMessageStream } from '../../helpers/fakeClaude';
 
 /** Spy standing in for client.messages.stream(). */
 const streamMock = vi.fn();
+/** Spy standing in for client.messages.create() (the warm-up). */
+const createMock = vi.fn();
 
 vi.mock('@anthropic-ai/sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@anthropic-ai/sdk')>();
   // Subclass the real client so its static error classes (APIError, …) stay real for instanceof.
   class FakeAnthropic extends actual.default {
-    override messages = { stream: streamMock } as unknown as Anthropic['messages'];
+    override messages = {
+      stream: streamMock,
+      create: createMock,
+    } as unknown as Anthropic['messages'];
   }
   return { ...actual, default: FakeAnthropic, Anthropic: FakeAnthropic };
 });
@@ -24,7 +32,8 @@ vi.stubEnv('ANTHROPIC_API_KEY', 'test-key');
 vi.stubEnv('KITE_MODEL_FAST', 'claude-haiku-5-5');
 vi.stubEnv('KITE_MODEL_SMART', 'claude-sonnet-5-5');
 
-const { describeClaudeError, streamReply } = await import('@/server/claude');
+const { cachedBlock, describeClaudeError, streamReply, thinkingFor, warmCache } =
+  await import('@/server/claude');
 
 /**
  * Reads a whole streamReply() generator.
@@ -52,6 +61,7 @@ const INPUT = {
 
 beforeEach(() => {
   streamMock.mockReset();
+  createMock.mockReset();
 });
 
 describe('streamReply', () => {
@@ -119,6 +129,71 @@ describe('streamReply', () => {
     const error = new Anthropic.APIError(500, undefined, 'server error', new Headers());
     streamMock.mockReturnValue(fakeMessageStream({ pieces: ['a'], error }));
     await expect(collect(streamReply(INPUT))).rejects.toBe(error);
+  });
+});
+
+describe('streamReply with prompt blocks', () => {
+  it('sends ready-made system blocks as they are, with the smart tier thinking setting', async () => {
+    streamMock.mockReturnValue(fakeMessageStream());
+    const system = [cachedBlock('RULES'), cachedBlock('SESSION')];
+    await collect(streamReply({ ...INPUT, model: 'claude-sonnet-5-5', tier: 'smart', system }));
+    const [params] = streamMock.mock.calls[0]!;
+    expect(params.system).toBe(system);
+    expect(params.thinking).toEqual({ type: 'between_tools' });
+  });
+});
+
+describe('thinkingFor', () => {
+  it('turns thinking off: disabled for Haiku (fast), between_tools for Sonnet (smart)', () => {
+    expect(thinkingFor('fast')).toEqual({ type: 'disabled' });
+    expect(thinkingFor('smart')).toEqual({ type: 'between_tools' });
+  });
+});
+
+describe('warmCache', () => {
+  /** Standard warm-up input. */
+  const WARM = {
+    model: 'claude-haiku-5-5',
+    tier: 'fast' as const,
+    system: [cachedBlock('RULES'), cachedBlock('SESSION')],
+    messages: [{ role: 'user' as const, content: 'Warm-up' }],
+  };
+
+  it('sends max_tokens 0 without streaming, with the answers thinking setting', async () => {
+    createMock.mockResolvedValue({
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 5, output_tokens: 0, cache_creation_input_tokens: 1800 },
+    });
+    const signal = new AbortController().signal;
+    const result = await warmCache({ ...WARM, signal });
+
+    expect(createMock).toHaveBeenCalledWith(
+      {
+        model: 'claude-haiku-5-5',
+        max_tokens: 0,
+        system: WARM.system,
+        messages: WARM.messages,
+        thinking: { type: 'disabled' },
+      },
+      { signal },
+    );
+    // The official docs reject max_tokens 0 with stream: true.
+    expect(createMock.mock.calls[0]![0]).not.toHaveProperty('stream');
+    expect(result).toEqual({
+      usage: {
+        input_tokens: 5,
+        output_tokens: 0,
+        cache_creation_input_tokens: 1800,
+        cache_read_input_tokens: 0,
+      },
+      stopReason: 'max_tokens',
+    });
+  });
+
+  it('passes API errors through to the caller', async () => {
+    const error = new Anthropic.APIError(400, undefined, 'bad', new Headers());
+    createMock.mockRejectedValue(error);
+    await expect(warmCache(WARM)).rejects.toBe(error);
   });
 });
 
