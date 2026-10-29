@@ -39,6 +39,8 @@ const sessionSchema = z
     type: z.string().max(50),
     company: z.string().max(200),
     role: z.string().max(200),
+    // Same limit as the wizard's description box.
+    description: z.string().max(5_000),
     instructions: z.string().max(5_000),
     keyTerms: z.array(z.string().max(200)).max(MAX_KEY_TERMS),
     style: styleSchema,

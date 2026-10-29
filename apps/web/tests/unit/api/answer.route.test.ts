@@ -183,6 +183,7 @@ const SESSION = {
   type: 'sales',
   company: 'Northwind Logistics',
   role: 'Account review',
+  description: 'SECRET-DESCRIPTION-TEXT',
   instructions: 'SECRET-INSTRUCTION-TEXT',
   keyTerms: ['Bluefin Route'],
   style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
@@ -265,6 +266,7 @@ describe('POST /api/answer, mode warm', () => {
     expect(logged).toContain('"cache_read_input_tokens":2100');
     expect(logged).not.toContain('SECRET-INSTRUCTION-TEXT');
     expect(logged).not.toContain('SECRET-DOCUMENT-TEXT');
+    expect(logged).not.toContain('SECRET-DESCRIPTION-TEXT');
     expect(logged).not.toContain('Northwind');
   });
 });

@@ -1,7 +1,7 @@
 /**
  * Tests for apps/web/src/server/prompt.ts: buildPrompt() gives two cached system blocks (fixed
  * rules, then the session block) and one uncached user turn; the same session gives identical
- * bytes every time, whatever the transcript; the session block holds the details, key terms,
+ * bytes every time, whatever the transcript, and a different description gives different bytes; the session block holds the details, description, key terms,
  * style, instructions and documents, and never the transcript or question; the rules include
  * the imperfect-transcript rule; tag-like text in documents cannot close the document tags.
  * All session text is invented.
@@ -15,6 +15,7 @@ const SESSION: SessionContext = {
   type: 'sales',
   company: 'Northwind Logistics',
   role: 'Account review',
+  description: 'Renewal call with the operations team.',
   instructions: 'Keep it short.',
   keyTerms: ['Bluefin Route', ' ', 'Professional plan'],
   style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
@@ -62,6 +63,18 @@ describe('buildPrompt', () => {
     expect(JSON.stringify(warm.system)).toBe(JSON.stringify(first.system));
   });
 
+  it('changes the cached bytes when the description changes, and only the session block', () => {
+    const warm = (description: string) =>
+      buildPrompt({ mode: 'warm', session: { ...SESSION, description } });
+    const withDescription = warm('Renewal call with the operations team.');
+    const withOther = warm('Renewal call with the finance team.');
+    const without = warm('');
+    expect(JSON.stringify(withOther.system)).not.toBe(JSON.stringify(withDescription.system));
+    expect(JSON.stringify(without.system)).not.toBe(JSON.stringify(withDescription.system));
+    // The rules block is shared by every session and never changes.
+    expect(withOther.system[0]).toEqual(withDescription.system[0]);
+  });
+
   it('keeps the transcript and question out of the cached blocks', () => {
     const prompt = buildPrompt(answer('When is the renewal?'));
     const cached = JSON.stringify(prompt.system);
@@ -90,6 +103,7 @@ describe('sessionBlock', () => {
       'Call type: sales',
       'Company: Northwind Logistics',
       'Role or topic: Account review',
+      'Description of the call:\nRenewal call with the operations team.',
       'Key terms: Bluefin Route; Professional plan',
       'Answer format: headline+bullets',
       'Answer length: short',
@@ -109,11 +123,13 @@ describe('sessionBlock', () => {
     const block = sessionBlock({
       ...SESSION,
       company: '',
+      description: '',
       instructions: '  ',
       keyTerms: [],
       documents: [],
     });
     expect(block).toContain('Company: (not given)');
+    expect(block).toContain('Description of the call:\n(not given)');
     expect(block).toContain('Key terms: (not given)');
     expect(block).toContain('Instructions from the user:\n(not given)');
     expect(block).toContain('<documents>\n(not given)\n</documents>');

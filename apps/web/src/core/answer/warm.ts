@@ -38,6 +38,7 @@ export function toSessionContext(
     type: session.type,
     company: session.company,
     role: session.role,
+    description: session.description,
     instructions: session.instructions,
     keyTerms: session.preferences.keyTerms
       .split('\n')

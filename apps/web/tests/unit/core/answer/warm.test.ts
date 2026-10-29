@@ -79,6 +79,7 @@ describe('toSessionContext', () => {
       type: 'sales',
       company: 'Northwind Logistics',
       role: 'Account review',
+      description: 'Renewal call',
       instructions: 'SECRET-INSTRUCTION-TEXT',
       keyTerms: ['Bluefin Route', 'Professional plan'],
       style: { format: 'headline+bullets', length: 'short', tone: 'simple' },

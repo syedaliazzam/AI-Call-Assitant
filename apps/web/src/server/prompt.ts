@@ -1,8 +1,8 @@
 /**
  * File: apps/web/src/server/prompt.ts
  * Purpose: Builds the prompt Claude receives for a session: a fixed system block (Kite's answer
- *          rules, including the imperfect-transcript rule), a session block (call details, key
- *          terms, answer style, instructions, documents), both cached, and the uncached messages
+ *          rules, including the imperfect-transcript rule), a session block (call details,
+ *          description, key terms, answer style, instructions, documents), both cached, and the uncached messages
  *          (transcript window and question; a placeholder for a warm-up).
  * Used by: app/api/answer/route.ts (mode 'warm' from Day 3; 'answer' and 'chat' from Day 4)
  * Depends on: @kite/shared (AnswerRequest, SessionContext), src/server/claude.ts (cachedBlock)
@@ -82,6 +82,8 @@ export function sessionBlock(session: SessionContext): string {
     `Call type: ${session.type || NOT_GIVEN}`,
     `Company: ${session.company || NOT_GIVEN}`,
     `Role or topic: ${session.role || NOT_GIVEN}`,
+    'Description of the call:',
+    session.description.trim() || NOT_GIVEN,
     `Key terms: ${keyTerms.length > 0 ? keyTerms.join('; ') : NOT_GIVEN}`,
     `Answer format: ${session.style.format}`,
     `Answer length: ${session.style.length}`,

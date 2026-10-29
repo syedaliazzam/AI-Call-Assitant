@@ -12,6 +12,7 @@ const SESSION = {
   type: 'sales',
   company: 'Acme',
   role: 'Account review',
+  description: 'Renewal call.',
   instructions: 'Be brief.',
   keyTerms: ['Bluefin Route'],
   style: { format: 'headline+bullets', length: 'short', tone: 'simple' },

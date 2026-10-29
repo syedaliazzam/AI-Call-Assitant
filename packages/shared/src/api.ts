@@ -57,6 +57,11 @@ export interface SessionContext {
   company: string;
   /** The user's role or the purpose of the call, for example 'Account review'. */
   role: string;
+  /**
+   * Free-text description of the call ('' when not given). Not in the §7.2 example; added on
+   * Day 3 (recorded in architecture 3.3.0).
+   */
+  description: string;
   /** Free-text instructions from the user for how Kite should answer. */
   instructions: string;
   /**
