@@ -91,10 +91,26 @@ Open http://localhost:3000 and sign in. To try a live call, create a session on 
 
 Admins also see **Dev tools** in the sidebar:
 
-- `/dev/stt-test`: speech-to-text with load time, real-time factor, lag, end of speech → final line latency (p50/p95) and the word error rate on 3 test sentences. "Copy results" gives the text for `docs/testing/benchmark-results.md`.
-- `/dev/claude-test`: streams a Claude reply and shows timings.
+- `/dev/stt-test`: speech-to-text with load time, real-time factor, lag, end of speech → final line latency (p50/p95) and the word error rate on 3 test sentences. "Hotwords from" fills the hotwords from a session; "Beam width" (4 or 8) is for measuring only. "Copy results" gives the text for `docs/testing/benchmark-results.md`.
+- `/dev/claude-test`: streams a Claude reply and shows timings. "Warm with session" sends two warm-ups for a session on this computer and shows the cache write, then the cache read.
 
-Speech-to-text runs on your device; audio never leaves it. Known limitation: names and technical terms are often misheard ([ADR-0020](docs/decisions/ADR-0020-stt-model.md)).
+Speech-to-text runs on your device; audio never leaves it. Known limitation: names and technical terms are often misheard ([ADR-0020](docs/decisions/ADR-0020-stt-model.md)). Session key terms help a little; the answer prompt tells Claude to expect misheard names.
+
+### Sessions, documents and settings
+
+- **Create session** (dashboard): step 1 Details (type, company, role or topic, description, documents), step 2 Preferences (model, answer style, **key terms**, instructions, save transcript). **Edit** and **Delete** are on each session card.
+- **Documents:** PDF, DOCX or TXT, read into text **on this computer**. Limits: 20 MB per file, 100,000 characters per document, 150,000 per session. Encrypted PDFs and scanned (image-only) PDFs are refused with a clear message.
+- **Key terms** (one per line), the company, the role or topic and the document names become speech-to-text hotwords for the session ("Listening for N key terms" on the Connect view). They are also sent to Claude so it can recognise misheard names.
+- **Warm-up:** opening a session's live screen sends a warm-up (`mode: "warm"`, no answer), so the first answer reads Claude's prompt cache. The screen never waits for it.
+- **Saved transcript:** with "Save transcript" on, final lines are saved on this computer and shown under the Connect view next time. Echo lines are never saved.
+- **Settings:** the default preferences for new sessions, and **Delete all local data** (keeps the downloaded speech model).
+- **Where it is stored:** IndexedDB on this computer ([ADR-0024](docs/decisions/ADR-0024-local-session-storage.md)). **The browser and the desktop app each have their own sessions**, and so does each browser profile: a session created in Chrome does not appear in the desktop app. There is no sync in v1.
+
+Check the warm-up against the real Claude API (developer only, never in CI; uses `apps/web/.env.local` and prints only token counts and times):
+
+```sh
+pnpm --filter web verify:warm   # PASS = call 1 writes the cache, call 2 reads the same number of tokens
+```
 
 ## Run the desktop app
 

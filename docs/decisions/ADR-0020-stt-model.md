@@ -1,7 +1,7 @@
 # ADR-0020: Speech-to-text model (WebAssembly, v3.0)
 
-- **Status:** **Accepted** (2026-10-28) for streaming-only: Zipformer 2023-06-21 with hotwords, two channels with the energy gate, the echo filter, model files from Hugging Face. Accuracy is still above the 20% bar (≈27% overall), and in the Day 2 real call names and technical terms were often wrong (see "Real-call result"). This is Kite's main known limitation. The second pass tried in Day 2 Stage 5 did not meet the bar and was removed (see "Second pass (Day 2, Stage 5): tried and rejected"). Next levers: session hotwords (Day 3); telling Claude that the transcript is imperfect (Day 4); a native desktop engine spike after Day 4.
-- **Date:** 2026-10-24 (created); 2026-10-27 (Day 1 spike results; Day 2 hosting and two-channel engine); 2026-10-28 (Day 2 Stage 5: second pass measured and rejected; Accepted for streaming-only. Stage 7: real-call result)
+- **Status:** **Accepted** (2026-10-28) for streaming-only: Zipformer 2023-06-21 with hotwords, two channels with the energy gate, the echo filter, model files from Hugging Face. Accuracy is still above the 20% bar (≈27% overall), and in the Day 2 real call names and technical terms were often wrong (see "Real-call result"). This is Kite's main known limitation. The second pass tried in Day 2 Stage 5 did not meet the bar and was removed (see "Second pass (Day 2, Stage 5): tried and rejected"). Levers: session hotwords (built Day 3: no overall WER change, names right more often; see "Session hotwords result"); telling Claude that the transcript is imperfect (built Day 3 Stage 5, in the answer prompt's rules); next, a native desktop engine spike after Day 4.
+- **Date:** 2026-10-24 (created); 2026-10-27 (Day 1 spike results; Day 2 hosting and two-channel engine); 2026-10-28 (Day 2 Stage 5: second pass measured and rejected; Accepted for streaming-only. Stage 7: real-call result); 2026-10-29 (Day 3 Stage 4: session hotwords measured, kept on)
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §6, §12 Day 1
 - **Supersedes / superseded by:** none
 
@@ -242,7 +242,7 @@ From Day 3, each live session gives the engine its own hotwords: the session's k
 
 ## Validation
 
-Measured numbers are in `docs/testing/benchmark-results.md` (Day 1 Stage 6 and Day 2 rows). The test page is `/dev/stt-test` (admins only). It shows:
+Measured numbers are in `docs/testing/benchmark-results.md` (Day 1 Stage 6, Day 2 and Day 3 Stage 4 rows). The test page is `/dev/stt-test` (admins only). It shows:
 - load time;
 - real-time factor and lag;
 - end of speech → final line latency (p50/p95);
