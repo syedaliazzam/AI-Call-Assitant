@@ -1,23 +1,24 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.2.0"
+version: "3.3.0"
 status: "Current: the single document the team builds from"
-date: "2026-10-28"
+date: "2026-10-29"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
-header: "Kite v3.2.0 · architecture and build plan"
+header: "Kite v3.3.0 · architecture and build plan"
 page_breaks: "1,3,5,7,9,11,13"
 ---
 
-# Kite: Architecture and 7-Day Build Plan v3.2.0
+# Kite: Architecture and 7-Day Build Plan v3.3.0
 
 ## Document control
 
 | Field | Value |
 |---|---|
-| Version | 3.2.0, **Current**: the only document to build from |
-| Date | 28 October 2026 |
+| Version | 3.3.0, **Current**: the only document to build from |
+| Date | 29 October 2026 |
+| Changes in 3.3.0 | Day 3 (sessions, documents, local storage, session prompt), matching what was built and measured. §5: the screens as built (dashboard, Create / Edit session wizard, Choose platform, Connect with saved transcript, Settings). §6.1/§6.3: session hotwords; the warm-up is a **non-streaming** `max_tokens: 0` request with the same thinking setting as the answers (the official prompt-caching docs reject `max_tokens: 0` with `stream: true`); measured cache write 4,508 → read 4,508 tokens. §7.1: `core/storage`, `core/documents`, `core/stt/sessionHotwords.ts`, `core/transcript/saver.ts`, `core/answer/warm.ts`, the new screens. §7.2: three differences from the 3.2.0 request example: `session` gains `description` and `keyTerms`; the answer style is in the cached session block, not the system block; thinking is off per model tier (fast `disabled`, smart `between_tools`, because Sonnet 5.5 rejects `disabled`). The prompt has the imperfect-transcript rule. §7.3: `security.ts` grants `persistent-storage` to the Kite origin. §7.4: the data model as built (`lastActiveAt`, status values, `settings` store, the 12-hour stale-live rule). §8.1: documents are stored locally as extracted text; the browser and the desktop app have separate local data (ADR-0024). §8.3: lost-laptop risk (local data is not encrypted by Kite). §9.1: files built on Day 3. ADR-0024 added; ADR-0020 records the session-hotword result. |
 | Changes in 3.2.0 | Day 2 (audio and transcript), matching what was built and measured. §6.1: speech-to-text is streaming-only (Zipformer 2023-06-21 + hotwords, energy gate instead of Silero VAD, echo filter; ADR-0020 Accepted; a second pass was tried and rejected). §6.2: measured lag and latency. §7.1: the real `core/audio`, `core/stt`, `core/transcript`, `features/live` and `platform` files. §7.3: `media.ts` and the files built so far. §9.1: STT files, tests and `next.config.ts` (no COOP/COEP). §10.1: no COOP/COEP headers; model files from Hugging Face, runtime from our origin (ADR-0023); deployment is CLI-only with no Git integration or automatic previews (as already practised since Day 1). §11: the STT integration test (Playwright, fake microphone) and its CI job. §13: battery, model size, macOS loopback and transcription accuracy (the main known limitation). The DOCX version of this document is regenerated separately. |
 | Changes in 3.1.2 | §8.3: the desktop shell allows exactly one origin (the Kite URL's). Any future payment or SSO page on another origin must be added to the allowlist on purpose. Day 1 Stage 5. |
 | Changes in 3.1.1 | §5 (Admin: users) and §8.2: the server **generates** the temporary password (14 readable random characters) when an admin creates a user or resets a password, and shows it to the admin once; the admin no longer types one in. Matches Day 1 Stage 2 and the create-admin script. |
@@ -139,14 +140,14 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 | Sign in | `/login` | Email and password form (no sign-up link) |
 | Change password | `/change-password` | Forced on first sign-in and after an admin password reset |
 | Admin: users | `/admin/users` | Admins only: list users, create user (name, email, role; the server generates the temporary password and shows it once), reset password (new generated temporary password), disable or enable, change role |
-| Dashboard | `/` | Session cards (date, company, role, type, status), search, type filter tabs, "Create session", "Download desktop app" banner |
-| Create session | `/sessions/new` | Step 1 Details, then step 2 Preferences; Back / Create |
-| Choose platform | dialog | "Desktop app" or "Open in browser", plus "What's the difference?" (section 4 table) |
-| Connect | `/live/[id]` (first view) | Call information, how to connect (meeting-app icons), "Connect" button, audio test meters |
+| Dashboard | `/` | **Built Day 3.** "Call Sessions": the sessions on this computer, newest first. Each card shows company, role or topic, type, status (Not started / Live / Ended; a "live" session idle for 12 hours shows as Ended) and date, with Open, Edit and Delete (asks first). Search box, type filter tabs (All / Interview / Sales / Support / Internal), "Create session", empty states, and a "Download desktop app" banner placeholder in the browser (installer on Day 6) |
+| Create / edit session | `/sessions/new`, `/sessions/[id]/edit` | **Built Day 3.** Step 1 Details: type, company, role or topic, description, documents (PDF, DOCX or TXT, drag-and-drop or picker; converted to text on this computer, each with its size or a clear error; at most 100,000 characters per document and 150,000 per session). Step 2 Preferences: language (English), model (fast / smart), answer style (format, length, tone), key terms (one per line), extra instructions, save transcript, auto-answer (beta, off until Day 6). Back / Next / Create (or Save). New sessions start from the defaults in Settings |
+| Choose platform | dialog | **Built Day 3.** In the browser only: "Desktop app" (explains that the installer arrives on Day 6) or "Open in browser", plus "What's the difference?" (section 4 table). The desktop app opens the session directly |
+| Connect | `/live/[id]` (first view) | Call information, "Listening for N key terms" (the session hotwords, Day 3), how to connect, "Connect" button, audio test meters. Underneath: the transcript saved by earlier calls of this session, or a note that the session does not save its transcript |
 | Live session | `/live/[id]` | Top bar: Answer · Screenshot · Chat · Clear · End. Transcript strip (live chips). Answer panel (Question, Answer headline, bullets, time, copy, prev/next). Chat input. |
 | Compact view | desktop window / PiP | Transcript line + latest answer + Answer button |
 | Session review | `/sessions/[id]` | AI notes, full transcript (You/Them), call details, delete |
-| Settings | `/settings` | Default preferences, hotkeys list, share-protection toggle (desktop), "Delete all local data" |
+| Settings | `/settings` | **Built Day 3.** Default preferences for new sessions, hotkeys list (read-only; shortcuts arrive Day 4), share-protection switch (desktop, Day 5), "Delete all local data" (asks first, then shows what was deleted; the downloaded speech model is kept) |
 
 ## 6. Live answer flow and latency
 
@@ -155,7 +156,7 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 ![Figure 2. Live answer flow, from audio to a streamed answer in the overlay](diagrams/v3-flow.png)
 
 1. **Capture.** Mic → "You" channel. Other side → "Them" channel. The two are never mixed.
-2. **Transcribe.** An AudioWorklet resamples each channel to 16 kHz and sends it straight to one Web Worker running sherpa-onnx v1.13.7 (WebAssembly, single-threaded) with the streaming Zipformer 2023-06-21 model and session **hotwords** (ADR-0020). Each channel has its own recognizer stream and an **energy gate** that skips silence (no Silero VAD). An utterance ends by the model's endpoint rule or after 1.2 s with no new words. The worker emits **partial** and **final** text; each final carries its end of speech, for latency measurement. The transcript core labels lines "You"/"Them" and hides "You" lines of 4+ words that echo "Them" through the speakers. Finals are saved to IndexedDB (Day 3). Streaming-only: a second, non-streaming pass was measured on Day 2 and rejected (ADR-0020). Model files load from pinned Hugging Face URLs with SHA-256 checks and are cached on the device (ADR-0023).
+2. **Transcribe.** An AudioWorklet resamples each channel to 16 kHz and sends it straight to one Web Worker running sherpa-onnx v1.13.7 (WebAssembly, single-threaded) with the streaming Zipformer 2023-06-21 model and session **hotwords** (ADR-0020), built from the session's key terms and company (boost 2) and its role or topic and document names (boost 1.5) by `core/stt/sessionHotwords.ts` (Day 3; measured: no overall WER change, names right more often). Each channel has its own recognizer stream and an **energy gate** that skips silence (no Silero VAD). An utterance ends by the model's endpoint rule or after 1.2 s with no new words. The worker emits **partial** and **final** text; each final carries its end of speech, for latency measurement. The transcript core labels lines "You"/"Them" and hides "You" lines of 4+ words that echo "Them" through the speakers. Finals are saved to IndexedDB when the session saves its transcript (`core/transcript/saver.ts`; echo lines are never saved, and a saved line later found to be an echo is deleted). Streaming-only: a second, non-streaming pass was measured on Day 2 and rejected (ADR-0020). Model files load from pinned Hugging Face URLs with SHA-256 checks and are cached on the device (ADR-0023).
 3. **Trigger.** The user presses the hotkey or button (or auto-answer fires, section 7.5). The question is the "Them" lines since the user last spoke.
 4. **Request.** The client sends `POST /api/answer` with the session context, the last ~3 minutes of transcript and the question.
 5. **Claude.** The server builds the prompt from a **cached block** (system rules + session details + documents, marked with `cache_control` so Claude reuses it) and a **fresh block** (transcript + question). It calls Haiku with streaming and forwards each text delta to the client immediately (Server-Sent Events).
@@ -182,10 +183,15 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 
 ### 6.3 Prompt caching rules
 
-- **Pre-warm.** When a live session opens, the client calls `/api/answer` with `mode: "warm"`. The server sends the cached block with `max_tokens: 0`, so the first real answer is a cache hit.
+- **Pre-warm.** When a live session opens, the client calls `/api/answer` with `mode: "warm"` (`core/answer/warm.ts`; the screen never waits for it). The server sends the cached blocks with `max_tokens: 0` and a placeholder user turn, so the first real answer is a cache hit. Two rules from the official prompt-caching docs apply:
+  - `max_tokens: 0` is rejected together with `stream: true`, so the warm-up is a plain request. Streaming is not part of the cached prompt, so the streamed answers still read the entry.
+  - The thinking setting is part of the cached prompt, so the warm-up sends the same one as the answers (`thinkingFor()` in `server/claude.ts`).
+
+  Measured on Day 3 against the real API (`pnpm --filter web verify:warm`, invented 2,000-word document): call 1 wrote 4,508 tokens, call 2 read 4,508; no output tokens either time.
 - **Keep the prefix identical.** The cached block must be byte-for-byte the same on every request: same order, same text, no timestamps.
 - **Cache lifetime.** The cache lives 5 minutes and refreshes each time it is used. During a call, answers keep it warm. After a long silence, the next answer pays one cache write.
-- **Minimum size.** The newest Claude models cache prompts of 512 tokens or more. A normal session context is larger.
+- **Minimum size.** The newest Claude models cache prompts of 512 tokens or more. A normal session context is larger. A session with no documents and few details can be smaller; it is then simply not cached (no error).
+- **Two breakpoints.** The fixed rules block and the session block each carry `cache_control`. The rules block is the same for every session but is under 512 tokens on its own, so in practice the entry that matters ends at the session block.
 
 ## 7. Component design
 
@@ -193,16 +199,17 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 
 | Module | Responsibility | Key files |
 |---|---|---|
-| `features/dashboard` | Session list, filters, search | `Dashboard.tsx`, `SessionCard.tsx` |
-| `features/session-setup` | Two-step create/edit wizard, document upload | `SessionWizard.tsx`, `DetailsStep.tsx`, `PreferencesStep.tsx` |
-| `features/live` | Connect view, live view, compact view, answer panel, chat | Built on Day 2: `LivePage.tsx`, `ConnectPanel.tsx`, `TranscriptStrip.tsx`, `AudioMeter.tsx`, `HealthNotice.tsx`, `speakers.ts`, `demoHotwords.ts` (until Day 3 sessions). Later: `AnswerPanel.tsx`, `CompactView.tsx` |
+| `features/dashboard` | Session list, filters, search, delete | `Dashboard.tsx`, `SessionCard.tsx` |
+| `features/session-setup` | Two-step create/edit wizard, document upload, Choose platform dialog | `SessionWizard.tsx`, `DetailsStep.tsx`, `PreferencesStep.tsx`, `ChoosePlatformDialog.tsx`, `draft.ts`, `labels.ts` |
+| `features/settings` | Default preferences, hotkey list, Delete all local data | `Settings.tsx` |
+| `features/live` | Connect view, live view, compact view, answer panel, chat | Built on Day 2: `LivePage.tsx`, `ConnectPanel.tsx`, `TranscriptStrip.tsx`, `AudioMeter.tsx`, `HealthNotice.tsx`, `speakers.ts`; Day 3: `LiveSession.tsx` (loads the session, its documents and saved lines, builds hotwords, starts the warm-up), `SavedTranscript.tsx` (`demoHotwords.ts` removed). Later: `AnswerPanel.tsx`, `CompactView.tsx` |
 | `features/review` | Notes, transcript, delete | `SessionReview.tsx` |
 | `core/audio` | Get streams via the platform; AudioWorklet resampling to 16 kHz; audio levels for the meters | `capture.ts`, `resampler.worklet.ts`, `resample.ts`, `levels.ts`, `recordingStream.ts` (test recordings as a stream) |
-| `core/stt` | Engine (one worker, two channels); worker with sherpa-onnx WASM; per-channel decoding with energy gate and endpoint rules; pinned model list; verified download and caching; hotwords; health status; WER and timing helpers for the test page | `sttEngine.ts`, `stt.worker.ts`, `channel.ts`, `gate.ts`, `models.ts`, `download.ts`, `hotwords.ts`, `sentencepiece.ts`, `health.ts`, `protocol.ts`, `metrics.ts`, `wer.ts` |
-| `core/transcript` | Utterance list (You/Them), echo filter, line merging and display hold, last-N-minutes window; question selection (Day 4) | `transcript.ts`, `echo.ts`, `merge.ts`, `display.ts`; later `question.ts` |
-| `core/answer` | Calls `/api/answer`, reads SSE, cancel, retries, timings | `answerClient.ts` |
-| `core/documents` | PDF (pdf.js), DOCX (mammoth), TXT → text; size cap | `extract.ts` |
-| `core/storage` | IndexedDB via Dexie; repositories | `db.ts`, `sessions.ts`, `utterances.ts`, `answers.ts` |
+| `core/stt` | Engine (one worker, two channels); worker with sherpa-onnx WASM; per-channel decoding with energy gate and endpoint rules; pinned model list; verified download and caching; hotwords, session hotwords; health status; WER and timing helpers for the test page | `sttEngine.ts`, `sessionHotwords.ts`, `stt.worker.ts`, `channel.ts`, `gate.ts`, `models.ts`, `download.ts`, `hotwords.ts`, `sentencepiece.ts`, `health.ts`, `protocol.ts`, `metrics.ts`, `wer.ts` |
+| `core/transcript` | Utterance list (You/Them), echo filter, line merging and display hold, last-N-minutes window; saving final lines to storage; question selection (Day 4) | `transcript.ts`, `echo.ts`, `merge.ts`, `display.ts`, `saver.ts`; later `question.ts` |
+| `core/answer` | Calls `/api/answer`, reads SSE, cancel, retries, timings; session warm-up and the request's session details | `answerClient.ts`, `warm.ts` |
+| `core/documents` | PDF (pdf.js 6.4.299; worker served from our origin), DOCX (mammoth 1.13.0), TXT → text with clear error codes (unsupported type, too large, encrypted, no text); size caps (20 MB file, 100,000 characters per document, 150,000 per session) | `extract.ts`, `limits.ts` |
+| `core/storage` | IndexedDB via Dexie 4.4.6 (ADR-0024); repositories; default preferences; persistence request; delete all | `db.ts`, `types.ts`, `sessions.ts`, `documents.ts`, `utterances.ts`, `settings.ts`, `persist.ts`, `wipe.ts`; later `answers.ts` |
 | `platform` | Platform adapter (section 3.3); shared media helpers and capture errors | `types.ts`, `desktop.ts`, `browser.ts`, `index.ts`, `media.ts`, `errors.ts` |
 
 ### 7.2 Server (apps/web/src/server and apps/web/app/api)
@@ -210,7 +217,7 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/auth/[...all]` | GET, POST | Better Auth handler: sign-in, sign-out, session, change password, and admin operations (admin plugin). Public sign-up is disabled. |
-| `/api/answer` | POST, SSE response | `mode`: `warm` / `answer` / `chat` / `screenshot` → builds the prompt, calls Claude, streams text |
+| `/api/answer` | POST, SSE response | `mode`: `hello` (Day 1 test) / `warm` (Day 3) / `answer` / `chat` / `screenshot` → builds the prompt, calls Claude, streams text. `answer` and `chat` return 400 "not implemented yet: Day 4", `screenshot` "Day 5" |
 | `/api/notes` | POST, SSE response | Post-call notes with Sonnet |
 
 **`POST /api/answer` request:**
@@ -223,7 +230,9 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
     "type": "sales",
     "company": "Acme",
     "role": "Account review",
+    "description": "...",
     "instructions": "...",
+    "keyTerms": ["Bluefin Route", "Professional plan"],
     "style": { "format": "headline+bullets", "length": "short", "tone": "simple" },
     "documents": [{ "name": "pricing.pdf", "text": "..." }]
   },
@@ -235,15 +244,24 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 }
 ```
 
-**Response:** `text/event-stream` with events `delta` (`{ "text": "..." }`), `done` (`{ "usage": {...}, "ms": {...} }`) and `error` (`{ "code": "...", "message": "..." }`).
+Differences from the 3.2.0 example, decided on Day 3:
+- `session.description` (the call description from the wizard, ≤ 5,000 characters) and `session.keyTerms` (the key terms typed for the session, one per entry, ≤ 100) are added. The key terms let Claude recognise misheard names.
+- `mode: "warm"` requires `session`; the other fields are not used.
+- Validation (`server/validate.ts`, zod): unknown fields are rejected; documents ≤ 150,000 characters in total; request ≤ 4 MB. Errors name the field and never echo its content (for example `session: required for mode warm`).
 
-**Prompt structure (`server/prompt.ts`):**
+**Response:** `text/event-stream` with events `delta` (`{ "text": "..." }`), `done` (`{ "usage": {...}, "ms": {...} }`) and `error` (`{ "code": "...", "message": "..." }`). A warm-up sends only `done` (cache counts and timings) or `error`.
+
+**Prompt structure (`server/prompt.ts`, built Day 3):**
 
 | Part | Content | Cached |
 |---|---|---|
-| System | Kite role, answer rules (headline ≤ 15 words, ≤ 5 bullets, use only session facts for personal claims, say what to clarify if unsure), answer style | Yes |
-| Session block | Type, company, role, instructions, document texts | Yes (`cache_control`) |
-| Messages | Transcript window + question (+ image for screenshots) | No |
+| System | Fixed rules, the same for every session: Kite's role; answer rules (headline ≤ 15 words and ≤ 5 bullets for headline+bullets, one short paragraph for paragraph; follow the session's length, tone and instructions; use only session facts and documents for claims about the user, their company, offer, prices, dates or commitments; if unsure or unclear, say what to clarify); the **imperfect-transcript rule**: the transcript is made by on-device speech recognition and often mishears names and technical terms, so Claude infers the intended words from the context and the session's key terms, company, role or topic and documents | Yes (`cache_control`) |
+| Session block | Fixed order and labels: call type, company, role or topic, description, key terms, answer format / length / tone, instructions, then each document in `<document name="…">` tags (`&`, `<`, `>` escaped, so a document cannot close its tag). Empty fields are written as "(not given)". Byte-for-byte the same for the same session: no timestamps or ids | Yes (`cache_control`) |
+| Messages | Transcript window ("You:" / "Them:" lines) + question (+ image for screenshots); for a warm-up, a fixed placeholder | No |
+
+The answer style is in the session block, not in the system block (a difference from 3.2.0): it differs per session, and keeping the system block identical for every session is what lets it be shared.
+
+**Thinking** is off for live answers, set per model tier by `thinkingFor()` in `server/claude.ts`: `fast` (claude-haiku-5-5) sends `{ type: "disabled" }`; `smart` (claude-sonnet-5-5) sends `{ type: "between_tools" }`, because Sonnet 5.5 rejects `disabled` with a 400 (Anthropic model docs). Kite uses no tools, so `between_tools` means no thinking.
 
 **Server rules:**
 
@@ -264,7 +282,7 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 | `screenshot.ts` | `desktopCapturer` → PNG of the current display (Day 5) |
 | `protection.ts` | `setContentProtection(on)` on the live window; re-applied every time it is shown (Day 5) |
 | `preload.ts` | Exposes `window.kiteDesktop` (typed in `packages/shared`) with the methods in section 3.3. Nothing else. |
-| `security.ts` | Blocks navigation to any other origin; opens external links in the system browser; `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false` |
+| `security.ts` | Blocks navigation to any other origin; opens external links in the system browser; `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`. Permissions for the Kite origin only: microphone, `display-capture` (handled in `media.ts`) and, from Day 3, `persistent-storage`: Electron routes `navigator.storage.persist()` through the permission handlers, so without this grant the request always fails in the desktop app and local sessions could be cleared when the disk is short of space (ADR-0024) |
 
 Default hotkeys (desktop):
 
@@ -277,15 +295,23 @@ Default hotkeys (desktop):
 
 ### 7.4 Data model (IndexedDB, Dexie)
 
-| Store | Fields |
-|---|---|
-| `sessions` | id, type, company, role, description, preferences, instructions, saveTranscript, autoAnswer, createdAt, status |
-| `documents` | id, sessionId, name, text, chars, addedAt |
-| `utterances` | id, sessionId, speaker (`you`/`them`), text, tStart, tEnd |
-| `answers` | id, sessionId, mode, question, text, model, msFirstToken, msTotal, createdAt |
-| `notes` | sessionId, summary, questions, nextSteps, createdAt |
+Built on Day 3 (`core/storage`, ADR-0024). One IndexedDB database, `kite`, opened with Dexie 4.4.6. The field types and their comments are in `core/storage/types.ts`.
 
-If "save transcript" is off, utterances are kept in memory only and discarded when the session ends.
+| Store (indexes) | Fields |
+|---|---|
+| `sessions` (id, createdAt, type, status) | id, type (`interview` / `sales` / `support` / `internal`), company, role, description, preferences (language `en`, model `fast`/`smart`, style {format, length, tone}, keyTerms: one per line), instructions, saveTranscript, autoAnswer, createdAt, status (`not-started` / `live` / `ended`), lastActiveAt |
+| `documents` (id, sessionId) | id, sessionId, name, text (extracted text only, never the file), chars, addedAt |
+| `utterances` (id, sessionId) | id (`<session>:<call>:<line>`), sessionId, speaker (`you`/`them`), text, tStart, tEnd |
+| `answers` (id, sessionId) | id, sessionId, mode, question, text, model, msFirstToken, msTotal, createdAt (written from Day 4) |
+| `notes` (sessionId) | sessionId, summary, questions, nextSteps, createdAt (written from Day 5) |
+| `settings` (id), schema version 2 | one row `defaults`: the default model, style, instructions and save-transcript setting for new sessions |
+
+Rules:
+- Ids come from `crypto.randomUUID()`; times are Unix milliseconds.
+- **Status shown:** a session stored as `live` whose `lastActiveAt` is more than **12 hours** old is shown as Ended (the window was closed or crashed during a call). `lastActiveAt` is set on Connect and refreshed every 60 s during a call.
+- **Delete a session** removes its documents, transcript lines, answers and notes in one transaction.
+- If "save transcript" is off, utterances are kept in memory only and discarded when the session ends. Echo lines are never stored.
+- Schema changes add a new Dexie version; earlier versions are never edited.
 
 ### 7.5 Auto-answer (beta)
 
@@ -304,7 +330,8 @@ Each automatic answer can be cancelled with Clear. Tuning and tests use transcri
 | Data | Location |
 |---|---|
 | Audio | Only in memory on the laptop; never stored, never sent |
-| Sessions, documents, transcripts, answers, notes | IndexedDB on the laptop (per app or browser profile) |
+| Sessions, documents, transcripts, answers, notes, default preferences | IndexedDB on the laptop (ADR-0024). Documents are stored as extracted text only; the original file is read in the browser and never kept or uploaded. **The browser and the desktop app have separate local data**, and so does each browser profile: a session created in Chrome does not appear in the desktop app, and the other way round. There is no sync in v1 (§14). |
+| Downloaded speech model | Cache Storage on the laptop. Public, checksum-pinned files only; "Delete all local data" keeps it. |
 | Text for an answer (session block, transcript window, question) and screenshots on request | Sent over HTTPS to Vercel, then to Claude. Not stored by Kite's server. |
 | Claude API key | Vercel environment variable only |
 | User accounts (name, email, role, password hash, sign-in sessions) | Neon Postgres on Vercel. Passwords are hashed (scrypt) and never stored or logged in plain text. |
@@ -328,7 +355,8 @@ Internal approval is needed that transcript text, documents and screenshots are 
 | Key leakage | Key only on Vercel; never sent to the client; never logged |
 | Malicious page inside the desktop shell | Only the Kite URL can load; navigation to other origins blocked; minimal preload API. Every other origin is blocked, so any future payment or SSO origin must be added to the allowlist (`apps/desktop/src/config.ts` / `security.ts`) on purpose, with a review. |
 | Prompt injection from documents | Documents are placed in a clearly marked context block; the answer path has no tools and can take no actions |
-| Lost laptop | Data is in the browser profile; "Delete all local data" in settings; sign-in sessions expire after 30 days |
+| Lost laptop | Data is in the browser profile or the desktop app's profile, **not encrypted by Kite** (ADR-0024). Mitigations: the operating system's disk encryption (FileVault / BitLocker), "Delete all local data" in Settings, sign-in sessions expire after 30 days (the app then asks for the password before showing its screens, but the IndexedDB files stay readable to anyone signed in to that operating-system account) |
+| Local data cleared by the browser | Kite asks for persistent storage when the first session is saved. The desktop shell grants `persistent-storage` to the Kite origin only (§7.3); Chrome decides by itself, and without it data is kept as long as there is disk space |
 
 ## 9. Folder structure and code rules
 
@@ -344,6 +372,7 @@ kite/
 │   │   │   ├── admin/users/page.tsx  # admins only
 │   │   │   ├── page.tsx              # dashboard
 │   │   │   ├── sessions/new/page.tsx # create session
+│   │   │   ├── sessions/[id]/edit/page.tsx  # edit session (Day 3)
 │   │   │   ├── sessions/[id]/page.tsx  # review
 │   │   │   ├── live/[id]/page.tsx    # connect + live session
 │   │   │   ├── settings/page.tsx
@@ -371,14 +400,16 @@ kite/
 │   │   ├── scripts/
 │   │   │   ├── create-admin.ts       # creates the first admin account
 │   │   │   ├── fetch-models.ts       # pinned STT files: runtime (every build), model (dev, CI)
-│   │   │   └── check-stt-runtime.ts  # fails the build if a runtime file is missing or wrong
+│   │   │   ├── check-stt-runtime.ts  # fails the build if a runtime file is missing or wrong
+│   │   │   └── verify-warm.ts        # developer-only: warm-up write/read against the real API
 │   │   ├── public/stt-runtime/       # STT runtime, unpacked at build time (git-ignored)
 │   │   ├── public/models/stt/        # STT model files for development and CI (git-ignored;
 │   │   │                             #   production loads them from Hugging Face, ADR-0023)
 │   │   ├── tests/
 │   │   │   ├── unit/                 # Vitest, same paths as src/ and scripts/
 │   │   │   ├── integration/          # Playwright: STT pipeline with a fake microphone
-│   │   │   └── fixtures/audio/       # official LibriSpeech test recordings + SOURCES.md
+│   │   │   ├── fixtures/audio/       # official LibriSpeech test recordings + SOURCES.md
+│   │   │   └── fixtures/documents/   # small invented PDF/DOCX/TXT files + generator, SOURCES.md
 │   │   ├── next.config.ts            # no COOP/COEP headers (single-threaded STT runtime)
 │   │   └── package.json
 │   └── desktop/                      # thin Electron shell
