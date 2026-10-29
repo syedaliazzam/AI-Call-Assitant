@@ -30,7 +30,14 @@ import {
   sha256Hex,
 } from './download';
 import { BPE_VOCAB_NAME, BPE_VOCAB_SHA256, type DownloadFile } from './models';
-import type { ChannelId, EngineStats, FromWorker, ToWorker } from './protocol';
+import {
+  DEFAULT_BEAM_WIDTH,
+  type BeamWidth,
+  type ChannelId,
+  type EngineStats,
+  type FromWorker,
+  type ToWorker,
+} from './protocol';
 import { sentencePieceVocab } from './sentencepiece';
 
 /** Endpoint rule 2: decoded silence (s) after some text that ends an utterance. */
@@ -127,6 +134,8 @@ interface ModelPaths {
 let runtime: EmscriptenModule | null = null;
 let recognizer: OnlineRecognizer | null = null;
 let modelPaths: ModelPaths | null = null;
+/** Beam width from 'load'; kept so 'set-hotwords' re-creates the recognizer with the same one. */
+let beamWidth: BeamWidth = DEFAULT_BEAM_WIDTH;
 const channels = new Map<ChannelId, ChannelDecoder>();
 /** Cancels a download in progress (on 'stop'). */
 let loadAbort: AbortController | null = null;
@@ -149,7 +158,7 @@ function runVerifiedScript(bytes: ArrayBuffer): void {
 }
 
 /**
- * Creates the recognizer with the given hotwords.
+ * Creates the recognizer with the given hotwords and the beam width set by 'load'.
  *
  * @param hotwords Hotwords buffer ('' for none).
  * @returns The recognizer.
@@ -169,9 +178,10 @@ function createRecognizer(hotwords: string): OnlineRecognizer {
       modelingUnit: 'bpe',
       bpeVocab: paths.bpeVocab,
     },
-    // Hotwords need beam search; greedy search ignores them. 4 paths is sherpa-onnx's default.
+    // Hotwords need beam search; greedy search ignores them. 4 paths is sherpa-onnx's default
+    // and what live sessions use; /dev/stt-test can ask for 8 (more CPU) to measure it.
     decodingMethod: 'modified_beam_search',
-    maxActivePaths: 4,
+    maxActivePaths: beamWidth,
     hotwordsBuf: hotwords,
     // Byte length: the C side copies exactly this many bytes from the buffer.
     hotwordsBufSize: new TextEncoder().encode(hotwords).length,
@@ -270,6 +280,7 @@ async function loadModel(message: Extract<ToWorker, { type: 'load' }>): Promise<
     tokens: path(files.tokens.name),
     bpeVocab: path(BPE_VOCAB_NAME),
   };
+  beamWidth = message.beamWidth;
   recognizer = createRecognizer(message.hotwords);
   const readyAt = performance.now();
 

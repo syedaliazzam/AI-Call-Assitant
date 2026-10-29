@@ -222,6 +222,24 @@ The desktop app against production worked: no picker, both channels, and 7 echo 
 
 **What this means:** answers on Day 4 must not depend on names being transcribed exactly. The levers in Decision item 3 apply in order: session hotwords (Day 3), the Day 4 prompt note, then the desktop native engine spike after Day 4.
 
+### Session hotwords result (Day 3, Stage 4)
+
+From Day 3, each live session gives the engine its own hotwords: the session's key terms and company at boost 2, its role/topic and document names at 1.5 (`core/stt/sessionHotwords.ts`). They were measured on `/dev/stt-test` with the 3 test sentences: 4 runs, alternating with and without hotwords, same laptop, same microphone, plugged in (rows in benchmark-results.md, 2026-10-29).
+
+| | Run 1 | Run 2 | Average | Sentence 3 (names), average |
+|---|---|---|---|---|
+| Session hotwords (A) | 19.6% | 13.7% | 16.7% | 26.5% |
+| No hotwords (B) | 13.7% | 19.6% | 16.7% | 40% |
+
+- **No overall effect.** Both averages are 16.7%. The first pair alone made hotwords look worse (19.6% vs 13.7%), which triggered the Day 3 stop rule; the repeat pair reversed it. A single pair cannot show a difference of a few words.
+- **Hotwords help names intermittently on this voice.** "Bluefin Route" and "Northwind Logistics" were exactly right in one hotword run (A2) and wrong in the other (A1: "your fin drove", "Northman"). They were never right without hotwords.
+- **No harm measured.** The average did not get worse, and no hotword phrase appeared where it was not said in the text reported from the runs (false insertions are the main risk of hotwords).
+- **Run-to-run variance is large.** The 4-run average is about 17% on the test sentences, ranging from 13.7% to 19.6%. A change smaller than about 3 words in 51 cannot be told apart from noise with one or two runs.
+
+**Decision (developer, 2026-10-29):** session hotwords stay **on** by default, at boost 2 for key terms and company and 1.5 for role/topic and document names. Live sessions keep beam width 4.
+
+**For later measurement:** `/dev/stt-test` has a "Beam width" choice of 4 or 8 (sherpa-onnx `maxActivePaths`). A hotword can only be boosted once its first word piece is among the candidates the beam keeps, so a wider beam may help names more often. It costs CPU, and two channels on battery already reach RTF 0.86. It must be measured on battery with two channels before live sessions change.
+
 ## Validation
 
 Measured numbers are in `docs/testing/benchmark-results.md` (Day 1 Stage 6 and Day 2 rows). The test page is `/dev/stt-test` (admins only). It shows:

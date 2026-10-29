@@ -1,7 +1,7 @@
 /**
  * Tests for apps/web/src/core/stt/sttEngine.ts, with a fake Worker and fake Web Audio objects:
  * the engine posts one 'load' with the resolved file URLs and the formatted (upper-case)
- * hotwords; `ready` resolves on 'ready' and rejects with the error code on an early error;
+ * hotwords and the beam width (4 unless /dev/stt-test asks for 8); `ready` resolves on 'ready' and rejects with the error code on an early error;
  * partial, final, progress and stats messages reach the callbacks; attach() builds one worklet
  * per channel and hands its port to the worker; detach() and setHotwords() post the right
  * messages; stop() ends the worker and ignores later messages; a final line's latency is
@@ -104,12 +104,20 @@ describe('createSttEngine', () => {
     expect(load.type).toBe('load');
     if (load.type !== 'load') return;
     expect(load.hotwords).toBe('BLUEFIN ROUTE :2\n');
+    // Live sessions never set a beam width, so they get the default of 4.
+    expect(load.beamWidth).toBe(4);
     expect(load.runtime.wasm.url).toBe(
       'http://localhost:3000/stt-runtime/v1.13.7/sherpa-onnx-wasm-main-asr.wasm',
     );
     expect(load.files.encoder.url).toBe(
       'http://localhost:3000/models/stt/zipformer-en-2023-06-21/encoder-epoch-99-avg-1.int8.onnx',
     );
+  });
+
+  it('passes a beam width set by /dev/stt-test to the worker', () => {
+    const { posted } = setup({ beamWidth: 8 });
+    const load = posted[0]!.message;
+    expect(load.type === 'load' && load.beamWidth).toBe(8);
   });
 
   it('resolves ready, and forwards progress, partial, final and stats', async () => {

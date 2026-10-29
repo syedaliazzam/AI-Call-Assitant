@@ -25,14 +25,16 @@ import {
   type ModelSource,
   type SttModelId,
 } from './models';
-import type {
-  ChannelId,
-  EndpointReason,
-  EngineErrorCode,
-  EngineStats,
-  FromWorker,
-  LoadStats,
-  ToWorker,
+import {
+  DEFAULT_BEAM_WIDTH,
+  type BeamWidth,
+  type ChannelId,
+  type EndpointReason,
+  type EngineErrorCode,
+  type EngineStats,
+  type FromWorker,
+  type LoadStats,
+  type ToWorker,
 } from './protocol';
 
 /** A partial-text update for one channel. */
@@ -77,6 +79,11 @@ export interface SttEngineOptions {
   model?: SttModelId;
   /** Hotwords as typed: one phrase per line, optional " :score" (see hotwords.ts). */
   hotwords?: string;
+  /**
+   * Candidate texts kept by beam search (default DEFAULT_BEAM_WIDTH, 4). Only /dev/stt-test sets
+   * it, for measuring; live sessions always use the default.
+   */
+  beamWidth?: BeamWidth;
   /** Where model files come from (default: pickModelSource() for this build). */
   source?: ModelSource;
   /** Download progress. */
@@ -163,7 +170,7 @@ interface AttachedChannel {
 /**
  * Creates the engine and starts loading the model right away.
  *
- * @param options Model, hotwords, source and callbacks.
+ * @param options Model, hotwords, beam width, source and callbacks.
  * @param deps    Browser objects (tests only).
  * @returns The engine. Await `ready` before relying on `attach`.
  * Called from: SttTest.tsx; core/audio/capture.ts (Stage 3)
@@ -255,6 +262,7 @@ export function createSttEngine(
     runtime: downloads.runtime,
     files: downloads.model,
     hotwords: formatHotwords(options.hotwords ?? '').buffer,
+    beamWidth: options.beamWidth ?? DEFAULT_BEAM_WIDTH,
   });
 
   /**

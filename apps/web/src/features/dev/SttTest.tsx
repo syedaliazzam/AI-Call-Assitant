@@ -19,6 +19,10 @@
  * company, role, document names; core/stt/sessionHotwords.ts), the fixed test list, or none,
  * to measure what session hotwords do to accuracy.
  *
+ * "Beam width" (Day 3 Stage 4): 4 (sherpa-onnx's default, what live sessions use) or 8, to measure
+ * whether a wider beam lets hotwords reach names and what it costs in RTF. This page only; it
+ * takes effect on the next Start.
+ *
  * Transcript text stays in this page's memory only; it is never logged or sent anywhere.
  */
 'use client';
@@ -44,7 +48,14 @@ import {
   TEST_RECORDINGS,
   testRecordingUrl,
 } from '@/core/stt/models';
-import type { ChannelId, EndpointReason, EngineStats, LoadStats } from '@/core/stt/protocol';
+import {
+  DEFAULT_BEAM_WIDTH,
+  type BeamWidth,
+  type ChannelId,
+  type EndpointReason,
+  type EngineStats,
+  type LoadStats,
+} from '@/core/stt/protocol';
 import { buildHotwords, hotwordsText as toHotwordsText } from '@/core/stt/sessionHotwords';
 import { buildModelSource, createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
 import { wordErrorRate, type WerResult } from '@/core/stt/wer';
@@ -152,6 +163,9 @@ export function SttTest() {
   const [hotwordSource, setHotwordSource] = useState('test');
   // The source of the hotwords loaded into the running engine (for "Copy results").
   const [hotwordSourceUsed, setHotwordSourceUsed] = useState('');
+  // Beam width chosen for the next Start, and the one the running engine was started with.
+  const [beamWidth, setBeamWidth] = useState<BeamWidth>(DEFAULT_BEAM_WIDTH);
+  const [beamWidthUsed, setBeamWidthUsed] = useState<BeamWidth>(DEFAULT_BEAM_WIDTH);
   // Sessions on this computer, for "Hotwords from".
   const [sessions, setSessions] = useState<Session[]>([]);
   // Accuracy: which sentence is being read, and the "You" final lines heard for each sentence.
@@ -271,6 +285,7 @@ export function SttTest() {
     setStats(null);
     setHotwordsUsed(hotwordsText);
     setHotwordSourceUsed(hotwordSource);
+    setBeamWidthUsed(beamWidth);
     monitor.current.reset();
     // The call audio is captured first, while the click still counts as a user gesture.
     let themStream: MediaStream | null = null;
@@ -283,6 +298,7 @@ export function SttTest() {
     }
     const created = createSttEngine({
       hotwords: hotwordsText,
+      beamWidth,
       onProgress: setProgress,
       onPartial: ({ channel, text }) => setPartials((current) => ({ ...current, [channel]: text })),
       onFinal: ({ channel, text, reason, latencyMs }) => {
@@ -429,7 +445,7 @@ export function SttTest() {
   function resultsText(): string {
     const lines = [
       `Where: ${where}; user agent: ${navigator.userAgent}`,
-      `Model: ${model.id} (source ${source}); decoding modified_beam_search; hotwords from ${describeSource(hotwordSourceUsed)}: ${hotwordsLoaded.length} (scores ${hotwordsLoaded.map((hotword) => hotword.score).join(', ') || '–'})`,
+      `Model: ${model.id} (source ${source}); decoding modified_beam_search, beam width ${beamWidthUsed}; hotwords from ${describeSource(hotwordSourceUsed)}: ${hotwordsLoaded.length} (scores ${hotwordsLoaded.map((hotword) => hotword.score).join(', ') || '–'})`,
       ...loads.map(
         (load, i) =>
           `Load ${i + 1} (${load.fromCache ? 'cache' : 'network'}${load.cacheAvailable ? '' : ', cache unavailable'}): total ${load.totalMs} ms = download ${load.downloadMs} + runtime ${load.runtimeInitMs} + model ${load.modelInitMs}; ${formatMb(load.bytes)}`,
@@ -492,6 +508,19 @@ export function SttTest() {
         {callSource && (
           <span className="text-xs text-emerald-700">Them = {CALL_SOURCE_LABEL[callSource]}</span>
         )}
+        <label className="flex items-center gap-2 text-sm text-slate-800">
+          Beam width:
+          {/* Read on Start only: the worker builds its recognizer once per load. */}
+          <select
+            value={beamWidth}
+            disabled={phase === 'loading' || phase === 'listening'}
+            onChange={(event) => setBeamWidth(Number(event.target.value) as BeamWidth)}
+            className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+          >
+            <option value={4}>4 (live sessions)</option>
+            <option value={8}>8 (more CPU)</option>
+          </select>
+        </label>
         <Button
           variant="ghost"
           onClick={clearCache}
