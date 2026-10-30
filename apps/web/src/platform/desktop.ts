@@ -64,6 +64,27 @@ export interface DesktopPlatform extends Platform {
   os: DesktopOs;
 }
 
+/** A hotkey seen twice within this many ms (global shortcut and in-page key) counts once. */
+const DUPLICATE_PRESS_MS = 150;
+
+/**
+ * Turns an Electron accelerator into the label users know.
+ *
+ * @param accelerator For example 'CommandOrControl+Left'.
+ * @param os          The desktop OS.
+ * @returns For example '⌘←' on macOS or 'Ctrl+←' on Windows.
+ * Called from: onHotkey() (taken shortcuts); tests
+ */
+export function acceleratorLabel(accelerator: string, os: DesktopOs): string {
+  const keys: Record<string, string> = { Left: '←', Right: '→', Enter: 'Enter' };
+  const parts = accelerator.split('+').map((part) => {
+    if (part === 'CommandOrControl') return os === 'mac' ? '⌘' : 'Ctrl';
+    if (part === 'Shift') return os === 'mac' ? '⇧' : 'Shift';
+    return keys[part] ?? part;
+  });
+  return os === 'mac' ? parts.join('') : parts.join('+');
+}
+
 /**
  * Builds the desktop Platform around the bridge object from the shell.
  * A factory (instead of a module-level constant) because `window` does not exist while Next.js
@@ -125,14 +146,42 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
-     * The hotkeys: the in-page shortcuts while the Kite window has focus (⌘ on macOS, Ctrl
-     * elsewhere). Stage 8 adds the shell's global shortcuts, which work from any app.
+     * The hotkeys: the shell's global shortcuts (work from any app, Stage 8) and the in-page
+     * shortcuts (while the Kite window has focus; the only ones in a desktop app installed
+     * before Day 4, whose bridge has no onHotkey). A key press that reaches both is handled
+     * once.
      *
      * @param handler Receives each hotkey action.
-     * @returns A function that stops listening.
+     * @param onTaken Receives the shortcuts another app already uses, as labels.
+     * @returns A function that stops listening and releases the global shortcuts.
      */
-    onHotkey(handler) {
-      return listenForHotkeys(window, bridge.os === 'mac', handler);
+    onHotkey(handler, onTaken) {
+      let last: { action: string; at: number } | null = null;
+      const once = (action: Parameters<typeof handler>[0]) => {
+        const now = performance.now();
+        // The same action within 150 ms is one key press seen twice (global and in-page).
+        if (last && last.action === action && now - last.at < DUPLICATE_PRESS_MS) return;
+        last = { action, at: now };
+        handler(action);
+      };
+      const stopPage = listenForHotkeys(window, bridge.os === 'mac', once);
+      const stopGlobal = bridge.onHotkey?.(once);
+      let active = true;
+      bridge
+        .setHotkeysEnabled?.(true)
+        .then((statuses) => {
+          const taken = statuses.filter((status) => !status.registered);
+          if (active && taken.length > 0) {
+            onTaken?.(taken.map((status) => acceleratorLabel(status.accelerator, bridge.os)));
+          }
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+        stopPage();
+        stopGlobal?.();
+        void bridge.setHotkeysEnabled?.(false).catch(() => undefined);
+      };
     },
 
     /**

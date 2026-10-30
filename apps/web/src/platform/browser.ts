@@ -114,7 +114,8 @@ export const browserPlatform: Platform = {
    * Ctrl elsewhere). A browser cannot have shortcuts that work from other apps. Day 5 adds the
    * picture-in-picture window.
    *
-   * @param handler Receives each hotkey action.
+   * @param handler Receives each hotkey action. (No shortcut can be "taken" in a browser, so
+   *                the second argument of the Platform method is not used.)
    * @returns A function that stops listening.
    */
   onHotkey(handler) {

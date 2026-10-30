@@ -70,6 +70,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     store: props.store,
   });
   const [chatOpen, setChatOpen] = useState(false);
+  // Desktop app: global shortcuts another app already uses (they work only while Kite has focus).
+  const [taken, setTaken] = useState<string[]>([]);
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
   const entry = answers.index >= 0 ? (answers.entries[answers.index] ?? null) : null;
   const answering = answers.entries.some((candidate) => candidate.status === 'streaming');
@@ -79,6 +81,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
   useEffect(() => {
     actions.current = answers;
   });
+  // Mounted only during a call, so the desktop app's global shortcuts are on only then.
   useEffect(
     () =>
       getPlatform().onHotkey((action) => {
@@ -87,7 +90,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         else if (action === 'prev') actions.current.prev();
         else if (action === 'next') actions.current.next();
         // 'screenshot' arrives on Day 5.
-      }),
+      }, setTaken),
     [],
   );
 
@@ -103,6 +106,13 @@ export function LiveAnswers(props: LiveAnswersProps) {
         onClear={answers.clear}
         onEnd={props.onEnd}
       />
+      {taken.length > 0 && (
+        <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Another app already uses {taken.join(', ')}, so{' '}
+          {taken.length === 1 ? 'it works' : 'they work'} only while Kite is in front. Close that
+          app&rsquo;s shortcut, or use the buttons.
+        </p>
+      )}
       {chatOpen && <ChatBox onSend={answers.chat} />}
       <AnswerPanel
         entry={entry}

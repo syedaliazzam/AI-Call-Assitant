@@ -7,10 +7,16 @@
  * macOS failure modes into typed errors (no audio track → 'not-supported'; an audio track that
  * arrived already ended → 'permission-denied' with the privacy-settings path) and a refused
  * request into 'permission-denied'; onHotkey() listens for the in-page shortcuts with ⌘ on
- * macOS and Ctrl on Windows (Day 4); every not-yet-built method throws NotImplementedError.
+ * macOS and Ctrl on Windows (Day 4) and, with a Day 4 shell, turns the global shortcuts on and
+ * off, forwards each press once and reports shortcuts another app holds (acceleratorLabel);
+ * every not-yet-built method throws NotImplementedError.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { createDesktopPlatform, DESKTOP_DISPLAY_OPTIONS } from '@/platform/desktop';
+import {
+  acceleratorLabel,
+  createDesktopPlatform,
+  DESKTOP_DISPLAY_OPTIONS,
+} from '@/platform/desktop';
 import { CaptureError, NotImplementedError } from '@/platform/errors';
 import { domError, fakeStream, fakeTrack, stubDisplayMedia } from './fakeMedia';
 
@@ -105,5 +111,58 @@ describe('desktop getOtherSideStream', () => {
       throw domError('NotAllowedError', 'Permission denied');
     });
     await expect(windows.getOtherSideStream()).rejects.toMatchObject({ code: 'permission-denied' });
+  });
+});
+
+describe('desktop onHotkey with the Day 4 shell', () => {
+  it('turns the global shortcuts on, forwards them once, reports taken ones, and releases them', async () => {
+    vi.stubGlobal('window', new EventTarget());
+    let forward: ((action: 'answer' | 'next') => void) | null = null;
+    const stopBridge = vi.fn();
+    const setHotkeysEnabled = vi.fn(async (on: boolean) =>
+      on
+        ? [
+            { action: 'answer' as const, accelerator: 'CommandOrControl+Enter', registered: true },
+            { action: 'prev' as const, accelerator: 'CommandOrControl+Left', registered: false },
+          ]
+        : [],
+    );
+    const platform = createDesktopPlatform({
+      version: '1.2.3',
+      os: 'windows',
+      setHotkeysEnabled,
+      onHotkey: (handler) => {
+        forward = handler;
+        return stopBridge;
+      },
+    });
+    const handler = vi.fn();
+    const onTaken = vi.fn();
+    const stop = platform.onHotkey(handler, onTaken);
+    expect(setHotkeysEnabled).toHaveBeenCalledWith(true);
+    await vi.waitFor(() => expect(onTaken).toHaveBeenCalledWith(['Ctrl+←']));
+    forward!('answer');
+    // The same key press also reaching the page counts once.
+    (window as unknown as EventTarget).dispatchEvent(
+      Object.assign(new Event('keydown'), {
+        key: 'Enter',
+        ctrlKey: true,
+        metaKey: false,
+        shiftKey: false,
+        altKey: false,
+        repeat: false,
+      }),
+    );
+    forward!('next');
+    expect(handler.mock.calls).toEqual([['answer'], ['next']]);
+    stop();
+    expect(stopBridge).toHaveBeenCalled();
+    expect(setHotkeysEnabled).toHaveBeenLastCalledWith(false);
+  });
+
+  it('labels accelerators the way each OS shows them', () => {
+    expect(acceleratorLabel('CommandOrControl+Enter', 'windows')).toBe('Ctrl+Enter');
+    expect(acceleratorLabel('CommandOrControl+Shift+Enter', 'mac')).toBe('⌘⇧Enter');
+    expect(acceleratorLabel('CommandOrControl+Right', 'mac')).toBe('⌘→');
   });
 });

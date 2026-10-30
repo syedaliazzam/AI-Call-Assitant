@@ -1,7 +1,10 @@
 /**
  * Smoke test for the Electron shell (apps/desktop/src/main.ts, preload.ts, security.ts).
  * Launches the built app (dist/) with KITE_URL pointing at a local test page and checks:
- * the window opens at 1280×820; window.kiteDesktop is exactly { version, os } and frozen;
+ * the window opens at 1280×820; window.kiteDesktop is exactly { version, os,
+ * setHotkeysEnabled, onHotkey } and frozen; the hotkey path works: the page turns the global
+ * shortcuts on and off, and a hotkey message sent from the main process reaches the page's
+ * onHotkey handler (an invalid action never does);
  * the page has no Node.js (`require`, `process`); same-origin navigation works while
  * navigation to another origin is blocked; window.open never creates a window and only http(s)
  * links would reach the system browser; only the microphone permission is granted;
@@ -100,9 +103,10 @@ test('opens one 1280×820 window on KITE_URL', async () => {
   expect(sizes).toEqual([[Math.min(1280, workArea.width), Math.min(820, workArea.height)]]);
 });
 
-test('exposes window.kiteDesktop as exactly { version, os }, frozen', async () => {
+test('exposes window.kiteDesktop as exactly { version, os, setHotkeysEnabled, onHotkey }, frozen', async () => {
   const bridge = await page.evaluate(() => ({
     keys: Object.keys(window.kiteDesktop ?? {}).sort(),
+    methods: [typeof window.kiteDesktop?.setHotkeysEnabled, typeof window.kiteDesktop?.onHotkey],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
     frozen: Object.isFrozen(window.kiteDesktop),
@@ -110,11 +114,53 @@ test('exposes window.kiteDesktop as exactly { version, os }, frozen', async () =
   const appVersion = await app.evaluate(({ app: electronApp }) => electronApp.getVersion());
   const expectedOs = { darwin: 'mac', win32: 'windows' }[process.platform as string] ?? 'linux';
 
-  expect(bridge.keys).toEqual(['os', 'version']);
+  expect(bridge.keys).toEqual(['onHotkey', 'os', 'setHotkeysEnabled', 'version']);
+  expect(bridge.methods).toEqual(['function', 'function']);
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
   expect(bridge.frozen).toBe(true);
+});
+
+test('hotkeys: the page turns them on and off, and a hotkey from the main process reaches it', async () => {
+  const statuses = await page.evaluate(async () => {
+    const seen: string[] = [];
+    (window as unknown as { __hotkeys: string[] }).__hotkeys = seen;
+    window.kiteDesktop!.onHotkey!((action) => seen.push(action));
+    return window.kiteDesktop!.setHotkeysEnabled!(true);
+  });
+  expect(statuses.map((status) => status.action)).toEqual([
+    'answer',
+    'screenshot',
+    'clear',
+    'prev',
+    'next',
+  ]);
+  /**
+   * Whether the main process holds a shortcut now.
+   *
+   * @param accelerator The Electron accelerator.
+   * @returns True when registered by this app.
+   */
+  const isRegistered = (accelerator: string) =>
+    app.evaluate(({ globalShortcut }, key) => globalShortcut.isRegistered(key), accelerator);
+  // A shortcut another app on this machine already holds is reported as not registered.
+  const answer = statuses.find((status) => status.action === 'answer')!;
+  expect(await isRegistered('CommandOrControl+Enter')).toBe(answer.registered);
+
+  // What the shell does when a global shortcut is pressed (simulated from the main process).
+  await app.evaluate(({ BrowserWindow }) => {
+    const contents = BrowserWindow.getAllWindows()[0]!.webContents;
+    contents.send('kite:hotkey', 'answer');
+    contents.send('kite:hotkey', 'not-an-action');
+    contents.send('kite:hotkey', 'next');
+  });
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __hotkeys: string[] }).__hotkeys))
+    .toEqual(['answer', 'next']);
+
+  await page.evaluate(() => window.kiteDesktop!.setHotkeysEnabled!(false));
+  expect(await isRegistered('CommandOrControl+Enter')).toBe(false);
 });
 
 test('gives the page no Node.js access', async () => {
