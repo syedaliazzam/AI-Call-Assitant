@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useId, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { getDesktopInfo } from '@/platform';
+import { BrandLockup } from './BrandLockup';
 
 /** The signed-in user, as far as the sidebar needs to know. */
 export interface SidebarUser {
@@ -99,14 +100,9 @@ export function Sidebar({ user, userActions }: SidebarProps) {
 
   return (
     <aside className="k-dark flex w-full shrink-0 flex-col bg-ui-nav text-ui-text md:w-60">
-      <div className="flex h-16 items-center gap-2 px-5">
-        <span
-          aria-hidden="true"
-          className="flex size-8 items-center justify-center bg-ui-primary text-sm font-bold text-ui-on-primary"
-        >
-          K
-        </span>
-        <span className="text-lg font-bold text-ui-heading">Kite</span>
+      {/* px-4 and the small lockup: the full byline fits the 240 px column. */}
+      <div className="flex h-16 items-center gap-2 px-4">
+        <BrandLockup tone="dark" size="sm" />
         <button
           type="button"
           aria-expanded={menuOpen}

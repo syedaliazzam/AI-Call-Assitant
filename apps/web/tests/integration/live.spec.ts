@@ -128,6 +128,14 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
         res.end(readFileSync(path.join(bundleDir, css ? 'live.css' : 'live.js')));
         return;
       }
+      // The brand files (the logo mark in the lockup), from the app's public folder.
+      if (req.url && /^\/brand\/[\w.-]+$/.test(req.url)) {
+        res.writeHead(200, {
+          'Content-Type': req.url.endsWith('.svg') ? 'image/svg+xml' : 'image/png',
+        });
+        res.end(readFileSync(path.join(WEB_DIR, 'public', req.url)));
+        return;
+      }
       if (req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end('<!doctype html><html><body><h1>Dashboard stand-in</h1></body></html>');

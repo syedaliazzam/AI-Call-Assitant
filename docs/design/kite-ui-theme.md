@@ -111,6 +111,14 @@ Deep navy, one bright cyan action colour, Montserrat, and **square corners every
 - Product lockup: logo mark + "Kite" (Montserrat 700) + optional small mono "by Paramount Intelligence".
 - Favicon and Electron app icon from `logo-icon`. Installers need 512 px and 1024 px PNGs (and `.ico` / `.icns`); if only 256 px exists, ask Zain for a larger source before Day 6 packaging.
 
+**As built (stage U4, 31 Oct 2026):**
+- **Source:** the site's `logo-mark.png` (216 × 304, transparent), copied to `apps/web/public/images/`, beside the original `company-logo.jpg` (204 × 192 JPEG on white, kept unchanged). No SVG exists. A trace to SVG (imagetracerjs, 16 and 64 colours) did not match: the gradients turn into bands with gaps, so the PNG is kept. **The designer's vector original is needed.**
+- **Generated** by `pnpm --filter web make-brand` (`scripts/make-brand.ts`; sharp from Next.js, no new dependency), the mark only scaled and centred:
+  - `apps/web/public/brand/`: `logo-mark.png`, `favicon.ico` (16/32/48), `favicon.svg` (wraps the 256 px PNG until a vector exists), `apple-touch-icon.png` (180, on white), `icon-16/32/48/256.png`;
+  - `apps/desktop/build/`: `icon.ico` (16 to 256), `icon.png` (the window icon), `icon-512.png` and `icon-1024.png`. The last two are scaled up from the 304 px source, so they are soft.
+- **Dark backgrounds:** the site only shows the mark on white and has no light version, so on dark surfaces (sidebar, sign-in hero, live view, compact window) the mark sits on a small white tile (`--k-logo-tile`). This is a decision for Zain. At 16 and 32 px the mark's dark blue nearly disappears on a dark taskbar.
+- **Lockup:** `src/ui/BrandLockup.tsx` (tone light or dark; sizes xs to lg).
+
 ## 8. Rules for implementation
 1. All colours, radii and fonts come from `theme.css` tokens. A unit test fails if any other file under `apps/web/src` or `apps/web/app` contains a hex colour (`#[0-9a-f]{3,8}`) or `rgb(`.
 2. A unit test computes the contrast of each token pair listed in §3 and fails below 4.5:1 for text.

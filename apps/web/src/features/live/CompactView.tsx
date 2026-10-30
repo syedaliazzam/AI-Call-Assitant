@@ -19,6 +19,7 @@ import type { ShareProtectionState } from '@kite/shared';
 import { useState, type KeyboardEvent } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import { Button } from '@/ui/Button';
+import { BrandLockup } from '@/ui/BrandLockup';
 
 /** Props for CompactView. */
 export interface CompactViewProps {
@@ -104,7 +105,7 @@ export function CompactView({ state, protection, onCommand, onProtection }: Comp
     // the details on expand. The protection label stays visible in the header.
     <div className="k-dark flex h-screen flex-col bg-ui-bg text-[13px] text-ui-text">
       <header className="flex items-center justify-between gap-2 border-b border-ui-border bg-ui-band px-3 py-1.5 [-webkit-app-region:drag]">
-        <span className={`${EYEBROW} text-ui-muted`}>Kite · live</span>
+        <BrandLockup tone="dark" size="xs" byline={false} name="Kite · live" />
         <ProtectionLabel protection={protection} onToggle={onProtection} />
       </header>
 

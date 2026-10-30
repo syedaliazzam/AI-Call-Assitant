@@ -24,6 +24,7 @@
     "eval:all": "pnpm run eval:answers && pnpm run eval:notes",
     "e2e-admin": "tsx --env-file=.env.local --conditions=react-server scripts/e2e-admin.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",
+    "make-brand": "tsx scripts/make-brand.ts",
     "stt:runtime": "tsx scripts/fetch-models.ts --runtime-only && tsx scripts/check-stt-runtime.ts",
     "test:stt": "playwright test -c tests/integration/playwright.config.ts stt.spec.ts",
     "test:answers": "playwright test -c tests/integration/playwright.config.ts answers.spec.ts",

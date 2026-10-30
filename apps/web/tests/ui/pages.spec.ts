@@ -208,9 +208,14 @@ for (const size of WIDTHS) {
     await page.goto(`${BASE_URL}/admin/users`);
     await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
     // Real accounts never go in a screenshot: every row's name and email is replaced, in this
-    // test browser only, with invented sample users (nothing changes in the database).
+    // test browser only, with invented sample users (nothing changes in the database). Only
+    // after React has hydrated the table, or React would report the edit as a mismatch.
+    await page.waitForFunction(() => {
+      const tbody = document.querySelector('tbody');
+      return !!tbody && Object.keys(tbody).some((key) => key.startsWith('__reactFiber'));
+    });
     const rows = await page.evaluate(() => {
-      const samples = [
+      const samples: [string, string][] = [
         ['Sample Admin', 'sample.admin@example.com'],
         ['Sample User', 'sample.user@example.com'],
         ['Sample Analyst', 'sample.analyst@example.com'],

@@ -12,6 +12,7 @@
 
 import { useId, useState } from 'react';
 import { Badge } from '@/ui/Badge';
+import { BrandLockup } from '@/ui/BrandLockup';
 import { Button } from '@/ui/Button';
 import { Card } from '@/ui/Card';
 import { Dialog, DialogPanel } from '@/ui/Dialog';
@@ -79,6 +80,13 @@ function GallerySet({ name }: { name: string }) {
         <Eyebrow>{name} surface</Eyebrow>
         <h2 className="text-[28px] font-bold text-ui-heading">Answers while you talk.</h2>
       </div>
+
+      <Row label="Lockup">
+        <div className="flex flex-wrap items-center gap-8">
+          <BrandLockup tone={name === 'Dark' ? 'dark' : 'light'} size="lg" />
+          <BrandLockup tone={name === 'Dark' ? 'dark' : 'light'} size="sm" byline={false} />
+        </div>
+      </Row>
 
       <Row label="Typography">
         <p className="text-[20px] text-ui-subheading">Section heading, 20 px</p>

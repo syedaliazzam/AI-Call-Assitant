@@ -96,6 +96,9 @@
   --k-on-dark-outline: rgba(255, 255, 255, 0.55); /* secondary button border on dark */
   --k-overlay: rgba(6, 13, 26, 0.6); /* modal backdrop */
   --k-topbar: rgba(255, 255, 255, 0.95); /* light top bar, with a backdrop blur */
+  /* The logo tile (UI U4): the company mark has no light version, so on dark surfaces it sits
+     on a small white tile, as on the company site's white header. */
+  --k-logo-tile: #ffffff;
 
   /* ---- Shape, type, spacing ---- */
   --k-radius: 0; /* signature: square corners */
@@ -174,6 +177,14 @@
   --ui-provisional: var(--k-dark-provisional);
 }
 
+/* Focus (theme §5, UI U4): every interactive element shows the cyan ring when focused from the
+   keyboard. Components draw it themselves (box-shadow var(--k-focus)); this outline is the
+   fallback for anything that does not, for example plain links in text. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--pi-cyan);
+  outline-offset: 2px;
+}
+
 /* Tailwind class names for the tokens (inline: the classes read the variables at run time, so
    .k-dark switches them). */
 @theme inline {
@@ -213,6 +224,7 @@
   --color-ui-dot-danger: var(--k-dark-danger);
   --color-ui-overlay: var(--k-overlay);
   --color-ui-topbar: var(--k-topbar);
+  --color-ui-logo-tile: var(--k-logo-tile);
   --font-sans: var(--k-font);
   --font-mono: var(--k-mono);
 }

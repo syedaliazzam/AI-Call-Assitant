@@ -8,6 +8,7 @@
  * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 import type { ReactNode } from 'react';
+import { BrandLockup } from './BrandLockup';
 
 /** Props for AuthCard. */
 export interface AuthCardProps {
@@ -37,20 +38,7 @@ export function AuthCard({ title, subtitle, children, footer }: AuthCardProps) {
         aria-label="About Kite"
         className="k-dark flex flex-col justify-between gap-10 bg-[image:var(--k-hero-gradient)] px-6 py-8 text-ui-text sm:px-10 md:py-12"
       >
-        <div className="flex items-center gap-3">
-          <span
-            aria-hidden="true"
-            className="flex size-9 items-center justify-center bg-ui-primary text-base font-bold text-ui-on-primary"
-          >
-            K
-          </span>
-          <span className="flex flex-col">
-            <span className="text-xl font-bold leading-none text-ui-heading">Kite</span>
-            <span className="mt-1 font-mono text-[11px] uppercase tracking-[0.08em] text-ui-muted">
-              by Paramount Intelligence
-            </span>
-          </span>
-        </div>
+        <BrandLockup tone="dark" size="lg" />
         <div className="max-w-md">
           <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-ui-you">
             Live call assistant

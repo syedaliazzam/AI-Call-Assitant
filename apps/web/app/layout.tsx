@@ -35,6 +35,15 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: 'Kite',
   description: 'Kite call assistant: live transcript and fast answers during calls.',
+  // Brand icons (UI U4, scripts/make-brand.ts): the .ico for every browser, the SVG where
+  // supported, and the Apple touch icon (on white).
+  icons: {
+    icon: [
+      { url: '/brand/favicon.ico', sizes: '16x16 32x32 48x48' },
+      { url: '/brand/favicon.svg', type: 'image/svg+xml' },
+    ],
+    apple: { url: '/brand/apple-touch-icon.png', sizes: '180x180' },
+  },
 };
 
 /**
