@@ -5,10 +5,11 @@
  * partial, final, progress and stats messages reach the callbacks; attach() builds one worklet
  * per channel and hands its port to the worker; detach() and setHotwords() post the right
  * messages; stop() ends the worker and ignores later messages; a final line's latency is
- * measured on the page from its end of speech.
+ * measured on the page from its end of speech; drain() resolves on the matching pong, after the
+ * final lines the worker sent before it, and after DRAIN_TIMEOUT_MS when no pong comes.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createSttEngine, type SttEngineDeps } from '@/core/stt/sttEngine';
+import { DRAIN_TIMEOUT_MS, createSttEngine, type SttEngineDeps } from '@/core/stt/sttEngine';
 import type { FromWorker, ToWorker } from '@/core/stt/protocol';
 
 /**
@@ -219,5 +220,52 @@ describe('createSttEngine', () => {
     });
     expect(onFinal).not.toHaveBeenCalled();
     await expect(engine.attach('you', {} as MediaStream)).rejects.toThrow(/stopped/);
+  });
+
+  it('drain resolves on its pong, after the final lines flushed before it', async () => {
+    const onFinal = vi.fn();
+    const { engine, reply, posted } = setup({ onFinal });
+    reply(READY);
+    engine.detach('them');
+    let drained = false;
+    const done = engine.drain().then(() => {
+      drained = true;
+      // The flushed line arrived first.
+      expect(onFinal).toHaveBeenCalledTimes(1);
+    });
+    const ping = posted.at(-1)!.message;
+    expect(ping.type).toBe('ping');
+    if (ping.type !== 'ping') return;
+    reply({ type: 'pong', id: ping.id + 1 });
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    reply({
+      type: 'final',
+      channel: 'them',
+      text: 'LAST',
+      reason: 'flush',
+      tStart: 1,
+      tEnd: 2,
+      speechEnd: 2,
+    });
+    reply({ type: 'pong', id: ping.id });
+    await done;
+    expect(drained).toBe(true);
+  });
+
+  it('drain gives up after the time limit, and returns at once after stop', async () => {
+    vi.useFakeTimers();
+    const { engine, reply } = setup();
+    reply(READY);
+    let drained = false;
+    void engine.drain().then(() => {
+      drained = true;
+    });
+    await vi.advanceTimersByTimeAsync(DRAIN_TIMEOUT_MS - 1);
+    expect(drained).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(drained).toBe(true);
+    engine.stop();
+    await expect(engine.drain()).resolves.toBeUndefined();
   });
 });

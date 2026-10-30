@@ -3,13 +3,16 @@
  * Purpose: The Platform implementation used when Kite runs inside the desktop app (Electron).
  *          It wraps `window.kiteDesktop`, the bridge exposed by the shell's preload script.
  *          It reports the shell version and OS, opens the microphone (Day 1) and the other side as
- *          system audio (Day 2); the other methods throw NotImplementedError naming the day.
+ *          system audio (Day 2), and the hotkeys (Day 4); the other methods throw
+ *          NotImplementedError naming the day.
  * Used by: src/platform/index.ts (getPlatform)
- * Depends on: @kite/shared (KiteDesktopApi), src/platform/types.ts, errors.ts, media.ts
+ * Depends on: @kite/shared (KiteDesktopApi), src/platform/types.ts, errors.ts, media.ts,
+ *             keymap.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (desktop column), §7.3
  */
 import type { DesktopOs, KiteDesktopApi } from '@kite/shared';
 import { CaptureError, NotImplementedError } from './errors';
+import { listenForHotkeys } from './keymap';
 import {
   openMicrophone,
   requestDisplayMedia,
@@ -59,6 +62,27 @@ export interface DesktopPlatform extends Platform {
   version: string;
   /** Operating system the shell runs on. */
   os: DesktopOs;
+}
+
+/** A hotkey seen twice within this many ms (global shortcut and in-page key) counts once. */
+const DUPLICATE_PRESS_MS = 150;
+
+/**
+ * Turns an Electron accelerator into the label users know.
+ *
+ * @param accelerator For example 'CommandOrControl+Left'.
+ * @param os          The desktop OS.
+ * @returns For example '⌘←' on macOS or 'Ctrl+←' on Windows.
+ * Called from: onHotkey() (taken shortcuts); tests
+ */
+export function acceleratorLabel(accelerator: string, os: DesktopOs): string {
+  const keys: Record<string, string> = { Left: '←', Right: '→', Enter: 'Enter' };
+  const parts = accelerator.split('+').map((part) => {
+    if (part === 'CommandOrControl') return os === 'mac' ? '⌘' : 'Ctrl';
+    if (part === 'Shift') return os === 'mac' ? '⇧' : 'Shift';
+    return keys[part] ?? part;
+  });
+  return os === 'mac' ? parts.join('') : parts.join('+');
 }
 
 /**
@@ -122,12 +146,51 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
-     * Day 4: global shortcuts registered by the shell and forwarded to the page.
+     * The hotkeys: the shell's global shortcuts (work from any app, Stage 8) and the in-page
+     * shortcuts (while the Kite window has focus; the only ones in a desktop app installed
+     * before Day 4, whose bridge has no onHotkey). A key press that reaches both is handled
+     * once.
      *
-     * @param _handler Receives each hotkey action (unused until Day 4).
+     * @param handler Receives each hotkey action.
+     * @param onTaken Receives the shortcuts another app already uses, as labels.
+     * @returns A function that stops listening and releases the global shortcuts.
      */
-    onHotkey(_handler) {
-      throw new NotImplementedError('desktop.onHotkey', 4);
+    onHotkey(handler, onTaken) {
+      let last: { action: string; at: number } | null = null;
+      const once = (action: Parameters<typeof handler>[0]) => {
+        const now = performance.now();
+        // The same action within 150 ms is one key press seen twice (global and in-page).
+        if (last && last.action === action && now - last.at < DUPLICATE_PRESS_MS) return;
+        last = { action, at: now };
+        handler(action);
+      };
+      const stopPage = listenForHotkeys(window, bridge.os === 'mac', once);
+      const stopGlobal = bridge.onHotkey?.(once);
+      let active = true;
+      bridge
+        .setHotkeysEnabled?.(true)
+        .then((statuses) => {
+          const taken = statuses.filter((status) => !status.registered);
+          if (active && taken.length > 0) {
+            onTaken?.(taken.map((status) => acceleratorLabel(status.accelerator, bridge.os)));
+          }
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+        stopPage();
+        stopGlobal?.();
+        void bridge.setHotkeysEnabled?.(false).catch(() => undefined);
+      };
+    },
+
+    /**
+     * The hotkeys' modifier for labels.
+     *
+     * @returns '⌘' on macOS, 'Ctrl+' on Windows and Linux.
+     */
+    hotkeyModifier() {
+      return bridge.os === 'mac' ? '⌘' : 'Ctrl+';
     },
 
     /**

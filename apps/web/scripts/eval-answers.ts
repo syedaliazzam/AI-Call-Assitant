@@ -1,0 +1,298 @@
+/**
+ * File: apps/web/scripts/eval-answers.ts
+ * Purpose: Developer-only answer-quality evaluation (day-04-answers.md Stage 9). Runs every
+ *          invented scenario in tests/eval/scenarios/ through the real server prompt
+ *          (buildPrompt) with the fast model (Haiku), then grades each answer with the smart
+ *          model (Sonnet) against the rubric in docs/testing/answer-eval.md, plus two checks
+ *          made in code (headline length, number of bullets). Prints a score table only.
+ *          Usage: pnpm --filter web eval:answers [--runs N] [--only <id>] [--show]
+ *            --runs N   answers per scenario (default 2; scores are averaged, because answers
+ *                       vary from run to run)
+ *            --only id  one scenario (its file name without .json)
+ *            --show     also print each answer and the grader's reason (local use only; the
+ *                       scenarios are invented, but answers are never printed by default)
+ * Used by: the "eval:answers" script in apps/web/package.json (run by a developer by hand;
+ *          never in CI: it calls the real API and needs the real key)
+ * Depends on: src/server/prompt.ts (buildPrompt, sessionBlock, SYSTEM_RULES),
+ *             src/server/claude.ts (streamReply, jsonReply), src/server/env.ts, @kite/shared
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (testing); ADR-0025;
+ *               docs/testing/answer-eval.md (rubric and results)
+ *
+ * Runs like verify-warm.ts: tsx with `--env-file=.env.local` and `--conditions=react-server`.
+ *
+ * Scenario files (JSON, so they hold no comments) have: id; covers (what it tests); session
+ * (SessionContext); conversation (ConversationChunk[]) and tail (CallLine[]); mode ('answer'
+ * or 'chat'); question; mustInclude and mustNotInclude (what a good answer must and must not
+ * contain, in plain words for the grader).
+ */
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { AnswerRequest, CallLine, ConversationChunk, SessionContext } from '@kite/shared';
+import { jsonReply, streamReply } from '@/server/claude';
+import { getClaudeEnv } from '@/server/env';
+import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
+
+/** tests/eval/scenarios. */
+const SCENARIO_DIR = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'tests',
+  'eval',
+  'scenarios',
+);
+
+/** One scenario file. */
+interface Scenario {
+  /** Its id (the file name without .json). */
+  id: string;
+  /** What it tests. */
+  covers: string;
+  /** The session details. */
+  session: SessionContext;
+  /** The call so far. */
+  conversation: ConversationChunk[];
+  /** Lines not yet stable. */
+  tail: CallLine[];
+  /** 'answer' or 'chat'. */
+  mode: 'answer' | 'chat';
+  /** The question. */
+  question: string;
+  /** What a good answer must contain. */
+  mustInclude: string[];
+  /** What it must not contain. */
+  mustNotInclude: string[];
+}
+
+/** The grader's scores for one answer (the rubric in docs/testing/answer-eval.md). */
+interface Grade {
+  /** Required facts present: 0–3. */
+  facts: number;
+  /** Nothing invented, nothing from mustNotInclude: 0–2. */
+  grounded: number;
+  /** Consistent with earlier answers (and updates them correctly): 0–2. */
+  consistent: number;
+  /** Follows the session's format, length, tone and instructions: 0–1. */
+  style: number;
+  /** One sentence on what cost points (printed only with --show). */
+  reason: string;
+}
+
+/** The structured-output schema the grader must follow. */
+const GRADE_SCHEMA = {
+  type: 'object',
+  properties: {
+    facts: { type: 'integer', enum: [0, 1, 2, 3] },
+    grounded: { type: 'integer', enum: [0, 1, 2] },
+    consistent: { type: 'integer', enum: [0, 1, 2] },
+    style: { type: 'integer', enum: [0, 1] },
+    reason: { type: 'string' },
+  },
+  required: ['facts', 'grounded', 'consistent', 'style', 'reason'],
+  additionalProperties: false,
+};
+
+/** The grader's instructions: the rubric (the same as docs/testing/answer-eval.md). */
+const GRADER_SYSTEM = `You grade answers written by Kite, a live call assistant. Kite reads the session details, documents and the call so far, and writes a short answer the user can say to the other person. Grade strictly against the rubric. Score only what is written in the answer.
+
+Rubric:
+- facts (0-3): how many of the "must include" points the answer contains, correctly. 3 = all, 2 = most, 1 = some, 0 = none or wrong.
+- grounded (0-2): 2 = every claim about the user, their company, offer, prices, dates or commitments comes from the session details, documents or the call, and nothing from "must not include" appears; 1 = one small unsupported detail; 0 = an invented fact, a wrong number, or a "must not include" item.
+- consistent (0-2): if the call shows earlier Kite answers, 2 = consistent with them, or, when new information changes the answer, it gives the new answer and says briefly what changed; 1 = partly; 0 = contradicts them without saying why, or ignores new information. If there are no earlier answers, give 2.
+- style (0-1): 1 = follows the session's answer format (headline+bullets: a headline line then short bullets; paragraph: one short paragraph, no bullets), length, tone and instructions, with no greeting or preamble; 0 = it does not.
+- reason: one short sentence on what cost points ("none" when nothing did).`;
+
+/**
+ * Reads the scenarios.
+ *
+ * @param only One scenario id, or null for all.
+ * @returns The scenarios, in file order.
+ * @throws Error when --only names no scenario.
+ * Called from: main()
+ */
+function loadScenarios(only: string | null): Scenario[] {
+  const files = readdirSync(SCENARIO_DIR)
+    .filter((name) => name.endsWith('.json'))
+    .sort();
+  const scenarios = files.map(
+    (name) => JSON.parse(readFileSync(path.join(SCENARIO_DIR, name), 'utf8')) as Scenario,
+  );
+  const chosen = only ? scenarios.filter((scenario) => scenario.id === only) : scenarios;
+  if (chosen.length === 0) throw new Error(`no scenario "${only}"`);
+  return chosen;
+}
+
+/**
+ * The two checks made in code. headline+bullets: headline ≤ 15 words, ≤ 5 bullets.
+ * paragraph: no bullet lines, and one paragraph.
+ *
+ * @param text   The answer.
+ * @param format The session's answer format.
+ * @returns 1 or 0 for each check.
+ * Called from: main(); tests/unit/scripts/eval-answers.test.ts
+ */
+export function shapeChecks(text: string, format: string): { headline: number; bullets: number } {
+  const lines = text.split('\n').filter((line) => line.trim() !== '');
+  const isBullet = (line: string) => /^\s*(?:[-*•]|\d+[.)])\s+/.test(line);
+  if (format === 'paragraph') {
+    return {
+      headline: lines.some(isBullet) ? 0 : 1,
+      bullets: text.trim().split(/\n\s*\n/).length === 1 ? 1 : 0,
+    };
+  }
+  const headline = (lines[0] ?? '').replace(/[*#_]/g, '').trim();
+  const words = headline.split(/\s+/).filter(Boolean).length;
+  return {
+    headline: words > 0 && words <= 15 ? 1 : 0,
+    bullets: lines.slice(1).filter(isBullet).length <= 5 ? 1 : 0,
+  };
+}
+
+/**
+ * Gets one answer through the real server prompt with the fast model.
+ *
+ * @param scenario The scenario.
+ * @param model    The fast model's name.
+ * @returns The answer text.
+ * Called from: main()
+ */
+async function answerScenario(scenario: Scenario, model: string): Promise<string> {
+  const request: AnswerRequest = {
+    mode: scenario.mode,
+    session: scenario.session,
+    conversation: scenario.conversation,
+    tail: scenario.tail,
+    question: scenario.question,
+  };
+  const prompt = buildPrompt(request);
+  let text = '';
+  const reply = streamReply({ model, tier: 'fast', ...prompt, maxTokens: ANSWER_MAX_TOKENS });
+  for (let next = await reply.next(); !next.done; next = await reply.next()) text += next.value;
+  return text;
+}
+
+/**
+ * Grades one answer with the smart model.
+ *
+ * @param scenario The scenario.
+ * @param text     The answer.
+ * @param model    The smart model's name.
+ * @returns The grade.
+ * Called from: main()
+ */
+async function grade(scenario: Scenario, text: string, model: string): Promise<Grade> {
+  const prompt = [
+    'Session details and documents:',
+    sessionBlock(scenario.session),
+    '',
+    'The call so far (oldest first; "answer" items are earlier Kite answers):',
+    JSON.stringify(scenario.conversation.flat(), null, 1),
+    'Newest lines:',
+    JSON.stringify(scenario.tail),
+    '',
+    `Question (${scenario.mode === 'chat' ? 'typed by the user' : 'from the other person'}): ${scenario.question}`,
+    '',
+    'Must include:',
+    ...scenario.mustInclude.map((item) => `- ${item}`),
+    'Must not include:',
+    ...scenario.mustNotInclude.map((item) => `- ${item}`),
+    '',
+    'The answer to grade:',
+    '<answer>',
+    text,
+    '</answer>',
+  ].join('\n');
+  const { value } = await jsonReply({
+    model,
+    tier: 'smart',
+    system: GRADER_SYSTEM,
+    prompt,
+    schema: GRADE_SCHEMA,
+    maxTokens: 400,
+  });
+  return value as Grade;
+}
+
+/**
+ * Reads the command-line options.
+ *
+ * @param argv process.argv.slice(2).
+ * @returns runs, only and show.
+ * Called from: main()
+ */
+function parseArgs(argv: string[]): { runs: number; only: string | null; show: boolean } {
+  const value = (name: string) => {
+    const at = argv.indexOf(name);
+    return at === -1 ? null : (argv[at + 1] ?? null);
+  };
+  return {
+    runs: Math.max(1, Number(value('--runs') ?? 2)),
+    only: value('--only'),
+    show: argv.includes('--show'),
+  };
+}
+
+/**
+ * Runs the evaluation and prints the score table.
+ *
+ * @returns Nothing; sets a non-zero exit code on failure.
+ * Called from: the bottom of this file
+ */
+async function main(): Promise<void> {
+  const options = parseArgs(process.argv.slice(2));
+  const env = getClaudeEnv();
+  const scenarios = loadScenarios(options.only);
+  console.log(
+    `eval-answers: answers by ${env.modelFast}, graded by ${env.modelSmart}; ${scenarios.length} scenarios × ${options.runs} runs`,
+  );
+  const header =
+    '| Scenario | Facts /3 | Grounded /2 | Consistent /2 | Style /1 | Headline /1 | Bullets /1 | Total /10 |';
+  const rows: string[] = [];
+  let sum = 0;
+  for (const scenario of scenarios) {
+    const totals = { facts: 0, grounded: 0, consistent: 0, style: 0, headline: 0, bullets: 0 };
+    for (let run = 1; run <= options.runs; run += 1) {
+      const text = await answerScenario(scenario, env.modelFast);
+      const graded = await grade(scenario, text, env.modelSmart);
+      const shape = shapeChecks(text, scenario.session.style.format);
+      totals.facts += graded.facts;
+      totals.grounded += graded.grounded;
+      totals.consistent += graded.consistent;
+      totals.style += graded.style;
+      totals.headline += shape.headline;
+      totals.bullets += shape.bullets;
+      if (options.show) {
+        console.log(`\n--- ${scenario.id} run ${run} ---\n${text}\n(grader: ${graded.reason})`);
+      }
+    }
+    const average = (n: number) => n / options.runs;
+    const total =
+      average(totals.facts) +
+      average(totals.grounded) +
+      average(totals.consistent) +
+      average(totals.style) +
+      average(totals.headline) +
+      average(totals.bullets);
+    sum += total;
+    const cell = (n: number) => average(n).toFixed(1);
+    rows.push(
+      `| ${scenario.id} | ${cell(totals.facts)} | ${cell(totals.grounded)} | ${cell(totals.consistent)} | ${cell(totals.style)} | ${cell(totals.headline)} | ${cell(totals.bullets)} | ${total.toFixed(1)} |`,
+    );
+  }
+  console.log(`\n${header}\n|---|---|---|---|---|---|---|---|\n${rows.join('\n')}`);
+  console.log(
+    `\nOverall: ${(sum / scenarios.length).toFixed(2)} / 10 (mean of ${scenarios.length} scenarios)`,
+  );
+}
+
+// Run only when executed directly (the unit test imports shapeChecks()).
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error: unknown) => {
+    // The error's name and status only: an API error message could quote the request.
+    const status = (error as { status?: number }).status;
+    console.error(
+      `eval-answers: failed (${error instanceof Error ? error.name : 'unknown'}${status ? `, HTTP ${status}` : ''})`,
+    );
+    process.exitCode = 1;
+  });
+}

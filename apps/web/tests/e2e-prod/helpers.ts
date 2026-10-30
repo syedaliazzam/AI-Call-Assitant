@@ -2,10 +2,12 @@
  * File: apps/web/tests/e2e-prod/helpers.ts
  * Purpose: Test helper (not a test) for the production end-to-end suites: the production URL,
  *          the test account's credentials (read from apps/web/.env.local, never printed), the
- *          invented document, sign-in, session creation through the wizard, reading the
- *          warm-up's token counts from the /api/answer response, and a step log that prints
- *          only pass/fail and numbers.
- * Used by: tests/e2e-prod/chrome.spec.ts, tests/e2e-prod/desktop.spec.ts
+ *          invented document, sign-in, session creation through the wizard, reading the token
+ *          counts of a warm-up or answer from its /api/answer response, asking for an answer
+ *          (Answer hotkey or a typed Chat question) and rating it (Day 4), and a step log that
+ *          prints only pass/fail and numbers.
+ * Used by: tests/e2e-prod/chrome.spec.ts, tests/e2e-prod/desktop.spec.ts,
+ *          tests/e2e-prod/latency.spec.ts
  * Depends on: @playwright/test
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (testing); README "Production
  *               end-to-end suites"
@@ -41,14 +43,18 @@ export interface TestAccount {
 }
 
 /**
- * Reads KITE_E2E_EMAIL and KITE_E2E_PASSWORD from apps/web/.env.local. Only these two lines
- * are read, so no other secret reaches the browser or the desktop app's environment.
+ * Reads a test account's two lines from apps/web/.env.local: KITE_E2E_EMAIL and
+ * KITE_E2E_PASSWORD (role user), or with 'admin' KITE_E2E_ADMIN_EMAIL and
+ * KITE_E2E_ADMIN_PASSWORD (role admin, for /dev/latency). Only those two lines are read, so no
+ * other secret reaches the browser or the desktop app's environment.
  *
+ * @param kind 'user' (default) or 'admin'.
  * @returns The credentials.
  * @throws Error naming the missing variable (never a value) when a line is missing.
- * Called from: chrome.spec.ts, desktop.spec.ts (beforeAll)
+ * Called from: chrome.spec.ts, desktop.spec.ts, latency.spec.ts
  */
-export function testAccount(): TestAccount {
+export function testAccount(kind: 'user' | 'admin' = 'user'): TestAccount {
+  const prefix = kind === 'admin' ? 'KITE_E2E_ADMIN' : 'KITE_E2E';
   const text = readFileSync(path.join(WEB_DIR, '.env.local'), 'utf8');
   /**
    * One value from the file.
@@ -61,7 +67,7 @@ export function testAccount(): TestAccount {
     if (!value) throw new Error(`${name} is missing from apps/web/.env.local (create-e2e-user)`);
     return value;
   };
-  return { email: read('KITE_E2E_EMAIL'), password: read('KITE_E2E_PASSWORD') };
+  return { email: read(`${prefix}_EMAIL`), password: read(`${prefix}_PASSWORD`) };
 }
 
 /**
@@ -179,25 +185,92 @@ export function sessionCard(page: Page, company: string) {
  * Called from: the suites (page.waitForResponse)
  */
 export function isWarmUp(response: Response): boolean {
+  return isMode(response, 'warm');
+}
+
+/**
+ * Whether a response is POST /api/answer with a given mode.
+ *
+ * @param response A network response.
+ * @param mode     'warm', 'answer' or 'chat'.
+ * @returns True when it matches.
+ * Called from: isWarmUp(), answerAndRate()
+ */
+export function isMode(response: Response, mode: string): boolean {
   if (!response.url().endsWith('/api/answer') || response.request().method() !== 'POST') {
     return false;
   }
   try {
-    return (response.request().postDataJSON() as { mode?: string }).mode === 'warm';
+    return (response.request().postDataJSON() as { mode?: string }).mode === mode;
   } catch {
     return false;
   }
 }
 
 /**
- * Reads the token counts from a warm-up response (its server-sent `done` event).
+ * Reads the token counts from a warm-up or answer response (its server-sent `done` event).
  *
- * @param response The warm-up response.
+ * @param response The response.
  * @returns The usage, or null when the response held no `done` event.
- * Called from: the suites
+ * Called from: the suites, answerAndRate()
  */
 export async function warmUsage(response: Response): Promise<AnswerUsage | null> {
   const body = await response.text();
   const data = /event: done\ndata: (.+)\n/.exec(body)?.[1];
   return data ? (JSON.parse(data) as { usage: AnswerUsage }).usage : null;
+}
+
+/** What answerAndRate() measured (numbers only). */
+export interface AnswerCheck {
+  /** Words in the headline that streamed in. */
+  headlineWords: number;
+  /** Bullets shown. */
+  bullets: number;
+  /** Key press → first word, from the panel ("First word in X s"), in ms. */
+  firstWordMs: number;
+  /** Cache tokens read by the answer. */
+  cacheRead: number;
+  /** Cache tokens written by the answer. */
+  cacheWrite: number;
+}
+
+/**
+ * Asks for an answer on the live view and rates it 👍: the Answer hotkey (Ctrl+Enter, as in
+ * the browser) or a typed Chat question, then waits for the headline to stream in and the
+ * answer to finish, and checks the rating is shown as pressed.
+ *
+ * @param page  The live view.
+ * @param how   'hotkey' (Answer from the transcript) or 'chat' (a typed, invented question).
+ * @returns The measured numbers.
+ * Called from: chrome.spec.ts, desktop.spec.ts
+ */
+export async function answerAndRate(page: Page, how: 'hotkey' | 'chat'): Promise<AnswerCheck> {
+  const mode = how === 'hotkey' ? 'answer' : 'chat';
+  const response = page.waitForResponse((r) => isMode(r, mode), { timeout: 60_000 });
+  if (how === 'hotkey') {
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press('Control+Enter');
+  } else {
+    await page.getByRole('button', { name: 'Chat' }).click();
+    const box = page.getByLabel('Type a question');
+    await box.fill('How much planning time did the pilot save per dispatcher?');
+    await box.press('Enter');
+  }
+  const headline = page.getByRole('heading', { name: 'Answer headline' });
+  // The headline shows "…" until the first words arrive.
+  await expect(headline).not.toHaveText('…', { timeout: 30_000 });
+  const good = page.getByRole('button', { name: 'Good answer' });
+  // The rating buttons appear when the answer is complete.
+  await expect(good).toBeVisible({ timeout: 60_000 });
+  const usage = await warmUsage(await response);
+  await good.click();
+  await expect(good).toHaveAttribute('aria-pressed', 'true');
+  const firstWord = (await page.getByLabel('Time to first word').textContent()) ?? '';
+  return {
+    headlineWords: ((await headline.textContent()) ?? '').trim().split(/\s+/).length,
+    bullets: await page.getByRole('list', { name: 'Answer details' }).getByRole('listitem').count(),
+    firstWordMs: Math.round(Number(/([\d.]+) s/.exec(firstWord)?.[1] ?? NaN) * 1000),
+    cacheRead: usage?.cache_read_input_tokens ?? -1,
+    cacheWrite: usage?.cache_creation_input_tokens ?? -1,
+  };
 }

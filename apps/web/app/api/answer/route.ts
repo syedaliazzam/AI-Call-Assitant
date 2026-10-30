@@ -1,12 +1,15 @@
 /**
  * File: apps/web/app/api/answer/route.ts
  * Purpose: POST /api/answer: checks sign-in and the request body, calls Claude, and streams the
- *          reply back as server-sent events (delta, done, error). Modes: 'hello' (Day 1 test) and
- *          'warm' (Day 3: writes a session's prompt cache; no text, just done with usage).
+ *          reply back as server-sent events (delta, done, error). Modes: 'hello' (Day 1 test),
+ *          'warm' (Day 3: writes a session's prompt cache; no text, just done with usage), and
+ *          'answer' and 'chat' (Day 4: an answer built on the session, the conversation so far
+ *          and the earlier answers, from server/prompt.ts). 'screenshot' arrives on Day 5.
  * Used by: src/core/answer/answerClient.ts (browser)
  * Depends on: src/server/auth.ts, src/server/env.ts, src/server/validate.ts, src/server/claude.ts,
  *             src/server/sse.ts, src/server/prompts/hello.ts, src/server/prompt.ts
- * Architecture: docs/architecture/kite-architecture-v3.1.md §6 (answer flow), §7.2 (/api/answer)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §6 (answer flow), §7.2 (/api/answer);
+ *               day-04-answers.md Stage 3
  *
  * The reply must stream, not be collected and sent at the end: "time to first word" is the main
  * latency number, and buffering would turn it into "time to last word". Each Claude text piece
@@ -33,7 +36,7 @@ import {
   type ReplyResult,
 } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
-import { buildPrompt } from '@/server/prompt';
+import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
 import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts/hello';
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
 import { MAX_REQUEST_BYTES, parseAnswerRequest } from '@/server/validate';
@@ -46,9 +49,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /** Which day each not-yet-built mode arrives (architecture §12.3). */
-const MODE_DAY: Record<Exclude<AnswerMode, 'hello' | 'warm'>, number> = {
-  answer: 4,
-  chat: 4,
+const MODE_DAY: Record<Exclude<AnswerMode, 'hello' | 'warm' | 'answer' | 'chat'>, number> = {
   screenshot: 5,
 };
 
@@ -153,7 +154,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.ok) return jsonError(400, 'bad_request', parsed.message);
 
   const { mode } = parsed.data;
-  if (mode !== 'hello' && mode !== 'warm') {
+  if (mode === 'screenshot') {
     return jsonError(400, 'not_implemented', `not implemented yet: Day ${MODE_DAY[mode]}`);
   }
 
@@ -177,18 +178,38 @@ export async function POST(request: Request): Promise<Response> {
   const markOpen = () => {
     streamOpenAt ??= performance.now();
   };
-  const source =
-    mode === 'warm'
-      ? warmReply(parsed.data, { model, tier, signal, onResponse: markOpen })
-      : streamReply({
-          model,
-          tier,
-          system: HELLO_SYSTEM,
-          messages: HELLO_MESSAGES,
-          maxTokens: HELLO_MAX_TOKENS,
-          signal,
-          onStreamOpen: markOpen,
-        });
+  // Sizes only (never text), so the logs show how much context each answer carried.
+  const context = {
+    chunks: parsed.data.conversation?.length ?? 0,
+    tailLines: parsed.data.tail?.length ?? 0,
+  };
+  let source: AsyncGenerator<string, ReplyResult, undefined>;
+  if (mode === 'warm') {
+    source = warmReply(parsed.data, { model, tier, signal, onResponse: markOpen });
+  } else if (mode === 'hello') {
+    source = streamReply({
+      model,
+      tier,
+      system: HELLO_SYSTEM,
+      messages: HELLO_MESSAGES,
+      maxTokens: HELLO_MAX_TOKENS,
+      signal,
+      onStreamOpen: markOpen,
+    });
+  } else {
+    // 'answer' and 'chat': the three cached parts and the uncached tail (server/prompt.ts).
+    // The SDK's single retry happens only before any text arrives (server/claude.ts).
+    const prompt = buildPrompt(parsed.data);
+    source = streamReply({
+      model,
+      tier,
+      system: prompt.system,
+      messages: prompt.messages,
+      maxTokens: ANSWER_MAX_TOKENS,
+      signal,
+      onStreamOpen: markOpen,
+    });
+  }
 
   const body = toEventStream(source, {
     onDone: (result, stats): AnswerEvent => {
@@ -208,6 +229,7 @@ export async function POST(request: Request): Promise<Response> {
         userId: session.user.id,
         mode,
         model,
+        ...context,
         stopReason: result.stopReason,
         ms,
         usage: result.usage,
@@ -224,6 +246,7 @@ export async function POST(request: Request): Promise<Response> {
         userId: session.user.id,
         mode,
         model,
+        ...context,
         code: described.code,
         ...errorLogDetails(error),
         msAuth: elapsed(startedAt, authDoneAt),

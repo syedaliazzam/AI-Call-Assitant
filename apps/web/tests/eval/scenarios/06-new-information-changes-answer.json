@@ -1,0 +1,75 @@
+{
+  "id": "06-new-information-changes-answer",
+  "covers": "New information since an earlier answer changes it.",
+  "session": {
+    "type": "sales",
+    "company": "Fernbrook Dental (invented)",
+    "role": "Account executive",
+    "description": "First call with a small clinic group.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Bluefin Route", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "price-list.txt",
+        "text": "Harbor Lane Freight price list (invented).\nStarter plan: 18 dollars per seat per month, up to 10 seats, no single sign-on.\nProfessional plan: 52 dollars per seat per month, billed yearly, includes single sign-on and live re-routing.\nEnterprise plan: custom price, from 200 seats, includes a dedicated support manager.\nOnboarding: a one-time fee of 1,500 dollars for any plan, covering setup and two training days.\nDiscounts: at most 10 percent, only for a yearly plan paid upfront, and only with approval from the sales director.\nContract: yearly, renews automatically; cancellation needs 30 days written notice before the renewal date."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "WE HAVE EIGHT PEOPLE AT THE FRONT DESK",
+        "at": 20
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "WHICH PLAN WOULD YOU RECOMMEND",
+        "at": 26
+      }
+    ],
+    [
+      {
+        "kind": "answer",
+        "mode": "answer",
+        "question": "WHICH PLAN WOULD YOU RECOMMEND",
+        "text": "For eight people, the Starter plan fits.\n- 18 dollars per seat per month\n- Up to 10 seats",
+        "at": 28
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "ACTUALLY WE ARE OPENING FOUR NEW CLINICS NEXT YEAR",
+        "at": 90
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "SO WE WILL BE AROUND SIXTY PEOPLE AND OUR IT TEAM NEEDS SINGLE SIGN ON",
+        "at": 97
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "SO WHICH PLAN SHOULD WE GO FOR THEN",
+      "at": 106
+    }
+  ],
+  "mode": "answer",
+  "question": "SO WHICH PLAN SHOULD WE GO FOR THEN",
+  "mustInclude": [
+    "the Professional plan",
+    "says what changed: about 60 people and single sign-on (Starter allows up to 10 seats and has no single sign-on)",
+    "52 dollars per seat per month"
+  ],
+  "mustNotInclude": ["still recommending Starter"]
+}

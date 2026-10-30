@@ -116,7 +116,14 @@ export interface StoredUtterance {
   tEnd: number;
 }
 
-/** One answer from Claude (architecture §7.4 `answers`). Written from Day 4. */
+/** The user's rating of an answer: thumbs up, thumbs down, or not rated. */
+export type AnswerRating = 'up' | 'down' | null;
+
+/**
+ * One answer from Claude (architecture §7.4 `answers`). Written from Day 4, even when "Save
+ * transcript" is off: the review page (Day 5) and the learning loop need the answers, their
+ * ratings and notes. Deleted with the session.
+ */
 export interface StoredAnswer {
   /** Random id. */
   id: string;
@@ -136,6 +143,13 @@ export interface StoredAnswer {
   msTotal: number;
   /** When it was asked (Unix ms). */
   createdAt: number;
+  /**
+   * The user's rating (Day 4): 'up', 'down' or null. Day 5's notes step reads ratings to
+   * propose lessons for the learning loop.
+   */
+  rating: AnswerRating;
+  /** The user's note, "What was wrong / better answer" ('' when none). Day 4. */
+  note: string;
 }
 
 /**

@@ -2,7 +2,9 @@
  * Tests for apps/web/src/server/users.ts, with Better Auth and the database mocked:
  * accounts are created with a temporary password and mustChangePassword = true, a taken email
  * becomes Error('EMAIL_TAKEN'), a reset sets a new password, re-flags the account and signs the
- * user out, disabling uses ban/unban, and markPasswordChanged() clears the flag.
+ * user out, disabling uses ban/unban, markPasswordChanged() clears the flag, and
+ * setTestAccountDisabled() makes the same changes as a ban (fields, then sessions deleted),
+ * re-enables without deleting sessions, and throws USER_NOT_FOUND for an unknown email.
  */
 import { APIError } from 'better-auth/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,7 +25,16 @@ const where = vi.fn();
 const set = vi.fn(() => ({ where }));
 const update = vi.fn(() => ({ set }));
 
-vi.mock('@/server/auth', () => ({ auth: { api } }));
+/** Fake Better Auth internal adapter (setTestAccountDisabled). */
+const internalAdapter = {
+  findUserByEmail: vi.fn(),
+  updateUser: vi.fn(),
+  deleteUserSessions: vi.fn(),
+};
+
+vi.mock('@/server/auth', () => ({
+  auth: { api, $context: Promise.resolve({ internalAdapter }) },
+}));
 vi.mock('@/server/db', () => ({ db: { update } }));
 
 const users = await import('@/server/users');
@@ -165,5 +176,37 @@ describe('markPasswordChanged', () => {
     expect(update).toHaveBeenCalledTimes(1);
     expect(set).toHaveBeenCalledWith({ mustChangePassword: false });
     expect(where).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('setTestAccountDisabled', () => {
+  it('disables like a ban: sets the ban fields, then deletes the sessions', async () => {
+    internalAdapter.findUserByEmail.mockResolvedValue({ user: { id: 'u9' } });
+    expect(await users.setTestAccountDisabled('Kite-E2E-Admin@example.com', true)).toBe('u9');
+    expect(internalAdapter.findUserByEmail).toHaveBeenCalledWith('kite-e2e-admin@example.com');
+    expect(internalAdapter.updateUser).toHaveBeenCalledWith(
+      'u9',
+      expect.objectContaining({
+        banned: true,
+        banReason: 'Disabled by an admin',
+        banExpires: null,
+      }),
+    );
+    expect(internalAdapter.deleteUserSessions).toHaveBeenCalledWith('u9');
+  });
+
+  it('re-enables without deleting sessions, and rejects an unknown email', async () => {
+    internalAdapter.findUserByEmail.mockResolvedValue({ user: { id: 'u9' } });
+    internalAdapter.deleteUserSessions.mockClear();
+    await users.setTestAccountDisabled('kite-e2e-admin@example.com', false);
+    expect(internalAdapter.updateUser).toHaveBeenLastCalledWith(
+      'u9',
+      expect.objectContaining({ banned: false, banReason: null }),
+    );
+    expect(internalAdapter.deleteUserSessions).not.toHaveBeenCalled();
+    internalAdapter.findUserByEmail.mockResolvedValue(null);
+    await expect(users.setTestAccountDisabled('none@example.com', true)).rejects.toThrow(
+      'USER_NOT_FOUND',
+    );
   });
 });

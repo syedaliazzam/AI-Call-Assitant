@@ -101,16 +101,33 @@ Speech-to-text runs on your device; audio never leaves it. Known limitation: nam
 - **Create session** (dashboard): step 1 Details (type, company, role or topic, description, documents), step 2 Preferences (model, answer style, **key terms**, instructions, save transcript). **Edit** and **Delete** are on each session card.
 - **Documents:** PDF, DOCX or TXT, read into text **on this computer**. Limits: 20 MB per file, 100,000 characters per document, 150,000 per session. Encrypted PDFs and scanned (image-only) PDFs are refused with a clear message.
 - **Key terms** (one per line), the company, the role or topic and the document names become speech-to-text hotwords for the session ("Listening for N key terms" on the Connect view). They are also sent to Claude so it can recognise misheard names.
-- **Warm-up:** opening a session's live screen sends a warm-up (`mode: "warm"`, no answer), so the first answer reads Claude's prompt cache. The screen never waits for it.
+- **Warm-up:** opening a session's live screen sends a warm-up (`mode: "warm"`, no answer), and Connect sends another, so the first answer reads Claude's prompt cache. The screen never waits for it. During a call, 4.5 quiet minutes trigger one more warm-up (with the conversation so far).
 - **Saved transcript:** with "Save transcript" on, final lines are saved on this computer and shown under the Connect view next time. Echo lines are never saved.
 - **Settings:** the default preferences for new sessions, and **Delete all local data** (keeps the downloaded speech model).
 - **Where it is stored:** IndexedDB on this computer ([ADR-0024](docs/decisions/ADR-0024-local-session-storage.md)). **The browser and the desktop app each have their own sessions**, and so does each browser profile: a session created in Chrome does not appear in the desktop app. There is no sync in v1.
 
-Check the warm-up against the real Claude API (developer only, never in CI; uses `apps/web/.env.local` and prints only token counts and times):
+### Answers during a call (Day 4)
+
+- **Answer** (button, or **Ctrl+Enter** / **⌘ Enter**) answers the latest question from the other person. The panel shows the question it used ("from N lines"), the headline as it streams, then the bullets, and the time to the first word.
+- **Chat** opens a box for a typed question: Enter sends it, Escape clears it.
+- **Clear** (Ctrl+Backspace / ⌘ Backspace) stops an answer that is still streaming, or hides the one shown. **Previous / Next** (Ctrl+← / Ctrl+→, ⌘ ← / ⌘ →) move through the session's answers. **Copy** copies the answer as plain text. Screenshot arrives on Day 5.
+- **Hotkeys:** in the browser they work while the Kite tab has focus. In the desktop app they are **global during a call** (they work while the meeting app has focus) and are released at End. If another app already uses one, the live view says which; it then works only while Kite is in front. While you type in a text box, the shortcuts are left to the text box.
+- **What Claude sees:** the session details and documents, **the whole call so far** and the answers already given in it, so answers stay consistent ([ADR-0025](docs/decisions/ADR-0025-answer-context-and-learning.md)). Over about 90 minutes, the oldest part of the call is left out.
+- **Ratings:** 👍 / 👎 and an optional "What was wrong / better answer" note on each answer. Answers, ratings and notes are saved on this computer **even when "Save transcript" is off** (the review page and Day 5's learning need them), and are deleted with the session.
+- **End** waits a moment for the line still being spoken, so it is saved too.
+
+Developer checks against the real Claude API (never in CI; they use `apps/web/.env.local` and print only token counts, times and scores):
 
 ```sh
-pnpm --filter web verify:warm   # PASS = call 1 writes the cache, call 2 reads the same number of tokens
+pnpm --filter web verify:warm           # PASS = call 1 writes the cache, call 2 reads the same number of tokens
+pnpm --filter web verify:answer-cache   # PASS = 3 answers on a growing call: each reads everything cached before it
+pnpm --filter web eval:answers          # answer-quality score table (15 invented scenarios × 2 runs, Haiku graded by Sonnet)
+pnpm --filter web eval:answers --only 08-documents-cannot-answer --runs 1 --show   # one scenario, with the answers (local only)
 ```
+
+The rubric, the scenarios and every result are in [docs/testing/answer-eval.md](docs/testing/answer-eval.md).
+
+**`/dev/latency`** (admins): runs a warm-up and 20 answers on an invented session through the live client path, and shows p50/p95 for key press → request sent → first word → headline → done, the server's own share, and cache hits. "Copy results" copies the numbers only.
 
 ## Run the desktop app
 
@@ -135,6 +152,7 @@ pnpm test        # Vitest unit tests (web, and the desktop shell's rules)
 pnpm format      # apply Prettier formatting
 pnpm --filter desktop test   # Electron smoke test: launches the real shell against a test page
 pnpm --filter web test:stt   # speech-to-text integration test (needs step 6; see below)
+pnpm --filter web test:answers   # answer UI harness test: mocked streaming answers, no sign-in (about 15 s)
 ```
 
 `pnpm lint && pnpm typecheck && pnpm test` must pass before every commit. Unit tests never call the real Claude API and need no secrets.
@@ -152,11 +170,23 @@ pnpm --filter web create-e2e-user   # creates the account, completes its first p
 - **To disable the account:** sign in as an admin → **Admin** in the sidebar (`/admin/users`) → find `kite-e2e@example.com` → **Disable**. Its sign-in sessions end immediately, and the suites then fail at sign-in. **Enable** turns it back on.
 - `vercel env pull` rewrites `.env.local` and removes the two lines. To restore them, add them back by hand, or reset the password at `/admin/users` and then sign in once as the account to choose a new one.
 
+**Admin test account (latency runs only).** `/dev/latency` is admin-only, so its production run uses a separate account, `kite-e2e-admin@example.com` (role admin). It was created with `pnpm --filter web create-e2e-user --admin`, which appends `KITE_E2E_ADMIN_EMAIL` / `KITE_E2E_ADMIN_PASSWORD` to `apps/web/.env.local` (password never printed). **It stays disabled between runs:**
+
+```sh
+pnpm --filter web e2e-admin --enable                    # turn the admin test account on
+pnpm --filter web test:e2e-prod latency.spec.ts         # 20 answers in Chrome and 20 in the desktop app
+pnpm --filter web e2e-admin --disable                   # turn it off again straight away
+```
+
+`e2e-admin` disables the account the same way **Disable** at `/admin/users` does (the admin plugin's ban fields, and every sign-in session ended), so it can also be checked or re-enabled there.
+
 **Production end-to-end suites** (`apps/web/tests/e2e-prod/`, manual only, never in CI). They run against https://kite-call-assistant.vercel.app as the test account above, and print only PASS/FAIL with numbers:
 
 ```sh
-pnpm --filter web test:e2e-prod   # builds the desktop shell, then runs both suites (about 3 minutes)
+pnpm --filter web test:e2e-prod chrome.spec.ts desktop.spec.ts   # builds the desktop shell, then runs both suites (about 3 minutes)
 ```
+
+(Without file names it also runs `latency.spec.ts`, which needs the admin test account enabled.)
 
 - **Chrome** (`chrome.spec.ts`), using Playwright's Chromium in headless mode:
   - sign in;
@@ -165,14 +195,17 @@ pnpm --filter web test:e2e-prod   # builds the desktop shell, then runs both sui
   - the live page's warm-up writes the cache, and a second warm-up (reload) reads it;
   - Connect with Chromium's fake microphone and a fake shared tab, both playing official test recordings;
   - Go live, final lines appear;
-  - End, "Saved transcript" survives a reload;
+  - **Answer with Ctrl+Enter:** the headline streams in, the answer reads the cache, and it is rated 👍;
+  - End, "Saved transcript" survives a reload (and holds at least the lines seen live);
   - the session is deleted.
 - **Desktop** (`desktop.spec.ts`): the real Electron shell with a fresh profile, on production:
   - sign in, and the dashboard is empty (its own data);
   - create a session;
   - Open goes straight to Connect;
   - Connect shows no picker;
-  - Go live, final lines appear, End;
+  - Go live, final lines appear;
+  - **a typed Chat question** streams an answer, which is rated 👍 (the test machine plays no "Them" audio, so there is no question for the Answer key);
+  - End;
   - Delete all local data leaves the dashboard empty.
 - Each run downloads the speech model again (about 1 minute), because the browser profiles are fresh.
 - **Known test-environment effect:** with Chromium's fake media, the "You" channel also hears the fake "Them" audio. Its lines repeat "Them", and the echo filter hides them (as it should), so the suites count final lines from either side. A real microphone shows "You" lines as normal.

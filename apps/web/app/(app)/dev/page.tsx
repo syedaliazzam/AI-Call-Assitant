@@ -21,6 +21,11 @@ const TOOLS = [
     description:
       'Live microphone transcription with load time, real-time factor, lag and accuracy.',
   },
+  {
+    href: '/dev/latency',
+    title: 'Answer latency',
+    description: '20 answers through the live client path: p50/p95 to first word and headline.',
+  },
 ];
 
 /**

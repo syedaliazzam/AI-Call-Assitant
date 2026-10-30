@@ -10,14 +10,15 @@ header: "Kite v3.3.0 · architecture and build plan"
 page_breaks: "1,3,5,7,9,11,13"
 ---
 
-# Kite: Architecture and 7-Day Build Plan v3.3.0
+# Kite: Architecture and 7-Day Build Plan v3.4.0
 
 ## Document control
 
 | Field | Value |
 |---|---|
-| Version | 3.3.0, **Current**: the only document to build from |
-| Date | 29 October 2026 |
+| Version | 3.4.0, **Current**: the only document to build from |
+| Date | 30 October 2026 |
+| Changes in 3.4.0 | Day 4 (answers), matching what was built and measured (ADR-0025). §6.1: the request carries **the whole call** (stable lines and earlier answers) instead of a 3-minute window; question selection; End waits for the last line. §6.2: measured latency (20 answers per platform, production). §6.3: **three cache breakpoints** with an **append-only, chunked conversation**, stable lines, the long-call cap in steps, the idle re-warm, re-warm on Connect; the rules block is now above the caching minimum and shared. §7.1: `core/answer` (context, keepWarm, latency, format), `core/transcript` (stability, question, endCall), `core/storage/answers.ts`, `features/live` answer components, `platform/keymap.ts`. §7.2: request shape (`conversation`, `tail`; `transcript` removed), `answer` and `chat` built, the prompt structure, `jsonReply()` for the evaluation grader. §7.3: `hotkeys.ts` and the bridge's hotkey methods; global shortcuts only during a call. §7.4: answers gain `rating` and `note` and are saved even with "Save transcript" off. §7.6 (new): the learning loop. §11: answer harness test (CI), answer evaluation, `/dev/latency`, the production suites with answers. §13: latency from far regions. |
 | Changes in 3.3.0 | Day 3 (sessions, documents, local storage, session prompt), matching what was built and measured. §5: the screens as built (dashboard, Create / Edit session wizard, Choose platform, Connect with saved transcript, Settings). §6.1/§6.3: session hotwords; the warm-up is a **non-streaming** `max_tokens: 0` request with the same thinking setting as the answers (the official prompt-caching docs reject `max_tokens: 0` with `stream: true`); measured cache write 4,508 → read 4,508 tokens. §7.1: `core/storage`, `core/documents`, `core/stt/sessionHotwords.ts`, `core/transcript/saver.ts`, `core/answer/warm.ts`, the new screens. §7.2: three differences from the 3.2.0 request example: `session` gains `description` and `keyTerms`; the answer style is in the cached session block, not the system block; thinking is off per model tier (fast `disabled`, smart `between_tools`, because Sonnet 5.5 rejects `disabled`). The prompt has the imperfect-transcript rule. §7.3: `security.ts` grants `persistent-storage` to the Kite origin. §7.4: the data model as built (`lastActiveAt`, status values, `settings` store, the 12-hour stale-live rule). §8.1: documents are stored locally as extracted text; the browser and the desktop app have separate local data (ADR-0024). §8.3: lost-laptop risk (local data is not encrypted by Kite). §9.1: files built on Day 3. §11: the manual production end-to-end suites (Chrome and the desktop app). ADR-0024 added; ADR-0020 records the session-hotword result. |
 | Changes in 3.2.0 | Day 2 (audio and transcript), matching what was built and measured. §6.1: speech-to-text is streaming-only (Zipformer 2023-06-21 + hotwords, energy gate instead of Silero VAD, echo filter; ADR-0020 Accepted; a second pass was tried and rejected). §6.2: measured lag and latency. §7.1: the real `core/audio`, `core/stt`, `core/transcript`, `features/live` and `platform` files. §7.3: `media.ts` and the files built so far. §9.1: STT files, tests and `next.config.ts` (no COOP/COEP). §10.1: no COOP/COEP headers; model files from Hugging Face, runtime from our origin (ADR-0023); deployment is CLI-only with no Git integration or automatic previews (as already practised since Day 1). §11: the STT integration test (Playwright, fake microphone) and its CI job. §13: battery, model size, macOS loopback and transcription accuracy (the main known limitation). The DOCX version of this document is regenerated separately. |
 | Changes in 3.1.2 | §8.3: the desktop shell allows exactly one origin (the Kite URL's). Any future payment or SSO page on another origin must be added to the allowlist on purpose. Day 1 Stage 5. |
@@ -157,10 +158,11 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 
 1. **Capture.** Mic → "You" channel. Other side → "Them" channel. The two are never mixed.
 2. **Transcribe.** An AudioWorklet resamples each channel to 16 kHz and sends it straight to one Web Worker running sherpa-onnx v1.13.7 (WebAssembly, single-threaded) with the streaming Zipformer 2023-06-21 model and session **hotwords** (ADR-0020), built from the session's key terms and company (boost 2) and its role or topic and document names (boost 1.5) by `core/stt/sessionHotwords.ts` (Day 3; measured: no overall WER change, names right more often). Each channel has its own recognizer stream and an **energy gate** that skips silence (no Silero VAD). An utterance ends by the model's endpoint rule or after 1.2 s with no new words. The worker emits **partial** and **final** text; each final carries its end of speech, for latency measurement. The transcript core labels lines "You"/"Them" and hides "You" lines of 4+ words that echo "Them" through the speakers. Finals are saved to IndexedDB when the session saves its transcript (`core/transcript/saver.ts`; echo lines are never saved, and a saved line later found to be an echo is deleted). Streaming-only: a second, non-streaming pass was measured on Day 2 and rejected (ADR-0020). Model files load from pinned Hugging Face URLs with SHA-256 checks and are cached on the device (ADR-0023).
-3. **Trigger.** The user presses the hotkey or button (or auto-answer fires, section 7.5). The question is the "Them" lines since the user last spoke.
-4. **Request.** The client sends `POST /api/answer` with the session context, the last ~3 minutes of transcript and the question.
-5. **Claude.** The server builds the prompt from a **cached block** (system rules + session details + documents, marked with `cache_control` so Claude reuses it) and a **fresh block** (transcript + question). It calls Haiku with streaming and forwards each text delta to the client immediately (Server-Sent Events).
-6. **Show.** The overlay renders the headline as it arrives, then the bullets. A new request or Clear cancels the old one.
+3. **Trigger.** The user presses the hotkey or button (or auto-answer fires, section 7.5), or types a question in Chat. The question is picked by `core/transcript/question.ts`: the "Them" lines since the user last really spoke (a short "right" does not count; echoes are already hidden), trimmed to the latest question-like run, or the last "Them" line if they have not spoken since.
+4. **Request.** `core/answer/context.ts` builds `POST /api/answer` from memory: the session details, **the whole call so far** as append-only conversation chunks (stable lines and the answers already given in this call, in time order), the lines that may still change (the tail), and the question (section 7.2). One request at a time: a new one cancels the old.
+5. **Claude.** The server builds the prompt from three cached parts (the rules, the session block, the conversation chunks; section 6.3) and an uncached tail with the question. It calls Haiku with streaming (`max_tokens` 400) and forwards each text delta to the client immediately (Server-Sent Events).
+6. **Show.** The answer panel renders the headline as it arrives, then the bullets, with the question used ("from N lines"), Cancel, Previous / Next, Copy, the time to the first word, and 👍 / 👎 with an optional note. Each finished answer is saved on the device (section 7.4).
+7. **End.** End stops both channels, waits for the line still being spoken to become final and be saved, then clears the transcript (Day 4 fix for a Day 3 finding: the last line used to be lost).
 
 ### 6.2 Latency targets (to be measured; better than ParakeetAI)
 
@@ -174,6 +176,8 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 
 **Measured on Day 2** (`docs/testing/benchmark-results.md`): speech → first partial (lag) 347–973 ms in Chrome and the desktop app, plugged in and on battery (after the Day 2 lag fix); end of speech → final line p50 1.5–1.7 s (p95 1.9–2.3 s). Accuracy is the weak point: about 27% WER on the 3 test sentences, with names and technical terms often wrong in a real call (§13).
 
+**Measured on Day 4** (production, from the developer's laptop in Pakistan; `/dev/latency`, 20 answers each, cache read on 20/20; `docs/testing/benchmark-results.md`): key press → request sent p50 0 ms; **first word p50 1,076–1,155 ms** (p95 1,327–1,934) in Chrome and the desktop app; headline p50 1,379–1,454 ms (p95 1,641–2,174). The server's own part (request received → first text) is p50 560–643 ms; the rest, about 500 ms, is the network between that laptop and the `iad1` function (requests enter Vercel at the `bom1` edge). The levers were applied in order: (1) cache hits confirmed; (2) the tail was already empty; (3) `max_tokens` 400 → 250 made no difference beyond noise and was reverted; (4) the region is already next to Anthropic, and moving it nearer the laptop would put the sign-in database and Claude a round trip away instead. The first-word target is met on the server side but not end to end from South Asia; see §13.
+
 These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platform (desktop macOS, desktop Windows, browser) with timestamps logged in the page, and write the measured p50/p95 into `docs/testing/benchmark-results.md`. If a target is missed, the levers are, in order:
 
 1. Confirm cache hits (`cache_read_input_tokens > 0`).
@@ -183,15 +187,18 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 
 ### 6.3 Prompt caching rules
 
-- **Pre-warm.** When a live session opens, the client calls `/api/answer` with `mode: "warm"` (`core/answer/warm.ts`; the screen never waits for it). The server sends the cached blocks with `max_tokens: 0` and a placeholder user turn, so the first real answer is a cache hit. Two rules from the official prompt-caching docs apply:
+- **Pre-warm.** When a live session opens, and again on Connect (Day 4: the first warm-up may have expired while the user read the Connect screen), the client calls `/api/answer` with `mode: "warm"` (`core/answer/warm.ts`; the screen never waits for it). The server sends the cached blocks with `max_tokens: 0` and a placeholder user turn, so the first real answer is a cache hit. Two rules from the official prompt-caching docs apply:
   - `max_tokens: 0` is rejected together with `stream: true`, so the warm-up is a plain request. Streaming is not part of the cached prompt, so the streamed answers still read the entry.
   - The thinking setting is part of the cached prompt, so the warm-up sends the same one as the answers (`thinkingFor()` in `server/claude.ts`).
 
   Measured on Day 3 against the real API (`pnpm --filter web verify:warm`, invented 2,000-word document): call 1 wrote 4,508 tokens, call 2 read 4,508; no output tokens either time.
 - **Keep the prefix identical.** The cached block must be byte-for-byte the same on every request: same order, same text, no timestamps.
-- **Cache lifetime.** The cache lives 5 minutes and refreshes each time it is used. During a call, answers keep it warm. After a long silence, the next answer pays one cache write.
+- **Cache lifetime.** The cache lives 5 minutes and refreshes each time it is used. During a call, answers keep it warm. **Idle re-warm** (Day 4, `core/answer/keepWarm.ts`): while connected, if no warm-up or answer was sent for 4.5 minutes, one warm-up is sent with the conversation chunks sent so far, so the next answer still reads the cache. It stops at End and logs only timings and token counts.
 - **Minimum size.** The newest Claude models cache prompts of 512 tokens or more. A normal session context is larger. A session with no documents and few details can be smaller; it is then simply not cached (no error).
-- **Two breakpoints.** The fixed rules block and the session block each carry `cache_control`. The rules block is the same for every session but is under 512 tokens on its own, so in practice the entry that matters ends at the session block.
+- **Three breakpoints** (Day 4, ADR-0025; Anthropic allows 4): the rules block, the session block, and the **last conversation chunk** each carry `cache_control`. With the Day 4 rules the rules block is about 836 tokens, above the minimum, so it is cached once and shared by every session (measured: a new session's first warm-up reads 836 and writes only its own block).
+- **Append-only conversation.** The call so far is sent as **chunks**: each request adds at most one new chunk at the end (the lines that became stable and the answers that finished since the last request), and a chunk is never changed once sent. Each chunk is its own text block, because Claude reads the cache only at a position where an earlier request put a breakpoint, and each breakpoint looks back at most 20 blocks: one growing text block would never read its own cache. So request N+1 starts with request N's blocks byte for byte, and its read lands on request N's breakpoint, one block back. Measured (`verify:answer-cache`, real API): reads 4,833 → 4,954 → 5,220, each the previous read plus the previous write; each write is only the new chunk.
+- **Stable lines** (`core/transcript/stability.ts`): final, not an echo, at least 5 s old, and no line still being heard that could merge into it (same speaker, within the 1.5 s merge gap) or mark it as an echo (a "Them" line within the 2 s echo window). Anything else is in the uncached tail. A sent line that still grows later (rare) is continued with only its new words.
+- **Long calls.** The server keeps about 20,000 estimated tokens of conversation (about 90 minutes of speech; characters ÷ 4). Above that it drops the **oldest whole chunks in steps of 5,000 tokens**, and the first kept chunk starts with "[Earlier part of the call omitted]". Because the cut moves only at each step, the cached start of the conversation stays the same between steps. Requests may carry at most 40,000 estimated tokens and 300 chunks; the client trims its oldest chunks to stay under that.
 
 ## 7. Component design
 
@@ -202,22 +209,22 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 | `features/dashboard` | Session list, filters, search, delete | `Dashboard.tsx`, `SessionCard.tsx` |
 | `features/session-setup` | Two-step create/edit wizard, document upload, Choose platform dialog | `SessionWizard.tsx`, `DetailsStep.tsx`, `PreferencesStep.tsx`, `ChoosePlatformDialog.tsx`, `draft.ts`, `labels.ts` |
 | `features/settings` | Default preferences, hotkey list, Delete all local data | `Settings.tsx` |
-| `features/live` | Connect view, live view, compact view, answer panel, chat | Built on Day 2: `LivePage.tsx`, `ConnectPanel.tsx`, `TranscriptStrip.tsx`, `AudioMeter.tsx`, `HealthNotice.tsx`, `speakers.ts`; Day 3: `LiveSession.tsx` (loads the session, its documents and saved lines, builds hotwords, starts the warm-up), `SavedTranscript.tsx` (`demoHotwords.ts` removed). Later: `AnswerPanel.tsx`, `CompactView.tsx` |
+| `features/live` | Connect view, live view, compact view, answer panel, chat | Built on Day 2: `LivePage.tsx`, `ConnectPanel.tsx`, `TranscriptStrip.tsx`, `AudioMeter.tsx`, `HealthNotice.tsx`, `speakers.ts`; Day 3: `LiveSession.tsx` (loads the session, its documents and saved lines, builds hotwords, starts the warm-up), `SavedTranscript.tsx` (`demoHotwords.ts` removed). Day 4: `LiveAnswers.tsx` (top bar, chat box and answer panel, hotkeys through the platform), `TopBar.tsx`, `AnswerPanel.tsx` (headline then bullets, cancel, previous/next, copy, 👍 / 👎 and note), `ChatBox.tsx`, `useLiveAnswers.ts` (requests, saving, idle re-warm). Later: `CompactView.tsx` |
 | `features/review` | Notes, transcript, delete | `SessionReview.tsx` |
 | `core/audio` | Get streams via the platform; AudioWorklet resampling to 16 kHz; audio levels for the meters | `capture.ts`, `resampler.worklet.ts`, `resample.ts`, `levels.ts`, `recordingStream.ts` (test recordings as a stream) |
 | `core/stt` | Engine (one worker, two channels); worker with sherpa-onnx WASM; per-channel decoding with energy gate and endpoint rules; pinned model list; verified download and caching; hotwords, session hotwords; health status; WER and timing helpers for the test page | `sttEngine.ts`, `sessionHotwords.ts`, `stt.worker.ts`, `channel.ts`, `gate.ts`, `models.ts`, `download.ts`, `hotwords.ts`, `sentencepiece.ts`, `health.ts`, `protocol.ts`, `metrics.ts`, `wer.ts` |
-| `core/transcript` | Utterance list (You/Them), echo filter, line merging and display hold, last-N-minutes window; saving final lines to storage; question selection (Day 4) | `transcript.ts`, `echo.ts`, `merge.ts`, `display.ts`, `saver.ts`; later `question.ts` |
-| `core/answer` | Calls `/api/answer`, reads SSE, cancel, retries, timings; session warm-up and the request's session details | `answerClient.ts`, `warm.ts` |
+| `core/transcript` | Utterance list (You/Them), echo filter, line merging and display hold; saving final lines to storage; ending a call without losing the last line; stable lines and question selection (Day 4) | `transcript.ts`, `echo.ts`, `merge.ts`, `display.ts`, `saver.ts`, `endCall.ts`, `stability.ts`, `question.ts` |
+| `core/answer` | Calls `/api/answer`, reads SSE, cancel; one answer at a time with timings (key press → sent → first word → headline → done); session warm-up and the idle re-warm; the request builder (append-only conversation log, tail, question); headline/bullet split; the `/dev/latency` measurement | `answerClient.ts`, `warm.ts`, `keepWarm.ts`, `context.ts`, `format.ts`, `latency.ts` |
 | `core/documents` | PDF (pdf.js 6.4.299; worker served from our origin), DOCX (mammoth 1.13.0), TXT → text with clear error codes (unsupported type, too large, encrypted, no text); size caps (20 MB file, 100,000 characters per document, 150,000 per session) | `extract.ts`, `limits.ts` |
-| `core/storage` | IndexedDB via Dexie 4.4.6 (ADR-0024); repositories; default preferences; persistence request; delete all | `db.ts`, `types.ts`, `sessions.ts`, `documents.ts`, `utterances.ts`, `settings.ts`, `persist.ts`, `wipe.ts`; later `answers.ts` |
-| `platform` | Platform adapter (section 3.3); shared media helpers and capture errors | `types.ts`, `desktop.ts`, `browser.ts`, `index.ts`, `media.ts`, `errors.ts` |
+| `core/storage` | IndexedDB via Dexie 4.4.6 (ADR-0024); repositories; default preferences; persistence request; delete all | `db.ts`, `types.ts`, `sessions.ts`, `documents.ts`, `utterances.ts`, `settings.ts`, `persist.ts`, `wipe.ts`, `answers.ts` (Day 4: save, list, rate, note) |
+| `platform` | Platform adapter (section 3.3); shared media helpers and capture errors; the §7.3 key map for in-page shortcuts (Day 4) | `types.ts`, `desktop.ts`, `browser.ts`, `index.ts`, `media.ts`, `errors.ts`, `keymap.ts` |
 
 ### 7.2 Server (apps/web/src/server and apps/web/app/api)
 
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/auth/[...all]` | GET, POST | Better Auth handler: sign-in, sign-out, session, change password, and admin operations (admin plugin). Public sign-up is disabled. |
-| `/api/answer` | POST, SSE response | `mode`: `hello` (Day 1 test) / `warm` (Day 3) / `answer` / `chat` / `screenshot` → builds the prompt, calls Claude, streams text. `answer` and `chat` return 400 "not implemented yet: Day 4", `screenshot` "Day 5" |
+| `/api/answer` | POST, SSE response | `mode`: `hello` (Day 1 test) / `warm` (Day 3) / `answer` / `chat` / `screenshot` → builds the prompt, calls Claude, streams text. `answer` and `chat` built on Day 4; `screenshot` returns 400 "not implemented yet: Day 5" |
 | `/api/notes` | POST, SSE response | Post-call notes with Sonnet |
 
 **`POST /api/answer` request:**
@@ -236,8 +243,18 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
     "style": { "format": "headline+bullets", "length": "short", "tone": "simple" },
     "documents": [{ "name": "pricing.pdf", "text": "..." }]
   },
-  "transcript": [
-    { "speaker": "them", "text": "What would the rollout timeline be?", "t": 1729750000 }
+  "conversation": [
+    [
+      { "kind": "line", "speaker": "you", "text": "Thanks for joining.", "at": 4 },
+      { "kind": "line", "speaker": "them", "text": "How much is the Professional plan?", "at": 9 }
+    ],
+    [
+      { "kind": "answer", "mode": "answer", "question": "How much is the Professional plan?", "text": "52 dollars per seat per month.\n- Billed yearly", "at": 12 },
+      { "kind": "line", "speaker": "you", "text": "It is 52 dollars per seat.", "at": 15 }
+    ]
+  ],
+  "tail": [
+    { "speaker": "them", "text": "What would the rollout timeline be?", "at": 31 }
   ],
   "question": "What would the rollout timeline be?",
   "image": null
@@ -249,6 +266,11 @@ Differences from the 3.2.0 example, decided on Day 3:
 - `mode: "warm"` requires `session`; the other fields are not used.
 - Validation (`server/validate.ts`, zod): unknown fields are rejected; documents ≤ 150,000 characters in total; request ≤ 4 MB. Errors name the field and never echo its content (for example `session: required for mode warm`).
 
+Differences decided on Day 4 (ADR-0025):
+- `transcript` (the 3-minute window) is **removed**. `conversation` is the call so far as chunks (oldest first) of items: `{ kind: "line", speaker, text, at }` and earlier answers `{ kind: "answer", mode, question, text, at }`; `at` is whole seconds since Connect (shown as mm:ss). A chunk never changes once sent. `tail` holds the lines that may still change.
+- Limits: at most 40,000 estimated tokens and 300 chunks of conversation, 100 tail lines, 2,000 characters per line or question, 4,000 per earlier answer.
+- Every mode but `hello` requires `session`; `chat` requires `question`. `warm` may carry `conversation` (the idle re-warm).
+
 **Response:** `text/event-stream` with events `delta` (`{ "text": "..." }`), `done` (`{ "usage": {...}, "ms": {...} }`) and `error` (`{ "code": "...", "message": "..." }`). A warm-up sends only `done` (cache counts and timings) or `error`.
 
 **Prompt structure (`server/prompt.ts`, built Day 3):**
@@ -257,7 +279,10 @@ Differences from the 3.2.0 example, decided on Day 3:
 |---|---|---|
 | System | Fixed rules, the same for every session: Kite's role; answer rules (headline ≤ 15 words and ≤ 5 bullets for headline+bullets, one short paragraph for paragraph; follow the session's length, tone and instructions; use only session facts and documents for claims about the user, their company, offer, prices, dates or commitments; if unsure or unclear, say what to clarify); the **imperfect-transcript rule**: the transcript is made by on-device speech recognition and often mishears names and technical terms, so Claude infers the intended words from the context and the session's key terms, company, role or topic and documents | Yes (`cache_control`) |
 | Session block | Fixed order and labels: call type, company, role or topic, description, key terms, answer format / length / tone, instructions, then each document in `<document name="…">` tags (`&`, `<`, `>` escaped, so a document cannot close its tag). Empty fields are written as "(not given)". Byte-for-byte the same for the same session: no timestamps or ids | Yes (`cache_control`) |
-| Messages | Transcript window ("You:" / "Them:" lines) + question (+ image for screenshots); for a warm-up, a fixed placeholder | No |
+| Conversation (Day 4) | One user-turn text block per chunk: `[mm:ss] Them: …` lines and `[mm:ss] Kite's earlier answer (question: …):` blocks, opened by `<conversation>`; the breakpoint is on the last chunk only. Over the long-call cap, the oldest whole chunks are dropped in steps with "[Earlier part of the call omitted]" | Yes (`cache_control` on the last chunk) |
+| Tail | Closes `</conversation>`, then `<latest>` (lines that may still change), then "Question to answer: …" or "Question typed by the user: …" (+ image for screenshots, Day 5); for a warm-up, a fixed placeholder | No |
+
+The system block also holds the Day 4 **consistency rules** ("Earlier answers in this call are shown in the conversation. Stay consistent with them. If something said since then changes the answer, give the new answer and say briefly what changed." and "If the same question is asked again, build on the earlier answer instead of starting over."), the rules tuned by the answer evaluation (headline of at most 15 words with conditions kept out of it, also when the session cannot answer; bullets only from session facts; no offers beyond the documents; `docs/testing/answer-eval.md`), and an empty **Learned preferences** slot for §7.6.
 
 The answer style is in the session block, not in the system block (a difference from 3.2.0): it differs per session, and keeping the system block identical for every session is what lets it be shared.
 
@@ -268,7 +293,8 @@ The answer style is in the session block, not in the system block (a difference 
 - Validate input with zod.
 - Cap the total size (documents ≤ ~150k characters; request ≤ 4 MB).
 - Set a 60 s timeout and do not retry mid-stream.
-- Never log transcript, document or answer text; log ids, timings and token counts only.
+- Never log transcript, document or answer text; log ids, timings and token counts only (the answer route logs the number of chunks and tail lines, never their text).
+- `server/claude.ts` also has `jsonReply()` (structured outputs: `output_config.format` with a JSON schema), used only by the developer-only answer evaluation's grader (Sonnet).
 
 ### 7.3 Desktop shell (apps/desktop)
 
@@ -278,13 +304,13 @@ The answer style is in the session block, not in the system block (a difference 
 | `config.ts` | The Kite URL (default production; `--kite-url` or `KITE_URL` for development) and its single allowed origin (Day 1) |
 | `windows.ts` | Workspace window; live window (frameless, always-on-top, resizable) opened by `openCompactView` (Day 5) |
 | `media.ts` | `session.setDisplayMediaRequestHandler`: for the Kite origin only, approves `getDisplayMedia` with **system-audio loopback and no picker**; every other origin is denied. Permission handler: microphone for the Kite origin only; camera, notifications and everything else denied (Day 2). Windows verified; macOS loopback not yet verified (§13). |
-| `hotkeys.ts` | Global shortcuts → `webContents.send('hotkey', action)` (Day 4) |
+| `hotkeys.ts` | **Built Day 4.** Electron `globalShortcut` with the defaults below, forwarded to the page as `kite:hotkey` messages. The page turns them on for a live call and off at End over `kite:set-hotkeys` (accepted only from the Kite origin's main frame); they are also released on reload, when the window closes and on quit. Global shortcuts take their keys from every other app while registered (Ctrl+Backspace, Ctrl+← / → edit text everywhere), which is why they are on only during a call. A shortcut another app already holds is reported back and the live view says which one (it then works only while Kite has focus). Channel names are in `channels.ts` |
 | `screenshot.ts` | `desktopCapturer` → PNG of the current display (Day 5) |
 | `protection.ts` | `setContentProtection(on)` on the live window; re-applied every time it is shown (Day 5) |
-| `preload.ts` | Exposes `window.kiteDesktop` (typed in `packages/shared`) with the methods in section 3.3. Nothing else. |
+| `preload.ts` | Exposes `window.kiteDesktop` (typed in `packages/shared`, frozen): `version`, `os`, and from Day 4 `setHotkeysEnabled(on)` (sends only a boolean) and `onHotkey(handler)` (passes only valid actions, never the IPC event). Nothing else. A desktop app installed before Day 4 has neither method; the page then uses in-page shortcuts only. |
 | `security.ts` | Blocks navigation to any other origin; opens external links in the system browser; `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`. Permissions for the Kite origin only: microphone, `display-capture` (handled in `media.ts`) and, from Day 3, `persistent-storage`: Electron routes `navigator.storage.persist()` through the permission handlers, so without this grant the request always fails in the desktop app and local sessions could be cleared when the disk is short of space (ADR-0024) |
 
-Default hotkeys (desktop):
+Default hotkeys (desktop global shortcuts during a call; the same keys work in the page in the browser and in the desktop app while Kite has focus, `platform/keymap.ts`, except while typing in a text box):
 
 | Action | macOS | Windows |
 |---|---|---|
@@ -302,7 +328,7 @@ Built on Day 3 (`core/storage`, ADR-0024). One IndexedDB database, `kite`, opene
 | `sessions` (id, createdAt, type, status) | id, type (`interview` / `sales` / `support` / `internal`), company, role, description, preferences (language `en`, model `fast`/`smart`, style {format, length, tone}, keyTerms: one per line), instructions, saveTranscript, autoAnswer, createdAt, status (`not-started` / `live` / `ended`), lastActiveAt |
 | `documents` (id, sessionId) | id, sessionId, name, text (extracted text only, never the file), chars, addedAt |
 | `utterances` (id, sessionId) | id (`<session>:<call>:<line>`), sessionId, speaker (`you`/`them`), text, tStart, tEnd |
-| `answers` (id, sessionId) | id, sessionId, mode, question, text, model, msFirstToken, msTotal, createdAt (written from Day 4) |
+| `answers` (id, sessionId) | id, sessionId, mode, question, text, model, msFirstToken, msTotal, createdAt, **rating** (`up` / `down` / null) and **note** ("What was wrong / better answer"), Day 4. Written when an answer finishes (a cancelled or failed one is not saved), **even when "Save transcript" is off**, because the review page and the learning loop need them; the preferences step says so. No index changed, so no new Dexie version |
 | `notes` (sessionId) | sessionId, summary, questions, nextSteps, createdAt (written from Day 5) |
 | `settings` (id), schema version 2 | one row `defaults`: the default model, style, instructions and save-transcript setting for new sessions |
 
@@ -323,6 +349,14 @@ Auto-answer is off by default. When on, it answers when **all** of these are tru
 
 Each automatic answer can be cancelled with Clear. Tuning and tests use transcript fixtures.
 
+### 7.6 Learning loop
+
+How Kite gets better for each user, from their own ratings (ADR-0025):
+
+- **Day 4 (built):** every answer is saved on the device with its rating (👍 / 👎) and an optional note ("What was wrong / better answer"). The system block has a "Learned preferences" slot, empty for now.
+- **Day 5:** after a call, the notes step (Sonnet) also proposes up to 3 short lessons from that call's ratings and notes (for example "Give prices per seat and per month"). The user approves, edits or rejects each one. Approved lessons are stored locally (for one session type, or for all) and managed in Settings → What Kite has learned.
+- Approved lessons go into the system block's slot (cached), at most about 20. Nothing is learned without the user's approval, and nothing leaves the laptop except as part of an answer request.
+
 ## 8. Security and privacy
 
 ### 8.1 Where data lives
@@ -332,7 +366,7 @@ Each automatic answer can be cancelled with Clear. Tuning and tests use transcri
 | Audio | Only in memory on the laptop; never stored, never sent |
 | Sessions, documents, transcripts, answers, notes, default preferences | IndexedDB on the laptop (ADR-0024). Documents are stored as extracted text only; the original file is read in the browser and never kept or uploaded. **The browser and the desktop app have separate local data**, and so does each browser profile: a session created in Chrome does not appear in the desktop app, and the other way round. There is no sync in v1 (§14). |
 | Downloaded speech model | Cache Storage on the laptop. Public, checksum-pinned files only; "Delete all local data" keeps it. |
-| Text for an answer (session block, transcript window, question) and screenshots on request | Sent over HTTPS to Vercel, then to Claude. Not stored by Kite's server. |
+| Text for an answer (session block, the call so far and the earlier answers in it, question) and screenshots on request | Sent over HTTPS to Vercel, then to Claude. Not stored by Kite's server. |
 | Claude API key | Vercel environment variable only |
 | User accounts (name, email, role, password hash, sign-in sessions) | Neon Postgres on Vercel. Passwords are hashed (scrypt) and never stored or logged in plain text. |
 
@@ -458,7 +492,7 @@ kite/
 | Setting | Value |
 |---|---|
 | Framework | Next.js (project root `apps/web`) |
-| Function region | `iad1` (US East), close to the Claude API (verify on Day 4 with timings) |
+| Function region | `iad1` (US East), close to the Claude API. Day 4: server time to first text p50 560–643 ms; from South Asia the network adds about 500 ms (§6.2, §13) |
 | Function runtime | Node.js; streaming responses for `/api/answer` and `/api/notes` |
 | Environment variables | `ANTHROPIC_API_KEY`, `DATABASE_URL` (added automatically by the Neon integration), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `KITE_MODEL_FAST=claude-haiku-5-5`, `KITE_MODEL_SMART=claude-sonnet-5-5` |
 | Deployment | **Vercel CLI only**: `vercel link` (once), `vercel env add` / `vercel env pull`, `vercel deploy` (preview), `vercel deploy --prod` (production). There is no Git integration: pushes and pull requests do not deploy. |
@@ -500,8 +534,10 @@ kite/
 | Unit | Prompt builder, question selection, transcript window, document extraction, storage repositories (fake IndexedDB), SSE parser, platform adapters (mocked APIs), auto-answer rule | Vitest | Every PR |
 | Integration | `/api/answer` with a mocked Claude stream (deltas, errors, cancel) | Vitest | Every PR |
 | Integration (STT) | Official LibriSpeech recordings played by Chromium's fake microphone through the real worklet → worker → recognizer → transcript; a final line and WER ≤ 10% per recording (`pnpm --filter web test:stt`) | Playwright (Chromium) | Every PR and push to `main` (`stt-integration` job; model files cached by their pinned SHA-256s) |
-| End-to-end (browser) | Sign-in (seeded test user) → create session → upload doc → live page with **fake microphone audio** (Chrome `--use-file-for-fake-audio-capture`) → transcript appears → answer (mocked Claude) appears | Playwright | Every PR |
-| End-to-end (production, manual) | Built Day 3 (`apps/web/tests/e2e-prod/`, `pnpm --filter web test:e2e-prod`). Runs against production as a dedicated test account (`create-e2e-user`; disable at `/admin/users`). **Chrome:** session with a document and key terms → key-term count → warm-up cache write then read (real Claude) → fake microphone and fake shared tab → final lines → saved transcript after reload → delete. **Desktop app** (fresh profile): empty dashboard (separate data) → Open without dialog → Connect without picker → final lines → Delete all local data. Fake media feeds the "Them" audio into "You" too, so the echo filter hides "You" lines there; the suites count final lines from either side | Playwright (Chromium, Electron) | By hand, before a pull request is marked ready; never in CI (real API, real account) |
+| Harness (answers) | Built Day 4 (`pnpm --filter web test:answers`). The real `LiveAnswers` component on a fixture transcript, no sign-in, with a mocked, slowly streaming `/api/answer`: Ctrl+Enter → headline before bullets, cancel, previous/next, copy, chat, append-only requests, rating and note survive a reload, deleting the session removes its answers | Playwright (Chromium) | Every PR and push to `main` (in the `stt-integration` job) |
+| Answer quality | Built Day 4 (`pnpm --filter web eval:answers`). 15 invented scenarios through the real server prompt with Haiku, graded by Sonnet against a rubric plus two code checks; score table only (`docs/testing/answer-eval.md`) | Script (real API) | By hand after a prompt change; never in CI |
+| Latency | Built Day 4: `/dev/latency` (admin), 20 answers through the live client path, p50/p95 and cache hits; run in production by `tests/e2e-prod/latency.spec.ts` as an admin test account that stays disabled between runs (`pnpm --filter web e2e-admin --enable` / `--disable`) | Page + Playwright | Day 4 and Day 7, by hand |
+| End-to-end (production, manual) | Built Day 3 (`apps/web/tests/e2e-prod/`, `pnpm --filter web test:e2e-prod`). Runs against production as a dedicated test account (`create-e2e-user`; disable at `/admin/users`). **Chrome:** session with a document and key terms → key-term count → warm-up cache write then read (real Claude) → fake microphone and fake shared tab → final lines → **Answer (Ctrl+Enter) streams and is rated (Day 4)** → saved transcript after reload → delete. **Desktop app** (fresh profile): empty dashboard (separate data) → Open without dialog → Connect without picker → final lines → **a Chat answer streams and is rated (Day 4)** → Delete all local data. Fake media feeds the "Them" audio into "You" too, so the echo filter hides "You" lines there; the suites count final lines from either side | Playwright (Chromium, Electron) | By hand, before a pull request is marked ready; never in CI (real API, real account) |
 | Desktop smoke | Shell launches, loads the app, `window.kiteDesktop` exists, live window opens, protection toggles | Playwright for Electron | Every PR (macOS + Windows runners) |
 | Manual | Real calls in Zoom, Teams and Meet × desktop macOS, desktop Windows, browser; screen-share check; fresh installs | Checklist | Day 5 to 7 |
 | Measured | Latency (section 6.2), transcript lag | In-page timings | Day 4 and Day 7 |
@@ -587,9 +623,9 @@ Checks:
 
 Checks:
 
-- [ ] The answer uses session facts.
-- [ ] Cancel works.
-- [ ] **20 timed answers per platform recorded.** p50 first words ≤ 1.0 s, or tuning levers applied (section 6.2).
+- [x] The answer uses session facts (evaluation 9.43 / 10).
+- [x] Cancel works (harness test).
+- [x] **20 timed answers per platform recorded** (Chrome and the desktop app on Windows; production). p50 first words 1,076–1,155 ms, above 1.0 s; the levers were applied and recorded (section 6.2). macOS is measured on Day 7.
 
 **Day 5: Overlay, screenshots, notes (Fri 30 Oct)**
 
@@ -645,7 +681,7 @@ Release checks (all must pass):
 | Short echoes on speakers ("OKAY SO") | Day 2 (measured) | The echo filter judges only lines of 4+ words, so short replies are never hidden by mistake. Recommend headphones in the Connect view |
 | macOS system-audio loopback fails in Electron | Day 2 (not yet verified: no Mac; deferred to Day 6/7) | Use the browser path inside the shell (share-picker with audio), or a free virtual audio device (BlackHole) |
 | Neon free-plan limits reached | Any | Upgrade the Neon plan; only accounts and sessions are stored, so data is tiny |
-| Latency above target | Day 4 | Levers in section 6.2; keep Haiku; trim context |
+| Latency above target **from far regions** | Day 4 (measured) | First word p50 about 1.1 s from Pakistan, of which about 0.5 s is the network to the US function; the server part (0.56–0.64 s) is within target. The §6.2 levers did not help further. Options: measure from the team's main location; Better Auth's cookie cache to skip the sign-in database lookup per request; a region near most users if they are not in the US (with the database and Claude a round trip away); keep Haiku; trim context |
 | Behind schedule by Day 5 | Day 5 | Drop auto-answer (F12) and notes (F11) to v1.1; keep F1 to F10 |
 
 ## 14. After v1.0 (backlog)

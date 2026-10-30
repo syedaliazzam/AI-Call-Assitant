@@ -5,7 +5,8 @@
  * MediaDevices API; getOtherSideStream() asks for a tab with its audio using Chrome's options,
  * returns the stream with its source ('tab-audio' / 'screen-audio'), keeps the video track,
  * stops the share and throws CaptureError('no-audio-track') when "Also share tab audio" was not
- * ticked, and maps a cancelled picker, an OS refusal and a missing API to typed errors; every
+ * ticked, and maps a cancelled picker, an OS refusal and a missing API to typed errors;
+ * onHotkey() listens for the in-page shortcuts with the Mac modifier on a Mac (Day 4); every
  * not-yet-built method throws NotImplementedError naming its day.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -44,9 +45,28 @@ describe('browserPlatform', () => {
     expect((error as NotImplementedError).day).toBe(day);
   });
 
-  it('onHotkey throws NotImplementedError (Day 4)', () => {
-    expect(() => browserPlatform.onHotkey(() => {})).toThrow(NotImplementedError);
-    expect(() => browserPlatform.onHotkey(() => {})).toThrow(/Day 4/);
+  it('onHotkey listens for the in-page shortcuts (⌘ on a Mac, Ctrl elsewhere)', () => {
+    const target = new EventTarget();
+    vi.stubGlobal('window', target);
+    vi.stubGlobal('navigator', { platform: 'MacIntel', userAgent: '' });
+    const handler = vi.fn();
+    const stop = browserPlatform.onHotkey(handler);
+    const key = (fields: object) =>
+      target.dispatchEvent(
+        Object.assign(new Event('keydown'), {
+          key: 'Enter',
+          ctrlKey: false,
+          metaKey: false,
+          shiftKey: false,
+          altKey: false,
+          repeat: false,
+          ...fields,
+        }),
+      );
+    key({ ctrlKey: true });
+    key({ metaKey: true });
+    expect(handler.mock.calls).toEqual([['answer']]);
+    stop();
   });
 });
 

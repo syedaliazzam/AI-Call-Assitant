@@ -1,12 +1,13 @@
 /**
  * File: apps/web/scripts/create-e2e-user.ts
- * Purpose: Creates the dedicated test account the production end-to-end suites sign in with
- *          (tests/e2e-prod/), role 'user'. It creates the account with a temporary password
- *          exactly like an admin would, completes the first password change the same way the
+ * Purpose: Creates a dedicated test account the production end-to-end suites sign in with
+ *          (tests/e2e-prod/): role 'user' (KITE_E2E_EMAIL / KITE_E2E_PASSWORD), or with --admin
+ *          role 'admin' for the admin-only /dev/latency page (Day 4; KITE_E2E_ADMIN_EMAIL /
+ *          KITE_E2E_ADMIN_PASSWORD). It creates the account with a temporary password exactly
+ *          like an admin would, completes the first password change the same way the
  *          /change-password page does, and appends the email and the new password to
- *          apps/web/.env.local as KITE_E2E_EMAIL / KITE_E2E_PASSWORD. The password is never
- *          printed.
- *          Usage: pnpm --filter web create-e2e-user
+ *          apps/web/.env.local. The password is never printed.
+ *          Usage: pnpm --filter web create-e2e-user [--admin] [--email <address>]
  * Used by: the "create-e2e-user" script in apps/web/package.json (run by a developer, once)
  * Depends on: src/server/users.ts (createUserAccount, markPasswordChanged),
  *             src/server/auth.ts (Better Auth: signInEmail, changePassword)
@@ -27,8 +28,27 @@ import { parseArgs } from 'node:util';
 import { auth } from '@/server/auth';
 import { createUserAccount, markPasswordChanged } from '@/server/users';
 
-/** The default test account email (example.com is reserved for examples: no real mailbox). */
-const DEFAULT_EMAIL = 'kite-e2e@example.com';
+/** The two kinds of test account. */
+const ACCOUNTS = {
+  /** The suites' normal account. */
+  user: {
+    /** Default email (example.com is reserved for examples: no real mailbox). */
+    email: 'kite-e2e@example.com',
+    /** Display name. */
+    name: 'Kite E2E (automated tests)',
+    /** Prefix of the two .env.local lines. */
+    prefix: 'KITE_E2E',
+  },
+  /** The admin account for /dev/latency only (Day 4). */
+  admin: {
+    /** Default email. */
+    email: 'kite-e2e-admin@example.com',
+    /** Display name. */
+    name: 'Kite E2E admin (latency test)',
+    /** Prefix of the two .env.local lines. */
+    prefix: 'KITE_E2E_ADMIN',
+  },
+} as const;
 
 /** Where the credentials are written (git-ignored; see .gitignore `.env*`). */
 const ENV_FILE = path.join(process.cwd(), '.env.local');
@@ -59,22 +79,26 @@ function randomPassword(): string {
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { email: { type: 'string' } } });
-  const email = (values.email ?? DEFAULT_EMAIL).trim().toLowerCase();
+  const { values } = parseArgs({
+    options: { email: { type: 'string' }, admin: { type: 'boolean' } },
+  });
+  const role = values.admin ? 'admin' : 'user';
+  const account = ACCOUNTS[role];
+  const email = (values.email ?? account.email).trim().toLowerCase();
 
-  // Refuse to add a second set of lines: the suites read the first one.
-  if (/^KITE_E2E_(EMAIL|PASSWORD)=/m.test(readFileSync(ENV_FILE, 'utf8'))) {
-    console.error('KITE_E2E_EMAIL / KITE_E2E_PASSWORD are already in .env.local. Nothing changed.');
+  // Refuse to add a second set of lines: the suites read the first one. (The admin prefix
+  // also starts with KITE_E2E_, so the user check names EMAIL/PASSWORD right after it.)
+  const existing = new RegExp(`^${account.prefix}_(EMAIL|PASSWORD)=`, 'm');
+  if (existing.test(readFileSync(ENV_FILE, 'utf8'))) {
+    console.error(
+      `${account.prefix}_EMAIL / ${account.prefix}_PASSWORD are already in .env.local. Nothing changed.`,
+    );
     process.exitCode = 1;
     return;
   }
 
   // 1. The account, with a temporary password, as an admin creates it (mustChangePassword).
-  const created = await createUserAccount({
-    name: 'Kite E2E (automated tests)',
-    email,
-    role: 'user',
-  });
+  const created = await createUserAccount({ name: account.name, email, role });
 
   // 2. The first password change, as the /change-password page does it: sign in with the
   //    temporary password, change it with that session, then clear mustChangePassword.
@@ -100,10 +124,12 @@ async function main(): Promise<void> {
   // 3. Store the credentials for the suites (never printed).
   appendFileSync(
     ENV_FILE,
-    `\n# Production end-to-end test account (tests/e2e-prod). Disable it at /admin/users.\nKITE_E2E_EMAIL=${email}\nKITE_E2E_PASSWORD=${password}\n`,
+    `\n# Production end-to-end test account (tests/e2e-prod), role ${role}. Disable it at /admin/users.\n${account.prefix}_EMAIL=${email}\n${account.prefix}_PASSWORD=${password}\n`,
   );
-  console.log(`Test account ${email} created (id ${created.id}), role user, password changed.`);
-  console.log('Credentials appended to apps/web/.env.local (KITE_E2E_EMAIL, KITE_E2E_PASSWORD).');
+  console.log(`Test account ${email} created (id ${created.id}), role ${role}, password changed.`);
+  console.log(
+    `Credentials appended to apps/web/.env.local (${account.prefix}_EMAIL, ${account.prefix}_PASSWORD).`,
+  );
 }
 
 main().catch((error: unknown) => {

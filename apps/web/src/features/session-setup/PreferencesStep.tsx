@@ -103,7 +103,7 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
       />
       <Toggle
         label="Save transcript"
-        hint="Keeps the transcript on this computer after the call. Off: it is discarded when the call ends."
+        hint="Keeps the transcript on this computer after the call. Off: it is discarded when the call ends. Kite's answers, with your ratings and notes, are always kept on this computer (until you delete the session), so you can review them and Kite can learn from them."
         checked={draft.saveTranscript}
         onChange={(saveTranscript) => onChange({ saveTranscript })}
       />

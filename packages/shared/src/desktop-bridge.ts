@@ -4,9 +4,10 @@
  *          `window.kiteDesktop`, which exists only when Kite runs inside the desktop app.
  * Used by: apps/desktop/src/preload.ts (Stage 5, implements it),
  *          apps/web/src/platform/desktop.ts and apps/web/src/platform/index.ts (read it)
- * Depends on: nothing (types only)
+ * Depends on: ./hotkeys.ts (types only)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 and §7.3 (preload.ts)
  */
+import type { HotkeyAction, HotkeyStatus } from './hotkeys';
 
 /** Operating system the desktop app is running on. */
 export type DesktopOs = 'mac' | 'windows' | 'linux';
@@ -25,6 +26,24 @@ export interface KiteDesktopApi {
   version: string;
   /** Operating system the shell runs on. */
   os: DesktopOs;
+  /**
+   * Day 4: turns the global shortcuts (architecture §7.3) on or off. The page turns them on
+   * only during a live call, because global shortcuts take these keys from every other app
+   * (Ctrl+Backspace, Ctrl+← and Ctrl+→ edit text in most apps).
+   * Optional: a desktop app installed before Day 4 does not have it.
+   *
+   * @param on True to register them, false to release them.
+   * @returns Whether each shortcut could be registered (another app may already use one).
+   */
+  setHotkeysEnabled?: (on: boolean) => Promise<HotkeyStatus[]>;
+  /**
+   * Day 4: listens for the global shortcuts, forwarded from the shell while they are on.
+   * Optional: a desktop app installed before Day 4 does not have it.
+   *
+   * @param handler Called with the action each time a shortcut is pressed (from any app).
+   * @returns A function that removes the listener.
+   */
+  onHotkey?: (handler: (action: HotkeyAction) => void) => () => void;
 }
 
 declare global {

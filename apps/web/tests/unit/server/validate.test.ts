@@ -1,10 +1,20 @@
 /**
  * Tests for apps/web/src/server/validate.ts, parseAnswerRequest():
- * accepts a hello request, a warm request and a full answer request; rejects unknown modes and
- * fields, a warm request without a session, and more than 100 key terms; enforces the
- * 150k-character document total; and reports field paths without echoing submitted values.
+ * accepts a hello request, a warm request (with and without the conversation so far), a full
+ * answer request and a chat request; rejects unknown modes and fields, warm/answer/chat without
+ * a session, chat without a question, the old Day 1–3 transcript field, more than 100 key terms,
+ * and each conversation and tail limit (tokens, chunks, empty chunk, line and answer length,
+ * times); enforces the 150k-character document total; and reports field paths without echoing
+ * submitted values. All text is invented.
  */
 import { describe, expect, it } from 'vitest';
+import {
+  MAX_ANSWER_CHARS,
+  MAX_CONVERSATION_CHUNKS,
+  MAX_CONVERSATION_TOKENS,
+  MAX_LINE_CHARS,
+  MAX_TAIL_LINES,
+} from '@kite/shared';
 import { MAX_DOCUMENT_CHARS, MAX_KEY_TERMS, parseAnswerRequest } from '@/server/validate';
 
 /** A complete, valid session block. */
@@ -19,6 +29,37 @@ const SESSION = {
   documents: [{ name: 'pricing.pdf', text: 'Price list' }],
 };
 
+/** A valid conversation: two chunks, with a line and an earlier answer. */
+const CONVERSATION = [
+  [{ kind: 'line', speaker: 'them', text: 'What does it cost?', at: 12 }],
+  [
+    { kind: 'answer', mode: 'answer', question: 'What does it cost?', text: 'Ten.', at: 15 },
+    { kind: 'line', speaker: 'you', text: 'It is ten dollars.', at: 20 },
+  ],
+];
+
+/**
+ * An answer request with some fields replaced.
+ *
+ * @param fields Fields to set or replace.
+ * @returns The request body.
+ */
+function answerWith(fields: Record<string, unknown>) {
+  return { mode: 'answer', session: SESSION, conversation: CONVERSATION, ...fields };
+}
+
+/**
+ * The validation message of a body that must fail.
+ *
+ * @param body The request body.
+ * @returns The message.
+ */
+function failure(body: unknown): string {
+  const result = parseAnswerRequest(body);
+  expect(result.ok).toBe(false);
+  return result.ok ? '' : result.message;
+}
+
 describe('parseAnswerRequest', () => {
   it('accepts the Day 1 hello request', () => {
     expect(parseAnswerRequest({ mode: 'hello' })).toEqual({ ok: true, data: { mode: 'hello' } });
@@ -29,11 +70,79 @@ describe('parseAnswerRequest', () => {
       mode: 'answer',
       model: 'fast',
       session: SESSION,
-      transcript: [{ speaker: 'them', text: 'What is the timeline?', t: 1729750000 }],
+      conversation: CONVERSATION,
+      tail: [{ speaker: 'them', text: 'And the timeline?', at: 30 }],
       question: 'What is the timeline?',
       image: null,
     });
     expect(result.ok).toBe(true);
+  });
+
+  it('accepts an answer request with nothing said yet, and a chat request', () => {
+    expect(parseAnswerRequest({ mode: 'answer', session: SESSION }).ok).toBe(true);
+    expect(parseAnswerRequest(answerWith({ mode: 'chat', question: 'Price?' })).ok).toBe(true);
+  });
+
+  it('accepts a warm request carrying the conversation so far (idle re-warm)', () => {
+    expect(
+      parseAnswerRequest({ mode: 'warm', session: SESSION, conversation: CONVERSATION }).ok,
+    ).toBe(true);
+  });
+
+  it('requires a session for answer and chat, and a question for chat', () => {
+    expect(failure({ mode: 'answer' })).toBe('session: required for mode answer');
+    expect(failure({ mode: 'chat', question: 'Price?' })).toBe('session: required for mode chat');
+    expect(failure(answerWith({ mode: 'chat' }))).toBe('question: required for mode chat');
+    expect(failure(answerWith({ mode: 'chat', question: '   ' }))).toBe(
+      'question: required for mode chat',
+    );
+  });
+
+  it('rejects the Day 1–3 transcript field', () => {
+    expect(failure(answerWith({ transcript: [] }))).toContain('transcript');
+  });
+
+  it('rejects a conversation above the estimated-token limit, naming the field', () => {
+    // One line of 2,000 characters is 500 estimated tokens.
+    const line = { kind: 'line', speaker: 'them', text: 'x'.repeat(MAX_LINE_CHARS), at: 1 };
+    const atLimit = Array.from({ length: MAX_CONVERSATION_TOKENS / 500 }, () => [line]);
+    expect(parseAnswerRequest(answerWith({ conversation: atLimit })).ok).toBe(true);
+    const over = [...atLimit, [{ ...line, text: 'xxxx' }]];
+    expect(failure(answerWith({ conversation: over }))).toBe(
+      `conversation: at most ${MAX_CONVERSATION_TOKENS} estimated tokens`,
+    );
+  });
+
+  it('rejects too many chunks, and an empty chunk', () => {
+    const many = Array.from({ length: MAX_CONVERSATION_CHUNKS + 1 }, () => CONVERSATION[0]);
+    expect(failure(answerWith({ conversation: many }))).toContain('conversation');
+    expect(failure(answerWith({ conversation: [[]] }))).toContain('conversation.0');
+  });
+
+  it('rejects items that break a limit, naming the item', () => {
+    const line = CONVERSATION[0]![0]!;
+    const answer = CONVERSATION[1]![0]!;
+    const cases: [unknown, string][] = [
+      [{ ...line, text: 'x'.repeat(MAX_LINE_CHARS + 1) }, 'conversation.0.0.text'],
+      [{ ...answer, text: 'x'.repeat(MAX_ANSWER_CHARS + 1) }, 'conversation.0.0.text'],
+      [{ ...line, at: 1.5 }, 'conversation.0.0.at'],
+      [{ ...line, at: -1 }, 'conversation.0.0.at'],
+      [{ ...line, speaker: 'both' }, 'conversation.0.0.speaker'],
+      [{ ...line, kind: 'note' }, 'conversation.0.0'],
+      [{ ...line, t: 5 }, 'conversation.0.0'],
+    ];
+    for (const [item, path] of cases) {
+      expect(failure(answerWith({ conversation: [[item]] })), path).toContain(path);
+    }
+  });
+
+  it('rejects a tail that breaks a limit', () => {
+    const line = { speaker: 'them', text: 'More?', at: 40 };
+    const many = Array.from({ length: MAX_TAIL_LINES + 1 }, () => line);
+    expect(parseAnswerRequest(answerWith({ tail: many.slice(1) })).ok).toBe(true);
+    expect(failure(answerWith({ tail: many }))).toContain('tail');
+    expect(failure(answerWith({ tail: [{ ...line, kind: 'line' }] }))).toContain('tail.0');
+    expect(failure(answerWith({ question: 'q'.repeat(MAX_LINE_CHARS + 1) }))).toContain('question');
   });
 
   it('accepts a warm request with a session', () => {
@@ -89,14 +198,19 @@ describe('parseAnswerRequest', () => {
   });
 
   it('rejects an image that is not an image data URL', () => {
-    expect(parseAnswerRequest({ mode: 'screenshot', image: 'https://example.com/a.png' }).ok).toBe(
-      false,
-    );
+    expect(
+      failure({ mode: 'screenshot', session: SESSION, image: 'https://example.com/a.png' }),
+    ).toContain('image');
   });
 
   it('does not echo submitted text in the error message', () => {
     const result = parseAnswerRequest({ mode: 'hello', question: 'q'.repeat(3000) });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.message).not.toContain('qqqq');
+    const secret = 'SECRET-LINE-'.repeat(200);
+    const message = failure(
+      answerWith({ conversation: [[{ kind: 'line', speaker: 'them', text: secret, at: 1 }]] }),
+    );
+    expect(message).not.toContain('SECRET');
   });
 });

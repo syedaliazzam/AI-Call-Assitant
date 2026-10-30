@@ -5,7 +5,7 @@
  * Used by: apps/web/src/server/validate.ts, apps/web/src/server/prompt.ts,
  *          apps/web/app/api/answer/route.ts, apps/web/src/core/answer/answerClient.ts,
  *          apps/web/src/core/answer/warm.ts
- * Depends on: nothing (types only)
+ * Depends on: nothing (types, limits and one pure helper; no Node or browser APIs)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (POST /api/answer)
  */
 
@@ -16,7 +16,8 @@
  * - `answer`: answers the latest question from the other side (Day 4).
  * - `chat`: answers a question the user typed (Day 4).
  * - `screenshot`: answers from a screenshot of the screen (Day 5).
- * `hello` and `warm` work (Day 3); the others return "not implemented yet: Day 4/5".
+ * `hello`, `warm`, `answer` and `chat` work (Day 4); `screenshot` returns "not implemented yet:
+ * Day 5".
  */
 export type AnswerMode = 'hello' | 'warm' | 'answer' | 'chat' | 'screenshot';
 
@@ -76,20 +77,102 @@ export interface SessionContext {
   documents: SessionDocument[];
 }
 
-/** One finished line of the live transcript. */
-export interface TranscriptLine {
+/**
+ * One transcript line in a request. Lines carry no ids or clock times, only what the prompt
+ * shows, so the same call always gives the same bytes (prompt caching, architecture §6.3).
+ */
+export interface CallLine {
   /** Who said it. */
   speaker: Speaker;
   /** What was said. Never logged. */
   text: string;
-  /** When the line ended, as a Unix timestamp in seconds. */
-  t: number;
+  /** When the line started, in whole seconds since the call connected (shown as mm:ss). */
+  at: number;
+}
+
+/** A stable transcript line in the conversation (final, about 5 s old, not an echo). */
+export interface ConversationLine extends CallLine {
+  /** Item kind. */
+  kind: 'line';
+}
+
+/** An answer Kite gave earlier in this call, placed in the conversation at its time. */
+export interface ConversationAnswer {
+  /** Item kind. */
+  kind: 'answer';
+  /** 'answer' (a question from the transcript) or 'chat' (a question the user typed). */
+  mode: 'answer' | 'chat';
+  /** The question it answered. Never logged. */
+  question: string;
+  /** The answer as shown (headline, then bullets). Never logged. */
+  text: string;
+  /** When the user asked for it, in whole seconds since the call connected. */
+  at: number;
+}
+
+/** One item of the conversation timeline. */
+export type ConversationItem = ConversationLine | ConversationAnswer;
+
+/**
+ * A group of conversation items, oldest first. The client never changes a chunk once it has
+ * sent it, and adds at most one new chunk per request, at the end. The server writes each chunk
+ * as its own prompt block with the cache breakpoint on the last one, so every request reads
+ * the previous request's cache entry (Claude's cache reads land only where an earlier request
+ * put a breakpoint, and look back at most 20 blocks; ADR-0025).
+ */
+export type ConversationChunk = ConversationItem[];
+
+/** Rough characters per token, for size estimates (no tokenizer in the browser). */
+export const CHARS_PER_TOKEN = 4;
+
+/**
+ * Most estimated tokens of conversation the prompt keeps (about 90 minutes of speech). Beyond
+ * it, the server drops the oldest chunks (server/prompt.ts, capConversation()).
+ */
+export const CONVERSATION_CAP_TOKENS = 20_000;
+
+/**
+ * The prompt drops old chunks in steps of this many estimated tokens, so the start of the
+ * conversation (and with it the cache) stays the same until the next step.
+ */
+export const CONVERSATION_CAP_STEP_TOKENS = 5_000;
+
+/**
+ * Most estimated tokens of conversation a request may carry (validation; twice the prompt's
+ * cap). The client drops its oldest chunks to stay under it.
+ */
+export const MAX_CONVERSATION_TOKENS = 40_000;
+
+/** Most conversation chunks a request may carry. */
+export const MAX_CONVERSATION_CHUNKS = 300;
+
+/** Most not-yet-stable lines a request may carry in its tail. */
+export const MAX_TAIL_LINES = 100;
+
+/** Longest transcript line or question, in characters. */
+export const MAX_LINE_CHARS = 2_000;
+
+/** Longest earlier answer in the conversation, in characters (400 tokens is about 1,600). */
+export const MAX_ANSWER_CHARS = 4_000;
+
+/**
+ * Estimated token count of one conversation item (the text it adds to the prompt).
+ *
+ * @param item A conversation item.
+ * @returns ceil(characters / CHARS_PER_TOKEN).
+ * Called from: apps/web/src/server/validate.ts, apps/web/src/server/prompt.ts (capConversation),
+ *              apps/web/src/core/answer/context.ts (Day 4, Stage 5)
+ */
+export function estimateItemTokens(item: ConversationItem): number {
+  const chars = item.kind === 'line' ? item.text.length : item.question.length + item.text.length;
+  return Math.ceil(chars / CHARS_PER_TOKEN);
 }
 
 /**
  * Body of POST /api/answer.
- * `{ mode: 'hello' }` needs nothing else; `warm` needs `session`; the other fields are used by
- * the later modes. All are checked by the server's zod schema (apps/web/src/server/validate.ts).
+ * `{ mode: 'hello' }` needs nothing else; `warm` needs `session` (and may carry the
+ * conversation so far, for the idle re-warm); `answer` and `chat` need `session`, and `chat`
+ * needs `question`. All are checked by the server's zod schema (apps/web/src/server/validate.ts).
  */
 export interface AnswerRequest {
   /** What kind of answer is wanted. */
@@ -98,8 +181,13 @@ export interface AnswerRequest {
   model?: ModelTier;
   /** Session details (modes `warm`, `answer`, `chat`, `screenshot`). */
   session?: SessionContext;
-  /** Recent transcript window (modes `answer`, `chat`, `screenshot`). */
-  transcript?: TranscriptLine[];
+  /**
+   * The call so far, as append-only chunks of stable lines and earlier answers (cached). Day 4
+   * replaces the Day 1–3 `transcript` window (architecture 3.4.0).
+   */
+  conversation?: ConversationChunk[];
+  /** Lines that may still change (newest, not yet stable), oldest first. Not cached. */
+  tail?: CallLine[];
   /** The question to answer: selected from the transcript or typed by the user. */
   question?: string;
   /** Screenshot as a base64 data URL (mode `screenshot` only), otherwise null or omitted. */

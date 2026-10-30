@@ -1,22 +1,27 @@
 /**
  * File: apps/desktop/src/main.ts
  * Purpose: Electron main process: starts one instance of the app, opens the Kite window on
- *          KITE_URL and applies every security rule from src/security.ts.
+ *          KITE_URL, applies every security rule from src/security.ts, and wires the global
+ *          shortcuts (src/hotkeys.ts, Day 4).
  * Used by: Electron (package.json "main": dist/main.js, built by esbuild)
- * Depends on: electron, src/config.ts, src/security.ts, src/media.ts
+ * Depends on: electron, src/config.ts, src/security.ts, src/media.ts, src/hotkeys.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * Kite never hides from the taskbar, Dock or process lists, and does not try to evade
  * monitoring or proctoring software (CLAUDE.md).
  */
 import path from 'node:path';
-import { app, BrowserWindow, dialog, session } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, session } from 'electron';
 import { APP_NAME, loadConfig, type DesktopConfig } from './config';
+import { installHotkeys, type HotkeyController } from './hotkeys';
 import { allowSystemAudioLoopback } from './media';
 import { allowOnlyOurPermissions, lockNavigation, secureWebPreferences } from './security';
 
 /** The single Kite window, or null before it exists / after it closes. */
 let mainWindow: BrowserWindow | null = null;
+
+/** The global shortcuts (created when the app is ready). */
+let hotkeys: HotkeyController | null = null;
 
 /**
  * Makes sure only one copy of Kite runs. A second launch focuses the existing window instead
@@ -59,7 +64,11 @@ function createMainWindow(config: DesktopConfig): BrowserWindow {
   window.once('ready-to-show', () => window.show());
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null;
+    // No page left to receive them: give the keys back to other apps.
+    hotkeys?.disable();
   });
+  // A reload or navigation ends the page's call; the live page turns them on again if needed.
+  window.webContents.on('did-navigate', () => hotkeys?.disable());
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     // Log the code only; the URL is known from the configuration.
     console.error('desktop: page failed to load', { errorCode, errorDescription });
@@ -97,12 +106,21 @@ function start(): void {
     allowOnlyOurPermissions(session.defaultSession, config.allowedOrigin);
     // "Them": the page's getDisplayMedia gets system audio with no picker (Kite origin only).
     allowSystemAudioLoopback(session.defaultSession, config.allowedOrigin);
+    hotkeys = installHotkeys({
+      globalShortcut,
+      ipcMain,
+      sendToPage: (channel, action) => mainWindow?.webContents.send(channel, action),
+      allowedOrigin: config.allowedOrigin,
+    });
     mainWindow = createMainWindow(config);
     // macOS convention: clicking the Dock icon re-opens a window if none is open.
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createMainWindow(config);
     });
   });
+
+  // Global shortcuts must be released before the app exits (Electron docs).
+  app.on('will-quit', () => hotkeys?.disable());
 
   // Quit when the window is closed, except on macOS, where apps stay in the Dock.
   app.on('window-all-closed', () => {

@@ -5,7 +5,8 @@
  * and "Northwind"; Open in browser shows "Listening for N key terms" (N ≥ 3); the live page's
  * warm-up writes Claude's prompt cache and a second warm-up (reload) reads it; Connect with
  * Chromium's fake microphone (official recording 0.wav) and a fake shared tab playing 1.wav;
- * Go live shows transcript lines; End shows "Saved transcript (N lines)", which survives a
+ * Go live shows transcript lines; Answer (Ctrl+Enter, Day 4) streams a headline, which is rated
+ * 👍, and its cache read is reported; End shows "Saved transcript (N lines)", which survives a
  * reload; the session is deleted. Manual run only (never in CI). Prints numbers only.
  */
 import { readFileSync } from 'node:fs';
@@ -13,6 +14,7 @@ import { chromium, expect, test, type BrowserContext, type Page } from '@playwri
 import {
   PRODUCTION_URL,
   RECORDINGS,
+  answerAndRate,
   createSession,
   inventedDocument,
   isWarmUp,
@@ -35,6 +37,9 @@ let context: BrowserContext;
 let page: Page;
 /** The first warm-up's cache write, compared with the second warm-up's read. */
 let firstWrite = 0;
+/** The first warm-up's cache read: the shared rules block (Day 4: over the 512-token minimum, so
+ * it is cached once for every session), or 0 when no other session used it in the last 5 min. */
+let firstRead = 0;
 /** Final transcript lines on screen just before End. */
 let liveFinals = 0;
 
@@ -88,7 +93,9 @@ test('3. Open in browser: key terms and the first warm-up (cache write)', async 
   const usage = await warmUsage(await warm);
   expect(usage).not.toBeNull();
   firstWrite = usage!.cache_creation_input_tokens;
-  const pass = firstWrite > 0 && usage!.cache_read_input_tokens === 0;
+  firstRead = usage!.cache_read_input_tokens;
+  // A new session writes its own blocks; it may read the rules block other sessions cached.
+  const pass = firstWrite > 0;
   report('warm-up 1 (cache write)', pass, {
     write: usage!.cache_creation_input_tokens,
     read: usage!.cache_read_input_tokens,
@@ -103,7 +110,8 @@ test('4. second warm-up on reload (cache read)', async () => {
   const usage = await warmUsage(await warm);
   expect(usage).not.toBeNull();
   const pass =
-    usage!.cache_creation_input_tokens === 0 && usage!.cache_read_input_tokens === firstWrite;
+    usage!.cache_creation_input_tokens === 0 &&
+    usage!.cache_read_input_tokens === firstWrite + firstRead;
   report('warm-up 2 (cache read)', pass, {
     write: usage!.cache_creation_input_tokens,
     read: usage!.cache_read_input_tokens,
@@ -152,8 +160,15 @@ test('5. Connect (fake mic + fake tab), Go live, lines appear', async () => {
   liveFinals = counts.final;
 });
 
-test('6. End: saved transcript survives a reload', async () => {
-  await page.getByRole('button', { name: 'End' }).click();
+test('6. Answer (Ctrl+Enter): the headline streams in, and the answer is rated', async () => {
+  const check = await answerAndRate(page, 'hotkey');
+  const pass = check.headlineWords > 0 && check.cacheRead > 0;
+  report('answer streams and is rated', pass, { ...check });
+  expect(pass).toBe(true);
+});
+
+test('7. End: saved transcript survives a reload', async () => {
+  await page.getByRole('button', { name: 'End', exact: true }).click();
   const saved = page.getByText(/Saved transcript \((\d+) lines?\)/);
   await expect(saved).toBeVisible({ timeout: 30_000 });
   const before = Number(/\((\d+)/.exec((await saved.textContent()) ?? '')?.[1]);
@@ -165,13 +180,15 @@ test('6. End: saved transcript survives a reload', async () => {
   const pass = before > 0 && after === before;
   report('saved transcript after reload', pass, {
     finalLinesInCall: liveFinals,
+    // The Day 4 End fix: the line still being heard at End is saved too, so never fewer.
+    savedAtLeastLive: before >= liveFinals ? 1 : 0,
     savedBefore: before,
     savedAfter: after,
   });
   expect(pass).toBe(true);
 });
 
-test('7. delete the session', async () => {
+test('8. delete the session', async () => {
   await page.goto(PRODUCTION_URL);
   const card = sessionCard(page, COMPANY);
   await card.getByRole('button', { name: 'Delete' }).click();

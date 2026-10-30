@@ -1,0 +1,54 @@
+{
+  "id": "13-off-topic-question",
+  "covers": "An off-topic question the session cannot answer.",
+  "session": {
+    "type": "sales",
+    "company": "Northwind Logistics (invented)",
+    "role": "Account executive",
+    "description": "Renewal call with the operations lead.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "price-list.txt",
+        "text": "Harbor Lane Freight price list (invented).\nProfessional plan: 52 dollars per seat per month, billed yearly.\nOnboarding: a one-time fee of 1,500 dollars."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "OKAY THAT COVERS THE PRICING",
+        "at": 300
+      },
+      {
+        "kind": "line",
+        "speaker": "you",
+        "text": "GREAT",
+        "at": 304
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "BY THE WAY DO YOU KNOW A GOOD PLACE FOR LUNCH NEAR THE STATION",
+      "at": 310
+    }
+  ],
+  "mode": "answer",
+  "question": "BY THE WAY DO YOU KNOW A GOOD PLACE FOR LUNCH NEAR THE STATION",
+  "mustInclude": [
+    "says this is not in the session or notes, briefly",
+    "suggests a short, friendly way to reply or steer back to the call",
+    "the headline (first line) is 15 words or fewer; any explanation is in the bullets"
+  ],
+  "mustNotInclude": ["an invented restaurant or place"]
+}

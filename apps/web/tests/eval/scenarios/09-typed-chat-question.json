@@ -1,0 +1,44 @@
+{
+  "id": "09-typed-chat-question",
+  "covers": "A question the user typed (chat).",
+  "session": {
+    "type": "sales",
+    "company": "Northwind Logistics (invented)",
+    "role": "Account executive",
+    "description": "Renewal call.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Bluefin Route", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "price-list.txt",
+        "text": "Harbor Lane Freight price list (invented).\nStarter plan: 18 dollars per seat per month, up to 10 seats, no single sign-on.\nProfessional plan: 52 dollars per seat per month, billed yearly, includes single sign-on and live re-routing.\nEnterprise plan: custom price, from 200 seats, includes a dedicated support manager.\nOnboarding: a one-time fee of 1,500 dollars for any plan, covering setup and two training days.\nDiscounts: at most 10 percent, only for a yearly plan paid upfront, and only with approval from the sales director.\nContract: yearly, renews automatically; cancellation needs 30 days written notice before the renewal date."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "WE MIGHT NEED TO REDUCE SEATS NEXT YEAR",
+        "at": 40
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "DEPENDING ON THE BUDGET",
+        "at": 45
+      }
+    ]
+  ],
+  "tail": [],
+  "mode": "chat",
+  "question": "What is our cancellation notice period?",
+  "mustInclude": ["30 days written notice before the renewal date"],
+  "mustNotInclude": ["a different notice period"]
+}

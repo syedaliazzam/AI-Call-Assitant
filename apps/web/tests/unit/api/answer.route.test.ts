@@ -4,7 +4,11 @@
  * are not built yet, and a streamed reply (delta events, then done with usage and timings);
  * a Claude refusal ends with an error event. Mode 'warm' (Day 3): a 400 naming the field without
  * a session; otherwise one max_tokens 0 request with the session's cached blocks and a done event
- * with the cache usage (no delta); session text never reaches the logs.
+ * with the cache usage (no delta); session text never reaches the logs. Modes 'answer' and
+ * 'chat' (Day 4): streamed with max_tokens 400, the tier's thinking setting and three cache
+ * breakpoints (rules, session, last conversation chunk); delta events in order, then done with
+ * cache usage; a failure before any text is an error event; 401 when signed out; logs carry
+ * sizes, timings and token counts, never transcript, question, answer or session text.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import type { AnswerTimings } from '@kite/shared';
@@ -90,11 +94,12 @@ describe('POST /api/answer', () => {
 
   it('returns 400 "not implemented yet: Day N" for later modes', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
-    const response = await POST(post('{"mode":"answer"}'));
+    // SESSION is defined below (with the warm-up tests); every mode but hello needs it.
+    const response = await POST(post(JSON.stringify({ mode: 'screenshot', session: SESSION })));
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       code: 'not_implemented',
-      message: 'not implemented yet: Day 4',
+      message: 'not implemented yet: Day 5',
     });
     expect(streamMock).not.toHaveBeenCalled();
   });
@@ -267,6 +272,116 @@ describe('POST /api/answer, mode warm', () => {
     expect(logged).not.toContain('SECRET-INSTRUCTION-TEXT');
     expect(logged).not.toContain('SECRET-DOCUMENT-TEXT');
     expect(logged).not.toContain('SECRET-DESCRIPTION-TEXT');
+    expect(logged).not.toContain('Northwind');
+  });
+});
+
+/** An invented answer request: two conversation chunks, a tail line and the question. */
+const ANSWER_REQUEST = {
+  mode: 'answer',
+  session: SESSION,
+  conversation: [
+    [{ kind: 'line', speaker: 'them', text: 'SECRET-LINE-ONE', at: 3 }],
+    [
+      { kind: 'answer', mode: 'answer', question: 'SECRET-Q', text: 'SECRET-EARLIER', at: 5 },
+      { kind: 'line', speaker: 'you', text: 'SECRET-LINE-TWO', at: 9 },
+    ],
+  ],
+  tail: [{ speaker: 'them', text: 'SECRET-TAIL', at: 14 }],
+  question: 'SECRET-QUESTION',
+};
+
+describe('POST /api/answer, modes answer and chat', () => {
+  it('returns 401 when signed out, before reading the body', async () => {
+    getSessionMock.mockResolvedValue(null);
+    expect((await POST(post(JSON.stringify(ANSWER_REQUEST)))).status).toBe(401);
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+
+  it('streams with max_tokens 400, the tier thinking and three breakpoints', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Headline'] }));
+    await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    const [params] = streamMock.mock.calls[0]!;
+    expect(params.model).toBe('claude-haiku-5-5');
+    expect(params.max_tokens).toBe(400);
+    expect(params.thinking).toEqual({ type: 'disabled' });
+    const blocks = [...params.system, ...params.messages[0].content] as {
+      cache_control?: unknown;
+    }[];
+    // rules, session, chunk 1, chunk 2 (breakpoint), tail
+    expect(blocks.map((block) => block.cache_control !== undefined)).toEqual([
+      true,
+      true,
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  it('streams delta events in order, then done with the cache usage', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(
+      fakeMessageStream({
+        pieces: ['Ten dollars', ' per seat.', '\n- Billed monthly'],
+        usage: {
+          input_tokens: 30,
+          output_tokens: 12,
+          cache_creation_input_tokens: 40,
+          cache_read_input_tokens: 2_400,
+        },
+      }),
+    );
+    const text = await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    const first = text.indexOf('{"text":"Ten dollars"}');
+    const second = text.indexOf('{"text":" per seat."}');
+    // JSON writes the newline as the two characters \n.
+    const third = text.indexOf('{"text":"\\n- Billed monthly"}');
+    expect(first).toBeGreaterThan(-1);
+    expect(second).toBeGreaterThan(first);
+    expect(third).toBeGreaterThan(second);
+    expect(text.indexOf('event: done')).toBeGreaterThan(third);
+    expect(text).toContain('"cache_creation_input_tokens":40,"cache_read_input_tokens":2400');
+  });
+
+  it('uses the smart model and its thinking setting for a chat question', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream());
+    const chat = { mode: 'chat', model: 'smart', session: SESSION, question: 'Seat price?' };
+    await (await POST(post(JSON.stringify(chat)))).text();
+    const [params] = streamMock.mock.calls[0]!;
+    expect(params.model).toBe('claude-sonnet-5-5');
+    expect(params.thinking).toEqual({ type: 'between_tools' });
+    expect(params.messages[0].content.at(-1).text).toContain('Question typed by the user');
+  });
+
+  it('sends an error event when Claude fails before any text', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    const error = new Anthropic.RateLimitError(429, undefined, 'detail', new Headers());
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: [], error }));
+    const text = await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    expect(text).not.toContain('event: delta');
+    expect(text).toContain('event: error\ndata: {"code":"upstream_error"');
+  });
+
+  it('logs sizes, timings and token counts, never call or session text', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['SECRET-ANSWER'] }));
+    await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    streamMock.mockReturnValue(
+      fakeMessageStream({
+        pieces: [],
+        error: new Anthropic.APIError(500, undefined, 'x', new Headers()),
+      }),
+    );
+    await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    const logged = JSON.stringify([
+      vi.mocked(console.info).mock.calls,
+      vi.mocked(console.error).mock.calls,
+    ]);
+    expect(logged).toContain('"mode":"answer"');
+    expect(logged).toContain('"chunks":2,"tailLines":1');
+    expect(logged).not.toContain('SECRET');
     expect(logged).not.toContain('Northwind');
   });
 });

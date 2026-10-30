@@ -92,14 +92,30 @@ export interface Platform {
   openCompactView(sessionId: string): Promise<void>;
 
   /**
-   * Listens for hotkey actions (answer, screenshot, clear, prev, next).
-   * - Desktop: Electron global shortcuts, which work from any app, forwarded to the page.
+   * Listens for hotkey actions (answer, screenshot, clear, prev, next). Call it for the length
+   * of a live call only: in the desktop app it takes the shortcuts from every other app.
+   * - Desktop: Electron global shortcuts, which work from any app, forwarded to the page (turned
+   *   on by this call, off by the returned function), plus the in-page shortcuts.
    * - Browser: keyboard shortcuts while the Kite tab or the picture-in-picture window has focus.
    *
-   * @param handler Called with the action each time a hotkey is pressed.
-   * @returns A function that removes the listener.
+   * @param handler   Called with the action each time a hotkey is pressed.
+   * @param onTaken   Desktop only: called with the shortcuts another app already uses (for
+   *                  example ['Ctrl+Enter']); those work only while Kite has focus.
+   * @returns A function that removes the listener (and, on desktop, releases the shortcuts).
    */
-  onHotkey(handler: (action: HotkeyAction) => void): () => void;
+  onHotkey(
+    handler: (action: HotkeyAction) => void,
+    onTaken?: (shortcuts: string[]) => void,
+  ): () => void;
+
+  /**
+   * The hotkeys' modifier, for labels ("⌘Enter" or "Ctrl+Enter").
+   * - Desktop: from the shell's OS.
+   * - Browser: from the browser's platform string.
+   *
+   * @returns '⌘' on macOS, 'Ctrl+' elsewhere.
+   */
+  hotkeyModifier(): '⌘' | 'Ctrl+';
 
   /**
    * Turns screen-share protection on or off for the live window.

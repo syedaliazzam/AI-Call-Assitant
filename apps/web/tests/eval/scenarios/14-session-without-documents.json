@@ -1,0 +1,49 @@
+{
+  "id": "14-session-without-documents",
+  "covers": "A factual question in a session that has no documents.",
+  "session": {
+    "type": "sales",
+    "company": "Fernbrook Dental (invented)",
+    "role": "Account executive",
+    "description": "First call.",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "THANKS FOR THE INTRO",
+        "at": 20
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "WE HAVE ABOUT FORTY USERS",
+        "at": 26
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "WHAT WOULD YOUR PRICE PER SEAT BE FOR FORTY USERS",
+      "at": 33
+    }
+  ],
+  "mode": "answer",
+  "question": "WHAT WOULD YOUR PRICE PER SEAT BE FOR FORTY USERS",
+  "mustInclude": [
+    "says the price is not in the session details",
+    "names what to check (the price list) or offers to follow up",
+    "the headline (first line) is 15 words or fewer; any explanation is in the bullets"
+  ],
+  "mustNotInclude": ["any price or discount"]
+}

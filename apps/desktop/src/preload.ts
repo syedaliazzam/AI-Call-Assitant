@@ -1,16 +1,24 @@
 /**
  * File: apps/desktop/src/preload.ts
  * Purpose: Runs inside the Kite window before the page and exposes exactly one object to it:
- *          window.kiteDesktop = { version, os } (frozen). Nothing else is exposed.
+ *          window.kiteDesktop = { version, os, setHotkeysEnabled, onHotkey } (frozen). Nothing
+ *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
- * Depends on: electron (contextBridge); @kite/shared (KiteDesktopApi type only)
+ * Depends on: electron (contextBridge, ipcRenderer); @kite/shared (KiteDesktopApi,
+ *             HOTKEY_ACTIONS); src/channels.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3, §7.3 (preload.ts)
  *
  * This preload is sandboxed: it can use contextBridge and a limited `process`
  * (argv, platform), but not Node modules or app.getVersion().
  */
-import type { DesktopOs, KiteDesktopApi } from '@kite/shared';
-import { contextBridge } from 'electron';
+import {
+  HOTKEY_ACTIONS,
+  type DesktopOs,
+  type HotkeyAction,
+  type KiteDesktopApi,
+} from '@kite/shared';
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { HOTKEY_CHANNEL, SET_HOTKEYS_CHANNEL } from './channels';
 
 /** Prefix of the argument main.ts passes with the app version. */
 const VERSION_ARG = '--kite-version=';
@@ -39,10 +47,41 @@ export function toDesktopOs(platform: string): DesktopOs {
   return 'linux';
 }
 
+/**
+ * Whether a value is a hotkey action (messages from the main process are checked anyway).
+ *
+ * @param value What arrived on the hotkey channel.
+ * @returns True for one of HOTKEY_ACTIONS.
+ * Called from: onHotkey(); tests
+ */
+export function isHotkeyAction(value: unknown): value is HotkeyAction {
+  return typeof value === 'string' && (HOTKEY_ACTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * Listens for global shortcuts forwarded by the main process (src/hotkeys.ts).
+ *
+ * @param handler The page's handler; it receives only valid actions, never the IPC event.
+ * @returns A function that removes the listener.
+ * Called from: the page, as window.kiteDesktop.onHotkey(); tests
+ */
+export function onHotkey(handler: (action: HotkeyAction) => void): () => void {
+  const listener = (_event: IpcRendererEvent, action: unknown) => {
+    if (isHotkeyAction(action)) handler(action);
+  };
+  ipcRenderer.on(HOTKEY_CHANNEL, listener);
+  return () => {
+    ipcRenderer.removeListener(HOTKEY_CHANNEL, listener);
+  };
+}
+
 /** The bridge object. Frozen, so the page cannot change or extend it. */
 const kiteDesktop: KiteDesktopApi = Object.freeze({
   version: readVersion(process.argv),
   os: toDesktopOs(process.platform),
+  // Only a boolean crosses to the main process.
+  setHotkeysEnabled: (on: boolean) => ipcRenderer.invoke(SET_HOTKEYS_CHANNEL, on === true),
+  onHotkey,
 });
 
 contextBridge.exposeInMainWorld('kiteDesktop', kiteDesktop);

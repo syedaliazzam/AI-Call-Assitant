@@ -98,6 +98,12 @@ export interface SttEngineOptions {
   onError?: (error: EngineError) => void;
 }
 
+/**
+ * Longest time drain() waits for the worker, in ms. A flush is a few milliseconds of decoding;
+ * a full second covers a busy worker without leaving End hanging.
+ */
+export const DRAIN_TIMEOUT_MS = 1_000;
+
 /** What createSttEngine() returns. */
 export interface SttEngine {
   /** Resolves when the model is loaded; rejects with an EngineError-shaped Error on failure. */
@@ -108,6 +114,14 @@ export interface SttEngine {
   detach(channel: ChannelId): void;
   /** Replaces the hotwords (about 2 s; both channels restart their current utterance). */
   setHotwords(text: string): Promise<void>;
+  /**
+   * Resolves once the worker has handled everything sent so far, so the final lines flushed by
+   * an earlier detach() have reached onFinal (Day 4: End waits for the last line).
+   *
+   * @param timeoutMs Longest wait (default DRAIN_TIMEOUT_MS); resolves anyway after it.
+   * @returns A promise that never rejects.
+   */
+  drain(timeoutMs?: number): Promise<void>;
   /** Stops everything and ends the worker. The engine cannot be used afterwards. */
   stop(): void;
 }
@@ -190,6 +204,9 @@ export function createSttEngine(
   let workletReady: Promise<void> | null = null;
   const attached = new Map<ChannelId, AttachedChannel>();
   let hotwordsWaiter: (() => void) | null = null;
+  /** Waiting drain() calls, by ping number. */
+  const pongWaiters = new Map<number, () => void>();
+  let nextPing = 1;
 
   const post = (message: ToWorker, transfer: Transferable[] = []) =>
     worker.postMessage(message, transfer);
@@ -241,6 +258,9 @@ export function createSttEngine(
         break;
       case 'stats':
         options.onStats?.(message.stats);
+        break;
+      case 'pong':
+        pongWaiters.get(message.id)?.();
         break;
       case 'error':
         options.onError?.({ code: message.code, message: message.message });
@@ -335,6 +355,23 @@ export function createSttEngine(
       });
       post({ type: 'set-hotwords', hotwords: formatHotwords(text).buffer });
       await done;
+    },
+
+    drain(timeoutMs = DRAIN_TIMEOUT_MS) {
+      // A stopped engine flushes on its own ('stop'); there is nothing to wait for.
+      if (ending) return Promise.resolve();
+      const id = nextPing++;
+      return new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timer);
+          pongWaiters.delete(id);
+          resolve();
+        };
+        // A busy or broken worker must not keep End waiting.
+        const timer = setTimeout(finish, timeoutMs);
+        pongWaiters.set(id, finish);
+        post({ type: 'ping', id });
+      });
     },
 
     stop() {

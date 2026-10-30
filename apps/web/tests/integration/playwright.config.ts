@@ -1,9 +1,12 @@
 /**
  * File: apps/web/tests/integration/playwright.config.ts
- * Purpose: Settings for the speech-to-text integration test (`pnpm --filter web test:stt`). The
- *          test launches Playwright's Chromium itself (each fixture needs its own fake-audio
- *          launch flags), so no `use.browserName` or web server is configured here.
- * Used by: the "test:stt" script in apps/web/package.json; the stt-integration CI job
+ * Purpose: Settings for the integration tests: speech-to-text (`pnpm --filter web test:stt`,
+ *          stt.spec.ts) and the answer harness (`pnpm --filter web test:answers`,
+ *          answers.spec.ts, Day 4). Each test launches Playwright's Chromium itself (the STT
+ *          fixtures need their own fake-audio launch flags) and serves its own page, so no
+ *          `use.browserName` or web server is configured here.
+ * Used by: the "test:stt" and "test:answers" scripts in apps/web/package.json; the
+ *          stt-integration CI job
  * Depends on: @playwright/test
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing); day-02-audio.md Stage 6
  */
