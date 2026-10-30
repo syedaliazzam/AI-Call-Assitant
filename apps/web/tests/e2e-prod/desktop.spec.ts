@@ -2,7 +2,8 @@
  * Production end-to-end suite, desktop app: the real Electron shell (apps/desktop, built to
  * dist/) opening https://kite-call-assistant.vercel.app with a fresh, empty profile, signed in
  * as the test account. Covers, in order: sign in; the dashboard is empty (the desktop app keeps
- * its own data, separate from Chrome); create a session; Open goes straight to Connect (no
+ * its own data, separate from Chrome); create a session, which survives a reload; Open goes
+ * straight to Connect (no
  * Choose platform dialog); Connect needs no picker (system audio + Chromium's fake microphone
  * playing the official recording 0.wav); Go live shows final lines; End; Settings → Delete all
  * local data → the dashboard is empty again. Manual run only (never in CI). Prints numbers only.
@@ -83,9 +84,13 @@ test('1. sign in, and the dashboard is empty (separate desktop data)', async () 
   });
 });
 
-test('2. create a session; Open goes straight to Connect', async () => {
+test('2. create a session (survives a reload); Open goes straight to Connect', async () => {
   await createSession(page, { company: COMPANY, keyTerms: ['Bluefin Route', 'Northwind'] });
   report('desktop create session', true);
+  // The session is stored in the desktop app's own IndexedDB: still there after a reload.
+  await page.reload();
+  await expect(sessionCard(page, COMPANY)).toBeVisible();
+  report('desktop session survives reload', true);
   await sessionCard(page, COMPANY).getByRole('button', { name: 'Open' }).click();
   await expect(page).toHaveURL(/\/live\//);
   await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
