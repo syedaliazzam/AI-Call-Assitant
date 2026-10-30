@@ -35,9 +35,9 @@ function answer(question: string): AnswerRequest {
   return {
     mode: 'answer',
     session: SESSION,
-    transcript: [
-      { speaker: 'them', text: 'What does the bluff in route cost?', t: 1 },
-      { speaker: 'you', text: 'Good question.', t: 2 },
+    tail: [
+      { speaker: 'them', text: 'What does the bluff in route cost?', at: 1 },
+      { speaker: 'you', text: 'Good question.', at: 2 },
     ],
     question,
   };

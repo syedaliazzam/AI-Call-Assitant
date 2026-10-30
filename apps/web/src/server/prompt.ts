@@ -25,7 +25,7 @@
  */
 import 'server-only';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { AnswerRequest, SessionContext, TranscriptLine } from '@kite/shared';
+import type { AnswerRequest, CallLine, SessionContext } from '@kite/shared';
 import { cachedBlock } from './claude';
 
 /**
@@ -114,7 +114,7 @@ export function sessionBlock(session: SessionContext): string {
  * @returns The user turn's text.
  * Called from: buildPrompt()
  */
-function transcriptTurn(transcript: readonly TranscriptLine[], question: string | undefined) {
+function transcriptTurn(transcript: readonly CallLine[], question: string | undefined) {
   const lines = transcript.map(
     (line) => `${line.speaker === 'you' ? 'You' : 'Them'}: ${escapeTags(line.text)}`,
   );
@@ -149,9 +149,7 @@ export interface BuiltPrompt {
 export function buildPrompt(request: AnswerRequest): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
   const content =
-    request.mode === 'warm'
-      ? WARM_MESSAGE
-      : transcriptTurn(request.transcript ?? [], request.question);
+    request.mode === 'warm' ? WARM_MESSAGE : transcriptTurn(request.tail ?? [], request.question);
   return {
     system: [cachedBlock(SYSTEM_RULES), cachedBlock(sessionBlock(request.session))],
     messages: [{ role: 'user', content }],

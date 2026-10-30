@@ -90,7 +90,8 @@ describe('POST /api/answer', () => {
 
   it('returns 400 "not implemented yet: Day N" for later modes', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
-    const response = await POST(post('{"mode":"answer"}'));
+    // SESSION is defined below (with the warm-up tests); answer and chat need it from Day 4.
+    const response = await POST(post(JSON.stringify({ mode: 'answer', session: SESSION })));
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
       code: 'not_implemented',

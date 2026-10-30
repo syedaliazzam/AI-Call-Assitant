@@ -1,14 +1,25 @@
 /**
  * File: apps/web/src/server/validate.ts
  * Purpose: Checks the body of POST /api/answer against the AnswerRequest type from @kite/shared,
- *          with size limits so one request cannot send unbounded text to Claude.
+ *          with size limits so one request cannot send unbounded text to Claude: documents,
+ *          key terms, and (Day 4) the conversation chunks, tail and question.
  * Used by: app/api/answer/route.ts
- * Depends on: zod, @kite/shared (AnswerRequest)
+ * Depends on: zod, @kite/shared (AnswerRequest, request limits, estimateItemTokens)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (server rules: validate with zod,
- *               documents ≤ ~150k characters, request ≤ 4 MB)
+ *               documents ≤ ~150k characters, request ≤ 4 MB); day-04-answers.md Stage 1
+ *
+ * Error messages name the field and the rule, never the submitted text.
  */
 import 'server-only';
-import type { AnswerRequest } from '@kite/shared';
+import {
+  MAX_ANSWER_CHARS,
+  MAX_CONVERSATION_CHUNKS,
+  MAX_CONVERSATION_TOKENS,
+  MAX_LINE_CHARS,
+  MAX_TAIL_LINES,
+  estimateItemTokens,
+  type AnswerRequest,
+} from '@kite/shared';
 import { z } from 'zod';
 
 /** Largest request body accepted, in bytes (architecture §7.2). */
@@ -52,12 +63,45 @@ const sessionSchema = z
     { path: ['documents'], message: `documents may hold at most ${MAX_DOCUMENT_CHARS} characters` },
   );
 
-/** One transcript line (TranscriptLine). */
-const transcriptLineSchema = z.object({
-  speaker: z.enum(['you', 'them']),
-  text: z.string().max(2_000),
-  t: z.number().finite(),
-});
+/** Seconds since the call connected: a whole number, at most one day. */
+const atSchema = z.number().int().min(0).max(86_400);
+
+/** One transcript line (CallLine): the tail's lines. */
+const callLineSchema = z
+  .object({
+    speaker: z.enum(['you', 'them']),
+    text: z.string().max(MAX_LINE_CHARS),
+    at: atSchema,
+  })
+  .strict();
+
+/** One conversation item (ConversationItem): a stable line or an earlier answer. */
+const conversationItemSchema = z.discriminatedUnion('kind', [
+  callLineSchema.extend({ kind: z.literal('line') }).strict(),
+  z
+    .object({
+      kind: z.literal('answer'),
+      mode: z.enum(['answer', 'chat']),
+      question: z.string().max(MAX_LINE_CHARS),
+      text: z.string().max(MAX_ANSWER_CHARS),
+      at: atSchema,
+    })
+    .strict(),
+]);
+
+/**
+ * The conversation: chunks of items, with the estimated total under MAX_CONVERSATION_TOKENS.
+ * An empty chunk would add an empty prompt block, so each chunk holds at least one item.
+ */
+const conversationSchema = z
+  .array(z.array(conversationItemSchema).min(1).max(2_000))
+  .max(MAX_CONVERSATION_CHUNKS)
+  .refine(
+    (chunks) =>
+      chunks.flat().reduce((total, item) => total + estimateItemTokens(item), 0) <=
+      MAX_CONVERSATION_TOKENS,
+    { message: `at most ${MAX_CONVERSATION_TOKENS} estimated tokens` },
+  );
 
 /**
  * The whole request body. `.strict()` rejects unknown fields, so typos are reported instead of
@@ -68,8 +112,9 @@ export const answerRequestSchema = z
     mode: z.enum(['hello', 'warm', 'answer', 'chat', 'screenshot']),
     model: z.enum(['fast', 'smart']).optional(),
     session: sessionSchema.optional(),
-    transcript: z.array(transcriptLineSchema).max(500).optional(),
-    question: z.string().max(2_000).optional(),
+    conversation: conversationSchema.optional(),
+    tail: z.array(callLineSchema).max(MAX_TAIL_LINES).optional(),
+    question: z.string().max(MAX_LINE_CHARS).optional(),
     // Screenshot as a data URL (Day 5); the 4 MB body limit caps its size.
     image: z
       .string()
@@ -78,10 +123,19 @@ export const answerRequestSchema = z
       .optional(),
   })
   .strict()
-  // A warm-up writes the session's cached prompt, so it needs the session.
-  .refine((request) => request.mode !== 'warm' || request.session !== undefined, {
-    path: ['session'],
-    message: 'required for mode warm',
+  // Every mode but hello is built on the session's cached prompt, so it needs the session.
+  .superRefine((request, context) => {
+    if (request.mode !== 'hello' && request.session === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['session'],
+        message: `required for mode ${request.mode}`,
+      });
+    }
+    // A chat question is typed by the user; there is nothing to fall back on.
+    if (request.mode === 'chat' && !request.question?.trim()) {
+      context.addIssue({ code: 'custom', path: ['question'], message: 'required for mode chat' });
+    }
   }) satisfies z.ZodType<AnswerRequest>;
 
 /** Result of parseAnswerRequest(). */
