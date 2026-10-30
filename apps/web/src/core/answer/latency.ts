@@ -34,6 +34,10 @@ export interface LatencySample extends AnswerTimeline {
   input: number;
   /** Output tokens. */
   output: number;
+  /** Server: request received → first text sent, in ms. */
+  serverToFirstText: number;
+  /** Server: request received → Claude's stream opened, in ms. */
+  serverToStreamOpen: number;
 }
 
 /** p50 and p95 of one timing, in ms. */
@@ -56,6 +60,11 @@ export interface LatencySummary {
   toHeadline: Spread;
   /** Key press → done. */
   toDone: Spread;
+  /**
+   * Server: request received → first text sent (sign-in check, reaching Claude, Claude's first
+   * token). The rest of toFirstWord is the network between this computer and Vercel.
+   */
+  serverToFirstText: Spread;
   /** Answers that read the cache (cacheRead > 0). */
   cacheHits: number;
 }
@@ -167,6 +176,7 @@ export function summarise(samples: readonly LatencySample[]): LatencySummary {
     toHeadline: spread(samples.map((s) => s.toHeadline)),
     toDone: spread(samples.map((s) => s.toDone)),
     cacheHits: samples.filter((s) => s.cacheRead > 0).length,
+    serverToFirstText: spread(samples.map((s) => s.serverToFirstText)),
   };
 }
 
@@ -237,6 +247,8 @@ export async function runLatencyTest(
             cacheWrite: done.usage.cache_creation_input_tokens,
             input: done.usage.input_tokens,
             output: done.usage.output_tokens,
+            serverToFirstText: done.serverMs.toFirstText,
+            serverToStreamOpen: done.serverMs.toStreamOpen,
           });
         },
         onError: (failure) => reject(new Error(`ANSWER_FAILED: ${failure.code}`)),

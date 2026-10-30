@@ -33,6 +33,7 @@ const ROWS = [
   ['Key press → first word', 'toFirstWord'],
   ['Key press → headline complete', 'toHeadline'],
   ['Key press → done', 'toDone'],
+  ['Server: request received → first text', 'serverToFirstText'],
 ] as const;
 
 /**

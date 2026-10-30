@@ -64,6 +64,8 @@ describe('runLatencyTest', () => {
         'input',
         'n',
         'output',
+        'serverToFirstText',
+        'serverToStreamOpen',
         'toDone',
         'toFirstWord',
         'toHeadline',
@@ -95,6 +97,8 @@ describe('summarise', () => {
       cacheWrite: 1,
       input: 1,
       output: 1,
+      serverToFirstText: 500,
+      serverToStreamOpen: 300,
     }));
     const summary = summarise(samples);
     expect(summary.toFirstWord).toEqual({ p50: 1_000, p95: 1_900 });

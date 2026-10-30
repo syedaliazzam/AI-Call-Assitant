@@ -167,6 +167,36 @@ export async function setUserDisabled(
 }
 
 /**
+ * Disables or re-enables an account by email from a developer script, where there is no
+ * signed-in admin. Better Auth's banUser endpoint needs an admin session other than the
+ * target's, so this makes the same changes that endpoint makes, through Better Auth's own
+ * internal adapter: `banned`, `banReason` and `banExpires` on the user, and (when disabling)
+ * deleting every session. The account then looks exactly as if an admin had pressed
+ * "Disable" at /admin/users, and can be re-enabled there too.
+ *
+ * @param email    The account's email.
+ * @param disabled True to disable, false to enable again.
+ * @returns The account's id.
+ * @throws Error('USER_NOT_FOUND') when no account has this email.
+ * Called from: scripts/e2e-admin.ts (the latency test's admin account)
+ */
+export async function setTestAccountDisabled(email: string, disabled: boolean): Promise<string> {
+  const context = await auth.$context;
+  const found = await context.internalAdapter.findUserByEmail(email.toLowerCase());
+  if (!found) throw new Error('USER_NOT_FOUND');
+  const id = found.user.id;
+  await context.internalAdapter.updateUser(id, {
+    banned: disabled,
+    banReason: disabled ? DISABLED_REASON : null,
+    banExpires: null,
+    updatedAt: new Date(),
+  });
+  // Signed out everywhere at once, as banUser does.
+  if (disabled) await context.internalAdapter.deleteUserSessions(id);
+  return id;
+}
+
+/**
  * Changes an account's role (admin only).
  *
  * @param userId  The account to change.

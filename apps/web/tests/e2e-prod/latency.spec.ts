@@ -39,6 +39,8 @@ interface Summary {
   toHeadline: Spread;
   /** Key press → done. */
   toDone: Spread;
+  /** Server: request received → first text sent. */
+  serverToFirstText: Spread;
   /** Answers that read the cache. */
   cacheHits: number;
 }
@@ -66,6 +68,8 @@ async function measure(page: Page, label: string): Promise<Summary> {
     headlineP95: summary.toHeadline.p95,
     doneP50: summary.toDone.p50,
     doneP95: summary.toDone.p95,
+    serverFirstTextP50: summary.serverToFirstText.p50,
+    serverFirstTextP95: summary.serverToFirstText.p95,
     cacheHits: summary.cacheHits,
   });
   return summary;

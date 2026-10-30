@@ -18,6 +18,7 @@
     "verify:warm": "tsx --env-file=.env.local --conditions=react-server scripts/verify-warm.ts",
     "verify:answer-cache": "tsx --env-file=.env.local --conditions=react-server scripts/verify-answer-cache.ts",
     "eval:answers": "tsx --env-file=.env.local --conditions=react-server scripts/eval-answers.ts",
+    "e2e-admin": "tsx --env-file=.env.local --conditions=react-server scripts/e2e-admin.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",
     "stt:runtime": "tsx scripts/fetch-models.ts --runtime-only && tsx scripts/check-stt-runtime.ts",
     "test:stt": "playwright test -c tests/integration/playwright.config.ts stt.spec.ts",
