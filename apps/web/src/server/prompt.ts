@@ -77,6 +77,12 @@ Learned preferences (approved by the user in earlier calls):
 /** Shown for a session field the user left empty, so the session block keeps the same shape. */
 const NOT_GIVEN = '(not given)';
 
+/**
+ * Most tokens an answer may use (architecture §6.2: "max_tokens ≈ 400"). A headline and five
+ * short bullets need about 150; the limit stops a runaway answer without cutting a normal one.
+ */
+export const ANSWER_MAX_TOKENS = 400;
+
 /** The placeholder user turn of a warm-up: read while the cache is written, never answered. */
 export const WARM_MESSAGE = 'Warm-up: no answer is needed.';
 

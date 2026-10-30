@@ -2,7 +2,8 @@
  * Tests for apps/web/src/core/answer/warm.ts with the request faked: toSessionContext() turns a
  * stored session into the request's session details (key terms split per line, documents oldest
  * first, the same JSON whatever order the documents were read in); warmSession() sends mode
- * 'warm' with the session's model tier, resolves with the usage, resolves null on failure
+ * 'warm' with the session's model tier (and the conversation chunks for the idle re-warm),
+ * resolves with the usage, resolves null on failure
  * (never throws), and logs only the id, times and token counts. All text is invented.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -111,6 +112,16 @@ describe('warmSession', () => {
     expect(request.mode).toBe('warm');
     expect(request.model).toBe('smart');
     expect(request.session?.company).toBe('Northwind Logistics');
+  });
+
+  it('sends the conversation chunks for the idle re-warm, and none by default', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const send = fakeSend((handlers) => handlers.onDone(DONE));
+    const conversation = [[{ kind: 'line' as const, speaker: 'them' as const, text: 'x', at: 1 }]];
+    await warmSession(SESSION, [], { send, conversation });
+    await warmSession(SESSION, [], { send });
+    expect(send.mock.calls[0]![0].conversation).toEqual(conversation);
+    expect(send.mock.calls[1]![0]).not.toHaveProperty('conversation');
   });
 
   it('resolves null on failure, and when sending throws', async () => {

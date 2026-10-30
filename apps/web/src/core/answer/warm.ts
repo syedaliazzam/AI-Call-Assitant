@@ -15,7 +15,7 @@
  *
  * Logs only the session id, timings and token counts; never session or document text.
  */
-import type { SessionContext } from '@kite/shared';
+import type { ConversationChunk, SessionContext } from '@kite/shared';
 import type { Session, StoredDocument } from '@/core/storage/types';
 import { streamAnswer, type AnswerDone } from './answerClient';
 
@@ -59,6 +59,11 @@ export function toSessionContext(
 export interface WarmOptions {
   /** Sends the request. Default streamAnswer() from answerClient.ts. */
   send?: typeof streamAnswer;
+  /**
+   * The conversation chunks already sent in this call (the idle re-warm, keepWarm.ts), so the
+   * warm-up refreshes their cache entry too. Omitted: the session's cached parts only.
+   */
+  conversation?: ConversationChunk[];
 }
 
 /**
@@ -67,9 +72,9 @@ export interface WarmOptions {
  *
  * @param session   The stored session.
  * @param documents Its documents.
- * @param options   Request override (tests).
+ * @param options   The conversation so far (idle re-warm), and a request override (tests).
  * @returns The warm-up's usage and timings, or null when it failed.
- * Called from: LiveSession.tsx (on open); LivePage.tsx (on Connect);
+ * Called from: LiveSession.tsx (on open); LivePage.tsx (on Connect, and the idle re-warm);
  *              ClaudeTest.tsx
  */
 export function warmSession(
@@ -85,6 +90,7 @@ export function warmSession(
           mode: 'warm',
           model: session.preferences.model,
           session: toSessionContext(session, documents),
+          ...(options.conversation?.length ? { conversation: options.conversation } : {}),
         },
         {
           // A warm-up produces no text.
@@ -92,6 +98,7 @@ export function warmSession(
           onDone: (done) => {
             console.info('warm: done', {
               sessionId: session.id,
+              chunks: options.conversation?.length ?? 0,
               msTotal: done.msTotal,
               cacheWrite: done.usage.cache_creation_input_tokens,
               cacheRead: done.usage.cache_read_input_tokens,

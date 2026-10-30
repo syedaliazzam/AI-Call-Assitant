@@ -84,7 +84,10 @@ export interface StreamReplyInput {
    * (each carrying its own cache breakpoint). Keep it identical between requests.
    */
   system: string | Anthropic.TextBlockParam[];
-  /** Conversation turns after the system prompt (not cached). */
+  /**
+   * The user turn after the system prompt. Its blocks may carry their own cache breakpoint (the
+   * last conversation chunk, from buildPrompt()); the rest is not cached.
+   */
   messages: Anthropic.MessageParam[];
   /** Most tokens Claude may write. */
   maxTokens: number;
