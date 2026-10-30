@@ -23,6 +23,7 @@
     "stt:runtime": "tsx scripts/fetch-models.ts --runtime-only && tsx scripts/check-stt-runtime.ts",
     "test:stt": "playwright test -c tests/integration/playwright.config.ts stt.spec.ts",
     "test:answers": "playwright test -c tests/integration/playwright.config.ts answers.spec.ts",
+    "test:screenshot": "playwright test -c tests/integration/playwright.config.ts screenshot.spec.ts",
     "test:e2e-prod": "pnpm --filter @kite/desktop build && playwright test -c tests/e2e-prod/playwright.config.ts"
   },
   "dependencies": {

@@ -4,10 +4,11 @@
  *          `window.kiteDesktop`, which exists only when Kite runs inside the desktop app.
  * Used by: apps/desktop/src/preload.ts (Stage 5, implements it),
  *          apps/web/src/platform/desktop.ts and apps/web/src/platform/index.ts (read it)
- * Depends on: ./hotkeys.ts (types only)
+ * Depends on: ./hotkeys.ts, ./screenshot.ts (types only)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 and §7.3 (preload.ts)
  */
 import type { HotkeyAction, HotkeyStatus } from './hotkeys';
+import type { DesktopScreenshot } from './screenshot';
 
 /** Operating system the desktop app is running on. */
 export type DesktopOs = 'mac' | 'windows' | 'linux';
@@ -44,6 +45,15 @@ export interface KiteDesktopApi {
    * @returns A function that removes the listener.
    */
   onHotkey?: (handler: (action: HotkeyAction) => void) => () => void;
+  /**
+   * Day 5: takes a screenshot of the display the Kite window is on (the primary display if
+   * that cannot be told), already scaled so its longest side is at most 1,568 px. Never stored
+   * or logged by the shell. Optional: a desktop app installed before Day 5 does not have it.
+   *
+   * @returns The PNG and its size, or why it failed (for example macOS Screen Recording
+   *          permission missing).
+   */
+  captureScreenshot?: () => Promise<DesktopScreenshot>;
 }
 
 declare global {

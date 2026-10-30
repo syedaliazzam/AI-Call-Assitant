@@ -2,18 +2,30 @@
  * File: apps/desktop/src/main.ts
  * Purpose: Electron main process: starts one instance of the app, opens the Kite window on
  *          KITE_URL, applies every security rule from src/security.ts, and wires the global
- *          shortcuts (src/hotkeys.ts, Day 4).
+ *          shortcuts (src/hotkeys.ts, Day 4) and screenshots (src/screenshot.ts, Day 5).
  * Used by: Electron (package.json "main": dist/main.js, built by esbuild)
- * Depends on: electron, src/config.ts, src/security.ts, src/media.ts, src/hotkeys.ts
+ * Depends on: electron, src/config.ts, src/security.ts, src/media.ts, src/hotkeys.ts,
+ *             src/screenshot.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * Kite never hides from the taskbar, Dock or process lists, and does not try to evade
  * monitoring or proctoring software (CLAUDE.md).
  */
 import path from 'node:path';
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, session } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  screen,
+  session,
+  systemPreferences,
+} from 'electron';
 import { APP_NAME, loadConfig, type DesktopConfig } from './config';
 import { installHotkeys, type HotkeyController } from './hotkeys';
+import { installScreenshot } from './screenshot';
 import { allowSystemAudioLoopback } from './media';
 import { allowOnlyOurPermissions, lockNavigation, secureWebPreferences } from './security';
 
@@ -110,6 +122,16 @@ function start(): void {
       globalShortcut,
       ipcMain,
       sendToPage: (channel, action) => mainWindow?.webContents.send(channel, action),
+      allowedOrigin: config.allowedOrigin,
+    });
+    // Screenshot answers (Day 5): the display under the Kite window, scaled, in memory only.
+    installScreenshot({
+      desktopCapturer,
+      screen,
+      systemPreferences,
+      platform: process.platform,
+      ipcMain,
+      getWindow: () => mainWindow,
       allowedOrigin: config.allowedOrigin,
     });
     mainWindow = createMainWindow(config);

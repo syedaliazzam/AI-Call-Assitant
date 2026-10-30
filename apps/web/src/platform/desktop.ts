@@ -132,8 +132,30 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /** Day 5: the shell captures the current display with desktopCapturer. */
+    /**
+     * A screenshot of the display the Kite window is on, taken by the shell already scaled to
+     * ≤ 1,568 px (apps/desktop/src/screenshot.ts).
+     *
+     * @returns The PNG as a Blob (in memory only).
+     * @throws CaptureError: 'not-supported' (a desktop app from before Day 5),
+     *         'permission-denied' (macOS Screen Recording), or 'failed'.
+     */
     async captureScreenshot() {
-      throw new NotImplementedError('desktop.captureScreenshot', 5);
+      if (!bridge.captureScreenshot) {
+        throw new CaptureError(
+          'not-supported',
+          'This version of the Kite desktop app cannot take screenshots. Install the latest version.',
+        );
+      }
+      const result = await bridge.captureScreenshot();
+      if (result.ok) return new Blob([result.png.slice()], { type: 'image/png' });
+      if (result.code === 'permission-denied') {
+        throw new CaptureError(
+          'permission-denied',
+          'Kite needs the Screen Recording permission: System Settings → Privacy & Security → Screen Recording → turn on Kite, then reopen Kite.',
+        );
+      }
+      throw new CaptureError('failed', 'Kite could not take a screenshot. Try again.');
     },
 
     /**

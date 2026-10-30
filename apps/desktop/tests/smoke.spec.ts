@@ -2,7 +2,8 @@
  * Smoke test for the Electron shell (apps/desktop/src/main.ts, preload.ts, security.ts).
  * Launches the built app (dist/) with KITE_URL pointing at a local test page and checks:
  * the window opens at 1280×820; window.kiteDesktop is exactly { version, os,
- * setHotkeysEnabled, onHotkey } and frozen; the hotkey path works: the page turns the global
+ * setHotkeysEnabled, onHotkey, captureScreenshot } and frozen; captureScreenshot() returns a
+ * PNG scaled to ≤ 1,568 px for the Kite page, and a frame from another origin has no bridge; the hotkey path works: the page turns the global
  * shortcuts on and off, and a hotkey message sent from the main process reaches the page's
  * onHotkey handler (an invalid action never does);
  * the page has no Node.js (`require`, `process`); same-origin navigation works while
@@ -103,10 +104,14 @@ test('opens one 1280×820 window on KITE_URL', async () => {
   expect(sizes).toEqual([[Math.min(1280, workArea.width), Math.min(820, workArea.height)]]);
 });
 
-test('exposes window.kiteDesktop as exactly { version, os, setHotkeysEnabled, onHotkey }, frozen', async () => {
+test('exposes window.kiteDesktop as exactly { version, os, setHotkeysEnabled, onHotkey, captureScreenshot }, frozen', async () => {
   const bridge = await page.evaluate(() => ({
     keys: Object.keys(window.kiteDesktop ?? {}).sort(),
-    methods: [typeof window.kiteDesktop?.setHotkeysEnabled, typeof window.kiteDesktop?.onHotkey],
+    methods: [
+      typeof window.kiteDesktop?.setHotkeysEnabled,
+      typeof window.kiteDesktop?.onHotkey,
+      typeof window.kiteDesktop?.captureScreenshot,
+    ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
     frozen: Object.isFrozen(window.kiteDesktop),
@@ -114,8 +119,14 @@ test('exposes window.kiteDesktop as exactly { version, os, setHotkeysEnabled, on
   const appVersion = await app.evaluate(({ app: electronApp }) => electronApp.getVersion());
   const expectedOs = { darwin: 'mac', win32: 'windows' }[process.platform as string] ?? 'linux';
 
-  expect(bridge.keys).toEqual(['onHotkey', 'os', 'setHotkeysEnabled', 'version']);
-  expect(bridge.methods).toEqual(['function', 'function']);
+  expect(bridge.keys).toEqual([
+    'captureScreenshot',
+    'onHotkey',
+    'os',
+    'setHotkeysEnabled',
+    'version',
+  ]);
+  expect(bridge.methods).toEqual(['function', 'function', 'function']);
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
@@ -161,6 +172,44 @@ test('hotkeys: the page turns them on and off, and a hotkey from the main proces
 
   await page.evaluate(() => window.kiteDesktop!.setHotkeysEnabled!(false));
   expect(await isRegistered('CommandOrControl+Enter')).toBe(false);
+});
+
+test('screenshot: the Kite page gets a scaled PNG; another origin has no bridge to ask', async () => {
+  const shot = await page.evaluate(async () => {
+    const result = await window.kiteDesktop!.captureScreenshot!();
+    if (!result.ok) return { ok: false, code: result.code };
+    const png = result.png;
+    return {
+      ok: true,
+      // The PNG signature: 89 50 4E 47.
+      signature: Array.from(png.slice(0, 4)),
+      bytes: png.byteLength,
+      width: result.width,
+      height: result.height,
+      ms: result.ms,
+    };
+  });
+  // Numbers only (the image itself is never printed or saved).
+  console.log('[smoke] screenshot', JSON.stringify({ ...shot, signature: undefined }));
+  expect(shot.ok).toBe(true);
+  expect(shot.signature).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  expect(Math.max(shot.width!, shot.height!)).toBeLessThanOrEqual(1568);
+
+  // A frame from another origin: the preload runs only in the Kite main frame, so there is no
+  // bridge there to ask (and the shell would refuse the sender anyway: unit-tested).
+  await page.evaluate((url) => {
+    const frame = document.createElement('iframe');
+    frame.id = 'other-shot';
+    frame.src = url;
+    document.body.append(frame);
+  }, `${other.origin}/frame`);
+  const frame = await expect
+    .poll(() => page.frames().find((f) => f.url().startsWith(other.origin)))
+    .toBeTruthy()
+    .then(() => page.frames().find((f) => f.url().startsWith(other.origin))!);
+  await frame.waitForSelector('#capture');
+  expect(await frame.evaluate(() => typeof window.kiteDesktop)).toBe('undefined');
+  await page.evaluate(() => document.getElementById('other-shot')?.remove());
 });
 
 test('gives the page no Node.js access', async () => {

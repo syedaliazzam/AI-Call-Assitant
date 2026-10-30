@@ -9,7 +9,8 @@
  * request into 'permission-denied'; onHotkey() listens for the in-page shortcuts with ⌘ on
  * macOS and Ctrl on Windows (Day 4) and, with a Day 4 shell, turns the global shortcuts on and
  * off, forwards each press once and reports shortcuts another app holds (acceleratorLabel);
- * every not-yet-built method throws NotImplementedError.
+ * captureScreenshot() returns the shell PNG and maps its failures (Day 5); every not-yet-built
+ * method throws NotImplementedError.
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -41,7 +42,6 @@ describe('createDesktopPlatform', () => {
   });
 
   it.each([
-    ['captureScreenshot', 5, () => mac.captureScreenshot()],
     ['openCompactView', 5, () => mac.openCompactView('s1')],
     ['setShareProtection', 5, () => mac.setShareProtection(true)],
   ])('%s rejects with NotImplementedError (Day %i)', async (_name, day, call) => {
@@ -164,5 +164,43 @@ describe('desktop onHotkey with the Day 4 shell', () => {
     expect(acceleratorLabel('CommandOrControl+Enter', 'windows')).toBe('Ctrl+Enter');
     expect(acceleratorLabel('CommandOrControl+Shift+Enter', 'mac')).toBe('⌘⇧Enter');
     expect(acceleratorLabel('CommandOrControl+Right', 'mac')).toBe('⌘→');
+  });
+});
+
+describe('desktop captureScreenshot', () => {
+  it('returns the shell PNG as a Blob', async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const platform = createDesktopPlatform({
+      version: '1',
+      os: 'windows',
+      captureScreenshot: async () => ({ ok: true, png, width: 4, height: 1, ms: 5 }),
+    });
+    const blob = await platform.captureScreenshot();
+    expect(blob.type).toBe('image/png');
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(png);
+  });
+
+  it('maps the shell failures and an old shell to typed errors', async () => {
+    const codes = async (bridge: Parameters<typeof createDesktopPlatform>[0]) =>
+      (
+        (await createDesktopPlatform(bridge)
+          .captureScreenshot()
+          .catch((e: unknown) => e)) as CaptureError
+      ).code;
+    expect(await codes({ version: '1', os: 'mac' })).toBe('not-supported');
+    expect(
+      await codes({
+        version: '1',
+        os: 'mac',
+        captureScreenshot: async () => ({ ok: false, code: 'permission-denied' }),
+      }),
+    ).toBe('permission-denied');
+    expect(
+      await codes({
+        version: '1',
+        os: 'windows',
+        captureScreenshot: async () => ({ ok: false, code: 'no-screen' }),
+      }),
+    ).toBe('failed');
   });
 });

@@ -14,8 +14,10 @@ import { listenForHotkeys } from './keymap';
 import {
   openMicrophone,
   requestDisplayMedia,
+  startFrameSource,
   stopAllTracks,
   type DisplayCaptureOptions,
+  type FrameSource,
 } from './media';
 import type { OtherSideSource, Platform } from './types';
 
@@ -69,6 +71,19 @@ function browserIsMac(): boolean {
   return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 }
 
+/** Shown when a screenshot is asked for but nothing is being shared. */
+export const NO_SHARE_MESSAGE =
+  'Kite can only take a screenshot of the tab or screen you are sharing for the call. Connect first, then try again.';
+
+/**
+ * The share from the latest getOtherSideStream() (its video track gives screenshots), or null
+ * before the first Connect. A stopped share is detected by its track's readyState.
+ */
+let currentShare: MediaStream | null = null;
+
+/** The current share's frames, ready to draw (media.ts startFrameSource()), or null. */
+let frames: FrameSource | null = null;
+
 /** Platform implementation for Chrome / Edge. */
 export const browserPlatform: Platform = {
   kind: 'browser',
@@ -92,12 +107,35 @@ export const browserPlatform: Platform = {
       stopAllTracks(stream);
       throw new CaptureError('no-audio-track', NO_TAB_AUDIO_MESSAGE);
     }
+    // Kept for screenshots: the share's video track is the only way to see the meeting. Its
+    // frames start playing now, so a screenshot is instant later.
+    frames?.close();
+    currentShare = stream;
+    const video = stream.getVideoTracks()[0];
+    frames = video && typeof document !== 'undefined' ? startFrameSource(video) : null;
     return { stream, source: shareSource(stream) };
   },
 
-  /** Day 5: grab a frame from the screen or tab stream the user already shared. */
+  /**
+   * A screenshot of the tab or screen the user is sharing for the call: one frame of the
+   * share's video track, scaled to ≤ 1,568 px (media.ts startFrameSource()).
+   *
+   * @returns The frame as a PNG Blob (in memory only).
+   * @throws CaptureError('no-share') when nothing is being shared (or the share ended), or
+   *         'failed' when no frame could be read.
+   */
   async captureScreenshot() {
-    throw new NotImplementedError('browser.captureScreenshot', 5);
+    const track = currentShare?.getVideoTracks()[0];
+    if (!track || track.readyState !== 'live') throw new CaptureError('no-share', NO_SHARE_MESSAGE);
+    try {
+      if (!frames) throw new Error('no frame source');
+      return await frames.grab();
+    } catch {
+      throw new CaptureError(
+        'failed',
+        'Kite could not take a screenshot of the shared tab. Try again.',
+      );
+    }
   },
 
   /**
