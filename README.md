@@ -141,6 +141,17 @@ pnpm --filter web test:stt   # speech-to-text integration test (needs step 6; se
 
 Run a command in a single package with `--filter`, for example `pnpm --filter web test`.
 
+**Production end-to-end test account.** The manual production suites (below) sign in as a dedicated account, `kite-e2e@example.com` (role user), created once with:
+
+```sh
+pnpm --filter web create-e2e-user   # creates the account, completes its first password change,
+                                    # appends KITE_E2E_EMAIL / KITE_E2E_PASSWORD to apps/web/.env.local
+```
+
+- The password is generated, never printed, and stored only in `apps/web/.env.local` (git-ignored).
+- **To disable the account:** sign in as an admin → **Admin** in the sidebar (`/admin/users`) → find `kite-e2e@example.com` → **Disable**. Its sign-in sessions end immediately, and the suites then fail at sign-in. **Enable** turns it back on.
+- `vercel env pull` rewrites `.env.local` and removes the two lines. To restore them, add them back by hand, or reset the password at `/admin/users` and then sign in once as the account to choose a new one.
+
 **Speech-to-text integration test** (`test:stt`): Chromium's fake microphone plays two official LibriSpeech recordings (`apps/web/tests/fixtures/audio/`, see its `SOURCES.md`) through the real pipeline. It checks for a final line and a word error rate of 10% or less.
 
 - **Once per machine:** `pnpm --filter web exec playwright install chromium`, plus step 6.

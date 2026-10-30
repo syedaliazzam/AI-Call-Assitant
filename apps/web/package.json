@@ -14,6 +14,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "create-admin": "tsx --env-file=.env.local --conditions=react-server scripts/create-admin.ts",
+    "create-e2e-user": "tsx --env-file=.env.local --conditions=react-server scripts/create-e2e-user.ts",
     "verify:warm": "tsx --env-file=.env.local --conditions=react-server scripts/verify-warm.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",
     "stt:runtime": "tsx scripts/fetch-models.ts --runtime-only && tsx scripts/check-stt-runtime.ts",
