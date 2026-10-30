@@ -37,4 +37,19 @@ Day 1 Stage 2 checks:
 - the admin creates a user;
 - the user is forced to change their password;
 - non-admins are blocked from `/admin/users`;
-- disabling a user signs them out.
+- disabling a user signs them out (Day 5: of every page and action at once, and of answers within 60 s; see "Update: session cookie cache" below).
+
+## Update: session cookie cache (Day 5, 2026-10-31)
+
+**Decision.** Better Auth's session cookie cache is on, with a **60-second** max age (`apps/web/src/server/auth-options.ts`). It is used only where speed matters:
+- **Answer routes** (`/api/answer`, and `/api/notes` from Day 5): read the session from the signed cookie (`getCachedSession()` in `server/auth.ts`). They skip the database lookup, and the free database's cold starts of about 1.4 s. When the cached copy is older than 60 s, Better Auth reads the database and sets a new cookie. The route sends that `Set-Cookie` back on every response, the streamed answer included, so the next answers use the cache again.
+- **Pages and server actions** (`getSession()`): pass `disableCookieCache`, so they always read the database.
+
+**Trade-off.** A user who is disabled, or whose password an admin resets, is refused by every page and action at once, but can still get answers for **up to 60 seconds**, until the cached cookie expires. Admin pages are not affected, because a role change or a disable is read from the database. A cached "must change password" is checked against the database once before an answer is refused, so a user who has just changed their password is not blocked for that minute.
+
+**Tests.** `tests/unit/server/auth-options.test.ts` runs a real Better Auth instance with these settings on an in-memory database and a mocked clock:
+- a disabled user is accepted from the cache at 59 s and refused at 61 s, and refused at once by a database read;
+- after 60 s, an active user gets a fresh cache cookie;
+- `mustChangePassword` is in the cached session.
+
+`tests/unit/server/session-cache.test.ts` covers the "must change password" re-check. The route test checks that `Set-Cookie` is forwarded.

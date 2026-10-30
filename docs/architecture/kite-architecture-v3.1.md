@@ -176,7 +176,7 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 
 **Measured on Day 2** (`docs/testing/benchmark-results.md`): speech → first partial (lag) 347–973 ms in Chrome and the desktop app, plugged in and on battery (after the Day 2 lag fix); end of speech → final line p50 1.5–1.7 s (p95 1.9–2.3 s). Accuracy is the weak point: about 27% WER on the 3 test sentences, with names and technical terms often wrong in a real call (§13).
 
-**Measured on Day 4** (production, from the developer's laptop in Pakistan; `/dev/latency`, 20 answers each, cache read on 20/20; `docs/testing/benchmark-results.md`): key press → request sent p50 0 ms; **first word p50 1,076–1,155 ms** (p95 1,327–1,934) in Chrome and the desktop app; headline p50 1,379–1,454 ms (p95 1,641–2,174). The server's own part (request received → first text) is p50 560–643 ms; the rest, about 500 ms, is the network between that laptop and the `iad1` function (requests enter Vercel at the `bom1` edge). The levers were applied in order: (1) cache hits confirmed; (2) the tail was already empty; (3) `max_tokens` 400 → 250 made no difference beyond noise and was reverted; (4) the region is already next to Anthropic, and moving it nearer the laptop would put the sign-in database and Claude a round trip away instead. The first-word target is met on the server side but not end to end from South Asia; see §13.
+**Measured on Day 4** (production, from the developer's laptop in Pakistan; `/dev/latency`, 20 answers each, cache read on 20/20; `docs/testing/benchmark-results.md`): key press → request sent p50 0 ms; **first word p50 1,076–1,155 ms** (p95 1,327–1,934) in Chrome and the desktop app; headline p50 1,379–1,454 ms (p95 1,641–2,174). The server's own part (request received → first text) is p50 560–643 ms; the rest, about 500 ms, is the network between that laptop and the `iad1` function (requests enter Vercel at the `bom1` edge). The levers were applied in order: (1) cache hits confirmed; (2) the tail was already empty; (3) `max_tokens` 400 → 250 made no difference beyond noise and was reverted; (4) the region is already next to Anthropic, and moving it nearer the laptop would put the sign-in database and Claude a round trip away instead. The first-word target is met on the server side but not end to end from South Asia; see §13. **Accepted for v1** (Day 5 decision): about 1.1 s to the first word from Pakistan is still well below the 2–4 s reported for ParakeetAI. From Day 5, the 60-second session cookie cache (§8.2) also removes the per-answer database lookup and its cold starts.
 
 These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platform (desktop macOS, desktop Windows, browser) with timestamps logged in the page, and write the measured p50/p95 into `docs/testing/benchmark-results.md`. If a target is missed, the levers are, in order:
 
@@ -380,6 +380,10 @@ Internal approval is needed that transcript text, documents and screenshots are 
 - **First admin:** created once from the command line (`pnpm --filter web create-admin`), which generates and prints a temporary password the same way.
 - **Desktop app:** shows the same `/login` page inside its window. Email + password works inside an app window, so no browser hand-off is needed.
 - **Library:** Better Auth with email + password (`disableSignUp: true`) and the admin plugin (create user, list users, set role, set password, ban/unban). Sessions are stored in Postgres and use secure, HTTP-only cookies; they expire after 30 days.
+- **Session cookie cache** (Day 5, ADR-0022 update): the session is also kept in a signed cookie for 60 s.
+  - The answer routes read it, so an answer skips the database lookup. They send any refreshed cookie back on their response.
+  - Pages and server actions always read the database.
+  - Trade-off: a disabled user, or one whose password was reset, is refused by pages at once and by answers within 60 s.
 
 ### 8.3 Controls
 

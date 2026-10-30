@@ -1,5 +1,7 @@
 /**
- * Tests for apps/web/app/api/answer/route.ts (POST), with sign-in and the Anthropic SDK mocked:
+ * Tests for apps/web/app/api/answer/route.ts (POST), with sign-in and the Anthropic SDK mocked.
+ * Day 5: the session comes from the cookie cache, and its Set-Cookie values are sent back on
+ * the stream and on errors.
  * 401 without a session (or with a temporary password), 400 for bad bodies and for modes that
  * are not built yet, and a streamed reply (delta events, then done with usage and timings);
  * a Claude refusal ends with an error event. Mode 'warm' (Day 3): a 400 naming the field without
@@ -19,8 +21,10 @@ import { fakeMessageStream } from '../../helpers/fakeClaude';
 const streamMock = vi.fn();
 /** Spy standing in for client.messages.create() (the warm-up). */
 const createMock = vi.fn();
-/** Spy standing in for getSession() from src/server/auth.ts. */
+/** Spy standing in for the session read of getCachedSession() from src/server/auth.ts. */
 const getSessionMock = vi.fn();
+/** Set-Cookie values the fake getCachedSession() returns (the refreshed cookie cache). */
+let setCookies: string[] = [];
 
 vi.mock('@anthropic-ai/sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@anthropic-ai/sdk')>();
@@ -33,7 +37,9 @@ vi.mock('@anthropic-ai/sdk', async (importOriginal) => {
   }
   return { ...actual, default: FakeAnthropic, Anthropic: FakeAnthropic };
 });
-vi.mock('@/server/auth', () => ({ getSession: getSessionMock }));
+vi.mock('@/server/auth', () => ({
+  getCachedSession: async () => ({ session: await getSessionMock(), setCookies: [...setCookies] }),
+}));
 
 vi.stubEnv('ANTHROPIC_API_KEY', 'test-key');
 vi.stubEnv('KITE_MODEL_FAST', 'claude-haiku-5-5');
@@ -62,8 +68,40 @@ beforeEach(() => {
   streamMock.mockReset();
   createMock.mockReset();
   getSessionMock.mockReset();
+  setCookies = [];
   vi.spyOn(console, 'info').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+describe('POST /api/answer, session cookie cache (Day 5)', () => {
+  it('sends the refreshed session cookie back on the streamed answer', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    setCookies = [
+      'better-auth.session_data=abc; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=60',
+      'better-auth.session_token=def; Path=/; HttpOnly; Secure; SameSite=Lax',
+    ];
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Hi'] }));
+    const response = await POST(post('{"mode":"hello"}'));
+    expect(response.headers.get('content-type')).toMatch(/^text\/event-stream/);
+    expect(response.headers.getSetCookie()).toEqual(setCookies);
+    await response.text();
+  });
+
+  it('sends the cookie back on an error too (an expired cache cookie is cleared)', async () => {
+    getSessionMock.mockResolvedValue(null);
+    setCookies = ['better-auth.session_data=; Path=/; Max-Age=0'];
+    const response = await POST(post('{"mode":"hello"}'));
+    expect(response.status).toBe(401);
+    expect(response.headers.getSetCookie()).toEqual(setCookies);
+  });
+
+  it('sends no Set-Cookie when the cache was used as it is', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream());
+    const response = await POST(post('{"mode":"hello"}'));
+    expect(response.headers.getSetCookie()).toEqual([]);
+    await response.text();
+  });
 });
 
 describe('POST /api/answer', () => {

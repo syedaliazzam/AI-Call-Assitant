@@ -69,7 +69,7 @@ A conversation sent as one text block that grows would therefore never read its 
 - **The last ~5 s.** The newest few seconds are always uncached (the tail). That is small: about 65 tokens of uncached input per answer, measured.
 - **Cap.** At each step of the long-call cap the conversation is written to the cache once again.
 - **More text sent.** More call text goes to Claude per request than with a 3-minute window. This is the same data class as before (§8.1); nothing is stored by the server.
-- **Latency from far away.** The first-word target (≤ 1.0 s p50) is met on the server side (560–643 ms) but not end to end from South Asia (1,076–1,155 ms, about 500 ms of network to `iad1`). See §13.
+- **Latency from far away.** The first-word target (≤ 1.0 s p50) is met on the server side (560–643 ms) but not end to end from South Asia (1,076–1,155 ms, about 500 ms of network to `iad1`). See §13. **Accepted for v1** (Day 5): about 1.1 s from Pakistan is still well below the 2–4 s reported for ParakeetAI. The session cookie cache (Day 5, ADR-0022) removes the per-answer database lookup.
 
 ## Alternatives considered
 
