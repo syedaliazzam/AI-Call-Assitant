@@ -5,7 +5,8 @@
  * its own data, separate from Chrome); create a session, which survives a reload; Open goes
  * straight to Connect (no
  * Choose platform dialog); Connect needs no picker (system audio + Chromium's fake microphone
- * playing the official recording 0.wav); Go live shows final lines; End; Settings → Delete all
+ * playing the official recording 0.wav); Go live shows final lines; a typed Chat question
+ * streams an answer, which is rated (Day 4); End; Settings → Delete all
  * local data → the dashboard is empty again. Manual run only (never in CI). Prints numbers only.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -23,6 +24,7 @@ import {
   PRODUCTION_URL,
   RECORDINGS,
   WEB_DIR,
+  answerAndRate,
   createSession,
   report,
   sessionCard,
@@ -99,7 +101,7 @@ test('2. create a session (survives a reload); Open goes straight to Connect', a
   expect(dialogs).toBe(0);
 });
 
-test('3. Connect needs no picker; Go live shows lines; End', async () => {
+test('3. Connect needs no picker; Go live shows lines; a Chat answer is rated; End', async () => {
   const startedAt = Date.now();
   await expect(page.getByText('Speech model ready')).toBeVisible({ timeout: 480_000 });
   report('desktop speech model ready', true, {
@@ -122,6 +124,12 @@ test('3. Connect needs no picker; Go live shows lines; End', async () => {
     finalThem: await finals.filter({ hasText: /^\s*Them/ }).count(),
   };
   report('desktop live lines appear', counts.final > 0, counts);
+
+  // Answer with a typed Chat question: on this test machine "Them" (system audio) is silent,
+  // so there is no question from the other side for the Answer key.
+  const check = await answerAndRate(page, 'chat');
+  report('desktop chat answer streams and is rated', check.headlineWords > 0, { ...check });
+  expect(check.headlineWords).toBeGreaterThan(0);
 
   await page.getByRole('button', { name: 'End' }).click();
   await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
