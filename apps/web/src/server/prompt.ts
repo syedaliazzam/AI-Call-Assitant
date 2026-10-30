@@ -17,8 +17,8 @@
  * Caching depends on bytes, not meaning: Claude reuses its cache only when everything up to a
  * breakpoint is byte-for-byte identical to an earlier request. So:
  * - SYSTEM_RULES is a constant (no dates, ids or per-session text). It is shared by every
- *   session; it is shorter than the 512-token caching minimum on its own, so in practice the
- *   first cache entry that matters is the one at the end of the session block.
+ *   session. With the Day 4 rules it is about 836 tokens, above the 512-token caching
+ *   minimum, so it is cached once and read by every session's first request.
  * - sessionBlock() writes the fields in a fixed order with fixed labels, and adds nothing that
  *   changes between requests (no timestamps, no random ids). The same session always gives the
  *   same text.
