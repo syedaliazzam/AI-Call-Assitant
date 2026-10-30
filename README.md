@@ -152,6 +152,31 @@ pnpm --filter web create-e2e-user   # creates the account, completes its first p
 - **To disable the account:** sign in as an admin → **Admin** in the sidebar (`/admin/users`) → find `kite-e2e@example.com` → **Disable**. Its sign-in sessions end immediately, and the suites then fail at sign-in. **Enable** turns it back on.
 - `vercel env pull` rewrites `.env.local` and removes the two lines. To restore them, add them back by hand, or reset the password at `/admin/users` and then sign in once as the account to choose a new one.
 
+**Production end-to-end suites** (`apps/web/tests/e2e-prod/`, manual only, never in CI). They run against https://kite-call-assistant.vercel.app as the test account above, and print only PASS/FAIL with numbers:
+
+```sh
+pnpm --filter web test:e2e-prod   # builds the desktop shell, then runs both suites (about 3 minutes)
+```
+
+- **Chrome** (`chrome.spec.ts`), using Playwright's Chromium in headless mode:
+  - sign in;
+  - create a session with an invented one-page `.txt` and key terms;
+  - Open in browser shows "Listening for N key terms";
+  - the live page's warm-up writes the cache, and a second warm-up (reload) reads it;
+  - Connect with Chromium's fake microphone and a fake shared tab, both playing official test recordings;
+  - Go live, final lines appear;
+  - End, "Saved transcript" survives a reload;
+  - the session is deleted.
+- **Desktop** (`desktop.spec.ts`): the real Electron shell with a fresh profile, on production:
+  - sign in, and the dashboard is empty (its own data);
+  - create a session;
+  - Open goes straight to Connect;
+  - Connect shows no picker;
+  - Go live, final lines appear, End;
+  - Delete all local data leaves the dashboard empty.
+- Each run downloads the speech model again (about 1 minute), because the browser profiles are fresh.
+- **Known test-environment effect:** with Chromium's fake media, the "You" channel also hears the fake "Them" audio. Its lines repeat "Them", and the echo filter hides them (as it should), so the suites count final lines from either side. A real microphone shows "You" lines as normal.
+
 **Speech-to-text integration test** (`test:stt`): Chromium's fake microphone plays two official LibriSpeech recordings (`apps/web/tests/fixtures/audio/`, see its `SOURCES.md`) through the real pipeline. It checks for a final line and a word error rate of 10% or less.
 
 - **Once per machine:** `pnpm --filter web exec playwright install chromium`, plus step 6.

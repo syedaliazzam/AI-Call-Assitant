@@ -18,7 +18,8 @@
     "verify:warm": "tsx --env-file=.env.local --conditions=react-server scripts/verify-warm.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",
     "stt:runtime": "tsx scripts/fetch-models.ts --runtime-only && tsx scripts/check-stt-runtime.ts",
-    "test:stt": "playwright test -c tests/integration/playwright.config.ts"
+    "test:stt": "playwright test -c tests/integration/playwright.config.ts",
+    "test:e2e-prod": "pnpm --filter @kite/desktop build && playwright test -c tests/e2e-prod/playwright.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
