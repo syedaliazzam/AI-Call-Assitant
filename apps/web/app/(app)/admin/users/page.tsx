@@ -11,6 +11,7 @@ import { CreateUserForm } from '@/features/admin/CreateUserForm';
 import { UsersTable } from '@/features/admin/UsersTable';
 import { requireAdmin } from '@/server/guard';
 import { listUserAccounts } from '@/server/users';
+import { PageShell } from '@/ui/PageShell';
 import {
   createUserAction,
   resetPasswordAction,
@@ -29,13 +30,12 @@ export default async function AdminUsersPage() {
   const users = await listUserAccounts(await headers());
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-8 py-10">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-900">Users</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Create accounts and share the temporary password with each person directly.
-        </p>
-      </header>
+    <PageShell
+      eyebrow="Admin"
+      title="Users"
+      width="lg"
+      description="Create accounts and share the temporary password with each person directly."
+    >
       <CreateUserForm action={createUserAction} />
       <UsersTable
         users={users}
@@ -46,6 +46,6 @@ export default async function AdminUsersPage() {
           setRole: setRoleAction,
         }}
       />
-    </div>
+    </PageShell>
   );
 }

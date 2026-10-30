@@ -21,7 +21,7 @@ export interface SidebarUser {
   name: string;
   /** Email shown under the name. */
   email: string;
-  /** 'admin' users also see the Admin and Dev tools links. */
+  /** 'admin' users also see the Admin and Dev Tools links. */
   role: 'admin' | 'user';
 }
 
@@ -53,7 +53,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Call Sessions', href: '/' },
   { label: 'Settings', href: '/settings' },
   { label: 'Admin', href: '/admin/users', adminOnly: true },
-  { label: 'Dev tools', href: '/dev', adminOnly: true },
+  { label: 'Dev Tools', href: '/dev', adminOnly: true },
 ];
 
 /**
@@ -112,7 +112,7 @@ export function Sidebar({ user, userActions }: SidebarProps) {
           aria-expanded={menuOpen}
           aria-controls={menuId}
           onClick={() => setMenuOpen((open) => !open)}
-          className="ml-auto border border-ui-secondary-border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] md:hidden"
+          className="ml-auto border border-ui-secondary-border px-3 py-1.5 pointer-coarse:min-h-11 font-mono text-[11px] uppercase tracking-[0.08em] text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] md:hidden"
         >
           {menuOpen ? 'Close' : 'Menu'}
         </button>
@@ -139,7 +139,7 @@ export function Sidebar({ user, userActions }: SidebarProps) {
                     href={item.href}
                     aria-current={pathname === item.href ? 'page' : undefined}
                     className={[
-                      'block border-l-[3px] px-5 py-2.5 text-sm font-semibold transition-colors duration-150',
+                      'flex items-center border-l-[3px] px-5 py-2.5 pointer-coarse:min-h-11 text-sm font-semibold transition-colors duration-150',
                       'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
                       pathname === item.href
                         ? 'border-ui-accent text-ui-heading'

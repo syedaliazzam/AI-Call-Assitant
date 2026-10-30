@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/ui/Button.tsx
  * Purpose: The one button style used across Kite, with a few visual variants and sizes.
- * Used by: src/features/dashboard/Dashboard.tsx (and every later feature)
+ * Used by: src/features/dashboard/Dashboard.tsx (and every later feature); src/ui/LinkButton.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
  * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
@@ -49,6 +49,34 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
 };
 
 /**
+ * The classes of a button of the given look. Shared with LinkButton, so a link that looks like
+ * a button is exactly the same size and colour.
+ *
+ * @param variant   The visual style.
+ * @param size      The size.
+ * @param className Extra classes, appended.
+ * @returns The class list.
+ * Called from: Button, LinkButton.tsx
+ */
+export function buttonClasses(
+  variant: ButtonVariant = 'primary',
+  size: ButtonSize = 'md',
+  className = '',
+): string {
+  return [
+    // k-btn marks every button-looking control (the UI screenshot test checks their size).
+    'k-btn inline-flex items-center justify-center gap-2 font-semibold transition-colors duration-150',
+    // Touch screens: at least 44 px tall (theme review, UI U1).
+    'pointer-coarse:min-h-11',
+    'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
+    'disabled:cursor-not-allowed disabled:opacity-50',
+    VARIANT_CLASSES[variant],
+    SIZE_CLASSES[size],
+    className,
+  ].join(' ');
+}
+
+/**
  * A styled <button>.
  * Defaults to type="button" so a button inside a form never submits it by accident;
  * pass type="submit" explicitly for submit buttons.
@@ -64,18 +92,5 @@ export function Button({
   className = '',
   ...rest
 }: ButtonProps) {
-  return (
-    <button
-      type={type}
-      className={[
-        'inline-flex items-center justify-center gap-2 font-semibold transition-colors duration-150',
-        'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
-        'disabled:cursor-not-allowed disabled:opacity-50',
-        VARIANT_CLASSES[variant],
-        SIZE_CLASSES[size],
-        className,
-      ].join(' ')}
-      {...rest}
-    />
-  );
+  return <button type={type} className={buttonClasses(variant, size, className)} {...rest} />;
 }

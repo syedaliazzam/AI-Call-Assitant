@@ -197,7 +197,7 @@ export function UiGallery() {
   return (
     <div id="ui-gallery" className="flex flex-col">
       <header className="k-light bg-ui-bg px-4 py-8 sm:px-8">
-        <Eyebrow>Dev tools</Eyebrow>
+        <Eyebrow>Dev Tools</Eyebrow>
         <h1 className="text-[28px] font-bold text-ui-heading">UI components</h1>
         <p className="mt-1 max-w-prose text-[15px] text-ui-muted">
           The Kite theme (docs/design/kite-ui-theme.md): navy, one cyan action colour, Montserrat
@@ -206,6 +206,35 @@ export function UiGallery() {
       </header>
       <section aria-label="Light surface" className="k-light bg-ui-bg px-4 py-8 sm:px-8">
         <GallerySet name="Light" />
+      </section>
+      <section aria-label="Grey band" className="k-light bg-ui-band px-4 py-8 sm:px-8">
+        <Eyebrow>Grey band (--k-band)</Eyebrow>
+        <h2 className="text-[20px] text-ui-subheading">Alternating sections</h2>
+        <p className="mt-1 max-w-prose text-[15px] leading-relaxed text-ui-text">
+          Long pages alternate white and grey-band sections, as on the company site. On the band,
+          body text, headings, muted text and status colours all pass 4.5:1; links and the
+          &quot;You&quot; label do not (4.37:1), so they stay on white surfaces such as the card
+          below.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <Card eyebrow="On the band" title="A white card">
+            <p className="text-[15px] text-ui-text">
+              Cards sit on the band as white surfaces.{' '}
+              <a href="#ui-gallery" className="text-ui-link hover:underline">
+                Links go here
+              </a>
+              .
+            </p>
+          </Card>
+          <div className="flex flex-col gap-3">
+            <Badge tone="success">Saved</Badge>
+            <Badge tone="warning">Unsaved changes</Badge>
+            <p className="text-[13px] text-ui-muted">Muted text on the band: 4.75:1.</p>
+            <div>
+              <Button variant="secondary">Secondary on the band</Button>
+            </div>
+          </div>
+        </div>
       </section>
       <section aria-label="Dark surface" className="k-dark bg-ui-bg px-4 py-8 sm:px-8">
         <GallerySet name="Dark" />

@@ -43,21 +43,28 @@ export function Toggle({ label, hint, checked, onChange, disabled = false }: Tog
         aria-describedby={hint ? hintId : undefined}
         disabled={disabled}
         onClick={() => onChange(!checked)}
+        // The button is the hit area: at least 44 px on touch screens (theme review, UI U1).
         className={[
-          // Square track and knob (theme: square corners everywhere).
-          'relative mt-0.5 inline-flex h-5 w-9 shrink-0 border transition-colors duration-150',
+          'inline-flex shrink-0 items-center justify-center pointer-coarse:min-h-11 pointer-coarse:min-w-11',
           'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
           'disabled:cursor-not-allowed',
-          checked ? 'border-ui-primary bg-ui-primary' : 'border-ui-border bg-ui-band',
         ].join(' ')}
       >
+        {/* Square track and knob (theme: square corners everywhere). */}
         <span
           aria-hidden="true"
           className={[
-            'absolute top-[1px] size-4 transition-transform duration-150',
-            checked ? 'translate-x-4 bg-ui-on-primary' : 'translate-x-[1px] bg-ui-muted',
+            'relative mt-0.5 inline-flex h-5 w-9 border transition-colors duration-150',
+            checked ? 'border-ui-primary bg-ui-primary' : 'border-ui-border bg-ui-band',
           ].join(' ')}
-        />
+        >
+          <span
+            className={[
+              'absolute top-[1px] size-4 transition-transform duration-150',
+              checked ? 'translate-x-4 bg-ui-on-primary' : 'translate-x-[1px] bg-ui-muted',
+            ].join(' ')}
+          />
+        </span>
       </button>
       <div className="flex flex-col">
         <span id={labelId} className="text-[15px] font-semibold text-ui-heading">

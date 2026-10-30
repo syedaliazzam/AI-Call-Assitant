@@ -65,7 +65,7 @@ export function Select<T extends string>({
         aria-describedby={hint ? hintId : undefined}
         // The options are exactly `options`, so the value is always one of T.
         onChange={(event) => onChange(event.target.value as T)}
-        className="h-10 border-ui-border border bg-ui-input px-3 text-[15px] text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="h-10 pointer-coarse:min-h-11 border-ui-border border bg-ui-input px-3 text-base md:text-[15px] text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

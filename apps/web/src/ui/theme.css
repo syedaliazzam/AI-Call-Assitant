@@ -65,6 +65,10 @@
   --k-danger-text: #b42d2d; /* 6.3:1 */
   --k-you: #0a79ab; /* "You" label on light, 4.8:1 on white; white surfaces only */
   --k-them: var(--pi-royal);
+  /* Notice backgrounds (Kite, UI U2): pale tints; the matching text token is ≥ 4.5:1 on each. */
+  --k-success-bg: #e8f6ef;
+  --k-warning-bg: #fdf3df;
+  --k-danger-bg: #fbeaea;
 
   /* ---- Kite semantic tokens: DARK surfaces (live view, overlay) ---- */
   --k-dark-bg: var(--pi-navy-800);
@@ -80,6 +84,10 @@
   --k-dark-success: var(--pi-green); /* 7.0:1 */
   --k-dark-warning: var(--pi-amber); /* 9.2:1 */
   --k-dark-danger: #ff7a7a; /* 6.5:1 */
+  /* Notice backgrounds on dark: faint tints of the status colours over the dark surface. */
+  --k-dark-success-bg: rgba(61, 190, 139, 0.12);
+  --k-dark-warning-bg: rgba(245, 184, 61, 0.12);
+  --k-dark-danger-bg: rgba(255, 122, 122, 0.12);
   --k-hero-gradient: linear-gradient(160deg, #060d1a, #0d1f3c 40%, #152d56 80%, #0d1f3c);
 
   /* ---- Component details from the theme document §5 ---- */
@@ -125,6 +133,11 @@
   --ui-secondary-hover-border: var(--pi-navy);
   /* A quiet hover background (ghost buttons, menu items). */
   --ui-hover: var(--pi-band);
+  /* Notice backgrounds, and the pale blue highlight. */
+  --ui-success-bg: var(--k-success-bg);
+  --ui-warning-bg: var(--k-warning-bg);
+  --ui-danger-bg: var(--k-danger-bg);
+  --ui-pale: var(--pi-pale);
 }
 
 /* ---- Surface tokens: dark (live view, compact overlay, PiP, the sidebar) ---- */
@@ -151,6 +164,10 @@
   --ui-secondary-hover-bg: transparent;
   --ui-secondary-hover-border: var(--k-dark-strong);
   --ui-hover: var(--pi-navy-600);
+  --ui-success-bg: var(--k-dark-success-bg);
+  --ui-warning-bg: var(--k-dark-warning-bg);
+  --ui-danger-bg: var(--k-dark-danger-bg);
+  --ui-pale: var(--pi-navy-600);
 }
 
 /* Tailwind class names for the tokens (inline: the classes read the variables at run time, so
@@ -176,6 +193,10 @@
   --color-ui-secondary-hover-bg: var(--ui-secondary-hover-bg);
   --color-ui-secondary-hover-border: var(--ui-secondary-hover-border);
   --color-ui-hover: var(--ui-hover);
+  --color-ui-success-bg: var(--ui-success-bg);
+  --color-ui-warning-bg: var(--ui-warning-bg);
+  --color-ui-danger-bg: var(--ui-danger-bg);
+  --color-ui-pale: var(--ui-pale);
   /* Fixed brand colours (the same on light and dark). */
   --color-ui-primary: var(--pi-cyan);
   --color-ui-primary-hover: var(--k-primary-hover);

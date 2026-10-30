@@ -109,7 +109,7 @@ export function DialogPanel({ titleId, title, onClose, children, footer }: Dialo
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="px-2 text-xl leading-none text-ui-muted hover:bg-ui-hover hover:text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+          className="px-2 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-xl leading-none text-ui-muted hover:bg-ui-hover hover:text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
         >
           ×
         </button>

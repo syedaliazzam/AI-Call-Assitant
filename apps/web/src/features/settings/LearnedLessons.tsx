@@ -71,7 +71,7 @@ export function LearnedLessons() {
     await reload();
   }
 
-  if (lessons === null) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (lessons === null) return <p className="text-sm text-ui-muted">Loading…</p>;
   const approved = lessons
     .filter((lesson) => lesson.status === 'approved')
     .sort((a, b) => (a.approvedAt ?? 0) - (b.approvedAt ?? 0));
@@ -79,23 +79,19 @@ export function LearnedLessons() {
 
   return (
     <div className="space-y-3 text-sm">
-      <p className="text-slate-600">
+      <p className="text-ui-muted">
         Lessons you approved after a call. Kite sends them, exactly as shown, with every answer in
         the calls they apply to, as your preferences: they adjust the style and content of answers
         and never override Kite&apos;s rules. At most the 20 newest are sent.
       </p>
       {approved.length === 0 ? (
-        <p className="text-slate-500">
+        <p className="text-ui-muted">
           No lessons yet. Approve one from the proposed lessons on a session&apos;s review page.
         </p>
       ) : (
         <ul aria-label="Learned lessons" className="space-y-2">
           {approved.map((lesson) => (
-            <li
-              key={lesson.id}
-              aria-label="Learned lesson"
-              className="rounded-md border border-slate-200 p-3"
-            >
+            <li key={lesson.id} aria-label="Learned lesson" className="border border-ui-border p-3">
               {editingId === lesson.id ? (
                 <LessonEditor
                   text={lesson.text}
@@ -106,8 +102,8 @@ export function LearnedLessons() {
                 />
               ) : (
                 <>
-                  <p className="text-slate-900">{lesson.text}</p>
-                  <p className="mt-1 text-xs text-slate-500">
+                  <p className="text-ui-heading">{lesson.text}</p>
+                  <p className="mt-1 text-xs text-ui-muted">
                     {lessonScopeLabel(lesson.scope)} · approved{' '}
                     {DATE_FORMAT.format(lesson.approvedAt ?? lesson.decidedAt)}
                     {lesson.evidence && ` · based on: ${lesson.evidence}`}
@@ -131,7 +127,7 @@ export function LearnedLessons() {
         </ul>
       )}
       {rejected > 0 && (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-ui-muted">
           {rejected} rejected{' '}
           {rejected === 1
             ? 'proposal is remembered, so it is not offered again.'
@@ -144,7 +140,7 @@ export function LearnedLessons() {
         </Button>
       )}
       {failed && (
-        <p role="alert" className="text-red-700">
+        <p role="alert" className="text-ui-danger">
           That could not be saved. Try again.
         </p>
       )}

@@ -175,6 +175,14 @@ describe('contrast of the theme tokens', () => {
     }
   });
 
+  it('status text is at least 4.5:1 on its own light notice background, and body text too', () => {
+    for (const tone of ['success', 'warning', 'danger']) {
+      const bg = resolve(`--k-${tone}-bg`);
+      expect(contrast(resolve(`--k-${tone}-text`), bg), tone).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(resolve('--k-text'), bg), `text on ${tone}`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
   it('navy text on the cyan primary button, and on its hover colour, is at least 4.5:1', () => {
     expect(contrast(resolve('--pi-navy'), resolve('--pi-cyan'))).toBeCloseTo(6.0, 1);
     expect(contrast(resolve('--pi-navy'), resolve('--k-primary-hover'))).toBeGreaterThanOrEqual(

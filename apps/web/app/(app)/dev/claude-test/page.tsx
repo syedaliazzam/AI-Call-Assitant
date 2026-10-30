@@ -1,7 +1,7 @@
 /**
  * File: apps/web/app/(app)/dev/claude-test/page.tsx
  * Purpose: The /dev/claude-test route (admins only): renders the Claude streaming test.
- * Used by: Next.js App Router; linked from the sidebar's "Dev tools"
+ * Used by: Next.js App Router; linked from the sidebar's "Dev Tools"
  * Depends on: src/features/dev/ClaudeTest.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §12 Day 1 (streamed Claude reply)
  */

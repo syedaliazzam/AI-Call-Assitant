@@ -31,16 +31,16 @@ export interface UsersTableProps {
  */
 function StatusBadge({ user }: { user: UserRow }) {
   if (user.disabled) {
-    return <span className="rounded bg-red-100 px-2 py-0.5 text-xs text-red-800">Disabled</span>;
+    return <span className="bg-ui-danger-bg px-2 py-0.5 text-xs text-ui-danger">Disabled</span>;
   }
   if (user.mustChangePassword) {
     return (
-      <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+      <span className="bg-ui-warning-bg px-2 py-0.5 text-xs text-ui-warning">
         Must change password
       </span>
     );
   }
-  return <span className="rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">Active</span>;
+  return <span className="bg-ui-success-bg px-2 py-0.5 text-xs text-ui-success">Active</span>;
 }
 
 /**
@@ -127,39 +127,39 @@ export function UsersTable({ users, currentUserId, actions }: UsersTableProps) {
         />
       )}
       {error && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger">
           {error}
         </p>
       )}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto border border-ui-border bg-ui-surface">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 uppercase">
+          <thead className="border-b border-ui-border bg-ui-band text-xs text-ui-muted uppercase">
             <tr>
-              <th className="px-4 py-3 font-medium">Name</th>
-              <th className="px-4 py-3 font-medium">Email</th>
-              <th className="px-4 py-3 font-medium">Role</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Created</th>
-              <th className="px-4 py-3 font-medium">
+              <th className="px-4 py-3 font-semibold">Name</th>
+              <th className="px-4 py-3 font-semibold">Email</th>
+              <th className="px-4 py-3 font-semibold">Role</th>
+              <th className="px-4 py-3 font-semibold">Status</th>
+              <th className="px-4 py-3 font-semibold">Created</th>
+              <th className="px-4 py-3 font-semibold">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-ui-border">
             {users.map((user) => {
               const isSelf = user.id === currentUserId;
               return (
                 <tr key={user.id}>
-                  <td className="px-4 py-3 font-medium text-slate-900">
+                  <td className="px-4 py-3 font-semibold text-ui-heading">
                     {user.name}
-                    {isSelf && <span className="ml-2 text-xs text-slate-400">(you)</span>}
+                    {isSelf && <span className="ml-2 text-xs text-ui-muted">(you)</span>}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{user.email}</td>
-                  <td className="px-4 py-3 text-slate-600 capitalize">{user.role}</td>
+                  <td className="px-4 py-3 text-ui-muted">{user.email}</td>
+                  <td className="px-4 py-3 text-ui-muted capitalize">{user.role}</td>
                   <td className="px-4 py-3">
                     <StatusBadge user={user} />
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{formatDate(user.createdAt)}</td>
+                  <td className="px-4 py-3 text-ui-muted">{formatDate(user.createdAt)}</td>
                   <td className="px-4 py-3">
                     {/* No actions on your own row: resetting, disabling or demoting yourself
                         would sign you out or lock you out. Use /change-password instead. */}

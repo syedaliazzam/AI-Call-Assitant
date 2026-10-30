@@ -11,13 +11,13 @@
  */
 'use client';
 
-import Link from 'next/link';
 import { useState } from 'react';
 import { shownStatus } from '@/core/storage/sessions';
 import type { Session, SessionStatus } from '@/core/storage/types';
 import { SESSION_TYPE_LABELS, STATUS_LABELS } from '@/features/session-setup/labels';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
+import { LinkButton } from '@/ui/LinkButton';
 
 /** Props for SessionCard. */
 export interface SessionCardProps {
@@ -33,9 +33,9 @@ export interface SessionCardProps {
 
 /** Badge colours per shown status. */
 const STATUS_CLASSES: Record<SessionStatus, string> = {
-  'not-started': 'bg-slate-100 text-slate-700',
-  live: 'bg-green-100 text-green-800',
-  ended: 'bg-slate-100 text-slate-500',
+  'not-started': 'bg-ui-band text-ui-text',
+  live: 'bg-ui-success-bg text-ui-success',
+  ended: 'bg-ui-band text-ui-muted',
 };
 
 /** Date and time format for the card, in the user's locale (for example "28 Oct 2026, 14:05"). */
@@ -66,39 +66,37 @@ export function SessionCard({ session, now, onOpen, onDelete }: SessionCardProps
   }
 
   return (
-    <li className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
+    <li className="flex flex-col gap-4 border border-ui-border bg-ui-surface p-5 md:flex-row md:items-center md:justify-between">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="truncate text-base font-semibold text-slate-900">{title}</h2>
-          <span className="rounded bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+          <h2 className="truncate text-[17px] font-semibold text-ui-heading">{title}</h2>
+          <span className="bg-ui-pale px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-subheading">
             {SESSION_TYPE_LABELS[session.type]}
           </span>
-          <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_CLASSES[status]}`}>
+          <span
+            className={`px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em] ${STATUS_CLASSES[status]}`}
+          >
             {STATUS_LABELS[status]}
           </span>
         </div>
-        <p className="mt-1 truncate text-sm text-slate-600">{session.role}</p>
-        <p className="mt-1 text-xs text-slate-400">{DATE_FORMAT.format(session.createdAt)}</p>
+        <p className="mt-1 truncate text-[15px] text-ui-text">{session.role}</p>
+        <p className="mt-1 font-mono text-[12px] text-ui-muted">
+          {DATE_FORMAT.format(session.createdAt)}
+        </p>
       </div>
-      <div className="flex shrink-0 gap-2">
+      <div className="flex shrink-0 flex-wrap gap-2">
         {status === 'ended' && (
           // Day 5 Stage 6: notes, answers and transcript of an ended session.
-          <Link
-            href={`/sessions/${session.id}`}
-            className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50"
-          >
+          <LinkButton href={`/sessions/${session.id}`} size="sm">
             Review
-          </Link>
+          </LinkButton>
         )}
         <Button size="sm" onClick={() => onOpen(session)}>
           Open
         </Button>
-        <Link
-          href={`/sessions/${session.id}/edit`}
-          className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50"
-        >
+        <LinkButton href={`/sessions/${session.id}/edit`} size="sm">
           Edit
-        </Link>
+        </LinkButton>
         <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
           Delete
         </Button>

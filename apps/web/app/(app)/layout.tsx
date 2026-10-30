@@ -33,7 +33,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         }}
         userActions={<SignOutButton />}
       />
-      <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
+      {/* relative: absolutely positioned content (for example screen-reader-only labels) stays
+          inside main instead of widening the page. */}
+      <main className="relative min-w-0 flex-1 overflow-y-auto">{children}</main>
     </div>
   );
 }

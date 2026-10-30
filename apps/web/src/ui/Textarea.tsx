@@ -45,7 +45,7 @@ export function Textarea({ label, hint, error, id, className = '', ...rest }: Te
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         className={[
-          'min-h-20 py-2.5 leading-relaxed border bg-ui-input px-3 text-[15px] text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60',
+          'min-h-20 py-2.5 leading-relaxed border bg-ui-input px-3 text-base md:text-[15px] text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60',
           error ? 'border-ui-danger' : 'border-ui-border',
           className,
         ].join(' ')}

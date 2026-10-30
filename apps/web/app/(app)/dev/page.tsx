@@ -1,7 +1,7 @@
 /**
  * File: apps/web/app/(app)/dev/page.tsx
  * Purpose: The /dev route (admins only, see ./layout.tsx): lists the developer test pages.
- * Used by: Next.js App Router; the sidebar's "Dev tools" link
+ * Used by: Next.js App Router; the sidebar's "Dev Tools" link
  * Depends on: next/link
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (measured results), §12 Days 1–2
  *               (developer test pages until the real screens exist)
@@ -34,14 +34,14 @@ const TOOLS = [
 ];
 
 /**
- * Dev tools index page.
+ * Dev Tools index page.
  *
  * @returns A list of links to the test pages.
  */
 export default function DevToolsPage() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 px-8 py-10">
-      <h1 className="text-2xl font-semibold text-slate-900">Dev tools</h1>
+      <h1 className="text-2xl font-semibold text-slate-900">Dev Tools</h1>
       <ul className="grid gap-4 md:grid-cols-2">
         {TOOLS.map((tool) => (
           <li key={tool.href}>

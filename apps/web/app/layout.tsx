@@ -46,7 +46,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`${montserrat.variable} ${plexMono.variable}`}>
-      <body className="bg-slate-50 font-sans text-slate-900 antialiased">{children}</body>
+      <body className="bg-ui-band font-sans text-ui-text antialiased">{children}</body>
     </html>
   );
 }

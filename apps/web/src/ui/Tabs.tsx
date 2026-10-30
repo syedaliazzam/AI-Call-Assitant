@@ -49,6 +49,7 @@ export function Tabs<T extends string>({ label, options, value, onChange }: Tabs
             onClick={() => onChange(option.value)}
             className={[
               '-mb-px border-b-[3px] px-3 py-2 text-[13.5px] font-semibold transition-colors duration-150',
+              'pointer-coarse:min-h-11',
               'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
               selected
                 ? 'border-ui-accent text-ui-heading'
