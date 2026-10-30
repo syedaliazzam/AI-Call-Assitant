@@ -1,42 +1,59 @@
 /**
  * File: apps/web/src/server/prompt.ts
- * Purpose: Builds the prompt Claude receives for a session: a fixed system block (Kite's answer
- *          rules, including the imperfect-transcript rule), a session block (call details,
- *          description, key terms, answer style, instructions, documents), both cached, and the uncached messages
- *          (transcript window and question; a placeholder for a warm-up).
- * Used by: app/api/answer/route.ts (mode 'warm' from Day 3; 'answer' and 'chat' from Day 4)
- * Depends on: @kite/shared (AnswerRequest, SessionContext), src/server/claude.ts (cachedBlock)
+ * Purpose: Builds the prompt Claude receives for a session, in three cached parts and an
+ *          uncached tail (day-04-answers.md "Prompt design"): the system block (Kite's rules,
+ *          the imperfect-transcript rule, the consistency rules and the learned-preferences
+ *          slot), the session block (call details, description, key terms, answer style,
+ *          instructions, documents), the conversation (stable lines and earlier answers, one
+ *          block per chunk, with the long-call cap), then the tail (lines that may still
+ *          change, and the question; a placeholder for a warm-up).
+ * Used by: app/api/answer/route.ts (modes 'warm', 'answer', 'chat');
+ *          scripts/verify-warm.ts, scripts/verify-answer-cache.ts
+ * Depends on: @kite/shared (AnswerRequest and conversation types, cap limits,
+ *             estimateItemTokens), src/server/claude.ts (cachedBlock)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3 (prompt caching rules),
- *               §7.2 (prompt structure); day-03-sessions.md Stage 5
+ *               §7.2 (prompt structure); day-04-answers.md Stage 2; ADR-0025
  *
  * Caching depends on bytes, not meaning: Claude reuses its cache only when everything up to a
  * breakpoint is byte-for-byte identical to an earlier request. So:
  * - SYSTEM_RULES is a constant (no dates, ids or per-session text). It is shared by every
  *   session; it is shorter than the 512-token caching minimum on its own, so in practice the
- *   cache entry that matters is the one at the end of the session block.
+ *   first cache entry that matters is the one at the end of the session block.
  * - sessionBlock() writes the fields in a fixed order with fixed labels, and adds nothing that
  *   changes between requests (no timestamps, no random ids). The same session always gives the
  *   same text.
- * - The transcript and the question change on every request, so they are in the messages,
- *   after both breakpoints, and never in a cached block.
+ * - The conversation only grows at the end: the client never changes a chunk it has sent, and
+ *   each chunk is its own block, so request N+1 starts with request N's blocks, byte for byte,
+ *   and its cache read lands on request N's last breakpoint.
+ * - Lines that can still change (and the question) are in the tail, after every breakpoint.
  *
  * Session and document text is the user's own content: it is put into the prompt only, never
  * logged.
  */
 import 'server-only';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { AnswerRequest, CallLine, SessionContext } from '@kite/shared';
+import {
+  CONVERSATION_CAP_STEP_TOKENS,
+  CONVERSATION_CAP_TOKENS,
+  estimateItemTokens,
+  type AnswerRequest,
+  type CallLine,
+  type ConversationChunk,
+  type ConversationItem,
+  type SessionContext,
+} from '@kite/shared';
 import { cachedBlock } from './claude';
 
 /**
- * Kite's fixed rules (architecture §7.2 "System"), plus the imperfect-transcript rule (Day 3):
- * the transcript is made by on-device speech recognition and mishears names and terms.
+ * Kite's fixed rules (architecture §7.2 "System"), plus the imperfect-transcript rule (Day 3),
+ * the consistency rules for earlier answers in the call and the "Learned preferences" slot
+ * (Day 4; empty until Day 5's learning loop fills it with lessons the user approved).
  * Do not add anything that changes between requests.
  */
 export const SYSTEM_RULES = `You are Kite, a live call assistant. During a call the user presses a key when they need help answering the other person. You write an answer the user can say, or adapt, right away.
 
 How to answer:
-- Answer the question the other person asked, using the transcript for context.
+- Answer the question the other person asked, using the conversation for context.
 - When the session's answer format is headline+bullets: start with a headline of at most 15 words that answers the question directly, then add at most 5 short bullet points with the supporting details, only when they help.
 - When the answer format is paragraph: write one short paragraph that starts with the direct answer.
 - Follow the session's answer length and tone, and the user's own instructions in the session details.
@@ -47,7 +64,15 @@ How to answer:
 About the transcript:
 - The transcript is made by speech recognition on the user's computer and contains mistakes. Names of people, companies and products, and technical terms, are often misheard, usually as similar-sounding common words or as invented words.
 - Infer the intended words from the context and from the session details: the key terms, the company, the role or topic, and the documents. When a misheard word or phrase sounds like one of them and fits the context, treat it as that word.
-- Lines are labelled "You" (the user) and "Them" (the other person). Recent "Them" lines usually hold the question.`;
+- Lines are labelled "You" (the user) and "Them" (the other person), with the time since the call started. Recent "Them" lines usually hold the question.
+- The conversation shows the call so far in time order. The lines under "latest" are the newest and may still be incomplete.
+
+Staying consistent:
+- Earlier answers in this call are shown in the conversation. Stay consistent with them. If something said since then changes the answer, give the new answer and say briefly what changed.
+- If the same question is asked again, build on the earlier answer instead of starting over.
+
+Learned preferences (approved by the user in earlier calls):
+(none yet)`;
 
 /** Shown for a session field the user left empty, so the session block keeps the same shape. */
 const NOT_GIVEN = '(not given)';
@@ -106,52 +131,178 @@ export function sessionBlock(session: SessionContext): string {
   return lines.join('\n');
 }
 
+/** Shown at the start of the conversation when the long-call cap dropped its oldest part. */
+export const OMITTED_NOTE = '[Earlier part of the call omitted]';
+
 /**
- * Writes the transcript window and the question as the (uncached) user turn.
+ * Writes a time as mm:ss, or h:mm:ss from one hour.
  *
- * @param transcript Recent transcript lines, oldest first.
- * @param question   The question to answer ('' or undefined: the latest "Them" lines).
- * @returns The user turn's text.
+ * @param seconds Whole seconds since the call connected.
+ * @returns For example '03:12' or '1:04:09'.
+ * Called from: lineText(), itemText()
+ */
+export function clockTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const mmss = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return h > 0 ? `${h}:${mmss}` : mmss;
+}
+
+/**
+ * Writes one transcript line as `[mm:ss] Them: text`.
+ *
+ * @param line The line.
+ * @returns The line's text in the prompt.
+ * Called from: itemText(), tailText()
+ */
+function lineText(line: CallLine): string {
+  const speaker = line.speaker === 'you' ? 'You' : 'Them';
+  return `[${clockTime(line.at)}] ${speaker}: ${escapeTags(line.text)}`;
+}
+
+/**
+ * Writes one conversation item: a line, or an earlier answer with the question it answered.
+ *
+ * @param item The item.
+ * @returns Its text in the prompt (fixed labels, escaped content).
+ * Called from: conversationBlocks()
+ */
+function itemText(item: ConversationItem): string {
+  if (item.kind === 'line') return lineText(item);
+  const asked = item.mode === 'chat' ? 'typed question' : 'question';
+  return [
+    `[${clockTime(item.at)}] Kite's earlier answer (${asked}: ${escapeTags(item.question.trim())}):`,
+    escapeTags(item.text.trim()),
+    '[end of earlier answer]',
+  ].join('\n');
+}
+
+/** What capConversation() returns. */
+export interface CappedConversation {
+  /** The chunks kept, oldest first (the same chunk objects as given). */
+  chunks: ConversationChunk[];
+  /** True when older chunks were dropped. */
+  omitted: boolean;
+}
+
+/**
+ * The long-call cap (day-04-answers.md "Long calls"). Keeps the conversation under
+ * CONVERSATION_CAP_TOKENS (estimated) by dropping the oldest whole chunks, in steps of
+ * CONVERSATION_CAP_STEP_TOKENS: the amount dropped is the excess rounded UP to a whole step.
+ * So the cut point, and with it the start of the cached conversation, only moves when the
+ * excess crosses another step; between steps every request still reads the cache. The result
+ * depends only on the chunks (no state), and the newest chunk is always kept.
+ *
+ * @param chunks The conversation chunks, oldest first.
+ * @returns The chunks kept and whether any were dropped.
+ * Called from: buildPrompt(); tests
+ */
+export function capConversation(chunks: readonly ConversationChunk[]): CappedConversation {
+  const sizes = chunks.map((chunk) =>
+    chunk.reduce((total, item) => total + estimateItemTokens(item), 0),
+  );
+  const total = sizes.reduce((sum, size) => sum + size, 0);
+  if (total <= CONVERSATION_CAP_TOKENS) return { chunks: [...chunks], omitted: false };
+  const excess = total - CONVERSATION_CAP_TOKENS;
+  const toDrop = Math.ceil(excess / CONVERSATION_CAP_STEP_TOKENS) * CONVERSATION_CAP_STEP_TOKENS;
+  let dropped = 0;
+  let first = 0;
+  while (first < chunks.length - 1 && dropped < toDrop) {
+    dropped += sizes[first]!;
+    first += 1;
+  }
+  return { chunks: chunks.slice(first), omitted: first > 0 };
+}
+
+/**
+ * Writes the conversation as one text block per chunk, with a cache breakpoint on the last
+ * block only. A chunk's text depends only on that chunk (and, for the first block, on whether
+ * the cap dropped older ones), so a later request repeats these blocks byte for byte and adds
+ * its new chunk after them: its cache read lands on this request's breakpoint, one block back
+ * (Claude reads the cache only where an earlier request put a breakpoint, looking back at most
+ * 20 blocks; ADR-0025). The `<conversation>` tag opens in the first block and closes in the
+ * uncached tail, so no cached block has to change when the conversation grows.
+ *
+ * @param capped The chunks to write (from capConversation()).
+ * @returns The blocks ([] when there is no conversation yet).
  * Called from: buildPrompt()
  */
-function transcriptTurn(transcript: readonly CallLine[], question: string | undefined) {
-  const lines = transcript.map(
-    (line) => `${line.speaker === 'you' ? 'You' : 'Them'}: ${escapeTags(line.text)}`,
+function conversationBlocks(capped: CappedConversation): Anthropic.TextBlockParam[] {
+  const blocks = capped.chunks.map((chunk, index): Anthropic.TextBlockParam => {
+    const items = chunk.map(itemText);
+    if (index === 0) items.unshift('<conversation>', ...(capped.omitted ? [OMITTED_NOTE] : []));
+    return { type: 'text', text: items.join('\n') };
+  });
+  const last = blocks.at(-1);
+  if (last) blocks[blocks.length - 1] = cachedBlock(last.text);
+  return blocks;
+}
+
+/**
+ * Writes the uncached tail: the end of the conversation, the lines that may still change, and
+ * the question (or the instruction to answer the latest question when there is none).
+ *
+ * @param request         The request (mode, tail, question).
+ * @param hasConversation True when conversation blocks come before (their tag is closed here).
+ * @returns The tail's text.
+ * Called from: buildPrompt()
+ */
+function tailText(request: AnswerRequest, hasConversation: boolean): string {
+  const tail = request.tail ?? [];
+  const question = request.question?.trim() ?? '';
+  const parts = hasConversation
+    ? ['</conversation>', '']
+    : ['<conversation>', '(nothing said yet)', '</conversation>', ''];
+  parts.push(
+    '<latest>',
+    ...(tail.length > 0 ? tail.map(lineText) : ['(nothing new)']),
+    '</latest>',
   );
-  return [
-    '<transcript>',
-    ...(lines.length > 0 ? lines : ['(nothing said yet)']),
-    '</transcript>',
-    '',
-    question?.trim()
-      ? `Question to answer: ${escapeTags(question.trim())}`
-      : 'Answer the latest question from "Them".',
-  ].join('\n');
+  parts.push('');
+  if (request.mode === 'chat') {
+    parts.push(`Question typed by the user: ${escapeTags(question)}`);
+  } else if (question) {
+    parts.push(`Question to answer: ${escapeTags(question)}`);
+  } else {
+    parts.push('Answer the latest question from "Them".');
+  }
+  return parts.join('\n');
 }
 
 /** What buildPrompt() returns: the `system` and `messages` request parameters. */
 export interface BuiltPrompt {
   /** System rules, then the session block; each block carries a cache breakpoint. */
   system: Anthropic.TextBlockParam[];
-  /** The uncached turn: the transcript and question, or the warm-up placeholder. */
+  /**
+   * One user turn: the conversation chunks (the last one carries the third breakpoint), then
+   * one uncached block (the tail and question, or the warm-up placeholder).
+   */
   messages: Anthropic.MessageParam[];
 }
 
 /**
- * Builds the prompt for a request.
+ * Builds the prompt for a request (day-04-answers.md "Prompt design"): three cached parts
+ * (rules, session, conversation; 3 of Anthropic's limit of 4 cache breakpoints) and an
+ * uncached tail. A warm-up sends the same cached parts with a placeholder block instead of the
+ * tail, so the answers that follow read everything it wrote.
  *
  * @param request A validated request with `session` set.
- * @returns The cached system blocks and the uncached messages.
+ * @returns The system blocks and the user turn.
  * @throws Error('SESSION_REQUIRED') when the request has no session (validation prevents this
- *         for mode 'warm').
- * Called from: POST handler in app/api/answer/route.ts
+ *         for every mode but hello).
+ * Called from: POST handler in app/api/answer/route.ts; scripts/verify-warm.ts,
+ *              scripts/verify-answer-cache.ts
  */
 export function buildPrompt(request: AnswerRequest): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
-  const content =
-    request.mode === 'warm' ? WARM_MESSAGE : transcriptTurn(request.tail ?? [], request.question);
+  const conversation = conversationBlocks(capConversation(request.conversation ?? []));
+  const last: Anthropic.TextBlockParam = {
+    type: 'text',
+    text: request.mode === 'warm' ? WARM_MESSAGE : tailText(request, conversation.length > 0),
+  };
   return {
     system: [cachedBlock(SYSTEM_RULES), cachedBlock(sessionBlock(request.session))],
-    messages: [{ role: 'user', content }],
+    messages: [{ role: 'user', content: [...conversation, last] }],
   };
 }
