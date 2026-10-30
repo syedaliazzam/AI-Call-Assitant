@@ -1,0 +1,88 @@
+{
+  "id": "n1-sales-renewal-with-feedback",
+  "covers": "A sales renewal with a thumbs-down answer and a note: a lesson should follow from it.",
+  "request": {
+    "session": {
+      "type": "sales",
+      "company": "Northwind Logistics (invented)",
+      "role": "Renewal call",
+      "description": "Renewal and expansion.",
+      "instructions": "",
+      "keyTerms": ["Professional plan"],
+      "style": {
+        "format": "headline+bullets",
+        "length": "short",
+        "tone": "simple"
+      },
+      "documents": [
+        {
+          "name": "price-list.txt",
+          "text": "Professional plan: 52 dollars per seat per month, billed yearly. Onboarding 1,500 dollars one-time."
+        }
+      ]
+    },
+    "lines": [
+      {
+        "speaker": "you",
+        "text": "THANKS FOR JOINING LET US TALK ABOUT THE RENEWAL",
+        "at": 5
+      },
+      {
+        "speaker": "them",
+        "text": "SURE WE WANT TO MOVE THE WHOLE DISPATCH TEAM TO PROFESSIONAL",
+        "at": 12
+      },
+      {
+        "speaker": "them",
+        "text": "THAT IS ABOUT FORTY SEATS",
+        "at": 18
+      },
+      {
+        "speaker": "them",
+        "text": "WHAT WOULD THAT COST",
+        "at": 24
+      },
+      {
+        "speaker": "you",
+        "text": "IT IS FIFTY TWO DOLLARS PER SEAT PER MONTH BILLED YEARLY",
+        "at": 40
+      },
+      {
+        "speaker": "them",
+        "text": "SO WHAT IS THAT FOR THE YEAR",
+        "at": 52
+      },
+      {
+        "speaker": "you",
+        "text": "ABOUT TWENTY FIVE THOUSAND A YEAR FOR FORTY SEATS",
+        "at": 70
+      },
+      {
+        "speaker": "them",
+        "text": "OKAY SEND ME A PROPOSAL AND I WILL TAKE IT TO FINANCE",
+        "at": 95
+      },
+      {
+        "speaker": "you",
+        "text": "I WILL SEND THE PROPOSAL BY MONDAY",
+        "at": 103
+      }
+    ],
+    "answers": [
+      {
+        "at": 26,
+        "mode": "answer",
+        "question": "What would forty seats on Professional cost?",
+        "text": "52 dollars per seat per month.\n- Billed yearly",
+        "rating": "down",
+        "note": "Better: give the monthly total and the yearly total for the seat count they said."
+      }
+    ]
+  },
+  "mustInclude": [
+    "the move of about 40 seats to the Professional plan at 52 dollars per seat per month, billed yearly",
+    "next step: the user sends the proposal by Monday; the other side takes it to finance",
+    "a proposed lesson to give the monthly and yearly totals for the seat count (from the thumbs down and its note)"
+  ],
+  "mustNotInclude": ["a discount", "dates or numbers not in the call", "next steps nobody agreed"]
+}

@@ -1,0 +1,157 @@
+/**
+ * Tests for apps/web/src/core/notes/generate.ts and src/core/storage/notes.ts: notesRequest()
+ * turns lines and this call's answers into times since the call started, leaves out empty lines
+ * and earlier calls' answers, and keeps the newest lines of a call over the character limit;
+ * generateNotes() posts once, saves the notes (and they can be read back from IndexedDB),
+ * returns null without posting when there is nothing to write about, and returns null (never
+ * throws) on a failure; its logs hold ids, sizes, times and token counts only.
+ * All text is invented.
+ */
+import 'fake-indexeddb/auto';
+import { MAX_NOTES_CHARS } from '@kite/shared';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { generateNotes, notesRequest, type NotesInput } from '@/core/notes/generate';
+import { getNotes } from '@/core/storage/notes';
+import type { Session, StoredAnswer } from '@/core/storage/types';
+import { resetDb } from '../storage/helpers';
+
+beforeEach(resetDb);
+
+/** When the invented call started. */
+const START = 1_000_000;
+
+/** An invented session. */
+const SESSION: Session = {
+  id: 's1',
+  type: 'sales',
+  company: 'Northwind (invented)',
+  role: 'Renewal',
+  description: '',
+  preferences: {
+    language: 'en',
+    model: 'fast',
+    style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
+    keyTerms: '',
+  },
+  instructions: '',
+  saveTranscript: false,
+  autoAnswer: false,
+  createdAt: 1,
+  status: 'ended',
+  lastActiveAt: null,
+};
+
+/**
+ * An invented answer.
+ *
+ * @param id        Id.
+ * @param createdAt When asked.
+ * @returns The answer.
+ */
+function answer(id: string, createdAt: number): StoredAnswer {
+  return {
+    id,
+    sessionId: 's1',
+    mode: 'answer',
+    question: 'SECRET-Q',
+    text: 'SECRET-A',
+    model: 'fast',
+    msFirstToken: 1,
+    msTotal: 2,
+    createdAt,
+    rating: 'down',
+    note: 'SECRET-NOTE',
+  };
+}
+
+/** The invented call. */
+const INPUT: NotesInput = {
+  session: SESSION,
+  documents: [],
+  lines: [
+    { speaker: 'them', text: 'SECRET what does it cost', tStart: START + 10_500 },
+    { speaker: 'you', text: '   ', tStart: START + 12_000 },
+    { speaker: 'you', text: 'fifty two per seat', tStart: START + 20_000 },
+  ],
+  answers: [answer('old', START - 60_000), answer('a1', START + 15_000)],
+  callStartedAt: START,
+};
+
+describe('notesRequest', () => {
+  it('uses seconds since the call started, this call only, and no empty lines', () => {
+    const request = notesRequest(INPUT);
+    expect(request.lines).toEqual([
+      { speaker: 'them', text: 'SECRET what does it cost', at: 10 },
+      { speaker: 'you', text: 'fifty two per seat', at: 20 },
+    ]);
+    expect(request.answers).toEqual([
+      {
+        at: 15,
+        mode: 'answer',
+        question: 'SECRET-Q',
+        text: 'SECRET-A',
+        rating: 'down',
+        note: 'SECRET-NOTE',
+      },
+    ]);
+    expect(request.session.company).toBe('Northwind (invented)');
+  });
+
+  it('keeps the newest lines when the call is over the character limit', () => {
+    const lines = Array.from({ length: 200 }, (_, i) => ({
+      speaker: 'them' as const,
+      text: `${i} `.padEnd(2_000, 'x'),
+      tStart: START + i * 1_000,
+    }));
+    const request = notesRequest({ ...INPUT, lines });
+    const total = request.lines.reduce((sum, line) => sum + line.text.length, 0);
+    expect(total).toBeLessThanOrEqual(MAX_NOTES_CHARS);
+    expect(request.lines.at(-1)!.at).toBe(199);
+    expect(request.lines[0]!.at).toBe(200 - MAX_NOTES_CHARS / 2_000);
+  });
+});
+
+describe('generateNotes', () => {
+  it('posts once, saves the notes, and logs numbers only', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const notes = {
+      summary: ['SECRET-SUMMARY'],
+      questions: [],
+      nextSteps: [],
+      unclear: [],
+      lessons: [],
+    };
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        notes,
+        usage: {
+          input_tokens: 900,
+          output_tokens: 120,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+        ms: 4_000,
+      }),
+    );
+    const saved = await generateNotes(INPUT, { fetchImpl, now: () => 42 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(saved).toEqual({ sessionId: 's1', notes, callStartedAt: START, createdAt: 42 });
+    expect(await getNotes('s1')).toEqual(saved);
+    const logged = JSON.stringify(info.mock.calls);
+    expect(logged).toContain('"input":900');
+    expect(logged).not.toContain('SECRET');
+  });
+
+  it('does nothing for an empty call, and never throws on failure', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fetchImpl = vi.fn(async () => Response.json({ code: 'upstream_error' }, { status: 502 }));
+    expect(await generateNotes({ ...INPUT, lines: [], answers: [] }, { fetchImpl })).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(await generateNotes(INPUT, { fetchImpl })).toBeNull();
+    const offline = vi.fn(async () => {
+      throw new Error('offline');
+    });
+    expect(await generateNotes(INPUT, { fetchImpl: offline })).toBeNull();
+    expect(await getNotes('s1')).toBeNull();
+  });
+});

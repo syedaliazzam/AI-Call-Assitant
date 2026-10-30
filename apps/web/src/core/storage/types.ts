@@ -5,10 +5,11 @@
  *          user's own content and are never logged (CLAUDE.md).
  * Used by: src/core/storage/db.ts and the repositories next to it (sessions.ts, documents.ts,
  *          utterances.ts, wipe.ts); from Stage 3 the session screens
- * Depends on: nothing
+ * Depends on: @kite/shared (CallNotes type)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (data model), §8.1 (where
  *               data lives); day-03-sessions.md Stage 1
  */
+import type { CallNotes } from '@kite/shared';
 
 /** What kind of call a session is for (the dashboard's type filter tabs). */
 export type SessionType = 'interview' | 'sales' | 'support' | 'internal';
@@ -178,16 +179,18 @@ export interface StoredSettings {
   updatedAt: number;
 }
 
-/** AI notes written after a call (architecture §7.4 `notes`). Written from Day 5. */
+/**
+ * AI notes written after a call (architecture §7.4 `notes`), Day 5: the latest call's notes
+ * for the session. They include proposed lessons, which are only suggestions until the user
+ * approves one (Stage 7).
+ */
 export interface StoredNotes {
   /** The session they belong to (one set of notes per session, so it is also the key). */
   sessionId: string;
-  /** Short summary of the call. */
-  summary: string;
-  /** Questions the other side asked, one per entry. */
-  questions: string[];
-  /** Agreed next steps, one per entry. */
-  nextSteps: string[];
+  /** The notes (summary, questions, next steps, unclear parts, proposed lessons). */
+  notes: CallNotes;
+  /** When the call they describe connected (Unix ms). */
+  callStartedAt: number;
   /** When they were written (Unix ms). */
   createdAt: number;
 }

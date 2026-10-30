@@ -18,6 +18,8 @@
     "verify:warm": "tsx --env-file=.env.local --conditions=react-server scripts/verify-warm.ts",
     "verify:answer-cache": "tsx --env-file=.env.local --conditions=react-server scripts/verify-answer-cache.ts",
     "verify:screenshot": "tsx --env-file=.env.local --conditions=react-server scripts/verify-screenshot.ts",
+    "verify:notes": "tsx --env-file=.env.local --conditions=react-server scripts/verify-notes.ts",
+    "eval:notes": "tsx --env-file=.env.local --conditions=react-server scripts/eval-notes.ts",
     "eval:answers": "tsx --env-file=.env.local --conditions=react-server scripts/eval-answers.ts",
     "e2e-admin": "tsx --env-file=.env.local --conditions=react-server scripts/e2e-admin.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",

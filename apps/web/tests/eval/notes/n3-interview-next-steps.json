@@ -1,0 +1,77 @@
+{
+  "id": "n3-interview-next-steps",
+  "covers": "An interview with an owner-named next step and an answer rated up: no lesson needed.",
+  "request": {
+    "session": {
+      "type": "interview",
+      "company": "Ledgerly (invented)",
+      "role": "Senior backend engineer interview (the user is the candidate)",
+      "description": "Second-round interview.",
+      "instructions": "Answer in first person.",
+      "keyTerms": ["Ledgerly"],
+      "style": {
+        "format": "headline+bullets",
+        "length": "short",
+        "tone": "simple"
+      },
+      "documents": [
+        {
+          "name": "my-notes.txt",
+          "text": "At Copperleaf Payments I cut invoice API p95 latency from 900 ms to 250 ms with read replicas and a Redis cache."
+        }
+      ]
+    },
+    "lines": [
+      {
+        "speaker": "them",
+        "text": "TELL ME ABOUT A TIME YOU IMPROVED PERFORMANCE",
+        "at": 30
+      },
+      {
+        "speaker": "you",
+        "text": "AT COPPERLEAF I CUT THE INVOICE API P NINETY FIVE FROM NINE HUNDRED TO TWO FIFTY MILLISECONDS",
+        "at": 45
+      },
+      {
+        "speaker": "them",
+        "text": "HOW DID YOU DO IT",
+        "at": 70
+      },
+      {
+        "speaker": "you",
+        "text": "READ REPLICAS AND A REDIS CACHE IN FRONT OF POSTGRES",
+        "at": 78
+      },
+      {
+        "speaker": "them",
+        "text": "NICE THAT IS ALL FROM ME",
+        "at": 300
+      },
+      {
+        "speaker": "them",
+        "text": "OUR RECRUITER SAM WILL EMAIL YOU ABOUT THE FINAL ROUND BY THURSDAY",
+        "at": 310
+      }
+    ],
+    "answers": [
+      {
+        "at": 32,
+        "mode": "answer",
+        "question": "Tell me about a time you improved performance.",
+        "text": "I cut the invoice API p95 from 900 ms to 250 ms at Copperleaf.\n- Read replicas\n- Redis cache",
+        "rating": "up",
+        "note": ""
+      }
+    ]
+  },
+  "mustInclude": [
+    "the performance story: invoice API p95 from 900 ms to 250 ms at Copperleaf with read replicas and a Redis cache",
+    "next step: Sam the recruiter emails about the final round by Thursday",
+    "no lesson, or only one grounded in the thumbs up (nothing to fix was noted)"
+  ],
+  "mustNotInclude": [
+    "a job offer or salary",
+    "next steps nobody agreed",
+    "a lesson that contradicts the thumbs up"
+  ]
+}

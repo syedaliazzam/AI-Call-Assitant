@@ -33,6 +33,8 @@ import { warmSession } from '@/core/answer/warm';
 import { markSessionActive, updateSession } from '@/core/storage/sessions';
 import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
 import { listUtterances } from '@/core/storage/utterances';
+import { listAnswers } from '@/core/storage/answers';
+import { generateNotes, type NotesLine } from '@/core/notes/generate';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
 import { endCall } from '@/core/transcript/endCall';
@@ -190,6 +192,8 @@ export function LivePage({
   // When this call first connected (Unix ms); a reconnect keeps it. Answers time their lines
   // from here, and a new value starts a new conversation (core/answer/context.ts).
   const [callStartedAt, setCallStartedAt] = useState<number | null>(null);
+  // The notes written after the last call (Day 5).
+  const [notesStatus, setNotesStatus] = useState<'idle' | 'writing' | 'saved' | 'failed'>('idle');
 
   const engineRef = useRef<SttEngine | null>(null);
   const captureRef = useRef<CallCapture | null>(null);
@@ -345,8 +349,8 @@ export function LivePage({
   /**
    * Ends the call: stops both channels, waits for the line still being spoken to become final
    * and be saved (when on; core/transcript/endCall.ts), clears the in-memory transcript (with
-   * saving off, this discards it, architecture §7.4), marks the session ended, and goes back to
-   * the Connect view.
+   * saving off, this discards it, architecture §7.4), marks the session ended, goes back to the
+   * Connect view, and (Day 5) has the call's notes written in the background.
    */
   const end = async () => {
     if (ending) return;
@@ -356,12 +360,24 @@ export function LivePage({
     saverRef.current = null;
     const capture = captureRef.current;
     captureRef.current = null;
+    // The call's final lines, taken just before the transcript is cleared (after the line
+    // still being spoken was flushed), for the notes.
+    let finalLines: NotesLine[] = [];
     await endCall({
       stopCapture: () => capture?.stop(),
       engine: engineRef.current,
       saver,
-      transcript,
+      transcript: {
+        clear: () => {
+          finalLines = transcript
+            .lines()
+            .filter((line) => line.final)
+            .map(({ speaker, text, tStart }) => ({ speaker, text, tStart }));
+          transcript.clear();
+        },
+      },
     });
+    const startedAt = callStartedAt;
     setConnection('idle');
     setLevels({ you: 0, them: 0 });
     setSoundCheck(null);
@@ -370,6 +386,23 @@ export function LivePage({
     setCallStartedAt(null);
     setEnding(false);
     updateSession(session.id, { status: 'ended' }).catch(() => undefined);
+    // The call's notes (Day 5): written after the call by the server, saved here. Not awaited:
+    // End never waits for them.
+    if (startedAt !== null && finalLines.length > 0) {
+      setNotesStatus('writing');
+      void listAnswers(session.id)
+        .catch(() => [])
+        .then((answers) =>
+          generateNotes({
+            session,
+            documents,
+            lines: finalLines,
+            answers,
+            callStartedAt: startedAt,
+          }),
+        )
+        .then((notes) => setNotesStatus(notes ? 'saved' : 'failed'));
+    }
     // Show the lines just saved under "Saved transcript".
     if (saver) {
       listUtterances(session.id)
@@ -404,6 +437,15 @@ export function LivePage({
           onRetryModel={retryModel}
           onContinue={() => setView('live')}
         />
+        {notesStatus !== 'idle' && (
+          <p role="status" className="mx-auto mt-4 max-w-3xl px-8 text-sm text-slate-600">
+            {notesStatus === 'writing'
+              ? 'Writing the call notes…'
+              : notesStatus === 'saved'
+                ? 'The call notes are saved on this computer.'
+                : 'The call notes could not be written. You can try again from the session review.'}
+          </p>
+        )}
         <SavedTranscript lines={saved} saving={session.saveTranscript} />
       </>
     );

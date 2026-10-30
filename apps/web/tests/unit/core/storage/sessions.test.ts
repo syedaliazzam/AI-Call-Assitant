@@ -244,9 +244,14 @@ describe('deleteSession', () => {
       });
       await getDb().notes.add({
         sessionId: session.id,
-        summary: 'Invented summary.',
-        questions: [],
-        nextSteps: [],
+        notes: {
+          summary: ['Invented summary.'],
+          questions: [],
+          nextSteps: [],
+          unclear: [],
+          lessons: [],
+        },
+        callStartedAt: 3,
         createdAt: 4,
       });
     }
