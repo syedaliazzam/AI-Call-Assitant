@@ -162,7 +162,7 @@ test('6. Answer (Ctrl+Enter): the headline streams in, and the answer is rated',
 });
 
 test('7. End: saved transcript survives a reload', async () => {
-  await page.getByRole('button', { name: 'End' }).click();
+  await page.getByRole('button', { name: 'End', exact: true }).click();
   const saved = page.getByText(/Saved transcript \((\d+) lines?\)/);
   await expect(saved).toBeVisible({ timeout: 30_000 });
   const before = Number(/\((\d+)/.exec((await saved.textContent()) ?? '')?.[1]);

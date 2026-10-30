@@ -131,7 +131,7 @@ test('3. Connect needs no picker; Go live shows lines; a Chat answer is rated; E
   report('desktop chat answer streams and is rated', check.headlineWords > 0, { ...check });
   expect(check.headlineWords).toBeGreaterThan(0);
 
-  await page.getByRole('button', { name: 'End' }).click();
+  await page.getByRole('button', { name: 'End', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
   report('desktop end', true);
 });
