@@ -45,7 +45,5 @@
     "names what to check (the price list) or offers to follow up",
     "the headline (first line) is 15 words or fewer; any explanation is in the bullets"
   ],
-  "mustNotInclude": [
-    "any price or discount"
-  ]
+  "mustNotInclude": ["any price or discount"]
 }

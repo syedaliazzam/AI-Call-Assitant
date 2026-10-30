@@ -7,10 +7,7 @@
     "role": "Account executive",
     "description": "Renewal call with the operations lead.",
     "instructions": "",
-    "keyTerms": [
-      "Harbor Lane",
-      "Professional plan"
-    ],
+    "keyTerms": ["Harbor Lane", "Professional plan"],
     "style": {
       "format": "headline+bullets",
       "length": "short",
@@ -53,7 +50,5 @@
     "suggests a short, friendly way to reply or steer back to the call",
     "the headline (first line) is 15 words or fewer; any explanation is in the bullets"
   ],
-  "mustNotInclude": [
-    "an invented restaurant or place"
-  ]
+  "mustNotInclude": ["an invented restaurant or place"]
 }

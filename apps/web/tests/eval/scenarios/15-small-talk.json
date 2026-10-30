@@ -7,9 +7,7 @@
     "role": "Senior backend engineer interview (the user is the candidate)",
     "description": "Second-round interview.",
     "instructions": "Answer in first person, as me.",
-    "keyTerms": [
-      "Ledgerly"
-    ],
+    "keyTerms": ["Ledgerly"],
     "style": {
       "format": "headline+bullets",
       "length": "short",
@@ -45,7 +43,5 @@
     "a short, friendly reply the user can say or adapt (for example \"Good, thanks, how about yours?\")",
     "the headline (first line) is 15 words or fewer; any explanation is in the bullets"
   ],
-  "mustNotInclude": [
-    "invented personal details about the user stated as facts"
-  ]
+  "mustNotInclude": ["invented personal details about the user stated as facts"]
 }
