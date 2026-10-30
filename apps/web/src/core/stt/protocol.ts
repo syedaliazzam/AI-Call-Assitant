@@ -174,6 +174,16 @@ export type ToWorker =
       hotwords: string;
     }
   | {
+      /**
+       * Asks the worker to answer with a matching 'pong'. The worker handles messages in order,
+       * so the pong arrives after every final line that earlier messages (such as a detach)
+       * produced: the page uses it to wait for the last flushed lines when a call ends (Day 4).
+       */
+      type: 'ping';
+      /** Number echoed back in the pong. */
+      id: number;
+    }
+  | {
       /** Cancel any download, flush and release everything. */
       type: 'stop';
     };
@@ -235,6 +245,12 @@ export type FromWorker =
       type: 'stats';
       /** The statistics. */
       stats: EngineStats;
+    }
+  | {
+      /** Answer to a 'ping': every message sent before it has been handled. */
+      type: 'pong';
+      /** The ping's number. */
+      id: number;
     }
   | {
       /** Loading or decoding failed. */

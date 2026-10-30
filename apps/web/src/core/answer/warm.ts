@@ -4,6 +4,7 @@
  *          session and its documents into the request's session details and sends mode 'warm',
  *          so the first real answer of the call reads the cache instead of writing it.
  * Used by: src/features/live/LiveSession.tsx (when a live session opens),
+ *          src/features/live/LivePage.tsx (again on Connect, Day 4),
  *          src/features/dev/ClaudeTest.tsx ("Warm with session")
  * Depends on: src/core/answer/answerClient.ts, src/core/storage/types.ts, @kite/shared
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3 (Pre-warm), §7.2;
@@ -68,7 +69,7 @@ export interface WarmOptions {
  * @param documents Its documents.
  * @param options   Request override (tests).
  * @returns The warm-up's usage and timings, or null when it failed.
- * Called from: LiveSession.tsx (on open, and again when it loads changed documents);
+ * Called from: LiveSession.tsx (on open); LivePage.tsx (on Connect);
  *              ClaudeTest.tsx
  */
 export function warmSession(

@@ -25,7 +25,7 @@ import { useEffect, useState } from 'react';
 import { warmSession } from '@/core/answer/warm';
 import { listDocuments } from '@/core/storage/documents';
 import { getSession } from '@/core/storage/sessions';
-import type { Session, StoredUtterance } from '@/core/storage/types';
+import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
 import { listUtterances } from '@/core/storage/utterances';
 import { buildHotwords, hotwordsText } from '@/core/stt/sessionHotwords';
 import { LivePage } from './LivePage';
@@ -55,6 +55,8 @@ type Loaded =
       state: 'ready';
       /** The session. */
       session: Session;
+      /** Its documents. */
+      documents: StoredDocument[];
       /** Its hotwords as engine text ("PHRASE :score" per line). */
       hotwords: string;
       /** How many hotwords. */
@@ -88,6 +90,7 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
       return {
         state: 'ready',
         session,
+        documents,
         hotwords: hotwordsText(hotwords),
         hotwordCount: hotwords.length,
         savedLines,
@@ -108,6 +111,7 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
     return (
       <LivePage
         session={loaded.session}
+        documents={loaded.documents}
         hotwords={loaded.hotwords}
         hotwordCount={loaded.hotwordCount}
         savedLines={loaded.savedLines}

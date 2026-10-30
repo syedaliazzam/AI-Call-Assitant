@@ -6,7 +6,8 @@
  *          core/ (it never calls media APIs itself).
  * Used by: src/features/live/LiveSession.tsx (which loads the session first)
  * Depends on: src/core/stt/sttEngine.ts, src/core/stt/health.ts, src/core/audio/capture.ts,
- *             src/core/transcript (transcript, saver), src/core/storage (sessions, utterances),
+ *             src/core/transcript (transcript, saver, endCall), src/core/answer/warm.ts,
+ *             src/core/storage (sessions, utterances),
  *             src/platform (kind, for the instructions only),
  *             src/features/live/* (ConnectPanel, TranscriptStrip, AudioMeter)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §6.1,
@@ -27,11 +28,13 @@ import {
   type CallCapture,
   type ChannelLevels,
 } from '@/core/audio/capture';
+import { warmSession } from '@/core/answer/warm';
 import { markSessionActive, updateSession } from '@/core/storage/sessions';
-import type { Session, StoredUtterance } from '@/core/storage/types';
+import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
 import { listUtterances } from '@/core/storage/utterances';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
+import { endCall } from '@/core/transcript/endCall';
 import { startTranscriptSaver, type TranscriptSaver } from '@/core/transcript/saver';
 import { createTranscript, type Speaker } from '@/core/transcript/transcript';
 import { SESSION_TYPE_LABELS } from '@/features/session-setup/labels';
@@ -71,6 +74,8 @@ const THEM_SOURCE_LABEL: Record<OtherSideSource, string> = {
 export interface LivePageProps {
   /** The session, loaded from this computer by LiveSession. */
   session: Session;
+  /** The session's documents (for the warm-up on Connect, and for answers). */
+  documents: readonly StoredDocument[];
   /**
    * The session's hotwords in the engine's text format ("PHRASE :score" per line; '' = none),
    * from buildHotwords() in core/stt/sessionHotwords.ts.
@@ -135,7 +140,13 @@ function channelEndedMessage(speaker: Speaker, platform: 'desktop' | 'browser'):
  * @returns The Connect view or the live view.
  * Rendered by: app/(app)/live/[id]/page.tsx
  */
-export function LivePage({ session, hotwords, hotwordCount, savedLines }: LivePageProps) {
+export function LivePage({
+  session,
+  documents,
+  hotwords,
+  hotwordCount,
+  savedLines,
+}: LivePageProps) {
   // Display only (instructions and messages); behaviour differences live in src/platform.
   // The server snapshot is 'browser'; the desktop app switches after hydration.
   const platform = useSyncExternalStore(
@@ -172,6 +183,8 @@ export function LivePage({ session, hotwords, hotwordCount, savedLines }: LivePa
   // Saved lines shown in the Connect view; refreshed after a call that saved its transcript.
   const [saved, setSaved] = useState<readonly StoredUtterance[]>(savedLines);
   const [saveFailed, setSaveFailed] = useState(false);
+  // True while End waits for the last line (at most about a second); End and Reconnect wait.
+  const [ending, setEnding] = useState(false);
 
   const engineRef = useRef<SttEngine | null>(null);
   const captureRef = useRef<CallCapture | null>(null);
@@ -293,6 +306,10 @@ export function LivePage({ session, hotwords, hotwordCount, savedLines }: LivePa
       captureRef.current = capture;
       setThemSource(capture.themSource);
       setConnection('connected');
+      // Warm Claude's prompt cache again: the warm-up from when the page opened may have
+      // expired (5 minutes) while the user read the instructions. If it is still warm this is
+      // a cheap cache read. Not awaited; it never throws.
+      void warmSession(session, documents);
       // The status and activity time are bookkeeping: a failure must not stop the call.
       markSessionActive(session.id).catch(() => undefined);
       // "Save transcript" on: save final lines as they arrive (one saver per call; a
@@ -320,29 +337,35 @@ export function LivePage({ session, hotwords, hotwordCount, savedLines }: LivePa
   };
 
   /**
-   * Ends the call: stops both channels, finishes saving (when on), marks the session ended,
-   * clears the in-memory transcript (with saving off, this discards it, architecture §7.4), and
-   * goes back to the Connect view.
+   * Ends the call: stops both channels, waits for the line still being spoken to become final
+   * and be saved (when on; core/transcript/endCall.ts), clears the in-memory transcript (with
+   * saving off, this discards it, architecture §7.4), marks the session ended, and goes back to
+   * the Connect view.
    */
-  const end = () => {
-    captureRef.current?.stop();
-    captureRef.current = null;
+  const end = async () => {
+    if (ending) return;
+    setEnding(true);
     checkRef.current = null;
     const saver = saverRef.current;
     saverRef.current = null;
-    saver?.stop();
-    transcript.clear();
+    const capture = captureRef.current;
+    captureRef.current = null;
+    await endCall({
+      stopCapture: () => capture?.stop(),
+      engine: engineRef.current,
+      saver,
+      transcript,
+    });
     setConnection('idle');
     setLevels({ you: 0, them: 0 });
     setSoundCheck(null);
     setChannelErrors({});
     setView('connect');
+    setEnding(false);
     updateSession(session.id, { status: 'ended' }).catch(() => undefined);
+    // Show the lines just saved under "Saved transcript".
     if (saver) {
-      // Show the lines just saved under "Saved transcript" once the last writes are done.
-      void saver
-        .flush()
-        .then(() => listUtterances(session.id))
+      listUtterances(session.id)
         .then(setSaved)
         .catch(() => undefined);
     }
@@ -401,8 +424,8 @@ export function LivePage({ session, hotwords, hotwordCount, savedLines }: LivePa
               />
             ))}
           </div>
-          <Button variant="danger" onClick={end}>
-            End
+          <Button variant="danger" onClick={() => void end()} disabled={ending}>
+            {ending ? 'Ending…' : 'End'}
           </Button>
         </div>
       </header>
@@ -416,7 +439,12 @@ export function LivePage({ session, hotwords, hotwordCount, savedLines }: LivePa
               className="flex items-center justify-between gap-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
             >
               <span>{channelErrors[speaker]}</span>
-              <Button size="sm" variant="secondary" onClick={() => void connect()}>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void connect()}
+                disabled={ending}
+              >
                 Reconnect
               </Button>
             </div>

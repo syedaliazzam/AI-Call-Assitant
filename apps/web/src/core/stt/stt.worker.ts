@@ -415,6 +415,9 @@ scope.onmessage = (event: MessageEvent<ToWorker>) => {
       send({ type: 'hotwords-set', ms: Math.round(performance.now() - startedAt) });
       break;
     }
+    case 'ping':
+      send({ type: 'pong', id: message.id });
+      break;
     case 'stop':
       loadAbort?.abort();
       if (statsTimer) clearInterval(statsTimer);
