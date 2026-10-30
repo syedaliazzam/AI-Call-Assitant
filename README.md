@@ -81,8 +81,6 @@ See [ADR-0023](docs/decisions/ADR-0023-stt-model-hosting.md).
 pnpm dev
 ```
 
-`pnpm dev` first checks that `ANTHROPIC_API_KEY` in `apps/web/.env.local` is the **development** key, from its own Claude Console workspace. It refuses to start with the production key or without a key. The check makes one free request to the API, so it needs a connection. See CLAUDE.md, "Separate Claude keys".
-
 Open http://localhost:3000 and sign in. To try a live call, create a session on the dashboard, then **Open** it (in the browser, choose **Open in browser**). Use headphones, so the microphone does not pick up the other side.
 
 1. Click **Connect**.

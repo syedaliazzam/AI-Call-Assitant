@@ -10,8 +10,8 @@
  * Used by: the "verify:screenshot" script in apps/web/package.json (by hand; never in CI)
  * Depends on: src/server/prompt.ts (buildPrompt), src/server/claude.ts (warmCache, streamReply),
  *             src/server/env.ts, @kite/shared
- * Key: refuses to run without the development Claude key (scripts/lib/dev-key.ts; CLAUDE.md
- *      "Separate Claude keys").
+ * Key: refuses to run without ANTHROPIC_API_KEY (scripts/lib/require-key.ts). A paid run: agree
+ *      it, with its estimated cost, with the developer first (CLAUDE.md "Claude key and spend").
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3, §7.2 (screenshot requests);
  *               day-05-overlay-screenshots-notes.md Stage 2
  *
@@ -25,7 +25,7 @@ import type { AnswerRequest, ConversationChunk, SessionContext } from '@kite/sha
 import { streamReply, warmCache } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
-import { requireDevKey } from './lib/dev-key';
+import { requireKey } from './lib/require-key';
 
 /** The invented slide (scripts/make-eval-images.ts). */
 const IMAGE = path.join(
@@ -44,7 +44,7 @@ const IMAGE = path.join(
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
-  await requireDevKey('verify-screenshot');
+  requireKey('verify-screenshot');
   const reference = crypto.randomUUID().slice(0, 8);
   const sentence =
     'The Harbor Lane renewal covers dispatch seats, single sign-on and live re-routing for all four depots.';

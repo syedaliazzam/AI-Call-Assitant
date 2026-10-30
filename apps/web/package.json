@@ -5,8 +5,7 @@
   "description": "Kite web application (Next.js): all screens, browser logic and the server routes. Deployed to Vercel.",
   "type": "module",
   "scripts": {
-    "dev": "tsx --env-file=.env.local --conditions=react-server scripts/check-dev-key.ts && next dev -p 3000",
-    "check-dev-key": "tsx --env-file=.env.local --conditions=react-server scripts/check-dev-key.ts",
+    "dev": "next dev -p 3000",
     "build": "pnpm run stt:runtime && next build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",

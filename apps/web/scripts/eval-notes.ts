@@ -13,8 +13,8 @@
  * Used by: the "eval:notes" script in apps/web/package.json (by hand; never in CI)
  * Depends on: src/server/notes.ts (generateCallNotes), src/server/claude.ts (jsonReply),
  *             src/server/prompt.ts (sessionBlock), src/server/env.ts, @kite/shared
- * Key: refuses to run without the development Claude key (scripts/lib/dev-key.ts; CLAUDE.md
- *      "Separate Claude keys").
+ * Key: refuses to run without ANTHROPIC_API_KEY (scripts/lib/require-key.ts). A paid run: agree
+ *      it, with its estimated cost, with the developer first (CLAUDE.md "Claude key and spend").
  * Architecture: docs/testing/answer-eval.md; day-05-overlay-screenshots-notes.md Stage 5
  *
  * Runs like eval-answers.ts (tsx, `--env-file=.env.local`, `--conditions=react-server`).
@@ -33,7 +33,7 @@ import { jsonReply } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { generateCallNotes } from '@/server/notes';
 import { sessionBlock } from '@/server/prompt';
-import { requireDevKey } from './lib/dev-key';
+import { requireKey } from './lib/require-key';
 import { estimateLine, parseEvalArgs, selectScenarios } from './lib/eval-options';
 
 /** tests/eval/notes. */
@@ -204,7 +204,7 @@ async function main(): Promise<void> {
     ]),
   );
   if (options.dryRun) return;
-  await requireDevKey('eval-notes');
+  requireKey('eval-notes');
   const env = getClaudeEnv();
   console.log(
     `eval-notes: notes and grades by ${env.modelSmart}; ${scenarios.length} scenarios × ${options.runs} runs`,

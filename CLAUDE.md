@@ -106,18 +106,14 @@ export async function createUserAccount(input: NewUserInput): Promise<CreatedUse
 - Add a dependency only with a reason (state it in the stage summary). Prefer the latest stable versions.
 - If an official library API differs from our docs (Next.js, Better Auth, Electron, sherpa-onnx, Anthropic SDK), follow the official docs and mention the difference in the stage summary.
 
-## Separate Claude keys
+## Claude key and spend
 
-- **Production** uses `ANTHROPIC_API_KEY` in Vercel (Production environment). That key is for the deployed app only.
-- **Local development, `scripts/verify-*.ts` and the evaluations** use a second key, from a separate Claude Console workspace. It lives in `apps/web/.env.local` under the same name, `ANTHROPIC_API_KEY`. It is local only and never goes in Vercel Production.
-  - `vercel env pull` writes Vercel's **Development** values into `.env.local`. So store the development key there: `vercel env rm ANTHROPIC_API_KEY development`, then `vercel env add ANTHROPIC_API_KEY development` (paste the development key), then `vercel env pull apps/web/.env.local`.
-- **The guard** (`src/server/dev-key.ts`, run by `scripts/lib/dev-key.ts`) runs before `pnpm dev`, every verify script and every evaluation. It refuses to run when:
-  - the key is missing;
-  - the variables come from a Vercel production or preview environment;
-  - the key belongs to the production workspace (`PRODUCTION_WORKSPACE_IDS`);
-  - its workspace cannot be confirmed (the Default workspace, or no connection).
-- **How it checks:** one free models request reads the `anthropic-workspace-id` response header. No model is called and nothing is billed. `pnpm --filter web check-dev-key` runs it alone.
-- Never print or log a key. The guard prints only the workspace id.
+- **One key:** `ANTHROPIC_API_KEY`, the same in Vercel (Production, Preview, Development) and in `apps/web/.env.local` (from `vercel env pull`). The deployed app, `pnpm dev`, the verify scripts and the evaluations all use it.
+- **One spend limit** in the Claude Console, about $20 a month for the whole team. Tests and evaluations spend from the same budget as production. So:
+  - before any paid run (evaluation, verify script, real-API check), tell the developer the estimated request count and cost, and run it only after they agree;
+  - follow "Evaluation cost" under Testing rules.
+- The scripts refuse to run without a key (`scripts/lib/require-key.ts`). There is no other key check.
+- Never print or log a key.
 
 ## Testing rules
 

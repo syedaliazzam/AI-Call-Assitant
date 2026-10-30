@@ -21,8 +21,8 @@
  * Depends on: src/server/prompt.ts (buildPrompt, sessionBlock, SYSTEM_RULES),
  *             src/server/claude.ts (streamReply, jsonReply), src/server/env.ts, @kite/shared,
  *             scripts/lib/eval-options.ts (options, groups, estimate)
- * Key: refuses to run without the development Claude key (scripts/lib/dev-key.ts; CLAUDE.md
- *      "Separate Claude keys").
+ * Key: refuses to run without ANTHROPIC_API_KEY (scripts/lib/require-key.ts). A paid run: agree
+ *      it, with its estimated cost, with the developer first (CLAUDE.md "Claude key and spend").
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (testing); ADR-0025;
  *               docs/testing/answer-eval.md (rubric and results)
  *
@@ -47,7 +47,7 @@ import {
 import { jsonReply, streamReply } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
-import { requireDevKey } from './lib/dev-key';
+import { requireKey } from './lib/require-key';
 import { estimateLine, parseEvalArgs, selectScenarios } from './lib/eval-options';
 
 /** tests/eval/scenarios. */
@@ -282,7 +282,7 @@ async function main(): Promise<void> {
     ]),
   );
   if (options.dryRun) return;
-  await requireDevKey('eval-answers');
+  requireKey('eval-answers');
   const env = getClaudeEnv();
   console.log(
     `eval-answers: answers by ${env.modelFast}, graded by ${env.modelSmart}; ${scenarios.length} scenarios × ${options.runs} runs`,

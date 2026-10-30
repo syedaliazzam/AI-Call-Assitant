@@ -12,8 +12,8 @@
  *          Usage: pnpm --filter web verify:notes
  * Used by: the "verify:notes" script in apps/web/package.json (by hand; never in CI)
  * Depends on: src/server/notes.ts, src/server/env.ts, @kite/shared
- * Key: refuses to run without the development Claude key (scripts/lib/dev-key.ts; CLAUDE.md
- *      "Separate Claude keys").
+ * Key: refuses to run without ANTHROPIC_API_KEY (scripts/lib/require-key.ts). A paid run: agree
+ *      it, with its estimated cost, with the developer first (CLAUDE.md "Claude key and spend").
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (/api/notes);
  *               day-05-overlay-screenshots-notes.md Stage 5
  *
@@ -28,7 +28,7 @@ import {
 } from '@kite/shared';
 import { getClaudeEnv } from '@/server/env';
 import { generateCallNotes } from '@/server/notes';
-import { requireDevKey } from './lib/dev-key';
+import { requireKey } from './lib/require-key';
 
 /** Invented sentences for the clear parts of the call, by topic. */
 const TOPICS: { them: string[]; you: string[] }[] = [
@@ -123,7 +123,7 @@ function inventedCall(): CallLine[] {
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
-  await requireDevKey('verify-notes');
+  requireKey('verify-notes');
   const lines = inventedCall();
   const request: NotesRequest = {
     session: {

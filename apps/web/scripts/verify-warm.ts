@@ -10,8 +10,8 @@
  *          in CI, because it calls the real API and needs the real key)
  * Depends on: src/server/prompt.ts (buildPrompt), src/server/claude.ts (warmCache),
  *             src/server/env.ts (the fast model name)
- * Key: refuses to run without the development Claude key (scripts/lib/dev-key.ts; CLAUDE.md
- *      "Separate Claude keys").
+ * Key: refuses to run without ANTHROPIC_API_KEY (scripts/lib/require-key.ts). A paid run: agree
+ *      it, with its estimated cost, with the developer first (CLAUDE.md "Claude key and spend").
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3 (Pre-warm); day-03-sessions.md
  *               Stage 5 check
  *
@@ -26,7 +26,7 @@ import type { AnswerRequest } from '@kite/shared';
 import { warmCache } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { buildPrompt } from '@/server/prompt';
-import { requireDevKey } from './lib/dev-key';
+import { requireKey } from './lib/require-key';
 
 /** Invented sentences the document is built from (no real company, person or customer). */
 const SENTENCES = [
@@ -62,7 +62,7 @@ function inventedDocument(): string {
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
-  await requireDevKey('verify-warm');
+  requireKey('verify-warm');
   const document = inventedDocument();
   const reference = crypto.randomUUID().slice(0, 8);
   const request: AnswerRequest = {

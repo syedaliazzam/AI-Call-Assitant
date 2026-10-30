@@ -343,24 +343,6 @@ export function describeClaudeError(error: unknown): { code: AnswerErrorCode; me
 }
 
 /**
- * Finds the Claude Console workspace an API key belongs to, without calling a model: it lists
- * one model (free; no tokens) and reads the `anthropic-workspace-id` response header that the
- * API sends with every response. Used by the development-key guard (server/dev-key.ts) so the
- * evaluations and local development never spend from the production workspace.
- *
- * @param apiKey The key to check. Never logged.
- * @returns The workspace id (for example 'wrkspc_…'), or null when the response has none.
- * @throws Anthropic.APIError (for example 401 for a revoked key) or a connection error.
- * Called from: checkDevKey() in server/dev-key.ts
- */
-export async function keyWorkspace(apiKey: string): Promise<string | null> {
-  // A separate client: the key being checked is not necessarily the server's configured one.
-  const checker = new Anthropic({ apiKey, timeout: 10_000, maxRetries: 0 });
-  const { response } = await checker.models.list({ limit: 1 }).withResponse();
-  return response.headers.get('anthropic-workspace-id');
-}
-
-/**
  * Extracts loggable details from an error (status and request id only, never content).
  *
  * @param error What was thrown.

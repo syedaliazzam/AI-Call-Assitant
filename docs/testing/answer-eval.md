@@ -2,7 +2,7 @@
 
 How Kite's live answers are scored, how to run the evaluation, and the results for each prompt version. Only measured runs are recorded here.
 
-- **Script:** `apps/web/scripts/eval-answers.ts`, run with `pnpm --filter web eval:answers`. It is developer-only: it calls the real Claude API with the **development key** in `apps/web/.env.local` (it refuses to run with the production key or without a key: CLAUDE.md "Separate Claude keys"), and never runs in CI.
+- **Script:** `apps/web/scripts/eval-answers.ts`, run with `pnpm --filter web eval:answers`. It is developer-only: it calls the real Claude API with the key in `apps/web/.env.local` (it refuses to run without one; it spends from the team's one Console limit, so each run is agreed with its estimated cost first: CLAUDE.md "Claude key and spend"), and never runs in CI.
 - **Scenarios:** `apps/web/tests/eval/scenarios/*.json`, 12 invented scenarios (no real company, person or customer).
 - **Architecture:** `docs/architecture/kite-architecture-v3.1.md` §11; ADR-0025.
 
