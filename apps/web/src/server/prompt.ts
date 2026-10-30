@@ -35,6 +35,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {
   CONVERSATION_CAP_STEP_TOKENS,
   CONVERSATION_CAP_TOKENS,
+  DEFAULT_SCREENSHOT_QUESTION,
   estimateItemTokens,
   type AnswerRequest,
   type CallLine,
@@ -177,9 +178,18 @@ function lineText(line: CallLine): string {
  */
 function itemText(item: ConversationItem): string {
   if (item.kind === 'line') return lineText(item);
-  const asked = item.mode === 'chat' ? 'typed question' : 'question';
+  const asked =
+    item.mode === 'chat'
+      ? 'typed question'
+      : item.mode === 'screenshot'
+        ? 'question about a screenshot'
+        : 'question';
+  // A screenshot is sent only with its own answer: later answers must not act as if they
+  // could still see it.
+  const unseen =
+    item.mode === 'screenshot' ? ' (answered from a screenshot you can no longer see)' : '';
   return [
-    `[${clockTime(item.at)}] Kite's earlier answer (${asked}: ${escapeTags(item.question.trim())}):`,
+    `[${clockTime(item.at)}] Kite's earlier answer${unseen} (${asked}: ${escapeTags(item.question.trim())}):`,
     escapeTags(item.text.trim()),
     '[end of earlier answer]',
   ].join('\n');
@@ -267,7 +277,12 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
     '</latest>',
   );
   parts.push('');
-  if (request.mode === 'chat') {
+  if (request.mode === 'screenshot') {
+    parts.push(
+      "The image above is a screenshot of the user's screen, taken just now. Read what it shows. To say whether something on it is right, compare it only with the session details and documents; if they have nothing to compare with, say so instead of claiming it matches. Follow the session's answer format, length, tone and instructions, and start with the headline itself, with no label.",
+      `Question about the screenshot: ${escapeTags(question || DEFAULT_SCREENSHOT_QUESTION)}`,
+    );
+  } else if (request.mode === 'chat') {
     parts.push(`Question typed by the user: ${escapeTags(question)}`);
   } else if (question) {
     parts.push(`Question to answer: ${escapeTags(question)}`);
@@ -277,13 +292,32 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
   return parts.join('\n');
 }
 
+/**
+ * The screenshot as an image block (base64 JPEG).
+ *
+ * @param dataUrl `data:image/jpeg;base64,…` (validated by server/validate.ts).
+ * @returns The image block.
+ * Called from: buildPrompt()
+ */
+function imageBlock(dataUrl: string): Anthropic.ImageBlockParam {
+  return {
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: 'image/jpeg',
+      data: dataUrl.slice(dataUrl.indexOf(',') + 1),
+    },
+  };
+}
+
 /** What buildPrompt() returns: the `system` and `messages` request parameters. */
 export interface BuiltPrompt {
   /** System rules, then the session block; each block carries a cache breakpoint. */
   system: Anthropic.TextBlockParam[];
   /**
    * One user turn: the conversation chunks (the last one carries the third breakpoint), then
-   * one uncached block (the tail and question, or the warm-up placeholder).
+   * the uncached part: the screenshot (mode screenshot), and the tail and question (or the
+   * warm-up placeholder).
    */
   messages: Anthropic.MessageParam[];
 }
@@ -308,8 +342,11 @@ export function buildPrompt(request: AnswerRequest): BuiltPrompt {
     type: 'text',
     text: request.mode === 'warm' ? WARM_MESSAGE : tailText(request, conversation.length > 0),
   };
+  // The screenshot is uncached and goes before the tail text that asks about it (Anthropic's
+  // vision guidance: image first, then the question).
+  const image = request.mode === 'screenshot' && request.image ? [imageBlock(request.image)] : [];
   return {
     system: [cachedBlock(SYSTEM_RULES), cachedBlock(sessionBlock(request.session))],
-    messages: [{ role: 'user', content: [...conversation, last] }],
+    messages: [{ role: 'user', content: [...conversation, ...image, last] }],
   };
 }

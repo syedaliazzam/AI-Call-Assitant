@@ -1,9 +1,9 @@
 /**
  * Tests for apps/web/app/api/answer/route.ts (POST), with sign-in and the Anthropic SDK mocked.
  * Day 5: the session comes from the cookie cache, and its Set-Cookie values are sent back on
- * the stream and on errors.
- * 401 without a session (or with a temporary password), 400 for bad bodies and for modes that
- * are not built yet, and a streamed reply (delta events, then done with usage and timings);
+ * the stream and on errors; mode screenshot needs a JPEG image (checked by its bytes, size
+ * capped), puts it uncached before the question, and logs only its size. Earlier days:
+ * 401 without a session (or with a temporary password), 400 for bad bodies, and a streamed reply (delta events, then done with usage and timings);
  * a Claude refusal ends with an error event. Mode 'warm' (Day 3): a 400 naming the field without
  * a session; otherwise one max_tokens 0 request with the session's cached blocks and a done event
  * with the cache usage (no delta); session text never reaches the logs. Modes 'answer' and
@@ -128,18 +128,6 @@ describe('POST /api/answer', () => {
   it('returns 400 for a body that fails validation', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     expect((await POST(post('{"mode":"poem"}'))).status).toBe(400);
-  });
-
-  it('returns 400 "not implemented yet: Day N" for later modes', async () => {
-    getSessionMock.mockResolvedValue(SIGNED_IN);
-    // SESSION is defined below (with the warm-up tests); every mode but hello needs it.
-    const response = await POST(post(JSON.stringify({ mode: 'screenshot', session: SESSION })));
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      code: 'not_implemented',
-      message: 'not implemented yet: Day 5',
-    });
-    expect(streamMock).not.toHaveBeenCalled();
   });
 
   it('streams delta events, then done with usage and timings', async () => {
@@ -421,5 +409,98 @@ describe('POST /api/answer, modes answer and chat', () => {
     expect(logged).toContain('"chunks":2,"tailLines":1');
     expect(logged).not.toContain('SECRET');
     expect(logged).not.toContain('Northwind');
+  });
+});
+
+/** The part of an image block's source the test reads. */
+interface SentImageSource {
+  /** Media type, for example image/jpeg. */
+  media_type: string;
+  /** Base64 data. */
+  data: string;
+}
+
+/** A content block as sent to the SDK (only the fields the test reads). */
+interface SentBlock {
+  /** Block type: text or image. */
+  type: string;
+  /** The cache breakpoint, if any. */
+  cache_control?: unknown;
+  /** An image block's source. */
+  source?: SentImageSource;
+  /** A text block's text. */
+  text?: string;
+}
+
+/** A tiny "JPEG" data URL: base64 "/9j/" decodes to FF D8 FF (the JPEG start bytes). */
+const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAADSECRETPIXELS';
+
+describe('POST /api/answer, mode screenshot (Day 5)', () => {
+  it('needs the image, and takes it only in screenshot mode', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    const noImage = await POST(post(JSON.stringify({ mode: 'screenshot', session: SESSION })));
+    expect(await noImage.json()).toEqual({
+      code: 'bad_request',
+      message: 'image: required for mode screenshot',
+    });
+    const wrongMode = await POST(
+      post(JSON.stringify({ mode: 'answer', session: SESSION, image: JPEG })),
+    );
+    expect(await wrongMode.json()).toMatchObject({ message: 'image: only for mode screenshot' });
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a PNG, a renamed PNG, and an image over the size limit, without echoing it', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    const send = async (image: string) =>
+      (await (
+        await POST(post(JSON.stringify({ mode: 'screenshot', session: SESSION, image })))
+      ).json()) as { message: string };
+    expect((await send('data:image/png;base64,iVBORw0KGgo=')).message).toContain('image');
+    // The prefix says JPEG, but the bytes are a PNG (89 50 4E 47).
+    const renamed = await send('data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUg==');
+    expect(renamed.message).toBe('image: must be a JPEG image');
+    expect(renamed.message).not.toContain('iVBOR');
+    const huge = await send(`data:image/jpeg;base64,/9j/${'A'.repeat(1_400_000)}`);
+    expect(huge.message).toContain('image: at most');
+  });
+
+  it('streams, with the image uncached and before the question, after the cached chunks', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['The slide shows'] }));
+    const body = {
+      mode: 'screenshot',
+      session: SESSION,
+      conversation: [[{ kind: 'line', speaker: 'them', text: 'Can you see my slide?', at: 3 }]],
+      image: JPEG,
+    };
+    const text = await (await POST(post(JSON.stringify(body)))).text();
+    expect(text).toContain('event: done');
+    const [params] = streamMock.mock.calls[0]!;
+    expect(params.max_tokens).toBe(400);
+    const content = params.messages[0].content as SentBlock[];
+    expect(content.map((block) => block.type)).toEqual(['text', 'image', 'text']);
+    expect(content[0]!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(content[1]).toMatchObject({
+      source: { media_type: 'image/jpeg', data: JPEG.slice(23) },
+    });
+    expect(content[1]!.cache_control).toBeUndefined();
+    expect(content[2]!.text).toContain(
+      "Question about the screenshot: What's on screen and how should I respond?",
+    );
+  });
+
+  it('logs the image size only, never its data', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['x'] }));
+    await (
+      await POST(post(JSON.stringify({ mode: 'screenshot', session: SESSION, image: JPEG })))
+    ).text();
+    const logged = JSON.stringify([
+      vi.mocked(console.info).mock.calls,
+      vi.mocked(console.error).mock.calls,
+    ]);
+    expect(logged).toContain(`"imageChars":${JPEG.length}`);
+    expect(logged).not.toContain('SECRETPIXELS');
   });
 });

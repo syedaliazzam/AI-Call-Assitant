@@ -12,6 +12,7 @@ import {
   MAX_ANSWER_CHARS,
   MAX_CONVERSATION_CHUNKS,
   MAX_CONVERSATION_TOKENS,
+  MAX_IMAGE_CHARS,
   MAX_LINE_CHARS,
   MAX_TAIL_LINES,
 } from '@kite/shared';
@@ -212,5 +213,41 @@ describe('parseAnswerRequest', () => {
       answerWith({ conversation: [[{ kind: 'line', speaker: 'them', text: secret, at: 1 }]] }),
     );
     expect(message).not.toContain('SECRET');
+  });
+});
+
+describe('screenshot image (Day 5)', () => {
+  it('accepts a JPEG data URL only in screenshot mode, checked by its first bytes', () => {
+    const jpeg = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
+    expect(parseAnswerRequest({ mode: 'screenshot', session: SESSION, image: jpeg }).ok).toBe(true);
+    expect(failure({ mode: 'screenshot', session: SESSION })).toBe(
+      'image: required for mode screenshot',
+    );
+    expect(failure(answerWith({ image: jpeg }))).toBe('image: only for mode screenshot');
+    // A PNG with a JPEG label: the bytes decide.
+    expect(
+      failure({
+        mode: 'screenshot',
+        session: SESSION,
+        image: 'data:image/jpeg;base64,iVBORw0KGgo=',
+      }),
+    ).toBe('image: must be a JPEG image');
+    expect(
+      failure({ mode: 'screenshot', session: SESSION, image: 'data:image/webp;base64,UklGR' }),
+    ).toContain('image: must be a JPEG data URL');
+    expect(
+      failure({
+        mode: 'screenshot',
+        session: SESSION,
+        image: `data:image/jpeg;base64,/9j/${'A'.repeat(MAX_IMAGE_CHARS)}`,
+      }),
+    ).toContain(`image: at most ${MAX_IMAGE_CHARS} characters`);
+  });
+
+  it('accepts earlier screenshot answers in the conversation', () => {
+    const conversation = [
+      [{ kind: 'answer', mode: 'screenshot', question: 'Q', text: 'A', at: 1 }],
+    ];
+    expect(parseAnswerRequest(answerWith({ conversation })).ok).toBe(true);
   });
 });

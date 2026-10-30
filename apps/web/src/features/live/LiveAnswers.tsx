@@ -89,7 +89,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         else if (action === 'clear') actions.current.clear();
         else if (action === 'prev') actions.current.prev();
         else if (action === 'next') actions.current.next();
-        // 'screenshot' arrives on Day 5.
+        else if (action === 'screenshot') actions.current.screenshot();
       }, setTaken),
     [],
   );
@@ -102,6 +102,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
         answering={answering}
         ending={props.ending}
         onAnswer={answers.answer}
+        onScreenshot={() => answers.screenshot()}
+        capturing={answers.capturing}
         onToggleChat={() => setChatOpen((open) => !open)}
         onClear={answers.clear}
         onEnd={props.onEnd}
@@ -113,7 +115,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
           app&rsquo;s shortcut, or use the buttons.
         </p>
       )}
-      {chatOpen && <ChatBox onSend={answers.chat} />}
+      {chatOpen && <ChatBox onSend={answers.chat} onAskScreen={answers.screenshot} />}
       <AnswerPanel
         entry={entry}
         index={answers.index}

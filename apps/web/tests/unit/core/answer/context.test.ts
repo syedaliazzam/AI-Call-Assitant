@@ -217,3 +217,30 @@ describe('buildAnswerRequest', () => {
     expect(after.slice(0, cachedCount)).toEqual(cached);
   });
 });
+
+describe('buildAnswerRequest, screenshot (Day 5)', () => {
+  it('sends the image and the typed question, without selecting one from the transcript', () => {
+    const built = build(
+      {
+        lines: FIRST,
+        mode: 'screenshot',
+        image: 'data:image/jpeg;base64,/9j/',
+        typedQuestion: ' Is this right? ',
+      },
+      14,
+    );
+    expect(built.request).toMatchObject({
+      mode: 'screenshot',
+      image: 'data:image/jpeg;base64,/9j/',
+      question: 'Is this right?',
+    });
+    expect(built.selected).toBeNull();
+    const plain = build(
+      { lines: FIRST, mode: 'screenshot', image: 'data:image/jpeg;base64,/9j/' },
+      14,
+    );
+    expect(plain.request.question).toBeUndefined();
+    // No image on other modes.
+    expect(build({ lines: FIRST }, 14).request).not.toHaveProperty('image');
+  });
+});

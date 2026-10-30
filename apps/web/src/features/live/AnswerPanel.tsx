@@ -3,7 +3,8 @@
  * Purpose: Shows one answer of the call: the question it answers (with "from N lines"), the
  *          headline as it streams, then the bullets; Cancel while it streams; Previous / Next
  *          through the session's answers; Copy; the time to the first word; and (Stage 7) 👍 / 👎
- *          and an optional "What was wrong / better answer" note.
+ *          and an optional "What was wrong / better answer" note; for a screenshot answer, a
+ *          small thumbnail of the screenshot, from memory only (Day 5).
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/core/answer/format.ts, src/features/live/useLiveAnswers.ts (AnswerEntry),
  *             src/ui/Button.tsx
@@ -185,9 +186,11 @@ export function AnswerPanel(props: AnswerPanelProps) {
   const { headline, bullets } = splitAnswer(entry.text);
   const source = entry.earlier
     ? 'earlier'
-    : entry.mode === 'chat'
-      ? 'typed question'
-      : `from ${entry.fromLines} ${entry.fromLines === 1 ? 'line' : 'lines'}`;
+    : entry.mode === 'screenshot'
+      ? 'screenshot'
+      : entry.mode === 'chat'
+        ? 'typed question'
+        : `from ${entry.fromLines} ${entry.fromLines === 1 ? 'line' : 'lines'}`;
 
   return (
     <section aria-label="Answer" className="rounded-lg border border-slate-200 bg-white p-4">
@@ -221,6 +224,15 @@ export function AnswerPanel(props: AnswerPanelProps) {
         </div>
       </div>
 
+      {entry.thumbnail && (
+        // The screenshot, from memory (a data URL; never saved). Small, for context only.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={entry.thumbnail}
+          alt="Screenshot this answer is about"
+          className="mt-2 max-h-24 rounded border border-slate-200"
+        />
+      )}
       <h2 aria-label="Answer headline" className="mt-2 text-lg font-semibold text-slate-900">
         {headline || '…'}
       </h2>

@@ -4,7 +4,8 @@
  *          reply back as server-sent events (delta, done, error). Modes: 'hello' (Day 1 test),
  *          'warm' (Day 3: writes a session's prompt cache; no text, just done with usage), and
  *          'answer' and 'chat' (Day 4: an answer built on the session, the conversation so far
- *          and the earlier answers, from server/prompt.ts). 'screenshot' arrives on Day 5.
+ *          and the earlier answers, from server/prompt.ts), and 'screenshot' (Day 5: the same,
+ *          with the screenshot in the uncached part).
  * Used by: src/core/answer/answerClient.ts (browser)
  * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts, src/server/claude.ts,
  *             src/server/sse.ts, src/server/prompts/hello.ts, src/server/prompt.ts
@@ -21,7 +22,6 @@
 import type {
   AnswerErrorCode,
   AnswerEvent,
-  AnswerMode,
   AnswerRequest,
   AnswerTimings,
   ModelTier,
@@ -47,11 +47,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 /** Vercel function limit in seconds; matches the 60 s Claude time limit. */
 export const maxDuration = 60;
-
-/** Which day each not-yet-built mode arrives (architecture §12.3). */
-const MODE_DAY: Record<Exclude<AnswerMode, 'hello' | 'warm' | 'answer' | 'chat'>, number> = {
-  screenshot: 5,
-};
 
 /**
  * Builds a JSON error response (used before streaming starts).
@@ -177,9 +172,6 @@ async function respond(
   if (!parsed.ok) return jsonError(400, 'bad_request', parsed.message);
 
   const { mode } = parsed.data;
-  if (mode === 'screenshot') {
-    return jsonError(400, 'not_implemented', `not implemented yet: Day ${MODE_DAY[mode]}`);
-  }
 
   const tier: ModelTier = parsed.data.model ?? 'fast';
   let model: string;
@@ -205,6 +197,8 @@ async function respond(
   const context = {
     chunks: parsed.data.conversation?.length ?? 0,
     tailLines: parsed.data.tail?.length ?? 0,
+    // The screenshot's size only (Day 5), never its content.
+    imageChars: parsed.data.image?.length ?? 0,
   };
   let source: AsyncGenerator<string, ReplyResult, undefined>;
   if (mode === 'warm') {
@@ -220,7 +214,8 @@ async function respond(
       onStreamOpen: markOpen,
     });
   } else {
-    // 'answer' and 'chat': the three cached parts and the uncached tail (server/prompt.ts).
+    // 'answer', 'chat' and 'screenshot': the three cached parts, then the uncached tail
+    // (with the screenshot first for 'screenshot'; server/prompt.ts).
     // The SDK's single retry happens only before any text arrives (server/claude.ts).
     const prompt = buildPrompt(parsed.data);
     source = streamReply({

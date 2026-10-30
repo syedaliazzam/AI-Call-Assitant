@@ -43,8 +43,8 @@ import { toSessionContext } from './warm';
 export interface CallAnswer {
   /** The answer's id (the same id it is saved under). */
   id: string;
-  /** 'answer' (question from the transcript) or 'chat' (typed question). */
-  mode: 'answer' | 'chat';
+  /** 'answer' (question from the transcript), 'chat' (typed) or 'screenshot' (Day 5). */
+  mode: 'answer' | 'chat' | 'screenshot';
   /** The question it answered. */
   question: string;
   /** The answer text as shown. */
@@ -73,10 +73,12 @@ export interface AnswerContextInput {
   lines: readonly Utterance[];
   /** Answers given in this call so far that have finished (oldest first or any order). */
   answers: readonly CallAnswer[];
-  /** 'answer' (the Answer key) or 'chat' (a typed question). */
-  mode: 'answer' | 'chat';
-  /** The typed question (mode 'chat'). */
+  /** 'answer' (the Answer key), 'chat' (a typed question) or 'screenshot' (Day 5). */
+  mode: 'answer' | 'chat' | 'screenshot';
+  /** The typed question (mode 'chat'; optional for 'screenshot', which has a default). */
   typedQuestion?: string;
+  /** The prepared screenshot (mode 'screenshot'): a JPEG data URL. In memory only. */
+  image?: string;
   /** Unix ms now, on the transcript's clock. */
   now: number;
   /** When the call connected (Unix ms); times in the request are seconds since then. */
@@ -210,7 +212,7 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
 
   const selected = input.mode === 'answer' ? selectQuestion(input.lines) : null;
   const question =
-    input.mode === 'chat' ? (input.typedQuestion ?? '').trim() : (selected?.text ?? '');
+    input.mode === 'answer' ? (selected?.text ?? '') : (input.typedQuestion ?? '').trim();
 
   const request: AnswerRequest = {
     mode: input.mode,
@@ -219,6 +221,7 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
     ...(chunks.length > 0 ? { conversation: chunks } : {}),
     ...(tailLines.length > 0 ? { tail: tailLines } : {}),
     ...(question ? { question: question.slice(0, MAX_LINE_CHARS) } : {}),
+    ...(input.mode === 'screenshot' && input.image ? { image: input.image } : {}),
   };
   return { request, log: { chunks, sentLines, sentAnswers }, selected };
 }

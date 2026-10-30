@@ -15,6 +15,7 @@ import {
   MAX_ANSWER_CHARS,
   MAX_CONVERSATION_CHUNKS,
   MAX_CONVERSATION_TOKENS,
+  MAX_IMAGE_CHARS,
   MAX_LINE_CHARS,
   MAX_TAIL_LINES,
   estimateItemTokens,
@@ -81,7 +82,7 @@ const conversationItemSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('answer'),
-      mode: z.enum(['answer', 'chat']),
+      mode: z.enum(['answer', 'chat', 'screenshot']),
       question: z.string().max(MAX_LINE_CHARS),
       text: z.string().max(MAX_ANSWER_CHARS),
       at: atSchema,
@@ -104,6 +105,20 @@ const conversationSchema = z
   );
 
 /**
+ * Whether a JPEG data URL's bytes start with the JPEG start-of-image marker (FF D8 FF), so a
+ * renamed PNG or other file is refused, not only a wrong prefix.
+ *
+ * @param dataUrl A string that already matched the JPEG data URL pattern.
+ * @returns True when the decoded bytes start as a JPEG.
+ * Called from: answerRequestSchema (image)
+ */
+function startsAsJpeg(dataUrl: string): boolean {
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1, dataUrl.indexOf(',') + 9);
+  const head = Buffer.from(base64, 'base64');
+  return head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+}
+
+/**
  * The whole request body. `.strict()` rejects unknown fields, so typos are reported instead of
  * silently ignored. `satisfies` makes the compiler check it matches AnswerRequest exactly.
  */
@@ -115,10 +130,12 @@ export const answerRequestSchema = z
     conversation: conversationSchema.optional(),
     tail: z.array(callLineSchema).max(MAX_TAIL_LINES).optional(),
     question: z.string().max(MAX_LINE_CHARS).optional(),
-    // Screenshot as a data URL (Day 5); the 4 MB body limit caps its size.
+    // The screenshot (Day 5): a JPEG data URL whose bytes really start as a JPEG.
     image: z
       .string()
-      .regex(/^data:image\/(png|jpeg|webp);base64,/, 'must be a PNG, JPEG or WebP data URL')
+      .max(MAX_IMAGE_CHARS, `at most ${MAX_IMAGE_CHARS} characters`)
+      .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/, 'must be a JPEG data URL')
+      .refine(startsAsJpeg, 'must be a JPEG image')
       .nullable()
       .optional(),
   })
@@ -131,6 +148,17 @@ export const answerRequestSchema = z
         path: ['session'],
         message: `required for mode ${request.mode}`,
       });
+    }
+    // The image goes only with a screenshot answer, and a screenshot answer needs it.
+    if (request.mode === 'screenshot' && !request.image) {
+      context.addIssue({
+        code: 'custom',
+        path: ['image'],
+        message: 'required for mode screenshot',
+      });
+    }
+    if (request.mode !== 'screenshot' && request.image) {
+      context.addIssue({ code: 'custom', path: ['image'], message: 'only for mode screenshot' });
     }
     // A chat question is typed by the user; there is nothing to fall back on.
     if (request.mode === 'chat' && !request.question?.trim()) {

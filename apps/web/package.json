@@ -17,6 +17,7 @@
     "create-e2e-user": "tsx --env-file=.env.local --conditions=react-server scripts/create-e2e-user.ts",
     "verify:warm": "tsx --env-file=.env.local --conditions=react-server scripts/verify-warm.ts",
     "verify:answer-cache": "tsx --env-file=.env.local --conditions=react-server scripts/verify-answer-cache.ts",
+    "verify:screenshot": "tsx --env-file=.env.local --conditions=react-server scripts/verify-screenshot.ts",
     "eval:answers": "tsx --env-file=.env.local --conditions=react-server scripts/eval-answers.ts",
     "e2e-admin": "tsx --env-file=.env.local --conditions=react-server scripts/e2e-admin.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",

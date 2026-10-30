@@ -362,3 +362,77 @@ describe('SYSTEM_RULES', () => {
     expect(SYSTEM_RULES).toContain('That headline is still 15 words or fewer');
   });
 });
+
+describe('screenshot answers (Day 5)', () => {
+  /** A minimal JPEG data URL (its base64 starts with "/9j/": FF D8 FF). */
+  const IMAGE = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
+
+  it('puts the image uncached, after the cached chunks and before the question', () => {
+    const prompt = buildPrompt({
+      mode: 'screenshot',
+      session: SESSION,
+      conversation: CHUNKS.slice(0, 1),
+      image: IMAGE,
+      question: 'What does this slide say about pricing?',
+    });
+    const content = prompt.messages[0]!.content as Anthropic.ContentBlockParam[];
+    expect(content.map((block) => block.type)).toEqual(['text', 'image', 'text']);
+    expect(content[1]).toEqual({
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/jpeg', data: '/9j/4AAQSkZJRg==' },
+    });
+    const tail = content[2] as Anthropic.TextBlockParam;
+    expect(tail.cache_control).toBeUndefined();
+    expect(tail.text).toContain(
+      'Question about the screenshot: What does this slide say about pricing?',
+    );
+    // The cached part is the same as for any other answer of the call.
+    expect(cachedTexts(prompt)).toEqual(cachedTexts(buildPrompt(answer(1))));
+  });
+
+  it('uses the default question when none was typed', () => {
+    const prompt = buildPrompt({ mode: 'screenshot', session: SESSION, image: IMAGE });
+    const tail = (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!;
+    expect(tail.text).toContain(
+      "Question about the screenshot: What's on screen and how should I respond?",
+    );
+  });
+
+  it('marks an earlier screenshot answer as one the model can no longer see', () => {
+    const prompt = buildPrompt({
+      mode: 'answer',
+      session: SESSION,
+      conversation: [
+        [
+          {
+            kind: 'answer',
+            mode: 'screenshot',
+            question: 'What is on screen?',
+            text: 'A pricing slide.',
+            at: 40,
+          },
+        ],
+      ],
+    });
+    const chunk = (prompt.messages[0]!.content as Anthropic.TextBlockParam[])[0]!;
+    expect(chunk.text).toContain(
+      "[00:40] Kite's earlier answer (answered from a screenshot you can no longer see) (question about a screenshot: What is on screen?):",
+    );
+  });
+});
+
+describe('screenshot tail text (Day 5)', () => {
+  it('asks for the session style and a headline without a label', () => {
+    const prompt = buildPrompt({
+      mode: 'screenshot',
+      session: SESSION,
+      image: 'data:image/jpeg;base64,/9j/4AAQ',
+    });
+    const tail = (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!;
+    expect(tail.text).toContain(
+      "Follow the session's answer format, length, tone and instructions",
+    );
+    expect(tail.text).toContain('start with the headline itself, with no label');
+    expect(tail.text).toContain('if they have nothing to compare with, say so');
+  });
+});

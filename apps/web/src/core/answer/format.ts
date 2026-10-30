@@ -20,6 +20,9 @@ export interface AnswerParts {
   bullets: string[];
 }
 
+/** A "Headline:" label at the start of the first line (any case, after Markdown is removed). */
+const HEADLINE_LABEL = /^headline\s*:\s*/i;
+
 /** Bullet marks at the start of a line: "-", "*", "•", or "1." / "1)". */
 const BULLET_MARK = /^\s*(?:[-*•]|\d+[.)])\s+/;
 
@@ -48,7 +51,8 @@ export function splitAnswer(text: string): AnswerParts {
   const lines = text.split('\n').filter((line) => line.trim() !== '');
   const [first = '', ...rest] = lines;
   return {
-    headline: plain(first.replace(BULLET_MARK, '')),
+    // A model sometimes labels the first line "Headline:"; the panel shows the headline itself.
+    headline: plain(first.replace(BULLET_MARK, '')).replace(HEADLINE_LABEL, ''),
     bullets: rest.map((line) => plain(line.replace(BULLET_MARK, ''))).filter(Boolean),
   };
 }
