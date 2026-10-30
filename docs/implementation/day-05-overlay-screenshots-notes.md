@@ -74,7 +74,7 @@ Day 5 is split into **small stages, each with a gate**.
 **Gate:**
 - [ ] Route tests (SDK mocked): image accepted only in screenshot mode; caps; no image data in logs.
 - [ ] Real-API script: a screenshot answer streams; the cached blocks are still read.
-- [ ] Eval: screenshot scenarios score ≥ 8 average; overall score not lower than Day 4's 9.43.
+- [ ] Eval: screenshot scenarios score ≥ 8 average; the 15 Day 4 scenarios, as a mean of 3 runs, score ≥ 9.28 (Day 4's 9.43 − 0.15). *Gate rule changed by the developer on Day 5, after measuring run-to-run variance of about ±0.15: existing scenarios use the mean of 3 runs ≥ the previous baseline − 0.15, and new scenarios are gated separately on their own threshold. It applies to every evaluation gate from now on (notes, lessons); see `docs/testing/answer-eval.md`.*
 
 ## Stage 3 — Desktop compact live window and screen-share protection
 
@@ -108,7 +108,7 @@ Day 5 is split into **small stages, each with a gate**.
 **Gate:**
 - [ ] Route tests (SDK mocked): shape, caps, no text in logs.
 - [ ] Real-API script on an invented call: notes come back in the expected structure; usage printed only.
-- [ ] Eval: 3 notes scenarios graded for faithfulness (nothing invented) ≥ 8 average.
+- [ ] Eval: 3 notes scenarios graded for faithfulness (nothing invented) ≥ 8 average (new scenarios: gated on their own; existing answer scenarios, if re-run, by the Day 5 rule).
 
 ## Stage 6 — Session review page
 
@@ -131,7 +131,7 @@ Day 5 is split into **small stages, each with a gate**.
 
 **Gate:**
 - [ ] Unit tests: lessons storage, scope filtering, cap, byte-stable serialisation; the rules block changes only when lessons change.
-- [ ] Eval: add 2 scenarios where an approved lesson should change the answer (for example "give prices per seat and per month"); scores improve with the lesson present; overall score not lower.
+- [ ] Eval: add 2 scenarios where an approved lesson should change the answer (for example "give prices per seat and per month"); scores improve with the lesson present; existing scenarios by the Day 5 rule (3-run mean ≥ previous baseline − 0.15).
 
 ## Stage 8 — Production checks and wrap-up
 

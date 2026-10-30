@@ -167,3 +167,40 @@ Approved by the developer as a third round, limited to the "can't answer from th
 - This is the Day 4 final prompt.
 
 **Still weak:** the headline in the interview answer (03) and the misheard-name answer (07), and the misheard-name answer's style.
+
+## Gate rule from Day 5
+
+Decided by the developer on Day 5, after measuring how much the score varies (below). It applies to every evaluation gate from Day 5 on, including the notes and lesson evaluations:
+
+- **Existing scenarios:** the mean of **3 runs** must be at least the previous baseline minus 0.15. For the 15 Day 4 scenarios that is 9.43 − 0.15 = **9.28**.
+- **New scenarios** are gated separately, on their own threshold.
+
+**Why:** the same prompt scores differently from run to run by about ±0.15. Three runs of the 15 Day 4 scenarios, with byte-identical prompts for them, scored 9.50, 9.20 and 9.27. Adding new scenarios that score lower would also pull down one overall mean even when nothing else changed.
+
+### Day 5 Stage 2: screenshot answers (kept)
+
+**New scenarios (3)**, each with an invented image drawn by `scripts/make-eval-images.ts` (`tests/eval/images/`). The grader reads a written description of the image, not the image itself.
+- 16-screenshot-slide-numbers: a slide with numbers, with the default question.
+- 17-screenshot-code-bug: code with an off-by-one bug, with a typed question.
+- 18-screenshot-pricing-table: a pricing table, where the answer has to read the table.
+
+**What changed** (screenshot answers only; other modes' prompts are byte-identical):
+- The image goes in the uncached part, before a tail that says it is a screenshot taken just now, with "Question about the screenshot: …" (default "What's on screen and how should I respond?").
+- **Fix 1**, after run 2: answers had claimed the figures "match our records" when the session had none. The tail now says to compare only with the session details and documents, and to say so when they have nothing to compare with.
+- **Fix 2**, after run 3: the tail asks for the session's format, length, tone and instructions, and for a headline with no label. The panel also removes a leading "Headline:" label from any answer (`core/answer/format.ts`).
+- Earlier screenshot answers are marked in the conversation "(answered from a screenshot you can no longer see)".
+
+**Runs:** 2026-10-31, same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario per run.
+
+| Run | Prompt | Screenshot scenarios (16–18) | 15 Day 4 scenarios | All 18 |
+|---|---|---|---|---|
+| 1 | screenshots, before the fixes | 8.33 (8.5, 7.5, 9.0) | 9.50 | 9.31 |
+| 2 | same | 8.67 (8.0, 9.0, 9.0) | 9.20 | 9.11 |
+| 3 | fix 1 | 8.83 (8.5, 9.0, 9.0) | 9.27 | 9.19 |
+| 4 (screenshot scenarios only) | fixes 1 and 2 | **8.83** (8.5, 9.0, 9.0) | — | — |
+
+**Result: passes** under the rule above.
+- **Day 4 scenarios:** the 3-run mean is **9.32** ≥ 9.28.
+- **Screenshot scenarios:** **8.83** ≥ 8.
+
+**Still weak:** in the code-bug scenario, the answer ignores the session's "answer in first person" instruction (style 0 in every run). It was not tuned further.

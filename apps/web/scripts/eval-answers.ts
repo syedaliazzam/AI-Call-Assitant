@@ -21,6 +21,7 @@
  * Runs like verify-warm.ts: tsx with `--env-file=.env.local` and `--conditions=react-server`.
  *
  * Scenario files (JSON, so they hold no comments) have: id; covers (what it tests); session
+ * (and, for screenshot scenarios, image and imageDescription: Day 5);
  * (SessionContext); conversation (ConversationChunk[]) and tail (CallLine[]); mode ('answer'
  * or 'chat'); question; mustInclude and mustNotInclude (what a good answer must and must not
  * contain, in plain words for the grader).
@@ -28,7 +29,13 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { AnswerRequest, CallLine, ConversationChunk, SessionContext } from '@kite/shared';
+import {
+  DEFAULT_SCREENSHOT_QUESTION,
+  type AnswerRequest,
+  type CallLine,
+  type ConversationChunk,
+  type SessionContext,
+} from '@kite/shared';
 import { jsonReply, streamReply } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
@@ -54,8 +61,15 @@ interface Scenario {
   conversation: ConversationChunk[];
   /** Lines not yet stable. */
   tail: CallLine[];
-  /** 'answer' or 'chat'. */
-  mode: 'answer' | 'chat';
+  /** 'answer', 'chat' or 'screenshot' (Day 5). */
+  mode: 'answer' | 'chat' | 'screenshot';
+  /** Screenshot scenarios: the invented image, relative to tests/eval (for example images/x.jpg). */
+  image?: string;
+  /**
+   * Screenshot scenarios: what the image shows, in words, for the grader (the grader reads text
+   * only, so it can judge what is on screen without being sent the image).
+   */
+  imageDescription?: string;
   /** The question. */
   question: string;
   /** What a good answer must contain. */
@@ -149,6 +163,18 @@ export function shapeChecks(text: string, format: string): { headline: number; b
 }
 
 /**
+ * Reads a scenario's invented image as a JPEG data URL.
+ *
+ * @param relative Its path relative to tests/eval.
+ * @returns `data:image/jpeg;base64,…`.
+ * Called from: answerScenario()
+ */
+function imageDataUrl(relative: string): string {
+  const bytes = readFileSync(path.join(SCENARIO_DIR, '..', relative));
+  return `data:image/jpeg;base64,${bytes.toString('base64')}`;
+}
+
+/**
  * Gets one answer through the real server prompt with the fast model.
  *
  * @param scenario The scenario.
@@ -162,7 +188,8 @@ async function answerScenario(scenario: Scenario, model: string): Promise<string
     session: scenario.session,
     conversation: scenario.conversation,
     tail: scenario.tail,
-    question: scenario.question,
+    ...(scenario.question ? { question: scenario.question } : {}),
+    ...(scenario.image ? { image: imageDataUrl(scenario.image) } : {}),
   };
   const prompt = buildPrompt(request);
   let text = '';
@@ -190,7 +217,12 @@ async function grade(scenario: Scenario, text: string, model: string): Promise<G
     'Newest lines:',
     JSON.stringify(scenario.tail),
     '',
-    `Question (${scenario.mode === 'chat' ? 'typed by the user' : 'from the other person'}): ${scenario.question}`,
+    ...(scenario.imageDescription
+      ? [`The answer was made from a screenshot that shows: ${scenario.imageDescription}`]
+      : []),
+    scenario.mode === 'screenshot'
+      ? `Question about the screenshot: ${scenario.question || DEFAULT_SCREENSHOT_QUESTION}`
+      : `Question (${scenario.mode === 'chat' ? 'typed by the user' : 'from the other person'}): ${scenario.question}`,
     '',
     'Must include:',
     ...scenario.mustInclude.map((item) => `- ${item}`),

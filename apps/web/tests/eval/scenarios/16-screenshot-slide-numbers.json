@@ -1,0 +1,51 @@
+{
+  "id": "16-screenshot-slide-numbers",
+  "covers": "A slide with numbers, asked about with the default screenshot question.",
+  "session": {
+    "type": "sales",
+    "company": "Northwind Logistics (invented)",
+    "role": "Account executive",
+    "description": "Renewal call; the customer is sharing their screen.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "LET ME SHARE OUR RENEWAL SUMMARY",
+        "at": 30
+      },
+      {
+        "kind": "line",
+        "speaker": "you",
+        "text": "SURE GO AHEAD",
+        "at": 33
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "SO DO THESE NUMBERS LOOK RIGHT TO YOU",
+      "at": 41
+    }
+  ],
+  "mode": "screenshot",
+  "question": "",
+  "image": "images/slide-numbers.jpg",
+  "imageDescription": "A slide \"Q3 renewal summary (invented)\": seats today 128; price 52 dollars per seat per month; monthly total 6,656 dollars; renewal date 1 December; late deliveries down 33% since the pilot.",
+  "mustInclude": [
+    "reads the slide: 128 seats at 52 dollars per seat per month",
+    "the monthly total of 6,656 dollars is consistent (128 × 52 = 6,656)",
+    "mentions the 1 December renewal or the 33% improvement"
+  ],
+  "mustNotInclude": ["numbers that are not on the slide", "saying the total is wrong"]
+}

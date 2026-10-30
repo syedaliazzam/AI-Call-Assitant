@@ -1,0 +1,51 @@
+{
+  "id": "18-screenshot-pricing-table",
+  "covers": "A pricing table, with a question that needs reading the table.",
+  "session": {
+    "type": "sales",
+    "company": "Northwind Logistics (invented)",
+    "role": "Account executive",
+    "description": "Renewal call; the customer is sharing their screen.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "THIS IS THE PRICING PAGE WE WERE SENT",
+        "at": 60
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "WE HAVE FORTY PEOPLE AND NEED SINGLE SIGN ON",
+        "at": 66
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "WHICH OF THESE PLANS WOULD WE NEED",
+      "at": 72
+    }
+  ],
+  "mode": "screenshot",
+  "question": "",
+  "image": "images/pricing-table.jpg",
+  "imageDescription": "A table of plans: Starter 18 dollars per seat per month, up to 10 seats, no single sign-on; Professional 52 dollars per seat per month, any number of seats, single sign-on yes; Enterprise custom price, 200 or more seats, single sign-on yes. Note: billed yearly, onboarding 1,500 dollars one-time.",
+  "mustInclude": [
+    "Professional: the cheapest plan with single sign-on for 40 people",
+    "Starter does not fit (up to 10 seats, no single sign-on); Enterprise starts at 200 seats",
+    "52 dollars per seat per month (about 2,080 dollars a month for 40)"
+  ],
+  "mustNotInclude": ["recommending Starter or Enterprise", "prices not in the table"]
+}
