@@ -2,14 +2,15 @@
  * File: apps/web/src/platform/browser.ts
  * Purpose: The Platform implementation used when Kite runs in Chrome or Edge (no desktop app).
  *          The microphone (Day 1) and the other side through a shared tab with its audio
- *          (Day 2) work, and the in-page hotkeys (Day 4); the other methods throw
- *          NotImplementedError naming the day they arrive.
+ *          (Day 2), the in-page hotkeys (Day 4), and (Day 5) screenshots of the shared tab, the
+ *          compact view in a Document Picture-in-Picture window, and share protection reported
+ *          as unsupported.
  * Used by: src/platform/index.ts (getPlatform)
  * Depends on: src/platform/types.ts, src/platform/errors.ts, src/platform/media.ts,
- *             src/platform/keymap.ts
+ *             src/platform/keymap.ts, src/platform/pip.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (browser column)
  */
-import { CaptureError, NotImplementedError } from './errors';
+import { CaptureError } from './errors';
 import { listenForHotkeys } from './keymap';
 import {
   openMicrophone,
@@ -19,6 +20,12 @@ import {
   type DisplayCaptureOptions,
   type FrameSource,
 } from './media';
+import {
+  closePictureInPicture,
+  openPictureInPicture,
+  pictureInPicture,
+  type PipRenderer,
+} from './pip';
 import type { OtherSideSource, Platform } from './types';
 
 /**
@@ -70,6 +77,10 @@ function browserIsMac(): boolean {
   // navigator.platform is deprecated but still set everywhere; the user agent is the fallback.
   return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 }
+
+/** Shown when the browser has no Document Picture-in-Picture (Firefox, Safari, older browsers). */
+export const NO_PIP_MESSAGE =
+  'This browser cannot show a small window on top of the meeting. Use Chrome or Edge 116 or newer, or keep Kite in its own window next to the meeting.';
 
 /** Shown when a screenshot is asked for but nothing is being shared. */
 export const NO_SHARE_MESSAGE =
@@ -139,12 +150,16 @@ export const browserPlatform: Platform = {
   },
 
   /**
-   * Day 5: Document Picture-in-Picture window.
+   * The compact view in a Document Picture-in-Picture window (Chrome / Edge 116+), opened from
+   * the click on "Compact view".
    *
-   * @param _sessionId The session to show (unused until Day 5).
+   * @param _sessionId The session (the renderer already knows it).
+   * @param render     Renders the compact view into the window.
+   * @throws CaptureError('not-supported') where the browser has no Document Picture-in-Picture.
    */
-  async openCompactView(_sessionId: string) {
-    throw new NotImplementedError('browser.openCompactView', 5);
+  async openCompactView(_sessionId: string, render?: PipRenderer) {
+    if (!render || !pictureInPicture()) throw new CaptureError('not-supported', NO_PIP_MESSAGE);
+    await openPictureInPicture(render);
   },
 
   /**
@@ -190,9 +205,11 @@ export const browserPlatform: Platform = {
   },
 
   /**
-   * Day 5 Stage 4: closes the picture-in-picture window.
+   * Closes the picture-in-picture window (End).
    *
-   * @returns Resolves at once until Stage 4.
+   * @returns Resolves at once.
    */
-  async closeCompactView() {},
+  async closeCompactView() {
+    closePictureInPicture();
+  },
 };

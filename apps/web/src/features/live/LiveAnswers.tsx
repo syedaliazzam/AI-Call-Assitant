@@ -18,7 +18,9 @@ import { openLiveChannel, type CompactState, type LiveChannel } from '@/core/liv
 import type { Session, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
+import { createRoot } from 'react-dom/client';
 import { AnswerPanel } from './AnswerPanel';
+import { CompactLive } from './CompactLive';
 import { ChatBox } from './ChatBox';
 import { TopBar } from './TopBar';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
@@ -169,7 +171,13 @@ export function LiveAnswers(props: LiveAnswersProps) {
         onCompact={() => {
           setCompactNotice(null);
           getPlatform()
-            .openCompactView(props.session.id)
+            .openCompactView(props.session.id, (container) => {
+              // Browser: the compact view in the picture-in-picture window (same page, so it
+              // reaches this live view over the session channel like the desktop window does).
+              const root = createRoot(container);
+              root.render(<CompactLive sessionId={props.session.id} closeOnEnd={false} />);
+              return () => root.unmount();
+            })
             .catch((error: unknown) =>
               setCompactNotice(
                 error instanceof Error ? error.message : 'Kite could not open the compact view.',

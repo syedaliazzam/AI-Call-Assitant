@@ -8,7 +8,8 @@
  * typed question (mode chat); the second request's conversation starts with the first's chunk
  * and adds the earlier answer (append-only). Stage 7: finished answers are saved (a cancelled
  * one is not); a rating and a note survive a reload; deleting the session removes its answers.
- * Day 5: a second page with the real compact view shows the live answer, and its Answer
+ * Day 5: the browser compact view opens in Document Picture-in-Picture where the browser has
+ * it (else a clear message); a second page with the real compact view shows the live answer, and its Answer
  * button and typed question make the live page answer.
  * All text is invented.
  */
@@ -108,6 +109,18 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as { port: number };
   return { server, origin: `http://127.0.0.1:${port}` };
+}
+
+/** The page's Document Picture-in-Picture API, as far as the test reads it. */
+interface PipApi {
+  /** The open picture-in-picture window, or null. */
+  window: Window | null;
+}
+
+/** A window with that API (Chrome / Edge 116+). */
+interface WithPip {
+  /** The API. */
+  documentPictureInPicture: PipApi;
 }
 
 let bundleDir = '';
@@ -277,4 +290,40 @@ test('the compact view shows the live answer and its Answer button asks the live
     'The seat price is 52 dollars.',
   );
   await compact.close();
+});
+
+test('Compact view in the browser: picture-in-picture, or a clear message where unsupported (Day 5)', async () => {
+  const supported = await page.evaluate(() => 'documentPictureInPicture' in window);
+  await page.getByRole('button', { name: 'Compact view' }).click();
+  if (!supported) {
+    await expect(
+      page.getByText('This browser cannot show a small window on top of the meeting'),
+    ).toBeVisible();
+    console.log(
+      '[harness] compact view: no Document Picture-in-Picture here, fallback message shown',
+    );
+    return;
+  }
+  // The picture-in-picture window renders the real compact view, linked to this live page.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as WithPip).documentPictureInPicture.window?.document.body.innerText ??
+          '',
+      ),
+    )
+    .toContain('Kite · live');
+  const headline = await page.getByRole('heading', { name: 'Answer headline' }).textContent();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as WithPip).documentPictureInPicture.window?.document.querySelector(
+            '[aria-label="Compact headline"]',
+          )?.textContent ?? '',
+      ),
+    )
+    .toBe(headline);
+  console.log('[harness] compact view: picture-in-picture window opened and shows the live answer');
 });

@@ -8,6 +8,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (the platform adapter)
  */
 import type { HotkeyAction, ShareProtectionState } from '@kite/shared';
+import type { PipRenderer } from './pip';
 
 // Re-exported so code using the platform can import every platform type from one place.
 export type { HotkeyAction };
@@ -88,9 +89,11 @@ export interface Platform {
    *   button click.
    *
    * @param sessionId Id of the live session to show.
+   * @param render    Browser only: renders the compact view into the picture-in-picture window
+   *                  (the features layer passes it; the desktop shell loads /compact/[id] itself).
    * @throws CaptureError('not-supported') when this app or browser cannot open it.
    */
-  openCompactView(sessionId: string): Promise<void>;
+  openCompactView(sessionId: string, render?: PipRenderer): Promise<void>;
 
   /**
    * Closes the small live view (End).
