@@ -168,6 +168,12 @@ jobs:
       - name: Screenshot harness test
         run: pnpm --filter web test:screenshot
 
+      # Session review page (Day 5 Stage 6): the real SessionReview on invented sessions in
+      # IndexedDB, with a mocked /api/notes: notes, answers, transcript, Regenerate, the
+      # usage-limit message, "Save transcript" off, and Delete. No sign-in, no secrets.
+      - name: Review harness test
+        run: pnpm --filter web test:review
+
       # Plays the official recordings through Chromium's fake microphone into the real
       # worklet → worker → recognizer → transcript path and checks the WER. CI=true (set by
       # GitHub) turns missing model files into a failure instead of a skip.

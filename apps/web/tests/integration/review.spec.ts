@@ -1,0 +1,303 @@
+/**
+ * Harness test for the session review page (day-05-overlay-screenshots-notes.md Stage 6), no
+ * sign-in, runs in CI. With the real SessionReview on invented sessions seeded into the
+ * browser's IndexedDB and a mocked /api/notes (no Claude call), it covers: the page shows the
+ * call details, the notes (summary, questions, next steps, unclear part, proposed lesson as a
+ * suggestion), every answer with its rating and note, and the transcript; Regenerate replaces
+ * the notes; a usage-limit reply shows the clear message and keeps the old notes; a session
+ * with "Save transcript" off says so, and its notes, written from the answers only (no lines
+ * sent), are labelled "Written from answers only"; Delete asks in an in-app dialog, removes
+ * everything stored for the session, and goes to the dashboard.
+ * Set KITE_SCREENSHOT_DIR to save screenshots of the page (for stage reports; never in CI).
+ */
+import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
+import { CLAUDE_UNAVAILABLE_MESSAGES, type NotesRequest } from '@kite/shared';
+import tailwind from '@tailwindcss/postcss';
+import { build } from 'esbuild';
+
+/** apps/web. */
+const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/** Where to save screenshots, or '' for none. */
+const SHOT_DIR = process.env.KITE_SCREENSHOT_DIR ?? '';
+
+/** How the mocked /api/notes answers: new notes, or the usage-limit error. */
+let notesMode: 'ok' | 'limit' = 'ok';
+
+/** Every body the mocked /api/notes received, in order. */
+const received: NotesRequest[] = [];
+
+/**
+ * Reads a request body.
+ *
+ * @param req The request.
+ * @returns The body text.
+ */
+async function bodyOf(req: IncomingMessage): Promise<string> {
+  const parts: Buffer[] = [];
+  for await (const part of req) parts.push(part as Buffer);
+  return Buffer.concat(parts).toString('utf8');
+}
+
+/**
+ * Serves the page, the bundle, a stand-in dashboard and the mocked /api/notes.
+ *
+ * @param bundleDir Folder with review.js.
+ * @returns The server and its origin.
+ */
+async function serve(bundleDir: string): Promise<{ server: Server; origin: string }> {
+  const server = createServer((req, res) => {
+    void (async () => {
+      if (req.method === 'POST' && req.url === '/api/notes') {
+        received.push(JSON.parse(await bodyOf(req)) as NotesRequest);
+        if (notesMode === 'limit') {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              code: 'claude_unavailable',
+              message: CLAUDE_UNAVAILABLE_MESSAGES.usageLimit,
+            }),
+          );
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            notes: {
+              summary: ['Regenerated: 40 seats on Professional, proposal by Monday.'],
+              questions: [],
+              nextSteps: [{ step: 'Send the proposal by Monday', owner: 'You' }],
+              unclear: [],
+              lessons: [],
+            },
+            usage: {
+              input_tokens: 10,
+              output_tokens: 5,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 0,
+            },
+            ms: 5,
+          }),
+        );
+        return;
+      }
+      if (req.url === '/harness/review.js' || req.url === '/harness/review.css') {
+        const css = req.url.endsWith('.css');
+        res.writeHead(200, { 'Content-Type': css ? 'text/css' : 'text/javascript' });
+        res.end(readFileSync(path.join(bundleDir, css ? 'review.css' : 'review.js')));
+        return;
+      }
+      if (req.url === '/dashboard') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<!doctype html><html><body><h1>Dashboard stand-in</h1></body></html>');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(
+        '<!doctype html><html><head><meta charset="utf-8"><title>Kite review harness</title>' +
+          '<link rel="stylesheet" href="/harness/review.css"></head>' +
+          '<body class="bg-slate-50"><div id="root"></div>' +
+          '<script type="module" src="/harness/review.js"></script></body></html>',
+      );
+    })();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  return { server, origin: `http://127.0.0.1:${port}` };
+}
+
+/**
+ * Saves a full-page screenshot when KITE_SCREENSHOT_DIR is set.
+ *
+ * @param name File name without extension.
+ */
+async function shot(name: string): Promise<void> {
+  if (!SHOT_DIR) return;
+  mkdirSync(SHOT_DIR, { recursive: true });
+  await page.screenshot({ path: path.join(SHOT_DIR, `${name}.png`), fullPage: true });
+}
+
+/**
+ * Compiles the app's real stylesheet (app/globals.css, Tailwind) into review.css, so the page
+ * looks as it does in the app. Uses the postcss that @tailwindcss/postcss itself depends on
+ * (no extra dependency).
+ *
+ * @param outDir Where to write review.css.
+ */
+async function buildCss(outDir: string): Promise<void> {
+  const fromTailwind = createRequire(
+    createRequire(import.meta.url).resolve('@tailwindcss/postcss'),
+  );
+  const postcss = fromTailwind('postcss') as PostcssRunner;
+  const from = path.join(WEB_DIR, 'app', 'globals.css');
+  const result = await postcss([tailwind({ base: WEB_DIR })]).process(readFileSync(from, 'utf8'), {
+    from,
+  });
+  writeFileSync(path.join(outDir, 'review.css'), result.css);
+}
+
+/** The part of postcss used here (it is not a direct dependency, so its types are not imported). */
+type PostcssRunner = (plugins: unknown[]) => {
+  /** Runs the plugins over a stylesheet. */
+  process: (css: string, options: { from: string }) => Promise<{ css: string }>;
+};
+
+let bundleDir = '';
+let server: Server | null = null;
+let browser: Browser | null = null;
+let page: Page;
+let origin = '';
+/** The 'full' fixture session. */
+let fullId = '';
+
+test.describe.configure({ mode: 'serial' });
+
+test.beforeAll(async () => {
+  bundleDir = mkdtempSync(path.join(tmpdir(), 'kite-review-test-'));
+  await build({
+    entryPoints: [path.join(WEB_DIR, 'tests', 'integration', 'harness', 'review.tsx')],
+    bundle: true,
+    platform: 'browser',
+    format: 'esm',
+    outdir: bundleDir,
+    // Resolves the `@/*` alias the same way the app does.
+    tsconfig: path.join(WEB_DIR, 'tsconfig.json'),
+    // No Next.js router here: links are plain anchors.
+    alias: {
+      'next/link': path.join(WEB_DIR, 'tests', 'integration', 'harness', 'next-link-stub.tsx'),
+    },
+    jsx: 'automatic',
+    define: { 'process.env.NODE_ENV': '"production"' },
+    logLevel: 'error',
+  });
+  await buildCss(bundleDir);
+  ({ server, origin } = await serve(bundleDir));
+  browser = await chromium.launch();
+  page = await (await browser.newContext({ viewport: { width: 1100, height: 900 } })).newPage();
+  await page.goto(origin);
+  await page.waitForFunction(() => 'kiteReviewHarness' in window);
+  fullId = await page.evaluate(() => window.kiteReviewHarness.seed('full'));
+  await page.evaluate((id) => window.kiteReviewHarness.show(id), fullId);
+  await expect(page.getByRole('heading', { name: 'Northwind Logistics (invented)' })).toBeVisible();
+});
+
+test.afterAll(async () => {
+  await browser?.close();
+  server?.close();
+  if (bundleDir) rmSync(bundleDir, { recursive: true, force: true });
+});
+
+test('shows the call details, notes, answers and transcript', async () => {
+  const details = page.getByRole('region', { name: 'Call details' });
+  await expect(details).toContainText('Sales');
+  await expect(details).toContainText('price-list.txt');
+  const notes = page.getByRole('region', { name: 'AI notes' });
+  await expect(notes.getByRole('list', { name: 'Summary' }).getByRole('listitem')).toHaveCount(2);
+  await expect(notes.getByRole('list', { name: 'Questions asked' })).toContainText(
+    '0:24 What would 40 seats cost? (Partly answered, 👎 Not helpful)',
+  );
+  await expect(notes.getByRole('list', { name: 'Next steps' })).toContainText(
+    'Send the proposal by Monday (You)',
+  );
+  await expect(notes.getByRole('list', { name: 'Unclear parts' })).toContainText(
+    '1:00–1:24 Garbled audio',
+  );
+  await expect(notes.getByRole('list', { name: 'Proposed lessons' })).toContainText(
+    'Give monthly and yearly totals',
+  );
+  await expect(notes).toContainText('Suggestions only');
+  await expect(notes).not.toContainText('Written from answers only');
+
+  const answers = page.getByRole('listitem', { name: 'Saved answer' });
+  await expect(answers).toHaveCount(2);
+  await expect(answers.first()).toContainText('What would forty seats on Professional cost?');
+  await expect(answers.first().getByLabel('Rating')).toHaveText('👎 Not helpful');
+  await expect(answers.first().getByLabel('Your note')).toContainText('monthly and yearly totals');
+  await expect(answers.nth(1)).toContainText('Typed question');
+  await expect(answers.nth(1).getByLabel('Rating')).toHaveText('👍 Helpful');
+
+  const transcript = page.getByRole('list', { name: 'Transcript lines' }).getByRole('listitem');
+  await expect(transcript).toHaveCount(6);
+  await expect(transcript.first()).toContainText('You');
+  await expect(transcript.nth(1)).toContainText('Them');
+  await shot('review-full');
+});
+
+test('a usage-limit reply shows the clear message and keeps the old notes', async () => {
+  notesMode = 'limit';
+  await page.getByRole('button', { name: 'Regenerate' }).click();
+  await expect(page.getByRole('alert')).toHaveText(
+    "The call notes could not be written: the team's Claude usage limit has been reached.",
+  );
+  await expect(page.getByRole('list', { name: 'Summary' }).getByRole('listitem')).toHaveCount(2);
+  await shot('review-usage-limit');
+});
+
+test('Regenerate replaces the notes from the saved call', async () => {
+  notesMode = 'ok';
+  received.length = 0;
+  await page.getByRole('button', { name: 'Regenerate' }).click();
+  await expect(page.getByText('The new notes are saved.')).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Summary' })).toHaveText(
+    'Regenerated: 40 seats on Professional, proposal by Monday.',
+  );
+  expect(received).toHaveLength(1);
+  // The saved lines and answers, in seconds since the call started.
+  expect(received[0]!.lines.map((line) => line.at)).toEqual([5, 12, 24, 40, 95, 103]);
+  expect(received[0]!.answers.map((answer) => answer.rating)).toEqual(['down', 'up']);
+});
+
+test('with "Save transcript" off: says so, and notes are written from answers only', async () => {
+  const offId = await page.evaluate(() => window.kiteReviewHarness.seed('transcript-off'));
+  await page.evaluate((id) => window.kiteReviewHarness.show(id), offId);
+  await expect(page.getByRole('heading', { name: 'Pinecrest Clinics (invented)' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Transcript' })).toContainText(
+    'The transcript was not saved for this session ("Save transcript" was off). Only the answers and the notes were kept.',
+  );
+  received.length = 0;
+  await page.getByRole('button', { name: 'Write the notes' }).click();
+  await expect(page.getByText('Written from answers only')).toBeVisible();
+  expect(received[0]!.lines).toEqual([]);
+  expect(received[0]!.answers).toHaveLength(2);
+  await shot('review-transcript-off');
+  // Back to the full session for the delete test.
+  await page.evaluate((id) => window.kiteReviewHarness.show(id), fullId);
+  await expect(page.getByRole('heading', { name: 'Northwind Logistics (invented)' })).toBeVisible();
+});
+
+test('Delete asks in a dialog, removes everything and returns to the dashboard', async () => {
+  // An in-app dialog, not window.confirm (a native dialog would fail this test).
+  page.on('dialog', () => {
+    throw new Error('A native browser dialog was opened');
+  });
+  await page.getByRole('button', { name: 'Delete session' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Delete this session?' });
+  await expect(dialog).toBeVisible();
+  await shot('review-delete-dialog');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  expect((await page.evaluate((id) => window.kiteReviewHarness.count(id), fullId)).sessions).toBe(
+    1,
+  );
+
+  await page.getByRole('button', { name: 'Delete session' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.waitForURL(`${origin}/dashboard`);
+  await expect(page.getByRole('heading', { name: 'Dashboard stand-in' })).toBeVisible();
+  // The dashboard stand-in is the same origin, so it can read the same IndexedDB.
+  await page.goto(origin);
+  await page.waitForFunction(() => 'kiteReviewHarness' in window);
+  expect(await page.evaluate((id) => window.kiteReviewHarness.count(id), fullId)).toEqual({
+    sessions: 0,
+    lines: 0,
+    answers: 0,
+    notes: 0,
+    documents: 0,
+  });
+});

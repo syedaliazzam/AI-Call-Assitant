@@ -183,6 +183,7 @@ export async function generateNotes(
       notes: body.notes,
       callStartedAt: input.callStartedAt,
       createdAt: now(),
+      fromAnswersOnly: request.lines.length === 0,
     };
     await (deps.save ?? saveNotes)(stored);
     console.info('notes: saved', {

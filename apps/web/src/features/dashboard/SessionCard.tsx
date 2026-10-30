@@ -1,7 +1,8 @@
 /**
  * File: apps/web/src/features/dashboard/SessionCard.tsx
  * Purpose: One session on the dashboard: date, company, role or topic, type and status, with
- *          Open, Edit and Delete (Delete asks for confirmation first).
+ *          Review (ended sessions, Day 5), Open, Edit and Delete (Delete asks for confirmation
+ *          first).
  * Used by: src/features/dashboard/Dashboard.tsx
  * Depends on: src/core/storage (types, shownStatus), src/ui (Button, Dialog),
  *             src/features/session-setup/labels.ts
@@ -80,6 +81,15 @@ export function SessionCard({ session, now, onOpen, onDelete }: SessionCardProps
         <p className="mt-1 text-xs text-slate-400">{DATE_FORMAT.format(session.createdAt)}</p>
       </div>
       <div className="flex shrink-0 gap-2">
+        {status === 'ended' && (
+          // Day 5 Stage 6: notes, answers and transcript of an ended session.
+          <Link
+            href={`/sessions/${session.id}`}
+            className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 hover:bg-slate-50"
+          >
+            Review
+          </Link>
+        )}
         <Button size="sm" onClick={() => onOpen(session)}>
           Open
         </Button>
@@ -110,8 +120,8 @@ export function SessionCard({ session, now, onOpen, onDelete }: SessionCardProps
         }
       >
         <p>
-          “{title}” and everything saved with it on this computer (documents, transcript, answers)
-          will be deleted. This cannot be undone.
+          “{title}” and everything saved with it on this computer (documents, transcript, answers,
+          notes) will be deleted. This cannot be undone.
         </p>
       </Dialog>
     </li>

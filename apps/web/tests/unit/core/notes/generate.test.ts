@@ -139,7 +139,13 @@ describe('generateNotes', () => {
     );
     const outcome = await generateNotes(INPUT, { fetchImpl, now: () => 42 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const saved = { sessionId: 's1', notes, callStartedAt: START, createdAt: 42 };
+    const saved = {
+      sessionId: 's1',
+      notes,
+      callStartedAt: START,
+      createdAt: 42,
+      fromAnswersOnly: false,
+    };
     expect(outcome).toEqual({ status: 'saved', stored: saved });
     expect(await getNotes('s1')).toEqual(saved);
     const logged = JSON.stringify(info.mock.calls);

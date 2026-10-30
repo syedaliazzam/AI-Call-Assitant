@@ -193,4 +193,11 @@ export interface StoredNotes {
   callStartedAt: number;
   /** When they were written (Unix ms). */
   createdAt: number;
+  /**
+   * True when they were written from the answers only, because no transcript lines were
+   * available ("Save transcript" was off and they were regenerated from the review page).
+   * The review page labels them "Written from answers only". Missing on notes saved before
+   * Day 5 Stage 6: read as false. No index uses it, so no new database version.
+   */
+  fromAnswersOnly?: boolean;
 }

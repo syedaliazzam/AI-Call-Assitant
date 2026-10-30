@@ -14,7 +14,7 @@
  *            --show     also print each answer and the grader's reason (local use only; the
  *                       scenarios are invented, but answers are never printed by default)
  *            --dry-run  print the estimated number of Claude requests and stop
- *          Re-run only the groups a change touches; the full suite once at the end of the day
+ *          Re-run only the groups a change touches; the full suite once, at release
  *          (CLAUDE.md "Evaluation cost"). The estimate is printed before anything is sent.
  * Used by: the "eval:answers" script in apps/web/package.json (run by a developer by hand;
  *          never in CI: it calls the real API and needs the real key)

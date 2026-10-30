@@ -125,7 +125,7 @@ export async function createUserAccount(input: NewUserInput): Promise<CreatedUse
 - Tests never call the real Claude API (mock the SDK). They never need real secrets.
 - Before every commit: `pnpm lint && pnpm typecheck && pnpm test` must pass.
 - Record only **measured** numbers in `docs/testing/benchmark-results.md`, with date, machine and browser.
-- **Evaluation cost:** re-run only the scenario groups a change touches (`--only=answers`, `--only=screenshots`, `--only=notes`). Run the full suite (`pnpm --filter web eval:all`) once at the end of the day. Each run prints its estimated number of Claude requests before sending anything; `--dry-run` prints only that. Groups and gates: `docs/testing/answer-eval.md`.
+- **Evaluation cost:** re-run only the scenario groups a change touches (`--only=answers`, `--only=screenshots`, `--only=notes`). Run the full suite (`pnpm --filter web eval:all`) **once, at release**. The grader stays Sonnet (baselines stay comparable). Each run prints its estimated number of Claude requests before sending anything; `--dry-run` prints only that. **Before any paid run** (eval, verify script, real-API check), tell the developer the estimated request count and cost, and run it only after they agree. Groups and gates: `docs/testing/answer-eval.md`.
 
 ## Working rhythm with Claude Code
 
