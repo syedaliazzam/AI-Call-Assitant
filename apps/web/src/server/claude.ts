@@ -22,7 +22,12 @@
  */
 import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
-import type { AnswerErrorCode, AnswerUsage, ModelTier } from '@kite/shared';
+import {
+  CLAUDE_UNAVAILABLE_MESSAGES,
+  type AnswerErrorCode,
+  type AnswerUsage,
+  type ModelTier,
+} from '@kite/shared';
 import { getClaudeEnv } from './env';
 
 /** Server time limit for one Claude reply (architecture §7.2: "Set a 60 s timeout"). */
@@ -272,6 +277,40 @@ export async function jsonReply(
   return { value: JSON.parse(text.text) as unknown, usage: toAnswerUsage(message.usage) };
 }
 
+/** The `error` object inside an Anthropic error body ({ type: 'error', error: { type, message } }). */
+interface ApiErrorDetail {
+  /** For example 'overloaded_error' or 'invalid_request_error'. */
+  type?: unknown;
+  /** Anthropic's explanation. Read here to classify the error; never logged or forwarded. */
+  message?: unknown;
+}
+
+/**
+ * Says whether an error means Claude cannot answer for anyone right now, and why.
+ * - Usage limit: the workspace's spend limit is reached. The API sends HTTP 400
+ *   invalid_request_error "You have reached your specified API usage limits…" (seen on
+ *   2026-10-30); a billing_error type or "credit balance is too low" is the same situation.
+ * - Overloaded: HTTP 529, or an overloaded_error event in the middle of a stream (the SDK then
+ *   throws an APIError with no status and the event's body).
+ * A per-minute rate limit (429 rate_limit_error) is not included: it clears in seconds.
+ *
+ * @param error What was thrown.
+ * @returns 'usageLimit', 'overloaded', or null for any other error.
+ * Called from: describeClaudeError()
+ */
+function unavailableReason(error: unknown): keyof typeof CLAUDE_UNAVAILABLE_MESSAGES | null {
+  if (!(error instanceof Anthropic.APIError) || error instanceof Anthropic.APIConnectionError) {
+    return null;
+  }
+  const detail = ((error.error as { error?: ApiErrorDetail } | undefined)?.error ??
+    {}) as ApiErrorDetail;
+  const type = error.type ?? (typeof detail.type === 'string' ? detail.type : null);
+  const text = typeof detail.message === 'string' ? detail.message : error.message;
+  if (type === 'overloaded_error' || error.status === 529) return 'overloaded';
+  if (type === 'billing_error' || /usage limit|credit balance/i.test(text)) return 'usageLimit';
+  return null;
+}
+
 /**
  * Turns an error from streamReply() into a code and a safe message for the browser.
  * Messages never include request content; API error text from Anthropic is not forwarded.
@@ -281,6 +320,10 @@ export async function jsonReply(
  * Called from: app/api/answer/route.ts (error event and logging)
  */
 export function describeClaudeError(error: unknown): { code: AnswerErrorCode; message: string } {
+  const unavailable = unavailableReason(error);
+  if (unavailable) {
+    return { code: 'claude_unavailable', message: CLAUDE_UNAVAILABLE_MESSAGES[unavailable] };
+  }
   if (error instanceof Anthropic.APIConnectionTimeoutError) {
     return { code: 'timeout', message: 'Claude took too long to answer.' };
   }
@@ -297,6 +340,24 @@ export function describeClaudeError(error: unknown): { code: AnswerErrorCode; me
     return { code: 'upstream_error', message: 'Claude returned an error.' };
   }
   return { code: 'internal', message: 'Something went wrong on the server.' };
+}
+
+/**
+ * Finds the Claude Console workspace an API key belongs to, without calling a model: it lists
+ * one model (free; no tokens) and reads the `anthropic-workspace-id` response header that the
+ * API sends with every response. Used by the development-key guard (server/dev-key.ts) so the
+ * evaluations and local development never spend from the production workspace.
+ *
+ * @param apiKey The key to check. Never logged.
+ * @returns The workspace id (for example 'wrkspc_…'), or null when the response has none.
+ * @throws Anthropic.APIError (for example 401 for a revoked key) or a connection error.
+ * Called from: checkDevKey() in server/dev-key.ts
+ */
+export async function keyWorkspace(apiKey: string): Promise<string | null> {
+  // A separate client: the key being checked is not necessarily the server's configured one.
+  const checker = new Anthropic({ apiKey, timeout: 10_000, maxRetries: 0 });
+  const { response } = await checker.models.list({ limit: 1 }).withResponse();
+  return response.headers.get('anthropic-workspace-id');
 }
 
 /**

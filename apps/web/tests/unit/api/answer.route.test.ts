@@ -10,10 +10,11 @@
  * 'chat' (Day 4): streamed with max_tokens 400, the tier's thinking setting and three cache
  * breakpoints (rules, session, last conversation chunk); delta events in order, then done with
  * cache usage; a failure before any text is an error event; 401 when signed out; logs carry
- * sizes, timings and token counts, never transcript, question, answer or session text.
+ * sizes, timings and token counts, never transcript, question, answer or session text. The usage
+ * limit and an overload (even mid-stream) end with claude_unavailable and the fixed message.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import type { AnswerTimings } from '@kite/shared';
+import { CLAUDE_UNAVAILABLE_MESSAGES, type AnswerTimings } from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeMessageStream } from '../../helpers/fakeClaude';
 
@@ -379,6 +380,42 @@ describe('POST /api/answer, modes answer and chat', () => {
     expect(params.model).toBe('claude-sonnet-5-5');
     expect(params.thinking).toEqual({ type: 'between_tools' });
     expect(params.messages[0].content.at(-1).text).toContain('Question typed by the user');
+  });
+
+  it('sends claude_unavailable with the fixed message for the usage limit and an overload', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    const limit = Anthropic.APIError.generate(
+      400,
+      {
+        type: 'error',
+        error: {
+          type: 'invalid_request_error',
+          message: 'You have reached your specified API usage limits. SECRET',
+        },
+      },
+      undefined,
+      new Headers(),
+    );
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: [], error: limit }));
+    const text = await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    expect(text).toContain(
+      `event: error\ndata: ${JSON.stringify({ code: 'claude_unavailable', message: CLAUDE_UNAVAILABLE_MESSAGES.usageLimit })}`,
+    );
+    expect(text).not.toContain('SECRET');
+    // An overloaded_error event after some text: the text already sent stays, then the message.
+    const overloaded = new Anthropic.APIError(
+      undefined,
+      { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } },
+      undefined,
+      new Headers(),
+    );
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Fifty'], error: overloaded }));
+    const midStream = await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    expect(midStream).toContain('event: delta');
+    expect(midStream).toContain(CLAUDE_UNAVAILABLE_MESSAGES.overloaded);
+    const logged = JSON.stringify(vi.mocked(console.error).mock.calls);
+    expect(logged).toContain('"code":"claude_unavailable"');
+    expect(logged).not.toContain('SECRET');
   });
 
   it('sends an error event when Claude fails before any text', async () => {

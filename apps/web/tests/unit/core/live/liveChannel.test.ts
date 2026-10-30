@@ -51,6 +51,8 @@ const STATE: CompactState = {
     bullets: ['Billed yearly'],
     status: 'done',
     mode: 'answer',
+    error: null,
+    unavailable: false,
   },
   answering: false,
   capturing: false,

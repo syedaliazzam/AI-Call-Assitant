@@ -13,6 +13,8 @@
  *          hand; never in CI, because it calls the real API and needs the real key)
  * Depends on: src/server/prompt.ts (buildPrompt), src/server/claude.ts (warmCache,
  *             streamReply), src/server/env.ts (the fast model name), @kite/shared
+ * Key: refuses to run without the development Claude key (scripts/lib/dev-key.ts; CLAUDE.md
+ *      "Separate Claude keys").
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3 (prompt caching);
  *               day-04-answers.md Stage 3; ADR-0025
  *
@@ -30,6 +32,7 @@ import {
 import { streamReply, warmCache } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
+import { requireDevKey } from './lib/dev-key';
 
 /** Invented sentences the document is built from (no real company, person or customer). */
 const SENTENCES = [
@@ -128,6 +131,7 @@ function print(label: string, measured: Measured): void {
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
+  await requireDevKey('verify-answer-cache');
   const reference = crypto.randomUUID().slice(0, 8);
   const session: SessionContext = {
     type: 'sales',

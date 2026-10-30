@@ -100,6 +100,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
               bullets: parts.bullets,
               status: entry.status,
               mode: entry.mode,
+              error: entry.status === 'error' ? (entry.error ?? null) : null,
+              unavailable: entry.unavailable ?? false,
             }
           : null,
       answering,

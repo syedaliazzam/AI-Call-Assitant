@@ -2,7 +2,7 @@
 
 How Kite's live answers are scored, how to run the evaluation, and the results for each prompt version. Only measured runs are recorded here.
 
-- **Script:** `apps/web/scripts/eval-answers.ts`, run with `pnpm --filter web eval:answers`. It is developer-only: it calls the real Claude API with the key in `apps/web/.env.local`, and never runs in CI.
+- **Script:** `apps/web/scripts/eval-answers.ts`, run with `pnpm --filter web eval:answers`. It is developer-only: it calls the real Claude API with the **development key** in `apps/web/.env.local` (it refuses to run with the production key or without a key: CLAUDE.md "Separate Claude keys"), and never runs in CI.
 - **Scenarios:** `apps/web/tests/eval/scenarios/*.json`, 12 invented scenarios (no real company, person or customer).
 - **Architecture:** `docs/architecture/kite-architecture-v3.1.md` §11; ADR-0025.
 
@@ -13,7 +13,19 @@ How Kite's live answers are scored, how to run the evaluation, and the results f
 3. **Check in code.** Two rubric points are counted in code instead of by the grader: the headline length and the number of bullets.
 4. **Average.** Each scenario runs twice by default (`--runs N`), because answers vary from run to run; its scores are averaged. The overall score is the mean of the scenario totals.
 
-The script prints the score table only. `--show` also prints each answer and the grader's one-line reason; use it locally only. `--only <id>` runs one scenario.
+The script prints the score table only. `--show` also prints each answer and the grader's one-line reason; use it locally only.
+
+### Groups, and what to re-run (from Day 5)
+
+Re-run only the groups a change touches; run the full suite once at the end of the day (`pnpm --filter web eval:all`). Every run first prints its estimated number of Claude requests; `--dry-run` prints only that and sends nothing.
+
+| Group | Scenarios | Command | Claude requests per command (default runs) | Gate |
+|---|---|---|---|---|
+| `answers` | 01–15 (Day 4) | `pnpm --filter web eval:answers --only=answers` | 15 × 2 runs × (answer + grade) = 60; the gate needs the command 3 times = 180 | mean of 3 commands ≥ baseline − 0.15 (9.28) |
+| `screenshots` | 16–18 (Day 5) | `pnpm --filter web eval:answers --only=screenshots` | 3 × 2 × 2 = 12 | ≥ 8 |
+| `notes` | n1–n3 (Day 5) | `pnpm --filter web eval:notes --only=notes` | 3 × 3 runs × (notes + grade) = 18 | ≥ 8 |
+
+`--only=<id>` runs one scenario; `--runs=N` sets the runs (default 2 for answers, 3 for notes). Which group a change touches: the rules block or the conversation part of `server/prompt.ts` → `answers` and `screenshots`; the screenshot tail only → `screenshots`; `server/notes.ts` → `notes`.
 
 ## Rubric (10 points per scenario)
 

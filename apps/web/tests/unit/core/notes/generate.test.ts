@@ -3,16 +3,20 @@
  * turns lines and this call's answers into times since the call started, leaves out empty lines
  * and earlier calls' answers, and keeps the newest lines of a call over the character limit;
  * generateNotes() posts once, saves the notes (and they can be read back from IndexedDB),
- * returns null without posting when there is nothing to write about, and returns null (never
- * throws) on a failure; its logs hold ids, sizes, times and token counts only.
+ * returns 'skipped' without posting when there is nothing to write about, and 'failed' (never
+ * throws) on a failure, with the reason when Claude was unavailable (usage limit or overload),
+ * leaving the saved transcript and answers as they were; its logs hold ids, sizes, times and
+ * token counts only.
  * All text is invented.
  */
 import 'fake-indexeddb/auto';
-import { MAX_NOTES_CHARS } from '@kite/shared';
+import { CLAUDE_UNAVAILABLE_MESSAGES, MAX_NOTES_CHARS } from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateNotes, notesRequest, type NotesInput } from '@/core/notes/generate';
+import { listAnswers, saveAnswer } from '@/core/storage/answers';
 import { getNotes } from '@/core/storage/notes';
 import type { Session, StoredAnswer } from '@/core/storage/types';
+import { listUtterances, saveUtterance } from '@/core/storage/utterances';
 import { resetDb } from '../storage/helpers';
 
 beforeEach(resetDb);
@@ -133,9 +137,10 @@ describe('generateNotes', () => {
         ms: 4_000,
       }),
     );
-    const saved = await generateNotes(INPUT, { fetchImpl, now: () => 42 });
+    const outcome = await generateNotes(INPUT, { fetchImpl, now: () => 42 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(saved).toEqual({ sessionId: 's1', notes, callStartedAt: START, createdAt: 42 });
+    const saved = { sessionId: 's1', notes, callStartedAt: START, createdAt: 42 };
+    expect(outcome).toEqual({ status: 'saved', stored: saved });
     expect(await getNotes('s1')).toEqual(saved);
     const logged = JSON.stringify(info.mock.calls);
     expect(logged).toContain('"input":900');
@@ -145,13 +150,49 @@ describe('generateNotes', () => {
   it('does nothing for an empty call, and never throws on failure', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fetchImpl = vi.fn(async () => Response.json({ code: 'upstream_error' }, { status: 502 }));
-    expect(await generateNotes({ ...INPUT, lines: [], answers: [] }, { fetchImpl })).toBeNull();
+    const empty = await generateNotes({ ...INPUT, lines: [], answers: [] }, { fetchImpl });
+    expect(empty).toEqual({ status: 'skipped' });
     expect(fetchImpl).not.toHaveBeenCalled();
-    expect(await generateNotes(INPUT, { fetchImpl })).toBeNull();
+    expect(await generateNotes(INPUT, { fetchImpl })).toEqual({
+      status: 'failed',
+      unavailable: null,
+    });
     const offline = vi.fn(async () => {
       throw new Error('offline');
     });
-    expect(await generateNotes(INPUT, { fetchImpl: offline })).toBeNull();
+    expect(await generateNotes(INPUT, { fetchImpl: offline })).toEqual({
+      status: 'failed',
+      unavailable: null,
+    });
     expect(await getNotes('s1')).toBeNull();
+  });
+
+  it('says when Claude was unavailable, and leaves the saved transcript and answers as they were', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    // What End has already saved before the notes are asked for.
+    await saveUtterance({
+      id: 'u1',
+      sessionId: 's1',
+      speaker: 'them',
+      text: 'SECRET what does it cost',
+      tStart: START + 10_500,
+      tEnd: START + 12_000,
+    });
+    await saveAnswer(answer('a1', START + 15_000));
+    for (const [reason, message] of Object.entries(CLAUDE_UNAVAILABLE_MESSAGES)) {
+      const fetchImpl = vi.fn(async () =>
+        Response.json({ code: 'claude_unavailable', message }, { status: 503 }),
+      );
+      expect(await generateNotes(INPUT, { fetchImpl })).toEqual({
+        status: 'failed',
+        unavailable: reason,
+      });
+    }
+    expect(await getNotes('s1')).toBeNull();
+    expect((await listUtterances('s1')).map((line) => line.id)).toEqual(['u1']);
+    expect((await listAnswers('s1')).map((stored) => stored.id)).toEqual(['a1']);
+    const logged = JSON.stringify(vi.mocked(console.warn).mock.calls);
+    expect(logged).toContain('"code":"claude_unavailable"');
+    expect(logged).not.toContain('SECRET');
   });
 });

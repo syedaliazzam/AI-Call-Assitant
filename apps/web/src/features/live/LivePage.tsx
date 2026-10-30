@@ -34,6 +34,7 @@ import { markSessionActive, updateSession } from '@/core/storage/sessions';
 import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
 import { listUtterances } from '@/core/storage/utterances';
 import { listAnswers } from '@/core/storage/answers';
+import { notesFailureText, type UnavailableReason } from '@/core/answer/unavailable';
 import { generateNotes, type NotesLine } from '@/core/notes/generate';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
@@ -194,6 +195,8 @@ export function LivePage({
   const [callStartedAt, setCallStartedAt] = useState<number | null>(null);
   // The notes written after the last call (Day 5).
   const [notesStatus, setNotesStatus] = useState<'idle' | 'writing' | 'saved' | 'failed'>('idle');
+  // Why the notes failed when Claude was unavailable (usage limit or overload), else null.
+  const [notesUnavailable, setNotesUnavailable] = useState<UnavailableReason | null>(null);
 
   const engineRef = useRef<SttEngine | null>(null);
   const captureRef = useRef<CallCapture | null>(null);
@@ -390,6 +393,7 @@ export function LivePage({
     // End never waits for them.
     if (startedAt !== null && finalLines.length > 0) {
       setNotesStatus('writing');
+      setNotesUnavailable(null);
       void listAnswers(session.id)
         .catch(() => [])
         .then((answers) =>
@@ -401,7 +405,10 @@ export function LivePage({
             callStartedAt: startedAt,
           }),
         )
-        .then((notes) => setNotesStatus(notes ? 'saved' : 'failed'));
+        .then((outcome) => {
+          setNotesStatus(outcome.status === 'saved' ? 'saved' : 'failed');
+          setNotesUnavailable(outcome.status === 'failed' ? outcome.unavailable : null);
+        });
     }
     // Show the lines just saved under "Saved transcript".
     if (saver) {
@@ -443,7 +450,7 @@ export function LivePage({
               ? 'Writing the call notes…'
               : notesStatus === 'saved'
                 ? 'The call notes are saved on this computer.'
-                : 'The call notes could not be written. You can try again from the session review.'}
+                : notesFailureText(notesUnavailable, session.saveTranscript)}
           </p>
         )}
         <SavedTranscript lines={saved} saving={session.saveTranscript} />

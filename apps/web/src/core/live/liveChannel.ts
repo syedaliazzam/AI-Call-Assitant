@@ -32,6 +32,13 @@ export interface CompactAnswer {
   status: 'streaming' | 'done' | 'error' | 'cancelled';
   /** How it was asked. */
   mode: 'answer' | 'chat' | 'screenshot';
+  /**
+   * When it failed: what to show (the "Claude is unavailable" message, or "The answer failed."
+   * with the reason; core/answer/unavailable.ts). Null otherwise.
+   */
+  error: string | null;
+  /** True when it failed because Claude is unavailable for everyone (usage limit or overload). */
+  unavailable: boolean;
 }
 
 /** Everything the compact view shows. */

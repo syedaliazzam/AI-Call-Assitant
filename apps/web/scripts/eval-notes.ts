@@ -7,10 +7,14 @@
  *          (nothing invented), coverage, unclear parts said instead of guessed, lessons grounded
  *          in the user's ratings and notes, and the size limits (checked in code). Prints a score
  *          table only (--show also prints the notes and the grader's reason, locally).
- *          Usage: pnpm --filter web eval:notes [--runs N] [--only <id>] [--show]
+ *          Usage: pnpm --filter web eval:notes [--only=<notes|id>] [--runs=N] [--show] [--dry-run]
+ *          (group 'notes', the only group here; options and the estimate printed before anything
+ *          is sent: scripts/lib/eval-options.ts)
  * Used by: the "eval:notes" script in apps/web/package.json (by hand; never in CI)
  * Depends on: src/server/notes.ts (generateCallNotes), src/server/claude.ts (jsonReply),
  *             src/server/prompt.ts (sessionBlock), src/server/env.ts, @kite/shared
+ * Key: refuses to run without the development Claude key (scripts/lib/dev-key.ts; CLAUDE.md
+ *      "Separate Claude keys").
  * Architecture: docs/testing/answer-eval.md; day-05-overlay-screenshots-notes.md Stage 5
  *
  * Runs like eval-answers.ts (tsx, `--env-file=.env.local`, `--conditions=react-server`).
@@ -29,6 +33,8 @@ import { jsonReply } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { generateCallNotes } from '@/server/notes';
 import { sessionBlock } from '@/server/prompt';
+import { requireDevKey } from './lib/dev-key';
+import { estimateLine, parseEvalArgs, selectScenarios } from './lib/eval-options';
 
 /** tests/eval/notes. */
 const SCENARIO_DIR = path.join(
@@ -92,11 +98,21 @@ Rubric:
 - reason: one short sentence on what cost points ("none" when nothing did).`;
 
 /**
+ * The group of every scenario here (docs/testing/answer-eval.md: gated on its own, ≥ 8).
+ *
+ * @returns 'notes'.
+ * Called from: loadScenarios(), main()
+ */
+function notesGroup(): string {
+  return 'notes';
+}
+
+/**
  * Reads the scenarios.
  *
- * @param only One id, or null for all.
+ * @param only 'notes', one id, or null for all.
  * @returns The scenarios.
- * @throws Error when --only names none.
+ * @throws Error when --only names neither the group nor a scenario.
  * Called from: main()
  */
 function loadScenarios(only: string | null): NotesScenario[] {
@@ -106,9 +122,7 @@ function loadScenarios(only: string | null): NotesScenario[] {
     .map(
       (name) => JSON.parse(readFileSync(path.join(SCENARIO_DIR, name), 'utf8')) as NotesScenario,
     );
-  const chosen = only ? scenarios.filter((scenario) => scenario.id === only) : scenarios;
-  if (chosen.length === 0) throw new Error(`no scenario "${only}"`);
-  return chosen;
+  return selectScenarios(scenarios, notesGroup, only);
 }
 
 /**
@@ -173,34 +187,25 @@ async function grade(
 }
 
 /**
- * Reads the command-line options.
- *
- * @param argv process.argv.slice(2).
- * @returns runs, only and show.
- * Called from: main()
- */
-function parseArgs(argv: string[]): { runs: number; only: string | null; show: boolean } {
-  const value = (name: string) => {
-    const at = argv.indexOf(name);
-    return at === -1 ? null : (argv[at + 1] ?? null);
-  };
-  return {
-    runs: Math.max(1, Number(value('--runs') ?? 3)),
-    only: value('--only'),
-    show: argv.includes('--show'),
-  };
-}
-
-/**
  * Runs the evaluation and prints the score table.
  *
  * @returns Nothing; sets a non-zero exit code on failure.
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
-  const env = getClaudeEnv();
+  const options = parseEvalArgs(process.argv.slice(2), 3);
   const scenarios = loadScenarios(options.only);
+  // Model names only, so --dry-run works without a key.
+  const smart = process.env.KITE_MODEL_SMART || 'the smart model';
+  console.log(
+    estimateLine(scenarios, notesGroup, options.runs, [
+      { label: 'notes', model: smart },
+      { label: 'grades', model: smart },
+    ]),
+  );
+  if (options.dryRun) return;
+  await requireDevKey('eval-notes');
+  const env = getClaudeEnv();
   console.log(
     `eval-notes: notes and grades by ${env.modelSmart}; ${scenarios.length} scenarios × ${options.runs} runs`,
   );
@@ -241,7 +246,7 @@ async function main(): Promise<void> {
 main().catch((error: unknown) => {
   const status = (error as { status?: number }).status;
   console.error(
-    `eval-notes: failed (${error instanceof Error ? error.name : 'unknown'}${status ? `, HTTP ${status}` : ''})`,
+    `eval-notes: failed (${error instanceof Error ? (error.message.startsWith('--') ? error.message : error.name) : 'unknown'}${status ? `, HTTP ${status}` : ''})`,
   );
   process.exitCode = 1;
 });

@@ -244,11 +244,18 @@ export function AnswerPanel(props: AnswerPanelProps) {
         </ul>
       )}
 
+      {entry.unavailable && (
+        // Claude is down for everyone (usage limit or overload): say so plainly, and that the
+        // transcript keeps recording (core/answer/unavailable.ts).
+        <p role="alert" className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {entry.error}
+        </p>
+      )}
+
       <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-        {entry.status !== 'done' && (
+        {entry.status !== 'done' && !entry.unavailable && (
           <span role={entry.status === 'error' ? 'alert' : 'status'}>
-            {STATUS_TEXT[entry.status]}
-            {entry.error ? ` ${entry.error}` : ''}
+            {entry.status === 'error' && entry.error ? entry.error : STATUS_TEXT[entry.status]}
           </span>
         )}
         {entry.timeline && (

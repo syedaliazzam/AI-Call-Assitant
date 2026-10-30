@@ -44,6 +44,7 @@ function jsonError(status: number, code: AnswerErrorCode, message: string): Resp
  *
  * @param request The incoming request; body is a NotesRequest (JSON).
  * @returns 401 (not signed in), 400 (bad body), 500 (not configured), 502/504 (Claude failed),
+ *          503 (Claude unavailable: usage limit or overload),
  *          or 200 with a NotesResponse; each with any Set-Cookie from the session check.
  */
 export async function POST(request: Request): Promise<Response> {
@@ -141,6 +142,10 @@ async function respond(
       ...errorLogDetails(error),
       ms: Math.round(performance.now() - startedAt),
     });
-    return jsonError(described.code === 'timeout' ? 504 : 502, described.code, described.message);
+    // 503 when Claude is unavailable for everyone (usage limit or overload): the browser shows
+    // that plainly instead of a generic failure (core/answer/unavailable.ts).
+    const status =
+      described.code === 'timeout' ? 504 : described.code === 'claude_unavailable' ? 503 : 502;
+    return jsonError(status, described.code, described.message);
   }
 }

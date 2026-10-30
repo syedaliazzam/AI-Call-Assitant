@@ -245,6 +245,9 @@ export interface AnswerTimings {
  * - `upstream_error`: the Claude API returned an error.
  * - `timeout`: Claude did not finish within the server time limit (60 s).
  * - `refused`: Claude declined to answer (stop reason "refusal"); nothing more will follow.
+ * - `claude_unavailable`: Claude cannot answer for anyone right now (the team's usage limit is
+ *   reached, or Claude is overloaded); the message is one of CLAUDE_UNAVAILABLE_MESSAGES and is
+ *   shown as it is.
  * - `internal`: any other server failure.
  */
 export type AnswerErrorCode =
@@ -254,7 +257,22 @@ export type AnswerErrorCode =
   | 'upstream_error'
   | 'timeout'
   | 'refused'
+  | 'claude_unavailable'
   | 'internal';
+
+/**
+ * The messages sent with `claude_unavailable`, shown as they are in the live view, the compact
+ * view and the notes status. Each says that the transcript is still being recorded, because
+ * only Claude is down: listening, the transcript and saving keep working.
+ */
+export const CLAUDE_UNAVAILABLE_MESSAGES = {
+  /** The team's Claude usage (spend) limit is reached, or its credit has run out. */
+  usageLimit:
+    "Answers are unavailable right now: the team's Claude usage limit has been reached. Your transcript is still being recorded.",
+  /** Claude is overloaded (HTTP 529, or an overloaded_error in the stream). */
+  overloaded:
+    'Answers are unavailable right now: Claude is overloaded. Your transcript is still being recorded.',
+} as const;
 
 /**
  * One server-sent event from /api/answer. The SSE event name equals `type`; the remaining fields

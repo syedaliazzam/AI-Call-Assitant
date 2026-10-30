@@ -5,11 +5,17 @@
  * and unknown fields, without echoing content; a valid call goes to the smart model as one
  * structured request with the cached notes rules and session block, and the JSON notes come
  * back with question ratings taken from the request (never from the model) and the counts
- * capped (6 summary bullets, 3 lessons); a Claude failure is 502 with a safe message; logs hold
+ * capped (6 summary bullets, 3 lessons); a Claude failure is 502 with a safe message (503
+ * claude_unavailable with the fixed message for the usage limit); logs hold
  * sizes, counts, times and token counts, never transcript, answer, note or notes text.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { MAX_NOTES_CHARS, MAX_NOTES_LINES, type NotesResponse } from '@kite/shared';
+import {
+  CLAUDE_UNAVAILABLE_MESSAGES,
+  MAX_NOTES_CHARS,
+  MAX_NOTES_LINES,
+  type NotesResponse,
+} from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** Spy standing in for client.messages.create(). */
@@ -178,6 +184,30 @@ describe('POST /api/notes', () => {
     expect(params.messages[0].content).toContain('[00:10] Them: SECRET-LINE what does it cost');
     expect(params.messages[0].content).toContain("User's note: SECRET-NOTE monthly too");
     expect(options.timeout).toBeGreaterThan(60_000);
+  });
+
+  it('503 claude_unavailable with the fixed message when the usage limit is reached', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    createMock.mockRejectedValueOnce(
+      Anthropic.APIError.generate(
+        400,
+        {
+          type: 'error',
+          error: {
+            type: 'invalid_request_error',
+            message: 'You have reached your specified API usage limits. SECRET',
+          },
+        },
+        undefined,
+        new Headers(),
+      ),
+    );
+    const response = await POST(post(JSON.stringify(BODY)));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      code: 'claude_unavailable',
+      message: CLAUDE_UNAVAILABLE_MESSAGES.usageLimit,
+    });
   });
 
   it('502 when Claude fails, with a safe message; logs never hold call or notes text', async () => {

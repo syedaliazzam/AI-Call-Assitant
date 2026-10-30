@@ -5,7 +5,8 @@
   "description": "Kite web application (Next.js): all screens, browser logic and the server routes. Deployed to Vercel.",
   "type": "module",
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "tsx --env-file=.env.local --conditions=react-server scripts/check-dev-key.ts && next dev -p 3000",
+    "check-dev-key": "tsx --env-file=.env.local --conditions=react-server scripts/check-dev-key.ts",
     "build": "pnpm run stt:runtime && next build",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
@@ -21,6 +22,7 @@
     "verify:notes": "tsx --env-file=.env.local --conditions=react-server scripts/verify-notes.ts",
     "eval:notes": "tsx --env-file=.env.local --conditions=react-server scripts/eval-notes.ts",
     "eval:answers": "tsx --env-file=.env.local --conditions=react-server scripts/eval-answers.ts",
+    "eval:all": "pnpm run eval:answers && pnpm run eval:notes",
     "e2e-admin": "tsx --env-file=.env.local --conditions=react-server scripts/e2e-admin.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",
     "stt:runtime": "tsx scripts/fetch-models.ts --runtime-only && tsx scripts/check-stt-runtime.ts",

@@ -5,16 +5,24 @@
  *          (buildPrompt) with the fast model (Haiku), then grades each answer with the smart
  *          model (Sonnet) against the rubric in docs/testing/answer-eval.md, plus two checks
  *          made in code (headline length, number of bullets). Prints a score table only.
- *          Usage: pnpm --filter web eval:answers [--runs N] [--only <id>] [--show]
- *            --runs N   answers per scenario (default 2; scores are averaged, because answers
+ *          Usage: pnpm --filter web eval:answers [--only=<group|id>] [--runs=N] [--show] [--dry-run]
+ *            --only=answers      the Day 4 group (scenarios 01–15; the baseline group)
+ *            --only=screenshots  the Day 5 screenshot group (16–18)
+ *            --only=<id>         one scenario (its file name without .json)
+ *            --runs=N   answers per scenario (default 2; scores are averaged, because answers
  *                       vary from run to run)
- *            --only id  one scenario (its file name without .json)
  *            --show     also print each answer and the grader's reason (local use only; the
  *                       scenarios are invented, but answers are never printed by default)
+ *            --dry-run  print the estimated number of Claude requests and stop
+ *          Re-run only the groups a change touches; the full suite once at the end of the day
+ *          (CLAUDE.md "Evaluation cost"). The estimate is printed before anything is sent.
  * Used by: the "eval:answers" script in apps/web/package.json (run by a developer by hand;
  *          never in CI: it calls the real API and needs the real key)
  * Depends on: src/server/prompt.ts (buildPrompt, sessionBlock, SYSTEM_RULES),
- *             src/server/claude.ts (streamReply, jsonReply), src/server/env.ts, @kite/shared
+ *             src/server/claude.ts (streamReply, jsonReply), src/server/env.ts, @kite/shared,
+ *             scripts/lib/eval-options.ts (options, groups, estimate)
+ * Key: refuses to run without the development Claude key (scripts/lib/dev-key.ts; CLAUDE.md
+ *      "Separate Claude keys").
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (testing); ADR-0025;
  *               docs/testing/answer-eval.md (rubric and results)
  *
@@ -39,6 +47,8 @@ import {
 import { jsonReply, streamReply } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
+import { requireDevKey } from './lib/dev-key';
+import { estimateLine, parseEvalArgs, selectScenarios } from './lib/eval-options';
 
 /** tests/eval/scenarios. */
 const SCENARIO_DIR = path.join(
@@ -117,11 +127,23 @@ Rubric:
 - reason: one short sentence on what cost points ("none" when nothing did).`;
 
 /**
+ * The group a scenario belongs to: 'screenshots' for the screenshot scenarios (Day 5), else
+ * 'answers' (the Day 4 baseline group). Each group has its own gate (docs/testing/answer-eval.md).
+ *
+ * @param scenario The scenario.
+ * @returns Its group name.
+ * Called from: loadScenarios(), main()
+ */
+export function answerGroup(scenario: Pick<Scenario, 'mode'>): string {
+  return scenario.mode === 'screenshot' ? 'screenshots' : 'answers';
+}
+
+/**
  * Reads the scenarios.
  *
- * @param only One scenario id, or null for all.
+ * @param only A group name or one scenario id, or null for all.
  * @returns The scenarios, in file order.
- * @throws Error when --only names no scenario.
+ * @throws Error when --only names neither a group nor a scenario.
  * Called from: main()
  */
 function loadScenarios(only: string | null): Scenario[] {
@@ -131,9 +153,7 @@ function loadScenarios(only: string | null): Scenario[] {
   const scenarios = files.map(
     (name) => JSON.parse(readFileSync(path.join(SCENARIO_DIR, name), 'utf8')) as Scenario,
   );
-  const chosen = only ? scenarios.filter((scenario) => scenario.id === only) : scenarios;
-  if (chosen.length === 0) throw new Error(`no scenario "${only}"`);
-  return chosen;
+  return selectScenarios(scenarios, answerGroup, only);
 }
 
 /**
@@ -246,34 +266,24 @@ async function grade(scenario: Scenario, text: string, model: string): Promise<G
 }
 
 /**
- * Reads the command-line options.
- *
- * @param argv process.argv.slice(2).
- * @returns runs, only and show.
- * Called from: main()
- */
-function parseArgs(argv: string[]): { runs: number; only: string | null; show: boolean } {
-  const value = (name: string) => {
-    const at = argv.indexOf(name);
-    return at === -1 ? null : (argv[at + 1] ?? null);
-  };
-  return {
-    runs: Math.max(1, Number(value('--runs') ?? 2)),
-    only: value('--only'),
-    show: argv.includes('--show'),
-  };
-}
-
-/**
  * Runs the evaluation and prints the score table.
  *
  * @returns Nothing; sets a non-zero exit code on failure.
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
-  const env = getClaudeEnv();
+  const options = parseEvalArgs(process.argv.slice(2), 2);
   const scenarios = loadScenarios(options.only);
+  // Model names only, so --dry-run works without a key.
+  console.log(
+    estimateLine(scenarios, answerGroup, options.runs, [
+      { label: 'answers', model: process.env.KITE_MODEL_FAST || 'the fast model' },
+      { label: 'grades', model: process.env.KITE_MODEL_SMART || 'the smart model' },
+    ]),
+  );
+  if (options.dryRun) return;
+  await requireDevKey('eval-answers');
+  const env = getClaudeEnv();
   console.log(
     `eval-answers: answers by ${env.modelFast}, graded by ${env.modelSmart}; ${scenarios.length} scenarios × ${options.runs} runs`,
   );
@@ -320,10 +330,11 @@ async function main(): Promise<void> {
 // Run only when executed directly (the unit test imports shapeChecks()).
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error: unknown) => {
-    // The error's name and status only: an API error message could quote the request.
+    // The error's name and status only: an API error message could quote the request. Option
+    // errors (ours, starting with "--") are printed in full.
     const status = (error as { status?: number }).status;
     console.error(
-      `eval-answers: failed (${error instanceof Error ? error.name : 'unknown'}${status ? `, HTTP ${status}` : ''})`,
+      `eval-answers: failed (${error instanceof Error ? (error.message.startsWith('--') ? error.message : error.name) : 'unknown'}${status ? `, HTTP ${status}` : ''})`,
     );
     process.exitCode = 1;
   });

@@ -7,7 +7,8 @@
  *          saved on this device with its rating and note (Stage 7). While the call runs, the
  *          idle re-warm keeps Claude's cache warm (core/answer/keepWarm.ts).
  * Used by: src/features/live/LiveAnswers.tsx
- * Depends on: src/core/answer (context.ts, answerClient.ts, warm.ts, keepWarm.ts),
+ * Depends on: src/core/answer (context.ts, answerClient.ts, warm.ts, keepWarm.ts,
+ *             unavailable.ts),
  *             src/core/transcript/transcript.ts, src/core/storage (answers.ts, types.ts)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1, §6.3; day-04-answers.md
  *               Stages 6–7
@@ -22,6 +23,7 @@ import { createAnswerRunner, type AnswerTimeline } from '@/core/answer/answerCli
 import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/context';
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { warmSession } from '@/core/answer/warm';
+import { answerFailureText } from '@/core/answer/unavailable';
 import { prepareScreenshot } from '@/core/screenshot/prepare';
 import { listAnswers, rateAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
 import type { AnswerRating, Session, StoredAnswer, StoredDocument } from '@/core/storage/types';
@@ -68,8 +70,10 @@ export interface AnswerEntry {
   text: string;
   /** Streaming, finished, failed, or cancelled by Clear (or a newer answer). */
   status: 'streaming' | 'done' | 'error' | 'cancelled';
-  /** The error message when it failed. */
+  /** What to show when it failed (core/answer/unavailable.ts answerFailureText()). */
   error?: string;
+  /** True when it failed because Claude is unavailable for everyone (usage limit or overload). */
+  unavailable?: boolean;
   /** When the user asked (Unix ms). */
   askedAt: number;
   /** The model tier used. */
@@ -341,7 +345,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           storeRef.current.save(toStored(finished, session.id)).catch(() => setSaveFailed(true));
         },
         onError: (failure) => {
-          update(entry.id, { status: 'error', error: failure.message });
+          const shown = answerFailureText(failure);
+          update(entry.id, { status: 'error', error: shown.text, unavailable: shown.unavailable });
           console.warn('answer: failed', {
             sessionId: session.id,
             answerId: entry.id,

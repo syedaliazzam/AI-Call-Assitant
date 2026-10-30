@@ -106,12 +106,26 @@ export async function createUserAccount(input: NewUserInput): Promise<CreatedUse
 - Add a dependency only with a reason (state it in the stage summary). Prefer the latest stable versions.
 - If an official library API differs from our docs (Next.js, Better Auth, Electron, sherpa-onnx, Anthropic SDK), follow the official docs and mention the difference in the stage summary.
 
+## Separate Claude keys
+
+- **Production** uses `ANTHROPIC_API_KEY` in Vercel (Production environment). That key is for the deployed app only.
+- **Local development, `scripts/verify-*.ts` and the evaluations** use a second key, from a separate Claude Console workspace. It lives in `apps/web/.env.local` under the same name, `ANTHROPIC_API_KEY`. It is local only and never goes in Vercel Production.
+  - `vercel env pull` writes Vercel's **Development** values into `.env.local`. So store the development key there: `vercel env rm ANTHROPIC_API_KEY development`, then `vercel env add ANTHROPIC_API_KEY development` (paste the development key), then `vercel env pull apps/web/.env.local`.
+- **The guard** (`src/server/dev-key.ts`, run by `scripts/lib/dev-key.ts`) runs before `pnpm dev`, every verify script and every evaluation. It refuses to run when:
+  - the key is missing;
+  - the variables come from a Vercel production or preview environment;
+  - the key belongs to the production workspace (`PRODUCTION_WORKSPACE_IDS`);
+  - its workspace cannot be confirmed (the Default workspace, or no connection).
+- **How it checks:** one free models request reads the `anthropic-workspace-id` response header. No model is called and nothing is billed. `pnpm --filter web check-dev-key` runs it alone.
+- Never print or log a key. The guard prints only the workspace id.
+
 ## Testing rules
 
 - Every module in `src/server`, `src/core` and `src/platform` gets unit tests (Vitest) in `apps/web/tests/unit/<same path>`.
 - Tests never call the real Claude API (mock the SDK). They never need real secrets.
 - Before every commit: `pnpm lint && pnpm typecheck && pnpm test` must pass.
 - Record only **measured** numbers in `docs/testing/benchmark-results.md`, with date, machine and browser.
+- **Evaluation cost:** re-run only the scenario groups a change touches (`--only=answers`, `--only=screenshots`, `--only=notes`). Run the full suite (`pnpm --filter web eval:all`) once at the end of the day. Each run prints its estimated number of Claude requests before sending anything; `--dry-run` prints only that. Groups and gates: `docs/testing/answer-eval.md`.
 
 ## Working rhythm with Claude Code
 
