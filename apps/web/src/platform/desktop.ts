@@ -3,13 +3,16 @@
  * Purpose: The Platform implementation used when Kite runs inside the desktop app (Electron).
  *          It wraps `window.kiteDesktop`, the bridge exposed by the shell's preload script.
  *          It reports the shell version and OS, opens the microphone (Day 1) and the other side as
- *          system audio (Day 2); the other methods throw NotImplementedError naming the day.
+ *          system audio (Day 2), and the hotkeys (Day 4); the other methods throw
+ *          NotImplementedError naming the day.
  * Used by: src/platform/index.ts (getPlatform)
- * Depends on: @kite/shared (KiteDesktopApi), src/platform/types.ts, errors.ts, media.ts
+ * Depends on: @kite/shared (KiteDesktopApi), src/platform/types.ts, errors.ts, media.ts,
+ *             keymap.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (desktop column), §7.3
  */
 import type { DesktopOs, KiteDesktopApi } from '@kite/shared';
 import { CaptureError, NotImplementedError } from './errors';
+import { listenForHotkeys } from './keymap';
 import {
   openMicrophone,
   requestDisplayMedia,
@@ -122,12 +125,23 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
-     * Day 4: global shortcuts registered by the shell and forwarded to the page.
+     * The hotkeys: the in-page shortcuts while the Kite window has focus (⌘ on macOS, Ctrl
+     * elsewhere). Stage 8 adds the shell's global shortcuts, which work from any app.
      *
-     * @param _handler Receives each hotkey action (unused until Day 4).
+     * @param handler Receives each hotkey action.
+     * @returns A function that stops listening.
      */
-    onHotkey(_handler) {
-      throw new NotImplementedError('desktop.onHotkey', 4);
+    onHotkey(handler) {
+      return listenForHotkeys(window, bridge.os === 'mac', handler);
+    },
+
+    /**
+     * The hotkeys' modifier for labels.
+     *
+     * @returns '⌘' on macOS, 'Ctrl+' on Windows and Linux.
+     */
+    hotkeyModifier() {
+      return bridge.os === 'mac' ? '⌘' : 'Ctrl+';
     },
 
     /**

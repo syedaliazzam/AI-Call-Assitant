@@ -1,13 +1,15 @@
 # File: .github/workflows/ci.yml
 # Purpose: Continuous integration for Kite: lint, typecheck and unit tests for the whole
-#          workspace, the speech-to-text integration test, and the Electron desktop smoke test.
+#          workspace, the speech-to-text integration test, the answer harness test (Day 4), and
+#          the Electron desktop smoke test.
 # Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing); day-01-setup.md Stage 7;
 #               day-02-audio.md Stage 6
 #
 # When each job runs (GitHub Actions minutes are limited on this private repository, and
 # Windows minutes count 2x and macOS minutes 10x against the allowance):
 # - web (ubuntu, 1x): every pull request and every push to main.
-# - stt-integration (ubuntu, 1x): every pull request and every push to main.
+# - stt-integration (ubuntu, 1x): every pull request and every push to main. It also runs the
+#   answer harness test, which needs the same Chromium but no model files.
 # - desktop-windows (2x): every pull request and every push to main.
 # - desktop-macos (10x): only when started by hand (Actions tab → CI → "Run workflow").
 #   A manual run starts ONLY this job; the other two already ran on the pull request / push.
@@ -154,6 +156,12 @@ jobs:
       - name: Install Chromium for Playwright
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium
+
+      # The live answer UI (LiveAnswers) on a fixture transcript with a mocked, streaming
+      # /api/answer: hotkey, headline before bullets, cancel, previous/next, copy, chat.
+      # No sign-in, no secrets, no real Claude call.
+      - name: Answer harness test
+        run: pnpm --filter web test:answers
 
       # Plays the official recordings through Chromium's fake microphone into the real
       # worklet → worker → recognizer → transcript path and checks the WER. CI=true (set by

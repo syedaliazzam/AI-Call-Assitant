@@ -2,12 +2,15 @@
  * File: apps/web/src/platform/browser.ts
  * Purpose: The Platform implementation used when Kite runs in Chrome or Edge (no desktop app).
  *          The microphone (Day 1) and the other side through a shared tab with its audio
- *          (Day 2) work; the other methods throw NotImplementedError naming the day they arrive.
+ *          (Day 2) work, and the in-page hotkeys (Day 4); the other methods throw
+ *          NotImplementedError naming the day they arrive.
  * Used by: src/platform/index.ts (getPlatform)
- * Depends on: src/platform/types.ts, src/platform/errors.ts, src/platform/media.ts
+ * Depends on: src/platform/types.ts, src/platform/errors.ts, src/platform/media.ts,
+ *             src/platform/keymap.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (browser column)
  */
 import { CaptureError, NotImplementedError } from './errors';
+import { listenForHotkeys } from './keymap';
 import {
   openMicrophone,
   requestDisplayMedia,
@@ -55,6 +58,17 @@ export function shareSource(stream: MediaStream): OtherSideSource {
   return settings?.displaySurface === 'browser' ? 'tab-audio' : 'screen-audio';
 }
 
+/**
+ * Whether the browser runs on macOS (⌘ is the shortcut modifier there).
+ *
+ * @returns True on a Mac.
+ * Called from: browserPlatform.onHotkey(), browserPlatform.hotkeyModifier()
+ */
+function browserIsMac(): boolean {
+  // navigator.platform is deprecated but still set everywhere; the user agent is the fallback.
+  return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+}
+
 /** Platform implementation for Chrome / Edge. */
 export const browserPlatform: Platform = {
   kind: 'browser',
@@ -96,12 +110,24 @@ export const browserPlatform: Platform = {
   },
 
   /**
-   * Day 4: in-page keyboard shortcuts while the Kite tab or PiP window has focus.
+   * In-page keyboard shortcuts while the Kite tab has focus (architecture §7.3; ⌘ on macOS,
+   * Ctrl elsewhere). A browser cannot have shortcuts that work from other apps. Day 5 adds the
+   * picture-in-picture window.
    *
-   * @param _handler Receives each hotkey action (unused until Day 4).
+   * @param handler Receives each hotkey action.
+   * @returns A function that stops listening.
    */
-  onHotkey(_handler) {
-    throw new NotImplementedError('browser.onHotkey', 4);
+  onHotkey(handler) {
+    return listenForHotkeys(window, browserIsMac(), handler);
+  },
+
+  /**
+   * The hotkeys' modifier for labels.
+   *
+   * @returns '⌘' on a Mac, 'Ctrl+' elsewhere.
+   */
+  hotkeyModifier() {
+    return browserIsMac() ? '⌘' : 'Ctrl+';
   },
 
   /**

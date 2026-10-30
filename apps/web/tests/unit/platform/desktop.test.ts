@@ -6,7 +6,8 @@
  * removes the video track at once, returns the audio as 'system-loopback', and turns the two
  * macOS failure modes into typed errors (no audio track → 'not-supported'; an audio track that
  * arrived already ended → 'permission-denied' with the privacy-settings path) and a refused
- * request into 'permission-denied'; every not-yet-built method throws NotImplementedError.
+ * request into 'permission-denied'; onHotkey() listens for the in-page shortcuts with ⌘ on
+ * macOS and Ctrl on Windows (Day 4); every not-yet-built method throws NotImplementedError.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createDesktopPlatform, DESKTOP_DISPLAY_OPTIONS } from '@/platform/desktop';
@@ -43,8 +44,25 @@ describe('createDesktopPlatform', () => {
     expect((error as NotImplementedError).day).toBe(day);
   });
 
-  it('onHotkey throws NotImplementedError (Day 4)', () => {
-    expect(() => mac.onHotkey(() => {})).toThrow(/desktop\.onHotkey.*Day 4/);
+  it('onHotkey listens for the in-page shortcuts with the OS modifier', () => {
+    const target = new EventTarget();
+    vi.stubGlobal('window', target);
+    const onMac = vi.fn();
+    const onWindows = vi.fn();
+    const stops = [mac.onHotkey(onMac), windows.onHotkey(onWindows)];
+    target.dispatchEvent(
+      Object.assign(new Event('keydown'), {
+        key: 'ArrowLeft',
+        ctrlKey: true,
+        metaKey: false,
+        shiftKey: false,
+        altKey: false,
+        repeat: false,
+      }),
+    );
+    expect(onMac).not.toHaveBeenCalled();
+    expect(onWindows).toHaveBeenCalledWith('prev');
+    for (const stop of stops) stop();
   });
 });
 

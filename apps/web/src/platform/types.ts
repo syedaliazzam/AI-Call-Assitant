@@ -102,6 +102,15 @@ export interface Platform {
   onHotkey(handler: (action: HotkeyAction) => void): () => void;
 
   /**
+   * The hotkeys' modifier, for labels ("⌘Enter" or "Ctrl+Enter").
+   * - Desktop: from the shell's OS.
+   * - Browser: from the browser's platform string.
+   *
+   * @returns '⌘' on macOS, 'Ctrl+' elsewhere.
+   */
+  hotkeyModifier(): '⌘' | 'Ctrl+';
+
+  /**
    * Turns screen-share protection on or off for the live window.
    * - Desktop: setContentProtection(on) on the live window (hidden in Windows full-screen share;
    *   still visible in macOS full-screen share).

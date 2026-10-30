@@ -1,7 +1,8 @@
 /**
  * File: apps/web/src/features/live/LivePage.tsx
  * Purpose: The live session screen flow: the Connect view first (instructions, model download,
- *          meters, sound check), then the live view (meters, the transcript strip, End). It owns
+ *          meters, sound check), then the live view (meters, the answer bar and panel, the
+ *          transcript strip). It owns
  *          the speech-to-text engine, the call capture and the in-memory transcript, all through
  *          core/ (it never calls media APIs itself).
  * Used by: src/features/live/LiveSession.tsx (which loads the session first)
@@ -9,7 +10,7 @@
  *             src/core/transcript (transcript, saver, endCall), src/core/answer/warm.ts,
  *             src/core/storage (sessions, utterances),
  *             src/platform (kind, for the instructions only),
- *             src/features/live/* (ConnectPanel, TranscriptStrip, AudioMeter)
+ *             src/features/live/* (ConnectPanel, TranscriptStrip, AudioMeter, LiveAnswers)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §6.1,
  *               §7.4 (save-transcript toggle); day-03-sessions.md Stage 4
  *
@@ -41,6 +42,7 @@ import { SESSION_TYPE_LABELS } from '@/features/session-setup/labels';
 import { getPlatform, type OtherSideSource } from '@/platform';
 import { Button } from '@/ui/Button';
 import { AudioMeter } from './AudioMeter';
+import { LiveAnswers } from './LiveAnswers';
 import {
   ConnectPanel,
   type CallInfo,
@@ -185,6 +187,9 @@ export function LivePage({
   const [saveFailed, setSaveFailed] = useState(false);
   // True while End waits for the last line (at most about a second); End and Reconnect wait.
   const [ending, setEnding] = useState(false);
+  // When this call first connected (Unix ms); a reconnect keeps it. Answers time their lines
+  // from here, and a new value starts a new conversation (core/answer/context.ts).
+  const [callStartedAt, setCallStartedAt] = useState<number | null>(null);
 
   const engineRef = useRef<SttEngine | null>(null);
   const captureRef = useRef<CallCapture | null>(null);
@@ -306,6 +311,7 @@ export function LivePage({
       captureRef.current = capture;
       setThemSource(capture.themSource);
       setConnection('connected');
+      setCallStartedAt((current) => current ?? Date.now());
       // Warm Claude's prompt cache again: the warm-up from when the page opened may have
       // expired (5 minutes) while the user read the instructions. If it is still warm this is
       // a cheap cache read. Not awaited; it never throws.
@@ -361,6 +367,7 @@ export function LivePage({
     setSoundCheck(null);
     setChannelErrors({});
     setView('connect');
+    setCallStartedAt(null);
     setEnding(false);
     updateSession(session.id, { status: 'ended' }).catch(() => undefined);
     // Show the lines just saved under "Saved transcript".
@@ -424,11 +431,25 @@ export function LivePage({
               />
             ))}
           </div>
+        </div>
+      </header>
+
+      {callStartedAt !== null ? (
+        <LiveAnswers
+          session={session}
+          documents={documents}
+          transcript={transcript}
+          callStartedAt={callStartedAt}
+          ending={ending}
+          onEnd={() => void end()}
+        />
+      ) : (
+        <div className="flex justify-end">
           <Button variant="danger" onClick={() => void end()} disabled={ending}>
             {ending ? 'Ending…' : 'End'}
           </Button>
         </div>
-      </header>
+      )}
 
       {(['you', 'them'] as const).map(
         (speaker) =>
