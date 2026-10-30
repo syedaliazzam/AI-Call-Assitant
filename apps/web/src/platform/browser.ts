@@ -170,11 +170,29 @@ export const browserPlatform: Platform = {
   },
 
   /**
-   * Day 5: returns false (browsers cannot hide a window from screen sharing) and the UI explains.
+   * A browser cannot hide a window from screen sharing: always unsupported (the UI explains:
+   * share one tab or window, or put Kite on another monitor).
    *
-   * @param _on True to hide the live window from screen sharing (unused until Day 5).
+   * @param _on Ignored.
+   * @returns { on: false, supported: false }.
    */
   async setShareProtection(_on: boolean) {
-    throw new NotImplementedError('browser.setShareProtection', 5);
+    return { on: false, supported: false };
   },
+
+  /**
+   * Always unsupported in a browser.
+   *
+   * @returns { on: false, supported: false }.
+   */
+  async getShareProtection() {
+    return { on: false, supported: false };
+  },
+
+  /**
+   * Day 5 Stage 4: closes the picture-in-picture window.
+   *
+   * @returns Resolves at once until Stage 4.
+   */
+  async closeCompactView() {},
 };

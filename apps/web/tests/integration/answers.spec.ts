@@ -8,6 +8,8 @@
  * typed question (mode chat); the second request's conversation starts with the first's chunk
  * and adds the earlier answer (append-only). Stage 7: finished answers are saved (a cancelled
  * one is not); a rating and a note survive a reload; deleting the session removes its answers.
+ * Day 5: a second page with the real compact view shows the live answer, and its Answer
+ * button and typed question make the live page answer.
  * All text is invented.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -83,9 +85,17 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
         res.end();
         return;
       }
-      if (req.url === '/harness/answers.js') {
+      if (req.url === '/harness/answers.js' || req.url === '/harness/compact.js') {
         res.writeHead(200, { 'Content-Type': 'text/javascript' });
-        res.end(readFileSync(path.join(bundleDir, 'answers.js')));
+        res.end(readFileSync(path.join(bundleDir, path.basename(req.url))));
+        return;
+      }
+      if (req.url === '/compact-harness') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(
+          '<!doctype html><html><head><meta charset="utf-8"><title>Kite compact harness</title></head>' +
+            '<body><div id="root"></div><script type="module" src="/harness/compact.js"></script></body></html>',
+        );
         return;
       }
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -104,17 +114,21 @@ let bundleDir = '';
 let server: Server | null = null;
 let browser: Browser | null = null;
 let page: Page;
+let origin = '';
 
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
   bundleDir = mkdtempSync(path.join(tmpdir(), 'kite-answers-test-'));
   await build({
-    entryPoints: [path.join(WEB_DIR, 'tests', 'integration', 'harness', 'answers.tsx')],
+    entryPoints: [
+      path.join(WEB_DIR, 'tests', 'integration', 'harness', 'answers.tsx'),
+      path.join(WEB_DIR, 'tests', 'integration', 'harness', 'compact.tsx'),
+    ],
     bundle: true,
     platform: 'browser',
     format: 'esm',
-    outfile: path.join(bundleDir, 'answers.js'),
+    outdir: bundleDir,
     // Resolves the `@/*` alias the same way the app does.
     tsconfig: path.join(WEB_DIR, 'tsconfig.json'),
     // Next.js compiles JSX itself (tsconfig "jsx": "preserve"); here esbuild must.
@@ -122,10 +136,10 @@ test.beforeAll(async () => {
     define: { 'process.env.NODE_ENV': '"production"' },
     logLevel: 'error',
   });
-  let origin: string;
   ({ server, origin } = await serve(bundleDir));
   browser = await chromium.launch();
-  page = await browser.newPage();
+  // A context of its own, so the compact view test can open a second page in it.
+  page = await (await browser.newContext()).newPage();
   await page.goto(origin);
   await expect(page.getByRole('button', { name: 'Answer', exact: true })).toBeVisible();
 });
@@ -243,4 +257,24 @@ test('a rating and a note survive a reload', async () => {
 test('deleting the session removes its answers', async () => {
   await page.evaluate(() => window.kiteAnswerHarness.deleteSession());
   expect(await page.evaluate(() => window.kiteAnswerHarness.saved())).toEqual([]);
+});
+
+test('the compact view shows the live answer and its Answer button asks the live page (Day 5)', async () => {
+  // A second page in the same browser, like the desktop compact window.
+  const compact = await page.context().newPage();
+  await compact.goto(`${origin}/compact-harness`);
+  // Nothing has been answered since the reload: the live page says so.
+  await expect(compact.getByLabel('Latest line')).toContainText('FOR FORTY SEATS');
+  await expect(compact.getByText('Visible in screen share')).toBeVisible();
+  await compact.getByRole('button', { name: 'Answer', exact: true }).click();
+  await expect(compact.getByRole('heading', { name: 'Compact headline' })).toHaveText(HEADLINE);
+  // The live page answered it (the same answer shows there).
+  await expect(page.getByRole('heading', { name: 'Answer headline' })).toHaveText(HEADLINE);
+  // A typed question from the compact view goes to the live page as chat.
+  await compact.getByLabel('Type a question').fill('What is the seat price?');
+  await compact.getByLabel('Type a question').press('Enter');
+  await expect(compact.getByRole('heading', { name: 'Compact headline' })).toHaveText(
+    'The seat price is 52 dollars.',
+  );
+  await compact.close();
 });

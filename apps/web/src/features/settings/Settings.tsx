@@ -5,13 +5,15 @@
  *          switch (Day 5), and "Delete all local data" (asks first, then shows what was
  *          deleted).
  * Used by: app/(app)/settings/page.tsx
- * Depends on: src/core/storage (settings, wipe), src/ui (Button, Dialog, Select, Textarea,
+ * Depends on: src/core/storage (settings, wipe), src/platform (share protection),
+ *             src/ui (Button, Dialog, Select, Textarea,
  *             Toggle), src/features/session-setup/labels.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Settings), §7.3 (default
  *               hotkeys), §8.1; day-03-sessions.md Stage 3
  */
 'use client';
 
+import type { ShareProtectionState } from '@kite/shared';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   BUILT_IN_DEFAULTS,
@@ -26,6 +28,7 @@ import {
   MODEL_OPTIONS,
   TONE_OPTIONS,
 } from '@/features/session-setup/labels';
+import { getPlatform } from '@/platform';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { Select } from '@/ui/Select';
@@ -63,6 +66,46 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <h2 className="mb-4 text-base font-semibold text-slate-900">{title}</h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * The screen-share protection switch (Day 5). In the desktop app it turns the compact window's
+ * protection on or off (setContentProtection only; the window still shows in the taskbar and
+ * Alt+Tab). In a browser it explains what to do instead.
+ *
+ * @returns The switch, or the guidance.
+ */
+function ShareProtectionSetting() {
+  const [state, setState] = useState<ShareProtectionState | null>(null);
+  useEffect(() => {
+    getPlatform()
+      .getShareProtection()
+      .then(setState)
+      .catch(() => undefined);
+  }, []);
+  if (!state) return <p className="text-sm text-slate-500">Checking…</p>;
+  if (!state.supported) {
+    return (
+      <p className="text-sm text-slate-600">
+        {getPlatform().kind === 'desktop'
+          ? 'This computer cannot hide a window from screen sharing. Share a single window instead of the whole screen, or keep Kite on another monitor.'
+          : 'A browser cannot hide its windows from screen sharing. In the meeting, share a single tab or window instead of the whole screen, or keep Kite on another monitor. The Kite desktop app can hide its compact window.'}
+      </p>
+    );
+  }
+  return (
+    <Toggle
+      label="Hide the compact window from screen sharing"
+      hint="On: people you share your whole screen with do not see Kite's compact window (Windows 10 version 2004 or later). The window still appears in your taskbar and Alt+Tab. On macOS, some apps that use the newer capture system may still show it."
+      checked={state.on}
+      onChange={(on) => {
+        getPlatform()
+          .setShareProtection(on)
+          .then(setState)
+          .catch(() => undefined);
+      }}
+    />
   );
 }
 
@@ -236,13 +279,7 @@ export function Settings() {
       </Section>
 
       <Section title="Screen-share protection">
-        <Toggle
-          label="Hide Kite's live window when you share your screen"
-          hint="Desktop app only; arrives on Day 5."
-          checked={false}
-          onChange={() => undefined}
-          disabled
-        />
+        <ShareProtectionSetting />
       </Section>
 
       <Section title="Local data">

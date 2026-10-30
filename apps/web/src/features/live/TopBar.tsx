@@ -33,6 +33,8 @@ export interface TopBarProps {
   onClear: () => void;
   /** End the call. */
   onEnd: () => void;
+  /** Open the compact view (Day 5). */
+  onCompact: () => void;
 }
 
 /**
@@ -71,6 +73,13 @@ export function TopBar(props: TopBarProps) {
         title={`${props.answering ? 'Stop the answer' : 'Clear the answer'} (${mod}Backspace)`}
       >
         Clear
+      </Button>
+      <Button
+        variant="ghost"
+        onClick={props.onCompact}
+        title="A small window that stays on top of the meeting"
+      >
+        Compact view
       </Button>
       <span className="flex-1" />
       <Button variant="danger" onClick={props.onEnd} disabled={props.ending}>

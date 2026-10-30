@@ -7,7 +7,7 @@
  * Depends on: @kite/shared (HotkeyAction)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (the platform adapter)
  */
-import type { HotkeyAction } from '@kite/shared';
+import type { HotkeyAction, ShareProtectionState } from '@kite/shared';
 
 // Re-exported so code using the platform can import every platform type from one place.
 export type { HotkeyAction };
@@ -88,8 +88,16 @@ export interface Platform {
    *   button click.
    *
    * @param sessionId Id of the live session to show.
+   * @throws CaptureError('not-supported') when this app or browser cannot open it.
    */
   openCompactView(sessionId: string): Promise<void>;
+
+  /**
+   * Closes the small live view (End).
+   *
+   * @returns Resolves when closed (also when none was open).
+   */
+  closeCompactView(): Promise<void>;
 
   /**
    * Listens for hotkey actions (answer, screenshot, clear, prev, next). Call it for the length
@@ -118,13 +126,21 @@ export interface Platform {
   hotkeyModifier(): '⌘' | 'Ctrl+';
 
   /**
-   * Turns screen-share protection on or off for the live window.
-   * - Desktop: setContentProtection(on) on the live window (hidden in Windows full-screen share;
-   *   still visible in macOS full-screen share).
-   * - Browser: not possible; returns false and the UI shows guidance instead.
+   * Turns screen-share protection of the compact live window on or off (remembered).
+   * - Desktop: setContentProtection(on) on the compact window, re-applied on every show; the
+   *   window stays in the taskbar and Alt+Tab. Windows 10 2004+: left out of screen shares;
+   *   macOS: apps built on ScreenCaptureKit may still capture it.
+   * - Browser: not possible (supported: false); the UI gives guidance instead.
    *
    * @param on True to protect, false to stop protecting.
-   * @returns True if protection is now in the requested state, false if the platform cannot do it.
+   * @returns The new state and whether this platform supports it.
    */
-  setShareProtection(on: boolean): Promise<boolean>;
+  setShareProtection(on: boolean): Promise<ShareProtectionState>;
+
+  /**
+   * The remembered protection setting.
+   *
+   * @returns The state and whether this platform supports it.
+   */
+  getShareProtection(): Promise<ShareProtectionState>;
 }

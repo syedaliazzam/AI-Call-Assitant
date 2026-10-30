@@ -41,14 +41,14 @@ describe('browserPlatform', () => {
     await expect(browserPlatform.getMicStream()).rejects.toThrow(/Microphone access/);
   });
 
-  it.each([
-    ['openCompactView', 5, () => browserPlatform.openCompactView('s1')],
-    ['setShareProtection', 5, () => browserPlatform.setShareProtection(true)],
-  ])('%s rejects with NotImplementedError (Day %i)', async (_name, day, call) => {
-    const error = await call().catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(NotImplementedError);
-    expect((error as NotImplementedError).day).toBe(day);
-  });
+  it.each([['openCompactView', 5, () => browserPlatform.openCompactView('s1')]])(
+    '%s rejects with NotImplementedError (Day %i)',
+    async (_name, day, call) => {
+      const error = await call().catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(NotImplementedError);
+      expect((error as NotImplementedError).day).toBe(day);
+    },
+  );
 
   it('onHotkey listens for the in-page shortcuts (⌘ on a Mac, Ctrl elsewhere)', () => {
     const target = new EventTarget();
@@ -139,6 +139,13 @@ describe('browserPlatform.getOtherSideStream', () => {
     await expect(browserPlatform.getOtherSideStream()).rejects.toMatchObject({
       code: 'not-supported',
     });
+  });
+});
+
+describe('browser share protection', () => {
+  it('is never supported in a browser', async () => {
+    expect(await browserPlatform.setShareProtection(true)).toEqual({ on: false, supported: false });
+    expect(await browserPlatform.getShareProtection()).toEqual({ on: false, supported: false });
   });
 });
 

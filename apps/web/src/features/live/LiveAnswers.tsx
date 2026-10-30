@@ -1,8 +1,9 @@
 /**
  * File: apps/web/src/features/live/LiveAnswers.tsx
  * Purpose: The answer part of the live view: the top bar (Answer · Chat · Screenshot · Clear ·
- *          End), the chat box, and the answer panel, plus the hotkeys (through the platform
- *          adapter: in-page shortcuts, and the desktop app's global shortcuts from Stage 8).
+ *          Compact view · End), the chat box, and the answer panel, plus the hotkeys (through
+ *          the platform adapter: in-page shortcuts, and the desktop app's global shortcuts) and
+ *          (Day 5) the link to the compact view (core/live/liveChannel.ts).
  * Used by: src/features/live/LivePage.tsx (live view);
  *          tests/integration/harness/answers.tsx (the answer harness test)
  * Depends on: src/features/live (useLiveAnswers, TopBar, ChatBox, AnswerPanel), src/platform
@@ -11,7 +12,9 @@
  */
 'use client';
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { splitAnswer } from '@/core/answer/format';
+import { openLiveChannel, type CompactState, type LiveChannel } from '@/core/live/liveChannel';
 import type { Session, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
@@ -75,12 +78,68 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
   const entry = answers.index >= 0 ? (answers.entries[answers.index] ?? null) : null;
   const answering = answers.entries.some((candidate) => candidate.status === 'streaming');
+  const [compactNotice, setCompactNotice] = useState<string | null>(null);
+  const lines = useSyncExternalStore(
+    props.transcript.subscribe,
+    props.transcript.lines,
+    props.transcript.lines,
+  );
+  const last = lines.at(-1);
+
+  // What the compact view shows (Day 5): the latest line and the answer shown here.
+  const compactState = useMemo<CompactState>(() => {
+    const parts = entry ? splitAnswer(entry.text) : null;
+    return {
+      line: last ? { speaker: last.speaker, text: last.text } : null,
+      answer:
+        entry && parts
+          ? {
+              headline: parts.headline,
+              bullets: parts.bullets,
+              status: entry.status,
+              mode: entry.mode,
+            }
+          : null,
+      answering,
+      capturing: answers.capturing,
+      notice: answers.notice,
+      ended: false,
+    };
+  }, [last, entry, answering, answers.capturing, answers.notice]);
+  const compactStateRef = useRef(compactState);
+  const channel = useRef<LiveChannel | null>(null);
 
   // The hotkeys call the latest actions (a ref, so the listener is added only once).
   const actions = useRef(answers);
   useEffect(() => {
     actions.current = answers;
   });
+  // The link to the compact view (Day 5): it sends commands; End (unmount) tells it the call
+  // ended and asks the platform to close it.
+  useEffect(() => {
+    const link = openLiveChannel(props.session.id);
+    channel.current = link;
+    link.onCommand((command) => {
+      if (command.type === 'hello') link.publish(compactStateRef.current);
+      else if (command.type === 'answer') actions.current.answer();
+      else if (command.type === 'screenshot') actions.current.screenshot();
+      else if (command.type === 'clear') actions.current.clear();
+      else if (command.type === 'chat') actions.current.chat(command.question);
+    });
+    return () => {
+      link.publish({ ...compactStateRef.current, ended: true });
+      link.close();
+      channel.current = null;
+      void getPlatform()
+        .closeCompactView()
+        .catch(() => undefined);
+    };
+  }, [props.session.id]);
+  useEffect(() => {
+    compactStateRef.current = compactState;
+    channel.current?.publish(compactState);
+  }, [compactState]);
+
   // Mounted only during a call, so the desktop app's global shortcuts are on only then.
   useEffect(
     () =>
@@ -107,7 +166,22 @@ export function LiveAnswers(props: LiveAnswersProps) {
         onToggleChat={() => setChatOpen((open) => !open)}
         onClear={answers.clear}
         onEnd={props.onEnd}
+        onCompact={() => {
+          setCompactNotice(null);
+          getPlatform()
+            .openCompactView(props.session.id)
+            .catch((error: unknown) =>
+              setCompactNotice(
+                error instanceof Error ? error.message : 'Kite could not open the compact view.',
+              ),
+            );
+        }}
       />
+      {compactNotice && (
+        <p role="status" className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
+          {compactNotice}
+        </p>
+      )}
       {taken.length > 0 && (
         <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
           Another app already uses {taken.join(', ')}, so{' '}
