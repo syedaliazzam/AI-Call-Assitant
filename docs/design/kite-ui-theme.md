@@ -116,7 +116,9 @@ Deep navy, one bright cyan action colour, Montserrat, and **square corners every
 - **Generated** by `pnpm --filter web make-brand` (`scripts/make-brand.ts`; sharp from Next.js, no new dependency), the mark only scaled and centred:
   - `apps/web/public/brand/`: `logo-mark.png`, `favicon.ico` (16/32/48), `favicon.svg` (wraps the 256 px PNG until a vector exists), `apple-touch-icon.png` (180, on white), `icon-16/32/48/256.png`;
   - `apps/desktop/build/`: `icon.ico` (16 to 256), `icon.png` (the window icon), `icon-512.png` and `icon-1024.png`. The last two are scaled up from the 304 px source, so they are soft.
-- **Dark backgrounds:** the site only shows the mark on white and has no light version, so on dark surfaces (sidebar, sign-in hero, live view, compact window) the mark sits on a small white tile (`--k-logo-tile`). This is a decision for Zain. At 16 and 32 px the mark's dark blue nearly disappears on a dark taskbar.
+- **Dark backgrounds** (decided 31 Oct: keep for v1): the site only shows the mark on white and has no light version, so on dark surfaces (sidebar, sign-in hero, live view, compact window) the mark sits on a small white tile (`--k-logo-tile`).
+- **Small sizes** (decided 31 Oct): the 16, 24, 32 and 48 px icons (favicon, the small `.ico` entries) and `favicon.svg` put the mark on the same white square tile, so it shows on dark taskbars and dark browser tabs. 64 px and larger are transparent.
+- **512 and 1024 px** stay placeholders until the designer's vector arrives (Day 6 checklist).
 - **Lockup:** `src/ui/BrandLockup.tsx` (tone light or dark; sizes xs to lg).
 
 ## 8. Rules for implementation

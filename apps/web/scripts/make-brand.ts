@@ -2,9 +2,11 @@
  * File: apps/web/scripts/make-brand.ts
  * Purpose: Makes Kite's brand files (UI theme stage U4) from the company logo mark, without
  *          changing its shapes, colours or proportions: the mark is only scaled and placed on
- *          a square canvas (transparent, or white for the Apple touch icon).
+ *          a square canvas (transparent, or white for the Apple touch icon and small sizes).
  *          Source: apps/web/public/images/logo-mark.png (216 × 304, transparent; the file
  *          paramountintelligence.co serves). Outputs:
+ *          Sizes up to 48 px (favicon, small .ico entries, favicon.svg) put the mark on a white
+ *          square tile, so it shows on dark taskbars and tabs; larger ones are transparent.
  *          - apps/web/public/brand/: logo-mark.png (the mark for the lockup), favicon.ico
  *            (16, 32, 48), favicon.svg (the 256 px icon embedded: there is no vector logo yet),
  *            apple-touch-icon.png (180, on white), icon-16/32/48/256.png (previews);
@@ -141,7 +143,13 @@ async function main(): Promise<void> {
 
   const sizes = [16, 24, 32, 48, 64, 128, 256];
   const icons = new Map<number, Buffer>();
-  for (const size of sizes) icons.set(size, await squareIcon(size));
+  for (const size of sizes) {
+    // Small sizes (≤ 48 px) on the white square tile used on dark surfaces (decision, 31 Oct):
+    // without it the mark's dark blue disappears on dark taskbars and dark browser tabs.
+    icons.set(size, size <= 48 ? await squareIcon(size, '#ffffff', 0.78) : await squareIcon(size));
+  }
+  // The SVG favicon is also shown small in tabs, so it wraps a tiled 256 px icon.
+  const tiled256 = await squareIcon(256, '#ffffff', 0.78);
   for (const size of [16, 32, 48, 256]) {
     write(path.join(WEB_OUT, `icon-${size}.png`), icons.get(size)!);
   }
@@ -150,10 +158,10 @@ async function main(): Promise<void> {
     ico([16, 32, 48].map((size) => ({ size, png: icons.get(size)! }))),
   );
   // An SVG favicon must be a vector to be sharp at every size; until the designer's vector
-  // arrives it wraps the 256 px icon, which browsers scale down cleanly.
+  // arrives it wraps the tiled 256 px icon (tabs show it small), which browsers scale down.
   write(
     path.join(WEB_OUT, 'favicon.svg'),
-    `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><image width="256" height="256" href="data:image/png;base64,${icons.get(256)!.toString('base64')}"/></svg>\n`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"><image width="256" height="256" href="data:image/png;base64,${tiled256.toString('base64')}"/></svg>\n`,
   );
   // iOS fills a transparent touch icon with black; the company site shows the mark on white.
   write(path.join(WEB_OUT, 'apple-touch-icon.png'), await squareIcon(180, '#ffffff', 0.72));
