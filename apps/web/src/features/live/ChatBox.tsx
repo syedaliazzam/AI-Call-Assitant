@@ -57,7 +57,7 @@ export function ChatBox({ onSend, onAskScreen }: ChatBoxProps) {
 
   return (
     <form
-      className="flex gap-2"
+      className="flex flex-wrap gap-2"
       onSubmit={(event) => {
         event.preventDefault();
         send();
@@ -67,7 +67,7 @@ export function ChatBox({ onSend, onAskScreen }: ChatBoxProps) {
         aria-label="Type a question"
         // The box opens when the user presses Chat, so it should take the typing at once.
         autoFocus
-        className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none"
+        className="min-w-0 flex-1 basis-56 border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-sm"
         placeholder="Type a question for Kite, then press Enter"
         value={text}
         onChange={(event) => setText(event.target.value)}

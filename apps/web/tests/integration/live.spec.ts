@@ -1,0 +1,388 @@
+/**
+ * Harness test for the dark call screens (UI theme stage U3), no sign-in, runs in CI. With the
+ * real components on invented data and a mocked /api/answer (no Claude call, no microphone, no
+ * speech model) it covers:
+ * - the live view: transcript left and answers right in a wide view, stacked (answers first)
+ *   in a narrower one; You in cyan, Them in blue-300, words still being heard grey italic;
+ * - no layout shift while an answer streams: between the headline arriving and the bullets
+ *   arriving, the action row, the answer panel's size and its footer (Cancel) do not move;
+ * - the "Claude unavailable" message in the answer panel;
+ * - the phone check: an iPhone sees "Live calls need a computer"; Chrome on Windows does not;
+ * - the compact view: headline first, details on expand, the protection label visible.
+ * Set KITE_SCREENSHOT_DIR to also save screenshots (1440, 900 and 390 px; 360 px for the
+ * compact view and picture-in-picture, which render the same component), each checked for
+ * sideways scroll, 44 px touch targets on touch screens and console errors (tests/ui/shots.ts).
+ */
+import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
+import { CLAUDE_UNAVAILABLE_MESSAGES, type AnswerRequest } from '@kite/shared';
+import tailwind from '@tailwindcss/postcss';
+import { build } from 'esbuild';
+import { SHOT_DIR, check, type Width, type WatchedPage } from '../ui/shots';
+
+/** apps/web. */
+const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+/** The mocked answer: a headline, then (after a pause) two bullets, then (after another) done. */
+const HEADLINE = 'Forty seats cost 2,080 dollars a month.';
+const BULLETS = [
+  '52 dollars per seat on Professional, billed yearly',
+  'Onboarding is 1,500 dollars once',
+];
+
+/** Pause before the bullets, and before the end, so the test can look at each step. */
+const STEP_MS = 1_200;
+
+/** Chrome on Windows, and Safari on an iPhone. */
+const WINDOWS_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36';
+const IPHONE_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.0 Mobile/15E148 Safari/604.1';
+
+/**
+ * Reads a request body.
+ *
+ * @param req The request.
+ * @returns The body text.
+ */
+async function bodyOf(req: IncomingMessage): Promise<string> {
+  const parts: Buffer[] = [];
+  for await (const part of req) parts.push(part as Buffer);
+  return Buffer.concat(parts).toString('utf8');
+}
+
+/** The part of postcss used here (not a direct dependency, so its types are not imported). */
+type PostcssRunner = (plugins: unknown[]) => {
+  /** Runs the plugins over a stylesheet. */
+  process: (css: string, options: { from: string }) => Promise<{ css: string }>;
+};
+
+/**
+ * Compiles the app's real stylesheet (app/globals.css, Tailwind) into live.css.
+ *
+ * @param outDir Where to write it.
+ */
+async function buildCss(outDir: string): Promise<void> {
+  const fromTailwind = createRequire(
+    createRequire(import.meta.url).resolve('@tailwindcss/postcss'),
+  );
+  const postcss = fromTailwind('postcss') as PostcssRunner;
+  const from = path.join(WEB_DIR, 'app', 'globals.css');
+  const result = await postcss([tailwind({ base: WEB_DIR })]).process(readFileSync(from, 'utf8'), {
+    from,
+  });
+  writeFileSync(path.join(outDir, 'live.css'), result.css);
+}
+
+/**
+ * Serves the page, the bundle, the stylesheet and the mocked /api/answer.
+ *
+ * @param bundleDir Folder with live.js and live.css.
+ * @returns The server and its origin.
+ */
+async function serve(bundleDir: string): Promise<{ server: Server; origin: string }> {
+  const server = createServer((req, res) => {
+    void (async () => {
+      if (req.method === 'POST' && req.url === '/api/answer') {
+        const request = JSON.parse(await bodyOf(req)) as AnswerRequest;
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+        const event = (name: string, data: unknown) =>
+          res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
+        const done = () =>
+          event('done', {
+            usage: {
+              input_tokens: 10,
+              output_tokens: 20,
+              cache_creation_input_tokens: 0,
+              cache_read_input_tokens: 900,
+            },
+            ms: { auth: 1, toStreamOpen: 2, streamOpenToFirstText: 3, toFirstText: 4, total: 5 },
+          });
+        if (request.mode === 'warm') {
+          done();
+        } else if (request.question === 'UNAVAILABLE') {
+          event('error', {
+            code: 'claude_unavailable',
+            message: CLAUDE_UNAVAILABLE_MESSAGES.usageLimit,
+          });
+        } else {
+          event('delta', { text: HEADLINE });
+          await new Promise((resolve) => setTimeout(resolve, STEP_MS));
+          if (res.destroyed) return;
+          event('delta', { text: `\n- ${BULLETS[0]}\n- ${BULLETS[1]}` });
+          await new Promise((resolve) => setTimeout(resolve, STEP_MS));
+          if (res.destroyed) return;
+          done();
+        }
+        res.end();
+        return;
+      }
+      if (req.url === '/harness/live.js' || req.url === '/harness/live.css') {
+        const css = req.url.endsWith('.css');
+        res.writeHead(200, { 'Content-Type': css ? 'text/css' : 'text/javascript' });
+        res.end(readFileSync(path.join(bundleDir, css ? 'live.css' : 'live.js')));
+        return;
+      }
+      if (req.url === '/') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<!doctype html><html><body><h1>Dashboard stand-in</h1></body></html>');
+        return;
+      }
+      // The brand fonts for screenshots only (the app self-hosts them with next/font; CI does
+      // not need them, and makes no request to Google).
+      const fonts = SHOT_DIR
+        ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Montserrat:wght@400;600;700&display=block">' +
+          "<style>:root{--font-montserrat:'Montserrat';--font-plex-mono:'IBM Plex Mono'}</style>"
+        : '';
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(
+        '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+          `<title>Kite live harness</title><link rel="stylesheet" href="/harness/live.css">${fonts}</head>` +
+          '<body class="font-sans"><div id="root"></div><script type="module" src="/harness/live.js"></script></body></html>',
+      );
+    })();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  return { server, origin: `http://127.0.0.1:${port}` };
+}
+
+let bundleDir = '';
+let server: Server | null = null;
+let browser: Browser | null = null;
+let origin = '';
+
+/**
+ * Opens a harness view in a fresh context.
+ *
+ * @param view   The ?view= value.
+ * @param size   Viewport and touch.
+ * @param ua     The user agent (default Chrome on Windows).
+ * @returns The page with its console problems.
+ */
+async function open(view: string, size: Width, ua = WINDOWS_UA): Promise<WatchedPage> {
+  const context = await browser!.newContext({
+    viewport: { width: size.width, height: size.height },
+    userAgent: ua,
+    ...(size.touch ? { isMobile: true, hasTouch: true } : {}),
+  });
+  const page = await context.newPage();
+  const problems: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error' || message.type() === 'warning') {
+      problems.push(`${message.type()}: ${message.text().slice(0, 400)}`);
+    }
+  });
+  page.on('pageerror', (error) => problems.push(`pageerror: ${error.message.slice(0, 400)}`));
+  await page.goto(`${origin}/?view=${view}`);
+  return { page, context, problems };
+}
+
+/**
+ * Checks and saves a screenshot when KITE_SCREENSHOT_DIR is set (tests/ui/shots.ts).
+ *
+ * @param watched The page.
+ * @param size    Its width.
+ * @param name    The screenshot's name.
+ */
+async function shot(watched: WatchedPage, size: Width, name: string): Promise<void> {
+  if (SHOT_DIR) await check(watched, size, name);
+}
+
+/**
+ * The bounding box of a locator, rounded.
+ *
+ * @param page     The page.
+ * @param selector What to measure (a CSS selector or aria label query).
+ * @returns x, y, width, height.
+ */
+async function box(page: Page, selector: string) {
+  const b = (await page.locator(selector).first().boundingBox())!;
+  return {
+    x: Math.round(b.x),
+    y: Math.round(b.y),
+    width: Math.round(b.width),
+    height: Math.round(b.height),
+  };
+}
+
+test.describe.configure({ mode: 'serial' });
+
+test.beforeAll(async () => {
+  bundleDir = mkdtempSync(path.join(tmpdir(), 'kite-live-test-'));
+  await build({
+    entryPoints: [path.join(WEB_DIR, 'tests', 'integration', 'harness', 'live.tsx')],
+    bundle: true,
+    platform: 'browser',
+    format: 'esm',
+    outdir: bundleDir,
+    tsconfig: path.join(WEB_DIR, 'tsconfig.json'),
+    // No Next.js router here: links are plain anchors.
+    alias: {
+      'next/link': path.join(WEB_DIR, 'tests', 'integration', 'harness', 'next-link-stub.tsx'),
+    },
+    jsx: 'automatic',
+    define: { 'process.env.NODE_ENV': '"production"' },
+    logLevel: 'error',
+  });
+  await buildCss(bundleDir);
+  ({ server, origin } = await serve(bundleDir));
+  browser = await chromium.launch();
+});
+
+test.afterAll(async () => {
+  await browser?.close();
+  server?.close();
+  if (bundleDir) rmSync(bundleDir, { recursive: true, force: true });
+});
+
+test('live view: dark, transcript beside answers when wide, no layout shift while streaming', async () => {
+  const size: Width = { width: 1440, height: 900, touch: false };
+  const watched = await open('live', size);
+  const { page } = watched;
+  const transcriptBox = await box(page, '[aria-label="Live transcript"]');
+  const panel = '[aria-label="Answer"]';
+  expect(transcriptBox.x).toBeLessThan((await box(page, panel)).x);
+
+  // Speaker colours and the provisional line (theme §6).
+  const colours = await page.evaluate(() => {
+    const items = [...document.querySelectorAll('[aria-label="Live transcript"] li')];
+    const label = (name: string) =>
+      getComputedStyle(items.find((li) => li.textContent?.startsWith(name))!.firstElementChild!)
+        .color;
+    const provisional = document.querySelector('[aria-label="Live transcript"] li span.italic');
+    if (!provisional) return { lines: items.map((li) => li.textContent) };
+    return {
+      you: label('You'),
+      them: label('Them'),
+      provisional: getComputedStyle(provisional).color,
+      italic: getComputedStyle(provisional).fontStyle,
+    };
+  });
+  expect(colours).toEqual({
+    you: 'rgb(9, 182, 249)',
+    them: 'rgb(107, 168, 255)',
+    provisional: 'rgb(143, 164, 196)',
+    italic: 'italic',
+  });
+  await shot(watched, size, 'live-empty');
+
+  // Stream an answer: measure when only the headline is there, then when the bullets are.
+  await page.getByRole('button', { name: 'Answer', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Answer headline' })).toHaveText(HEADLINE);
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  const toolbar = '[aria-label="Call actions"]';
+  const before = {
+    toolbar: await box(page, toolbar),
+    panel: await box(page, panel),
+    footer: await box(page, 'button:has-text("Cancel")'),
+  };
+  await expect(
+    page.getByRole('list', { name: 'Answer details' }).getByRole('listitem'),
+  ).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  const after = {
+    toolbar: await box(page, toolbar),
+    panel: await box(page, panel),
+    footer: await box(page, 'button:has-text("Cancel")'),
+  };
+  expect(after).toEqual(before);
+  await shot(watched, size, 'live-streaming');
+  await expect(page.getByLabel('Time to first word')).toBeVisible({ timeout: 10_000 });
+  await shot(watched, size, 'live');
+  await watched.context.close();
+});
+
+test('live view stacks answers above the transcript when narrower than 900 px', async () => {
+  for (const size of [
+    { width: 900, height: 900, touch: false },
+    // A narrow window on a touch-screen Windows laptop: still a computer, so the live view.
+    { width: 390, height: 844, touch: true },
+  ] as const) {
+    const watched = await open('live', size);
+    const { page } = watched;
+    const panel = await box(page, '[aria-label="Answer"]');
+    const transcript = await box(page, '[aria-label="Live transcript"]');
+    expect(panel.y).toBeLessThan(transcript.y);
+    await shot(watched, size, 'live');
+    await watched.context.close();
+  }
+});
+
+test('the "Claude unavailable" message in the answer panel', async () => {
+  const size: Width = { width: 1440, height: 900, touch: false };
+  const watched = await open('live', size);
+  const { page } = watched;
+  await page.getByRole('button', { name: 'Chat' }).click();
+  await page.getByLabel('Type a question').fill('UNAVAILABLE');
+  await page.getByLabel('Type a question').press('Enter');
+  const alert = page.getByRole('region', { name: 'Answer' }).getByRole('alert');
+  await expect(alert).toContainText('Claude unavailable');
+  await expect(alert).toContainText(CLAUDE_UNAVAILABLE_MESSAGES.usageLimit);
+  // The app logs the failed answer on purpose (ids and the code only): expected here, and the
+  // only console line allowed.
+  const expected = watched.problems.filter((line) => line.includes('answer: failed'));
+  expect(expected.length).toBe(1);
+  expect(expected[0]).toContain('claude_unavailable');
+  watched.problems.splice(
+    0,
+    watched.problems.length,
+    ...watched.problems.filter((line) => !line.includes('answer: failed')),
+  );
+  await shot(watched, size, 'live-unavailable');
+  await watched.context.close();
+});
+
+test('the Connect view is on the dark tokens', async () => {
+  for (const size of [
+    { width: 1440, height: 900, touch: false },
+    { width: 900, height: 900, touch: false },
+  ] as const) {
+    const watched = await open('connect', size);
+    await expect(watched.page.getByRole('button', { name: 'Connect' })).toBeVisible();
+    await shot(watched, size, 'connect');
+    await watched.context.close();
+  }
+});
+
+test('phones: "Live calls need a computer"; computers: the live page', async () => {
+  const phone: Width = { width: 390, height: 844, touch: true };
+  const watched = await open('gate', phone, IPHONE_UA);
+  await expect(
+    watched.page.getByRole('heading', { name: 'Live calls need a computer' }),
+  ).toBeVisible();
+  await expect(watched.page.getByRole('link', { name: 'Review past sessions' })).toHaveAttribute(
+    'href',
+    '/',
+  );
+  await shot(watched, phone, 'live-phone');
+  await watched.context.close();
+  const computer = await open('gate', { width: 1440, height: 900, touch: false });
+  await expect(computer.page.getByText('Live calls are supported here.')).toBeVisible();
+  await computer.context.close();
+});
+
+test('compact view (desktop window and PiP): headline first, details on expand, protection label', async () => {
+  const size: Width = { width: 360, height: 560, touch: false };
+  const watched = await open('compact', size);
+  const { page } = watched;
+  await expect(page.getByRole('heading', { name: 'Compact headline' })).toHaveText(
+    'Forty seats cost 2,080 dollars a month.',
+  );
+  await expect(page.getByText('Hidden from screen share')).toBeVisible();
+  await expect(page.getByText('52 dollars per seat on Professional')).toHaveCount(0);
+  await shot(watched, size, 'compact');
+  await page.getByRole('button', { name: 'Details (2)' }).click();
+  await expect(page.getByText('52 dollars per seat on Professional')).toBeVisible();
+  await shot(watched, size, 'compact-expanded');
+  await watched.context.close();
+  const unavailable = await open('compact-unavailable', size);
+  await expect(unavailable.page.getByRole('alert')).toContainText('usage limit');
+  await shot(unavailable, size, 'compact-unavailable');
+  await unavailable.context.close();
+});

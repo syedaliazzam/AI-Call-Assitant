@@ -16,8 +16,8 @@ export default function ClaudeTestPage() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 px-8 py-10">
       <header>
-        <h1 className="text-2xl font-semibold text-slate-900">Claude streaming test</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-[28px] font-bold text-ui-heading">Claude streaming test</h1>
+        <p className="mt-1 text-sm text-ui-muted">
           Sends a fixed test prompt (mode &quot;hello&quot;) with the fast model and streams the
           reply. Below, &quot;Warm with session&quot; checks the session prompt cache (Day 3).
         </p>

@@ -108,19 +108,19 @@ function mb(bytes: number): string {
 function HowToConnect({ platform }: { platform: 'desktop' | 'browser' }) {
   if (platform === 'desktop') {
     return (
-      <div className="text-sm text-slate-700">
-        <p className="font-medium text-slate-900">
+      <div className="text-sm text-ui-text">
+        <p className="font-semibold text-ui-heading">
           Kite hears your microphone and your computer&apos;s sound. Join your call in any app.
         </p>
-        <p className="mt-1 text-slate-500">
+        <p className="mt-1 text-ui-muted">
           Works with {DESKTOP_APPS}. Start or join the call, then click Connect.
         </p>
       </div>
     );
   }
   return (
-    <div className="text-sm text-slate-700">
-      <p className="font-medium text-slate-900">Share your meeting tab with its sound:</p>
+    <div className="text-sm text-ui-text">
+      <p className="font-semibold text-ui-heading">Share your meeting tab with its sound:</p>
       <ol className="mt-2 list-decimal space-y-1 pl-5">
         <li>
           Open your meeting in another Chrome or Edge tab (Google Meet, Teams or Zoom on the web).
@@ -134,7 +134,7 @@ function HowToConnect({ platform }: { platform: 'desktop' | 'browser' }) {
         </li>
         <li>Allow the microphone when Chrome asks.</li>
       </ol>
-      <p className="mt-2 text-xs text-slate-500">
+      <p className="mt-2 text-xs text-ui-muted">
         Chrome or Edge only: Safari and Firefox cannot share a tab&apos;s sound.
       </p>
     </div>
@@ -170,22 +170,24 @@ export function ConnectPanel({
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 px-8 py-10">
       <header>
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{call.title}</p>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-900">{call.company}</h1>
-        <p className="mt-1 text-sm text-slate-500">{call.role}</p>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted">
+          {call.title}
+        </p>
+        <h1 className="mt-1 text-[28px] font-bold text-ui-heading">{call.company}</h1>
+        <p className="mt-1 text-sm text-ui-muted">{call.role}</p>
+        <p className="mt-2 text-sm text-ui-muted">
           {hotwordCount > 0
             ? `Listening for ${hotwordCount} key term${hotwordCount === 1 ? '' : 's'} (names and terms from this session).`
             : 'No key terms for this session. Add names to listen for under Edit → Preferences → Key terms.'}
         </p>
       </header>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5">
-        <h2 className="mb-3 text-base font-medium text-slate-900">How to connect</h2>
+      <section className="border border-ui-border bg-ui-surface p-5">
+        <h2 className="mb-3 text-base font-semibold text-ui-heading">How to connect</h2>
         <HowToConnect platform={platform} />
         {/* Speakers leak the other person's voice into the microphone, where it would be
             transcribed a second time as "You" (measured on Day 2). Headphones prevent it. */}
-        <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p className="mt-4 bg-ui-warning-bg px-3 py-2 text-sm text-ui-warning">
           Use headphones for best results: sound from your speakers can reach the microphone and
           show up as You.
         </p>
@@ -195,7 +197,7 @@ export function ConnectPanel({
         {model.status === 'error' ? (
           <div
             role="alert"
-            className="flex items-center justify-between gap-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
+            className="flex items-center justify-between gap-3 bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger"
           >
             <span>{model.error}</span>
             <Button size="sm" variant="secondary" onClick={onRetryModel}>
@@ -204,22 +206,22 @@ export function ConnectPanel({
           </div>
         ) : downloading ? (
           <>
-            <p className="text-sm text-slate-600 tabular-nums">
+            <p className="text-sm text-ui-muted tabular-nums">
               Downloading the speech model (one time only): {mb(progress.loadedBytes)} of{' '}
               {mb(progress.totalBytes)} · {Math.round(progress.fraction * 100)}%
             </p>
             <ProgressBar value={progress.fraction} label="Speech model download" />
           </>
         ) : model.status === 'loading' ? (
-          <p className="text-sm text-slate-600">Starting the speech model…</p>
+          <p className="text-sm text-ui-muted">Starting the speech model…</p>
         ) : (
-          <p className="text-sm font-medium text-emerald-700">Speech model ready</p>
+          <p className="text-sm font-semibold text-ui-success">Speech model ready</p>
         )}
       </section>
 
-      <section className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-5">
+      <section className="flex flex-col gap-4 border border-ui-border bg-ui-surface p-5">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-medium text-slate-900">Audio</h2>
+          <h2 className="text-base font-semibold text-ui-heading">Audio</h2>
           {connection !== 'connected' && (
             <Button onClick={onConnect} disabled={connection === 'connecting'}>
               {connection === 'connecting' ? 'Connecting…' : anyError ? 'Try again' : 'Connect'}
@@ -237,7 +239,7 @@ export function ConnectPanel({
             {channelErrors[speaker] && (
               <div
                 role="alert"
-                className="ml-14 flex items-start justify-between gap-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
+                className="ml-14 flex items-start justify-between gap-3 bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger"
               >
                 <span>{channelErrors[speaker]}</span>
                 <Button size="sm" variant="secondary" onClick={onConnect}>
@@ -249,8 +251,8 @@ export function ConnectPanel({
         ))}
 
         {soundCheck && (
-          <div className="rounded-md bg-slate-50 p-3 text-sm">
-            <p className="font-medium text-slate-900">
+          <div className="bg-ui-band p-3 text-sm">
+            <p className="font-semibold text-ui-heading">
               {soundCheck.secondsLeft > 0
                 ? `Sound check: ${soundCheck.secondsLeft} s — say a few words, and let the other side (or any video) play.`
                 : 'Sound check done.'}
@@ -261,11 +263,13 @@ export function ConnectPanel({
                 const style = SPEAKER_STYLE[speaker];
                 return (
                   <li key={speaker} className="flex gap-3">
-                    <span className={`w-12 shrink-0 font-medium ${style.label}`}>{style.name}</span>
+                    <span className={`w-12 shrink-0 font-semibold ${style.label}`}>
+                      {style.name}
+                    </span>
                     {heard ? (
-                      <span className="text-slate-700">“{heard}”</span>
+                      <span className="text-ui-text">“{heard}”</span>
                     ) : (
-                      <span className="text-slate-400">
+                      <span className="text-ui-muted">
                         {soundCheck.secondsLeft > 0
                           ? 'Nothing heard yet…'
                           : speaker === 'you'

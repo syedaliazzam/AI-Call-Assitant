@@ -483,7 +483,7 @@ export function SttTest() {
         <Button variant="secondary" onClick={stop} disabled={phase !== 'listening'}>
           Stop
         </Button>
-        <label className="flex items-center gap-2 text-sm text-slate-800">
+        <label className="flex items-center gap-2 text-sm text-ui-text">
           <input
             type="checkbox"
             checked={micOn}
@@ -492,13 +492,13 @@ export function SttTest() {
           />
           You: microphone
         </label>
-        <label className="flex items-center gap-2 text-sm text-slate-800">
+        <label className="flex items-center gap-2 text-sm text-ui-text">
           Them:
           <select
             value={themSource}
             disabled={phase === 'loading'}
             onChange={(event) => void setThem(event.target.value as ThemSource)}
-            className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+            className="h-9 border border-ui-border bg-ui-surface px-2 text-sm"
           >
             <option value="off">off</option>
             <option value="recordings">test recordings (looped)</option>
@@ -506,16 +506,16 @@ export function SttTest() {
           </select>
         </label>
         {callSource && (
-          <span className="text-xs text-emerald-700">Them = {CALL_SOURCE_LABEL[callSource]}</span>
+          <span className="text-xs text-ui-success">Them = {CALL_SOURCE_LABEL[callSource]}</span>
         )}
-        <label className="flex items-center gap-2 text-sm text-slate-800">
+        <label className="flex items-center gap-2 text-sm text-ui-text">
           Beam width:
           {/* Read on Start only: the worker builds its recognizer once per load. */}
           <select
             value={beamWidth}
             disabled={phase === 'loading' || phase === 'listening'}
             onChange={(event) => setBeamWidth(Number(event.target.value) as BeamWidth)}
-            className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+            className="h-9 border border-ui-border bg-ui-surface px-2 text-sm"
           >
             <option value={4}>4 (live sessions)</option>
             <option value={8}>8 (more CPU)</option>
@@ -531,13 +531,13 @@ export function SttTest() {
         <Button variant="ghost" onClick={() => void navigator.clipboard.writeText(resultsText())}>
           Copy results
         </Button>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-ui-muted">
           {where} · {model.label} · {formatMb(totalBytes)} · source {source}
         </span>
       </section>
 
       <section className="flex flex-col gap-1">
-        <label htmlFor="stt-hotword-source" className="text-sm font-medium text-slate-800">
+        <label htmlFor="stt-hotword-source" className="text-sm font-semibold text-ui-text">
           Hotwords from
         </label>
         <select
@@ -545,7 +545,7 @@ export function SttTest() {
           value={hotwordSource}
           disabled={phase === 'loading'}
           onChange={(event) => void chooseHotwordSource(event.target.value)}
-          className="mb-2 h-9 max-w-xl rounded-md border border-slate-300 bg-white px-2 text-sm"
+          className="mb-2 h-9 max-w-xl border border-ui-border bg-ui-surface px-2 text-sm"
         >
           <option value="test">Test list (Bluefin Route, Northwind Logistics)</option>
           <option value="none">No hotwords</option>
@@ -555,7 +555,7 @@ export function SttTest() {
             </option>
           ))}
         </select>
-        <label htmlFor="stt-hotwords" className="text-sm font-medium text-slate-800">
+        <label htmlFor="stt-hotwords" className="text-sm font-semibold text-ui-text">
           Hotwords (one phrase per line, optional boost score after &quot; :&quot;)
         </label>
         <textarea
@@ -564,10 +564,10 @@ export function SttTest() {
           value={hotwordsText}
           disabled={phase === 'loading'}
           onChange={(event) => setHotwordsText(event.target.value)}
-          className="max-w-xl rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-sm"
+          className="max-w-xl border border-ui-border bg-ui-surface px-3 py-2 font-mono text-sm"
         />
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ui-muted">
             {hotwordsPreview.hotwords.length === 0
               ? 'No hotwords: plain beam search.'
               : `Sent to the model: ${hotwordsPreview.hotwords.map((hotword) => `${hotword.phrase} (${hotword.score})`).join(', ')}`}
@@ -585,18 +585,18 @@ export function SttTest() {
       {phase === 'loading' && (
         <section className="flex max-w-xl flex-col gap-1" aria-live="polite">
           <div
-            className="h-2 w-full overflow-hidden rounded bg-slate-200"
+            className="h-2 w-full overflow-hidden bg-ui-band"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={Math.round((progress?.fraction ?? 0) * 100)}
           >
             <div
-              className="h-full bg-brand-600 transition-[width]"
+              className="h-full bg-ui-primary transition-[width]"
               style={{ width: `${(progress?.fraction ?? 0) * 100}%` }}
             />
           </div>
-          <p className="text-sm text-slate-600 tabular-nums">
+          <p className="text-sm text-ui-muted tabular-nums">
             {progress
               ? `${Math.round(progress.fraction * 100)}% · ${formatMb(progress.loadedBytes)} of ${formatMb(progress.totalBytes)} · ${progress.file}`
               : 'Starting…'}
@@ -605,15 +605,15 @@ export function SttTest() {
         </section>
       )}
       {phase === 'listening' && loads.length > 0 && (
-        <p className="text-sm font-medium text-emerald-700">Ready</p>
+        <p className="text-sm font-semibold text-ui-success">Ready</p>
       )}
       {loads.at(-1)?.cacheAvailable === false && (
-        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p className="bg-ui-warning-bg px-3 py-2 text-sm text-ui-warning">
           This browser does not allow Kite to store the model, so it downloads again on every start.
         </p>
       )}
       {error && (
-        <p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <p role="alert" className="bg-ui-warning-bg px-3 py-2 text-sm text-ui-warning">
           {error}
         </p>
       )}
@@ -622,8 +622,8 @@ export function SttTest() {
           role="status"
           className={
             healthTone(health) === 'hint'
-              ? 'rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600'
-              : 'rounded-md bg-red-50 px-3 py-2 text-sm text-red-800'
+              ? 'bg-ui-band px-3 py-2 text-sm text-ui-muted'
+              : 'bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger'
           }
         >
           {message}
@@ -632,15 +632,15 @@ export function SttTest() {
 
       <section
         aria-live="polite"
-        className="min-h-32 rounded-lg border border-slate-200 bg-white p-4 text-slate-900"
+        className="min-h-32 border border-ui-border bg-ui-surface p-4 text-ui-heading"
       >
         {finals.map((line, i) => (
           <p key={i}>
-            <span className={line.channel === 'you' ? 'text-brand-700' : 'text-violet-700'}>
+            <span className={line.channel === 'you' ? 'text-ui-you' : 'text-ui-them'}>
               {CHANNEL_LABEL[line.channel]}:
             </span>{' '}
             {line.text}{' '}
-            <span className="text-xs text-slate-400" title="Which rule ended this utterance">
+            <span className="text-xs text-ui-muted" title="Which rule ended this utterance">
               · {line.reason}
             </span>
           </p>
@@ -648,22 +648,22 @@ export function SttTest() {
         {(['you', 'them'] as const).map(
           (channel) =>
             partials[channel] && (
-              <p key={channel} className="text-slate-400">
+              <p key={channel} className="text-ui-muted">
                 {CHANNEL_LABEL[channel]}: {partials[channel]}
               </p>
             ),
         )}
         {!partials.you && !partials.them && (
-          <p className="text-slate-400">
+          <p className="text-ui-muted">
             {phase === 'listening' ? 'Listening…' : 'Press Start and speak.'}
           </p>
         )}
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-          <h2 className="mb-2 font-semibold text-slate-900">Loading</h2>
-          {loads.length === 0 && <p className="text-slate-400">Not loaded yet.</p>}
+        <div className="border border-ui-border bg-ui-surface p-4 text-sm">
+          <h2 className="mb-2 font-semibold text-ui-heading">Loading</h2>
+          {loads.length === 0 && <p className="text-ui-muted">Not loaded yet.</p>}
           <ul className="flex flex-col gap-1 tabular-nums">
             {loads.map((load, i) => (
               <li key={i}>
@@ -675,8 +675,8 @@ export function SttTest() {
             ))}
           </ul>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm tabular-nums">
-          <h2 className="mb-2 font-semibold text-slate-900">Live</h2>
+        <div className="border border-ui-border bg-ui-surface p-4 text-sm tabular-nums">
+          <h2 className="mb-2 font-semibold text-ui-heading">Live</h2>
           <p>
             Combined real-time factor: <strong>{stats ? stats.combinedRtf.toFixed(3) : '–'}</strong>{' '}
             (0.5 or less needed, both channels; also the share of one CPU core)
@@ -700,9 +700,9 @@ export function SttTest() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-        <h2 className="mb-1 font-semibold text-slate-900">Accuracy test (You channel)</h2>
-        <p className="mb-3 text-slate-500">
+      <section className="border border-ui-border bg-ui-surface p-4 text-sm">
+        <h2 className="mb-1 font-semibold text-ui-heading">Accuracy test (You channel)</h2>
+        <p className="mb-3 text-ui-muted">
           Click a sentence, pause for a second, read it aloud at normal speed, then pause until it
           appears as a final line. Lag is measured from the start of each utterance after a pause.
         </p>
@@ -716,12 +716,12 @@ export function SttTest() {
             return (
               <li
                 key={i}
-                className={`rounded-md border p-3 ${sentence === i ? 'border-brand-600' : 'border-slate-200'}`}
+                className={`border p-3 ${sentence === i ? 'border-ui-accent' : 'border-ui-border'}`}
               >
                 <button
                   type="button"
                   onClick={() => chooseSentence(i)}
-                  className="text-left font-medium text-slate-900"
+                  className="text-left font-semibold text-ui-heading"
                 >
                   {i + 1}. {reference}
                 </button>
@@ -738,12 +738,12 @@ export function SttTest() {
                           key={j}
                           className={
                             step.type === 'ok'
-                              ? 'text-slate-700'
+                              ? 'text-ui-text'
                               : step.type === 'sub'
-                                ? 'rounded bg-amber-100 px-1 text-amber-900'
+                                ? 'bg-ui-warning-bg px-1 text-ui-warning'
                                 : step.type === 'del'
-                                  ? 'rounded bg-red-100 px-1 text-red-800 line-through'
-                                  : 'rounded bg-sky-100 px-1 text-sky-900'
+                                  ? 'bg-ui-danger-bg px-1 text-ui-danger line-through'
+                                  : 'bg-ui-pale px-1 text-ui-heading'
                           }
                           title={step.type}
                         >

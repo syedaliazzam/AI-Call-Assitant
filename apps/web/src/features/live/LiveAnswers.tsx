@@ -191,12 +191,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
         }}
       />
       {compactNotice && (
-        <p role="status" className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">
+        <p role="status" className="bg-ui-surface px-3 py-2 text-sm text-ui-text">
           {compactNotice}
         </p>
       )}
       {taken.length > 0 && (
-        <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p
+          role="status"
+          className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
+        >
           Another app already uses {taken.join(', ')}, so{' '}
           {taken.length === 1 ? 'it works' : 'they work'} only while Kite is in front. Close that
           app&rsquo;s shortcut, or use the buttons.
@@ -217,7 +220,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
         copy={props.copy}
       />
       {answers.saveFailed && (
-        <p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <p
+          role="alert"
+          className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
+        >
           An answer, rating or note could not be saved on this computer (is the disk full?).
         </p>
       )}

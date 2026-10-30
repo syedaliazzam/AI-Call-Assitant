@@ -29,6 +29,7 @@
     "test:answers": "playwright test -c tests/integration/playwright.config.ts answers.spec.ts",
     "test:screenshot": "playwright test -c tests/integration/playwright.config.ts screenshot.spec.ts",
     "test:review": "playwright test -c tests/integration/playwright.config.ts review.spec.ts",
+    "test:live-ui": "playwright test -c tests/integration/playwright.config.ts live.spec.ts",
     "test:ui-shots": "playwright test -c tests/ui/playwright.config.ts",
     "test:e2e-prod": "pnpm --filter @kite/desktop build && playwright test -c tests/e2e-prod/playwright.config.ts"
   },

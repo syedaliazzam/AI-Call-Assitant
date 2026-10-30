@@ -33,7 +33,7 @@ export interface CompactViewProps {
 }
 
 /** Small mono uppercase label style (the "eyebrow" style). */
-const EYEBROW = 'font-mono text-[10px] font-medium uppercase tracking-wider';
+const EYEBROW = 'font-mono text-[10px] font-medium uppercase tracking-[0.08em]';
 
 /**
  * The protection label: what the other side of a screen share can see.
@@ -53,11 +53,11 @@ function ProtectionLabel({
 }) {
   if (!protection) return null;
   if (!protection.supported) {
-    return <span className={`${EYEBROW} text-slate-400`}>Visible in screen share</span>;
+    return <span className={`${EYEBROW} text-ui-muted`}>Visible in screen share</span>;
   }
   return (
     <label
-      className={`${EYEBROW} flex items-center gap-1 [-webkit-app-region:no-drag] ${protection.on ? 'text-emerald-700' : 'text-amber-700'}`}
+      className={`${EYEBROW} flex items-center gap-1 pointer-coarse:min-h-11 [-webkit-app-region:no-drag] ${protection.on ? 'text-ui-success' : 'text-ui-warning'}`}
     >
       <input
         type="checkbox"
@@ -80,6 +80,8 @@ function ProtectionLabel({
  */
 export function CompactView({ state, protection, onCommand, onProtection }: CompactViewProps) {
   const [question, setQuestion] = useState('');
+  // The answer's details (bullets) show on expand: the headline comes first.
+  const [expanded, setExpanded] = useState(false);
 
   /**
    * Enter sends the typed question; Escape clears it.
@@ -98,73 +100,95 @@ export function CompactView({ state, protection, onCommand, onProtection }: Comp
 
   const answer = state?.answer ?? null;
   return (
-    <div className="flex h-screen flex-col bg-white text-sm text-slate-900">
-      <header className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5 [-webkit-app-region:drag]">
-        <span className={`${EYEBROW} text-slate-500`}>Kite · live</span>
+    // Theme §6: the same dark tokens as the live view, compact sizes, the headline first and
+    // the details on expand. The protection label stays visible in the header.
+    <div className="k-dark flex h-screen flex-col bg-ui-bg text-[13px] text-ui-text">
+      <header className="flex items-center justify-between gap-2 border-b border-ui-border bg-ui-band px-3 py-1.5 [-webkit-app-region:drag]">
+        <span className={`${EYEBROW} text-ui-muted`}>Kite · live</span>
         <ProtectionLabel protection={protection} onToggle={onProtection} />
       </header>
 
       {state?.ended ? (
-        <p className="p-3 text-slate-500">The call has ended.</p>
+        <p className="p-3 text-ui-muted">The call has ended.</p>
       ) : (
         <>
           <section
             aria-label="Latest line"
-            className="border-b border-slate-100 px-3 py-2 text-xs text-slate-600"
+            className="border-b border-ui-border px-3 py-2 text-[12px] text-ui-text"
           >
             {state?.line ? (
               <p className="line-clamp-2">
-                <span className="font-medium">
-                  {state.line.speaker === 'you' ? 'You' : 'Them'}:
+                <span
+                  className={`${EYEBROW} mr-1 ${state.line.speaker === 'you' ? 'text-ui-you' : 'text-ui-them'}`}
+                >
+                  {state.line.speaker === 'you' ? 'You' : 'Them'}
                 </span>{' '}
                 {state.line.text}
               </p>
             ) : (
-              <p className="text-slate-400">
+              <p className="text-ui-muted">
                 {state ? 'Nothing said yet.' : 'Connecting to the call…'}
               </p>
             )}
           </section>
 
-          <section aria-label="Latest answer" className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+          <section
+            aria-label="Latest answer"
+            className="min-h-0 flex-1 overflow-y-auto border-l-[3px] border-ui-accent px-3 py-2"
+          >
             {answer ? (
               <>
-                <h2 aria-label="Compact headline" className="font-semibold">
+                <h2
+                  aria-label="Compact headline"
+                  className="text-[14px] font-bold leading-snug text-ui-heading"
+                >
                   {answer.headline || '…'}
                 </h2>
                 {answer.bullets.length > 0 && (
-                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-slate-700">
-                    {answer.bullets.map((bullet, i) => (
-                      <li key={i}>{bullet}</li>
-                    ))}
-                  </ul>
+                  <>
+                    <button
+                      type="button"
+                      aria-expanded={expanded}
+                      onClick={() => setExpanded((open) => !open)}
+                      className={`${EYEBROW} mt-1 text-ui-link hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11`}
+                    >
+                      {expanded ? 'Hide details' : `Details (${answer.bullets.length})`}
+                    </button>
+                    {expanded && (
+                      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[12px] text-ui-text">
+                        {answer.bullets.map((bullet, i) => (
+                          <li key={i}>{bullet}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
                 )}
                 {answer.status === 'streaming' && (
-                  <p className="mt-1 text-xs text-slate-400">Answering…</p>
+                  <p className={`${EYEBROW} mt-1 text-ui-muted`}>Answering…</p>
                 )}
                 {answer.status === 'error' &&
                   (answer.unavailable ? (
                     // Claude is down for everyone: the plain message, and that recording goes on.
                     <p
                       role="alert"
-                      className="mt-1 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900"
+                      className="mt-1 border-l-[3px] border-ui-warning bg-ui-warning-bg px-2 py-1 text-[12px] text-ui-text"
                     >
                       {answer.error}
                     </p>
                   ) : (
-                    <p role="alert" className="mt-1 text-xs text-red-700">
+                    <p role="alert" className="mt-1 text-[12px] text-ui-danger">
                       {answer.error ?? 'The answer failed.'}
                     </p>
                   ))}
               </>
             ) : (
-              <p className="text-slate-400">
+              <p className="text-ui-muted">
                 {state?.notice ?? 'Press Answer when they ask something.'}
               </p>
             )}
           </section>
 
-          <footer className="flex flex-col gap-1.5 border-t border-slate-200 p-2">
+          <footer className="flex flex-col gap-1.5 border-t border-ui-border bg-ui-band p-2">
             <div className="flex gap-1.5">
               <Button size="sm" onClick={() => onCommand({ type: 'answer' })} disabled={!state}>
                 Answer
@@ -188,7 +212,7 @@ export function CompactView({ state, protection, onCommand, onProtection }: Comp
             </div>
             <input
               aria-label="Type a question"
-              className="rounded border border-slate-300 px-2 py-1 text-xs"
+              className="h-8 border border-ui-border bg-ui-input px-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-[12px]"
               placeholder="Type a question, then Enter"
               value={question}
               maxLength={2_000}

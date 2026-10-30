@@ -1,7 +1,7 @@
 /**
  * Tests for apps/web/src/ui/theme.css and the theme rules (docs/design/kite-ui-theme.md §8):
  * - no file under apps/web/src or apps/web/app other than src/ui/theme.css contains a hex
- *   colour or rgb()/rgba();
+ *   colour or rgb()/rgba(), and no class uses a Tailwind palette or the removed brand-* colours;
  * - contrast (WCAG 2.x) of every text token on the surfaces it is used on, read from theme.css
  *   itself (variables resolved): light tokens on white and on the grey band, dark tokens on
  *   the dark background, surface and bar, and navy on the cyan primary button: at least
@@ -141,6 +141,24 @@ describe('no colours outside theme.css', () => {
       }
     }
     expect(scanned).toBeGreaterThan(100);
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('only theme colours in class names', () => {
+  it('finds no Tailwind palette or legacy brand-* colour class in apps/web/src or apps/web/app', () => {
+    const offenders: string[] = [];
+    // A colour utility with a palette name, for example bg-slate-100 or text-brand-700.
+    const palette =
+      /\b(?:bg|text|border|divide|ring|outline|fill|stroke|from|via|to|decoration|placeholder|accent|caret)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|brand)-\d{2,3}\b/;
+    for (const dir of ['src', 'app']) {
+      for (const file of filesUnder(path.join(WEB_DIR, dir))) {
+        if (!/\.(tsx?|css)$/.test(file)) continue;
+        for (const [i, line] of readFileSync(file, 'utf8').split('\n').entries()) {
+          if (palette.test(line)) offenders.push(`${path.relative(WEB_DIR, file)}:${i + 1}`);
+        }
+      }
+    }
     expect(offenders).toEqual([]);
   });
 });

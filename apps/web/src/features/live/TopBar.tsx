@@ -38,6 +38,22 @@ export interface TopBarProps {
 }
 
 /**
+ * A keyboard shortcut hint inside a button: mono, smaller, hidden from screen readers (the
+ * button's title says the shortcut), so the button's name stays its label.
+ *
+ * @param props.children The keys, for example "Ctrl+↵".
+ * @returns The hint.
+ * Rendered by: TopBar
+ */
+function Hint({ children }: { children: string }) {
+  return (
+    <span aria-hidden="true" className="font-mono text-[11px] font-medium opacity-75">
+      {children}
+    </span>
+  );
+}
+
+/**
  * The live view's action bar.
  *
  * @param props See TopBarProps.
@@ -50,6 +66,7 @@ export function TopBar(props: TopBarProps) {
     <div role="toolbar" aria-label="Call actions" className="flex flex-wrap items-center gap-2">
       <Button onClick={props.onAnswer} title={`Answer the latest question (${mod}Enter)`}>
         Answer
+        <Hint>{props.mac ? '⌘↵' : 'Ctrl+↵'}</Hint>
       </Button>
       <Button
         variant="secondary"
@@ -66,16 +83,18 @@ export function TopBar(props: TopBarProps) {
         title={`Answer from a screenshot of your screen (${mod}${props.mac ? '⇧' : 'Shift+'}Enter)`}
       >
         {props.capturing ? 'Taking screenshot…' : 'Screenshot'}
+        <Hint>{props.mac ? '⌘⇧↵' : 'Ctrl+Shift+↵'}</Hint>
       </Button>
       <Button
-        variant="ghost"
+        variant="secondary"
         onClick={props.onClear}
         title={`${props.answering ? 'Stop the answer' : 'Clear the answer'} (${mod}Backspace)`}
       >
         Clear
+        <Hint>{props.mac ? '⌘⌫' : 'Ctrl+⌫'}</Hint>
       </Button>
       <Button
-        variant="ghost"
+        variant="secondary"
         onClick={props.onCompact}
         title="A small window that stays on top of the meeting"
       >

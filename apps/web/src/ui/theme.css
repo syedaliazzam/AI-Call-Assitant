@@ -138,6 +138,8 @@
   --ui-warning-bg: var(--k-warning-bg);
   --ui-danger-bg: var(--k-danger-bg);
   --ui-pale: var(--pi-pale);
+  /* Transcript words that may still change (light pages: muted). */
+  --ui-provisional: var(--k-muted);
 }
 
 /* ---- Surface tokens: dark (live view, compact overlay, PiP, the sidebar) ---- */
@@ -168,6 +170,8 @@
   --ui-warning-bg: var(--k-dark-warning-bg);
   --ui-danger-bg: var(--k-dark-danger-bg);
   --ui-pale: var(--pi-navy-600);
+  /* Transcript words that may still change: grey (6.5:1), shown in italics. */
+  --ui-provisional: var(--k-dark-provisional);
 }
 
 /* Tailwind class names for the tokens (inline: the classes read the variables at run time, so
@@ -197,6 +201,7 @@
   --color-ui-warning-bg: var(--ui-warning-bg);
   --color-ui-danger-bg: var(--ui-danger-bg);
   --color-ui-pale: var(--ui-pale);
+  --color-ui-provisional: var(--ui-provisional);
   /* Fixed brand colours (the same on light and dark). */
   --color-ui-primary: var(--pi-cyan);
   --color-ui-primary-hover: var(--k-primary-hover);
@@ -210,14 +215,4 @@
   --color-ui-topbar: var(--k-topbar);
   --font-sans: var(--k-font);
   --font-mono: var(--k-mono);
-}
-
-/* Legacy colours of the pages not restyled yet (UI stage U2 replaces them). Moved here from
-   app/globals.css so this stays the only file with hex colours. */
-@theme {
-  --color-brand-50: #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
-  --color-brand-800: #3730a3;
 }

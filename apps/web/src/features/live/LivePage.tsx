@@ -46,6 +46,7 @@ import { getPlatform, type OtherSideSource } from '@/platform';
 import { Button } from '@/ui/Button';
 import { AudioMeter } from './AudioMeter';
 import { LiveAnswers } from './LiveAnswers';
+import { LiveCallLayout, type LiveCallStatus } from './LiveCallLayout';
 import {
   ConnectPanel,
   type CallInfo,
@@ -432,7 +433,8 @@ export function LivePage({
 
   if (view === 'connect') {
     return (
-      <>
+      // The Connect view is a call screen too: dark tokens (theme §2).
+      <div className="k-dark min-h-screen bg-ui-bg pb-10 text-ui-text">
         <ConnectPanel
           call={call}
           hotwordCount={hotwordCount}
@@ -448,7 +450,7 @@ export function LivePage({
           onContinue={() => setView('live')}
         />
         {notesStatus !== 'idle' && (
-          <p role="status" className="mx-auto mt-4 max-w-3xl px-8 text-sm text-slate-600">
+          <p role="status" className="mx-auto mt-4 max-w-3xl px-8 text-sm text-ui-muted">
             {notesStatus === 'writing'
               ? 'Writing the call notes…'
               : notesStatus === 'saved'
@@ -457,91 +459,99 @@ export function LivePage({
           </p>
         )}
         <SavedTranscript lines={saved} saving={session.saveTranscript} />
-      </>
+      </div>
     );
   }
 
+  // The badge in the top bar: a lost channel first, then the connection.
+  const lostChannel = channelErrors.you !== undefined || channelErrors.them !== undefined;
+  const status: LiveCallStatus = lostChannel
+    ? { tone: 'danger', label: 'Channel lost' }
+    : connection === 'connected'
+      ? { tone: 'success', label: 'Connected' }
+      : connection === 'connecting'
+        ? { tone: 'warning', label: 'Connecting' }
+        : { tone: 'neutral', label: 'Not connected' };
+
   return (
-    <div className="flex h-screen flex-col gap-4 px-8 py-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{call.title}</p>
-          <h1 className="text-xl font-semibold text-slate-900">{call.company}</h1>
-          {themSource && (
-            <p className="text-xs text-slate-500">Them = {THEM_SOURCE_LABEL[themSource]}</p>
-          )}
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="flex flex-col gap-1">
-            {(['you', 'them'] as const).map((speaker) => (
-              <AudioMeter
-                key={speaker}
-                speaker={speaker}
-                level={levels[speaker]}
-                inactive={connection !== 'connected' || channelErrors[speaker] !== undefined}
-                compact
-              />
-            ))}
-          </div>
-        </div>
-      </header>
-
-      {callStartedAt !== null ? (
-        <LiveAnswers
-          session={session}
-          documents={documents}
-          lessons={lessons}
-          transcript={transcript}
-          callStartedAt={callStartedAt}
-          ending={ending}
-          onEnd={() => void end()}
+    <LiveCallLayout
+      title={call.title}
+      name={call.company}
+      themSource={themSource ? THEM_SOURCE_LABEL[themSource] : null}
+      status={status}
+      meters={(['you', 'them'] as const).map((speaker) => (
+        <AudioMeter
+          key={speaker}
+          speaker={speaker}
+          level={levels[speaker]}
+          inactive={connection !== 'connected' || channelErrors[speaker] !== undefined}
+          compact
         />
-      ) : (
-        <div className="flex justify-end">
-          <Button variant="danger" onClick={() => void end()} disabled={ending}>
-            {ending ? 'Ending…' : 'End'}
-          </Button>
-        </div>
-      )}
-
-      {(['you', 'them'] as const).map(
-        (speaker) =>
-          channelErrors[speaker] && (
-            <div
-              key={speaker}
-              role="alert"
-              className="flex items-center justify-between gap-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800"
-            >
-              <span>{channelErrors[speaker]}</span>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => void connect()}
-                disabled={ending}
+      ))}
+      notices={
+        lostChannel || saveFailed || echoNoteVisible ? (
+          <>
+            {(['you', 'them'] as const).map(
+              (speaker) =>
+                channelErrors[speaker] && (
+                  <div
+                    key={speaker}
+                    role="alert"
+                    className="flex flex-wrap items-center justify-between gap-3 border-l-[3px] border-ui-danger bg-ui-danger-bg px-3 py-2 text-sm text-ui-text"
+                  >
+                    <span>{channelErrors[speaker]}</span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void connect()}
+                      disabled={ending}
+                    >
+                      Reconnect
+                    </Button>
+                  </div>
+                ),
+            )}
+            {saveFailed && (
+              <p
+                role="alert"
+                className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
               >
-                Reconnect
-              </Button>
-            </div>
-          ),
-      )}
-
-      {saveFailed && (
-        <p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Some transcript lines could not be saved on this computer (is the disk full?). The call
-          continues; Kite keeps trying.
-        </p>
-      )}
-
-      {/* Echo lines (the other side's voice from the speakers, picked up by the microphone) are
-          hidden from the transcript (core/transcript/echo.ts); say so while it is happening. */}
-      {echoNoteVisible && (
-        <p role="status" className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600">
-          Hiding echo from your speakers ({echoStats.count}{' '}
-          {echoStats.count === 1 ? 'line' : 'lines'} so far). Headphones work best.
-        </p>
-      )}
-
-      <TranscriptStrip lines={lines} health={health} />
-    </div>
+                Some transcript lines could not be saved on this computer (is the disk full?). The
+                call continues; Kite keeps trying.
+              </p>
+            )}
+            {/* Echo lines (the other side's voice from the speakers, picked up by the
+                microphone) are hidden from the transcript (core/transcript/echo.ts); say so while
+                it is happening. */}
+            {echoNoteVisible && (
+              <p role="status" className="bg-ui-surface px-3 py-2 text-sm text-ui-muted">
+                Hiding echo from your speakers ({echoStats.count}{' '}
+                {echoStats.count === 1 ? 'line' : 'lines'} so far). Headphones work best.
+              </p>
+            )}
+          </>
+        ) : null
+      }
+      transcript={<TranscriptStrip lines={lines} health={health} />}
+      answers={
+        callStartedAt !== null ? (
+          <LiveAnswers
+            session={session}
+            documents={documents}
+            lessons={lessons}
+            transcript={transcript}
+            callStartedAt={callStartedAt}
+            ending={ending}
+            onEnd={() => void end()}
+          />
+        ) : (
+          <div className="flex justify-end">
+            <Button variant="danger" onClick={() => void end()} disabled={ending}>
+              {ending ? 'Ending…' : 'End'}
+            </Button>
+          </div>
+        )
+      }
+    />
   );
 }

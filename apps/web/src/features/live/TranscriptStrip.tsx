@@ -84,12 +84,12 @@ export const TranscriptStrip = memo(function TranscriptStrip({
         <div
           ref={box}
           onScroll={(event) => setFollowing(isAtBottom(event.currentTarget))}
-          className="h-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-4"
+          className="h-full overflow-y-auto border border-ui-border bg-ui-surface p-4 sm:p-5"
           aria-live="polite"
           aria-label="Live transcript"
         >
           {lines.length === 0 ? (
-            <p className="text-sm text-slate-400">
+            <p className="text-sm text-ui-muted">
               Listening… Lines appear here as you and the other person speak.
             </p>
           ) : (
@@ -97,12 +97,18 @@ export const TranscriptStrip = memo(function TranscriptStrip({
               {lines.flatMap(splitForDisplay).map((line) => {
                 const style = SPEAKER_STYLE[line.speaker];
                 return (
-                  <li key={line.id} className="flex gap-3 text-sm leading-6">
-                    <span className={`w-12 shrink-0 font-medium ${style.label}`}>{style.name}</span>
-                    <span className={line.final ? 'text-slate-900' : 'text-slate-400'}>
+                  <li key={line.id} className="flex gap-3 text-[15px] leading-6">
+                    {/* Mono uppercase speaker labels: You in cyan, Them in blue-300. */}
+                    <span
+                      className={`w-12 shrink-0 font-mono text-[11px] font-medium uppercase leading-6 tracking-[0.08em] ${style.label}`}
+                    >
+                      {style.name}
+                    </span>
+                    {/* Words that may still change: grey italic. */}
+                    <span className={line.final ? 'text-ui-text' : 'italic text-ui-provisional'}>
                       {line.text}
                     </span>
-                    <span className="ml-auto shrink-0 text-xs tabular-nums text-slate-400">
+                    <span className="ml-auto shrink-0 font-mono text-[11px] leading-6 text-ui-muted">
                       {clockTime(line.tStart)}
                     </span>
                   </li>
@@ -115,7 +121,7 @@ export const TranscriptStrip = memo(function TranscriptStrip({
           <button
             type="button"
             onClick={() => setFollowing(true)}
-            className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white shadow"
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-ui-primary px-3 py-1 text-xs font-semibold text-ui-on-primary focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
           >
             Jump to latest
           </button>

@@ -207,6 +207,26 @@ for (const size of WIDTHS) {
 
     await page.goto(`${BASE_URL}/admin/users`);
     await expect(page.getByRole('heading', { name: 'Users', level: 1 })).toBeVisible();
+    // Real accounts never go in a screenshot: every row's name and email is replaced, in this
+    // test browser only, with invented sample users (nothing changes in the database).
+    const rows = await page.evaluate(() => {
+      const samples = [
+        ['Sample Admin', 'sample.admin@example.com'],
+        ['Sample User', 'sample.user@example.com'],
+        ['Sample Analyst', 'sample.analyst@example.com'],
+      ];
+      const trs = [...document.querySelectorAll('tbody tr')];
+      trs.forEach((tr, i) => {
+        const [name, email] = samples[i % samples.length]!;
+        const cells = tr.querySelectorAll('td');
+        const nameText = [...cells[0]!.childNodes].find((node) => node.nodeType === Node.TEXT_NODE);
+        if (nameText) nameText.textContent = `${name} `;
+        cells[1]!.textContent = email;
+      });
+      return trs.length;
+    });
+    expect(rows).toBeGreaterThan(0);
+    await expect(page.locator('tbody')).not.toContainText('@gmail.com');
     await check(watched, size, 'admin-users');
 
     await watched.context.close();

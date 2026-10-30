@@ -16,8 +16,8 @@ export default function SttTestPage() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 px-8 py-10">
       <header>
-        <h1 className="text-2xl font-semibold text-slate-900">Speech-to-text test</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-[28px] font-bold text-ui-heading">Speech-to-text test</h1>
+        <p className="mt-1 text-sm text-ui-muted">
           Runs sherpa-onnx (WebAssembly) in a Web Worker on this device, for one or two channels.
           Audio and text stay on this computer. In <code>pnpm dev</code> the model loads from this
           computer (run <code>pnpm --filter web fetch-models</code> first); production builds load

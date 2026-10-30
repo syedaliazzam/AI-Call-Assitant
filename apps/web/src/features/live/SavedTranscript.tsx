@@ -35,26 +35,26 @@ export function SavedTranscript({ lines, saving }: SavedTranscriptProps) {
   return (
     <section className="mx-auto max-w-3xl px-8 pb-10">
       {lines.length === 0 ? (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-ui-muted">
           {saving
             ? 'This session saves its transcript on this computer. Nothing saved yet.'
             : 'This session does not save its transcript: it is discarded when the call ends.'}
         </p>
       ) : (
-        <details className="rounded-lg border border-slate-200 bg-white p-5">
-          <summary className="cursor-pointer text-sm font-medium text-slate-900">
+        <details className="border border-ui-border bg-ui-surface p-5">
+          <summary className="cursor-pointer text-sm font-semibold text-ui-heading">
             Saved transcript ({lines.length} {lines.length === 1 ? 'line' : 'lines'})
           </summary>
           <ol className="mt-3 flex flex-col gap-2">
             {lines.map((line) => (
               <li key={line.id} className="text-sm">
-                <span className="mr-2 text-xs text-slate-400">
+                <span className="mr-2 text-xs text-ui-muted">
                   {TIME_FORMAT.format(line.tStart)}
                 </span>
-                <span className={`mr-2 font-medium ${SPEAKER_STYLE[line.speaker].label}`}>
+                <span className={`mr-2 font-semibold ${SPEAKER_STYLE[line.speaker].label}`}>
                   {SPEAKER_STYLE[line.speaker].name}
                 </span>
-                <span className="text-slate-800">{line.text}</span>
+                <span className="text-ui-text">{line.text}</span>
               </li>
             ))}
           </ol>
