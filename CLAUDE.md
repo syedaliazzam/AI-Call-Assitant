@@ -22,6 +22,7 @@ It works as a **desktop app (macOS and Windows)** and **in the browser (Chrome o
 | Speech-to-text model choice (decided on Day 1) | `docs/decisions/ADR-0020-stt-model.md` |
 | Today's work instructions | `docs/implementation/day-NN-*.md` |
 | Measured results (only real measurements) | `docs/testing/benchmark-results.md` |
+| UI theme (for later stages; not implemented yet) | `docs/design/kite-ui-theme.md` |
 
 If code and these documents disagree, stop and ask. Do not silently change the architecture. Architecture changes need a new ADR (copy `docs/decisions/TEMPLATE.md`).
 
