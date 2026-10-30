@@ -2,8 +2,11 @@
  * File: apps/web/src/core/answer/answerClient.ts
  * Purpose: Browser side of POST /api/answer: sends the request, reads the server-sent events as
  *          they arrive, calls back for each text piece, and measures time to first text and total
- *          time. Returns a cancel function.
- * Used by: src/features/dev/ClaudeTest.tsx (Day 1); the live answer panel (Day 4)
+ *          time. Returns a cancel function. createAnswerRunner() (Day 4) runs live answers one
+ *          at a time (a new one cancels the old) and measures key press → request sent → first
+ *          word → headline complete → done.
+ * Used by: src/features/dev/ClaudeTest.tsx (Day 1); src/core/answer/warm.ts; the live answer
+ *          panel (Day 4)
  * Depends on: @kite/shared (AnswerRequest, AnswerEvent types), browser fetch and streams
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 (flow), §7.1 (core/answer)
  */
@@ -210,4 +213,113 @@ export function streamAnswer(
   })();
 
   return { cancel: () => controller.abort() };
+}
+
+/**
+ * Where an answer's time went, in ms from the key press (architecture §6.2 targets: request
+ * sent ≤ 50 ms, first word ≤ 1.0 s, headline ≤ 1.5 s at p50).
+ */
+export interface AnswerTimeline {
+  /** Key press → request handed to fetch (building the request). */
+  toSent: number;
+  /** Key press → first answer text on screen. */
+  toFirstWord: number;
+  /** Key press → headline complete (first line break, or the end for a one-line answer). */
+  toHeadline: number;
+  /** Key press → answer complete. */
+  toDone: number;
+}
+
+/** Callbacks for one answer run by an AnswerRunner. None are called after it is cancelled. */
+export interface RunHandlers {
+  /** The answer text so far (the whole text, each time a piece arrives). */
+  onText: (text: string) => void;
+  /** The answer finished: its full text, the server's details and the timeline. */
+  onDone: (text: string, done: AnswerDone, timeline: AnswerTimeline) => void;
+  /** The answer failed (the text so far is kept by the caller). */
+  onError: (failure: AnswerFailure) => void;
+}
+
+/** Runs answers one at a time: a new one cancels the one still streaming. */
+export interface AnswerRunner {
+  /**
+   * Starts an answer, cancelling any answer still running.
+   *
+   * @param request    The request (from buildAnswerRequest()).
+   * @param keyPressAt When the user pressed Answer or sent Chat (the runner's clock, ms).
+   * @param handlers   Callbacks for this answer only.
+   */
+  run(request: AnswerRequest, keyPressAt: number, handlers: RunHandlers): void;
+  /** Cancels the running answer, if any (Clear, or End). */
+  cancel(): void;
+  /** True while an answer is streaming. */
+  busy(): boolean;
+}
+
+/** Options for createAnswerRunner() (tests replace both). */
+export interface AnswerRunnerOptions {
+  /** Sends one request. Default streamAnswer(). */
+  send?: typeof streamAnswer;
+  /** Clock in ms, the same one keyPressAt uses. Default performance.now(). */
+  now?: () => number;
+}
+
+/**
+ * Creates the live page's answer runner.
+ *
+ * @param options Request and clock overrides (tests).
+ * @returns The runner.
+ * Called from: the live page (one runner per call); tests
+ */
+export function createAnswerRunner(options: AnswerRunnerOptions = {}): AnswerRunner {
+  const send = options.send ?? streamAnswer;
+  const now = options.now ?? (() => performance.now());
+  let current: { cancel: () => void } | null = null;
+  /** Increases with every run, so a cancelled run's late callbacks are ignored. */
+  let generation = 0;
+
+  return {
+    run(request, keyPressAt, handlers) {
+      current?.cancel();
+      generation += 1;
+      const mine = generation;
+      const live = () => mine === generation;
+      let text = '';
+      let firstWordAt: number | null = null;
+      let headlineAt: number | null = null;
+      const sentAt = now();
+      current = send(request, {
+        onDelta: (piece) => {
+          if (!live()) return;
+          firstWordAt ??= now();
+          text += piece;
+          // The headline is the first line: complete at the first line break after some text.
+          if (headlineAt === null && /\S[^\n]*\n/.test(text)) headlineAt = now();
+          handlers.onText(text);
+        },
+        onDone: (done) => {
+          if (!live()) return;
+          const doneAt = now();
+          current = null;
+          handlers.onDone(text, done, {
+            toSent: Math.round(sentAt - keyPressAt),
+            toFirstWord: Math.round((firstWordAt ?? doneAt) - keyPressAt),
+            toHeadline: Math.round((headlineAt ?? doneAt) - keyPressAt),
+            toDone: Math.round(doneAt - keyPressAt),
+          });
+        },
+        onError: (failure) => {
+          if (!live()) return;
+          current = null;
+          handlers.onError(failure);
+        },
+      });
+    },
+    cancel() {
+      generation += 1;
+      current?.cancel();
+      current = null;
+    },
+    busy: () => current !== null,
+  };
 }
