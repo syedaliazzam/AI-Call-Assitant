@@ -4,8 +4,9 @@
  *          this platform, the speech-model download progress, a "Connect" button, live audio
  *          meters for You and Them with any capture error (and a retry button) next to the right
  *          meter, a 5-second sound check that shows what each channel heard, the headphones tip
- *          and the speech-to-text health notice. Display only: LivePage owns the engine and the
- *          capture and passes their state in.
+ *          the speech-to-text health notice, and how many key terms Kite listens for (the
+ *          session's hotwords). Display only: LivePage owns the engine and the capture and passes
+ *          their state in.
  * Used by: src/features/live/LivePage.tsx
  * Depends on: src/ui/Button.tsx, src/ui/ProgressBar.tsx, src/features/live/AudioMeter.tsx,
  *             src/features/live/HealthNotice.tsx, src/features/live/speakers.ts
@@ -20,9 +21,18 @@ import type { Speaker } from '@/core/transcript/transcript';
 import { Button } from '@/ui/Button';
 import { ProgressBar } from '@/ui/ProgressBar';
 import { AudioMeter } from './AudioMeter';
-import type { DemoCall } from './demoHotwords';
 import { HealthNotice } from './HealthNotice';
 import { SPEAKER_STYLE } from './speakers';
+
+/** The call's details shown at the top of the Connect view. */
+export interface CallInfo {
+  /** Small heading above the company, for example "Sales call". */
+  title: string;
+  /** Company the call is with. */
+  company: string;
+  /** Role (interview) or topic. */
+  role: string;
+}
 
 /** State of the speech model, as LivePage sees it. */
 export interface ModelState {
@@ -48,7 +58,12 @@ export interface SoundCheck {
 /** Props for ConnectPanel. */
 export interface ConnectPanelProps {
   /** The call's details. */
-  call: DemoCall;
+  call: CallInfo;
+  /**
+   * How many key terms (hotwords) speech-to-text listens for in this session: the session's key
+   * terms, company, role and names found in its documents.
+   */
+  hotwordCount: number;
   /** Which platform the page runs on (decides the instructions only). */
   platform: 'desktop' | 'browser';
   /** The speech model. */
@@ -136,6 +151,7 @@ function HowToConnect({ platform }: { platform: 'desktop' | 'browser' }) {
  */
 export function ConnectPanel({
   call,
+  hotwordCount,
   platform,
   model,
   connection,
@@ -157,6 +173,11 @@ export function ConnectPanel({
         <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{call.title}</p>
         <h1 className="mt-1 text-2xl font-semibold text-slate-900">{call.company}</h1>
         <p className="mt-1 text-sm text-slate-500">{call.role}</p>
+        <p className="mt-2 text-sm text-slate-600">
+          {hotwordCount > 0
+            ? `Listening for ${hotwordCount} key term${hotwordCount === 1 ? '' : 's'} (names and terms from this session).`
+            : 'No key terms for this session. Add names to listen for under Edit → Preferences → Key terms.'}
+        </p>
       </header>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5">

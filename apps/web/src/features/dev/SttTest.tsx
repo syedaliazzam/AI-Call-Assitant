@@ -15,12 +15,23 @@
  *             src/platform (getPlatform, getDesktopInfo), src/ui/Button.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.2 (speech → partial text), §12 Day 2
  *
+ * "Hotwords from" (Day 3 Stage 4): fills the hotwords box from a session's hotwords (key terms,
+ * company, role, document names; core/stt/sessionHotwords.ts), the fixed test list, or none,
+ * to measure what session hotwords do to accuracy.
+ *
+ * "Beam width" (Day 3 Stage 4): 4 (sherpa-onnx's default, what live sessions use) or 8, to measure
+ * whether a wider beam lets hotwords reach names and what it costs in RTF. This page only; it
+ * takes effect on the next Start.
+ *
  * Transcript text stays in this page's memory only; it is never logged or sent anywhere.
  */
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import { createRecordingStream, type RecordingStream } from '@/core/audio/recordingStream';
+import { listDocuments } from '@/core/storage/documents';
+import { getSession, listSessions } from '@/core/storage/sessions';
+import type { Session } from '@/core/storage/types';
 import { clearSttCache, type DownloadProgress } from '@/core/stt/download';
 import {
   healthMessage,
@@ -37,7 +48,15 @@ import {
   TEST_RECORDINGS,
   testRecordingUrl,
 } from '@/core/stt/models';
-import type { ChannelId, EndpointReason, EngineStats, LoadStats } from '@/core/stt/protocol';
+import {
+  DEFAULT_BEAM_WIDTH,
+  type BeamWidth,
+  type ChannelId,
+  type EndpointReason,
+  type EngineStats,
+  type LoadStats,
+} from '@/core/stt/protocol';
+import { buildHotwords, hotwordsText as toHotwordsText } from '@/core/stt/sessionHotwords';
 import { buildModelSource, createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
 import { wordErrorRate, type WerResult } from '@/core/stt/wer';
 import { CaptureError, getDesktopInfo, getPlatform, type OtherSideSource } from '@/platform';
@@ -51,9 +70,9 @@ export const TEST_SENTENCES: readonly string[] = [
 ];
 
 /**
- * Hotwords prefilled for the accuracy test: the two names in sentence 3, one phrase per line
- * with a boost score. Day 3: the live page builds this list from the session's details and
- * documents (participant and company names, product terms) instead of a text box.
+ * Hotwords prefilled for the accuracy test ("Test list"): the two names in sentence 3, one
+ * phrase per line with a boost score. Live sessions build their own list instead
+ * (core/stt/sessionHotwords.ts); "Hotwords from" can load a session's list here.
  */
 export const TEST_HOTWORDS = ['Bluefin Route :2', 'Northwind Logistics :2'].join('\n');
 
@@ -140,6 +159,15 @@ export function SttTest() {
   const [callSource, setCallSource] = useState<OtherSideSource | null>(null);
   const [hotwordsText, setHotwordsText] = useState(TEST_HOTWORDS);
   const [hotwordsUsed, setHotwordsUsed] = useState('');
+  // Where the hotwords box was last filled from: 'test', 'none', or a session id.
+  const [hotwordSource, setHotwordSource] = useState('test');
+  // The source of the hotwords loaded into the running engine (for "Copy results").
+  const [hotwordSourceUsed, setHotwordSourceUsed] = useState('');
+  // Beam width chosen for the next Start, and the one the running engine was started with.
+  const [beamWidth, setBeamWidth] = useState<BeamWidth>(DEFAULT_BEAM_WIDTH);
+  const [beamWidthUsed, setBeamWidthUsed] = useState<BeamWidth>(DEFAULT_BEAM_WIDTH);
+  // Sessions on this computer, for "Hotwords from".
+  const [sessions, setSessions] = useState<Session[]>([]);
   // Accuracy: which sentence is being read, and the "You" final lines heard for each sentence.
   const [sentence, setSentence] = useState<number | null>(null);
   const [heard, setHeard] = useState<string[]>(['', '', '']);
@@ -256,6 +284,8 @@ export function SttTest() {
     setPartials({ you: '', them: '' });
     setStats(null);
     setHotwordsUsed(hotwordsText);
+    setHotwordSourceUsed(hotwordSource);
+    setBeamWidthUsed(beamWidth);
     monitor.current.reset();
     // The call audio is captured first, while the click still counts as a user gesture.
     let themStream: MediaStream | null = null;
@@ -268,6 +298,7 @@ export function SttTest() {
     }
     const created = createSttEngine({
       hotwords: hotwordsText,
+      beamWidth,
       onProgress: setProgress,
       onPartial: ({ channel, text }) => setPartials((current) => ({ ...current, [channel]: text })),
       onFinal: ({ channel, text, reason, latencyMs }) => {
@@ -310,11 +341,50 @@ export function SttTest() {
     setPhase('stopped');
   }
 
+  useEffect(() => {
+    listSessions()
+      .then(setSessions)
+      .catch(() => undefined);
+  }, []);
+
+  /**
+   * Fills the hotwords box from the fixed test list, nothing, or a session's hotwords.
+   *
+   * @param source 'test', 'none', or a session id.
+   */
+  async function chooseHotwordSource(source: string) {
+    setHotwordSource(source);
+    if (source === 'test') {
+      setHotwordsText(TEST_HOTWORDS);
+    } else if (source === 'none') {
+      setHotwordsText('');
+    } else {
+      const session = await getSession(source);
+      if (!session) return;
+      setHotwordsText(toHotwordsText(buildHotwords(session, await listDocuments(session.id))));
+    }
+  }
+
+  /**
+   * A short description of a hotword source for "Copy results" (no names: the session is
+   * described by its type only).
+   *
+   * @param source 'test', 'none', or a session id.
+   * @returns For example "session (sales)".
+   */
+  function describeSource(source: string): string {
+    if (source === 'test') return 'test list';
+    if (source === 'none') return 'none';
+    const session = sessions.find((candidate) => candidate.id === source);
+    return session ? `session (${session.type})` : 'session';
+  }
+
   /** Applies the hotwords box to the running engine. */
   async function applyHotwords() {
     if (!engine.current) return;
     await engine.current.setHotwords(hotwordsText);
     setHotwordsUsed(hotwordsText);
+    setHotwordSourceUsed(hotwordSource);
   }
 
   /**
@@ -375,7 +445,7 @@ export function SttTest() {
   function resultsText(): string {
     const lines = [
       `Where: ${where}; user agent: ${navigator.userAgent}`,
-      `Model: ${model.id} (source ${source}); decoding modified_beam_search; hotwords: ${hotwordsLoaded.length} (scores ${hotwordsLoaded.map((hotword) => hotword.score).join(', ') || '–'})`,
+      `Model: ${model.id} (source ${source}); decoding modified_beam_search, beam width ${beamWidthUsed}; hotwords from ${describeSource(hotwordSourceUsed)}: ${hotwordsLoaded.length} (scores ${hotwordsLoaded.map((hotword) => hotword.score).join(', ') || '–'})`,
       ...loads.map(
         (load, i) =>
           `Load ${i + 1} (${load.fromCache ? 'cache' : 'network'}${load.cacheAvailable ? '' : ', cache unavailable'}): total ${load.totalMs} ms = download ${load.downloadMs} + runtime ${load.runtimeInitMs} + model ${load.modelInitMs}; ${formatMb(load.bytes)}`,
@@ -438,6 +508,19 @@ export function SttTest() {
         {callSource && (
           <span className="text-xs text-emerald-700">Them = {CALL_SOURCE_LABEL[callSource]}</span>
         )}
+        <label className="flex items-center gap-2 text-sm text-slate-800">
+          Beam width:
+          {/* Read on Start only: the worker builds its recognizer once per load. */}
+          <select
+            value={beamWidth}
+            disabled={phase === 'loading' || phase === 'listening'}
+            onChange={(event) => setBeamWidth(Number(event.target.value) as BeamWidth)}
+            className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm"
+          >
+            <option value={4}>4 (live sessions)</option>
+            <option value={8}>8 (more CPU)</option>
+          </select>
+        </label>
         <Button
           variant="ghost"
           onClick={clearCache}
@@ -454,6 +537,24 @@ export function SttTest() {
       </section>
 
       <section className="flex flex-col gap-1">
+        <label htmlFor="stt-hotword-source" className="text-sm font-medium text-slate-800">
+          Hotwords from
+        </label>
+        <select
+          id="stt-hotword-source"
+          value={hotwordSource}
+          disabled={phase === 'loading'}
+          onChange={(event) => void chooseHotwordSource(event.target.value)}
+          className="mb-2 h-9 max-w-xl rounded-md border border-slate-300 bg-white px-2 text-sm"
+        >
+          <option value="test">Test list (Bluefin Route, Northwind Logistics)</option>
+          <option value="none">No hotwords</option>
+          {sessions.map((session) => (
+            <option key={session.id} value={session.id}>
+              Session: {session.company || 'Untitled'} · {session.role}
+            </option>
+          ))}
+        </select>
         <label htmlFor="stt-hotwords" className="text-sm font-medium text-slate-800">
           Hotwords (one phrase per line, optional boost score after &quot; :&quot;)
         </label>

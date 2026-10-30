@@ -25,6 +25,16 @@ export const CHANNELS: readonly ChannelId[] = ['you', 'them'];
  */
 export type EndpointReason = 'model' | 'pause' | 'flush';
 
+/**
+ * How many candidate texts beam search keeps (sherpa-onnx maxActivePaths). 4 is sherpa-onnx's
+ * default and what live sessions use; 8 is offered on /dev/stt-test only, to measure whether a
+ * wider beam lets hotwords reach names (Day 3 Stage 4 measurement) and what it costs in CPU.
+ */
+export type BeamWidth = 4 | 8;
+
+/** The beam width live sessions use. */
+export const DEFAULT_BEAM_WIDTH: BeamWidth = 4;
+
 /** How long loading took, and from where. */
 export interface LoadStats {
   /** Which model was loaded. */
@@ -99,7 +109,14 @@ export type ToWorker =
       /** Which model. */
       model: SttModelId;
       /** Runtime files, from our own origin (see models.ts). */
-      runtime: { loader: DownloadFile; wasm: DownloadFile; api: DownloadFile };
+      runtime: {
+        /** Emscripten loader script (defines the global `Module`). */
+        loader: DownloadFile;
+        /** The compiled sherpa-onnx WebAssembly code. */
+        wasm: DownloadFile;
+        /** sherpa-onnx's JavaScript API (createOnlineRecognizer). */
+        api: DownloadFile;
+      };
       /** Model files (local or remote). */
       files: {
         /** Encoder. */
@@ -115,6 +132,8 @@ export type ToWorker =
       };
       /** Hotwords buffer from formatHotwords() ('' for none). Session names; never logged. */
       hotwords: string;
+      /** Candidate texts kept by beam search (4 everywhere except /dev/stt-test). */
+      beamWidth: BeamWidth;
     }
   | {
       /** Start decoding a channel from a worklet's MessagePort (audio skips the main thread). */

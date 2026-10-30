@@ -15,9 +15,13 @@ export interface FakeStreamOptions {
   pieces?: string[];
   /** Usage on the final message (cache counts may be null, like the real API). */
   usage?: {
+    /** Input tokens that were neither written to nor read from the prompt cache. */
     input_tokens: number;
+    /** Tokens Claude generated. */
     output_tokens: number;
+    /** Tokens written to the prompt cache by this request (null = not reported). */
     cache_creation_input_tokens: number | null;
+    /** Tokens read from the prompt cache (null = not reported). */
     cache_read_input_tokens: number | null;
   };
   /** stop_reason on the final message. Default 'end_turn'. */

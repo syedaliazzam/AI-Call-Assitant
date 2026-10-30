@@ -21,7 +21,7 @@ It runs as a desktop app (macOS, Windows) and in Chrome or Edge. Start with [CLA
 
 ## Set up a development machine (once)
 
-Steps 1–2 are needed for everything; steps 3–5 for sign-in and Claude; step 6 for speech-to-text in development (`/live/demo`, `/dev/stt-test`, `test:stt`).
+Steps 1–2 are needed for everything; steps 3–5 for sign-in and Claude; step 6 for speech-to-text in development (live sessions, `/dev/stt-test`, `test:stt`).
 
 **1. Install the dependencies.**
 
@@ -81,18 +81,36 @@ See [ADR-0023](docs/decisions/ADR-0023-stt-model-hosting.md).
 pnpm dev
 ```
 
-Open http://localhost:3000 and sign in. Admins also see **Dev tools** in the sidebar:
+Open http://localhost:3000 and sign in. To try a live call, create a session on the dashboard, then **Open** it (in the browser, choose **Open in browser**). Use headphones, so the microphone does not pick up the other side.
 
-- `/live/demo`: the real live screen on a demo session (until Day 3 adds sessions). Use headphones, so the microphone does not pick up the other side.
-  1. Click **Connect**.
-  2. Pick where the other side comes from:
-     - **desktop app:** this computer's sound, with no picker;
-     - **browser:** pick the meeting tab and turn on **"Also share tab audio"**.
-  3. Talk. Your microphone is labelled **You** and the call is labelled **Them**. Grey text is still being heard; lines become final at pauses.
-- `/dev/stt-test`: speech-to-text with load time, real-time factor, lag, end of speech → final line latency (p50/p95) and the word error rate on 3 test sentences. "Copy results" gives the text for `docs/testing/benchmark-results.md`.
-- `/dev/claude-test`: streams a Claude reply and shows timings.
+1. Click **Connect**.
+2. Pick where the other side comes from:
+   - **desktop app:** this computer's sound, with no picker;
+   - **browser:** pick the meeting tab and turn on **"Also share tab audio"**.
+3. Talk. Your microphone is labelled **You** and the call is labelled **Them**. Grey text is still being heard; lines become final at pauses.
 
-Speech-to-text runs on your device; audio never leaves it. Known limitation: names and technical terms are often misheard ([ADR-0020](docs/decisions/ADR-0020-stt-model.md)).
+Admins also see **Dev tools** in the sidebar:
+
+- `/dev/stt-test`: speech-to-text with load time, real-time factor, lag, end of speech → final line latency (p50/p95) and the word error rate on 3 test sentences. "Hotwords from" fills the hotwords from a session; "Beam width" (4 or 8) is for measuring only. "Copy results" gives the text for `docs/testing/benchmark-results.md`.
+- `/dev/claude-test`: streams a Claude reply and shows timings. "Warm with session" sends two warm-ups for a session on this computer and shows the cache write, then the cache read.
+
+Speech-to-text runs on your device; audio never leaves it. Known limitation: names and technical terms are often misheard ([ADR-0020](docs/decisions/ADR-0020-stt-model.md)). Session key terms help a little; the answer prompt tells Claude to expect misheard names.
+
+### Sessions, documents and settings
+
+- **Create session** (dashboard): step 1 Details (type, company, role or topic, description, documents), step 2 Preferences (model, answer style, **key terms**, instructions, save transcript). **Edit** and **Delete** are on each session card.
+- **Documents:** PDF, DOCX or TXT, read into text **on this computer**. Limits: 20 MB per file, 100,000 characters per document, 150,000 per session. Encrypted PDFs and scanned (image-only) PDFs are refused with a clear message.
+- **Key terms** (one per line), the company, the role or topic and the document names become speech-to-text hotwords for the session ("Listening for N key terms" on the Connect view). They are also sent to Claude so it can recognise misheard names.
+- **Warm-up:** opening a session's live screen sends a warm-up (`mode: "warm"`, no answer), so the first answer reads Claude's prompt cache. The screen never waits for it.
+- **Saved transcript:** with "Save transcript" on, final lines are saved on this computer and shown under the Connect view next time. Echo lines are never saved.
+- **Settings:** the default preferences for new sessions, and **Delete all local data** (keeps the downloaded speech model).
+- **Where it is stored:** IndexedDB on this computer ([ADR-0024](docs/decisions/ADR-0024-local-session-storage.md)). **The browser and the desktop app each have their own sessions**, and so does each browser profile: a session created in Chrome does not appear in the desktop app. There is no sync in v1.
+
+Check the warm-up against the real Claude API (developer only, never in CI; uses `apps/web/.env.local` and prints only token counts and times):
+
+```sh
+pnpm --filter web verify:warm   # PASS = call 1 writes the cache, call 2 reads the same number of tokens
+```
 
 ## Run the desktop app
 
@@ -122,6 +140,42 @@ pnpm --filter web test:stt   # speech-to-text integration test (needs step 6; se
 `pnpm lint && pnpm typecheck && pnpm test` must pass before every commit. Unit tests never call the real Claude API and need no secrets.
 
 Run a command in a single package with `--filter`, for example `pnpm --filter web test`.
+
+**Production end-to-end test account.** The manual production suites (below) sign in as a dedicated account, `kite-e2e@example.com` (role user), created once with:
+
+```sh
+pnpm --filter web create-e2e-user   # creates the account, completes its first password change,
+                                    # appends KITE_E2E_EMAIL / KITE_E2E_PASSWORD to apps/web/.env.local
+```
+
+- The password is generated, never printed, and stored only in `apps/web/.env.local` (git-ignored).
+- **To disable the account:** sign in as an admin → **Admin** in the sidebar (`/admin/users`) → find `kite-e2e@example.com` → **Disable**. Its sign-in sessions end immediately, and the suites then fail at sign-in. **Enable** turns it back on.
+- `vercel env pull` rewrites `.env.local` and removes the two lines. To restore them, add them back by hand, or reset the password at `/admin/users` and then sign in once as the account to choose a new one.
+
+**Production end-to-end suites** (`apps/web/tests/e2e-prod/`, manual only, never in CI). They run against https://kite-call-assistant.vercel.app as the test account above, and print only PASS/FAIL with numbers:
+
+```sh
+pnpm --filter web test:e2e-prod   # builds the desktop shell, then runs both suites (about 3 minutes)
+```
+
+- **Chrome** (`chrome.spec.ts`), using Playwright's Chromium in headless mode:
+  - sign in;
+  - create a session with an invented one-page `.txt` and key terms;
+  - Open in browser shows "Listening for N key terms";
+  - the live page's warm-up writes the cache, and a second warm-up (reload) reads it;
+  - Connect with Chromium's fake microphone and a fake shared tab, both playing official test recordings;
+  - Go live, final lines appear;
+  - End, "Saved transcript" survives a reload;
+  - the session is deleted.
+- **Desktop** (`desktop.spec.ts`): the real Electron shell with a fresh profile, on production:
+  - sign in, and the dashboard is empty (its own data);
+  - create a session;
+  - Open goes straight to Connect;
+  - Connect shows no picker;
+  - Go live, final lines appear, End;
+  - Delete all local data leaves the dashboard empty.
+- Each run downloads the speech model again (about 1 minute), because the browser profiles are fresh.
+- **Known test-environment effect:** with Chromium's fake media, the "You" channel also hears the fake "Them" audio. Its lines repeat "Them", and the echo filter hides them (as it should), so the suites count final lines from either side. A real microphone shows "You" lines as normal.
 
 **Speech-to-text integration test** (`test:stt`): Chromium's fake microphone plays two official LibriSpeech recordings (`apps/web/tests/fixtures/audio/`, see its `SOURCES.md`) through the real pipeline. It checks for a final line and a word error rate of 10% or less.
 

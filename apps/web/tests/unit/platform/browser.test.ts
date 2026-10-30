@@ -1,5 +1,6 @@
 /**
  * Tests for apps/web/src/platform/browser.ts (and the shared microphone code in media.ts):
+ * kind 'browser' with the Choose platform dialog (offersPlatformChoice);
  * getMicStream() calls getUserMedia with the microphone settings and fails clearly without the
  * MediaDevices API; getOtherSideStream() asks for a tab with its audio using Chrome's options,
  * returns the stream with its source ('tab-audio' / 'screen-audio'), keeps the video track,
@@ -14,8 +15,9 @@ import { MIC_CONSTRAINTS } from '@/platform/media';
 import { domError, fakeStream, fakeTrack, stubDisplayMedia } from './fakeMedia';
 
 describe('browserPlatform', () => {
-  it('reports kind "browser"', () => {
+  it('reports kind "browser" and shows the Choose platform dialog', () => {
     expect(browserPlatform.kind).toBe('browser');
+    expect(browserPlatform.offersPlatformChoice).toBe(true);
   });
 
   it('getMicStream opens the microphone with getUserMedia', async () => {

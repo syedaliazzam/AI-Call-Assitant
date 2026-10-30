@@ -1,10 +1,11 @@
 /**
  * File: apps/web/app/api/answer/route.ts
  * Purpose: POST /api/answer: checks sign-in and the request body, calls Claude, and streams the
- *          reply back as server-sent events (delta, done, error). Day 1 supports mode 'hello'.
+ *          reply back as server-sent events (delta, done, error). Modes: 'hello' (Day 1 test) and
+ *          'warm' (Day 3: writes a session's prompt cache; no text, just done with usage).
  * Used by: src/core/answer/answerClient.ts (browser)
  * Depends on: src/server/auth.ts, src/server/env.ts, src/server/validate.ts, src/server/claude.ts,
- *             src/server/sse.ts, src/server/prompts/hello.ts
+ *             src/server/sse.ts, src/server/prompts/hello.ts, src/server/prompt.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6 (answer flow), §7.2 (/api/answer)
  *
  * The reply must stream, not be collected and sent at the end: "time to first word" is the main
@@ -14,15 +15,25 @@
  *
  * Logs contain ids, timings and token counts only, never prompt or answer text.
  */
-import type { AnswerErrorCode, AnswerEvent, AnswerMode, AnswerTimings } from '@kite/shared';
+import type {
+  AnswerErrorCode,
+  AnswerEvent,
+  AnswerMode,
+  AnswerRequest,
+  AnswerTimings,
+  ModelTier,
+} from '@kite/shared';
 import { getSession } from '@/server/auth';
 import {
   CLAUDE_TIMEOUT_MS,
   describeClaudeError,
   errorLogDetails,
   streamReply,
+  warmCache,
+  type ReplyResult,
 } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
+import { buildPrompt } from '@/server/prompt';
 import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts/hello';
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
 import { MAX_REQUEST_BYTES, parseAnswerRequest } from '@/server/validate';
@@ -35,8 +46,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /** Which day each not-yet-built mode arrives (architecture §12.3). */
-const MODE_DAY: Record<Exclude<AnswerMode, 'hello'>, number> = {
-  warm: 3,
+const MODE_DAY: Record<Exclude<AnswerMode, 'hello' | 'warm'>, number> = {
   answer: 4,
   chat: 4,
   screenshot: 5,
@@ -65,6 +75,44 @@ function jsonError(status: number, code: AnswerErrorCode, message: string): Resp
  */
 function elapsed(from: number, to: number): number {
   return Math.round(to - from);
+}
+
+/** Options for warmReply(). */
+interface WarmReplyOptions {
+  /** Full model name. */
+  model: string;
+  /** Its tier (thinking setting). */
+  tier: ModelTier;
+  /** Aborts the request. */
+  signal: AbortSignal;
+  /** Called when Claude's response arrives (there is no stream to open). */
+  onResponse: () => void;
+}
+
+/**
+ * A warm-up as a text source with no text, so it goes through the same event stream as a reply:
+ * the browser receives only `done` (usage and timings) or `error`. The request starts on the
+ * first read of the stream.
+ *
+ * @param request A validated 'warm' request (with session).
+ * @param options Model, tier, abort signal and the response callback.
+ * @returns A generator that yields nothing and returns the warm-up's usage.
+ * Called from: POST()
+ */
+async function* warmReply(
+  request: AnswerRequest,
+  options: WarmReplyOptions,
+): AsyncGenerator<string, ReplyResult, undefined> {
+  const prompt = buildPrompt(request);
+  const result = await warmCache({
+    model: options.model,
+    tier: options.tier,
+    system: prompt.system,
+    messages: prompt.messages,
+    signal: options.signal,
+  });
+  options.onResponse();
+  return result;
 }
 
 /**
@@ -105,14 +153,15 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.ok) return jsonError(400, 'bad_request', parsed.message);
 
   const { mode } = parsed.data;
-  if (mode !== 'hello') {
+  if (mode !== 'hello' && mode !== 'warm') {
     return jsonError(400, 'not_implemented', `not implemented yet: Day ${MODE_DAY[mode]}`);
   }
 
+  const tier: ModelTier = parsed.data.model ?? 'fast';
   let model: string;
   try {
     const env = getClaudeEnv();
-    model = parsed.data.model === 'smart' ? env.modelSmart : env.modelFast;
+    model = tier === 'smart' ? env.modelSmart : env.modelFast;
   } catch (error) {
     // The message names missing variables only (no values), so it is safe to log.
     console.error('answer: Claude is not configured', {
@@ -125,16 +174,21 @@ export async function POST(request: Request): Promise<Response> {
   // Stop Claude when the browser disconnects or the 60 s limit passes, whichever comes first.
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(CLAUDE_TIMEOUT_MS)]);
   let streamOpenAt: number | null = null;
-  const source = streamReply({
-    model,
-    system: HELLO_SYSTEM,
-    messages: HELLO_MESSAGES,
-    maxTokens: HELLO_MAX_TOKENS,
-    signal,
-    onStreamOpen: () => {
-      streamOpenAt ??= performance.now();
-    },
-  });
+  const markOpen = () => {
+    streamOpenAt ??= performance.now();
+  };
+  const source =
+    mode === 'warm'
+      ? warmReply(parsed.data, { model, tier, signal, onResponse: markOpen })
+      : streamReply({
+          model,
+          tier,
+          system: HELLO_SYSTEM,
+          messages: HELLO_MESSAGES,
+          maxTokens: HELLO_MAX_TOKENS,
+          signal,
+          onStreamOpen: markOpen,
+        });
 
   const body = toEventStream(source, {
     onDone: (result, stats): AnswerEvent => {

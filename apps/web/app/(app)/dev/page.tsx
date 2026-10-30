@@ -16,12 +16,6 @@ const TOOLS = [
     description: 'Streams a fixed test reply and shows timings and prompt-cache use.',
   },
   {
-    href: '/live/demo',
-    title: 'Live demo (Connect + transcript)',
-    description:
-      'The real live screen on a demo session: connect both sides of a call and watch the transcript. Until Day 3 adds sessions.',
-  },
-  {
     href: '/dev/stt-test',
     title: 'Speech-to-text test',
     description:

@@ -1,1 +1,10 @@
 * text=auto eol=lf
+
+# Test fixtures must stay byte-for-byte as generated (SHA-256s in their SOURCES.md files).
+# PDF and DOCX files are binary even when they contain no zero bytes (Git's binary test), so
+# line-ending conversion must never touch them: a changed byte breaks a PDF's offsets.
+*.pdf binary
+*.docx binary
+*.wav binary
+# notes.txt deliberately has Windows line ends (CRLF), to test whitespace normalisation.
+apps/web/tests/fixtures/documents/notes.txt -text

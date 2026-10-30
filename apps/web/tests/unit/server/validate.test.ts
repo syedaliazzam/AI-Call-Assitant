@@ -1,17 +1,20 @@
 /**
  * Tests for apps/web/src/server/validate.ts, parseAnswerRequest():
- * accepts a hello request and a full answer request, rejects unknown modes and fields, enforces
- * the 150k-character document total, and reports field paths without echoing submitted values.
+ * accepts a hello request, a warm request and a full answer request; rejects unknown modes and
+ * fields, a warm request without a session, and more than 100 key terms; enforces the
+ * 150k-character document total; and reports field paths without echoing submitted values.
  */
 import { describe, expect, it } from 'vitest';
-import { MAX_DOCUMENT_CHARS, parseAnswerRequest } from '@/server/validate';
+import { MAX_DOCUMENT_CHARS, MAX_KEY_TERMS, parseAnswerRequest } from '@/server/validate';
 
 /** A complete, valid session block. */
 const SESSION = {
   type: 'sales',
   company: 'Acme',
   role: 'Account review',
+  description: 'Renewal call.',
   instructions: 'Be brief.',
+  keyTerms: ['Bluefin Route'],
   style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
   documents: [{ name: 'pricing.pdf', text: 'Price list' }],
 };
@@ -31,6 +34,29 @@ describe('parseAnswerRequest', () => {
       image: null,
     });
     expect(result.ok).toBe(true);
+  });
+
+  it('accepts a warm request with a session', () => {
+    expect(parseAnswerRequest({ mode: 'warm', model: 'fast', session: SESSION }).ok).toBe(true);
+  });
+
+  it('rejects a warm request without a session, naming the field', () => {
+    expect(parseAnswerRequest({ mode: 'warm' })).toEqual({
+      ok: false,
+      message: 'session: required for mode warm',
+    });
+  });
+
+  it('rejects a session without key terms, and more than the key-term limit', () => {
+    const { keyTerms: _omitted, ...withoutKeyTerms } = SESSION;
+    expect(parseAnswerRequest({ mode: 'warm', session: withoutKeyTerms })).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('session.keyTerms'),
+    });
+    const tooMany = Array.from({ length: MAX_KEY_TERMS + 1 }, (_, i) => `Term ${i}`);
+    expect(
+      parseAnswerRequest({ mode: 'warm', session: { ...SESSION, keyTerms: tooMany } }).ok,
+    ).toBe(false);
   });
 
   it('rejects an unknown mode', () => {

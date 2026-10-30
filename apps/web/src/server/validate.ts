@@ -17,6 +17,9 @@ export const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 /** Largest total length of all session document texts, in characters (architecture §7.2). */
 export const MAX_DOCUMENT_CHARS = 150_000;
 
+/** Most key terms a session may send (the hotword list keeps at most 100 phrases). */
+export const MAX_KEY_TERMS = 100;
+
 /** How answers should look (AnswerStyle). */
 const styleSchema = z.object({
   format: z.string().max(50),
@@ -36,7 +39,10 @@ const sessionSchema = z
     type: z.string().max(50),
     company: z.string().max(200),
     role: z.string().max(200),
+    // Same limit as the wizard's description box.
+    description: z.string().max(5_000),
     instructions: z.string().max(5_000),
+    keyTerms: z.array(z.string().max(200)).max(MAX_KEY_TERMS),
     style: styleSchema,
     documents: z.array(documentSchema).max(20),
   })
@@ -71,7 +77,12 @@ export const answerRequestSchema = z
       .nullable()
       .optional(),
   })
-  .strict() satisfies z.ZodType<AnswerRequest>;
+  .strict()
+  // A warm-up writes the session's cached prompt, so it needs the session.
+  .refine((request) => request.mode !== 'warm' || request.session !== undefined, {
+    path: ['session'],
+    message: 'required for mode warm',
+  }) satisfies z.ZodType<AnswerRequest>;
 
 /** Result of parseAnswerRequest(). */
 export type ParseResult =

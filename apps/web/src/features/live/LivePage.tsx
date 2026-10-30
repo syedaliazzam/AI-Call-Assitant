@@ -4,15 +4,19 @@
  *          meters, sound check), then the live view (meters, the transcript strip, End). It owns
  *          the speech-to-text engine, the call capture and the in-memory transcript, all through
  *          core/ (it never calls media APIs itself).
- * Used by: app/(app)/live/[id]/page.tsx
+ * Used by: src/features/live/LiveSession.tsx (which loads the session first)
  * Depends on: src/core/stt/sttEngine.ts, src/core/stt/health.ts, src/core/audio/capture.ts,
- *             src/core/transcript/transcript.ts, src/platform (kind, for the instructions only),
- *             src/features/live/* (ConnectPanel, TranscriptStrip, AudioMeter, demoHotwords)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §6.1
+ *             src/core/transcript (transcript, saver), src/core/storage (sessions, utterances),
+ *             src/platform (kind, for the instructions only),
+ *             src/features/live/* (ConnectPanel, TranscriptStrip, AudioMeter)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §6.1,
+ *               §7.4 (save-transcript toggle); day-03-sessions.md Stage 4
  *
- * Day 2: only the demo session exists (demoHotwords.ts). Day 3 loads the session (details,
- * documents, hotwords) from IndexedDB and saves final lines when "save transcript" is on.
- * Transcript text stays in this page's memory; it is never logged.
+ * The session's hotwords are given to the engine when it is created, as the page opens: before
+ * Connect, and without the ~2 s recognizer rebuild a later setHotwords() would cost. With "save
+ * transcript" on, final lines are saved as they arrive (core/transcript/saver.ts; never echo
+ * lines); with it off, they stay in memory and are discarded at End. Transcript text is never
+ * logged.
  */
 'use client';
 
@@ -23,20 +27,32 @@ import {
   type CallCapture,
   type ChannelLevels,
 } from '@/core/audio/capture';
+import { markSessionActive, updateSession } from '@/core/storage/sessions';
+import type { Session, StoredUtterance } from '@/core/storage/types';
+import { listUtterances } from '@/core/storage/utterances';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
+import { startTranscriptSaver, type TranscriptSaver } from '@/core/transcript/saver';
 import { createTranscript, type Speaker } from '@/core/transcript/transcript';
+import { SESSION_TYPE_LABELS } from '@/features/session-setup/labels';
 import { getPlatform, type OtherSideSource } from '@/platform';
 import { Button } from '@/ui/Button';
 import { AudioMeter } from './AudioMeter';
 import {
   ConnectPanel,
+  type CallInfo,
   type ConnectionState,
   type ModelState,
   type SoundCheck,
 } from './ConnectPanel';
-import { DEMO_CALL, DEMO_HOTWORDS } from './demoHotwords';
+import { SavedTranscript } from './SavedTranscript';
 import { TranscriptStrip } from './TranscriptStrip';
+
+/**
+ * How often a running call refreshes the session's lastActiveAt, in ms. Well under the 12-hour
+ * limit after which the dashboard shows a "live" session as ended (core/storage/sessions.ts).
+ */
+const ACTIVE_REFRESH_MS = 60_000;
 
 /** How long the echo note stays after the latest hidden echo line, in ms. */
 const ECHO_NOTE_MS = 60_000;
@@ -53,8 +69,17 @@ const THEM_SOURCE_LABEL: Record<OtherSideSource, string> = {
 
 /** Props for LivePage. */
 export interface LivePageProps {
-  /** The session id from the URL (Day 2: always 'demo'). */
-  sessionId: string;
+  /** The session, loaded from this computer by LiveSession. */
+  session: Session;
+  /**
+   * The session's hotwords in the engine's text format ("PHRASE :score" per line; '' = none),
+   * from buildHotwords() in core/stt/sessionHotwords.ts.
+   */
+  hotwords: string;
+  /** How many hotwords that is (shown as "Listening for N key terms"). */
+  hotwordCount: number;
+  /** Transcript lines saved by earlier calls of this session (oldest first). */
+  savedLines: readonly StoredUtterance[];
 }
 
 /**
@@ -110,7 +135,7 @@ function channelEndedMessage(speaker: Speaker, platform: 'desktop' | 'browser'):
  * @returns The Connect view or the live view.
  * Rendered by: app/(app)/live/[id]/page.tsx
  */
-export function LivePage({ sessionId }: LivePageProps) {
+export function LivePage({ session, hotwords, hotwordCount, savedLines }: LivePageProps) {
   // Display only (instructions and messages); behaviour differences live in src/platform.
   // The server snapshot is 'browser'; the desktop app switches after hydration.
   const platform = useSyncExternalStore(
@@ -144,8 +169,13 @@ export function LivePage({ sessionId }: LivePageProps) {
   // Unix ms, refreshed once a second while connected (for the echo note; render must stay pure).
   const [now, setNow] = useState(0);
 
+  // Saved lines shown in the Connect view; refreshed after a call that saved its transcript.
+  const [saved, setSaved] = useState<readonly StoredUtterance[]>(savedLines);
+  const [saveFailed, setSaveFailed] = useState(false);
+
   const engineRef = useRef<SttEngine | null>(null);
   const captureRef = useRef<CallCapture | null>(null);
+  const saverRef = useRef<TranscriptSaver | null>(null);
   const monitor = useRef(new SttHealthMonitor());
   /** The running sound check: when it ends and what each channel said so far. */
   const checkRef = useRef<{ endsAt: number; heard: Record<Speaker, string> } | null>(null);
@@ -167,7 +197,7 @@ export function LivePage({ sessionId }: LivePageProps) {
     // reach the screen.
     let active = true;
     const engine = createSttEngine({
-      hotwords: DEMO_HOTWORDS,
+      hotwords,
       onProgress: (progress) => {
         if (active) setModel((current) => ({ ...current, progress }));
       },
@@ -196,12 +226,24 @@ export function LivePage({ sessionId }: LivePageProps) {
     );
     return () => {
       active = false;
+      saverRef.current?.stop();
+      saverRef.current = null;
       captureRef.current?.stop();
       captureRef.current = null;
       engine.stop();
       engineRef.current = null;
     };
-  }, [modelAttempt, transcript, noteHeard]);
+  }, [modelAttempt, transcript, noteHeard, hotwords]);
+
+  // While connected: keep the session's lastActiveAt fresh, so the dashboard shows it as live
+  // (and as ended once a crash or a closed window stops the refreshes for 12 hours).
+  useEffect(() => {
+    if (connection !== 'connected') return;
+    const timer = setInterval(() => {
+      markSessionActive(session.id).catch(() => undefined);
+    }, ACTIVE_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [connection, session.id]);
 
   // Health and the sound-check countdown, once a second while connected.
   useEffect(() => {
@@ -251,6 +293,15 @@ export function LivePage({ sessionId }: LivePageProps) {
       captureRef.current = capture;
       setThemSource(capture.themSource);
       setConnection('connected');
+      // The status and activity time are bookkeeping: a failure must not stop the call.
+      markSessionActive(session.id).catch(() => undefined);
+      // "Save transcript" on: save final lines as they arrive (one saver per call; a
+      // reconnect keeps the running one).
+      if (session.saveTranscript && !saverRef.current) {
+        saverRef.current = startTranscriptSaver(transcript, session.id, {
+          onError: () => setSaveFailed(true),
+        });
+      }
       // Start the sound check.
       checkRef.current = {
         endsAt: performance.now() + SOUND_CHECK_SECONDS * 1000,
@@ -268,47 +319,72 @@ export function LivePage({ sessionId }: LivePageProps) {
     }
   };
 
-  /** Ends the call: stops both channels and goes back to the Connect view. */
+  /**
+   * Ends the call: stops both channels, finishes saving (when on), marks the session ended,
+   * clears the in-memory transcript (with saving off, this discards it, architecture §7.4), and
+   * goes back to the Connect view.
+   */
   const end = () => {
     captureRef.current?.stop();
     captureRef.current = null;
     checkRef.current = null;
+    const saver = saverRef.current;
+    saverRef.current = null;
+    saver?.stop();
+    transcript.clear();
     setConnection('idle');
     setLevels({ you: 0, them: 0 });
     setSoundCheck(null);
     setChannelErrors({});
     setView('connect');
+    updateSession(session.id, { status: 'ended' }).catch(() => undefined);
+    if (saver) {
+      // Show the lines just saved under "Saved transcript" once the last writes are done.
+      void saver
+        .flush()
+        .then(() => listUtterances(session.id))
+        .then(setSaved)
+        .catch(() => undefined);
+    }
   };
 
   const echoStats = transcript.echoStats();
   const echoNoteVisible = echoStats.lastAt !== null && now - echoStats.lastAt < ECHO_NOTE_MS;
 
+  const call: CallInfo = {
+    title: `${SESSION_TYPE_LABELS[session.type]} call`,
+    company: session.company,
+    role: session.role,
+  };
+
   if (view === 'connect') {
     return (
-      <ConnectPanel
-        call={DEMO_CALL}
-        platform={platform}
-        model={model}
-        connection={connection}
-        levels={levels}
-        channelErrors={channelErrors}
-        soundCheck={soundCheck}
-        health={health}
-        onConnect={() => void connect()}
-        onRetryModel={retryModel}
-        onContinue={() => setView('live')}
-      />
+      <>
+        <ConnectPanel
+          call={call}
+          hotwordCount={hotwordCount}
+          platform={platform}
+          model={model}
+          connection={connection}
+          levels={levels}
+          channelErrors={channelErrors}
+          soundCheck={soundCheck}
+          health={health}
+          onConnect={() => void connect()}
+          onRetryModel={retryModel}
+          onContinue={() => setView('live')}
+        />
+        <SavedTranscript lines={saved} saving={session.saveTranscript} />
+      </>
     );
   }
 
   return (
-    <div className="flex h-screen flex-col gap-4 px-8 py-6" data-session={sessionId}>
+    <div className="flex h-screen flex-col gap-4 px-8 py-6">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-            {DEMO_CALL.title}
-          </p>
-          <h1 className="text-xl font-semibold text-slate-900">{DEMO_CALL.company}</h1>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{call.title}</p>
+          <h1 className="text-xl font-semibold text-slate-900">{call.company}</h1>
           {themSource && (
             <p className="text-xs text-slate-500">Them = {THEM_SOURCE_LABEL[themSource]}</p>
           )}
@@ -345,6 +421,13 @@ export function LivePage({ sessionId }: LivePageProps) {
               </Button>
             </div>
           ),
+      )}
+
+      {saveFailed && (
+        <p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Some transcript lines could not be saved on this computer (is the disk full?). The call
+          continues; Kite keeps trying.
+        </p>
       )}
 
       {/* Echo lines (the other side's voice from the speakers, picked up by the microphone) are

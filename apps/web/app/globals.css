@@ -10,8 +10,10 @@
 @theme {
   /* Kite brand colour (indigo-like), used for primary buttons and the active link. */
   --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
   --color-brand-600: #4f46e5;
   --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
 
   /* The font loaded in app/layout.tsx (next/font sets --font-inter), with system fallbacks. */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;

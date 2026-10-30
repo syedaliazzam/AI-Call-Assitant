@@ -30,7 +30,14 @@ import {
   sha256Hex,
 } from './download';
 import { BPE_VOCAB_NAME, BPE_VOCAB_SHA256, type DownloadFile } from './models';
-import type { ChannelId, EngineStats, FromWorker, ToWorker } from './protocol';
+import {
+  DEFAULT_BEAM_WIDTH,
+  type BeamWidth,
+  type ChannelId,
+  type EngineStats,
+  type FromWorker,
+  type ToWorker,
+} from './protocol';
 import { sentencePieceVocab } from './sentencepiece';
 
 /** Endpoint rule 2: decoded silence (s) after some text that ends an utterance. */
@@ -47,13 +54,30 @@ interface OnlineRecognizer extends RecognizerLike {
 
 /** The parts of the Emscripten `Module` object the worker sets or calls. */
 interface EmscriptenModule {
+  /** Turns a file name the runtime asks for into a URL (next to the verified .wasm). */
   locateFile?: (path: string) => string;
+  /** The verified .wasm bytes, so the runtime does not fetch the file a second time. */
   wasmBinary?: ArrayBuffer;
+  /**
+   * Supplies the runtime's bundled data package. Kite returns an empty buffer, so the bundle's
+   * 191 MB model is never downloaded (our pinned model files are written instead).
+   */
   getPreloadedPackage?: (name: string, size: number) => ArrayBuffer;
+  /** Called once the WebAssembly runtime has started. */
   onRuntimeInitialized?: () => void;
+  /** Receives the runtime's console output (Kite drops it: model details, not timings). */
   print?: (text: string) => void;
+  /** Receives the runtime's error output (dropped, like print). */
   printErr?: (text: string) => void;
+  /**
+   * Emscripten file system: creates a folder (the model folder /kite-model). Set by the runtime
+   * once it has started.
+   */
   FS_createPath?: (parent: string, path: string, canRead: boolean, canWrite: boolean) => void;
+  /**
+   * Emscripten file system: writes a file from bytes (each verified model file). Set by the
+   * runtime once it has started.
+   */
   FS_createDataFile?: (
     parent: string,
     name: string,
@@ -68,10 +92,15 @@ interface EmscriptenModule {
 
 /** The worker's global scope, as far as this file needs it. */
 interface WorkerScope {
+  /** The Emscripten Module object; the worker sets it before running the loader script. */
   Module?: EmscriptenModule;
+  /** Defined by sherpa-onnx's API script (sherpa-onnx-asr.js) once it has run. */
   createOnlineRecognizer?: (runtime: EmscriptenModule, config: unknown) => OnlineRecognizer;
+  /** Runs scripts in this classic worker (used with Blob URLs of the verified bytes). */
   importScripts: (...urls: string[]) => void;
+  /** Sends a message to the page. */
   postMessage(message: FromWorker, transfer?: Transferable[]): void;
+  /** Handles messages from the page. */
   onmessage: ((event: MessageEvent<ToWorker>) => void) | null;
 }
 
@@ -89,10 +118,15 @@ function send(message: FromWorker): void {
 
 /** Paths of the model files inside the WebAssembly file system, once written. */
 interface ModelPaths {
+  /** Path of the encoder (.onnx) in the runtime's file system, for example /kite-model/… */
   encoder: string;
+  /** Path of the decoder (.onnx). */
   decoder: string;
+  /** Path of the joiner (.onnx). */
   joiner: string;
+  /** Path of tokens.txt (the model's vocabulary). */
   tokens: string;
+  /** Path of bpe.vocab, derived from bpe.model; needed to encode hotwords. */
   bpeVocab: string;
 }
 
@@ -100,6 +134,8 @@ interface ModelPaths {
 let runtime: EmscriptenModule | null = null;
 let recognizer: OnlineRecognizer | null = null;
 let modelPaths: ModelPaths | null = null;
+/** Beam width from 'load'; kept so 'set-hotwords' re-creates the recognizer with the same one. */
+let beamWidth: BeamWidth = DEFAULT_BEAM_WIDTH;
 const channels = new Map<ChannelId, ChannelDecoder>();
 /** Cancels a download in progress (on 'stop'). */
 let loadAbort: AbortController | null = null;
@@ -122,7 +158,7 @@ function runVerifiedScript(bytes: ArrayBuffer): void {
 }
 
 /**
- * Creates the recognizer with the given hotwords.
+ * Creates the recognizer with the given hotwords and the beam width set by 'load'.
  *
  * @param hotwords Hotwords buffer ('' for none).
  * @returns The recognizer.
@@ -142,9 +178,10 @@ function createRecognizer(hotwords: string): OnlineRecognizer {
       modelingUnit: 'bpe',
       bpeVocab: paths.bpeVocab,
     },
-    // Hotwords need beam search; greedy search ignores them. 4 paths is sherpa-onnx's default.
+    // Hotwords need beam search; greedy search ignores them. 4 paths is sherpa-onnx's default
+    // and what live sessions use; /dev/stt-test can ask for 8 (more CPU) to measure it.
     decodingMethod: 'modified_beam_search',
-    maxActivePaths: 4,
+    maxActivePaths: beamWidth,
     hotwordsBuf: hotwords,
     // Byte length: the C side copies exactly this many bytes from the buffer.
     hotwordsBufSize: new TextEncoder().encode(hotwords).length,
@@ -243,6 +280,7 @@ async function loadModel(message: Extract<ToWorker, { type: 'load' }>): Promise<
     tokens: path(files.tokens.name),
     bpeVocab: path(BPE_VOCAB_NAME),
   };
+  beamWidth = message.beamWidth;
   recognizer = createRecognizer(message.hotwords);
   const readyAt = performance.now();
 
