@@ -658,6 +658,10 @@ Checks:
 
 - [ ] Fresh install from the installers on a clean Mac and Windows PC in under 5 minutes.
 - [ ] All tests green on CI (Linux web, macOS and Windows desktop).
+- [ ] **macOS checks (added Day 5):**
+  - Screen-share protection of the compact window in a full-screen share from Zoom, Teams and Google Meet (Chrome). On recent macOS versions, apps built on ScreenCaptureKit may capture the window despite `setContentProtection` (Electron docs); record each app and version, and say so honestly in the app if it is visible.
+  - Screen Recording permission for screenshots (a denied permission shows the typed error).
+  - The compact window: always on top, shown without taking focus, position remembered.
 
 **Day 7: Test and release (Mon 2 Nov)**
 
@@ -683,6 +687,8 @@ Release checks (all must pass):
 | WebAssembly STT too slow on some laptops, especially on battery | Day 1–2 (measured) | Two channels used 0.30–0.44 of one core plugged in, **0.86 on battery** (still keeping up; the "Plug in your laptop" hint appears above 0.5). Fallbacks: the hint; one channel at a time; the native desktop engine behind `src/platform/` |
 | STT model download size (204.5 MB first load) | Day 2 | Resolved for hosting: pinned Hugging Face URLs with SHA-256 checks and Cache Storage (ADR-0023); fallback Vercel Blob (Pro), Cloudflare R2 or a company server by changing only the URLs. Remaining: the first load takes about 30 s; Day 3 starts it when a session opens |
 | Short echoes on speakers ("OKAY SO") | Day 2 (measured) | The echo filter judges only lines of 4+ words, so short replies are never hidden by mistake. Recommend headphones in the Connect view |
+| **macOS: screen-share protection may not hide the compact window** | Day 5 (Electron docs; not verified: no Mac) | macOS applies `NSWindowSharingNone`, but apps built on ScreenCaptureKit (many recent meeting apps) can still capture the window. Checked on Day 6 on a Mac; if visible, the app says so next to the protection switch. Fallback: share a single window, or keep Kite on another monitor |
+| Screenshots cover one monitor only | Day 5 | The desktop app captures the display the Kite window is on (the primary one if that cannot be told). A known v1 limit; a display picker is backlog |
 | macOS system-audio loopback fails in Electron | Day 2 (not yet verified: no Mac; deferred to Day 6/7) | Use the browser path inside the shell (share-picker with audio), or a free virtual audio device (BlackHole) |
 | Neon free-plan limits reached | Any | Upgrade the Neon plan; only accounts and sessions are stored, so data is tiny |
 | Latency above target **from far regions** | Day 4 (measured) | First word p50 about 1.1 s from Pakistan, of which about 0.5 s is the network to the US function; the server part (0.56–0.64 s) is within target. The §6.2 levers did not help further. Options: measure from the team's main location; Better Auth's cookie cache to skip the sign-in database lookup per request; a region near most users if they are not in the US (with the database and Claude a round trip away); keep Haiku; trim context |
