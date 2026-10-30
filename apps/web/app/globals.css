@@ -1,20 +1,10 @@
 /**
  * File: apps/web/app/globals.css
- * Purpose: Global styles: loads Tailwind CSS and defines Kite's theme tokens (brand colour, font).
+ * Purpose: Global styles: loads Tailwind CSS and Kite's design tokens (src/ui/theme.css, the
+ *          only file with colour values).
  * Used by: app/layout.tsx
- * Depends on: tailwindcss (v4, via postcss.config.mjs)
+ * Depends on: tailwindcss (v4, via postcss.config.mjs), src/ui/theme.css
+ * Architecture: docs/design/kite-ui-theme.md §3, §8
  */
 @import 'tailwindcss';
-
-/* Theme tokens become Tailwind classes, for example bg-brand-600 or text-brand-700. */
-@theme {
-  /* Kite brand colour (indigo-like), used for primary buttons and the active link. */
-  --color-brand-50: #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
-  --color-brand-800: #3730a3;
-
-  /* The font loaded in app/layout.tsx (next/font sets --font-inter), with system fallbacks. */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-}
+@import '../src/ui/theme.css';

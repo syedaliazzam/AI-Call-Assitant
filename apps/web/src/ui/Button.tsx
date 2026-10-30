@@ -4,6 +4,7 @@
  * Used by: src/features/dashboard/Dashboard.tsx (and every later feature)
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 import type { ButtonHTMLAttributes } from 'react';
 
@@ -17,10 +18,10 @@ export type ButtonSize = 'sm' | 'md';
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /**
    * Visual style. Default 'primary'.
-   * - primary: the main action on a screen (filled).
-   * - secondary: other actions (outlined).
+   * - primary: the main action on a screen (cyan, navy text); one per view.
+   * - secondary: other actions (outlined; navy on light pages, white on dark surfaces).
    * - ghost: low-emphasis actions such as "Cancel" (text only).
-   * - danger: destructive actions such as "Delete" (red).
+   * - danger: destructive actions such as "Delete" (outlined in the danger colour).
    */
   variant?: ButtonVariant;
   /** Size. Default 'md'; 'sm' is for table rows and toolbars. */
@@ -29,16 +30,22 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 /** Tailwind classes for each variant. */
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: 'bg-brand-600 text-white hover:bg-brand-700',
-  secondary: 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50',
-  ghost: 'text-slate-700 hover:bg-slate-100',
-  danger: 'bg-red-600 text-white hover:bg-red-700',
+  // Cyan with navy text (6.0:1) and the site's inset underline. One per view.
+  primary:
+    'bg-ui-primary text-ui-on-primary [box-shadow:var(--k-primary-inset)] hover:bg-ui-primary-hover',
+  // Outlined: navy on light pages, white on dark surfaces (the --ui-secondary tokens switch).
+  secondary:
+    'border border-ui-secondary-border text-ui-secondary hover:border-ui-secondary-hover-border hover:bg-ui-secondary-hover-bg',
+  // Text only, for low-emphasis actions such as Cancel.
+  ghost: 'text-ui-text hover:bg-ui-hover',
+  // Outlined in the danger colour; destructive actions only.
+  danger: 'border border-ui-danger text-ui-danger hover:bg-ui-hover',
 };
 
 /** Tailwind classes for each size. */
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-sm',
-  md: 'h-10 px-4 text-sm',
+  sm: 'h-8 px-3 text-[13px]',
+  md: 'h-10 px-[18px] text-[13.5px]',
 };
 
 /**
@@ -61,8 +68,8 @@ export function Button({
     <button
       type={type}
       className={[
-        'inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600',
+        'inline-flex items-center justify-center gap-2 font-semibold transition-colors duration-150',
+        'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
         'disabled:cursor-not-allowed disabled:opacity-50',
         VARIANT_CLASSES[variant],
         SIZE_CLASSES[size],

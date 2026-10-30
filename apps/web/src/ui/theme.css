@@ -1,0 +1,202 @@
+/**
+ * File: apps/web/src/ui/theme.css
+ * Purpose: Kite's design tokens (UI theme stage U1): the Paramount Intelligence brand colours,
+ *          Kite's semantic tokens for light pages and dark surfaces, shape and type. The ONLY
+ *          file allowed to contain hex or rgb() colours (tests/unit/ui/theme.test.ts checks it).
+ * Used by: app/globals.css (imported after Tailwind), every component in src/ui
+ * Depends on: tailwindcss v4 (@theme), the fonts set in app/layout.tsx (next/font)
+ * Architecture: docs/design/kite-ui-theme.md §3 (tokens), §5 (components), §8 (rules)
+ *
+ * Three layers:
+ * 1. Brand and semantic tokens (--pi-*, --k-*), copied from the theme document.
+ * 2. Surface tokens (--ui-*): what a component uses. They point at the light tokens by default
+ *    and at the dark ones inside an element with class "k-dark", so one component works on a
+ *    light page and on the dark live view without a second style.
+ * 3. Tailwind names for the surface tokens (@theme inline): bg-ui-surface, text-ui-muted, …
+ *
+ * Contrast (computed, WCAG 2.x; tested in tests/unit/ui/theme.test.ts): every text token is at
+ * least 4.5:1 on its surfaces, except --k-link and --k-you on the grey band (4.37:1 and 4.36:1):
+ * use links and the "You" label on white surfaces only.
+ */
+
+/* Brand tokens, copied from paramountintelligence.co :root (30 Oct 2026). */
+:root {
+  /* Navy scale */
+  --pi-navy-900: #060d1a;
+  --pi-navy-800: #0d1f3c;
+  --pi-navy-700: #152d56;
+  --pi-navy-600: #1b3a6b;
+  --pi-navy-500: #1e4d8c;
+  /* Blues */
+  --pi-blue-500: #1e6fd9;
+  --pi-blue-400: #3b88f5;
+  --pi-blue-300: #6ba8ff;
+  --pi-royal: #204ecf;
+  --pi-navy: #0f256e;
+  --pi-cyan: #09b6f9;
+  /* Silvers / neutrals */
+  --pi-silver-400: #8fa4c4;
+  --pi-silver-300: #b5c8e2;
+  --pi-silver-200: #d4e0f0;
+  --pi-silver-100: #eef3fa;
+  --pi-text: #2b3245;
+  --pi-muted: #646c7e;
+  --pi-line: #d9dbe0;
+  --pi-band: #f3f3f3;
+  --pi-pale: #eaf1ff;
+  --pi-on-dark: #c9d4f2;
+  --pi-on-dark-2: #9fb3e8;
+  /* Status (the site has green and amber; red is a Kite addition) */
+  --pi-green: #3dbe8b;
+  --pi-amber: #f5b83d;
+
+  /* ---- Kite semantic tokens: LIGHT pages ---- */
+  --k-bg: #ffffff;
+  --k-band: var(--pi-band);
+  --k-surface: #ffffff;
+  --k-border: var(--pi-line);
+  --k-text: var(--pi-text); /* 12.8:1 on white */
+  --k-heading: var(--pi-navy-800);
+  --k-subheading: var(--pi-royal); /* 6.9:1 */
+  --k-muted: var(--pi-muted); /* 5.3:1 on white, 4.75:1 on band */
+  --k-link: var(--pi-blue-500); /* 4.85:1 on white; white surfaces only */
+  --k-success-text: #17784f; /* 5.5:1; --pi-green is too light for text on white (2.35:1) */
+  --k-warning-text: #8a5a0b; /* 5.9:1 */
+  --k-danger-text: #b42d2d; /* 6.3:1 */
+  --k-you: #0a79ab; /* "You" label on light, 4.8:1 on white; white surfaces only */
+  --k-them: var(--pi-royal);
+
+  /* ---- Kite semantic tokens: DARK surfaces (live view, overlay) ---- */
+  --k-dark-bg: var(--pi-navy-800);
+  --k-dark-bar: var(--pi-navy-900);
+  --k-dark-surface: var(--pi-navy-700);
+  --k-dark-border: rgba(201, 212, 242, 0.14);
+  --k-dark-text: var(--pi-on-dark); /* 11.1:1 */
+  --k-dark-strong: #ffffff;
+  --k-dark-muted: var(--pi-on-dark-2); /* 7.9:1 */
+  --k-dark-provisional: var(--pi-silver-400); /* still-changing transcript words, 6.5:1 */
+  --k-dark-you: var(--pi-cyan); /* 7.1:1 */
+  --k-dark-them: var(--pi-blue-300); /* 6.8:1 */
+  --k-dark-success: var(--pi-green); /* 7.0:1 */
+  --k-dark-warning: var(--pi-amber); /* 9.2:1 */
+  --k-dark-danger: #ff7a7a; /* 6.5:1 */
+  --k-hero-gradient: linear-gradient(160deg, #060d1a, #0d1f3c 40%, #152d56 80%, #0d1f3c);
+
+  /* ---- Component details from the theme document §5 ---- */
+  --k-primary-hover: #2cc2fa; /* primary button hover; navy text on it is 6.8:1 */
+  --k-primary-inset: inset 0 -3px 0 rgba(15, 37, 110, 0.18);
+  --k-on-dark-outline: rgba(255, 255, 255, 0.55); /* secondary button border on dark */
+  --k-overlay: rgba(6, 13, 26, 0.6); /* modal backdrop */
+  --k-topbar: rgba(255, 255, 255, 0.95); /* light top bar, with a backdrop blur */
+
+  /* ---- Shape, type, spacing ---- */
+  --k-radius: 0; /* signature: square corners */
+  --k-border-w: 1px;
+  --k-font:
+    var(--font-montserrat), 'Montserrat', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    sans-serif;
+  --k-mono: var(--font-plex-mono), 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  --k-focus: 0 0 0 2px var(--pi-cyan); /* visible on light and dark */
+  --k-dur: 150ms;
+}
+
+/* ---- Surface tokens: light by default (and inside .k-light) ---- */
+:root,
+.k-light {
+  --ui-bg: var(--k-bg);
+  --ui-band: var(--k-band);
+  --ui-surface: var(--k-surface);
+  --ui-border: var(--k-border);
+  --ui-input: var(--k-surface);
+  --ui-text: var(--k-text);
+  --ui-heading: var(--k-heading);
+  --ui-subheading: var(--k-subheading);
+  --ui-muted: var(--k-muted);
+  --ui-link: var(--k-link);
+  --ui-success: var(--k-success-text);
+  --ui-warning: var(--k-warning-text);
+  --ui-danger: var(--k-danger-text);
+  --ui-you: var(--k-you);
+  --ui-them: var(--k-them);
+  /* Secondary button on light (Kite): navy text and border, pale on hover. */
+  --ui-secondary: var(--pi-navy);
+  --ui-secondary-border: var(--pi-navy);
+  --ui-secondary-hover-bg: var(--pi-pale);
+  --ui-secondary-hover-border: var(--pi-navy);
+  /* A quiet hover background (ghost buttons, menu items). */
+  --ui-hover: var(--pi-band);
+}
+
+/* ---- Surface tokens: dark (live view, compact overlay, PiP, the sidebar) ---- */
+.k-dark {
+  color-scheme: dark;
+  --ui-bg: var(--k-dark-bg);
+  --ui-band: var(--k-dark-bar);
+  --ui-surface: var(--k-dark-surface);
+  --ui-border: var(--k-dark-border);
+  --ui-input: var(--pi-navy-900);
+  --ui-text: var(--k-dark-text);
+  --ui-heading: var(--k-dark-strong);
+  --ui-subheading: var(--k-dark-strong);
+  --ui-muted: var(--k-dark-muted);
+  --ui-link: var(--pi-blue-300); /* 6.8:1 on the dark background */
+  --ui-success: var(--k-dark-success);
+  --ui-warning: var(--k-dark-warning);
+  --ui-danger: var(--k-dark-danger);
+  --ui-you: var(--k-dark-you);
+  --ui-them: var(--k-dark-them);
+  /* Secondary button on dark (site): white text, a 55% white border, white on hover. */
+  --ui-secondary: var(--k-dark-strong);
+  --ui-secondary-border: var(--k-on-dark-outline);
+  --ui-secondary-hover-bg: transparent;
+  --ui-secondary-hover-border: var(--k-dark-strong);
+  --ui-hover: var(--pi-navy-600);
+}
+
+/* Tailwind class names for the tokens (inline: the classes read the variables at run time, so
+   .k-dark switches them). */
+@theme inline {
+  --color-ui-bg: var(--ui-bg);
+  --color-ui-band: var(--ui-band);
+  --color-ui-surface: var(--ui-surface);
+  --color-ui-border: var(--ui-border);
+  --color-ui-input: var(--ui-input);
+  --color-ui-text: var(--ui-text);
+  --color-ui-heading: var(--ui-heading);
+  --color-ui-subheading: var(--ui-subheading);
+  --color-ui-muted: var(--ui-muted);
+  --color-ui-link: var(--ui-link);
+  --color-ui-success: var(--ui-success);
+  --color-ui-warning: var(--ui-warning);
+  --color-ui-danger: var(--ui-danger);
+  --color-ui-you: var(--ui-you);
+  --color-ui-them: var(--ui-them);
+  --color-ui-secondary: var(--ui-secondary);
+  --color-ui-secondary-border: var(--ui-secondary-border);
+  --color-ui-secondary-hover-bg: var(--ui-secondary-hover-bg);
+  --color-ui-secondary-hover-border: var(--ui-secondary-hover-border);
+  --color-ui-hover: var(--ui-hover);
+  /* Fixed brand colours (the same on light and dark). */
+  --color-ui-primary: var(--pi-cyan);
+  --color-ui-primary-hover: var(--k-primary-hover);
+  --color-ui-on-primary: var(--pi-navy);
+  --color-ui-accent: var(--pi-cyan);
+  --color-ui-nav: var(--pi-navy-900);
+  --color-ui-dot-success: var(--pi-green);
+  --color-ui-dot-warning: var(--pi-amber);
+  --color-ui-dot-danger: var(--k-dark-danger);
+  --color-ui-overlay: var(--k-overlay);
+  --color-ui-topbar: var(--k-topbar);
+  --font-sans: var(--k-font);
+  --font-mono: var(--k-mono);
+}
+
+/* Legacy colours of the pages not restyled yet (UI stage U2 replaces them). Moved here from
+   app/globals.css so this stays the only file with hex colours. */
+@theme {
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+}

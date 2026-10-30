@@ -3,19 +3,33 @@
  * Purpose: Root HTML frame for every page (signed-in or not): <html>, <body>, font, global CSS
  *          and the page title "Kite".
  * Used by: Next.js App Router (wraps every route)
- * Depends on: next/font/google (Inter), app/globals.css
- * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1
+ * Depends on: next/font/google (Montserrat, IBM Plex Mono), app/globals.css
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1; docs/design/kite-ui-theme.md §4
  */
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { IBM_Plex_Mono, Montserrat } from 'next/font/google';
 import type { ReactNode } from 'react';
 import './globals.css';
 
 /**
- * The Inter font, self-hosted by Next.js at build time (no request to Google from the user's
- * browser). Exposed as the CSS variable --font-inter, used by globals.css.
+ * Montserrat, the brand font (UI theme §4): body and headings. Self-hosted by Next.js at build
+ * time, so users' browsers never request Google. Exposed as --font-montserrat (src/ui/theme.css).
  */
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+const montserrat = Montserrat({
+  subsets: ['latin'],
+  weight: ['400', '600', '700'],
+  variable: '--font-montserrat',
+});
+
+/**
+ * IBM Plex Mono for eyebrows, labels, timestamps, shortcuts and numbers (UI theme §4).
+ * Exposed as --font-plex-mono.
+ */
+const plexMono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-plex-mono',
+});
 
 /** Page title and description shown in the browser tab and the desktop window title. */
 export const metadata: Metadata = {
@@ -31,7 +45,7 @@ export const metadata: Metadata = {
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={`${montserrat.variable} ${plexMono.variable}`}>
       <body className="bg-slate-50 font-sans text-slate-900 antialiased">{children}</body>
     </html>
   );

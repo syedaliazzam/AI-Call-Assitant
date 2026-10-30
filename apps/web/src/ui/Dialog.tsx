@@ -3,9 +3,11 @@
  * Purpose: A modal dialog built on the browser's own <dialog> element (showModal): it traps
  *          keyboard focus, closes on Escape and dims the page, with no extra library.
  * Used by: src/features/session-setup/ChoosePlatformDialog.tsx, src/features/dashboard/SessionCard.tsx
- *          (delete confirmation), src/features/settings/Settings.tsx (delete-all confirmation)
+ *          (delete confirmation), src/features/settings/Settings.tsx (delete-all confirmation),
+ *          and more; DialogPanel also by src/features/dev/UiGallery.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 'use client';
 
@@ -62,27 +64,58 @@ export function Dialog({ open, onClose, title, children, footer, size = 'md' }: 
         if (event.target === event.currentTarget) onClose();
       }}
       className={[
-        'm-auto w-full rounded-lg border border-slate-200 bg-white p-0 shadow-xl backdrop:bg-slate-900/40',
+        // Square, flat, 1 px border; the navy backdrop at 60% (theme §5 Modal).
+        'm-auto w-full border border-ui-border bg-ui-surface p-0 text-ui-text backdrop:bg-ui-overlay',
         size === 'lg' ? 'max-w-2xl' : 'max-w-md',
       ].join(' ')}
     >
-      <div className="flex flex-col gap-4 p-6">
-        <div className="flex items-start justify-between gap-4">
-          <h2 id={titleId} className="text-lg font-semibold text-slate-900">
-            {title}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-md px-2 text-xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-          >
-            ×
-          </button>
-        </div>
-        <div className="text-sm text-slate-700">{children}</div>
-        {footer && <div className="flex justify-end gap-2">{footer}</div>}
-      </div>
+      <DialogPanel titleId={titleId} title={title} onClose={onClose} footer={footer}>
+        {children}
+      </DialogPanel>
     </dialog>
+  );
+}
+
+/** Props for DialogPanel. */
+export interface DialogPanelProps {
+  /** The heading's id (the dialog is labelled by it). */
+  titleId: string;
+  /** Heading at the top. */
+  title: string;
+  /** Called by the close button. */
+  onClose: () => void;
+  /** The content. */
+  children: ReactNode;
+  /** Buttons at the bottom, right-aligned. */
+  footer?: ReactNode;
+}
+
+/**
+ * The inside of a dialog: title with a close button, content, footer. Separate from Dialog so
+ * the UI gallery (/dev/ui) can show the modal's styling without opening a modal.
+ *
+ * @param props See DialogPanelProps.
+ * @returns The panel.
+ * Rendered by: Dialog; src/features/dev/UiGallery.tsx
+ */
+export function DialogPanel({ titleId, title, onClose, children, footer }: DialogPanelProps) {
+  return (
+    <div className="flex flex-col gap-4 p-6">
+      <div className="flex items-start justify-between gap-4">
+        <h2 id={titleId} className="text-[20px] font-semibold text-ui-heading">
+          {title}
+        </h2>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="px-2 text-xl leading-none text-ui-muted hover:bg-ui-hover hover:text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+        >
+          ×
+        </button>
+      </div>
+      <div className="text-[15px] leading-relaxed text-ui-text">{children}</div>
+      {footer && <div className="flex justify-end gap-2">{footer}</div>}
+    </div>
   );
 }

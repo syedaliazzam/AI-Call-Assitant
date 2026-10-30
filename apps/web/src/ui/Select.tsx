@@ -5,6 +5,7 @@
  *          src/features/settings/Settings.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 import { useId } from 'react';
 
@@ -51,7 +52,10 @@ export function Select<T extends string>({
   const hintId = `${id}-hint`;
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-slate-800">
+      <label
+        htmlFor={id}
+        className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted"
+      >
         {label}
       </label>
       <select
@@ -61,7 +65,7 @@ export function Select<T extends string>({
         aria-describedby={hint ? hintId : undefined}
         // The options are exactly `options`, so the value is always one of T.
         onChange={(event) => onChange(event.target.value as T)}
-        className="h-10 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 focus:border-brand-600 focus:outline-none disabled:bg-slate-100 disabled:text-slate-500"
+        className="h-10 border-ui-border border bg-ui-input px-3 text-[15px] text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -70,7 +74,7 @@ export function Select<T extends string>({
         ))}
       </select>
       {hint && (
-        <p id={hintId} className="text-xs text-slate-500">
+        <p id={hintId} className="text-[13px] text-ui-muted">
           {hint}
         </p>
       )}

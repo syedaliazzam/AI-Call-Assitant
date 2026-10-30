@@ -5,6 +5,7 @@
  * Used by: src/features/dashboard/Dashboard.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F1 filter by type), §9.1
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 
 /** One tab. */
@@ -37,7 +38,7 @@ export interface TabsProps<T extends string> {
  */
 export function Tabs<T extends string>({ label, options, value, onChange }: TabsProps<T>) {
   return (
-    <div role="group" aria-label={label} className="flex flex-wrap gap-1 border-b border-slate-200">
+    <div role="group" aria-label={label} className="flex flex-wrap gap-1 border-b border-ui-border">
       {options.map((option) => {
         const selected = option.value === value;
         return (
@@ -47,10 +48,11 @@ export function Tabs<T extends string>({ label, options, value, onChange }: Tabs
             aria-pressed={selected}
             onClick={() => onChange(option.value)}
             className={[
-              '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+              '-mb-px border-b-[3px] px-3 py-2 text-[13.5px] font-semibold transition-colors duration-150',
+              'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
               selected
-                ? 'border-brand-600 text-brand-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800',
+                ? 'border-ui-accent text-ui-heading'
+                : 'border-transparent text-ui-muted hover:text-ui-heading',
             ].join(' ')}
           >
             {option.label}

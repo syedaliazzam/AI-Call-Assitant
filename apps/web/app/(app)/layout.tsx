@@ -23,7 +23,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const { user } = await requireUser();
 
   return (
-    <div className="flex min-h-screen">
+    // Stacked on narrow screens (the sidebar becomes a top bar), side by side from 768 px.
+    <div className="flex min-h-screen flex-col md:flex-row">
       <Sidebar
         user={{
           name: user.name,
@@ -32,7 +33,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         }}
         userActions={<SignOutButton />}
       />
-      <main className="flex-1 overflow-y-auto">{children}</main>
+      <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
     </div>
   );
 }

@@ -5,6 +5,7 @@
  * Used by: app/login/page.tsx, app/change-password/page.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Sign in, Change password)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 import type { ReactNode } from 'react';
 
@@ -30,18 +31,18 @@ export interface AuthCardProps {
 export function AuthCard({ title, subtitle, children, footer }: AuthCardProps) {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-4">
-      <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
+      <div className="w-full max-w-sm border border-ui-border bg-ui-surface p-8">
         <div className="mb-6 flex items-center gap-2">
           <span
             aria-hidden="true"
-            className="flex size-8 items-center justify-center rounded-md bg-brand-600 text-sm font-bold text-white"
+            className="flex size-8 items-center justify-center bg-ui-nav text-sm font-bold text-ui-accent"
           >
             K
           </span>
-          <span className="text-lg font-semibold text-slate-900">Kite</span>
+          <span className="text-lg font-bold text-ui-heading">Kite</span>
         </div>
-        <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
-        <p className="mt-1 mb-6 text-sm text-slate-500">{subtitle}</p>
+        <h1 className="text-[28px] font-bold text-ui-heading">{title}</h1>
+        <p className="mt-1 mb-6 text-[15px] text-ui-muted">{subtitle}</p>
         {children}
       </div>
       {footer}

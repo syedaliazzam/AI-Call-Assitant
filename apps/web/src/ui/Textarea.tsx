@@ -5,6 +5,7 @@
  *          src/features/settings/Settings.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 import { useId, type TextareaHTMLAttributes } from 'react';
 
@@ -33,7 +34,10 @@ export function Textarea({ label, hint, error, id, className = '', ...rest }: Te
   const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={fieldId} className="text-sm font-medium text-slate-800">
+      <label
+        htmlFor={fieldId}
+        className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted"
+      >
         {label}
       </label>
       <textarea
@@ -41,19 +45,19 @@ export function Textarea({ label, hint, error, id, className = '', ...rest }: Te
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         className={[
-          'min-h-20 rounded-md border bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none',
-          error ? 'border-red-500 focus:border-red-600' : 'border-slate-300 focus:border-brand-600',
+          'min-h-20 py-2.5 leading-relaxed border bg-ui-input px-3 text-[15px] text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60',
+          error ? 'border-ui-danger' : 'border-ui-border',
           className,
         ].join(' ')}
         {...rest}
       />
       {hint && (
-        <p id={hintId} className="text-xs text-slate-500">
+        <p id={hintId} className="text-[13px] text-ui-muted">
           {hint}
         </p>
       )}
       {error && (
-        <p id={errorId} className="text-xs text-red-600">
+        <p id={errorId} className="text-[13px] text-ui-danger">
           {error}
         </p>
       )}

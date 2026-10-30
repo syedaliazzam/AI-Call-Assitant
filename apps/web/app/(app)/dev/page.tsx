@@ -11,6 +11,11 @@ import Link from 'next/link';
 /** The developer test pages. */
 const TOOLS = [
   {
+    href: '/dev/ui',
+    title: 'UI components',
+    description: 'Every shared UI component in the Kite theme, on light and dark surfaces.',
+  },
+  {
     href: '/dev/claude-test',
     title: 'Claude streaming test',
     description: 'Streams a fixed test reply and shows timings and prompt-cache use.',
