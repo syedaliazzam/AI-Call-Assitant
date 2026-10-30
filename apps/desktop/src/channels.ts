@@ -16,3 +16,15 @@ export const HOTKEY_CHANNEL = 'kite:hotkey';
 
 /** The page asks for a screenshot (invoke; answers with a DesktopScreenshot). */
 export const CAPTURE_SCREENSHOT_CHANNEL = 'kite:capture-screenshot';
+
+/** The page opens the compact live window (invoke; carries the session id). */
+export const OPEN_COMPACT_CHANNEL = 'kite:open-compact';
+
+/** The page closes the compact live window (invoke). */
+export const CLOSE_COMPACT_CHANNEL = 'kite:close-compact';
+
+/** The page changes screen-share protection (invoke; carries a boolean, answers the state). */
+export const SET_PROTECTION_CHANNEL = 'kite:set-protection';
+
+/** The page reads screen-share protection (invoke; answers the state). */
+export const GET_PROTECTION_CHANNEL = 'kite:get-protection';

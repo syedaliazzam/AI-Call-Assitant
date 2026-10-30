@@ -54,6 +54,47 @@ export interface KiteDesktopApi {
    *          permission missing).
    */
   captureScreenshot?: () => Promise<DesktopScreenshot>;
+  /**
+   * Day 5: opens (or brings back) the compact live window for a session: frameless, always on
+   * top, shown without taking focus from the meeting, at its last position and size.
+   * Optional: a desktop app installed before Day 5 does not have it.
+   *
+   * @param sessionId The live session's id.
+   * @returns Resolves when the window is open.
+   */
+  openCompactView?: (sessionId: string) => Promise<void>;
+  /**
+   * Day 5: closes the compact live window (End).
+   *
+   * @returns Resolves when it is closed (also when none was open).
+   */
+  closeCompactView?: () => Promise<void>;
+  /**
+   * Day 5: turns screen-share protection of the compact window on or off
+   * (setContentProtection only; the window stays in the taskbar and Alt+Tab). Remembered by
+   * the shell.
+   *
+   * @param on True to hide the compact window from screen capture.
+   * @returns The new state, and whether this OS supports it.
+   */
+  setShareProtection?: (on: boolean) => Promise<ShareProtectionState>;
+  /**
+   * Day 5: the remembered protection setting.
+   *
+   * @returns The state, and whether this OS supports it.
+   */
+  getShareProtection?: () => Promise<ShareProtectionState>;
+}
+
+/** Screen-share protection of the compact window (Day 5). */
+export interface ShareProtectionState {
+  /** True when the user wants the compact window hidden from screen capture. */
+  on: boolean;
+  /**
+   * True when this OS can hide a window from capture at all (Windows 10 2004+ and macOS;
+   * on macOS, apps built on ScreenCaptureKit may still capture it).
+   */
+  supported: boolean;
 }
 
 declare global {

@@ -3,7 +3,10 @@
  * Launches the built app (dist/) with KITE_URL pointing at a local test page and checks:
  * the window opens at 1280×820; window.kiteDesktop is exactly { version, os,
  * setHotkeysEnabled, onHotkey, captureScreenshot } and frozen; captureScreenshot() returns a
- * PNG scaled to ≤ 1,568 px for the Kite page, and a frame from another origin has no bridge; the hotkey path works: the page turns the global
+ * PNG scaled to ≤ 1,568 px for the Kite page, and a frame from another origin has no bridge;
+ * the compact window opens at /compact/[id] always on top, unfocused and protected, refuses a
+ * bad id and closes on request; on Windows, a real desktopCapturer screen capture leaves the
+ * protected compact window out, and shows it once protection is off (Day 5); the hotkey path works: the page turns the global
  * shortcuts on and off, and a hotkey message sent from the main process reaches the page's
  * onHotkey handler (an invalid action never does);
  * the page has no Node.js (`require`, `process`); same-origin navigation works while
@@ -104,13 +107,17 @@ test('opens one 1280×820 window on KITE_URL', async () => {
   expect(sizes).toEqual([[Math.min(1280, workArea.width), Math.min(820, workArea.height)]]);
 });
 
-test('exposes window.kiteDesktop as exactly { version, os, setHotkeysEnabled, onHotkey, captureScreenshot }, frozen', async () => {
+test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async () => {
   const bridge = await page.evaluate(() => ({
     keys: Object.keys(window.kiteDesktop ?? {}).sort(),
     methods: [
       typeof window.kiteDesktop?.setHotkeysEnabled,
       typeof window.kiteDesktop?.onHotkey,
       typeof window.kiteDesktop?.captureScreenshot,
+      typeof window.kiteDesktop?.openCompactView,
+      typeof window.kiteDesktop?.closeCompactView,
+      typeof window.kiteDesktop?.setShareProtection,
+      typeof window.kiteDesktop?.getShareProtection,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -121,12 +128,16 @@ test('exposes window.kiteDesktop as exactly { version, os, setHotkeysEnabled, on
 
   expect(bridge.keys).toEqual([
     'captureScreenshot',
+    'closeCompactView',
+    'getShareProtection',
     'onHotkey',
+    'openCompactView',
     'os',
     'setHotkeysEnabled',
+    'setShareProtection',
     'version',
   ]);
-  expect(bridge.methods).toEqual(['function', 'function', 'function']);
+  expect(bridge.methods).toEqual(Array(7).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
@@ -210,6 +221,123 @@ test('screenshot: the Kite page gets a scaled PNG; another origin has no bridge 
   await frame.waitForSelector('#capture');
   expect(await frame.evaluate(() => typeof window.kiteDesktop)).toBe('undefined');
   await page.evaluate(() => document.getElementById('other-shot')?.remove());
+});
+
+test('compact window: opens on top without focus at /compact/[id], and closes on request', async () => {
+  const windowPromise = app.waitForEvent('window');
+  await page.evaluate(() => window.kiteDesktop!.openCompactView!('smoke-session'));
+  const compactPage = await windowPromise;
+  await compactPage.waitForLoadState();
+  expect(new URL(compactPage.url()).pathname).toBe('/compact/smoke-session');
+  // Wait for it to be shown (showInactive after ready-to-show).
+  await expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().some(
+          (w) => w.getTitle() === 'Kite compact (smoke)' && w.isVisible(),
+        ),
+      ),
+    )
+    .toBe(true);
+  const state = await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows().find((x) => x.getTitle() === 'Kite compact (smoke)')!;
+    return {
+      onTop: w.isAlwaysOnTop(),
+      focused: w.isFocused(),
+      protected: w.isContentProtected(),
+      skipTaskbar: false,
+    };
+  });
+  expect(state).toMatchObject({ onTop: true, focused: false, protected: true });
+
+  // A bad id is refused by the shell.
+  expect(
+    await page.evaluate(() =>
+      window.kiteDesktop!.openCompactView!('../admin').then(
+        () => 'opened',
+        () => 'refused',
+      ),
+    ),
+  ).toBe('refused');
+
+  await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
+  await expect
+    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length))
+    .toBe(1);
+});
+
+test('protection (Windows): the compact window is left out of a screen capture, and shows when off', async () => {
+  test.skip(process.platform !== 'win32', 'Windows only; macOS is checked by hand (Day 6)');
+  /**
+   * Captures the primary screen in the main process and counts magenta pixels (the compact
+   * fixture's colour) inside the compact window's area. Numbers only.
+   *
+   * @returns The window's on-screen size and how many of its pixels are magenta.
+   */
+  const magentaInWindow = () =>
+    app.evaluate(async ({ BrowserWindow, desktopCapturer, screen }) => {
+      const w = BrowserWindow.getAllWindows().find((x) => x.getTitle() === 'Kite compact (smoke)')!;
+      const display = screen.getPrimaryDisplay();
+      const scale = display.scaleFactor;
+      const size = {
+        width: Math.round(display.size.width * scale),
+        height: Math.round(display.size.height * scale),
+      };
+      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: size });
+      const source = sources.find((x) => x.display_id === String(display.id)) ?? sources[0]!;
+      const image = source.thumbnail;
+      const actual = image.getSize();
+      const bitmap = image.toBitmap(); // BGRA
+      const b = w.getBounds();
+      const fx = actual.width / display.size.width;
+      const fy = actual.height / display.size.height;
+      let magenta = 0;
+      let total = 0;
+      // Inner 60% of the window, to stay clear of any border or shadow.
+      for (
+        let y = Math.round((b.y + b.height * 0.2) * fy);
+        y < (b.y + b.height * 0.8) * fy;
+        y += 2
+      ) {
+        for (
+          let x = Math.round((b.x + b.width * 0.2) * fx);
+          x < (b.x + b.width * 0.8) * fx;
+          x += 2
+        ) {
+          const i = (y * actual.width + x) * 4;
+          total += 1;
+          if (bitmap[i + 2]! > 230 && bitmap[i + 1]! < 40 && bitmap[i]! > 230) magenta += 1;
+        }
+      }
+      return { total, magenta };
+    });
+
+  const windowPromise = app.waitForEvent('window');
+  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(true));
+  await page.evaluate(() => window.kiteDesktop!.openCompactView!('smoke-protection'));
+  const compactPage = await windowPromise;
+  await compactPage.waitForLoadState();
+  // Put it where the capture looks, fully on the primary screen.
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows().find((x) => x.getTitle() === 'Kite compact (smoke)')!;
+    w.setBounds({ x: 120, y: 120, width: 360, height: 260 });
+  });
+  // The OS applies the change with the next desktop composition (Electron docs): wait a moment.
+  await compactPage.waitForTimeout(800);
+  const hidden = await magentaInWindow();
+
+  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));
+  await compactPage.waitForTimeout(800);
+  const shown = await magentaInWindow();
+
+  console.log('[smoke] protection', JSON.stringify({ hidden, shown }));
+  // Protection on: none of the window's own colour in the capture. Off: almost all of it.
+  expect(hidden.magenta).toBe(0);
+  expect(shown.magenta / shown.total).toBeGreaterThan(0.9);
+
+  // Back on (the default) and closed.
+  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(true));
+  await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
 });
 
 test('gives the page no Node.js access', async () => {
