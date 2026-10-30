@@ -238,6 +238,8 @@ describe('deleteSession', () => {
         model: 'fast',
         msFirstToken: 500,
         msTotal: 900,
+        rating: null,
+        note: '',
         createdAt: 3,
       });
       await getDb().notes.add({

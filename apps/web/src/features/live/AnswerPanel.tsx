@@ -2,7 +2,8 @@
  * File: apps/web/src/features/live/AnswerPanel.tsx
  * Purpose: Shows one answer of the call: the question it answers (with "from N lines"), the
  *          headline as it streams, then the bullets; Cancel while it streams; Previous / Next
- *          through this call's answers; Copy; and the time to the first word.
+ *          through the session's answers; Copy; the time to the first word; and (Stage 7) 👍 / 👎
+ *          and an optional "What was wrong / better answer" note.
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/core/answer/format.ts, src/features/live/useLiveAnswers.ts (AnswerEntry),
  *             src/ui/Button.tsx
@@ -14,6 +15,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { AnswerRating } from '@/core/storage/types';
 import { answerText, splitAnswer } from '@/core/answer/format';
 import { Button } from '@/ui/Button';
 import type { AnswerEntry } from './useLiveAnswers';
@@ -36,8 +38,112 @@ export interface AnswerPanelProps {
   onNext: () => void;
   /** Stops the answer streaming. */
   onCancel: () => void;
+  /** Rates an answer. */
+  onRate: (id: string, rating: AnswerRating) => void;
+  /** Saves an answer's note. */
+  onNote: (id: string, note: string) => void;
   /** Puts text on the clipboard (resolves when done). */
   copy?: (text: string) => Promise<void>;
+}
+
+/** Props for RatingControls. */
+interface RatingControlsProps {
+  /** The answer being rated. */
+  entry: AnswerEntry;
+  /** Rates it. */
+  onRate: (id: string, rating: AnswerRating) => void;
+  /** Saves its note. */
+  onNote: (id: string, note: string) => void;
+}
+
+/**
+ * 👍 / 👎 (pressing the chosen one again removes the rating) and the note box.
+ *
+ * @param props See RatingControlsProps.
+ * @returns The controls.
+ * Rendered by: AnswerPanel (for a finished answer)
+ */
+function RatingControls({ entry, onRate, onNote }: RatingControlsProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(entry.note);
+  /**
+   * Sets or toggles off a rating.
+   *
+   * @param rating The rating pressed.
+   * @returns Nothing.
+   */
+  const toggle = (rating: 'up' | 'down') =>
+    onRate(entry.id, entry.rating === rating ? null : rating);
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <span>Was this answer good?</span>
+        <Button
+          size="sm"
+          variant={entry.rating === 'up' ? 'primary' : 'secondary'}
+          aria-pressed={entry.rating === 'up'}
+          aria-label="Good answer"
+          onClick={() => toggle('up')}
+        >
+          👍
+        </Button>
+        <Button
+          size="sm"
+          variant={entry.rating === 'down' ? 'primary' : 'secondary'}
+          aria-pressed={entry.rating === 'down'}
+          aria-label="Bad answer"
+          onClick={() => toggle('down')}
+        >
+          👎
+        </Button>
+        {!editing && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setDraft(entry.note);
+              setEditing(true);
+            }}
+          >
+            {entry.note ? 'Edit note' : 'Add a note'}
+          </Button>
+        )}
+        {!editing && entry.note && (
+          <span aria-label="Your note" className="text-slate-600">
+            “{entry.note}”
+          </span>
+        )}
+      </div>
+      {editing && (
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onNote(entry.id, draft);
+            setEditing(false);
+          }}
+        >
+          <textarea
+            aria-label="What was wrong / better answer"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            placeholder="What was wrong, or what would a better answer say?"
+            rows={2}
+            maxLength={2_000}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <div className="flex gap-2">
+            <Button size="sm" type="submit">
+              Save note
+            </Button>
+            <Button size="sm" variant="ghost" type="button" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
 }
 
 /** Status line under a finished, failed or cancelled answer. */
@@ -77,8 +183,9 @@ export function AnswerPanel(props: AnswerPanelProps) {
   }
 
   const { headline, bullets } = splitAnswer(entry.text);
-  const source =
-    entry.mode === 'chat'
+  const source = entry.earlier
+    ? 'earlier'
+    : entry.mode === 'chat'
       ? 'typed question'
       : `from ${entry.fromLines} ${entry.fromLines === 1 ? 'line' : 'lines'}`;
 
@@ -158,6 +265,10 @@ export function AnswerPanel(props: AnswerPanelProps) {
           )
         )}
       </div>
+      {entry.status === 'done' && (
+        // key: a different answer starts with its own note draft.
+        <RatingControls key={entry.id} entry={entry} onRate={props.onRate} onNote={props.onNote} />
+      )}
     </section>
   );
 }

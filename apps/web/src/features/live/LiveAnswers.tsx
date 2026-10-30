@@ -18,7 +18,7 @@ import { getPlatform } from '@/platform';
 import { AnswerPanel } from './AnswerPanel';
 import { ChatBox } from './ChatBox';
 import { TopBar } from './TopBar';
-import { useLiveAnswers, type AnswerEntry } from './useLiveAnswers';
+import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
 
 /** Props for LiveAnswers. */
 export interface LiveAnswersProps {
@@ -34,8 +34,8 @@ export interface LiveAnswersProps {
   ending: boolean;
   /** Ends the call. */
   onEnd: () => void;
-  /** Called when an answer finishes (Stage 7 saves it). */
-  onFinished?: (entry: AnswerEntry) => void;
+  /** Where answers, ratings and notes are saved (default: this device; tests may replace it). */
+  store?: AnswerStore;
   /** Puts text on the clipboard (tests replace it). */
   copy?: (text: string) => Promise<void>;
 }
@@ -67,7 +67,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     documents: props.documents,
     transcript: props.transcript,
     callStartedAt: props.callStartedAt,
-    onFinished: props.onFinished,
+    store: props.store,
   });
   const [chatOpen, setChatOpen] = useState(false);
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
@@ -113,8 +113,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
         onPrev={answers.prev}
         onNext={answers.next}
         onCancel={answers.clear}
+        onRate={answers.rate}
+        onNote={answers.saveNote}
         copy={props.copy}
       />
+      {answers.saveFailed && (
+        <p role="alert" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          An answer, rating or note could not be saved on this computer (is the disk full?).
+        </p>
+      )}
     </div>
   );
 }

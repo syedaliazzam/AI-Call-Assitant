@@ -3,10 +3,12 @@
  * Purpose: Browser side of the answer harness test. Renders the live view's real answer part
  *          (LiveAnswers: top bar, chat box, answer panel, in-page hotkeys) for an invented
  *          session and a fixture transcript, with no sign-in. Answers go to the test server's
- *          mocked /api/answer, which streams a fixed answer slowly. Exposes what was copied on
- *          `window.kiteAnswerHarness` for the Playwright test.
+ *          mocked /api/answer, which streams a fixed answer slowly. Answers, ratings and notes are
+ *          saved in this browser's real IndexedDB (core/storage). Exposes what was copied, the
+ *          saved answers and a session delete on `window.kiteAnswerHarness` for the test.
  * Used by: tests/integration/answers.spec.ts (bundled with esbuild and served on a test page)
- * Depends on: src/features/live/LiveAnswers.tsx, src/core/transcript/transcript.ts, react-dom
+ * Depends on: src/features/live/LiveAnswers.tsx, src/core/transcript/transcript.ts,
+ *             src/core/storage (answers.ts, sessions.ts), react-dom
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing); day-04-answers.md
  *               Stage 6
  *
@@ -15,6 +17,8 @@
  * the microphone are left out. All text here is invented.
  */
 import { createRoot } from 'react-dom/client';
+import { listAnswers } from '@/core/storage/answers';
+import { deleteSession } from '@/core/storage/sessions';
 import type { Session } from '@/core/storage/types';
 import { createTranscript } from '@/core/transcript/transcript';
 import { LiveAnswers } from '@/features/live/LiveAnswers';
@@ -23,6 +27,10 @@ import { LiveAnswers } from '@/features/live/LiveAnswers';
 export interface KiteAnswerHarness {
   /** Text put on the clipboard by Copy, in order. */
   copied: string[];
+  /** The harness session's saved answers: mode, rating and note of each (oldest first). */
+  saved: () => Promise<{ mode: string; rating: string | null; note: string }[]>;
+  /** Deletes the harness session and everything stored for it. */
+  deleteSession: () => Promise<void>;
 }
 
 declare global {
@@ -78,7 +86,14 @@ transcript.addFinal({
 // Starts 2 s after the line before: beyond the 1.5 s merge gap, so it stays its own line.
 transcript.addFinal({ speaker: 'them', text: 'FOR FORTY SEATS', tStart: at(35), tEnd: at(36) });
 
-window.kiteAnswerHarness = { copied: [] };
+window.kiteAnswerHarness = {
+  copied: [],
+  saved: async () =>
+    (await listAnswers(SESSION.id)).map(({ mode, rating, note }) => ({ mode, rating, note })),
+  deleteSession: async () => {
+    await deleteSession(SESSION.id);
+  },
+};
 
 createRoot(document.getElementById('root')!).render(
   <LiveAnswers

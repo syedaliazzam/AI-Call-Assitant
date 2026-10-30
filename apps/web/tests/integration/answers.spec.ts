@@ -6,7 +6,9 @@
  * appears before the bullets; Copy puts the clean answer on the clipboard; Cancel stops a
  * streaming answer (no bullets ever arrive); Previous / Next move between answers; Chat sends a
  * typed question (mode chat); the second request's conversation starts with the first's chunk
- * and adds the earlier answer (append-only). All text is invented.
+ * and adds the earlier answer (append-only). Stage 7: finished answers are saved (a cancelled
+ * one is not); a rating and a note survive a reload; deleting the session removes its answers.
+ * All text is invented.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -206,4 +208,39 @@ test('Chat sends a typed question', async () => {
   await box.fill('Something else');
   await box.press('Escape');
   await expect(box).toHaveValue('');
+});
+
+test('a rating and a note survive a reload', async () => {
+  await page.getByRole('button', { name: 'Bad answer' }).click();
+  await expect(page.getByRole('button', { name: 'Bad answer' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await page.getByRole('button', { name: 'Add a note' }).click();
+  await page.getByLabel('What was wrong / better answer').fill('Give the monthly total too.');
+  await page.getByRole('button', { name: 'Save note' }).click();
+  await expect(page.getByLabel('Your note')).toContainText('Give the monthly total too.');
+
+  // Finished answers are saved; the cancelled one is not.
+  await expect
+    .poll(() => page.evaluate(() => window.kiteAnswerHarness.saved()))
+    .toEqual([
+      { mode: 'answer', rating: null, note: '' },
+      { mode: 'chat', rating: 'down', note: 'Give the monthly total too.' },
+    ]);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Show last answer' }).click();
+  await expect(page.getByText('2 of 2')).toBeVisible();
+  await expect(page.getByText('(earlier)')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Bad answer' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.getByLabel('Your note')).toContainText('Give the monthly total too.');
+});
+
+test('deleting the session removes its answers', async () => {
+  await page.evaluate(() => window.kiteAnswerHarness.deleteSession());
+  expect(await page.evaluate(() => window.kiteAnswerHarness.saved())).toEqual([]);
 });
