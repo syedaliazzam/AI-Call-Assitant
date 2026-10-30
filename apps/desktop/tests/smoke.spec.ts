@@ -4,7 +4,8 @@
  * the window opens at 1280×820; window.kiteDesktop is exactly { version, os,
  * setHotkeysEnabled, onHotkey, captureScreenshot } and frozen; captureScreenshot() returns a
  * PNG scaled to ≤ 1,568 px for the Kite page, and a frame from another origin has no bridge;
- * the compact window opens at /compact/[id] always on top, unfocused and protected, refuses a
+ * the compact window opens at /compact/[id] always on top and unfocused, unprotected by default
+ * and protected once the user turns it on, refuses a
  * bad id and closes on request; on Windows, a real desktopCapturer screen capture leaves the
  * protected compact window out, and shows it once protection is off (Day 5); the hotkey path works: the page turns the global
  * shortcuts on and off, and a hotkey message sent from the main process reaches the page's
@@ -224,6 +225,8 @@ test('screenshot: the Kite page gets a scaled PNG; another origin has no bridge 
 });
 
 test('compact window: opens on top without focus at /compact/[id], and closes on request', async () => {
+  // The default (nothing remembered yet on this test profile is not guaranteed, so set it).
+  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));
   const windowPromise = app.waitForEvent('window');
   await page.evaluate(() => window.kiteDesktop!.openCompactView!('smoke-session'));
   const compactPage = await windowPromise;
@@ -248,7 +251,16 @@ test('compact window: opens on top without focus at /compact/[id], and closes on
       skipTaskbar: false,
     };
   });
-  expect(state).toMatchObject({ onTop: true, focused: false, protected: true });
+  expect(state).toMatchObject({ onTop: true, focused: false, protected: false });
+  // The user turns protection on: applied to the open window at once.
+  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(true));
+  expect(
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.getTitle() === 'Kite compact (smoke)')!
+        .isContentProtected(),
+    ),
+  ).toBe(true);
 
   // A bad id is refused by the shell.
   expect(
@@ -335,8 +347,8 @@ test('protection (Windows): the compact window is left out of a screen capture, 
   expect(hidden.magenta).toBe(0);
   expect(shown.magenta / shown.total).toBeGreaterThan(0.9);
 
-  // Back on (the default) and closed.
-  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(true));
+  // Back to the default (off) and closed.
+  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));
   await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
 });
 

@@ -7,7 +7,7 @@
  * - the controller opens one window, shows it without focus (showInactive), never calls focus,
  *   switches session without a new window, applies protection and re-applies it on show,
  *   saves its position after a move, and closes; IPC answers the Kite page only;
- * - protection: supported on Windows 10 2004+ and macOS only; on by default; set() remembers
+ * - protection: supported on Windows 10 2004+ and macOS only; off by default; set() remembers
  *   and applies; the IPC accepts only a boolean, from the Kite page;
  * - the store ignores a broken file and invalid bounds.
  */
@@ -179,12 +179,12 @@ describe('compactUrl and restoreBounds', () => {
 describe('createCompactWindows', () => {
   it('opens one window, shown without focus, protected, and saves where it was moved', () => {
     vi.useFakeTimers();
-    const { compact, store } = setup();
+    const { compact, store } = setup({ shareProtection: true });
     expect(compact.open('s1')).toBe(true);
     const window = FakeWindow.created[0]!;
     expect(window.loadURL).toHaveBeenCalledWith(`${ORIGIN}/compact/s1`);
     expect(window.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating');
-    // Protection on by default, applied at once.
+    // The remembered setting (on here), applied at once.
     expect(window.setContentProtection).toHaveBeenLastCalledWith(true);
     window.emit('ready-to-show');
     expect(window.showInactive).toHaveBeenCalledTimes(1);
@@ -242,10 +242,13 @@ describe('protection', () => {
     expect(protectionSupported('linux', '6.8.0')).toBe(false);
   });
 
-  it('is on by default, remembers a change and applies it; IPC takes a boolean from Kite only', async () => {
+  it('is off by default, remembers a change and applies it; IPC takes a boolean from Kite only', async () => {
     const store = memoryStore();
     const protection = createProtection(store, 'win32', '10.0.26200');
-    expect(protection.state()).toEqual({ on: true, supported: true });
+    expect(protection.state()).toEqual({ on: false, supported: true });
+    const fresh = { setContentProtection: vi.fn(), on: vi.fn() };
+    protection.attach(fresh);
+    expect(fresh.setContentProtection).toHaveBeenCalledWith(false);
     const window = { setContentProtection: vi.fn() };
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
     installProtection(

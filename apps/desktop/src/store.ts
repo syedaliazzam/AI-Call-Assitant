@@ -27,7 +27,7 @@ export interface Bounds {
 export interface ShellSettings {
   /** The compact window's last position and size. */
   compactBounds?: Bounds;
-  /** Screen-share protection of the compact window (absent: on). */
+  /** Screen-share protection of the compact window (absent: off). */
   shareProtection?: boolean;
 }
 

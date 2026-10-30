@@ -2,8 +2,8 @@
  * File: apps/desktop/src/protection.ts
  * Purpose: Screen-share protection for the compact live window (architecture §4, §7.3):
  *          `setContentProtection` only, applied when the window is created and re-applied every
- *          time it is shown; the user's setting is remembered by the shell (on by default, as
- *          the developer decided on Day 5) and reported to the page with whether this OS
+ *          time it is shown; the user's setting is remembered by the shell on this device (off
+ *          by default: the user turns it on) and reported to the page with whether this OS
  *          supports it.
  * Used by: src/windows.ts (applies it to the compact window), src/main.ts (IPC)
  * Depends on: electron (BrowserWindow, IpcMain types), src/store.ts, src/channels.ts,
@@ -79,8 +79,8 @@ export interface Protection {
  */
 export function createProtection(store: ShellStore, platform: string, release: string): Protection {
   const supported = protectionSupported(platform, release);
-  // On by default (Day 5 decision); the user can turn it off in Settings or the compact view.
-  const wanted = () => store.read().shareProtection ?? true;
+  // Off by default (Day 5 file); the user turns it on in Settings or the compact view.
+  const wanted = () => store.read().shareProtection ?? false;
   const state = (): ShareProtectionState => ({ on: wanted(), supported });
   return {
     state,
