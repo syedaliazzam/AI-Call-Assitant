@@ -85,6 +85,11 @@ export interface AnswerContextInput {
   callStartedAt: number;
   /** The conversation sent so far. */
   log: ConversationLog;
+  /**
+   * The approved lessons for this session (Day 5 Stage 7, core/lessons/active.ts), loaded once
+   * when the session opened; the same list as the warm-ups, so the rules block stays cached.
+   */
+  lessons?: readonly string[];
 }
 
 /** What buildAnswerRequest() returns. */
@@ -222,6 +227,7 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
     ...(tailLines.length > 0 ? { tail: tailLines } : {}),
     ...(question ? { question: question.slice(0, MAX_LINE_CHARS) } : {}),
     ...(input.mode === 'screenshot' && input.image ? { image: input.image } : {}),
+    ...(input.lessons?.length ? { lessons: [...input.lessons] } : {}),
   };
   return { request, log: { chunks, sentLines, sentAnswers }, selected };
 }

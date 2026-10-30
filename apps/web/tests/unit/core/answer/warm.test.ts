@@ -124,6 +124,16 @@ describe('warmSession', () => {
     expect(send.mock.calls[1]![0]).not.toHaveProperty('conversation');
   });
 
+  it('sends the approved lessons exactly as given (Day 5 Stage 7), and none by default', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const send = fakeSend((handlers) => handlers.onDone(DONE));
+    const lessons = ['Give prices per seat and per month.', 'Answer in first person.'];
+    await warmSession(SESSION, [], { send, lessons });
+    await warmSession(SESSION, [], { send, lessons: [] });
+    expect(send.mock.calls[0]![0].lessons).toEqual(lessons);
+    expect(send.mock.calls[1]![0]).not.toHaveProperty('lessons');
+  });
+
   it('resolves null on failure, and when sending throws', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const failing = fakeSend((handlers) =>

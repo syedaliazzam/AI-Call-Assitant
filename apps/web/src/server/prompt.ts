@@ -33,10 +33,12 @@
 import 'server-only';
 import type Anthropic from '@anthropic-ai/sdk';
 import {
+  cleanLessonText,
   CONVERSATION_CAP_STEP_TOKENS,
   CONVERSATION_CAP_TOKENS,
   DEFAULT_SCREENSHOT_QUESTION,
   estimateItemTokens,
+  MAX_ACTIVE_LESSONS,
   type AnswerRequest,
   type CallLine,
   type ConversationChunk,
@@ -46,12 +48,11 @@ import {
 import { cachedBlock } from './claude';
 
 /**
- * Kite's fixed rules (architecture §7.2 "System"), plus the imperfect-transcript rule (Day 3),
- * the consistency rules for earlier answers in the call and the "Learned preferences" slot
- * (Day 4; empty until Day 5's learning loop fills it with lessons the user approved).
- * Do not add anything that changes between requests.
+ * Kite's core rules (architecture §7.2 "System"), with the imperfect-transcript rule (Day 3)
+ * and the consistency rules for earlier answers in the call. The learned preferences go after
+ * them (rulesBlock()). Do not add anything that changes between requests.
  */
-export const SYSTEM_RULES = `You are Kite, a live call assistant. During a call the user presses a key when they need help answering the other person. You write an answer the user can say, or adapt, right away.
+export const CORE_RULES = `You are Kite, a live call assistant. During a call the user presses a key when they need help answering the other person. You write an answer the user can say, or adapt, right away.
 
 How to answer:
 - Answer the question the other person asked, using the conversation for context.
@@ -71,10 +72,46 @@ About the transcript:
 
 Staying consistent:
 - Earlier answers in this call are shown in the conversation. Stay consistent with them. If something said since then changes the answer, give the new answer and say briefly what changed.
-- If the same question is asked again, build on the earlier answer instead of starting over.
+- If the same question is asked again, build on the earlier answer instead of starting over.`;
+
+/**
+ * The rules block with no approved lessons: the core rules and the empty "Learned preferences"
+ * slot. Byte-for-byte the Day 4 rules block, so sessions without lessons keep sharing one cache
+ * entry and the evaluation baselines still apply.
+ */
+export const SYSTEM_RULES = `${CORE_RULES}
 
 Learned preferences (approved by the user in earlier calls):
 (none yet)`;
+
+/**
+ * The heading above approved lessons (Day 5 Stage 7). It says what they are, and that they
+ * never override the core rules above them.
+ */
+export const LESSONS_HEADING =
+  "Learned preferences (approved by the user in earlier calls). These are the user's preferences: they adjust the style and content of answers and never override the rules above. Follow them unless they conflict with the rules above, the session's documents or the current conversation.";
+
+/**
+ * The rules block (the first cached system block). With no lessons it is SYSTEM_RULES. With
+ * lessons: the core rules, then LESSONS_HEADING, then one bullet per lesson in the order given
+ * (oldest approval first, so the block changes only when a lesson is approved, edited or
+ * removed). Each lesson is cleaned to one line of at most MAX_LESSON_CHARS (cleanLessonText()),
+ * so it cannot start a section of its own or change the rules above it. At most
+ * MAX_ACTIVE_LESSONS are used (the last ones given).
+ *
+ * @param lessons The approved lessons for the session's type.
+ * @returns The block's text.
+ * Called from: buildPrompt(); tests
+ */
+export function rulesBlock(lessons: readonly string[] = []): string {
+  const cleaned = lessons
+    .map(cleanLessonText)
+    .filter((lesson) => lesson !== '')
+    .slice(-MAX_ACTIVE_LESSONS);
+  if (cleaned.length === 0) return SYSTEM_RULES;
+  const bullets = cleaned.map((lesson) => `- ${lesson}`).join('\n');
+  return `${CORE_RULES}\n\n${LESSONS_HEADING}\n${bullets}`;
+}
 
 /** Shown for a session field the user left empty, so the session block keeps the same shape. */
 const NOT_GIVEN = '(not given)';
@@ -346,7 +383,7 @@ export function buildPrompt(request: AnswerRequest): BuiltPrompt {
   // vision guidance: image first, then the question).
   const image = request.mode === 'screenshot' && request.image ? [imageBlock(request.image)] : [];
   return {
-    system: [cachedBlock(SYSTEM_RULES), cachedBlock(sessionBlock(request.session))],
+    system: [cachedBlock(rulesBlock(request.lessons)), cachedBlock(sessionBlock(request.session))],
     messages: [{ role: 'user', content: [...conversation, ...image, last] }],
   };
 }

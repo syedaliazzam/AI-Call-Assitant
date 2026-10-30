@@ -64,6 +64,11 @@ export interface WarmOptions {
    * warm-up refreshes their cache entry too. Omitted: the session's cached parts only.
    */
   conversation?: ConversationChunk[];
+  /**
+   * The approved lessons for this session (Day 5 Stage 7): the same list the answers send, so
+   * the warm-up writes the rules block the answers read.
+   */
+  lessons?: readonly string[];
 }
 
 /**
@@ -91,6 +96,7 @@ export function warmSession(
           model: session.preferences.model,
           session: toSessionContext(session, documents),
           ...(options.conversation?.length ? { conversation: options.conversation } : {}),
+          ...(options.lessons?.length ? { lessons: [...options.lessons] } : {}),
         },
         {
           // A warm-up produces no text.

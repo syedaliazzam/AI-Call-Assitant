@@ -261,6 +261,7 @@ describe('deleteSession', () => {
       utterances: 1,
       answers: 1,
       notes: 1,
+      rejectedLessons: 0,
     });
     expect(await getSession(gone.id)).toBeNull();
     expect(await listDocuments(gone.id)).toEqual([]);
@@ -281,6 +282,25 @@ describe('deleteSession', () => {
       utterances: 0,
       answers: 0,
       notes: 0,
+      rejectedLessons: 0,
     });
+  });
+
+  it("removes the session's rejected lesson decisions and keeps its approved lessons", async () => {
+    const session = await createSession(sessionInput());
+    const decision = (id: string, status: 'approved' | 'rejected') => ({
+      id,
+      text: `Invented lesson ${id}`,
+      scope: 'all' as const,
+      status,
+      sourceSessionId: session.id,
+      sourceKey: `invented lesson ${id}`,
+      evidence: '',
+      decidedAt: 1,
+      approvedAt: status === 'approved' ? 1 : null,
+    });
+    await getDb().lessons.bulkAdd([decision('kept', 'approved'), decision('gone', 'rejected')]);
+    expect((await deleteSession(session.id)).rejectedLessons).toBe(1);
+    expect((await getDb().lessons.toArray()).map((lesson) => lesson.id)).toEqual(['kept']);
   });
 });

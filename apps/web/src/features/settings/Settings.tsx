@@ -2,8 +2,8 @@
  * File: apps/web/src/features/settings/Settings.tsx
  * Purpose: The Settings page: default preferences for new sessions, the hotkey list
  *          (read-only; the shortcuts themselves arrive on Day 4), the screen-share protection
- *          switch (Day 5), and "Delete all local data" (asks first, then shows what was
- *          deleted).
+ *          switch (Day 5), "What Kite has learned" (Day 5 Stage 7: LearnedLessons.tsx), and
+ *          "Delete all local data" (asks first, then shows what was deleted).
  * Used by: app/(app)/settings/page.tsx
  * Depends on: src/core/storage (settings, wipe), src/platform (share protection),
  *             src/ui (Button, Dialog, Select, Textarea,
@@ -34,6 +34,7 @@ import { Dialog } from '@/ui/Dialog';
 import { Select } from '@/ui/Select';
 import { Textarea } from '@/ui/Textarea';
 import { Toggle } from '@/ui/Toggle';
+import { LearnedLessons } from './LearnedLessons';
 
 /**
  * The default hotkeys (architecture §7.3), shown read-only. Display text only: the shortcuts
@@ -282,12 +283,17 @@ export function Settings() {
         <ShareProtectionSetting />
       </Section>
 
+      <Section title="What Kite has learned">
+        {/* Remounted after "Delete all local data", so the list shows the empty store. */}
+        <LearnedLessons key={deleted ? 'wiped' : 'kept'} />
+      </Section>
+
       <Section title="Local data">
         <p className="mb-4 text-sm text-slate-600">
-          Deletes every session, document, transcript and answer saved by Kite on this computer, and
-          these settings. The speech model stays (it holds no personal data and is 204 MB to
-          download again). Sessions in another browser or in the desktop app are separate and are
-          not affected.
+          Deletes every session, document, transcript, answer and learned lesson saved by Kite on
+          this computer, and these settings. The speech model stays (it holds no personal data and
+          is 204 MB to download again). Sessions in another browser or in the desktop app are
+          separate and are not affected.
         </p>
         <Button variant="danger" onClick={() => setConfirming(true)}>
           Delete all local data
@@ -295,7 +301,8 @@ export function Settings() {
         {deleted && (
           <p role="status" className="mt-3 text-sm text-green-700">
             Deleted {deleted.sessions} sessions, {deleted.documents} documents, {deleted.utterances}{' '}
-            transcript lines, {deleted.answers} answers and {deleted.notes} notes.
+            transcript lines, {deleted.answers} answers, {deleted.notes} notes and {deleted.lessons}{' '}
+            lessons.
           </p>
         )}
       </Section>
@@ -316,8 +323,8 @@ export function Settings() {
         }
       >
         <p>
-          Every session, document, transcript and answer Kite saved on this computer will be
-          deleted. This cannot be undone.
+          Every session, document, transcript, answer and learned lesson Kite saved on this computer
+          will be deleted. This cannot be undone.
         </p>
       </Dialog>
     </div>

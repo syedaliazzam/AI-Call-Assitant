@@ -2,10 +2,12 @@
  * File: apps/web/scripts/lib/eval-options.ts
  * Purpose: Command-line options shared by the evaluations (eval-answers.ts, eval-notes.ts), so
  *          a change re-runs only the scenario groups it touches (CLAUDE.md "Evaluation cost"):
- *          --only=<group or scenario id>, --runs=N, --show and --dry-run; and the estimated
+ *          --only=<group or scenario id>, --runs=N, --show, --dry-run and --without-lessons; and
+ *          the estimated
  *          number of Claude requests, printed before anything is sent.
  *          Groups: 'answers' (the Day 4 scenarios 01–15, the baseline group), 'screenshots'
- *          (16–18, Day 5), both in eval-answers.ts; 'notes' (eval-notes.ts).
+ *          (16–18, Day 5), 'lessons' (19–20, Day 5 Stage 7), in eval-answers.ts; 'notes'
+ *          (eval-notes.ts).
  * Used by: scripts/eval-answers.ts, scripts/eval-notes.ts
  * Depends on: nothing
  * Architecture: docs/testing/answer-eval.md (groups and gates)
@@ -21,6 +23,8 @@ export interface EvalOptions {
   show: boolean;
   /** Print the estimate and stop (sends nothing; needs no key). */
   dryRun: boolean;
+  /** Send no lessons (the lesson group's comparison run, Day 5 Stage 7). */
+  withoutLessons: boolean;
 }
 
 /**
@@ -47,6 +51,7 @@ export function parseEvalArgs(argv: readonly string[], defaultRuns: number): Eva
     only: value('--only'),
     show: argv.includes('--show'),
     dryRun: argv.includes('--dry-run'),
+    withoutLessons: argv.includes('--without-lessons'),
   };
 }
 

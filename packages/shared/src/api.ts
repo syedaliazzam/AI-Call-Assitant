@@ -206,6 +206,13 @@ export interface AnswerRequest {
    * (`data:image/jpeg;base64,…`, at most MAX_IMAGE_CHARS). Never logged or stored.
    */
   image?: string | null;
+  /**
+   * The lessons the user approved for this session's type (Day 5 Stage 7): at most
+   * MAX_ACTIVE_LESSONS, each at most MAX_LESSON_CHARS, oldest approval first. They go in the
+   * cached rules block, so the warm-up and every answer of a call send the same list.
+   * Omitted or empty: the rules block is unchanged. Never logged (only their count).
+   */
+  lessons?: string[];
 }
 
 /** Token counts reported by the Claude API for one reply. Names match the API's usage fields. */

@@ -5,6 +5,7 @@
  *          saved transcript (You/Them with clock times, or a note when it was not saved).
  * Used by: src/features/review/SessionReview.tsx
  * Depends on: src/core/review/load.ts (formatCallTime), src/core/answer/format.ts (splitAnswer),
+ *             src/features/review/ProposedLessons.tsx (Stage 7),
  *             src/core/storage/types.ts, src/ui/Button.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review);
  *               day-05-overlay-screenshots-notes.md Stage 6
@@ -13,8 +14,15 @@
 
 import { splitAnswer } from '@/core/answer/format';
 import { formatCallTime } from '@/core/review/load';
-import type { StoredAnswer, StoredNotes, StoredUtterance } from '@/core/storage/types';
+import type {
+  SessionType,
+  StoredAnswer,
+  StoredLesson,
+  StoredNotes,
+  StoredUtterance,
+} from '@/core/storage/types';
 import { Button } from '@/ui/Button';
+import { ProposedLessons } from './ProposedLessons';
 
 /** Clock time of a line or answer, in the user's locale (for example "14:05:32"). */
 const CLOCK = new Intl.DateTimeFormat(undefined, { timeStyle: 'medium' });
@@ -66,11 +74,19 @@ export interface NotesSectionProps {
   failed: boolean;
   /** Writes the notes again (Regenerate) or for the first time. */
   onRegenerate: () => void;
+  /** The session (for lesson decisions). */
+  sessionId: string;
+  /** Its type (the default lesson scope). */
+  sessionType: SessionType;
+  /** The decisions on this session's proposed lessons. */
+  lessonDecisions: readonly StoredLesson[];
+  /** Called after a lesson decision changed (the page reloads). */
+  onLessonsChanged: () => void;
 }
 
 /**
  * The AI notes: summary, questions, next steps, unclear parts and proposed lessons, with
- * Regenerate. Proposed lessons are shown as suggestions only (approval comes in Stage 7).
+ * Regenerate. Proposed lessons are suggestions with Approve / Edit / Reject (ProposedLessons).
  *
  * @param props See NotesSectionProps.
  * @returns The section.
@@ -174,20 +190,13 @@ export function NotesSection(props: NotesSectionProps) {
             </div>
           )}
           {notes.notes.lessons.length > 0 && (
-            <div>
-              <h3 className="font-medium text-slate-900">Proposed lessons</h3>
-              <p className="text-xs text-slate-500">
-                Suggestions only: Kite learns nothing until you approve a lesson.
-              </p>
-              <ul aria-label="Proposed lessons" className="mt-1 space-y-2">
-                {notes.notes.lessons.map((lesson, i) => (
-                  <li key={i} className="rounded-md bg-slate-50 px-3 py-2">
-                    <p>{lesson.text}</p>
-                    <p className="text-xs text-slate-500">Based on: {lesson.evidence}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <ProposedLessons
+              sessionId={props.sessionId}
+              sessionType={props.sessionType}
+              proposals={notes.notes.lessons}
+              decisions={props.lessonDecisions}
+              onChanged={props.onLessonsChanged}
+            />
           )}
         </div>
       ) : (

@@ -96,6 +96,7 @@ describe('loadReview', () => {
       lines: [],
       answers: [],
       notes: null,
+      lessonDecisions: [],
     });
   });
 });

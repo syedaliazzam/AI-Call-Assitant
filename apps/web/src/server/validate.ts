@@ -12,10 +12,12 @@
  */
 import 'server-only';
 import {
+  MAX_ACTIVE_LESSONS,
   MAX_ANSWER_CHARS,
   MAX_CONVERSATION_CHUNKS,
   MAX_CONVERSATION_TOKENS,
   MAX_IMAGE_CHARS,
+  MAX_LESSON_CHARS,
   MAX_LINE_CHARS,
   MAX_NOTES_ANSWERS,
   MAX_NOTES_CHARS,
@@ -141,6 +143,11 @@ export const answerRequestSchema = z
       .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/, 'must be a JPEG data URL')
       .refine(startsAsJpeg, 'must be a JPEG image')
       .nullable()
+      .optional(),
+    // Approved lessons (Day 5 Stage 7), for the rules block.
+    lessons: z
+      .array(z.string().min(1).max(MAX_LESSON_CHARS, `at most ${MAX_LESSON_CHARS} characters`))
+      .max(MAX_ACTIVE_LESSONS, `at most ${MAX_ACTIVE_LESSONS} lessons`)
       .optional(),
   })
   .strict()

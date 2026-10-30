@@ -110,6 +110,7 @@ function review(changes: Partial<ReviewData> = {}): ReviewData {
     lines: [line('old', 1_000), line('new1', 100_000 + 10_000), line('new2', 100_000 + 30_000)],
     answers: [ANSWER],
     notes: null,
+    lessonDecisions: [],
     ...changes,
   };
 }

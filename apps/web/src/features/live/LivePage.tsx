@@ -81,6 +81,8 @@ export interface LivePageProps {
   session: Session;
   /** The session's documents (for the warm-up on Connect, and for answers). */
   documents: readonly StoredDocument[];
+  /** The approved lessons for this session type (Day 5 Stage 7), for warm-ups and answers. */
+  lessons: readonly string[];
   /**
    * The session's hotwords in the engine's text format ("PHRASE :score" per line; '' = none),
    * from buildHotwords() in core/stt/sessionHotwords.ts.
@@ -148,6 +150,7 @@ function channelEndedMessage(speaker: Speaker, platform: 'desktop' | 'browser'):
 export function LivePage({
   session,
   documents,
+  lessons,
   hotwords,
   hotwordCount,
   savedLines,
@@ -322,7 +325,7 @@ export function LivePage({
       // Warm Claude's prompt cache again: the warm-up from when the page opened may have
       // expired (5 minutes) while the user read the instructions. If it is still warm this is
       // a cheap cache read. Not awaited; it never throws.
-      void warmSession(session, documents);
+      void warmSession(session, documents, { lessons });
       // The status and activity time are bookkeeping: a failure must not stop the call.
       markSessionActive(session.id).catch(() => undefined);
       // "Save transcript" on: save final lines as they arrive (one saver per call; a
@@ -487,6 +490,7 @@ export function LivePage({
         <LiveAnswers
           session={session}
           documents={documents}
+          lessons={lessons}
           transcript={transcript}
           callStartedAt={callStartedAt}
           ending={ending}

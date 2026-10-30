@@ -2,13 +2,15 @@
  * File: apps/web/src/features/session-setup/labels.ts
  * Purpose: The words shown for stored values: session types, statuses, models and answer
  *          styles, in one place so the dashboard, the wizard and Settings say the same thing.
- * Used by: src/features/dashboard/*, src/features/session-setup/*, src/features/settings/*
+ * Used by: src/features/dashboard/*, src/features/session-setup/*, src/features/settings/*,
+ *          src/features/review/* (lesson scopes, Day 5 Stage 7)
  * Depends on: src/core/storage/types.ts (the values)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F1–F3), §5
  */
 import {
   SESSION_TYPES,
   type AnswerModel,
+  type LessonScope,
   type AnswerStyle,
   type SessionStatus,
   type SessionType,
@@ -59,4 +61,21 @@ export const TONE_OPTIONS: readonly { value: AnswerStyle['tone']; label: string 
   { value: 'simple', label: 'Simple' },
   { value: 'professional', label: 'Professional' },
   { value: 'friendly', label: 'Friendly' },
+];
+
+/**
+ * The words for a lesson's scope.
+ *
+ * @param scope 'all' or a session type.
+ * @returns "All calls" or, for example, "Sales calls only".
+ * Called from: features/review (proposed lessons), features/settings (What Kite has learned)
+ */
+export function lessonScopeLabel(scope: LessonScope): string {
+  return scope === 'all' ? 'All calls' : `${SESSION_TYPE_LABELS[scope]} calls only`;
+}
+
+/** The lesson scope choices: all calls first, then each session type. */
+export const LESSON_SCOPE_OPTIONS: readonly { value: LessonScope; label: string }[] = [
+  { value: 'all', label: lessonScopeLabel('all') },
+  ...SESSION_TYPES.map((type) => ({ value: type, label: lessonScopeLabel(type) })),
 ];

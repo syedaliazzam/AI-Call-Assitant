@@ -140,6 +140,12 @@ describe('buildAnswerRequest', () => {
     expect(third.log.chunks).toBe(second.log.chunks);
   });
 
+  it('sends the approved lessons with every request, the same list as the warm-up (Day 5)', () => {
+    const lessons = ['Give prices per seat and per month.'];
+    expect(build({ lessons }, 10).request.lessons).toEqual(lessons);
+    expect(build({}, 10).request).not.toHaveProperty('lessons');
+  });
+
   it('sends only the new words of a line that grew after it was sent', () => {
     const before = build({ lines: [line('u1', 'them', 'WHAT ABOUT TRAINING', 1, 2)] }, 10);
     const grown = [line('u1', 'them', 'WHAT ABOUT TRAINING FOR DISPATCHERS', 1, 4)];

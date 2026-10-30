@@ -31,6 +31,8 @@ export interface LiveAnswersProps {
   session: Session;
   /** Its documents. */
   documents: readonly StoredDocument[];
+  /** The approved lessons for this session type (Day 5 Stage 7); none when omitted. */
+  lessons?: readonly string[];
   /** The live transcript. */
   transcript: Transcript;
   /** When this call connected (Unix ms). */
@@ -70,6 +72,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const answers = useLiveAnswers({
     session: props.session,
     documents: props.documents,
+    ...(props.lessons ? { lessons: props.lessons } : {}),
     transcript: props.transcript,
     callStartedAt: props.callStartedAt,
     store: props.store,

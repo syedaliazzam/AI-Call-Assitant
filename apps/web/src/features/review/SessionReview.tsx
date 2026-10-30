@@ -241,6 +241,10 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
         status={notesState.status}
         failed={notesState.failed}
         onRegenerate={() => void regenerate()}
+        sessionId={session.id}
+        sessionType={session.type}
+        lessonDecisions={review.lessonDecisions}
+        onLessonsChanged={() => void reload()}
       />
       <AnswersSection answers={answers} />
       <TranscriptSection lines={lines} saveTranscript={session.saveTranscript} />
@@ -262,7 +266,8 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
       >
         <p>
           “{title}” and everything saved with it on this computer (documents, transcript, answers
-          and notes) will be deleted. This cannot be undone.
+          and notes) will be deleted. This cannot be undone. Lessons you approved from it stay in
+          Settings.
         </p>
         {deleteFailed && (
           <p role="alert" className="mt-2 text-sm text-red-700">

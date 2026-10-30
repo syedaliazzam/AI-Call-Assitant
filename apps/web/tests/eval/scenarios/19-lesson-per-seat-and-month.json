@@ -1,0 +1,51 @@
+{
+  "id": "19-lesson-per-seat-and-month",
+  "covers": "An approved lesson changes a price answer: give the price per seat, the monthly total and the yearly total.",
+  "session": {
+    "type": "sales",
+    "company": "Harbor Lane Freight (invented)",
+    "role": "Account executive",
+    "description": "New business call with a regional courier.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "price-list.txt",
+        "text": "Harbor Lane Freight price list (invented).\nStarter plan: 18 dollars per seat per month, up to 10 seats.\nProfessional plan: 52 dollars per seat per month, billed yearly, includes single sign-on.\nOnboarding: a one-time fee of 1,500 dollars for any plan."
+      }
+    ]
+  },
+  "lessons": [
+    "Give prices per seat, the monthly total and the yearly total for the seat count they mention."
+  ],
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "WE HAVE TWENTY FIVE DRIVERS WHO WOULD NEED ACCESS",
+        "at": 8
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "WHAT WOULD THE PROFESSIONAL PLAN COST FOR THEM",
+      "at": 15
+    }
+  ],
+  "mode": "answer",
+  "question": "WHAT WOULD THE PROFESSIONAL PLAN COST FOR THEM",
+  "mustInclude": [
+    "52 dollars per seat per month",
+    "1,300 dollars a month for 25 seats",
+    "15,600 dollars a year for 25 seats (billed yearly)"
+  ],
+  "mustNotInclude": ["a discount", "a price other than 52 dollars per seat"]
+}

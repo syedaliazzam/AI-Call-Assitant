@@ -140,12 +140,20 @@ function toStored(entry: AnswerEntry, sessionId: string): StoredAnswer {
   };
 }
 
+/** No lessons: one shared empty list, so hook dependencies stay stable between renders. */
+const NO_LESSONS: readonly string[] = [];
+
 /** Inputs of useLiveAnswers(). */
 export interface LiveAnswersInput {
   /** The session. */
   session: Session;
   /** Its documents. */
   documents: readonly StoredDocument[];
+  /**
+   * The approved lessons for this session type (Day 5 Stage 7), sent with every warm-up and
+   * answer so the cached rules block is the same for all of them. None when omitted.
+   */
+  lessons?: readonly string[];
   /** The live transcript. */
   transcript: Transcript;
   /** When this call connected (Unix ms); a new value starts a new conversation. */
@@ -198,6 +206,7 @@ export interface LiveAnswers {
  */
 export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const { session, documents, transcript, callStartedAt } = input;
+  const lessons = input.lessons ?? NO_LESSONS;
   const store = input.store ?? DEFAULT_STORE;
   const [entries, setEntries] = useState<AnswerEntry[]>([]);
   // The answer shown, by id (null after Clear).
@@ -239,7 +248,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     logRef.current = emptyLog();
     finishedRef.current = [];
     const keepWarm = startKeepWarm({
-      warm: () => warmSession(session, documents, { conversation: logRef.current.chunks }),
+      warm: () => warmSession(session, documents, { conversation: logRef.current.chunks, lessons }),
     });
     keepWarmRef.current = keepWarm;
     return () => {
@@ -247,7 +256,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       keepWarmRef.current = null;
       runner.cancel();
     };
-  }, [callStartedAt, session, documents, runner]);
+  }, [callStartedAt, session, documents, lessons, runner]);
 
   /**
    * Replaces one entry's fields.
@@ -290,6 +299,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         now: Date.now(),
         callStartedAt,
         log: logRef.current,
+        lessons,
       });
       logRef.current = built.log;
       keepWarmRef.current?.noteActivity();
@@ -355,7 +365,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         },
       });
     },
-    [session, documents, transcript, callStartedAt, runner, update],
+    [session, documents, lessons, transcript, callStartedAt, runner, update],
   );
 
   const clear = useCallback(() => {

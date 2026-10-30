@@ -3,11 +3,13 @@
  * sign-in, runs in CI. With the real SessionReview on invented sessions seeded into the
  * browser's IndexedDB and a mocked /api/notes (no Claude call), it covers: the page shows the
  * call details, the notes (summary, questions, next steps, unclear part, proposed lesson as a
- * suggestion), every answer with its rating and note, and the transcript; Regenerate replaces
- * the notes; a usage-limit reply shows the clear message and keeps the old notes; a session
+ * suggestion), every answer with its rating and note, and the transcript; lessons (Stage 7):
+ * Edit and Approve for all calls, Reject, only decisions stored; Regenerate replaces the notes
+ * and, when it proposes the same lessons reworded, the decisions carry over (no duplicates); a usage-limit reply shows the clear message and keeps the old notes; a session
  * with "Save transcript" off says so, and its notes, written from the answers only (no lines
  * sent), are labelled "Written from answers only"; Delete asks in an in-app dialog, removes
- * everything stored for the session, and goes to the dashboard.
+ * everything stored for the session, and goes to the dashboard. Settings' "What Kite has
+ * learned" lists the approved lesson as sent, edits it, and clears all lessons after a dialog.
  * Set KITE_SCREENSHOT_DIR to save screenshots of the page (for stage reports; never in CI).
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -74,7 +76,17 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
               questions: [],
               nextSteps: [{ step: 'Send the proposal by Monday', owner: 'You' }],
               unclear: [],
-              lessons: [],
+              // The same two lessons, reworded: decisions must carry over, not duplicate.
+              lessons: [
+                {
+                  text: 'Give the monthly and yearly totals for the seat count they mention',
+                  evidence: 'The 40-seat answer was rated down.',
+                },
+                {
+                  text: 'Mention the onboarding fee with every price',
+                  evidence: 'Invented.',
+                },
+              ],
             },
             usage: {
               input_tokens: 10,
@@ -229,6 +241,31 @@ test('shows the call details, notes, answers and transcript', async () => {
   await shot('review-full');
 });
 
+test('lessons: Edit and Approve for all calls, Reject; only decisions are stored', async () => {
+  expect(await page.evaluate(() => window.kiteReviewHarness.lessons())).toEqual([]);
+  const proposals = page.getByRole('listitem', { name: 'Proposed lesson' });
+  await expect(proposals).toHaveCount(2);
+  await proposals.first().getByRole('button', { name: 'Edit' }).click();
+  // Typed newlines and long spaces are cleaned: what is shown is what is sent.
+  await proposals
+    .first()
+    .getByLabel('Lesson', { exact: true })
+    .fill('Give the monthly   and yearly totals.');
+  await expect(proposals.first()).toContainText('/200 characters. Kite sends exactly this text');
+  await proposals.first().getByLabel('Applies to').selectOption('all');
+  await shot('review-lesson-edit');
+  await proposals.first().getByRole('button', { name: 'Approve' }).click();
+  await expect(proposals.first().getByLabel('Decision')).toHaveText('Approved · All calls');
+  await expect(proposals.first()).toContainText('Give the monthly and yearly totals.');
+  await proposals.nth(1).getByRole('button', { name: 'Reject' }).click();
+  await expect(proposals.nth(1).getByLabel('Decision')).toHaveText('Rejected');
+  expect(await page.evaluate(() => window.kiteReviewHarness.lessons())).toEqual([
+    { text: 'Give the monthly and yearly totals.', scope: 'all', status: 'approved' },
+    { text: 'Mention the onboarding fee with every price.', scope: 'sales', status: 'rejected' },
+  ]);
+  await shot('review-lessons-decided');
+});
+
 test('a usage-limit reply shows the clear message and keeps the old notes', async () => {
   notesMode = 'limit';
   await page.getByRole('button', { name: 'Regenerate' }).click();
@@ -251,6 +288,11 @@ test('Regenerate replaces the notes from the saved call', async () => {
   // The saved lines and answers, in seconds since the call started.
   expect(received[0]!.lines.map((line) => line.at)).toEqual([5, 12, 24, 40, 95, 103]);
   expect(received[0]!.answers.map((answer) => answer.rating)).toEqual(['down', 'up']);
+  // The regenerated notes propose the same lessons in other words: the decisions carry over.
+  const proposals = page.getByRole('listitem', { name: 'Proposed lesson' });
+  await expect(proposals.first().getByLabel('Decision')).toHaveText('Approved · All calls');
+  await expect(proposals.nth(1).getByLabel('Decision')).toHaveText('Rejected');
+  expect(await page.evaluate(() => window.kiteReviewHarness.lessons())).toHaveLength(2);
 });
 
 test('with "Save transcript" off: says so, and notes are written from answers only', async () => {
@@ -267,6 +309,29 @@ test('with "Save transcript" off: says so, and notes are written from answers on
   expect(received[0]!.answers).toHaveLength(2);
   await shot('review-transcript-off');
   // Back to the full session for the delete test.
+  await page.evaluate((id) => window.kiteReviewHarness.show(id), fullId);
+  await expect(page.getByRole('heading', { name: 'Northwind Logistics (invented)' })).toBeVisible();
+});
+
+test('Settings lists the approved lesson as sent; edit, then clear all in a dialog', async () => {
+  await page.evaluate(() => window.kiteReviewHarness.showLearned());
+  const learned = page.getByRole('listitem', { name: 'Learned lesson' });
+  await expect(learned).toHaveCount(1);
+  await expect(learned).toContainText('Give the monthly and yearly totals.');
+  await expect(learned).toContainText('All calls');
+  await expect(page.getByText('1 rejected proposal is remembered')).toBeVisible();
+  await shot('settings-learned');
+  await learned.getByRole('button', { name: 'Edit' }).click();
+  await learned.getByLabel('Lesson', { exact: true }).fill('Give monthly and yearly totals.');
+  await learned.getByLabel('Applies to').selectOption('sales');
+  await learned.getByRole('button', { name: 'Save' }).click();
+  await expect(learned).toContainText('Sales calls only');
+  await page.getByRole('button', { name: 'Clear all lessons' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Clear all lessons?' });
+  await dialog.getByRole('button', { name: 'Clear all lessons' }).click();
+  await expect(page.getByText('No lessons yet.')).toBeVisible();
+  expect(await page.evaluate(() => window.kiteReviewHarness.lessons())).toEqual([]);
+  // Back to the review for the delete test.
   await page.evaluate((id) => window.kiteReviewHarness.show(id), fullId);
   await expect(page.getByRole('heading', { name: 'Northwind Logistics (invented)' })).toBeVisible();
 });

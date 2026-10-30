@@ -199,6 +199,8 @@ async function respond(
     tailLines: parsed.data.tail?.length ?? 0,
     // The screenshot's size only (Day 5), never its content.
     imageChars: parsed.data.image?.length ?? 0,
+    // How many approved lessons were sent (Day 5 Stage 7), never their text.
+    lessons: parsed.data.lessons?.length ?? 0,
   };
   let source: AsyncGenerator<string, ReplyResult, undefined>;
   if (mode === 'warm') {

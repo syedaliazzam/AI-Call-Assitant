@@ -4,9 +4,10 @@
  *          sessions into this browser's real IndexedDB (core/storage) and renders the real
  *          SessionReview for one of them, with no sign-in. Regenerate posts to the test
  *          server's mocked /api/notes. After Delete the page goes to /dashboard (the test's
- *          stand-in for the dashboard). Exposes seed, show and count on `window.kiteReviewHarness`.
+ *          stand-in for the dashboard). Exposes seed, show, count and lessons on
+ *          `window.kiteReviewHarness`.
  * Used by: tests/integration/review.spec.ts (bundled with esbuild and served on a test page)
- * Depends on: src/features/review/SessionReview.tsx, src/core/storage (sessions, documents,
+ * Depends on: src/features/review/SessionReview.tsx, src/features/settings/LearnedLessons.tsx, src/core/storage (sessions, documents,
  *             utterances, answers, notes), src/core/review/load.ts, react-dom
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing);
  *               day-05-overlay-screenshots-notes.md Stage 6
@@ -18,10 +19,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { loadReview } from '@/core/review/load';
 import { saveAnswer } from '@/core/storage/answers';
 import { addDocument } from '@/core/storage/documents';
+import { listLessons } from '@/core/storage/lessons';
 import { saveNotes } from '@/core/storage/notes';
 import { createSession } from '@/core/storage/sessions';
 import { saveUtterance } from '@/core/storage/utterances';
 import { SessionReview } from '@/features/review/SessionReview';
+import { LearnedLessons } from '@/features/settings/LearnedLessons';
 
 /** Which fixture to seed. */
 export type ReviewFixture = 'full' | 'transcript-off';
@@ -48,6 +51,10 @@ export interface KiteReviewHarness {
   show: (sessionId: string) => void;
   /** Counts what is stored for a session. */
   count: (sessionId: string) => Promise<StoredCounts>;
+  /** Renders Settings' "What Kite has learned" section instead (Day 5 Stage 7). */
+  showLearned: () => void;
+  /** Every stored lesson decision: text, scope and status (Day 5 Stage 7). */
+  lessons: () => Promise<{ text: string; scope: string; status: string }[]>;
 }
 
 declare global {
@@ -164,6 +171,10 @@ async function seed(fixture: ReviewFixture): Promise<string> {
             text: 'Give monthly and yearly totals for the seat count they mention.',
             evidence: 'The 40-seat price answer was rated down with that note.',
           },
+          {
+            text: 'Mention the onboarding fee with every price.',
+            evidence: 'Invented: no answer was rated for this.',
+          },
         ],
       },
     });
@@ -196,4 +207,17 @@ window.kiteReviewHarness = {
       documents: review?.documents.length ?? 0,
     };
   },
+  showLearned: () => {
+    root ??= createRoot(document.getElementById('root')!);
+    root.render(
+      <div className="mx-auto max-w-3xl p-8">
+        <section className="rounded-lg border border-slate-200 bg-white p-6">
+          <h2 className="mb-4 text-base font-semibold text-slate-900">What Kite has learned</h2>
+          <LearnedLessons />
+        </section>
+      </div>,
+    );
+  },
+  lessons: async () =>
+    (await listLessons()).map(({ text, scope, status }) => ({ text, scope, status })),
 };

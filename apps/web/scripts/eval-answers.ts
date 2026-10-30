@@ -8,6 +8,8 @@
  *          Usage: pnpm --filter web eval:answers [--only=<group|id>] [--runs=N] [--show] [--dry-run]
  *            --only=answers      the Day 4 group (scenarios 01–15; the baseline group)
  *            --only=screenshots  the Day 5 screenshot group (16–18)
+ *            --only=lessons      the Day 5 lesson group (19–20: answers with approved lessons)
+ *            --without-lessons   send no lessons (the lesson group's comparison run)
  *            --only=<id>         one scenario (its file name without .json)
  *            --runs=N   answers per scenario (default 2; scores are averaged, because answers
  *                       vary from run to run)
@@ -80,6 +82,11 @@ interface Scenario {
    * only, so it can judge what is on screen without being sent the image).
    */
   imageDescription?: string;
+  /**
+   * Lesson scenarios (Day 5 Stage 7): the approved lessons sent with the answer, exactly as
+   * the app sends them (the rules block's learned preferences).
+   */
+  lessons?: string[];
   /** The question. */
   question: string;
   /** What a good answer must contain. */
@@ -127,14 +134,16 @@ Rubric:
 - reason: one short sentence on what cost points ("none" when nothing did).`;
 
 /**
- * The group a scenario belongs to: 'screenshots' for the screenshot scenarios (Day 5), else
- * 'answers' (the Day 4 baseline group). Each group has its own gate (docs/testing/answer-eval.md).
+ * The group a scenario belongs to: 'lessons' for scenarios with approved lessons (Day 5
+ * Stage 7), 'screenshots' for the screenshot scenarios (Day 5), else 'answers' (the Day 4
+ * baseline group). Each group has its own gate (docs/testing/answer-eval.md).
  *
  * @param scenario The scenario.
  * @returns Its group name.
  * Called from: loadScenarios(), main()
  */
-export function answerGroup(scenario: Pick<Scenario, 'mode'>): string {
+export function answerGroup(scenario: Pick<Scenario, 'mode' | 'lessons'>): string {
+  if (scenario.lessons?.length) return 'lessons';
   return scenario.mode === 'screenshot' ? 'screenshots' : 'answers';
 }
 
@@ -197,12 +206,17 @@ function imageDataUrl(relative: string): string {
 /**
  * Gets one answer through the real server prompt with the fast model.
  *
- * @param scenario The scenario.
- * @param model    The fast model's name.
+ * @param scenario       The scenario.
+ * @param model          The fast model's name.
+ * @param withoutLessons True to leave out the scenario's lessons (the comparison run).
  * @returns The answer text.
  * Called from: main()
  */
-async function answerScenario(scenario: Scenario, model: string): Promise<string> {
+async function answerScenario(
+  scenario: Scenario,
+  model: string,
+  withoutLessons: boolean,
+): Promise<string> {
   const request: AnswerRequest = {
     mode: scenario.mode,
     session: scenario.session,
@@ -210,6 +224,7 @@ async function answerScenario(scenario: Scenario, model: string): Promise<string
     tail: scenario.tail,
     ...(scenario.question ? { question: scenario.question } : {}),
     ...(scenario.image ? { image: imageDataUrl(scenario.image) } : {}),
+    ...(scenario.lessons?.length && !withoutLessons ? { lessons: scenario.lessons } : {}),
   };
   const prompt = buildPrompt(request);
   let text = '';
@@ -294,7 +309,7 @@ async function main(): Promise<void> {
   for (const scenario of scenarios) {
     const totals = { facts: 0, grounded: 0, consistent: 0, style: 0, headline: 0, bullets: 0 };
     for (let run = 1; run <= options.runs; run += 1) {
-      const text = await answerScenario(scenario, env.modelFast);
+      const text = await answerScenario(scenario, env.modelFast, options.withoutLessons);
       const graded = await grade(scenario, text, env.modelSmart);
       const shape = shapeChecks(text, scenario.session.style.format);
       totals.facts += graded.facts;

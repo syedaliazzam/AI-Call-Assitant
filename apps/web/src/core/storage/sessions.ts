@@ -48,6 +48,11 @@ export interface DeletedSessionData {
   answers: number;
   /** Notes removed (0 or 1). */
   notes: number;
+  /**
+   * Rejected lesson decisions removed (Day 5 Stage 7). Approved lessons from the session stay:
+   * they are the user's preferences now, managed in Settings.
+   */
+  rejectedLessons: number;
 }
 
 /**
@@ -244,7 +249,8 @@ export async function updateSessionWithDocuments(
 
 /**
  * Deletes a session and everything stored for it (documents, transcript lines, answers,
- * notes) in one transaction, so a failure part-way leaves nothing half-deleted.
+ * notes, and its rejected lesson decisions) in one transaction, so a failure part-way leaves
+ * nothing half-deleted. Approved lessons it proposed stay (Settings manages them).
  *
  * @param id The session id.
  * @returns How many related rows were removed (all 0 when the session did not exist).
@@ -254,15 +260,20 @@ export async function deleteSession(id: string): Promise<DeletedSessionData> {
   const db = getDb();
   return db.transaction(
     'rw',
-    [db.sessions, db.documents, db.utterances, db.answers, db.notes],
+    [db.sessions, db.documents, db.utterances, db.answers, db.notes, db.lessons],
     async () => {
       const documents = await db.documents.where('sessionId').equals(id).delete();
       const utterances = await db.utterances.where('sessionId').equals(id).delete();
       const answers = await db.answers.where('sessionId').equals(id).delete();
       const notes = (await db.notes.get(id)) ? 1 : 0;
       await db.notes.delete(id);
+      const rejectedLessons = await db.lessons
+        .where('sourceSessionId')
+        .equals(id)
+        .filter((lesson) => lesson.status === 'rejected')
+        .delete();
       await db.sessions.delete(id);
-      return { documents, utterances, answers, notes };
+      return { documents, utterances, answers, notes, rejectedLessons };
     },
   );
 }

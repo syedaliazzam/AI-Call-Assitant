@@ -11,3 +11,4 @@ export type * from './desktop-bridge';
 export * from './hotkeys';
 export * from './screenshot';
 export * from './notes';
+export * from './lessons';

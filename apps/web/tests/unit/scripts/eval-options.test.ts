@@ -31,14 +31,23 @@ describe('parseEvalArgs', () => {
       only: 'screenshots',
       show: false,
       dryRun: true,
+      withoutLessons: false,
     });
     expect(parseEvalArgs(['--only', '01-a', '--runs', '1', '--show'], 2)).toEqual({
       runs: 1,
       only: '01-a',
       show: true,
       dryRun: false,
+      withoutLessons: false,
     });
-    expect(parseEvalArgs([], 3)).toEqual({ runs: 3, only: null, show: false, dryRun: false });
+    expect(parseEvalArgs([], 3)).toEqual({
+      runs: 3,
+      only: null,
+      show: false,
+      dryRun: false,
+      withoutLessons: false,
+    });
+    expect(parseEvalArgs(['--without-lessons'], 2).withoutLessons).toBe(true);
   });
 
   it('refuses a --runs that is not a whole number of at least 1', () => {
@@ -80,5 +89,7 @@ describe('answerGroup', () => {
     expect(answerGroup({ mode: 'screenshot' })).toBe('screenshots');
     expect(answerGroup({ mode: 'answer' })).toBe('answers');
     expect(answerGroup({ mode: 'chat' })).toBe('answers');
+    expect(answerGroup({ mode: 'answer', lessons: ['Give totals.'] })).toBe('lessons');
+    expect(answerGroup({ mode: 'answer', lessons: [] })).toBe('answers');
   });
 });

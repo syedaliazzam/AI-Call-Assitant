@@ -201,3 +201,42 @@ export interface StoredNotes {
    */
   fromAnswersOnly?: boolean;
 }
+
+/** Which sessions a lesson applies to: every session, or one session type. */
+export type LessonScope = 'all' | SessionType;
+
+/**
+ * A decision on a lesson the notes proposed (architecture §7.4 `lessons`), Day 5 Stage 7.
+ * Proposed lessons live only in the notes; this store holds the user's decisions, apart from
+ * the notes, so regenerating the notes never loses or duplicates them. Only approved lessons
+ * are sent to Claude. Lesson text is never logged.
+ */
+export interface StoredLesson {
+  /** Unique id (random). */
+  id: string;
+  /**
+   * The lesson as it is sent: one line, at most MAX_LESSON_CHARS (cleanLessonText()). The user
+   * may have edited it from the proposal.
+   */
+  text: string;
+  /** Which sessions it applies to. */
+  scope: LessonScope;
+  /** 'approved' (sent with answers) or 'rejected' (kept so it is not offered again). */
+  status: 'approved' | 'rejected';
+  /** The session whose notes proposed it (kept after that session is deleted, if approved). */
+  sourceSessionId: string;
+  /**
+   * The proposal's original text, normalised (core/lessons/match.ts normaliseLesson()). It
+   * never changes, even when the text is edited; a regenerated proposal is matched against it.
+   */
+  sourceKey: string;
+  /** What the notes based it on (which answer, rating and note), shown in Settings. */
+  evidence: string;
+  /** When the decision was first made (Unix ms). */
+  decidedAt: number;
+  /**
+   * When it was approved (Unix ms), or null when rejected. Lessons are sent oldest approval
+   * first, so editing a lesson never moves it.
+   */
+  approvedAt: number | null;
+}
