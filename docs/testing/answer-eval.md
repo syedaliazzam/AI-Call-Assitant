@@ -130,3 +130,40 @@ Runs vary: the same prompt can score differently on a second run, so small diffe
 - **Interview answer (03):** it still adds an unrelated bullet ("mentored two junior engineers").
 
 These are candidates for Day 5's learned preferences (for example "keep the headline under 15 words").
+
+### Round 3: short headlines when the session cannot answer (kept)
+
+Approved by the developer as a third round, limited to the "can't answer from the session" case.
+
+**New scenarios (3):** 13-off-topic-question, 14-session-without-documents, 15-small-talk. Each needs a headline of 15 words or fewer, with any explanation in the bullets.
+
+**What changed:** one rule in `SYSTEM_RULES` (the "not in the session" rule) gains: "That headline is still 15 words or fewer, for example "Not in your notes: ask which plan they mean"; put any explanation in the bullets. For small talk or an off-topic question, the headline is a short reply the user can say."
+
+**Run:** same day, machine and models; 15 × 2. "Before" is the round-2 prompt run on all 15 scenarios. Its 12 shared scenarios scored a little differently from round 2's own run (runs vary).
+
+| Scenario | Before /10 | Round 3 /10 | Change |
+|---|---|---|---|
+| 01-sales-pricing-from-document | 10.0 | 10.0 | 0 |
+| 02-support-troubleshooting | 10.0 | 10.0 | 0 |
+| 03-interview-question | 7.5 | 8.0 | +0.5 |
+| 04-follow-up-refers-back | 10.0 | 9.5 | −0.5 |
+| 05-same-question-twice | 9.0 | 9.0 | 0 |
+| 06-new-information-changes-answer | 9.5 | 10.0 | +0.5 |
+| 07-misheard-names | 8.5 | 8.5 | 0 |
+| 08-documents-cannot-answer | 8.0 | 10.0 | +2.0 |
+| 09-typed-chat-question | 9.5 | 9.5 | 0 |
+| 10-discount-pressure | 8.0 | 9.0 | +1.0 |
+| 11-paragraph-style | 10.0 | 10.0 | 0 |
+| 12-internal-meeting | 9.0 | 10.0 | +1.0 |
+| 13-off-topic-question | 8.0 | 9.0 | +1.0 |
+| 14-session-without-documents | 8.0 | 10.0 | +2.0 |
+| 15-small-talk | 7.5 | 9.0 | +1.5 |
+| **Overall** | **8.83** | **9.43** | **+0.60** |
+
+**Result: kept.**
+- The score went up, and no scenario dropped by more than one point (the largest drop is 04, by 0.5).
+- On the original 12 scenarios, round 3 averages 9.46, against round 2's 9.38.
+- The headline check now passes in every can't-answer scenario except 13, where one run in two was over 15 words.
+- This is the Day 4 final prompt.
+
+**Still weak:** the headline in the interview answer (03) and the misheard-name answer (07), and the misheard-name answer's style.

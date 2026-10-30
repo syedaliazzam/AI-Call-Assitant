@@ -1,0 +1,51 @@
+{
+  "id": "15-small-talk",
+  "covers": "Small talk, with nothing in the session to draw on.",
+  "session": {
+    "type": "interview",
+    "company": "Ledgerly (invented)",
+    "role": "Senior backend engineer interview (the user is the candidate)",
+    "description": "Second-round interview.",
+    "instructions": "Answer in first person, as me.",
+    "keyTerms": [
+      "Ledgerly"
+    ],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "my-notes.txt",
+        "text": "My experience (invented).\nAt Copperleaf Payments I led the invoice API move to read replicas and a Redis cache."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "HI THANKS FOR JOINING",
+        "at": 2
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "HOW WAS YOUR WEEKEND ANYWAY",
+      "at": 6
+    }
+  ],
+  "mode": "answer",
+  "question": "HOW WAS YOUR WEEKEND ANYWAY",
+  "mustInclude": [
+    "a short, friendly reply the user can say or adapt (for example \"Good, thanks, how about yours?\")",
+    "the headline (first line) is 15 words or fewer; any explanation is in the bullets"
+  ],
+  "mustNotInclude": [
+    "invented personal details about the user stated as facts"
+  ]
+}

@@ -358,5 +358,7 @@ describe('SYSTEM_RULES', () => {
     expect(SYSTEM_RULES).toContain('keep conditions and details out of it');
     expect(SYSTEM_RULES).toContain('Each bullet must state a fact from the session details');
     expect(SYSTEM_RULES).toContain('Never offer or hint at a price, discount, exception');
+    // Round 3 (kept): a short headline even when the session cannot answer.
+    expect(SYSTEM_RULES).toContain('That headline is still 15 words or fewer');
   });
 });
