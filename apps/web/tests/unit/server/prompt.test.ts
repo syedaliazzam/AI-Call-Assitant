@@ -354,5 +354,9 @@ describe('SYSTEM_RULES', () => {
       'If the same question is asked again, build on the earlier answer instead of starting over.',
     );
     expect(SYSTEM_RULES).toContain('Learned preferences');
+    // Day 4 Stage 10 (round 2, kept): short headlines, bullets only from session facts.
+    expect(SYSTEM_RULES).toContain('keep conditions and details out of it');
+    expect(SYSTEM_RULES).toContain('Each bullet must state a fact from the session details');
+    expect(SYSTEM_RULES).toContain('Never offer or hint at a price, discount, exception');
   });
 });

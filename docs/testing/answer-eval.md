@@ -73,3 +73,60 @@ Runs vary: the same prompt can score differently on a second run, so small diffe
 | 12-internal-meeting | 3.0 | 2.0 | 2.0 | 1.0 | 1.0 | 1.0 | 10.0 |
 
 **Overall: 9.17 / 10.** The points lost are mostly in the headline: it was longer than 15 words in 8 of the 24 answers (scenarios 01, 03, 07, 08, 10). Grounded and style lost points in the same scenarios.
+
+### Round 1: shorter headlines, no offers beyond the documents (reverted)
+
+**What changed** in `SYSTEM_RULES` (`apps/web/src/server/prompt.ts`):
+- The headline rule adds "keep conditions and details out of it".
+- Bullets are "for this question only; leave out facts that do not help answer it".
+- A new rule: "Never offer or hint at a price, discount, exception or commitment beyond what the session details and documents allow."
+
+**Run:** same day, machine and models; 12 × 2.
+
+| Scenario | Total /10 | Change from baseline |
+|---|---|---|
+| 01-sales-pricing-from-document | 10.0 | +1.5 |
+| 02-support-troubleshooting | 10.0 | 0 |
+| 03-interview-question | 8.0 | +0.5 |
+| 04-follow-up-refers-back | 9.5 | −0.5 |
+| 05-same-question-twice | 9.0 | 0 |
+| 06-new-information-changes-answer | 10.0 | 0 |
+| 07-misheard-names | 9.5 | +0.5 |
+| 08-documents-cannot-answer | 9.0 | +0.5 |
+| 09-typed-chat-question | 8.5 | **−1.5** |
+| 10-discount-pressure | 8.0 | +0.5 |
+| 11-paragraph-style | 10.0 | 0 |
+| 12-internal-meeting | 10.0 | 0 |
+
+**Overall: 9.29 / 10.**
+
+**Result: reverted.** Scenario 09 dropped by more than one point. Its answers padded the bullets with advice that is not in the documents ("reducing seats is not a cancellation; check with your account lead"), and the grader marked that as ungrounded.
+
+### Round 2: round 1, plus bullets only from session facts (kept)
+
+**What changed:** round 1's changes, plus one sentence in the bullet rule: "Each bullet must state a fact from the session details, documents or conversation; do not add advice, next steps or offers that are not in them."
+
+**Run:** same day, machine and models; 12 × 2.
+
+| Scenario | Facts /3 | Grounded /2 | Consistent /2 | Style /1 | Headline /1 | Bullets /1 | Total /10 | Change from baseline |
+|---|---|---|---|---|---|---|---|---|
+| 01-sales-pricing-from-document | 3.0 | 2.0 | 2.0 | 1.0 | 1.0 | 1.0 | 10.0 | +1.5 |
+| 02-support-troubleshooting | 3.0 | 2.0 | 2.0 | 1.0 | 1.0 | 1.0 | 10.0 | 0 |
+| 03-interview-question | 3.0 | 1.0 | 2.0 | 0.5 | 0.0 | 1.0 | 7.5 | 0 |
+| 04-follow-up-refers-back | 3.0 | 2.0 | 2.0 | 1.0 | 1.0 | 1.0 | 10.0 | 0 |
+| 05-same-question-twice | 2.0 | 2.0 | 2.0 | 1.0 | 1.0 | 1.0 | 9.0 | 0 |
+| 06-new-information-changes-answer | 3.0 | 2.0 | 2.0 | 1.0 | 1.0 | 1.0 | 10.0 | 0 |
+| 07-misheard-names | 3.0 | 1.5 | 2.0 | 1.0 | 0.0 | 1.0 | 8.5 | −0.5 |
+| 08-documents-cannot-answer | 3.0 | 2.0 | 2.0 | 1.0 | 0.0 | 1.0 | 9.0 | +0.5 |
+| 09-typed-chat-question | 3.0 | 2.0 | 2.0 | 1.0 | 1.0 | 1.0 | 10.0 | 0 |
+| 10-discount-pressure | 3.0 | 2.0 | 2.0 | 0.5 | 0.0 | 1.0 | 8.5 | +1.0 |
+| 11-paragraph-style | 3.0 | 2.0 | 2.0 | 1.0 | 1.0 | 1.0 | 10.0 | 0 |
+| 12-internal-meeting | 3.0 | 2.0 | 2.0 | 1.0 | 1.0 | 1.0 | 10.0 | 0 |
+
+**Overall: 9.38 / 10** (baseline 9.17). No scenario dropped by more than one point (the largest drop is 07, by 0.5), so the change is **kept**. This is the Day 4 final prompt.
+
+**Still weak:**
+- **Headlines over 15 words:** these remain in the interview (03), misheard-name (07), unanswerable-question (08) and discount (10) scenarios. These are answers that open with a full sentence.
+- **Interview answer (03):** it still adds an unrelated bullet ("mentored two junior engineers").
+
+These are candidates for Day 5's learned preferences (for example "keep the headline under 15 words").
