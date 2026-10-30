@@ -37,6 +37,9 @@ let context: BrowserContext;
 let page: Page;
 /** The first warm-up's cache write, compared with the second warm-up's read. */
 let firstWrite = 0;
+/** The first warm-up's cache read: the shared rules block (Day 4: over the 512-token minimum, so
+ * it is cached once for every session), or 0 when no other session used it in the last 5 min. */
+let firstRead = 0;
 /** Final transcript lines on screen just before End. */
 let liveFinals = 0;
 
@@ -90,7 +93,9 @@ test('3. Open in browser: key terms and the first warm-up (cache write)', async 
   const usage = await warmUsage(await warm);
   expect(usage).not.toBeNull();
   firstWrite = usage!.cache_creation_input_tokens;
-  const pass = firstWrite > 0 && usage!.cache_read_input_tokens === 0;
+  firstRead = usage!.cache_read_input_tokens;
+  // A new session writes its own blocks; it may read the rules block other sessions cached.
+  const pass = firstWrite > 0;
   report('warm-up 1 (cache write)', pass, {
     write: usage!.cache_creation_input_tokens,
     read: usage!.cache_read_input_tokens,
@@ -105,7 +110,8 @@ test('4. second warm-up on reload (cache read)', async () => {
   const usage = await warmUsage(await warm);
   expect(usage).not.toBeNull();
   const pass =
-    usage!.cache_creation_input_tokens === 0 && usage!.cache_read_input_tokens === firstWrite;
+    usage!.cache_creation_input_tokens === 0 &&
+    usage!.cache_read_input_tokens === firstWrite + firstRead;
   report('warm-up 2 (cache read)', pass, {
     write: usage!.cache_creation_input_tokens,
     read: usage!.cache_read_input_tokens,
