@@ -1,0 +1,48 @@
+{
+  "id": "11-paragraph-style",
+  "covers": "The paragraph answer format and a friendly tone.",
+  "session": {
+    "type": "sales",
+    "company": "Northwind Logistics (invented)",
+    "role": "Account executive",
+    "description": "Intro call.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Bluefin Route", "Professional plan"],
+    "style": {
+      "format": "paragraph",
+      "length": "short",
+      "tone": "friendly"
+    },
+    "documents": [
+      {
+        "name": "pilot-report.txt",
+        "text": "Bluefin Route pilot report (invented).\nBluefin Route is the live re-routing feature of the Harbor Lane platform.\nIn the 12-week pilot across four depots, Bluefin Route cut late deliveries by a third.\nAverage route planning time fell from 40 minutes to 18 minutes per dispatcher.\nRollout plan: phase 1 (weeks 1 to 2) connects the depots and imports routes; phase 2 (weeks 3 to 4) trains dispatchers in groups of six with one practice day; phase 3 (weeks 5 to 6) switches on live re-routing depot by depot."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "I AM NEW TO THE PROJECT",
+        "at": 4
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "WHAT DID THE PILOT ACTUALLY SHOW",
+      "at": 10
+    }
+  ],
+  "mode": "answer",
+  "question": "WHAT DID THE PILOT ACTUALLY SHOW",
+  "mustInclude": [
+    "late deliveries cut by a third",
+    "planning time from 40 to 18 minutes per dispatcher",
+    "one short paragraph (no bullets)"
+  ],
+  "mustNotInclude": ["bullet points"]
+}

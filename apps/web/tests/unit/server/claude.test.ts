@@ -4,7 +4,8 @@
  * thinking off for the tier, yields only text, returns usage with null cache counts as 0, and
  * aborts the Claude request when the caller stops early; warmCache() sends max_tokens 0 without
  * streaming, with the answers' thinking setting, and returns the cache usage; thinkingFor() turns
- * thinking off in the way each model accepts;
+ * thinking off in the way each model accepts; jsonReply() asks for structured output with the
+ * given schema and the tier's thinking setting, parses the reply, and throws NO_JSON without text;
  * describeClaudeError() maps SDK errors to Kite error codes without leaking API text.
  */
 import Anthropic from '@anthropic-ai/sdk';
@@ -32,7 +33,7 @@ vi.stubEnv('ANTHROPIC_API_KEY', 'test-key');
 vi.stubEnv('KITE_MODEL_FAST', 'claude-haiku-5-5');
 vi.stubEnv('KITE_MODEL_SMART', 'claude-sonnet-5-5');
 
-const { cachedBlock, describeClaudeError, streamReply, thinkingFor, warmCache } =
+const { cachedBlock, describeClaudeError, jsonReply, streamReply, thinkingFor, warmCache } =
   await import('@/server/claude');
 
 /**
@@ -194,6 +195,40 @@ describe('warmCache', () => {
     const error = new Anthropic.APIError(400, undefined, 'bad', new Headers());
     createMock.mockRejectedValue(error);
     await expect(warmCache(WARM)).rejects.toBe(error);
+  });
+});
+
+describe('jsonReply', () => {
+  /** Standard input. */
+  const JSON_INPUT = {
+    model: 'claude-sonnet-5-5',
+    tier: 'smart' as const,
+    system: 'RUBRIC',
+    prompt: 'GRADE THIS',
+    schema: { type: 'object' },
+    maxTokens: 300,
+  };
+
+  it('asks for structured output and parses the reply', async () => {
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: '{"facts":3}' }],
+      usage: { input_tokens: 50, output_tokens: 9 },
+    });
+    const result = await jsonReply(JSON_INPUT);
+    expect(createMock.mock.calls[0]![0]).toMatchObject({
+      model: 'claude-sonnet-5-5',
+      max_tokens: 300,
+      thinking: { type: 'between_tools' },
+      output_config: { format: { type: 'json_schema', schema: { type: 'object' } } },
+      messages: [{ role: 'user', content: 'GRADE THIS' }],
+    });
+    expect(result.value).toEqual({ facts: 3 });
+    expect(result.usage.cache_read_input_tokens).toBe(0);
+  });
+
+  it('throws NO_JSON when the reply has no text', async () => {
+    createMock.mockResolvedValue({ content: [], usage: { input_tokens: 1, output_tokens: 0 } });
+    await expect(jsonReply(JSON_INPUT)).rejects.toThrow('NO_JSON');
   });
 });
 

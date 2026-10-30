@@ -2,9 +2,12 @@
  * File: apps/web/src/server/claude.ts
  * Purpose: The ONLY place Kite talks to the Claude API. Holds one SDK client; streamReply(),
  *          which streams a reply as text pieces and finishes with the token usage; and
- *          warmCache(), which writes the prompt cache for a session without answering (Day 3).
+ *          warmCache(), which writes the prompt cache for a session without answering (Day 3);
+ *          and jsonReply(), a non-streaming reply in a fixed JSON shape (structured outputs),
+ *          used by the answer-quality evaluation's grader (Day 4).
  * Used by: app/api/answer/route.ts, src/server/prompt.ts (cachedBlock); app/api/notes/route.ts
- *          (Day 5)
+ *          (Day 5); scripts/verify-warm.ts, scripts/verify-answer-cache.ts,
+ *          scripts/eval-answers.ts (developer-only)
  * Depends on: @anthropic-ai/sdk, src/server/env.ts (ANTHROPIC_API_KEY)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3 (prompt caching), §7.2 (server rules)
  *
@@ -213,6 +216,48 @@ export async function warmCache(input: WarmCacheInput): Promise<ReplyResult> {
     { signal: input.signal },
   );
   return { usage: toAnswerUsage(message.usage), stopReason: message.stop_reason };
+}
+
+/** Input for jsonReply(). */
+export interface JsonReplyInput {
+  /** Full model name. */
+  model: string;
+  /** Which tier that model is (thinking setting). */
+  tier: ModelTier;
+  /** System prompt (sent as one cached block). */
+  system: string;
+  /** The user turn. */
+  prompt: string;
+  /** JSON schema the reply must follow (structured outputs). */
+  schema: Record<string, unknown>;
+  /** Most tokens Claude may write. */
+  maxTokens: number;
+}
+
+/**
+ * Asks Claude for a reply in a fixed JSON shape, using structured outputs
+ * (`output_config.format` with a JSON schema, so the reply always parses), not streamed.
+ *
+ * @param input See JsonReplyInput.
+ * @returns The parsed JSON value and the token usage.
+ * @throws Anthropic.APIError for API failures; Error('NO_JSON') when the reply has no text
+ *         (for example a refusal).
+ * Called from: scripts/eval-answers.ts (the grader)
+ */
+export async function jsonReply(
+  input: JsonReplyInput,
+): Promise<{ value: unknown; usage: AnswerUsage }> {
+  const message = await getClaude().messages.create({
+    model: input.model,
+    max_tokens: input.maxTokens,
+    system: [cachedBlock(input.system)],
+    messages: [{ role: 'user', content: input.prompt }],
+    thinking: thinkingFor(input.tier),
+    output_config: { format: { type: 'json_schema', schema: input.schema } },
+  });
+  const text = message.content.find((block) => block.type === 'text');
+  if (!text || text.type !== 'text') throw new Error('NO_JSON');
+  return { value: JSON.parse(text.text) as unknown, usage: toAnswerUsage(message.usage) };
 }
 
 /**

@@ -1,0 +1,53 @@
+{
+  "id": "12-internal-meeting",
+  "covers": "An internal meeting question from a project document.",
+  "session": {
+    "type": "internal",
+    "company": "Harbor Lane (our company, invented)",
+    "role": "Project status meeting",
+    "description": "Weekly status meeting for the routing migration.",
+    "instructions": "",
+    "keyTerms": ["cut-over", "Bluefin Route"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "migration-plan.txt",
+        "text": "Routing migration plan (invented).\nCut-over: Saturday 14 November, 02:00 to 04:00 UTC.\nRollback: if error rate is above 2 percent after 30 minutes, switch back to the old router.\nOwner: Priya Nair (platform team). Comms to customers go out on Thursday 12 November."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "OKAY NEXT ITEM IS THE MIGRATION",
+        "at": 120
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "TESTING LOOKED GOOD THIS WEEK",
+        "at": 126
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "REMIND ME WHEN IS THE CUT OVER AND WHAT IS THE ROLLBACK RULE",
+      "at": 133
+    }
+  ],
+  "mode": "answer",
+  "question": "REMIND ME WHEN IS THE CUT OVER AND WHAT IS THE ROLLBACK RULE",
+  "mustInclude": [
+    "Saturday 14 November, 02:00 to 04:00 UTC",
+    "roll back if the error rate is above 2 percent after 30 minutes"
+  ],
+  "mustNotInclude": ["a different date or threshold"]
+}

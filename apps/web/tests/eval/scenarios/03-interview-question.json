@@ -1,0 +1,48 @@
+{
+  "id": "03-interview-question",
+  "covers": "An interview question answered from the candidate’s own notes.",
+  "session": {
+    "type": "interview",
+    "company": "Ledgerly (invented)",
+    "role": "Senior backend engineer interview (the user is the candidate)",
+    "description": "Second-round technical interview.",
+    "instructions": "Answer in first person, as me.",
+    "keyTerms": ["Ledgerly", "Postgres", "Redis"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "my-notes.txt",
+        "text": "My experience (invented).\nAt Copperleaf Payments (2021 to 2025) I led the move of the invoice API from one Postgres server to read replicas plus a Redis cache.\nResult: p95 latency fell from 900 ms to 250 ms and database CPU dropped by half.\nI also mentored two junior engineers and ran the on-call rota."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "THANKS FOR COMING BACK FOR THE SECOND ROUND",
+        "at": 2
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "TELL ME ABOUT A TIME YOU IMPROVED THE PERFORMANCE OF A SYSTEM",
+      "at": 9
+    }
+  ],
+  "mode": "answer",
+  "question": "TELL ME ABOUT A TIME YOU IMPROVED THE PERFORMANCE OF A SYSTEM",
+  "mustInclude": [
+    "the Copperleaf Payments invoice API",
+    "read replicas and a Redis cache",
+    "p95 latency from 900 ms to 250 ms"
+  ],
+  "mustNotInclude": ["companies or numbers not in the notes"]
+}

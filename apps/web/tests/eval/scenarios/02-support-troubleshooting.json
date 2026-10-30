@@ -1,0 +1,55 @@
+{
+  "id": "02-support-troubleshooting",
+  "covers": "Support troubleshooting steps from a document.",
+  "session": {
+    "type": "support",
+    "company": "Pinecrest Clinics (invented)",
+    "role": "Support engineer",
+    "description": "Customer reports that calendar sync keeps failing.",
+    "instructions": "Give steps in order.",
+    "keyTerms": ["SyncAgent", "E42"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "runbook-sync.txt",
+        "text": "Calendar sync runbook (invented).\nError E42 means the sync token has expired.\nFix for E42, in order: 1) open Settings, Integrations; 2) click Re-link calendar and sign in again; 3) restart SyncAgent from the tray icon; 4) if it still fails after 15 minutes, send the SyncAgent log file to support.\nError E17 means the calendar is read-only; ask the clinic admin for edit rights."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "HI OUR CALENDAR SYNC HAS BEEN FAILING SINCE MONDAY",
+        "at": 4
+      },
+      {
+        "kind": "line",
+        "speaker": "you",
+        "text": "SORRY TO HEAR THAT DO YOU SEE AN ERROR CODE",
+        "at": 10
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "YES IT SAYS E FORTY TWO WHAT SHOULD WE TRY",
+      "at": 16
+    }
+  ],
+  "mode": "answer",
+  "question": "YES IT SAYS E FORTY TWO WHAT SHOULD WE TRY",
+  "mustInclude": [
+    "E42 means the sync token expired",
+    "Re-link the calendar (Settings, Integrations) and sign in again",
+    "restart SyncAgent",
+    "send the log if it still fails after 15 minutes"
+  ],
+  "mustNotInclude": ["steps that are not in the runbook", "the E17 fix as the answer"]
+}

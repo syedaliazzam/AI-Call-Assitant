@@ -1,0 +1,59 @@
+{
+  "id": "01-sales-pricing-from-document",
+  "covers": "Sales pricing taken from a document, with a calculation.",
+  "session": {
+    "type": "sales",
+    "company": "Northwind Logistics (invented)",
+    "role": "Account executive",
+    "description": "Renewal and expansion call with the operations lead.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Bluefin Route", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "price-list.txt",
+        "text": "Harbor Lane Freight price list (invented).\nStarter plan: 18 dollars per seat per month, up to 10 seats, no single sign-on.\nProfessional plan: 52 dollars per seat per month, billed yearly, includes single sign-on and live re-routing.\nEnterprise plan: custom price, from 200 seats, includes a dedicated support manager.\nOnboarding: a one-time fee of 1,500 dollars for any plan, covering setup and two training days.\nDiscounts: at most 10 percent, only for a yearly plan paid upfront, and only with approval from the sales director.\nContract: yearly, renews automatically; cancellation needs 30 days written notice before the renewal date."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "you",
+        "text": "THANKS FOR MAKING TIME TODAY",
+        "at": 3
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "SURE WE ARE LOOKING AT THE PROFESSIONAL PLAN FOR THE WHOLE DISPATCH TEAM",
+        "at": 9
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "THAT IS ABOUT FORTY PEOPLE",
+        "at": 15
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "SO WHAT WOULD THAT COST US PER MONTH FOR FORTY SEATS",
+      "at": 22
+    }
+  ],
+  "mode": "answer",
+  "question": "SO WHAT WOULD THAT COST US PER MONTH FOR FORTY SEATS",
+  "mustInclude": ["2,080 dollars a month for 40 seats (52 dollars per seat)", "billed yearly"],
+  "mustNotInclude": [
+    "any discount that was not asked for",
+    "a price other than 52 dollars per seat"
+  ]
+}

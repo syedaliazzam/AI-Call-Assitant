@@ -1,0 +1,81 @@
+{
+  "id": "05-same-question-twice",
+  "covers": "The same question asked again minutes later.",
+  "session": {
+    "type": "sales",
+    "company": "Northwind Logistics (invented)",
+    "role": "Account executive",
+    "description": "Commercial terms call.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Bluefin Route", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "price-list.txt",
+        "text": "Harbor Lane Freight price list (invented).\nStarter plan: 18 dollars per seat per month, up to 10 seats, no single sign-on.\nProfessional plan: 52 dollars per seat per month, billed yearly, includes single sign-on and live re-routing.\nEnterprise plan: custom price, from 200 seats, includes a dedicated support manager.\nOnboarding: a one-time fee of 1,500 dollars for any plan, covering setup and two training days.\nDiscounts: at most 10 percent, only for a yearly plan paid upfront, and only with approval from the sales director.\nContract: yearly, renews automatically; cancellation needs 30 days written notice before the renewal date."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "WHAT DOES ONBOARDING COST",
+        "at": 128
+      }
+    ],
+    [
+      {
+        "kind": "answer",
+        "mode": "answer",
+        "question": "WHAT DOES ONBOARDING COST",
+        "text": "Onboarding is a one-time fee of 1,500 dollars.\n- Covers setup and two training days\n- Same for every plan",
+        "at": 130
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "GOT IT LET US TALK ABOUT THE SEATS",
+        "at": 140
+      },
+      {
+        "kind": "line",
+        "speaker": "you",
+        "text": "SURE IT IS FIFTY TWO DOLLARS PER SEAT ON PROFESSIONAL",
+        "at": 200
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "OKAY AND THE CONTRACT IS YEARLY",
+        "at": 330
+      },
+      {
+        "kind": "line",
+        "speaker": "you",
+        "text": "YES IT RENEWS EVERY YEAR",
+        "at": 340
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "SORRY REMIND ME WHAT ONBOARDING COSTS AGAIN",
+      "at": 460
+    }
+  ],
+  "mode": "answer",
+  "question": "SORRY REMIND ME WHAT ONBOARDING COSTS AGAIN",
+  "mustInclude": [
+    "1,500 dollars one-time",
+    "covers setup and two training days",
+    "builds on the earlier answer (for example \"as I mentioned\"), without contradicting it"
+  ],
+  "mustNotInclude": ["a different onboarding price"]
+}

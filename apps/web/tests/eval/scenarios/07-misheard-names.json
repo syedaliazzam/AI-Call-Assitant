@@ -1,0 +1,54 @@
+{
+  "id": "07-misheard-names",
+  "covers": "Misheard product name (\"your fin drove\" for Bluefin Route).",
+  "session": {
+    "type": "sales",
+    "company": "Northwind Logistics (invented)",
+    "role": "Account executive",
+    "description": "Product deep-dive.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Bluefin Route", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "pilot-report.txt",
+        "text": "Bluefin Route pilot report (invented).\nBluefin Route is the live re-routing feature of the Harbor Lane platform.\nIn the 12-week pilot across four depots, Bluefin Route cut late deliveries by a third.\nAverage route planning time fell from 40 minutes to 18 minutes per dispatcher.\nRollout plan: phase 1 (weeks 1 to 2) connects the depots and imports routes; phase 2 (weeks 3 to 4) trains dispatchers in groups of six with one practice day; phase 3 (weeks 5 to 6) switches on live re-routing depot by depot."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "you",
+        "text": "LET ME SHOW YOU THE RESULTS FROM THE PILOT",
+        "at": 5
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "YES PLEASE WE HEARD GOOD THINGS",
+        "at": 11
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "HOW DOES YOUR FIN DROVE HANDLE LATE DELIVERIES",
+      "at": 18
+    }
+  ],
+  "mode": "answer",
+  "question": "HOW DOES YOUR FIN DROVE HANDLE LATE DELIVERIES",
+  "mustInclude": [
+    "names it Bluefin Route",
+    "live re-routing",
+    "cut late deliveries by a third in the pilot"
+  ],
+  "mustNotInclude": ["the misheard words \"fin drove\" or \"your fin\" as a product name"]
+}

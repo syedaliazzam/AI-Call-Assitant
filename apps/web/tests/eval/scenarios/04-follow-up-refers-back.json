@@ -1,0 +1,69 @@
+{
+  "id": "04-follow-up-refers-back",
+  "covers": "A follow-up question that refers back to an earlier answer (\"that\").",
+  "session": {
+    "type": "sales",
+    "company": "Northwind Logistics (invented)",
+    "role": "Account executive",
+    "description": "Rollout planning call.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Bluefin Route", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "pilot-report.txt",
+        "text": "Bluefin Route pilot report (invented).\nBluefin Route is the live re-routing feature of the Harbor Lane platform.\nIn the 12-week pilot across four depots, Bluefin Route cut late deliveries by a third.\nAverage route planning time fell from 40 minutes to 18 minutes per dispatcher.\nRollout plan: phase 1 (weeks 1 to 2) connects the depots and imports routes; phase 2 (weeks 3 to 4) trains dispatchers in groups of six with one practice day; phase 3 (weeks 5 to 6) switches on live re-routing depot by depot."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "HOW LONG WOULD THE ROLLOUT TAKE",
+        "at": 30
+      }
+    ],
+    [
+      {
+        "kind": "answer",
+        "mode": "answer",
+        "question": "HOW LONG WOULD THE ROLLOUT TAKE",
+        "text": "The rollout takes about six weeks, in three phases.\n- Weeks 1-2: connect depots, import routes\n- Weeks 3-4: train dispatchers\n- Weeks 5-6: switch on live re-routing",
+        "at": 32
+      },
+      {
+        "kind": "line",
+        "speaker": "you",
+        "text": "IT IS ABOUT SIX WEEKS IN THREE PHASES",
+        "at": 38
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "OKAY THAT SOUNDS REASONABLE",
+        "at": 45
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "AND WHAT EXACTLY HAPPENS IN THE SECOND PHASE OF THAT",
+      "at": 52
+    }
+  ],
+  "mode": "answer",
+  "question": "AND WHAT EXACTLY HAPPENS IN THE SECOND PHASE OF THAT",
+  "mustInclude": [
+    "phase 2 is weeks 3 to 4",
+    "dispatchers are trained in groups of six",
+    "one practice day"
+  ],
+  "mustNotInclude": ["a different timeline from the earlier answer"]
+}
