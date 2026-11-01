@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 Stage 4f.
+**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 Stage 4e–f.
 
 ---
 
@@ -86,10 +86,10 @@
 
 | # | Do | Expect |
 |---|---|---|
-| 7.1 | During a call, turn Wi-Fi off for 20 s, then on. | A clear "connection lost" message; the transcript keeps going; answers resume. |
+| 7.1 | During a call, turn Wi-Fi off for 20 s, press Answer, then turn it on. | A "No connection" banner: answers are paused, the transcript keeps going; Answer says so. The banner goes when Wi-Fi is back, and Answer works again. |
 | 7.2 | Block the microphone (Windows privacy settings or the browser's site settings) and start a call. | A message saying the microphone is blocked and how to allow it. |
 | 7.3 | Share a silent tab as "Them" for 20 s. | A message to check the right tab or app is shared. |
-| 7.4 | Sign out in another tab during a call, then press Answer. | Asked to sign in again; after signing in the session and transcript are still there. |
+| 7.4 | Sign out in another tab (browser) during a call, then press Answer. | A "Signed out" box with **Sign in again**: a dialog over the call; after signing in, the call, transcript and answers are all still there and Answer works. Repeat in the desktop app by disabling and re-enabling your account from an admin account. |
 
 ## 8. Auto-answer (Day 6 Stage 4, beta)
 

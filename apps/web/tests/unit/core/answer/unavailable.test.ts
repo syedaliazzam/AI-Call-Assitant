@@ -2,13 +2,20 @@
  * Tests for apps/web/src/core/answer/unavailable.ts: unavailableReason() recognises only the
  * code 'claude_unavailable' (with each fixed message, and an unknown message as the usage
  * limit); answerFailureText() shows the usage-limit and overload messages exactly as given
- * (they say the transcript is still being recorded) and any other failure as "The answer
+ * (they say the transcript is still being recorded), a 401 as "signed out" and a lost
+ * connection as "offline" (Day 6 Stage 4e), and any other failure as "The answer
  * failed." with the server's reason; notesFailureText() names the usage limit or overload, and
  * mentions the session review only when the transcript is saved.
  */
 import { CLAUDE_UNAVAILABLE_MESSAGES } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
-import { answerFailureText, notesFailureText, unavailableReason } from '@/core/answer/unavailable';
+import {
+  answerFailureText,
+  notesFailureText,
+  OFFLINE_TEXT,
+  SIGNED_OUT_TEXT,
+  unavailableReason,
+} from '@/core/answer/unavailable';
 
 describe('unavailableReason', () => {
   it('reads the reason from the code and the fixed message only', () => {
@@ -62,5 +69,30 @@ describe('notesFailureText', () => {
       'The call notes could not be written: Claude is overloaded.',
     );
     expect(notesFailureText(null, false)).toBe('The call notes could not be written.');
+  });
+});
+
+describe('answerFailureText: problems the user can act on (Day 6 Stage 4e)', () => {
+  it('turns a 401 into "signed out", with the session kept', () => {
+    expect(answerFailureText({ code: 'unauthorized', message: 'Sign in required' })).toEqual({
+      text: SIGNED_OUT_TEXT,
+      unavailable: false,
+      problem: 'signed-out',
+    });
+    expect(SIGNED_OUT_TEXT).toContain('stay as they are');
+  });
+
+  it('turns a lost connection into "offline"', () => {
+    for (const message of ['Network error', 'The connection closed before the end']) {
+      expect(answerFailureText({ code: 'internal', message })).toEqual({
+        text: OFFLINE_TEXT,
+        unavailable: false,
+        problem: 'offline',
+      });
+    }
+    // Any other internal failure keeps the generic text.
+    expect(
+      answerFailureText({ code: 'internal', message: 'Malformed reply from server' }).problem,
+    ).toBeUndefined();
   });
 });

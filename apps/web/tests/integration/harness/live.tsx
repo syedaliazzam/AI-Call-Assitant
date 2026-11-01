@@ -27,6 +27,7 @@ import { AudioMeter } from '@/features/live/AudioMeter';
 import { CompactView } from '@/features/live/CompactView';
 import { ConnectPanel } from '@/features/live/ConnectPanel';
 import { LiveAnswers } from '@/features/live/LiveAnswers';
+import { ThemSilentNotice } from '@/features/live/ThemSilentNotice';
 import { LiveCallLayout } from '@/features/live/LiveCallLayout';
 import { LiveCallsUnsupported } from '@/features/live/LiveCallsUnsupported';
 import { TranscriptStrip } from '@/features/live/TranscriptStrip';
@@ -51,6 +52,18 @@ const SESSION: Session = {
   createdAt: 1,
   status: 'live',
   lastActiveAt: null,
+};
+
+/** Which view the test asked for (?view=…). */
+const VIEW = new URLSearchParams(window.location.search).get('view') ?? 'live';
+
+/** Error texts for ?view=connect-errors (Day 6 Stage 4e), as the app words them. */
+const CONNECT_ERRORS = {
+  /** core/audio/capture.ts micError(), permission denied. */
+  mic: 'Kite can\u2019t use your microphone. Allow microphone access for Kite, then click Connect again.',
+  /** core/stt/download.ts, quota exceeded. */
+  model:
+    'Not enough disk space to store the speech model (about 205 MB needed). Free some space, then try again.',
 };
 
 /** ?view=auto: auto-answer on (Day 6 Stage 4f), with a hook to add a finished Them question. */
@@ -117,6 +130,7 @@ function LiveView() {
         name={SESSION.company}
         themSource="the shared tab's audio"
         status={{ tone: 'success', label: 'Connected' }}
+        notices={VIEW === 'live-errors' ? <ThemSilentNotice /> : undefined}
         meters={(['you', 'them'] as const).map((speaker) => (
           <AudioMeter
             key={speaker}
@@ -156,10 +170,14 @@ function ConnectView() {
         call={{ title: 'Sales call', company: SESSION.company, role: SESSION.role }}
         hotwordCount={6}
         platform="browser"
-        model={{ status: 'ready', progress: null, error: null }}
+        model={
+          VIEW === 'connect-errors'
+            ? { status: 'error', progress: null, error: CONNECT_ERRORS.model }
+            : { status: 'ready', progress: null, error: null }
+        }
         connection="idle"
         levels={{ you: 0, them: 0 }}
-        channelErrors={{}}
+        channelErrors={VIEW === 'connect-errors' ? { you: CONNECT_ERRORS.mic } : {}}
         soundCheck={null}
         health="ok"
         onConnect={() => undefined}
@@ -202,7 +220,7 @@ const UNAVAILABLE_STATE: CompactState = {
 
 const view = new URLSearchParams(window.location.search).get('view') ?? 'live';
 const root = createRoot(document.getElementById('root')!);
-if (view === 'connect') {
+if (view === 'connect' || view === 'connect-errors') {
   root.render(<ConnectView />);
 } else if (view === 'gate') {
   // The live page's check (LiveSession.tsx), through the real platform adapter.

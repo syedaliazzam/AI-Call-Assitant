@@ -23,6 +23,8 @@ import { AnswerPanel } from './AnswerPanel';
 import { CompactLive } from './CompactLive';
 import { ChatBox } from './ChatBox';
 import { TopBar } from './TopBar';
+import { isOnline, subscribeOnline } from '@/core/net/online';
+import { SignInAgainDialog } from './SignInAgainDialog';
 import { useAutoAnswer } from './useAutoAnswer';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
 
@@ -94,6 +96,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
     ...(props.autoAnswer !== undefined ? { enabled: props.autoAnswer } : {}),
   });
   const [compactNotice, setCompactNotice] = useState<string | null>(null);
+  // Day 6 Stage 4e: no connection pauses answers (banner); a signed-out answer offers to sign
+  // in again in a dialog, so the call is never left.
+  const online = useSyncExternalStore(subscribeOnline, isOnline, () => true);
+  const [signInOpen, setSignInOpen] = useState(false);
   const lines = useSyncExternalStore(
     props.transcript.subscribe,
     props.transcript.lines,
@@ -215,6 +221,20 @@ export function LiveAnswers(props: LiveAnswersProps) {
           app&rsquo;s shortcut, or use the buttons.
         </p>
       )}
+      {!online && (
+        <div
+          role="alert"
+          className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
+        >
+          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-warning">
+            No connection
+          </p>
+          <p className="mt-1">
+            Answers are paused until the connection is back. The transcript keeps going on this
+            computer.
+          </p>
+        </div>
+      )}
       {chatOpen && <ChatBox onSend={answers.chat} onAskScreen={answers.screenshot} />}
       <AnswerPanel
         entry={entry}
@@ -226,8 +246,14 @@ export function LiveAnswers(props: LiveAnswersProps) {
         onNext={answers.next}
         onCancel={answers.clear}
         onRate={answers.rate}
+        onSignInAgain={() => setSignInOpen(true)}
         onNote={answers.saveNote}
         copy={props.copy}
+      />
+      <SignInAgainDialog
+        open={signInOpen}
+        onClose={() => setSignInOpen(false)}
+        onSignedIn={() => setSignInOpen(false)}
       />
       {answers.saveFailed && (
         <p

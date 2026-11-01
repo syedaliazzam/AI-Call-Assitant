@@ -200,7 +200,12 @@ export function ConnectPanel({
             className="flex items-center justify-between gap-3 bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger"
           >
             <span>{model.error}</span>
-            <Button size="sm" variant="secondary" onClick={onRetryModel}>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="shrink-0 whitespace-nowrap"
+              onClick={onRetryModel}
+            >
               Try again
             </Button>
           </div>
@@ -242,7 +247,12 @@ export function ConnectPanel({
                 className="ml-14 flex items-start justify-between gap-3 bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger"
               >
                 <span>{channelErrors[speaker]}</span>
-                <Button size="sm" variant="secondary" onClick={onConnect}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0 whitespace-nowrap"
+                  onClick={onConnect}
+                >
                   Try again
                 </Button>
               </div>

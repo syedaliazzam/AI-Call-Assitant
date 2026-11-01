@@ -23,7 +23,8 @@ import { createAnswerRunner, type AnswerTimeline } from '@/core/answer/answerCli
 import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/context';
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { warmSession } from '@/core/answer/warm';
-import { answerFailureText } from '@/core/answer/unavailable';
+import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
+import { isOnline } from '@/core/net/online';
 import { prepareScreenshot } from '@/core/screenshot/prepare';
 import { listAnswers, rateAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
 import type { AnswerRating, Session, StoredAnswer, StoredDocument } from '@/core/storage/types';
@@ -76,6 +77,8 @@ export interface AnswerEntry {
   error?: string;
   /** True when it failed because Claude is unavailable for everyone (usage limit or overload). */
   unavailable?: boolean;
+  /** A failure the user can act on: signed out, or no connection (Day 6 Stage 4e). */
+  problem?: AnswerProblem;
   /** When the user asked (Unix ms). */
   askedAt: number;
   /** The model tier used. */
@@ -293,6 +296,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       auto = false,
     ) => {
       const keyPressAt = pressedAt ?? performance.now();
+      // Offline: answers are paused (the banner says so); the transcript keeps going.
+      if (!isOnline()) {
+        setNotice(OFFLINE_TEXT);
+        return;
+      }
       const lines = transcript.lines();
       if (mode === 'answer' && !lines.some((line) => line.speaker === 'them')) {
         setNotice('Nothing from the other person yet. Type a question in Chat instead.');
@@ -368,7 +376,12 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         },
         onError: (failure) => {
           const shown = answerFailureText(failure);
-          update(entry.id, { status: 'error', error: shown.text, unavailable: shown.unavailable });
+          update(entry.id, {
+            status: 'error',
+            error: shown.text,
+            unavailable: shown.unavailable,
+            ...(shown.problem ? { problem: shown.problem } : {}),
+          });
           console.warn('answer: failed', {
             sessionId: session.id,
             answerId: entry.id,

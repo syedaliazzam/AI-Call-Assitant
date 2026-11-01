@@ -90,6 +90,12 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
     void (async () => {
       if (req.method === 'POST' && req.url === '/api/answer') {
         const request = JSON.parse(await bodyOf(req)) as AnswerRequest;
+        if (request.question === 'SIGNEDOUT') {
+          // The server's reply when the sign-in has expired (app/api/answer/route.ts).
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ code: 'unauthorized', message: 'Sign in required' }));
+          return;
+        }
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
         const event = (name: string, data: unknown) =>
           res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -431,4 +437,78 @@ test('auto-answer: answers a finished question by itself, at most once per 15 s'
   await expect.poll(() => answers, { timeout: 3_000 }).toBe(2);
   await shot(watched, size, 'live-auto-answer');
   await watched.context.close();
+});
+
+/** The two widths each error state is photographed at (Day 6 Stage 4e). */
+const ERROR_SIZES: Width[] = [
+  { width: 1440, height: 900, touch: false },
+  { width: 390, height: 844, touch: true },
+];
+
+/**
+ * Removes the expected console lines of a failed answer: the app's "answer: failed" (ids and
+ * the code only) and the browser's own line for the mocked 401 response.
+ *
+ * @param watched The page's console problems.
+ * @returns Nothing.
+ */
+function dropExpectedFailures(watched: WatchedPage): void {
+  watched.problems.splice(
+    0,
+    watched.problems.length,
+    ...watched.problems.filter(
+      (line) => !line.includes('answer: failed') && !line.includes('status of 401'),
+    ),
+  );
+}
+
+test('error states: no connection pauses answers; signed out offers sign-in in place', async () => {
+  for (const size of ERROR_SIZES) {
+    const watched = await open('live', size);
+    const { page } = watched;
+    // Let the session warm-up finish first: going offline mid-request logs an expected warning.
+    await page.waitForLoadState('networkidle');
+    await watched.context.setOffline(true);
+    const banner = page.getByRole('alert').filter({ hasText: 'Answers are paused' });
+    await expect(banner).toBeVisible();
+    await shot(watched, size, 'error-offline');
+    await watched.context.setOffline(false);
+    await expect(banner).toBeHidden();
+
+    await page.getByRole('button', { name: 'Chat' }).click();
+    await page.getByLabel('Type a question').fill('SIGNEDOUT');
+    await page.getByLabel('Type a question').press('Enter');
+    const box = page.getByRole('region', { name: 'Answer' }).getByRole('alert');
+    await expect(box).toContainText('Signed out');
+    await expect(box).toContainText('stay as they are');
+    dropExpectedFailures(watched);
+    await shot(watched, size, 'error-signed-out');
+    await box.getByRole('button', { name: 'Sign in again' }).click();
+    await expect(page.getByRole('dialog', { name: 'Sign in again' })).toBeVisible();
+    await expect(page.getByLabel('Password')).toBeVisible();
+    await shot(watched, size, 'error-sign-in-again');
+    dropExpectedFailures(watched);
+    await watched.context.close();
+  }
+});
+
+test('error states: Them silent for 20 s', async () => {
+  for (const size of ERROR_SIZES) {
+    const watched = await open('live-errors', size);
+    await expect(
+      watched.page.getByRole('alert').filter({ hasText: 'Nothing heard from Them' }),
+    ).toBeVisible();
+    await shot(watched, size, 'error-them-silent');
+    await watched.context.close();
+  }
+});
+
+test('error states: microphone denied and speech model download failed', async () => {
+  for (const size of ERROR_SIZES) {
+    const watched = await open('connect-errors', size);
+    await expect(watched.page.getByRole('alert').filter({ hasText: 'microphone' })).toBeVisible();
+    await expect(watched.page.getByRole('alert').filter({ hasText: 'disk space' })).toBeVisible();
+    await shot(watched, size, 'error-connect');
+    await watched.context.close();
+  }
 });
