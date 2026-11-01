@@ -93,7 +93,7 @@ Every failure says what happened and what to do, in the theme's style (U1–U4),
 **Auto-answer (beta, off by default):** when "Them" finishes a question (ends with "?" or starts with a question word, followed by ≥ 1.2 s pause), Kite answers automatically. Max one auto-answer per 15 s, never while an answer is streaming, a visible "Auto" label on auto answers, a setting with a short explanation. Unit tests for the question detector with 30 invented examples (≥ 90% correct); harness test for rate limiting.
 - **Gate:** all error-state harness tests, detector tests, existing harnesses, screenshots of each error state at 1440 and 390 px; headline ≤ 15 words in the lessons and answers evaluations (after the developer agrees the cost).
 
-## Stage 5 — Subdomain readiness (no DNS change today)
+## Stage 5 — Subdomain readiness: moved to post-v1 (developer, 1 Nov; architecture §14). Skipped today.
 - All URLs from config: `BETTER_AUTH_URL`, trusted origins list (vercel.app + `kite.paramountintelligence.co`), desktop allowed-origin list, CSP, cookie domain.
 - Desktop shell accepts exactly the configured Kite origins; a test refuses any other.
 - Write `docs/deploy/subdomain.md`: the exact Vercel and DNS steps, what to change in env vars, how to verify (sign-in, cookies, desktop app, CSP), and how to roll back.
