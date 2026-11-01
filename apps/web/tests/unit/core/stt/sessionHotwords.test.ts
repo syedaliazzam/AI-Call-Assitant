@@ -2,7 +2,9 @@
  * Tests for apps/web/src/core/stt/sessionHotwords.ts on invented session data: buildHotwords()
  * puts key terms first (keeping a typed " :score"), then the company and the role, then terms
  * that repeat in documents; removes duplicates; drops phrases that are too long or have no
- * letters; caps the list at MAX_HOTWORDS. extractDocumentTerms() finds repeated names and
+ * letters; caps the list at MAX_HOTWORDS; adds the technical vocabulary for Interview sessions
+ * only (after the role, before documents) and at most MAX_DOCUMENT_TERMS document terms.
+ * extractDocumentTerms() finds repeated names and
  * acronyms (a comma ends a name; a verb starting a sentence is not part of the name), ignores
  * capitalised sentence starters and common words, needs two mentions and
  * sorts by mentions (ties alphabetical). hotwordsText() writes the engine's "PHRASE :score" lines.
@@ -14,9 +16,12 @@ import {
   DOCUMENT_TERM_SCORE,
   extractDocumentTerms,
   hotwordsText,
+  INTERVIEW_TECH_TERMS,
   KEY_TERM_SCORE,
+  MAX_DOCUMENT_TERMS,
   MAX_HOTWORDS,
   ROLE_SCORE,
+  TECH_TERM_SCORE,
 } from '@/core/stt/sessionHotwords';
 
 /**
@@ -130,5 +135,35 @@ describe('cleanPhrase / hotwordsText', () => {
       ]),
     ).toBe('BLUEFIN ROUTE :2\nCRM :1.5');
     expect(hotwordsText([])).toBe('');
+  });
+});
+
+describe('buildHotwords: Interview vocabulary and the document cap (Day 6 Stage 4c)', () => {
+  it('adds the technical vocabulary for Interview sessions only, after the role', () => {
+    const interview = buildHotwords({ ...session('Bluefin Route'), type: 'interview' }, []);
+    const phrases = interview.map((hotword) => hotword.phrase);
+    expect(phrases.slice(0, 3)).toEqual(['BLUEFIN ROUTE', 'NORTHWIND LOGISTICS', 'RENEWAL REVIEW']);
+    expect(phrases).toContain('RAG');
+    expect(phrases).toContain('VECTOR DATABASE');
+    expect(interview.find((hotword) => hotword.phrase === 'LLM')?.score).toBe(TECH_TERM_SCORE);
+    expect(interview).toHaveLength(3 + INTERVIEW_TECH_TERMS.length);
+    expect(buildHotwords({ ...session('Bluefin Route'), type: 'sales' }, [])).toHaveLength(3);
+  });
+
+  it('uses at most MAX_DOCUMENT_TERMS document terms, the most mentioned first', () => {
+    // 60 invented acronyms, each mentioned twice; the first ten three times.
+    const names = Array.from(
+      { length: 60 },
+      (_, i) =>
+        `Q${String.fromCharCode(65 + (i % 26))}${String.fromCharCode(65 + Math.floor(i / 26))}`,
+    );
+    const text = names
+      .map((name, i) => `We met ${name} and ${name}${i < 10 ? ` and ${name}` : ''} today.`)
+      .join(' ');
+    const hotwords = buildHotwords(session('', '', ''), [{ text }]);
+    expect(hotwords).toHaveLength(MAX_DOCUMENT_TERMS);
+    expect(hotwords.slice(0, 10).map((hotword) => hotword.phrase)).toEqual(
+      names.slice(0, 10).sort(),
+    );
   });
 });

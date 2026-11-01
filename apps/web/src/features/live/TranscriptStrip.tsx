@@ -17,7 +17,7 @@
 
 import { memo, useEffect, useRef, useState } from 'react';
 import type { SttHealthStatus } from '@/core/stt/health';
-import { splitForDisplay } from '@/core/transcript/display';
+import { sentenceCase, splitForDisplay } from '@/core/transcript/display';
 import type { Utterance } from '@/core/transcript/transcript';
 import { HealthNotice } from './HealthNotice';
 import { SPEAKER_STYLE } from './speakers';
@@ -29,6 +29,8 @@ const BOTTOM_TOLERANCE_PX = 40;
 export interface TranscriptStripProps {
   /** Lines in time order (from transcript.lines()). */
   lines: readonly Utterance[];
+  /** The session's own spellings to restore in each line (displayTerms()); none by default. */
+  terms?: readonly string[];
   /** Speech-to-text health. */
   health: SttHealthStatus;
 }
@@ -67,6 +69,7 @@ function clockTime(unixMs: number): string {
 export const TranscriptStrip = memo(function TranscriptStrip({
   lines,
   health,
+  terms = [],
 }: TranscriptStripProps) {
   const box = useRef<HTMLDivElement>(null);
   // True while following new lines; false after the user scrolled up.
@@ -106,7 +109,7 @@ export const TranscriptStrip = memo(function TranscriptStrip({
                     </span>
                     {/* Words that may still change: grey italic. */}
                     <span className={line.final ? 'text-ui-text' : 'italic text-ui-provisional'}>
-                      {line.text}
+                      {sentenceCase(line.text, terms)}
                     </span>
                     <span className="ml-auto shrink-0 font-mono text-[11px] leading-6 text-ui-muted">
                       {clockTime(line.tStart)}

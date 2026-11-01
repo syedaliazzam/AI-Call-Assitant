@@ -21,6 +21,7 @@ import { notesFailureText } from '@/core/answer/unavailable';
 import { regenerateNotes } from '@/core/notes/regenerate';
 import { loadReview, type ReviewData } from '@/core/review/load';
 import { deleteSession } from '@/core/storage/sessions';
+import { displayTerms } from '@/core/transcript/display';
 import {
   FORMAT_OPTIONS,
   LENGTH_OPTIONS,
@@ -237,7 +238,11 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
         onLessonsChanged={() => void reload()}
       />
       <AnswersSection answers={answers} />
-      <TranscriptSection lines={lines} saveTranscript={session.saveTranscript} />
+      <TranscriptSection
+        lines={lines}
+        saveTranscript={session.saveTranscript}
+        terms={displayTerms(session)}
+      />
 
       <Dialog
         open={confirming}

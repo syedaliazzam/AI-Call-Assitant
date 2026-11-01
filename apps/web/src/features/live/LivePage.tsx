@@ -22,7 +22,7 @@
  */
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   CallCaptureError,
   startCallCapture,
@@ -38,6 +38,7 @@ import { notesFailureText, type UnavailableReason } from '@/core/answer/unavaila
 import { generateNotes, type NotesLine } from '@/core/notes/generate';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
+import { displayTerms } from '@/core/transcript/display';
 import { endCall } from '@/core/transcript/endCall';
 import { startTranscriptSaver, type TranscriptSaver } from '@/core/transcript/saver';
 import { createTranscript, type Speaker } from '@/core/transcript/transcript';
@@ -156,6 +157,9 @@ export function LivePage({
   hotwordCount,
   savedLines,
 }: LivePageProps) {
+  // The session's own spellings for the transcript (sentence case, Day 6 Stage 4d), kept
+  // stable so the memoised transcript strip does not re-render on every update.
+  const terms = useMemo(() => displayTerms(session), [session]);
   // Display only (instructions and messages); behaviour differences live in src/platform.
   // The server snapshot is 'browser'; the desktop app switches after hydration.
   const platform = useSyncExternalStore(
@@ -458,7 +462,7 @@ export function LivePage({
                 : notesFailureText(notesUnavailable, session.saveTranscript)}
           </p>
         )}
-        <SavedTranscript lines={saved} saving={session.saveTranscript} />
+        <SavedTranscript lines={saved} saving={session.saveTranscript} terms={terms} />
       </div>
     );
   }
@@ -532,7 +536,7 @@ export function LivePage({
           </>
         ) : null
       }
-      transcript={<TranscriptStrip lines={lines} health={health} />}
+      transcript={<TranscriptStrip lines={lines} health={health} terms={terms} />}
       answers={
         callStartedAt !== null ? (
           <LiveAnswers

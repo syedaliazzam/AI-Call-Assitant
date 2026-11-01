@@ -11,12 +11,15 @@
 'use client';
 
 import type { StoredUtterance } from '@/core/storage/types';
+import { sentenceCase } from '@/core/transcript/display';
 import { SPEAKER_STYLE } from './speakers';
 
 /** Props for SavedTranscript. */
 export interface SavedTranscriptProps {
   /** Lines saved by earlier calls, oldest first. */
   lines: readonly StoredUtterance[];
+  /** The session's own spellings to restore in each line (displayTerms()); none by default. */
+  terms?: readonly string[];
   /** The session's "save transcript" setting. */
   saving: boolean;
 }
@@ -31,7 +34,7 @@ const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { timeStyle: 'medium' });
  * @returns A collapsible list of lines, or a one-line note when there are none.
  * Rendered by: LivePage.tsx (Connect view)
  */
-export function SavedTranscript({ lines, saving }: SavedTranscriptProps) {
+export function SavedTranscript({ lines, saving, terms = [] }: SavedTranscriptProps) {
   return (
     <section className="mx-auto max-w-3xl px-8 pb-10">
       {lines.length === 0 ? (
@@ -54,7 +57,7 @@ export function SavedTranscript({ lines, saving }: SavedTranscriptProps) {
                 <span className={`mr-2 font-semibold ${SPEAKER_STYLE[line.speaker].label}`}>
                   {SPEAKER_STYLE[line.speaker].name}
                 </span>
-                <span className="text-ui-text">{line.text}</span>
+                <span className="text-ui-text">{sentenceCase(line.text, terms)}</span>
               </li>
             ))}
           </ol>

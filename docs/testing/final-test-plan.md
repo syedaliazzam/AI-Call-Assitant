@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 (before Stage 0).
+**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 Stage 4d.
 
 ---
 
@@ -31,6 +31,8 @@
 | 1.3 | Ask aloud (or play) a price question the document answers. Press **Answer**. | An answer streams within about 2 s; headline of 15 words or fewer, at most 5 bullets, figures from the document. |
 | 1.4 | **Follow-up:** ask "What are the three phases of the rollout?", answer, then "How long does the second phase of that take?" and answer. | The second answer is about the second phase from the first answer, without asking which plan you mean. |
 | 1.5 | Rate an answer thumbs up and another thumbs down with a short note. | Both ratings stay after reloading the page. |
+| 1.6 | Look at the final transcript lines (live view, then the review page). | Sentence case: a capital first letter and "I"; your key terms and company spelled as you typed them (for example "Bluefin Route", "CRM"). |
+| 1.7 | **Interview** session: say "we used RAG with embeddings in a vector database to cut latency". | RAG, embeddings, vector database and latency come out right more often than before (built-in technical vocabulary). |
 
 ## 2. Desktop hotkeys (Day 4)
 
