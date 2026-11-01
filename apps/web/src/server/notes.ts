@@ -42,9 +42,9 @@ export const NOTES_RULES = `You are Kite. A call has just ended. Write short, fa
 Rules:
 - Use only what is in the transcript, the answers Kite gave, and the session details and documents. Never invent names, numbers, dates, commitments or next steps.
 - The transcript comes from speech recognition and contains mistakes. Names and terms are often misheard; read them in the light of the session's key terms and documents.
-- If a part of the call is too unclear to follow (garbled words, missing pieces, or lines that do not make sense together), do not guess what was said: add it to "unclear" with its time range (in seconds since the call started) and a short reason, and leave it out of the summary.
+- If speech in the call could not be understood (garbled words, or lines that do not make sense together), do not guess what was said: add it to "unclear" with its time range (in seconds since the call started) and a short reason, and leave it out of the summary. Silence, or a gap where nobody spoke, is not unclear: leave it out.
 - summary: at most ${MAX_SUMMARY_BULLETS} short bullets about what was discussed and decided.
-- questions: the questions the other person ("Them") asked, each in a few words, with when it was asked (seconds since the call started). "answered" says whether one of Kite's answers covered it: yes, partly or no. If one did, "answeredAt" is that answer's time (seconds) exactly as given in the answers list; otherwise null.
+- questions: the questions the other person ("Them") asked, each in a few words, with when it was asked (seconds since the call started). "answerId" is the id of the one Kite answer (from the answers list, for example "A2") that was given for this question; null when Kite gave no answer for it. An answer the user gave themselves does not count. "answered" says whether that Kite answer covered the question: yes or partly; "no" when answerId is null. Use each answer id for at most one question.
 - nextSteps: only steps that were actually agreed or promised in the call, with the person who will do them if a name or role was said (otherwise an empty owner).
 - lessons: at most ${MAX_PROPOSED_LESSONS} short lessons for how Kite should answer in future calls, each one sentence, based only on the user's ratings and notes on Kite's answers (a thumbs down, or a note saying what was wrong or what a better answer would be). Give the evidence: which answer (its time and question) and the rating or note. If the ratings and notes show nothing to learn, give no lessons.
 - Write plainly. No preamble.`;
@@ -62,9 +62,9 @@ export const NOTES_SCHEMA = {
           question: { type: 'string' },
           at: { type: 'integer' },
           answered: { type: 'string', enum: ['yes', 'partly', 'no'] },
-          answeredAt: { type: ['integer', 'null'] },
+          answerId: { type: ['string', 'null'] },
         },
-        required: ['question', 'at', 'answered', 'answeredAt'],
+        required: ['question', 'at', 'answered', 'answerId'],
         additionalProperties: false,
       },
     },
@@ -106,10 +106,10 @@ export const NOTES_SCHEMA = {
 
 /** The model's notes, before ratings are added (NOTES_SCHEMA). */
 interface ModelNotes extends Omit<CallNotes, 'questions'> {
-  /** The questions, with the time of the Kite answer that covered each (or null). */
+  /** The questions, with the id of the Kite answer given for each (or null). */
   questions: (Omit<NotesQuestion, 'rating'> & {
-    /** The covering answer's time, in seconds, or null. */
-    answeredAt: number | null;
+    /** The Kite answer's id from the prompt ("A1", "A2", … by position), or null. */
+    answerId: string | null;
   })[];
 }
 
@@ -125,17 +125,30 @@ function escape(text: string): string {
 }
 
 /**
- * Writes one answer for the prompt, with the user's rating and note.
+ * An answer's id in the notes prompt: "A" and its position in the request, from 1. The notes
+ * link questions to answers by this id (Day 6 Stage 4b), never by time.
+ *
+ * @param index The answer's position in the request, from 0.
+ * @returns The id, for example "A1".
+ * Called from: answerText(), finishNotes()
+ */
+export function answerId(index: number): string {
+  return `A${index + 1}`;
+}
+
+/**
+ * Writes one answer for the prompt, with its id, the user's rating and note.
  *
  * @param answer The answer.
+ * @param index  Its position in the request, from 0 (gives its id).
  * @returns Its text block.
  * Called from: notesPrompt()
  */
-function answerText(answer: NotesAnswer): string {
+function answerText(answer: NotesAnswer, index: number): string {
   const rating =
     answer.rating === 'up' ? 'thumbs up' : answer.rating === 'down' ? 'thumbs down' : 'not rated';
   return [
-    `<answer at="${answer.at}" time="${clockTime(answer.at)}" asked="${answer.mode}">`,
+    `<answer id="${answerId(index)}" at="${answer.at}" time="${clockTime(answer.at)}" asked="${answer.mode}">`,
     `Question: ${escape(answer.question)}`,
     `User's rating: ${rating}`,
     `User's note: ${answer.note.trim() ? escape(answer.note.trim()) : '(none)'}`,
@@ -166,7 +179,9 @@ export function notesPrompt(request: NotesRequest) {
     '</transcript>',
     '',
     '<answers>',
-    ...(request.answers.length > 0 ? request.answers.map(answerText) : ['(Kite gave no answers)']),
+    ...(request.answers.length > 0
+      ? request.answers.map((answer, index) => answerText(answer, index))
+      : ['(Kite gave no answers)']),
     '</answers>',
     '',
     'Write the notes.',
@@ -178,8 +193,11 @@ export function notesPrompt(request: NotesRequest) {
 }
 
 /**
- * Adds each question's rating from the request (the answer at the time the model gave), and
- * keeps the counts within the limits.
+ * Adds each question's rating from the request, and keeps the counts within the limits.
+ * A rating is attached only when the question names a real Kite answer by its id, and each
+ * answer rates at most one question (the first that names it). A question with no such answer
+ * is "not answered" with no rating: the user may have answered it themselves (Day 6 Stage 4b;
+ * before, a time-based link copied one answer's rating onto several questions).
  *
  * @param model    The model's notes.
  * @param answers  The request's answers.
@@ -187,14 +205,22 @@ export function notesPrompt(request: NotesRequest) {
  * Called from: generateCallNotes(); tests
  */
 export function finishNotes(model: ModelNotes, answers: readonly NotesAnswer[]): CallNotes {
-  const ratingAt = new Map(answers.map((answer) => [answer.at, answer.rating]));
+  const byId = new Map(answers.map((answer, index) => [answerId(index), answer]));
+  const used = new Set<string>();
   return {
     summary: model.summary.slice(0, MAX_SUMMARY_BULLETS),
-    questions: model.questions.map(({ answeredAt, ...question }) => ({
-      ...question,
-      // Only a rating the user actually gave; an answer time the model made up gives none.
-      rating: answeredAt === null ? null : (ratingAt.get(answeredAt) ?? null),
-    })),
+    questions: model.questions.map(({ answerId: id, ...question }) => {
+      // Only a real, not yet used answer id links a question to a Kite answer; an id the model
+      // made up, or one already used for another question, links nothing.
+      const answer = id !== null && !used.has(id) ? byId.get(id) : undefined;
+      if (!answer || id === null) return { ...question, answered: 'no' as const, rating: null };
+      used.add(id);
+      return {
+        ...question,
+        answered: question.answered === 'no' ? 'partly' : question.answered,
+        rating: answer.rating,
+      };
+    }),
     nextSteps: model.nextSteps,
     unclear: model.unclear,
     lessons: model.lessons.slice(0, MAX_PROPOSED_LESSONS),

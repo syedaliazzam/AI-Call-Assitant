@@ -285,3 +285,22 @@ Decided by the developer on Day 5, after measuring how much the score varies (be
 **Result: passes** (≥ 8, higher than 8.50 without, headline 1.0 in every run).
 
 The follow-up scenario (04) went over 15 words in one run on 1 Nov without any lesson. On Day 4 it scored 10.0 and 9.5, so this is treated as run-to-run variation. Fixing it would change the core rules and need the `answers` group 3 times (about 180 requests), so it is not done.
+
+### Day 6 Stage 4b: ratings linked by answer id; silence is not unclear (kept)
+
+**What changed** (`server/notes.ts`):
+- Each answer in the notes prompt has an id, `A1`, `A2`, … by position.
+- The model links a question to one Kite answer by that id (`answerId`), not by time.
+- The code attaches the user's rating only for a real id, and each answer rates at most one question. A question with no linked Kite answer is "no" with no rating, because the user may have answered it.
+- The unclear rule now covers only speech that could not be understood: "Silence, or a gap where nobody spoke, is not unclear."
+
+**Run:** 2026-11-01, same laptop; `eval:notes --only=notes`, 18 requests.
+
+| Scenario | Faithful /4 | Unclear /1 | Total | 1 Nov |
+|---|---|---|---|---|
+| n1-sales-renewal-with-feedback | 4.0 | 1.0 | 10.0 | 9.3 |
+| n2-support-with-unclear-part | 4.0 | 1.0 | 10.0 | 10.0 |
+| n3-interview-next-steps | **3.7** | **1.0** | **9.7** | 8.7 (faithful 3.0, unclear 0.7) |
+| **Overall** | | | **9.89** | 9.33 |
+
+**Result: passes** (≥ 8; n3's faithfulness and unclear scores both went up).
