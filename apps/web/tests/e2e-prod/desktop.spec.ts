@@ -78,7 +78,8 @@ test.afterAll(async () => {
 });
 
 test('1. sign in, and the dashboard is empty (separate desktop data)', async () => {
-  await signIn(page, testAccount());
+  // Fresh: the desktop app keeps its own cookies (separate from the browser suites).
+  await signIn(page, testAccount(), true);
   report('desktop sign in', true);
   await expect(page.getByText('No sessions yet')).toBeVisible();
   report('desktop dashboard empty', true, {

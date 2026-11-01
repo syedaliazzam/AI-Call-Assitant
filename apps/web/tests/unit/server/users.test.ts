@@ -4,7 +4,8 @@
  * becomes Error('EMAIL_TAKEN'), a reset sets a new password, re-flags the account and signs the
  * user out, disabling uses ban/unban, markPasswordChanged() clears the flag, and
  * setTestAccountDisabled() makes the same changes as a ban (fields, then sessions deleted),
- * re-enables without deleting sessions, and throws USER_NOT_FOUND for an unknown email.
+ * re-enables without deleting sessions, and throws USER_NOT_FOUND for an unknown email;
+ * setTestAccountPassword() stores Better Auth's hash and deletes the sessions without enabling.
  */
 import { APIError } from 'better-auth/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,15 +26,19 @@ const where = vi.fn();
 const set = vi.fn(() => ({ where }));
 const update = vi.fn(() => ({ set }));
 
-/** Fake Better Auth internal adapter (setTestAccountDisabled). */
+/** Fake Better Auth internal adapter (setTestAccountDisabled, setTestAccountPassword). */
 const internalAdapter = {
   findUserByEmail: vi.fn(),
   updateUser: vi.fn(),
+  updatePassword: vi.fn(),
   deleteUserSessions: vi.fn(),
 };
 
+/** Fake Better Auth password hasher (setTestAccountPassword). */
+const password = { hash: vi.fn(async (plain: string) => `hashed:${plain}`) };
+
 vi.mock('@/server/auth', () => ({
-  auth: { api, $context: Promise.resolve({ internalAdapter }) },
+  auth: { api, $context: Promise.resolve({ internalAdapter, password }) },
 }));
 vi.mock('@/server/db', () => ({ db: { update } }));
 
@@ -206,6 +211,27 @@ describe('setTestAccountDisabled', () => {
     expect(internalAdapter.deleteUserSessions).not.toHaveBeenCalled();
     internalAdapter.findUserByEmail.mockResolvedValue(null);
     await expect(users.setTestAccountDisabled('none@example.com', true)).rejects.toThrow(
+      'USER_NOT_FOUND',
+    );
+  });
+});
+
+describe('setTestAccountPassword', () => {
+  it('stores the hashed password, deletes the sessions, and does not enable the account', async () => {
+    internalAdapter.findUserByEmail.mockResolvedValue({ user: { id: 'u9' } });
+    internalAdapter.updateUser.mockClear();
+    expect(await users.setTestAccountPassword('Kite-E2E-Admin@example.com', 'new-secret')).toBe(
+      'u9',
+    );
+    expect(internalAdapter.findUserByEmail).toHaveBeenCalledWith('kite-e2e-admin@example.com');
+    expect(internalAdapter.updatePassword).toHaveBeenCalledWith('u9', 'hashed:new-secret');
+    expect(internalAdapter.deleteUserSessions).toHaveBeenCalledWith('u9');
+    expect(internalAdapter.updateUser).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown email', async () => {
+    internalAdapter.findUserByEmail.mockResolvedValue(null);
+    await expect(users.setTestAccountPassword('none@example.com', 'x')).rejects.toThrow(
       'USER_NOT_FOUND',
     );
   });

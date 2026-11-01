@@ -197,6 +197,28 @@ export async function setTestAccountDisabled(email: string, disabled: boolean): 
 }
 
 /**
+ * Gives a test account a new password (developer script only), without enabling it or
+ * signing in: the password is hashed by Better Auth's own hasher and stored on the account's
+ * credential, exactly as a password change does, and every session is deleted.
+ *
+ * @param email    The test account's email.
+ * @param password The new password (never logged).
+ * @returns The account's id.
+ * @throws Error('USER_NOT_FOUND') when no account has this email.
+ * Called from: scripts/rotate-e2e-password.ts
+ */
+export async function setTestAccountPassword(email: string, password: string): Promise<string> {
+  const context = await auth.$context;
+  const found = await context.internalAdapter.findUserByEmail(email.toLowerCase());
+  if (!found) throw new Error('USER_NOT_FOUND');
+  const id = found.user.id;
+  await context.internalAdapter.updatePassword(id, await context.password.hash(password));
+  // A session started with the old password must not outlive it.
+  await context.internalAdapter.deleteUserSessions(id);
+  return id;
+}
+
+/**
  * Changes an account's role (admin only).
  *
  * @param userId  The account to change.

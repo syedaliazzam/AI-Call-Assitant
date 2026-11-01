@@ -47,7 +47,8 @@ test('session cookie cache: answers 1, 2, 3 (after > 60 s) and 4', async () => {
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   try {
     const page = await browser.newPage();
-    await signIn(page, testAccount());
+    // Fresh: this test measures the cookie cache that sign-in sets.
+    await signIn(page, testAccount(), true);
 
     /**
      * Sends one Chat answer from the page (the browser's own cookies) and reads its timings.

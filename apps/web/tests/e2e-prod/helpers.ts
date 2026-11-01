@@ -19,6 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Page, type Response } from '@playwright/test';
 import type { AnswerUsage } from '@kite/shared';
+import { signInOnce } from '../lib/sign-in';
 
 /** The production site the suites run against. */
 export const PRODUCTION_URL = 'https://kite-call-assistant.vercel.app';
@@ -117,20 +118,18 @@ export function inventedDocument(): TextFile {
 }
 
 /**
- * Signs in on /login and waits for the dashboard.
+ * Signs in on /login and waits for the dashboard. Reuses this run's session for the account
+ * (one sign-in per run, so production's sign-in rate limit cannot fail a run); a failed
+ * sign-in leaves no password on the page (tests/lib/sign-in.ts).
  *
  * @param page    The page.
  * @param account The test account.
+ * @param fresh   True to always sign in with the form (the sign-in cache test; the desktop app).
+ * @returns Nothing.
  * Called from: the suites
  */
-export async function signIn(page: Page, account: TestAccount): Promise<void> {
-  await page.goto(`${PRODUCTION_URL}/login`);
-  await page.getByLabel('Email').fill(account.email);
-  await page.getByLabel('Password').fill(account.password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeVisible({
-    timeout: 30_000,
-  });
+export async function signIn(page: Page, account: TestAccount, fresh = false): Promise<void> {
+  await signInOnce(page, { baseUrl: PRODUCTION_URL, ...account, fresh });
 }
 
 /** Details of a session created through the wizard. */

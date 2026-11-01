@@ -7,6 +7,7 @@
  */
 import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
 import { testAccount } from '../e2e-prod/helpers';
+import { clearPasswordOnFailure } from '../lib/sign-in';
 import { BASE_URL } from './shots';
 
 let browser: Browser | null = null;
@@ -85,11 +86,15 @@ test('sign-in → dashboard → new session with the keyboard only, every stop w
   await tabTo(page, 'Email', missing);
   await page.keyboard.type(account.email);
   await tabTo(page, 'Password', missing);
-  await page.keyboard.type(account.password);
-  await tabTo(page, 'Sign in', missing);
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeVisible({
-    timeout: 60_000,
+  // This test types the password itself (keyboard only); on a failure the field is emptied
+  // first, so the failure snapshot shows no password (tests/lib/sign-in.ts).
+  await clearPasswordOnFailure(page, account.email, async () => {
+    await page.keyboard.type(account.password);
+    await tabTo(page, 'Sign in', missing);
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeVisible({
+      timeout: 60_000,
+    });
   });
 
   // A fresh browser has no sessions: the empty state's button is the way in.
