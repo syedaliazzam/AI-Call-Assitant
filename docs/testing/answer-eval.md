@@ -255,3 +255,17 @@ Decided by the developer on Day 5, after measuring how much the score varies (be
 | 3.0 | 2.0 | 2.0 | 1.0 | 0.0 | 1.0 | 9.0 |
 
 **Result: passes.** The answer used the earlier answer's facts (facts 3 of 3) and stayed consistent with it (2 of 2). Its headline went over 15 words in this run (it scored 10.0 and 9.5 on Day 4).
+
+### Day 5 Stage 5: notes faithfulness issues, with causes
+
+(2026-11-01: n1 and n3 re-run with `--show`, 3 runs each, 12 requests; prompts not changed):
+- **n1:** 10.0 in all 3 runs (faithful 4 of 4). The earlier 3.3 did not come back, so it was run-to-run variation; no cause found.
+- **n3, issue 1 (all 3 runs): a rating on a question Kite did not answer.** The follow-up "How did you do it?" was marked answered "partly" and got the thumbs up the user gave Kite's only answer, which was to the first question. The user answered the follow-up themselves.
+  - Cause: the model sets `answeredAt` to that one answer's time (32 s) for both questions.
+  - `withRatings()` in `server/notes.ts` then copies the answer's rating onto every question that points at that time.
+  - The prompt's "answered" rule ("whether one of Kite's answers covered it") does not say that the user answering for themselves does not count.
+- **n3, issue 2 (2 of 3 runs, and why "Unclear" scored 0.3): a silent stretch listed as unclear.** The gap from 78 to 300 s, with nothing said, was listed as an unclear part. Cause: the prompt's "missing pieces" wording reads as covering silence too.
+- Possible fixes, for a later stage after the developer agrees:
+  - give a rating only to the question an answer was asked about (one question per answer time);
+  - say in the prompt that the user's own reply does not make a question answered;
+  - say that silence is not unclear.
