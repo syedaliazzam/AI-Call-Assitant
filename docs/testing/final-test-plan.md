@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 Stage 4d.
+**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 Stage 4f.
 
 ---
 
@@ -95,7 +95,7 @@
 
 | # | Do | Expect |
 |---|---|---|
-| 8.1 | Settings → turn **Auto-answer** on. Play "Them" asking "What does the plan cost?" and pause. | An answer starts by itself, marked **Auto**. |
+| 8.1 | Settings → Answers → turn **Auto-answer (beta)** on, then start a new call. Play "Them" asking "What does the plan cost?" and pause. | An answer starts by itself, marked **Auto**. |
 | 8.2 | Ask two questions within 15 s. | Only the first is answered automatically. |
 | 8.3 | Turn Auto-answer off. | Questions are no longer answered by themselves. |
 

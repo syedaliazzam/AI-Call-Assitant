@@ -202,6 +202,10 @@ export function AnswerPanel(props: AnswerPanelProps) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted">
           Answer
+          {/* Kite answered by itself (auto-answer beta, Day 6 Stage 4f). */}
+          {entry.auto ? (
+            <span className="ml-2 border border-ui-primary px-1 text-ui-primary">Auto</span>
+          ) : null}
           {entry.timeline ? (
             <>
               {' · '}

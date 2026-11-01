@@ -57,6 +57,8 @@ export interface AnswerEntry {
   id: string;
   /** 'answer' (from the transcript), 'chat' (typed) or 'screenshot' (Day 5). */
   mode: 'answer' | 'chat' | 'screenshot';
+  /** True when Kite answered by itself (auto-answer, Day 6 Stage 4f); shown as "Auto". */
+  auto?: boolean;
   /**
    * The screenshot a screenshot answer was made from, as a JPEG data URL, for the thumbnail.
    * In memory only: never saved (toStored() leaves it out) and never logged.
@@ -172,6 +174,8 @@ export interface LiveAnswers {
   notice: string | null;
   /** Answers the latest question from the transcript. */
   answer: () => void;
+  /** Answers the latest question by itself (auto-answer, Day 6 Stage 4f; marked "Auto"). */
+  autoAnswer: () => void;
   /** Answers a typed question. */
   chat: (question: string) => void;
   /** Cancels a streaming answer; otherwise hides the answer shown. */
@@ -278,9 +282,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
    * @param image      The prepared screenshot (mode 'screenshot').
    * @param pressedAt  When the user pressed the key (default now; a screenshot passes the time
    *                   before it was taken, so the capture counts in the timings).
+   * @param auto       True when Kite answers by itself (auto-answer); the entry is marked "Auto".
    */
   const ask = useCallback(
-    (mode: AnswerEntry['mode'], typed?: string, image?: string, pressedAt?: number) => {
+    (
+      mode: AnswerEntry['mode'],
+      typed?: string,
+      image?: string,
+      pressedAt?: number,
+      auto = false,
+    ) => {
       const keyPressAt = pressedAt ?? performance.now();
       const lines = transcript.lines();
       if (mode === 'answer' && !lines.some((line) => line.speaker === 'them')) {
@@ -306,6 +317,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       const entry: AnswerEntry = {
         id: crypto.randomUUID(),
         mode,
+        ...(auto ? { auto: true } : {}),
         question:
           built.request.question ?? (mode === 'screenshot' ? DEFAULT_SCREENSHOT_QUESTION : ''),
         ...(image ? { thumbnail: image } : {}),
@@ -449,6 +461,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     index,
     notice,
     answer: useCallback(() => ask('answer'), [ask]),
+    autoAnswer: useCallback(() => ask('answer', undefined, undefined, undefined, true), [ask]),
     chat: useCallback((question: string) => ask('chat', question), [ask]),
     clear,
     prev,

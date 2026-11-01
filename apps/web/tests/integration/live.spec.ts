@@ -394,3 +394,41 @@ test('compact view (desktop window and PiP): headline first, details on expand, 
   await shot(unavailable, size, 'compact-unavailable');
   await unavailable.context.close();
 });
+
+test('auto-answer: answers a finished question by itself, at most once per 15 s', async () => {
+  test.setTimeout(60_000);
+  const size: Width = { width: 1440, height: 900, touch: false };
+  const watched = await open('auto', size);
+  const { page } = watched;
+  // Count the real answers sent (warm-ups excluded).
+  let answers = 0;
+  page.on('request', (request) => {
+    if (request.url().endsWith('/api/answer') && !request.postData()?.includes('"mode":"warm"')) {
+      answers += 1;
+    }
+  });
+  const addThem = (text: string) =>
+    page.evaluate(
+      (line) => (window as unknown as { addThemLine: (t: string) => void }).addThemLine(line),
+      text,
+    );
+
+  await page.waitForTimeout(2_000);
+  expect(answers, 'no auto-answer for the opening lines').toBe(0);
+  await addThem('WHAT DOES THE ANNUAL PLAN COST FOR FORTY SEATS');
+  const panel = page.getByRole('region', { name: 'Answer' });
+  await expect(panel.getByText('Auto', { exact: true })).toBeVisible({ timeout: 5_000 });
+  expect(answers).toBe(1);
+  const firstAt = Date.now();
+
+  // A second question within 15 s is not answered by itself.
+  await addThem('HOW LONG DOES THE ROLLOUT TAKE');
+  await page.waitForTimeout(4_000);
+  expect(answers, 'rate limit: one auto-answer per 15 s').toBe(1);
+
+  // After 15 s, the still-unanswered question is answered.
+  await page.waitForTimeout(Math.max(0, 15_500 - (Date.now() - firstAt)));
+  await expect.poll(() => answers, { timeout: 3_000 }).toBe(2);
+  await shot(watched, size, 'live-auto-answer');
+  await watched.context.close();
+});

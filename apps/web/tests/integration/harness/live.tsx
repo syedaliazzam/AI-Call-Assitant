@@ -4,7 +4,8 @@
  *          call screens for invented data, chosen by the page's ?view=:
  *          - live: inside a stand-in of the app shell (same width as in the app), LiveCallLayout
  *            with the real TranscriptStrip (a provisional line included)
- *            and LiveAnswers (answers come from the test server's mocked /api/answer);
+ *            and LiveAnswers (answers come from the test server's mocked /api/answer); ?view=auto turns
+ *            auto-answer on and adds window.addThemLine() for the rate-limit test;
  *          - connect: the Connect view (ConnectPanel), model ready, not connected;
  *          - gate: the live page's phone check (platform supportsLiveCalls()), showing
  *            LiveCallsUnsupported on a phone or tablet;
@@ -51,6 +52,9 @@ const SESSION: Session = {
   status: 'live',
   lastActiveAt: null,
 };
+
+/** ?view=auto: auto-answer on (Day 6 Stage 4f), with a hook to add a finished Them question. */
+const AUTO_VIEW = new URLSearchParams(window.location.search).get('view') === 'auto';
 
 const callStartedAt = Date.now() - 120_000;
 const transcript = createTranscript();
@@ -129,6 +133,7 @@ function LiveView() {
             documents={[]}
             transcript={transcript}
             callStartedAt={callStartedAt}
+            autoAnswer={AUTO_VIEW}
             ending={false}
             onEnd={() => undefined}
             copy={async () => undefined}
@@ -218,5 +223,12 @@ if (view === 'connect') {
     />,
   );
 } else {
+  if (AUTO_VIEW) {
+    // The test adds a finished "Them" line that ended just now (invented text).
+    (window as unknown as { addThemLine: (text: string) => void }).addThemLine = (text) => {
+      const now = Date.now();
+      transcript.addFinal({ speaker: 'them', text, tStart: now - 1_500, tEnd: now });
+    };
+  }
   root.render(<LiveView />);
 }

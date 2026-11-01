@@ -35,6 +35,7 @@ import { Select } from '@/ui/Select';
 import { Textarea } from '@/ui/Textarea';
 import { PageShell } from '@/ui/PageShell';
 import { Toggle } from '@/ui/Toggle';
+import { AutoAnswerSetting } from './AutoAnswerSetting';
 import { LearnedLessons } from './LearnedLessons';
 
 /**
@@ -277,6 +278,10 @@ export function Settings() {
 
       <Section title="Screen-share protection">
         <ShareProtectionSetting />
+      </Section>
+
+      <Section title="Answers">
+        <AutoAnswerSetting />
       </Section>
 
       <Section title="What Kite has learned">

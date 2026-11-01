@@ -23,6 +23,7 @@ import { AnswerPanel } from './AnswerPanel';
 import { CompactLive } from './CompactLive';
 import { ChatBox } from './ChatBox';
 import { TopBar } from './TopBar';
+import { useAutoAnswer } from './useAutoAnswer';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
 
 /** Props for LiveAnswers. */
@@ -35,6 +36,8 @@ export interface LiveAnswersProps {
   lessons?: readonly string[];
   /** The live transcript. */
   transcript: Transcript;
+  /** Turns auto-answer on or off for this call, overriding the saved setting (the harness). */
+  autoAnswer?: boolean;
   /** When this call connected (Unix ms). */
   callStartedAt: number;
   /** True while End waits for the last line. */
@@ -83,6 +86,13 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
   const entry = answers.index >= 0 ? (answers.entries[answers.index] ?? null) : null;
   const answering = answers.entries.some((candidate) => candidate.status === 'streaming');
+  // Auto-answer (beta, off by default): answers a finished question from Them by itself.
+  useAutoAnswer({
+    transcript: props.transcript,
+    streaming: answering,
+    autoAnswer: answers.autoAnswer,
+    ...(props.autoAnswer !== undefined ? { enabled: props.autoAnswer } : {}),
+  });
   const [compactNotice, setCompactNotice] = useState<string | null>(null);
   const lines = useSyncExternalStore(
     props.transcript.subscribe,
