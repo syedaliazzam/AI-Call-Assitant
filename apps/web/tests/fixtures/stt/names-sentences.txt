@@ -1,0 +1,45 @@
+# Names set for the Day 6 speech engine trial (ADR-0027). One sentence per line:
+#   <sentence to read> | <names scored for "name accuracy", separated by ;>
+# Lines starting with # are skipped. Lines marked EDIT use placeholder names: replace them with
+# real team or client names before recording (keep the "| names" part in step with the sentence).
+# Read each sentence once, at a normal speaking pace, as you would on a call.
+Kite is the call assistant Paramount Intelligence built for our team. | Kite; Paramount Intelligence
+Zain Ul Abideen will send the summary after the call. | Zain Ul Abideen
+Please ask Syed Ali Azzam to review the pricing sheet. | Syed Ali Azzam
+The answers come from Claude, made by Anthropic. | Claude; Anthropic
+We use Claude Haiku for live answers and Claude Sonnet for the notes. | Claude Haiku; Claude Sonnet
+The web app is deployed on Vercel and the accounts live in Neon. | Vercel; Neon
+The desktop shell is built with Electron and Next.js. | Electron; Next.js
+Speech runs on sherpa onnx with a Zipformer model. | sherpa onnx; Zipformer
+We are comparing Parakeet with Whisper for the final pass. | Parakeet; Whisper
+Sessions are stored in IndexedDB on the laptop. | IndexedDB
+Sign-in uses Better Auth with email and password. | Better Auth
+Can you share the Bluefin Route proposal from Tuesday? | Bluefin Route
+The pilot ran in Lahore, Karachi and Islamabad. | Lahore; Karachi; Islamabad
+Our second office is in Rawalpindi near Saddar. | Rawalpindi; Saddar
+The client asked whether we integrate with Salesforce and HubSpot. | Salesforce; HubSpot
+They track tickets in Jira and write specs in Confluence. | Jira; Confluence
+The invoice goes through QuickBooks at the end of the month. | QuickBooks
+We meet on Google Meet, but their team prefers Microsoft Teams. | Google Meet; Microsoft Teams
+Kubernetes and PostgreSQL run the client's backend. | Kubernetes; PostgreSQL
+The API returns JSON over HTTPS with OAuth tokens. | JSON; HTTPS; OAuth
+Ayesha Siddiqui leads design and Bilal Chaudhry leads sales. | Ayesha Siddiqui; Bilal Chaudhry
+Fatima Malik will join the call with Usman Qureshi. | Fatima Malik; Usman Qureshi
+Hamza Sheikh asked about the WebSocket timeout. | Hamza Sheikh; WebSocket
+Mehwish Raza approved the TypeScript migration. | Mehwish Raza; TypeScript
+The demo uses a GPT comparison and a Llama benchmark. | GPT; Llama
+Paramount Intelligence signed the renewal with Northwind Traders. | Paramount Intelligence; Northwind Traders
+Contoso wants a quote for forty seats on the annual plan. | Contoso
+Send the Kite installer to Fabrikam's IT team. | Kite; Fabrikam
+The SLA says ninety nine point nine percent uptime on AWS. | SLA; AWS
+We moved the GitHub Actions runners to Windows and macOS. | GitHub Actions; Windows; macOS
+EDIT: Our main client is Client One and their lead is Person One. | Client One; Person One
+EDIT: Client Two asked for the onboarding deck on Friday. | Client Two
+EDIT: Person Two from Client Three will review the contract. | Person Two; Client Three
+EDIT: Our product Product One competes with Product Two. | Product One; Product Two
+EDIT: Teammate One and Teammate Two will run the workshop. | Teammate One; Teammate Two
+EDIT: Client Four uses Tool One for their reporting. | Client Four; Tool One
+EDIT: Person Three is the decision maker at Client Five. | Person Three; Client Five
+EDIT: Teammate Three handles support for Client Six. | Teammate Three; Client Six
+Zain and Ali will demo Kite to Northwind on Monday. | Zain; Ali; Kite; Northwind
+Please spell it again: Paramount Intelligence, Kite, Bluefin Route. | Paramount Intelligence; Kite; Bluefin Route

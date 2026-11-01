@@ -27,6 +27,7 @@
     "fetch-models": "tsx scripts/fetch-models.ts",
     "make-brand": "tsx scripts/make-brand.ts",
     "stt:runtime": "tsx scripts/fetch-models.ts --runtime-only && tsx scripts/check-stt-runtime.ts",
+    "stt:record-names": "tsx scripts/record-names.ts",
     "test:stt": "playwright test -c tests/integration/playwright.config.ts stt.spec.ts",
     "test:answers": "playwright test -c tests/integration/playwright.config.ts answers.spec.ts",
     "test:screenshot": "playwright test -c tests/integration/playwright.config.ts screenshot.spec.ts",
