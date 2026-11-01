@@ -217,3 +217,41 @@ Decided by the developer on Day 5, after measuring how much the score varies (be
 - **Screenshot scenarios:** **8.83** ≥ 8.
 
 **Still weak:** in the code-bug scenario, the answer ignores the session's "answer in first person" instruction (style 0 in every run). It was not tuned further.
+
+### Day 5 Stage 5: notes (n1–n3)
+
+**Run:** 2026-11-01, same laptop; `pnpm --filter web eval:notes --only=notes`; notes and grades by `claude-sonnet-5-5`; 3 runs per scenario (18 requests). It was queued from 2026-10-30, when the usage limit stopped the first try.
+
+| Scenario | Faithful /4 | Coverage /3 | Unclear /1 | Lessons /1 | Format /1 | Total /10 |
+|---|---|---|---|---|---|---|
+| n1-sales-renewal-with-feedback | 3.3 | 3.0 | 1.0 | 1.0 | 1.0 | 9.3 |
+| n2-support-with-unclear-part | 4.0 | 3.0 | 1.0 | 1.0 | 1.0 | 10.0 |
+| n3-interview-next-steps | 3.0 | 3.0 | 0.7 | 1.0 | 1.0 | 8.7 |
+
+**Result: passes** (9.33 ≥ 8).
+
+**Faithfulness:** n1 lost points in one or more of its 3 runs (3.3 of 4) and n3 in each run on average (3.0 of 4); n2 was fully faithful. The run printed scores only, so the grader's reasons for these points were not recorded (they need `--show`, which re-runs the scenarios). In n3, one run in three also missed the unclear part (0.7).
+
+### Day 5 Stage 7: answers with an approved lesson (19–20)
+
+**Runs:** 2026-11-01, same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario; the same scenarios with and without their lesson (16 requests).
+
+| Scenario | With the lesson | Without (`--without-lessons`) |
+|---|---|---|
+| 19-lesson-per-seat-and-month | 8.5 (facts 3.0, grounded 1.5, headline 0.0) | 8.0 (facts 2.0, grounded 1.0, headline 1.0) |
+| 20-lesson-error-code-in-headline | 9.5 (facts 2.5) | 9.0 (facts 2.0) |
+| **Overall** | **9.00** | **8.50** |
+
+**Result: passes** (with the lesson 9.00 ≥ 8, and higher than 8.50 without).
+
+**Still weak:** with the per-seat-and-month lesson, the headline went over 15 words in both runs (headline 0). The lesson asks for both prices in the answer, which makes the headline longer. It was not tuned.
+
+### Day 4 follow-up check (04-follow-up-refers-back, one run)
+
+**Run:** 2026-11-01, same laptop; `pnpm --filter web eval:answers --only=04-follow-up-refers-back --runs=1` (2 requests). The scenario's second question ("the second phase of that") refers back to the earlier answer.
+
+| Facts /3 | Grounded /2 | Consistent /2 | Style /1 | Headline /1 | Bullets /1 | Total /10 |
+|---|---|---|---|---|---|---|
+| 3.0 | 2.0 | 2.0 | 1.0 | 0.0 | 1.0 | 9.0 |
+
+**Result: passes.** The answer used the earlier answer's facts (facts 3 of 3) and stayed consistent with it (2 of 2). Its headline went over 15 words in this run (it scored 10.0 and 9.5 on Day 4).
