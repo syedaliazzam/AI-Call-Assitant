@@ -1,23 +1,24 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.3.0"
+version: "3.5.0"
 status: "Current: the single document the team builds from"
-date: "2026-10-29"
+date: "2026-10-31"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
-header: "Kite v3.3.0 · architecture and build plan"
+header: "Kite v3.5.0 · architecture and build plan"
 page_breaks: "1,3,5,7,9,11,13"
 ---
 
-# Kite: Architecture and 7-Day Build Plan v3.4.0
+# Kite: Architecture and 7-Day Build Plan v3.5.0
 
 ## Document control
 
 | Field | Value |
 |---|---|
-| Version | 3.4.0, **Current**: the only document to build from |
-| Date | 30 October 2026 |
+| Version | 3.5.0, **Current**: the only document to build from |
+| Date | 31 October 2026 |
+| Changes in 3.5.0 | Day 5 (compact view, screen-share protection, screenshots, notes, review, learning loop), matching what was built (ADR-0026). §3.3: the adapter as built (`captureScreenshot` returns a JPEG ≤ 1,568 px; `openCompactView(sessionId, render?)`, `closeCompactView`, `get`/`setShareProtection`). §4: protection is **off by default**, remembered per device; the Windows result. §5: the `/compact/[id]` route, the review page, Settings "What Kite has learned". §7.1: `core/live` (a BroadcastChannel between the live page and the compact view), `core/notes`, `core/review`, `core/lessons`, `core/screenshot`, `features/review`, `platform/pip.ts`. §7.2: `screenshot` mode built; `/api/notes` (JSON, Sonnet); the `lessons` request field and the rules block's learned preferences; the `claude_unavailable` error code. §7.3: windows, screenshot and protection as built. §7.4: the `lessons` store (schema version 3); notes fields. §7.6: the learning loop as built. §10: **one Claude key and one Console spend limit** for production, development and evaluations. §13: the API usage limit. |
 | Changes in 3.4.0 | Day 4 (answers), matching what was built and measured (ADR-0025). §6.1: the request carries **the whole call** (stable lines and earlier answers) instead of a 3-minute window; question selection; End waits for the last line. §6.2: measured latency (20 answers per platform, production). §6.3: **three cache breakpoints** with an **append-only, chunked conversation**, stable lines, the long-call cap in steps, the idle re-warm, re-warm on Connect; the rules block is now above the caching minimum and shared. §7.1: `core/answer` (context, keepWarm, latency, format), `core/transcript` (stability, question, endCall), `core/storage/answers.ts`, `features/live` answer components, `platform/keymap.ts`. §7.2: request shape (`conversation`, `tail`; `transcript` removed), `answer` and `chat` built, the prompt structure, `jsonReply()` for the evaluation grader. §7.3: `hotkeys.ts` and the bridge's hotkey methods; global shortcuts only during a call. §7.4: answers gain `rating` and `note` and are saved even with "Save transcript" off. §7.6 (new): the learning loop. §11: answer harness test (CI), answer evaluation, `/dev/latency`, the production suites with answers. §13: latency from far regions. |
 | Changes in 3.3.0 | Day 3 (sessions, documents, local storage, session prompt), matching what was built and measured. §5: the screens as built (dashboard, Create / Edit session wizard, Choose platform, Connect with saved transcript, Settings). §6.1/§6.3: session hotwords; the warm-up is a **non-streaming** `max_tokens: 0` request with the same thinking setting as the answers (the official prompt-caching docs reject `max_tokens: 0` with `stream: true`); measured cache write 4,508 → read 4,508 tokens. §7.1: `core/storage`, `core/documents`, `core/stt/sessionHotwords.ts`, `core/transcript/saver.ts`, `core/answer/warm.ts`, the new screens. §7.2: three differences from the 3.2.0 request example: `session` gains `description` and `keyTerms`; the answer style is in the cached session block, not the system block; thinking is off per model tier (fast `disabled`, smart `between_tools`, because Sonnet 5.5 rejects `disabled`). The prompt has the imperfect-transcript rule. §7.3: `security.ts` grants `persistent-storage` to the Kite origin. §7.4: the data model as built (`lastActiveAt`, status values, `settings` store, the 12-hour stale-live rule). §8.1: documents are stored locally as extracted text; the browser and the desktop app have separate local data (ADR-0024). §8.3: lost-laptop risk (local data is not encrypted by Kite). §9.1: files built on Day 3. §11: the manual production end-to-end suites (Chrome and the desktop app). ADR-0024 added; ADR-0020 records the session-hotword result. |
 | Changes in 3.2.0 | Day 2 (audio and transcript), matching what was built and measured. §6.1: speech-to-text is streaming-only (Zipformer 2023-06-21 + hotwords, energy gate instead of Silero VAD, echo filter; ADR-0020 Accepted; a second pass was tried and rejected). §6.2: measured lag and latency. §7.1: the real `core/audio`, `core/stt`, `core/transcript`, `features/live` and `platform` files. §7.3: `media.ts` and the files built so far. §9.1: STT files, tests and `next.config.ts` (no COOP/COEP). §10.1: no COOP/COEP headers; model files from Hugging Face, runtime from our origin (ADR-0023); deployment is CLI-only with no Git integration or automatic previews (as already practised since Day 1). §11: the STT integration test (Playwright, fake microphone) and its CI job. §13: battery, model size, macOS loopback and transcription accuracy (the main known limitation). The DOCX version of this document is regenerated separately. |
@@ -106,20 +107,22 @@ export interface Platform {
   kind: 'desktop' | 'browser';
   getMicStream(): Promise<MediaStream>;
   getOtherSideStream(): Promise<MediaStream>;
-  captureScreenshot(): Promise<Blob>;
-  openCompactView(sessionId: string): Promise<void>;
-  onHotkey(handler: (action: HotkeyAction) => void): () => void;
-  setShareProtection(on: boolean): Promise<boolean>;
+  captureScreenshot(): Promise<Blob>; // JPEG, long side ≤ 1,568 px (Day 5)
+  openCompactView(sessionId: string, render?: PipRenderer): Promise<void>;
+  closeCompactView(): Promise<void>;
+  onHotkey(handler: (action: HotkeyAction) => void, onTaken?: (shortcuts: string[]) => void): () => void;
+  setShareProtection(on: boolean): Promise<ShareProtectionState>;
+  getShareProtection(): Promise<ShareProtectionState>;
 }
 ```
 
 | Method | Desktop (Electron) | Browser (Chrome / Edge) |
 |---|---|---|
 | `getOtherSideStream` | Page calls `getDisplayMedia`; the shell auto-approves it with **system-audio loopback** (Windows; macOS 14.2+), with no picker | `getDisplayMedia` with the share picker. The user picks the meeting tab and ticks "Also share tab audio". On Windows, sharing the entire screen can include system audio. |
-| `captureScreenshot` | Shell captures the current display (`desktopCapturer`) and returns PNG bytes | Grab a frame from the screen or tab stream the user already shared |
-| `openCompactView` | Shell opens the live session in a frameless, always-on-top window | Document Picture-in-Picture window (Chrome/Edge 116+), opened by a button click |
+| `captureScreenshot` | The shell captures the display the Kite window is on (`desktopCapturer` thumbnail, already scaled so the long side is ≤ 1,568 px; IPC `kite:capture-screenshot`, Kite main frame only; macOS asks for Screen Recording permission). The page encodes it once (`core/screenshot/prepare.ts`: JPEG ≤ 1 MB, checked to start with FF D8 FF) | Draws the current frame of the screen or tab the user already shared at Connect (a hidden video element plays the share's video track, so a frame is ready at once), then the same `prepare.ts` encoding. Never saved to disk |
+| `openCompactView` | The shell opens `/compact/[id]` in a frameless window, always on top (`floating`), shown without taking focus (`showInactive`) but accepting typing; position and size remembered (`kite-shell.json` in the app data folder) | Document Picture-in-Picture (Chrome/Edge 116+), opened by a click; the features layer passes a render function, so `platform/` holds no React. Elsewhere: a clear message |
 | `onHotkey` | Electron global shortcuts, forwarded to the page | Keyboard shortcuts while the Kite tab or PiP window has focus |
-| `setShareProtection` | `setContentProtection(true)` on the live window | Returns `false`; UI shows guidance |
+| `setShareProtection` | `setContentProtection(on)` on the compact window, **off by default**, the user's choice remembered per device and re-applied every time the window is shown | Not supported; Settings explains why |
 
 ## 4. Desktop vs browser: what users get
 
@@ -129,7 +132,7 @@ export interface Platform {
 | Meeting apps | Any: Zoom, Teams, Meet, Webex, phone apps | Calls running in a Chrome/Edge tab (Meet, Teams web, Zoom web) |
 | Hotkeys | Work from any app | Only when Kite is focused |
 | Overlay | Always-on-top live window | Picture-in-picture mini view |
-| Screen-share protection | Windows: hidden in full-screen share. macOS: visible in full-screen share (share a window instead). | Not available. Share a single tab or window, or keep Kite on a second monitor. |
+| Screen-share protection | **Off by default**; a switch in Settings, remembered per device. The compact window shows "Hidden from screen share" or "Visible in screen share". Windows (measured Day 5): hidden from an entire-screen share in Chrome 155 (0 of 75,816 window pixels captured with protection on, all of them with it off); a real meeting-app check is on the human checklist. macOS: not verified (no Mac); apps built on ScreenCaptureKit may still capture the window (§13). | Not available. Share a single tab or window, or keep Kite on a second monitor. |
 | Supported browsers | (built in) | Chrome or Edge, current versions. Safari and Firefox are not supported (no tab-audio sharing). |
 
 Kite never hides from the taskbar, Dock or process lists, and does not try to evade monitoring or proctoring software.
@@ -146,9 +149,9 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 | Choose platform | dialog | **Built Day 3.** In the browser only: "Desktop app" (explains that the installer arrives on Day 6) or "Open in browser", plus "What's the difference?" (section 4 table). The desktop app opens the session directly |
 | Connect | `/live/[id]` (first view) | Call information, "Listening for N key terms" (the session hotwords, Day 3), how to connect, "Connect" button, audio test meters. Underneath: the transcript saved by earlier calls of this session, or a note that the session does not save its transcript |
 | Live session | `/live/[id]` | Top bar: Answer · Screenshot · Chat · Clear · End. Transcript strip (live chips). Answer panel (Question, Answer headline, bullets, time, copy, prev/next). Chat input. |
-| Compact view | desktop window / PiP | Transcript line + latest answer + Answer button |
-| Session review | `/sessions/[id]` | AI notes, full transcript (You/Them), call details, delete |
-| Settings | `/settings` | **Built Day 3.** Default preferences for new sessions, hotkeys list (read-only; shortcuts arrive Day 4), share-protection switch (desktop, Day 5), "Delete all local data" (asks first, then shows what was deleted; the downloaded speech model is kept) |
+| Compact view | `/compact/[id]` (desktop window, outside the app layout: no sidebar) / Document PiP | **Built Day 5.** The latest transcript line, the latest answer (or the "Claude is unavailable" message), Answer, Screenshot and a question box. It talks to the live page over a per-session `BroadcastChannel` (`kite-live-<id>`): the live page publishes its state and runs the commands; the compact view never calls Claude itself. Desktop: the protection label |
+| Session review | `/sessions/[id]` | **Built Day 5.** Call details; AI notes (summary, questions with ratings, next steps with owners, parts too unclear to summarise, proposed lessons with Approve / Edit / Reject and a scope) with Regenerate, labelled "Written from answers only" when no transcript was saved; every answer with its rating and note; the saved transcript (or a note that it was not saved); Delete session (in-app dialog). The dashboard shows "Review" on ended sessions |
+| Settings | `/settings` | **Built Day 3.** Default preferences for new sessions, hotkeys list (read-only; shortcuts arrive Day 4), share-protection switch (desktop, Day 5, off by default), "What Kite has learned" (Day 5: approved lessons with edit, delete and "Clear all lessons"), "Delete all local data" (asks first, then shows what was deleted; the downloaded speech model is kept) |
 
 ## 6. Live answer flow and latency
 
@@ -176,7 +179,7 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 
 **Measured on Day 2** (`docs/testing/benchmark-results.md`): speech → first partial (lag) 347–973 ms in Chrome and the desktop app, plugged in and on battery (after the Day 2 lag fix); end of speech → final line p50 1.5–1.7 s (p95 1.9–2.3 s). Accuracy is the weak point: about 27% WER on the 3 test sentences, with names and technical terms often wrong in a real call (§13).
 
-**Measured on Day 4** (production, from the developer's laptop in Pakistan; `/dev/latency`, 20 answers each, cache read on 20/20; `docs/testing/benchmark-results.md`): key press → request sent p50 0 ms; **first word p50 1,076–1,155 ms** (p95 1,327–1,934) in Chrome and the desktop app; headline p50 1,379–1,454 ms (p95 1,641–2,174). The server's own part (request received → first text) is p50 560–643 ms; the rest, about 500 ms, is the network between that laptop and the `iad1` function (requests enter Vercel at the `bom1` edge). The levers were applied in order: (1) cache hits confirmed; (2) the tail was already empty; (3) `max_tokens` 400 → 250 made no difference beyond noise and was reverted; (4) the region is already next to Anthropic, and moving it nearer the laptop would put the sign-in database and Claude a round trip away instead. The first-word target is met on the server side but not end to end from South Asia; see §13.
+**Measured on Day 4** (production, from the developer's laptop in Pakistan; `/dev/latency`, 20 answers each, cache read on 20/20; `docs/testing/benchmark-results.md`): key press → request sent p50 0 ms; **first word p50 1,076–1,155 ms** (p95 1,327–1,934) in Chrome and the desktop app; headline p50 1,379–1,454 ms (p95 1,641–2,174). The server's own part (request received → first text) is p50 560–643 ms; the rest, about 500 ms, is the network between that laptop and the `iad1` function (requests enter Vercel at the `bom1` edge). The levers were applied in order: (1) cache hits confirmed; (2) the tail was already empty; (3) `max_tokens` 400 → 250 made no difference beyond noise and was reverted; (4) the region is already next to Anthropic, and moving it nearer the laptop would put the sign-in database and Claude a round trip away instead. The first-word target is met on the server side but not end to end from South Asia; see §13. **Accepted for v1** (Day 5 decision): about 1.1 s to the first word from Pakistan is still well below the 2–4 s reported for ParakeetAI. From Day 5, the 60-second session cookie cache (§8.2) also removes the per-answer database lookup and its cold starts.
 
 These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platform (desktop macOS, desktop Windows, browser) with timestamps logged in the page, and write the measured p50/p95 into `docs/testing/benchmark-results.md`. If a target is missed, the levers are, in order:
 
@@ -208,24 +211,29 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 |---|---|---|
 | `features/dashboard` | Session list, filters, search, delete | `Dashboard.tsx`, `SessionCard.tsx` |
 | `features/session-setup` | Two-step create/edit wizard, document upload, Choose platform dialog | `SessionWizard.tsx`, `DetailsStep.tsx`, `PreferencesStep.tsx`, `ChoosePlatformDialog.tsx`, `draft.ts`, `labels.ts` |
-| `features/settings` | Default preferences, hotkey list, Delete all local data | `Settings.tsx` |
+| `features/settings` | Default preferences, hotkey list, screen-share protection, What Kite has learned, Delete all local data | `Settings.tsx`, `LearnedLessons.tsx` |
 | `features/live` | Connect view, live view, compact view, answer panel, chat | Built on Day 2: `LivePage.tsx`, `ConnectPanel.tsx`, `TranscriptStrip.tsx`, `AudioMeter.tsx`, `HealthNotice.tsx`, `speakers.ts`; Day 3: `LiveSession.tsx` (loads the session, its documents and saved lines, builds hotwords, starts the warm-up), `SavedTranscript.tsx` (`demoHotwords.ts` removed). Day 4: `LiveAnswers.tsx` (top bar, chat box and answer panel, hotkeys through the platform), `TopBar.tsx`, `AnswerPanel.tsx` (headline then bullets, cancel, previous/next, copy, 👍 / 👎 and note), `ChatBox.tsx`, `useLiveAnswers.ts` (requests, saving, idle re-warm). Later: `CompactView.tsx` |
-| `features/review` | Notes, transcript, delete | `SessionReview.tsx` |
+| `features/review` | Review page: notes with Regenerate, proposed lessons (Approve / Edit / Reject), answers, transcript, delete (Day 5) | `ReviewPage.tsx`, `SessionReview.tsx`, `ReviewSections.tsx`, `ProposedLessons.tsx`, `LessonEditor.tsx` |
+| `core/live` | The per-session `BroadcastChannel` between the live page and the compact view (state out, commands in) | `liveChannel.ts` |
+| `core/notes` | The notes request built from the call, sent at End (never blocking it) and from Regenerate; saved on the device | `generate.ts`, `regenerate.ts` |
+| `core/review` | Loads a session's review data | `load.ts` |
+| `core/lessons` | Matching proposals to decisions (same text, or ≥ 80% word overlap, from the same session), approve / reject / edit / remove, the lessons sent with answers | `match.ts`, `decide.ts`, `active.ts` |
+| `core/screenshot` | The single JPEG encoder for screenshots | `prepare.ts` |
 | `core/audio` | Get streams via the platform; AudioWorklet resampling to 16 kHz; audio levels for the meters | `capture.ts`, `resampler.worklet.ts`, `resample.ts`, `levels.ts`, `recordingStream.ts` (test recordings as a stream) |
 | `core/stt` | Engine (one worker, two channels); worker with sherpa-onnx WASM; per-channel decoding with energy gate and endpoint rules; pinned model list; verified download and caching; hotwords, session hotwords; health status; WER and timing helpers for the test page | `sttEngine.ts`, `sessionHotwords.ts`, `stt.worker.ts`, `channel.ts`, `gate.ts`, `models.ts`, `download.ts`, `hotwords.ts`, `sentencepiece.ts`, `health.ts`, `protocol.ts`, `metrics.ts`, `wer.ts` |
 | `core/transcript` | Utterance list (You/Them), echo filter, line merging and display hold; saving final lines to storage; ending a call without losing the last line; stable lines and question selection (Day 4) | `transcript.ts`, `echo.ts`, `merge.ts`, `display.ts`, `saver.ts`, `endCall.ts`, `stability.ts`, `question.ts` |
 | `core/answer` | Calls `/api/answer`, reads SSE, cancel; one answer at a time with timings (key press → sent → first word → headline → done); session warm-up and the idle re-warm; the request builder (append-only conversation log, tail, question); headline/bullet split; the `/dev/latency` measurement | `answerClient.ts`, `warm.ts`, `keepWarm.ts`, `context.ts`, `format.ts`, `latency.ts` |
 | `core/documents` | PDF (pdf.js 6.4.299; worker served from our origin), DOCX (mammoth 1.13.0), TXT → text with clear error codes (unsupported type, too large, encrypted, no text); size caps (20 MB file, 100,000 characters per document, 150,000 per session) | `extract.ts`, `limits.ts` |
 | `core/storage` | IndexedDB via Dexie 4.4.6 (ADR-0024); repositories; default preferences; persistence request; delete all | `db.ts`, `types.ts`, `sessions.ts`, `documents.ts`, `utterances.ts`, `settings.ts`, `persist.ts`, `wipe.ts`, `answers.ts` (Day 4: save, list, rate, note) |
-| `platform` | Platform adapter (section 3.3); shared media helpers and capture errors; the §7.3 key map for in-page shortcuts (Day 4) | `types.ts`, `desktop.ts`, `browser.ts`, `index.ts`, `media.ts`, `errors.ts`, `keymap.ts` |
+| `platform` | Platform adapter (section 3.3); shared media helpers and capture errors; the §7.3 key map for in-page shortcuts (Day 4); the frame source for browser screenshots and Document Picture-in-Picture (Day 5) | `types.ts`, `desktop.ts`, `browser.ts`, `index.ts`, `media.ts`, `errors.ts`, `keymap.ts`, `pip.ts` |
 
 ### 7.2 Server (apps/web/src/server and apps/web/app/api)
 
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/auth/[...all]` | GET, POST | Better Auth handler: sign-in, sign-out, session, change password, and admin operations (admin plugin). Public sign-up is disabled. |
-| `/api/answer` | POST, SSE response | `mode`: `hello` (Day 1 test) / `warm` (Day 3) / `answer` / `chat` / `screenshot` → builds the prompt, calls Claude, streams text. `answer` and `chat` built on Day 4; `screenshot` returns 400 "not implemented yet: Day 5" |
-| `/api/notes` | POST, SSE response | Post-call notes with Sonnet |
+| `/api/answer` | POST, SSE response | `mode`: `hello` (Day 1 test) / `warm` (Day 3) / `answer` / `chat` / `screenshot` → builds the prompt, calls Claude, streams text. `answer` and `chat` built on Day 4; `screenshot` built on Day 5 (a JPEG data URL ≤ 1,400,000 characters, checked by its bytes, placed uncached before the question) |
+| `/api/notes` | POST, JSON response | **Built Day 5.** Post-call notes with Sonnet in one structured-output request (110 s limit): summary (≤ 6 bullets), questions (their ratings taken from the request, never from the model), next steps with owners, parts too unclear to summarise (with a time range), up to 3 proposed lessons. Not streamed: nobody waits word by word after a call |
 
 **`POST /api/answer` request:**
 
@@ -271,6 +279,11 @@ Differences decided on Day 4 (ADR-0025):
 - Limits: at most 40,000 estimated tokens and 300 chunks of conversation, 100 tail lines, 2,000 characters per line or question, 4,000 per earlier answer.
 - Every mode but `hello` requires `session`; `chat` requires `question`. `warm` may carry `conversation` (the idle re-warm).
 
+Differences decided on Day 5:
+- `image` (mode `screenshot` only, and required there).
+- `lessons`: the approved lessons for the session's type (at most 20, each ≤ 200 characters, oldest approval first), sent with every warm-up and answer of a call (loaded once when the session opens). They go in the rules block's "Learned preferences" (§7.6).
+- Error code **`claude_unavailable`**: Claude cannot answer for anyone right now: the usage limit (HTTP 400 "usage limits", `billing_error`, "credit balance") or an overload (529, or `overloaded_error` mid-stream). The message is fixed ("Answers are unavailable right now: the team's Claude usage limit has been reached. Your transcript is still being recorded.", or the overload version) and shown as it is in the live view and the compact view; `/api/notes` answers 503 and the notes status says why. Listening, the transcript and saving keep working.
+
 **Response:** `text/event-stream` with events `delta` (`{ "text": "..." }`), `done` (`{ "usage": {...}, "ms": {...} }`) and `error` (`{ "code": "...", "message": "..." }`). A warm-up sends only `done` (cache counts and timings) or `error`.
 
 **Prompt structure (`server/prompt.ts`, built Day 3):**
@@ -294,7 +307,8 @@ The answer style is in the session block, not in the system block (a difference 
 - Cap the total size (documents ≤ ~150k characters; request ≤ 4 MB).
 - Set a 60 s timeout and do not retry mid-stream.
 - Never log transcript, document or answer text; log ids, timings and token counts only (the answer route logs the number of chunks and tail lines, never their text).
-- `server/claude.ts` also has `jsonReply()` (structured outputs: `output_config.format` with a JSON schema), used only by the developer-only answer evaluation's grader (Sonnet).
+- `server/claude.ts` also has `jsonReply()` (structured outputs: `output_config.format` with a JSON schema), used by the notes (Day 5) and by the evaluations' graders (Sonnet).
+- **Learned preferences (Day 5):** `rulesBlock(lessons)`. Without lessons it is the Day 4 rules block byte for byte (pinned by its SHA-256 in a unit test), so sessions without lessons share one cache entry. With lessons: the core rules unchanged, then a heading saying these are the user's preferences, which adjust style and content and never override the rules above, then one bullet per lesson (cleaned to one line of ≤ 200 characters, so a lesson cannot start a section or replace a rule). The block changes only when a lesson is approved, edited or removed; the next session's first request then pays one cache write.
 
 ### 7.3 Desktop shell (apps/desktop)
 
@@ -302,12 +316,12 @@ The answer style is in the session block, not in the system block (a difference 
 |---|---|
 | `main.ts` | App start, single instance, workspace window loading the Kite URL (`*.vercel.app` now, `kite.company.com` later), tray (built Day 1; tray later) |
 | `config.ts` | The Kite URL (default production; `--kite-url` or `KITE_URL` for development) and its single allowed origin (Day 1) |
-| `windows.ts` | Workspace window; live window (frameless, always-on-top, resizable) opened by `openCompactView` (Day 5) |
+| `windows.ts` | Workspace window; the compact window (Day 5): `/compact/[id]`, frameless, always on top (`floating`), resizable, opened with `showInactive` (does not take focus, accepts typing), bounds remembered in `kite-shell.json` |
 | `media.ts` | `session.setDisplayMediaRequestHandler`: for the Kite origin only, approves `getDisplayMedia` with **system-audio loopback and no picker**; every other origin is denied. Permission handler: microphone for the Kite origin only; camera, notifications and everything else denied (Day 2). Windows verified; macOS loopback not yet verified (§13). |
 | `hotkeys.ts` | **Built Day 4.** Electron `globalShortcut` with the defaults below, forwarded to the page as `kite:hotkey` messages. The page turns them on for a live call and off at End over `kite:set-hotkeys` (accepted only from the Kite origin's main frame); they are also released on reload, when the window closes and on quit. Global shortcuts take their keys from every other app while registered (Ctrl+Backspace, Ctrl+← / → edit text everywhere), which is why they are on only during a call. A shortcut another app already holds is reported back and the live view says which one (it then works only while Kite has focus). Channel names are in `channels.ts` |
-| `screenshot.ts` | `desktopCapturer` → PNG of the current display (Day 5) |
-| `protection.ts` | `setContentProtection(on)` on the live window; re-applied every time it is shown (Day 5) |
-| `preload.ts` | Exposes `window.kiteDesktop` (typed in `packages/shared`, frozen): `version`, `os`, and from Day 4 `setHotkeysEnabled(on)` (sends only a boolean) and `onHotkey(handler)` (passes only valid actions, never the IPC event). Nothing else. A desktop app installed before Day 4 has neither method; the page then uses in-page shortcuts only. |
+| `screenshot.ts` | `desktopCapturer` thumbnail of the display the Kite window is on, scaled so the long side is ≤ 1,568 px (no full-resolution image over IPC); `kite:capture-screenshot` from the Kite main frame only; macOS permission check (Day 5) |
+| `protection.ts` | `setContentProtection(on)` on the compact window, **off by default**, the choice stored per device and re-applied every time the window is shown. `setContentProtection` only: the window stays in the taskbar, the Dock and Alt+Tab (Day 5) |
+| `preload.ts` | Exposes `window.kiteDesktop` (typed in `packages/shared`, frozen): `version`, `os`, and from Day 4 `setHotkeysEnabled(on)` (sends only a boolean) and `onHotkey(handler)` (passes only valid actions, never the IPC event); from Day 5 `captureScreenshot()`, `openCompactView(sessionId)`, `closeCompactView()`, `setShareProtection(on)` and `getShareProtection()`. Nothing else. A desktop app installed before Day 4 has neither method; the page then uses in-page shortcuts only. |
 | `security.ts` | Blocks navigation to any other origin; opens external links in the system browser; `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`. Permissions for the Kite origin only: microphone, `display-capture` (handled in `media.ts`) and, from Day 3, `persistent-storage`: Electron routes `navigator.storage.persist()` through the permission handlers, so without this grant the request always fails in the desktop app and local sessions could be cleared when the disk is short of space (ADR-0024) |
 
 Default hotkeys (desktop global shortcuts during a call; the same keys work in the page in the browser and in the desktop app while Kite has focus, `platform/keymap.ts`, except while typing in a text box):
@@ -329,13 +343,14 @@ Built on Day 3 (`core/storage`, ADR-0024). One IndexedDB database, `kite`, opene
 | `documents` (id, sessionId) | id, sessionId, name, text (extracted text only, never the file), chars, addedAt |
 | `utterances` (id, sessionId) | id (`<session>:<call>:<line>`), sessionId, speaker (`you`/`them`), text, tStart, tEnd |
 | `answers` (id, sessionId) | id, sessionId, mode, question, text, model, msFirstToken, msTotal, createdAt, **rating** (`up` / `down` / null) and **note** ("What was wrong / better answer"), Day 4. Written when an answer finishes (a cancelled or failed one is not saved), **even when "Save transcript" is off**, because the review page and the learning loop need them; the preferences step says so. No index changed, so no new Dexie version |
-| `notes` (sessionId) | sessionId, summary, questions, nextSteps, createdAt (written from Day 5) |
+| `notes` (sessionId) | sessionId, notes (summary, questions, nextSteps, unclear, lessons: the proposals), callStartedAt, createdAt, fromAnswersOnly (Day 5). One set per session (the latest call); Regenerate replaces it |
+| `lessons` (id, sourceSessionId, status), schema version 3 | id, text (one line, ≤ 200 characters, as sent), scope (`all` or a session type), status (`approved` / `rejected`), sourceSessionId, sourceKey (the proposal's normalised text, never changed by edits), evidence, decidedAt, approvedAt (Day 5). Only decisions are stored, apart from the notes, so regenerating notes never loses or duplicates them |
 | `settings` (id), schema version 2 | one row `defaults`: the default model, style, instructions and save-transcript setting for new sessions |
 
 Rules:
 - Ids come from `crypto.randomUUID()`; times are Unix milliseconds.
 - **Status shown:** a session stored as `live` whose `lastActiveAt` is more than **12 hours** old is shown as Ended (the window was closed or crashed during a call). `lastActiveAt` is set on Connect and refreshed every 60 s during a call.
-- **Delete a session** removes its documents, transcript lines, answers and notes in one transaction.
+- **Delete a session** removes its documents, transcript lines, answers, notes and rejected lesson decisions in one transaction. Approved lessons from it stay (they are the user's preferences, managed in Settings). "Delete all local data" removes lessons too.
 - If "save transcript" is off, utterances are kept in memory only and discarded when the session ends. Echo lines are never stored.
 - Schema changes add a new Dexie version; earlier versions are never edited.
 
@@ -354,8 +369,9 @@ Each automatic answer can be cancelled with Clear. Tuning and tests use transcri
 How Kite gets better for each user, from their own ratings (ADR-0025):
 
 - **Day 4 (built):** every answer is saved on the device with its rating (👍 / 👎) and an optional note ("What was wrong / better answer"). The system block has a "Learned preferences" slot, empty for now.
-- **Day 5:** after a call, the notes step (Sonnet) also proposes up to 3 short lessons from that call's ratings and notes (for example "Give prices per seat and per month"). The user approves, edits or rejects each one. Approved lessons are stored locally (for one session type, or for all) and managed in Settings → What Kite has learned.
-- Approved lessons go into the system block's slot (cached), at most about 20. Nothing is learned without the user's approval, and nothing leaves the laptop except as part of an answer request.
+- **Day 5 (built):** after a call, the notes (Sonnet) propose up to 3 short lessons from that call's ratings and notes. On the review page the user approves (this session type by default, or all calls), edits (one line, ≤ 200 characters, shown exactly as it will be sent) or rejects each. Decisions are stored in the `lessons` store, apart from the notes. A proposal from the same session with the same normalised text, or ≥ 80% word overlap, is matched to its earlier decision, so Regenerate never asks twice or duplicates. Approved lessons are managed in Settings → What Kite has learned.
+- **Sent with answers:** approved lessons for the session's type plus `all`, oldest approval first, at most 20 (the newest approvals), loaded once when a session opens and sent with every warm-up and answer; they go into the rules block's "Learned preferences" (§7.2). Nothing is learned without the user's approval, and nothing leaves the laptop except as part of an answer request.
+- **Evaluation:** scenarios 19–20 (group `lessons`) are answered with and without their lesson (`--without-lessons`); the lesson must raise the score. Queued until the API is available again.
 
 ## 8. Security and privacy
 
@@ -364,9 +380,9 @@ How Kite gets better for each user, from their own ratings (ADR-0025):
 | Data | Location |
 |---|---|
 | Audio | Only in memory on the laptop; never stored, never sent |
-| Sessions, documents, transcripts, answers, notes, default preferences | IndexedDB on the laptop (ADR-0024). Documents are stored as extracted text only; the original file is read in the browser and never kept or uploaded. **The browser and the desktop app have separate local data**, and so does each browser profile: a session created in Chrome does not appear in the desktop app, and the other way round. There is no sync in v1 (§14). |
+| Sessions, documents, transcripts, answers, notes, lesson decisions, default preferences | IndexedDB on the laptop (ADR-0024). Documents are stored as extracted text only; the original file is read in the browser and never kept or uploaded. **The browser and the desktop app have separate local data**, and so does each browser profile: a session created in Chrome does not appear in the desktop app, and the other way round. There is no sync in v1 (§14). |
 | Downloaded speech model | Cache Storage on the laptop. Public, checksum-pinned files only; "Delete all local data" keeps it. |
-| Text for an answer (session block, the call so far and the earlier answers in it, question) and screenshots on request | Sent over HTTPS to Vercel, then to Claude. Not stored by Kite's server. |
+| Text for an answer (session block, approved lessons, the call so far and the earlier answers in it, question) and screenshots on request | Sent over HTTPS to Vercel, then to Claude. Not stored by Kite's server. Screenshots exist only in memory until the request is sent; never saved to disk or logged |
 | Claude API key | Vercel environment variable only |
 | User accounts (name, email, role, password hash, sign-in sessions) | Neon Postgres on Vercel. Passwords are hashed (scrypt) and never stored or logged in plain text. |
 
@@ -380,6 +396,10 @@ Internal approval is needed that transcript text, documents and screenshots are 
 - **First admin:** created once from the command line (`pnpm --filter web create-admin`), which generates and prints a temporary password the same way.
 - **Desktop app:** shows the same `/login` page inside its window. Email + password works inside an app window, so no browser hand-off is needed.
 - **Library:** Better Auth with email + password (`disableSignUp: true`) and the admin plugin (create user, list users, set role, set password, ban/unban). Sessions are stored in Postgres and use secure, HTTP-only cookies; they expire after 30 days.
+- **Session cookie cache** (Day 5, ADR-0022 update): the session is also kept in a signed cookie for 60 s.
+  - The answer routes read it, so an answer skips the database lookup. They send any refreshed cookie back on their response.
+  - Pages and server actions always read the database.
+  - Trade-off: a disabled user, or one whose password was reset, is refused by pages at once and by answers within 60 s.
 
 ### 8.3 Controls
 
@@ -494,7 +514,7 @@ kite/
 | Framework | Next.js (project root `apps/web`) |
 | Function region | `iad1` (US East), close to the Claude API. Day 4: server time to first text p50 560–643 ms; from South Asia the network adds about 500 ms (§6.2, §13) |
 | Function runtime | Node.js; streaming responses for `/api/answer` and `/api/notes` |
-| Environment variables | `ANTHROPIC_API_KEY`, `DATABASE_URL` (added automatically by the Neon integration), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `KITE_MODEL_FAST=claude-haiku-5-5`, `KITE_MODEL_SMART=claude-sonnet-5-5` |
+| Environment variables | `ANTHROPIC_API_KEY` (**one key**, the same in Production, Preview and Development and in `apps/web/.env.local`: the deployed app, local development, the verify scripts and the evaluations all use it; Day 5 decision), `DATABASE_URL` (added automatically by the Neon integration), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `KITE_MODEL_FAST=claude-haiku-5-5`, `KITE_MODEL_SMART=claude-sonnet-5-5` |
 | Deployment | **Vercel CLI only**: `vercel link` (once), `vercel env add` / `vercel env pull`, `vercel deploy` (preview), `vercel deploy --prod` (production). There is no Git integration: pushes and pull requests do not deploy. |
 | Build | `pnpm run stt:runtime && next build`: the STT runtime (13.3 MB) is downloaded from the pinned sherpa-onnx release (175 MB archive), checked by SHA-256 and served from `/stt-runtime/v1.13.7/` (ADR-0023) |
 | Speech-to-text model files | Not deployed. The browser loads them from pinned Hugging Face commit URLs, checks each SHA-256 and caches them in Cache Storage (ADR-0023). |
@@ -521,7 +541,7 @@ kite/
 
 | Item | Cost |
 |---|---|
-| Claude API | Usage-based. Set a monthly spend limit in the Claude Console. Prompt caching cuts repeated context to about 10% of the input price on Haiku. |
+| Claude API | Usage-based, with **one Console spend limit (about $20 a month)** for everything: production, development and evaluations share it (Day 5 decision, after the evaluations used up the limit on 30 October). Every paid run is agreed first with its estimated cost; evaluations re-run only the groups a change touches, and the full suite once at release. Prompt caching cuts repeated context to about 10% of the input price on Haiku. |
 | Vercel | **Pro plan required for company use.** The free Hobby plan is for non-commercial personal use only. Pro is $20 per month per developer seat; app users do not need Vercel seats. |
 | Accounts database | Neon Postgres free plan (via the Vercel Marketplace); a few users and sessions fit easily |
 | Domain, DNS, certificates | `*.vercel.app` address for now (free); existing company domain later; Vercel certificates are free |
@@ -538,11 +558,14 @@ kite/
 | Answer quality | Built Day 4 (`pnpm --filter web eval:answers`). 15 invented scenarios through the real server prompt with Haiku, graded by Sonnet against a rubric plus two code checks; score table only (`docs/testing/answer-eval.md`) | Script (real API) | By hand after a prompt change; never in CI |
 | Latency | Built Day 4: `/dev/latency` (admin), 20 answers through the live client path, p50/p95 and cache hits; run in production by `tests/e2e-prod/latency.spec.ts` as an admin test account that stays disabled between runs (`pnpm --filter web e2e-admin --enable` / `--disable`) | Page + Playwright | Day 4 and Day 7, by hand |
 | End-to-end (production, manual) | Built Day 3 (`apps/web/tests/e2e-prod/`, `pnpm --filter web test:e2e-prod`). Runs against production as a dedicated test account (`create-e2e-user`; disable at `/admin/users`). **Chrome:** session with a document and key terms → key-term count → warm-up cache write then read (real Claude) → fake microphone and fake shared tab → final lines → **Answer (Ctrl+Enter) streams and is rated (Day 4)** → saved transcript after reload → delete. **Desktop app** (fresh profile): empty dashboard (separate data) → Open without dialog → Connect without picker → final lines → **a Chat answer streams and is rated (Day 4)** → Delete all local data. Fake media feeds the "Them" audio into "You" too, so the echo filter hides "You" lines there; the suites count final lines from either side | Playwright (Chromium, Electron) | By hand, before a pull request is marked ready; never in CI (real API, real account) |
-| Desktop smoke | Shell launches, loads the app, `window.kiteDesktop` exists, live window opens, protection toggles | Playwright for Electron | Every PR (macOS + Windows runners) |
+| Harness (screenshot) | Built Day 5 (`pnpm --filter web test:screenshot`). Chromium shares a fake tab; the browser adapter grabs a frame and `prepare.ts` encodes it (JPEG, ≤ 1,568 px, ≤ 1 MB) | Playwright | Every PR (CI) |
+| Harness (review and lessons) | Built Day 5 (`pnpm --filter web test:review`). The real review page and Settings "What Kite has learned" on invented sessions in IndexedDB, with a mocked `/api/notes`: notes, answers, transcript, Regenerate (reworded proposals keep their decisions), the usage-limit message, "Save transcript" off ("Written from answers only"), Approve / Edit / Reject, Clear all lessons, Delete (in-app dialog) | Playwright | Every PR (CI) |
+| Notes and lessons quality | Built Day 5 (`eval:notes`; `eval:answers --only=lessons`, with and without lessons). Developer-only, real API, run only after the developer agrees to the estimated cost | Scripts | When notes or lessons change |
+| Desktop smoke | Shell launches, loads the app, `window.kiteDesktop` exists, the compact window opens (always on top, not focused), protection toggles (default off) | Playwright for Electron | Every PR (macOS + Windows runners) |
 | Manual | Real calls in Zoom, Teams and Meet × desktop macOS, desktop Windows, browser; screen-share check; fresh installs | Checklist | Day 5 to 7 |
 | Measured | Latency (section 6.2), transcript lag | In-page timings | Day 4 and Day 7 |
 
-CI never calls the real Claude API. A separate manual "live check" job uses a test key with a small limit.
+CI never calls the real Claude API. Real-API checks (verify scripts, evaluations) are run by hand with the one key, only after the developer agrees to their estimated cost (§10.4).
 
 ## 12. Seven-day build plan
 
@@ -654,6 +677,10 @@ Checks:
 
 - [ ] Fresh install from the installers on a clean Mac and Windows PC in under 5 minutes.
 - [ ] All tests green on CI (Linux web, macOS and Windows desktop).
+- [ ] **macOS checks (added Day 5):**
+  - Screen-share protection of the compact window in a full-screen share from Zoom, Teams and Google Meet (Chrome). On recent macOS versions, apps built on ScreenCaptureKit may capture the window despite `setContentProtection` (Electron docs); record each app and version, and say so honestly in the app if it is visible.
+  - Screen Recording permission for screenshots (a denied permission shows the typed error).
+  - The compact window: always on top, shown without taking focus, position remembered.
 
 **Day 7: Test and release (Mon 2 Nov)**
 
@@ -679,7 +706,10 @@ Release checks (all must pass):
 | WebAssembly STT too slow on some laptops, especially on battery | Day 1–2 (measured) | Two channels used 0.30–0.44 of one core plugged in, **0.86 on battery** (still keeping up; the "Plug in your laptop" hint appears above 0.5). Fallbacks: the hint; one channel at a time; the native desktop engine behind `src/platform/` |
 | STT model download size (204.5 MB first load) | Day 2 | Resolved for hosting: pinned Hugging Face URLs with SHA-256 checks and Cache Storage (ADR-0023); fallback Vercel Blob (Pro), Cloudflare R2 or a company server by changing only the URLs. Remaining: the first load takes about 30 s; Day 3 starts it when a session opens |
 | Short echoes on speakers ("OKAY SO") | Day 2 (measured) | The echo filter judges only lines of 4+ words, so short replies are never hidden by mistake. Recommend headphones in the Connect view |
+| **macOS: screen-share protection may not hide the compact window** | Day 5 (Electron docs; not verified: no Mac) | macOS applies `NSWindowSharingNone`, but apps built on ScreenCaptureKit (many recent meeting apps) can still capture the window. Checked on Day 6 on a Mac; if visible, the app says so next to the protection switch. Fallback: share a single window, or keep Kite on another monitor |
+| Screenshots cover one monitor only | Day 5 | The desktop app captures the display the Kite window is on (the primary one if that cannot be told). A known v1 limit; a display picker is backlog |
 | macOS system-audio loopback fails in Electron | Day 2 (not yet verified: no Mac; deferred to Day 6/7) | Use the browser path inside the shell (share-picker with audio), or a free virtual audio device (BlackHole) |
+| **Claude usage limit reached**: every answer, warm-up, screenshot and note fails until the limit is raised or the month resets | Day 5 (happened on 30 Oct; access back 1 Nov 00:00 UTC) | The live view, the compact view and the notes say so plainly (`claude_unavailable`); the transcript and saving keep working. One spend limit for everything, the cost agreed before every paid run, evaluations by touched group only |
 | Neon free-plan limits reached | Any | Upgrade the Neon plan; only accounts and sessions are stored, so data is tiny |
 | Latency above target **from far regions** | Day 4 (measured) | First word p50 about 1.1 s from Pakistan, of which about 0.5 s is the network to the US function; the server part (0.56–0.64 s) is within target. The §6.2 levers did not help further. Options: measure from the team's main location; Better Auth's cookie cache to skip the sign-in database lookup per request; a region near most users if they are not in the US (with the database and Claude a round trip away); keep Haiku; trim context |
 | Behind schedule by Day 5 | Day 5 | Drop auto-answer (F12) and notes (F11) to v1.1; keep F1 to F10 |

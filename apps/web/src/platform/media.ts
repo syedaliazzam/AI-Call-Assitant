@@ -5,11 +5,13 @@
  *          Electron the page uses the same browser APIs (the shell only grants or answers the
  *          requests), so the code lives here once instead of being copied into browser.ts and
  *          desktop.ts. The differences (options, messages, what happens to the video track) stay
- *          in those two files.
+ *          in those two files. Also the frame grab for browser screenshots (Day 5).
  * Used by: src/platform/browser.ts, src/platform/desktop.ts
- * Depends on: browser MediaDevices API; src/platform/errors.ts (CaptureError)
+ * Depends on: browser MediaDevices API, HTMLVideoElement, OffscreenCanvas; @kite/shared
+ *             (fitWithin); src/platform/errors.ts (CaptureError)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (getMicStream, getOtherSideStream)
  */
+import { fitWithin } from '@kite/shared';
 import { CaptureError } from './errors';
 
 /**
@@ -150,4 +152,65 @@ export async function requestDisplayMedia(
  */
 export function stopAllTracks(stream: MediaStream): void {
   for (const track of stream.getTracks()) track.stop();
+}
+
+/** A share's frames, ready to be drawn at any moment. */
+export interface FrameSource {
+  /**
+   * Draws the share's current frame as a PNG, at a size whose longest side is at most
+   * 1,568 px (core/screenshot/prepare.ts then encodes the JPEG).
+   *
+   * @returns The frame (in memory only; never stored or logged).
+   */
+  grab(): Promise<Blob>;
+  /** Stops playing the frames (the share itself is not stopped). */
+  close(): void;
+}
+
+/**
+ * Starts showing a share's video track in a muted, unattached video element, so a screenshot
+ * can draw the current frame at once. (ImageCapture.grabFrame() waits for the next frame, and a
+ * still tab sends new frames rarely: measured about 2.1 s per screenshot on Day 5.)
+ *
+ * @param track The live video track of the share (it keeps running; it is the call's share).
+ * @returns The frame source.
+ * Called from: browserPlatform.getOtherSideStream()
+ */
+export function startFrameSource(track: MediaStreamTrack): FrameSource {
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = new MediaStream([track]);
+  const playing = video.play().catch(() => undefined);
+  return {
+    async grab() {
+      await playing;
+      // The very first frame may still be on its way just after the share starts.
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('no frame')), 5_000);
+          video.addEventListener(
+            'loadeddata',
+            () => {
+              clearTimeout(timer);
+              resolve();
+            },
+            { once: true },
+          );
+        });
+      }
+      const size = { width: video.videoWidth, height: video.videoHeight };
+      if (size.width === 0 || size.height === 0) throw new Error('empty frame');
+      const fitted = fitWithin(size);
+      const canvas = new OffscreenCanvas(fitted.width, fitted.height);
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('no 2d context');
+      context.drawImage(video, 0, 0, fitted.width, fitted.height);
+      return canvas.convertToBlob({ type: 'image/png' });
+    },
+    close() {
+      video.pause();
+      video.srcObject = null;
+    },
+  };
 }

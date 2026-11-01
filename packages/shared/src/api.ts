@@ -16,8 +16,7 @@
  * - `answer`: answers the latest question from the other side (Day 4).
  * - `chat`: answers a question the user typed (Day 4).
  * - `screenshot`: answers from a screenshot of the screen (Day 5).
- * `hello`, `warm`, `answer` and `chat` work (Day 4); `screenshot` returns "not implemented yet:
- * Day 5".
+ * All modes work: `hello`, `warm` (Day 3), `answer` and `chat` (Day 4), `screenshot` (Day 5).
  */
 export type AnswerMode = 'hello' | 'warm' | 'answer' | 'chat' | 'screenshot';
 
@@ -100,8 +99,11 @@ export interface ConversationLine extends CallLine {
 export interface ConversationAnswer {
   /** Item kind. */
   kind: 'answer';
-  /** 'answer' (a question from the transcript) or 'chat' (a question the user typed). */
-  mode: 'answer' | 'chat';
+  /**
+   * 'answer' (a question from the transcript), 'chat' (a question the user typed) or
+   * 'screenshot' (answered from a screenshot, which is not sent again: Day 5).
+   */
+  mode: 'answer' | 'chat' | 'screenshot';
   /** The question it answered. Never logged. */
   question: string;
   /** The answer as shown (headline, then bullets). Never logged. */
@@ -152,6 +154,15 @@ export const MAX_TAIL_LINES = 100;
 /** Longest transcript line or question, in characters. */
 export const MAX_LINE_CHARS = 2_000;
 
+/**
+ * Longest screenshot data URL, in characters: about 1 MB of JPEG in base64 (the client keeps
+ * the JPEG under 1 MB, core/screenshot/prepare.ts).
+ */
+export const MAX_IMAGE_CHARS = 1_400_000;
+
+/** The question a screenshot answer uses when the user typed none. */
+export const DEFAULT_SCREENSHOT_QUESTION = "What's on screen and how should I respond?";
+
 /** Longest earlier answer in the conversation, in characters (400 tokens is about 1,600). */
 export const MAX_ANSWER_CHARS = 4_000;
 
@@ -190,8 +201,18 @@ export interface AnswerRequest {
   tail?: CallLine[];
   /** The question to answer: selected from the transcript or typed by the user. */
   question?: string;
-  /** Screenshot as a base64 data URL (mode `screenshot` only), otherwise null or omitted. */
+  /**
+   * Mode `screenshot` only, and required there: the screenshot as a JPEG data URL
+   * (`data:image/jpeg;base64,…`, at most MAX_IMAGE_CHARS). Never logged or stored.
+   */
   image?: string | null;
+  /**
+   * The lessons the user approved for this session's type (Day 5 Stage 7): at most
+   * MAX_ACTIVE_LESSONS, each at most MAX_LESSON_CHARS, oldest approval first. They go in the
+   * cached rules block, so the warm-up and every answer of a call send the same list.
+   * Omitted or empty: the rules block is unchanged. Never logged (only their count).
+   */
+  lessons?: string[];
 }
 
 /** Token counts reported by the Claude API for one reply. Names match the API's usage fields. */
@@ -231,6 +252,9 @@ export interface AnswerTimings {
  * - `upstream_error`: the Claude API returned an error.
  * - `timeout`: Claude did not finish within the server time limit (60 s).
  * - `refused`: Claude declined to answer (stop reason "refusal"); nothing more will follow.
+ * - `claude_unavailable`: Claude cannot answer for anyone right now (the team's usage limit is
+ *   reached, or Claude is overloaded); the message is one of CLAUDE_UNAVAILABLE_MESSAGES and is
+ *   shown as it is.
  * - `internal`: any other server failure.
  */
 export type AnswerErrorCode =
@@ -240,7 +264,22 @@ export type AnswerErrorCode =
   | 'upstream_error'
   | 'timeout'
   | 'refused'
+  | 'claude_unavailable'
   | 'internal';
+
+/**
+ * The messages sent with `claude_unavailable`, shown as they are in the live view, the compact
+ * view and the notes status. Each says that the transcript is still being recorded, because
+ * only Claude is down: listening, the transcript and saving keep working.
+ */
+export const CLAUDE_UNAVAILABLE_MESSAGES = {
+  /** The team's Claude usage (spend) limit is reached, or its credit has run out. */
+  usageLimit:
+    "Answers are unavailable right now: the team's Claude usage limit has been reached. Your transcript is still being recorded.",
+  /** Claude is overloaded (HTTP 529, or an overloaded_error in the stream). */
+  overloaded:
+    'Answers are unavailable right now: Claude is overloaded. Your transcript is still being recorded.',
+} as const;
 
 /**
  * One server-sent event from /api/answer. The SSE event name equals `type`; the remaining fields

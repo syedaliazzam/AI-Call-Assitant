@@ -7,7 +7,8 @@
  *          saved on this device with its rating and note (Stage 7). While the call runs, the
  *          idle re-warm keeps Claude's cache warm (core/answer/keepWarm.ts).
  * Used by: src/features/live/LiveAnswers.tsx
- * Depends on: src/core/answer (context.ts, answerClient.ts, warm.ts, keepWarm.ts),
+ * Depends on: src/core/answer (context.ts, answerClient.ts, warm.ts, keepWarm.ts,
+ *             unavailable.ts),
  *             src/core/transcript/transcript.ts, src/core/storage (answers.ts, types.ts)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1, §6.3; day-04-answers.md
  *               Stages 6–7
@@ -16,15 +17,19 @@
  */
 'use client';
 
-import type { AnswerUsage, ModelTier } from '@kite/shared';
+import { DEFAULT_SCREENSHOT_QUESTION, type AnswerUsage, type ModelTier } from '@kite/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAnswerRunner, type AnswerTimeline } from '@/core/answer/answerClient';
 import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/context';
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { warmSession } from '@/core/answer/warm';
+import { answerFailureText } from '@/core/answer/unavailable';
+import { prepareScreenshot } from '@/core/screenshot/prepare';
 import { listAnswers, rateAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
 import type { AnswerRating, Session, StoredAnswer, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
+import { getPlatform } from '@/platform';
+import { CaptureError } from '@/platform/errors';
 
 /** Where answers are saved on this device (core/storage/answers.ts; tests may replace it). */
 export interface AnswerStore {
@@ -50,8 +55,13 @@ const DEFAULT_STORE: AnswerStore = {
 export interface AnswerEntry {
   /** Answer id (crypto.randomUUID()). */
   id: string;
-  /** 'answer' (from the transcript) or 'chat' (typed). */
-  mode: 'answer' | 'chat';
+  /** 'answer' (from the transcript), 'chat' (typed) or 'screenshot' (Day 5). */
+  mode: 'answer' | 'chat' | 'screenshot';
+  /**
+   * The screenshot a screenshot answer was made from, as a JPEG data URL, for the thumbnail.
+   * In memory only: never saved (toStored() leaves it out) and never logged.
+   */
+  thumbnail?: string;
   /** The question answered ('' when Claude was asked to answer the latest "Them" lines). */
   question: string;
   /** How many transcript lines the question came from (0 for chat). */
@@ -60,8 +70,10 @@ export interface AnswerEntry {
   text: string;
   /** Streaming, finished, failed, or cancelled by Clear (or a newer answer). */
   status: 'streaming' | 'done' | 'error' | 'cancelled';
-  /** The error message when it failed. */
+  /** What to show when it failed (core/answer/unavailable.ts answerFailureText()). */
   error?: string;
+  /** True when it failed because Claude is unavailable for everyone (usage limit or overload). */
+  unavailable?: boolean;
   /** When the user asked (Unix ms). */
   askedAt: number;
   /** The model tier used. */
@@ -91,7 +103,7 @@ export interface AnswerEntry {
 function fromStored(saved: StoredAnswer): AnswerEntry {
   return {
     id: saved.id,
-    mode: saved.mode === 'chat' ? 'chat' : 'answer',
+    mode: saved.mode,
     question: saved.question,
     fromLines: 0,
     text: saved.text,
@@ -128,12 +140,20 @@ function toStored(entry: AnswerEntry, sessionId: string): StoredAnswer {
   };
 }
 
+/** No lessons: one shared empty list, so hook dependencies stay stable between renders. */
+const NO_LESSONS: readonly string[] = [];
+
 /** Inputs of useLiveAnswers(). */
 export interface LiveAnswersInput {
   /** The session. */
   session: Session;
   /** Its documents. */
   documents: readonly StoredDocument[];
+  /**
+   * The approved lessons for this session type (Day 5 Stage 7), sent with every warm-up and
+   * answer so the cached rules block is the same for all of them. None when omitted.
+   */
+  lessons?: readonly string[];
   /** The live transcript. */
   transcript: Transcript;
   /** When this call connected (Unix ms); a new value starts a new conversation. */
@@ -166,6 +186,15 @@ export interface LiveAnswers {
   saveNote: (id: string, note: string) => void;
   /** True when a rating or note could not be saved on this device. */
   saveFailed: boolean;
+  /**
+   * Takes a screenshot and answers from it (Day 5).
+   *
+   * @param question A typed question about the screen (default: what is on screen and how to
+   *                 respond).
+   */
+  screenshot: (question?: string) => void;
+  /** True while a screenshot is being taken and prepared. */
+  capturing: boolean;
 }
 
 /**
@@ -177,12 +206,14 @@ export interface LiveAnswers {
  */
 export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const { session, documents, transcript, callStartedAt } = input;
+  const lessons = input.lessons ?? NO_LESSONS;
   const store = input.store ?? DEFAULT_STORE;
   const [entries, setEntries] = useState<AnswerEntry[]>([]);
   // The answer shown, by id (null after Clear).
   const [shownId, setShownId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const [runner] = useState(() => createAnswerRunner());
   // What the conversation has sent so far, and the finished answers (refs: read when asked).
   const logRef = useRef(emptyLog());
@@ -217,7 +248,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     logRef.current = emptyLog();
     finishedRef.current = [];
     const keepWarm = startKeepWarm({
-      warm: () => warmSession(session, documents, { conversation: logRef.current.chunks }),
+      warm: () => warmSession(session, documents, { conversation: logRef.current.chunks, lessons }),
     });
     keepWarmRef.current = keepWarm;
     return () => {
@@ -225,7 +256,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       keepWarmRef.current = null;
       runner.cancel();
     };
-  }, [callStartedAt, session, documents, runner]);
+  }, [callStartedAt, session, documents, lessons, runner]);
 
   /**
    * Replaces one entry's fields.
@@ -242,12 +273,15 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   /**
    * Builds and streams an answer.
    *
-   * @param mode  'answer' or 'chat'.
-   * @param typed The typed question (chat).
+   * @param mode       'answer', 'chat' or 'screenshot'.
+   * @param typed      The typed question (chat, or about a screenshot).
+   * @param image      The prepared screenshot (mode 'screenshot').
+   * @param pressedAt  When the user pressed the key (default now; a screenshot passes the time
+   *                   before it was taken, so the capture counts in the timings).
    */
   const ask = useCallback(
-    (mode: 'answer' | 'chat', typed?: string) => {
-      const keyPressAt = performance.now();
+    (mode: AnswerEntry['mode'], typed?: string, image?: string, pressedAt?: number) => {
+      const keyPressAt = pressedAt ?? performance.now();
       const lines = transcript.lines();
       if (mode === 'answer' && !lines.some((line) => line.speaker === 'them')) {
         setNotice('Nothing from the other person yet. Type a question in Chat instead.');
@@ -261,16 +295,20 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         answers: finishedRef.current,
         mode,
         typedQuestion: typed,
+        ...(image ? { image } : {}),
         now: Date.now(),
         callStartedAt,
         log: logRef.current,
+        lessons,
       });
       logRef.current = built.log;
       keepWarmRef.current?.noteActivity();
       const entry: AnswerEntry = {
         id: crypto.randomUUID(),
         mode,
-        question: built.request.question ?? '',
+        question:
+          built.request.question ?? (mode === 'screenshot' ? DEFAULT_SCREENSHOT_QUESTION : ''),
+        ...(image ? { thumbnail: image } : {}),
         fromLines: built.selected?.lineIds.length ?? 0,
         text: '',
         status: 'streaming',
@@ -317,7 +355,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           storeRef.current.save(toStored(finished, session.id)).catch(() => setSaveFailed(true));
         },
         onError: (failure) => {
-          update(entry.id, { status: 'error', error: failure.message });
+          const shown = answerFailureText(failure);
+          update(entry.id, { status: 'error', error: shown.text, unavailable: shown.unavailable });
           console.warn('answer: failed', {
             sessionId: session.id,
             answerId: entry.id,
@@ -326,7 +365,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         },
       });
     },
-    [session, documents, transcript, callStartedAt, runner, update],
+    [session, documents, lessons, transcript, callStartedAt, runner, update],
   );
 
   const clear = useCallback(() => {
@@ -367,6 +406,39 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     setShownId(entries[target]?.id ?? null);
   }, [entries, index]);
 
+  const screenshot = useCallback(
+    (question?: string) => {
+      if (capturing) return;
+      const pressedAt = performance.now();
+      setCapturing(true);
+      setNotice(null);
+      void (async () => {
+        try {
+          const png = await getPlatform().captureScreenshot();
+          const prepared = await prepareScreenshot(png);
+          // Sizes and times only; never the image.
+          console.info('screenshot: prepared', {
+            sessionId: session.id,
+            width: prepared.width,
+            height: prepared.height,
+            bytes: prepared.bytes,
+            ms: Math.round(performance.now() - pressedAt),
+          });
+          ask('screenshot', question, prepared.dataUrl, pressedAt);
+        } catch (error) {
+          setNotice(
+            error instanceof CaptureError
+              ? error.message
+              : 'Kite could not take a screenshot. Try again.',
+          );
+        } finally {
+          setCapturing(false);
+        }
+      })();
+    },
+    [ask, capturing, session.id],
+  );
+
   const next = useCallback(() => {
     if (index === -1) return;
     setShownId(entries[Math.min(entries.length - 1, index + 1)]?.id ?? null);
@@ -384,5 +456,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     rate,
     saveNote,
     saveFailed,
+    screenshot,
+    capturing,
   };
 }

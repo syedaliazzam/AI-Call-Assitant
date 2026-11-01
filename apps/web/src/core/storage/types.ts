@@ -5,10 +5,11 @@
  *          user's own content and are never logged (CLAUDE.md).
  * Used by: src/core/storage/db.ts and the repositories next to it (sessions.ts, documents.ts,
  *          utterances.ts, wipe.ts); from Stage 3 the session screens
- * Depends on: nothing
+ * Depends on: @kite/shared (CallNotes type)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (data model), §8.1 (where
  *               data lives); day-03-sessions.md Stage 1
  */
+import type { CallNotes } from '@kite/shared';
 
 /** What kind of call a session is for (the dashboard's type filter tabs). */
 export type SessionType = 'interview' | 'sales' | 'support' | 'internal';
@@ -178,16 +179,64 @@ export interface StoredSettings {
   updatedAt: number;
 }
 
-/** AI notes written after a call (architecture §7.4 `notes`). Written from Day 5. */
+/**
+ * AI notes written after a call (architecture §7.4 `notes`), Day 5: the latest call's notes
+ * for the session. They include proposed lessons, which are only suggestions until the user
+ * approves one (Stage 7).
+ */
 export interface StoredNotes {
   /** The session they belong to (one set of notes per session, so it is also the key). */
   sessionId: string;
-  /** Short summary of the call. */
-  summary: string;
-  /** Questions the other side asked, one per entry. */
-  questions: string[];
-  /** Agreed next steps, one per entry. */
-  nextSteps: string[];
+  /** The notes (summary, questions, next steps, unclear parts, proposed lessons). */
+  notes: CallNotes;
+  /** When the call they describe connected (Unix ms). */
+  callStartedAt: number;
   /** When they were written (Unix ms). */
   createdAt: number;
+  /**
+   * True when they were written from the answers only, because no transcript lines were
+   * available ("Save transcript" was off and they were regenerated from the review page).
+   * The review page labels them "Written from answers only". Missing on notes saved before
+   * Day 5 Stage 6: read as false. No index uses it, so no new database version.
+   */
+  fromAnswersOnly?: boolean;
+}
+
+/** Which sessions a lesson applies to: every session, or one session type. */
+export type LessonScope = 'all' | SessionType;
+
+/**
+ * A decision on a lesson the notes proposed (architecture §7.4 `lessons`), Day 5 Stage 7.
+ * Proposed lessons live only in the notes; this store holds the user's decisions, apart from
+ * the notes, so regenerating the notes never loses or duplicates them. Only approved lessons
+ * are sent to Claude. Lesson text is never logged.
+ */
+export interface StoredLesson {
+  /** Unique id (random). */
+  id: string;
+  /**
+   * The lesson as it is sent: one line, at most MAX_LESSON_CHARS (cleanLessonText()). The user
+   * may have edited it from the proposal.
+   */
+  text: string;
+  /** Which sessions it applies to. */
+  scope: LessonScope;
+  /** 'approved' (sent with answers) or 'rejected' (kept so it is not offered again). */
+  status: 'approved' | 'rejected';
+  /** The session whose notes proposed it (kept after that session is deleted, if approved). */
+  sourceSessionId: string;
+  /**
+   * The proposal's original text, normalised (core/lessons/match.ts normaliseLesson()). It
+   * never changes, even when the text is edited; a regenerated proposal is matched against it.
+   */
+  sourceKey: string;
+  /** What the notes based it on (which answer, rating and note), shown in Settings. */
+  evidence: string;
+  /** When the decision was first made (Unix ms). */
+  decidedAt: number;
+  /**
+   * When it was approved (Unix ms), or null when rejected. Lessons are sent oldest approval
+   * first, so editing a lesson never moves it.
+   */
+  approvedAt: number | null;
 }

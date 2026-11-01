@@ -23,6 +23,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { warmSession } from '@/core/answer/warm';
+import { loadActiveLessons } from '@/core/lessons/active';
 import { listDocuments } from '@/core/storage/documents';
 import { getSession } from '@/core/storage/sessions';
 import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
@@ -63,6 +64,8 @@ type Loaded =
       hotwordCount: number;
       /** Lines saved by earlier calls. */
       savedLines: StoredUtterance[];
+      /** The approved lessons for this session type (Day 5 Stage 7), oldest approval first. */
+      lessons: string[];
     };
 
 /**
@@ -80,12 +83,14 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
     (async () => {
       const session = await getSession(sessionId);
       if (!session) return { state: 'not-found' } as const;
-      const [documents, savedLines] = await Promise.all([
+      const [documents, savedLines, lessons] = await Promise.all([
         listDocuments(session.id),
         listUtterances(session.id),
+        // Loaded once: the whole call sends the same lessons, so the rules block stays cached.
+        loadActiveLessons(session.type),
       ]);
       // Not awaited: warmSession() never throws, and the screen does not wait for Claude.
-      if (!cancelled) void warmSession(session, documents);
+      if (!cancelled) void warmSession(session, documents, { lessons });
       const hotwords = buildHotwords(session, documents);
       return {
         state: 'ready',
@@ -94,6 +99,7 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
         hotwords: hotwordsText(hotwords),
         hotwordCount: hotwords.length,
         savedLines,
+        lessons,
       } as const;
     })()
       .then((result) => {
@@ -115,6 +121,7 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
         hotwords={loaded.hotwords}
         hotwordCount={loaded.hotwordCount}
         savedLines={loaded.savedLines}
+        lessons={loaded.lessons}
       />
     );
   }

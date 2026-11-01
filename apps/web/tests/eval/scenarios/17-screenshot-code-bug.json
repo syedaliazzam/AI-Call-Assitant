@@ -1,0 +1,45 @@
+{
+  "id": "17-screenshot-code-bug",
+  "covers": "A code snippet with a bug, with a typed question about the screen.",
+  "session": {
+    "type": "interview",
+    "company": "Ledgerly (invented)",
+    "role": "Senior backend engineer interview (the user is the candidate)",
+    "description": "Live coding round; the interviewer shares code.",
+    "instructions": "Answer in first person, as me.",
+    "keyTerms": ["TypeScript"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "HERE IS A FUNCTION FROM OUR CODEBASE",
+        "at": 120
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "CAN YOU SPOT WHY IT CRASHES",
+      "at": 128
+    }
+  ],
+  "mode": "screenshot",
+  "question": "Why does this function crash?",
+  "image": "images/code-bug.jpg",
+  "imageDescription": "A TypeScript function cartTotal(items) with \"for (let i = 0; i <= items.length; i++) { total += items[i].price; }\"; a note says it crashes on every cart.",
+  "mustInclude": [
+    "the loop uses <= items.length, so it reads one past the end (an off-by-one)",
+    "items[items.length] is undefined, so reading .price throws",
+    "the fix: use < instead of <= (or a for...of loop / reduce)"
+  ],
+  "mustNotInclude": ["a different cause for the crash"]
+}

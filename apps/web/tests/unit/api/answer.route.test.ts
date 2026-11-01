@@ -1,17 +1,20 @@
 /**
- * Tests for apps/web/app/api/answer/route.ts (POST), with sign-in and the Anthropic SDK mocked:
- * 401 without a session (or with a temporary password), 400 for bad bodies and for modes that
- * are not built yet, and a streamed reply (delta events, then done with usage and timings);
+ * Tests for apps/web/app/api/answer/route.ts (POST), with sign-in and the Anthropic SDK mocked.
+ * Day 5: the session comes from the cookie cache, and its Set-Cookie values are sent back on
+ * the stream and on errors; mode screenshot needs a JPEG image (checked by its bytes, size
+ * capped), puts it uncached before the question, and logs only its size. Earlier days:
+ * 401 without a session (or with a temporary password), 400 for bad bodies, and a streamed reply (delta events, then done with usage and timings);
  * a Claude refusal ends with an error event. Mode 'warm' (Day 3): a 400 naming the field without
  * a session; otherwise one max_tokens 0 request with the session's cached blocks and a done event
  * with the cache usage (no delta); session text never reaches the logs. Modes 'answer' and
  * 'chat' (Day 4): streamed with max_tokens 400, the tier's thinking setting and three cache
  * breakpoints (rules, session, last conversation chunk); delta events in order, then done with
  * cache usage; a failure before any text is an error event; 401 when signed out; logs carry
- * sizes, timings and token counts, never transcript, question, answer or session text.
+ * sizes, timings and token counts, never transcript, question, answer or session text. The usage
+ * limit and an overload (even mid-stream) end with claude_unavailable and the fixed message.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import type { AnswerTimings } from '@kite/shared';
+import { CLAUDE_UNAVAILABLE_MESSAGES, type AnswerTimings } from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeMessageStream } from '../../helpers/fakeClaude';
 
@@ -19,8 +22,10 @@ import { fakeMessageStream } from '../../helpers/fakeClaude';
 const streamMock = vi.fn();
 /** Spy standing in for client.messages.create() (the warm-up). */
 const createMock = vi.fn();
-/** Spy standing in for getSession() from src/server/auth.ts. */
+/** Spy standing in for the session read of getCachedSession() from src/server/auth.ts. */
 const getSessionMock = vi.fn();
+/** Set-Cookie values the fake getCachedSession() returns (the refreshed cookie cache). */
+let setCookies: string[] = [];
 
 vi.mock('@anthropic-ai/sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@anthropic-ai/sdk')>();
@@ -33,7 +38,9 @@ vi.mock('@anthropic-ai/sdk', async (importOriginal) => {
   }
   return { ...actual, default: FakeAnthropic, Anthropic: FakeAnthropic };
 });
-vi.mock('@/server/auth', () => ({ getSession: getSessionMock }));
+vi.mock('@/server/auth', () => ({
+  getCachedSession: async () => ({ session: await getSessionMock(), setCookies: [...setCookies] }),
+}));
 
 vi.stubEnv('ANTHROPIC_API_KEY', 'test-key');
 vi.stubEnv('KITE_MODEL_FAST', 'claude-haiku-5-5');
@@ -62,8 +69,40 @@ beforeEach(() => {
   streamMock.mockReset();
   createMock.mockReset();
   getSessionMock.mockReset();
+  setCookies = [];
   vi.spyOn(console, 'info').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+describe('POST /api/answer, session cookie cache (Day 5)', () => {
+  it('sends the refreshed session cookie back on the streamed answer', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    setCookies = [
+      'better-auth.session_data=abc; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=60',
+      'better-auth.session_token=def; Path=/; HttpOnly; Secure; SameSite=Lax',
+    ];
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Hi'] }));
+    const response = await POST(post('{"mode":"hello"}'));
+    expect(response.headers.get('content-type')).toMatch(/^text\/event-stream/);
+    expect(response.headers.getSetCookie()).toEqual(setCookies);
+    await response.text();
+  });
+
+  it('sends the cookie back on an error too (an expired cache cookie is cleared)', async () => {
+    getSessionMock.mockResolvedValue(null);
+    setCookies = ['better-auth.session_data=; Path=/; Max-Age=0'];
+    const response = await POST(post('{"mode":"hello"}'));
+    expect(response.status).toBe(401);
+    expect(response.headers.getSetCookie()).toEqual(setCookies);
+  });
+
+  it('sends no Set-Cookie when the cache was used as it is', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream());
+    const response = await POST(post('{"mode":"hello"}'));
+    expect(response.headers.getSetCookie()).toEqual([]);
+    await response.text();
+  });
 });
 
 describe('POST /api/answer', () => {
@@ -90,18 +129,6 @@ describe('POST /api/answer', () => {
   it('returns 400 for a body that fails validation', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     expect((await POST(post('{"mode":"poem"}'))).status).toBe(400);
-  });
-
-  it('returns 400 "not implemented yet: Day N" for later modes', async () => {
-    getSessionMock.mockResolvedValue(SIGNED_IN);
-    // SESSION is defined below (with the warm-up tests); every mode but hello needs it.
-    const response = await POST(post(JSON.stringify({ mode: 'screenshot', session: SESSION })));
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({
-      code: 'not_implemented',
-      message: 'not implemented yet: Day 5',
-    });
-    expect(streamMock).not.toHaveBeenCalled();
   });
 
   it('streams delta events, then done with usage and timings', async () => {
@@ -355,6 +382,42 @@ describe('POST /api/answer, modes answer and chat', () => {
     expect(params.messages[0].content.at(-1).text).toContain('Question typed by the user');
   });
 
+  it('sends claude_unavailable with the fixed message for the usage limit and an overload', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    const limit = Anthropic.APIError.generate(
+      400,
+      {
+        type: 'error',
+        error: {
+          type: 'invalid_request_error',
+          message: 'You have reached your specified API usage limits. SECRET',
+        },
+      },
+      undefined,
+      new Headers(),
+    );
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: [], error: limit }));
+    const text = await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    expect(text).toContain(
+      `event: error\ndata: ${JSON.stringify({ code: 'claude_unavailable', message: CLAUDE_UNAVAILABLE_MESSAGES.usageLimit })}`,
+    );
+    expect(text).not.toContain('SECRET');
+    // An overloaded_error event after some text: the text already sent stays, then the message.
+    const overloaded = new Anthropic.APIError(
+      undefined,
+      { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } },
+      undefined,
+      new Headers(),
+    );
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Fifty'], error: overloaded }));
+    const midStream = await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    expect(midStream).toContain('event: delta');
+    expect(midStream).toContain(CLAUDE_UNAVAILABLE_MESSAGES.overloaded);
+    const logged = JSON.stringify(vi.mocked(console.error).mock.calls);
+    expect(logged).toContain('"code":"claude_unavailable"');
+    expect(logged).not.toContain('SECRET');
+  });
+
   it('sends an error event when Claude fails before any text', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     const error = new Anthropic.RateLimitError(429, undefined, 'detail', new Headers());
@@ -383,5 +446,98 @@ describe('POST /api/answer, modes answer and chat', () => {
     expect(logged).toContain('"chunks":2,"tailLines":1');
     expect(logged).not.toContain('SECRET');
     expect(logged).not.toContain('Northwind');
+  });
+});
+
+/** The part of an image block's source the test reads. */
+interface SentImageSource {
+  /** Media type, for example image/jpeg. */
+  media_type: string;
+  /** Base64 data. */
+  data: string;
+}
+
+/** A content block as sent to the SDK (only the fields the test reads). */
+interface SentBlock {
+  /** Block type: text or image. */
+  type: string;
+  /** The cache breakpoint, if any. */
+  cache_control?: unknown;
+  /** An image block's source. */
+  source?: SentImageSource;
+  /** A text block's text. */
+  text?: string;
+}
+
+/** A tiny "JPEG" data URL: base64 "/9j/" decodes to FF D8 FF (the JPEG start bytes). */
+const JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAADSECRETPIXELS';
+
+describe('POST /api/answer, mode screenshot (Day 5)', () => {
+  it('needs the image, and takes it only in screenshot mode', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    const noImage = await POST(post(JSON.stringify({ mode: 'screenshot', session: SESSION })));
+    expect(await noImage.json()).toEqual({
+      code: 'bad_request',
+      message: 'image: required for mode screenshot',
+    });
+    const wrongMode = await POST(
+      post(JSON.stringify({ mode: 'answer', session: SESSION, image: JPEG })),
+    );
+    expect(await wrongMode.json()).toMatchObject({ message: 'image: only for mode screenshot' });
+    expect(streamMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a PNG, a renamed PNG, and an image over the size limit, without echoing it', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    const send = async (image: string) =>
+      (await (
+        await POST(post(JSON.stringify({ mode: 'screenshot', session: SESSION, image })))
+      ).json()) as { message: string };
+    expect((await send('data:image/png;base64,iVBORw0KGgo=')).message).toContain('image');
+    // The prefix says JPEG, but the bytes are a PNG (89 50 4E 47).
+    const renamed = await send('data:image/jpeg;base64,iVBORw0KGgoAAAANSUhEUg==');
+    expect(renamed.message).toBe('image: must be a JPEG image');
+    expect(renamed.message).not.toContain('iVBOR');
+    const huge = await send(`data:image/jpeg;base64,/9j/${'A'.repeat(1_400_000)}`);
+    expect(huge.message).toContain('image: at most');
+  });
+
+  it('streams, with the image uncached and before the question, after the cached chunks', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['The slide shows'] }));
+    const body = {
+      mode: 'screenshot',
+      session: SESSION,
+      conversation: [[{ kind: 'line', speaker: 'them', text: 'Can you see my slide?', at: 3 }]],
+      image: JPEG,
+    };
+    const text = await (await POST(post(JSON.stringify(body)))).text();
+    expect(text).toContain('event: done');
+    const [params] = streamMock.mock.calls[0]!;
+    expect(params.max_tokens).toBe(400);
+    const content = params.messages[0].content as SentBlock[];
+    expect(content.map((block) => block.type)).toEqual(['text', 'image', 'text']);
+    expect(content[0]!.cache_control).toEqual({ type: 'ephemeral' });
+    expect(content[1]).toMatchObject({
+      source: { media_type: 'image/jpeg', data: JPEG.slice(23) },
+    });
+    expect(content[1]!.cache_control).toBeUndefined();
+    expect(content[2]!.text).toContain(
+      "Question about the screenshot: What's on screen and how should I respond?",
+    );
+  });
+
+  it('logs the image size only, never its data', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['x'] }));
+    await (
+      await POST(post(JSON.stringify({ mode: 'screenshot', session: SESSION, image: JPEG })))
+    ).text();
+    const logged = JSON.stringify([
+      vi.mocked(console.info).mock.calls,
+      vi.mocked(console.error).mock.calls,
+    ]);
+    expect(logged).toContain(`"imageChars":${JPEG.length}`);
+    expect(logged).not.toContain('SECRETPIXELS');
   });
 });

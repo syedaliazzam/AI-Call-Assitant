@@ -3,15 +3,15 @@
  * Purpose: The Platform implementation used when Kite runs inside the desktop app (Electron).
  *          It wraps `window.kiteDesktop`, the bridge exposed by the shell's preload script.
  *          It reports the shell version and OS, opens the microphone (Day 1) and the other side as
- *          system audio (Day 2), and the hotkeys (Day 4); the other methods throw
- *          NotImplementedError naming the day.
+ *          system audio (Day 2), the hotkeys (Day 4), and screenshots, the compact live window and
+ *          its screen-share protection through the shell (Day 5).
  * Used by: src/platform/index.ts (getPlatform)
  * Depends on: @kite/shared (KiteDesktopApi), src/platform/types.ts, errors.ts, media.ts,
  *             keymap.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (desktop column), §7.3
  */
-import type { DesktopOs, KiteDesktopApi } from '@kite/shared';
-import { CaptureError, NotImplementedError } from './errors';
+import type { DesktopOs, KiteDesktopApi, ShareProtectionState } from '@kite/shared';
+import { CaptureError } from './errors';
 import { listenForHotkeys } from './keymap';
 import {
   openMicrophone,
@@ -63,6 +63,9 @@ export interface DesktopPlatform extends Platform {
   /** Operating system the shell runs on. */
   os: DesktopOs;
 }
+
+/** Protection state reported where it cannot be applied. */
+const UNSUPPORTED_PROTECTION: ShareProtectionState = { on: false, supported: false };
 
 /** A hotkey seen twice within this many ms (global shortcut and in-page key) counts once. */
 const DUPLICATE_PRESS_MS = 150;
@@ -132,17 +135,55 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /** Day 5: the shell captures the current display with desktopCapturer. */
+    /**
+     * A screenshot of the display the Kite window is on, taken by the shell already scaled to
+     * ≤ 1,568 px (apps/desktop/src/screenshot.ts).
+     *
+     * @returns The PNG as a Blob (in memory only).
+     * @throws CaptureError: 'not-supported' (a desktop app from before Day 5),
+     *         'permission-denied' (macOS Screen Recording), or 'failed'.
+     */
     async captureScreenshot() {
-      throw new NotImplementedError('desktop.captureScreenshot', 5);
+      if (!bridge.captureScreenshot) {
+        throw new CaptureError(
+          'not-supported',
+          'This version of the Kite desktop app cannot take screenshots. Install the latest version.',
+        );
+      }
+      const result = await bridge.captureScreenshot();
+      if (result.ok) return new Blob([result.png.slice()], { type: 'image/png' });
+      if (result.code === 'permission-denied') {
+        throw new CaptureError(
+          'permission-denied',
+          'Kite needs the Screen Recording permission: System Settings → Privacy & Security → Screen Recording → turn on Kite, then reopen Kite.',
+        );
+      }
+      throw new CaptureError('failed', 'Kite could not take a screenshot. Try again.');
     },
 
     /**
-     * Day 5: the shell opens a frameless, always-on-top live window.
+     * The shell opens the compact live window (frameless, always on top, shown without focus).
      *
-     * @param _sessionId The session to show (unused until Day 5).
+     * @param sessionId The session to show.
+     * @throws CaptureError('not-supported') in a desktop app from before Day 5.
      */
-    async openCompactView(_sessionId: string) {
-      throw new NotImplementedError('desktop.openCompactView', 5);
+    async openCompactView(sessionId: string) {
+      if (!bridge.openCompactView) {
+        throw new CaptureError(
+          'not-supported',
+          'This version of the Kite desktop app has no compact view. Install the latest version.',
+        );
+      }
+      await bridge.openCompactView(sessionId);
+    },
+
+    /**
+     * Closes the compact live window (End).
+     *
+     * @returns Resolves when closed.
+     */
+    async closeCompactView() {
+      await bridge.closeCompactView?.();
     },
 
     /**
@@ -194,12 +235,22 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
-     * Day 5: setContentProtection on the live window.
+     * setContentProtection on the compact window, through the shell (remembered there).
      *
-     * @param _on True to hide the live window from screen sharing (unused until Day 5).
+     * @param on True to hide the compact window from screen sharing.
+     * @returns The new state; unsupported in a desktop app from before Day 5.
      */
-    async setShareProtection(_on: boolean) {
-      throw new NotImplementedError('desktop.setShareProtection', 5);
+    async setShareProtection(on: boolean) {
+      return bridge.setShareProtection ? bridge.setShareProtection(on) : UNSUPPORTED_PROTECTION;
+    },
+
+    /**
+     * The shell's remembered protection setting.
+     *
+     * @returns The state; unsupported in a desktop app from before Day 5.
+     */
+    async getShareProtection() {
+      return bridge.getShareProtection ? bridge.getShareProtection() : UNSUPPORTED_PROTECTION;
     },
   };
 }

@@ -2,21 +2,30 @@
  * File: apps/web/src/platform/browser.ts
  * Purpose: The Platform implementation used when Kite runs in Chrome or Edge (no desktop app).
  *          The microphone (Day 1) and the other side through a shared tab with its audio
- *          (Day 2) work, and the in-page hotkeys (Day 4); the other methods throw
- *          NotImplementedError naming the day they arrive.
+ *          (Day 2), the in-page hotkeys (Day 4), and (Day 5) screenshots of the shared tab, the
+ *          compact view in a Document Picture-in-Picture window, and share protection reported
+ *          as unsupported.
  * Used by: src/platform/index.ts (getPlatform)
  * Depends on: src/platform/types.ts, src/platform/errors.ts, src/platform/media.ts,
- *             src/platform/keymap.ts
+ *             src/platform/keymap.ts, src/platform/pip.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (browser column)
  */
-import { CaptureError, NotImplementedError } from './errors';
+import { CaptureError } from './errors';
 import { listenForHotkeys } from './keymap';
 import {
   openMicrophone,
   requestDisplayMedia,
+  startFrameSource,
   stopAllTracks,
   type DisplayCaptureOptions,
+  type FrameSource,
 } from './media';
+import {
+  closePictureInPicture,
+  openPictureInPicture,
+  pictureInPicture,
+  type PipRenderer,
+} from './pip';
 import type { OtherSideSource, Platform } from './types';
 
 /**
@@ -69,6 +78,23 @@ function browserIsMac(): boolean {
   return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 }
 
+/** Shown when the browser has no Document Picture-in-Picture (Firefox, Safari, older browsers). */
+export const NO_PIP_MESSAGE =
+  'This browser cannot show a small window on top of the meeting. Use Chrome or Edge 116 or newer, or keep Kite in its own window next to the meeting.';
+
+/** Shown when a screenshot is asked for but nothing is being shared. */
+export const NO_SHARE_MESSAGE =
+  'Kite can only take a screenshot of the tab or screen you are sharing for the call. Connect first, then try again.';
+
+/**
+ * The share from the latest getOtherSideStream() (its video track gives screenshots), or null
+ * before the first Connect. A stopped share is detected by its track's readyState.
+ */
+let currentShare: MediaStream | null = null;
+
+/** The current share's frames, ready to draw (media.ts startFrameSource()), or null. */
+let frames: FrameSource | null = null;
+
 /** Platform implementation for Chrome / Edge. */
 export const browserPlatform: Platform = {
   kind: 'browser',
@@ -92,21 +118,48 @@ export const browserPlatform: Platform = {
       stopAllTracks(stream);
       throw new CaptureError('no-audio-track', NO_TAB_AUDIO_MESSAGE);
     }
+    // Kept for screenshots: the share's video track is the only way to see the meeting. Its
+    // frames start playing now, so a screenshot is instant later.
+    frames?.close();
+    currentShare = stream;
+    const video = stream.getVideoTracks()[0];
+    frames = video && typeof document !== 'undefined' ? startFrameSource(video) : null;
     return { stream, source: shareSource(stream) };
   },
 
-  /** Day 5: grab a frame from the screen or tab stream the user already shared. */
+  /**
+   * A screenshot of the tab or screen the user is sharing for the call: one frame of the
+   * share's video track, scaled to ≤ 1,568 px (media.ts startFrameSource()).
+   *
+   * @returns The frame as a PNG Blob (in memory only).
+   * @throws CaptureError('no-share') when nothing is being shared (or the share ended), or
+   *         'failed' when no frame could be read.
+   */
   async captureScreenshot() {
-    throw new NotImplementedError('browser.captureScreenshot', 5);
+    const track = currentShare?.getVideoTracks()[0];
+    if (!track || track.readyState !== 'live') throw new CaptureError('no-share', NO_SHARE_MESSAGE);
+    try {
+      if (!frames) throw new Error('no frame source');
+      return await frames.grab();
+    } catch {
+      throw new CaptureError(
+        'failed',
+        'Kite could not take a screenshot of the shared tab. Try again.',
+      );
+    }
   },
 
   /**
-   * Day 5: Document Picture-in-Picture window.
+   * The compact view in a Document Picture-in-Picture window (Chrome / Edge 116+), opened from
+   * the click on "Compact view".
    *
-   * @param _sessionId The session to show (unused until Day 5).
+   * @param _sessionId The session (the renderer already knows it).
+   * @param render     Renders the compact view into the window.
+   * @throws CaptureError('not-supported') where the browser has no Document Picture-in-Picture.
    */
-  async openCompactView(_sessionId: string) {
-    throw new NotImplementedError('browser.openCompactView', 5);
+  async openCompactView(_sessionId: string, render?: PipRenderer) {
+    if (!render || !pictureInPicture()) throw new CaptureError('not-supported', NO_PIP_MESSAGE);
+    await openPictureInPicture(render);
   },
 
   /**
@@ -132,11 +185,31 @@ export const browserPlatform: Platform = {
   },
 
   /**
-   * Day 5: returns false (browsers cannot hide a window from screen sharing) and the UI explains.
+   * A browser cannot hide a window from screen sharing: always unsupported (the UI explains:
+   * share one tab or window, or put Kite on another monitor).
    *
-   * @param _on True to hide the live window from screen sharing (unused until Day 5).
+   * @param _on Ignored.
+   * @returns { on: false, supported: false }.
    */
   async setShareProtection(_on: boolean) {
-    throw new NotImplementedError('browser.setShareProtection', 5);
+    return { on: false, supported: false };
+  },
+
+  /**
+   * Always unsupported in a browser.
+   *
+   * @returns { on: false, supported: false }.
+   */
+  async getShareProtection() {
+    return { on: false, supported: false };
+  },
+
+  /**
+   * Closes the picture-in-picture window (End).
+   *
+   * @returns Resolves at once.
+   */
+  async closeCompactView() {
+    closePictureInPicture();
   },
 };

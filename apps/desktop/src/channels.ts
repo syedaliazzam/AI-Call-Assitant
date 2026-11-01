@@ -2,7 +2,7 @@
  * File: apps/desktop/src/channels.ts
  * Purpose: Names of the IPC channels between the main process and the preload script. Kept in
  *          their own file so the preload bundle does not include main-process code.
- * Used by: src/hotkeys.ts (main process), src/preload.ts
+ * Used by: src/hotkeys.ts and src/screenshot.ts (main process), src/preload.ts
  * Depends on: nothing
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (hotkeys.ts, preload.ts);
  *               day-04-answers.md Stage 8
@@ -13,3 +13,18 @@ export const SET_HOTKEYS_CHANNEL = 'kite:set-hotkeys';
 
 /** The shell tells the page a global shortcut was pressed (send; carries the action). */
 export const HOTKEY_CHANNEL = 'kite:hotkey';
+
+/** The page asks for a screenshot (invoke; answers with a DesktopScreenshot). */
+export const CAPTURE_SCREENSHOT_CHANNEL = 'kite:capture-screenshot';
+
+/** The page opens the compact live window (invoke; carries the session id). */
+export const OPEN_COMPACT_CHANNEL = 'kite:open-compact';
+
+/** The page closes the compact live window (invoke). */
+export const CLOSE_COMPACT_CHANNEL = 'kite:close-compact';
+
+/** The page changes screen-share protection (invoke; carries a boolean, answers the state). */
+export const SET_PROTECTION_CHANNEL = 'kite:set-protection';
+
+/** The page reads screen-share protection (invoke; answers the state). */
+export const GET_PROTECTION_CHANNEL = 'kite:get-protection';

@@ -140,6 +140,12 @@ describe('buildAnswerRequest', () => {
     expect(third.log.chunks).toBe(second.log.chunks);
   });
 
+  it('sends the approved lessons with every request, the same list as the warm-up (Day 5)', () => {
+    const lessons = ['Give prices per seat and per month.'];
+    expect(build({ lessons }, 10).request.lessons).toEqual(lessons);
+    expect(build({}, 10).request).not.toHaveProperty('lessons');
+  });
+
   it('sends only the new words of a line that grew after it was sent', () => {
     const before = build({ lines: [line('u1', 'them', 'WHAT ABOUT TRAINING', 1, 2)] }, 10);
     const grown = [line('u1', 'them', 'WHAT ABOUT TRAINING FOR DISPATCHERS', 1, 4)];
@@ -215,5 +221,32 @@ describe('buildAnswerRequest', () => {
     const cached = before.slice(0, cachedCount).map((block) => block.text);
     const after = texts(second.request).map((block) => block.text);
     expect(after.slice(0, cachedCount)).toEqual(cached);
+  });
+});
+
+describe('buildAnswerRequest, screenshot (Day 5)', () => {
+  it('sends the image and the typed question, without selecting one from the transcript', () => {
+    const built = build(
+      {
+        lines: FIRST,
+        mode: 'screenshot',
+        image: 'data:image/jpeg;base64,/9j/',
+        typedQuestion: ' Is this right? ',
+      },
+      14,
+    );
+    expect(built.request).toMatchObject({
+      mode: 'screenshot',
+      image: 'data:image/jpeg;base64,/9j/',
+      question: 'Is this right?',
+    });
+    expect(built.selected).toBeNull();
+    const plain = build(
+      { lines: FIRST, mode: 'screenshot', image: 'data:image/jpeg;base64,/9j/' },
+      14,
+    );
+    expect(plain.request.question).toBeUndefined();
+    // No image on other modes.
+    expect(build({ lines: FIRST }, 14).request).not.toHaveProperty('image');
   });
 });

@@ -2,23 +2,43 @@
  * File: apps/desktop/src/main.ts
  * Purpose: Electron main process: starts one instance of the app, opens the Kite window on
  *          KITE_URL, applies every security rule from src/security.ts, and wires the global
- *          shortcuts (src/hotkeys.ts, Day 4).
+ *          shortcuts (src/hotkeys.ts, Day 4) screenshots (src/screenshot.ts), the compact live window
+ *          (src/windows.ts) and its screen-share protection (src/protection.ts), Day 5.
  * Used by: Electron (package.json "main": dist/main.js, built by esbuild)
- * Depends on: electron, src/config.ts, src/security.ts, src/media.ts, src/hotkeys.ts
+ * Depends on: electron, src/config.ts, src/security.ts, src/media.ts, src/hotkeys.ts,
+ *             src/screenshot.ts, src/windows.ts, src/protection.ts, src/store.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * Kite never hides from the taskbar, Dock or process lists, and does not try to evade
  * monitoring or proctoring software (CLAUDE.md).
  */
+import os from 'node:os';
 import path from 'node:path';
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, session } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  screen,
+  session,
+  systemPreferences,
+} from 'electron';
 import { APP_NAME, loadConfig, type DesktopConfig } from './config';
 import { installHotkeys, type HotkeyController } from './hotkeys';
+import { createProtection, installProtection } from './protection';
+import { installScreenshot } from './screenshot';
+import { createStore } from './store';
+import { createCompactWindows, installCompactWindows, type CompactWindows } from './windows';
 import { allowSystemAudioLoopback } from './media';
 import { allowOnlyOurPermissions, lockNavigation, secureWebPreferences } from './security';
 
 /** The single Kite window, or null before it exists / after it closes. */
 let mainWindow: BrowserWindow | null = null;
+
+/** The compact live window (created when the app is ready). */
+let compact: CompactWindows | null = null;
 
 /** The global shortcuts (created when the app is ready). */
 let hotkeys: HotkeyController | null = null;
@@ -64,6 +84,8 @@ function createMainWindow(config: DesktopConfig): BrowserWindow {
   window.once('ready-to-show', () => window.show());
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null;
+    // The compact window belongs to the main window's call.
+    compact?.close();
     // No page left to receive them: give the keys back to other apps.
     hotkeys?.disable();
   });
@@ -112,6 +134,31 @@ function start(): void {
       sendToPage: (channel, action) => mainWindow?.webContents.send(channel, action),
       allowedOrigin: config.allowedOrigin,
     });
+    // Screenshot answers (Day 5): the display under the Kite window, scaled, in memory only.
+    installScreenshot({
+      desktopCapturer,
+      screen,
+      systemPreferences,
+      platform: process.platform,
+      ipcMain,
+      getWindow: () => mainWindow,
+      allowedOrigin: config.allowedOrigin,
+    });
+    // The compact live window and its screen-share protection (Day 5); the shell remembers
+    // the window's position and size and the protection setting in its own small file.
+    const store = createStore(path.join(app.getPath('userData'), 'kite-shell.json'));
+    const protection = createProtection(store, process.platform, os.release());
+    compact = createCompactWindows({
+      createWindow: (options) => new BrowserWindow(options),
+      screen,
+      kiteUrl: config.kiteUrl,
+      preloadPath: path.join(__dirname, 'preload.js'),
+      appVersion: app.getVersion(),
+      store,
+      protection,
+    });
+    installCompactWindows(ipcMain, compact, config.allowedOrigin);
+    installProtection(ipcMain, protection, () => compact?.window() ?? null, config.allowedOrigin);
     mainWindow = createMainWindow(config);
     // macOS convention: clicking the Dock icon re-opens a window if none is open.
     app.on('activate', () => {

@@ -6,7 +6,9 @@
  * straight to Connect (no
  * Choose platform dialog); Connect needs no picker (system audio + Chromium's fake microphone
  * playing the official recording 0.wav); Go live shows final lines; a typed Chat question
- * streams an answer, which is rated (Day 4); End; Settings → Delete all
+ * streams an answer, which is rated (Day 4); the compact window (Day 5) opens on top without
+ * focus, shows the live answer, and a question typed into it is answered; End closes it;
+ * Settings → Delete all
  * local data → the dashboard is empty again. Manual run only (never in CI). Prints numbers only.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -25,6 +27,7 @@ import {
   RECORDINGS,
   WEB_DIR,
   answerAndRate,
+  isMode,
   createSession,
   report,
   sessionCard,
@@ -131,7 +134,64 @@ test('3. Connect needs no picker; Go live shows lines; a Chat answer is rated; E
   report('desktop chat answer streams and is rated', check.headlineWords > 0, { ...check });
   expect(check.headlineWords).toBeGreaterThan(0);
 
+  // The compact window (Day 5): a second Electron window with the real compact view.
+  const compactOpened = app.waitForEvent('window');
+  await page.getByRole('button', { name: 'Compact view' }).click();
+  const compact = await compactOpened;
+  await compact.waitForLoadState();
+  const liveHeadline = page.getByRole('heading', { name: 'Answer headline' });
+  const compactHeadline = compact.getByRole('heading', { name: 'Compact headline' });
+  // (b) The live answer reaches the compact window over the session's BroadcastChannel.
+  await expect(compactHeadline).toHaveText((await liveHeadline.textContent()) ?? '', {
+    timeout: 20_000,
+  });
+  const shown = await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows().find((x) =>
+      new URL(x.webContents.getURL()).pathname.startsWith('/compact/'),
+    )!;
+    return {
+      onTop: w.isAlwaysOnTop(),
+      focused: w.isFocused(),
+      protectedOn: w.isContentProtected(),
+    };
+  });
+  report('desktop compact window shows the live answer', shown.onTop && !shown.focused, {
+    onTop: shown.onTop ? 1 : 0,
+    focusedWhenShown: shown.focused ? 1 : 0,
+    protectedByDefault: shown.protectedOn ? 1 : 0,
+  });
+  expect(shown).toMatchObject({ onTop: true, focused: false, protectedOn: false });
+  await expect(compact.getByText('Visible in screen share')).toBeVisible();
+
+  // (a) Click into the compact window's question box, type, Enter: the live page answers it.
+  const before = (await liveHeadline.textContent()) ?? '';
+  const chatResponse = page.waitForResponse((r) => isMode(r, 'chat'), { timeout: 60_000 });
+  const box = compact.getByLabel('Type a question');
+  await box.click();
+  await box.pressSequentially('What was the late delivery change in the pilot?');
+  await expect(box).toHaveValue('What was the late delivery change in the pilot?');
+  await box.press('Enter');
+  // Wait for the whole answer (the stream's end), then for the panel to finish showing it.
+  await (await chatResponse).text();
+  await expect(page.getByText('Answering…')).toHaveCount(0, { timeout: 30_000 });
+  await expect(liveHeadline).not.toHaveText(before);
+  await expect(compactHeadline).toHaveText((await liveHeadline.textContent()) ?? '', {
+    timeout: 20_000,
+  });
+  const focusedAfterClick = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find((x) => new URL(x.webContents.getURL()).pathname.startsWith('/compact/'))!
+      .isFocused(),
+  );
+  report('desktop compact question box: typed question answered', true, {
+    focusedAfterClick: focusedAfterClick ? 1 : 0,
+  });
+
   await page.getByRole('button', { name: 'End', exact: true }).click();
+  // End closes the compact window.
+  await expect
+    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length))
+    .toBe(1);
   await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
   report('desktop end', true);
 });

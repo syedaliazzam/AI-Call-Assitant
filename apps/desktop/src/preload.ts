@@ -1,7 +1,8 @@
 /**
  * File: apps/desktop/src/preload.ts
  * Purpose: Runs inside the Kite window before the page and exposes exactly one object to it:
- *          window.kiteDesktop = { version, os, setHotkeysEnabled, onHotkey } (frozen). Nothing
+ *          window.kiteDesktop = { version, os, setHotkeysEnabled, onHotkey, captureScreenshot,
+ *          openCompactView, closeCompactView, setShareProtection, getShareProtection } (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
  * Depends on: electron (contextBridge, ipcRenderer); @kite/shared (KiteDesktopApi,
@@ -18,7 +19,15 @@ import {
   type KiteDesktopApi,
 } from '@kite/shared';
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import { HOTKEY_CHANNEL, SET_HOTKEYS_CHANNEL } from './channels';
+import {
+  CAPTURE_SCREENSHOT_CHANNEL,
+  CLOSE_COMPACT_CHANNEL,
+  GET_PROTECTION_CHANNEL,
+  HOTKEY_CHANNEL,
+  OPEN_COMPACT_CHANNEL,
+  SET_HOTKEYS_CHANNEL,
+  SET_PROTECTION_CHANNEL,
+} from './channels';
 
 /** Prefix of the argument main.ts passes with the app version. */
 const VERSION_ARG = '--kite-version=';
@@ -82,6 +91,14 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
   // Only a boolean crosses to the main process.
   setHotkeysEnabled: (on: boolean) => ipcRenderer.invoke(SET_HOTKEYS_CHANNEL, on === true),
   onHotkey,
+  // No arguments cross to the main process; the image comes back in memory only.
+  captureScreenshot: () => ipcRenderer.invoke(CAPTURE_SCREENSHOT_CHANNEL),
+  // Only a string id (checked again by the shell) or a boolean crosses to the main process.
+  openCompactView: (sessionId: string) =>
+    ipcRenderer.invoke(OPEN_COMPACT_CHANNEL, String(sessionId)),
+  closeCompactView: () => ipcRenderer.invoke(CLOSE_COMPACT_CHANNEL),
+  setShareProtection: (on: boolean) => ipcRenderer.invoke(SET_PROTECTION_CHANNEL, on === true),
+  getShareProtection: () => ipcRenderer.invoke(GET_PROTECTION_CHANNEL),
 });
 
 contextBridge.exposeInMainWorld('kiteDesktop', kiteDesktop);

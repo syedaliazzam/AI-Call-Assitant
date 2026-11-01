@@ -14,6 +14,8 @@ export default defineConfig({
   testDir: 'tests',
   // Only *.spec.ts files; tests/unit/*.test.ts are Vitest unit tests.
   testMatch: '*.spec.ts',
+  // tests/manual: checks that need a real desktop and installed apps (playwright.manual.config.ts).
+  testIgnore: '**/manual/**',
   // One Electron instance at a time: the app takes a single-instance lock.
   workers: 1,
   fullyParallel: false,

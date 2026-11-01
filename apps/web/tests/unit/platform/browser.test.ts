@@ -6,12 +6,19 @@
  * returns the stream with its source ('tab-audio' / 'screen-audio'), keeps the video track,
  * stops the share and throws CaptureError('no-audio-track') when "Also share tab audio" was not
  * ticked, and maps a cancelled picker, an OS refusal and a missing API to typed errors;
- * onHotkey() listens for the in-page shortcuts with the Mac modifier on a Mac (Day 4); every
- * not-yet-built method throws NotImplementedError naming its day.
+ * onHotkey() listens for the in-page shortcuts with the Mac modifier on a Mac (Day 4);
+ * captureScreenshot() needs an active share (Day 5); share protection is never supported; and
+ * openCompactView() says clearly when the browser has no Document Picture-in-Picture (Day 5).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { BROWSER_DISPLAY_OPTIONS, browserPlatform, NO_TAB_AUDIO_MESSAGE } from '@/platform/browser';
-import { CaptureError, NotImplementedError } from '@/platform/errors';
+import {
+  BROWSER_DISPLAY_OPTIONS,
+  browserPlatform,
+  NO_PIP_MESSAGE,
+  NO_SHARE_MESSAGE,
+  NO_TAB_AUDIO_MESSAGE,
+} from '@/platform/browser';
+import { CaptureError } from '@/platform/errors';
 import { MIC_CONSTRAINTS } from '@/platform/media';
 import { domError, fakeStream, fakeTrack, stubDisplayMedia } from './fakeMedia';
 
@@ -35,14 +42,14 @@ describe('browserPlatform', () => {
     await expect(browserPlatform.getMicStream()).rejects.toThrow(/Microphone access/);
   });
 
-  it.each([
-    ['captureScreenshot', 5, () => browserPlatform.captureScreenshot()],
-    ['openCompactView', 5, () => browserPlatform.openCompactView('s1')],
-    ['setShareProtection', 5, () => browserPlatform.setShareProtection(true)],
-  ])('%s rejects with NotImplementedError (Day %i)', async (_name, day, call) => {
-    const error = await call().catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(NotImplementedError);
-    expect((error as NotImplementedError).day).toBe(day);
+  it('openCompactView: a browser without Document Picture-in-Picture gets a clear message', async () => {
+    const error = (await browserPlatform
+      .openCompactView('s1', () => () => undefined)
+      .catch((e: unknown) => e)) as CaptureError;
+    expect(error).toBeInstanceOf(CaptureError);
+    expect(error.code).toBe('not-supported');
+    expect(error.message).toBe(NO_PIP_MESSAGE);
+    await expect(browserPlatform.closeCompactView()).resolves.toBeUndefined();
   });
 
   it('onHotkey listens for the in-page shortcuts (⌘ on a Mac, Ctrl elsewhere)', () => {
@@ -134,5 +141,33 @@ describe('browserPlatform.getOtherSideStream', () => {
     await expect(browserPlatform.getOtherSideStream()).rejects.toMatchObject({
       code: 'not-supported',
     });
+  });
+});
+
+describe('browser share protection', () => {
+  it('is never supported in a browser', async () => {
+    expect(await browserPlatform.setShareProtection(true)).toEqual({ on: false, supported: false });
+    expect(await browserPlatform.getShareProtection()).toEqual({ on: false, supported: false });
+  });
+});
+
+describe('browser captureScreenshot', () => {
+  it('reports no-share when the share has ended, and failed when no frame can be read', async () => {
+    const video = fakeTrack('video', 'live', 'browser');
+    stubDisplayMedia(async () => fakeStream([fakeTrack('audio'), video]));
+    await browserPlatform.getOtherSideStream();
+    // A live share, but this test environment has no ImageCapture or document to read it.
+    const failed = (await browserPlatform
+      .captureScreenshot()
+      .catch((e: unknown) => e)) as CaptureError;
+    expect(failed).toBeInstanceOf(CaptureError);
+    expect(failed.code).toBe('failed');
+    // The user stopped sharing.
+    video.readyState = 'ended';
+    const noShare = (await browserPlatform
+      .captureScreenshot()
+      .catch((e: unknown) => e)) as CaptureError;
+    expect(noShare.code).toBe('no-share');
+    expect(noShare.message).toBe(NO_SHARE_MESSAGE);
   });
 });

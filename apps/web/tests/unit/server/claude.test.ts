@@ -6,9 +6,13 @@
  * streaming, with the answers' thinking setting, and returns the cache usage; thinkingFor() turns
  * thinking off in the way each model accepts; jsonReply() asks for structured output with the
  * given schema and the tier's thinking setting, parses the reply, and throws NO_JSON without text;
- * describeClaudeError() maps SDK errors to Kite error codes without leaking API text.
+ * describeClaudeError() maps SDK errors to Kite error codes without leaking API text, and maps
+ * the usage limit (HTTP 400, or billing_error) and an overload (529, or overloaded_error in the
+ * stream) to claude_unavailable with the fixed message; a per-minute rate limit stays
+ * upstream_error.
  */
 import Anthropic from '@anthropic-ai/sdk';
+import { CLAUDE_UNAVAILABLE_MESSAGES } from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeMessageStream } from '../../helpers/fakeClaude';
 
@@ -255,5 +259,59 @@ describe('describeClaudeError', () => {
 
   it('maps anything else to "internal"', () => {
     expect(describeClaudeError(new Error('boom')).code).toBe('internal');
+  });
+
+  it('maps the usage limit (as the API sent it on 2026-10-30) to "claude_unavailable"', () => {
+    const body = {
+      type: 'error',
+      error: {
+        type: 'invalid_request_error',
+        message:
+          'You have reached your specified API usage limits. You will regain access on 2026-11-01 at 00:00 UTC.',
+      },
+    };
+    const error = Anthropic.APIError.generate(400, body, undefined, new Headers());
+    expect(describeClaudeError(error)).toEqual({
+      code: 'claude_unavailable',
+      message: CLAUDE_UNAVAILABLE_MESSAGES.usageLimit,
+    });
+    // The date and Anthropic's wording are not forwarded.
+    expect(describeClaudeError(error).message).not.toContain('2026-11-01');
+    const billing = Anthropic.APIError.generate(
+      400,
+      { type: 'error', error: { type: 'billing_error', message: 'x' } },
+      undefined,
+      new Headers(),
+    );
+    expect(describeClaudeError(billing).message).toBe(CLAUDE_UNAVAILABLE_MESSAGES.usageLimit);
+  });
+
+  it('maps an overload (529, or an overloaded_error event mid-stream) to "claude_unavailable"', () => {
+    const body = { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } };
+    const http = Anthropic.APIError.generate(529, body, undefined, new Headers());
+    expect(describeClaudeError(http)).toEqual({
+      code: 'claude_unavailable',
+      message: CLAUDE_UNAVAILABLE_MESSAGES.overloaded,
+    });
+    // In a stream the SDK throws an APIError with no status and the event's body.
+    const midStream = new Anthropic.APIError(undefined, body, undefined, new Headers());
+    expect(describeClaudeError(midStream).message).toBe(CLAUDE_UNAVAILABLE_MESSAGES.overloaded);
+  });
+
+  it('keeps a per-minute rate limit and other 400s as "upstream_error"', () => {
+    const rate = Anthropic.APIError.generate(
+      429,
+      { type: 'error', error: { type: 'rate_limit_error', message: 'Too many requests' } },
+      undefined,
+      new Headers(),
+    );
+    expect(describeClaudeError(rate).code).toBe('upstream_error');
+    const bad = Anthropic.APIError.generate(
+      400,
+      { type: 'error', error: { type: 'invalid_request_error', message: 'max_tokens: too big' } },
+      undefined,
+      new Headers(),
+    );
+    expect(describeClaudeError(bad).code).toBe('upstream_error');
   });
 });

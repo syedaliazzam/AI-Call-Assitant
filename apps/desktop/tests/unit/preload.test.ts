@@ -55,7 +55,17 @@ describe('the exposed bridge', () => {
     expect(exposeCalls).toHaveLength(1);
     const [name, api] = exposeCalls[0]!;
     expect(name).toBe('kiteDesktop');
-    expect(Object.keys(api).sort()).toEqual(['onHotkey', 'os', 'setHotkeysEnabled', 'version']);
+    expect(Object.keys(api).sort()).toEqual([
+      'captureScreenshot',
+      'closeCompactView',
+      'getShareProtection',
+      'onHotkey',
+      'openCompactView',
+      'os',
+      'setHotkeysEnabled',
+      'setShareProtection',
+      'version',
+    ]);
     expect(Object.isFrozen(api)).toBe(true);
   });
 

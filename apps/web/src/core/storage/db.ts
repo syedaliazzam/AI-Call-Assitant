@@ -2,8 +2,9 @@
  * File: apps/web/src/core/storage/db.ts
  * Purpose: Kite's local database on the user's device: one IndexedDB database ("kite") opened
  *          with Dexie, with the stores of architecture §7.4 (sessions, documents, utterances,
- *          answers, notes) and the indexes the dashboard and per-session lookups need.
- * Used by: src/core/storage/sessions.ts, documents.ts, utterances.ts, wipe.ts
+ *          answers, notes; settings from version 2; lessons from version 3) and the indexes the
+ *          dashboard and per-session lookups need.
+ * Used by: src/core/storage/sessions.ts, documents.ts, utterances.ts, lessons.ts, wipe.ts
  * Depends on: dexie; src/core/storage/types.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (data model), §8.1;
  *               day-03-sessions.md Stage 1
@@ -19,6 +20,7 @@ import type {
   Session,
   StoredAnswer,
   StoredDocument,
+  StoredLesson,
   StoredNotes,
   StoredSettings,
   StoredUtterance,
@@ -43,6 +45,8 @@ export class KiteDb extends Dexie {
   declare notes: EntityTable<StoredNotes, 'sessionId'>;
   /** App settings on this device (version 2): the default preferences for new sessions. */
   declare settings: EntityTable<StoredSettings, 'id'>;
+  /** Lesson decisions, approved or rejected (version 3, Day 5 Stage 7). */
+  declare lessons: EntityTable<StoredLesson, 'id'>;
 
   /**
    * Declares the schema. Only indexed fields are listed (Dexie stores every field of a row);
@@ -70,6 +74,12 @@ export class KiteDb extends Dexie {
     // no upgrade() is needed because no existing row changes.
     this.version(2).stores({
       settings: 'id',
+    });
+    // Version 3 (Day 5 Stage 7): adds the lessons store. sourceSessionId: a session's
+    // decisions (the review page, and removing rejected ones with the session); status: the
+    // approved lessons sent with answers. No existing row changes, so no upgrade().
+    this.version(3).stores({
+      lessons: 'id, sourceSessionId, status',
     });
   }
 }

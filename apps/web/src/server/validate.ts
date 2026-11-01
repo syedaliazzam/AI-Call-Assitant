@@ -3,7 +3,7 @@
  * Purpose: Checks the body of POST /api/answer against the AnswerRequest type from @kite/shared,
  *          with size limits so one request cannot send unbounded text to Claude: documents,
  *          key terms, and (Day 4) the conversation chunks, tail and question.
- * Used by: app/api/answer/route.ts
+ * Used by: app/api/answer/route.ts, app/api/notes/route.ts (Day 5)
  * Depends on: zod, @kite/shared (AnswerRequest, request limits, estimateItemTokens)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (server rules: validate with zod,
  *               documents ≤ ~150k characters, request ≤ 4 MB); day-04-answers.md Stage 1
@@ -12,13 +12,20 @@
  */
 import 'server-only';
 import {
+  MAX_ACTIVE_LESSONS,
   MAX_ANSWER_CHARS,
   MAX_CONVERSATION_CHUNKS,
   MAX_CONVERSATION_TOKENS,
+  MAX_IMAGE_CHARS,
+  MAX_LESSON_CHARS,
   MAX_LINE_CHARS,
+  MAX_NOTES_ANSWERS,
+  MAX_NOTES_CHARS,
+  MAX_NOTES_LINES,
   MAX_TAIL_LINES,
   estimateItemTokens,
   type AnswerRequest,
+  type NotesRequest,
 } from '@kite/shared';
 import { z } from 'zod';
 
@@ -81,7 +88,7 @@ const conversationItemSchema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('answer'),
-      mode: z.enum(['answer', 'chat']),
+      mode: z.enum(['answer', 'chat', 'screenshot']),
       question: z.string().max(MAX_LINE_CHARS),
       text: z.string().max(MAX_ANSWER_CHARS),
       at: atSchema,
@@ -104,6 +111,20 @@ const conversationSchema = z
   );
 
 /**
+ * Whether a JPEG data URL's bytes start with the JPEG start-of-image marker (FF D8 FF), so a
+ * renamed PNG or other file is refused, not only a wrong prefix.
+ *
+ * @param dataUrl A string that already matched the JPEG data URL pattern.
+ * @returns True when the decoded bytes start as a JPEG.
+ * Called from: answerRequestSchema (image)
+ */
+function startsAsJpeg(dataUrl: string): boolean {
+  const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1, dataUrl.indexOf(',') + 9);
+  const head = Buffer.from(base64, 'base64');
+  return head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+}
+
+/**
  * The whole request body. `.strict()` rejects unknown fields, so typos are reported instead of
  * silently ignored. `satisfies` makes the compiler check it matches AnswerRequest exactly.
  */
@@ -115,11 +136,18 @@ export const answerRequestSchema = z
     conversation: conversationSchema.optional(),
     tail: z.array(callLineSchema).max(MAX_TAIL_LINES).optional(),
     question: z.string().max(MAX_LINE_CHARS).optional(),
-    // Screenshot as a data URL (Day 5); the 4 MB body limit caps its size.
+    // The screenshot (Day 5): a JPEG data URL whose bytes really start as a JPEG.
     image: z
       .string()
-      .regex(/^data:image\/(png|jpeg|webp);base64,/, 'must be a PNG, JPEG or WebP data URL')
+      .max(MAX_IMAGE_CHARS, `at most ${MAX_IMAGE_CHARS} characters`)
+      .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/, 'must be a JPEG data URL')
+      .refine(startsAsJpeg, 'must be a JPEG image')
       .nullable()
+      .optional(),
+    // Approved lessons (Day 5 Stage 7), for the rules block.
+    lessons: z
+      .array(z.string().min(1).max(MAX_LESSON_CHARS, `at most ${MAX_LESSON_CHARS} characters`))
+      .max(MAX_ACTIVE_LESSONS, `at most ${MAX_ACTIVE_LESSONS} lessons`)
       .optional(),
   })
   .strict()
@@ -131,6 +159,17 @@ export const answerRequestSchema = z
         path: ['session'],
         message: `required for mode ${request.mode}`,
       });
+    }
+    // The image goes only with a screenshot answer, and a screenshot answer needs it.
+    if (request.mode === 'screenshot' && !request.image) {
+      context.addIssue({
+        code: 'custom',
+        path: ['image'],
+        message: 'required for mode screenshot',
+      });
+    }
+    if (request.mode !== 'screenshot' && request.image) {
+      context.addIssue({ code: 'custom', path: ['image'], message: 'only for mode screenshot' });
     }
     // A chat question is typed by the user; there is nothing to fall back on.
     if (request.mode === 'chat' && !request.question?.trim()) {
@@ -163,6 +202,67 @@ export type ParseResult =
 export function parseAnswerRequest(body: unknown): ParseResult {
   const result = answerRequestSchema.safeParse(body);
   if (result.success) return { ok: true, data: result.data as AnswerRequest };
+  const problems = result.error.issues.map(
+    (issue) => `${issue.path.join('.') || 'body'}: ${issue.message}`,
+  );
+  return { ok: false, message: problems.join('; ') };
+}
+
+/** One answer in a notes request (NotesAnswer). */
+const notesAnswerSchema = z
+  .object({
+    at: atSchema,
+    mode: z.enum(['answer', 'chat', 'screenshot']),
+    question: z.string().max(MAX_LINE_CHARS),
+    text: z.string().max(MAX_ANSWER_CHARS),
+    rating: z.enum(['up', 'down']).nullable(),
+    note: z.string().max(MAX_LINE_CHARS),
+  })
+  .strict();
+
+/**
+ * The body of POST /api/notes (Day 5): the session, the call's lines (at most MAX_NOTES_LINES
+ * and MAX_NOTES_CHARS characters in all) and its answers. Unknown fields are rejected.
+ */
+export const notesRequestSchema = z
+  .object({
+    session: sessionSchema,
+    lines: z
+      .array(callLineSchema)
+      .max(MAX_NOTES_LINES)
+      .refine(
+        (lines) => lines.reduce((total, line) => total + line.text.length, 0) <= MAX_NOTES_CHARS,
+        { message: `at most ${MAX_NOTES_CHARS} characters in all` },
+      ),
+    answers: z.array(notesAnswerSchema).max(MAX_NOTES_ANSWERS),
+  })
+  .strict() satisfies z.ZodType<NotesRequest>;
+
+/** Result of parseNotesRequest(). */
+export type NotesParseResult =
+  | {
+      /** The body is valid. */
+      ok: true;
+      /** The validated request. */
+      data: NotesRequest;
+    }
+  | {
+      /** The body is invalid. */
+      ok: false;
+      /** Which fields are wrong and why (field paths only, never the submitted values). */
+      message: string;
+    };
+
+/**
+ * Validates a parsed notes request body.
+ *
+ * @param body The JSON value from the request.
+ * @returns The validated request, or a message listing the problems.
+ * Called from: POST handler in app/api/notes/route.ts
+ */
+export function parseNotesRequest(body: unknown): NotesParseResult {
+  const result = notesRequestSchema.safeParse(body);
+  if (result.success) return { ok: true, data: result.data as NotesRequest };
   const problems = result.error.issues.map(
     (issue) => `${issue.path.join('.') || 'body'}: ${issue.message}`,
   );

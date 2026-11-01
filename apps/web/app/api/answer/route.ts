@@ -4,9 +4,10 @@
  *          reply back as server-sent events (delta, done, error). Modes: 'hello' (Day 1 test),
  *          'warm' (Day 3: writes a session's prompt cache; no text, just done with usage), and
  *          'answer' and 'chat' (Day 4: an answer built on the session, the conversation so far
- *          and the earlier answers, from server/prompt.ts). 'screenshot' arrives on Day 5.
+ *          and the earlier answers, from server/prompt.ts), and 'screenshot' (Day 5: the same,
+ *          with the screenshot in the uncached part).
  * Used by: src/core/answer/answerClient.ts (browser)
- * Depends on: src/server/auth.ts, src/server/env.ts, src/server/validate.ts, src/server/claude.ts,
+ * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts, src/server/claude.ts,
  *             src/server/sse.ts, src/server/prompts/hello.ts, src/server/prompt.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6 (answer flow), §7.2 (/api/answer);
  *               day-04-answers.md Stage 3
@@ -21,12 +22,11 @@
 import type {
   AnswerErrorCode,
   AnswerEvent,
-  AnswerMode,
   AnswerRequest,
   AnswerTimings,
   ModelTier,
 } from '@kite/shared';
-import { getSession } from '@/server/auth';
+import { getCachedSession, type AuthSession } from '@/server/auth';
 import {
   CLAUDE_TIMEOUT_MS,
   describeClaudeError,
@@ -47,11 +47,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 /** Vercel function limit in seconds; matches the 60 s Claude time limit. */
 export const maxDuration = 60;
-
-/** Which day each not-yet-built mode arrives (architecture §12.3). */
-const MODE_DAY: Record<Exclude<AnswerMode, 'hello' | 'warm' | 'answer' | 'chat'>, number> = {
-  screenshot: 5,
-};
 
 /**
  * Builds a JSON error response (used before streaming starts).
@@ -117,18 +112,41 @@ async function* warmReply(
 }
 
 /**
- * Handles POST /api/answer.
+ * Handles POST /api/answer. The sign-in check reads the 60-second session cookie cache
+ * (server/auth.ts getCachedSession()), and any refreshed session cookie is sent back on the
+ * response, whatever it is (an error or the stream), so the next request can use it too.
  *
  * @param request The incoming request; body is an AnswerRequest (JSON).
  * @returns 401 (not signed in), 400 (bad body or mode not built yet), 500 (Claude not
- *          configured), or 200 with a text/event-stream body.
+ *          configured), or 200 with a text/event-stream body; each with any Set-Cookie
+ *          headers from the session check.
  */
 export async function POST(request: Request): Promise<Response> {
   const startedAt = performance.now();
-  const requestId = crypto.randomUUID();
-
-  const session = await getSession();
+  const { session, setCookies } = await getCachedSession(request.headers);
   const authDoneAt = performance.now();
+  const response = await respond(request, session, startedAt, authDoneAt);
+  for (const cookie of setCookies) response.headers.append('set-cookie', cookie);
+  return response;
+}
+
+/**
+ * The answer request after the sign-in check.
+ *
+ * @param request    The incoming request.
+ * @param session    The session from the cookie cache (null when not signed in).
+ * @param startedAt  When the request arrived (performance.now()).
+ * @param authDoneAt When the sign-in check finished (performance.now()).
+ * @returns The response (see POST()).
+ * Called from: POST()
+ */
+async function respond(
+  request: Request,
+  session: AuthSession | null,
+  startedAt: number,
+  authDoneAt: number,
+): Promise<Response> {
+  const requestId = crypto.randomUUID();
   if (!session) return jsonError(401, 'unauthorized', 'Sign in required');
   // A temporary password must be replaced before using the app (architecture §8.2).
   if (session.user.mustChangePassword) {
@@ -154,9 +172,6 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.ok) return jsonError(400, 'bad_request', parsed.message);
 
   const { mode } = parsed.data;
-  if (mode === 'screenshot') {
-    return jsonError(400, 'not_implemented', `not implemented yet: Day ${MODE_DAY[mode]}`);
-  }
 
   const tier: ModelTier = parsed.data.model ?? 'fast';
   let model: string;
@@ -182,6 +197,10 @@ export async function POST(request: Request): Promise<Response> {
   const context = {
     chunks: parsed.data.conversation?.length ?? 0,
     tailLines: parsed.data.tail?.length ?? 0,
+    // The screenshot's size only (Day 5), never its content.
+    imageChars: parsed.data.image?.length ?? 0,
+    // How many approved lessons were sent (Day 5 Stage 7), never their text.
+    lessons: parsed.data.lessons?.length ?? 0,
   };
   let source: AsyncGenerator<string, ReplyResult, undefined>;
   if (mode === 'warm') {
@@ -197,7 +216,8 @@ export async function POST(request: Request): Promise<Response> {
       onStreamOpen: markOpen,
     });
   } else {
-    // 'answer' and 'chat': the three cached parts and the uncached tail (server/prompt.ts).
+    // 'answer', 'chat' and 'screenshot': the three cached parts, then the uncached tail
+    // (with the screenshot first for 'screenshot'; server/prompt.ts).
     // The SDK's single retry happens only before any text arrives (server/claude.ts).
     const prompt = buildPrompt(parsed.data);
     source = streamReply({

@@ -1,0 +1,54 @@
+{
+  "id": "20-lesson-error-code-in-headline",
+  "covers": "An approved lesson changes a support answer: name the error code and the exact setting in the headline.",
+  "session": {
+    "type": "support",
+    "company": "Pinecrest Clinics (invented)",
+    "role": "Support engineer",
+    "description": "A clinic's calendar sync keeps failing.",
+    "instructions": "",
+    "keyTerms": ["SyncAgent", "E42"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "runbook.txt",
+        "text": "Calendar sync runbook (invented).\nE42: the sync token expired. Fix: open Settings > Calendars, choose Re-link, sign in again, then restart SyncAgent from the tray icon.\nE17: the calendar was deleted on the server. Fix: pick another calendar in Settings > Calendars."
+      }
+    ]
+  },
+  "lessons": ["Name the error code and the exact setting to change in the headline."],
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "OUR CALENDAR STOPPED SYNCING THIS MORNING",
+        "at": 5
+      },
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "THE APP SHOWS E FORTY TWO",
+        "at": 11
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "HOW DO WE FIX IT",
+      "at": 16
+    }
+  ],
+  "mode": "answer",
+  "question": "HOW DO WE FIX IT",
+  "mustInclude": [
+    "the headline names E42 and Settings > Calendars (Re-link)",
+    "the steps: Re-link and sign in again, then restart SyncAgent"
+  ],
+  "mustNotInclude": ["the E17 fix as the answer", "steps that are not in the runbook"]
+}

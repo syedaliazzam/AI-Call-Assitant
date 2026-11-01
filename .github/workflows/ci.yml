@@ -9,7 +9,7 @@
 # Windows minutes count 2x and macOS minutes 10x against the allowance):
 # - web (ubuntu, 1x): every pull request and every push to main.
 # - stt-integration (ubuntu, 1x): every pull request and every push to main. It also runs the
-#   answer harness test, which needs the same Chromium but no model files.
+#   answer and screenshot harness tests, which need the same Chromium but no model files.
 # - desktop-windows (2x): every pull request and every push to main.
 # - desktop-macos (10x): only when started by hand (Actions tab → CI → "Run workflow").
 #   A manual run starts ONLY this job; the other two already ran on the pull request / push.
@@ -162,6 +162,17 @@ jobs:
       # No sign-in, no secrets, no real Claude call.
       - name: Answer harness test
         run: pnpm --filter web test:answers
+
+      # Browser screenshots (Day 5): Chromium shares a fake tab, the browser adapter grabs a
+      # frame and prepare.ts encodes it (JPEG, ≤ 1,568 px, ≤ 1 MB). No sign-in, no secrets.
+      - name: Screenshot harness test
+        run: pnpm --filter web test:screenshot
+
+      # Session review page (Day 5 Stage 6): the real SessionReview on invented sessions in
+      # IndexedDB, with a mocked /api/notes: notes, answers, transcript, Regenerate, the
+      # usage-limit message, "Save transcript" off, and Delete. No sign-in, no secrets.
+      - name: Review harness test
+        run: pnpm --filter web test:review
 
       # Plays the official recordings through Chromium's fake microphone into the real
       # worklet → worker → recognizer → transcript path and checks the WER. CI=true (set by

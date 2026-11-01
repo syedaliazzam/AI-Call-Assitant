@@ -1,0 +1,88 @@
+{
+  "id": "n2-support-with-unclear-part",
+  "covers": "A support call with a garbled stretch: it must be listed as unclear, not guessed.",
+  "request": {
+    "session": {
+      "type": "support",
+      "company": "Pinecrest Clinics (invented)",
+      "role": "Support engineer",
+      "description": "Calendar sync keeps failing.",
+      "instructions": "",
+      "keyTerms": ["SyncAgent", "E42"],
+      "style": {
+        "format": "headline+bullets",
+        "length": "short",
+        "tone": "simple"
+      },
+      "documents": [
+        {
+          "name": "runbook.txt",
+          "text": "E42 means the sync token expired: re-link the calendar, then restart SyncAgent."
+        }
+      ]
+    },
+    "lines": [
+      {
+        "speaker": "them",
+        "text": "OUR CALENDAR SYNC FAILS WITH E FORTY TWO",
+        "at": 8
+      },
+      {
+        "speaker": "you",
+        "text": "THAT MEANS THE SYNC TOKEN EXPIRED",
+        "at": 15
+      },
+      {
+        "speaker": "you",
+        "text": "PLEASE RE LINK THE CALENDAR IN SETTINGS",
+        "at": 22
+      },
+      {
+        "speaker": "them",
+        "text": "THE SEVEN GLASS WHEN OVER IN THE MARKET",
+        "at": 61
+      },
+      {
+        "speaker": "them",
+        "text": "AND SO RIVER THE BREAD OF NINETY PAPER",
+        "at": 70
+      },
+      {
+        "speaker": "you",
+        "text": "SORRY YOU BROKE UP THERE",
+        "at": 84
+      },
+      {
+        "speaker": "them",
+        "text": "THE OF IN FOREST COLD WHICH STATION",
+        "at": 92
+      },
+      {
+        "speaker": "them",
+        "text": "OKAY I AM BACK THE RE LINK WORKED",
+        "at": 130
+      },
+      {
+        "speaker": "you",
+        "text": "GREAT NOW RESTART SYNCAGENT FROM THE TRAY ICON",
+        "at": 138
+      },
+      {
+        "speaker": "them",
+        "text": "DONE IT IS SYNCING AGAIN THANKS",
+        "at": 160
+      }
+    ],
+    "answers": []
+  },
+  "mustInclude": [
+    "the E42 error is an expired sync token; the fix was re-linking the calendar and restarting SyncAgent, and syncing works again",
+    "the stretch around 60–100 seconds is listed as unclear (garbled), not summarised",
+    "no lessons (there were no answers or ratings)"
+  ],
+  "mustNotInclude": [
+    "any guessed content for the garbled stretch",
+    "next steps nobody agreed",
+    "invented lessons"
+  ]
+}

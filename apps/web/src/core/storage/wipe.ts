@@ -26,6 +26,8 @@ export interface DeletedCounts {
   answers: number;
   /** Notes removed. */
   notes: number;
+  /** Lesson decisions removed (Day 5 Stage 7): approved lessons are forgotten too. */
+  lessons: number;
 }
 
 /**
@@ -46,6 +48,7 @@ export async function deleteAllLocalData(): Promise<DeletedCounts> {
     utterances: await db.utterances.count(),
     answers: await db.answers.count(),
     notes: await db.notes.count(),
+    lessons: await db.lessons.count(),
   };
   await db.delete();
   forgetDb();

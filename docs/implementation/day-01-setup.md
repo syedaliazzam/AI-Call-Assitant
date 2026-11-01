@@ -105,7 +105,7 @@
 - [ ] `pnpm --filter web create-admin …` prints a temporary password.
 - [ ] Sign in → forced to `/change-password` → after changing, the dashboard appears.
 - [ ] `/admin/users`: create a user, copy their temporary password, sign out, sign in as them → forced change → `/admin/users` redirects them away.
-- [ ] Disable that user as admin → their next request is signed out.
+- [ ] Disable that user as admin → their next request is signed out. (Day 5: pages and actions at once; answer requests within 60 s, because of the session cookie cache; ADR-0022 update.)
 - [ ] Tests pass.
 
 ---

@@ -1,7 +1,8 @@
 /**
  * Tests for apps/web/src/core/answer/format.ts: splitAnswer() takes the first line as the
  * headline and the rest as bullets, removing bullet and Markdown marks, and works on text that
- * is still streaming; answerText() gives clean "- " bullets for Copy. All text is invented.
+ * is still streaming, and drops a "Headline:" label (Day 5); answerText() gives clean "- " bullets
+ * for Copy. All text is invented.
  */
 import { describe, expect, it } from 'vitest';
 import { answerText, splitAnswer } from '@/core/answer/format';
@@ -30,6 +31,20 @@ describe('answerText', () => {
   it('gives the headline and "- " bullets', () => {
     expect(answerText('**Yes.**\n* Fixed price\n* Two years')).toBe(
       'Yes.\n- Fixed price\n- Two years',
+    );
+  });
+});
+
+describe('the "Headline:" label (Day 5)', () => {
+  it('is removed from any answer, in any case and with Markdown, and Copy leaves it out too', () => {
+    expect(splitAnswer('Headline: Numbers match the slide.\n- 128 seats').headline).toBe(
+      'Numbers match the slide.',
+    );
+    expect(splitAnswer('**HEADLINE :** Yes, it fits.').headline).toBe('Yes, it fits.');
+    expect(answerText('headline: Ten dollars.\n- Per seat')).toBe('Ten dollars.\n- Per seat');
+    // A headline that merely mentions the word keeps it.
+    expect(splitAnswer('The headline figure is 6,656 dollars.').headline).toBe(
+      'The headline figure is 6,656 dollars.',
     );
   });
 });

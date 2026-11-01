@@ -16,6 +16,13 @@
     <h1 id="heading">Kite smoke test page</h1>
     <button id="capture" type="button">Capture</button>
     <script>
+      // The compact window: one bright colour that appears nowhere else on screen.
+      if (location.pathname.startsWith('/compact/')) {
+        document.title = 'Kite compact (smoke)';
+        document.documentElement.style.background = '#ff00ff';
+        document.body.style.background = '#ff00ff';
+        document.head.insertAdjacentHTML('beforeend', '<style>body * { display: none }</style>');
+      }
       // Result of the last capture: track counts and states, or the error name.
       window.__capture = null;
       document.getElementById('capture').addEventListener('click', async () => {

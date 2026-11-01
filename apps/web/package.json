@@ -17,12 +17,18 @@
     "create-e2e-user": "tsx --env-file=.env.local --conditions=react-server scripts/create-e2e-user.ts",
     "verify:warm": "tsx --env-file=.env.local --conditions=react-server scripts/verify-warm.ts",
     "verify:answer-cache": "tsx --env-file=.env.local --conditions=react-server scripts/verify-answer-cache.ts",
+    "verify:screenshot": "tsx --env-file=.env.local --conditions=react-server scripts/verify-screenshot.ts",
+    "verify:notes": "tsx --env-file=.env.local --conditions=react-server scripts/verify-notes.ts",
+    "eval:notes": "tsx --env-file=.env.local --conditions=react-server scripts/eval-notes.ts",
     "eval:answers": "tsx --env-file=.env.local --conditions=react-server scripts/eval-answers.ts",
+    "eval:all": "pnpm run eval:answers && pnpm run eval:notes",
     "e2e-admin": "tsx --env-file=.env.local --conditions=react-server scripts/e2e-admin.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",
     "stt:runtime": "tsx scripts/fetch-models.ts --runtime-only && tsx scripts/check-stt-runtime.ts",
     "test:stt": "playwright test -c tests/integration/playwright.config.ts stt.spec.ts",
     "test:answers": "playwright test -c tests/integration/playwright.config.ts answers.spec.ts",
+    "test:screenshot": "playwright test -c tests/integration/playwright.config.ts screenshot.spec.ts",
+    "test:review": "playwright test -c tests/integration/playwright.config.ts review.spec.ts",
     "test:e2e-prod": "pnpm --filter @kite/desktop build && playwright test -c tests/e2e-prod/playwright.config.ts"
   },
   "dependencies": {

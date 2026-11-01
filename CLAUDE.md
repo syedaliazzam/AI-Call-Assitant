@@ -22,6 +22,7 @@ It works as a **desktop app (macOS and Windows)** and **in the browser (Chrome o
 | Speech-to-text model choice (decided on Day 1) | `docs/decisions/ADR-0020-stt-model.md` |
 | Today's work instructions | `docs/implementation/day-NN-*.md` |
 | Measured results (only real measurements) | `docs/testing/benchmark-results.md` |
+| UI theme (for later stages; not implemented yet) | `docs/design/kite-ui-theme.md` |
 
 If code and these documents disagree, stop and ask. Do not silently change the architecture. Architecture changes need a new ADR (copy `docs/decisions/TEMPLATE.md`).
 
@@ -105,12 +106,22 @@ export async function createUserAccount(input: NewUserInput): Promise<CreatedUse
 - Add a dependency only with a reason (state it in the stage summary). Prefer the latest stable versions.
 - If an official library API differs from our docs (Next.js, Better Auth, Electron, sherpa-onnx, Anthropic SDK), follow the official docs and mention the difference in the stage summary.
 
+## Claude key and spend
+
+- **One key:** `ANTHROPIC_API_KEY`, the same in Vercel (Production, Preview, Development) and in `apps/web/.env.local` (from `vercel env pull`). The deployed app, `pnpm dev`, the verify scripts and the evaluations all use it.
+- **One spend limit** in the Claude Console, about $20 a month for the whole team. Tests and evaluations spend from the same budget as production. So:
+  - before any paid run (evaluation, verify script, real-API check), tell the developer the estimated request count and cost, and run it only after they agree;
+  - follow "Evaluation cost" under Testing rules.
+- The scripts refuse to run without a key (`scripts/lib/require-key.ts`). There is no other key check.
+- Never print or log a key.
+
 ## Testing rules
 
 - Every module in `src/server`, `src/core` and `src/platform` gets unit tests (Vitest) in `apps/web/tests/unit/<same path>`.
 - Tests never call the real Claude API (mock the SDK). They never need real secrets.
 - Before every commit: `pnpm lint && pnpm typecheck && pnpm test` must pass.
 - Record only **measured** numbers in `docs/testing/benchmark-results.md`, with date, machine and browser.
+- **Evaluation cost:** re-run only the scenario groups a change touches (`--only=answers`, `--only=screenshots`, `--only=notes`). Run the full suite (`pnpm --filter web eval:all`) **once, at release**. The grader stays Sonnet (baselines stay comparable). Each run prints its estimated number of Claude requests before sending anything; `--dry-run` prints only that. **Before any paid run** (eval, verify script, real-API check), tell the developer the estimated request count and cost, and run it only after they agree. Groups and gates: `docs/testing/answer-eval.md`.
 
 ## Working rhythm with Claude Code
 
