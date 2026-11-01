@@ -76,8 +76,8 @@ function RatingControls({ entry, onRate, onNote }: RatingControlsProps) {
   const toggle = (rating: 'up' | 'down') =>
     onRate(entry.id, entry.rating === rating ? null : rating);
   return (
-    <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+    <div className="mt-3 flex flex-col gap-2 border-t border-ui-border pt-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-ui-muted">
         <span>Was this answer good?</span>
         <Button
           size="sm"
@@ -110,7 +110,7 @@ function RatingControls({ entry, onRate, onNote }: RatingControlsProps) {
           </Button>
         )}
         {!editing && entry.note && (
-          <span aria-label="Your note" className="text-slate-600">
+          <span aria-label="Your note" className="text-ui-muted">
             “{entry.note}”
           </span>
         )}
@@ -126,7 +126,7 @@ function RatingControls({ entry, onRate, onNote }: RatingControlsProps) {
         >
           <textarea
             aria-label="What was wrong / better answer"
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] md:text-sm"
             placeholder="What was wrong, or what would a better answer say?"
             rows={2}
             maxLength={2_000}
@@ -170,12 +170,12 @@ export function AnswerPanel(props: AnswerPanelProps) {
     return (
       <section
         aria-label="Answer"
-        className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500"
+        className="flex min-h-[20rem] flex-col items-start justify-center gap-3 border border-dashed border-ui-border p-5 text-[15px] text-ui-muted"
       >
         {props.notice ??
           `Press Answer (${props.mac ? '⌘' : 'Ctrl+'}Enter) when they ask something, or type a question with Chat.`}
         {props.total > 0 && (
-          <Button size="sm" variant="ghost" className="ml-2" onClick={props.onPrev}>
+          <Button size="sm" variant="secondary" onClick={props.onPrev}>
             Show last answer
           </Button>
         )}
@@ -192,12 +192,26 @@ export function AnswerPanel(props: AnswerPanelProps) {
         ? 'typed question'
         : `from ${entry.fromLines} ${entry.fromLines === 1 ? 'line' : 'lines'}`;
 
+  // Theme §6: a mono eyebrow, a 3 px cyan bar, a bold headline. A minimum height with the
+  // footer pinned to the bottom: the footer does not move while the bullets stream in.
   return (
-    <section aria-label="Answer" className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <p className="text-xs text-slate-500">
-          <span className="font-medium text-slate-600">Question</span> ({source}):{' '}
-          <span aria-label="Question used">{entry.question || 'the latest from Them'}</span>
+    <section
+      aria-label="Answer"
+      className="flex min-h-[20rem] flex-col border border-l-[3px] border-ui-border border-l-ui-accent bg-ui-surface p-5"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted">
+          Answer
+          {entry.timeline ? (
+            <>
+              {' · '}
+              <span aria-label="Time to first word">
+                {(entry.timeline.toFirstWord / 1000).toFixed(2)} s
+              </span>
+            </>
+          ) : entry.status === 'streaming' ? (
+            ' · …'
+          ) : null}
         </p>
         <div className="flex items-center gap-1">
           <Button
@@ -209,7 +223,7 @@ export function AnswerPanel(props: AnswerPanelProps) {
           >
             ←
           </Button>
-          <span className="text-xs text-slate-500">
+          <span className="font-mono text-[11px] text-ui-muted">
             {props.index + 1} of {props.total}
           </span>
           <Button
@@ -223,44 +237,62 @@ export function AnswerPanel(props: AnswerPanelProps) {
           </Button>
         </div>
       </div>
+      <p className="mt-1 text-[13px] text-ui-muted">
+        Question ({source}):{' '}
+        <span aria-label="Question used" className="text-ui-text">
+          {entry.question || 'the latest from Them'}
+        </span>
+      </p>
 
-      {entry.thumbnail && (
-        // The screenshot, from memory (a data URL; never saved). Small, for context only.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={entry.thumbnail}
-          alt="Screenshot this answer is about"
-          className="mt-2 max-h-24 rounded border border-slate-200"
-        />
-      )}
-      <h2 aria-label="Answer headline" className="mt-2 text-lg font-semibold text-slate-900">
-        {headline || '…'}
-      </h2>
-      {bullets.length > 0 && (
-        <ul aria-label="Answer details" className="mt-2 list-disc space-y-1 pl-5 text-slate-800">
-          {bullets.map((bullet, i) => (
-            <li key={i}>{bullet}</li>
-          ))}
-        </ul>
-      )}
+      <div className="mt-3 flex-1">
+        {entry.thumbnail && (
+          // The screenshot, from memory (a data URL; never saved). Small, for context only.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={entry.thumbnail}
+            alt="Screenshot this answer is about"
+            className="mb-3 max-h-24 border border-ui-border"
+          />
+        )}
+        {/* No placeholder headline when Claude was unavailable: the message says it all. */}
+        {!(entry.unavailable && !headline) && (
+          <h2
+            aria-label="Answer headline"
+            className="text-[17px] font-bold leading-snug text-ui-heading"
+          >
+            {headline || '…'}
+          </h2>
+        )}
+        {bullets.length > 0 && (
+          <ul
+            aria-label="Answer details"
+            className="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ui-text"
+          >
+            {bullets.map((bullet, i) => (
+              <li key={i}>{bullet}</li>
+            ))}
+          </ul>
+        )}
 
-      {entry.unavailable && (
-        // Claude is down for everyone (usage limit or overload): say so plainly, and that the
-        // transcript keeps recording (core/answer/unavailable.ts).
-        <p role="alert" className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          {entry.error}
-        </p>
-      )}
+        {entry.unavailable && (
+          // Claude is down for everyone (usage limit or overload): say so plainly, and that the
+          // transcript keeps recording (core/answer/unavailable.ts).
+          <div
+            role="alert"
+            className="mt-3 border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2"
+          >
+            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-warning">
+              Claude unavailable
+            </p>
+            <p className="mt-1 text-[14px] text-ui-text">{entry.error}</p>
+          </div>
+        )}
+      </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-ui-muted">
         {entry.status !== 'done' && !entry.unavailable && (
           <span role={entry.status === 'error' ? 'alert' : 'status'}>
             {entry.status === 'error' && entry.error ? entry.error : STATUS_TEXT[entry.status]}
-          </span>
-        )}
-        {entry.timeline && (
-          <span aria-label="Time to first word">
-            First word in {(entry.timeline.toFirstWord / 1000).toFixed(2)} s
           </span>
         )}
         <span className="flex-1" />

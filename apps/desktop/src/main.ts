@@ -6,7 +6,7 @@
  *          (src/windows.ts) and its screen-share protection (src/protection.ts), Day 5.
  * Used by: Electron (package.json "main": dist/main.js, built by esbuild)
  * Depends on: electron, src/config.ts, src/security.ts, src/media.ts, src/hotkeys.ts,
- *             src/screenshot.ts, src/windows.ts, src/protection.ts, src/store.ts
+ *             src/screenshot.ts, src/windows.ts, src/protection.ts, src/store.ts, src/icon.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * Kite never hides from the taskbar, Dock or process lists, and does not try to evade
@@ -27,6 +27,7 @@ import {
 } from 'electron';
 import { APP_NAME, loadConfig, type DesktopConfig } from './config';
 import { installHotkeys, type HotkeyController } from './hotkeys';
+import { appIconPath } from './icon';
 import { createProtection, installProtection } from './protection';
 import { installScreenshot } from './screenshot';
 import { createStore } from './store';
@@ -77,6 +78,8 @@ function createMainWindow(config: DesktopConfig): BrowserWindow {
     width: 1280,
     height: 820,
     title: APP_NAME,
+    // The company logo mark (UI U4): the title bar and taskbar icon on Windows.
+    icon: appIconPath(__dirname),
     show: false,
     backgroundColor: '#f8fafc',
     webPreferences: secureWebPreferences(path.join(__dirname, 'preload.js'), app.getVersion()),
@@ -149,7 +152,7 @@ function start(): void {
     const store = createStore(path.join(app.getPath('userData'), 'kite-shell.json'));
     const protection = createProtection(store, process.platform, os.release());
     compact = createCompactWindows({
-      createWindow: (options) => new BrowserWindow(options),
+      createWindow: (options) => new BrowserWindow({ ...options, icon: appIconPath(__dirname) }),
       screen,
       kiteUrl: config.kiteUrl,
       preloadPath: path.join(__dirname, 'preload.js'),

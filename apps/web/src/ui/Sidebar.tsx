@@ -6,13 +6,15 @@
  * Depends on: next/link, next/navigation (to highlight the current page),
  *             src/platform (getDesktopInfo, for the footer label only)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §4 (desktop vs browser), §5
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useSyncExternalStore, type ReactNode } from 'react';
+import { useId, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { getDesktopInfo } from '@/platform';
+import { BrandLockup } from './BrandLockup';
 
 /** The signed-in user, as far as the sidebar needs to know. */
 export interface SidebarUser {
@@ -20,7 +22,7 @@ export interface SidebarUser {
   name: string;
   /** Email shown under the name. */
   email: string;
-  /** 'admin' users also see the Admin and Dev tools links. */
+  /** 'admin' users also see the Admin and Dev Tools links. */
   role: 'admin' | 'user';
 }
 
@@ -52,7 +54,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Call Sessions', href: '/' },
   { label: 'Settings', href: '/settings' },
   { label: 'Admin', href: '/admin/users', adminOnly: true },
-  { label: 'Dev tools', href: '/dev', adminOnly: true },
+  { label: 'Dev Tools', href: '/dev', adminOnly: true },
 ];
 
 /**
@@ -92,64 +94,79 @@ export function Sidebar({ user, userActions }: SidebarProps) {
   // The server cannot know whether the page will run in the desktop app, so it renders no
   // label (null); the browser fills it in after hydration. This avoids a hydration mismatch.
   const runtime = useSyncExternalStore(subscribeNever, runtimeLabel, () => null);
+  // Narrow screens (below 768 px): a top bar with a Menu button that shows the navigation.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuId = useId();
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white">
-      <div className="flex h-16 items-center gap-2 px-5">
-        <span
-          aria-hidden="true"
-          className="flex size-8 items-center justify-center rounded-md bg-brand-600 text-sm font-bold text-white"
+    <aside className="k-dark flex w-full shrink-0 flex-col bg-ui-nav text-ui-text md:w-60">
+      {/* px-4 and the small lockup: the full byline fits the 240 px column. */}
+      <div className="flex h-16 items-center gap-2 px-4">
+        <BrandLockup tone="dark" size="sm" />
+        <button
+          type="button"
+          aria-expanded={menuOpen}
+          aria-controls={menuId}
+          onClick={() => setMenuOpen((open) => !open)}
+          className="ml-auto border border-ui-secondary-border px-3 py-1.5 pointer-coarse:min-h-11 font-mono text-[11px] uppercase tracking-[0.08em] text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] md:hidden"
         >
-          K
-        </span>
-        <span className="text-lg font-semibold text-slate-900">Kite</span>
+          {menuOpen ? 'Close' : 'Menu'}
+        </button>
       </div>
 
-      <nav aria-label="Main" className="flex-1 px-3 py-2">
-        <ul className="flex flex-col gap-1">
-          {items.map((item) => (
-            <li key={item.href}>
-              {item.disabledNote ? (
-                <span
-                  aria-disabled="true"
-                  className="flex cursor-not-allowed items-center justify-between rounded-md px-3 py-2 text-sm text-slate-400"
-                >
-                  {item.label}
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">
-                    {item.disabledNote}
+      {/* Always shown from 768 px; below that only while the menu is open. */}
+      <div id={menuId} className={`${menuOpen ? 'flex' : 'hidden'} flex-1 flex-col md:flex`}>
+        <nav aria-label="Main" className="flex-1 py-2">
+          <ul className="flex flex-col">
+            {items.map((item) => (
+              <li key={item.href}>
+                {item.disabledNote ? (
+                  <span
+                    aria-disabled="true"
+                    className="flex cursor-not-allowed items-center justify-between border-l-[3px] border-transparent px-5 py-2.5 text-sm text-ui-muted"
+                  >
+                    {item.label}
+                    <span className="font-mono text-[11px] uppercase tracking-[0.08em]">
+                      {item.disabledNote}
+                    </span>
                   </span>
-                </span>
-              ) : (
-                <Link
-                  href={item.href}
-                  aria-current={pathname === item.href ? 'page' : undefined}
-                  className={[
-                    'block rounded-md px-3 py-2 text-sm font-medium',
-                    pathname === item.href
-                      ? 'bg-brand-50 text-brand-700'
-                      : 'text-slate-700 hover:bg-slate-100',
-                  ].join(' ')}
-                >
-                  {item.label}
-                </Link>
-              )}
-            </li>
-          ))}
-        </ul>
-      </nav>
+                ) : (
+                  <Link
+                    href={item.href}
+                    aria-current={pathname === item.href ? 'page' : undefined}
+                    className={[
+                      'flex items-center border-l-[3px] px-5 py-2.5 pointer-coarse:min-h-11 text-sm font-semibold transition-colors duration-150',
+                      'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
+                      pathname === item.href
+                        ? 'border-ui-accent text-ui-heading'
+                        : 'border-transparent text-ui-text hover:bg-ui-hover hover:text-ui-heading',
+                    ].join(' ')}
+                  >
+                    {item.label}
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-      {/* User box: who is signed in, plus the sign-out button. */}
-      <div className="border-t border-slate-200 px-5 py-4 text-sm">
-        {user ? (
-          <>
-            <p className="font-medium text-slate-900">{user.name}</p>
-            <p className="truncate text-slate-500">{user.email}</p>
-            {userActions && <div className="mt-2 -ml-3">{userActions}</div>}
-          </>
-        ) : (
-          <p className="text-slate-400">Not signed in</p>
-        )}
-        {runtime && <p className="mt-3 text-xs text-slate-400">{runtime}</p>}
+        {/* User box: who is signed in, plus the sign-out button. */}
+        <div className="border-t border-ui-border px-5 py-4 text-sm">
+          {user ? (
+            <>
+              <p className="font-semibold text-ui-heading">{user.name}</p>
+              <p className="truncate text-ui-muted">{user.email}</p>
+              {userActions && <div className="mt-2 -ml-3">{userActions}</div>}
+            </>
+          ) : (
+            <p className="text-ui-muted">Not signed in</p>
+          )}
+          {runtime && (
+            <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.08em] text-ui-muted">
+              {runtime}
+            </p>
+          )}
+        </div>
       </div>
     </aside>
   );

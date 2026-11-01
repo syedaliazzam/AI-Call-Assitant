@@ -67,6 +67,40 @@ export function shareSource(stream: MediaStream): OtherSideSource {
   return settings?.displaySurface === 'browser' ? 'tab-audio' : 'screen-audio';
 }
 
+/** The parts of navigator that isComputerBrowser() reads. */
+export interface BrowserNavigator {
+  /** The user agent string. */
+  userAgent: string;
+  /** Touch points: 0 on a Mac, more than 1 on an iPad (which reports a Mac user agent). */
+  maxTouchPoints: number;
+  /** Chromium's client hints, where available ("mobile" is true on phones). */
+  userAgentData?: {
+    /** True on a phone or tablet. */
+    mobile?: boolean;
+  };
+  /** Media devices; getDisplayMedia is missing on phones. */
+  mediaDevices?: {
+    /** Screen and tab sharing. */
+    getDisplayMedia?: unknown;
+  };
+}
+
+/**
+ * Whether this browser is on a computer that can run a live call: not a phone or tablet, and
+ * with screen or tab sharing.
+ *
+ * @param nav The browser's navigator (tests pass their own).
+ * @returns True on a Windows, macOS or Linux computer browser with getDisplayMedia.
+ * Called from: browserPlatform.supportsLiveCalls(); tests
+ */
+export function isComputerBrowser(nav: BrowserNavigator): boolean {
+  if (nav.userAgentData?.mobile) return false;
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(nav.userAgent)) return false;
+  // iPadOS reports a Mac user agent; a Mac has no touch points.
+  if (/Macintosh/.test(nav.userAgent) && nav.maxTouchPoints > 1) return false;
+  return typeof nav.mediaDevices?.getDisplayMedia === 'function';
+}
+
 /**
  * Whether the browser runs on macOS (⌘ is the shortcut modifier there).
  *
@@ -182,6 +216,15 @@ export const browserPlatform: Platform = {
    */
   hotkeyModifier() {
     return browserIsMac() ? '⌘' : 'Ctrl+';
+  },
+
+  /**
+   * A live call needs a computer browser with screen or tab sharing.
+   *
+   * @returns False on phones and tablets.
+   */
+  supportsLiveCalls() {
+    return isComputerBrowser(navigator as BrowserNavigator);
   },
 
   /**

@@ -21,6 +21,7 @@ export interface SpeakerStyle {
 
 /** You = brand indigo, Them = emerald (distinct for common colour-vision types too). */
 export const SPEAKER_STYLE: Record<Speaker, SpeakerStyle> = {
-  you: { name: 'You', label: 'text-brand-700', bar: 'bg-brand-600' },
-  them: { name: 'Them', label: 'text-emerald-700', bar: 'bg-emerald-600' },
+  // Theme §6: You in cyan, Them in blue-300 on the dark call screens.
+  you: { name: 'You', label: 'text-ui-you', bar: 'bg-ui-you' },
+  them: { name: 'Them', label: 'text-ui-them', bar: 'bg-ui-them' },
 };

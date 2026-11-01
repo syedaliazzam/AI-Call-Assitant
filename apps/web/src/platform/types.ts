@@ -129,6 +129,16 @@ export interface Platform {
   hotkeyModifier(): '⌘' | 'Ctrl+';
 
   /**
+   * Whether a live call can run here (UI theme stage U3). A live call needs a computer: both
+   * audio channels, the speech model and screen or tab sharing.
+   * - Desktop: always true (the app runs on Windows and macOS).
+   * - Browser: false on phones and tablets, and where screen or tab sharing is missing.
+   *
+   * @returns True when the live page can run a call.
+   */
+  supportsLiveCalls(): boolean;
+
+  /**
    * Turns screen-share protection of the compact live window on or off (remembered).
    * - Desktop: setContentProtection(on) on the compact window, re-applied on every show; the
    *   window stays in the taskbar and Alt+Tab. Windows 10 2004+: left out of screen shares;

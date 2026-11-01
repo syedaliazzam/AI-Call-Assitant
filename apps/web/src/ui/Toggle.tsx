@@ -5,6 +5,7 @@
  * Used by: src/features/session-setup/PreferencesStep.tsx, src/features/settings/Settings.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 import { useId } from 'react';
 
@@ -42,27 +43,35 @@ export function Toggle({ label, hint, checked, onChange, disabled = false }: Tog
         aria-describedby={hint ? hintId : undefined}
         disabled={disabled}
         onClick={() => onChange(!checked)}
+        // The button is the hit area: at least 44 px on touch screens (theme review, UI U1).
         className={[
-          'relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full transition-colors',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600',
+          'inline-flex shrink-0 items-center justify-center pointer-coarse:min-h-11 pointer-coarse:min-w-11',
+          'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
           'disabled:cursor-not-allowed',
-          checked ? 'bg-brand-600' : 'bg-slate-300',
         ].join(' ')}
       >
+        {/* Square track and knob (theme: square corners everywhere). */}
         <span
           aria-hidden="true"
           className={[
-            'absolute top-0.5 size-4 rounded-full bg-white shadow transition-transform',
-            checked ? 'translate-x-4' : 'translate-x-0.5',
+            'relative mt-0.5 inline-flex h-5 w-9 border transition-colors duration-150',
+            checked ? 'border-ui-primary bg-ui-primary' : 'border-ui-border bg-ui-band',
           ].join(' ')}
-        />
+        >
+          <span
+            className={[
+              'absolute top-[1px] size-4 transition-transform duration-150',
+              checked ? 'translate-x-4 bg-ui-on-primary' : 'translate-x-[1px] bg-ui-muted',
+            ].join(' ')}
+          />
+        </span>
       </button>
       <div className="flex flex-col">
-        <span id={labelId} className="text-sm font-medium text-slate-800">
+        <span id={labelId} className="text-[15px] font-semibold text-ui-heading">
           {label}
         </span>
         {hint && (
-          <span id={hintId} className="text-xs text-slate-500">
+          <span id={hintId} className="text-[13px] text-ui-muted">
             {hint}
           </span>
         )}

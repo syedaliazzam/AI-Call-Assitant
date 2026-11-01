@@ -4,6 +4,7 @@
  * Used by: src/features/auth/LoginForm.tsx and the admin forms (Stage 2), later the session wizard
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 import { useId, type InputHTMLAttributes } from 'react';
 
@@ -34,7 +35,10 @@ export function Input({ label, hint, error, id, className = '', ...rest }: Input
 
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={inputId} className="text-sm font-medium text-slate-800">
+      <label
+        htmlFor={inputId}
+        className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted"
+      >
         {label}
       </label>
       <input
@@ -42,21 +46,19 @@ export function Input({ label, hint, error, id, className = '', ...rest }: Input
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
         className={[
-          'h-10 rounded-md border bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400',
-          'focus:outline-2 focus:outline-offset-1 focus:outline-brand-600',
-          'disabled:cursor-not-allowed disabled:bg-slate-100',
-          error ? 'border-red-500' : 'border-slate-300',
+          'h-10 pointer-coarse:min-h-11 border bg-ui-input px-3 text-base md:text-[15px] text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60',
+          error ? 'border-ui-danger' : 'border-ui-border',
           className,
         ].join(' ')}
         {...rest}
       />
       {hint && (
-        <p id={hintId} className="text-xs text-slate-500">
+        <p id={hintId} className="text-[13px] text-ui-muted">
           {hint}
         </p>
       )}
       {error && (
-        <p id={errorId} className="text-xs text-red-600">
+        <p id={errorId} className="text-[13px] text-ui-danger">
           {error}
         </p>
       )}

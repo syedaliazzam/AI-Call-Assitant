@@ -31,7 +31,7 @@ const CLOCK = new Intl.DateTimeFormat(undefined, { timeStyle: 'medium' });
 const DATE_TIME = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 /** Shared look of a review section. */
-const SECTION_CLASSES = 'rounded-lg border border-slate-200 bg-white p-5';
+const SECTION_CLASSES = 'border border-ui-border bg-ui-surface p-5';
 
 /** Labels for the answered field of a notes question. */
 const ANSWERED_LABELS: Record<'yes' | 'partly' | 'no', string> = {
@@ -98,9 +98,9 @@ export function NotesSection(props: NotesSectionProps) {
     <section aria-label="AI notes" className={SECTION_CLASSES}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-base font-semibold text-slate-900">AI notes</h2>
+          <h2 className="text-[20px] text-ui-subheading">AI notes</h2>
           {notes?.fromAnswersOnly && (
-            <span className="rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+            <span className="bg-ui-warning-bg px-2 py-0.5 text-xs font-semibold text-ui-warning">
               Written from answers only
             </span>
           )}
@@ -117,25 +117,25 @@ export function NotesSection(props: NotesSectionProps) {
       {props.status && (
         <p
           role={props.failed ? 'alert' : 'status'}
-          className={`mt-2 text-sm ${props.failed ? 'text-amber-900' : 'text-slate-600'}`}
+          className={`mt-2 text-sm ${props.failed ? 'text-ui-warning' : 'text-ui-muted'}`}
         >
           {props.status}
         </p>
       )}
       {!props.canWrite && !notes && (
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-2 text-sm text-ui-muted">
           Nothing was saved from this session to write notes from.
         </p>
       )}
 
       {notes ? (
-        <div className="mt-4 space-y-4 text-sm text-slate-800">
-          <p className="text-xs text-slate-500">
+        <div className="mt-4 space-y-4 text-sm text-ui-text">
+          <p className="text-xs text-ui-muted">
             Notes of the call that started {DATE_TIME.format(notes.callStartedAt)}; written{' '}
             {DATE_TIME.format(notes.createdAt)}.
           </p>
           <div>
-            <h3 className="font-medium text-slate-900">Summary</h3>
+            <h3 className="font-semibold text-ui-heading">Summary</h3>
             <ul aria-label="Summary" className="mt-1 list-disc space-y-1 pl-5">
               {notes.notes.summary.map((bullet, i) => (
                 <li key={i}>{bullet}</li>
@@ -144,15 +144,15 @@ export function NotesSection(props: NotesSectionProps) {
           </div>
           {notes.notes.questions.length > 0 && (
             <div>
-              <h3 className="font-medium text-slate-900">Questions asked</h3>
+              <h3 className="font-semibold text-ui-heading">Questions asked</h3>
               <ul aria-label="Questions asked" className="mt-1 space-y-1">
                 {notes.notes.questions.map((question, i) => (
                   <li key={i}>
-                    <span className="font-mono text-xs text-slate-500">
+                    <span className="font-mono text-xs text-ui-muted">
                       {formatCallTime(question.at)}
                     </span>{' '}
                     {question.question}{' '}
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-ui-muted">
                       ({ANSWERED_LABELS[question.answered]}
                       {question.rating ? `, ${ratingLabel(question.rating)}` : ''})
                     </span>
@@ -163,12 +163,12 @@ export function NotesSection(props: NotesSectionProps) {
           )}
           {notes.notes.nextSteps.length > 0 && (
             <div>
-              <h3 className="font-medium text-slate-900">Next steps</h3>
+              <h3 className="font-semibold text-ui-heading">Next steps</h3>
               <ul aria-label="Next steps" className="mt-1 list-disc space-y-1 pl-5">
                 {notes.notes.nextSteps.map((step, i) => (
                   <li key={i}>
                     {step.step}
-                    {step.owner && <span className="text-slate-500"> ({step.owner})</span>}
+                    {step.owner && <span className="text-ui-muted"> ({step.owner})</span>}
                   </li>
                 ))}
               </ul>
@@ -176,11 +176,11 @@ export function NotesSection(props: NotesSectionProps) {
           )}
           {notes.notes.unclear.length > 0 && (
             <div>
-              <h3 className="font-medium text-slate-900">Too unclear to summarise</h3>
+              <h3 className="font-semibold text-ui-heading">Too unclear to summarise</h3>
               <ul aria-label="Unclear parts" className="mt-1 space-y-1">
                 {notes.notes.unclear.map((part, i) => (
                   <li key={i}>
-                    <span className="font-mono text-xs text-slate-500">
+                    <span className="font-mono text-xs text-ui-muted">
                       {formatCallTime(part.from)}–{formatCallTime(part.to)}
                     </span>{' '}
                     {part.reason}
@@ -201,9 +201,7 @@ export function NotesSection(props: NotesSectionProps) {
         </div>
       ) : (
         props.canWrite && (
-          <p className="mt-2 text-sm text-slate-500">
-            No notes have been written for this session.
-          </p>
+          <p className="mt-2 text-sm text-ui-muted">No notes have been written for this session.</p>
         )
       )}
     </section>
@@ -226,9 +224,9 @@ export interface AnswersSectionProps {
 export function AnswersSection({ answers }: AnswersSectionProps) {
   return (
     <section aria-label="Answers" className={SECTION_CLASSES}>
-      <h2 className="text-base font-semibold text-slate-900">Answers ({answers.length})</h2>
+      <h2 className="text-[20px] text-ui-subheading">Answers ({answers.length})</h2>
       {answers.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">Kite gave no answers in this session.</p>
+        <p className="mt-2 text-sm text-ui-muted">Kite gave no answers in this session.</p>
       ) : (
         <ol className="mt-3 space-y-3">
           {answers.map((answer) => {
@@ -237,23 +235,21 @@ export function AnswersSection({ answers }: AnswersSectionProps) {
               <li
                 key={answer.id}
                 aria-label="Saved answer"
-                className="rounded-md border border-slate-100 p-3 text-sm"
+                className="border border-ui-border p-3 text-sm"
               >
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-ui-muted">
                   {CLOCK.format(answer.createdAt)} · {MODE_LABELS[answer.mode]} · Question:{' '}
-                  <span className="text-slate-700">
-                    {answer.question || 'the latest from Them'}
-                  </span>
+                  <span className="text-ui-text">{answer.question || 'the latest from Them'}</span>
                 </p>
-                <p className="mt-1 font-medium text-slate-900">{parts.headline}</p>
+                <p className="mt-1 font-semibold text-ui-heading">{parts.headline}</p>
                 {parts.bullets.length > 0 && (
-                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-slate-800">
+                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ui-text">
                     {parts.bullets.map((bullet, i) => (
                       <li key={i}>{bullet}</li>
                     ))}
                   </ul>
                 )}
-                <p className="mt-2 text-xs text-slate-600">
+                <p className="mt-2 text-xs text-ui-muted">
                   <span aria-label="Rating">{ratingLabel(answer.rating)}</span>
                   {answer.note && (
                     <>
@@ -289,9 +285,9 @@ export interface TranscriptSectionProps {
 export function TranscriptSection({ lines, saveTranscript }: TranscriptSectionProps) {
   return (
     <section aria-label="Transcript" className={SECTION_CLASSES}>
-      <h2 className="text-base font-semibold text-slate-900">Transcript</h2>
+      <h2 className="text-[20px] text-ui-subheading">Transcript</h2>
       {lines.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-2 text-sm text-ui-muted">
           {saveTranscript
             ? 'No transcript lines were saved for this session.'
             : 'The transcript was not saved for this session ("Save transcript" was off). Only the answers and the notes were kept.'}
@@ -300,15 +296,15 @@ export function TranscriptSection({ lines, saveTranscript }: TranscriptSectionPr
         <ol aria-label="Transcript lines" className="mt-3 space-y-1 text-sm">
           {lines.map((line) => (
             <li key={line.id} className="flex gap-3">
-              <span className="w-20 shrink-0 font-mono text-xs leading-5 text-slate-400">
+              <span className="w-20 shrink-0 font-mono text-xs leading-5 text-ui-muted">
                 {CLOCK.format(line.tStart)}
               </span>
               <span
-                className={`w-12 shrink-0 font-medium ${line.speaker === 'you' ? 'text-brand-700' : 'text-slate-700'}`}
+                className={`w-12 shrink-0 font-mono text-[11px] font-medium uppercase leading-6 tracking-[0.08em] ${line.speaker === 'you' ? 'text-ui-you' : 'text-ui-them'}`}
               >
                 {line.speaker === 'you' ? 'You' : 'Them'}
               </span>
-              <span className="text-slate-800">{line.text}</span>
+              <span className="text-ui-text">{line.text}</span>
             </li>
           ))}
         </ol>

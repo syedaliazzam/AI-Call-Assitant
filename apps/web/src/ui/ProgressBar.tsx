@@ -4,6 +4,7 @@
  * Used by: src/features/live/ConnectPanel.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
  */
 
 /** Props for ProgressBar. */
@@ -25,14 +26,14 @@ export function ProgressBar({ value, label }: ProgressBarProps) {
   const percent = Math.round(Math.min(1, Math.max(0, value)) * 100);
   return (
     <div
-      className="h-2 w-full overflow-hidden rounded bg-slate-200"
+      className="h-2 w-full overflow-hidden bg-ui-band"
       role="progressbar"
       aria-label={label}
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={percent}
     >
-      <div className="h-full bg-brand-600 transition-[width]" style={{ width: `${percent}%` }} />
+      <div className="h-full bg-ui-primary transition-[width]" style={{ width: `${percent}%` }} />
     </div>
   );
 }

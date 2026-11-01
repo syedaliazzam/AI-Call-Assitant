@@ -62,7 +62,7 @@ export function ChangePasswordForm({ action }: ChangePasswordFormProps) {
         error={state.fieldErrors?.confirmPassword}
       />
       {state.error && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger">
           {state.error}
         </p>
       )}

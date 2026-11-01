@@ -174,6 +174,12 @@ jobs:
       - name: Review harness test
         run: pnpm --filter web test:review
 
+      # Dark call screens (UI theme U3): the real live view, Connect view, compact view and the
+      # phone message on invented data with a mocked /api/answer; checks the layout, colours and
+      # that the answer panel does not shift while an answer streams. No sign-in, no secrets.
+      - name: Live screens harness test
+        run: pnpm --filter web test:live-ui
+
       # Plays the official recordings through Chromium's fake microphone into the real
       # worklet → worker → recognizer → transcript path and checks the WER. CI=true (set by
       # GitHub) turns missing model files into a failure instead of a skip.

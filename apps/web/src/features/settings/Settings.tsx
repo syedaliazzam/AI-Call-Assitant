@@ -33,6 +33,7 @@ import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { Select } from '@/ui/Select';
 import { Textarea } from '@/ui/Textarea';
+import { PageShell } from '@/ui/PageShell';
 import { Toggle } from '@/ui/Toggle';
 import { LearnedLessons } from './LearnedLessons';
 
@@ -63,8 +64,8 @@ const HOTKEYS: readonly {
  */
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6">
-      <h2 className="mb-4 text-base font-semibold text-slate-900">{title}</h2>
+    <section aria-label={title} className="border border-ui-border bg-ui-surface p-6">
+      <h2 className="mb-4 text-[20px] text-ui-subheading">{title}</h2>
       {children}
     </section>
   );
@@ -85,10 +86,10 @@ function ShareProtectionSetting() {
       .then(setState)
       .catch(() => undefined);
   }, []);
-  if (!state) return <p className="text-sm text-slate-500">Checking…</p>;
+  if (!state) return <p className="text-sm text-ui-muted">Checking…</p>;
   if (!state.supported) {
     return (
-      <p className="text-sm text-slate-600">
+      <p className="text-sm text-ui-muted">
         {getPlatform().kind === 'desktop'
           ? 'This computer cannot hide a window from screen sharing. Share a single window instead of the whole screen, or keep Kite on another monitor.'
           : 'A browser cannot hide its windows from screen sharing. In the meeting, share a single tab or window instead of the whole screen, or keep Kite on another monitor. The Kite desktop app can hide its compact window.'}
@@ -175,14 +176,9 @@ export function Settings() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-8 py-10">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-900">Settings</h1>
-        <p className="mt-1 text-sm text-slate-500">Saved on this computer only.</p>
-      </header>
-
+    <PageShell eyebrow="Kite" title="Settings" description="Saved on this computer only.">
       {error && (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className="text-sm text-ui-danger">
           {error}
         </p>
       )}
@@ -190,7 +186,7 @@ export function Settings() {
       <Section title="Defaults for new sessions">
         {defaults ? (
           <div className="flex flex-col gap-5">
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-ui-muted">
               New sessions start with these; each session can change them. Existing sessions keep
               their own.
             </p>
@@ -235,44 +231,44 @@ export function Settings() {
             <div className="flex items-center gap-3">
               <Button onClick={() => void save()}>Save defaults</Button>
               {saved && (
-                <span role="status" className="text-sm text-green-700">
+                <span role="status" className="text-sm text-ui-success">
                   Saved.
                 </span>
               )}
             </div>
           </div>
         ) : (
-          <p className="text-sm text-slate-500">Loading…</p>
+          <p className="text-sm text-ui-muted">Loading…</p>
         )}
       </Section>
 
       <Section title="Hotkeys">
-        <p className="mb-3 text-sm text-slate-500">
+        <p className="mb-3 text-sm text-ui-muted">
           Shown for reference; the shortcuts start working on Day 4. In the browser they work while
           Kite has focus; in the desktop app, from any app.
         </p>
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-slate-200 text-slate-500">
-              <th scope="col" className="py-2 pr-4 font-medium">
+            <tr className="border-b border-ui-border text-ui-muted">
+              <th scope="col" className="py-2 pr-4 font-semibold">
                 Action
               </th>
-              <th scope="col" className="py-2 pr-4 font-medium">
+              <th scope="col" className="py-2 pr-4 font-semibold">
                 macOS
               </th>
-              <th scope="col" className="py-2 font-medium">
+              <th scope="col" className="py-2 font-semibold">
                 Windows
               </th>
             </tr>
           </thead>
           <tbody>
             {HOTKEYS.map((hotkey) => (
-              <tr key={hotkey.action} className="border-b border-slate-100">
-                <th scope="row" className="py-2 pr-4 font-medium text-slate-800">
+              <tr key={hotkey.action} className="border-b border-ui-border">
+                <th scope="row" className="py-2 pr-4 font-semibold text-ui-text">
                   {hotkey.action}
                 </th>
-                <td className="py-2 pr-4 text-slate-600">{hotkey.mac}</td>
-                <td className="py-2 text-slate-600">{hotkey.windows}</td>
+                <td className="py-2 pr-4 text-ui-muted">{hotkey.mac}</td>
+                <td className="py-2 text-ui-muted">{hotkey.windows}</td>
               </tr>
             ))}
           </tbody>
@@ -289,7 +285,7 @@ export function Settings() {
       </Section>
 
       <Section title="Local data">
-        <p className="mb-4 text-sm text-slate-600">
+        <p className="mb-4 text-sm text-ui-muted">
           Deletes every session, document, transcript, answer and learned lesson saved by Kite on
           this computer, and these settings. The speech model stays (it holds no personal data and
           is 204 MB to download again). Sessions in another browser or in the desktop app are
@@ -299,7 +295,7 @@ export function Settings() {
           Delete all local data
         </Button>
         {deleted && (
-          <p role="status" className="mt-3 text-sm text-green-700">
+          <p role="status" className="mt-3 text-sm text-ui-success">
             Deleted {deleted.sessions} sessions, {deleted.documents} documents, {deleted.utterances}{' '}
             transcript lines, {deleted.answers} answers, {deleted.notes} notes and {deleted.lessons}{' '}
             lessons.
@@ -327,6 +323,6 @@ export function Settings() {
           will be deleted. This cannot be undone.
         </p>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

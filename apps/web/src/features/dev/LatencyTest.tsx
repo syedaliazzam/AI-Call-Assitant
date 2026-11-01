@@ -78,11 +78,11 @@ export function LatencyTest() {
         <Button onClick={() => void run()} disabled={running}>
           {running ? 'Running…' : 'Run 20 answers'}
         </Button>
-        <span role="status" className="text-sm text-slate-600">
+        <span role="status" className="text-sm text-ui-muted">
           {running ? `Answer ${samples.length + 1} of 20…` : finished ? 'Done: 20 answers.' : ''}
         </span>
         {error && (
-          <span role="alert" className="text-sm text-red-700">
+          <span role="alert" className="text-sm text-ui-danger">
             {error}
           </span>
         )}
@@ -92,7 +92,7 @@ export function LatencyTest() {
         <>
           <table aria-label="Latency summary" className="w-full text-left text-sm">
             <thead>
-              <tr className="text-slate-500">
+              <tr className="text-ui-muted">
                 <th className="py-1">Stage (ms)</th>
                 <th>p50</th>
                 <th>p95</th>
@@ -101,19 +101,19 @@ export function LatencyTest() {
             </thead>
             <tbody>
               {ROWS.map(([label, key]) => (
-                <tr key={key} className="border-t border-slate-100">
+                <tr key={key} className="border-t border-ui-border">
                   <td className="py-1">{label}</td>
                   <td>{summary[key].p50}</td>
                   <td>{summary[key].p95}</td>
-                  <td className="text-slate-500">{TARGETS[key] ?? '—'}</td>
+                  <td className="text-ui-muted">{TARGETS[key] ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-ui-muted">
             Cache read on {summary.cacheHits} of {summary.count} answers.
           </p>
-          <table aria-label="Per answer" className="w-full text-left text-xs text-slate-600">
+          <table aria-label="Per answer" className="w-full text-left text-xs text-ui-muted">
             <thead>
               <tr>
                 <th>#</th>
@@ -154,7 +154,7 @@ export function LatencyTest() {
             >
               {copied ? 'Copied' : 'Copy results'}
             </Button>
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-ui-muted">
               Numbers only (no question or answer text).
             </span>
           </div>

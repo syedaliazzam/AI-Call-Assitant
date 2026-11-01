@@ -130,17 +130,17 @@ export function ClaudeTest() {
 
       <section
         aria-live="polite"
-        className="min-h-20 rounded-lg border border-slate-200 bg-white p-4 text-slate-900"
+        className="min-h-20 border border-ui-border bg-ui-surface p-4 text-ui-heading"
       >
-        {text || <span className="text-slate-400">The reply streams here.</span>}
+        {text || <span className="text-ui-muted">The reply streams here.</span>}
       </section>
       {error && (
-        <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p role="alert" className="bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger">
           {error}
         </p>
       )}
 
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-ui-muted">
         The first click writes the prompt to Claude&apos;s cache (cache write &gt; 0). Clicks within
         5 minutes of the previous one should read it back (cache read &gt; 0) and usually reach the
         first word sooner. Browser times include the network; server times start when the request
@@ -149,27 +149,27 @@ export function ClaudeTest() {
         (Open → text).
       </p>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto border border-ui-border bg-ui-surface">
         <table className="w-full text-right text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 uppercase">
+          <thead className="border-b border-ui-border bg-ui-band text-xs text-ui-muted uppercase">
             <tr>
-              <th className="px-3 py-2 text-left font-medium">#</th>
-              <th className="px-3 py-2 font-medium">First word (browser)</th>
-              <th className="px-3 py-2 font-medium">Total (browser)</th>
-              <th className="px-3 py-2 font-medium">First word (server)</th>
-              <th className="px-3 py-2 font-medium">Auth</th>
-              <th className="px-3 py-2 font-medium">To Claude open</th>
-              <th className="px-3 py-2 font-medium">Open → text</th>
-              <th className="px-3 py-2 font-medium">Input</th>
-              <th className="px-3 py-2 font-medium">Output</th>
-              <th className="px-3 py-2 font-medium">Cache write</th>
-              <th className="px-3 py-2 font-medium">Cache read</th>
+              <th className="px-3 py-2 text-left font-semibold">#</th>
+              <th className="px-3 py-2 font-semibold">First word (browser)</th>
+              <th className="px-3 py-2 font-semibold">Total (browser)</th>
+              <th className="px-3 py-2 font-semibold">First word (server)</th>
+              <th className="px-3 py-2 font-semibold">Auth</th>
+              <th className="px-3 py-2 font-semibold">To Claude open</th>
+              <th className="px-3 py-2 font-semibold">Open → text</th>
+              <th className="px-3 py-2 font-semibold">Input</th>
+              <th className="px-3 py-2 font-semibold">Output</th>
+              <th className="px-3 py-2 font-semibold">Cache write</th>
+              <th className="px-3 py-2 font-semibold">Cache read</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 tabular-nums">
+          <tbody className="divide-y divide-ui-border tabular-nums">
             {runs.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-3 py-4 text-center text-slate-400">
+                <td colSpan={11} className="px-3 py-4 text-center text-ui-muted">
                   No runs yet.
                 </td>
               </tr>
@@ -177,7 +177,7 @@ export function ClaudeTest() {
             {runs.map(({ number, result }) => (
               <tr key={number}>
                 <td className="px-3 py-2 text-left">{number}</td>
-                <td className="px-3 py-2 font-medium">{result.msToFirstText} ms</td>
+                <td className="px-3 py-2 font-semibold">{result.msToFirstText} ms</td>
                 <td className="px-3 py-2">{result.msTotal} ms</td>
                 <td className="px-3 py-2">{result.serverMs.toFirstText} ms</td>
                 <td className="px-3 py-2">{result.serverMs.auth} ms</td>
@@ -194,15 +194,15 @@ export function ClaudeTest() {
       </div>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-medium text-slate-900">Warm with session</h2>
-        <p className="text-sm text-slate-500">
+        <h2 className="text-base font-semibold text-ui-heading">Warm with session</h2>
+        <p className="text-sm text-ui-muted">
           Sends mode &quot;warm&quot; (max_tokens 0, no answer) twice for a session on this
           computer, with its details and documents. The first warm-up writes the cache (cache write
           &gt; 0); the second, within 5 minutes, reads it (cache read &gt; 0). A session whose
           prompt is under 512 tokens (no documents, few details) is not cached at all: both show 0.
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="warm-session" className="text-sm text-slate-800">
+          <label htmlFor="warm-session" className="text-sm text-ui-text">
             Session
           </label>
           <select
@@ -210,7 +210,7 @@ export function ClaudeTest() {
             value={warmId}
             disabled={warming || sessions.length === 0}
             onChange={(event) => setWarmId(event.target.value)}
-            className="h-9 max-w-md rounded-md border border-slate-300 bg-white px-2 text-sm"
+            className="h-9 max-w-md border border-ui-border bg-ui-surface px-2 text-sm"
           >
             {sessions.length === 0 && <option value="">No sessions on this computer</option>}
             {sessions.map((session) => (
@@ -223,24 +223,24 @@ export function ClaudeTest() {
             {warming ? 'Warming…' : 'Warm twice'}
           </Button>
         </div>
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <div className="overflow-x-auto border border-ui-border bg-ui-surface">
           <table className="w-full text-right text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 uppercase">
+            <thead className="border-b border-ui-border bg-ui-band text-xs text-ui-muted uppercase">
               <tr>
-                <th className="px-3 py-2 text-left font-medium">#</th>
-                <th className="px-3 py-2 text-left font-medium">Session</th>
-                <th className="px-3 py-2 font-medium">Total (browser)</th>
-                <th className="px-3 py-2 font-medium">Total (server)</th>
-                <th className="px-3 py-2 font-medium">Input</th>
-                <th className="px-3 py-2 font-medium">Output</th>
-                <th className="px-3 py-2 font-medium">Cache write</th>
-                <th className="px-3 py-2 font-medium">Cache read</th>
+                <th className="px-3 py-2 text-left font-semibold">#</th>
+                <th className="px-3 py-2 text-left font-semibold">Session</th>
+                <th className="px-3 py-2 font-semibold">Total (browser)</th>
+                <th className="px-3 py-2 font-semibold">Total (server)</th>
+                <th className="px-3 py-2 font-semibold">Input</th>
+                <th className="px-3 py-2 font-semibold">Output</th>
+                <th className="px-3 py-2 font-semibold">Cache write</th>
+                <th className="px-3 py-2 font-semibold">Cache read</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 tabular-nums">
+            <tbody className="divide-y divide-ui-border tabular-nums">
               {warms.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-4 text-center text-slate-400">
+                  <td colSpan={8} className="px-3 py-4 text-center text-ui-muted">
                     No warm-ups yet.
                   </td>
                 </tr>
@@ -255,15 +255,15 @@ export function ClaudeTest() {
                       <td className="px-3 py-2">{result.serverMs.total} ms</td>
                       <td className="px-3 py-2">{result.usage.input_tokens}</td>
                       <td className="px-3 py-2">{result.usage.output_tokens}</td>
-                      <td className="px-3 py-2 font-medium">
+                      <td className="px-3 py-2 font-semibold">
                         {result.usage.cache_creation_input_tokens}
                       </td>
-                      <td className="px-3 py-2 font-medium">
+                      <td className="px-3 py-2 font-semibold">
                         {result.usage.cache_read_input_tokens}
                       </td>
                     </>
                   ) : (
-                    <td colSpan={6} className="px-3 py-2 text-left text-red-700">
+                    <td colSpan={6} className="px-3 py-2 text-left text-ui-danger">
                       Failed (the browser console shows the error code).
                     </td>
                   )}

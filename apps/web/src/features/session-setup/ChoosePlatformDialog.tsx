@@ -70,12 +70,12 @@ export function ChoosePlatformDialog({
     <Dialog open={open} onClose={onClose} title="How do you want to join?" size="lg">
       <div className="flex flex-col gap-4">
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-2 rounded-lg border border-slate-200 p-4">
-            <h3 className="font-medium text-slate-900">Desktop app</h3>
-            <p className="text-slate-600">
+          <div className="flex flex-col gap-2 border border-ui-border p-4">
+            <h3 className="font-semibold text-ui-heading">Desktop app</h3>
+            <p className="text-ui-muted">
               Hears calls from any meeting app and works with global hotkeys.
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-ui-muted">
               The desktop installer arrives on Day 6. Until then, developers run it from source
               (README: “Run the desktop app”).
             </p>
@@ -83,9 +83,9 @@ export function ChoosePlatformDialog({
               Download (Day 6)
             </Button>
           </div>
-          <div className="flex flex-col gap-2 rounded-lg border border-brand-600 p-4">
-            <h3 className="font-medium text-slate-900">Open in browser</h3>
-            <p className="text-slate-600">
+          <div className="flex flex-col gap-2 border border-ui-accent p-4">
+            <h3 className="font-semibold text-ui-heading">Open in browser</h3>
+            <p className="text-ui-muted">
               For calls in a Chrome or Edge tab. You share the meeting tab with its audio.
             </p>
             <Button onClick={onOpenInBrowser} className="mt-auto">
@@ -98,33 +98,33 @@ export function ChoosePlatformDialog({
           type="button"
           aria-expanded={showDifferences}
           onClick={() => setShowDifferences((shown) => !shown)}
-          className="self-start text-sm font-medium text-brand-700 hover:underline"
+          className="inline-flex items-center self-start text-sm font-semibold text-ui-link hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
         >
           What’s the difference?
         </button>
         {showDifferences && (
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-slate-500">
-                <th className="py-2 pr-4 font-medium" scope="col">
+              <tr className="border-b border-ui-border text-ui-muted">
+                <th className="py-2 pr-4 font-semibold" scope="col">
                   <span className="sr-only">Topic</span>
                 </th>
-                <th className="py-2 pr-4 font-medium" scope="col">
+                <th className="py-2 pr-4 font-semibold" scope="col">
                   Desktop app
                 </th>
-                <th className="py-2 font-medium" scope="col">
+                <th className="py-2 font-semibold" scope="col">
                   Browser
                 </th>
               </tr>
             </thead>
             <tbody>
               {DIFFERENCES.map((row) => (
-                <tr key={row.topic} className="border-b border-slate-100 align-top">
-                  <th scope="row" className="py-2 pr-4 font-medium text-slate-800">
+                <tr key={row.topic} className="border-b border-ui-border align-top">
+                  <th scope="row" className="py-2 pr-4 font-semibold text-ui-text">
                     {row.topic}
                   </th>
-                  <td className="py-2 pr-4 text-slate-600">{row.desktop}</td>
-                  <td className="py-2 text-slate-600">{row.browser}</td>
+                  <td className="py-2 pr-4 text-ui-muted">{row.desktop}</td>
+                  <td className="py-2 text-ui-muted">{row.browser}</td>
                 </tr>
               ))}
             </tbody>

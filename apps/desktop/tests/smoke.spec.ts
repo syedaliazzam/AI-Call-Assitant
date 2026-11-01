@@ -15,11 +15,12 @@
  * links would reach the system browser; only the microphone permission is granted;
  * getDisplayMedia from the Kite page gets a system-audio track with no picker (Windows; macOS
  * needs the System Audio Recording permission and is checked by hand), and getDisplayMedia from
- * another origin (in a frame) is denied.
+ * another origin (in a frame) is denied. UI U4: on Windows, the icon Windows shows for the Kite
+ * window (title bar and taskbar) is the company logo mark (saved when KITE_SCREENSHOT_DIR is set).
  *
  * The app runs with KITE_TEST_NO_EXTERNAL_OPEN=1, so this test never launches a real browser.
  */
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
@@ -350,6 +351,66 @@ test('protection (Windows): the compact window is left out of a screen capture, 
   // Back to the default (off) and closed.
   await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));
   await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
+});
+
+test('window icon (Windows): the taskbar icon is the company logo mark (UI U4)', async () => {
+  test.skip(process.platform !== 'win32', 'window icons are read through Windows');
+  // The icon Windows itself shows for the Kite window (title bar and taskbar).
+  const result = await app.evaluate(
+    async ({ BrowserWindow, desktopCapturer, nativeImage }, iconFile) => {
+      /**
+       * Counts the mark's blue ribbon pixels: clearly more blue than red and green, and opaque.
+       *
+       * @param image An icon image.
+       * @returns The number of blue mark pixels.
+       */
+      const bluePixels = (image: Electron.NativeImage) => {
+        const bitmap = image.toBitmap(); // BGRA
+        let blue = 0;
+        for (let i = 0; i < bitmap.length; i += 4) {
+          const [b, g, r, a] = [bitmap[i]!, bitmap[i + 1]!, bitmap[i + 2]!, bitmap[i + 3]!];
+          if (a > 200 && b > r + 60 && b > g + 30) blue += 1;
+        }
+        return blue;
+      };
+      // The file the windows are given (src/icon.ts: apps/desktop/build/icon.png).
+      const file = nativeImage.createFromPath(iconFile);
+      const fileBlue = file.isEmpty() ? 0 : bluePixels(file);
+      const main = BrowserWindow.getAllWindows().find((w) => w.getSize()[0] === 1280);
+      const sources = await desktopCapturer.getSources({
+        types: ['window'],
+        fetchWindowIcons: true,
+        thumbnailSize: { width: 0, height: 0 },
+      });
+      const source = sources.find((s) => s.id === main?.getMediaSourceId());
+      if (!source) return { fileBlue, listed: false as const, icon: null };
+      if (!source.appIcon || source.appIcon.isEmpty())
+        return { fileBlue, listed: true as const, icon: null };
+      const { width, height } = source.appIcon.getSize();
+      const icon = {
+        width,
+        height,
+        blue: bluePixels(source.appIcon),
+        png: source.appIcon.toPNG().toString('base64'),
+      };
+      return { fileBlue, listed: true as const, icon };
+    },
+    path.join(APP_DIR, 'build', 'icon.png'),
+  );
+  // Always: the icon file the windows use holds the company mark.
+  expect(result.fileBlue, 'build/icon.png has no blue mark pixels').toBeGreaterThan(0);
+  // GitHub's Windows runners have no interactive desktop, so Windows lists no window sources
+  // there; the taskbar icon can only be read where Windows lists the Kite window.
+  test.skip(!result.listed, 'Windows listed no window source for Kite (no interactive desktop)');
+  const icon = result.icon;
+  expect(icon, 'Windows listed the Kite window but returned no icon for it').not.toBeNull();
+  expect(icon!.blue).toBeGreaterThan(0);
+  const dir = process.env.KITE_SCREENSHOT_DIR;
+  if (dir) {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'desktop-window-icon.png'), Buffer.from(icon!.png, 'base64'));
+  }
+  console.log(`[smoke] window icon ${icon!.width}×${icon!.height}, ${icon!.blue} blue pixels`);
 });
 
 test('gives the page no Node.js access', async () => {

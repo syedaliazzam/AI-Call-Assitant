@@ -16,7 +16,6 @@
  */
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { extractText } from '@/core/documents/extract';
@@ -30,6 +29,8 @@ import {
 } from '@/core/storage/sessions';
 import { getSessionDefaults } from '@/core/storage/settings';
 import { Button } from '@/ui/Button';
+import { Eyebrow } from '@/ui/Eyebrow';
+import { LinkButton } from '@/ui/LinkButton';
 import { DetailsStep, type DocumentProblem } from './DetailsStep';
 import {
   draftChars,
@@ -212,9 +213,9 @@ export function SessionWizard({ mode, sessionId }: SessionWizardProps) {
 
   if (load !== 'ready' || !draft) {
     return (
-      <div className="mx-auto max-w-3xl px-8 py-10">
-        <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
-        <p className="mt-4 text-sm text-slate-600">
+      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
+        <h1 className="text-[28px] font-bold text-ui-heading">{title}</h1>
+        <p className="mt-4 text-[15px] text-ui-muted">
           {load === 'loading' && 'Loading…'}
           {load === 'not-found' &&
             'This session does not exist on this computer. Sessions are saved per browser and per desktop app, so a session created elsewhere does not appear here.'}
@@ -222,9 +223,9 @@ export function SessionWizard({ mode, sessionId }: SessionWizardProps) {
             'Kite could not open its local storage. Reload the page to try again.'}
         </p>
         {load !== 'loading' && (
-          <Link href="/" className="mt-4 inline-block text-sm font-medium text-brand-700">
+          <LinkButton href="/" className="mt-4">
             Back to Call Sessions
-          </Link>
+          </LinkButton>
         )}
       </div>
     );
@@ -232,59 +233,71 @@ export function SessionWizard({ mode, sessionId }: SessionWizardProps) {
 
   const errors = showErrors ? validateDetails(draft) : {};
   return (
-    <div className="mx-auto max-w-3xl px-8 py-10">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Step {step} of 2 · {step === 1 ? 'Details' : 'Preferences'}
-        </p>
+    <div className="flex min-h-full flex-col">
+      {/* White header band with the step, then the form on the grey band. */}
+      <header className="border-b border-ui-border bg-ui-surface px-4 py-8 sm:px-8">
+        <div className="mx-auto max-w-3xl">
+          <Eyebrow>
+            Step {step} of 2 · {step === 1 ? 'Details' : 'Preferences'}
+          </Eyebrow>
+          <h1 className="text-[28px] font-bold text-ui-heading">{title}</h1>
+          {/* Two square segments: the current and done steps in cyan. */}
+          <div aria-hidden="true" className="mt-4 grid max-w-xs grid-cols-2 gap-1">
+            <span className="h-1 bg-ui-primary" />
+            <span className={`h-1 ${step === 2 ? 'bg-ui-primary' : 'bg-ui-border'}`} />
+          </div>
+        </div>
       </header>
 
-      <div className="rounded-lg border border-slate-200 bg-white p-6">
-        {step === 1 ? (
-          <DetailsStep
-            draft={draft}
-            errors={errors}
-            onChange={change}
-            onAddFiles={(files) => void addFiles(files)}
-            onRemoveDocument={removeDocument}
-            readingCount={readingCount}
-            problems={problems}
-            onDismissProblem={(key) =>
-              setProblems((current) => current.filter((problem) => problem.key !== key))
-            }
-          />
-        ) : (
-          <PreferencesStep draft={draft} onChange={change} />
-        )}
+      <div className="flex-1 bg-ui-band px-4 py-8 sm:px-8">
+        <div className="mx-auto max-w-3xl">
+          <div className="border border-ui-border bg-ui-surface p-6">
+            {step === 1 ? (
+              <DetailsStep
+                draft={draft}
+                errors={errors}
+                onChange={change}
+                onAddFiles={(files) => void addFiles(files)}
+                onRemoveDocument={removeDocument}
+                readingCount={readingCount}
+                problems={problems}
+                onDismissProblem={(key) =>
+                  setProblems((current) => current.filter((problem) => problem.key !== key))
+                }
+              />
+            ) : (
+              <PreferencesStep draft={draft} onChange={change} />
+            )}
+          </div>
+
+          {saveError && (
+            <p role="alert" className="mt-4 text-sm text-ui-danger">
+              {saveError}
+            </p>
+          )}
+
+          <footer className="mt-6 flex items-center justify-between">
+            {step === 1 ? (
+              <LinkButton href="/" variant="ghost">
+                Cancel
+              </LinkButton>
+            ) : (
+              <Button variant="ghost" onClick={() => setStep(1)} disabled={saving}>
+                Back
+              </Button>
+            )}
+            {step === 1 ? (
+              <Button onClick={next} disabled={readingCount > 0}>
+                Next
+              </Button>
+            ) : (
+              <Button onClick={() => void save()} disabled={saving}>
+                {saving ? 'Saving…' : mode === 'create' ? 'Create session' : 'Save changes'}
+              </Button>
+            )}
+          </footer>
+        </div>
       </div>
-
-      {saveError && (
-        <p role="alert" className="mt-4 text-sm text-red-700">
-          {saveError}
-        </p>
-      )}
-
-      <footer className="mt-6 flex items-center justify-between">
-        {step === 1 ? (
-          <Link href="/" className="text-sm font-medium text-slate-600 hover:text-slate-900">
-            Cancel
-          </Link>
-        ) : (
-          <Button variant="ghost" onClick={() => setStep(1)} disabled={saving}>
-            Back
-          </Button>
-        )}
-        {step === 1 ? (
-          <Button onClick={next} disabled={readingCount > 0}>
-            Next
-          </Button>
-        ) : (
-          <Button onClick={() => void save()} disabled={saving}>
-            {saving ? 'Saving…' : mode === 'create' ? 'Create session' : 'Save changes'}
-          </Button>
-        )}
-      </footer>
     </div>
   );
 }

@@ -677,6 +677,7 @@ Checks:
 
 - [ ] Fresh install from the installers on a clean Mac and Windows PC in under 5 minutes.
 - [ ] All tests green on CI (Linux web, macOS and Windows desktop).
+- [ ] **App icons (added Day 5, UI U4):** replace the placeholder icons (`apps/desktop/build/icon-512.png`, `icon-1024.png`, `icon.ico`; `apps/web/public/brand/favicon.svg`) with ones made from the designer's vector logo, then run `pnpm --filter web make-brand`. The placeholders are scaled from the 304 px PNG, so the 512 and 1024 px ones are soft.
 - [ ] **macOS checks (added Day 5):**
   - Screen-share protection of the compact window in a full-screen share from Zoom, Teams and Google Meet (Chrome). On recent macOS versions, apps built on ScreenCaptureKit may capture the window despite `setContentProtection` (Electron docs); record each app and version, and say so honestly in the app if it is visible.
   - Screen Recording permission for screenshots (a denied permission shows the typed error).

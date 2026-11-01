@@ -235,6 +235,15 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * The desktop app runs on Windows and macOS computers: live calls always work.
+     *
+     * @returns True.
+     */
+    supportsLiveCalls() {
+      return true;
+    },
+
+    /**
      * setContentProtection on the compact window, through the shell (remembered there).
      *
      * @param on True to hide the compact window from screen sharing.
