@@ -118,8 +118,8 @@ test('3. Connect needs no picker; Go live shows lines; a Chat answer is rated; E
   await page.getByRole('button', { name: 'Go live' }).click();
 
   const lines = page.getByLabel('Live transcript').getByRole('listitem');
-  // Final lines are drawn in dark text (TranscriptStrip: text-slate-900).
-  const finals = lines.filter({ has: page.locator('span.text-slate-900') });
+  // Final lines use the normal text colour (TranscriptStrip: text-ui-text, UI theme U3).
+  const finals = lines.filter({ has: page.locator('span.text-ui-text') });
   await expect(finals.first()).toBeVisible({ timeout: 120_000 });
   const counts = {
     final: await finals.count(),
