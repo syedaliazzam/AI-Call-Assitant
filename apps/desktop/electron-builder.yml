@@ -75,3 +75,28 @@ mac:
     NSAudioCaptureUsageDescription: Kite records the other side of the call (system audio) to write the live transcript. The audio stays on this Mac.
 dmg:
   artifactName: Kite-${version}-${arch}.dmg
+
+# Microsoft Store package (MSIX/AppX; investigated 2 Nov as the no-purchase alternative to code
+# signing: the Store signs the package with Microsoft's certificate, which Smart App Control
+# trusts). Build with "pnpm dist:store". The identity values below are placeholders until
+# Partner Center reserves the name: copy Package/Identity/Name, Package/Identity/Publisher and
+# the publisher display name from Product management → Product identity
+# (docs/deploy/microsoft-store.md).
+appx:
+  identityName: ParamountIntelligence.Kite
+  publisher: CN=00000000-0000-0000-0000-000000000000
+  publisherDisplayName: Paramount Intelligence
+  applicationId: Kite
+  displayName: Kite
+  backgroundColor: '#0B1630'
+  languages:
+    - en-US
+  # runFullTrust: a desktop (Win32) app; microphone: lists Kite in Windows' microphone privacy
+  # settings; internetClient: Kite opens the deployed web app.
+  capabilities:
+    - runFullTrust
+    - internetClient
+    - microphone
+  # The Store updates the app; the app's own updater is off in Store builds (src/main.ts).
+  electronUpdaterAware: false
+  artifactName: Kite-${version}.${ext}

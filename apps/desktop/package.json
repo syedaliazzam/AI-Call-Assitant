@@ -15,7 +15,8 @@
     "test:unit": "vitest run",
     "test:manual": "pnpm electron:install && pnpm build && playwright test -c playwright.manual.config.ts",
     "dist:win": "pnpm electron:install && pnpm build && electron-builder --win --publish never",
-    "dist:mac": "pnpm electron:install && pnpm build && electron-builder --mac --publish never"
+    "dist:mac": "pnpm electron:install && pnpm build && electron-builder --mac --publish never",
+    "dist:store": "pnpm electron:install && pnpm build && electron-builder --win appx --publish never"
   },
   "devDependencies": {
     "@kite/shared": "workspace:*",

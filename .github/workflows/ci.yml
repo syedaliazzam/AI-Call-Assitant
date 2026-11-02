@@ -13,7 +13,10 @@
 # - desktop-windows (2x): every pull request and every push to main.
 # - desktop-macos (10x): only when started by hand (Actions tab → CI → "Run workflow").
 #   It also builds the unsigned macOS .dmg files and keeps them as a run artifact (Day 6).
-#   A manual run starts ONLY this job; the other two already ran on the pull request / push.
+# - desktop-store (2x): also only when started by hand: builds and installs the Microsoft Store
+#   (MSIX) package with a throwaway test certificate and smoke-tests it (Day 6).
+#   A manual run starts only the manual job chosen (input "job": macos, store or both); the
+#   other jobs already ran on the pull request / push.
 #
 # What CI never does: it uses no secrets, makes no real Claude calls (unit tests mock the SDK),
 # and deploys nothing (Vercel deploys stay CLI-only, no preview deploys). The only large download
@@ -29,6 +32,16 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      # Which manual job to run (each costs extra minutes: macOS 10x, Windows 2x).
+      job:
+        description: Manual job to run
+        type: choice
+        options:
+          - macos
+          - store
+          - both
+        default: macos
 
 # Read-only token: no job writes to the repository.
 permissions:
@@ -238,10 +251,47 @@ jobs:
           # whole workflow file if it does.
           electron_config_cache: ${{ runner.temp }}/electron-cache
 
+  desktop-store:
+    name: Microsoft Store package (Windows, manual)
+    # Manual runs only (Day 6): builds the MSIX, signs it with a throwaway test certificate,
+    # installs it on the runner, starts it as the Store would, and runs the smoke test on it.
+    if: github.event_name == 'workflow_dispatch' && (inputs.job == 'store' || inputs.job == 'both')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      # Get the code.
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Install pnpm (version from package.json "packageManager").
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # Install Node 24 and cache the pnpm store.
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Install exactly what the lockfile says.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Build, sign (test certificate), install and start the Store package
+      # (apps/desktop/scripts/store-ci-check.ps1).
+      - name: Build, install and start the Store package
+        shell: pwsh
+        run: ./apps/desktop/scripts/store-ci-check.ps1
+
+      # The desktop smoke test against the installed package's Kite.exe (KITE_INSTALLED_EXE).
+      - name: Smoke test the installed package
+        run: pnpm --filter desktop exec playwright test
+
   desktop-macos:
     name: Desktop smoke test (macOS, manual)
     # Manual runs only: macOS minutes count 10x (see the header).
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && (inputs.job == 'macos' || inputs.job == 'both')
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
