@@ -70,6 +70,7 @@ The rule above does not change. These details say how its words are measured. Th
 - The names set: the developer's recording of `names-sentences.txt`. Only sentences with a clip are scored.
   - A first check (numbers only, before any counted run) showed the clip numbers did not match the sentences read. Each clip's best sentence was clear (word error 0.00–0.54, next best 0.60 or worse), so the clips were renumbered to the sentences they are.
   - Of a sentence read twice, the later take is kept: a fixed rule, not chosen by any engine's score.
+  - The recorder had auto-gain and noise suppression off, while the live microphone has them on, so the clips peaked near 0.07 against about 0.5 for the read set. **Every engine gets the clips levelled to a peak of 0.5:** a plain volume change, decided before any candidate had a counted result. Noise suppression is not recreated, so the names set stays somewhat harder than a live call. The control on the unlevelled clips, plugged in, for comparison: name accuracy 15.3%, names-set word error 55.8%.
 - The read set: `0.wav` and `1.wav`, the two public recordings already used since Day 1 (66 words).
 - No conversational audio exists yet, so it is not in this trial. Stage 2's human checks cover real calls.
 

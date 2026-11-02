@@ -48,6 +48,7 @@ import {
 } from '../src/core/stt/models';
 import { buildHotwords, hotwordsText } from '../src/core/stt/sessionHotwords';
 import {
+  levelToPeak,
   overallWer,
   parseNamesList,
   percentile,
@@ -68,6 +69,8 @@ const TRIAL_DIR =
   path.join(process.env.LOCALAPPDATA ?? tmpdir(), 'kite-stt-trial');
 /** Result files (they hold what the engines wrote: for the developer only). */
 const RESULTS_DIR = path.join(TRIAL_DIR, 'results');
+/** The names clips' loudest sample after levelling: about the read set's level (ADR-0027). */
+const NAMES_PEAK = 0.5;
 /** Native engines' threads: the laptop has 4 cores (ADR-0027). */
 const NATIVE_THREADS = 4;
 /** Logical processors of the test laptop's CPU, for CPU % (reported per whole machine). */
@@ -176,6 +179,33 @@ interface TrialResult {
 }
 
 /**
+ * Writes samples as a 16 kHz mono 16-bit WAV, for engines that take a file.
+ *
+ * @param samples The samples, -1…1.
+ * @returns The file's bytes.
+ * Called from: runWhisper()
+ */
+function wavBytes(samples: Float32Array): Buffer {
+  const out = Buffer.alloc(44 + samples.length * 2);
+  out.write('RIFF', 0, 'latin1');
+  out.writeUInt32LE(36 + samples.length * 2, 4);
+  out.write('WAVEfmt ', 8, 'latin1');
+  out.writeUInt32LE(16, 16);
+  out.writeUInt16LE(1, 20);
+  out.writeUInt16LE(1, 22);
+  out.writeUInt32LE(16_000, 24);
+  out.writeUInt32LE(32_000, 28);
+  out.writeUInt16LE(2, 32);
+  out.writeUInt16LE(16, 34);
+  out.write('data', 36, 'latin1');
+  out.writeUInt32LE(samples.length * 2, 40);
+  samples.forEach((sample, index) => {
+    out.writeInt16LE(Math.round(Math.max(-1, Math.min(1, sample)) * 32_767), 44 + index * 2);
+  });
+  return out;
+}
+
+/**
  * Reads a 16 kHz mono 16-bit WAV.
  *
  * @param file The file.
@@ -238,7 +268,7 @@ function loadClips(): { clips: Clip[]; recorded: NamesSentence[] } {
       sentenceIndex: sentence.index,
       reference: sentence.sentence,
       file,
-      samples: readWav(file),
+      samples: levelToPeak(readWav(file), NAMES_PEAK),
     };
   });
   for (const recording of TEST_RECORDINGS) {
@@ -644,7 +674,11 @@ async function runWhisper(
   let audioMs = 0;
   for (const clip of clips) {
     const form = new FormData();
-    form.append('file', new Blob([readFileSync(clip.file)], { type: 'audio/wav' }), 'clip.wav');
+    form.append(
+      'file',
+      new Blob([new Uint8Array(wavBytes(clip.samples))], { type: 'audio/wav' }),
+      'clip.wav',
+    );
     form.append('response_format', 'json');
     form.append('language', 'en');
     form.append('temperature', '0');

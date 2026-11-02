@@ -207,6 +207,24 @@ export function overallWer(pairs: readonly { reference: string; hypothesis: stri
 }
 
 /**
+ * Scales a clip so its loudest sample reaches the target: a plain volume change, nothing else.
+ * The names clips were recorded with auto-gain off, while the live microphone has it on, so they
+ * are far quieter than a live call (ADR-0027).
+ *
+ * @param samples The samples.
+ * @param target  The loudest sample after scaling (0…1).
+ * @returns New samples; a silent clip is returned unchanged.
+ * Called from: stt-trial.ts (names clips); tests
+ */
+export function levelToPeak(samples: Float32Array, target: number): Float32Array {
+  let peak = 0;
+  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+  if (peak === 0) return samples;
+  const gain = target / peak;
+  return samples.map((sample) => sample * gain);
+}
+
+/**
  * A percentile by the nearest-rank method.
  *
  * @param values The values.

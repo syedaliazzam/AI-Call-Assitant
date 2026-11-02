@@ -2,11 +2,12 @@
  * Tests for apps/web/scripts/lib/stt-score.ts (Day 6 Stage 1), on invented text: the names list
  * is parsed; a term matches regardless of case, punctuation and spacing, as whole words only, and
  * with a possessive; terms split into names and technical terms; word error rates are weighted
- * by words; percentiles use the nearest rank.
+ * by words; percentiles use the nearest rank; levelToPeak() scales a clip to a target peak.
  */
 import { describe, expect, it } from 'vitest';
 import {
   isTechTerm,
+  levelToPeak,
   overallWer,
   parseNamesList,
   percentile,
@@ -61,6 +62,19 @@ describe('scoreTerms', () => {
     expect(scores.all).toEqual({ right: 1, total: 4 });
     expect(scores.names).toEqual({ right: 1, total: 2 });
     expect(scores.tech).toEqual({ right: 0, total: 2 });
+  });
+});
+
+describe('levelToPeak', () => {
+  it('scales the loudest sample to the target, and keeps the shape', () => {
+    const out = levelToPeak(new Float32Array([0.05, -0.1, 0.025]), 0.5);
+    expect(out[0]).toBeCloseTo(0.25);
+    expect(out[1]).toBeCloseTo(-0.5);
+    expect(out[2]).toBeCloseTo(0.125);
+  });
+
+  it('leaves a silent clip alone', () => {
+    expect(levelToPeak(new Float32Array([0, 0]), 0.5)).toEqual(new Float32Array([0, 0]));
   });
 });
 
