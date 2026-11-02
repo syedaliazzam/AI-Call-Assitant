@@ -31,6 +31,11 @@ import {
   MAX_ASK_QUESTION_CHARS,
   MAX_ASK_TURN_CHARS,
   MAX_JOB_URL_CHARS,
+  MAX_MOCK_FEEDBACK_CHARS,
+  MAX_MOCK_QUESTIONS,
+  MAX_MOCK_TEXT_CHARS,
+  MIN_MOCK_QUESTIONS,
+  type PrepareRequest,
   type AskRequest,
   type AnswerPreviewRequest,
   type JobImportRequest,
@@ -369,4 +374,59 @@ const askRequestSchema = notesRequestSchema.extend({
  */
 export function parseAskRequest(body: unknown): SmallParseResult<AskRequest> {
   return parseSmall<AskRequest>(askRequestSchema as unknown as z.ZodType<AskRequest>, body);
+}
+
+/** A question or answer in a mock interview. */
+const mockTextSchema = z.string().trim().min(1).max(MAX_MOCK_TEXT_CHARS);
+
+/** The body of POST /api/prepare: one of the Prepare tools' requests. Unknown fields are rejected. */
+const prepareRequestSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      kind: z.literal('mock-questions'),
+      session: sessionSchema,
+      count: z.number().int().min(MIN_MOCK_QUESTIONS).max(MAX_MOCK_QUESTIONS),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('mock-feedback'),
+      session: sessionSchema,
+      question: mockTextSchema,
+      answer: mockTextSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('mock-summary'),
+      session: sessionSchema,
+      items: z
+        .array(
+          z
+            .object({
+              question: mockTextSchema,
+              answer: mockTextSchema,
+              feedback: z.string().max(MAX_MOCK_FEEDBACK_CHARS),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(MAX_MOCK_QUESTIONS),
+    })
+    .strict(),
+  z.object({ kind: z.literal('question-bank'), session: sessionSchema }).strict(),
+]);
+
+/**
+ * Validates a Prepare request.
+ *
+ * @param body The JSON value from the request.
+ * @returns The validated request, or a message.
+ * Called from: POST handler in app/api/prepare/route.ts
+ */
+export function parsePrepareRequest(body: unknown): SmallParseResult<PrepareRequest> {
+  return parseSmall<PrepareRequest>(
+    prepareRequestSchema as unknown as z.ZodType<PrepareRequest>,
+    body,
+  );
 }

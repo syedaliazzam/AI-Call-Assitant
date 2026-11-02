@@ -261,6 +261,7 @@ describe('deleteSession', () => {
       answers: 1,
       notes: 1,
       rejectedLessons: 0,
+      questionBanks: 0,
     });
     expect(await getSession(gone.id)).toBeNull();
     expect(await listDocuments(gone.id)).toEqual([]);
@@ -282,6 +283,7 @@ describe('deleteSession', () => {
       answers: 0,
       notes: 0,
       rejectedLessons: 0,
+      questionBanks: 0,
     });
   });
 

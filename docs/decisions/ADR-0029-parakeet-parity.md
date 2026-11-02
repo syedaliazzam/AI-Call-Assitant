@@ -59,6 +59,16 @@ Phase 3 (after the call) decisions:
 
 **Ask AI.** Sonnet, with the rules, the session and the call as three cached blocks and the question outside them, so later questions read the cache. The chat lasts while the page is open and is not stored. Its cost is logged in development only.
 
+Phase 4 (Prepare tools) decisions:
+
+**Mock Interview.** Kite writes the questions with Sonnet from a session's job description and resume, reads each with the browser's own speech synthesis (no paid voice), and listens with the same on-device speech-to-text as a call, so the "audio never leaves the device" rule holds. The browser's own speech recognition was rejected for that reason: in Chrome it sends audio to Google. The microphone opens only after a question has been read, so Kite's own voice is not taken for the answer. Answers can also be typed, which also covers a refused microphone. Feedback uses Haiku, because the user is waiting; questions and the summary use Sonnet.
+
+**Saved as a Mock session.** A finished interview becomes a new, ended Mock session, a copy of the one it came from, which stays as it was. Questions are "Them", answers "You", each feedback one of Kite's answers, and the summary its AI notes, so the dashboard and the session window need no special case. Ending before any answer saves nothing.
+
+**Question Bank.** Sonnet writes at most 12 likely questions for a session, grouped by type, each with a suggested answer in the session's format. An answer the documents cannot support says in square brackets what to add, rather than inventing it. Each session keeps one bank in a new store (`questionBanks`, schema version 5), so reviewing it later costs nothing; writing it again replaces it.
+
+**Skipped by decision:** Resume Maker, Headshots, credits, upgrade, referrals, "Rate us".
+
 ## Consequences
 
 - The rules block changes, so its hash and every session's first prompt cache entry change.

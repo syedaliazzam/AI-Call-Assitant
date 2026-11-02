@@ -1,9 +1,9 @@
 /**
  * Production check of the routes added for ADR-0029, from a signed-in browser, because Vercel's
  * network and runtime differ from a laptop: /api/job-import reads a real public job page and refuses
- * private addresses; /api/preview writes a preview; /api/ask answers about a call. Prints numbers
- * only. Manual run only (never in CI): 2 Claude requests with the fast model and 1 with the smart
- * model (about $0.02). Pass the page with KITE_E2E_JOB_URL, or it finds a current one on a public
+ * private addresses; /api/preview writes a preview; /api/ask answers about a call; /api/prepare writes
+ * a question bank. Prints numbers only. Manual run only (never in CI): 2 Claude requests with the
+ * fast model and 2 with the smart model (about $0.05). Pass the page with KITE_E2E_JOB_URL, or it finds a current one on a public
  * job board.
  */
 import { expect, test, type Page } from '@playwright/test';
@@ -128,4 +128,42 @@ test('Ask AI: answers from the call', async () => {
   const reply = String(first.json.text);
   report('Ask AI answers', true, { characters: reply.length });
   expect(reply.toLowerCase()).toMatch(/40|forty/);
+});
+
+test('Question Bank: writes grouped questions from the job description and resume', async () => {
+  const { status, json } = await post('/api/prepare', {
+    kind: 'question-bank',
+    session: {
+      type: 'interview',
+      company: 'Lantern Freight (invented)',
+      role: 'Data Analyst',
+      description: 'Build weekly reports with SQL and explain them to the operations team.',
+      instructions: '',
+      keyTerms: [],
+      style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
+      documents: [
+        {
+          name: 'resume.txt',
+          text: 'Priya Rao. Data analyst, 4 years at Alder Foods. Built the weekly sales report in SQL, used by 60 people.',
+        },
+      ],
+    },
+  });
+  expect(status).toBe(200);
+  const groups = json.groups as {
+    /** The kind of question. */
+    type: string;
+    /** The questions. */
+    questions: {
+      /** The question. */
+      question: string;
+      /** The suggested answer. */
+      answer: string;
+    }[];
+  }[];
+  const questions = groups.flatMap((group) => group.questions);
+  report('question bank written', true, { groups: groups.length, questions: questions.length });
+  expect(questions.length).toBeGreaterThan(2);
+  expect(questions.length).toBeLessThanOrEqual(12);
+  expect(questions.every((item) => item.answer.trim() !== '')).toBe(true);
 });

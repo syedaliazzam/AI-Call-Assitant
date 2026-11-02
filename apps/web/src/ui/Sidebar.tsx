@@ -54,6 +54,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Call Sessions', href: '/' },
   { label: 'Resumes', href: '/resumes' },
   { label: 'Documents', href: '/documents' },
+  { label: 'Mock Interview', href: '/mock' },
+  { label: 'Question Bank', href: '/question-bank' },
   { label: 'Settings', href: '/settings' },
   { label: 'Admin', href: '/admin/users', adminOnly: true },
   { label: 'Dev Tools', href: '/dev', adminOnly: true },

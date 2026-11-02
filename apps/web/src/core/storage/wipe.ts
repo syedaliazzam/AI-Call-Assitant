@@ -30,6 +30,8 @@ export interface DeletedCounts {
   lessons: number;
   /** Library items removed (Resumes and Documents, parity Phase 2). */
   library: number;
+  /** Question banks removed (parity Phase 4). */
+  questionBanks: number;
 }
 
 /**
@@ -52,6 +54,7 @@ export async function deleteAllLocalData(): Promise<DeletedCounts> {
     notes: await db.notes.count(),
     lessons: await db.lessons.count(),
     library: await db.library.count(),
+    questionBanks: await db.questionBanks.count(),
   };
   await db.delete();
   forgetDb();

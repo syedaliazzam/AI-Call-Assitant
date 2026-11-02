@@ -53,6 +53,8 @@ export interface DeletedSessionData {
    * they are the user's preferences now, managed in Settings.
    */
   rejectedLessons: number;
+  /** Question banks removed (0 or 1). */
+  questionBanks: number;
 }
 
 /**
@@ -318,7 +320,7 @@ export function sortSessions(sessions: readonly Session[], sort: SessionSort): S
 
 /**
  * Deletes a session and everything stored for it (documents, transcript lines, answers,
- * notes, and its rejected lesson decisions) in one transaction, so a failure part-way leaves
+ * notes, its question bank and its rejected lesson decisions) in one transaction, so a failure part-way leaves
  * nothing half-deleted. Approved lessons it proposed stay (Settings manages them).
  *
  * @param id The session id.
@@ -329,7 +331,7 @@ export async function deleteSession(id: string): Promise<DeletedSessionData> {
   const db = getDb();
   return db.transaction(
     'rw',
-    [db.sessions, db.documents, db.utterances, db.answers, db.notes, db.lessons],
+    [db.sessions, db.documents, db.utterances, db.answers, db.notes, db.lessons, db.questionBanks],
     async () => {
       const documents = await db.documents.where('sessionId').equals(id).delete();
       const utterances = await db.utterances.where('sessionId').equals(id).delete();
@@ -341,8 +343,10 @@ export async function deleteSession(id: string): Promise<DeletedSessionData> {
         .equals(id)
         .filter((lesson) => lesson.status === 'rejected')
         .delete();
+      const questionBanks = (await db.questionBanks.get(id)) ? 1 : 0;
+      await db.questionBanks.delete(id);
       await db.sessions.delete(id);
-      return { documents, utterances, answers, notes, rejectedLessons };
+      return { documents, utterances, answers, notes, rejectedLessons, questionBanks };
     },
   );
 }
