@@ -525,7 +525,7 @@ test('Export my data, wipe, Import data restores it; importing again adds nothin
     documents: { text?: string }[];
   };
   expect(exported.format).toBe('kite-export');
-  expect(exported.version).toBe(3);
+  expect(exported.version).toBe(4);
   // Documents with their text, so a restore is complete.
   expect(exported.documents.length).toBeGreaterThan(0);
   expect(exported.documents.every((document) => typeof document.text === 'string')).toBe(true);

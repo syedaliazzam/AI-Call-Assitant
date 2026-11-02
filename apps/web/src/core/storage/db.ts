@@ -24,6 +24,7 @@ import type {
   StoredDocument,
   StoredLesson,
   StoredNotes,
+  StoredQuestionBank,
   StoredSettings,
   StoredUtterance,
 } from './types';
@@ -51,6 +52,8 @@ export class KiteDb extends Dexie {
   declare lessons: EntityTable<StoredLesson, 'id'>;
   /** The Resume and Document libraries (version 4, parity Phase 2). */
   declare library: EntityTable<LibraryItem, 'id'>;
+  /** Question banks, one per session (version 5, parity Phase 4). */
+  declare questionBanks: EntityTable<StoredQuestionBank, 'sessionId'>;
 
   /**
    * Declares the schema. Only indexed fields are listed (Dexie stores every field of a row);
@@ -113,6 +116,10 @@ export class KiteDb extends Dexie {
             lesson.scope = currentLessonScope(lesson.scope);
           });
       });
+    // Version 5 (parity Phase 4): adds the question banks. No existing row changes.
+    this.version(5).stores({
+      questionBanks: 'sessionId',
+    });
   }
 }
 

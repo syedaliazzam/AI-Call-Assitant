@@ -19,6 +19,7 @@ import { currentSessionType, currentTone } from './migrate';
 import type {
   LibraryItem,
   LibraryKind,
+  StoredQuestionBank,
   Session,
   StoredAnswer,
   StoredLesson,
@@ -32,9 +33,9 @@ export const EXPORT_FORMAT = 'kite-export';
 /**
  * The file layout version. Raise it when the layout changes, and keep reading older ones.
  * 1: documents as metadata only. 2: documents with their extracted text. 3: adds the Resume and
- * Document libraries.
+ * Document libraries. 4: adds the question banks.
  */
-export const EXPORT_VERSION = 3;
+export const EXPORT_VERSION = 4;
 
 /** Largest file accepted for import (50 MB): far above a year of calls, below browser limits. */
 export const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
@@ -81,6 +82,8 @@ export interface ExportFile {
   lessons: StoredLesson[];
   /** The Resume and Document libraries (version 3; absent in older files). */
   library?: LibraryItem[];
+  /** The question banks (version 4; absent in older files). */
+  questionBanks?: StoredQuestionBank[];
 }
 
 // Older files hold the old types and tones; they are read as today's (core/storage/migrate.ts).
@@ -121,6 +124,16 @@ const DocumentSchema = z.object({
   text: z.string().optional(),
   kind: z.enum(['resume', 'document']).optional(),
   sourceId: z.string().optional(),
+});
+const QuestionBankSchema = z.object({
+  sessionId: z.string().min(1),
+  groups: z.array(
+    z.object({
+      type: z.enum(['behavioural', 'technical', 'role', 'company']),
+      questions: z.array(z.object({ question: z.string(), answer: z.string() })),
+    }),
+  ),
+  createdAt: z.number(),
 });
 const LibrarySchema = z.object({
   id: z.string().min(1),
@@ -186,6 +199,7 @@ const ExportSchema = z.object({
   notes: z.array(NotesSchema),
   lessons: z.array(LessonSchema),
   library: z.array(LibrarySchema).optional(),
+  questionBanks: z.array(QuestionBankSchema).optional(),
 });
 
 /**
@@ -218,6 +232,7 @@ export async function exportData(now = Date.now()): Promise<ExportFile> {
     notes: await db.notes.toArray(),
     lessons: await db.lessons.toArray(),
     library: await db.library.toArray(),
+    questionBanks: await db.questionBanks.toArray(),
   };
 }
 
@@ -314,6 +329,8 @@ export interface ImportSummary {
   lessons: MergeCount;
   /** Library items (Resumes and Documents). */
   library: MergeCount;
+  /** Question banks. */
+  questionBanks: MergeCount;
   /**
    * Documents a version 1 file lists by name only (no text), for sessions that were added: their
    * files must be attached again. Always 0 for version 2 files.
@@ -351,7 +368,16 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
   const db = getDb();
   return db.transaction(
     'rw',
-    [db.sessions, db.documents, db.utterances, db.answers, db.notes, db.lessons, db.library],
+    [
+      db.sessions,
+      db.documents,
+      db.utterances,
+      db.answers,
+      db.notes,
+      db.lessons,
+      db.library,
+      db.questionBanks,
+    ],
     async () => {
       const sessions = missing(
         await db.sessions.bulkGet(file.sessions.map((session) => session.id)),
@@ -389,7 +415,14 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
         fileLibrary,
       );
 
+      const fileBanks = file.questionBanks ?? [];
+      const questionBanks = missing(
+        await db.questionBanks.bulkGet(fileBanks.map((bank) => bank.sessionId)),
+        fileBanks,
+      );
+
       await db.sessions.bulkAdd(sessions.toAdd);
+      await db.questionBanks.bulkAdd(questionBanks.toAdd);
       await db.documents.bulkAdd(
         documents.toAdd.map(({ id, sessionId, name, chars, addedAt, text, kind, sourceId }) => ({
           id,
@@ -420,6 +453,7 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
           skipped: file.lessons.length - lessonsToAdd.length,
         },
         library: library.count,
+        questionBanks: questionBanks.count,
         documentsToReattach: file.documents.filter(
           (document) => document.text === undefined && addedSessionIds.has(document.sessionId),
         ).length,

@@ -94,4 +94,5 @@ Global shortcuts need the desktop app; in a browser all shortcuts work only whil
 - **Connect icons:** generic drawings instead of the apps' logos; the licensing is unclear. The video tutorial is a placeholder until one is recorded.
 - **PDF download:** Western European letters only; others show as "?", and the TXT download keeps them. The page says so when it happens.
 - **Ask AI:** the chat is not stored; it lasts while the page is open.
+- **Mock Interview voice:** the browser's own voices, which vary by computer; where there is none, the question is on screen. English-only, because the transcription is.
 - **Local data:** sessions, documents and libraries stay on the device, so they do not follow a user between computers (Export and Import cover that).

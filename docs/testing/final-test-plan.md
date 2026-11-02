@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: parity Phase 3 (after the call).
+**Kept up to date:** each later stage adds its human checks here. Last updated: parity Phase 4 (Prepare tools).
 
 ---
 
@@ -125,6 +125,17 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 5b.4 | **Download TXT** and **Download PDF**; open both. | Same content, readable, no private notes. Each opens in Notepad and in a PDF reader. |
 | 5b.5 | Ask AI: "What did they ask about?", then a follow-up, then something the call never covered. | Short answers from the call; the follow-up understands the first question; the last says it is not there. |
 | 5b.6 | **Clear transcript**: cancel once, then confirm. | Only the transcript goes; answers and notes stay. |
+
+## 5c. Prepare tools (parity Phase 4)
+
+| # | Do | Expect |
+|---|---|---|
+| 5c.1 | **Mock Interview**: choose an Interview session with a real-looking job description and resume, in the desktop app, wearing headphones. | The questions fit the job and resume. Each is read aloud; a voice you can understand. |
+| 5c.2 | Answer two questions out loud. | "What Kite heard" follows you, and your answer is not mixed with Kite's voice. The feedback is short and about what you said. |
+| 5c.3 | Do the same in Chrome, with speakers instead of headphones. | The question's sound does not show up as your answer. |
+| 5c.4 | Finish, then **Review this interview**. | A Mock session: the questions and answers as a chat, feedback inline, the summary in AI notes. It is on the dashboard as Ended. |
+| 5c.5 | Refuse the microphone (browser setting), then start again. | Kite says so, and typed answers work. |
+| 5c.6 | **Question Bank**: write one for an Interview session. Open answers. Leave and come back. | Questions by type; answers in your format, with nothing made up (gaps in square brackets). It shows again at once, with no waiting. |
 
 ## 6. New speech engine (Day 6, only if adopted)
 

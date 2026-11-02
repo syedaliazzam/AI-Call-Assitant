@@ -9,7 +9,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (data model), §8.1 (where
  *               data lives); day-03-sessions.md Stage 1
  */
-import type { CallNotes } from '@kite/shared';
+import type { BankGroup, CallNotes } from '@kite/shared';
 
 /** What kind of call a session is for (the dashboard's type filter tabs). */
 export type SessionType = 'interview' | 'regular' | 'mock';
@@ -306,4 +306,14 @@ export interface StoredLesson {
    * first, so editing a lesson never moves it.
    */
   approvedAt: number | null;
+}
+
+/** A session's question bank (parity Phase 4). */
+export interface StoredQuestionBank {
+  /** The session it was written for (one per session, so it is also the key). */
+  sessionId: string;
+  /** The questions and suggested answers, by kind. */
+  groups: BankGroup[];
+  /** When it was written (Unix ms). */
+  createdAt: number;
 }

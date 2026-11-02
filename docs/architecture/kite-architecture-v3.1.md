@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.8.0"
+version: "3.9.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-02"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.8.0, **Current**: the only document to build from |
+| Version | 3.9.0, **Current**: the only document to build from |
+| Changes in 3.9.0 | Parity Phase 4, the Prepare tools (ADR-0029). §5: Mock Interview and Question Bank pages. §7.2: `/api/prepare`. §7.4: `questionBanks` store (schema version 5). |
 | Changes in 3.8.0 | Parity Phase 3, after the call (ADR-0029). §5: the session window has a side menu; the transcript is a chat with answers inline; Report, Download (TXT and PDF), Clear transcript, Ask AI. §7.2: `/api/ask`. |
 | Changes in 3.7.0 | Parity Phase 2, session setup (ADR-0029). §5: dashboard, wizard, Connect screen; new Resumes and Documents pages. §7.2: `/api/job-import` and `/api/preview`; `language` in the session details. §7.4: new session types, `library` store (schema version 4), documents keep `kind` and `sourceId`. |
 | Date | 2 November 2026 |
@@ -150,6 +151,8 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 | Admin: users | `/admin/users` | Admins only: list users, create user (name, email, role; the server generates the temporary password and shows it once), reset password (new generated temporary password), disable or enable, change role |
 | Dashboard | `/` | **Built Day 3, rebuilt in parity Phase 2.** "Call Sessions": type tabs with counts (All / Interview / Regular / Mock), search by role or company, sort, grid or list (remembered in this browser), and a Create session menu of types. Each card shows date, company, role or topic, type and transcript chips, and status (Ready to start / Live / Ended; a "live" session idle for 12 hours shows as Ended), with Start session or Review, and a ⋮ menu: Edit, Rename, Duplicate, Delete (asks first). |
 | Create / edit session | `/sessions/new`, `/sessions/[id]/edit` | **Built Day 3, reworked in parity Phase 2.** Step 1 Details: type, "Paste a job link" (Interview and Mock), company, role or topic, job description, Resume picker (Interview and Mock) and Documents picker, from the libraries with upload; files are converted to text on this computer, at most 100,000 characters per document and 150,000 per session. Step 2 Preferences: Answer preferences (a window with format, length, tone, a preview per question type, Set as default), AI instructions (a window), answer language, model, key terms, save transcript, auto-answer. |
+| Mock Interview | `/mock` | **Built parity Phase 4.** Kite asks questions written from a session's job description and resume, read aloud by the browser's own voice; listens through the microphone with on-device speech-to-text, or takes typed answers; gives brief feedback on each and a summary; saves it as a Mock session. |
+| Question Bank | `/question-bank` | **Built parity Phase 4.** Likely questions for a session, by type, each with a suggested answer in its format. Saved per session on this computer. |
 | Resumes, Documents | `/resumes`, `/documents` | **Built parity Phase 2.** Upload once (PDF, DOCX or TXT), reuse in any session, delete. Stored on this computer. |
 | Choose platform | dialog | **Built Day 3.** In the browser only: "Desktop app" (explains that the installer arrives on Day 6) or "Open in browser", plus "What's the difference?" (section 4 table). The desktop app opens the session directly |
 | Connect | `/live/[id]` (first view) | A sentence saying what the session is, "Listening for N key terms" (the session hotwords, Day 3), how to connect (generic icons for Zoom, Teams, Google Meet, Webex and phone, each with a short how-to for this platform; a video tutorial placeholder; a link to a practice video), "Connect" button, audio test meters, Back. Underneath: the transcript saved by earlier calls of this session, or a note that the session does not save its transcript |
@@ -238,6 +241,7 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 |---|---|---|
 | `/api/auth/[...all]` | GET, POST | Better Auth handler: sign-in, sign-out, session, change password, and admin operations (admin plugin). Public sign-up is disabled. |
 | `/api/answer` | POST, SSE response | `mode`: `hello` (Day 1 test) / `warm` (Day 3) / `answer` / `chat` / `screenshot` → builds the prompt, calls Claude, streams text. `answer` and `chat` built on Day 4; `screenshot` built on Day 5 (a JPEG data URL ≤ 1,400,000 characters, checked by its bytes, placed uncached before the question) |
+| `/api/prepare` | POST, JSON response | **Built parity Phase 4.** The Prepare tools: mock interview questions and summary, and the question bank, with Sonnet; feedback on an answer, with Haiku. Logs the kind and token counts only. |
 | `/api/ask` | POST, JSON response | **Built parity Phase 3.** Answers a question about a finished call with Sonnet, from its transcript, answers, notes and documents. Rules, session and call are cached blocks. Logs token counts only; the cost in development only. |
 | `/api/job-import` | POST, JSON response | **Built parity Phase 2.** Fetches a public job page (public addresses only: `server/job-page.ts`) and extracts the company, role and description with Haiku for the user to check. Logs sizes and token counts only. |
 | `/api/preview` | POST, JSON response | **Built parity Phase 2.** One Answer preview on an invented interview, with Haiku and the real rules. Only known settings are accepted. The browser keeps each result. |
@@ -350,6 +354,7 @@ Built on Day 3 (`core/storage`, ADR-0024). One IndexedDB database, `kite`, opene
 
 | Store (indexes) | Fields |
 |---|---|
+| `questionBanks` (sessionId), schema version 5 | sessionId, groups (type; questions with suggested answers), createdAt. Goes with its session. |
 | `library` (id, kind), schema version 4 | id, kind (`resume` / `document`), name, text, chars, addedAt. A session keeps its own copy of what it uses. |
 | `sessions` (id, createdAt, type, status) | id, type (`interview` / `regular` / `mock`; older types become `regular` in schema version 4), company, role, description, preferences (language `en`, model `fast`/`smart`, style {format, length, tone}, keyTerms: one per line), instructions, saveTranscript, autoAnswer, createdAt, status (`not-started` / `live` / `ended`), lastActiveAt |
 | `documents` (id, sessionId) | id, sessionId, name, text (extracted text only, never the file), chars, addedAt, kind (`resume` or `document`), sourceId (the library item it was copied from) |
