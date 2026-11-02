@@ -366,3 +366,44 @@ test('Delete asks in a dialog, removes everything and returns to the dashboard',
     documents: 0,
   });
 });
+
+test('Export my data, wipe, Import data restores it; importing again adds nothing (Day 6)', async () => {
+  const id = await page.evaluate(() => window.kiteReviewHarness.seed('full'));
+  const before = await page.evaluate((sessionId) => window.kiteReviewHarness.count(sessionId), id);
+  await page.evaluate(() => window.kiteReviewHarness.showData());
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Export my data' }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^kite-export-\d{4}-\d{2}-\d{2}\.json$/);
+  const file = (await download.path())!;
+  const exported = JSON.parse(readFileSync(file, 'utf8')) as {
+    format: string;
+    documents: Record<string, unknown>[];
+  };
+  expect(exported.format).toBe('kite-export');
+  // Document metadata only: no extracted text in the file.
+  expect(exported.documents.every((document) => !('text' in document))).toBe(true);
+  await expect(page.getByRole('status')).toContainText('Exported');
+
+  await page.evaluate(() => window.kiteReviewHarness.wipe());
+  await page.evaluate(() => window.kiteReviewHarness.showData());
+  await page.getByLabel('Kite export file to import').setInputFiles(file);
+  await expect(page.getByRole('status')).toContainText('Added');
+  await expect(page.getByRole('status')).toContainText('attach the files again');
+  const after = await page.evaluate((sessionId) => window.kiteReviewHarness.count(sessionId), id);
+  expect({ ...after, documents: 0 }).toEqual({ ...before, documents: 0 });
+
+  await page.getByLabel('Kite export file to import').setInputFiles(file);
+  await expect(page.getByRole('status')).toContainText('Added 0 sessions');
+  await expect(page.getByRole('status')).toContainText('already on this computer');
+
+  // Not a Kite export: a clear message, nothing changed.
+  await page.getByLabel('Kite export file to import').setInputFiles({
+    name: 'other.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{"hello":1}'),
+  });
+  await expect(page.getByRole('alert')).toHaveText('This file is not a Kite export.');
+});

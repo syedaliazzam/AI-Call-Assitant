@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 (Microsoft Store investigation).
+**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 (export and import).
 
 ---
 
@@ -133,6 +133,15 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 9b.7 | **Compact view**, then share the entire screen in Google Meet and look from your phone. | Hidden in screen share: not visible; Visible: visible. |
 | 9b.8 | Leave Kite open for a day after a new Store version is published. | The Store updates Kite; Kite itself never shows its own Restart now / Later question. |
 | 9b.9 | Uninstall from Windows Settings → Apps. | No question about keeping data; no Kite folder left in AppData. |
+
+## 9c. Export and import your data (Day 6)
+
+| # | Do | Expect |
+|---|---|---|
+| 9c.1 | In the **browser**: Settings → Local data → **Export my data**. | A file  downloads; Settings says how many sessions it holds. |
+| 9c.2 | In the **desktop app**: Settings → Local data → **Import data**, pick that file. | "Added N sessions…"; the dashboard shows them with their transcripts, answers and notes; documents need attaching again (it says how many). |
+| 9c.3 | Import the same file again. | "Added 0 sessions… already on this computer"; nothing appears twice. |
+| 9c.4 | Pick any other file (a photo, a random .json). | A clear message; nothing changes. |
 
 ## 10. Look and phones (UI U1–U4)
 

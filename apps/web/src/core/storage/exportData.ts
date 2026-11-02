@@ -1,0 +1,356 @@
+/**
+ * File: apps/web/src/core/storage/exportData.ts
+ * Purpose: "Export my data" and "Import data" (Day 6): one JSON file with everything Kite keeps
+ *          on this computer that a user would want to move or back up: sessions, document
+ *          metadata (name, size, date; not the extracted text), saved transcript lines,
+ *          answers, notes and lesson decisions. Never audio (Kite stores none). The file is
+ *          versioned and fully validated before anything is written; import merges: a record
+ *          already on this computer (same id; for lessons also the same original proposal)
+ *          is kept, so importing the same file twice adds nothing.
+ * Used by: src/features/settings/DataTransfer.tsx
+ * Depends on: src/core/storage/db.ts, src/core/storage/types.ts, zod
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (local storage); ADR-0024
+ *
+ * The file holds the user's own call content; it is never logged or sent anywhere.
+ */
+import { z } from 'zod';
+import { getDb } from './db';
+import type { Session, StoredAnswer, StoredLesson, StoredNotes, StoredUtterance } from './types';
+
+/** The file's "format" value: tells a Kite export apart from any other JSON file. */
+export const EXPORT_FORMAT = 'kite-export';
+
+/** The file layout version. Raise it when the layout changes, and keep reading older ones. */
+export const EXPORT_VERSION = 1;
+
+/** Largest file accepted for import (50 MB): far above a year of calls, below browser limits. */
+export const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
+
+/** A document's metadata in the export: its text stays on the computer it was added on. */
+export interface ExportedDocument {
+  /** Document id. */
+  id: string;
+  /** The session it belongs to. */
+  sessionId: string;
+  /** Original file name. */
+  name: string;
+  /** Length of its extracted text, in characters. */
+  chars: number;
+  /** When it was added (Unix ms). */
+  addedAt: number;
+}
+
+/** The export file. */
+export interface ExportFile {
+  /** Always EXPORT_FORMAT. */
+  format: typeof EXPORT_FORMAT;
+  /** The layout version (EXPORT_VERSION when written). */
+  version: number;
+  /** When it was written (Unix ms). */
+  exportedAt: number;
+  /** All sessions. */
+  sessions: Session[];
+  /** Document metadata (no text). */
+  documents: ExportedDocument[];
+  /** Saved transcript lines. */
+  utterances: StoredUtterance[];
+  /** Answers with ratings and notes. */
+  answers: StoredAnswer[];
+  /** Notes, one per session that has them. */
+  notes: StoredNotes[];
+  /** Lesson decisions (approved and rejected). */
+  lessons: StoredLesson[];
+}
+
+const sessionType = z.enum(['interview', 'sales', 'support', 'internal']);
+
+/** Validation for each record type (matching core/storage/types.ts). */
+const SessionSchema = z.object({
+  id: z.string().min(1),
+  type: sessionType,
+  company: z.string(),
+  role: z.string(),
+  description: z.string(),
+  preferences: z.object({
+    language: z.literal('en'),
+    model: z.enum(['fast', 'smart']),
+    style: z.object({
+      format: z.enum(['headline+bullets', 'paragraph']),
+      length: z.enum(['short', 'medium', 'detailed']),
+      tone: z.enum(['simple', 'professional', 'friendly']),
+    }),
+    keyTerms: z.string(),
+  }),
+  instructions: z.string(),
+  saveTranscript: z.boolean(),
+  autoAnswer: z.boolean(),
+  createdAt: z.number(),
+  status: z.enum(['not-started', 'live', 'ended']),
+  lastActiveAt: z.number().nullable(),
+});
+const DocumentSchema = z.object({
+  id: z.string().min(1),
+  sessionId: z.string().min(1),
+  name: z.string(),
+  chars: z.number(),
+  addedAt: z.number(),
+});
+const UtteranceSchema = z.object({
+  id: z.string().min(1),
+  sessionId: z.string().min(1),
+  speaker: z.enum(['you', 'them']),
+  text: z.string(),
+  tStart: z.number(),
+  tEnd: z.number(),
+});
+const AnswerSchema = z.object({
+  id: z.string().min(1),
+  sessionId: z.string().min(1),
+  mode: z.enum(['answer', 'chat', 'screenshot']),
+  question: z.string(),
+  text: z.string(),
+  model: z.enum(['fast', 'smart']),
+  msFirstToken: z.number().nullable(),
+  msTotal: z.number(),
+  createdAt: z.number(),
+  rating: z.enum(['up', 'down']).nullable(),
+  note: z.string(),
+});
+const NotesSchema = z.object({
+  sessionId: z.string().min(1),
+  notes: z.object({
+    summary: z.array(z.string()),
+    questions: z.array(z.looseObject({ question: z.string(), at: z.number() })),
+    nextSteps: z.array(z.looseObject({ step: z.string(), owner: z.string() })),
+    unclear: z.array(z.looseObject({ from: z.number(), to: z.number(), reason: z.string() })),
+    lessons: z.array(z.looseObject({ text: z.string(), evidence: z.string() })),
+  }),
+  callStartedAt: z.number(),
+  createdAt: z.number(),
+  fromAnswersOnly: z.boolean().optional(),
+});
+const LessonSchema = z.object({
+  id: z.string().min(1),
+  text: z.string(),
+  scope: z.union([z.literal('all'), sessionType]),
+  status: z.enum(['approved', 'rejected']),
+  sourceSessionId: z.string(),
+  sourceKey: z.string(),
+  evidence: z.string(),
+  decidedAt: z.number(),
+  approvedAt: z.number().nullable(),
+});
+const ExportSchema = z.object({
+  format: z.literal(EXPORT_FORMAT),
+  version: z.number().int(),
+  exportedAt: z.number(),
+  sessions: z.array(SessionSchema),
+  documents: z.array(DocumentSchema),
+  utterances: z.array(UtteranceSchema),
+  answers: z.array(AnswerSchema),
+  notes: z.array(NotesSchema),
+  lessons: z.array(LessonSchema),
+});
+
+/**
+ * Reads everything to export.
+ *
+ * @param now The export time (Unix ms).
+ * @returns The export file's contents.
+ * Called from: DataTransfer.tsx ("Export my data"); tests
+ */
+export async function exportData(now = Date.now()): Promise<ExportFile> {
+  const db = getDb();
+  const documents = await db.documents.toArray();
+  return {
+    format: EXPORT_FORMAT,
+    version: EXPORT_VERSION,
+    exportedAt: now,
+    sessions: await db.sessions.toArray(),
+    // Metadata only: the extracted text stays on this computer.
+    documents: documents.map(({ id, sessionId, name, chars, addedAt }) => ({
+      id,
+      sessionId,
+      name,
+      chars,
+      addedAt,
+    })),
+    utterances: await db.utterances.toArray(),
+    answers: await db.answers.toArray(),
+    notes: await db.notes.toArray(),
+    lessons: await db.lessons.toArray(),
+  };
+}
+
+/**
+ * The file name for an export, for example "kite-export-2026-11-02.json".
+ *
+ * @param now The export time (Unix ms).
+ * @returns The file name.
+ * Called from: DataTransfer.tsx
+ */
+export function exportFileName(now = Date.now()): string {
+  return `kite-export-${new Date(now).toISOString().slice(0, 10)}.json`;
+}
+
+/** The result of checking a file: the export, or why it cannot be imported. */
+export type ParsedExport = ExportAccepted | ExportRejected;
+
+/** A file that passed every check. */
+export interface ExportAccepted {
+  /** Always true. */
+  ok: true;
+  /** The checked export. */
+  file: ExportFile;
+}
+
+/** A file that cannot be imported. */
+export interface ExportRejected {
+  /** Always false. */
+  ok: false;
+  /** Why, in words for the user (never the file's content). */
+  error: string;
+}
+
+/**
+ * Checks a file's text before anything is imported: size, JSON, format, version and every
+ * record.
+ *
+ * @param text The file's text.
+ * @returns The export, or a message for the user.
+ * Called from: DataTransfer.tsx ("Import data"); tests
+ */
+export function parseExport(text: string): ParsedExport {
+  if (text.length > MAX_IMPORT_BYTES) {
+    return { ok: false, error: 'This file is too large to be a Kite export.' };
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return { ok: false, error: 'This file is not a Kite export (it is not JSON).' };
+  }
+  const head = json as { format?: unknown; version?: unknown } | null;
+  if (!head || typeof head !== 'object' || head.format !== EXPORT_FORMAT) {
+    return { ok: false, error: 'This file is not a Kite export.' };
+  }
+  if (typeof head.version !== 'number' || head.version > EXPORT_VERSION) {
+    return {
+      ok: false,
+      error: 'This export was made by a newer version of Kite. Update Kite, then import it.',
+    };
+  }
+  const result = ExportSchema.safeParse(json);
+  if (!result.success) {
+    // Name the place only (for example "answers.3.rating"), never the content.
+    const where = result.error.issues[0]?.path.join('.') ?? 'unknown';
+    return { ok: false, error: `This Kite export is damaged (at ${where}). Nothing was imported.` };
+  }
+  // Every record field is checked above; the notes items are checked on the fields Kite reads
+  // and kept whole (looseObject), so the type is narrowed through unknown.
+  return { ok: true, file: result.data as unknown as ExportFile };
+}
+
+/** How many records of one kind were added, and how many were already here. */
+export interface MergeCount {
+  /** Added to this computer. */
+  added: number;
+  /** Already here (kept as they are). */
+  skipped: number;
+}
+
+/** What an import did. */
+export interface ImportSummary {
+  /** Sessions. */
+  sessions: MergeCount;
+  /** Saved transcript lines. */
+  utterances: MergeCount;
+  /** Answers. */
+  answers: MergeCount;
+  /** Notes. */
+  notes: MergeCount;
+  /** Lesson decisions. */
+  lessons: MergeCount;
+  /** Documents listed in the file for sessions that were added: their files must be re-attached. */
+  documentsToReattach: number;
+}
+
+/**
+ * Picks the records whose key is not here yet.
+ *
+ * @param existing What bulkGet found for each record's key, in the same order (undefined when
+ *                 the key is not here).
+ * @param records  The file's records.
+ * @returns The records to add, and the merge count.
+ * Called from: importData()
+ */
+function missing<T>(
+  existing: readonly unknown[],
+  records: readonly T[],
+): { toAdd: T[]; count: MergeCount } {
+  const toAdd = records.filter((_, index) => existing[index] === undefined);
+  return { toAdd, count: { added: toAdd.length, skipped: records.length - toAdd.length } };
+}
+
+/**
+ * Imports a checked export by merging: records already on this computer are kept as they are,
+ * so nothing is duplicated and importing the same file twice adds nothing. All in one
+ * transaction: either everything new is added, or nothing is.
+ *
+ * @param file A file checked by parseExport().
+ * @returns What was added and kept.
+ * Called from: DataTransfer.tsx ("Import data"); tests
+ */
+export async function importData(file: ExportFile): Promise<ImportSummary> {
+  const db = getDb();
+  return db.transaction(
+    'rw',
+    [db.sessions, db.utterances, db.answers, db.notes, db.lessons],
+    async () => {
+      const sessions = missing(
+        await db.sessions.bulkGet(file.sessions.map((session) => session.id)),
+        file.sessions,
+      );
+      const utterances = missing(
+        await db.utterances.bulkGet(file.utterances.map((line) => line.id)),
+        file.utterances,
+      );
+      const answers = missing(
+        await db.answers.bulkGet(file.answers.map((answer) => answer.id)),
+        file.answers,
+      );
+      const notes = missing(
+        await db.notes.bulkGet(file.notes.map((entry) => entry.sessionId)),
+        file.notes,
+      );
+      // Lessons: also skip a decision on the same original proposal (sourceKey), so a decision
+      // made again on this computer is not doubled.
+      const knownKeys = new Set((await db.lessons.toArray()).map((lesson) => lesson.sourceKey));
+      const byId = await db.lessons.bulkGet(file.lessons.map((lesson) => lesson.id));
+      const lessonsToAdd = file.lessons.filter(
+        (lesson, index) => byId[index] === undefined && !knownKeys.has(lesson.sourceKey),
+      );
+
+      await db.sessions.bulkAdd(sessions.toAdd);
+      await db.utterances.bulkAdd(utterances.toAdd);
+      await db.answers.bulkAdd(answers.toAdd);
+      await db.notes.bulkAdd(notes.toAdd);
+      await db.lessons.bulkAdd(lessonsToAdd);
+
+      const addedSessionIds = new Set(sessions.toAdd.map((session) => session.id));
+      return {
+        sessions: sessions.count,
+        utterances: utterances.count,
+        answers: answers.count,
+        notes: notes.count,
+        lessons: {
+          added: lessonsToAdd.length,
+          skipped: file.lessons.length - lessonsToAdd.length,
+        },
+        documentsToReattach: file.documents.filter((document) =>
+          addedSessionIds.has(document.sessionId),
+        ).length,
+      };
+    },
+  );
+}
