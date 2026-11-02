@@ -36,6 +36,7 @@ Settings → Hotkeys lists them and reports any global shortcut another app hold
 - The rules block changes, so its hash and every session's first prompt cache entry change.
 - **The grader's rubric changes,** because it has to accept "Tip:" and "Note:" lines. The grader is still Sonnet, but scores after this change are not strictly comparable with earlier baselines. Results are in `docs/testing/answer-eval.md`.
 - Older desktop installs keep working: every new bridge method is optional, and the page skips what the shell does not have. They do not get the new global overlay shortcuts until updated.
+- **New `answers` baseline: 9.18** (9.17, 9.07, 9.30), accepted by the developer on 2 Nov 2026 although it missed the old gate of 9.28 by 0.10. The format is what was asked for and the rubric changed with it. The next gate is at least 9.03. `screenshots` fell from 8.83 to 8.00, at its limit: a Day 7 evaluation check, not tuned now.
 - The overlay no longer shows the Kite lockup: the controls bar has no room for it at its smallest size.
 - Whole-window opacity also fades the text, which is why the range stops at 0.35.
 

@@ -78,6 +78,9 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 
 ## 4. Screenshot answers (Day 5)
 
+**Evaluation check for the release run:** the `screenshots` group fell from 8.83 to 8.00 in parity Phase 1, right at its limit. Compare it in the `eval:all` run and read the saved grader reasons (`apps/web/eval-results/`).
+
+
 | # | Do | Expect |
 |---|---|---|
 | 4.1 | Open an invented slide with numbers. In the desktop app press **Screenshot** (or Ctrl+Shift+Enter). | The answer is about the slide's numbers. Nothing is saved to disk. |

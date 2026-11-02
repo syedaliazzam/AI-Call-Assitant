@@ -494,7 +494,11 @@ function dropExpectedFailures(watched: WatchedPage): void {
     0,
     watched.problems.length,
     ...watched.problems.filter(
-      (line) => !line.includes('answer: failed') && !line.includes('status of 401'),
+      (line) =>
+        !line.includes('answer: failed') &&
+        !line.includes('status of 401') &&
+        // This test goes offline on purpose, so requests made meanwhile fail.
+        !line.includes('ERR_INTERNET_DISCONNECTED'),
     ),
   );
 }
@@ -508,6 +512,7 @@ test('error states: no connection pauses answers; signed out offers sign-in in p
     await watched.context.setOffline(true);
     const banner = page.getByRole('alert').filter({ hasText: 'Answers are paused' });
     await expect(banner).toBeVisible();
+    dropExpectedFailures(watched);
     await shot(watched, size, 'error-offline');
     await watched.context.setOffline(false);
     await expect(banner).toBeHidden();

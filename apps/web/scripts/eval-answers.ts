@@ -16,13 +16,16 @@
  *            --show     also print each answer and the grader's reason (local use only; the
  *                       scenarios are invented, but answers are never printed by default)
  *            --dry-run  print the estimated number of Claude requests and stop
+ *          Every paid run also saves per-scenario scores and grader reasons to a git-ignored
+ *          file (scripts/lib/eval-results.ts), so a drop can be diagnosed without another run.
  *          Re-run only the groups a change touches; the full suite once, at release
  *          (CLAUDE.md "Evaluation cost"). The estimate is printed before anything is sent.
  * Used by: the "eval:answers" script in apps/web/package.json (run by a developer by hand;
  *          never in CI: it calls the real API and needs the real key)
  * Depends on: src/server/prompt.ts (buildPrompt, sessionBlock, SYSTEM_RULES),
  *             src/server/claude.ts (streamReply, jsonReply), src/server/env.ts, @kite/shared,
- *             scripts/lib/eval-options.ts (options, groups, estimate)
+ *             scripts/lib/eval-options.ts (options, groups, estimate),
+ *             scripts/lib/eval-results.ts (the saved results)
  * Key: refuses to run without ANTHROPIC_API_KEY (scripts/lib/require-key.ts). A paid run: agree
  *      it, with its estimated cost, with the developer first (CLAUDE.md "Claude key and spend").
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (testing); ADR-0025;
@@ -51,6 +54,7 @@ import { getClaudeEnv } from '@/server/env';
 import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
 import { requireKey } from './lib/require-key';
 import { estimateLine, parseEvalArgs, selectScenarios } from './lib/eval-options';
+import { saveEvalResults, type ScenarioResult, type ScenarioRunResult } from './lib/eval-results';
 
 /** tests/eval/scenarios. */
 const SCENARIO_DIR = path.join(
@@ -305,9 +309,11 @@ async function main(): Promise<void> {
   const header =
     '| Scenario | Facts /3 | Grounded /2 | Consistent /2 | Style /1 | Headline /1 | Bullets /1 | Total /10 |';
   const rows: string[] = [];
+  const results: ScenarioResult[] = [];
   let sum = 0;
   for (const scenario of scenarios) {
     const totals = { facts: 0, grounded: 0, consistent: 0, style: 0, headline: 0, bullets: 0 };
+    const runs: ScenarioRunResult[] = [];
     for (let run = 1; run <= options.runs; run += 1) {
       const text = await answerScenario(scenario, env.modelFast, options.withoutLessons);
       const graded = await grade(scenario, text, env.modelSmart);
@@ -318,6 +324,20 @@ async function main(): Promise<void> {
       totals.style += graded.style;
       totals.headline += shape.headline;
       totals.bullets += shape.bullets;
+      const scores = {
+        facts: graded.facts,
+        grounded: graded.grounded,
+        consistent: graded.consistent,
+        style: graded.style,
+        headline: shape.headline,
+        bullets: shape.bullets,
+      };
+      runs.push({
+        run,
+        scores,
+        total: Object.values(scores).reduce((a, b) => a + b, 0),
+        reason: graded.reason,
+      });
       if (options.show) {
         console.log(`\n--- ${scenario.id} run ${run} ---\n${text}\n(grader: ${graded.reason})`);
       }
@@ -331,6 +351,7 @@ async function main(): Promise<void> {
       average(totals.headline) +
       average(totals.bullets);
     sum += total;
+    results.push({ id: scenario.id, mean: total, runs });
     const cell = (n: number) => average(n).toFixed(1);
     rows.push(
       `| ${scenario.id} | ${cell(totals.facts)} | ${cell(totals.grounded)} | ${cell(totals.consistent)} | ${cell(totals.style)} | ${cell(totals.headline)} | ${cell(totals.bullets)} | ${total.toFixed(1)} |`,
@@ -340,6 +361,17 @@ async function main(): Promise<void> {
   console.log(
     `\nOverall: ${(sum / scenarios.length).toFixed(2)} / 10 (mean of ${scenarios.length} scenarios)`,
   );
+  const saved = saveEvalResults({
+    evaluation: 'answers',
+    only: options.only,
+    withoutLessons: options.withoutLessons,
+    finishedAt: new Date().toISOString(),
+    model: env.modelFast,
+    grader: env.modelSmart,
+    overall: sum / scenarios.length,
+    scenarios: results,
+  });
+  console.log(`Scores and grader reasons saved to ${saved}`);
 }
 
 // Run only when executed directly (the unit test imports shapeChecks()).

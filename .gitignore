@@ -31,6 +31,9 @@ apps/web/next-env.d.ts
 apps/web/public/models/**
 apps/web/public/stt-runtime/**
 
+# Evaluation results: per-scenario scores and grader reasons, kept on the developer's machine
+apps/web/eval-results/
+
 # Logs
 *.log
 npm-debug.log*

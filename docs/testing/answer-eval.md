@@ -305,7 +305,7 @@ The follow-up scenario (04) went over 15 words in one run on 1 Nov without any l
 
 **Result: passes** (≥ 8; n3's faithfulness and unclear scores both went up).
 
-### Parity Phase 1: first-person answers, optional tip and private note (not yet accepted)
+### Parity Phase 1: first-person answers, optional tip and private note
 
 **What changed** (`server/prompt.ts`, ADR-0029): answers are written in the first person, the headline is one sentence, and an answer may end with a "Tip:" line and a private "Note:" line. The grader's rubric now allows those two lines; the grader is still Sonnet, so these scores are not strictly comparable with earlier ones.
 
@@ -320,3 +320,9 @@ The follow-up scenario (04) went over 15 words in one run on 1 Nov without any l
 | `lessons` (2) | 9.00 | 9.00 | at least 8 and above 8.50: passes (10.00 before) |
 
 Per-scenario scores of these runs were not kept, so which scenarios lost points is not known.
+
+**Decision (developer, 2026-11-02): accepted. 9.18 is the new `answers` baseline** for the new format and changed rubric, even though it missed the old gate by 0.10. From now on the `answers` gate is at least 9.03 (9.18 − 0.15).
+
+**Day 7 eval check:** `screenshots` fell from 8.83 to 8.00, right at its limit, and was not tuned. Look at it again in the release run.
+
+**Saved results:** every paid run now saves per-scenario scores and grader reasons to `apps/web/eval-results/` (git-ignored; `scripts/lib/eval-results.ts`), so a drop can be diagnosed without another run. The answers themselves are not saved.
