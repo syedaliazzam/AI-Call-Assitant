@@ -10,9 +10,20 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 Stages 3 and 6.
+**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 (Smart App Control finding).
 
 ---
+
+## First: install on a teammate's laptop (Smart App Control)
+
+Do this before everything else: it decides whether Kite can ship unsigned. On the developer's laptop, Windows Smart App Control blocked an unsigned Kite build from starting (Code Integrity events 3033 and 3077, 2 Nov).
+
+| # | Do | Expect / write down |
+|---|---|---|
+| F.1 | On a **teammate's** Windows 11 laptop, open **Windows Security → App & browser control → Smart App Control settings**. | Write down: **On**, **Evaluation** or **Off**. (Do not change it.) |
+| F.2 | Download `Kite-Setup-<version>.exe` from the releases page and open it. | Write down exactly what Windows shows: nothing, the SmartScreen "Windows protected your PC" (then **More info → Run anyway**), or a Smart App Control block ("Part of this app has been blocked…"), which cannot be bypassed. |
+| F.3 | If it installed, open Kite from the Start menu. | Write down whether it opens or is blocked. |
+| F.4 | Send the developer the three answers and a photo of any block message. | If Smart App Control blocks it on a teammate's laptop, code signing is required before release (lead decision, ADR-0028). |
 
 ## 0. Setup
 

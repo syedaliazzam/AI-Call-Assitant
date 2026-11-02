@@ -37,7 +37,10 @@ The Kite desktop app needs an installer for the team's Windows laptops, and a wa
 1. **Move the releases repository to a company GitHub organisation.**
    - There is no organisation yet, so it is under the developer's account for now.
    - Moving it means changing `publish.owner` in `apps/desktop/electron-builder.yml` and releasing once from the old place, so installed apps learn the new address.
-2. **Code-signing certificate.**
+2. **Code-signing certificate: code signing is likely required (Smart App Control).**
+   - On the developer's Windows 11 laptop, Smart App Control is on. It blocked an unsigned Kite build from starting (Code Integrity events 3033 and 3077: "did not meet the Enterprise signing level requirements"; 2 Nov). It also blocked one form of the build itself.
+   - Unlike SmartScreen, a Smart App Control block has no "Run anyway". Freshly set-up Windows 11 PCs start it in evaluation mode, and Windows may then turn it on.
+   - The Day 7 final test plan starts by installing on a teammate's laptop to see how common this is.
    - Without one, Windows SmartScreen shows "Windows protected your PC" on first run. Users click More info → Run anyway, as the user guide says (`docs/user-guide/install-windows.md`).
    - An OV or EV code-signing certificate removes or reduces the warning; an EV certificate is trusted immediately. Prices vary by vendor.
    - Nothing was bought.
