@@ -187,6 +187,15 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * Tells the shell whether a call is live (older shells without it ignore the call).
+     *
+     * @param active True while connected.
+     */
+    setCallActive(active: boolean) {
+      bridge.setCallActive?.(active);
+    },
+
+    /**
      * The hotkeys: the shell's global shortcuts (work from any app, Stage 8) and the in-page
      * shortcuts (while the Kite window has focus; the only ones in a desktop app installed
      * before Day 4, whose bridge has no onHotkey). A key press that reaches both is handled

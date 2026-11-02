@@ -190,6 +190,12 @@ export function LivePage({
   const [levels, setLevels] = useState<ChannelLevels>({ you: 0, them: 0 });
   // Day 6 Stage 4e: when "Them" last had sound (or the call connected), and whether it has been
   // silent for 20 s (then a notice suggests checking the shared tab or app).
+  // Day 6: the desktop app never asks to restart for an update while a call is connected.
+  useEffect(() => {
+    const platformApi = getPlatform();
+    platformApi.setCallActive(connection === 'connected');
+    return () => platformApi.setCallActive(false);
+  }, [connection]);
   const themSoundAt = useRef(0);
   const [themQuiet, setThemQuiet] = useState(false);
   useEffect(() => {

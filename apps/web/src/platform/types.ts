@@ -103,6 +103,14 @@ export interface Platform {
   closeCompactView(): Promise<void>;
 
   /**
+   * Says whether a live call is going on (Day 6): the desktop app then never asks to restart
+   * for an update during a call. Nothing happens in the browser.
+   *
+   * @param active True while connected to a call.
+   */
+  setCallActive(active: boolean): void;
+
+  /**
    * Listens for hotkey actions (answer, screenshot, clear, prev, next). Call it for the length
    * of a live call only: in the desktop app it takes the shortcuts from every other app.
    * - Desktop: Electron global shortcuts, which work from any app, forwarded to the page (turned

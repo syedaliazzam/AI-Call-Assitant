@@ -79,6 +79,13 @@ export interface KiteDesktopApi {
    */
   setShareProtection?: (on: boolean) => Promise<ShareProtectionState>;
   /**
+   * Day 6: tells the shell whether a live call is going on, so an update never asks to restart
+   * during a call.
+   *
+   * @param active True while connected to a call.
+   */
+  setCallActive?: (active: boolean) => void;
+  /**
    * Day 5: the remembered protection setting.
    *
    * @returns The state, and whether this OS supports it.
