@@ -3,7 +3,8 @@
 #          (Day 6, the no-purchase alternative to code signing; docs/deploy/microsoft-store.md):
 #          1. makes a throwaway self-signed test certificate whose subject matches the
 #             placeholder publisher in electron-builder.yml (never stored, gone with the runner);
-#          2. builds and signs the package with it, trusts it on the runner, installs it;
+#          2. builds the package unsigned (as for the Store), signs it with the Windows SDK's
+#             signtool for this test, trusts the certificate on the runner, installs it;
 #          3. starts Kite through its Store app id (package identity, as the Store starts it) and
 #             checks that Kite.exe runs from the package and stays up;
 #          4. writes KITE_INSTALLED_EXE for the next step, which runs the desktop smoke test
@@ -26,13 +27,19 @@ $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $publisher `
 $secure = ConvertTo-SecureString $password -AsPlainText -Force
 Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $secure | Out-Null
 
-# 2. Build and sign the package; trust the certificate for installing; install.
-$env:CSC_LINK = $pfx
-$env:CSC_KEY_PASSWORD = $password
+# 2. Build the package unsigned (as it goes to the Store), then sign it for this test with the
+#    Windows SDK's signtool (electron-builder's bundled signtool rejects this kind of test key:
+#    "A required function is not present"); trust the certificate for installing; install.
 pnpm --filter desktop dist:store
 if ($LASTEXITCODE -ne 0) { throw "dist:store failed ($LASTEXITCODE)" }
 $appx = Get-ChildItem apps/desktop/release/*.appx | Select-Object -First 1
 Write-Host "Package: $($appx.Name), $($appx.Length) bytes"
+$signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe' |
+  Sort-Object FullName -Descending | Select-Object -First 1
+if (-not $signtool) { throw 'Windows SDK signtool not found on the runner' }
+& $signtool.FullName sign /fd SHA256 /f $pfx /p $password $appx.FullName | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "signtool failed ($LASTEXITCODE)" }
+Write-Host "Signed for the test with $($signtool.FullName)"
 Import-Certificate -FilePath (Export-Certificate -Cert $cert -FilePath (Join-Path $env:RUNNER_TEMP 'kite-store-test.cer')).FullName `
   -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
 Add-AppxPackage -Path $appx.FullName
