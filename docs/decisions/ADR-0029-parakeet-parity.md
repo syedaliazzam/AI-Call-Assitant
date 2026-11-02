@@ -31,6 +31,24 @@ Settings → Hotkeys lists them and reports any global shortcut another app hold
 
 **Reports.** "Report this answer" stores a flag and the note on the device (`StoredAnswer.reported`). It is never sent anywhere. No database version change: no index uses it.
 
+Phase 2 (session setup) decisions:
+
+**Session types.** Interview, Regular and Mock. Sales, Support and Internal become Regular when a device's database upgrades (version 4) and when an older export file is imported, through one set of rules (`core/storage/migrate.ts`). Lessons scoped to the old types move with them.
+
+**Stored style names stay; only the words on screen change.** "Script + bullets" is still stored as `headline+bullets`, "Script only" as `paragraph`, and "Balanced" as `medium`. Only `bullets` and `technical` are new; `friendly` becomes `simple`. Renaming the stored values would change every session's prompt, and every evaluation scenario, for no change in what users get.
+
+**Libraries.** Resumes and Documents are a new store, `library`. A session gets its own copy of what it uses (with `sourceId` saying where it came from), so deleting from a library never changes a past session. Uploading in the wizard adds to the library and chooses the file.
+
+**Job link.** The server fetches a URL a user typed, so it must never reach anything private (`server/job-page.ts`): only http and https on ports 80 and 443; every address a host resolves to is checked, inside the connection's own DNS lookup, so a host cannot change its answer between check and connection; any private answer refuses the host; every redirect is checked the same way; 10 seconds and 3 MB at most. The page is untrusted text: Claude is told to treat it as data, the reply is limited to three fields by a schema, and the user sees and can edit them. Neither the page, the address nor the result is logged. Some sites block automatic reading, and pages built entirely by scripts have no text to read: the user is told, and can paste the details.
+
+**Answer preview.** Written with the real rules on an invented interview, only when asked for, and kept in the browser per combination of settings, so each costs one Haiku request at most, once.
+
+**Answer language and the bullets format live in the session block, not the shared rules.** Answers can be written in another language; live transcription stays English-only. An English session sends no language, so its prompt and cache entry are unchanged. The first version put both rules in the shared rules, and `answers` fell to 8.97 against a gate of 9.03. Moving them restored the shared rules byte for byte, and `answers` scored 9.31. Why the first version scored lower is not established: the scenarios that moved most were 15, 10 and 03, while scenario 05, first suspected, scored 8 in all six runs. The same rules scored 9.18 in Phase 1, so differences of about 0.13 can be noise. Either way, rules used by few sessions belong with those sessions.
+
+**Answer preferences during a call.** The overlay's menu has format, length and tone, sent to the live page as a command and saved with the session. There is no preview there: the overlay is too small, and it would cost a request during a call. A change takes effect from the next answer; that answer misses the prompt cache once, because the style is in the cached session block.
+
+**Icons on the Connect screen** are generic line drawings, not the apps' logos. The video tutorial is a placeholder.
+
 ## Consequences
 
 - The rules block changes, so its hash and every session's first prompt cache entry change.

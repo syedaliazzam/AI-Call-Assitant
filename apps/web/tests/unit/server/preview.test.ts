@@ -63,7 +63,8 @@ describe('generatePreview', () => {
     expect(input.prompt).toContain('Answer format: bullets');
     expect(input.prompt).toContain('Answer length: detailed');
     expect(input.prompt).toContain('Answer tone: technical');
-    expect(input.prompt).toContain('Answer language: Spanish');
+    expect(input.prompt).toContain('Answer language: Spanish.');
+    expect(input.prompt).toContain('only short bullet points');
   });
 });
 

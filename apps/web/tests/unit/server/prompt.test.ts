@@ -292,6 +292,37 @@ describe('clockTime', () => {
   });
 });
 
+describe('sessionBlock, options used by few sessions', () => {
+  const base = {
+    type: 'interview',
+    company: 'A',
+    role: 'B',
+    description: '',
+    instructions: '',
+    keyTerms: [],
+    documents: [],
+  };
+
+  it('adds nothing for an English session with headline and bullets', () => {
+    const block = sessionBlock({
+      ...base,
+      style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
+    });
+    expect(block).not.toContain('Answer language');
+    expect(block).not.toContain('only short bullet points');
+  });
+
+  it('adds the format and language lines only when they are used', () => {
+    const block = sessionBlock({
+      ...base,
+      style: { format: 'bullets', length: 'short', tone: 'technical' },
+      language: 'Spanish',
+    });
+    expect(block).toContain('only short bullet points');
+    expect(block).toContain('Answer language: Spanish.');
+  });
+});
+
 describe('sessionBlock', () => {
   it('holds the details, key terms, style, instructions and documents in a fixed order', () => {
     const block = sessionBlock(SESSION);

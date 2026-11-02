@@ -89,4 +89,7 @@ Global shortcuts need the desktop app; in a browser all shortcuts work only whil
 - **Look and words:** Kite's own brand and copy, by design.
 - **Browser overlay opacity:** a browser picture-in-picture window cannot be translucent, so the opacity controls exist only in the desktop app.
 - **Live transcription:** English only for now. Answers can use other languages.
+- **Job links:** some job sites refuse automatic reading, and pages built only by scripts have no text. Kite says so and the user pastes the details.
+- **Answer preferences during a call:** format, length and tone are in the overlay's menu, without a preview: the overlay is small, and a preview would cost a request mid-call.
+- **Connect icons:** generic drawings instead of the apps' logos; the licensing is unclear. The video tutorial is a placeholder until one is recorded.
 - **Local data:** sessions, documents and libraries stay on the device, so they do not follow a user between computers (Export and Import cover that).

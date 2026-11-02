@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: parity Phase 1 (overlay and hotkeys).
+**Kept up to date:** each later stage adds its human checks here. Last updated: parity Phase 2 (session setup).
 
 ---
 
@@ -38,13 +38,29 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 
 | # | Do | Expect |
 |---|---|---|
-| 1.1 | **New session:** sales type, a few invented details, attach a short PDF of an invented price list. | The session opens; the document shows as ready. |
+| 1.1 | **New session:** Regular type, a few invented details, upload a short PDF of an invented price list. | The session opens; the document shows as chosen. |
 | 1.2 | Start the call in the desktop app. Speak a sentence; play a YouTube interview for "Them". | "You" and "Them" lines appear separately; grey words turn final as you go. |
 | 1.3 | Ask aloud (or play) a price question the document answers. Press **Answer**. | An answer streams within about 2 s; headline of 15 words or fewer, at most 5 bullets, figures from the document. |
 | 1.4 | **Follow-up:** ask "What are the three phases of the rollout?", answer, then "How long does the second phase of that take?" and answer. | The second answer is about the second phase from the first answer, without asking which plan you mean. |
 | 1.5 | Rate an answer thumbs up and another thumbs down with a short note. | Both ratings stay after reloading the page. |
 | 1.6 | Look at the final transcript lines (live view, then the review page). | Sentence case: a capital first letter and "I"; your key terms and company spelled as you typed them (for example "Bluefin Route", "CRM"). |
 | 1.7 | **Interview** session: say "we used RAG with embeddings in a vector database to cut latency". | RAG, embeddings, vector database and latency come out right more often than before (built-in technical vocabulary). |
+
+## 1b. Session setup (parity Phase 2)
+
+| # | Do | Expect |
+|---|---|---|
+| 1b.1 | Open a dashboard that held sessions before this update. | They are all there; Sales, Support and Internal ones now say Regular. Their answers and notes still open. |
+| 1b.2 | **Create session** → **Mock**. | The wizard starts with Mock chosen. |
+| 1b.3 | Paste the link of a real public job posting, press **Import**. | Company, role and job description fill in, and a line says what came in. Change one. Try two more job sites: some refuse, and Kite says so kindly. |
+| 1b.4 | Paste `http://localhost` and press Import. | "Kite can only read public web pages." |
+| 1b.5 | **Upload a resume**, choose a document from the list. In **Resumes**, delete that resume. | The session still answers from it, and Edit still lists it. |
+| 1b.6 | Step 2 → **Answer preferences** → **Show preview** for each question type. Change the tone and look again. Change it back. | A preview appears within a few seconds; going back shows it at once. It reads like the format and tone chosen. |
+| 1b.7 | **Set as default**, then create another session. | It starts with those preferences. |
+| 1b.8 | Set the language to Spanish, then ask a question in a call. | The answer is in Spanish; the transcript stays English. |
+| 1b.9 | During a call, in the overlay's menu, change the format. | The next answer uses it. |
+| 1b.10 | On the Connect screen, read the summary sentence and open each app's how-to, on desktop and in Chrome. | The steps fit the platform and are correct. |
+| 1b.11 | On the dashboard: tabs and their counts, search, sort, grid and list, rename, duplicate, delete. | Each works; the layout and sort are remembered after a reload; a duplicate has no transcript or answers. |
 
 ## 2. Desktop hotkeys
 
