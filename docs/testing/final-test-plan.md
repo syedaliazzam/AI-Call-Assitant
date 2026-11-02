@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 Stage 3 (installer).
+**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 Stages 3 and 6.
 
 ---
 
@@ -104,7 +104,7 @@
 | # | Do | Expect |
 |---|---|---|
 | 9.1 | Run `Kite-Setup-<version>.exe`. If SmartScreen says "Windows protected your PC", click **More info → Run anyway** (the installer is not signed yet). | Installs without an admin prompt into `%LOCALAPPDATA%Programskite`; Start-menu shortcut "Kite"; the Kite icon on the taskbar. |
-| 9.2 | Install the next beta when it is published (or let the app update on start). | The app downloads in the background and asks to restart; it never restarts during a call. |
+| 9.2 | When a new version is published, start Kite (or wait up to 6 hours). Also try during a live call. | Kite downloads it in the background and asks **Restart now / Later**; Later installs it when you quit. During a live call it does not ask until the call ends. |
 | 9.3 | Uninstall from Windows Settings → Apps → Kite; answer **No** to "Keep your Kite data on this computer?". | No `kite` folder left in `%LOCALAPPDATA%Programs` or `%APPDATA%`. |
 | 9.4 | Reinstall, sign in, create a session, uninstall answering **Yes** to "Keep your Kite data", reinstall. | The session is still on the dashboard. |
 

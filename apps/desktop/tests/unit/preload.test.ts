@@ -11,9 +11,16 @@ import { describe, expect, it, vi } from 'vitest';
 const exposeInMainWorld = vi.fn();
 /** Listeners added with ipcRenderer.on, by channel. */
 const listeners = new Map<string, Set<(event: unknown, value: unknown) => void>>();
+/** Messages sent with ipcRenderer.send, in order: [channel, value]. */
+const sent: [string, unknown][] = [];
+
 /** Stand-in for ipcRenderer. */
 const ipcRenderer = {
   invoke: vi.fn(async () => []),
+  /** Fire-and-forget messages (Day 6: setCallActive). */
+  send: vi.fn((channel: string, value: unknown) => {
+    sent.push([channel, value]);
+  }),
   on: vi.fn((channel: string, listener: (event: unknown, value: unknown) => void) => {
     if (!listeners.has(channel)) listeners.set(channel, new Set());
     listeners.get(channel)!.add(listener);
@@ -51,7 +58,7 @@ describe('toDesktopOs', () => {
 });
 
 describe('the exposed bridge', () => {
-  it('exposes only kiteDesktop with exactly { version, os, setHotkeysEnabled, onHotkey }, frozen', () => {
+  it('exposes only kiteDesktop with exactly the bridge methods, frozen', () => {
     expect(exposeCalls).toHaveLength(1);
     const [name, api] = exposeCalls[0]!;
     expect(name).toBe('kiteDesktop');
@@ -62,6 +69,7 @@ describe('the exposed bridge', () => {
       'onHotkey',
       'openCompactView',
       'os',
+      'setCallActive',
       'setHotkeysEnabled',
       'setShareProtection',
       'version',
@@ -103,5 +111,13 @@ describe('isHotkeyAction', () => {
     }
     expect(isHotkeyAction('ANSWER')).toBe(false);
     expect(isHotkeyAction(1)).toBe(false);
+  });
+
+  it('setCallActive sends only a boolean on its channel (Day 6)', () => {
+    const [, api] = exposeCalls[0]!;
+    (api as { setCallActive: (active: unknown) => void }).setCallActive('yes');
+    expect(sent.at(-1)).toEqual(['kite:call-active', false]);
+    (api as { setCallActive: (active: unknown) => void }).setCallActive(true);
+    expect(sent.at(-1)).toEqual(['kite:call-active', true]);
   });
 });

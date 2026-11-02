@@ -41,3 +41,37 @@ nsis:
   artifactName: Kite-Setup-${version}.exe
   # The "keep my local data?" question at uninstall (build/installer.nsh).
   include: build/installer.nsh
+# Where installed apps look for updates (ADR-0028): the public releases-only repository. Only
+# installers, latest.yml and blockmaps are published there (with gh, by the developer); the app
+# needs no token. Move to a company organisation is a decision for the lead.
+publish:
+  provider: github
+  owner: Zainpak123
+  repo: kite-releases
+  releaseType: release
+
+# macOS (Day 6 Stage 6, readiness only: no Mac to test on). Unsigned until the lead decides on an
+# Apple Developer account; testers open it with Privacy & Security → Open Anyway
+# (docs/testing/macos-checklist.md).
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  # Placeholder: scaled up from the 304 px logo until the designer's vector arrives (Day 6 list).
+  icon: build/icon-1024.png
+  category: public.app-category.business
+  # Unsigned build: no signing identity is looked for.
+  identity: null
+  # Ready for signing later: the hardened runtime needs these entitlements (build/entitlements.mac.plist).
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    # The text macOS shows when Kite asks for the microphone.
+    NSMicrophoneUsageDescription: Kite listens to your side of the call to write the live transcript. The audio stays on this Mac.
+    # The text macOS shows when Kite asks to record the other side of the call (system audio).
+    NSAudioCaptureUsageDescription: Kite records the other side of the call (system audio) to write the live transcript. The audio stays on this Mac.
+dmg:
+  artifactName: Kite-${version}-${arch}.dmg

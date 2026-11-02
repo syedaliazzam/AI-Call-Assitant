@@ -1,6 +1,6 @@
 {
   "name": "@kite/desktop",
-  "version": "0.1.0",
+  "version": "1.0.0-beta.2",
   "private": true,
   "description": "Kite desktop shell (Electron): opens the deployed Kite web app in a locked-down window and adds native features via window.kiteDesktop.",
   "author": "Paramount Intelligence",
@@ -14,7 +14,8 @@
     "test": "pnpm electron:install && pnpm build && playwright test",
     "test:unit": "vitest run",
     "test:manual": "pnpm electron:install && pnpm build && playwright test -c playwright.manual.config.ts",
-    "dist:win": "pnpm electron:install && pnpm build && electron-builder --win --publish never"
+    "dist:win": "pnpm electron:install && pnpm build && electron-builder --win --publish never",
+    "dist:mac": "pnpm electron:install && pnpm build && electron-builder --mac --publish never"
   },
   "devDependencies": {
     "@kite/shared": "workspace:*",
@@ -22,6 +23,7 @@
     "@types/node": "^24.0.0",
     "electron": "44.9.3",
     "electron-builder": "26.17.0",
+    "electron-updater": "6.8.10",
     "esbuild": "0.28.2",
     "typescript": "~6.0.3",
     "vitest": "^5.0.5"

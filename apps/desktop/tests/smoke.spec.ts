@@ -89,6 +89,8 @@ test.beforeAll(async () => {
       ...parentEnv,
       KITE_URL: `${kite.origin}/`,
       KITE_TEST_NO_EXTERNAL_OPEN: '1',
+      // The installed app would otherwise check the releases repository for updates.
+      KITE_NO_UPDATE_CHECK: '1',
     },
   });
   page = await app.firstWindow();
@@ -124,6 +126,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.closeCompactView,
       typeof window.kiteDesktop?.setShareProtection,
       typeof window.kiteDesktop?.getShareProtection,
+      typeof window.kiteDesktop?.setCallActive,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -139,11 +142,12 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'onHotkey',
     'openCompactView',
     'os',
+    'setCallActive',
     'setHotkeysEnabled',
     'setShareProtection',
     'version',
   ]);
-  expect(bridge.methods).toEqual(Array(7).fill('function'));
+  expect(bridge.methods).toEqual(Array(8).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
