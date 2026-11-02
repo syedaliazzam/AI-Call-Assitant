@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 (Smart App Control finding).
+**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 (Microsoft Store investigation).
 
 ---
 
@@ -118,6 +118,20 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 9.2 | When a new version is published, start Kite (or wait up to 6 hours). Also try during a live call. | Kite downloads it in the background and asks **Restart now / Later**; Later installs it when you quit. During a live call it does not ask until the call ends. |
 | 9.3 | Uninstall from Windows Settings → Apps → Kite; answer **No** to "Keep your Kite data on this computer?". | No `kite` folder left in `%LOCALAPPDATA%Programs` or `%APPDATA%`. |
 | 9.4 | Reinstall, sign in, create a session, uninstall answering **Yes** to "Keep your Kite data", reinstall. | The session is still on the dashboard. |
+
+## 9b. Microsoft Store version (only if the Store route is used; docs/deploy/microsoft-store.md)
+
+| # | Do | Expect |
+|---|---|---|
+| 9b.1 | Signed in to the Microsoft Store with your listed Microsoft account, open the private Store link and click **Get**. | Kite installs with no SmartScreen or Smart App Control warning. |
+| 9b.2 | Start Kite from the Start menu and sign in. | The dashboard appears. |
+| 9b.3 | Create a session, **Connect**: allow the microphone. | Windows asks once; **Settings → Privacy & security → Microphone** lists Kite; the You meter moves. |
+| 9b.4 | Play a video for the other side (system audio). | The Them meter moves and Them lines appear. |
+| 9b.5 | First call after installing: the speech model downloads. Close Kite, open it again, start another call. | The model is not downloaded again (kept inside the package's data). |
+| 9b.6 | With Notepad focused, press **Ctrl+Enter**. | Kite answers; Notepad keeps focus. |
+| 9b.7 | **Compact view**, then share the entire screen in Google Meet and look from your phone. | Hidden in screen share: not visible; Visible: visible. |
+| 9b.8 | Leave Kite open for a day after a new Store version is published. | The Store updates Kite; Kite itself never shows its own Restart now / Later question. |
+| 9b.9 | Uninstall from Windows Settings → Apps. | No question about keeping data; no Kite folder left in AppData. |
 
 ## 10. Look and phones (UI U1–U4)
 

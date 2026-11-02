@@ -41,6 +41,10 @@ The Kite desktop app needs an installer for the team's Windows laptops, and a wa
    - On the developer's Windows 11 laptop, Smart App Control is on. It blocked an unsigned Kite build from starting (Code Integrity events 3033 and 3077: "did not meet the Enterprise signing level requirements"; 2 Nov). It also blocked one form of the build itself.
    - Unlike SmartScreen, a Smart App Control block has no "Run anyway". Freshly set-up Windows 11 PCs start it in evaluation mode, and Windows may then turn it on.
    - The Day 7 final test plan starts by installing on a teammate's laptop to see how common this is.
+   - **No-purchase alternative: the Microsoft Store, private audience** (`docs/deploy/microsoft-store.md`).
+     - The Store signs the package with Microsoft's certificate, which Smart App Control trusts, and company developer accounts are free since May 2026.
+     - Kite's Store package builds, installs and runs. Screen-share protection worked inside it on CI (2 Nov).
+     - Costs: each update goes through certification (up to three business days), and the Store version updates itself through the Store.
    - Without one, Windows SmartScreen shows "Windows protected your PC" on first run. Users click More info → Run anyway, as the user guide says (`docs/user-guide/install-windows.md`).
    - An OV or EV code-signing certificate removes or reduces the warning; an EV certificate is trusted immediately. Prices vary by vendor.
    - Nothing was bought.
