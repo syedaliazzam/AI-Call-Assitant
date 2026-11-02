@@ -1,6 +1,7 @@
 /**
  * Smoke test for the Electron shell (apps/desktop/src/main.ts, preload.ts, security.ts).
- * Launches the built app (dist/) with KITE_URL pointing at a local test page and checks:
+ * Launches the built app (dist/), or the installed app when KITE_INSTALLED_EXE names its
+ * Kite.exe (Day 6 Stage 3), with KITE_URL pointing at a local test page and checks:
  * the window opens at 1280×820; window.kiteDesktop is exactly { version, os,
  * setHotkeysEnabled, onHotkey, captureScreenshot } and frozen; captureScreenshot() returns a
  * PNG scaled to ≤ 1,568 px for the Kite page, and a frame from another origin has no bridge;
@@ -79,8 +80,11 @@ test.beforeAll(async () => {
   // Electron apps (VS Code extensions, for example) set it for their child processes, so it
   // must not be passed on to the app under test.
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
+  // KITE_INSTALLED_EXE (Day 6 Stage 3): test the installed app (Kite.exe from the installer)
+  // instead of the development build, with the same checks.
+  const installed = process.env.KITE_INSTALLED_EXE;
   app = await electron.launch({
-    args: [APP_DIR],
+    ...(installed ? { executablePath: installed, args: [] } : { args: [APP_DIR] }),
     env: {
       ...parentEnv,
       KITE_URL: `${kite.origin}/`,

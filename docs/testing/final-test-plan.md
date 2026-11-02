@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 Stage 4e–f.
+**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 Stage 3 (installer).
 
 ---
 
@@ -103,10 +103,10 @@
 
 | # | Do | Expect |
 |---|---|---|
-| 9.1 | Run the installer. If SmartScreen warns, **More info → Run anyway**. | Installs without an admin prompt; Start-menu shortcut "Kite"; Kite icon on the taskbar. |
+| 9.1 | Run `Kite-Setup-<version>.exe`. If SmartScreen says "Windows protected your PC", click **More info → Run anyway** (the installer is not signed yet). | Installs without an admin prompt into `%LOCALAPPDATA%Programskite`; Start-menu shortcut "Kite"; the Kite icon on the taskbar. |
 | 9.2 | Install the next beta when it is published (or let the app update on start). | The app downloads in the background and asks to restart; it never restarts during a call. |
-| 9.3 | Uninstall from Windows Settings → Apps, without "keep my local data". | No Kite folder left in AppData or Program Files. |
-| 9.4 | Reinstall, run a session, uninstall **with** "keep my local data", reinstall. | The earlier session is still there. |
+| 9.3 | Uninstall from Windows Settings → Apps → Kite; answer **No** to "Keep your Kite data on this computer?". | No `kite` folder left in `%LOCALAPPDATA%Programs` or `%APPDATA%`. |
+| 9.4 | Reinstall, sign in, create a session, uninstall answering **Yes** to "Keep your Kite data", reinstall. | The session is still on the dashboard. |
 
 ## 10. Look and phones (UI U1–U4)
 
