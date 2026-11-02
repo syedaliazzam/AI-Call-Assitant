@@ -24,3 +24,6 @@ apps/web/public/models
 
 # The developer's voice recordings for the speech engine trial (Day 6) are never uploaded.
 apps/web/tests/fixtures/stt/names-audio/
+
+# Desktop installers and unpacked builds (over 100 MB): never part of the web deployment.
+apps/desktop/release/
