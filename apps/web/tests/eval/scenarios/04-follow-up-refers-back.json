@@ -2,7 +2,7 @@
   "id": "04-follow-up-refers-back",
   "covers": "A follow-up question that refers back to an earlier answer (\"that\").",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Northwind Logistics (invented)",
     "role": "Account executive",
     "description": "Rollout planning call.",

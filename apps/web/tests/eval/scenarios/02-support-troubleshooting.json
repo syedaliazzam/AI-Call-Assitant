@@ -2,7 +2,7 @@
   "id": "02-support-troubleshooting",
   "covers": "Support troubleshooting steps from a document.",
   "session": {
-    "type": "support",
+    "type": "regular",
     "company": "Pinecrest Clinics (invented)",
     "role": "Support engineer",
     "description": "Customer reports that calendar sync keeps failing.",

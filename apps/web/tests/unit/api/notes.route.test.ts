@@ -48,7 +48,7 @@ const SIGNED_IN = { user: { id: 'u1', role: 'user', mustChangePassword: false } 
 
 /** An invented session. */
 const SESSION = {
-  type: 'sales',
+  type: 'regular',
   company: 'SECRET-COMPANY Ltd',
   role: 'Renewal',
   description: '',

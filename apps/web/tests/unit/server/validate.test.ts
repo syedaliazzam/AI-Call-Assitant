@@ -20,7 +20,7 @@ import { MAX_DOCUMENT_CHARS, MAX_KEY_TERMS, parseAnswerRequest } from '@/server/
 
 /** A complete, valid session block. */
 const SESSION = {
-  type: 'sales',
+  type: 'regular',
   company: 'Acme',
   role: 'Account review',
   description: 'Renewal call.',

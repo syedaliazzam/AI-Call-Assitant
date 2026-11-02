@@ -15,6 +15,7 @@
  * BroadcastChannel stays inside this browser profile and origin: nothing leaves the computer.
  * Messages are checked before use, and their text is never logged.
  */
+import type { AnswerStyle } from '@/core/storage/types';
 /** A transcript line, as the overlay shows it when the transcript is expanded. */
 export interface CompactLine {
   /** The line's id. */
@@ -102,6 +103,8 @@ export interface CompactState {
   notice: string | null;
   /** True once the call has ended (the compact view closes). */
   ended: boolean;
+  /** How answers are written now; the overlay's menu can change it during a call. */
+  style?: AnswerStyle;
 }
 
 /** A command without details. */
@@ -134,6 +137,14 @@ export interface ReportCommand {
   note: string;
 }
 
+/** New answer preferences from the overlay's menu. */
+export interface StyleCommand {
+  /** Command type. */
+  type: 'style';
+  /** How the next answers should be written. */
+  style: AnswerStyle;
+}
+
 /** A typed question from the compact view. */
 export interface ChatCommand {
   /** Command type. */
@@ -143,7 +154,8 @@ export interface ChatCommand {
 }
 
 /** What the compact view can ask the live page to do. */
-export type CompactCommand = SimpleCommand | ChatCommand | RateCommand | ReportCommand;
+export type CompactCommand =
+  SimpleCommand | ChatCommand | RateCommand | ReportCommand | StyleCommand;
 
 /** One message on the channel. */
 type Message =
@@ -238,6 +250,15 @@ export function isCommand(value: unknown): value is CompactCommand {
       typeof command.id === 'string' &&
       typeof command.note === 'string' &&
       command.note.length <= 2_000
+    );
+  }
+  if (command.type === 'style') {
+    const style = (value as { style?: Partial<AnswerStyle> | null }).style;
+    return (
+      !!style &&
+      ['headline+bullets', 'bullets', 'paragraph'].includes(String(style.format)) &&
+      ['short', 'medium', 'detailed'].includes(String(style.length)) &&
+      ['simple', 'professional', 'technical'].includes(String(style.tone))
     );
   }
   if (command.type === 'chat') {

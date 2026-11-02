@@ -2,7 +2,7 @@
   "id": "07-misheard-names",
   "covers": "Misheard product name (\"your fin drove\" for Bluefin Route).",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Northwind Logistics (invented)",
     "role": "Account executive",
     "description": "Product deep-dive.",

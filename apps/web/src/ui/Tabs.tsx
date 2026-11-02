@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/ui/Tabs.tsx
- * Purpose: A row of filter tabs (one selected), for example All / Interview / Sales / Support /
- *          Internal on the dashboard. They filter a list; they do not switch panels.
+ * Purpose: A row of filter tabs (one selected), for example All / Interview / Regular / Mock on
+ *          the dashboard. They filter a list; they do not switch panels.
  * Used by: src/features/dashboard/Dashboard.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F1 filter by type), §9.1

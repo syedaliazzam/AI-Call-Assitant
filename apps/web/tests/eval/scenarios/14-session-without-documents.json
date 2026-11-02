@@ -2,7 +2,7 @@
   "id": "14-session-without-documents",
   "covers": "A factual question in a session that has no documents.",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Fernbrook Dental (invented)",
     "role": "Account executive",
     "description": "First call.",

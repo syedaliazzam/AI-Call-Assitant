@@ -88,7 +88,7 @@ test('1. sign in, and the dashboard is empty (separate desktop data)', async () 
   report('desktop dashboard empty', true, {
     sessions: await page
       .getByRole('listitem')
-      .filter({ has: page.getByRole('button', { name: 'Open' }) })
+      .filter({ has: page.getByRole('button', { name: 'Start session' }) })
       .count(),
   });
 });
@@ -100,7 +100,7 @@ test('2. create a session (survives a reload); Open goes straight to Connect', a
   await page.reload();
   await expect(sessionCard(page, COMPANY)).toBeVisible();
   report('desktop session survives reload', true);
-  await sessionCard(page, COMPANY).getByRole('button', { name: 'Open' }).click();
+  await sessionCard(page, COMPANY).getByRole('button', { name: 'Start session' }).click();
   await expect(page).toHaveURL(/\/live\//);
   await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
   const dialogs = await page.getByRole('dialog').count();

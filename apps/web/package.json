@@ -19,6 +19,7 @@
     "verify:answer-cache": "tsx --env-file=.env.local --conditions=react-server scripts/verify-answer-cache.ts",
     "verify:screenshot": "tsx --env-file=.env.local --conditions=react-server scripts/verify-screenshot.ts",
     "verify:notes": "tsx --env-file=.env.local --conditions=react-server scripts/verify-notes.ts",
+    "verify:setup": "tsx --env-file=.env.local --conditions=react-server scripts/verify-setup.ts",
     "eval:notes": "tsx --env-file=.env.local --conditions=react-server scripts/eval-notes.ts",
     "eval:answers": "tsx --env-file=.env.local --conditions=react-server scripts/eval-answers.ts",
     "eval:all": "pnpm run eval:answers && pnpm run eval:notes",
@@ -34,6 +35,7 @@
     "test:screenshot": "playwright test -c tests/integration/playwright.config.ts screenshot.spec.ts",
     "test:review": "playwright test -c tests/integration/playwright.config.ts review.spec.ts",
     "test:live-ui": "playwright test -c tests/integration/playwright.config.ts live.spec.ts",
+    "test:setup": "playwright test -c tests/integration/playwright.config.ts setup.spec.ts",
     "test:ui-shots": "playwright test -c tests/ui/playwright.config.ts",
     "test:e2e-prod": "pnpm --filter @kite/desktop build && playwright test -c tests/e2e-prod/playwright.config.ts"
   },

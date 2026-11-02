@@ -290,6 +290,19 @@ test('the compact view shows the live answer and its Answer button asks the live
   await expect(compact.getByRole('heading', { name: 'Answer line' })).toHaveText(
     'The seat price is 52 dollars.',
   );
+  // Answer preferences change from the overlay's menu; the next answer uses them.
+  await compact.getByRole('button', { name: 'Overlay menu' }).click();
+  await expect(compact.getByLabel('Tone')).toHaveValue('simple');
+  await compact.getByLabel('Tone').selectOption('technical');
+  await compact.getByLabel('Format').selectOption('bullets');
+  await expect(compact.getByLabel('Tone')).toHaveValue('technical');
+  await compact.getByRole('button', { name: 'Overlay menu' }).click();
+  await compact.getByRole('button', { name: 'Chat' }).click();
+  await compact.getByLabel('Type a question').fill('What is the seat price?');
+  await compact.getByLabel('Type a question').press('Enter');
+  await expect
+    .poll(() => received.at(-1)?.session?.style)
+    .toMatchObject({ tone: 'technical', format: 'bullets' });
   await compact.close();
 });
 

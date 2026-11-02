@@ -2,7 +2,7 @@
   "id": "13-off-topic-question",
   "covers": "An off-topic question the session cannot answer.",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Northwind Logistics (invented)",
     "role": "Account executive",
     "description": "Renewal call with the operations lead.",

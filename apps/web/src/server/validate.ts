@@ -26,6 +26,9 @@ import {
   estimateItemTokens,
   type AnswerRequest,
   type NotesRequest,
+  MAX_JOB_URL_CHARS,
+  type AnswerPreviewRequest,
+  type JobImportRequest,
 } from '@kite/shared';
 import { z } from 'zod';
 
@@ -62,6 +65,7 @@ const sessionSchema = z
     instructions: z.string().max(5_000),
     keyTerms: z.array(z.string().max(200)).max(MAX_KEY_TERMS),
     style: styleSchema,
+    language: z.string().max(50).optional(),
     documents: z.array(documentSchema).max(20),
   })
   .refine(
@@ -267,4 +271,70 @@ export function parseNotesRequest(body: unknown): NotesParseResult {
     (issue) => `${issue.path.join('.') || 'body'}: ${issue.message}`,
   );
   return { ok: false, message: problems.join('; ') };
+}
+
+/** The result of checking a small request: the data, or field paths only, never the values. */
+export type SmallParseResult<T> =
+  | {
+      /** It is valid. */
+      ok: true;
+      /** The validated request. */
+      data: T;
+    }
+  | {
+      /** It is not. */
+      ok: false;
+      /** Which fields are wrong (paths only). */
+      message: string;
+    };
+
+/**
+ * Validates a body against a schema, naming only the wrong fields' paths.
+ *
+ * @param schema The schema.
+ * @param body   The JSON value from the request.
+ * @returns The validated request, or a message.
+ * Called from: parseJobImportRequest(), parsePreviewRequest()
+ */
+function parseSmall<T>(schema: z.ZodType<T>, body: unknown): SmallParseResult<T> {
+  const result = schema.safeParse(body);
+  if (result.success) return { ok: true, data: result.data };
+  const problems = result.error.issues.map((issue) => issue.path.join('.') || 'body');
+  return { ok: false, message: `Invalid: ${problems.join(', ')}` };
+}
+
+/** Body of POST /api/job-import. Whether the address may be fetched is checked in job-page.ts. */
+const jobImportSchema = z.object({ url: z.string().min(1).max(MAX_JOB_URL_CHARS) });
+
+/**
+ * Validates a job import request.
+ *
+ * @param body The JSON value from the request.
+ * @returns The validated request, or a message.
+ * Called from: POST handler in app/api/job-import/route.ts
+ */
+export function parseJobImportRequest(body: unknown): SmallParseResult<JobImportRequest> {
+  return parseSmall<JobImportRequest>(jobImportSchema, body);
+}
+
+/** Body of POST /api/preview: only known settings, so it cannot carry anything else to Claude. */
+const previewSchema = z.object({
+  style: z.object({
+    format: z.enum(['headline+bullets', 'bullets', 'paragraph']),
+    length: z.enum(['short', 'medium', 'detailed']),
+    tone: z.enum(['simple', 'professional', 'technical']),
+  }),
+  language: z.string().max(50).optional(),
+  question: z.enum(['behavioural', 'technical', 'general']),
+});
+
+/**
+ * Validates a preview request.
+ *
+ * @param body The JSON value from the request.
+ * @returns The validated request, or a message.
+ * Called from: POST handler in app/api/preview/route.ts
+ */
+export function parsePreviewRequest(body: unknown): SmallParseResult<AnswerPreviewRequest> {
+  return parseSmall<AnswerPreviewRequest>(previewSchema as z.ZodType<AnswerPreviewRequest>, body);
 }

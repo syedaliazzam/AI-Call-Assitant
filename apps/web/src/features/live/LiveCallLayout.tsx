@@ -27,7 +27,7 @@ export interface LiveCallStatus {
 
 /** Props for LiveCallLayout. */
 export interface LiveCallLayoutProps {
-  /** The call's title, for example "Sales call" (shown as a mono eyebrow). */
+  /** The call's title, for example "Interview call" (shown as a mono eyebrow). */
   title: string;
   /** The session's company or topic (the session name). */
   name: string;

@@ -26,6 +26,8 @@ import {
 } from '@kite/shared';
 import { useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
+import type { AnswerStyle } from '@/core/storage/types';
+import { FORMAT_OPTIONS, LENGTH_OPTIONS, TONE_OPTIONS } from '@/features/session-setup/labels';
 import { OVERLAY_OPACITY } from '@/core/storage/overlayPrefs';
 import {
   CollapseIcon,
@@ -151,7 +153,8 @@ function AudioStatus({
 }
 
 /**
- * The menu's contents: opacity and fade (desktop), and what a screen share can see.
+ * The menu's contents: answer preferences, opacity and fade (desktop), and what a screen share
+ * can see.
  *
  * @param props.windowSettings Opacity and fade, where the window can do them.
  * @param props.protection     Protection of this window.
@@ -159,10 +162,16 @@ function AudioStatus({
  * @returns The menu.
  */
 function OverlayMenu({
+  style,
+  onStyle,
   windowSettings,
   protection,
   onProtection,
 }: {
+  /** How answers are written now (absent until the live page has said). */
+  style: AnswerStyle | undefined;
+  /** Changes how the next answers are written. */
+  onStyle: (style: AnswerStyle) => void;
   /** Opacity and fade, where the window can do them. */
   windowSettings?: OverlayWindowSettings;
   /** Protection of this window. */
@@ -174,8 +183,37 @@ function OverlayMenu({
     <div
       role="group"
       aria-label="Overlay settings"
-      className="absolute right-1 top-11 z-10 flex w-64 flex-col gap-3 border border-ui-border bg-ui-surface p-3 text-[13px] [-webkit-app-region:no-drag]"
+      data-menu="overlay"
+      // Kept inside the window at its smallest size: the menu scrolls rather than being cut off.
+      className="absolute right-1 top-11 z-10 flex max-h-[calc(100vh-3rem)] w-64 flex-col gap-3 overflow-y-auto border border-ui-border bg-ui-surface p-3 text-[13px] [-webkit-app-region:no-drag]"
     >
+      {style && (
+        <div className="flex flex-col gap-2">
+          <span className={`${EYEBROW} text-ui-muted`}>Answer preferences</span>
+          {(
+            [
+              ['format', 'Format', FORMAT_OPTIONS],
+              ['length', 'Length', LENGTH_OPTIONS],
+              ['tone', 'Tone', TONE_OPTIONS],
+            ] as const
+          ).map(([field, name, options]) => (
+            <label key={field} className="flex items-center justify-between gap-2">
+              {name}
+              <select
+                value={style[field]}
+                onChange={(event) => onStyle({ ...style, [field]: event.target.value })}
+                className="w-36 border border-ui-border bg-ui-input px-1 py-0.5 text-[14px] text-ui-text"
+              >
+                {options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      )}
       {windowSettings ? (
         <>
           <label className="flex flex-col gap-1">
@@ -355,7 +393,7 @@ export function CompactView(props: CompactViewProps) {
           aria-label="Overlay menu"
           aria-expanded={menuOpen}
           disabled={collapsed}
-          title="Opacity and screen share"
+          title="Answer preferences, opacity and screen share"
           onClick={() => setMenuOpen((open) => !open)}
         >
           <MenuIcon />
@@ -370,6 +408,8 @@ export function CompactView(props: CompactViewProps) {
         </button>
         {menuOpen && (
           <OverlayMenu
+            style={state?.style}
+            onStyle={(style) => onCommand({ type: 'style', style })}
             protection={props.protection}
             {...(props.windowSettings ? { windowSettings: props.windowSettings } : {})}
             {...(props.onProtection ? { onProtection: props.onProtection } : {})}

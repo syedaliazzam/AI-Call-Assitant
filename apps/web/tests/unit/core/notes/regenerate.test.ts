@@ -24,7 +24,7 @@ beforeEach(async () => {
 /** An invented session. */
 const SESSION: Session = {
   id: 's1',
-  type: 'sales',
+  type: 'regular',
   company: 'Northwind (invented)',
   role: 'Renewal',
   description: '',

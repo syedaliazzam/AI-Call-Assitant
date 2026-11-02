@@ -2,7 +2,7 @@
   "id": "08-documents-cannot-answer",
   "covers": "A question the session and documents cannot answer.",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Kesterel Health (invented)",
     "role": "Account executive",
     "description": "Security review call.",

@@ -55,7 +55,7 @@ describe('match', () => {
     const decision: StoredLesson = {
       id: 'd1',
       text: 'Always give monthly and yearly totals.',
-      scope: 'sales',
+      scope: 'regular',
       status: 'approved',
       sourceSessionId: 's1',
       sourceKey: normaliseLesson(PROPOSAL.text),
@@ -82,13 +82,13 @@ describe('decide', () => {
         proposal: PROPOSAL,
         status: 'approved',
         text: PROPOSAL.text,
-        scope: 'sales',
+        scope: 'regular',
       },
       100,
     );
     expect(approved).toMatchObject({
       status: 'approved',
-      scope: 'sales',
+      scope: 'regular',
       approvedAt: 100,
       sourceSessionId: 's1',
       evidence: PROPOSAL.evidence,
@@ -113,7 +113,7 @@ describe('decide', () => {
         proposal: PROPOSAL,
         status: 'approved',
         text: PROPOSAL.text,
-        scope: 'sales',
+        scope: 'regular',
       },
       100,
     );
@@ -150,8 +150,8 @@ describe('decide', () => {
     );
     expect(lesson.text.startsWith('Line one line two x')).toBe(true);
     expect(lesson.text.length).toBe(MAX_LESSON_CHARS);
-    await editLesson(lesson.id, ' Edited\nlesson ', 'support');
-    expect((await listLessons())[0]).toMatchObject({ text: 'Edited lesson', scope: 'support' });
+    await editLesson(lesson.id, ' Edited\nlesson ', 'regular');
+    expect((await listLessons())[0]).toMatchObject({ text: 'Edited lesson', scope: 'regular' });
     await expect(editLesson(lesson.id, ' \n ', 'all')).rejects.toThrow('EMPTY_LESSON');
     await expect(
       decideLesson({
@@ -218,12 +218,12 @@ describe('activeLessons', () => {
   it('approved, for all calls or this type, oldest approval first', () => {
     const rows = [
       lesson('c', { approvedAt: 30 }),
-      lesson('a', { approvedAt: 10, scope: 'sales' }),
+      lesson('a', { approvedAt: 10, scope: 'regular' }),
       lesson('x', { approvedAt: 5, scope: 'interview' }),
       lesson('r', { status: 'rejected', approvedAt: null }),
       lesson('b', { approvedAt: 20, text: 'Lesson b, edited later' }),
     ];
-    expect(activeLessons(rows, 'sales')).toEqual([
+    expect(activeLessons(rows, 'regular')).toEqual([
       'Lesson a',
       'Lesson b, edited later',
       'Lesson c',
@@ -239,7 +239,7 @@ describe('activeLessons', () => {
     const rows = Array.from({ length: 25 }, (_, i) =>
       lesson(`l${i}`, { approvedAt: i, text: `L${i}` }),
     );
-    const active = activeLessons(rows, 'sales');
+    const active = activeLessons(rows, 'regular');
     expect(active).toHaveLength(MAX_ACTIVE_LESSONS);
     expect(active[0]).toBe('L5');
     expect(active.at(-1)).toBe('L24');
@@ -252,11 +252,11 @@ describe('activeLessons', () => {
         proposal: PROPOSAL,
         status: 'approved',
         text: 'Give totals.',
-        scope: 'sales',
+        scope: 'regular',
       },
       1,
     );
-    expect(await loadActiveLessons('sales')).toEqual(['Give totals.']);
-    expect(await loadActiveLessons('support')).toEqual([]);
+    expect(await loadActiveLessons('regular')).toEqual(['Give totals.']);
+    expect(await loadActiveLessons('mock')).toEqual([]);
   });
 });

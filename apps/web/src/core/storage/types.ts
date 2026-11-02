@@ -12,10 +12,10 @@
 import type { CallNotes } from '@kite/shared';
 
 /** What kind of call a session is for (the dashboard's type filter tabs). */
-export type SessionType = 'interview' | 'sales' | 'support' | 'internal';
+export type SessionType = 'interview' | 'regular' | 'mock';
 
 /** Every session type, in the order the dashboard tabs show them. */
-export const SESSION_TYPES: readonly SessionType[] = ['interview', 'sales', 'support', 'internal'];
+export const SESSION_TYPES: readonly SessionType[] = ['interview', 'regular', 'mock'];
 
 /**
  * Where a session is in its life:
@@ -31,18 +31,56 @@ export type AnswerModel = 'fast' | 'smart';
 
 /** How answers are laid out (architecture §7.2 "style"). */
 export interface AnswerStyle {
-  /** 'headline+bullets' (a short headline, then up to 5 bullets) or 'paragraph'. */
-  format: 'headline+bullets' | 'paragraph';
-  /** Rough answer length: 'short' (the live default), 'medium' or 'detailed'. */
+  /**
+   * 'headline+bullets' (shown as "Script + bullets": an answer line, then up to 5 bullets),
+   * 'bullets' ("Bullets only") or 'paragraph' ("Script only"). The stored names stayed when the
+   * labels changed, so existing sessions and the evaluation baselines stay valid (ADR-0029).
+   */
+  format: 'headline+bullets' | 'bullets' | 'paragraph';
+  /** Rough answer length: 'short' (the live default), 'medium' (shown as "Balanced") or 'detailed'. */
   length: 'short' | 'medium' | 'detailed';
-  /** Wording: 'simple' (plain language), 'professional' or 'friendly'. */
-  tone: 'simple' | 'professional' | 'friendly';
+  /** Wording: 'simple' (plain language), 'professional' or 'technical'. */
+  tone: 'simple' | 'professional' | 'technical';
+}
+
+/** The languages answers can be written in (live transcription stays English-only for now). */
+export const ANSWER_LANGUAGES: readonly { value: string; label: string }[] = [
+  { value: 'en', label: 'English' },
+  { value: 'ar', label: 'Arabic' },
+  { value: 'zh', label: 'Chinese' },
+  { value: 'nl', label: 'Dutch' },
+  { value: 'fr', label: 'French' },
+  { value: 'de', label: 'German' },
+  { value: 'hi', label: 'Hindi' },
+  { value: 'it', label: 'Italian' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'ko', label: 'Korean' },
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'ru', label: 'Russian' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'tr', label: 'Turkish' },
+  { value: 'ur', label: 'Urdu' },
+];
+
+/**
+ * The language to send with a request.
+ *
+ * @param code A language code from ANSWER_LANGUAGES.
+ * @returns Its English name, or undefined for English and unknown codes (nothing is sent then).
+ * Called from: core/answer/warm.ts (toSessionContext), AnswerPreferencesDialog.tsx
+ */
+export function answerLanguageName(code: string): string | undefined {
+  if (code === 'en') return undefined;
+  return ANSWER_LANGUAGES.find((language) => language.value === code)?.label;
 }
 
 /** A session's preferences (step 2 of the Create session wizard). */
 export interface SessionPreferences {
-  /** Transcription language. Only 'en' (English) exists in v1. */
-  language: 'en';
+  /**
+   * The language answers are written in, as a code from ANSWER_LANGUAGES ('en' by default).
+   * Live transcription stays English-only for now.
+   */
+  language: string;
   /** Which model answers during this session. */
   model: AnswerModel;
   /** How answers are written. */
@@ -72,7 +110,7 @@ export interface Session {
   instructions: string;
   /** True to save final transcript lines on this device; false keeps them in memory only. */
   saveTranscript: boolean;
-  /** Auto-answer (beta). Always false until Day 6. */
+  /** Auto-answer (beta) for this session, on top of the device-wide setting in Settings. */
   autoAnswer: boolean;
   /** When the session was created (Unix ms). The dashboard sorts by it, newest first. */
   createdAt: number;
@@ -98,6 +136,29 @@ export interface StoredDocument {
   /** Length of `text` in characters (UTF-16 code units, as JavaScript counts them). */
   chars: number;
   /** When it was added (Unix ms); documents are listed oldest first. */
+  addedAt: number;
+  /** 'resume' for the session's resume; 'document' (or absent, in older rows) otherwise. */
+  kind?: LibraryKind;
+  /** The library item it was copied from, if any (the copy stays when that item is deleted). */
+  sourceId?: string;
+}
+
+/** Which library an item is in. */
+export type LibraryKind = 'resume' | 'document';
+
+/** A file in the Resume or Document library, as extracted text (ADR-0029). */
+export interface LibraryItem {
+  /** Random id (crypto.randomUUID()). */
+  id: string;
+  /** Which library it is in. */
+  kind: LibraryKind;
+  /** Original file name, for example 'resume.pdf'. */
+  name: string;
+  /** The extracted plain text (never the original file). The user's content; never logged. */
+  text: string;
+  /** Length of `text` in characters (UTF-16 code units, as JavaScript counts them). */
+  chars: number;
+  /** When it was added (Unix ms). Libraries list newest first. */
   addedAt: number;
 }
 

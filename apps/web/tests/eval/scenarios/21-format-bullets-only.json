@@ -1,0 +1,49 @@
+{
+  "id": "21-format-bullets-only",
+  "group": "preferences",
+  "covers": "The Bullets only format: no answer line, the first bullet answers directly.",
+  "session": {
+    "type": "interview",
+    "company": "Lantern Freight (invented)",
+    "role": "Data Analyst",
+    "description": "Interview for a data analyst role on the operations team.",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "resume.txt",
+        "text": "Priya Rao. Data analyst, 4 years at Alder Foods. Built the weekly sales report in SQL and Power BI, used by 60 people. Cut its run time from 2 hours to 10 minutes. Trained 5 colleagues on SQL."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "THANKS FOR COMING IN TODAY",
+        "at": 12
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "WHAT IS YOUR EXPERIENCE WITH SQL",
+      "at": 20
+    }
+  ],
+  "mode": "answer",
+  "question": "WHAT IS YOUR EXPERIENCE WITH SQL",
+  "mustInclude": [
+    "says the user has used SQL, in the first person",
+    "mentions the weekly sales report or the cut from 2 hours to 10 minutes",
+    "is bullet points only, with no headline line before them; the first bullet answers directly"
+  ],
+  "mustNotInclude": ["any employer, tool or number not in the resume"]
+}

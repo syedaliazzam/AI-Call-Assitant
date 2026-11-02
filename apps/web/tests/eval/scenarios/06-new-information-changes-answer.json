@@ -2,7 +2,7 @@
   "id": "06-new-information-changes-answer",
   "covers": "New information since an earlier answer changes it.",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Fernbrook Dental (invented)",
     "role": "Account executive",
     "description": "First call with a small clinic group.",

@@ -82,7 +82,7 @@ export interface LatencyOptions {
 /** The invented session used for the measurement. */
 export const LATENCY_SESSION: Session = {
   id: 'latency-test',
-  type: 'sales',
+  type: 'regular',
   company: 'Harbor Lane Freight (invented)',
   role: 'Pilot review',
   description: 'Invented latency test session.',

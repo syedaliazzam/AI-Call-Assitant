@@ -20,18 +20,22 @@ import type { DownloadProgress } from '@/core/stt/download';
 import type { Speaker } from '@/core/transcript/transcript';
 import { Button } from '@/ui/Button';
 import { ProgressBar } from '@/ui/ProgressBar';
+import { LinkButton } from '@/ui/LinkButton';
 import { AudioMeter } from './AudioMeter';
+import { ConnectGuide } from './ConnectGuide';
 import { HealthNotice } from './HealthNotice';
 import { SPEAKER_STYLE } from './speakers';
 
 /** The call's details shown at the top of the Connect view. */
 export interface CallInfo {
-  /** Small heading above the company, for example "Sales call". */
+  /** Small heading above the company, for example "Interview call". */
   title: string;
   /** Company the call is with. */
   company: string;
   /** Role (interview) or topic. */
   role: string;
+  /** One sentence saying what this session is, for example "This is an Interview session…". */
+  summary: string;
 }
 
 /** State of the speech model, as LivePage sees it. */
@@ -86,9 +90,6 @@ export interface ConnectPanelProps {
   onContinue: () => void;
 }
 
-/** Meeting apps named in the desktop instructions. */
-const DESKTOP_APPS = 'Zoom, Microsoft Teams, Google Meet, Webex or a phone app';
-
 /**
  * Formats bytes as whole megabytes.
  *
@@ -97,48 +98,6 @@ const DESKTOP_APPS = 'Zoom, Microsoft Teams, Google Meet, Webex or a phone app';
  */
 function mb(bytes: number): string {
   return `${Math.round(bytes / 1e6)} MB`;
-}
-
-/**
- * How to connect, for the platform the page runs on.
- *
- * @param props.platform Desktop app or browser.
- * @returns The instructions.
- */
-function HowToConnect({ platform }: { platform: 'desktop' | 'browser' }) {
-  if (platform === 'desktop') {
-    return (
-      <div className="text-sm text-ui-text">
-        <p className="font-semibold text-ui-heading">
-          Kite hears your microphone and your computer&apos;s sound. Join your call in any app.
-        </p>
-        <p className="mt-1 text-ui-muted">
-          Works with {DESKTOP_APPS}. Start or join the call, then click Connect.
-        </p>
-      </div>
-    );
-  }
-  return (
-    <div className="text-sm text-ui-text">
-      <p className="font-semibold text-ui-heading">Share your meeting tab with its sound:</p>
-      <ol className="mt-2 list-decimal space-y-1 pl-5">
-        <li>
-          Open your meeting in another Chrome or Edge tab (Google Meet, Teams or Zoom on the web).
-        </li>
-        <li>
-          Click <strong>Connect</strong>. In the window that opens, choose the{' '}
-          <strong>Chrome Tab</strong> pane and pick the meeting tab.
-        </li>
-        <li>
-          Turn on <strong>Also share tab audio</strong>, then click <strong>Share</strong>.
-        </li>
-        <li>Allow the microphone when Chrome asks.</li>
-      </ol>
-      <p className="mt-2 text-xs text-ui-muted">
-        Chrome or Edge only: Safari and Firefox cannot share a tab&apos;s sound.
-      </p>
-    </div>
-  );
 }
 
 /**
@@ -174,7 +133,7 @@ export function ConnectPanel({
           {call.title}
         </p>
         <h1 className="mt-1 text-[28px] font-bold text-ui-heading">{call.company}</h1>
-        <p className="mt-1 text-sm text-ui-muted">{call.role}</p>
+        <p className="mt-1 text-[15px] text-ui-text">{call.summary}</p>
         <p className="mt-2 text-sm text-ui-muted">
           {hotwordCount > 0
             ? `Listening for ${hotwordCount} key term${hotwordCount === 1 ? '' : 's'} (names and terms from this session).`
@@ -184,7 +143,7 @@ export function ConnectPanel({
 
       <section className="border border-ui-border bg-ui-surface p-5">
         <h2 className="mb-3 text-base font-semibold text-ui-heading">How to connect</h2>
-        <HowToConnect platform={platform} />
+        <ConnectGuide platform={platform} />
         {/* Speakers leak the other person's voice into the microphone, where it would be
             transcribed a second time as "You" (measured on Day 2). Headphones prevent it. */}
         <p className="mt-4 bg-ui-warning-bg px-3 py-2 text-sm text-ui-warning">
@@ -304,6 +263,14 @@ export function ConnectPanel({
           </div>
         )}
       </section>
+
+      {connection !== 'connected' && (
+        <div>
+          <LinkButton href="/" variant="ghost">
+            Back
+          </LinkButton>
+        </div>
+      )}
     </div>
   );
 }

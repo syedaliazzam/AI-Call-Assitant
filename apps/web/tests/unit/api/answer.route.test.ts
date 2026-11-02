@@ -212,7 +212,7 @@ describe('POST /api/answer', () => {
 
 /** An invented session, as the browser sends it. */
 const SESSION = {
-  type: 'sales',
+  type: 'regular',
   company: 'Northwind Logistics',
   role: 'Account review',
   description: 'SECRET-DESCRIPTION-TEXT',

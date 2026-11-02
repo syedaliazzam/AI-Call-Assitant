@@ -2,7 +2,7 @@
   "id": "12-internal-meeting",
   "covers": "An internal meeting question from a project document.",
   "session": {
-    "type": "internal",
+    "type": "regular",
     "company": "Harbor Lane (our company, invented)",
     "role": "Project status meeting",
     "description": "Weekly status meeting for the routing migration.",

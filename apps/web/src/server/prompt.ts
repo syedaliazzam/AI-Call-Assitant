@@ -59,6 +59,8 @@ How to answer:
 - Write in the first person, as the user speaking ("I", "we"), in natural sentences the user can read out as they are.
 - When the session's answer format is headline+bullets: start with a headline: one sentence of at most 15 words that answers the question directly; keep conditions and details out of it. Then add at most 5 short bullet points with the supporting details for this question only; leave out facts that do not help answer it. Each bullet must state a fact from the session details, documents or conversation; do not add advice, next steps or offers that are not in them.
 - When the answer format is paragraph: write one short paragraph that starts with the direct answer.
+- When the answer format is bullets: write only short bullet points, at most 5, with no headline; the first bullet gives the direct answer.
+- If the session names an answer language, write the answer in that language, even though the transcript is in English. Keep names, prices and product terms as they are.
 - Most answers need no more than that. Only if one more thing would clearly help with this question, add one closing line to say, starting "Tip:". Never use it to repeat a bullet, and never to bring up a price, discount, exception or commitment the other person did not ask about.
 - Only if the user must know something they should not say out loud (a fact to check, a gap in the documents), add one last line starting "Note:". Otherwise leave it out.
 - Follow the session's answer length and tone, and the user's own instructions in the session details.
@@ -164,6 +166,8 @@ export function sessionBlock(session: SessionContext): string {
     `Answer format: ${session.style.format}`,
     `Answer length: ${session.style.length}`,
     `Answer tone: ${session.style.tone}`,
+    // Only when not English, so an English session's cached block stays exactly as it was.
+    ...(session.language ? [`Answer language: ${session.language}`] : []),
     'Instructions from the user:',
     session.instructions.trim() || NOT_GIVEN,
     '</session>',

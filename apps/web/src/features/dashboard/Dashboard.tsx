@@ -1,49 +1,68 @@
 /**
  * File: apps/web/src/features/dashboard/Dashboard.tsx
- * Purpose: The dashboard ("Call Sessions"): the user's sessions on this computer, newest first,
- *          with a search box, type filter tabs (All / Interview / Sales / Support / Internal), a
- *          "Create session" button, empty states, and a "Download desktop app" banner placeholder
- *          in the browser. Opening a session goes through Choose platform in the browser and
- *          straight to the live screen in the desktop app.
+ * Purpose: The dashboard ("Call Sessions"): the user's sessions on this computer, with type tabs
+ *          and their counts (All / Interview / Regular / Mock), search by role or company, sort,
+ *          grid or list, a "Create session" menu of types, empty states, and a note about the
+ *          desktop app in the browser. Starting a session goes through Choose platform in the
+ *          browser and straight to the live screen in the desktop app.
  * Used by: app/(app)/page.tsx
- * Depends on: src/core/storage/sessions.ts, src/platform (offersPlatformChoice, kind for the
- *             banner), ./SessionCard.tsx, src/features/session-setup/ChoosePlatformDialog.tsx,
- *             src/ui (Button, Tabs)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F1, F4), §5 (Dashboard);
- *               day-03-sessions.md Stage 3
+ * Depends on: src/core/storage (sessions.ts, dashboardPrefs.ts), src/platform (offersPlatformChoice,
+ *             kind for the note), ./SessionCard.tsx,
+ *             src/features/session-setup/ChoosePlatformDialog.tsx, src/ui (Menu, Select, Tabs, icons)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F1, F4), §5 (Dashboard); ADR-0029
  */
 'use client';
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { deleteSession, listSessions } from '@/core/storage/sessions';
+import {
+  getDashboardLayout,
+  getDashboardSort,
+  setDashboardLayout,
+  setDashboardSort,
+  type DashboardLayout,
+} from '@/core/storage/dashboardPrefs';
+import {
+  deleteSession,
+  duplicateSession,
+  filterSessions,
+  listSessions,
+  sortSessions,
+  updateSession,
+  type SessionSort,
+} from '@/core/storage/sessions';
 import type { Session, SessionType } from '@/core/storage/types';
 import { ChoosePlatformDialog } from '@/features/session-setup/ChoosePlatformDialog';
 import { SESSION_TYPE_OPTIONS } from '@/features/session-setup/labels';
 import { getPlatform } from '@/platform';
 import { Eyebrow } from '@/ui/Eyebrow';
+import { GridIcon, ListIcon } from '@/ui/icons';
 import { LinkButton } from '@/ui/LinkButton';
+import { Menu } from '@/ui/Menu';
+import { Select } from '@/ui/Select';
 import { Tabs } from '@/ui/Tabs';
 import { SessionCard } from './SessionCard';
 
 /** The type filter: one session type, or all of them. */
 type TypeFilter = SessionType | 'all';
 
-/** The filter tabs, "All" first. */
-const TYPE_TABS: readonly { value: TypeFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  ...SESSION_TYPE_OPTIONS,
+/** The sort choices. */
+const SORT_OPTIONS: readonly { value: SessionSort; label: string }[] = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'company', label: 'Company A–Z' },
 ];
 
 /**
- * No-op subscription for useSyncExternalStore: the platform never changes while a page is open.
+ * No-op subscription for useSyncExternalStore: these values never change by themselves while a
+ * page is open.
  *
  * @returns An unsubscribe function that does nothing.
  */
 const subscribeNever = () => () => {};
 
 /**
- * Which platform the page runs on, for display only (the "Download desktop app" banner).
+ * Which platform the page runs on, for display only (the note about the desktop app).
  *
  * @returns 'desktop' or 'browser'.
  */
@@ -62,17 +81,31 @@ export function Dashboard() {
   // null while loading; the list as stored on this computer otherwise.
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [failed, setFailed] = useState(false);
-  // Bumped to reload the list (after a delete).
+  // Bumped to reload the list (after a change).
   const [version, setVersion] = useState(0);
   const [choosing, setChoosing] = useState<Session | null>(null);
   // Fixed per render pass so every card judges "live for over 12 hours" the same way.
   const [now, setNow] = useState(() => Date.now());
-  // The server cannot know the platform; it renders no banner, the browser decides after load.
+  // The server cannot know the platform or saved choices; the browser decides after load.
   const kind = useSyncExternalStore(subscribeNever, platformKind, () => null);
+  const savedLayout = useSyncExternalStore<DashboardLayout>(
+    subscribeNever,
+    getDashboardLayout,
+    () => 'list',
+  );
+  const savedSort = useSyncExternalStore<SessionSort>(
+    subscribeNever,
+    getDashboardSort,
+    () => 'newest',
+  );
+  const [chosenLayout, setChosenLayout] = useState<DashboardLayout | null>(null);
+  const [chosenSort, setChosenSort] = useState<SessionSort | null>(null);
+  const layout = chosenLayout ?? savedLayout;
+  const sort = chosenSort ?? savedSort;
 
   useEffect(() => {
     let cancelled = false;
-    listSessions({ search, type: type === 'all' ? undefined : type })
+    listSessions()
       .then((rows) => {
         if (cancelled) return;
         setSessions(rows);
@@ -84,13 +117,13 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [search, type, version]);
+  }, [version]);
 
   /**
-   * Opens a session: Choose platform first where it applies (browser), otherwise straight to
+   * Starts a session: Choose platform first where it applies (browser), otherwise straight to
    * the live screen (desktop app).
    *
-   * @param session The session to open.
+   * @param session The session to start.
    */
   function open(session: Session) {
     if (getPlatform().offersPlatformChoice) setChoosing(session);
@@ -107,9 +140,43 @@ export function Dashboard() {
     setVersion((n) => n + 1);
   }
 
+  /**
+   * Saves a session's new names, then reloads the list.
+   *
+   * @param session The session.
+   * @param company The new company.
+   * @param role    The new role or topic.
+   */
+  async function rename(session: Session, company: string, role: string) {
+    await updateSession(session.id, { company, role });
+    setVersion((n) => n + 1);
+  }
+
+  /**
+   * Copies a session, then reloads the list.
+   *
+   * @param session The session to copy.
+   */
+  async function duplicate(session: Session) {
+    await duplicateSession(session.id);
+    setVersion((n) => n + 1);
+  }
+
+  const all = sessions ?? [];
+  const tabs: readonly { value: TypeFilter; label: string }[] = [
+    { value: 'all', label: `All (${all.length})` },
+    ...SESSION_TYPE_OPTIONS.map((option) => ({
+      value: option.value,
+      label: `${option.label} (${all.filter((session) => session.type === option.value).length})`,
+    })),
+  ];
+  const shown = sortSessions(
+    filterSessions(all, { search, ...(type === 'all' ? {} : { type }) }),
+    sort,
+  );
   const filtering = search.trim() !== '' || type !== 'all';
   // The empty state has its own primary button; the header's is hidden then (one per view).
-  const firstRun = sessions !== null && sessions.length === 0 && !filtering;
+  const firstRun = sessions !== null && sessions.length === 0;
   return (
     <div className="flex flex-col">
       {/* White header band, then the list on the grey band (theme §5: alternating sections). */}
@@ -123,9 +190,14 @@ export function Dashboard() {
             </p>
           </div>
           {!firstRun && (
-            <LinkButton href="/sessions/new" variant="primary">
-              Create session
-            </LinkButton>
+            <Menu
+              label="Create session"
+              variant="primary"
+              items={SESSION_TYPE_OPTIONS.map((option) => ({
+                label: option.label,
+                onSelect: () => router.push(`/sessions/new?type=${option.value}`),
+              }))}
+            />
           )}
         </div>
       </header>
@@ -133,27 +205,64 @@ export function Dashboard() {
       <section aria-label="Sessions" className="flex-1 bg-ui-band px-4 py-8 sm:px-8">
         <div className="mx-auto max-w-5xl">
           {kind === 'browser' && (
-            // Placeholder: the installer and its download links go live on Day 6.
-            <aside className="mb-6 flex flex-wrap items-center justify-between gap-2 border border-l-[3px] border-ui-border border-l-ui-accent bg-ui-surface px-5 py-3 text-[15px]">
-              <span className="text-ui-text">
-                The desktop app hears calls from any meeting app, with global hotkeys.
-              </span>
-              <span className="shrink-0 font-mono text-[11px] uppercase tracking-[0.08em] text-ui-muted">
-                Download on Day 6
-              </span>
+            <aside className="mb-6 border border-l-[3px] border-ui-border border-l-ui-accent bg-ui-surface px-5 py-3 text-[15px] text-ui-text">
+              The desktop app hears calls from any meeting app, with global hotkeys. Ask your admin
+              for the installer.
             </aside>
           )}
 
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <Tabs label="Session type" options={TYPE_TABS} value={type} onChange={setType} />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search company, role or description"
-              aria-label="Search sessions"
-              className="h-10 w-full border border-ui-border bg-ui-input px-3 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 sm:w-72 md:text-[15px]"
-            />
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <Tabs label="Session type" options={tabs} value={type} onChange={setType} />
+            <div className="flex flex-wrap items-end gap-3">
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search role or company"
+                aria-label="Search sessions"
+                className="h-10 w-full border border-ui-border bg-ui-input px-3 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 sm:w-60 md:text-[15px]"
+              />
+              <div className="w-40">
+                <Select
+                  label="Sort"
+                  options={SORT_OPTIONS}
+                  value={sort}
+                  onChange={(next) => {
+                    setChosenSort(next);
+                    setDashboardSort(next);
+                  }}
+                />
+              </div>
+              <div role="radiogroup" aria-label="Layout" className="flex">
+                {(
+                  [
+                    ['list', 'List', <ListIcon key="list" />],
+                    ['grid', 'Grid', <GridIcon key="grid" />],
+                  ] as const
+                ).map(([value, name, icon]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={layout === value}
+                    aria-label={name}
+                    title={name}
+                    onClick={() => {
+                      setChosenLayout(value);
+                      setDashboardLayout(value);
+                    }}
+                    className={[
+                      'flex h-10 w-10 items-center justify-center border border-ui-border focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11',
+                      layout === value
+                        ? 'bg-ui-pale text-ui-heading'
+                        : 'bg-ui-surface text-ui-muted',
+                    ].join(' ')}
+                  >
+                    {icon}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {failed && (
@@ -162,21 +271,30 @@ export function Dashboard() {
             </p>
           )}
 
-          {sessions && sessions.length > 0 && (
-            <ul className="mt-6 flex flex-col gap-3">
-              {sessions.map((session) => (
+          {shown.length > 0 && (
+            <ul
+              className={
+                layout === 'grid'
+                  ? 'mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
+                  : 'mt-6 flex flex-col gap-3'
+              }
+            >
+              {shown.map((session) => (
                 <SessionCard
                   key={session.id}
                   session={session}
                   now={now}
+                  grid={layout === 'grid'}
                   onOpen={open}
                   onDelete={remove}
+                  onRename={rename}
+                  onDuplicate={duplicate}
                 />
               ))}
             </ul>
           )}
 
-          {sessions && sessions.length === 0 && (
+          {sessions && shown.length === 0 && (
             // Empty state (theme §6): a headline, one line, one primary button.
             <section className="mt-6 flex flex-col items-center border border-ui-border bg-ui-surface px-6 py-14 text-center">
               <h2 className="text-[20px] font-semibold text-ui-heading">

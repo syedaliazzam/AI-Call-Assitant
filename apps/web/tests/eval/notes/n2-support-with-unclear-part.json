@@ -3,7 +3,7 @@
   "covers": "A support call with a garbled stretch: it must be listed as unclear, not guessed.",
   "request": {
     "session": {
-      "type": "support",
+      "type": "regular",
       "company": "Pinecrest Clinics (invented)",
       "role": "Support engineer",
       "description": "Calendar sync keeps failing.",

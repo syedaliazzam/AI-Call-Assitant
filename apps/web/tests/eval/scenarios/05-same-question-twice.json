@@ -2,7 +2,7 @@
   "id": "05-same-question-twice",
   "covers": "The same question asked again minutes later.",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Northwind Logistics (invented)",
     "role": "Account executive",
     "description": "Commercial terms call.",

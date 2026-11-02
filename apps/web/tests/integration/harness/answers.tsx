@@ -43,7 +43,7 @@ declare global {
 /** An invented session. */
 const SESSION: Session = {
   id: 'harness-session',
-  type: 'sales',
+  type: 'regular',
   company: 'Harbor Lane Freight (invented)',
   role: 'Pilot review',
   description: 'Invented harness session.',

@@ -37,7 +37,7 @@ import {
 
 /** An invented session. */
 const SESSION: SessionContext = {
-  type: 'sales',
+  type: 'regular',
   company: 'Northwind Logistics',
   role: 'Account review',
   description: 'Renewal call with the operations team.',
@@ -296,7 +296,7 @@ describe('sessionBlock', () => {
   it('holds the details, key terms, style, instructions and documents in a fixed order', () => {
     const block = sessionBlock(SESSION);
     const order = [
-      'Call type: sales',
+      'Call type: regular',
       'Company: Northwind Logistics',
       'Role or topic: Account review',
       'Description of the call:\nRenewal call with the operations team.',

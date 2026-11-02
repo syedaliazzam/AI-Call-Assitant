@@ -2,7 +2,7 @@
   "id": "20-lesson-error-code-in-headline",
   "covers": "An approved lesson changes a support answer: name the error code and the exact setting in the headline.",
   "session": {
-    "type": "support",
+    "type": "regular",
     "company": "Pinecrest Clinics (invented)",
     "role": "Support engineer",
     "description": "A clinic's calendar sync keeps failing.",

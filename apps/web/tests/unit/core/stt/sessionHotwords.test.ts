@@ -147,7 +147,7 @@ describe('buildHotwords: Interview vocabulary and the document cap (Day 6 Stage 
     expect(phrases).toContain('VECTOR DATABASE');
     expect(interview.find((hotword) => hotword.phrase === 'LLM')?.score).toBe(TECH_TERM_SCORE);
     expect(interview).toHaveLength(3 + INTERVIEW_TECH_TERMS.length);
-    expect(buildHotwords({ ...session('Bluefin Route'), type: 'sales' }, [])).toHaveLength(3);
+    expect(buildHotwords({ ...session('Bluefin Route'), type: 'regular' }, [])).toHaveLength(3);
   });
 
   it('uses at most MAX_DOCUMENT_TERMS document terms, the most mentioned first', () => {

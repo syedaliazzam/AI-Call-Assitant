@@ -10,6 +10,8 @@
  */
 import type { DocumentText, NewSessionInput } from '@/core/storage/sessions';
 import type {
+  LibraryItem,
+  LibraryKind,
   Session,
   SessionDefaults,
   SessionPreferences,
@@ -29,6 +31,10 @@ export interface DraftDocument {
   text: string;
   /** Length of `text` in characters. */
   chars: number;
+  /** 'resume' for the session's resume; absent or 'document' otherwise. */
+  kind?: LibraryKind;
+  /** The library item it is a copy of, if any. */
+  sourceId?: string;
 }
 
 /** Everything the wizard edits. */
@@ -51,6 +57,8 @@ export interface SessionDraft {
   instructions: string;
   /** Save the transcript on this device. */
   saveTranscript: boolean;
+  /** Auto-answer (beta) for this session. */
+  autoAnswer: boolean;
 }
 
 /** Problems with the Details step, by field (absent = fine). */
@@ -65,12 +73,16 @@ export interface DetailsErrors {
  * A new, empty draft starting from the user's default preferences.
  *
  * @param defaults The defaults from Settings.
+ * @param type     The session type to start with.
  * @returns The draft.
  * Called from: SessionWizard (create)
  */
-export function emptyDraft(defaults: SessionDefaults): SessionDraft {
+export function emptyDraft(
+  defaults: SessionDefaults,
+  type: SessionType = 'interview',
+): SessionDraft {
   return {
-    type: 'interview',
+    type,
     company: '',
     role: '',
     description: '',
@@ -84,6 +96,7 @@ export function emptyDraft(defaults: SessionDefaults): SessionDraft {
     },
     instructions: defaults.instructions,
     saveTranscript: defaults.saveTranscript,
+    autoAnswer: false,
   };
 }
 
@@ -107,11 +120,14 @@ export function draftFromSession(session: Session, documents: StoredDocument[]):
       name: document.name,
       text: document.text,
       chars: document.chars,
+      ...(document.kind ? { kind: document.kind } : {}),
+      ...(document.sourceId ? { sourceId: document.sourceId } : {}),
     })),
     removedIds: [],
     preferences: { ...session.preferences, style: { ...session.preferences.style } },
     instructions: session.instructions,
     saveTranscript: session.saveTranscript,
+    autoAnswer: session.autoAnswer,
   };
 }
 
@@ -128,9 +144,9 @@ export function validateDetails(draft: SessionDraft): DetailsErrors {
   if (draft.company.trim() === '') errors.company = 'Enter the company the call is with.';
   if (draft.role.trim() === '') {
     errors.role =
-      draft.type === 'interview'
-        ? 'Enter the role you are interviewing for.'
-        : 'Enter what the call is about.';
+      draft.type === 'regular'
+        ? 'Enter what the call is about.'
+        : 'Enter the role you are interviewing for.';
   }
   return errors;
 }
@@ -139,7 +155,7 @@ export function validateDetails(draft: SessionDraft): DetailsErrors {
  * The session fields to store, with surrounding spaces trimmed.
  *
  * @param draft The draft.
- * @returns Input for createSession / updateSession (auto-answer stays off until Day 6).
+ * @returns Input for createSession / updateSession.
  * Called from: SessionWizard (Create/Save)
  */
 export function draftToInput(draft: SessionDraft): NewSessionInput {
@@ -151,7 +167,7 @@ export function draftToInput(draft: SessionDraft): NewSessionInput {
     preferences: { ...draft.preferences, keyTerms: draft.preferences.keyTerms.trim() },
     instructions: draft.instructions.trim(),
     saveTranscript: draft.saveTranscript,
-    autoAnswer: false,
+    autoAnswer: draft.autoAnswer,
   };
 }
 
@@ -165,7 +181,12 @@ export function draftToInput(draft: SessionDraft): NewSessionInput {
 export function newDocuments(draft: SessionDraft): DocumentText[] {
   return draft.documents
     .filter((document) => document.storedId === undefined)
-    .map(({ name, text }) => ({ name, text }));
+    .map(({ name, text, kind, sourceId }) => ({
+      name,
+      text,
+      ...(kind ? { kind } : {}),
+      ...(sourceId ? { sourceId } : {}),
+    }));
 }
 
 /**
@@ -177,4 +198,71 @@ export function newDocuments(draft: SessionDraft): DocumentText[] {
  */
 export function draftChars(draft: SessionDraft): number {
   return draft.documents.reduce((sum, document) => sum + document.chars, 0);
+}
+
+/**
+ * Which library a document belongs with.
+ *
+ * @param document The document.
+ * @returns 'resume', or 'document' (also for older rows, which have no kind).
+ * Called from: LibraryPicker.tsx, withLibraryItem(); tests
+ */
+export function documentKind(document: Pick<DraftDocument, 'kind'>): LibraryKind {
+  return document.kind ?? 'document';
+}
+
+/**
+ * Removes a document from the draft. A stored one is deleted when the wizard saves.
+ *
+ * @param draft The draft.
+ * @param key   The document's list key.
+ * @returns The changes to apply.
+ * Called from: SessionWizard, withLibraryItem(); tests
+ */
+export function withoutDocument(
+  draft: Pick<SessionDraft, 'documents' | 'removedIds'>,
+  key: string,
+): Pick<SessionDraft, 'documents' | 'removedIds'> {
+  const document = draft.documents.find((candidate) => candidate.key === key);
+  return {
+    documents: draft.documents.filter((candidate) => candidate.key !== key),
+    removedIds: document?.storedId ? [...draft.removedIds, document.storedId] : draft.removedIds,
+  };
+}
+
+/**
+ * Adds a copy of a library item to the draft. A session has one resume, so a new one replaces the
+ * old. The text is copied, so deleting the library item later does not change the session.
+ *
+ * @param draft The draft.
+ * @param item  The library item.
+ * @param key   The new document's list key.
+ * @returns The changes to apply.
+ * Called from: SessionWizard; tests
+ */
+export function withLibraryItem(
+  draft: Pick<SessionDraft, 'documents' | 'removedIds'>,
+  item: LibraryItem,
+  key: string,
+): Pick<SessionDraft, 'documents' | 'removedIds'> {
+  let next = { documents: draft.documents, removedIds: draft.removedIds };
+  if (item.kind === 'resume') {
+    for (const old of draft.documents.filter((document) => documentKind(document) === 'resume')) {
+      next = withoutDocument(next, old.key);
+    }
+  }
+  return {
+    ...next,
+    documents: [
+      ...next.documents,
+      {
+        key,
+        name: item.name,
+        text: item.text,
+        chars: item.chars,
+        kind: item.kind,
+        sourceId: item.id,
+      },
+    ],
+  };
 }

@@ -16,7 +16,7 @@
  * Logs only the session id, timings and token counts; never session or document text.
  */
 import type { ConversationChunk, SessionContext } from '@kite/shared';
-import type { Session, StoredDocument } from '@/core/storage/types';
+import { answerLanguageName, type Session, type StoredDocument } from '@/core/storage/types';
 import { streamAnswer, type AnswerDone } from './answerClient';
 
 /**
@@ -35,6 +35,7 @@ export function toSessionContext(
   const sorted = [...documents].sort((a, b) =>
     a.addedAt !== b.addedAt ? a.addedAt - b.addedAt : a.id < b.id ? -1 : 1,
   );
+  const language = answerLanguageName(session.preferences.language);
   return {
     type: session.type,
     company: session.company,
@@ -51,6 +52,7 @@ export function toSessionContext(
       length: session.preferences.style.length,
       tone: session.preferences.style.tone,
     },
+    ...(language ? { language } : {}),
     documents: sorted.map((document) => ({ name: document.name, text: document.text })),
   };
 }

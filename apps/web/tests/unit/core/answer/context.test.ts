@@ -28,7 +28,7 @@ const START = 1_000_000;
 /** An invented session. */
 const SESSION: Session = {
   id: 's1',
-  type: 'sales',
+  type: 'regular',
   company: 'Northwind Logistics',
   role: 'Account review',
   description: 'Renewal call',

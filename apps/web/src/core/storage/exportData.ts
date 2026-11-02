@@ -15,16 +15,26 @@
  */
 import { z } from 'zod';
 import { getDb } from './db';
-import type { Session, StoredAnswer, StoredLesson, StoredNotes, StoredUtterance } from './types';
+import { currentSessionType, currentTone } from './migrate';
+import type {
+  LibraryItem,
+  LibraryKind,
+  Session,
+  StoredAnswer,
+  StoredLesson,
+  StoredNotes,
+  StoredUtterance,
+} from './types';
 
 /** The file's "format" value: tells a Kite export apart from any other JSON file. */
 export const EXPORT_FORMAT = 'kite-export';
 
 /**
  * The file layout version. Raise it when the layout changes, and keep reading older ones.
- * 1: documents as metadata only. 2: documents with their extracted text.
+ * 1: documents as metadata only. 2: documents with their extracted text. 3: adds the Resume and
+ * Document libraries.
  */
-export const EXPORT_VERSION = 2;
+export const EXPORT_VERSION = 3;
 
 /** Largest file accepted for import (50 MB): far above a year of calls, below browser limits. */
 export const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
@@ -43,6 +53,10 @@ export interface ExportedDocument {
   addedAt: number;
   /** The extracted text (version 2). Missing in version 1 files: those documents are not restored. */
   text?: string;
+  /** 'resume' for a session's resume; absent or 'document' otherwise. */
+  kind?: LibraryKind;
+  /** The library item it was copied from, if any. */
+  sourceId?: string;
 }
 
 /** The export file. */
@@ -65,9 +79,14 @@ export interface ExportFile {
   notes: StoredNotes[];
   /** Lesson decisions (approved and rejected). */
   lessons: StoredLesson[];
+  /** The Resume and Document libraries (version 3; absent in older files). */
+  library?: LibraryItem[];
 }
 
-const sessionType = z.enum(['interview', 'sales', 'support', 'internal']);
+// Older files hold the old types and tones; they are read as today's (core/storage/migrate.ts).
+const sessionType = z
+  .enum(['interview', 'regular', 'mock', 'sales', 'support', 'internal'])
+  .transform(currentSessionType);
 
 /** Validation for each record type (matching core/storage/types.ts). */
 const SessionSchema = z.object({
@@ -77,12 +96,12 @@ const SessionSchema = z.object({
   role: z.string(),
   description: z.string(),
   preferences: z.object({
-    language: z.literal('en'),
+    language: z.string(),
     model: z.enum(['fast', 'smart']),
     style: z.object({
-      format: z.enum(['headline+bullets', 'paragraph']),
+      format: z.enum(['headline+bullets', 'bullets', 'paragraph']),
       length: z.enum(['short', 'medium', 'detailed']),
-      tone: z.enum(['simple', 'professional', 'friendly']),
+      tone: z.enum(['simple', 'professional', 'technical', 'friendly']).transform(currentTone),
     }),
     keyTerms: z.string(),
   }),
@@ -100,6 +119,16 @@ const DocumentSchema = z.object({
   chars: z.number(),
   addedAt: z.number(),
   text: z.string().optional(),
+  kind: z.enum(['resume', 'document']).optional(),
+  sourceId: z.string().optional(),
+});
+const LibrarySchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(['resume', 'document']),
+  name: z.string(),
+  text: z.string(),
+  chars: z.number(),
+  addedAt: z.number(),
 });
 const UtteranceSchema = z.object({
   id: z.string().min(1),
@@ -156,6 +185,7 @@ const ExportSchema = z.object({
   answers: z.array(AnswerSchema),
   notes: z.array(NotesSchema),
   lessons: z.array(LessonSchema),
+  library: z.array(LibrarySchema).optional(),
 });
 
 /**
@@ -173,18 +203,21 @@ export async function exportData(now = Date.now()): Promise<ExportFile> {
     version: EXPORT_VERSION,
     exportedAt: now,
     sessions: await db.sessions.toArray(),
-    documents: documents.map(({ id, sessionId, name, chars, addedAt, text }) => ({
+    documents: documents.map(({ id, sessionId, name, chars, addedAt, text, kind, sourceId }) => ({
       id,
       sessionId,
       name,
       chars,
       addedAt,
       text,
+      ...(kind ? { kind } : {}),
+      ...(sourceId ? { sourceId } : {}),
     })),
     utterances: await db.utterances.toArray(),
     answers: await db.answers.toArray(),
     notes: await db.notes.toArray(),
     lessons: await db.lessons.toArray(),
+    library: await db.library.toArray(),
   };
 }
 
@@ -279,6 +312,8 @@ export interface ImportSummary {
   notes: MergeCount;
   /** Lesson decisions. */
   lessons: MergeCount;
+  /** Library items (Resumes and Documents). */
+  library: MergeCount;
   /**
    * Documents a version 1 file lists by name only (no text), for sessions that were added: their
    * files must be attached again. Always 0 for version 2 files.
@@ -316,7 +351,7 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
   const db = getDb();
   return db.transaction(
     'rw',
-    [db.sessions, db.documents, db.utterances, db.answers, db.notes, db.lessons],
+    [db.sessions, db.documents, db.utterances, db.answers, db.notes, db.lessons, db.library],
     async () => {
       const sessions = missing(
         await db.sessions.bulkGet(file.sessions.map((session) => session.id)),
@@ -348,17 +383,26 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
         (lesson, index) => byId[index] === undefined && !knownKeys.has(lesson.sourceKey),
       );
 
+      const fileLibrary = file.library ?? [];
+      const library = missing(
+        await db.library.bulkGet(fileLibrary.map((item) => item.id)),
+        fileLibrary,
+      );
+
       await db.sessions.bulkAdd(sessions.toAdd);
       await db.documents.bulkAdd(
-        documents.toAdd.map(({ id, sessionId, name, chars, addedAt, text }) => ({
+        documents.toAdd.map(({ id, sessionId, name, chars, addedAt, text, kind, sourceId }) => ({
           id,
           sessionId,
           name,
           chars,
           addedAt,
           text: text ?? '',
+          ...(kind ? { kind } : {}),
+          ...(sourceId ? { sourceId } : {}),
         })),
       );
+      await db.library.bulkAdd(library.toAdd);
       await db.utterances.bulkAdd(utterances.toAdd);
       await db.answers.bulkAdd(answers.toAdd);
       await db.notes.bulkAdd(notes.toAdd);
@@ -375,6 +419,7 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
           added: lessonsToAdd.length,
           skipped: file.lessons.length - lessonsToAdd.length,
         },
+        library: library.count,
         documentsToReattach: file.documents.filter(
           (document) => document.text === undefined && addedSessionIds.has(document.sessionId),
         ).length,

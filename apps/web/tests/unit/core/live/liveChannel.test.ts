@@ -117,6 +117,13 @@ describe('openLiveChannel', () => {
 });
 
 describe('isCommand and isState', () => {
+  it('accepts answer preferences only with known values', () => {
+    const style = { format: 'bullets', length: 'short', tone: 'technical' };
+    expect(isCommand({ type: 'style', style })).toBe(true);
+    expect(isCommand({ type: 'style', style: { ...style, tone: 'shouting' } })).toBe(false);
+    expect(isCommand({ type: 'style' })).toBe(false);
+  });
+
   it('accept only the known shapes', () => {
     for (const type of ['answer', 'screenshot', 'clear', 'prev', 'next', 'end', 'hello'])
       expect(isCommand({ type })).toBe(true);

@@ -14,7 +14,7 @@ import type { Session, StoredDocument } from '@/core/storage/types';
 /** An invented session. */
 const SESSION: Session = {
   id: 's1',
-  type: 'sales',
+  type: 'regular',
   company: 'Northwind Logistics',
   role: 'Account review',
   description: 'Renewal call',
@@ -77,7 +77,7 @@ describe('toSessionContext', () => {
   it('builds the session details: key terms per line, style and documents oldest first', () => {
     const context = toSessionContext(SESSION, [doc('b', 2), doc('a', 1)]);
     expect(context).toEqual({
-      type: 'sales',
+      type: 'regular',
       company: 'Northwind Logistics',
       role: 'Account review',
       description: 'Renewal call',

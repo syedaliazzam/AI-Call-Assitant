@@ -12,6 +12,7 @@ import {
   type AnswerModel,
   type LessonScope,
   type AnswerStyle,
+  type Session,
   type SessionStatus,
   type SessionType,
 } from '@/core/storage/types';
@@ -19,9 +20,8 @@ import {
 /** Display name of each session type. */
 export const SESSION_TYPE_LABELS: Record<SessionType, string> = {
   interview: 'Interview',
-  sales: 'Sales',
-  support: 'Support',
-  internal: 'Internal',
+  regular: 'Regular',
+  mock: 'Mock',
 };
 
 /** The session types as Select / Tabs options, in the dashboard's order. */
@@ -32,7 +32,7 @@ export const SESSION_TYPE_OPTIONS = SESSION_TYPES.map((value) => ({
 
 /** Display name of each status shown on a session card. */
 export const STATUS_LABELS: Record<SessionStatus, string> = {
-  'not-started': 'Not started',
+  'not-started': 'Ready to start',
   live: 'Live',
   ended: 'Ended',
 };
@@ -45,14 +45,15 @@ export const MODEL_OPTIONS: readonly { value: AnswerModel; label: string }[] = [
 
 /** Answer format choices. */
 export const FORMAT_OPTIONS: readonly { value: AnswerStyle['format']; label: string }[] = [
-  { value: 'headline+bullets', label: 'Headline and bullets' },
-  { value: 'paragraph', label: 'Short paragraph' },
+  { value: 'headline+bullets', label: 'Script + bullets' },
+  { value: 'bullets', label: 'Bullets only' },
+  { value: 'paragraph', label: 'Script only' },
 ];
 
 /** Answer length choices. */
 export const LENGTH_OPTIONS: readonly { value: AnswerStyle['length']; label: string }[] = [
   { value: 'short', label: 'Short' },
-  { value: 'medium', label: 'Medium' },
+  { value: 'medium', label: 'Balanced' },
   { value: 'detailed', label: 'Detailed' },
 ];
 
@@ -60,14 +61,45 @@ export const LENGTH_OPTIONS: readonly { value: AnswerStyle['length']; label: str
 export const TONE_OPTIONS: readonly { value: AnswerStyle['tone']; label: string }[] = [
   { value: 'simple', label: 'Simple' },
   { value: 'professional', label: 'Professional' },
-  { value: 'friendly', label: 'Friendly' },
+  { value: 'technical', label: 'Technical' },
 ];
+
+/**
+ * The sentence on the Connect screen saying what this session is.
+ *
+ * @param session The session's type, company, and role or topic.
+ * @returns For example "This is an Interview session for Data Analyst at Lantern Freight."
+ * Called from: LivePage.tsx; tests
+ */
+export function sessionSummary(session: Pick<Session, 'type' | 'company' | 'role'>): string {
+  const name = `This is a${session.type === 'interview' ? 'n' : ''} ${SESSION_TYPE_LABELS[session.type]} session`;
+  return session.type === 'regular'
+    ? `${name} about ${session.role} with ${session.company}.`
+    : `${name} for ${session.role} at ${session.company}.`;
+}
+
+/**
+ * One line summing up an answer style.
+ *
+ * @param style The style.
+ * @returns For example "Script + bullets · Short · Simple".
+ * Called from: PreferencesStep.tsx
+ */
+export function styleSummary(style: AnswerStyle): string {
+  const label = <T>(options: readonly { value: T; label: string }[], value: T) =>
+    options.find((option) => option.value === value)?.label ?? String(value);
+  return [
+    label(FORMAT_OPTIONS, style.format),
+    label(LENGTH_OPTIONS, style.length),
+    label(TONE_OPTIONS, style.tone),
+  ].join(' · ');
+}
 
 /**
  * The words for a lesson's scope.
  *
  * @param scope 'all' or a session type.
- * @returns "All calls" or, for example, "Sales calls only".
+ * @returns "All calls" or, for example, "Mock calls only".
  * Called from: features/review (proposed lessons), features/settings (What Kite has learned)
  */
 export function lessonScopeLabel(scope: LessonScope): string {
