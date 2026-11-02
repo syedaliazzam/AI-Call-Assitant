@@ -111,8 +111,27 @@ test('opens one 1280×820 window on KITE_URL', async () => {
     workArea: screen.getPrimaryDisplay().workAreaSize,
   }));
   // Electron shrinks a window to fit the screen's work area (for example 1280×720 on a
-  // 1920×1080 laptop at 150% scaling), so compare against the size that fits.
-  expect(sizes).toEqual([[Math.min(1280, workArea.width), Math.min(820, workArea.height)]]);
+  // 1920×1080 laptop at 150% scaling), so compare against the size that fits. A shrunk side may
+  // come out a few pixels smaller (macOS on a 1024×768 runner: 674 for a 677 px work area).
+  expect(sizes).toHaveLength(1);
+  const [width = 0, height = 0] = sizes[0]!;
+  /**
+   * Checks one side: exactly the wanted size when it fits, else within 8 px of the space.
+   *
+   * @param wanted    The window's designed size.
+   * @param available The work area's size.
+   * @param actual    The window's size.
+   */
+  const fit = (wanted: number, available: number, actual: number) => {
+    if (wanted <= available) {
+      expect(actual).toBe(wanted);
+    } else {
+      expect(actual).toBeGreaterThanOrEqual(available - 8);
+      expect(actual).toBeLessThanOrEqual(available);
+    }
+  };
+  fit(1280, workArea.width, width);
+  fit(820, workArea.height, height);
 });
 
 test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async () => {
