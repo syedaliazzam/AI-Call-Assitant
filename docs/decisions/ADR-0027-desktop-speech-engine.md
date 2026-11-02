@@ -67,7 +67,9 @@ The rule is not changed after the results are seen. A near miss is reported as a
 The rule above does not change. These details say how its words are measured. The code is `apps/web/scripts/stt-trial.ts` and `scripts/lib/stt-score.ts` (unit-tested).
 
 **Audio:**
-- The names set: the developer's recording of `names-sentences.txt`. **39 of the 40 sentences** have a clip (clip 40 is missing), so only those are scored.
+- The names set: the developer's recording of `names-sentences.txt`. Only sentences with a clip are scored.
+  - A first check (numbers only, before any counted run) showed the clip numbers did not match the sentences read. Each clip's best sentence was clear (word error 0.00–0.54, next best 0.60 or worse), so the clips were renumbered to the sentences they are.
+  - Of a sentence read twice, the later take is kept: a fixed rule, not chosen by any engine's score.
 - The read set: `0.wav` and `1.wav`, the two public recordings already used since Day 1 (66 words).
 - No conversational audio exists yet, so it is not in this trial. Stage 2's human checks cover real calls.
 

@@ -8,6 +8,7 @@
  *          developer's voice), and tests/fixtures/stt/names-manifest.json (committed) lists each
  *          clip's file, sentence number, length and SHA-256.
  *          Usage: pnpm --filter web stt:record-names [--from=N]  (N = sentence to start at)
+ *                 pnpm --filter web stt:record-names --only=2,21,33  (just these sentences)
  * Used by: the "stt:record-names" script in apps/web/package.json (run by the developer, once)
  * Depends on: @playwright/test (Chromium, already installed for the tests), node:http, node:fs,
  *             node:crypto
@@ -80,10 +81,15 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>Kite names recorder</t
 <p id="state" style="font:16px monospace;color:#ffd166"></p>
 <p style="color:#9fb0d0">Space: start / stop &nbsp; Enter: keep and go on &nbsp; R: record again</p>
 <script>
-let sentences = [], i = 0, recorder = null, chunks = [], clip = null, stream = null;
+let sentences = [], order = [], position = 0, recorder = null, chunks = [], clip = null, stream = null;
+// busy: a clip is being processed or saved. Keys wait, so a held key or a quick second press can
+// never save a clip twice, or start a recording over the one being processed (Day 6).
+let busy = false;
+const current = () => order[position];
 const show = (state) => {
-  document.getElementById('step').textContent = 'Sentence ' + (i + 1) + ' of ' + sentences.length;
-  document.getElementById('sentence').textContent = sentences[i] || 'All done. You can close this window.';
+  const done = position >= order.length;
+  document.getElementById('step').textContent = done ? '' : 'Sentence ' + (current() + 1) + ' of ' + sentences.length;
+  document.getElementById('sentence').textContent = done ? 'All done. You can close this window.' : sentences[current()];
   document.getElementById('state').textContent = state;
 };
 async function toWav(blob) {
@@ -104,7 +110,7 @@ async function toWav(blob) {
   return { base64: btoa(binary), seconds: pcm.length / 16000 };
 }
 document.addEventListener('keydown', async (e) => {
-  if (i >= sentences.length) return;
+  if (position >= order.length || e.repeat || busy) return;
   if (e.code === 'Space') {
     e.preventDefault();
     if (!recorder) {
@@ -112,16 +118,18 @@ document.addEventListener('keydown', async (e) => {
       chunks = []; clip = null;
       recorder = new MediaRecorder(stream);
       recorder.ondataavailable = (ev) => chunks.push(ev.data);
-      recorder.onstop = async () => { clip = await toWav(new Blob(chunks)); show('Recorded ' + clip.seconds.toFixed(1) + ' s. Enter to keep, R to redo.'); };
+      recorder.onstop = async () => { clip = await toWav(new Blob(chunks)); busy = false; show('Recorded ' + clip.seconds.toFixed(1) + ' s. Enter to keep, R to redo.'); };
       recorder.start(); show('Recording... Space to stop.');
-    } else { recorder.stop(); recorder = null; show('Processing...'); }
+    } else { busy = true; recorder.stop(); recorder = null; show('Processing...'); }
   } else if (e.key === 'r' || e.key === 'R') { clip = null; show('Press Space and read the sentence again.'); }
   else if (e.key === 'Enter' && clip) {
-    await window.saveClip(i, clip.base64, clip.seconds);
-    i += 1; clip = null; show(i < sentences.length ? 'Press Space and read the sentence.' : '');
+    busy = true;
+    await window.saveClip(current(), clip.base64, clip.seconds);
+    position += 1; clip = null; busy = false;
+    show(position < order.length ? 'Press Space and read the sentence.' : '');
   }
 });
-window.start = (list, from) => { sentences = list; i = from; show('Press Space and read the sentence.'); };
+window.start = (list, indexes) => { sentences = list; order = indexes; position = 0; show('Press Space and read the sentence.'); };
 </script>`;
 
 /**
@@ -132,9 +140,16 @@ window.start = (list, from) => { sentences = list; i = from; show('Press Space a
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { from: { type: 'string' } } });
+  const { values } = parseArgs({ options: { from: { type: 'string' }, only: { type: 'string' } } });
   const sentences = readSentences();
   const from = Math.max(0, Number(values.from ?? '1') - 1);
+  // The sentences to record, as positions in the list: --only, or everything from --from on.
+  const order = values.only
+    ? values.only.split(',').map((number) => Number(number) - 1)
+    : sentences.map((_, index) => index).slice(from);
+  if (order.some((index) => !Number.isInteger(index) || index < 0 || index >= sentences.length)) {
+    throw new Error(`--only: use sentence numbers from 1 to ${sentences.length}`);
+  }
   mkdirSync(AUDIO_DIR, { recursive: true });
   let manifest: ManifestClip[] = [];
   try {
@@ -169,13 +184,11 @@ async function main(): Promise<void> {
   });
   await page.goto(`http://127.0.0.1:${port}/`);
   await page.evaluate(
-    ([list, start]) =>
-      (window as unknown as { start: (l: string[], s: number) => void }).start(list, start),
-    [sentences, from] as const,
+    ([list, indexes]) =>
+      (window as unknown as { start: (l: string[], i: number[]) => void }).start(list, indexes),
+    [sentences, order] as const,
   );
-  console.log(
-    `Recorder open: sentences ${from + 1}–${sentences.length}. Close the window when done.`,
-  );
+  console.log(`Recorder open: ${order.length} sentences. Close the window when done.`);
   await page.waitForEvent('close', { timeout: 0 });
   await browser.close();
   server.close();
