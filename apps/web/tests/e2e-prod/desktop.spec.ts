@@ -165,11 +165,16 @@ test('3. Connect needs no picker; Go live shows lines; a Chat answer is rated; E
     protectedByDefault: shown.protectedOn ? 1 : 0,
   });
   expect(shown).toMatchObject({ onTop: true, focused: false, protectedOn: false });
+  // The protection state lives in the overlay's menu since parity Phase 1.
+  await compact.getByRole('button', { name: 'Overlay menu' }).click();
   await expect(compact.getByText('Visible in screen share')).toBeVisible();
+  await compact.getByRole('button', { name: 'Overlay menu' }).click();
 
   // (a) Click into the compact window's question box, type, Enter: the live page answers it.
   const before = (await liveHeadline.textContent()) ?? '';
   const chatResponse = page.waitForResponse((r) => isMode(r, 'chat'), { timeout: 60_000 });
+  // The question box opens from Chat since parity Phase 1.
+  await compact.getByRole('button', { name: 'Chat' }).click();
   const box = compact.getByLabel('Type a question');
   await box.click();
   await box.pressSequentially('What was the late delivery change in the pilot?');
