@@ -410,6 +410,11 @@ worker.onmessage = ({ data }) => {
     statsWaiters.splice(0).forEach((resolve) => resolve());
   }
 };
+// A worker crash (for example the WebAssembly aborting) must fail the run, not hang it.
+worker.onerror = (event) => {
+  onReady.reject(new Error('worker crashed: ' + (event.message || 'unknown')));
+  window.trialCrash = event.message || 'unknown';
+};
 let audioClock = 1;
 let pingId = 0;
 window.trial = {
@@ -434,7 +439,11 @@ window.trial = {
     const ended = performance.now();
     worker.postMessage({ type: 'detach', channel: 'you' });
     const id2 = ++pingId;
-    await new Promise((resolve) => { pongs.set(id2, resolve); worker.postMessage({ type: 'ping', id: id2 }); });
+    await new Promise((resolve, reject) => {
+      pongs.set(id2, resolve);
+      worker.postMessage({ type: 'ping', id: id2 });
+      setTimeout(() => reject(new Error('no answer from the worker for 60 s' + (window.trialCrash ? ' (crashed: ' + window.trialCrash + ')' : ''))), 60000);
+    });
     return { hypothesis: finals.join(' '), finalMs: performance.now() - ended, decodeMs, audioMs };
   },
 };
