@@ -84,7 +84,7 @@ test('2. create a session with a document and key terms', async () => {
 
 test('3. Open in browser: key terms and the first warm-up (cache write)', async () => {
   const warm = page.waitForResponse(isWarmUp, { timeout: 60_000 });
-  await sessionCard(page, COMPANY).getByRole('button', { name: 'Open' }).click();
+  await sessionCard(page, COMPANY).getByRole('button', { name: 'Start session' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Open in browser' }).click();
   const line = page.getByText(/Listening for \d+ key terms?/);
   await expect(line).toBeVisible();
@@ -193,7 +193,8 @@ test('7. End: saved transcript survives a reload', async () => {
 test('8. delete the session', async () => {
   await page.goto(PRODUCTION_URL);
   const card = sessionCard(page, COMPANY);
-  await card.getByRole('button', { name: 'Delete' }).click();
+  await card.getByRole('button', { name: /^More for / }).click();
+  await card.getByRole('menuitem', { name: 'Delete' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(card).toHaveCount(0);
   report('delete session', true);

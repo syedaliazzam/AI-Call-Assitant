@@ -79,7 +79,7 @@ describe('answers', () => {
 
   it('deleting the session deletes its answers', async () => {
     const session = await createSession({
-      type: 'sales',
+      type: 'regular',
       company: 'Invented Co',
       role: '',
       description: '',

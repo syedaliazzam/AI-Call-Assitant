@@ -44,7 +44,7 @@ import { ThemSilentNotice } from './ThemSilentNotice';
 import { endCall } from '@/core/transcript/endCall';
 import { startTranscriptSaver, type TranscriptSaver } from '@/core/transcript/saver';
 import { createTranscript, type Speaker } from '@/core/transcript/transcript';
-import { SESSION_TYPE_LABELS } from '@/features/session-setup/labels';
+import { SESSION_TYPE_LABELS, sessionSummary } from '@/features/session-setup/labels';
 import { getPlatform, type OtherSideSource } from '@/platform';
 import { Button } from '@/ui/Button';
 import { AudioMeter } from './AudioMeter';
@@ -457,6 +457,7 @@ export function LivePage({
     title: `${SESSION_TYPE_LABELS[session.type]} call`,
     company: session.company,
     role: session.role,
+    summary: sessionSummary(session),
   };
 
   if (view === 'connect') {

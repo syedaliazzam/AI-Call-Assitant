@@ -12,7 +12,7 @@
  * is never logged.
  */
 import { getDb } from './db';
-import type { Session, SessionStatus, SessionType } from './types';
+import type { LibraryKind, Session, SessionStatus, SessionType, StoredDocument } from './types';
 
 /**
  * How long a 'live' session may go without activity before the dashboard shows it as 'ended':
@@ -30,8 +30,8 @@ export type SessionChanges = Partial<Omit<Session, 'id' | 'createdAt'>>;
 /** Filters for listSessions(). */
 export interface SessionFilter {
   /**
-   * Text to look for in company, role and description, ignoring case and surrounding spaces
-   * (undefined or '' = no search).
+   * Text to look for in company and role, ignoring case and surrounding spaces (undefined or
+   * '' = no search).
    */
   search?: string;
   /** Only sessions of this type (undefined = all types). */
@@ -96,20 +96,26 @@ export async function getSession(id: string): Promise<Session | null> {
  * Called from: the dashboard (Day 3 Stage 3); tests
  */
 export async function listSessions(filter: SessionFilter = {}): Promise<Session[]> {
-  const db = getDb();
-  const rows = filter.type
-    ? await db.sessions.where('type').equals(filter.type).toArray()
-    : await db.sessions.toArray();
+  const rows = await getDb().sessions.toArray();
+  return filterSessions(rows, filter).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
+ * Picks the sessions that match a type and a search text.
+ *
+ * @param sessions The sessions.
+ * @param filter   Optional search text and type.
+ * @returns The matching sessions, in the same order.
+ * Called from: listSessions(); the dashboard; tests
+ */
+export function filterSessions(sessions: readonly Session[], filter: SessionFilter): Session[] {
   const search = filter.search?.trim().toLowerCase() ?? '';
-  return rows
-    .filter(
-      (session) =>
-        search === '' ||
-        [session.company, session.role, session.description].some((field) =>
-          field.toLowerCase().includes(search),
-        ),
-    )
-    .sort((a, b) => b.createdAt - a.createdAt);
+  return sessions.filter(
+    (session) =>
+      (!filter.type || session.type === filter.type) &&
+      (search === '' ||
+        [session.company, session.role].some((field) => field.toLowerCase().includes(search))),
+  );
 }
 
 /**
@@ -167,6 +173,33 @@ export interface DocumentText {
   name: string;
   /** The extracted plain text. */
   text: string;
+  /** 'resume' for the session's resume; absent or 'document' otherwise. */
+  kind?: LibraryKind;
+  /** The library item this is a copy of, if any. */
+  sourceId?: string;
+}
+
+/**
+ * The stored row for a session's document. Its text is a copy, so it stays when the library item
+ * it came from is deleted.
+ *
+ * @param document  The document's name, text and where it came from.
+ * @param sessionId The session.
+ * @param addedAt   Time added, in Unix ms.
+ * @returns The row.
+ * Called from: createSessionWithDocuments(), updateSessionWithDocuments()
+ */
+function documentRow(document: DocumentText, sessionId: string, addedAt: number): StoredDocument {
+  return {
+    id: crypto.randomUUID(),
+    sessionId,
+    name: document.name,
+    text: document.text,
+    chars: document.text.length,
+    addedAt,
+    ...(document.kind ? { kind: document.kind } : {}),
+    ...(document.sourceId ? { sourceId: document.sourceId } : {}),
+  };
 }
 
 /**
@@ -190,14 +223,7 @@ export async function createSessionWithDocuments(
     const session = await createSession(input, now);
     // One millisecond apart, so the documents keep the order they were added in.
     await db.documents.bulkAdd(
-      documents.map((document, i) => ({
-        id: crypto.randomUUID(),
-        sessionId: session.id,
-        name: document.name,
-        text: document.text,
-        chars: document.text.length,
-        addedAt: now + i,
-      })),
+      documents.map((document, i) => documentRow(document, session.id, now + i)),
     );
     return session;
   });
@@ -233,17 +259,60 @@ export async function updateSessionWithDocuments(
       .filter((document) => document.sessionId === id)
       .primaryKeys();
     await db.documents.bulkDelete(removable);
-    await db.documents.bulkAdd(
-      add.map((document, i) => ({
-        id: crypto.randomUUID(),
-        sessionId: id,
-        name: document.name,
-        text: document.text,
-        chars: document.text.length,
-        addedAt: now + i,
-      })),
-    );
+    await db.documents.bulkAdd(add.map((document, i) => documentRow(document, id, now + i)));
     return session;
+  });
+}
+
+/**
+ * Copies a session so it can be used again: its details, preferences and documents, but not its
+ * transcript, answers or notes. The copy has not started.
+ *
+ * @param id  The session to copy.
+ * @param now Creation time in Unix ms (tests pass a fixed time).
+ * @returns The new session.
+ * @throws Error('SESSION_NOT_FOUND') when there is no session with this id.
+ * Called from: the dashboard's session menu; tests
+ */
+export async function duplicateSession(id: string, now = Date.now()): Promise<Session> {
+  const db = getDb();
+  return db.transaction('rw', db.sessions, db.documents, async () => {
+    const source = await db.sessions.get(id);
+    if (!source) throw new Error('SESSION_NOT_FOUND');
+    const documents = await db.documents.where('sessionId').equals(id).sortBy('addedAt');
+    const {
+      id: _id,
+      createdAt: _createdAt,
+      status: _status,
+      lastActiveAt: _active,
+      ...input
+    } = source;
+    const copy = await createSession(input, now);
+    await db.documents.bulkAdd(
+      documents.map((document, i) => documentRow(document, copy.id, now + i)),
+    );
+    return copy;
+  });
+}
+
+/** How the dashboard can sort its sessions. */
+export type SessionSort = 'newest' | 'oldest' | 'company';
+
+/**
+ * Sorts sessions for the dashboard.
+ *
+ * @param sessions The sessions.
+ * @param sort     The order.
+ * @returns A new, sorted list.
+ * Called from: the dashboard; tests
+ */
+export function sortSessions(sessions: readonly Session[], sort: SessionSort): Session[] {
+  return [...sessions].sort((a, b) => {
+    if (sort === 'oldest') return a.createdAt - b.createdAt;
+    if (sort === 'company') {
+      return a.company.localeCompare(b.company, undefined, { sensitivity: 'base' });
+    }
+    return b.createdAt - a.createdAt;
   });
 }
 

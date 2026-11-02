@@ -2,7 +2,7 @@
   "id": "10-discount-pressure",
   "covers": "Pressure for a discount beyond what the documents allow.",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Northwind Logistics (invented)",
     "role": "Account executive",
     "description": "Closing call.",

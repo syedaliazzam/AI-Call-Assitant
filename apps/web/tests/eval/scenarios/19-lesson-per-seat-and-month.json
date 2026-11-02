@@ -2,7 +2,7 @@
   "id": "19-lesson-per-seat-and-month",
   "covers": "An approved lesson changes a price answer: give the price per seat, the monthly total and the yearly total.",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Harbor Lane Freight (invented)",
     "role": "Account executive",
     "description": "New business call with a regional courier.",

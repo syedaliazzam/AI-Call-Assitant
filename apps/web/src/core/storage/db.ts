@@ -16,8 +16,10 @@
  * touches IndexedDB, which only exists in the browser.
  */
 import Dexie, { type EntityTable } from 'dexie';
+import { currentLessonScope, currentSessionType, currentTone } from './migrate';
 import type {
   Session,
+  LibraryItem,
   StoredAnswer,
   StoredDocument,
   StoredLesson,
@@ -47,6 +49,8 @@ export class KiteDb extends Dexie {
   declare settings: EntityTable<StoredSettings, 'id'>;
   /** Lesson decisions, approved or rejected (version 3, Day 5 Stage 7). */
   declare lessons: EntityTable<StoredLesson, 'id'>;
+  /** The Resume and Document libraries (version 4, parity Phase 2). */
+  declare library: EntityTable<LibraryItem, 'id'>;
 
   /**
    * Declares the schema. Only indexed fields are listed (Dexie stores every field of a row);
@@ -81,6 +85,34 @@ export class KiteDb extends Dexie {
     this.version(3).stores({
       lessons: 'id, sourceSessionId, status',
     });
+    // Version 4 (parity Phase 2): adds the libraries (kind: one library's items), and moves
+    // stored values to the new session types and tones (core/storage/migrate.ts). Everything
+    // else about a session stays as it was.
+    this.version(4)
+      .stores({
+        library: 'id, kind',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<Session, string>('sessions')
+          .toCollection()
+          .modify((session) => {
+            session.type = currentSessionType(session.type);
+            session.preferences.style.tone = currentTone(session.preferences.style.tone);
+          });
+        await tx
+          .table<StoredSettings, string>('settings')
+          .toCollection()
+          .modify((row) => {
+            row.defaults.style.tone = currentTone(row.defaults.style.tone);
+          });
+        await tx
+          .table<StoredLesson, string>('lessons')
+          .toCollection()
+          .modify((lesson) => {
+            lesson.scope = currentLessonScope(lesson.scope);
+          });
+      });
   }
 }
 

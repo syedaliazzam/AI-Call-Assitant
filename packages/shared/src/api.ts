@@ -1,6 +1,7 @@
 /**
  * File: packages/shared/src/api.ts
- * Purpose: Request and response types for POST /api/answer (and later /api/notes), shared by the
+ * Purpose: Request and response types for POST /api/answer, /api/notes, /api/job-import and
+ *          /api/preview, shared by the
  *          server route and the browser answer client so both sides agree on the wire format.
  * Used by: apps/web/src/server/validate.ts, apps/web/src/server/prompt.ts,
  *          apps/web/app/api/answer/route.ts, apps/web/src/core/answer/answerClient.ts,
@@ -72,6 +73,11 @@ export interface SessionContext {
   keyTerms: string[];
   /** How answers should look. */
   style: AnswerStyle;
+  /**
+   * The language to answer in, by name (for example 'Spanish'). Absent means English, so an
+   * English session's prompt, and its cache entry, stay exactly as they were (parity Phase 2).
+   */
+  language?: string;
   /** Attached documents (total capped at about 150k characters by the server). */
   documents: SessionDocument[];
 }
@@ -311,3 +317,58 @@ export type AnswerEvent =
       /** Short human-readable explanation (never contains transcript or document text). */
       message: string;
     };
+
+/** Longest company name kept from a job page (the wizard's limit). */
+export const MAX_JOB_COMPANY_CHARS = 200;
+
+/** Longest job title kept from a job page (the wizard's limit). */
+export const MAX_JOB_ROLE_CHARS = 200;
+
+/** Longest job description kept from a job page (the wizard's limit). */
+export const MAX_JOB_DESCRIPTION_CHARS = 5_000;
+
+/** Longest address accepted by POST /api/job-import. */
+export const MAX_JOB_URL_CHARS = 2_000;
+
+/** Body of POST /api/job-import. */
+export interface JobImportRequest {
+  /** The address of a public job page. Never logged. */
+  url: string;
+}
+
+/** What was found on a job page ('' where the page did not say). Never logged. */
+export interface JobImportFields {
+  /** The hiring company. */
+  company: string;
+  /** The job title. */
+  role: string;
+  /** The posting's description of the job. */
+  description: string;
+}
+
+/** Response of POST /api/job-import. */
+export interface JobImportResponse {
+  /** What was found. */
+  fields: JobImportFields;
+  /** The site the page came from, after any redirects. */
+  host: string;
+}
+
+/** Which invented question a preview answers. */
+export type PreviewQuestionType = 'behavioural' | 'technical' | 'general';
+
+/** Body of POST /api/preview. */
+export interface AnswerPreviewRequest {
+  /** The format, length and tone to show. */
+  style: AnswerStyle;
+  /** The language by name, or absent for English. */
+  language?: string;
+  /** Which invented question to answer. */
+  question: PreviewQuestionType;
+}
+
+/** Response of POST /api/preview. */
+export interface AnswerPreviewResponse {
+  /** The preview answer, in the same lines as a live answer. */
+  text: string;
+}

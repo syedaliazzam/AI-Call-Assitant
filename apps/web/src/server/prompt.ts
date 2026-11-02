@@ -164,6 +164,18 @@ export function sessionBlock(session: SessionContext): string {
     `Answer format: ${session.style.format}`,
     `Answer length: ${session.style.length}`,
     `Answer tone: ${session.style.tone}`,
+    // These two lines appear only in sessions that use them. In the shared rules, the bullets rule
+    // leaked into headline+bullets answers and lowered the evaluation (ADR-0029).
+    ...(session.style.format === 'bullets'
+      ? [
+          'For this format, write only short bullet points, at most 5, with no headline; the first bullet gives the direct answer.',
+        ]
+      : []),
+    ...(session.language
+      ? [
+          `Answer language: ${session.language}. Write the answer in this language, even though the transcript is in English. Keep names, prices and product terms as they are.`,
+        ]
+      : []),
     'Instructions from the user:',
     session.instructions.trim() || NOT_GIVEN,
     '</session>',

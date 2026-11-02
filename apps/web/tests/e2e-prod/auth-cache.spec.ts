@@ -13,7 +13,7 @@ import { report, signIn, testAccount } from './helpers';
 
 /** An invented, minimal session (no documents). */
 const SESSION = {
-  type: 'sales',
+  type: 'regular',
   company: 'Invented Co (auth cache check)',
   role: 'Test',
   description: '',

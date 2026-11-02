@@ -163,7 +163,7 @@ for (const size of WIDTHS) {
 
     // The wizard, with an invented document attached.
     await page.goto(`${BASE_URL}/sessions/new`);
-    await page.getByLabel('Session type').selectOption('sales');
+    await page.getByLabel('Session type').selectOption('regular');
     await page.getByLabel('Company').fill(COMPANY);
     await page.getByLabel('Topic').fill('Renewal call');
     await page.locator('input[type="file"]').setInputFiles({
@@ -186,19 +186,30 @@ for (const size of WIDTHS) {
       .filter({ has: page.getByRole('heading', { name: COMPANY }) });
     await expect(card).toBeVisible();
     await check(watched, size, 'dashboard');
-    await card.getByRole('button', { name: 'Open' }).click();
+    await card.getByRole('button', { name: 'Start session' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await check(watched, size, 'choose-platform');
     await page.keyboard.press('Escape');
 
     // The session review, on an invented ended call.
-    const href = await card.getByRole('link', { name: 'Edit' }).getAttribute('href');
-    const sessionId = href!.split('/')[2]!;
+    // The session's id, from the Edit page's address (Edit is in the card's menu).
+    await card.getByRole('button', { name: /^More for / }).click();
+    await check(watched, size, 'session-menu');
+    await page.getByRole('menuitem', { name: 'Edit' }).click();
+    await page.waitForURL(/\/sessions\/[^/]+\/edit$/);
+    const sessionId = new URL(page.url()).pathname.split('/')[2]!;
     await seedEndedCall(page, sessionId);
     await page.goto(`${BASE_URL}/sessions/${sessionId}`);
     await expect(page.getByRole('heading', { name: COMPANY })).toBeVisible();
     await expect(page.getByRole('listitem', { name: 'Saved answer' })).toHaveCount(2);
     await check(watched, size, 'review');
+
+    await page.goto(`${BASE_URL}/resumes`);
+    await expect(page.getByRole('heading', { name: 'Resumes' })).toBeVisible();
+    await check(watched, size, 'resumes');
+    await page.goto(`${BASE_URL}/documents`);
+    await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
+    await check(watched, size, 'documents');
 
     await page.goto(`${BASE_URL}/settings`);
     await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();

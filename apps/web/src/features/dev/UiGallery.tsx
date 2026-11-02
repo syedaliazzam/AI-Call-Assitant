@@ -28,8 +28,8 @@ import { Toggle } from '@/ui/Toggle';
 /** The sample tabs. */
 const TABS = [
   { value: 'all', label: 'All' },
-  { value: 'sales', label: 'Sales' },
-  { value: 'support', label: 'Support' },
+  { value: 'regular', label: 'Regular' },
+  { value: 'mock', label: 'Mock' },
 ] as const;
 
 /** A sample tab value. */

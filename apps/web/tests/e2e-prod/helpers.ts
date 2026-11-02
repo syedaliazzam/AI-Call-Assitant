@@ -143,7 +143,7 @@ export interface NewSession {
 }
 
 /**
- * Creates a Sales session through the Create session wizard and waits for its card.
+ * Creates a Regular session through the Create session wizard and waits for its card.
  *
  * @param page    The page (signed in).
  * @param session What to fill in.
@@ -151,7 +151,7 @@ export interface NewSession {
  */
 export async function createSession(page: Page, session: NewSession): Promise<void> {
   await page.goto(`${PRODUCTION_URL}/sessions/new`);
-  await page.getByLabel('Session type').selectOption('sales');
+  await page.getByLabel('Session type').selectOption('regular');
   await page.getByLabel('Company').fill(session.company);
   await page.getByLabel('Topic').fill('Pilot review');
   if (session.document) {

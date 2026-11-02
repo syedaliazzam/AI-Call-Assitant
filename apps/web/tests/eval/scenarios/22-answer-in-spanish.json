@@ -1,0 +1,50 @@
+{
+  "id": "22-answer-in-spanish",
+  "group": "preferences",
+  "covers": "An answer language: the transcript is English, the answer is in Spanish, names stay as they are.",
+  "session": {
+    "type": "regular",
+    "company": "Alder Foods (invented)",
+    "role": "Renewal review",
+    "description": "Renewal call with their operations lead.",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "professional"
+    },
+    "language": "Spanish",
+    "documents": [
+      {
+        "name": "plan.txt",
+        "text": "Harbor Professional plan: 52 US dollars per seat per month, billed yearly. Support by email within one business day."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "THANKS FOR MAKING TIME",
+        "at": 8
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "HOW MUCH IS THE PROFESSIONAL PLAN PER SEAT",
+      "at": 15
+    }
+  ],
+  "mode": "answer",
+  "question": "HOW MUCH IS THE PROFESSIONAL PLAN PER SEAT",
+  "mustInclude": [
+    "the answer is written in Spanish",
+    "gives 52 US dollars per seat per month, billed yearly",
+    "the product name Harbor Professional, if used, is not translated"
+  ],
+  "mustNotInclude": ["any discount", "whole sentences in English"]
+}

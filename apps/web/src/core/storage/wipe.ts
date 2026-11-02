@@ -1,8 +1,8 @@
 /**
  * File: apps/web/src/core/storage/wipe.ts
  * Purpose: "Delete all local data": deletes Kite's whole IndexedDB database on this device
- *          (sessions, documents, transcripts, answers, notes, and the default preferences in
- *          the settings store) and reports how much was removed.
+ *          (sessions, documents, transcripts, answers, notes, the Resume and Document
+ *          libraries, and the default preferences in the settings store) and reports how much was removed.
  * Used by: the Settings page (Day 3 Stage 3)
  * Depends on: src/core/storage/db.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (privacy), §8.1;
@@ -28,6 +28,8 @@ export interface DeletedCounts {
   notes: number;
   /** Lesson decisions removed (Day 5 Stage 7): approved lessons are forgotten too. */
   lessons: number;
+  /** Library items removed (Resumes and Documents, parity Phase 2). */
+  library: number;
 }
 
 /**
@@ -49,6 +51,7 @@ export async function deleteAllLocalData(): Promise<DeletedCounts> {
     answers: await db.answers.count(),
     notes: await db.notes.count(),
     lessons: await db.lessons.count(),
+    library: await db.library.count(),
   };
   await db.delete();
   forgetDb();

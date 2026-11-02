@@ -36,7 +36,7 @@ import { getPlatform } from '@/platform';
 /** An invented session. */
 const SESSION: Session = {
   id: 'live-harness-session',
-  type: 'sales',
+  type: 'regular',
   company: 'Harbor Lane Freight (invented)',
   role: 'Pilot review',
   description: 'Invented harness session.',
@@ -167,7 +167,12 @@ function ConnectView() {
   return (
     <div className="k-dark min-h-screen bg-ui-bg pb-10 text-ui-text">
       <ConnectPanel
-        call={{ title: 'Sales call', company: SESSION.company, role: SESSION.role }}
+        call={{
+          title: 'Regular call',
+          company: SESSION.company,
+          role: SESSION.role,
+          summary: `This is a Regular session about ${SESSION.role} with ${SESSION.company}.`,
+        }}
         hotwordCount={6}
         platform="browser"
         model={

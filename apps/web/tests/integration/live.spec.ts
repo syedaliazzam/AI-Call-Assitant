@@ -358,8 +358,26 @@ test('the Connect view is on the dark tokens', async () => {
     { width: 900, height: 900, touch: false },
   ] as const) {
     const watched = await open('connect', size);
-    await expect(watched.page.getByRole('button', { name: 'Connect' })).toBeVisible();
+    const { page } = watched;
+    await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
+    await expect(page.getByText('This is a Regular session about')).toBeVisible();
     await shot(watched, size, 'connect');
+    // Each way of calling opens a short how-to for this platform.
+    await expect(
+      page.getByRole('list', { name: 'Ways of calling' }).getByRole('button'),
+    ).toHaveText([/Zoom/, /Teams/, /Google Meet/, /Webex/, /Phone/]);
+    await page.getByRole('button', { name: 'Google Meet' }).click();
+    const howTo = page.getByRole('dialog', { name: 'Connect Google Meet' });
+    await expect(howTo).toContainText('Also share tab audio');
+    await howTo.getByRole('button', { name: 'Got it' }).click();
+    await page.getByRole('button', { name: 'Phone' }).click();
+    await expect(page.getByRole('dialog', { name: 'Connect Phone' })).toContainText('desktop app');
+    await page.getByRole('button', { name: 'Got it' }).click();
+    await expect(page.getByText('Video tutorial: coming soon')).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'No call to share? Open a mock interview video' }),
+    ).toHaveAttribute('rel', 'noreferrer');
+    await expect(page.getByRole('link', { name: 'Back' })).toBeVisible();
     await watched.context.close();
   }
 });

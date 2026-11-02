@@ -25,6 +25,7 @@ import { createSessionWithDocuments } from '@/core/storage/sessions';
 import type { StoredLesson } from '@/core/storage/types';
 import { saveUtterance } from '@/core/storage/utterances';
 import { resetDb, sessionInput } from './helpers';
+import { addLibraryItem, listLibrary, removeLibraryItem } from '@/core/storage/library';
 
 beforeEach(resetDb);
 
@@ -39,7 +40,7 @@ function lesson(id: string, sourceKey: string): StoredLesson {
   return {
     id,
     text: 'Give the monthly price first.',
-    scope: 'sales',
+    scope: 'regular',
     status: 'approved',
     sourceSessionId: 's-old',
     sourceKey,
@@ -120,7 +121,64 @@ describe('exportData', () => {
   });
 });
 
+/** The fields of an export file that the older-file test rewrites. */
+interface OlderFile {
+  /** The layout version. */
+  version: number;
+  /** The libraries (absent before version 3). */
+  library?: unknown;
+  /** The sessions. */
+  sessions: {
+    /** The session type. */
+    type: string;
+    /** The preferences. */
+    preferences: {
+      /** The answer style. */
+      style: {
+        /** The tone. */
+        tone: string;
+      };
+    };
+  }[];
+  /** The lesson decisions. */
+  lessons: {
+    /** Which calls it applies to. */
+    scope: string;
+  }[];
+}
+
 describe('parseExport', () => {
+  it("reads an older file with the old session types and tones as today's", async () => {
+    await fill();
+    const file = JSON.parse(JSON.stringify(await exportData())) as OlderFile;
+    file.version = 2;
+    delete file.library;
+    file.sessions[0]!.type = 'sales';
+    file.sessions[0]!.preferences.style.tone = 'friendly';
+    if (file.lessons[0]) file.lessons[0].scope = 'support';
+    const parsed = parseExport(JSON.stringify(file));
+    if (!parsed.ok) throw new Error(parsed.error);
+    expect(parsed.file.sessions[0]?.type).toBe('regular');
+    expect(parsed.file.sessions[0]?.preferences.style.tone).toBe('simple');
+    if (file.lessons[0]) expect(parsed.file.lessons[0]?.scope).toBe('regular');
+  });
+
+  it("carries the libraries, and a session document's link to its library item", async () => {
+    await fill();
+    const item = await addLibraryItem('resume', 'cv.txt', 'Experience (invented).');
+    const file = await exportData();
+    expect(file.library?.map((row) => row.name)).toEqual(['cv.txt']);
+    await removeLibraryItem(item.id);
+    const parsed = parseExport(JSON.stringify(file));
+    if (!parsed.ok) throw new Error(parsed.error);
+    const summary = await importData(parsed.file);
+    expect(summary.library).toEqual({ added: 1, skipped: 0 });
+    expect((await listLibrary('resume')).map((row) => row.text)).toEqual([
+      'Experience (invented).',
+    ]);
+    expect((await importData(parsed.file)).library).toEqual({ added: 0, skipped: 1 });
+  });
+
   it('accepts an export and rejects other files', async () => {
     await fill();
     const text = JSON.stringify(await exportData());

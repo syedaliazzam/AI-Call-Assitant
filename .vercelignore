@@ -27,3 +27,4 @@ apps/web/tests/fixtures/stt/names-audio/
 
 # Desktop installers and unpacked builds (over 100 MB): never part of the web deployment.
 apps/desktop/release/
+apps/web/eval-results/

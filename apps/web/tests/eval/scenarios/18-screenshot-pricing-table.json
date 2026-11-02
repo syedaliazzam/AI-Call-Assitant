@@ -2,7 +2,7 @@
   "id": "18-screenshot-pricing-table",
   "covers": "A pricing table, with a question that needs reading the table.",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Northwind Logistics (invented)",
     "role": "Account executive",
     "description": "Renewal call; the customer is sharing their screen.",

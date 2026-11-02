@@ -9,6 +9,8 @@
  *            --only=answers      the Day 4 group (scenarios 01–15; the baseline group)
  *            --only=screenshots  the Day 5 screenshot group (16–18)
  *            --only=lessons      the Day 5 lesson group (19–20: answers with approved lessons)
+ *            --only=preferences  parity Phase 2 (21–23: bullets only, an answer language, the
+ *                                technical tone)
  *            --without-lessons   send no lessons (the lesson group's comparison run)
  *            --only=<id>         one scenario (its file name without .json)
  *            --runs=N   answers per scenario (default 2; scores are averaged, because answers
@@ -36,7 +38,8 @@
  * Scenario files (JSON, so they hold no comments) have: id; covers (what it tests); session
  * (and, for screenshot scenarios, image and imageDescription: Day 5);
  * (SessionContext); conversation (ConversationChunk[]) and tail (CallLine[]); mode ('answer'
- * or 'chat'); question; mustInclude and mustNotInclude (what a good answer must and must not
+ * or 'chat'); group (optional: its evaluation group, when not worked out from the rest); question;
+ * mustInclude and mustNotInclude (what a good answer must and must not
  * contain, in plain words for the grader).
  */
 import { readdirSync, readFileSync } from 'node:fs';
@@ -71,6 +74,8 @@ interface Scenario {
   id: string;
   /** What it tests. */
   covers: string;
+  /** Its evaluation group, when it is not worked out from the rest (parity Phase 2). */
+  group?: string;
   /** The session details. */
   session: SessionContext;
   /** The call so far. */
@@ -134,7 +139,7 @@ Rubric:
 - facts (0-3): how many of the "must include" points the answer contains, correctly. 3 = all, 2 = most, 1 = some, 0 = none or wrong.
 - grounded (0-2): 2 = every claim about the user, their company, offer, prices, dates or commitments comes from the session details, documents or the call, and nothing from "must not include" appears; 1 = one small unsupported detail; 0 = an invented fact, a wrong number, or a "must not include" item.
 - consistent (0-2): if the call shows earlier Kite answers, 2 = consistent with them, or, when new information changes the answer, it gives the new answer and says briefly what changed; 1 = partly; 0 = contradicts them without saying why, or ignores new information. If there are no earlier answers, give 2.
-- style (0-1): 1 = follows the session's answer format (headline+bullets: a headline line then short bullets, optionally followed by one closing line starting "Tip:" and one line starting "Note:" that is private to the user, both allowed only when they add something and do not repeat a bullet; paragraph: one short paragraph, no bullets), length, tone and instructions, with no greeting or preamble; 0 = it does not.
+- style (0-1): 1 = follows the session's answer format (bullets: only short bullets with no headline line, the first giving the direct answer, optionally followed by the same two lines; headline+bullets: a headline line then short bullets, optionally followed by one closing line starting "Tip:" and one line starting "Note:" that is private to the user, both allowed only when they add something and do not repeat a bullet; paragraph: one short paragraph, no bullets), length, tone and instructions, with no greeting or preamble; 0 = it does not.
 - reason: one short sentence on what cost points ("none" when nothing did).`;
 
 /**
@@ -146,7 +151,8 @@ Rubric:
  * @returns Its group name.
  * Called from: loadScenarios(), main()
  */
-export function answerGroup(scenario: Pick<Scenario, 'mode' | 'lessons'>): string {
+export function answerGroup(scenario: Pick<Scenario, 'mode' | 'lessons' | 'group'>): string {
+  if (scenario.group) return scenario.group;
   if (scenario.lessons?.length) return 'lessons';
   return scenario.mode === 'screenshot' ? 'screenshots' : 'answers';
 }
@@ -185,6 +191,13 @@ export function shapeChecks(text: string, format: string): { headline: number; b
     return {
       headline: lines.some(isBullet) ? 0 : 1,
       bullets: text.trim().split(/\n\s*\n/).length === 1 ? 1 : 0,
+    };
+  }
+  if (format === 'bullets') {
+    const bullets = lines.filter(isBullet).length;
+    return {
+      headline: isBullet(lines[0] ?? '') ? 1 : 0,
+      bullets: bullets >= 1 && bullets <= 5 ? 1 : 0,
     };
   }
   const headline = (lines[0] ?? '').replace(/[*#_]/g, '').trim();

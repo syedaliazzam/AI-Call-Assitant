@@ -28,7 +28,7 @@ export async function resetDb(): Promise<void> {
  */
 export function sessionInput(changes: Partial<NewSessionInput> = {}): NewSessionInput {
   return {
-    type: 'sales',
+    type: 'regular',
     company: 'Bluefin Route',
     role: 'Quarterly account review',
     description: 'Renewal of the professional plan',

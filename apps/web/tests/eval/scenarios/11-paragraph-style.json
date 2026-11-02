@@ -2,7 +2,7 @@
   "id": "11-paragraph-style",
   "covers": "The paragraph answer format and a friendly tone.",
   "session": {
-    "type": "sales",
+    "type": "regular",
     "company": "Northwind Logistics (invented)",
     "role": "Account executive",
     "description": "Intro call.",

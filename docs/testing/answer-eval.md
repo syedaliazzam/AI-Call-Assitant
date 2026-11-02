@@ -24,6 +24,7 @@ Re-run only the groups a change touches; run the full suite once, at release (`p
 | `answers` | 01–15 (Day 4) | `pnpm --filter web eval:answers --only=answers` | 15 × 2 runs × (answer + grade) = 60; the gate needs the command 3 times = 180 | mean of 3 commands ≥ baseline − 0.15 (9.28) |
 | `screenshots` | 16–18 (Day 5) | `pnpm --filter web eval:answers --only=screenshots` | 3 × 2 × 2 = 12 | ≥ 8 |
 | `lessons` | 19–20 (Day 5 Stage 7: answers with an approved lesson) | `pnpm --filter web eval:answers --only=lessons`, then the same with `--without-lessons` | 2 × 2 × 2 = 8 per command, 16 for the pair | with lessons ≥ 8 and higher than without |
+| `preferences` | 21–23 (parity Phase 2: bullets only, an answer language, the technical tone) | `pnpm --filter web eval:answers --only=preferences` | 3 × 2 × 2 = 12 | ≥ 8 |
 | `notes` | n1–n3 (Day 5) | `pnpm --filter web eval:notes --only=notes` | 3 × 3 runs × (notes + grade) = 18 | ≥ 8 |
 
 `--only=<id>` runs one scenario; `--runs=N` sets the runs (default 2 for answers, 3 for notes). Which group a change touches: the rules block or the conversation part of `server/prompt.ts` → `answers` and `screenshots`; the screenshot tail only → `screenshots`; the learned-preferences part of the rules block (`rulesBlock()` with lessons) → `lessons` (a session without lessons sends the Day 4 rules block byte for byte, pinned by a unit test, so `answers` and `screenshots` need no re-run); `server/notes.ts` → `notes`.
@@ -326,3 +327,22 @@ Per-scenario scores of these runs were not kept, so which scenarios lost points 
 **Day 7 eval check:** `screenshots` fell from 8.83 to 8.00, right at its limit, and was not tuned. Look at it again in the release run.
 
 **Saved results:** every paid run now saves per-scenario scores and grader reasons to `apps/web/eval-results/` (git-ignored; `scripts/lib/eval-results.ts`), so a drop can be diagnosed without another run. The answers themselves are not saved.
+
+### Parity Phase 2: session types, the bullets format, an answer language
+
+**What changed:** scenarios moved to the new session types (Sales, Support and Internal became Regular). New group `preferences` (21–23).
+
+**Round 1 (reverted):** two new lines in the shared rules. `answers` 9.03, 8.77, 9.10, **mean 8.97, gate 9.03: failed.** `screenshots` 8.00, `lessons` 9.00, `preferences` 8.83.
+
+**Round 2 (accepted):** those lines moved to the session block, used only by sessions that need them, so the shared rules are byte-identical to Phase 1's (the pinned hash confirms it). 2026-11-02, same laptop, 2 runs per scenario per run.
+
+| Group | Runs | Result | Gate |
+|---|---|---|---|
+| `answers` (15 scenarios) | 9.30, 9.23, 9.40 | **mean 9.31** | at least 9.03: passes |
+| `preferences` (3) | 8.67 | 8.67 | at least 8: passes |
+
+`screenshots` and `lessons` were not re-run: their rules are back to those measured in Phase 1 (8.00 and 9.00).
+
+**Reading these numbers:** the same shared rules scored 9.18 in Phase 1 and 9.31 here, with only the session type's name changed, so about 0.13 can be noise between one 3-run mean and another. The baseline stays 9.18 unless the developer changes it. Why round 1 scored lower is not established: scenario 05, first suspected, scored 8 in all six runs; 15, 10 and 03 moved most.
+
+**For the Day 7 release run:** scenario 05 (same question twice) scores 8 every time, and 13 (off-topic) fell to about 8 in round 2. In `preferences`, 21 (bullets only) scored 8.0: read the saved reasons.

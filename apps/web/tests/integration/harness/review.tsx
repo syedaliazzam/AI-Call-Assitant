@@ -87,7 +87,7 @@ async function seed(fixture: ReviewFixture): Promise<string> {
   const full = fixture === 'full';
   const session = await createSession(
     {
-      type: 'sales',
+      type: 'regular',
       company: full ? 'Northwind Logistics (invented)' : 'Pinecrest Clinics (invented)',
       role: full ? 'Renewal call' : 'Support follow-up',
       description: full ? 'Renewal and expansion to the dispatch team.' : '',

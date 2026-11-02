@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { splitAnswer } from '@/core/answer/format';
+import { updateSession } from '@/core/storage/sessions';
 import { getStartInOverlay } from '@/core/storage/overlayPrefs';
 import { displayTerms, sentenceCase, transcriptChips } from '@/core/transcript/display';
 import {
@@ -103,8 +104,14 @@ function openOverlay(sessionId: string): Promise<void> {
  * Rendered by: LivePage.tsx; the answer harness page
  */
 export function LiveAnswers(props: LiveAnswersProps) {
+  // The overlay's menu can change how answers are written during a call (ADR-0029).
+  const [style, setStyle] = useState(props.session.preferences.style);
+  const session = useMemo(
+    () => ({ ...props.session, preferences: { ...props.session.preferences, style } }),
+    [props.session, style],
+  );
   const answers = useLiveAnswers({
-    session: props.session,
+    session,
     documents: props.documents,
     ...(props.lessons ? { lessons: props.lessons } : {}),
     transcript: props.transcript,
@@ -122,7 +129,12 @@ export function LiveAnswers(props: LiveAnswersProps) {
     transcript: props.transcript,
     streaming: answering,
     autoAnswer: answers.autoAnswer,
-    ...(props.autoAnswer !== undefined ? { enabled: props.autoAnswer } : {}),
+    // This session's own switch turns it on; otherwise the device-wide setting decides.
+    ...(props.autoAnswer !== undefined
+      ? { enabled: props.autoAnswer }
+      : props.session.autoAnswer
+        ? { enabled: true }
+        : {}),
   });
   const [compactNotice, setCompactNotice] = useState<string | null>(null);
   // Day 6 Stage 4e: no connection pauses answers (banner); a signed-out answer offers to sign
@@ -176,6 +188,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       capturing: answers.capturing,
       notice: answers.notice,
       ended: false,
+      style,
     };
   }, [
     lines,
@@ -188,6 +201,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     answering,
     answers.capturing,
     answers.notice,
+    style,
   ]);
   const compactStateRef = useRef(compactState);
   const channel = useRef<LiveChannel | null>(null);
@@ -195,9 +209,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
   // The hotkeys call the latest actions (a ref, so the listener is added only once).
   const actions = useRef(answers);
   const onEnd = useRef(props.onEnd);
+  const latestPreferences = useRef(props.session.preferences);
   useEffect(() => {
     actions.current = answers;
     onEnd.current = props.onEnd;
+    latestPreferences.current = props.session.preferences;
   });
   // The link to the compact view (Day 5): it sends commands; End (unmount) tells it the call
   // ended and asks the platform to close it.
@@ -215,6 +231,12 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'report') actions.current.report(command.id, command.note);
       else if (command.type === 'end') onEnd.current();
       else if (command.type === 'chat') actions.current.chat(command.question);
+      else if (command.type === 'style') {
+        setStyle(command.style);
+        // Kept with the session, so a reconnect and the review show what was used last.
+        const preferences = { ...latestPreferences.current, style: command.style };
+        updateSession(props.session.id, { preferences }).catch(() => undefined);
+      }
     });
     return () => {
       link.publish({ ...compactStateRef.current, ended: true });

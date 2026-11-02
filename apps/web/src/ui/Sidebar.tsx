@@ -52,6 +52,8 @@ interface NavItem {
 /** All navigation links, in display order. */
 const NAV_ITEMS: NavItem[] = [
   { label: 'Call Sessions', href: '/' },
+  { label: 'Resumes', href: '/resumes' },
+  { label: 'Documents', href: '/documents' },
   { label: 'Settings', href: '/settings' },
   { label: 'Admin', href: '/admin/users', adminOnly: true },
   { label: 'Dev Tools', href: '/dev', adminOnly: true },

@@ -1,0 +1,49 @@
+{
+  "id": "23-technical-tone",
+  "group": "preferences",
+  "covers": "The Technical tone: precise terms from the documents, still first person and short.",
+  "session": {
+    "type": "interview",
+    "company": "Northwind Systems (invented)",
+    "role": "Senior Backend Engineer",
+    "description": "Technical interview.",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "technical"
+    },
+    "documents": [
+      {
+        "name": "resume.txt",
+        "text": "Sam Okafor. Backend engineer. At Lantern Freight cut a report query from 40 seconds to 3 by reading EXPLAIN ANALYZE output, adding a composite index on (customer_id, created_at), and rewriting a correlated subquery as a join. PostgreSQL 15."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "LET'S TALK ABOUT DATABASES",
+        "at": 9
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "HOW DID YOU SPEED UP A SLOW QUERY",
+      "at": 16
+    }
+  ],
+  "mode": "answer",
+  "question": "HOW DID YOU SPEED UP A SLOW QUERY",
+  "mustInclude": [
+    "uses the technical terms: EXPLAIN ANALYZE, composite index, and the subquery rewritten as a join",
+    "gives the result, from 40 seconds to 3",
+    "is in the first person"
+  ],
+  "mustNotInclude": ["any technique, tool or number not in the resume"]
+}

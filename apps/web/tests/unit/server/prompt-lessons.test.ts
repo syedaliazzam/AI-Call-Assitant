@@ -28,7 +28,7 @@ const RULES_SHA256 = '758505448180b4b00c602deaddf5b1300b4e38e3735c53c4667adc0081
 const REQUEST: AnswerRequest = {
   mode: 'answer',
   session: {
-    type: 'sales',
+    type: 'regular',
     company: 'Northwind (invented)',
     role: 'Renewal',
     description: '',

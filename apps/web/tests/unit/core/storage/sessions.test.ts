@@ -1,7 +1,7 @@
 /**
  * Tests for apps/web/src/core/storage/sessions.ts, on an in-memory IndexedDB (fake-indexeddb):
  * create/get (new sessions are 'not-started' with no activity yet; unknown ids give null);
- * listSessions() is newest first, filters by type and searches company, role and description
+ * listSessions() is newest first, filters by type and searches company and role
  * ignoring case; updateSession() keeps id and createdAt and fails for unknown ids;
  * createSessionWithDocuments() and updateSessionWithDocuments() save a session and its document
  * changes all-or-nothing (and never touch another session's documents);
@@ -55,13 +55,13 @@ describe('listSessions', () => {
    * @returns The sessions: a (sales, Acme), b (interview, Globex), c (sales, mentions ACME).
    */
   async function three() {
-    const a = await createSession(sessionInput({ type: 'sales', company: 'Acme' }), 1);
+    const a = await createSession(sessionInput({ type: 'regular', company: 'Acme' }), 1);
     const b = await createSession(
       sessionInput({ type: 'interview', company: 'Globex', role: 'Data Engineer' }),
       2,
     );
     const c = await createSession(
-      sessionInput({ type: 'sales', company: 'Initech', description: 'Pilot for ACME team' }),
+      sessionInput({ type: 'regular', company: 'Initech', description: 'Pilot for ACME team' }),
       3,
     );
     return { a, b, c };
@@ -74,26 +74,25 @@ describe('listSessions', () => {
 
   it('filters by type', async () => {
     const { a, c } = await three();
-    expect((await listSessions({ type: 'sales' })).map((s) => s.id)).toEqual([c.id, a.id]);
-    expect(await listSessions({ type: 'support' })).toEqual([]);
+    expect((await listSessions({ type: 'regular' })).map((s) => s.id)).toEqual([c.id, a.id]);
+    expect(await listSessions({ type: 'mock' })).toEqual([]);
   });
 
-  it('searches company, role and description, ignoring case and spaces', async () => {
-    const { a, b, c } = await three();
-    // "acme" matches Acme (company) and "Pilot for ACME team" (description).
-    expect((await listSessions({ search: '  acme ' })).map((s) => s.id)).toEqual([c.id, a.id]);
+  it('searches company and role, ignoring case and spaces, but not the description', async () => {
+    const { a, b } = await three();
+    // "acme" matches Acme (company), and not "Pilot for ACME team" (a description).
+    expect((await listSessions({ search: '  acme ' })).map((s) => s.id)).toEqual([a.id]);
     expect((await listSessions({ search: 'data eng' })).map((s) => s.id)).toEqual([b.id]);
     expect(await listSessions({ search: 'zzz' })).toEqual([]);
     expect(await listSessions({ search: '   ' })).toHaveLength(3);
   });
 
   it('combines the type filter and the search', async () => {
-    const { a, c } = await three();
-    expect((await listSessions({ type: 'sales', search: 'acme' })).map((s) => s.id)).toEqual([
-      c.id,
+    const { a } = await three();
+    expect((await listSessions({ type: 'regular', search: 'acme' })).map((s) => s.id)).toEqual([
       a.id,
     ]);
-    // Globex (interview) does not mention Acme; the Acme sessions are sales.
+    // Globex (interview) is not Acme; the Acme session is regular.
     expect(await listSessions({ type: 'interview', search: 'acme' })).toEqual([]);
   });
 });

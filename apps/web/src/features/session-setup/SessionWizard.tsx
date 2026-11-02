@@ -1,12 +1,12 @@
 /**
  * File: apps/web/src/features/session-setup/SessionWizard.tsx
- * Purpose: The Create / Edit session wizard: step 1 Details (with documents), step 2
- *          Preferences, with Back / Next / Create (or Save). It keeps what was typed when moving
- *          between steps, checks the required fields, reads documents into text on this
- *          computer, and saves the session with its documents in one go.
+ * Purpose: The Create / Edit session wizard: step 1 Details (with resume and documents from the
+ *          libraries), step 2 Preferences, with Back / Next / Create (or Save). It keeps what was
+ *          typed when moving between steps, checks the required fields, and saves the session with
+ *          its own copy of its documents in one go.
  * Used by: app/(app)/sessions/new/page.tsx, app/(app)/sessions/[id]/edit/page.tsx
  * Depends on: src/core/storage (sessions, documents, settings, persist),
- *             src/core/documents (extract, limits), ./DetailsStep.tsx, ./PreferencesStep.tsx,
+ *             src/core/documents/limits.ts, ./DetailsStep.tsx, ./PreferencesStep.tsx,
  *             ./draft.ts, src/ui/Button.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F2, F3), §5 (Create session),
  *               §7.4; day-03-sessions.md Stage 3
@@ -18,7 +18,6 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { extractText } from '@/core/documents/extract';
 import { fitsInSession } from '@/core/documents/limits';
 import { listDocuments } from '@/core/storage/documents';
 import { requestPersistentStorage } from '@/core/storage/persist';
@@ -28,10 +27,11 @@ import {
   updateSessionWithDocuments,
 } from '@/core/storage/sessions';
 import { getSessionDefaults } from '@/core/storage/settings';
+import { SESSION_TYPES, type LibraryItem, type SessionType } from '@/core/storage/types';
 import { Button } from '@/ui/Button';
 import { Eyebrow } from '@/ui/Eyebrow';
 import { LinkButton } from '@/ui/LinkButton';
-import { DetailsStep, type DocumentProblem } from './DetailsStep';
+import { DetailsStep } from './DetailsStep';
 import {
   draftChars,
   draftFromSession,
@@ -39,6 +39,8 @@ import {
   emptyDraft,
   newDocuments,
   validateDetails,
+  withLibraryItem,
+  withoutDocument,
   type SessionDraft,
 } from './draft';
 import { PreferencesStep } from './PreferencesStep';
@@ -49,6 +51,8 @@ export interface SessionWizardProps {
   mode: 'create' | 'edit';
   /** The session to edit (edit mode only). */
   sessionId?: string;
+  /** The type to start with, from the dashboard's menu (create mode; anything unknown is ignored). */
+  initialType?: string;
 }
 
 /** Where loading the wizard's starting point stands. */
@@ -61,7 +65,7 @@ type LoadState = 'loading' | 'ready' | 'not-found' | 'failed';
  * @returns The wizard, or a loading / not-found message.
  * Rendered by: app/(app)/sessions/new/page.tsx, app/(app)/sessions/[id]/edit/page.tsx
  */
-export function SessionWizard({ mode, sessionId }: SessionWizardProps) {
+export function SessionWizard({ mode, sessionId, initialType }: SessionWizardProps) {
   const router = useRouter();
   const [load, setLoad] = useState<LoadState>('loading');
   const [draft, setDraft] = useState<SessionDraft | null>(null);
@@ -70,16 +74,16 @@ export function SessionWizard({ mode, sessionId }: SessionWizardProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [showErrors, setShowErrors] = useState(false);
   const [readingCount, setReadingCount] = useState(0);
-  const [problems, setProblems] = useState<DocumentProblem[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Load the starting point: the defaults from Settings (create) or the stored session (edit).
   useEffect(() => {
     let cancelled = false;
+    const type = SESSION_TYPES.find((known: SessionType) => known === initialType);
     const start =
       mode === 'create'
-        ? getSessionDefaults().then(emptyDraft)
+        ? getSessionDefaults().then((defaults) => emptyDraft(defaults, type))
         : getSession(sessionId ?? '').then(async (session) =>
             session ? draftFromSession(session, await listDocuments(session.id)) : null,
           );
@@ -96,7 +100,7 @@ export function SessionWizard({ mode, sessionId }: SessionWizardProps) {
     return () => {
       cancelled = true;
     };
-  }, [mode, sessionId]);
+  }, [mode, sessionId, initialType]);
 
   /**
    * Applies changes to the draft (state and ref together).
@@ -111,41 +115,25 @@ export function SessionWizard({ mode, sessionId }: SessionWizardProps) {
   }
 
   /**
-   * Shows a problem with a file under the document list.
+   * Chooses a library item for the session, if it fits. A resume replaces the current one, so the
+   * current one's size does not count against it.
    *
-   * @param message The message (names the file).
+   * @param item The library item.
+   * @returns Why it does not fit, or null when it was added.
    */
-  function addProblem(message: string) {
-    setProblems((current) => [...current, { key: crypto.randomUUID(), message }]);
-  }
-
-  /**
-   * Reads files into text, one at a time (each checked against the room the previous ones
-   * left), and adds the ones that fit.
-   *
-   * @param files The chosen or dropped files.
-   */
-  async function addFiles(files: File[]) {
-    setReadingCount((n) => n + files.length);
-    for (const file of files) {
-      const result = await extractText(file);
-      setReadingCount((n) => n - 1);
-      const current = draftRef.current;
-      if (!current) return;
-      if (!result.ok) {
-        addProblem(result.error.message);
-        continue;
-      }
-      const fit = fitsInSession(result.document.chars, draftChars(current));
-      if (!fit.ok) {
-        addProblem(`${file.name}: ${fit.message}`);
-        continue;
-      }
-      const { name, text, chars } = result.document;
-      change({
-        documents: [...current.documents, { key: crypto.randomUUID(), name, text, chars }],
-      });
-    }
+  function pick(item: LibraryItem): string | null {
+    const current = draftRef.current;
+    if (!current) return null;
+    const replaced =
+      item.kind === 'resume'
+        ? current.documents
+            .filter((document) => document.kind === 'resume')
+            .reduce((sum, document) => sum + document.chars, 0)
+        : 0;
+    const fit = fitsInSession(item.chars, draftChars(current) - replaced);
+    if (!fit.ok) return fit.message;
+    change(withLibraryItem(current, item, crypto.randomUUID()));
+    return null;
   }
 
   /**
@@ -154,15 +142,7 @@ export function SessionWizard({ mode, sessionId }: SessionWizardProps) {
    * @param key The document's list key.
    */
   function removeDocument(key: string) {
-    const current = draftRef.current;
-    if (!current) return;
-    const document = current.documents.find((d) => d.key === key);
-    change({
-      documents: current.documents.filter((d) => d.key !== key),
-      removedIds: document?.storedId
-        ? [...current.removedIds, document.storedId]
-        : current.removedIds,
-    });
+    if (draftRef.current) change(withoutDocument(draftRef.current, key));
   }
 
   /** Goes to step 2 when the required details are filled in. */
@@ -257,13 +237,9 @@ export function SessionWizard({ mode, sessionId }: SessionWizardProps) {
                 draft={draft}
                 errors={errors}
                 onChange={change}
-                onAddFiles={(files) => void addFiles(files)}
+                onPick={pick}
                 onRemoveDocument={removeDocument}
-                readingCount={readingCount}
-                problems={problems}
-                onDismissProblem={(key) =>
-                  setProblems((current) => current.filter((problem) => problem.key !== key))
-                }
+                onBusy={(delta) => setReadingCount((n) => n + delta)}
               />
             ) : (
               <PreferencesStep draft={draft} onChange={change} />

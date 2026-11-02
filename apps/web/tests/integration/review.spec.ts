@@ -207,7 +207,7 @@ test.afterAll(async () => {
 
 test('shows the call details, notes, answers and transcript', async () => {
   const details = page.getByRole('region', { name: 'Call details' });
-  await expect(details).toContainText('Sales');
+  await expect(details).toContainText('Regular');
   await expect(details).toContainText('price-list.txt');
   const notes = page.getByRole('region', { name: 'AI notes' });
   await expect(notes.getByRole('list', { name: 'Summary' }).getByRole('listitem')).toHaveCount(2);
@@ -261,7 +261,7 @@ test('lessons: Edit and Approve for all calls, Reject; only decisions are stored
   await expect(proposals.nth(1).getByLabel('Decision')).toHaveText('Rejected');
   expect(await page.evaluate(() => window.kiteReviewHarness.lessons())).toEqual([
     { text: 'Give the monthly and yearly totals.', scope: 'all', status: 'approved' },
-    { text: 'Mention the onboarding fee with every price.', scope: 'sales', status: 'rejected' },
+    { text: 'Mention the onboarding fee with every price.', scope: 'regular', status: 'rejected' },
   ]);
   await shot('review-lessons-decided');
 });
@@ -323,9 +323,9 @@ test('Settings lists the approved lesson as sent; edit, then clear all in a dial
   await shot('settings-learned');
   await learned.getByRole('button', { name: 'Edit' }).click();
   await learned.getByLabel('Lesson', { exact: true }).fill('Give monthly and yearly totals.');
-  await learned.getByLabel('Applies to').selectOption('sales');
+  await learned.getByLabel('Applies to').selectOption('regular');
   await learned.getByRole('button', { name: 'Save' }).click();
-  await expect(learned).toContainText('Sales calls only');
+  await expect(learned).toContainText('Regular calls only');
   await page.getByRole('button', { name: 'Clear all lessons' }).click();
   const dialog = page.getByRole('dialog', { name: 'Clear all lessons?' });
   await dialog.getByRole('button', { name: 'Clear all lessons' }).click();
@@ -390,7 +390,7 @@ test('Export my data, wipe, Import data restores it; importing again adds nothin
     documents: { text?: string }[];
   };
   expect(exported.format).toBe('kite-export');
-  expect(exported.version).toBe(2);
+  expect(exported.version).toBe(3);
   // Documents with their text, so a restore is complete.
   expect(exported.documents.length).toBeGreaterThan(0);
   expect(exported.documents.every((document) => typeof document.text === 'string')).toBe(true);

@@ -3,7 +3,7 @@
   "covers": "A sales renewal with a thumbs-down answer and a note: a lesson should follow from it.",
   "request": {
     "session": {
-      "type": "sales",
+      "type": "regular",
       "company": "Northwind Logistics (invented)",
       "role": "Renewal call",
       "description": "Renewal and expansion.",

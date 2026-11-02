@@ -36,6 +36,7 @@ describe('deleteAllLocalData', () => {
       answers: 0,
       notes: 0,
       lessons: 0,
+      library: 0,
     });
     expect(await listSessions()).toEqual([]);
     expect(await getDb().documents.count()).toBe(0);
@@ -54,6 +55,7 @@ describe('deleteAllLocalData', () => {
       answers: 0,
       notes: 0,
       lessons: 0,
+      library: 0,
     });
   });
 });

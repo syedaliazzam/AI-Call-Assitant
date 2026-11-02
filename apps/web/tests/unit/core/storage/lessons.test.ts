@@ -90,12 +90,12 @@ describe('lessons store', () => {
   it('updates only the text and scope, and deletes one or all', async () => {
     await saveLesson(lesson('a', 's1', 10));
     await saveLesson(lesson('b', 's1', 20));
-    await updateLesson('a', { text: 'Edited.', scope: 'sales' });
+    await updateLesson('a', { text: 'Edited.', scope: 'regular' });
     const [edited] = await listLessons();
     expect(edited).toMatchObject({
       id: 'a',
       text: 'Edited.',
-      scope: 'sales',
+      scope: 'regular',
       approvedAt: 10,
       sourceKey: 'invented lesson a',
     });
