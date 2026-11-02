@@ -145,7 +145,11 @@ async function main(): Promise<void> {
   const from = Math.max(0, Number(values.from ?? '1') - 1);
   // The sentences to record, as positions in the list: --only, or everything from --from on.
   const order = values.only
-    ? values.only.split(',').map((number) => Number(number) - 1)
+    ? // Commas or spaces: PowerShell turns --only=2,21,33 into '--only=2 21 33'.
+      values.only
+        .split(/[s,]+/)
+        .filter(Boolean)
+        .map((number) => Number(number) - 1)
     : sentences.map((_, index) => index).slice(from);
   if (order.some((index) => !Number.isInteger(index) || index < 0 || index >= sentences.length)) {
     throw new Error(`--only: use sentence numbers from 1 to ${sentences.length}`);
