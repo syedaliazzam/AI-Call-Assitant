@@ -21,3 +21,6 @@ coverage
 # public/stt-runtime is NOT listed: the build fetches it anyway, and an uploaded verified copy
 # just lets the build skip the download.
 apps/web/public/models
+
+# The developer's voice recordings for the speech engine trial (Day 6) are never uploaded.
+apps/web/tests/fixtures/stt/names-audio/

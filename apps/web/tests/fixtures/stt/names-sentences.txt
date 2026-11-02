@@ -33,13 +33,13 @@ Contoso wants a quote for forty seats on the annual plan. | Contoso
 Send the Kite installer to Fabrikam's IT team. | Kite; Fabrikam
 The SLA says ninety nine point nine percent uptime on AWS. | SLA; AWS
 We moved the GitHub Actions runners to Windows and macOS. | GitHub Actions; Windows; macOS
-EDIT: Our main client is Client One and their lead is Person One. | Client One; Person One
-EDIT: Client Two asked for the onboarding deck on Friday. | Client Two
-EDIT: Person Two from Client Three will review the contract. | Person Two; Client Three
-EDIT: Our product Product One competes with Product Two. | Product One; Product Two
-EDIT: Teammate One and Teammate Two will run the workshop. | Teammate One; Teammate Two
-EDIT: Client Four uses Tool One for their reporting. | Client Four; Tool One
-EDIT: Person Three is the decision maker at Client Five. | Person Three; Client Five
-EDIT: Teammate Three handles support for Client Six. | Teammate Three; Client Six
+I build RAG systems and LLM agents for production use. | RAG; LLM
+We evaluate the retriever and the generator separately, then the full answer. | retriever; generator
+Hybrid retrieval combines BM25 with dense embeddings in a vector database. | hybrid retrieval; BM25; embeddings; vector database
+The pipeline uses LangChain with Pinecone and a FastAPI backend. | LangChain; Pinecone; FastAPI
+Slow blocking calls in async Python pipelines are fixed with asyncio. | async; Python; asyncio
+We test for hallucinations by checking every claim against retrieved evidence. | hallucinations; retrieved evidence
+Ahmed Raza fine-tuned the model with LoRA on Hugging Face. | Ahmed Raza; LoRA; Hugging Face
+Sana Javed and Omar Farooq run forward-deployed AI engineering for the client. | Sana Javed; Omar Farooq; forward-deployed AI engineering
 Zain and Ali will demo Kite to Northwind on Monday. | Zain; Ali; Kite; Northwind
 Please spell it again: Paramount Intelligence, Kite, Bluefin Route. | Paramount Intelligence; Kite; Bluefin Route

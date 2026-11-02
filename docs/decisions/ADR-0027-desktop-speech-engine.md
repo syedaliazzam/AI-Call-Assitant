@@ -62,6 +62,40 @@ Adopt a candidate for the desktop **only if all four hold**. Each is measured on
 
 The rule is not changed after the results are seen. A near miss is reported as a miss, with its numbers.
 
+## How it is measured (fixed on 2026-11-02, before any engine ran)
+
+The rule above does not change. These details say how its words are measured. The code is `apps/web/scripts/stt-trial.ts` and `scripts/lib/stt-score.ts` (unit-tested).
+
+**Audio:**
+- The names set: the developer's recording of `names-sentences.txt`. **39 of the 40 sentences** have a clip (clip 40 is missing), so only those are scored.
+- The read set: `0.wav` and `1.wav`, the two public recordings already used since Day 1 (66 words).
+- No conversational audio exists yet, so it is not in this trial. Stage 2's human checks cover real calls.
+
+**Name accuracy (the rule's measure):** the share of **all terms listed after `|`**, in the sentences with a clip, written exactly right in that sentence's transcript. "Exactly right" ignores case, punctuation and spacing ("Next.js" = "NEXT JS", "LangChain" = "lang chain"), allows a possessive, and needs whole words.
+
+**Names and technical terms, reported separately:** the list `TECH_TERMS` in `stt-score.ts` decides which terms are technical; all others are names. The split is information for the developer. The rule uses the combined measure.
+
+**Overall word error rate:** errors ÷ reference words across the names set and the read set together (`core/stt/wer.ts`, which spells out numbers, so "40" = "forty").
+
+**Session terms:** the current engine runs with hotwords, so the rule compares engines **with the listed terms given as session terms**:
+- the control gets them as hotwords, through the app's own `buildHotwords()`;
+- Whisper gets them as its initial prompt;
+- Parakeet gets them as hotwords if its decoder accepts them; otherwise it runs without, against the control with.
+
+Every engine also runs **without terms**, which is what happens when a user types none. If the two comparisons disagree, the report says so.
+
+**The control** is the real thing: the app's own `stt.worker.ts` and sherpa-onnx WebAssembly in Chromium, fed clip by clip at real-time speed. It also runs with the built-in Interview vocabulary alone, to measure Stage 4c.
+
+**Final-text latency:** from the moment an utterance has ended and all its audio has been handed over, to the final text. The pause that detects the end of an utterance (about 1.2 s) comes first for every engine and is not included; the report states it. The first clip of each run is a warm-up and is left out of the percentiles.
+
+**Candidates run alone,** with 4 threads, one clip at a time, with the model already loaded. Decoding while the live engine also runs is measured by criterion 3 and again in Stage 2.
+
+**Criterion 3** (answer latency) needs paid Claude requests, so it runs only for a candidate that already passes criteria 1, 2 and 4, after its cost is agreed.
+
+**Criterion 4** counts the candidate's model plus its native runtime files. Resume and SHA-256 are Stage 2's job, so here the size decides it.
+
+**Power:** the script reads the power state itself and writes it into each result. The rule uses the runs on battery.
+
 ## Decision
 
 Pending: added after the trial, with the results table.
