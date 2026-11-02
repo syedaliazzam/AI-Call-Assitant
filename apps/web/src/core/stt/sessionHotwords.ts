@@ -2,8 +2,9 @@
  * File: apps/web/src/core/stt/sessionHotwords.ts
  * Purpose: Builds a session's speech-to-text hotwords: the names and terms the recognizer
  *          should prefer during this call. Sources, in priority order: the session's key terms
- *          (typed by the user), the company, the role or topic, then names and acronyms that
- *          repeat in the session's documents.
+ *          (typed by the user), the company, the role or topic, for Interview sessions a
+ *          built-in technical vocabulary (Day 6 Stage 4c), then names and acronyms that repeat
+ *          in the session's documents (at most MAX_DOCUMENT_TERMS of them).
  * Used by: src/features/live/LiveSession.tsx (before the engine starts), src/features/dev/SttTest.tsx
  *          ("Use session")
  * Depends on: src/core/stt/hotwords.ts (cleaning to the model's alphabet), src/core/storage/types.ts
@@ -28,6 +29,35 @@ export const ROLE_SCORE = 1.5;
 
 /** Boost for terms found in documents: guessed, so the milder boost too. */
 export const DOCUMENT_TERM_SCORE = 1.5;
+
+/** Boost for the Interview technical vocabulary: common words, so the milder boost too. */
+export const TECH_TERM_SCORE = 1.5;
+
+/**
+ * Most document terms used (the most mentioned first), so a long document cannot crowd out the
+ * built-in vocabulary within MAX_HOTWORDS (Day 6 Stage 4c).
+ */
+export const MAX_DOCUMENT_TERMS = 40;
+
+/**
+ * Technical words that technical interviews use and the recognizer often mishears (Day 6
+ * Stage 4c). Added for Interview sessions only, after the user's own terms.
+ */
+export const INTERVIEW_TECH_TERMS: readonly string[] = [
+  'RAG',
+  'LLM',
+  'retrieval',
+  'embeddings',
+  'vector database',
+  'async',
+  'Python',
+  'fine-tuning',
+  'evaluation',
+  'hallucination',
+  'latency',
+  'API',
+  'prompt',
+];
 
 /**
  * Most phrases sent to the recognizer. Each hotword adds work to every decoding step and makes
@@ -195,17 +225,18 @@ export function extractDocumentTerms(texts: readonly string[]): DocumentTerm[] {
 }
 
 /**
- * Builds a session's hotwords, in priority order (key terms, company, role/topic, document
- * terms), without duplicates (the first, highest-priority entry wins) and capped at
- * MAX_HOTWORDS.
+ * Builds a session's hotwords, in priority order (key terms, company, role/topic, the
+ * Interview technical vocabulary, document terms), without duplicates (the first,
+ * highest-priority entry wins) and capped at MAX_HOTWORDS.
  *
- * @param session   The session (its key terms, company and role are used).
+ * @param session   The session (its key terms, company, role and type are used; without a
+ *                  type, no built-in vocabulary is added).
  * @param documents The session's documents.
  * @returns The hotwords for the recognizer.
  * Called from: LiveSession.tsx (before the engine starts), SttTest.tsx ("Use session"); tests
  */
 export function buildHotwords(
-  session: Pick<Session, 'company' | 'role' | 'preferences'>,
+  session: Pick<Session, 'company' | 'role' | 'preferences'> & Partial<Pick<Session, 'type'>>,
   documents: readonly Pick<StoredDocument, 'text'>[],
 ): Hotword[] {
   const result: Hotword[] = [];
@@ -230,8 +261,13 @@ export function buildHotwords(
   // 2. Company, then 3. role or topic.
   add(session.company, KEY_TERM_SCORE);
   add(session.role, ROLE_SCORE);
-  // 4. Names and acronyms that repeat in the documents.
-  for (const term of extractDocumentTerms(documents.map((document) => document.text))) {
+  // 4. Interview sessions: the built-in technical vocabulary.
+  if (session.type === 'interview') {
+    for (const term of INTERVIEW_TECH_TERMS) add(term, TECH_TERM_SCORE);
+  }
+  // 5. Names and acronyms that repeat in the documents, the most mentioned first.
+  const documentTerms = extractDocumentTerms(documents.map((document) => document.text));
+  for (const term of documentTerms.slice(0, MAX_DOCUMENT_TERMS)) {
     add(term.phrase, DOCUMENT_TERM_SCORE);
   }
   return result;

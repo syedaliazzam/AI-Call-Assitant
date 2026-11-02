@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  File: apps/desktop/build/entitlements.mac.plist
+  Purpose: What the Kite desktop app may do on macOS under the hardened runtime (Day 6 Stage 6),
+           for when the app is signed and notarised: Electron's JavaScript engine (JIT), and the
+           microphone. Screen and system-audio recording is a user permission (System Settings),
+           not an entitlement.
+  Used by: apps/desktop/electron-builder.yml (mac.entitlements)
+  Architecture: docs/architecture/kite-architecture-v3.1.md §10 (installation); ADR-0028
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Electron's V8 engine compiles JavaScript at run time. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- The microphone ("You" channel). -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+  </dict>
+</plist>

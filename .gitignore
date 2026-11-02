@@ -42,3 +42,9 @@ Thumbs.db
 desktop.ini
 .idea/
 *.swp
+
+# Day 6 names set: the developer's voice stays out of git (the manifest with SHA-256 is committed)
+apps/web/tests/fixtures/stt/names-audio/
+
+# Day 6 Stage 3: Windows installers built by electron-builder
+apps/desktop/release/

@@ -22,5 +22,6 @@ export default defineConfig({
   expect: { timeout: 20_000 },
   reporter: 'list',
   outputDir: '../../test-results/e2e-prod',
-  use: { trace: 'retain-on-failure' },
+  // No traces: a trace records typed values, including the test account's password.
+  use: { trace: 'off' },
 });

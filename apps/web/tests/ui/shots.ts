@@ -12,6 +12,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { testAccount } from '../e2e-prod/helpers';
+import { signInOnce } from '../lib/sign-in';
 
 /** The Kite to screenshot (default the local `pnpm dev`). */
 export const BASE_URL = (process.env.KITE_UI_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
@@ -77,18 +78,16 @@ export async function openAt(browser: Browser, size: Width): Promise<WatchedPage
 }
 
 /**
- * Signs in as the admin test account (enabled only for the run).
+ * Signs in as the admin test account (enabled only for the run), once per run: later pages
+ * reuse the session (tests/lib/sign-in.ts), so production's sign-in rate limit cannot fail
+ * the checks, and a failed sign-in leaves no password on the page.
  *
  * @param page The page.
+ * @returns Nothing.
  * Called from: dev-ui.spec.ts, pages.spec.ts
  */
 export async function signIn(page: Page): Promise<void> {
-  const account = testAccount('admin');
-  await page.goto(`${BASE_URL}/login`);
-  await page.getByLabel('Email').fill(account.email);
-  await page.getByLabel('Password').fill(account.password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeVisible();
+  await signInOnce(page, { baseUrl: BASE_URL, ...testAccount('admin') });
 }
 
 /**

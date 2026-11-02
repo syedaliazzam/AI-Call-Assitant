@@ -85,10 +85,15 @@ Every failure says what happened and what to do, in the theme's style (U1–U4),
 
 **Headline length (added 1 Nov):** keep every headline at 15 words or fewer, including when an approved lesson asks for more detail. The Day 5 lesson evaluation (scenario 19) and the follow-up check (scenario 04) both went over 15 words (`docs/testing/answer-eval.md`). Ask the developer, with the estimated cost, before running its evaluation (`--only=lessons` and `--only=answers`).
 
+**Notes fixes (added 1 Nov; code and prompt, from the n3 faithfulness issues in `docs/testing/answer-eval.md`):**
+- A rating is attached to a question only when the notes link it to a Kite answer **by answer id**. A question the user answered themselves shows no rating.
+- "Unclear" means speech that could not be understood. Silence is not unclear; optionally list it separately as "no speech".
+- Gate: the `notes` evaluation group (≥ 8, and n3's faithfulness and unclear scores no lower than on 1 Nov). Ask the developer, with the estimated cost, before running it.
+
 **Auto-answer (beta, off by default):** when "Them" finishes a question (ends with "?" or starts with a question word, followed by ≥ 1.2 s pause), Kite answers automatically. Max one auto-answer per 15 s, never while an answer is streaming, a visible "Auto" label on auto answers, a setting with a short explanation. Unit tests for the question detector with 30 invented examples (≥ 90% correct); harness test for rate limiting.
 - **Gate:** all error-state harness tests, detector tests, existing harnesses, screenshots of each error state at 1440 and 390 px; headline ≤ 15 words in the lessons and answers evaluations (after the developer agrees the cost).
 
-## Stage 5 — Subdomain readiness (no DNS change today)
+## Stage 5 — Subdomain readiness: moved to post-v1 (developer, 1 Nov; architecture §14). Skipped today.
 - All URLs from config: `BETTER_AUTH_URL`, trusted origins list (vercel.app + `kite.paramountintelligence.co`), desktop allowed-origin list, CSP, cookie domain.
 - Desktop shell accepts exactly the configured Kite origins; a test refuses any other.
 - Write `docs/deploy/subdomain.md`: the exact Vercel and DNS steps, what to change in env vars, how to verify (sign-in, cookies, desktop app, CSP), and how to roll back.

@@ -26,6 +26,7 @@ import {
   systemPreferences,
 } from 'electron';
 import { APP_NAME, loadConfig, type DesktopConfig } from './config';
+import { startUpdater } from './updater';
 import { installHotkeys, type HotkeyController } from './hotkeys';
 import { appIconPath } from './icon';
 import { createProtection, installProtection } from './protection';
@@ -163,6 +164,15 @@ function start(): void {
     installCompactWindows(ipcMain, compact, config.allowedOrigin);
     installProtection(ipcMain, protection, () => compact?.window() ?? null, config.allowedOrigin);
     mainWindow = createMainWindow(config);
+    // Updates (Day 6, ADR-0028): installed builds only; tests turn them off. Store builds
+    // (process.windowsStore) are updated by the Microsoft Store, which forbids self-updating.
+    if (app.isPackaged && !process.windowsStore && process.env.KITE_NO_UPDATE_CHECK !== '1') {
+      startUpdater({
+        ipcMain,
+        allowedOrigin: config.allowedOrigin,
+        getWindow: () => mainWindow,
+      });
+    }
     // macOS convention: clicking the Dock icon re-opens a window if none is open.
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) mainWindow = createMainWindow(config);

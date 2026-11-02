@@ -1,9 +1,12 @@
 /**
  * File: apps/web/src/core/transcript/display.ts
- * Purpose: Splits very long transcript lines into shorter ones for display, so the strip stays
- *          easy to read. Display only: the stored line (and what answers use) is unchanged.
- * Used by: src/features/live/TranscriptStrip.tsx
- * Depends on: src/core/transcript/transcript.ts (Utterance type)
+ * Purpose: Prepares transcript lines for display: splits very long lines into shorter ones, and
+ *          writes lines in sentence case with the session's own spellings (Day 6 Stage 4d). Display
+ *          only: the stored line (and what answers and notes use) is unchanged.
+ * Used by: src/features/live/TranscriptStrip.tsx, src/features/live/SavedTranscript.tsx,
+ *          src/features/review/ReviewSections.tsx, src/features/live/LivePage.tsx,
+ *          src/features/review/SessionReview.tsx
+ * Depends on: src/core/transcript/transcript.ts (Utterance type), src/core/storage/types.ts (Session)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session: transcript strip)
  *
  * Why by length and not by sentence: the speech model writes no punctuation, so sentences
@@ -11,6 +14,7 @@
  * spoken sentences) is cut into equal parts. The model gives no per-word times, so each part's
  * start and end are estimated in proportion to its words.
  */
+import type { Session } from '../storage/types';
 import type { Utterance } from './transcript';
 
 /** Longest line shown in one piece, in ms. */
@@ -51,4 +55,56 @@ export function splitForDisplay(line: Utterance): Utterance[] {
     });
   }
   return result;
+}
+
+/**
+ * The spellings to restore in displayed lines: the session's key terms (one per line, without a
+ * typed " :score") and its company, as the user wrote them (Day 6 Stage 4d).
+ *
+ * @param session The session's company and key terms.
+ * @returns The terms, longest first (so "Bluefin Route" wins over "Route").
+ * Called from: LivePage.tsx, SessionReview.tsx (passed to the transcript components)
+ */
+export function displayTerms(
+  session: Pick<Session, 'company'> & { preferences: Pick<Session['preferences'], 'keyTerms'> },
+): string[] {
+  const terms = [session.company, ...session.preferences.keyTerms.split(/\r?\n/)]
+    .map((term) => term.replace(/\s*:\s*[\d.]+\s*$/, '').trim())
+    .filter((term) => /[A-Za-z]/.test(term) && term.length <= 50);
+  return [...new Set(terms)].sort((a, b) => b.length - a.length);
+}
+
+/**
+ * Escapes text for use inside a regular expression.
+ *
+ * @param text Any text.
+ * @returns The text with every regular-expression character escaped.
+ * Called from: sentenceCase()
+ */
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Writes a transcript line in sentence case for display (Day 6 Stage 4d): the speech model
+ * writes all capitals and no punctuation, which is hard to read. An all-capitals line is
+ * lower-cased; then the session's own spellings of its terms are restored, "I" (and I'm, I'll,
+ * I've, I'd) is capitalised, and so is the first letter. A line that already has lower-case
+ * letters (an engine that writes case) keeps its case. Display only: the stored line, and what
+ * answers and notes use, are unchanged.
+ *
+ * @param text  The line as the engine wrote it.
+ * @param terms Spellings to restore (displayTerms()), longest first.
+ * @returns The line for display.
+ * Called from: TranscriptStrip.tsx, SavedTranscript.tsx, ReviewSections.tsx (TranscriptSection)
+ */
+export function sentenceCase(text: string, terms: readonly string[] = []): string {
+  let line = /[a-z]/.test(text) ? text : text.toLowerCase();
+  for (const term of terms) {
+    // Whole words only: "route" inside "routes" or "reroute" is left alone.
+    line = line.replace(new RegExp(`(?<![\\w'])${escapeRegExp(term)}(?![\\w'])`, 'gi'), () => term);
+  }
+  line = line.replace(/(?<![\w'])i(?=$|[\s'’,.?!])/g, 'I');
+  return line.replace(
+    /^(\s*)([a-z])/,
+    (_match, space: string, letter: string) => space + letter.toUpperCase(),
+  );
 }

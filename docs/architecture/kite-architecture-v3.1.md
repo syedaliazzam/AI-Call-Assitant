@@ -722,3 +722,5 @@ Release checks (all must pass):
 3. Export session to Markdown or DOCX.
 4. Team-shared session templates and instructions.
 5. Browser-tab reading (extension).
+6. **Subdomain `kite.paramountintelligence.co` (post-v1, decided 1 Nov 2026):** config-driven URLs, trusted and desktop origins, CSP and cookie domain, plus `docs/deploy/subdomain.md` (was Day 6 Stage 5). Until then Kite stays on the `*.vercel.app` address (§10.2).
+7. **Microsoft Store (private audience), post-v1 (decided 2 Nov 2026):** the MSIX target and its manual CI job are kept (`docs/deploy/microsoft-store.md`); for v1, desktop users turn Smart App Control off if it blocks the unsigned app (user guide).

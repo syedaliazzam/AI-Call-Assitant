@@ -15,12 +15,31 @@ import type { AnswerFailure } from './answerClient';
 /** Why Claude is unavailable: a key of CLAUDE_UNAVAILABLE_MESSAGES. */
 export type UnavailableReason = keyof typeof CLAUDE_UNAVAILABLE_MESSAGES;
 
+/**
+ * A failure the user can act on, shown in its own box (Day 6 Stage 4e): 'signed-out' (the
+ * sign-in expired; sign in again without leaving the call) or 'offline' (no connection).
+ */
+export type AnswerProblem = 'signed-out' | 'offline';
+
+/** What the user sees for a signed-out answer. */
+export const SIGNED_OUT_TEXT =
+  'Your sign-in has expired. Sign in again here: this call, its transcript and its answers stay as they are. Then press Answer again.';
+
+/** What the user sees when Kite cannot reach the internet. */
+export const OFFLINE_TEXT =
+  "Kite can't reach the internet. The transcript keeps going on this computer; answers come back when the connection does.";
+
+/** Server messages that mean the request never got a full reply (core/answer/answerClient.ts). */
+const CONNECTION_MESSAGES = new Set(['Network error', 'The connection closed before the end']);
+
 /** What to show for a failed answer. */
 export interface FailureText {
   /** The text, ready to show. */
   text: string;
   /** True when Claude is unavailable for everyone (shown as a notice, not as this answer's failure). */
   unavailable: boolean;
+  /** A failure the user can act on (its own box), or undefined for any other failure. */
+  problem?: AnswerProblem;
 }
 
 /**
@@ -54,6 +73,13 @@ export function unavailableReason(
 export function answerFailureText(failure: AnswerFailure): FailureText {
   const reason = unavailableReason(failure.code, failure.message);
   if (reason) return { text: CLAUDE_UNAVAILABLE_MESSAGES[reason], unavailable: true };
+  // The server's 401: the session cookie has expired or the account was signed out.
+  if (failure.code === 'unauthorized') {
+    return { text: SIGNED_OUT_TEXT, unavailable: false, problem: 'signed-out' };
+  }
+  if (failure.code === 'internal' && CONNECTION_MESSAGES.has(failure.message)) {
+    return { text: OFFLINE_TEXT, unavailable: false, problem: 'offline' };
+  }
   return { text: `The answer failed. ${failure.message}`.trim(), unavailable: false };
 }
 

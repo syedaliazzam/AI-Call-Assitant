@@ -10,9 +10,21 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 (before Stage 0).
+**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 (export and import).
 
 ---
+
+## First: install on a teammate's laptop (Smart App Control)
+
+Do this before everything else: it decides whether Kite can ship unsigned. On the developer's laptop, Windows Smart App Control blocked an unsigned Kite build from starting (Code Integrity events 3033 and 3077, 2 Nov).
+
+| # | Do | Expect / write down |
+|---|---|---|
+| F.1 | On a **teammate's** Windows 11 laptop, open **Windows Security → App & browser control → Smart App Control settings**. | Write down: **On**, **Evaluation** or **Off**. (Do not change it.) |
+| F.2 | Download `Kite-Setup-<version>.exe` from the releases page and open it. | Write down exactly what Windows shows: nothing, the SmartScreen "Windows protected your PC" (then **More info → Run anyway**), or a Smart App Control block ("Part of this app has been blocked…"), which cannot be bypassed. |
+| F.3 | If it installed, open Kite from the Start menu. | Write down whether it opens or is blocked. |
+| F.4 | If Kite was blocked, follow the user guide's "If Windows blocks Kite" section (`docs/user-guide/install-windows.md`): turn Smart App Control off (with the IT lead's OK) and install again. | Kite installs and opens. Also check the guide's steps match what Windows shows. |
+| F.5 | Send the developer the answers and a photo of any block message. | The v1 decision (2 Nov) is to turn Smart App Control off; the Microsoft Store route is post-v1 (`docs/deploy/microsoft-store.md`). |
 
 ## 0. Setup
 
@@ -31,6 +43,8 @@
 | 1.3 | Ask aloud (or play) a price question the document answers. Press **Answer**. | An answer streams within about 2 s; headline of 15 words or fewer, at most 5 bullets, figures from the document. |
 | 1.4 | **Follow-up:** ask "What are the three phases of the rollout?", answer, then "How long does the second phase of that take?" and answer. | The second answer is about the second phase from the first answer, without asking which plan you mean. |
 | 1.5 | Rate an answer thumbs up and another thumbs down with a short note. | Both ratings stay after reloading the page. |
+| 1.6 | Look at the final transcript lines (live view, then the review page). | Sentence case: a capital first letter and "I"; your key terms and company spelled as you typed them (for example "Bluefin Route", "CRM"). |
+| 1.7 | **Interview** session: say "we used RAG with embeddings in a vector database to cut latency". | RAG, embeddings, vector database and latency come out right more often than before (built-in technical vocabulary). |
 
 ## 2. Desktop hotkeys (Day 4)
 
@@ -84,16 +98,16 @@
 
 | # | Do | Expect |
 |---|---|---|
-| 7.1 | During a call, turn Wi-Fi off for 20 s, then on. | A clear "connection lost" message; the transcript keeps going; answers resume. |
+| 7.1 | During a call, turn Wi-Fi off for 20 s, press Answer, then turn it on. | A "No connection" banner: answers are paused, the transcript keeps going; Answer says so. The banner goes when Wi-Fi is back, and Answer works again. |
 | 7.2 | Block the microphone (Windows privacy settings or the browser's site settings) and start a call. | A message saying the microphone is blocked and how to allow it. |
 | 7.3 | Share a silent tab as "Them" for 20 s. | A message to check the right tab or app is shared. |
-| 7.4 | Sign out in another tab during a call, then press Answer. | Asked to sign in again; after signing in the session and transcript are still there. |
+| 7.4 | Sign out in another tab (browser) during a call, then press Answer. | A "Signed out" box with **Sign in again**: a dialog over the call; after signing in, the call, transcript and answers are all still there and Answer works. Repeat in the desktop app by disabling and re-enabling your account from an admin account. |
 
 ## 8. Auto-answer (Day 6 Stage 4, beta)
 
 | # | Do | Expect |
 |---|---|---|
-| 8.1 | Settings → turn **Auto-answer** on. Play "Them" asking "What does the plan cost?" and pause. | An answer starts by itself, marked **Auto**. |
+| 8.1 | Settings → Answers → turn **Auto-answer (beta)** on, then start a new call. Play "Them" asking "What does the plan cost?" and pause. | An answer starts by itself, marked **Auto**. |
 | 8.2 | Ask two questions within 15 s. | Only the first is answered automatically. |
 | 8.3 | Turn Auto-answer off. | Questions are no longer answered by themselves. |
 
@@ -101,10 +115,33 @@
 
 | # | Do | Expect |
 |---|---|---|
-| 9.1 | Run the installer. If SmartScreen warns, **More info → Run anyway**. | Installs without an admin prompt; Start-menu shortcut "Kite"; Kite icon on the taskbar. |
-| 9.2 | Install the next beta when it is published (or let the app update on start). | The app downloads in the background and asks to restart; it never restarts during a call. |
-| 9.3 | Uninstall from Windows Settings → Apps, without "keep my local data". | No Kite folder left in AppData or Program Files. |
-| 9.4 | Reinstall, run a session, uninstall **with** "keep my local data", reinstall. | The earlier session is still there. |
+| 9.1 | Run `Kite-Setup-<version>.exe`. If SmartScreen says "Windows protected your PC", click **More info → Run anyway** (the installer is not signed yet). | Installs without an admin prompt into `%LOCALAPPDATA%Programskite`; Start-menu shortcut "Kite"; the Kite icon on the taskbar. |
+| 9.2 | When a new version is published, start Kite (or wait up to 6 hours). Also try during a live call. | Kite downloads it in the background and asks **Restart now / Later**; Later installs it when you quit. During a live call it does not ask until the call ends. |
+| 9.3 | Uninstall from Windows Settings → Apps → Kite; answer **No** to "Keep your Kite data on this computer?". | No `kite` folder left in `%LOCALAPPDATA%Programs` or `%APPDATA%`. |
+| 9.4 | Reinstall, sign in, create a session, uninstall answering **Yes** to "Keep your Kite data", reinstall. | The session is still on the dashboard. |
+
+## 9b. Microsoft Store version (only if the Store route is used; docs/deploy/microsoft-store.md)
+
+| # | Do | Expect |
+|---|---|---|
+| 9b.1 | Signed in to the Microsoft Store with your listed Microsoft account, open the private Store link and click **Get**. | Kite installs with no SmartScreen or Smart App Control warning. |
+| 9b.2 | Start Kite from the Start menu and sign in. | The dashboard appears. |
+| 9b.3 | Create a session, **Connect**: allow the microphone. | Windows asks once; **Settings → Privacy & security → Microphone** lists Kite; the You meter moves. |
+| 9b.4 | Play a video for the other side (system audio). | The Them meter moves and Them lines appear. |
+| 9b.5 | First call after installing: the speech model downloads. Close Kite, open it again, start another call. | The model is not downloaded again (kept inside the package's data). |
+| 9b.6 | With Notepad focused, press **Ctrl+Enter**. | Kite answers; Notepad keeps focus. |
+| 9b.7 | **Compact view**, then share the entire screen in Google Meet and look from your phone. | Hidden in screen share: not visible; Visible: visible. |
+| 9b.8 | Leave Kite open for a day after a new Store version is published. | The Store updates Kite; Kite itself never shows its own Restart now / Later question. |
+| 9b.9 | Uninstall from Windows Settings → Apps. | No question about keeping data; no Kite folder left in AppData. |
+
+## 9c. Export and import your data (Day 6)
+
+| # | Do | Expect |
+|---|---|---|
+| 9c.1 | In the **browser**: Settings → Local data → **Export my data**. | A warning: "This file contains your session documents and transcripts — keep it private."; after **Save file**, `kite-export-<date>.json` downloads and Settings says how many sessions it holds. |
+| 9c.2 | In the **desktop app**: Settings → Local data → **Import data**, pick that file. | "Added N sessions…"; the dashboard shows them with their transcripts, answers and notes; their documents are there too (answers can use them). |
+| 9c.3 | Import the same file again. | "Added 0 sessions… already on this computer"; nothing appears twice. |
+| 9c.4 | Pick any other file (a photo, a random .json). | A clear message; nothing changes. |
 
 ## 10. Look and phones (UI U1–U4)
 

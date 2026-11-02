@@ -1,6 +1,7 @@
 /**
  * Smoke test for the Electron shell (apps/desktop/src/main.ts, preload.ts, security.ts).
- * Launches the built app (dist/) with KITE_URL pointing at a local test page and checks:
+ * Launches the built app (dist/), or the installed app when KITE_INSTALLED_EXE names its
+ * Kite.exe (Day 6 Stage 3), with KITE_URL pointing at a local test page and checks:
  * the window opens at 1280×820; window.kiteDesktop is exactly { version, os,
  * setHotkeysEnabled, onHotkey, captureScreenshot } and frozen; captureScreenshot() returns a
  * PNG scaled to ≤ 1,568 px for the Kite page, and a frame from another origin has no bridge;
@@ -79,12 +80,17 @@ test.beforeAll(async () => {
   // Electron apps (VS Code extensions, for example) set it for their child processes, so it
   // must not be passed on to the app under test.
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
+  // KITE_INSTALLED_EXE (Day 6 Stage 3): test the installed app (Kite.exe from the installer)
+  // instead of the development build, with the same checks.
+  const installed = process.env.KITE_INSTALLED_EXE;
   app = await electron.launch({
-    args: [APP_DIR],
+    ...(installed ? { executablePath: installed, args: [] } : { args: [APP_DIR] }),
     env: {
       ...parentEnv,
       KITE_URL: `${kite.origin}/`,
       KITE_TEST_NO_EXTERNAL_OPEN: '1',
+      // The installed app would otherwise check the releases repository for updates.
+      KITE_NO_UPDATE_CHECK: '1',
     },
   });
   page = await app.firstWindow();
@@ -105,8 +111,27 @@ test('opens one 1280×820 window on KITE_URL', async () => {
     workArea: screen.getPrimaryDisplay().workAreaSize,
   }));
   // Electron shrinks a window to fit the screen's work area (for example 1280×720 on a
-  // 1920×1080 laptop at 150% scaling), so compare against the size that fits.
-  expect(sizes).toEqual([[Math.min(1280, workArea.width), Math.min(820, workArea.height)]]);
+  // 1920×1080 laptop at 150% scaling), so compare against the size that fits. A shrunk side may
+  // come out a few pixels smaller (macOS on a 1024×768 runner: 674 for a 677 px work area).
+  expect(sizes).toHaveLength(1);
+  const [width = 0, height = 0] = sizes[0]!;
+  /**
+   * Checks one side: exactly the wanted size when it fits, else within 8 px of the space.
+   *
+   * @param wanted    The window's designed size.
+   * @param available The work area's size.
+   * @param actual    The window's size.
+   */
+  const fit = (wanted: number, available: number, actual: number) => {
+    if (wanted <= available) {
+      expect(actual).toBe(wanted);
+    } else {
+      expect(actual).toBeGreaterThanOrEqual(available - 8);
+      expect(actual).toBeLessThanOrEqual(available);
+    }
+  };
+  fit(1280, workArea.width, width);
+  fit(820, workArea.height, height);
 });
 
 test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async () => {
@@ -120,6 +145,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.closeCompactView,
       typeof window.kiteDesktop?.setShareProtection,
       typeof window.kiteDesktop?.getShareProtection,
+      typeof window.kiteDesktop?.setCallActive,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -135,11 +161,12 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'onHotkey',
     'openCompactView',
     'os',
+    'setCallActive',
     'setHotkeysEnabled',
     'setShareProtection',
     'version',
   ]);
-  expect(bridge.methods).toEqual(Array(7).fill('function'));
+  expect(bridge.methods).toEqual(Array(8).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);

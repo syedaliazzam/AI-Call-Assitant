@@ -22,7 +22,7 @@
  */
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   CallCaptureError,
   startCallCapture,
@@ -38,6 +38,9 @@ import { notesFailureText, type UnavailableReason } from '@/core/answer/unavaila
 import { generateNotes, type NotesLine } from '@/core/notes/generate';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
+import { displayTerms } from '@/core/transcript/display';
+import { isSound, themSilent } from '@/core/audio/silence';
+import { ThemSilentNotice } from './ThemSilentNotice';
 import { endCall } from '@/core/transcript/endCall';
 import { startTranscriptSaver, type TranscriptSaver } from '@/core/transcript/saver';
 import { createTranscript, type Speaker } from '@/core/transcript/transcript';
@@ -156,6 +159,9 @@ export function LivePage({
   hotwordCount,
   savedLines,
 }: LivePageProps) {
+  // The session's own spellings for the transcript (sentence case, Day 6 Stage 4d), kept
+  // stable so the memoised transcript strip does not re-render on every update.
+  const terms = useMemo(() => displayTerms(session), [session]);
   // Display only (instructions and messages); behaviour differences live in src/platform.
   // The server snapshot is 'browser'; the desktop app switches after hydration.
   const platform = useSyncExternalStore(
@@ -182,6 +188,24 @@ export function LivePage({
   const [modelAttempt, setModelAttempt] = useState(0);
   const [connection, setConnection] = useState<ConnectionState>('idle');
   const [levels, setLevels] = useState<ChannelLevels>({ you: 0, them: 0 });
+  // Day 6 Stage 4e: when "Them" last had sound (or the call connected), and whether it has been
+  // silent for 20 s (then a notice suggests checking the shared tab or app).
+  // Day 6: the desktop app never asks to restart for an update while a call is connected.
+  useEffect(() => {
+    const platformApi = getPlatform();
+    platformApi.setCallActive(connection === 'connected');
+    return () => platformApi.setCallActive(false);
+  }, [connection]);
+  const themSoundAt = useRef(0);
+  const [themQuiet, setThemQuiet] = useState(false);
+  useEffect(() => {
+    if (connection !== 'connected') return;
+    const timer = setInterval(
+      () => setThemQuiet(themSilent(themSoundAt.current, Date.now())),
+      1_000,
+    );
+    return () => clearInterval(timer);
+  }, [connection]);
   const [channelErrors, setChannelErrors] = useState<Partial<Record<Speaker, string>>>({});
   const [themSource, setThemSource] = useState<OtherSideSource | null>(null);
   const [soundCheck, setSoundCheck] = useState<SoundCheck | null>(null);
@@ -312,7 +336,10 @@ export function LivePage({
     try {
       const capture = await startCallCapture({
         engine,
-        onLevels: setLevels,
+        onLevels: (next) => {
+          setLevels(next);
+          if (isSound(next.them)) themSoundAt.current = Date.now();
+        },
         onEvent: (event) =>
           setChannelErrors((current) => ({
             ...current,
@@ -321,6 +348,7 @@ export function LivePage({
       });
       captureRef.current = capture;
       setThemSource(capture.themSource);
+      themSoundAt.current = Date.now();
       setConnection('connected');
       setCallStartedAt((current) => current ?? Date.now());
       // Warm Claude's prompt cache again: the warm-up from when the page opened may have
@@ -458,7 +486,7 @@ export function LivePage({
                 : notesFailureText(notesUnavailable, session.saveTranscript)}
           </p>
         )}
-        <SavedTranscript lines={saved} saving={session.saveTranscript} />
+        <SavedTranscript lines={saved} saving={session.saveTranscript} terms={terms} />
       </div>
     );
   }
@@ -473,6 +501,7 @@ export function LivePage({
         ? { tone: 'warning', label: 'Connecting' }
         : { tone: 'neutral', label: 'Not connected' };
 
+  const themQuietShown = connection === 'connected' && themQuiet && !channelErrors.them;
   return (
     <LiveCallLayout
       title={call.title}
@@ -489,7 +518,7 @@ export function LivePage({
         />
       ))}
       notices={
-        lostChannel || saveFailed || echoNoteVisible ? (
+        lostChannel || saveFailed || echoNoteVisible || themQuietShown ? (
           <>
             {(['you', 'them'] as const).map(
               (speaker) =>
@@ -511,6 +540,7 @@ export function LivePage({
                   </div>
                 ),
             )}
+            {themQuietShown && <ThemSilentNotice />}
             {saveFailed && (
               <p
                 role="alert"
@@ -532,7 +562,7 @@ export function LivePage({
           </>
         ) : null
       }
-      transcript={<TranscriptStrip lines={lines} health={health} />}
+      transcript={<TranscriptStrip lines={lines} health={health} terms={terms} />}
       answers={
         callStartedAt !== null ? (
           <LiveAnswers

@@ -139,9 +139,9 @@ test('5. Connect (fake mic + fake tab), Go live, lines appear', async () => {
   await page.getByRole('button', { name: 'Go live' }).click();
 
   const lines = page.getByLabel('Live transcript').getByRole('listitem');
-  // Final lines are drawn in dark text (TranscriptStrip: text-slate-900); grey lines are still
+  // Final lines use the normal text colour (TranscriptStrip: text-ui-text, UI theme U3); grey lines are still
   // being heard. Only final lines are saved, so the test waits for final ones.
-  const finals = lines.filter({ has: page.locator('span.text-slate-900') });
+  const finals = lines.filter({ has: page.locator('span.text-ui-text') });
   const you = finals.filter({ hasText: /^\s*You/ });
   const themLines = finals.filter({ hasText: /^\s*Them/ });
   // Wait for final lines, then a little longer for more. In headless Chromium the fake

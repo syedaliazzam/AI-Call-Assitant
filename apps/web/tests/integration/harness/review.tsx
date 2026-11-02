@@ -7,7 +7,8 @@
  *          stand-in for the dashboard). Exposes seed, show, count and lessons on
  *          `window.kiteReviewHarness`.
  * Used by: tests/integration/review.spec.ts (bundled with esbuild and served on a test page)
- * Depends on: src/features/review/SessionReview.tsx, src/features/settings/LearnedLessons.tsx, src/core/storage (sessions, documents,
+ * Depends on: src/features/review/SessionReview.tsx, src/features/settings/LearnedLessons.tsx,
+ *             src/features/settings/DataTransfer.tsx (Day 6), src/core/storage/wipe.ts, src/core/storage (sessions, documents,
  *             utterances, answers, notes), src/core/review/load.ts, react-dom
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing);
  *               day-05-overlay-screenshots-notes.md Stage 6
@@ -24,7 +25,9 @@ import { saveNotes } from '@/core/storage/notes';
 import { createSession } from '@/core/storage/sessions';
 import { saveUtterance } from '@/core/storage/utterances';
 import { SessionReview } from '@/features/review/SessionReview';
+import { DataTransfer } from '@/features/settings/DataTransfer';
 import { LearnedLessons } from '@/features/settings/LearnedLessons';
+import { deleteAllLocalData } from '@/core/storage/wipe';
 
 /** Which fixture to seed. */
 export type ReviewFixture = 'full' | 'transcript-off';
@@ -55,6 +58,10 @@ export interface KiteReviewHarness {
   showLearned: () => void;
   /** Every stored lesson decision: text, scope and status (Day 5 Stage 7). */
   lessons: () => Promise<{ text: string; scope: string; status: string }[]>;
+  /** Renders Settings' "Export my data" / "Import data" controls instead (Day 6). */
+  showData: () => void;
+  /** Deletes the whole local database, as "Delete all local data" does (Day 6). */
+  wipe: () => Promise<void>;
 }
 
 declare global {
@@ -220,4 +227,15 @@ window.kiteReviewHarness = {
   },
   lessons: async () =>
     (await listLessons()).map(({ text, scope, status }) => ({ text, scope, status })),
+  showData: () => {
+    root ??= createRoot(document.getElementById('root')!);
+    root.render(
+      <div className="mx-auto max-w-3xl p-8">
+        <DataTransfer />
+      </div>,
+    );
+  },
+  wipe: async () => {
+    await deleteAllLocalData();
+  },
 };

@@ -23,6 +23,9 @@ import { AnswerPanel } from './AnswerPanel';
 import { CompactLive } from './CompactLive';
 import { ChatBox } from './ChatBox';
 import { TopBar } from './TopBar';
+import { isOnline, subscribeOnline } from '@/core/net/online';
+import { SignInAgainDialog } from './SignInAgainDialog';
+import { useAutoAnswer } from './useAutoAnswer';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
 
 /** Props for LiveAnswers. */
@@ -35,6 +38,8 @@ export interface LiveAnswersProps {
   lessons?: readonly string[];
   /** The live transcript. */
   transcript: Transcript;
+  /** Turns auto-answer on or off for this call, overriding the saved setting (the harness). */
+  autoAnswer?: boolean;
   /** When this call connected (Unix ms). */
   callStartedAt: number;
   /** True while End waits for the last line. */
@@ -83,7 +88,18 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
   const entry = answers.index >= 0 ? (answers.entries[answers.index] ?? null) : null;
   const answering = answers.entries.some((candidate) => candidate.status === 'streaming');
+  // Auto-answer (beta, off by default): answers a finished question from Them by itself.
+  useAutoAnswer({
+    transcript: props.transcript,
+    streaming: answering,
+    autoAnswer: answers.autoAnswer,
+    ...(props.autoAnswer !== undefined ? { enabled: props.autoAnswer } : {}),
+  });
   const [compactNotice, setCompactNotice] = useState<string | null>(null);
+  // Day 6 Stage 4e: no connection pauses answers (banner); a signed-out answer offers to sign
+  // in again in a dialog, so the call is never left.
+  const online = useSyncExternalStore(subscribeOnline, isOnline, () => true);
+  const [signInOpen, setSignInOpen] = useState(false);
   const lines = useSyncExternalStore(
     props.transcript.subscribe,
     props.transcript.lines,
@@ -205,6 +221,20 @@ export function LiveAnswers(props: LiveAnswersProps) {
           app&rsquo;s shortcut, or use the buttons.
         </p>
       )}
+      {!online && (
+        <div
+          role="alert"
+          className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
+        >
+          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-warning">
+            No connection
+          </p>
+          <p className="mt-1">
+            Answers are paused until the connection is back. The transcript keeps going on this
+            computer.
+          </p>
+        </div>
+      )}
       {chatOpen && <ChatBox onSend={answers.chat} onAskScreen={answers.screenshot} />}
       <AnswerPanel
         entry={entry}
@@ -216,8 +246,14 @@ export function LiveAnswers(props: LiveAnswersProps) {
         onNext={answers.next}
         onCancel={answers.clear}
         onRate={answers.rate}
+        onSignInAgain={() => setSignInOpen(true)}
         onNote={answers.saveNote}
         copy={props.copy}
+      />
+      <SignInAgainDialog
+        open={signInOpen}
+        onClose={() => setSignInOpen(false)}
+        onSignedIn={() => setSignInOpen(false)}
       />
       {answers.saveFailed && (
         <p

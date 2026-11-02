@@ -4,7 +4,8 @@
  * with the session cookie forwarded; 400 for a bad body, too many lines, too many characters
  * and unknown fields, without echoing content; a valid call goes to the smart model as one
  * structured request with the cached notes rules and session block, and the JSON notes come
- * back with question ratings taken from the request (never from the model) and the counts
+ * back with question ratings taken from the request (never from the model; linked by answer id,
+ * each answer rating at most one question) and the counts
  * capped (6 summary bullets, 3 lessons); a Claude failure is 502 with a safe message (503
  * claude_unavailable with the fixed message for the usage limit); logs hold
  * sizes, counts, times and token counts, never transcript, answer, note or notes text.
@@ -87,9 +88,10 @@ function modelReply() {
   const notes = {
     summary: ['SECRET-S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'],
     questions: [
-      { question: 'SECRET cost?', at: 10, answered: 'yes', answeredAt: 12 },
-      { question: 'Renewal?', at: 25, answered: 'partly', answeredAt: 99 },
-      { question: 'Training?', at: 40, answered: 'no', answeredAt: null },
+      { question: 'SECRET cost?', at: 10, answered: 'yes', answerId: 'A1' },
+      { question: 'Renewal?', at: 25, answered: 'partly', answerId: 'A9' },
+      { question: 'Training?', at: 40, answered: 'no', answerId: null },
+      { question: 'Follow-up?', at: 50, answered: 'yes', answerId: 'A1' },
     ],
     nextSteps: [{ step: 'Send the price list', owner: 'You' }],
     unclear: [{ from: 60, to: 90, reason: 'garbled' }],
@@ -170,8 +172,15 @@ describe('POST /api/notes', () => {
     const body = (await response.json()) as NotesResponse;
     expect(body.notes.summary).toHaveLength(6);
     expect(body.notes.lessons).toHaveLength(3);
-    // 12 → the down-rated answer; 99 is not an answer time (made up) → no rating; null → none.
-    expect(body.notes.questions.map((q) => q.rating)).toEqual(['down', null, null]);
+    // A1 → the down-rated answer; A9 is not an answer id (made up) → no rating and "no";
+    // null → none; A1 again (already used for the first question) → no rating and "no", so one
+    // answer's rating is never copied onto a follow-up the user answered (Day 6 Stage 4b).
+    expect(body.notes.questions.map((q) => q.rating)).toEqual(['down', null, null, null]);
+    expect(body.notes.questions.map((q) => q.answered)).toEqual(['yes', 'no', 'no', 'no']);
+    // Each answer is labelled with its id in the prompt.
+    const sent = JSON.stringify(createMock.mock.calls[0]![0]);
+    expect(sent).toContain('id=\\"A1\\"');
+    expect(sent).toContain('id=\\"A2\\"');
     expect(body.usage.input_tokens).toBe(2_000);
 
     const [params, options] = createMock.mock.calls[0]!;
@@ -180,7 +189,9 @@ describe('POST /api/notes', () => {
     expect(params.output_config.format.type).toBe('json_schema');
     expect(params.system).toHaveLength(2);
     for (const block of params.system) expect(block.cache_control).toEqual({ type: 'ephemeral' });
-    expect(params.system[0].text).toContain('too unclear to follow');
+    expect(params.system[0].text).toContain('could not be understood');
+    // Silence is not unclear (Day 6 Stage 4b).
+    expect(params.system[0].text).toContain('Silence, or a gap where nobody spoke, is not unclear');
     expect(params.messages[0].content).toContain('[00:10] Them: SECRET-LINE what does it cost');
     expect(params.messages[0].content).toContain("User's note: SECRET-NOTE monthly too");
     expect(options.timeout).toBeGreaterThan(60_000);

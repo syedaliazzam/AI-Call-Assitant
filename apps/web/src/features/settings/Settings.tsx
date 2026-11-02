@@ -3,7 +3,8 @@
  * Purpose: The Settings page: default preferences for new sessions, the hotkey list
  *          (read-only; the shortcuts themselves arrive on Day 4), the screen-share protection
  *          switch (Day 5), "What Kite has learned" (Day 5 Stage 7: LearnedLessons.tsx), and
- *          "Delete all local data" (asks first, then shows what was deleted).
+ *          "Export my data" and "Import data" (Day 6, DataTransfer.tsx), and "Delete all local
+ *          data" (asks first, then shows what was deleted).
  * Used by: app/(app)/settings/page.tsx
  * Depends on: src/core/storage (settings, wipe), src/platform (share protection),
  *             src/ui (Button, Dialog, Select, Textarea,
@@ -35,6 +36,8 @@ import { Select } from '@/ui/Select';
 import { Textarea } from '@/ui/Textarea';
 import { PageShell } from '@/ui/PageShell';
 import { Toggle } from '@/ui/Toggle';
+import { AutoAnswerSetting } from './AutoAnswerSetting';
+import { DataTransfer } from './DataTransfer';
 import { LearnedLessons } from './LearnedLessons';
 
 /**
@@ -279,12 +282,17 @@ export function Settings() {
         <ShareProtectionSetting />
       </Section>
 
+      <Section title="Answers">
+        <AutoAnswerSetting />
+      </Section>
+
       <Section title="What Kite has learned">
         {/* Remounted after "Delete all local data", so the list shows the empty store. */}
         <LearnedLessons key={deleted ? 'wiped' : 'kept'} />
       </Section>
 
       <Section title="Local data">
+        <DataTransfer />
         <p className="mb-4 text-sm text-ui-muted">
           Deletes every session, document, transcript, answer and learned lesson saved by Kite on
           this computer, and these settings. The speech model stays (it holds no personal data and

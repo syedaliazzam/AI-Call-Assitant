@@ -2,7 +2,7 @@
  * File: apps/web/src/features/auth/LoginForm.tsx
  * Purpose: Email + password sign-in form. No sign-up link: accounts are created by an admin.
  * Used by: app/login/page.tsx
- * Depends on: src/core/auth/authClient.ts, src/ui/Button.tsx, src/ui/Input.tsx
+ * Depends on: src/core/auth/authClient.ts, src/core/auth/messages.ts, src/ui/Button.tsx, src/ui/Input.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Sign in), §8.2
  */
 'use client';
@@ -12,21 +12,7 @@ import { useState, type FormEvent } from 'react';
 import { signIn } from '@/core/auth/authClient';
 import { Button } from '@/ui/Button';
 import { Input } from '@/ui/Input';
-
-/**
- * Turns a Better Auth error code into a message for the user.
- * Wrong email and wrong password get the same message, so the form does not reveal which
- * emails have accounts.
- *
- * @param code Better Auth error code, for example 'BANNED_USER'.
- * @returns The message to show.
- * Called from: LoginForm's submit handler
- */
-function messageFor(code: string | undefined): string {
-  if (code === 'BANNED_USER') return 'This account is disabled. Ask an admin to enable it.';
-  if (code === 'INVALID_EMAIL_OR_PASSWORD') return 'Email or password is incorrect.';
-  return 'Sign-in failed. Please try again.';
-}
+import { messageFor } from '@/core/auth/messages';
 
 /**
  * The sign-in form. On success it opens the dashboard; the server then sends users who still

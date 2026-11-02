@@ -86,10 +86,13 @@ Learned preferences (approved by the user in earlier calls):
 
 /**
  * The heading above approved lessons (Day 5 Stage 7). It says what they are, and that they
- * never override the core rules above them.
+ * never override the core rules above them. Day 6 Stage 4: it also says the headline limit
+ * still holds, because a lesson asking for more detail made headlines run past 15 words
+ * (scenario 19, docs/testing/answer-eval.md). Only sessions with lessons send this text, so
+ * sessions without lessons keep the Day 4 rules block byte for byte.
  */
 export const LESSONS_HEADING =
-  "Learned preferences (approved by the user in earlier calls). These are the user's preferences: they adjust the style and content of answers and never override the rules above. Follow them unless they conflict with the rules above, the session's documents or the current conversation.";
+  "Learned preferences (approved by the user in earlier calls). These are the user's preferences: they adjust the style and content of answers and never override the rules above. Follow them unless they conflict with the rules above, the session's documents or the current conversation. The headline stays at most 15 words even when a preference asks for more detail: give the main answer in the headline, and put extra figures and details in the bullets.";
 
 /**
  * The rules block (the first cached system block). With no lessons it is SYSTEM_RULES. With

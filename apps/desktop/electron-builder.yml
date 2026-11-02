@@ -1,0 +1,103 @@
+# File: apps/desktop/electron-builder.yml
+# Purpose: How the Windows installer is built (Day 6 Stage 3): electron-builder, NSIS, per-user
+#          (no admin rights), "Kite" by "Paramount Intelligence", the company icons, and a clean
+#          uninstall that asks whether to keep the user's local Kite data.
+# Used by: the "dist:win" script in apps/desktop/package.json
+# Architecture: docs/architecture/kite-architecture-v3.1.md §10 (installation); ADR-0028
+appId: co.paramountintelligence.kite
+# The installed app's name: also its data folder, %APPDATA%\Kite (development runs keep theirs).
+productName: Kite
+copyright: Copyright © 2026 Paramount Intelligence
+directories:
+  # Icons and the NSIS include live in build/; installers are written to release/ (git-ignored).
+  buildResources: build
+  output: release
+# Only the bundled main and preload (esbuild puts @kite/shared inside them) and package.json.
+files:
+  - dist/**
+  - package.json
+extraMetadata:
+  # The installed folder (%LOCALAPPDATA%Programskite) comes from the package name; the
+  # workspace name "@kite/desktop" would give "@kitedesktop".
+  name: kite
+  # Packaged apps start from the bundled main process.
+  main: dist/main.js
+# The app needs no native Node modules, so nothing is rebuilt for Electron.
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: x64
+  icon: build/icon.ico
+  # The publisher Windows shows comes from package.json "author" (Paramount Intelligence).
+nsis:
+  # One-click, per-user install into %LOCALAPPDATA%\Programs\Kite: no admin prompt.
+  oneClick: true
+  perMachine: false
+  createStartMenuShortcut: true
+  createDesktopShortcut: false
+  shortcutName: Kite
+  uninstallDisplayName: Kite
+  artifactName: Kite-Setup-${version}.exe
+  # The "keep my local data?" question at uninstall (build/installer.nsh).
+  include: build/installer.nsh
+# Where installed apps look for updates (ADR-0028): the public releases-only repository. Only
+# installers, latest.yml and blockmaps are published there (with gh, by the developer); the app
+# needs no token. Move to a company organisation is a decision for the lead.
+publish:
+  provider: github
+  owner: Zainpak123
+  repo: kite-releases
+  releaseType: release
+
+# macOS (Day 6 Stage 6, readiness only: no Mac to test on). Unsigned until the lead decides on an
+# Apple Developer account; testers open it with Privacy & Security → Open Anyway
+# (docs/testing/macos-checklist.md).
+mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  # Placeholder: scaled up from the 304 px logo until the designer's vector arrives (Day 6 list).
+  icon: build/icon-1024.png
+  category: public.app-category.business
+  # Unsigned build: no signing identity is looked for.
+  identity: null
+  # Ready for signing later: the hardened runtime needs these entitlements (build/entitlements.mac.plist).
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    # The text macOS shows when Kite asks for the microphone.
+    NSMicrophoneUsageDescription: Kite listens to your side of the call to write the live transcript. The audio stays on this Mac.
+    # The text macOS shows when Kite asks to record the other side of the call (system audio).
+    NSAudioCaptureUsageDescription: Kite records the other side of the call (system audio) to write the live transcript. The audio stays on this Mac.
+dmg:
+  artifactName: Kite-${version}-${arch}.dmg
+
+# Microsoft Store package (MSIX/AppX), POST-V1 (developer decision, 2 Nov): kept, not used for v1.
+# Investigated 2 Nov as the no-purchase alternative to code
+# signing: the Store signs the package with Microsoft's certificate, which Smart App Control
+# trusts). Build with "pnpm dist:store". The identity values below are placeholders until
+# Partner Center reserves the name: copy Package/Identity/Name, Package/Identity/Publisher and
+# the publisher display name from Product management → Product identity
+# (docs/deploy/microsoft-store.md).
+appx:
+  identityName: ParamountIntelligence.Kite
+  publisher: CN=00000000-0000-0000-0000-000000000000
+  publisherDisplayName: Paramount Intelligence
+  applicationId: Kite
+  displayName: Kite
+  backgroundColor: '#0B1630'
+  languages:
+    - en-US
+  # runFullTrust: a desktop (Win32) app; microphone: lists Kite in Windows' microphone privacy
+  # settings; internetClient: Kite opens the deployed web app.
+  capabilities:
+    - runFullTrust
+    - internetClient
+    - microphone
+  # The Store updates the app; the app's own updater is off in Store builds (src/main.ts).
+  electronUpdaterAware: false
+  artifactName: Kite-${version}.${ext}

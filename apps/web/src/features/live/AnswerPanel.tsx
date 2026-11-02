@@ -41,6 +41,8 @@ export interface AnswerPanelProps {
   onCancel: () => void;
   /** Rates an answer. */
   onRate: (id: string, rating: AnswerRating) => void;
+  /** Opens the in-call sign-in (after a "Signed out" failure, Day 6 Stage 4e). */
+  onSignInAgain?: () => void;
   /** Saves an answer's note. */
   onNote: (id: string, note: string) => void;
   /** Puts text on the clipboard (resolves when done). */
@@ -202,6 +204,10 @@ export function AnswerPanel(props: AnswerPanelProps) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted">
           Answer
+          {/* Kite answered by itself (auto-answer beta, Day 6 Stage 4f). */}
+          {entry.auto ? (
+            <span className="ml-2 border border-ui-primary px-1 text-ui-primary">Auto</span>
+          ) : null}
           {entry.timeline ? (
             <>
               {' · '}
@@ -254,8 +260,9 @@ export function AnswerPanel(props: AnswerPanelProps) {
             className="mb-3 max-h-24 border border-ui-border"
           />
         )}
-        {/* No placeholder headline when Claude was unavailable: the message says it all. */}
-        {!(entry.unavailable && !headline) && (
+        {/* No placeholder headline when Claude was unavailable or the answer has a problem box:
+            the message says it all. */}
+        {!((entry.unavailable || entry.problem) && !headline) && (
           <h2
             aria-label="Answer headline"
             className="text-[17px] font-bold leading-snug text-ui-heading"
@@ -287,10 +294,29 @@ export function AnswerPanel(props: AnswerPanelProps) {
             <p className="mt-1 text-[14px] text-ui-text">{entry.error}</p>
           </div>
         )}
+
+        {entry.problem && (
+          // A failure the user can act on (Day 6 Stage 4e): signed out (sign in again here,
+          // without leaving the call) or no connection. Same box as "Claude unavailable".
+          <div
+            role="alert"
+            className="mt-3 border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2"
+          >
+            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-warning">
+              {entry.problem === 'signed-out' ? 'Signed out' : 'No connection'}
+            </p>
+            <p className="mt-1 text-[14px] text-ui-text">{entry.error}</p>
+            {entry.problem === 'signed-out' && props.onSignInAgain && (
+              <Button className="mt-2" variant="secondary" onClick={props.onSignInAgain}>
+                Sign in again
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-ui-muted">
-        {entry.status !== 'done' && !entry.unavailable && (
+        {entry.status !== 'done' && !entry.unavailable && !entry.problem && (
           <span role={entry.status === 'error' ? 'alert' : 'status'}>
             {entry.status === 'error' && entry.error ? entry.error : STATUS_TEXT[entry.status]}
           </span>

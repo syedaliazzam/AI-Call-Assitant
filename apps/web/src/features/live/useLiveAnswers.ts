@@ -23,7 +23,8 @@ import { createAnswerRunner, type AnswerTimeline } from '@/core/answer/answerCli
 import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/context';
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { warmSession } from '@/core/answer/warm';
-import { answerFailureText } from '@/core/answer/unavailable';
+import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
+import { isOnline } from '@/core/net/online';
 import { prepareScreenshot } from '@/core/screenshot/prepare';
 import { listAnswers, rateAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
 import type { AnswerRating, Session, StoredAnswer, StoredDocument } from '@/core/storage/types';
@@ -57,6 +58,8 @@ export interface AnswerEntry {
   id: string;
   /** 'answer' (from the transcript), 'chat' (typed) or 'screenshot' (Day 5). */
   mode: 'answer' | 'chat' | 'screenshot';
+  /** True when Kite answered by itself (auto-answer, Day 6 Stage 4f); shown as "Auto". */
+  auto?: boolean;
   /**
    * The screenshot a screenshot answer was made from, as a JPEG data URL, for the thumbnail.
    * In memory only: never saved (toStored() leaves it out) and never logged.
@@ -74,6 +77,8 @@ export interface AnswerEntry {
   error?: string;
   /** True when it failed because Claude is unavailable for everyone (usage limit or overload). */
   unavailable?: boolean;
+  /** A failure the user can act on: signed out, or no connection (Day 6 Stage 4e). */
+  problem?: AnswerProblem;
   /** When the user asked (Unix ms). */
   askedAt: number;
   /** The model tier used. */
@@ -172,6 +177,8 @@ export interface LiveAnswers {
   notice: string | null;
   /** Answers the latest question from the transcript. */
   answer: () => void;
+  /** Answers the latest question by itself (auto-answer, Day 6 Stage 4f; marked "Auto"). */
+  autoAnswer: () => void;
   /** Answers a typed question. */
   chat: (question: string) => void;
   /** Cancels a streaming answer; otherwise hides the answer shown. */
@@ -278,10 +285,22 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
    * @param image      The prepared screenshot (mode 'screenshot').
    * @param pressedAt  When the user pressed the key (default now; a screenshot passes the time
    *                   before it was taken, so the capture counts in the timings).
+   * @param auto       True when Kite answers by itself (auto-answer); the entry is marked "Auto".
    */
   const ask = useCallback(
-    (mode: AnswerEntry['mode'], typed?: string, image?: string, pressedAt?: number) => {
+    (
+      mode: AnswerEntry['mode'],
+      typed?: string,
+      image?: string,
+      pressedAt?: number,
+      auto = false,
+    ) => {
       const keyPressAt = pressedAt ?? performance.now();
+      // Offline: answers are paused (the banner says so); the transcript keeps going.
+      if (!isOnline()) {
+        setNotice(OFFLINE_TEXT);
+        return;
+      }
       const lines = transcript.lines();
       if (mode === 'answer' && !lines.some((line) => line.speaker === 'them')) {
         setNotice('Nothing from the other person yet. Type a question in Chat instead.');
@@ -306,6 +325,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       const entry: AnswerEntry = {
         id: crypto.randomUUID(),
         mode,
+        ...(auto ? { auto: true } : {}),
         question:
           built.request.question ?? (mode === 'screenshot' ? DEFAULT_SCREENSHOT_QUESTION : ''),
         ...(image ? { thumbnail: image } : {}),
@@ -356,7 +376,12 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         },
         onError: (failure) => {
           const shown = answerFailureText(failure);
-          update(entry.id, { status: 'error', error: shown.text, unavailable: shown.unavailable });
+          update(entry.id, {
+            status: 'error',
+            error: shown.text,
+            unavailable: shown.unavailable,
+            ...(shown.problem ? { problem: shown.problem } : {}),
+          });
           console.warn('answer: failed', {
             sessionId: session.id,
             answerId: entry.id,
@@ -449,6 +474,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     index,
     notice,
     answer: useCallback(() => ask('answer'), [ask]),
+    autoAnswer: useCallback(() => ask('answer', undefined, undefined, undefined, true), [ask]),
     chat: useCallback((question: string) => ask('chat', question), [ask]),
     clear,
     prev,

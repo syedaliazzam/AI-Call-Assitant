@@ -28,3 +28,6 @@ export const SET_PROTECTION_CHANNEL = 'kite:set-protection';
 
 /** The page reads screen-share protection (invoke; answers the state). */
 export const GET_PROTECTION_CHANNEL = 'kite:get-protection';
+
+/** The page says whether a live call is going on (send; a boolean). Updates wait for it. */
+export const CALL_ACTIVE_CHANNEL = 'kite:call-active';

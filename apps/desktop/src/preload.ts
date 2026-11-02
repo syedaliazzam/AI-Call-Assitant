@@ -2,7 +2,8 @@
  * File: apps/desktop/src/preload.ts
  * Purpose: Runs inside the Kite window before the page and exposes exactly one object to it:
  *          window.kiteDesktop = { version, os, setHotkeysEnabled, onHotkey, captureScreenshot,
- *          openCompactView, closeCompactView, setShareProtection, getShareProtection } (frozen). Nothing
+ *          openCompactView, closeCompactView, setShareProtection, getShareProtection,
+ *          setCallActive } (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
  * Depends on: electron (contextBridge, ipcRenderer); @kite/shared (KiteDesktopApi,
@@ -21,6 +22,7 @@ import {
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import {
   CAPTURE_SCREENSHOT_CHANNEL,
+  CALL_ACTIVE_CHANNEL,
   CLOSE_COMPACT_CHANNEL,
   GET_PROTECTION_CHANNEL,
   HOTKEY_CHANNEL,
@@ -98,6 +100,8 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
     ipcRenderer.invoke(OPEN_COMPACT_CHANNEL, String(sessionId)),
   closeCompactView: () => ipcRenderer.invoke(CLOSE_COMPACT_CHANNEL),
   setShareProtection: (on: boolean) => ipcRenderer.invoke(SET_PROTECTION_CHANNEL, on === true),
+  // Day 6: a live call is going on (or not); only a boolean crosses.
+  setCallActive: (active: boolean) => ipcRenderer.send(CALL_ACTIVE_CHANNEL, active === true),
   getShareProtection: () => ipcRenderer.invoke(GET_PROTECTION_CHANNEL),
 });
 

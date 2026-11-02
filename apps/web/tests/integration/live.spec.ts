@@ -90,6 +90,12 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
     void (async () => {
       if (req.method === 'POST' && req.url === '/api/answer') {
         const request = JSON.parse(await bodyOf(req)) as AnswerRequest;
+        if (request.question === 'SIGNEDOUT') {
+          // The server's reply when the sign-in has expired (app/api/answer/route.ts).
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ code: 'unauthorized', message: 'Sign in required' }));
+          return;
+        }
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
         const event = (name: string, data: unknown) =>
           res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -393,4 +399,116 @@ test('compact view (desktop window and PiP): headline first, details on expand, 
   await expect(unavailable.page.getByRole('alert')).toContainText('usage limit');
   await shot(unavailable, size, 'compact-unavailable');
   await unavailable.context.close();
+});
+
+test('auto-answer: answers a finished question by itself, at most once per 15 s', async () => {
+  test.setTimeout(60_000);
+  const size: Width = { width: 1440, height: 900, touch: false };
+  const watched = await open('auto', size);
+  const { page } = watched;
+  // Count the real answers sent (warm-ups excluded).
+  let answers = 0;
+  page.on('request', (request) => {
+    if (request.url().endsWith('/api/answer') && !request.postData()?.includes('"mode":"warm"')) {
+      answers += 1;
+    }
+  });
+  const addThem = (text: string) =>
+    page.evaluate(
+      (line) => (window as unknown as { addThemLine: (t: string) => void }).addThemLine(line),
+      text,
+    );
+
+  await page.waitForTimeout(2_000);
+  expect(answers, 'no auto-answer for the opening lines').toBe(0);
+  await addThem('WHAT DOES THE ANNUAL PLAN COST FOR FORTY SEATS');
+  const panel = page.getByRole('region', { name: 'Answer' });
+  await expect(panel.getByText('Auto', { exact: true })).toBeVisible({ timeout: 5_000 });
+  expect(answers).toBe(1);
+  const firstAt = Date.now();
+
+  // A second question within 15 s is not answered by itself.
+  await addThem('HOW LONG DOES THE ROLLOUT TAKE');
+  await page.waitForTimeout(4_000);
+  expect(answers, 'rate limit: one auto-answer per 15 s').toBe(1);
+
+  // After 15 s, the still-unanswered question is answered.
+  await page.waitForTimeout(Math.max(0, 15_500 - (Date.now() - firstAt)));
+  await expect.poll(() => answers, { timeout: 3_000 }).toBe(2);
+  await shot(watched, size, 'live-auto-answer');
+  await watched.context.close();
+});
+
+/** The two widths each error state is photographed at (Day 6 Stage 4e). */
+const ERROR_SIZES: Width[] = [
+  { width: 1440, height: 900, touch: false },
+  { width: 390, height: 844, touch: true },
+];
+
+/**
+ * Removes the expected console lines of a failed answer: the app's "answer: failed" (ids and
+ * the code only) and the browser's own line for the mocked 401 response.
+ *
+ * @param watched The page's console problems.
+ * @returns Nothing.
+ */
+function dropExpectedFailures(watched: WatchedPage): void {
+  watched.problems.splice(
+    0,
+    watched.problems.length,
+    ...watched.problems.filter(
+      (line) => !line.includes('answer: failed') && !line.includes('status of 401'),
+    ),
+  );
+}
+
+test('error states: no connection pauses answers; signed out offers sign-in in place', async () => {
+  for (const size of ERROR_SIZES) {
+    const watched = await open('live', size);
+    const { page } = watched;
+    // Let the session warm-up finish first: going offline mid-request logs an expected warning.
+    await page.waitForLoadState('networkidle');
+    await watched.context.setOffline(true);
+    const banner = page.getByRole('alert').filter({ hasText: 'Answers are paused' });
+    await expect(banner).toBeVisible();
+    await shot(watched, size, 'error-offline');
+    await watched.context.setOffline(false);
+    await expect(banner).toBeHidden();
+
+    await page.getByRole('button', { name: 'Chat' }).click();
+    await page.getByLabel('Type a question').fill('SIGNEDOUT');
+    await page.getByLabel('Type a question').press('Enter');
+    const box = page.getByRole('region', { name: 'Answer' }).getByRole('alert');
+    await expect(box).toContainText('Signed out');
+    await expect(box).toContainText('stay as they are');
+    dropExpectedFailures(watched);
+    await shot(watched, size, 'error-signed-out');
+    await box.getByRole('button', { name: 'Sign in again' }).click();
+    await expect(page.getByRole('dialog', { name: 'Sign in again' })).toBeVisible();
+    await expect(page.getByLabel('Password')).toBeVisible();
+    await shot(watched, size, 'error-sign-in-again');
+    dropExpectedFailures(watched);
+    await watched.context.close();
+  }
+});
+
+test('error states: Them silent for 20 s', async () => {
+  for (const size of ERROR_SIZES) {
+    const watched = await open('live-errors', size);
+    await expect(
+      watched.page.getByRole('alert').filter({ hasText: 'Nothing heard from Them' }),
+    ).toBeVisible();
+    await shot(watched, size, 'error-them-silent');
+    await watched.context.close();
+  }
+});
+
+test('error states: microphone denied and speech model download failed', async () => {
+  for (const size of ERROR_SIZES) {
+    const watched = await open('connect-errors', size);
+    await expect(watched.page.getByRole('alert').filter({ hasText: 'microphone' })).toBeVisible();
+    await expect(watched.page.getByRole('alert').filter({ hasText: 'disk space' })).toBeVisible();
+    await shot(watched, size, 'error-connect');
+    await watched.context.close();
+  }
 });

@@ -252,6 +252,13 @@ export const browserPlatform: Platform = {
    *
    * @returns Resolves at once.
    */
+  /**
+   * Nothing to do: the browser has no updater.
+   *
+   * @param _active Ignored.
+   */
+  setCallActive(_active: boolean) {},
+
   async closeCompactView() {
     closePictureInPicture();
   },

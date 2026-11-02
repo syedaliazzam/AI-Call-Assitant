@@ -14,6 +14,7 @@
 
 import { splitAnswer } from '@/core/answer/format';
 import { formatCallTime } from '@/core/review/load';
+import { sentenceCase } from '@/core/transcript/display';
 import type {
   SessionType,
   StoredAnswer,
@@ -271,6 +272,8 @@ export function AnswersSection({ answers }: AnswersSectionProps) {
 export interface TranscriptSectionProps {
   /** The saved lines, oldest first. */
   lines: readonly StoredUtterance[];
+  /** The session's own spellings to restore in each line (displayTerms()); none by default. */
+  terms?: readonly string[];
   /** The session's "Save transcript" setting. */
   saveTranscript: boolean;
 }
@@ -282,7 +285,7 @@ export interface TranscriptSectionProps {
  * @returns The section.
  * Rendered by: SessionReview.tsx
  */
-export function TranscriptSection({ lines, saveTranscript }: TranscriptSectionProps) {
+export function TranscriptSection({ lines, saveTranscript, terms = [] }: TranscriptSectionProps) {
   return (
     <section aria-label="Transcript" className={SECTION_CLASSES}>
       <h2 className="text-[20px] text-ui-subheading">Transcript</h2>
@@ -304,7 +307,7 @@ export function TranscriptSection({ lines, saveTranscript }: TranscriptSectionPr
               >
                 {line.speaker === 'you' ? 'You' : 'Them'}
               </span>
-              <span className="text-ui-text">{line.text}</span>
+              <span className="text-ui-text">{sentenceCase(line.text, terms)}</span>
             </li>
           ))}
         </ol>
