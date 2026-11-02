@@ -9,6 +9,7 @@
  */
 'use client';
 
+import { FOCUSED_HOTKEYS, hotkeyLabel } from '@kite/shared';
 import { Button } from '@/ui/Button';
 
 /** Props for TopBar. */
@@ -72,9 +73,10 @@ export function TopBar(props: TopBarProps) {
         variant="secondary"
         onClick={props.onToggleChat}
         aria-pressed={props.chatOpen}
-        title="Type a question"
+        title={`Type a question (${hotkeyLabel(FOCUSED_HOTKEYS.chat, props.mac)})`}
       >
         Chat
+        <Hint>{hotkeyLabel(FOCUSED_HOTKEYS.chat, props.mac)}</Hint>
       </Button>
       <Button
         variant="secondary"
@@ -98,7 +100,7 @@ export function TopBar(props: TopBarProps) {
         onClick={props.onCompact}
         title="A small window that stays on top of the meeting"
       >
-        Compact view
+        Overlay
       </Button>
       <span className="flex-1" />
       <Button variant="danger" onClick={props.onEnd} disabled={props.ending}>

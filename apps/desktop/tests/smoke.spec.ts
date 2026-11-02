@@ -21,6 +21,7 @@
  *
  * The app runs with KITE_TEST_NO_EXTERNAL_OPEN=1, so this test never launches a real browser.
  */
+import { GLOBAL_HOTKEYS } from '@kite/shared';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -146,6 +147,10 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.setShareProtection,
       typeof window.kiteDesktop?.getShareProtection,
       typeof window.kiteDesktop?.setCallActive,
+      typeof window.kiteDesktop?.checkHotkeys,
+      typeof window.kiteDesktop?.setOverlayOpacity,
+      typeof window.kiteDesktop?.setOverlayCollapsed,
+      typeof window.kiteDesktop?.minimizeMainWindow,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -156,17 +161,21 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
 
   expect(bridge.keys).toEqual([
     'captureScreenshot',
+    'checkHotkeys',
     'closeCompactView',
     'getShareProtection',
+    'minimizeMainWindow',
     'onHotkey',
     'openCompactView',
     'os',
     'setCallActive',
     'setHotkeysEnabled',
+    'setOverlayCollapsed',
+    'setOverlayOpacity',
     'setShareProtection',
     'version',
   ]);
-  expect(bridge.methods).toEqual(Array(8).fill('function'));
+  expect(bridge.methods).toEqual(Array(12).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
@@ -180,13 +189,9 @@ test('hotkeys: the page turns them on and off, and a hotkey from the main proces
     window.kiteDesktop!.onHotkey!((action) => seen.push(action));
     return window.kiteDesktop!.setHotkeysEnabled!(true);
   });
-  expect(statuses.map((status) => status.action)).toEqual([
-    'answer',
-    'screenshot',
-    'clear',
-    'prev',
-    'next',
-  ]);
+  expect(statuses.map((status) => status.action)).toEqual(GLOBAL_HOTKEYS);
+  // Keys that edit text in other apps are never global.
+  expect(statuses.map((status) => status.accelerator)).not.toContain('CommandOrControl+Backspace');
   /**
    * Whether the main process holds a shortcut now.
    *
@@ -378,6 +383,53 @@ test('protection (Windows): the compact window is left out of a screen capture, 
   // Back to the default (off) and closed.
   await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));
   await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
+});
+
+test('overlay: opacity, collapse, minimises the main window and brings it back (ADR-0029)', async () => {
+  await page.evaluate(() => window.kiteDesktop!.openCompactView!('smoke-overlay'));
+  await expect
+    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length))
+    .toBe(2);
+  /**
+   * Reads the real overlay and main windows.
+   *
+   * @returns Their state.
+   */
+  const read = () =>
+    app.evaluate(({ BrowserWindow }) => {
+      const windows = BrowserWindow.getAllWindows();
+      const overlay = windows.find((w) => w.getTitle().includes('overlay') || w.isAlwaysOnTop());
+      const main = windows.find((w) => w !== overlay);
+      return {
+        opacity: overlay?.getOpacity(),
+        height: overlay?.getBounds().height,
+        minimized: main?.isMinimized(),
+        count: windows.length,
+      };
+    });
+  await page.evaluate(() => window.kiteDesktop!.setOverlayOpacity!(0.6));
+  expect((await read()).opacity).toBeCloseTo(0.6, 1);
+  // Kept readable whatever the page asks for.
+  await page.evaluate(() => window.kiteDesktop!.setOverlayOpacity!(0));
+  expect((await read()).opacity).toBeGreaterThanOrEqual(0.3);
+  await page.evaluate(() => window.kiteDesktop!.setOverlayOpacity!(1));
+
+  const open = (await read()).height ?? 0;
+  await page.evaluate(() => window.kiteDesktop!.setOverlayCollapsed!(true));
+  await expect.poll(async () => (await read()).height).toBeLessThan(open);
+  await page.evaluate(() => window.kiteDesktop!.setOverlayCollapsed!(false));
+  await expect.poll(async () => (await read()).height).toBe(open);
+
+  // Conflicts can be checked with no call on, and nothing stays registered.
+  const statuses = await page.evaluate(() => window.kiteDesktop!.checkHotkeys!());
+  expect(statuses.length).toBeGreaterThan(5);
+
+  // A call starting in the overlay minimises the main window; closing the overlay restores it.
+  await page.evaluate(() => window.kiteDesktop!.minimizeMainWindow!());
+  await expect.poll(async () => (await read()).minimized).toBe(true);
+  await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
+  await expect.poll(async () => (await read()).minimized).toBe(false);
+  expect((await read()).count).toBe(1);
 });
 
 test('window icon (Windows): the taskbar icon is the company logo mark (UI U4)', async () => {

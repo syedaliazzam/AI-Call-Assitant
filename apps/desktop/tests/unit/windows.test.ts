@@ -28,6 +28,13 @@ import {
   compactWindowOptions,
   createCompactWindows,
   installCompactWindows,
+  COMPACT_COLLAPSED_HEIGHT,
+  COMPACT_DEFAULT_SIZE,
+  COMPACT_MIN_SIZE,
+  OVERLAY_OPACITY_RANGE,
+  OVERLAY_STEP,
+  overlayMove,
+  overlayShortcut,
   restoreBounds,
 } from '../../src/windows';
 
@@ -66,6 +73,22 @@ class FakeWindow {
   loadURL = vi.fn(async () => undefined);
   setAlwaysOnTop = vi.fn();
   setContentProtection = vi.fn();
+  setOpacity = vi.fn();
+  setMinimumSize = vi.fn();
+  hide = vi.fn();
+  visible = true;
+  isVisible() {
+    return this.visible;
+  }
+  getPosition() {
+    return [this.bounds.x, this.bounds.y];
+  }
+  setPosition = vi.fn((x: number, y: number) => {
+    this.bounds = { ...this.bounds, x, y };
+  });
+  setBounds = vi.fn((bounds: { x: number; y: number; width: number; height: number }) => {
+    this.bounds = bounds;
+  });
   close = vi.fn(() => {
     this.emit('close');
     this.destroyed = true;
@@ -143,16 +166,16 @@ describe('compactUrl and restoreBounds', () => {
     // On a monitor that was unplugged.
     const gone = { x: 3000, y: 100, width: 400, height: 300 };
     expect(restoreBounds(gone, [PRIMARY], PRIMARY)).toEqual({
-      x: 1516,
-      y: 696,
-      width: 380,
-      height: 320,
+      x: PRIMARY.x + PRIMARY.width - COMPACT_DEFAULT_SIZE.width - 24,
+      y: PRIMARY.y + PRIMARY.height - COMPACT_DEFAULT_SIZE.height - 24,
+      width: COMPACT_DEFAULT_SIZE.width,
+      height: COMPACT_DEFAULT_SIZE.height,
     });
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY)).toEqual({
-      x: 1516,
-      y: 696,
-      width: 380,
-      height: 320,
+      x: PRIMARY.x + PRIMARY.width - COMPACT_DEFAULT_SIZE.width - 24,
+      y: PRIMARY.y + PRIMARY.height - COMPACT_DEFAULT_SIZE.height - 24,
+      width: COMPACT_DEFAULT_SIZE.width,
+      height: COMPACT_DEFAULT_SIZE.height,
     });
   });
 
@@ -303,5 +326,59 @@ describe('store', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('the overlay window (ADR-0029)', () => {
+  it('shows or hides without taking focus, and moves by the shortcut steps', () => {
+    const { compact } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    overlayShortcut(compact, 'overlay-toggle');
+    expect(window.hide).toHaveBeenCalledTimes(1);
+    window.visible = false;
+    window.showInactive.mockClear();
+    overlayShortcut(compact, 'overlay-toggle');
+    expect(window.showInactive).toHaveBeenCalledTimes(1);
+    const start = { ...window.bounds };
+    overlayShortcut(compact, 'overlay-right');
+    expect(window.bounds.x).toBe(start.x + OVERLAY_STEP.small);
+    overlayShortcut(compact, 'overlay-up-big');
+    expect(window.bounds.y).toBe(start.y - OVERLAY_STEP.big);
+    expect(overlayMove('answer')).toBeNull();
+  });
+
+  it('keeps the opacity readable, whatever is asked', () => {
+    const { compact } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    compact.setOpacity(0.6);
+    expect(window.setOpacity).toHaveBeenLastCalledWith(0.6);
+    compact.setOpacity(0);
+    expect(window.setOpacity).toHaveBeenLastCalledWith(OVERLAY_OPACITY_RANGE.min);
+    compact.setOpacity(9);
+    expect(window.setOpacity).toHaveBeenLastCalledWith(OVERLAY_OPACITY_RANGE.max);
+    window.setOpacity.mockClear();
+    compact.setOpacity('0.5');
+    compact.setOpacity(Number.NaN);
+    expect(window.setOpacity).not.toHaveBeenCalled();
+  });
+
+  it('collapses to the controls bar, and opens to the size it had', () => {
+    const { compact, store } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    const height = window.bounds.height;
+    compact.setCollapsed(true);
+    expect(window.bounds.height).toBe(COMPACT_COLLAPSED_HEIGHT);
+    // Saved while collapsed: the open size is what is remembered.
+    window.emit('close');
+    expect(store.read().compactBounds?.height).toBe(height);
+    compact.setCollapsed(false);
+    expect(window.bounds.height).toBe(height);
+    expect(window.setMinimumSize).toHaveBeenLastCalledWith(
+      COMPACT_MIN_SIZE.width,
+      COMPACT_MIN_SIZE.height,
+    );
   });
 });

@@ -190,10 +190,35 @@ function ConnectView() {
 
 /** The compact view's state: a live line and answer. */
 const COMPACT_STATE: CompactState = {
-  line: { speaker: 'them', text: 'SO WHAT WOULD THE PROFESSIONAL PLAN COST FOR FORTY SEATS' },
+  audio: { you: true, them: true },
+  chips: [
+    { id: 'l1:0', speaker: 'them', text: 'So what would' },
+    { id: 'l1:1', speaker: 'them', text: 'the Professional plan' },
+    { id: 'l1:2', speaker: 'them', text: 'cost for forty' },
+    { id: 'l1:3', speaker: 'them', text: 'seats' },
+  ],
+  lines: [
+    { id: 'l0', speaker: 'you', text: 'Thanks for joining', final: true },
+    {
+      id: 'l1',
+      speaker: 'them',
+      text: 'So what would the Professional plan cost for forty seats',
+      final: true,
+    },
+  ],
+  index: 1,
+  total: 2,
   answer: {
+    id: 'a2',
+    question: 'What would the Professional plan cost for forty seats?',
     headline: 'Forty seats cost 2,080 dollars a month.',
     bullets: ['52 dollars per seat on Professional', 'Billed yearly'],
+    tip: 'I can also send the annual comparison after this call.',
+    note: 'The discount for two years is not in your documents: check with finance.',
+    askedAt: Date.now(),
+    rating: 'up',
+    reported: false,
+    auto: false,
     status: 'done',
     mode: 'answer',
     error: null,
@@ -209,8 +234,16 @@ const COMPACT_STATE: CompactState = {
 const UNAVAILABLE_STATE: CompactState = {
   ...COMPACT_STATE,
   answer: {
+    id: 'a3',
+    question: '',
     headline: '',
     bullets: [],
+    tip: '',
+    note: '',
+    askedAt: Date.now(),
+    rating: null,
+    reported: false,
+    auto: false,
     status: 'error',
     mode: 'answer',
     error: CLAUDE_UNAVAILABLE_MESSAGES.usageLimit,
@@ -238,6 +271,8 @@ if (view === 'connect' || view === 'connect-errors') {
       protection={{ supported: true, on: true }}
       onCommand={() => undefined}
       onProtection={() => undefined}
+      chatOpen={false}
+      onChatOpen={() => undefined}
     />,
   );
 } else {

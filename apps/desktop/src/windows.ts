@@ -1,10 +1,12 @@
 /**
  * File: apps/desktop/src/windows.ts
- * Purpose: The compact live window (architecture §7.3): frameless, always on top, resizable,
- *          shown without taking focus from the meeting (showInactive), at its last position and
- *          size; loads /compact/[id] from the Kite origin only; screen-share
+ * Purpose: The overlay, the compact live window (architecture §7.3; ADR-0029): frameless, always
+ *          on top, resizable, shown without taking focus from the meeting (showInactive), at its
+ *          last position and size; loads /compact/[id] from the Kite origin only; screen-share
  *          protection applied (protection.ts). Opened and closed by the Kite page over IPC
- *          (`kite:open-compact`, `kite:close-compact`), and closed with the main window.
+ *          (`kite:open-compact`, `kite:close-compact`), and closed with the main window. The page
+ *          sets its opacity and collapses it; global shortcuts show, hide and move it. Closing
+ *          it brings back the main window, which a call may have minimised.
  * Used by: src/main.ts
  * Depends on: electron (BrowserWindow, Screen, IpcMain types), src/security.ts
  *             (secureWebPreferences), src/protection.ts, src/store.ts, src/channels.ts,
@@ -23,14 +25,33 @@ import type {
   Rectangle,
   Screen,
 } from 'electron';
-import { CLOSE_COMPACT_CHANNEL, OPEN_COMPACT_CHANNEL } from './channels';
+import type { GlobalHotkey } from '@kite/shared';
+import {
+  CLOSE_COMPACT_CHANNEL,
+  MINIMIZE_MAIN_CHANNEL,
+  OPEN_COMPACT_CHANNEL,
+  OVERLAY_COLLAPSE_CHANNEL,
+  OVERLAY_OPACITY_CHANNEL,
+} from './channels';
 import { isKiteSender } from './hotkeys';
 import type { Protection } from './protection';
 import { secureWebPreferences } from './security';
 import type { Bounds, ShellStore } from './store';
 
-/** The compact window's default size, in DIPs. */
-export const COMPACT_DEFAULT_SIZE = { width: 380, height: 320 };
+/** The overlay's default size, in DIPs: three bars with readable 16–18 px text. */
+export const COMPACT_DEFAULT_SIZE = { width: 720, height: 520 };
+
+/** The overlay's smallest size, in DIPs. */
+export const COMPACT_MIN_SIZE = { width: 460, height: 260 };
+
+/** The overlay's height when collapsed to its controls bar, in DIPs. */
+export const COMPACT_COLLAPSED_HEIGHT = 60;
+
+/** The overlay's opacity range: below this the text is no longer readable. */
+export const OVERLAY_OPACITY_RANGE = { min: 0.35, max: 1 };
+
+/** How far a move shortcut moves the overlay, in DIPs (with Shift: the big step). */
+export const OVERLAY_STEP = { small: 20, big: 100 };
 
 /** Distance from the screen edge when the window is placed by default, in DIPs. */
 const EDGE_MARGIN = 24;
@@ -103,16 +124,17 @@ export function compactWindowOptions(
 ): BrowserWindowConstructorOptions {
   return {
     ...bounds,
-    minWidth: 280,
-    minHeight: 180,
-    title: 'Kite (compact)',
+    minWidth: COMPACT_MIN_SIZE.width,
+    minHeight: COMPACT_MIN_SIZE.height,
+    title: 'Kite (overlay)',
     frame: false,
     alwaysOnTop: true,
     resizable: true,
     // Visible in the taskbar and Alt+Tab like any window (never hidden: CLAUDE.md).
     skipTaskbar: false,
     show: false,
-    backgroundColor: '#ffffff',
+    // Kite's dark navy, so opening the overlay never flashes white over the meeting.
+    backgroundColor: '#0b1630',
     webPreferences: secureWebPreferences(preloadPath, appVersion),
   };
 }
@@ -133,6 +155,8 @@ export interface CompactDeps {
   store: ShellStore;
   /** Screen-share protection. */
   protection: Protection;
+  /** Called when the overlay has closed (brings back the main window). Optional in tests. */
+  onClosed?: () => void;
 }
 
 /** The compact window. */
@@ -149,6 +173,60 @@ export interface CompactWindows {
   close(): void;
   /** The open window, or null. */
   window(): BrowserWindow | null;
+  /** Hides the overlay if it is showing; shows it again, without taking focus, if hidden. */
+  toggle(): void;
+  /**
+   * Moves the overlay.
+   *
+   * @param dx Pixels to the right (negative: left).
+   * @param dy Pixels down (negative: up).
+   */
+  move(dx: number, dy: number): void;
+  /**
+   * Sets the overlay's opacity, kept to a readable range.
+   *
+   * @param value What the page asked for.
+   */
+  setOpacity(value: unknown): void;
+  /**
+   * Collapses the overlay to its controls bar, or opens it to the size it had.
+   *
+   * @param collapsed True to collapse.
+   */
+  setCollapsed(collapsed: boolean): void;
+}
+
+/**
+ * The overlay's movement for a shortcut, or null when it is not a move.
+ *
+ * @param action The global shortcut.
+ * @returns The pixels to move by.
+ * Called from: overlayShortcut(); tests
+ */
+export function overlayMove(action: GlobalHotkey): { dx: number; dy: number } | null {
+  const match = /^overlay-(up|down|left|right)(-big)?$/.exec(action);
+  if (!match) return null;
+  const step = match[2] ? OVERLAY_STEP.big : OVERLAY_STEP.small;
+  if (match[1] === 'up') return { dx: 0, dy: -step };
+  if (match[1] === 'down') return { dx: 0, dy: step };
+  if (match[1] === 'left') return { dx: -step, dy: 0 };
+  return { dx: step, dy: 0 };
+}
+
+/**
+ * Carries out an overlay shortcut.
+ *
+ * @param compact The controller.
+ * @param action  The shortcut.
+ * Called from: start() in main.ts (installHotkeys' overlayAction); tests
+ */
+export function overlayShortcut(compact: CompactWindows, action: GlobalHotkey): void {
+  if (action === 'overlay-toggle') {
+    compact.toggle();
+    return;
+  }
+  const move = overlayMove(action);
+  if (move) compact.move(move.dx, move.dy);
 }
 
 /**
@@ -162,10 +240,17 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
   let current: BrowserWindow | null = null;
   let loadedUrl = '';
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The height to go back to when the overlay opens again; null while it is open. */
+  let heightBeforeCollapse: number | null = null;
 
-  /** Saves the window's position and size. */
+  /** Saves the window's position and size (the open size, also while collapsed). */
   const save = () => {
-    if (current && !current.isDestroyed()) deps.store.write({ compactBounds: current.getBounds() });
+    if (!current || current.isDestroyed()) return;
+    const bounds = current.getBounds();
+    deps.store.write({
+      compactBounds:
+        heightBeforeCollapse === null ? bounds : { ...bounds, height: heightBeforeCollapse },
+    });
   };
 
   return {
@@ -206,6 +291,8 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       window.on('closed', () => {
         if (saveTimer) clearTimeout(saveTimer);
         if (current === window) current = null;
+        heightBeforeCollapse = null;
+        deps.onClosed?.();
       });
       void window.loadURL(url);
       return true;
@@ -214,6 +301,37 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       if (current && !current.isDestroyed()) current.close();
     },
     window: () => (current && !current.isDestroyed() ? current : null),
+    toggle() {
+      if (!current || current.isDestroyed()) return;
+      if (current.isVisible()) current.hide();
+      else current.showInactive();
+    },
+    move(dx, dy) {
+      if (!current || current.isDestroyed()) return;
+      const [x = 0, y = 0] = current.getPosition();
+      current.setPosition(x + dx, y + dy);
+    },
+    setOpacity(value) {
+      if (!current || current.isDestroyed() || typeof value !== 'number' || Number.isNaN(value)) {
+        return;
+      }
+      const { min, max } = OVERLAY_OPACITY_RANGE;
+      current.setOpacity(Math.min(max, Math.max(min, value)));
+    },
+    setCollapsed(collapsed) {
+      if (!current || current.isDestroyed()) return;
+      const bounds = current.getBounds();
+      if (collapsed && heightBeforeCollapse === null) {
+        heightBeforeCollapse = bounds.height;
+        current.setMinimumSize(COMPACT_MIN_SIZE.width, COMPACT_COLLAPSED_HEIGHT);
+        current.setBounds({ ...bounds, height: COMPACT_COLLAPSED_HEIGHT });
+      } else if (!collapsed && heightBeforeCollapse !== null) {
+        const height = heightBeforeCollapse;
+        heightBeforeCollapse = null;
+        current.setBounds({ ...bounds, height });
+        current.setMinimumSize(COMPACT_MIN_SIZE.width, COMPACT_MIN_SIZE.height);
+      }
+    },
   };
 }
 
@@ -223,12 +341,14 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
  * @param ipcMain       Electron's ipcMain.
  * @param compact       The controller.
  * @param allowedOrigin The Kite origin.
+ * @param minimizeMain  Minimises the main window (a call starting in the overlay).
  * Called from: start() in main.ts; tests
  */
 export function installCompactWindows(
   ipcMain: Pick<IpcMain, 'handle'>,
   compact: CompactWindows,
   allowedOrigin: string,
+  minimizeMain: () => void = () => undefined,
 ): void {
   ipcMain.handle(OPEN_COMPACT_CHANNEL, (event, sessionId: unknown) => {
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can open it');
@@ -237,5 +357,18 @@ export function installCompactWindows(
   ipcMain.handle(CLOSE_COMPACT_CHANNEL, (event) => {
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can close it');
     compact.close();
+  });
+  ipcMain.handle(OVERLAY_OPACITY_CHANNEL, (event, opacity: unknown) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    compact.setOpacity(opacity);
+  });
+  ipcMain.handle(OVERLAY_COLLAPSE_CHANNEL, (event, collapsed: unknown) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    compact.setCollapsed(collapsed === true);
+  });
+  ipcMain.handle(MINIMIZE_MAIN_CHANNEL, (event) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can do this');
+    // Only with the overlay open: never leave the user with no Kite window in view.
+    if (compact.window()) minimizeMain();
   });
 }

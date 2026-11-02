@@ -140,7 +140,11 @@ describe('desktop onHotkey with the Day 4 shell', () => {
       on
         ? [
             { action: 'answer' as const, accelerator: 'CommandOrControl+Enter', registered: true },
-            { action: 'prev' as const, accelerator: 'CommandOrControl+Left', registered: false },
+            {
+              action: 'overlay-left' as const,
+              accelerator: 'CommandOrControl+Alt+Left',
+              registered: false,
+            },
           ]
         : [],
     );
@@ -157,7 +161,7 @@ describe('desktop onHotkey with the Day 4 shell', () => {
     const onTaken = vi.fn();
     const stop = platform.onHotkey(handler, onTaken);
     expect(setHotkeysEnabled).toHaveBeenCalledWith(true);
-    await vi.waitFor(() => expect(onTaken).toHaveBeenCalledWith(['Ctrl+←']));
+    await vi.waitFor(() => expect(onTaken).toHaveBeenCalledWith(['Ctrl+Alt+←']));
     forward!('answer');
     // The same key press also reaching the page counts once.
     (window as unknown as EventTarget).dispatchEvent(

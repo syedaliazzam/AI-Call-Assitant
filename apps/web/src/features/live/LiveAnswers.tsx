@@ -14,7 +14,14 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { splitAnswer } from '@/core/answer/format';
-import { openLiveChannel, type CompactState, type LiveChannel } from '@/core/live/liveChannel';
+import { getStartInOverlay } from '@/core/storage/overlayPrefs';
+import { displayTerms, sentenceCase, transcriptChips } from '@/core/transcript/display';
+import {
+  openLiveChannel,
+  type CompactAudio,
+  type CompactState,
+  type LiveChannel,
+} from '@/core/live/liveChannel';
 import type { Session, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
@@ -38,6 +45,10 @@ export interface LiveAnswersProps {
   lessons?: readonly string[];
   /** The live transcript. */
   transcript: Transcript;
+  /** Whether each side of the call is coming through (shown in the overlay). */
+  audio?: CompactAudio;
+  /** Opens the overlay when the call starts, overriding the saved setting (the harness). */
+  startInOverlay?: boolean;
   /** Turns auto-answer on or off for this call, overriding the saved setting (the harness). */
   autoAnswer?: boolean;
   /** When this call connected (Unix ms). */
@@ -65,6 +76,24 @@ const subscribeNever = () => () => {};
  * @returns True on macOS.
  */
 const isMac = () => getPlatform().hotkeyModifier() === '⌘';
+
+/**
+ * Opens the overlay for a session.
+ *
+ * @param sessionId The session.
+ * @returns Resolves when it is open.
+ * @throws What the platform throws when it cannot open one.
+ * Called from: LiveAnswers (Overlay button; a call starting in the overlay)
+ */
+function openOverlay(sessionId: string): Promise<void> {
+  return getPlatform().openCompactView(sessionId, (container) => {
+    // Browser: the overlay in the picture-in-picture window (same page, so it reaches this live
+    // view over the session channel like the desktop window does).
+    const root = createRoot(container);
+    root.render(<CompactLive sessionId={sessionId} closeOnEnd={false} />);
+    return () => root.unmount();
+  });
+}
 
 /**
  * The answer part of the live view.
@@ -105,37 +134,70 @@ export function LiveAnswers(props: LiveAnswersProps) {
     props.transcript.lines,
     props.transcript.lines,
   );
-  const last = lines.at(-1);
 
-  // What the compact view shows (Day 5): the latest line and the answer shown here.
+  // What the overlay shows (Day 5, ADR-0029): audio, the latest words and lines, and the answer
+  // shown here with its place in the history.
+  const terms = useMemo(() => displayTerms(props.session), [props.session]);
+  const audioYou = props.audio?.you ?? true;
+  const audioThem = props.audio?.them ?? true;
   const compactState = useMemo<CompactState>(() => {
     const parts = entry ? splitAnswer(entry.text) : null;
     return {
-      line: last ? { speaker: last.speaker, text: last.text } : null,
+      audio: { you: audioYou, them: audioThem },
+      chips: transcriptChips(lines, terms),
+      lines: lines.slice(-30).map((line) => ({
+        id: line.id,
+        speaker: line.speaker,
+        text: sentenceCase(line.text, terms),
+        final: line.final,
+      })),
       answer:
         entry && parts
           ? {
+              id: entry.id,
+              question: entry.question,
               headline: parts.headline,
               bullets: parts.bullets,
+              tip: parts.tip,
+              note: parts.note,
+              askedAt: entry.askedAt,
+              rating: entry.rating,
+              reported: entry.reported ?? false,
+              auto: entry.auto ?? false,
               status: entry.status,
               mode: entry.mode,
               error: entry.status === 'error' ? (entry.error ?? null) : null,
               unavailable: entry.unavailable ?? false,
             }
           : null,
+      index: answers.index,
+      total: answers.entries.length,
       answering,
       capturing: answers.capturing,
       notice: answers.notice,
       ended: false,
     };
-  }, [last, entry, answering, answers.capturing, answers.notice]);
+  }, [
+    lines,
+    terms,
+    entry,
+    answers.index,
+    answers.entries.length,
+    audioYou,
+    audioThem,
+    answering,
+    answers.capturing,
+    answers.notice,
+  ]);
   const compactStateRef = useRef(compactState);
   const channel = useRef<LiveChannel | null>(null);
 
   // The hotkeys call the latest actions (a ref, so the listener is added only once).
   const actions = useRef(answers);
+  const onEnd = useRef(props.onEnd);
   useEffect(() => {
     actions.current = answers;
+    onEnd.current = props.onEnd;
   });
   // The link to the compact view (Day 5): it sends commands; End (unmount) tells it the call
   // ended and asks the platform to close it.
@@ -147,6 +209,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'answer') actions.current.answer();
       else if (command.type === 'screenshot') actions.current.screenshot();
       else if (command.type === 'clear') actions.current.clear();
+      else if (command.type === 'prev') actions.current.prev();
+      else if (command.type === 'next') actions.current.next();
+      else if (command.type === 'rate') actions.current.rate(command.id, command.rating);
+      else if (command.type === 'report') actions.current.report(command.id, command.note);
+      else if (command.type === 'end') onEnd.current();
       else if (command.type === 'chat') actions.current.chat(command.question);
     });
     return () => {
@@ -163,11 +230,24 @@ export function LiveAnswers(props: LiveAnswersProps) {
     channel.current?.publish(compactState);
   }, [compactState]);
 
+  // "Start calls in the overlay" (Settings, default on; ADR-0029): this view mounts when the call
+  // connects, so that is when the overlay opens and the main window steps aside. A browser asks
+  // for a fresh click before it opens a picture-in-picture window, so there the user is told.
+  const startInOverlay = props.startInOverlay;
+  useEffect(() => {
+    if (!(startInOverlay ?? getStartInOverlay())) return;
+    openOverlay(props.session.id).then(
+      () => getPlatform().minimizeMainWindow(),
+      () => setCompactNotice('To follow the call in the overlay, press Overlay.'),
+    );
+  }, [props.session.id, startInOverlay]);
+
   // Mounted only during a call, so the desktop app's global shortcuts are on only then.
   useEffect(
     () =>
       getPlatform().onHotkey((action) => {
         if (action === 'answer') actions.current.answer();
+        else if (action === 'chat') setChatOpen((open) => !open);
         else if (action === 'clear') actions.current.clear();
         else if (action === 'prev') actions.current.prev();
         else if (action === 'next') actions.current.next();
@@ -191,19 +271,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
         onEnd={props.onEnd}
         onCompact={() => {
           setCompactNotice(null);
-          getPlatform()
-            .openCompactView(props.session.id, (container) => {
-              // Browser: the compact view in the picture-in-picture window (same page, so it
-              // reaches this live view over the session channel like the desktop window does).
-              const root = createRoot(container);
-              root.render(<CompactLive sessionId={props.session.id} closeOnEnd={false} />);
-              return () => root.unmount();
-            })
-            .catch((error: unknown) =>
-              setCompactNotice(
-                error instanceof Error ? error.message : 'Kite could not open the compact view.',
-              ),
-            );
+          openOverlay(props.session.id).catch((error: unknown) =>
+            setCompactNotice(
+              error instanceof Error ? error.message : 'Kite could not open the overlay.',
+            ),
+          );
         }}
       />
       {compactNotice && (

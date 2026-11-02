@@ -45,10 +45,22 @@ function fakeNetwork() {
 
 /** An invented state. */
 const STATE: CompactState = {
-  line: { speaker: 'them', text: 'WHAT DOES IT COST' },
+  audio: { you: true, them: true },
+  chips: [{ id: 'l1:0', speaker: 'them', text: 'What does it' }],
+  lines: [{ id: 'l1', speaker: 'them', text: 'What does it cost', final: true }],
+  index: 0,
+  total: 1,
   answer: {
+    id: 'a1',
+    question: 'What does it cost?',
     headline: '52 dollars per seat.',
     bullets: ['Billed yearly'],
+    tip: '',
+    note: '',
+    askedAt: 1,
+    rating: null,
+    reported: false,
+    auto: false,
     status: 'done',
     mode: 'answer',
     error: null,
@@ -106,12 +118,18 @@ describe('openLiveChannel', () => {
 
 describe('isCommand and isState', () => {
   it('accept only the known shapes', () => {
-    for (const type of ['answer', 'screenshot', 'clear', 'hello'])
+    for (const type of ['answer', 'screenshot', 'clear', 'prev', 'next', 'end', 'hello'])
       expect(isCommand({ type })).toBe(true);
+    expect(isCommand({ type: 'rate', id: 'a1', rating: 'up' })).toBe(true);
+    expect(isCommand({ type: 'rate', id: 'a1', rating: null })).toBe(true);
+    expect(isCommand({ type: 'rate', id: 'a1', rating: 'great' })).toBe(false);
+    expect(isCommand({ type: 'report', id: 'a1', note: 'Wrong price' })).toBe(true);
+    expect(isCommand({ type: 'report', id: 'a1' })).toBe(false);
+    expect(isCommand({ type: 'open-window' })).toBe(false);
     expect(isCommand({ type: 'chat', question: 'Price?' })).toBe(true);
     expect(isCommand({ type: 'chat' })).toBe(false);
     expect(isState(STATE)).toBe(true);
     expect(isState({ ...STATE, ended: 'yes' })).toBe(false);
-    expect(isState({ ...STATE, line: { speaker: 'them' } })).toBe(false);
+    expect(isState({ ...STATE, chips: 'words' })).toBe(false);
   });
 });

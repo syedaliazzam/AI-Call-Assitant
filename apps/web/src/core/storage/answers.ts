@@ -53,6 +53,24 @@ export async function rateAnswer(id: string, rating: AnswerRating): Promise<void
 }
 
 /**
+ * Reports an answer as wrong: marks it, with the note saying why (ADR-0029). Stays on this
+ * device.
+ *
+ * @param id   The answer's id.
+ * @param note What was wrong; trimmed and cut to MAX_NOTE_CHARS ('' keeps any earlier note).
+ * @throws Error('ANSWER_NOT_FOUND') when no answer has this id.
+ * Called from: useLiveAnswers.ts (Report); tests
+ */
+export async function reportAnswer(id: string, note: string): Promise<void> {
+  const clean = note.trim().slice(0, MAX_NOTE_CHARS);
+  const changed = await getDb().answers.update(id, {
+    reported: true,
+    ...(clean ? { note: clean } : {}),
+  });
+  if (changed === 0 && !(await getDb().answers.get(id))) throw new Error('ANSWER_NOT_FOUND');
+}
+
+/**
  * Sets an answer's note ("What was wrong / better answer").
  *
  * @param id   The answer's id.

@@ -1,6 +1,6 @@
 /**
  * Tests for the learned preferences in apps/web/src/server/prompt.ts (Day 5 Stage 7):
- * without lessons the rules block is byte-for-byte the Day 4 block (pinned by its SHA-256), so
+ * without lessons the rules block is byte-for-byte the current block (pinned by its SHA-256), so
  * the shared cache and the evaluation baselines stay valid; with lessons the core rules come
  * first, unchanged, then a heading saying the lessons are user preferences that never override
  * the rules above, then one bullet per lesson in the order given (at most 20, each one line of
@@ -21,8 +21,8 @@ import {
 } from '@/server/prompt';
 import { parseAnswerRequest } from '@/server/validate';
 
-/** SHA-256 of the Day 4 rules block (measured from the Day 4 source on 2026-10-31). */
-const DAY4_RULES_SHA256 = 'bd8781f8b4e8d3a767a48d57d834f74d2475fef2b5302d7d4634559e79440f4f';
+/** SHA-256 of the rules block, changed on purpose for first-person answers (ADR-0029). */
+const RULES_SHA256 = '62bf557105bf46b2fcdec04868dc8255565996b4cc4062705ff0aa03aed3183a';
 
 /** An invented request. */
 const REQUEST: AnswerRequest = {
@@ -41,8 +41,8 @@ const REQUEST: AnswerRequest = {
 };
 
 describe('rulesBlock', () => {
-  it('without lessons is byte-for-byte the Day 4 rules block', () => {
-    expect(createHash('sha256').update(SYSTEM_RULES).digest('hex')).toBe(DAY4_RULES_SHA256);
+  it('without lessons is byte-for-byte the pinned rules block', () => {
+    expect(createHash('sha256').update(SYSTEM_RULES).digest('hex')).toBe(RULES_SHA256);
     expect(rulesBlock()).toBe(SYSTEM_RULES);
     expect(rulesBlock([])).toBe(SYSTEM_RULES);
     expect(rulesBlock(['   ', '\n'])).toBe(SYSTEM_RULES);

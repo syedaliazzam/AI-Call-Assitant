@@ -26,7 +26,13 @@ import { warmSession } from '@/core/answer/warm';
 import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
 import { isOnline } from '@/core/net/online';
 import { prepareScreenshot } from '@/core/screenshot/prepare';
-import { listAnswers, rateAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
+import {
+  listAnswers,
+  rateAnswer,
+  reportAnswer,
+  saveAnswer,
+  setAnswerNote,
+} from '@/core/storage/answers';
 import type { AnswerRating, Session, StoredAnswer, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
@@ -40,6 +46,8 @@ export interface AnswerStore {
   list: (sessionId: string) => Promise<StoredAnswer[]>;
   /** Sets an answer's rating. */
   rate: (id: string, rating: AnswerRating) => Promise<void>;
+  /** Reports an answer, with what was wrong. */
+  report: (id: string, note: string) => Promise<void>;
   /** Sets an answer's note. */
   note: (id: string, note: string) => Promise<void>;
 }
@@ -49,6 +57,7 @@ const DEFAULT_STORE: AnswerStore = {
   save: saveAnswer,
   list: listAnswers,
   rate: rateAnswer,
+  report: reportAnswer,
   note: setAnswerNote,
 };
 
@@ -91,6 +100,8 @@ export interface AnswerEntry {
   rating: AnswerRating;
   /** The user's note ('' when none). */
   note: string;
+  /** True once the user has reported it (ADR-0029). */
+  reported?: boolean;
   /**
    * True for an answer saved earlier (a previous call, or before a reload): shown for review
    * and rating, but not part of this call's conversation.
@@ -117,6 +128,7 @@ function fromStored(saved: StoredAnswer): AnswerEntry {
     model: saved.model,
     rating: saved.rating ?? null,
     note: saved.note ?? '',
+    ...(saved.reported ? { reported: true } : {}),
     earlier: true,
   };
 }
@@ -142,6 +154,7 @@ function toStored(entry: AnswerEntry, sessionId: string): StoredAnswer {
     createdAt: entry.askedAt,
     rating: entry.rating,
     note: entry.note,
+    ...(entry.reported ? { reported: true } : {}),
   };
 }
 
@@ -191,6 +204,8 @@ export interface LiveAnswers {
   rate: (id: string, rating: AnswerRating) => void;
   /** Saves an answer's note. */
   saveNote: (id: string, note: string) => void;
+  /** Reports an answer, with what was wrong (ADR-0029; stays on this device). */
+  report: (id: string, note: string) => void;
   /** True when a rating or note could not be saved on this device. */
   saveFailed: boolean;
   /**
@@ -415,6 +430,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     [update],
   );
 
+  const report = useCallback(
+    (id: string, note: string) => {
+      update(id, { reported: true, ...(note.trim() ? { note: note.trim() } : {}) });
+      storeRef.current.report(id, note).catch(() => setSaveFailed(true));
+    },
+    [update],
+  );
+
   const saveNote = useCallback(
     (id: string, note: string) => {
       update(id, { note: note.trim() });
@@ -481,6 +504,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     next,
     rate,
     saveNote,
+    report,
     saveFailed,
     screenshot,
     capturing,

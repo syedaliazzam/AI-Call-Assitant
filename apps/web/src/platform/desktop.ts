@@ -187,6 +187,58 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * Whether this shell can change the overlay window (older shells cannot).
+     *
+     * @returns True when it has the controls.
+     */
+    overlayWindowControls() {
+      return typeof bridge.setOverlayOpacity === 'function';
+    },
+
+    /**
+     * Sets the overlay window's opacity (older shells ignore it).
+     *
+     * @param opacity 0–1.
+     */
+    setOverlayOpacity(opacity: number) {
+      void bridge.setOverlayOpacity?.(opacity).catch(() => undefined);
+    },
+
+    /**
+     * Collapses or opens the overlay window (older shells ignore it).
+     *
+     * @param collapsed True to collapse.
+     */
+    setOverlayCollapsed(collapsed: boolean) {
+      void bridge.setOverlayCollapsed?.(collapsed).catch(() => undefined);
+    },
+
+    /** Minimises the main window (older shells ignore it). */
+    minimizeMainWindow() {
+      void bridge.minimizeMainWindow?.().catch(() => undefined);
+    },
+
+    /**
+     * Which global shortcuts another app already uses.
+     *
+     * @returns The statuses, or null on a shell that cannot check.
+     */
+    async checkHotkeys() {
+      return bridge.checkHotkeys ? bridge.checkHotkeys() : null;
+    },
+
+    /**
+     * The in-page shortcuts on another window (the overlay).
+     *
+     * @param target  The window.
+     * @param handler Called with each action.
+     * @returns A function that stops listening.
+     */
+    listenForFocusedHotkeys(target, handler) {
+      return listenForHotkeys(target, bridge.os === 'mac', handler);
+    },
+
+    /**
      * Tells the shell whether a call is live (older shells without it ignore the call).
      *
      * @param active True while connected.

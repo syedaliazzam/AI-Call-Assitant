@@ -137,11 +137,11 @@ test('3. Connect needs no picker; Go live shows lines; a Chat answer is rated; E
 
   // The compact window (Day 5): a second Electron window with the real compact view.
   const compactOpened = app.waitForEvent('window');
-  await page.getByRole('button', { name: 'Compact view' }).click();
+  await page.getByRole('button', { name: 'Overlay' }).click();
   const compact = await compactOpened;
   await compact.waitForLoadState();
   const liveHeadline = page.getByRole('heading', { name: 'Answer headline' });
-  const compactHeadline = compact.getByRole('heading', { name: 'Compact headline' });
+  const compactHeadline = compact.getByRole('heading', { name: 'Answer line' });
   // (b) The live answer reaches the compact window over the session's BroadcastChannel.
   await expect(compactHeadline).toHaveText((await liveHeadline.textContent()) ?? '', {
     timeout: 20_000,

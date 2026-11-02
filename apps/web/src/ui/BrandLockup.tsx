@@ -6,7 +6,7 @@
  *          version, so on dark surfaces it sits on a small white tile (the decision is flagged
  *          for the developer; the company site only shows it on white).
  * Used by: src/ui/Sidebar.tsx, src/ui/AuthCard.tsx, src/features/live/LiveCallLayout.tsx,
- *          src/features/live/CompactView.tsx, src/features/dev/UiGallery.tsx
+ *          src/features/dev/UiGallery.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
  * Theme: docs/design/kite-ui-theme.md §7 (brand assets); tokens from src/ui/theme.css
@@ -41,7 +41,7 @@ export interface BrandLockupProps {
  *
  * @param props See BrandLockupProps.
  * @returns The mark and the name.
- * Rendered by: the sidebar, sign-in, the live view, the compact window, the UI gallery
+ * Rendered by: the sidebar, sign-in, the live view, the UI gallery
  */
 export function BrandLockup({ tone, size = 'md', byline = true, name = 'Kite' }: BrandLockupProps) {
   const s = SIZES[size];

@@ -108,3 +108,48 @@ export function sentenceCase(text: string, terms: readonly string[] = []): strin
     (_match, space: string, letter: string) => space + letter.toUpperCase(),
   );
 }
+
+/** Words in one transcript chip (the overlay shows the latest words as small chips). */
+export const CHIP_WORDS = 3;
+
+/** One chip of the overlay's transcript bar. */
+export interface TranscriptChip {
+  /** Stable id: the line's id and the chip's place in the line. */
+  id: string;
+  /** The words. */
+  text: string;
+  /** Who said them. */
+  speaker: Utterance['speaker'];
+}
+
+/**
+ * The latest words as chips, newest last: each line in sentence case, cut every CHIP_WORDS
+ * words. Ids stay the same as a line grows, so Clear can hide what was on screen.
+ *
+ * @param lines The visible lines, in order.
+ * @param terms Spellings to restore (displayTerms()).
+ * @param max   Most chips.
+ * @returns The chips.
+ * Called from: LiveAnswers.tsx (the overlay's state); tests
+ */
+export function transcriptChips(
+  lines: readonly Utterance[],
+  terms: readonly string[] = [],
+  max = 6,
+): TranscriptChip[] {
+  const chips: TranscriptChip[] = [];
+  for (let l = lines.length - 1; l >= 0 && chips.length < max; l -= 1) {
+    const line = lines[l]!;
+    const words = sentenceCase(line.text, terms).split(/\s+/).filter(Boolean);
+    const lineChips: TranscriptChip[] = [];
+    for (let i = 0; i < words.length; i += CHIP_WORDS) {
+      lineChips.push({
+        id: `${line.id}:${i / CHIP_WORDS}`,
+        text: words.slice(i, i + CHIP_WORDS).join(' '),
+        speaker: line.speaker,
+      });
+    }
+    chips.unshift(...lineChips);
+  }
+  return chips.slice(-max);
+}

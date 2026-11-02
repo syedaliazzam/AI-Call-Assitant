@@ -11,12 +11,13 @@ import {
   MAX_NOTE_CHARS,
   listAnswers,
   rateAnswer,
+  reportAnswer,
   saveAnswer,
   setAnswerNote,
 } from '@/core/storage/answers';
 import { createSession, deleteSession } from '@/core/storage/sessions';
 import type { StoredAnswer } from '@/core/storage/types';
-import { resetDb } from './helpers';
+import { resetDb, sessionInput } from './helpers';
 
 beforeEach(resetDb);
 
@@ -96,5 +97,32 @@ describe('answers', () => {
     await saveAnswer(answer('a2', session.id, 2_000));
     await deleteSession(session.id);
     expect(await listAnswers(session.id)).toEqual([]);
+  });
+});
+
+describe('reportAnswer (ADR-0029)', () => {
+  it('marks the answer and keeps the note; an empty note keeps the earlier one', async () => {
+    const session = await createSession(sessionInput());
+    await saveAnswer({
+      id: 'r1',
+      sessionId: session.id,
+      mode: 'answer',
+      question: 'Invented question?',
+      text: 'Invented answer.',
+      model: 'fast',
+      msFirstToken: 1,
+      msTotal: 2,
+      createdAt: 3,
+      rating: null,
+      note: '',
+    });
+    await reportAnswer('r1', '  The price was wrong.  ');
+    let [saved] = await listAnswers(session.id);
+    expect(saved?.reported).toBe(true);
+    expect(saved?.note).toBe('The price was wrong.');
+    await reportAnswer('r1', '');
+    [saved] = await listAnswers(session.id);
+    expect(saved?.note).toBe('The price was wrong.');
+    await expect(reportAnswer('missing', '')).rejects.toThrow('ANSWER_NOT_FOUND');
   });
 });

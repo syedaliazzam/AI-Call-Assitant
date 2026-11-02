@@ -1,10 +1,11 @@
 /**
  * File: apps/web/src/core/live/liveChannel.ts
- * Purpose: The link between a live call's page and its compact view (Day 5): the live page
- *          publishes what the compact view shows (the latest transcript line, the latest answer,
- *          whether it is answering or taking a screenshot, a notice, and when the call ended), and the compact view sends back what the user pressed (Answer,
- *          Screenshot, Clear, a typed question). One BroadcastChannel per session, so it works
- *          between the desktop app's two windows and with a browser picture-in-picture window.
+ * Purpose: The link between a live call's page and its overlay (the compact view; Day 5,
+ *          ADR-0029): the live page publishes what the overlay shows (audio status, the latest
+ *          words and lines, the answer shown with its place in the history, whether it is
+ *          answering or taking a screenshot, a notice, and when the call ended), and the overlay
+ *          sends back what the user pressed. One BroadcastChannel per session, so it works between
+ *          the desktop app's two windows and with a browser picture-in-picture window.
  * Used by: src/features/live/LiveAnswers.tsx (publishes, takes commands),
  *          src/features/live/CompactLive.tsx (shows, sends commands)
  * Depends on: the browser's BroadcastChannel (injectable for tests)
@@ -14,20 +15,58 @@
  * BroadcastChannel stays inside this browser profile and origin: nothing leaves the computer.
  * Messages are checked before use, and their text is never logged.
  */
-/** The latest transcript line, as the compact view shows it. */
+/** A transcript line, as the overlay shows it when the transcript is expanded. */
 export interface CompactLine {
+  /** The line's id. */
+  id: string;
   /** Who said it. */
   speaker: 'you' | 'them';
-  /** What was said. */
+  /** What was said, in sentence case. */
+  text: string;
+  /** False while the words are still changing. */
+  final: boolean;
+}
+
+/** A few of the latest words, as one chip in the overlay's transcript bar. */
+export interface CompactChip {
+  /** Stable id (Clear hides the chips on screen by their ids). */
+  id: string;
+  /** Who said them. */
+  speaker: 'you' | 'them';
+  /** The words. */
   text: string;
 }
 
-/** The latest answer, as the compact view shows it. */
+/** Whether each side of the call is coming through. */
+export interface CompactAudio {
+  /** The microphone is connected. */
+  you: boolean;
+  /** The other side's audio is connected. */
+  them: boolean;
+}
+
+/** The answer shown, as the overlay shows it. */
 export interface CompactAnswer {
-  /** The headline (first line). */
+  /** The answer's id. */
+  id: string;
+  /** The question it answers ('' when Claude was asked to answer the latest "Them" lines). */
+  question: string;
+  /** The answer line (first line). */
   headline: string;
   /** The bullets. */
   bullets: string[];
+  /** The closing tip to say, or ''. */
+  tip: string;
+  /** A private note for the user, not to be said, or ''. */
+  note: string;
+  /** When it was asked (Unix ms). */
+  askedAt: number;
+  /** The user's rating. */
+  rating: 'up' | 'down' | null;
+  /** True once the user has reported it. */
+  reported: boolean;
+  /** True when Kite answered by itself (auto-answer). */
+  auto: boolean;
   /** Streaming, finished, failed or cancelled. */
   status: 'streaming' | 'done' | 'error' | 'cancelled';
   /** How it was asked. */
@@ -41,12 +80,20 @@ export interface CompactAnswer {
   unavailable: boolean;
 }
 
-/** Everything the compact view shows. */
+/** Everything the overlay shows. */
 export interface CompactState {
-  /** The latest transcript line, or null. */
-  line: CompactLine | null;
-  /** The latest answer, or null (none yet, or cleared). */
+  /** Whether each side of the call is coming through. */
+  audio: CompactAudio;
+  /** The latest words, as chips. */
+  chips: CompactChip[];
+  /** The latest lines, oldest first (shown when the transcript is expanded). */
+  lines: CompactLine[];
+  /** The answer shown, or null (none yet, or cleared). */
   answer: CompactAnswer | null;
+  /** The answer's place in this call's history, from 0 (-1 when none is shown). */
+  index: number;
+  /** How many answers the history holds. */
+  total: number;
   /** True while an answer streams. */
   answering: boolean;
   /** True while a screenshot is being taken. */
@@ -57,13 +104,34 @@ export interface CompactState {
   ended: boolean;
 }
 
-/** A command without details: answer, take a screenshot, clear, or ask for the state. */
+/** A command without details. */
 export interface SimpleCommand {
   /**
    * 'answer': answer the latest question; 'screenshot': answer from a screenshot;
-   * 'clear': stop or clear the answer; 'hello': the compact view just opened, send the state.
+   * 'clear': stop or clear the answer; 'prev' / 'next': move through the history; 'end': end the
+   * call; 'hello': the overlay just opened, send the state.
    */
-  type: 'answer' | 'screenshot' | 'clear' | 'hello';
+  type: 'answer' | 'screenshot' | 'clear' | 'prev' | 'next' | 'end' | 'hello';
+}
+
+/** A rating from the overlay. */
+export interface RateCommand {
+  /** Command type. */
+  type: 'rate';
+  /** The answer's id. */
+  id: string;
+  /** The rating, or null to remove it. */
+  rating: 'up' | 'down' | null;
+}
+
+/** A report from the overlay. */
+export interface ReportCommand {
+  /** Command type. */
+  type: 'report';
+  /** The answer's id. */
+  id: string;
+  /** What was wrong ('' when the user wrote nothing). Never logged. */
+  note: string;
 }
 
 /** A typed question from the compact view. */
@@ -75,7 +143,7 @@ export interface ChatCommand {
 }
 
 /** What the compact view can ask the live page to do. */
-export type CompactCommand = SimpleCommand | ChatCommand;
+export type CompactCommand = SimpleCommand | ChatCommand | RateCommand | ReportCommand;
 
 /** One message on the channel. */
 type Message =
@@ -151,8 +219,27 @@ export function channelName(sessionId: string): string {
  * Called from: openLiveChannel(); tests
  */
 export function isCommand(value: unknown): value is CompactCommand {
-  const command = value as Partial<{ type: string; question: unknown }> | null;
+  const command = value as Partial<{
+    type: string;
+    question: unknown;
+    id: unknown;
+    rating: unknown;
+    note: unknown;
+  }> | null;
   if (!command || typeof command.type !== 'string') return false;
+  if (command.type === 'rate') {
+    return (
+      typeof command.id === 'string' &&
+      (command.rating === 'up' || command.rating === 'down' || command.rating === null)
+    );
+  }
+  if (command.type === 'report') {
+    return (
+      typeof command.id === 'string' &&
+      typeof command.note === 'string' &&
+      command.note.length <= 2_000
+    );
+  }
   if (command.type === 'chat') {
     return (
       typeof command.question === 'string' &&
@@ -160,7 +247,7 @@ export function isCommand(value: unknown): value is CompactCommand {
       command.question.length <= 2_000
     );
   }
-  return ['answer', 'screenshot', 'clear', 'hello'].includes(command.type);
+  return ['answer', 'screenshot', 'clear', 'prev', 'next', 'end', 'hello'].includes(command.type);
 }
 
 /**
@@ -177,7 +264,8 @@ export function isState(value: unknown): value is CompactState {
     typeof state.answering === 'boolean' &&
     typeof state.capturing === 'boolean' &&
     typeof state.ended === 'boolean' &&
-    (state.line === null || typeof state.line?.text === 'string') &&
+    Array.isArray(state.chips) &&
+    Array.isArray(state.lines) &&
     (state.answer === null || typeof state.answer?.headline === 'string')
   );
 }

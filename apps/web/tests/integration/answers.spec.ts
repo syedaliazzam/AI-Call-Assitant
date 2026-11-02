@@ -277,16 +277,17 @@ test('the compact view shows the live answer and its Answer button asks the live
   const compact = await page.context().newPage();
   await compact.goto(`${origin}/compact-harness`);
   // Nothing has been answered since the reload: the live page says so.
-  await expect(compact.getByLabel('Latest line')).toContainText('FOR FORTY SEATS');
-  await expect(compact.getByText('Visible in screen share')).toBeVisible();
+  await expect(compact.getByLabel('Latest words')).toContainText('For forty seats');
+  await expect(compact.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
   await compact.getByRole('button', { name: 'Answer', exact: true }).click();
-  await expect(compact.getByRole('heading', { name: 'Compact headline' })).toHaveText(HEADLINE);
+  await expect(compact.getByRole('heading', { name: 'Answer line' })).toHaveText(HEADLINE);
   // The live page answered it (the same answer shows there).
   await expect(page.getByRole('heading', { name: 'Answer headline' })).toHaveText(HEADLINE);
-  // A typed question from the compact view goes to the live page as chat.
+  // A typed question from the overlay goes to the live page as chat.
+  await compact.getByRole('button', { name: 'Chat' }).click();
   await compact.getByLabel('Type a question').fill('What is the seat price?');
   await compact.getByLabel('Type a question').press('Enter');
-  await expect(compact.getByRole('heading', { name: 'Compact headline' })).toHaveText(
+  await expect(compact.getByRole('heading', { name: 'Answer line' })).toHaveText(
     'The seat price is 52 dollars.',
   );
   await compact.close();
@@ -294,7 +295,7 @@ test('the compact view shows the live answer and its Answer button asks the live
 
 test('Compact view in the browser: picture-in-picture, or a clear message where unsupported (Day 5)', async () => {
   const supported = await page.evaluate(() => 'documentPictureInPicture' in window);
-  await page.getByRole('button', { name: 'Compact view' }).click();
+  await page.getByRole('button', { name: 'Overlay' }).click();
   if (!supported) {
     await expect(
       page.getByText('This browser cannot show a small window on top of the meeting'),
@@ -313,14 +314,14 @@ test('Compact view in the browser: picture-in-picture, or a clear message where 
           '',
       ),
     )
-    .toContain('Kite · live');
+    .toContain('Screenshot');
   const headline = await page.getByRole('heading', { name: 'Answer headline' }).textContent();
   await expect
     .poll(() =>
       page.evaluate(
         () =>
           (window as unknown as WithPip).documentPictureInPicture.window?.document.querySelector(
-            '[aria-label="Compact headline"]',
+            '[aria-label="Answer line"]',
           )?.textContent ?? '',
       ),
     )

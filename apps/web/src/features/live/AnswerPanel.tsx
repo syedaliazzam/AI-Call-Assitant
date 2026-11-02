@@ -185,7 +185,7 @@ export function AnswerPanel(props: AnswerPanelProps) {
     );
   }
 
-  const { headline, bullets } = splitAnswer(entry.text);
+  const { headline, bullets, tip, note } = splitAnswer(entry.text);
   const source = entry.earlier
     ? 'earlier'
     : entry.mode === 'screenshot'
@@ -279,6 +279,23 @@ export function AnswerPanel(props: AnswerPanelProps) {
               <li key={i}>{bullet}</li>
             ))}
           </ul>
+        )}
+        {tip && (
+          <p aria-label="Tip" className="mt-2 text-[14px] leading-relaxed text-ui-text">
+            {tip}
+          </p>
+        )}
+        {note && (
+          // For the user only, not to be said: set apart and muted.
+          <p
+            aria-label="Private note"
+            className="mt-2 border-t border-ui-border pt-1.5 text-[13px] italic text-ui-muted"
+          >
+            <span className="mr-1 font-mono text-[10px] font-medium uppercase not-italic tracking-[0.08em]">
+              Just for you
+            </span>
+            {note}
+          </p>
         )}
 
         {entry.unavailable && (

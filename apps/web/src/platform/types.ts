@@ -7,7 +7,7 @@
  * Depends on: @kite/shared (HotkeyAction)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (the platform adapter)
  */
-import type { HotkeyAction, ShareProtectionState } from '@kite/shared';
+import type { HotkeyAction, HotkeyStatus, ShareProtectionState } from '@kite/shared';
 import type { PipRenderer } from './pip';
 
 // Re-exported so code using the platform can import every platform type from one place.
@@ -103,6 +103,55 @@ export interface Platform {
   closeCompactView(): Promise<void>;
 
   /**
+   * Whether this platform can change the overlay window itself: opacity, and its size when it
+   * collapses (the desktop app; a browser picture-in-picture window cannot).
+   *
+   * @returns True in a desktop app that supports it.
+   */
+  overlayWindowControls(): boolean;
+
+  /**
+   * Sets the overlay window's opacity. Nothing happens where it is not supported.
+   *
+   * @param opacity 0–1.
+   */
+  setOverlayOpacity(opacity: number): void;
+
+  /**
+   * Collapses the overlay window to its controls bar, or opens it again. Nothing happens to the
+   * window where it is not supported (the view still hides its other bars).
+   *
+   * @param collapsed True to collapse.
+   */
+  setOverlayCollapsed(collapsed: boolean): void;
+
+  /**
+   * Minimises the main window when a call starts in the overlay. Nothing happens in a browser
+   * (a web page cannot minimise its window).
+   */
+  minimizeMainWindow(): void;
+
+  /**
+   * Which global shortcuts another app already uses (Settings → Hotkeys).
+   *
+   * @returns The statuses, or null where there are no global shortcuts (a browser).
+   */
+  checkHotkeys(): Promise<HotkeyStatus[] | null>;
+
+  /**
+   * Listens for the in-page shortcuts on a window other than the live page, for as long as it
+   * has focus (the overlay). It never takes shortcuts from other apps.
+   *
+   * @param target  The window to listen on.
+   * @param handler Called with each action.
+   * @returns A function that stops listening.
+   */
+  listenForFocusedHotkeys(
+    target: Pick<Window, 'addEventListener' | 'removeEventListener'>,
+    handler: (action: HotkeyAction) => void,
+  ): () => void;
+
+  /**
    * Says whether a live call is going on (Day 6): the desktop app then never asks to restart
    * for an update during a call. Nothing happens in the browser.
    *
@@ -111,7 +160,7 @@ export interface Platform {
   setCallActive(active: boolean): void;
 
   /**
-   * Listens for hotkey actions (answer, screenshot, clear, prev, next). Call it for the length
+   * Listens for hotkey actions (answer, screenshot, chat, clear, prev, next). Call it for the length
    * of a live call only: in the desktop app it takes the shortcuts from every other app.
    * - Desktop: Electron global shortcuts, which work from any app, forwarded to the page (turned
    *   on by this call, off by the returned function), plus the in-page shortcuts.

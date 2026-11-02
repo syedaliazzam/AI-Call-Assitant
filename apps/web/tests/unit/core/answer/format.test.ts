@@ -14,16 +14,40 @@ describe('splitAnswer', () => {
     expect(splitAnswer(text)).toEqual({
       headline: 'Forty seats cost 2,080 dollars a month.',
       bullets: ['52 dollars per seat', 'Billed yearly', 'Fixed for two years'],
+      tip: '',
+      note: '',
     });
   });
 
   it('works while the answer is still streaming', () => {
-    expect(splitAnswer('')).toEqual({ headline: '', bullets: [] });
-    expect(splitAnswer('Forty seats')).toEqual({ headline: 'Forty seats', bullets: [] });
+    expect(splitAnswer('')).toEqual({ headline: '', bullets: [], tip: '', note: '' });
+    expect(splitAnswer('Forty seats')).toEqual({
+      headline: 'Forty seats',
+      bullets: [],
+      tip: '',
+      note: '',
+    });
     expect(splitAnswer('# Forty seats\n- 52')).toEqual({
       headline: 'Forty seats',
       bullets: ['52'],
+      tip: '',
+      note: '',
     });
+  });
+
+  it('takes out the closing tip and the private note (ADR-0029)', () => {
+    const text =
+      'I can start next week.\n- We finished the pilot\nTip: mention the Lahore rollout.\nNote: check the date with finance.';
+    expect(splitAnswer(text)).toEqual({
+      headline: 'I can start next week.',
+      bullets: ['We finished the pilot'],
+      tip: 'mention the Lahore rollout.',
+      note: 'check the date with finance.',
+    });
+    // Copy is what the user says: the tip is in, the private note is not.
+    expect(answerText(text)).toBe(
+      'I can start next week.\n- We finished the pilot\nmention the Lahore rollout.',
+    );
   });
 });
 

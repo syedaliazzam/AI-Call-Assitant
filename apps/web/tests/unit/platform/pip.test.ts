@@ -107,7 +107,7 @@ describe('pip', () => {
 
     await openPictureInPicture(render, api);
     expect(requestWindow).toHaveBeenCalledWith(PIP_SIZE);
-    expect(win.document.title).toBe('Kite (compact)');
+    expect(win.document.title).toBe('Kite (overlay)');
     expect(head.children.map((c) => c.tag)).toEqual(['style', 'link']);
     expect(head.children[0]!.textContent).toBe('.a { color: red; }');
     expect(head.children[1]!.href).toBe('https://fonts.example/x.css');

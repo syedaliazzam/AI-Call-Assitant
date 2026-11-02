@@ -151,6 +151,12 @@ export interface StoredAnswer {
   rating: AnswerRating;
   /** The user's note, "What was wrong / better answer" ('' when none). Day 4. */
   note: string;
+  /**
+   * True when the user reported this answer (ADR-0029): stored here with the note, and never sent
+   * anywhere. Missing on answers saved earlier: read as false. No index uses it, so no new
+   * database version.
+   */
+  reported?: boolean;
 }
 
 /**
