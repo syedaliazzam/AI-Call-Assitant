@@ -43,8 +43,8 @@ The Kite desktop app needs an installer for the team's Windows laptops, and a wa
    - The Day 7 final test plan starts by installing on a teammate's laptop to see how common this is.
    - **No-purchase alternative: the Microsoft Store, private audience** (`docs/deploy/microsoft-store.md`).
      - The Store signs the package with Microsoft's certificate, which Smart App Control trusts, and company developer accounts are free since May 2026.
-     - Kite's Store package builds, installs and runs. Screen-share protection worked inside it on CI (2 Nov).
-     - Costs: each update goes through certification (up to three business days), and the Store version updates itself through the Store.
+     - Kite's Store package builds, installs and starts with its package identity on CI (2 Nov). The smoke test passed on its packaged files, including screen-share protection; checks inside the running Store app are in the Day 7 plan.
+     - Costs: each update goes through certification (up to three business days), and Store users get updates only through the Store.
    - Without one, Windows SmartScreen shows "Windows protected your PC" on first run. Users click More info → Run anyway, as the user guide says (`docs/user-guide/install-windows.md`).
    - An OV or EV code-signing certificate removes or reduces the warning; an EV certificate is trusted immediately. Prices vary by vendor.
    - Nothing was bought.
