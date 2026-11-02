@@ -372,28 +372,38 @@ test('Export my data, wipe, Import data restores it; importing again adds nothin
   const before = await page.evaluate((sessionId) => window.kiteReviewHarness.count(sessionId), id);
   await page.evaluate(() => window.kiteReviewHarness.showData());
 
+  // A warning first; the file is saved only after "Save file".
+  await page.getByRole('button', { name: 'Export my data' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Export my data' });
+  await expect(dialog).toContainText(
+    'This file contains your session documents and transcripts — keep it private.',
+  );
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Export my data' }).click(),
+    dialog.getByRole('button', { name: 'Save file' }).click(),
   ]);
   expect(download.suggestedFilename()).toMatch(/^kite-export-\d{4}-\d{2}-\d{2}\.json$/);
   const file = (await download.path())!;
   const exported = JSON.parse(readFileSync(file, 'utf8')) as {
     format: string;
-    documents: Record<string, unknown>[];
+    version: number;
+    documents: { text?: string }[];
   };
   expect(exported.format).toBe('kite-export');
-  // Document metadata only: no extracted text in the file.
-  expect(exported.documents.every((document) => !('text' in document))).toBe(true);
+  expect(exported.version).toBe(2);
+  // Documents with their text, so a restore is complete.
+  expect(exported.documents.length).toBeGreaterThan(0);
+  expect(exported.documents.every((document) => typeof document.text === 'string')).toBe(true);
   await expect(page.getByRole('status')).toContainText('Exported');
 
   await page.evaluate(() => window.kiteReviewHarness.wipe());
   await page.evaluate(() => window.kiteReviewHarness.showData());
   await page.getByLabel('Kite export file to import').setInputFiles(file);
   await expect(page.getByRole('status')).toContainText('Added');
-  await expect(page.getByRole('status')).toContainText('attach the files again');
+  await expect(page.getByRole('status')).not.toContainText('attach the files again');
   const after = await page.evaluate((sessionId) => window.kiteReviewHarness.count(sessionId), id);
-  expect({ ...after, documents: 0 }).toEqual({ ...before, documents: 0 });
+  // Everything, documents included, is back.
+  expect(after).toEqual(before);
 
   await page.getByLabel('Kite export file to import').setInputFiles(file);
   await expect(page.getByRole('status')).toContainText('Added 0 sessions');

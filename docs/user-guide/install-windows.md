@@ -20,7 +20,12 @@ Some Windows 11 PCs have **Smart App Control** turned on. It blocks apps that ar
 Choose one:
 1. **Turn Smart App Control off:**
    - Open **Settings → Privacy & security → Windows Security → App & browser control → Smart App Control settings**, choose **Off**, then install Kite again.
-   - On many Windows versions it cannot be turned back on without resetting or reinstalling Windows, so on a company laptop ask your IT lead first.
+   - With recent Windows updates you can turn it back on later in the same place, without resetting Windows.
+   - There are exceptions, where turning it back on means resetting or reinstalling Windows ([Microsoft: What is Smart App Control?](https://support.microsoft.com/topic/what-is-smart-app-control-285ea03d-fa88-4d56-882e-6698afdb7003)):
+     - the PC runs Windows in **S mode**;
+     - **optional diagnostic data** is off;
+     - the PC is **managed by your organisation (IT)** or has **developer mode** set up.
+   - On a company laptop, ask your IT lead first.
 2. **Ask your IT lead.** They may prefer to decide for company laptops.
 3. **Use Kite in the browser instead.** Open Kite in Chrome or Edge and sign in with the same account. Everything works there except the desktop-only features: global shortcuts while another app is in front, the floating compact window hidden from screen share, and the system-audio connection without sharing a tab.
 

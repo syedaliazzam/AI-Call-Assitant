@@ -1,9 +1,9 @@
 /**
  * File: apps/web/src/core/storage/exportData.ts
  * Purpose: "Export my data" and "Import data" (Day 6): one JSON file with everything Kite keeps
- *          on this computer that a user would want to move or back up: sessions, document
- *          metadata (name, size, date; not the extracted text), saved transcript lines,
- *          answers, notes and lesson decisions. Never audio (Kite stores none). The file is
+ *          on this computer that a user would want to move or back up: sessions, documents
+ *          (their extracted text, so a restore is complete; layout version 2), saved transcript
+ *          lines, answers, notes and lesson decisions. Never audio (Kite stores none). The file is
  *          versioned and fully validated before anything is written; import merges: a record
  *          already on this computer (same id; for lessons also the same original proposal)
  *          is kept, so importing the same file twice adds nothing.
@@ -20,13 +20,16 @@ import type { Session, StoredAnswer, StoredLesson, StoredNotes, StoredUtterance 
 /** The file's "format" value: tells a Kite export apart from any other JSON file. */
 export const EXPORT_FORMAT = 'kite-export';
 
-/** The file layout version. Raise it when the layout changes, and keep reading older ones. */
-export const EXPORT_VERSION = 1;
+/**
+ * The file layout version. Raise it when the layout changes, and keep reading older ones.
+ * 1: documents as metadata only. 2: documents with their extracted text.
+ */
+export const EXPORT_VERSION = 2;
 
 /** Largest file accepted for import (50 MB): far above a year of calls, below browser limits. */
 export const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 
-/** A document's metadata in the export: its text stays on the computer it was added on. */
+/** A document in the export. */
 export interface ExportedDocument {
   /** Document id. */
   id: string;
@@ -38,6 +41,8 @@ export interface ExportedDocument {
   chars: number;
   /** When it was added (Unix ms). */
   addedAt: number;
+  /** The extracted text (version 2). Missing in version 1 files: those documents are not restored. */
+  text?: string;
 }
 
 /** The export file. */
@@ -50,7 +55,7 @@ export interface ExportFile {
   exportedAt: number;
   /** All sessions. */
   sessions: Session[];
-  /** Document metadata (no text). */
+  /** Documents, with their text. */
   documents: ExportedDocument[];
   /** Saved transcript lines. */
   utterances: StoredUtterance[];
@@ -94,6 +99,7 @@ const DocumentSchema = z.object({
   name: z.string(),
   chars: z.number(),
   addedAt: z.number(),
+  text: z.string().optional(),
 });
 const UtteranceSchema = z.object({
   id: z.string().min(1),
@@ -167,13 +173,13 @@ export async function exportData(now = Date.now()): Promise<ExportFile> {
     version: EXPORT_VERSION,
     exportedAt: now,
     sessions: await db.sessions.toArray(),
-    // Metadata only: the extracted text stays on this computer.
-    documents: documents.map(({ id, sessionId, name, chars, addedAt }) => ({
+    documents: documents.map(({ id, sessionId, name, chars, addedAt, text }) => ({
       id,
       sessionId,
       name,
       chars,
       addedAt,
+      text,
     })),
     utterances: await db.utterances.toArray(),
     answers: await db.answers.toArray(),
@@ -263,6 +269,8 @@ export interface MergeCount {
 export interface ImportSummary {
   /** Sessions. */
   sessions: MergeCount;
+  /** Documents (with their text). */
+  documents: MergeCount;
   /** Saved transcript lines. */
   utterances: MergeCount;
   /** Answers. */
@@ -271,7 +279,10 @@ export interface ImportSummary {
   notes: MergeCount;
   /** Lesson decisions. */
   lessons: MergeCount;
-  /** Documents listed in the file for sessions that were added: their files must be re-attached. */
+  /**
+   * Documents a version 1 file lists by name only (no text), for sessions that were added: their
+   * files must be attached again. Always 0 for version 2 files.
+   */
   documentsToReattach: number;
 }
 
@@ -305,11 +316,17 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
   const db = getDb();
   return db.transaction(
     'rw',
-    [db.sessions, db.utterances, db.answers, db.notes, db.lessons],
+    [db.sessions, db.documents, db.utterances, db.answers, db.notes, db.lessons],
     async () => {
       const sessions = missing(
         await db.sessions.bulkGet(file.sessions.map((session) => session.id)),
         file.sessions,
+      );
+      // Only documents with their text can be restored (version 2); see documentsToReattach.
+      const withText = file.documents.filter((document) => typeof document.text === 'string');
+      const documents = missing(
+        await db.documents.bulkGet(withText.map((document) => document.id)),
+        withText,
       );
       const utterances = missing(
         await db.utterances.bulkGet(file.utterances.map((line) => line.id)),
@@ -332,6 +349,16 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
       );
 
       await db.sessions.bulkAdd(sessions.toAdd);
+      await db.documents.bulkAdd(
+        documents.toAdd.map(({ id, sessionId, name, chars, addedAt, text }) => ({
+          id,
+          sessionId,
+          name,
+          chars,
+          addedAt,
+          text: text ?? '',
+        })),
+      );
       await db.utterances.bulkAdd(utterances.toAdd);
       await db.answers.bulkAdd(answers.toAdd);
       await db.notes.bulkAdd(notes.toAdd);
@@ -340,6 +367,7 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
       const addedSessionIds = new Set(sessions.toAdd.map((session) => session.id));
       return {
         sessions: sessions.count,
+        documents: documents.count,
         utterances: utterances.count,
         answers: answers.count,
         notes: notes.count,
@@ -347,8 +375,8 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
           added: lessonsToAdd.length,
           skipped: file.lessons.length - lessonsToAdd.length,
         },
-        documentsToReattach: file.documents.filter((document) =>
-          addedSessionIds.has(document.sessionId),
+        documentsToReattach: file.documents.filter(
+          (document) => document.text === undefined && addedSessionIds.has(document.sessionId),
         ).length,
       };
     },

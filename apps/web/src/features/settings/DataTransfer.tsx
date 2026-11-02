@@ -1,11 +1,12 @@
 /**
  * File: apps/web/src/features/settings/DataTransfer.tsx
- * Purpose: Settings → Local data: "Export my data" (one JSON file with sessions, document
- *          names, saved transcripts, answers, notes and lessons; no audio, no document text) and
- *          "Import data" (checks the file, then merges it without duplicates), Day 6. Moves a
- *          user's Kite data between the browser and the desktop app, or to another computer.
+ * Purpose: Settings → Local data: "Export my data" (one JSON file with sessions, documents,
+ *          saved transcripts, answers, notes and lessons; no audio), after a warning that the
+ *          file is private, and "Import data" (checks the file, then merges it without
+ *          duplicates), Day 6. Moves a user's Kite data between the browser and the desktop app,
+ *          or to another computer.
  * Used by: src/features/settings/Settings.tsx
- * Depends on: src/core/storage/exportData.ts, src/ui/Button.tsx
+ * Depends on: src/core/storage/exportData.ts, src/ui/Button.tsx, src/ui/Dialog.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (local storage); ADR-0024
  */
 'use client';
@@ -19,6 +20,11 @@ import {
   type ImportSummary,
 } from '@/core/storage/exportData';
 import { Button } from '@/ui/Button';
+import { Dialog } from '@/ui/Dialog';
+
+/** The warning shown before the export is saved (developer's wording, Day 6). */
+export const EXPORT_WARNING =
+  'This file contains your session documents and transcripts — keep it private.';
 
 /** What the section shows after an action. */
 type Outcome = Exported | Imported | Failed;
@@ -55,14 +61,14 @@ interface Failed {
  * Called from: DataTransfer (status line)
  */
 export function importSentence(summary: ImportSummary): string {
-  const added = `Added ${summary.sessions.added} sessions, ${summary.utterances.added} transcript lines, ${summary.answers.added} answers, ${summary.notes.added} notes and ${summary.lessons.added} lessons.`;
+  const added = `Added ${summary.sessions.added} sessions, ${summary.documents.added} documents, ${summary.utterances.added} transcript lines, ${summary.answers.added} answers, ${summary.notes.added} notes and ${summary.lessons.added} lessons.`;
   const kept =
     summary.sessions.skipped > 0
       ? ` ${summary.sessions.skipped} sessions were already on this computer and were kept as they are.`
       : '';
   const documents =
     summary.documentsToReattach > 0
-      ? ` The export lists ${summary.documentsToReattach} documents by name only: attach the files again to use them in answers.`
+      ? ` This older export lists ${summary.documentsToReattach} documents by name only: attach the files again to use them in answers.`
       : '';
   return added + kept + documents;
 }
@@ -77,9 +83,11 @@ export function DataTransfer() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [warning, setWarning] = useState(false);
 
-  /** Builds the export and hands it to the browser as a download. */
+  /** Builds the export and hands it to the browser as a download (after the warning). */
   async function handleExport() {
+    setWarning(false);
     setBusy(true);
     try {
       const file = await exportData();
@@ -129,12 +137,12 @@ export function DataTransfer() {
   return (
     <div className="mb-6">
       <p className="mb-4 text-sm text-ui-muted">
-        Export saves your sessions, saved transcripts, answers, notes and lessons in one file
-        (document names only, never audio). Import adds a file&rsquo;s data here; anything already
-        on this computer stays as it is.
+        Export saves your sessions, documents, saved transcripts, answers, notes and lessons in one
+        file (never audio). Import adds a file&rsquo;s data here; anything already on this computer
+        stays as it is.
       </p>
       <div className="flex flex-wrap gap-3">
-        <Button variant="secondary" onClick={() => void handleExport()} disabled={busy}>
+        <Button variant="secondary" onClick={() => setWarning(true)} disabled={busy}>
           Export my data
         </Button>
         <Button variant="secondary" onClick={() => fileInput.current?.click()} disabled={busy}>
@@ -152,6 +160,21 @@ export function DataTransfer() {
           }}
         />
       </div>
+      <Dialog
+        open={warning}
+        onClose={() => setWarning(false)}
+        title="Export my data"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setWarning(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleExport()}>Save file</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ui-text">{EXPORT_WARNING}</p>
+      </Dialog>
       {outcome?.kind === 'exported' && (
         <p role="status" className="mt-3 text-sm text-ui-success">
           Exported {outcome.sessions} sessions. Keep the file somewhere safe: it holds your call
