@@ -64,13 +64,17 @@ describe('the exposed bridge', () => {
     expect(name).toBe('kiteDesktop');
     expect(Object.keys(api).sort()).toEqual([
       'captureScreenshot',
+      'checkHotkeys',
       'closeCompactView',
       'getShareProtection',
+      'minimizeMainWindow',
       'onHotkey',
       'openCompactView',
       'os',
       'setCallActive',
       'setHotkeysEnabled',
+      'setOverlayCollapsed',
+      'setOverlayOpacity',
       'setShareProtection',
       'version',
     ]);

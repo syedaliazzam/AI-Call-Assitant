@@ -341,7 +341,7 @@ describe('sessionBlock', () => {
 
 describe('SYSTEM_RULES', () => {
   it('includes the answer, imperfect-transcript and consistency rules, and the slot', () => {
-    expect(SYSTEM_RULES).toContain('headline of at most 15 words');
+    expect(SYSTEM_RULES).toContain('headline: one sentence of at most 15 words');
     expect(SYSTEM_RULES).toContain('at most 5 short bullet points');
     expect(SYSTEM_RULES).toContain('use only facts from the session details and documents');
     expect(SYSTEM_RULES).toContain('name what the user should clarify');

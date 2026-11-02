@@ -79,6 +79,35 @@ export interface KiteDesktopApi {
    */
   setShareProtection?: (on: boolean) => Promise<ShareProtectionState>;
   /**
+   * ADR-0029: which global shortcuts another app already uses (Settings → Hotkeys). Optional: a
+   * desktop app installed earlier does not have it.
+   *
+   * @returns Whether each global shortcut can be registered.
+   */
+  checkHotkeys?: () => Promise<HotkeyStatus[]>;
+  /**
+   * ADR-0029: sets the overlay window's opacity. Optional, as above.
+   *
+   * @param opacity 0–1; the shell keeps it in a readable range.
+   * @returns Resolves when set.
+   */
+  setOverlayOpacity?: (opacity: number) => Promise<void>;
+  /**
+   * ADR-0029: collapses the overlay window to its controls bar, or opens it again. Optional, as
+   * above.
+   *
+   * @param collapsed True to collapse.
+   * @returns Resolves when done.
+   */
+  setOverlayCollapsed?: (collapsed: boolean) => Promise<void>;
+  /**
+   * ADR-0029: minimises the main window when a call starts in the overlay. Closing the overlay
+   * brings it back. Optional, as above.
+   *
+   * @returns Resolves when done.
+   */
+  minimizeMainWindow?: () => Promise<void>;
+  /**
    * Day 6: tells the shell whether a live call is going on, so an update never asks to restart
    * during a call.
    *

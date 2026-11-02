@@ -32,7 +32,12 @@ import { appIconPath } from './icon';
 import { createProtection, installProtection } from './protection';
 import { installScreenshot } from './screenshot';
 import { createStore } from './store';
-import { createCompactWindows, installCompactWindows, type CompactWindows } from './windows';
+import {
+  createCompactWindows,
+  installCompactWindows,
+  overlayShortcut,
+  type CompactWindows,
+} from './windows';
 import { allowSystemAudioLoopback } from './media';
 import { allowOnlyOurPermissions, lockNavigation, secureWebPreferences } from './security';
 
@@ -83,7 +88,12 @@ function createMainWindow(config: DesktopConfig): BrowserWindow {
     icon: appIconPath(__dirname),
     show: false,
     backgroundColor: '#f8fafc',
-    webPreferences: secureWebPreferences(path.join(__dirname, 'preload.js'), app.getVersion()),
+    webPreferences: {
+      ...secureWebPreferences(path.join(__dirname, 'preload.js'), app.getVersion()),
+      // This page runs the call while it is minimised (calls start in the overlay, ADR-0029):
+      // its timers must keep their normal speed.
+      backgroundThrottling: false,
+    },
   });
   window.once('ready-to-show', () => window.show());
   window.on('closed', () => {
@@ -136,6 +146,9 @@ function start(): void {
       globalShortcut,
       ipcMain,
       sendToPage: (channel, action) => mainWindow?.webContents.send(channel, action),
+      overlayAction: (action) => {
+        if (compact) overlayShortcut(compact, action);
+      },
       allowedOrigin: config.allowedOrigin,
     });
     // Screenshot answers (Day 5): the display under the Kite window, scaled, in memory only.
@@ -160,8 +173,12 @@ function start(): void {
       appVersion: app.getVersion(),
       store,
       protection,
+      // The overlay is gone: never leave the user with the main window still minimised.
+      onClosed: () => {
+        if (mainWindow?.isMinimized()) mainWindow.restore();
+      },
     });
-    installCompactWindows(ipcMain, compact, config.allowedOrigin);
+    installCompactWindows(ipcMain, compact, config.allowedOrigin, () => mainWindow?.minimize());
     installProtection(ipcMain, protection, () => compact?.window() ?? null, config.allowedOrigin);
     mainWindow = createMainWindow(config);
     // Updates (Day 6, ADR-0028): installed builds only; tests turn them off. Store builds

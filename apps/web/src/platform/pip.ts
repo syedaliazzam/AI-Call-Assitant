@@ -36,7 +36,7 @@ export interface PipWindowSize {
 }
 
 /** The compact window's size. */
-export const PIP_SIZE: PipWindowSize = { width: 380, height: 320 };
+export const PIP_SIZE: PipWindowSize = { width: 720, height: 520 };
 
 /**
  * Renders into the window's container; returns a function that unmounts it.
@@ -110,7 +110,7 @@ export async function openPictureInPicture(
     return;
   }
   const pip = await api.requestWindow(PIP_SIZE);
-  pip.document.title = 'Kite (compact)';
+  pip.document.title = 'Kite (overlay)';
   copyStyles(document, pip.document);
   const container = pip.document.createElement('div');
   pip.document.body.style.margin = '0';

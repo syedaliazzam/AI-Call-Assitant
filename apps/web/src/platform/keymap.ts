@@ -1,8 +1,8 @@
 /**
  * File: apps/web/src/platform/keymap.ts
- * Purpose: The default hotkeys of architecture §7.3 as a key-press → action map, used for the
- *          in-page shortcuts (while the Kite page has focus) in the browser and the desktop app.
- * Used by: src/platform/browser.ts and src/platform/desktop.ts (onHotkey)
+ * Purpose: The hotkeys (packages/shared/src/hotkeys.ts) as a key-press → action map, used for the
+ *          in-page shortcuts (while a Kite window has focus) in the browser and the desktop app.
+ * Used by: src/platform/browser.ts and src/platform/desktop.ts (onHotkey, listenForFocusedHotkeys)
  * Depends on: @kite/shared (HotkeyAction)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (default hotkeys);
  *               day-04-answers.md Stage 6
@@ -54,7 +54,7 @@ function isTyping(target: EventTarget | null): boolean {
  *
  * @param press The key press.
  * @param mac   True on macOS (⌘ is the modifier), false elsewhere (Ctrl).
- * @returns 'answer', 'screenshot', 'clear', 'prev', 'next', or null.
+ * @returns 'answer', 'screenshot', 'chat', 'clear', 'prev', 'next', or null.
  * Called from: listenForHotkeys(); tests
  */
 export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
@@ -66,7 +66,7 @@ export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
     case 'Enter':
       return press.shiftKey ? 'screenshot' : 'answer';
     case 'Backspace':
-      return press.shiftKey ? null : 'clear';
+      return press.shiftKey ? 'chat' : 'clear';
     case 'ArrowLeft':
       return press.shiftKey ? null : 'prev';
     case 'ArrowRight':

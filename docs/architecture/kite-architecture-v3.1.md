@@ -1,8 +1,8 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.5.0"
+version: "3.6.0"
 status: "Current: the single document the team builds from"
-date: "2026-10-31"
+date: "2026-11-02"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
@@ -16,8 +16,9 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.5.0, **Current**: the only document to build from |
-| Date | 31 October 2026 |
+| Version | 3.6.0, **Current**: the only document to build from |
+| Date | 2 November 2026 |
+| Changes in 3.6.0 | Parity Phase 1, the live call (ADR-0029; plan in `docs/design/parakeet-parity.md`). §3.3: new hotkey actions and optional bridge methods. §5: the overlay has three stacked bars; "Start calls in the overlay". §6: first-person answers with an optional tip and a private note. §7.3: new default hotkeys; only Answer, Screenshot, show or hide and move are global; opacity and collapse. |
 | Changes in 3.5.0 | Day 5 (compact view, screen-share protection, screenshots, notes, review, learning loop), matching what was built (ADR-0026). §3.3: the adapter as built (`captureScreenshot` returns a JPEG ≤ 1,568 px; `openCompactView(sessionId, render?)`, `closeCompactView`, `get`/`setShareProtection`). §4: protection is **off by default**, remembered per device; the Windows result. §5: the `/compact/[id]` route, the review page, Settings "What Kite has learned". §7.1: `core/live` (a BroadcastChannel between the live page and the compact view), `core/notes`, `core/review`, `core/lessons`, `core/screenshot`, `features/review`, `platform/pip.ts`. §7.2: `screenshot` mode built; `/api/notes` (JSON, Sonnet); the `lessons` request field and the rules block's learned preferences; the `claude_unavailable` error code. §7.3: windows, screenshot and protection as built. §7.4: the `lessons` store (schema version 3); notes fields. §7.6: the learning loop as built. §10: **one Claude key and one Console spend limit** for production, development and evaluations. §13: the API usage limit. |
 | Changes in 3.4.0 | Day 4 (answers), matching what was built and measured (ADR-0025). §6.1: the request carries **the whole call** (stable lines and earlier answers) instead of a 3-minute window; question selection; End waits for the last line. §6.2: measured latency (20 answers per platform, production). §6.3: **three cache breakpoints** with an **append-only, chunked conversation**, stable lines, the long-call cap in steps, the idle re-warm, re-warm on Connect; the rules block is now above the caching minimum and shared. §7.1: `core/answer` (context, keepWarm, latency, format), `core/transcript` (stability, question, endCall), `core/storage/answers.ts`, `features/live` answer components, `platform/keymap.ts`. §7.2: request shape (`conversation`, `tail`; `transcript` removed), `answer` and `chat` built, the prompt structure, `jsonReply()` for the evaluation grader. §7.3: `hotkeys.ts` and the bridge's hotkey methods; global shortcuts only during a call. §7.4: answers gain `rating` and `note` and are saved even with "Save transcript" off. §7.6 (new): the learning loop. §11: answer harness test (CI), answer evaluation, `/dev/latency`, the production suites with answers. §13: latency from far regions. |
 | Changes in 3.3.0 | Day 3 (sessions, documents, local storage, session prompt), matching what was built and measured. §5: the screens as built (dashboard, Create / Edit session wizard, Choose platform, Connect with saved transcript, Settings). §6.1/§6.3: session hotwords; the warm-up is a **non-streaming** `max_tokens: 0` request with the same thinking setting as the answers (the official prompt-caching docs reject `max_tokens: 0` with `stream: true`); measured cache write 4,508 → read 4,508 tokens. §7.1: `core/storage`, `core/documents`, `core/stt/sessionHotwords.ts`, `core/transcript/saver.ts`, `core/answer/warm.ts`, the new screens. §7.2: three differences from the 3.2.0 request example: `session` gains `description` and `keyTerms`; the answer style is in the cached session block, not the system block; thinking is off per model tier (fast `disabled`, smart `between_tools`, because Sonnet 5.5 rejects `disabled`). The prompt has the imperfect-transcript rule. §7.3: `security.ts` grants `persistent-storage` to the Kite origin. §7.4: the data model as built (`lastActiveAt`, status values, `settings` store, the 12-hour stale-live rule). §8.1: documents are stored locally as extracted text; the browser and the desktop app have separate local data (ADR-0024). §8.3: lost-laptop risk (local data is not encrypted by Kite). §9.1: files built on Day 3. §11: the manual production end-to-end suites (Chrome and the desktop app). ADR-0024 added; ADR-0020 records the session-hotword result. |
@@ -101,7 +102,7 @@ The web app calls one interface. At start-up it picks the desktop implementation
 
 ```ts
 // apps/web/src/platform/types.ts
-export type HotkeyAction = 'answer' | 'screenshot' | 'clear' | 'prev' | 'next';
+export type HotkeyAction = 'answer' | 'screenshot' | 'chat' | 'clear' | 'prev' | 'next';
 
 export interface Platform {
   kind: 'desktop' | 'browser';
@@ -121,7 +122,8 @@ export interface Platform {
 | `getOtherSideStream` | Page calls `getDisplayMedia`; the shell auto-approves it with **system-audio loopback** (Windows; macOS 14.2+), with no picker | `getDisplayMedia` with the share picker. The user picks the meeting tab and ticks "Also share tab audio". On Windows, sharing the entire screen can include system audio. |
 | `captureScreenshot` | The shell captures the display the Kite window is on (`desktopCapturer` thumbnail, already scaled so the long side is ≤ 1,568 px; IPC `kite:capture-screenshot`, Kite main frame only; macOS asks for Screen Recording permission). The page encodes it once (`core/screenshot/prepare.ts`: JPEG ≤ 1 MB, checked to start with FF D8 FF) | Draws the current frame of the screen or tab the user already shared at Connect (a hidden video element plays the share's video track, so a frame is ready at once), then the same `prepare.ts` encoding. Never saved to disk |
 | `openCompactView` | The shell opens `/compact/[id]` in a frameless window, always on top (`floating`), shown without taking focus (`showInactive`) but accepting typing; position and size remembered (`kite-shell.json` in the app data folder) | Document Picture-in-Picture (Chrome/Edge 116+), opened by a click; the features layer passes a render function, so `platform/` holds no React. Elsewhere: a clear message |
-| `onHotkey` | Electron global shortcuts, forwarded to the page | Keyboard shortcuts while the Kite tab or PiP window has focus |
+| `onHotkey` | Electron global shortcuts for Answer and Screenshot, forwarded to the page; the keys that work only while Kite is focused come from the page (`listenForFocusedHotkeys`) | Keyboard shortcuts while the Kite tab or PiP window has focus |
+| `overlayWindowControls`, `setOverlayOpacity`, `setOverlayCollapsed`, `minimizeMainWindow`, `checkHotkeys` | Opacity, collapse, minimising the main window and checking which global shortcuts are free (optional bridge methods: older installs skip them) | No window control; opacity is not offered, and `checkHotkeys` reports nothing |
 | `setShareProtection` | `setContentProtection(on)` on the compact window, **off by default**, the user's choice remembered per device and re-applied every time the window is shown | Not supported; Settings explains why |
 
 ## 4. Desktop vs browser: what users get
@@ -149,7 +151,7 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 | Choose platform | dialog | **Built Day 3.** In the browser only: "Desktop app" (explains that the installer arrives on Day 6) or "Open in browser", plus "What's the difference?" (section 4 table). The desktop app opens the session directly |
 | Connect | `/live/[id]` (first view) | Call information, "Listening for N key terms" (the session hotwords, Day 3), how to connect, "Connect" button, audio test meters. Underneath: the transcript saved by earlier calls of this session, or a note that the session does not save its transcript |
 | Live session | `/live/[id]` | Top bar: Answer · Screenshot · Chat · Clear · End. Transcript strip (live chips). Answer panel (Question, Answer headline, bullets, time, copy, prev/next). Chat input. |
-| Compact view | `/compact/[id]` (desktop window, outside the app layout: no sidebar) / Document PiP | **Built Day 5.** The latest transcript line, the latest answer (or the "Claude is unavailable" message), Answer, Screenshot and a question box. It talks to the live page over a per-session `BroadcastChannel` (`kite-live-<id>`): the live page publishes its state and runs the commands; the compact view never calls Claude itself. Desktop: the protection label |
+| Overlay (compact view) | `/compact/[id]` (desktop window, outside the app layout: no sidebar) / Document PiP | **Built Day 5, rebuilt in parity Phase 1 (ADR-0029).** Three stacked bars: controls (mic and system-audio status, Answer, Screenshot, Chat, move, collapse, menu, End); the live transcript (latest words as chips, Clear, expand); the answer card (question, answer line, bullets, optional tip, private note apart and muted; time, thumbs, copy, report; history; Clear; expand). One scroll area, 16–18 px text. Desktop: opacity 35–100% and fade when the pointer is elsewhere. Default 720 × 520, smallest 460 × 260. With "Start calls in the overlay" (Settings, on by default), Go live opens it and minimises the main window; closing it brings the main window back; a browser asks for a click, because picture-in-picture needs one. The "Claude is unavailable" message shows on the card. It talks to the live page over a per-session `BroadcastChannel` (`kite-live-<id>`): the live page publishes its state and runs the commands; the compact view never calls Claude itself. Desktop: the protection label |
 | Session review | `/sessions/[id]` | **Built Day 5.** Call details; AI notes (summary, questions with ratings, next steps with owners, parts too unclear to summarise, proposed lessons with Approve / Edit / Reject and a scope) with Regenerate, labelled "Written from answers only" when no transcript was saved; every answer with its rating and note; the saved transcript (or a note that it was not saved); Delete session (in-app dialog). The dashboard shows "Review" on ended sessions |
 | Settings | `/settings` | **Built Day 3.** Default preferences for new sessions, hotkeys list (read-only; shortcuts arrive Day 4), share-protection switch (desktop, Day 5, off by default), "What Kite has learned" (Day 5: approved lessons with edit, delete and "Clear all lessons"), "Delete all local data" (asks first, then shows what was deleted; the downloaded speech model is kept) |
 
@@ -324,14 +326,17 @@ The answer style is in the session block, not in the system block (a difference 
 | `preload.ts` | Exposes `window.kiteDesktop` (typed in `packages/shared`, frozen): `version`, `os`, and from Day 4 `setHotkeysEnabled(on)` (sends only a boolean) and `onHotkey(handler)` (passes only valid actions, never the IPC event); from Day 5 `captureScreenshot()`, `openCompactView(sessionId)`, `closeCompactView()`, `setShareProtection(on)` and `getShareProtection()`. Nothing else. A desktop app installed before Day 4 has neither method; the page then uses in-page shortcuts only. |
 | `security.ts` | Blocks navigation to any other origin; opens external links in the system browser; `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`. Permissions for the Kite origin only: microphone, `display-capture` (handled in `media.ts`) and, from Day 3, `persistent-storage`: Electron routes `navigator.storage.persist()` through the permission handlers, so without this grant the request always fails in the desktop app and local sessions could be cleared when the disk is short of space (ADR-0024) |
 
-Default hotkeys (desktop global shortcuts during a call; the same keys work in the page in the browser and in the desktop app while Kite has focus, `platform/keymap.ts`, except while typing in a text box):
+Default hotkeys (ADR-0029). The page's keys are in `platform/keymap.ts` and do not fire while typing in a text box. Settings → Hotkeys lists them all and names any global shortcut another app holds:
 
-| Action | macOS | Windows |
-|---|---|---|
-| Answer | ⌘ Enter | Ctrl+Enter |
-| Screenshot | ⌘ Shift Enter | Ctrl+Shift+Enter |
-| Clear / cancel | ⌘ Backspace | Ctrl+Backspace |
-| Previous / next answer | ⌘ ← / ⌘ → | Ctrl+← / Ctrl+→ |
+| Action | macOS | Windows | Works |
+|---|---|---|---|
+| Answer | ⌘ Enter | Ctrl+Enter | Any app, during a call |
+| Screenshot | ⌘ Shift Enter | Ctrl+Shift+Enter | Any app, during a call |
+| Show or hide overlay | ⌘ Alt H | Ctrl+Alt+H | Any app, during a call |
+| Move overlay (Shift: bigger steps) | ⌘ Alt Arrows | Ctrl+Alt+Arrows | Any app, during a call |
+| Chat | ⌘ Shift Backspace | Ctrl+Shift+Backspace | Kite focused only |
+| Clear answer | ⌘ Backspace | Ctrl+Backspace | Kite focused only |
+| Previous / next answer | ⌘ ← / ⌘ → | Ctrl+← / Ctrl+→ | Kite focused only |
 
 ### 7.4 Data model (IndexedDB, Dexie)
 

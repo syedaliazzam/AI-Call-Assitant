@@ -8,7 +8,7 @@
  *   arriving, the action row, the answer panel's size and its footer (Cancel) do not move;
  * - the "Claude unavailable" message in the answer panel;
  * - the phone check: an iPhone sees "Live calls need a computer"; Chrome on Windows does not;
- * - the compact view: headline first, details on expand, the protection label visible.
+ * - the overlay: three bars, the answer's parts, one scroll area, at its default and smallest sizes.
  * Set KITE_SCREENSHOT_DIR to also save screenshots (1440, 900 and 390 px; 360 px for the
  * compact view and picture-in-picture, which render the same component), each checked for
  * sideways scroll, 44 px touch targets on touch screens and console errors (tests/ui/shots.ts).
@@ -381,23 +381,60 @@ test('phones: "Live calls need a computer"; computers: the live page', async () 
   await computer.context.close();
 });
 
-test('compact view (desktop window and PiP): headline first, details on expand, protection label', async () => {
-  const size: Width = { width: 360, height: 560, touch: false };
-  const watched = await open('compact', size);
-  const { page } = watched;
-  await expect(page.getByRole('heading', { name: 'Compact headline' })).toHaveText(
-    'Forty seats cost 2,080 dollars a month.',
-  );
-  await expect(page.getByText('Hidden from screen share')).toBeVisible();
-  await expect(page.getByText('52 dollars per seat on Professional')).toHaveCount(0);
-  await shot(watched, size, 'compact');
-  await page.getByRole('button', { name: 'Details (2)' }).click();
-  await expect(page.getByText('52 dollars per seat on Professional')).toBeVisible();
-  await shot(watched, size, 'compact-expanded');
-  await watched.context.close();
+test('overlay: three bars, the answer in full, one scroll area, at default and smallest size', async () => {
+  for (const size of [
+    { width: 720, height: 520, touch: false },
+    { width: 460, height: 260, touch: false },
+  ] satisfies Width[]) {
+    const watched = await open('compact', size);
+    const { page } = watched;
+    await expect(page.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Live transcript bar' })).toBeVisible();
+    await expect(page.getByLabel('Latest words')).toContainText('the Professional plan');
+    await expect(page.getByLabel('Question', { exact: true })).toContainText('Professional plan');
+    await expect(page.getByRole('heading', { name: 'Answer line' })).toHaveText(
+      'Forty seats cost 2,080 dollars a month.',
+    );
+    // Nothing is hidden behind a click, and the note is set apart from what to say.
+    await expect(page.getByText('52 dollars per seat on Professional')).toBeAttached();
+    await expect(page.getByLabel('Tip')).toContainText('annual');
+    await expect(page.getByLabel('Private note')).toContainText('finance');
+    // Everything fits the bars: only the answer scrolls, never the window.
+    const fits = await page.evaluate(
+      () => document.documentElement.scrollHeight <= window.innerHeight + 1,
+    );
+    expect(fits, 'the window itself does not scroll').toBe(true);
+    await shot(watched, size, `overlay-${size.width}`);
+
+    // The transcript and the answer can each take the space.
+    await page.getByRole('button', { name: 'Expand the transcript' }).click();
+    await expect(page.getByRole('region', { name: 'Transcript', exact: true })).toContainText(
+      'forty seats',
+    );
+    await page.getByRole('button', { name: 'Show the answer' }).click();
+    await page.getByRole('button', { name: 'Expand the answer' }).click();
+    await expect(page.getByRole('region', { name: 'Live transcript bar' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Show the transcript bar' }).click();
+    // Collapse leaves only the controls.
+    await page.getByRole('button', { name: 'Collapse the overlay' }).click();
+    await expect(page.getByRole('region', { name: 'Latest answer' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Open the overlay' }).click();
+    await expect(page.getByRole('region', { name: 'Latest answer' })).toBeVisible();
+    // Clear hides the words on screen.
+    await page
+      .getByRole('region', { name: 'Live transcript bar' })
+      .getByRole('button', { name: 'Clear' })
+      .click();
+    await expect(page.getByLabel('Latest words')).not.toContainText('the Professional plan');
+    // The menu: a browser window has no opacity control and says so.
+    await page.getByRole('button', { name: 'Overlay menu' }).click();
+    await expect(page.getByLabel('Hide this window from screen share')).toBeVisible();
+    await watched.context.close();
+  }
+  const size: Width = { width: 720, height: 520, touch: false };
   const unavailable = await open('compact-unavailable', size);
   await expect(unavailable.page.getByRole('alert')).toContainText('usage limit');
-  await shot(unavailable, size, 'compact-unavailable');
+  await shot(unavailable, size, 'overlay-unavailable');
   await unavailable.context.close();
 });
 
@@ -457,7 +494,11 @@ function dropExpectedFailures(watched: WatchedPage): void {
     0,
     watched.problems.length,
     ...watched.problems.filter(
-      (line) => !line.includes('answer: failed') && !line.includes('status of 401'),
+      (line) =>
+        !line.includes('answer: failed') &&
+        !line.includes('status of 401') &&
+        // This test goes offline on purpose, so requests made meanwhile fail.
+        !line.includes('ERR_INTERNET_DISCONNECTED'),
     ),
   );
 }
@@ -471,6 +512,7 @@ test('error states: no connection pauses answers; signed out offers sign-in in p
     await watched.context.setOffline(true);
     const banner = page.getByRole('alert').filter({ hasText: 'Answers are paused' });
     await expect(banner).toBeVisible();
+    dropExpectedFailures(watched);
     await shot(watched, size, 'error-offline');
     await watched.context.setOffline(false);
     await expect(banner).toBeHidden();

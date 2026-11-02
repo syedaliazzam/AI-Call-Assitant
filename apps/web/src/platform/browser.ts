@@ -248,17 +248,63 @@ export const browserPlatform: Platform = {
   },
 
   /**
-   * Closes the picture-in-picture window (End).
-   *
-   * @returns Resolves at once.
-   */
-  /**
    * Nothing to do: the browser has no updater.
    *
    * @param _active Ignored.
    */
   setCallActive(_active: boolean) {},
 
+  /**
+   * A picture-in-picture window cannot change its opacity or be resized by the page.
+   *
+   * @returns False.
+   */
+  overlayWindowControls() {
+    return false;
+  },
+
+  /**
+   * Nothing to do (see overlayWindowControls).
+   *
+   * @param _opacity Ignored.
+   */
+  setOverlayOpacity(_opacity: number) {},
+
+  /**
+   * Nothing to do to the window (see overlayWindowControls).
+   *
+   * @param _collapsed Ignored.
+   */
+  setOverlayCollapsed(_collapsed: boolean) {},
+
+  /** Nothing to do: a web page cannot minimise its window. */
+  minimizeMainWindow() {},
+
+  /**
+   * A browser has no global shortcuts.
+   *
+   * @returns Null.
+   */
+  async checkHotkeys() {
+    return null;
+  },
+
+  /**
+   * The in-page shortcuts on another window (the picture-in-picture window).
+   *
+   * @param target  The window.
+   * @param handler Called with each action.
+   * @returns A function that stops listening.
+   */
+  listenForFocusedHotkeys(target, handler) {
+    return listenForHotkeys(target, browserIsMac(), handler);
+  },
+
+  /**
+   * Closes the picture-in-picture window (End).
+   *
+   * @returns Resolves at once.
+   */
   async closeCompactView() {
     closePictureInPicture();
   },

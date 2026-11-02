@@ -29,5 +29,17 @@ export const SET_PROTECTION_CHANNEL = 'kite:set-protection';
 /** The page reads screen-share protection (invoke; answers the state). */
 export const GET_PROTECTION_CHANNEL = 'kite:get-protection';
 
+/** Settings asks which global shortcuts another app already uses (invoke; answers statuses). */
+export const CHECK_HOTKEYS_CHANNEL = 'kite:check-hotkeys';
+
+/** The overlay sets its window's opacity (invoke; carries a number, kept to a readable range). */
+export const OVERLAY_OPACITY_CHANNEL = 'kite:overlay-opacity';
+
+/** The overlay collapses to its controls bar, or opens again (invoke; carries a boolean). */
+export const OVERLAY_COLLAPSE_CHANNEL = 'kite:overlay-collapse';
+
+/** The live page minimises the main window when a call starts in the overlay (invoke). */
+export const MINIMIZE_MAIN_CHANNEL = 'kite:minimize-main';
+
 /** The page says whether a live call is going on (send; a boolean). Updates wait for it. */
 export const CALL_ACTIVE_CHANNEL = 'kite:call-active';

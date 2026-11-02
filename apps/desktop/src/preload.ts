@@ -23,10 +23,14 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import {
   CAPTURE_SCREENSHOT_CHANNEL,
   CALL_ACTIVE_CHANNEL,
+  CHECK_HOTKEYS_CHANNEL,
   CLOSE_COMPACT_CHANNEL,
   GET_PROTECTION_CHANNEL,
   HOTKEY_CHANNEL,
+  MINIMIZE_MAIN_CHANNEL,
   OPEN_COMPACT_CHANNEL,
+  OVERLAY_COLLAPSE_CHANNEL,
+  OVERLAY_OPACITY_CHANNEL,
   SET_HOTKEYS_CHANNEL,
   SET_PROTECTION_CHANNEL,
 } from './channels';
@@ -103,6 +107,14 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
   // Day 6: a live call is going on (or not); only a boolean crosses.
   setCallActive: (active: boolean) => ipcRenderer.send(CALL_ACTIVE_CHANNEL, active === true),
   getShareProtection: () => ipcRenderer.invoke(GET_PROTECTION_CHANNEL),
+  // ADR-0029: the overlay and the shortcuts. Only a number or a boolean crosses; the shell keeps
+  // the opacity in a readable range whatever arrives.
+  checkHotkeys: () => ipcRenderer.invoke(CHECK_HOTKEYS_CHANNEL),
+  setOverlayOpacity: (opacity: number) =>
+    ipcRenderer.invoke(OVERLAY_OPACITY_CHANNEL, Number(opacity)),
+  setOverlayCollapsed: (collapsed: boolean) =>
+    ipcRenderer.invoke(OVERLAY_COLLAPSE_CHANNEL, collapsed === true),
+  minimizeMainWindow: () => ipcRenderer.invoke(MINIMIZE_MAIN_CHANNEL),
 });
 
 contextBridge.exposeInMainWorld('kiteDesktop', kiteDesktop);

@@ -571,6 +571,10 @@ export function LivePage({
             lessons={lessons}
             transcript={transcript}
             callStartedAt={callStartedAt}
+            audio={{
+              you: connection === 'connected' && !channelErrors.you,
+              them: connection === 'connected' && !channelErrors.them,
+            }}
             ending={ending}
             onEnd={() => void end()}
           />

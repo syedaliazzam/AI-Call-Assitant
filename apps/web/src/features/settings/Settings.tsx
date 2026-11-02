@@ -38,25 +38,9 @@ import { PageShell } from '@/ui/PageShell';
 import { Toggle } from '@/ui/Toggle';
 import { AutoAnswerSetting } from './AutoAnswerSetting';
 import { DataTransfer } from './DataTransfer';
+import { HotkeyList } from './HotkeyList';
 import { LearnedLessons } from './LearnedLessons';
-
-/**
- * The default hotkeys (architecture §7.3), shown read-only. Display text only: the shortcuts
- * are registered on Day 4, which will take this list from the shared hotkey definitions.
- */
-const HOTKEYS: readonly {
-  /** What the hotkey does. */
-  action: string;
-  /** Keys on macOS. */
-  mac: string;
-  /** Keys on Windows. */
-  windows: string;
-}[] = [
-  { action: 'Answer', mac: '⌘ Enter', windows: 'Ctrl + Enter' },
-  { action: 'Screenshot', mac: '⌘ Shift Enter', windows: 'Ctrl + Shift + Enter' },
-  { action: 'Clear / cancel', mac: '⌘ Backspace', windows: 'Ctrl + Backspace' },
-  { action: 'Previous / next answer', mac: '⌘ ← / ⌘ →', windows: 'Ctrl + ← / Ctrl + →' },
-];
+import { OverlaySetting } from './OverlaySetting';
 
 /**
  * A titled section of the page.
@@ -246,36 +230,11 @@ export function Settings() {
       </Section>
 
       <Section title="Hotkeys">
-        <p className="mb-3 text-sm text-ui-muted">
-          Shown for reference; the shortcuts start working on Day 4. In the browser they work while
-          Kite has focus; in the desktop app, from any app.
-        </p>
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-ui-border text-ui-muted">
-              <th scope="col" className="py-2 pr-4 font-semibold">
-                Action
-              </th>
-              <th scope="col" className="py-2 pr-4 font-semibold">
-                macOS
-              </th>
-              <th scope="col" className="py-2 font-semibold">
-                Windows
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {HOTKEYS.map((hotkey) => (
-              <tr key={hotkey.action} className="border-b border-ui-border">
-                <th scope="row" className="py-2 pr-4 font-semibold text-ui-text">
-                  {hotkey.action}
-                </th>
-                <td className="py-2 pr-4 text-ui-muted">{hotkey.mac}</td>
-                <td className="py-2 text-ui-muted">{hotkey.windows}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <HotkeyList />
+      </Section>
+
+      <Section title="Overlay">
+        <OverlaySetting />
       </Section>
 
       <Section title="Screen-share protection">
