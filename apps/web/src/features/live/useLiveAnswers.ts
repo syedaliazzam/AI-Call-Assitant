@@ -17,9 +17,17 @@
  */
 'use client';
 
-import { DEFAULT_SCREENSHOT_QUESTION, type AnswerUsage, type ModelTier } from '@kite/shared';
+import {
+  DEFAULT_SCREENSHOT_QUESTION,
+  type AnswerMeta,
+  type AnswerType,
+  type AnswerUsage,
+  type ModelTier,
+  type TargetChoice,
+} from '@kite/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAnswerRunner, type AnswerTimeline } from '@/core/answer/answerClient';
+import { buildClaimCorpus, checkClaims, needsClaimCheck } from '@/core/answer/claimCheck';
 import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/context';
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { warmSession } from '@/core/answer/warm';
@@ -102,6 +110,10 @@ export interface AnswerEntry {
   note: string;
   /** True once the user has reported it (ADR-0029). */
   reported?: boolean;
+  /** Its question type, who it is for and its source, once they arrive (ADR-0030). */
+  meta?: AnswerMeta;
+  /** Words the claim check could not find in the documents or the call (ADR-0030). */
+  claims?: string[];
   /**
    * True for an answer saved earlier (a previous call, or before a reload): shown for review
    * and rating, but not part of this call's conversation.
@@ -129,6 +141,8 @@ function fromStored(saved: StoredAnswer): AnswerEntry {
     rating: saved.rating ?? null,
     note: saved.note ?? '',
     ...(saved.reported ? { reported: true } : {}),
+    ...(saved.meta ? { meta: saved.meta } : {}),
+    ...(saved.claims?.length ? { claims: saved.claims } : {}),
     earlier: true,
   };
 }
@@ -155,7 +169,39 @@ function toStored(entry: AnswerEntry, sessionId: string): StoredAnswer {
     rating: entry.rating,
     note: entry.note,
     ...(entry.reported ? { reported: true } : {}),
+    ...(entry.meta ? { meta: entry.meta } : {}),
+    ...(entry.claims?.length ? { claims: entry.claims } : {}),
   };
+}
+
+/**
+ * Finds what the claim check compares an answer with: the session's details, its documents, and
+ * everything said in the call. Earlier answers are left out on purpose: repeating an invented figure
+ * does not make it true.
+ *
+ * @param session   The session.
+ * @param documents Its documents.
+ * @param lines     The call's lines.
+ * @param question  The question.
+ * @returns The source texts.
+ * Called from: useLiveAnswers() (when an answer finishes); tests
+ */
+export function claimSources(
+  session: Session,
+  documents: readonly StoredDocument[],
+  lines: readonly { text: string }[],
+  question: string,
+): string[] {
+  return [
+    session.company,
+    session.role,
+    session.description,
+    session.instructions,
+    session.preferences.keyTerms,
+    question,
+    ...documents.map((document) => document.text),
+    ...lines.map((line) => line.text),
+  ];
 }
 
 /** No lessons: one shared empty list, so hook dependencies stay stable between renders. */
@@ -178,6 +224,8 @@ export interface LiveAnswersInput {
   callStartedAt: number;
   /** Where answers are saved (default: this device's IndexedDB). */
   store?: AnswerStore;
+  /** The chat box's switch: who typed and screenshot questions are for (ADR-0030). */
+  chatTarget?: TargetChoice;
 }
 
 /** What useLiveAnswers() returns. */
@@ -200,6 +248,10 @@ export interface LiveAnswers {
   prev: () => void;
   /** Shows the next answer. */
   next: () => void;
+  /** Shows one answer of the call (the list under the answer shown, ADR-0030). */
+  show: (id: string) => void;
+  /** Answers again in another shape (the answer card's menu, ADR-0030). */
+  reanswer: (id: string, answerType: AnswerType) => void;
   /** Rates an answer (saved at once). */
   rate: (id: string, rating: AnswerRating) => void;
   /** Saves an answer's note. */
@@ -242,8 +294,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const finishedRef = useRef<CallAnswer[]>([]);
   const keepWarmRef = useRef<KeepWarm | null>(null);
   const storeRef = useRef(store);
+  // The chat switch, read when a question is sent: changing it must not rebuild the actions.
+  const chatTargetRef = useRef<TargetChoice>(input.chatTarget ?? 'auto');
   useEffect(() => {
     storeRef.current = store;
+    chatTargetRef.current = input.chatTarget ?? 'auto';
   });
 
   // The session's saved answers (earlier calls, or before a reload), shown before this call's.
@@ -295,33 +350,53 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   /**
    * Builds and streams an answer.
    *
-   * @param mode       'answer', 'chat' or 'screenshot'.
-   * @param typed      The typed question (chat, or about a screenshot).
-   * @param image      The prepared screenshot (mode 'screenshot').
-   * @param pressedAt  When the user pressed the key (default now; a screenshot passes the time
-   *                   before it was taken, so the capture counts in the timings).
-   * @param auto       True when Kite answers by itself (auto-answer); the entry is marked "Auto".
+   * @param mode               'answer', 'chat' or 'screenshot'.
+   * @param options.typed      The typed question (chat, or about a screenshot).
+   * @param options.image      The prepared screenshot (mode 'screenshot').
+   * @param options.pressedAt  When the user pressed the key (default now; a screenshot passes the
+   *                           time before it was taken, so the capture counts in the timings).
+   * @param options.auto       True when Kite answers by itself (auto-answer); marked "Auto".
+   * @param options.answerType The question type chosen on the answer card (a re-answer).
+   * @param options.question   A re-answer's question, used instead of picking one.
    */
   const ask = useCallback(
     (
       mode: AnswerEntry['mode'],
-      typed?: string,
-      image?: string,
-      pressedAt?: number,
-      auto = false,
+      options: {
+        /** The typed question. */
+        typed?: string;
+        /** The prepared screenshot. */
+        image?: string;
+        /** When the user pressed the key. */
+        pressedAt?: number;
+        /** True when Kite answers by itself. */
+        auto?: boolean;
+        /** The question type chosen on the answer card. */
+        answerType?: AnswerType;
+        /** A re-answer's question. */
+        question?: string;
+      } = {},
     ) => {
-      const keyPressAt = pressedAt ?? performance.now();
+      const { typed, image, auto = false, answerType } = options;
+      const keyPressAt = options.pressedAt ?? performance.now();
       // Offline: answers are paused (the banner says so); the transcript keeps going.
       if (!isOnline()) {
         setNotice(OFFLINE_TEXT);
         return;
       }
       const lines = transcript.lines();
-      if (mode === 'answer' && !lines.some((line) => line.speaker === 'them')) {
+      if (
+        mode === 'answer' &&
+        !options.question &&
+        !lines.some((line) => line.speaker === 'them')
+      ) {
         setNotice('Nothing from the other person yet. Type a question in Chat instead.');
         return;
       }
       setNotice(null);
+      // A question from Them is always for the call; the switch is for what the user types or
+      // screenshots.
+      const choice = mode === 'answer' ? 'auto' : chatTargetRef.current;
       const built = buildAnswerRequest({
         session,
         documents,
@@ -334,6 +409,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         callStartedAt,
         log: logRef.current,
         lessons,
+        ...(choice !== 'auto' ? { target: choice } : {}),
+        ...(answerType ? { answerType } : {}),
+        ...(options.question ? { question: options.question } : {}),
       });
       logRef.current = built.log;
       keepWarmRef.current?.noteActivity();
@@ -361,20 +439,44 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         entry,
       ]);
       setShownId(entry.id);
+      // Kept here as well as in state: the answer's end needs it in the same tick.
+      let meta: AnswerMeta | undefined;
       runner.run(built.request, keyPressAt, {
+        onMeta: (received) => {
+          meta = received;
+          update(entry.id, { meta: received });
+        },
         onText: (text) => update(entry.id, { text }),
         onDone: (text, done, timeline) => {
+          // No model call: plain text matching (ADR-0030).
+          const claims = needsClaimCheck(meta, mode)
+            ? checkClaims(
+                text,
+                buildClaimCorpus(
+                  claimSources(session, documents, transcript.lines(), entry.question),
+                ),
+              ).map((claim) => claim.text)
+            : [];
           const finished: AnswerEntry = {
             ...entry,
             text,
             status: 'done',
             timeline,
             usage: done.usage,
+            ...(meta ? { meta } : {}),
+            ...(claims.length > 0 ? { claims } : {}),
           };
           update(entry.id, finished);
           finishedRef.current = [
             ...finishedRef.current,
-            { id: entry.id, mode, question: entry.question, text, askedAt: entry.askedAt },
+            {
+              id: entry.id,
+              mode,
+              question: entry.question,
+              text,
+              askedAt: entry.askedAt,
+              ...(meta?.target === 'kite' ? { target: 'kite' as const } : {}),
+            },
           ];
           console.info('answer: done', {
             sessionId: session.id,
@@ -472,7 +574,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             bytes: prepared.bytes,
             ms: Math.round(performance.now() - pressedAt),
           });
-          ask('screenshot', question, prepared.dataUrl, pressedAt);
+          ask('screenshot', {
+            ...(question ? { typed: question } : {}),
+            image: prepared.dataUrl,
+            pressedAt,
+          });
         } catch (error) {
           setNotice(
             error instanceof CaptureError
@@ -492,16 +598,34 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     setShownId(entries[Math.min(entries.length - 1, index + 1)]?.id ?? null);
   }, [entries, index]);
 
+  const reanswer = useCallback(
+    (id: string, answerType: AnswerType) => {
+      const entry = entries.find((candidate) => candidate.id === id);
+      if (!entry) return;
+      // A screenshot is kept in memory only: from an earlier page it can only go by its question.
+      if (entry.mode === 'screenshot' && entry.thumbnail) {
+        ask('screenshot', { typed: entry.question, image: entry.thumbnail, answerType });
+      } else if (entry.mode === 'answer') {
+        ask('answer', { answerType, ...(entry.question ? { question: entry.question } : {}) });
+      } else {
+        ask('chat', { typed: entry.question, answerType });
+      }
+    },
+    [ask, entries],
+  );
+
   return {
     entries,
     index,
     notice,
     answer: useCallback(() => ask('answer'), [ask]),
-    autoAnswer: useCallback(() => ask('answer', undefined, undefined, undefined, true), [ask]),
-    chat: useCallback((question: string) => ask('chat', question), [ask]),
+    autoAnswer: useCallback(() => ask('answer', { auto: true }), [ask]),
+    chat: useCallback((question: string) => ask('chat', { typed: question }), [ask]),
     clear,
     prev,
     next,
+    show: setShownId,
+    reanswer,
     rate,
     saveNote,
     report,

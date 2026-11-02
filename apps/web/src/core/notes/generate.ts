@@ -99,6 +99,9 @@ export function notesRequest(input: NotesInput): NotesRequest {
     first += 1;
   }
   const answers = [...input.answers]
+    // A private Ask Kite answer was never part of the call (ADR-0030), so the notes must not read
+    // it as something discussed.
+    .filter((answer) => answer.meta?.target !== 'kite')
     .filter((answer) => answer.text.trim() !== '' && answer.createdAt >= input.callStartedAt)
     .sort((a, b) => a.createdAt - b.createdAt)
     .slice(-MAX_NOTES_ANSWERS)

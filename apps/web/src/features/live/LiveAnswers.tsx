@@ -12,8 +12,10 @@
  */
 'use client';
 
+import type { TargetChoice } from '@kite/shared';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { splitAnswer } from '@/core/answer/format';
+import { getChatTarget, setChatTarget } from '@/core/storage/answerPrefs';
 import { updateSession } from '@/core/storage/sessions';
 import { getStartInOverlay } from '@/core/storage/overlayPrefs';
 import { displayTerms, sentenceCase, transcriptChips } from '@/core/transcript/display';
@@ -110,7 +112,12 @@ export function LiveAnswers(props: LiveAnswersProps) {
     () => ({ ...props.session, preferences: { ...props.session.preferences, style } }),
     [props.session, style],
   );
+  // The chat box's switch, remembered per session (ADR-0030).
+  const [chatTarget, setTarget] = useState<TargetChoice>(() => getChatTarget(props.session.id));
+  // Grows with each press of the Ask Kite shortcut, so the overlay opens its chat box too.
+  const [askKiteCount, setAskKiteCount] = useState(0);
   const answers = useLiveAnswers({
+    chatTarget,
     session,
     documents: props.documents,
     ...(props.lessons ? { lessons: props.lessons } : {}),
@@ -168,10 +175,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
           ? {
               id: entry.id,
               question: entry.question,
+              text: entry.text,
               headline: parts.headline,
-              bullets: parts.bullets,
-              tip: parts.tip,
-              note: parts.note,
+              ...(entry.meta ? { meta: entry.meta } : {}),
+              claims: entry.claims ?? [],
               askedAt: entry.askedAt,
               rating: entry.rating,
               reported: entry.reported ?? false,
@@ -182,6 +189,19 @@ export function LiveAnswers(props: LiveAnswersProps) {
               unavailable: entry.unavailable ?? false,
             }
           : null,
+      // Newest first (ADR-0030). A cap, because this goes over the channel on every word.
+      earlier: answers.entries
+        .filter((other) => other.id !== entry?.id && other.text.trim() !== '')
+        .slice(-20)
+        .reverse()
+        .map((other) => ({
+          id: other.id,
+          question: other.question,
+          headline: splitAnswer(other.text).headline,
+        })),
+      chatTarget,
+      askKiteCount,
+      sessionType: props.session.type,
       index: answers.index,
       total: answers.entries.length,
       answering,
@@ -195,7 +215,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
     terms,
     entry,
     answers.index,
-    answers.entries.length,
+    answers.entries,
+    chatTarget,
+    askKiteCount,
+    props.session.type,
     audioYou,
     audioThem,
     answering,
@@ -210,7 +233,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const actions = useRef(answers);
   const onEnd = useRef(props.onEnd);
   const latestPreferences = useRef(props.session.preferences);
+  const sessionIdRef = useRef(props.session.id);
   useEffect(() => {
+    sessionIdRef.current = props.session.id;
     actions.current = answers;
     onEnd.current = props.onEnd;
     latestPreferences.current = props.session.preferences;
@@ -229,7 +254,13 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'next') actions.current.next();
       else if (command.type === 'rate') actions.current.rate(command.id, command.rating);
       else if (command.type === 'report') actions.current.report(command.id, command.note);
-      else if (command.type === 'end') onEnd.current();
+      else if (command.type === 'show') actions.current.show(command.id);
+      else if (command.type === 'reanswer')
+        actions.current.reanswer(command.id, command.answerType);
+      else if (command.type === 'chat-target') {
+        setTarget(command.target);
+        setChatTarget(props.session.id, command.target);
+      } else if (command.type === 'end') onEnd.current();
       else if (command.type === 'chat') actions.current.chat(command.question);
       else if (command.type === 'style') {
         setStyle(command.style);
@@ -274,6 +305,14 @@ export function LiveAnswers(props: LiveAnswersProps) {
         else if (action === 'prev') actions.current.prev();
         else if (action === 'next') actions.current.next();
         else if (action === 'screenshot') actions.current.screenshot();
+        else if (action === 'ask-kite') {
+          // Leaving this page would end the call, so during a call the shortcut opens the chat
+          // box, here and in the overlay, set to a private answer (ADR-0030).
+          setChatOpen(true);
+          setTarget('kite');
+          setChatTarget(sessionIdRef.current, 'kite');
+          setAskKiteCount((count) => count + 1);
+        }
       }, setTaken),
     [],
   );
@@ -329,7 +368,17 @@ export function LiveAnswers(props: LiveAnswersProps) {
           </p>
         </div>
       )}
-      {chatOpen && <ChatBox onSend={answers.chat} onAskScreen={answers.screenshot} />}
+      {chatOpen && (
+        <ChatBox
+          onSend={answers.chat}
+          onAskScreen={answers.screenshot}
+          target={chatTarget}
+          onTarget={(target) => {
+            setTarget(target);
+            setChatTarget(props.session.id, target);
+          }}
+        />
+      )}
       <AnswerPanel
         entry={entry}
         index={answers.index}
@@ -343,6 +392,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
         onSignInAgain={() => setSignInOpen(true)}
         onNote={answers.saveNote}
         copy={props.copy}
+        sessionType={props.session.type}
+        onReanswer={answers.reanswer}
+        entries={answers.entries}
+        onShow={answers.show}
       />
       <SignInAgainDialog
         open={signInOpen}

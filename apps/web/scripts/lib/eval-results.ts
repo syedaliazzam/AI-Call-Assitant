@@ -21,6 +21,54 @@ export interface ScenarioRunResult {
   total: number;
   /** The grader's sentence on what cost points ("none" when nothing did). */
   reason: string;
+  /** The checks made in code on top of the score (ADR-0030), when this evaluation has them. */
+  checks?: RunChecks;
+}
+
+/** The checks made in code on one answer (ADR-0030). */
+export interface RunChecks {
+  /** True when the reply opened with its hidden line. */
+  hiddenLine: boolean;
+  /** Whether the question type was as expected (when the scenario expects one). */
+  typeOk?: boolean;
+  /** Whether "for the call" or "Ask Kite" was as expected (when the scenario expects one). */
+  targetOk?: boolean;
+  /** True when the spoken part comments on what Kite was given. */
+  metaComment: boolean;
+  /** What the grader found invented. */
+  invented: string[];
+  /** Numbers and prices the claim check could not find in the documents or the call. */
+  unsupportedNumbers: string[];
+  /** Dates and names the claim check could not find. */
+  unsupportedNames: string[];
+  /** What running the answer's code found, when it has code. */
+  code?: RunCode;
+  /** Whether the code ran (when the scenario requires code). */
+  codeRuns?: boolean;
+  /** A repeat against the first answer: the same numbers, and the share of words in common. */
+  agreement?: RunAgreement;
+}
+
+/** What running an answer's code found. */
+export interface RunCode {
+  /** How many blocks the answer has. */
+  blocks: number;
+  /** How many ran without an error. */
+  ran: number;
+  /** How many failed. */
+  failed: number;
+  /** How many are in a language the sandbox does not run. */
+  notRun: number;
+  /** The first failure's last line. */
+  error?: string;
+}
+
+/** A repeated answer against the first one. */
+export interface RunAgreement {
+  /** True when both state the same numbers. */
+  numbers: boolean;
+  /** The share of words in common (0 to 1). */
+  words: number;
 }
 
 /** All runs of one scenario. */

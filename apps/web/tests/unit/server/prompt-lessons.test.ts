@@ -22,7 +22,7 @@ import {
 import { parseAnswerRequest } from '@/server/validate';
 
 /** SHA-256 of the rules block, changed on purpose for first-person answers (ADR-0029). */
-const RULES_SHA256 = '758505448180b4b00c602deaddf5b1300b4e38e3735c53c4667adc0081f1ce96';
+const RULES_SHA256 = 'da2895090cb1a71793ac8241402b469c6ea8abf7ca62c8ed101b8c50760a09b3';
 
 /** An invented request. */
 const REQUEST: AnswerRequest = {
@@ -67,7 +67,8 @@ describe('rulesBlock', () => {
     const block = rulesBlock(attack);
     // The core rules are all there, unchanged, before anything from a lesson.
     expect(block.indexOf(CORE_RULES)).toBe(0);
-    expect(block.split('How to answer:')).toHaveLength(3); // the rule's own heading + one inside a bullet
+    expect(block.split('How to answer for the call:')).toHaveLength(2); // the rule's own heading
+    expect(block.split('How to answer:')).toHaveLength(2); // only inside the lesson's own bullet
     const afterHeading = block.slice(block.indexOf(LESSONS_HEADING) + LESSONS_HEADING.length);
     const lines = afterHeading.split('\n').filter((line) => line !== '');
     // Each lesson is exactly one bullet line: it cannot start a heading or a rule of its own.

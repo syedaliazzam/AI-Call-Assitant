@@ -54,11 +54,16 @@ function isTyping(target: EventTarget | null): boolean {
  *
  * @param press The key press.
  * @param mac   True on macOS (⌘ is the modifier), false elsewhere (Ctrl).
- * @returns 'answer', 'screenshot', 'chat', 'clear', 'prev', 'next', or null.
+ * @returns 'answer', 'screenshot', 'chat', 'clear', 'prev', 'next', 'ask-kite', or null.
  * Called from: listenForHotkeys(); tests
  */
 export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
-  if (press.repeat || press.altKey || isTyping(press.target)) return null;
+  if (press.repeat || isTyping(press.target)) return null;
+  // The one shortcut with Alt: Ask Kite (ADR-0030). Every other Alt combination stays the browser's.
+  if (press.altKey) {
+    const held = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;
+    return held && !press.shiftKey && press.key.toLowerCase() === 'k' ? 'ask-kite' : null;
+  }
   // Exactly the platform's modifier: Ctrl+⌘ together is not a shortcut.
   const modifier = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;
   if (!modifier) return null;
@@ -74,6 +79,30 @@ export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
     default:
       return null;
   }
+}
+
+/**
+ * Listens for the Ask Kite shortcut alone, on every signed-in page. Unlike listenForHotkeys(), it
+ * leaves every other key to the page and the browser, because no call is going on there.
+ *
+ * @param target  The window to listen on.
+ * @param mac     True on macOS.
+ * @param handler Called each time it is pressed.
+ * @returns A function that stops listening.
+ * Called from: browserPlatform.onAskKiteHotkey(), desktop platform onAskKiteHotkey(); tests
+ */
+export function listenForAskKite(
+  target: Pick<Window, 'addEventListener' | 'removeEventListener'>,
+  mac: boolean,
+  handler: () => void,
+): () => void {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (hotkeyFor(event, mac) !== 'ask-kite') return;
+    event.preventDefault();
+    handler();
+  };
+  target.addEventListener('keydown', onKeyDown);
+  return () => target.removeEventListener('keydown', onKeyDown);
 }
 
 /**

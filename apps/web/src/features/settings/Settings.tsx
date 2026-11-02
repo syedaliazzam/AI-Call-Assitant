@@ -36,6 +36,7 @@ import { Select } from '@/ui/Select';
 import { Textarea } from '@/ui/Textarea';
 import { PageShell } from '@/ui/PageShell';
 import { Toggle } from '@/ui/Toggle';
+import { AnswerPrefsSetting } from './AnswerPrefsSetting';
 import { AutoAnswerSetting } from './AutoAnswerSetting';
 import { DataTransfer } from './DataTransfer';
 import { HotkeyList } from './HotkeyList';
@@ -242,7 +243,10 @@ export function Settings() {
       </Section>
 
       <Section title="Answers">
-        <AutoAnswerSetting />
+        <div className="flex flex-col gap-5">
+          <AutoAnswerSetting />
+          <AnswerPrefsSetting />
+        </div>
       </Section>
 
       <Section title="What Kite has learned">
@@ -253,10 +257,10 @@ export function Settings() {
       <Section title="Local data">
         <DataTransfer />
         <p className="mb-4 text-sm text-ui-muted">
-          Deletes every session, document, transcript, answer and learned lesson saved by Kite on
-          this computer, and these settings. The speech model stays (it holds no personal data and
-          is 204 MB to download again). Sessions in another browser or in the desktop app are
-          separate and are not affected.
+          Deletes every session, document, transcript, answer, Ask Kite chat and learned lesson
+          saved by Kite on this computer, and these settings. The speech model stays (it holds no
+          personal data and is 204 MB to download again). Sessions in another browser or in the
+          desktop app are separate and are not affected.
         </p>
         <Button variant="danger" onClick={() => setConfirming(true)}>
           Delete all local data
@@ -264,8 +268,8 @@ export function Settings() {
         {deleted && (
           <p role="status" className="mt-3 text-sm text-ui-success">
             Deleted {deleted.sessions} sessions, {deleted.documents} documents, {deleted.utterances}{' '}
-            transcript lines, {deleted.answers} answers, {deleted.notes} notes and {deleted.lessons}{' '}
-            lessons.
+            transcript lines, {deleted.answers} answers, {deleted.notes} notes, {deleted.lessons}{' '}
+            lessons and {deleted.chats} Ask Kite chats.
           </p>
         )}
       </Section>

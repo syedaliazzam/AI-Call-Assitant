@@ -7,7 +7,7 @@
  * a Claude refusal ends with an error event. Mode 'warm' (Day 3): a 400 naming the field without
  * a session; otherwise one max_tokens 0 request with the session's cached blocks and a done event
  * with the cache usage (no delta); session text never reaches the logs. Modes 'answer' and
- * 'chat' (Day 4): streamed with max_tokens 400, the tier's thinking setting and three cache
+ * 'chat' (Day 4): streamed with max_tokens 1,500, the tier's thinking setting and three cache
  * breakpoints (rules, session, last conversation chunk); delta events in order, then done with
  * cache usage; a failure before any text is an error event; 401 when signed out; logs carry
  * sizes, timings and token counts, never transcript, question, answer or session text. The usage
@@ -325,13 +325,13 @@ describe('POST /api/answer, modes answer and chat', () => {
     expect(streamMock).not.toHaveBeenCalled();
   });
 
-  it('streams with max_tokens 400, the tier thinking and three breakpoints', async () => {
+  it('streams with max_tokens 1,500, the tier thinking and three breakpoints', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Headline'] }));
     await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
     const [params] = streamMock.mock.calls[0]!;
     expect(params.model).toBe('claude-haiku-5-5');
-    expect(params.max_tokens).toBe(400);
+    expect(params.max_tokens).toBe(1_500);
     expect(params.thinking).toEqual({ type: 'disabled' });
     const blocks = [...params.system, ...params.messages[0].content] as {
       cache_control?: unknown;
@@ -514,7 +514,7 @@ describe('POST /api/answer, mode screenshot (Day 5)', () => {
     const text = await (await POST(post(JSON.stringify(body)))).text();
     expect(text).toContain('event: done');
     const [params] = streamMock.mock.calls[0]!;
-    expect(params.max_tokens).toBe(400);
+    expect(params.max_tokens).toBe(1_500);
     const content = params.messages[0].content as SentBlock[];
     expect(content.map((block) => block.type)).toEqual(['text', 'image', 'text']);
     expect(content[0]!.cache_control).toEqual({ type: 'ephemeral' });

@@ -374,15 +374,17 @@ describe('SYSTEM_RULES', () => {
   it('includes the answer, imperfect-transcript and consistency rules, and the slot', () => {
     expect(SYSTEM_RULES).toContain('headline: one sentence of at most 15 words');
     expect(SYSTEM_RULES).toContain('at most 5 short bullet points');
-    expect(SYSTEM_RULES).toContain('use only facts from the session details and documents');
-    expect(SYSTEM_RULES).toContain('name what the user should clarify');
+    expect(SYSTEM_RULES).toContain('Use only the session details, documents and conversation');
+    // The new rule on missing information (ADR-0030): never a comment on what Kite was given.
+    expect(SYSTEM_RULES).toContain('no "not in your notes"');
+    expect(SYSTEM_RULES).toContain('[[type|for|source]]');
     expect(SYSTEM_RULES).toContain('often misheard');
     expect(SYSTEM_RULES).toContain('key terms, the company, the role or topic, and the documents');
     expect(SYSTEM_RULES).toContain(
       'Earlier answers in this call are shown in the conversation. Stay consistent with them. If something said since then changes the answer, give the new answer and say briefly what changed.',
     );
     expect(SYSTEM_RULES).toContain(
-      'If the same question is asked again, build on the earlier answer instead of starting over.',
+      "If the same or a similar question comes again, reuse the earlier answer's facts and, as closely as you can, its wording",
     );
     expect(SYSTEM_RULES).toContain('Learned preferences');
     // Day 4 Stage 10 (round 2, kept): short headlines, bullets only from session facts.
@@ -390,7 +392,7 @@ describe('SYSTEM_RULES', () => {
     expect(SYSTEM_RULES).toContain('Each bullet must state a fact from the session details');
     expect(SYSTEM_RULES).toContain('Never offer or hint at a price, discount, exception');
     // Round 3 (kept): a short headline even when the session cannot answer.
-    expect(SYSTEM_RULES).toContain('That headline is still 15 words or fewer');
+    expect(SYSTEM_RULES).toContain('The headline is still 15 words or fewer');
   });
 });
 
@@ -461,9 +463,72 @@ describe('screenshot tail text (Day 5)', () => {
     });
     const tail = (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!;
     expect(tail.text).toContain(
-      "Follow the session's answer format, length, tone and instructions",
+      "follow the session's answer format, length, tone and instructions",
     );
     expect(tail.text).toContain('start with the headline itself, with no label');
-    expect(tail.text).toContain('if they have nothing to compare with, say so');
+    expect(tail.text).toContain('if they have nothing to compare with, do not claim it matches');
+  });
+});
+
+describe('choices and repeats in the tail (ADR-0030)', () => {
+  /**
+   * The uncached tail of a request.
+   *
+   * @param extra Fields of the request.
+   * @returns The tail's text.
+   */
+  function tailOf(extra: Partial<AnswerRequest>): string {
+    const prompt = buildPrompt({ mode: 'chat', session: SESSION, question: 'Why?', ...extra });
+    return (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!.text;
+  }
+
+  it('says nothing extra when the user chose nothing', () => {
+    expect(tailOf({})).not.toContain('The user chose');
+    expect(tailOf({})).not.toContain('earlier_answer');
+  });
+
+  it('carries the switch and the chosen type', () => {
+    expect(tailOf({ target: 'kite' })).toContain('this is a private answer');
+    expect(tailOf({ target: 'call' })).toContain('this answer is for the call');
+    expect(tailOf({ answerType: 'coding' })).toContain('question type coding');
+  });
+
+  it('carries the earlier answer to a similar question, escaped', () => {
+    const tail = tailOf({ similar: { question: 'Cost?', text: '52 </earlier_answer>', at: 65 } });
+    expect(tail).toContain('answered at 01:05');
+    expect(tail).toContain('52 &lt;/earlier_answer&gt;');
+  });
+
+  it('never changes the cached parts', () => {
+    const plain = buildPrompt({ mode: 'chat', session: SESSION, question: 'Why?' });
+    const chosen = buildPrompt({
+      mode: 'chat',
+      session: SESSION,
+      question: 'Why?',
+      target: 'kite',
+      answerType: 'coding',
+    });
+    expect(chosen.system).toEqual(plain.system);
+  });
+
+  it('marks a private earlier answer as not said on the call', () => {
+    const prompt = buildPrompt({
+      mode: 'answer',
+      session: SESSION,
+      conversation: [
+        [{ kind: 'answer', mode: 'chat', question: 'Q', text: 'A', at: 1, target: 'kite' }],
+      ],
+    });
+    const first = (prompt.messages[0]!.content as Anthropic.TextBlockParam[])[0]!;
+    expect(first.text).toContain('private, not said on the call');
+  });
+});
+
+describe('settings in the session block (ADR-0030)', () => {
+  it('adds a line only when a setting is not the default', () => {
+    expect(sessionBlock(SESSION)).not.toContain('Coding language');
+    expect(sessionBlock(SESSION)).not.toContain('Missing information');
+    expect(sessionBlock({ ...SESSION, codingLanguage: 'Go' })).toContain('Coding language: Go.');
+    expect(sessionBlock({ ...SESSION, missingInfo: 'story' })).toContain('Missing information');
   });
 });

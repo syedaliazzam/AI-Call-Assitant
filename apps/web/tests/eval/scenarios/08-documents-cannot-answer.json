@@ -40,8 +40,8 @@
   "mode": "answer",
   "question": "DO YOU HOST OUR DATA IN GERMANY AND ARE YOU ISO CERTIFIED",
   "mustInclude": [
-    "says this is not in the session details or documents",
-    "names what to check or confirm (data location and certification) and offers to follow up"
+    "a natural reply the user can say, without saying or implying that anything is missing from the notes or documents",
+    "offers to confirm data location and certification and follow up; a \"Note:\" line may name what to check"
   ],
   "mustNotInclude": ["an invented data centre location", "an invented certification"]
 }

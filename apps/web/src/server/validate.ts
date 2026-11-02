@@ -12,8 +12,15 @@
  */
 import 'server-only';
 import {
+  ANSWER_TYPES,
   MAX_ACTIVE_LESSONS,
   MAX_ANSWER_CHARS,
+  MAX_KITE_ATTACHMENTS,
+  MAX_KITE_HISTORY,
+  MAX_KITE_IMAGES,
+  MAX_KITE_QUESTION_CHARS,
+  MAX_KITE_TURN_CHARS,
+  type AnswerType,
   MAX_CONVERSATION_CHUNKS,
   MAX_CONVERSATION_TOKENS,
   MAX_IMAGE_CHARS,
@@ -76,6 +83,8 @@ const sessionSchema = z
     keyTerms: z.array(z.string().max(200)).max(MAX_KEY_TERMS),
     style: styleSchema,
     language: z.string().max(50).optional(),
+    codingLanguage: z.string().max(50).optional(),
+    missingInfo: z.enum(['approach', 'story']).optional(),
     documents: z.array(documentSchema).max(20),
   })
   .refine(
@@ -106,6 +115,7 @@ const conversationItemSchema = z.discriminatedUnion('kind', [
       question: z.string().max(MAX_LINE_CHARS),
       text: z.string().max(MAX_ANSWER_CHARS),
       at: atSchema,
+      target: z.enum(['call', 'kite']).optional(),
     })
     .strict(),
 ]);
@@ -138,36 +148,88 @@ function startsAsJpeg(dataUrl: string): boolean {
   return head.length >= 3 && head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
 }
 
+/** A JPEG data URL whose bytes really start as a JPEG (a screenshot). */
+const imageSchema = z
+  .string()
+  .max(MAX_IMAGE_CHARS, `at most ${MAX_IMAGE_CHARS} characters`)
+  .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/, 'must be a JPEG data URL')
+  .refine(startsAsJpeg, 'must be a JPEG image');
+
 /**
  * The whole request body. `.strict()` rejects unknown fields, so typos are reported instead of
  * silently ignored. `satisfies` makes the compiler check it matches AnswerRequest exactly.
  */
 export const answerRequestSchema = z
   .object({
-    mode: z.enum(['hello', 'warm', 'answer', 'chat', 'screenshot']),
+    mode: z.enum(['hello', 'warm', 'answer', 'chat', 'screenshot', 'kite']),
     model: z.enum(['fast', 'smart']).optional(),
     session: sessionSchema.optional(),
     conversation: conversationSchema.optional(),
     tail: z.array(callLineSchema).max(MAX_TAIL_LINES).optional(),
-    question: z.string().max(MAX_LINE_CHARS).optional(),
+    // MAX_KITE_QUESTION_CHARS is the larger limit; every other mode is held to MAX_LINE_CHARS below.
+    question: z.string().max(MAX_KITE_QUESTION_CHARS).optional(),
     // The screenshot (Day 5): a JPEG data URL whose bytes really start as a JPEG.
-    image: z
-      .string()
-      .max(MAX_IMAGE_CHARS, `at most ${MAX_IMAGE_CHARS} characters`)
-      .regex(/^data:image\/jpeg;base64,[A-Za-z0-9+/]+=*$/, 'must be a JPEG data URL')
-      .refine(startsAsJpeg, 'must be a JPEG image')
-      .nullable()
-      .optional(),
+    image: imageSchema.nullable().optional(),
     // Approved lessons (Day 5 Stage 7), for the rules block.
     lessons: z
       .array(z.string().min(1).max(MAX_LESSON_CHARS, `at most ${MAX_LESSON_CHARS} characters`))
       .max(MAX_ACTIVE_LESSONS, `at most ${MAX_ACTIVE_LESSONS} lessons`)
       .optional(),
+    // Ask Kite and answer quality (ADR-0030).
+    target: z.enum(['call', 'kite']).optional(),
+    answerType: z.enum(ANSWER_TYPES as [AnswerType, ...AnswerType[]]).optional(),
+    similar: z
+      .object({
+        question: z.string().max(MAX_LINE_CHARS),
+        text: z.string().max(MAX_ANSWER_CHARS),
+        at: atSchema,
+      })
+      .strict()
+      .optional(),
+    // The Ask Kite page's chat: mode 'kite' only (checked below).
+    codingLanguage: z.string().max(50).optional(),
+    history: z
+      .array(
+        z
+          .object({
+            role: z.enum(['you', 'kite']),
+            text: z.string().min(1).max(MAX_KITE_TURN_CHARS),
+          })
+          .strict(),
+      )
+      .max(MAX_KITE_HISTORY)
+      .optional(),
+    attachments: z.array(documentSchema).max(MAX_KITE_ATTACHMENTS).optional(),
+    images: z.array(imageSchema).max(MAX_KITE_IMAGES).optional(),
   })
   .strict()
-  // Every mode but hello is built on the session's cached prompt, so it needs the session.
+  // Every mode but hello and kite is built on the session's cached prompt, so it needs the session.
   .superRefine((request, context) => {
-    if (request.mode !== 'hello' && request.session === undefined) {
+    if (request.mode === 'kite') {
+      if (!request.question?.trim() && !request.images?.length) {
+        context.addIssue({ code: 'custom', path: ['question'], message: 'required for mode kite' });
+      }
+      const total = (request.attachments ?? []).reduce((sum, item) => sum + item.text.length, 0);
+      if (total > MAX_DOCUMENT_CHARS) {
+        context.addIssue({
+          code: 'custom',
+          path: ['attachments'],
+          message: `attachments may hold at most ${MAX_DOCUMENT_CHARS} characters`,
+        });
+      }
+    } else {
+      if (request.history || request.attachments || request.images) {
+        context.addIssue({ code: 'custom', path: ['history'], message: 'only for mode kite' });
+      }
+      if ((request.question?.length ?? 0) > MAX_LINE_CHARS) {
+        context.addIssue({
+          code: 'custom',
+          path: ['question'],
+          message: `at most ${MAX_LINE_CHARS} characters`,
+        });
+      }
+    }
+    if (request.mode !== 'hello' && request.mode !== 'kite' && request.session === undefined) {
       context.addIssue({
         code: 'custom',
         path: ['session'],

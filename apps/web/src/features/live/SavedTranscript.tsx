@@ -49,7 +49,7 @@ export function SavedTranscript({ lines, saving, terms = [] }: SavedTranscriptPr
             Saved transcript ({lines.length} {lines.length === 1 ? 'line' : 'lines'})
           </summary>
           <ol className="mt-3 flex flex-col gap-2">
-            {lines.map((line) => (
+            {[...lines].reverse().map((line) => (
               <li key={line.id} className="text-sm">
                 <span className="mr-2 text-xs text-ui-muted">
                   {TIME_FORMAT.format(line.tStart)}

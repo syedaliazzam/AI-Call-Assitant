@@ -53,10 +53,9 @@ const STATE: CompactState = {
   answer: {
     id: 'a1',
     question: 'What does it cost?',
+    text: '52 dollars per seat.\n- Billed yearly',
     headline: '52 dollars per seat.',
-    bullets: ['Billed yearly'],
-    tip: '',
-    note: '',
+    claims: [],
     askedAt: 1,
     rating: null,
     reported: false,

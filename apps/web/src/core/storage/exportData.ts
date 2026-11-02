@@ -13,6 +13,7 @@
  *
  * The file holds the user's own call content; it is never logged or sent anywhere.
  */
+import { ANSWER_TYPES, type AnswerType } from '@kite/shared';
 import { z } from 'zod';
 import { getDb } from './db';
 import { currentSessionType, currentTone } from './migrate';
@@ -22,6 +23,7 @@ import type {
   StoredQuestionBank,
   Session,
   StoredAnswer,
+  StoredChat,
   StoredLesson,
   StoredNotes,
   StoredUtterance,
@@ -35,7 +37,7 @@ export const EXPORT_FORMAT = 'kite-export';
  * 1: documents as metadata only. 2: documents with their extracted text. 3: adds the Resume and
  * Document libraries. 4: adds the question banks.
  */
-export const EXPORT_VERSION = 4;
+export const EXPORT_VERSION = 5;
 
 /** Largest file accepted for import (50 MB): far above a year of calls, below browser limits. */
 export const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
@@ -84,6 +86,8 @@ export interface ExportFile {
   library?: LibraryItem[];
   /** The question banks (version 4; absent in older files). */
   questionBanks?: StoredQuestionBank[];
+  /** The Ask Kite chats (version 5; absent in older files). */
+  chats?: StoredChat[];
 }
 
 // Older files hold the old types and tones; they are read as today's (core/storage/migrate.ts).
@@ -163,6 +167,45 @@ const AnswerSchema = z.object({
   createdAt: z.number(),
   rating: z.enum(['up', 'down']).nullable(),
   note: z.string(),
+  reported: z.boolean().optional(),
+  meta: z
+    .object({
+      type: z.enum(ANSWER_TYPES as [AnswerType, ...AnswerType[]]),
+      target: z.enum(['call', 'kite']),
+      source: z.enum(['docs', 'call', 'general', 'example']),
+    })
+    .optional(),
+  claims: z.array(z.string()).optional(),
+});
+const ChatSchema = z.object({
+  id: z.string().min(1),
+  title: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  attachments: z.array(
+    z.object({
+      id: z.string().min(1),
+      name: z.string(),
+      kind: z.enum(['resume', 'document', 'session']),
+      text: z.string(),
+    }),
+  ),
+  messages: z.array(
+    z.object({
+      id: z.string().min(1),
+      role: z.enum(['you', 'kite']),
+      text: z.string(),
+      at: z.number(),
+      images: z.number().optional(),
+      meta: z
+        .object({
+          type: z.enum(ANSWER_TYPES as [AnswerType, ...AnswerType[]]),
+          target: z.enum(['call', 'kite']),
+          source: z.enum(['docs', 'call', 'general', 'example']),
+        })
+        .optional(),
+    }),
+  ),
 });
 const NotesSchema = z.object({
   sessionId: z.string().min(1),
@@ -200,6 +243,7 @@ const ExportSchema = z.object({
   lessons: z.array(LessonSchema),
   library: z.array(LibrarySchema).optional(),
   questionBanks: z.array(QuestionBankSchema).optional(),
+  chats: z.array(ChatSchema).optional(),
 });
 
 /**
@@ -233,6 +277,7 @@ export async function exportData(now = Date.now()): Promise<ExportFile> {
     lessons: await db.lessons.toArray(),
     library: await db.library.toArray(),
     questionBanks: await db.questionBanks.toArray(),
+    chats: await db.chats.toArray(),
   };
 }
 
@@ -331,6 +376,8 @@ export interface ImportSummary {
   library: MergeCount;
   /** Question banks. */
   questionBanks: MergeCount;
+  /** Ask Kite chats. */
+  chats: MergeCount;
   /**
    * Documents a version 1 file lists by name only (no text), for sessions that were added: their
    * files must be attached again. Always 0 for version 2 files.
@@ -377,6 +424,7 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
       db.lessons,
       db.library,
       db.questionBanks,
+      db.chats,
     ],
     async () => {
       const sessions = missing(
@@ -421,7 +469,11 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
         fileBanks,
       );
 
+      const fileChats = file.chats ?? [];
+      const chats = missing(await db.chats.bulkGet(fileChats.map((chat) => chat.id)), fileChats);
+
       await db.sessions.bulkAdd(sessions.toAdd);
+      await db.chats.bulkAdd(chats.toAdd);
       await db.questionBanks.bulkAdd(questionBanks.toAdd);
       await db.documents.bulkAdd(
         documents.toAdd.map(({ id, sessionId, name, chars, addedAt, text, kind, sourceId }) => ({
@@ -454,6 +506,7 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
         },
         library: library.count,
         questionBanks: questionBanks.count,
+        chats: chats.count,
         documentsToReattach: file.documents.filter(
           (document) => document.text === undefined && addedSessionIds.has(document.sessionId),
         ).length,

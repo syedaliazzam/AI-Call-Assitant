@@ -2,9 +2,10 @@
  * File: apps/web/src/features/live/CompactView.tsx
  * Purpose: The overlay (the compact live view; architecture §5, ADR-0029): three stacked bars.
  *          Controls: audio status, Answer, Screenshot, Chat, move, collapse, menu (opacity, fade,
- *          screen-share protection), End. Transcript: the latest words as chips, Clear, expand.
- *          Answer card: question, answer line, bullets, closing tip, private note; time, thumbs,
- *          copy and report; history; Clear; expand. One scroll area, readable 16–18 px text.
+ *          screen-share protection), End. Transcript: the latest words as chips, Clear, expand
+ *          (newest line first). Answer card: question, type and source tags, the answer (shared
+ *          with the main window: AnswerBody), time, thumbs, copy and report; history, with the
+ *          other answers listed newest first; Clear; expand. One scroll area, 16–18 px text.
  *          Presentational: CompactLive.tsx gives it the state.
  * Used by: src/features/live/CompactLive.tsx (desktop overlay window; browser picture-in-picture)
  * Depends on: src/core/live/liveChannel.ts (types), @kite/shared (hotkeys), src/ui/icons.tsx,
@@ -22,9 +23,15 @@ import {
   DEFAULT_GLOBAL_HOTKEYS,
   FOCUSED_HOTKEYS,
   hotkeyLabel,
+  type AnswerType,
   type ShareProtectionState,
+  type TargetChoice,
 } from '@kite/shared';
-import { useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { answerText } from '@/core/answer/format';
+import { AnswerBody } from '@/features/answers/AnswerBody';
+import { AnswerTags } from '@/features/answers/AnswerTags';
+import { TARGET_OPTIONS } from './ChatBox';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import type { AnswerStyle } from '@/core/storage/types';
 import { FORMAT_OPTIONS, LENGTH_OPTIONS, TONE_OPTIONS } from '@/features/session-setup/labels';
@@ -318,6 +325,12 @@ export function CompactView(props: CompactViewProps) {
   };
 
   const answer = state?.answer ?? null;
+  // A new answer starts at the top of the one scroll area, wherever the last one was scrolled to.
+  const scrollArea = useRef<HTMLDivElement>(null);
+  const answerId = answer?.id;
+  useEffect(() => {
+    if (scrollArea.current) scrollArea.current.scrollTop = 0;
+  }, [answerId]);
   const chips = (state?.chips ?? []).filter((chip) => !clearedChips.includes(chip.id));
   const hasHistory = (state?.total ?? 0) > 1;
 
@@ -472,7 +485,8 @@ export function CompactView(props: CompactViewProps) {
                 {(state?.lines ?? []).length === 0 && (
                   <p className="text-ui-muted">Nothing said yet.</p>
                 )}
-                {(state?.lines ?? []).map((line) => (
+                {/* Newest first (ADR-0030). */}
+                {[...(state?.lines ?? [])].reverse().map((line) => (
                   <p key={line.id} className="mb-1.5">
                     <span
                       className={`${EYEBROW} mr-2 ${line.speaker === 'you' ? 'text-ui-you' : 'text-ui-them'}`}
@@ -536,11 +550,29 @@ export function CompactView(props: CompactViewProps) {
                 </div>
 
                 {props.chatOpen && (
-                  <div className="shrink-0 border-b border-ui-border p-1.5">
+                  <div className="flex shrink-0 gap-1 border-b border-ui-border p-1.5">
+                    <select
+                      aria-label="Who the answer is for"
+                      title="Auto decides for each question. For the call: words to say. Ask Kite: a private answer on any topic."
+                      value={state?.chatTarget ?? 'auto'}
+                      onChange={(event) =>
+                        onCommand({
+                          type: 'chat-target',
+                          target: event.target.value as TargetChoice,
+                        })
+                      }
+                      className="h-9 shrink-0 border border-ui-border bg-ui-input px-1 text-[13px] text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+                    >
+                      {TARGET_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
                     <input
                       autoFocus
                       aria-label="Type a question"
-                      className="h-9 w-full border border-ui-border bg-ui-input px-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+                      className="h-9 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
                       placeholder="Type a question, then Enter"
                       value={question}
                       maxLength={2_000}
@@ -551,43 +583,33 @@ export function CompactView(props: CompactViewProps) {
                 )}
 
                 {/* The one scroll area. */}
-                <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+                <div ref={scrollArea} className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
                   {answer ? (
                     <>
                       <p aria-label="Question" className="text-[15px] text-ui-muted">
                         <strong className="font-semibold text-ui-text">Question:</strong>{' '}
                         {answer.question || 'the latest from Them'}
                       </p>
-                      <h2
-                        aria-label="Answer line"
-                        className="mt-2 text-[18px] font-bold leading-snug text-ui-heading"
-                      >
-                        {answer.headline || '…'}
-                      </h2>
-                      {answer.bullets.length > 0 && (
-                        <ul
-                          aria-label="Answer details"
-                          className="mt-2 list-disc space-y-1 pl-5 text-[16px] leading-relaxed"
-                        >
-                          {answer.bullets.map((bullet, i) => (
-                            <li key={i}>{bullet}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {answer.tip && (
-                        <p aria-label="Tip" className="mt-2 text-[16px] leading-relaxed">
-                          {answer.tip}
-                        </p>
-                      )}
-                      {answer.note && (
-                        <p
-                          aria-label="Private note"
-                          className="mt-2 border-t border-ui-border pt-1.5 text-[13px] italic text-ui-muted"
-                        >
-                          <span className={`${EYEBROW} mr-1 not-italic`}>Just for you</span>
-                          {answer.note}
-                        </p>
-                      )}
+                      <AnswerTags
+                        meta={answer.meta}
+                        {...(state?.sessionType ? { sessionType: state.sessionType } : {})}
+                        {...(answer.status !== 'streaming'
+                          ? {
+                              onChangeType: (answerType: AnswerType) =>
+                                onCommand({ type: 'reanswer', id: answer.id, answerType }),
+                            }
+                          : {})}
+                      />
+                      <div className="mt-2">
+                        <AnswerBody
+                          text={answer.text}
+                          size="overlay"
+                          headlineLabel="Answer line"
+                          claims={answer.claims}
+                          {...(answer.meta?.target ? { target: answer.meta.target } : {})}
+                          {...(props.copy ? { copy: props.copy } : {})}
+                        />
+                      </div>
                       {answer.status === 'streaming' && (
                         <p className={`${EYEBROW} mt-2 text-ui-muted`}>Answering…</p>
                       )}
@@ -648,11 +670,12 @@ export function CompactView(props: CompactViewProps) {
                           className={`${FOOTER_BUTTON} text-ui-muted`}
                           aria-label={copied ? 'Copied' : 'Copy the answer'}
                           onClick={() => {
-                            const text = [
-                              answer.headline,
-                              ...answer.bullets.map((bullet) => `- ${bullet}`),
-                              ...(answer.tip ? [answer.tip] : []),
-                            ].join('\n');
+                            // A private answer is read as written; for the call, Copy leaves out
+                            // the private note.
+                            const text =
+                              answer.meta?.target === 'kite'
+                                ? answer.text
+                                : answerText(answer.text);
                             void copy(text).then(() => {
                               setCopied(true);
                               setTimeout(() => setCopied(false), 1_500);
@@ -697,6 +720,24 @@ export function CompactView(props: CompactViewProps) {
                     <p className="text-ui-muted">
                       {state?.notice ?? 'Press Answer when they ask something.'}
                     </p>
+                  )}
+                  {(state?.earlier ?? []).length > 0 && (
+                    <div className="mt-3 border-t border-ui-border pt-2">
+                      <p className={`${EYEBROW} text-ui-muted`}>Other answers, newest first</p>
+                      <ul aria-label="Other answers" className="mt-1">
+                        {(state?.earlier ?? []).map((other) => (
+                          <li key={other.id}>
+                            <button
+                              type="button"
+                              className="w-full truncate py-0.5 text-left text-[14px] text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+                              onClick={() => onCommand({ type: 'show', id: other.id })}
+                            >
+                              {other.question || other.headline}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
               </>

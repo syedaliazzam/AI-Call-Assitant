@@ -11,6 +11,10 @@
  * Day 5: the browser compact view opens in Document Picture-in-Picture where the browser has
  * it (else a clear message); a second page with the real compact view shows the live answer, and its Answer
  * button and typed question make the live page answer.
+ * ADR-0030: the switch next to the chat box goes in the request and is remembered; a private answer
+ * shows code with its own Copy; the type and source tags show, and choosing another type answers
+ * again; a figure in no document is underlined with a "check before saying" note; a repeated
+ * question sends the earlier answer; other answers are listed newest first.
  * All text is invented.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -73,6 +77,22 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
             ms: { auth: 1, toStreamOpen: 2, streamOpenToFirstText: 3, toFirstText: 4, total: 5 },
           });
         if (request.mode === 'warm') {
+          done();
+          res.end();
+          return;
+        }
+        // ADR-0030: a question that asks for it gets the hidden line's contents and a richer answer.
+        if (request.question?.startsWith('rich:') || request.answerType) {
+          const target = request.target ?? 'call';
+          event('meta', {
+            meta: { type: request.answerType ?? 'coding', target, source: 'general' },
+          });
+          event('delta', {
+            text:
+              target === 'kite'
+                ? 'Use **a loop**.\n```python\nprint(1)\n```'
+                : 'We saved 37 percent last year.\n- Fixed yearly\nSay: I would keep it short.',
+          });
           done();
           res.end();
           return;
@@ -171,7 +191,10 @@ test('the Answer hotkey streams the headline before the bullets', async () => {
   await expect(headline).toHaveText(HEADLINE);
   // The bullets have not arrived yet: the server waits before sending them.
   await expect(page.getByRole('list', { name: 'Answer details' })).toHaveCount(0);
-  await expect(page.getByRole('listitem')).toHaveText(BULLETS, { timeout: 10_000 });
+  await expect(page.getByRole('list', { name: 'Answer details' }).getByRole('listitem')).toHaveText(
+    BULLETS,
+    { timeout: 10_000 },
+  );
   await expect(page.getByText('1 of 1')).toBeVisible();
   await expect(page.getByText('from 2 lines')).toBeVisible();
   await expect(page.getByLabel('Question used')).toHaveText(
@@ -213,7 +236,9 @@ test('Cancel stops a streaming answer', async () => {
 test('Previous and Next move between answers', async () => {
   await page.getByRole('button', { name: 'Previous answer' }).click();
   await expect(page.getByText('1 of 2')).toBeVisible();
-  await expect(page.getByRole('listitem')).toHaveText(BULLETS);
+  await expect(page.getByRole('list', { name: 'Answer details' }).getByRole('listitem')).toHaveText(
+    BULLETS,
+  );
   await page.keyboard.press('Control+ArrowRight');
   await expect(page.getByText('2 of 2')).toBeVisible();
   await expect(page.getByText('Stopped.')).toBeVisible();
@@ -340,4 +365,77 @@ test('Compact view in the browser: picture-in-picture, or a clear message where 
     )
     .toBe(headline);
   console.log('[harness] compact view: picture-in-picture window opened and shows the live answer');
+});
+
+test('the chat switch goes in the request, a private answer has code with Copy, and it is remembered', async () => {
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Answer', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Chat', exact: false }).first().click();
+  const before = received.length;
+  await page.getByLabel('Who the answer is for').selectOption('kite');
+  await page.getByLabel('Type a question').fill('rich: how do I loop?');
+  await page.getByLabel('Type a question').press('Enter');
+  const answer = page.getByLabel('Private answer');
+  await expect(answer).toContainText('a loop');
+  await expect(answer.locator('strong')).toHaveText('a loop');
+  await answer.getByRole('button', { name: 'Copy code' }).click();
+  await expect(answer.getByRole('button', { name: 'Copied' })).toBeVisible();
+  const copied = await page.evaluate(() => window.kiteAnswerHarness.copied);
+  expect(copied.at(-1)).toBe('print(1)');
+  const sent = received.slice(before).find((body) => body.mode === 'chat')!;
+  expect(sent.target).toBe('kite');
+  // The typed question is never a "You" line: nothing but an answer carries it.
+  expect(JSON.stringify(sent.tail ?? [])).not.toContain('how do I loop');
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Answer', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Chat', exact: false }).first().click();
+  await expect(page.getByLabel('Who the answer is for')).toHaveValue('kite');
+  await page.getByLabel('Who the answer is for').selectOption('auto');
+});
+
+test('tags show, a figure in no document is flagged, and another type answers again', async () => {
+  await page.getByLabel('Type a question').fill('rich: what did you save?');
+  await page.getByLabel('Type a question').press('Enter');
+  await expect(page.getByRole('heading', { name: 'Answer headline' })).toContainText('37 percent');
+  const tags = page.getByLabel('About this answer');
+  await expect(tags).toContainText('General knowledge');
+  await expect(page.getByLabel('How to say it')).toContainText('keep it short');
+  // The claim check, with no model call: underlined, with a private note.
+  await expect(page.locator('[data-claim]').first()).toHaveText('37');
+  await expect(page.getByLabel('Check before saying')).toContainText('37');
+  // Copy leaves the note and the tags out.
+  await page.getByRole('button', { name: 'Copy', exact: true }).click();
+  const copied = await page.evaluate(() => window.kiteAnswerHarness.copied);
+  expect(copied.at(-1)).not.toContain('Check before');
+  expect(copied.at(-1)).not.toContain('General knowledge');
+
+  const before = received.length;
+  await tags.getByRole('combobox').selectOption('design');
+  await expect(page.getByLabel('About this answer').getByRole('combobox')).toHaveValue('design');
+  expect(received.slice(before).find((body) => body.answerType)?.answerType).toBe('design');
+});
+
+test('a repeated question sends the earlier answer, and other answers are newest first', async () => {
+  const ask = async (question: string) => {
+    await page.getByLabel('Type a question').fill(question);
+    await page.getByLabel('Type a question').press('Enter');
+  };
+  await ask('what does the seat cost');
+  await expect(page.getByRole('heading', { name: 'Answer headline' })).toHaveText(
+    'The seat price is 52 dollars.',
+  );
+  await expect(page.getByRole('list', { name: 'Answer details' })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText('Answering…')).toHaveCount(0);
+  const before = received.length;
+  await ask('sorry what does the seat cost again');
+  await expect(page.getByRole('list', { name: 'Answer details' })).toBeVisible({ timeout: 10_000 });
+  const repeat = received.slice(before).find((body) => body.mode === 'chat')!;
+  expect(repeat.similar?.question).toBe('what does the seat cost');
+  expect(repeat.similar?.text).toContain('52 dollars');
+
+  const others = page.getByRole('list', { name: 'Other answers' }).getByRole('button');
+  await expect(others.first()).toHaveText('what does the seat cost');
+  await others.first().click();
+  await expect(page.getByLabel('Question used')).toHaveText('what does the seat cost');
 });

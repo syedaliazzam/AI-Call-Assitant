@@ -2,7 +2,9 @@
  * File: apps/web/src/features/review/ConversationSection.tsx
  * Purpose: The Transcript section of the session window: the call as a chat (Them on the left, You
  *          on the right) with Kite's answers inline as cards, each with its time, thumbs and
- *          "Report this answer". Also Download (TXT and PDF) and Clear transcript (asks first).
+ *          "Report this answer", newest first, with an "Oldest first" toggle that is remembered
+ *          (ADR-0030). Also Download (TXT and PDF, always in time order) and Clear transcript
+ *          (asks first).
  * Used by: src/features/review/SessionReview.tsx
  * Depends on: src/core/review/conversation.ts, src/core/answer/format.ts (splitAnswer),
  *             src/core/storage/answers.ts (rating, report), src/core/storage/utterances.ts (clear),
@@ -13,8 +15,10 @@
  */
 'use client';
 
-import { useState } from 'react';
-import { splitAnswer } from '@/core/answer/format';
+import { useState, useSyncExternalStore } from 'react';
+import { AnswerBody } from '@/features/answers/AnswerBody';
+import { AnswerTags } from '@/features/answers/AnswerTags';
+import { getReviewOldestFirst, setReviewOldestFirst } from '@/core/storage/answerPrefs';
 import {
   conversationItems,
   transcriptFileName,
@@ -38,6 +42,14 @@ const MODE_LABELS: Record<StoredAnswer['mode'], string> = {
   chat: 'Typed question',
   screenshot: 'Screenshot',
 };
+
+/**
+ * Nothing to subscribe to: only this page changes the setting.
+ *
+ * @returns An unsubscribe function that does nothing.
+ * Called from: ConversationSection (useSyncExternalStore)
+ */
+const subscribeNever = () => () => undefined;
 
 /** Words for a rating. */
 const RATING_LABELS = { up: '👍 Helpful', down: '👎 Not helpful' } as const;
@@ -78,23 +90,26 @@ function download(name: string, type: string, data: BlobPart) {
 /**
  * One of Kite's answers in the conversation.
  *
- * @param props.answer    The answer.
+ * @param props.answer      The answer.
+ * @param props.sessionType The session's type.
  * @param props.onChanged Reads the data again after a change.
  * @returns The card.
  * Rendered by: ConversationSection
  */
 function AnswerCard({
   answer,
+  sessionType,
   onChanged,
 }: {
   /** The answer. */
   answer: StoredAnswer;
+  /** The session's type, for the source tag's words. */
+  sessionType: string;
   /** Reads the data again after a change. */
   onChanged: () => void;
 }) {
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState('');
-  const parts = splitAnswer(answer.text);
 
   /**
    * Sets or removes a rating.
@@ -120,20 +135,15 @@ function AnswerCard({
         Kite · {MODE_LABELS[answer.mode]} · Question:{' '}
         <span className="text-ui-text">{answer.question || 'the latest from Them'}</span>
       </p>
-      <p className="mt-1 font-semibold text-ui-heading">{parts.headline}</p>
-      {parts.bullets.length > 0 && (
-        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ui-text">
-          {parts.bullets.map((bullet, i) => (
-            <li key={i}>{bullet}</li>
-          ))}
-        </ul>
-      )}
-      {parts.tip && <p className="mt-1 text-ui-text">{parts.tip}</p>}
-      {parts.note && (
-        <p aria-label="Private note" className="mt-1 text-xs italic text-ui-muted">
-          Just for you: {parts.note}
-        </p>
-      )}
+      <AnswerTags meta={answer.meta} sessionType={sessionType} />
+      <div className="mt-1">
+        <AnswerBody
+          text={answer.text}
+          size="review"
+          claims={answer.claims ?? []}
+          {...(answer.meta?.target ? { target: answer.meta.target } : {})}
+        />
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ui-muted">
         <span>{CLOCK.format(answer.createdAt)}</span>
         <button
@@ -203,6 +213,11 @@ export function ConversationSection({
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const items = conversationItems(lines, answers);
+  // Newest first unless the user chose otherwise (remembered on this device).
+  const savedOldestFirst = useSyncExternalStore(subscribeNever, getReviewOldestFirst, () => false);
+  const [oldestChoice, setOldestChoice] = useState<boolean | null>(null);
+  const oldestFirst = oldestChoice ?? savedOldestFirst;
+  const shown = oldestFirst ? items : [...items].reverse();
 
   /** Downloads the conversation as text. */
   function downloadText() {
@@ -238,6 +253,17 @@ export function ConversationSection({
         <h2 className="text-[20px] text-ui-subheading">Transcript</h2>
         {items.length > 0 && (
           <div className="flex flex-wrap gap-2">
+            <label className="flex items-center gap-1.5 text-sm text-ui-text pointer-coarse:min-h-11">
+              <input
+                type="checkbox"
+                checked={oldestFirst}
+                onChange={(event) => {
+                  setOldestChoice(event.target.checked);
+                  setReviewOldestFirst(event.target.checked);
+                }}
+              />
+              Oldest first
+            </label>
             <Button variant="secondary" size="sm" onClick={downloadText}>
               Download TXT
             </Button>
@@ -266,9 +292,14 @@ export function ConversationSection({
       )}
       {items.length > 0 && (
         <ol aria-label="Conversation" className="mt-3 flex flex-col gap-1.5">
-          {items.map((item) =>
+          {shown.map((item) =>
             item.kind === 'answer' ? (
-              <AnswerCard key={item.answer.id} answer={item.answer} onChanged={onChanged} />
+              <AnswerCard
+                key={item.answer.id}
+                answer={item.answer}
+                sessionType={session.type}
+                onChanged={onChanged}
+              />
             ) : (
               <li
                 key={item.line.id}

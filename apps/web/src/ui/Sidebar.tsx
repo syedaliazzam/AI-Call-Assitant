@@ -52,6 +52,7 @@ interface NavItem {
 /** All navigation links, in display order. */
 const NAV_ITEMS: NavItem[] = [
   { label: 'Call Sessions', href: '/' },
+  { label: 'Ask Kite', href: '/ask-kite' },
   { label: 'Resumes', href: '/resumes' },
   { label: 'Documents', href: '/documents' },
   { label: 'Mock Interview', href: '/mock' },

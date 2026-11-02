@@ -11,7 +11,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (browser column)
  */
 import { CaptureError } from './errors';
-import { listenForHotkeys } from './keymap';
+import { listenForAskKite, listenForHotkeys } from './keymap';
 import {
   openMicrophone,
   requestDisplayMedia,
@@ -298,6 +298,16 @@ export const browserPlatform: Platform = {
    */
   listenForFocusedHotkeys(target, handler) {
     return listenForHotkeys(target, browserIsMac(), handler);
+  },
+
+  /**
+   * The Ask Kite shortcut, while the Kite tab has focus.
+   *
+   * @param handler Called each time it is pressed.
+   * @returns A function that stops listening.
+   */
+  onAskKiteHotkey(handler) {
+    return listenForAskKite(window, browserIsMac(), handler);
   },
 
   /**

@@ -1,9 +1,10 @@
 /**
  * File: apps/web/src/features/live/ChatBox.tsx
  * Purpose: The typed-question box of the live view: Enter sends the question (mode 'chat'),
- *          Escape clears it, and "Ask about my screen" sends it with a screenshot (Day 5).
+ *          Escape clears it, and "Ask about my screen" sends it with a screenshot (Day 5). The switch
+ *          next to it says who the answer is for: Auto, For the call or Ask Kite (ADR-0030).
  * Used by: src/features/live/LiveAnswers.tsx
- * Depends on: src/ui/Button.tsx
+ * Depends on: src/ui/Button.tsx, @kite/shared (TargetChoice)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session); day-04-answers.md
  *               Stage 6
  *
@@ -11,8 +12,16 @@
  */
 'use client';
 
+import type { TargetChoice } from '@kite/shared';
 import { useState, type KeyboardEvent } from 'react';
 import { Button } from '@/ui/Button';
+
+/** The switch's choices, in the order shown. */
+export const TARGET_OPTIONS: readonly { value: TargetChoice; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'call', label: 'For the call' },
+  { value: 'kite', label: 'Ask Kite' },
+];
 
 /** Props for ChatBox. */
 export interface ChatBoxProps {
@@ -20,6 +29,10 @@ export interface ChatBoxProps {
   onSend: (question: string) => void;
   /** Sends the typed question about a screenshot of the screen (Day 5). */
   onAskScreen: (question: string) => void;
+  /** Who answers are for. */
+  target: TargetChoice;
+  /** Changes who answers are for (remembered for this session). */
+  onTarget: (target: TargetChoice) => void;
 }
 
 /**
@@ -29,7 +42,7 @@ export interface ChatBoxProps {
  * @returns The box.
  * Rendered by: LiveAnswers.tsx (while Chat is open)
  */
-export function ChatBox({ onSend, onAskScreen }: ChatBoxProps) {
+export function ChatBox({ onSend, onAskScreen, target, onTarget }: ChatBoxProps) {
   const [text, setText] = useState('');
 
   /** Sends the question, unless it is empty, and clears the box. */
@@ -63,6 +76,19 @@ export function ChatBox({ onSend, onAskScreen }: ChatBoxProps) {
         send();
       }}
     >
+      <select
+        aria-label="Who the answer is for"
+        title="Auto decides for each question. For the call: words to say. Ask Kite: a private answer on any topic."
+        value={target}
+        onChange={(event) => onTarget(event.target.value as TargetChoice)}
+        className="border border-ui-border bg-ui-input px-2 py-2 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-sm"
+      >
+        {TARGET_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
       <input
         aria-label="Type a question"
         // The box opens when the user presses Chat, so it should take the typing at once.

@@ -44,6 +44,16 @@ describe('hotkeyFor', () => {
     expect(hotkeyFor(press('Enter', { metaKey: true }), false)).toBeNull();
   });
 
+  it('maps Ask Kite, the one shortcut with Alt, but never while typing (ADR-0030)', () => {
+    expect(hotkeyFor(press('k', { ctrlKey: true, altKey: true }), false)).toBe('ask-kite');
+    expect(hotkeyFor(press('K', { ctrlKey: true, altKey: true }), false)).toBe('ask-kite');
+    expect(hotkeyFor(press('k', { metaKey: true, altKey: true }), true)).toBe('ask-kite');
+    expect(hotkeyFor(press('k', { altKey: true }), false)).toBeNull();
+    expect(hotkeyFor(press('j', { ctrlKey: true, altKey: true }), false)).toBeNull();
+    const input = { tagName: 'INPUT' } as unknown as EventTarget;
+    expect(hotkeyFor(press('k', { ctrlKey: true, altKey: true, target: input }), false)).toBeNull();
+  });
+
   it('ignores other keys, Alt, repeats, both modifiers and typing in a text box', () => {
     expect(hotkeyFor(press('a', { ctrlKey: true }), false)).toBeNull();
     expect(hotkeyFor(press('Enter'), false)).toBeNull();

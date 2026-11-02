@@ -12,7 +12,12 @@
  * none of the user's content.
  */
 import 'server-only';
-import type { AnswerPreviewRequest, AnswerUsage, PreviewQuestionType } from '@kite/shared';
+import {
+  splitMetaLine,
+  type AnswerPreviewRequest,
+  type AnswerUsage,
+  type PreviewQuestionType,
+} from '@kite/shared';
 import { jsonReply } from './claude';
 import { rulesBlock, sessionBlock } from './prompt';
 
@@ -66,5 +71,8 @@ export async function generatePreview(
     },
     maxTokens: PREVIEW_MAX_TOKENS,
   });
-  return { text: (value as { answer: string }).answer.trim(), usage };
+  // The answer rules open every reply with a hidden line (ADR-0030); the preview shows the answer.
+  const answer = (value as { answer: string }).answer.trim();
+  const split = splitMetaLine(answer);
+  return { text: split.state === 'found' ? split.rest : answer, usage };
 }

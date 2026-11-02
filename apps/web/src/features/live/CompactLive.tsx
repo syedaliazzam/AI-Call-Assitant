@@ -112,9 +112,20 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
     if (!target) return;
     return getPlatform().listenForFocusedHotkeys(target, (action) => {
       if (action === 'chat') setChatOpen((open) => !open);
-      else channel.current?.send({ type: action });
+      else if (action === 'ask-kite') {
+        channel.current?.send({ type: 'chat-target', target: 'kite' });
+        setChatOpen(true);
+      } else channel.current?.send({ type: action });
     });
   }, []);
+
+  // The Ask Kite shortcut was pressed (the live page counts the presses, ADR-0030): open the box.
+  const askKiteCount = state?.askKiteCount ?? 0;
+  const [seenAskKite, setSeenAskKite] = useState(0);
+  if (askKiteCount !== seenAskKite) {
+    setSeenAskKite(askKiteCount);
+    if (askKiteCount > seenAskKite) setChatOpen(true);
+  }
 
   // The call ended: close this window shortly (the live page also asks the shell to close it).
   useEffect(() => {

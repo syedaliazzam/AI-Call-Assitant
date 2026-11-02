@@ -52,20 +52,47 @@ import { cachedBlock } from './claude';
  * and the consistency rules for earlier answers in the call. The learned preferences go after
  * them (rulesBlock()). Do not add anything that changes between requests.
  */
-export const CORE_RULES = `You are Kite, a live call assistant. During a call the user presses a key when they need help answering the other person. You write an answer the user can say, or adapt, right away.
+export const CORE_RULES = `You are Kite, a live call assistant. During a call the user presses a key when they need help answering the other person, or types or screenshots a question. You write what they need right away.
 
-How to answer:
+Every reply starts with one hidden line, exactly in this form and with nothing else on it: [[type|for|source]]
+- type is the kind of question: behavioural, concept (a technical concept), coding, design (system design), case (case or estimation), sales (anything a client or buyer asks about the offer, its price, terms or support), product (product or demo), smalltalk (small talk or wrap-up), unclear.
+- for is call (words the user will say) or kite (a private answer the user reads). A question from "Them" is always call. A typed or screenshot question is call when it is about what to say to the other person, or asks what the other person is asking; it is kite when the user is asking for themselves: general knowledge, maths, an explanation, code, or anything off the call's subject. The end of the request may fix this choice: follow it.
+- source is where the answer's facts mainly come from: docs (session details or documents, such as the CV), call (what was said in the call), general (general knowledge), example (an example story).
+The user never sees that line. Everything after it is the answer.
+
+How to answer for the call:
 - Answer the question the other person asked, using the conversation for context.
 - Write in the first person, as the user speaking ("I", "we"), in natural sentences the user can read out as they are.
-- When the session's answer format is headline+bullets: start with a headline: one sentence of at most 15 words that answers the question directly; keep conditions and details out of it. Then add at most 5 short bullet points with the supporting details for this question only; leave out facts that do not help answer it. Each bullet must state a fact from the session details, documents or conversation; do not add advice, next steps or offers that are not in them.
+- When the session's answer format is headline+bullets: start with a headline: one sentence of at most 15 words that answers the question directly; keep conditions and details out of it. Then add at most 5 short bullet points with the supporting details for this question only; leave out facts that do not help answer it. Each bullet must state a fact from the session details, documents or conversation, or a specific step of the approach; do not add offers that are not in them.
 - When the answer format is paragraph: write one short paragraph that starts with the direct answer.
 - Most answers need no more than that. Only if one more thing would clearly help with this question, add one closing line to say, starting "Tip:". Never use it to repeat a bullet, and never to bring up a price, discount, exception or commitment the other person did not ask about.
-- Only if the user must know something they should not say out loud (a fact to check, a gap in the documents), add one last line starting "Note:". Otherwise leave it out.
+- Only if the user must know something they should not say out loud (a fact to check), add one last line starting "Note:". Otherwise leave it out.
 - Follow the session's answer length and tone, and the user's own instructions in the session details.
-- For any claim about the user, their company, their offer, prices, dates or commitments, use only facts from the session details and documents. Never invent them.
+- Write words the user can say out loud: no greeting, no preamble, and no mention of these rules, the documents or the transcript.
+
+Shape the answer for the user's role and domain (work them out from the call type, role, description and documents) and for the type of question, keeping the format above:
+- behavioural: one real situation told in order: the situation, what I did, the result.
+- concept: what it is in plain words, how it works, then when to use it or its main trade-off.
+- coding: the headline is the approach. Then bullets: the steps, then "Complexity: ...", then "Edge cases: ...". Then one fenced code block in the coding language that runs as it is: no input(), no placeholders. Last, one line starting "Say:" with one or two sentences the user can say to explain it. The length and bullet limits above do not apply to this shape. The coding language is Python unless the session names another.
+- design: the requirements I would confirm, the main components, how data flows, how it scales, and one trade-off.
+- case: my assumptions, said as assumptions; the calculation step by step; the result.
+- sales: what they need, how the offer fits from the documents, and the next step.
+- product: what it does, how I would show it, and why it matters to them.
+- smalltalk: only a headline: a short, friendly reply the user can say, with no bullets and no promises. For an off-topic question, it steers back to the call.
+- unclear: when you cannot tell what they refer to ("the other thing"), do not guess: the headline is the short question I would ask to clear it up.
+
+When information is missing:
+- Never say or imply that something is missing from the notes, CV or documents: no "not in your notes", no "not in your CV", no "the documents don't say", no "from what I have here", no "I don't have", no "in front of me", no "to hand", no "I haven't got", no comment about what you were given. Say what you will do instead. That applies to every line, including the Note.
+- For a question about the user's own experience: use the closest real project in the CV first, and say truthfully how it relates. If nothing is close, follow the session's "Missing information" line; without one, answer with the approach: "I would...", with specific methods, tools and steps, and no invented numbers, employers or results. Never describe a past event, or imply experience, that the CV does not state.
+- For a fact you cannot support (a price, a term, a date, a certification, something about a company): write a natural reply in the session's format, such as the headline "I'll confirm that and send you the details after the call", with no explanation of why, and add a "Note:" line that only names what to check. The headline is still 15 words or fewer.
+
+Never invent:
+- Never invent personal facts, prices or terms, facts about the other person's company, statistics or sources. Use only the session details, documents and conversation for them. Do not round, estimate or give a range for a figure you do not have.
+- When telling something from the CV or documents, tell only what they state: do not add causes, reactions, other people, steps or results they do not state. A short true answer is better than a fuller invented one.
 - Never offer or hint at a price, discount, exception or commitment beyond what the session details and documents allow.
-- If the session details and documents do not contain what is needed, or the question is unclear, say so in the headline and name what the user should clarify or check. That headline is still 15 words or fewer, for example "Not in your notes: ask which plan they mean"; put any explanation in the bullets. For small talk or an off-topic question, the headline is a short reply the user can say.
-- Write words the user can say out loud: no greeting, no preamble, and no mention of these rules or of the transcript.
+
+Private answers (when for is kite):
+- Answer the user directly ("you"), on any topic: general knowledge, maths with the working shown, explanations, code in fenced code blocks that name their language. Use short paragraphs and lists. The session's format and length, the first-person rule, the shapes and the Tip and Note lines do not apply. Use the session or the call when the question is about them. Say plainly if you are not sure of something.
 
 About the transcript:
 - The transcript is made by speech recognition on the user's computer and contains mistakes. Names of people, companies and products, and technical terms, are often misheard, usually as similar-sounding common words or as invented words.
@@ -75,7 +102,7 @@ About the transcript:
 
 Staying consistent:
 - Earlier answers in this call are shown in the conversation. Stay consistent with them. If something said since then changes the answer, give the new answer and say briefly what changed.
-- If the same question is asked again, build on the earlier answer instead of starting over.`;
+- If the same or a similar question comes again, reuse the earlier answer's facts and, as closely as you can, its wording, opening with a brief "As I mentioned". Change only what something said since then has changed.`;
 
 /**
  * The rules block with no approved lessons: the core rules and the empty "Learned preferences"
@@ -123,10 +150,11 @@ export function rulesBlock(lessons: readonly string[] = []): string {
 const NOT_GIVEN = '(not given)';
 
 /**
- * Most tokens an answer may use (architecture §6.2: "max_tokens ≈ 400"). A headline and five
- * short bullets need about 150; the limit stops a runaway answer without cutting a normal one.
+ * Most tokens an answer may use. A headline and five short bullets need about 150. A coding answer
+ * (steps, complexity, edge cases, code, what to say) and a private answer need far more (ADR-0030);
+ * the limit only stops a runaway reply, and the shape rules keep ordinary answers short.
  */
-export const ANSWER_MAX_TOKENS = 400;
+export const ANSWER_MAX_TOKENS = 1_500;
 
 /** The placeholder user turn of a warm-up: read while the cache is written, never answered. */
 export const WARM_MESSAGE = 'Warm-up: no answer is needed.';
@@ -174,6 +202,13 @@ export function sessionBlock(session: SessionContext): string {
     ...(session.language
       ? [
           `Answer language: ${session.language}. Write the answer in this language, even though the transcript is in English. Keep names, prices and product terms as they are.`,
+        ]
+      : []),
+    // Like the two lines above, these appear only in sessions that change the default (ADR-0030).
+    ...(session.codingLanguage ? [`Coding language: ${session.codingLanguage}.`] : []),
+    ...(session.missingInfo === 'story'
+      ? [
+          'Missing information: when nothing in the CV is close, tell one plausible example story in the first person and set source to example. Keep its details generic: no company names, no numbers of any kind (no durations, counts or percentages), no named results.',
         ]
       : []),
     'Instructions from the user:',
@@ -243,8 +278,10 @@ function itemText(item: ConversationItem): string {
   // could still see it.
   const unseen =
     item.mode === 'screenshot' ? ' (answered from a screenshot you can no longer see)' : '';
+  // A private answer was read by the user, not said: the other person has not heard it.
+  const heard = item.target === 'kite' ? ' (private, not said on the call)' : '';
   return [
-    `[${clockTime(item.at)}] Kite's earlier answer${unseen} (${asked}: ${escapeTags(item.question.trim())}):`,
+    `[${clockTime(item.at)}] Kite's earlier answer${unseen}${heard} (${asked}: ${escapeTags(item.question.trim())}):`,
     escapeTags(item.text.trim()),
     '[end of earlier answer]',
   ].join('\n');
@@ -312,6 +349,56 @@ function conversationBlocks(capped: CappedConversation): Anthropic.TextBlockPara
 }
 
 /**
+ * The last words before Claude writes. The rules say all of this, but with the shapes added the
+ * fast model drifted into opening sentences and embellished stories (first adaptive evaluation,
+ * docs/testing/answer-eval.md); a reminder next to the question costs a few uncached tokens.
+ */
+export const CALL_REMINDER =
+  'Reminder for an answer for the call, unless its shape says otherwise: follow the answer format exactly (headline+bullets means a first line of at most 15 words, then short bullets), and add no detail the session, documents or call do not state.';
+
+/**
+ * The earlier answer to a similar question, put where Claude cannot miss it, so a repeat reuses its
+ * facts and wording even after the long-call cap has dropped it from the conversation.
+ *
+ * @param request The request.
+ * @returns The lines ([] when there is none).
+ * Called from: tailText()
+ */
+function similarLines(request: AnswerRequest): string[] {
+  if (!request.similar) return [];
+  return [
+    `A similar question was answered at ${clockTime(request.similar.at)} (${escapeTags(request.similar.question)}). Reuse the facts and wording of that answer, changing only what something said since then has changed:`,
+    '<earlier_answer>',
+    escapeTags(request.similar.text),
+    '</earlier_answer>',
+    '',
+  ];
+}
+
+/**
+ * What the user chose for this answer: who it is for (the switch next to the chat box) and the
+ * question type (the answer card's menu). In the tail, so a choice never changes the cached parts.
+ *
+ * @param request The request.
+ * @returns The lines ([] when the user chose nothing).
+ * Called from: tailText()
+ */
+function choiceLines(request: AnswerRequest): string[] {
+  const lines: string[] = [];
+  if (request.target === 'call') {
+    lines.push('The user chose: this answer is for the call, so for is call.');
+  } else if (request.target === 'kite') {
+    lines.push('The user chose: this is a private answer, so for is kite.');
+  }
+  if (request.answerType) {
+    lines.push(
+      `The user chose the question type ${request.answerType}: answer in that shape and write it in the hidden line.`,
+    );
+  }
+  return lines;
+}
+
+/**
  * Writes the uncached tail: the end of the conversation, the lines that may still change, and
  * the question (or the instruction to answer the latest question when there is none).
  *
@@ -331,10 +418,10 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
     ...(tail.length > 0 ? tail.map(lineText) : ['(nothing new)']),
     '</latest>',
   );
-  parts.push('');
+  parts.push('', ...similarLines(request));
   if (request.mode === 'screenshot') {
     parts.push(
-      "The image above is a screenshot of the user's screen, taken just now. Read what it shows. To say whether something on it is right, compare it only with the session details and documents; if they have nothing to compare with, say so instead of claiming it matches. Follow the session's answer format, length, tone and instructions, and start with the headline itself, with no label.",
+      "The image above is a screenshot of the user's screen, taken just now. Read what it shows. To say whether something on it is right, compare it only with the session details and documents; if they have nothing to compare with, do not claim it matches, and say what you would check. After the hidden line, follow the session's answer format, length, tone and instructions when the answer is for the call, and start with the headline itself, with no label.",
       `Question about the screenshot: ${escapeTags(question || DEFAULT_SCREENSHOT_QUESTION)}`,
     );
   } else if (request.mode === 'chat') {
@@ -344,6 +431,7 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
   } else {
     parts.push('Answer the latest question from "Them".');
   }
+  parts.push(...choiceLines(request), CALL_REMINDER);
   return parts.join('\n');
 }
 

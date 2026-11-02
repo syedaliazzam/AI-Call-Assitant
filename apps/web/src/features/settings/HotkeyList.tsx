@@ -61,9 +61,9 @@ export function HotkeyList() {
   return (
     <>
       <p className="mb-3 text-sm text-ui-muted">
-        &ldquo;Any app&rdquo; shortcuts work from every app in the desktop app, during a call.
-        &ldquo;Kite in front&rdquo; ones never take keys from other apps. In a browser, all of them
-        work while Kite has focus.
+        &ldquo;Any app&rdquo; shortcuts work from every app in the desktop app, during a call; Open
+        Ask Kite works whenever the desktop app is running. &ldquo;Kite in front&rdquo; ones never
+        take keys from other apps. In a browser, all of them work while Kite has focus.
       </p>
       <table className="w-full text-left text-sm">
         <thead>
