@@ -40,7 +40,7 @@ export function AnswerTags({ meta, sessionType, onChangeType }: AnswerTagsProps)
   return (
     <p
       aria-label="About this answer"
-      className="flex flex-wrap items-center gap-x-1.5 text-[12px] leading-5 text-ui-muted"
+      className="flex flex-wrap items-center gap-x-1.5 text-[13px] leading-5 text-ui-muted"
     >
       {onChangeType ? (
         <select
@@ -48,7 +48,7 @@ export function AnswerTags({ meta, sessionType, onChangeType }: AnswerTagsProps)
           title="Choose another type to answer again in that shape"
           value={meta.type}
           onChange={(event) => onChangeType(event.target.value as AnswerType)}
-          className="max-w-[10rem] border-0 bg-transparent [field-sizing:content] py-0 pr-1 text-[12px] text-ui-muted hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]"
+          className="max-w-[10rem] border-0 bg-transparent [field-sizing:content] py-0 pr-1 text-[13px] text-ui-muted hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]"
         >
           {ANSWER_TYPES.map((type) => (
             <option key={type} value={type}>

@@ -4,7 +4,7 @@
  * Used by: src/features/auth/LoginForm.tsx and the admin forms (Stage 2), later the session wizard
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
  */
 import { useId, type InputHTMLAttributes } from 'react';
 
@@ -35,10 +35,7 @@ export function Input({ label, hint, error, id, className = '', ...rest }: Input
 
   return (
     <div className="flex flex-col gap-1">
-      <label
-        htmlFor={inputId}
-        className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted"
-      >
+      <label htmlFor={inputId} className="text-[13px] font-medium text-ui-muted">
         {label}
       </label>
       <input

@@ -17,7 +17,7 @@ export function ThemSilentNotice() {
   return (
     <p
       role="alert"
-      className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
+      className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
     >
       Nothing heard from Them for 20 seconds. Check that the right tab or app is shared and playing
       sound (in Chrome, share the meeting tab with &ldquo;Also share tab audio&rdquo; on).

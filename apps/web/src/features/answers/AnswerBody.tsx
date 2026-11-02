@@ -22,9 +22,9 @@ import { inlinePieces, markdownBlocks } from '@/core/answer/markdown';
 
 /** Text sizes for each place an answer is shown. */
 const SIZES = {
-  panel: { headline: 'text-[17px]', body: 'text-[14px]', small: 'text-[13px]' },
+  panel: { headline: 'text-[15px]', body: 'text-[15px]', small: 'text-[13px]' },
   overlay: { headline: 'text-[18px]', body: 'text-[16px]', small: 'text-[13px]' },
-  review: { headline: 'text-sm', body: 'text-sm', small: 'text-xs' },
+  review: { headline: 'text-[13px]', body: 'text-[13px]', small: 'text-[13px]' },
   chat: { headline: 'text-[15px]', body: 'text-[15px]', small: 'text-[13px]' },
 } as const;
 
@@ -110,7 +110,7 @@ function CodeBlock({
   const [copied, setCopied] = useState(false);
   return (
     <figure className="mt-2 border border-ui-border bg-ui-band">
-      <figcaption className="flex items-center justify-between gap-2 border-b border-ui-border px-2 py-0.5 font-mono text-[11px] text-ui-muted">
+      <figcaption className="flex items-center justify-between gap-2 border-b border-ui-border px-2 py-0.5 text-[13px] text-ui-muted">
         <span>{language || 'code'}</span>
         <button
           type="button"
@@ -126,10 +126,7 @@ function CodeBlock({
         </button>
       </figcaption>
       {/* tabIndex: a keyboard user can scroll long lines. */}
-      <pre
-        tabIndex={0}
-        className="overflow-x-auto p-2 font-mono text-[13px] leading-5 text-ui-text"
-      >
+      <pre tabIndex={0} className="overflow-x-auto p-2 text-[13px] leading-5 text-ui-text">
         <code>{text}</code>
       </pre>
     </figure>
@@ -157,7 +154,7 @@ function InlineText({
             {piece.text}
           </strong>
         ) : piece.style === 'code' ? (
-          <code key={i} className="bg-ui-band px-1 font-mono text-[0.9em]">
+          <code key={i} className="rounded-control bg-ui-band px-1 text-[0.9em]">
             {piece.text}
           </code>
         ) : (
@@ -196,7 +193,7 @@ function PrivateAnswer({
         }
         if (block.kind === 'heading') {
           return (
-            <h3 key={i} className={`font-bold text-ui-heading ${sizes.headline}`}>
+            <h3 key={i} className={`font-semibold text-ui-heading ${sizes.headline}`}>
               <InlineText text={block.text} />
             </h3>
           );
@@ -250,7 +247,7 @@ export function AnswerBody(props: AnswerBodyProps) {
       {!(props.hideEmptyHeadline && !headline) && (
         <h2
           aria-label={props.headlineLabel ?? 'Answer headline'}
-          className={`font-bold leading-snug text-ui-heading ${sizes.headline}`}
+          className={`font-semibold leading-snug text-ui-heading ${sizes.headline}`}
         >
           {headline ? <ClaimText text={headline} claims={claims} /> : '…'}
         </h2>
@@ -286,17 +283,13 @@ export function AnswerBody(props: AnswerBodyProps) {
           aria-label="Private note"
           className={`mt-2 border-t border-ui-border pt-1.5 italic text-ui-muted ${sizes.small}`}
         >
-          <span className="mr-1 font-mono text-[10px] font-medium uppercase not-italic tracking-[0.08em]">
-            Just for you
-          </span>
+          <span className="mr-1 text-[13px] font-medium not-italic">Just for you</span>
           {note}
         </p>
       )}
       {claims.length > 0 && (
         <p aria-label="Check before saying" className={`mt-2 text-ui-muted ${sizes.small}`}>
-          <span className="mr-1 font-mono text-[10px] font-medium uppercase tracking-[0.08em] text-ui-warning">
-            Check before saying
-          </span>
+          <span className="mr-1 text-[13px] font-medium text-ui-warning">Check before saying</span>
           {claims.join(', ')}: not found in your documents or the call.
         </p>
       )}

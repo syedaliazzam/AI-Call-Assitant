@@ -448,7 +448,7 @@ test('Answer preferences: a preview is asked for once and kept; Apply and Set as
   await page.getByLabel('Role').fill('Data Analyst');
   await page.getByRole('button', { name: 'Next' }).click();
   await expect(page.getByText('Script + bullets · Short · Simple')).toBeVisible();
-  await page.getByRole('button', { name: 'Change: Answer preferences' }).click();
+  await page.getByRole('button', { name: 'Configure: Answer preferences' }).click();
   const dialog = page.getByRole('dialog', { name: 'Answer preferences' });
 
   // Nothing is asked for until the user wants it.
@@ -481,13 +481,13 @@ test('Answer preferences: a preview is asked for once and kept; Apply and Set as
   await page.getByLabel('Answer language').selectOption('es');
   await expect(page.getByText('Live transcription is English-only for now.')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Edit: AI instructions' }).click();
+  await page.getByRole('button', { name: 'Add: AI instructions' }).click();
   const instructions = page.getByRole('dialog', { name: 'AI instructions' });
   await instructions.getByLabel('Context for Kite').fill('Answer as a data analyst.');
   // Cancel keeps what was there; Save keeps the new words.
   await instructions.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByText('None yet. Tell Kite who you are')).toBeVisible();
-  await page.getByRole('button', { name: 'Edit: AI instructions' }).click();
+  await page.getByRole('button', { name: 'Add: AI instructions' }).click();
   await instructions.getByLabel('Context for Kite').fill('Answer as a data analyst.');
   await instructions.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText('None yet. Tell Kite who you are')).toHaveCount(0);
@@ -513,7 +513,7 @@ test('a failed preview says so and can be tried again, and nothing is kept', asy
   await page.getByLabel('Company').fill('Lantern Freight (invented)');
   await page.getByLabel('Role').fill('Data Analyst');
   await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('button', { name: 'Change: Answer preferences' }).click();
+  await page.getByRole('button', { name: 'Configure: Answer preferences' }).click();
   const dialog = page.getByRole('dialog', { name: 'Answer preferences' });
   await dialog.getByRole('button', { name: 'Show preview' }).click();
   await expect(dialog.getByText('could not write a preview')).toBeVisible();

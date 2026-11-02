@@ -55,25 +55,17 @@ export interface LiveCallLayoutProps {
 export function LiveCallLayout(props: LiveCallLayoutProps) {
   return (
     <div className="k-dark @container flex min-h-screen flex-col bg-ui-bg text-ui-text">
-      <header className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-ui-border bg-ui-band px-4 py-3 sm:px-6">
+      <header className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-ui-border rounded-control bg-ui-band px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <BrandLockup tone="dark" size="sm" byline={false} />
           <span aria-hidden="true" className="h-8 w-px shrink-0 bg-ui-border" />
           <div className="min-w-0">
-            <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-ui-muted">
-              {props.title}
-            </p>
-            <h1 className="truncate font-mono text-[15px] font-medium text-ui-heading">
-              {props.name}
-            </h1>
+            <p className="text-[13px] text-ui-muted">{props.title}</p>
+            <h1 className="truncate text-[15px] font-medium text-ui-heading">{props.name}</h1>
           </div>
         </div>
         <Badge tone={props.status.tone}>{props.status.label}</Badge>
-        {props.themSource && (
-          <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-ui-muted">
-            Them = {props.themSource}
-          </p>
-        )}
+        {props.themSource && <p className="text-[13px] text-ui-muted">Them = {props.themSource}</p>}
         <div className="ml-auto flex flex-col gap-1">{props.meters}</div>
       </header>
 

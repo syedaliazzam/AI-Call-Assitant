@@ -5,7 +5,7 @@
  *          src/features/settings/Settings.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
  */
 import { useId } from 'react';
 
@@ -52,10 +52,7 @@ export function Select<T extends string>({
   const hintId = `${id}-hint`;
   return (
     <div className="flex flex-col gap-1">
-      <label
-        htmlFor={id}
-        className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted"
-      >
+      <label htmlFor={id} className="text-[13px] font-medium text-ui-muted">
         {label}
       </label>
       <select
@@ -65,7 +62,7 @@ export function Select<T extends string>({
         aria-describedby={hint ? hintId : undefined}
         // The options are exactly `options`, so the value is always one of T.
         onChange={(event) => onChange(event.target.value as T)}
-        className="h-10 pointer-coarse:min-h-11 border-ui-border border bg-ui-input px-3 text-base md:text-[15px] text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60"
+        className="h-10 pointer-coarse:min-h-11 border border-ui-border bg-ui-input px-3 text-base md:text-[15px] text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

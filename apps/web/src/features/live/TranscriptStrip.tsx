@@ -64,12 +64,12 @@ export const TranscriptStrip = memo(function TranscriptStrip({
         {/* Newest at the top: at the top the newest line is in view, and someone who scrolled down
             to read stays where they are, because the browser anchors the scroll position. */}
         <div
-          className="h-full overflow-y-auto border border-ui-border bg-ui-surface p-4 sm:p-5"
+          className="h-full overflow-y-auto border border-ui-border rounded-card bg-ui-surface shadow-card p-4 sm:p-5"
           aria-live="polite"
           aria-label="Live transcript"
         >
           {lines.length === 0 ? (
-            <p className="text-sm text-ui-muted">
+            <p className="text-[13px] text-ui-muted">
               Listening… Lines appear here as you and the other person speak.
             </p>
           ) : (
@@ -82,9 +82,9 @@ export const TranscriptStrip = memo(function TranscriptStrip({
                   const style = SPEAKER_STYLE[line.speaker];
                   return (
                     <li key={line.id} className="flex gap-3 text-[15px] leading-6">
-                      {/* Mono uppercase speaker labels: You in cyan, Them in blue-300. */}
+                      {/* Speaker labels: You in the accent, Them in a light grey. */}
                       <span
-                        className={`w-12 shrink-0 font-mono text-[11px] font-medium uppercase leading-6 tracking-[0.08em] ${style.label}`}
+                        className={`w-12 shrink-0 text-[13px] font-medium leading-6 ${style.label}`}
                       >
                         {style.name}
                       </span>
@@ -92,7 +92,7 @@ export const TranscriptStrip = memo(function TranscriptStrip({
                       <span className={line.final ? 'text-ui-text' : 'italic text-ui-provisional'}>
                         {sentenceCase(line.text, terms)}
                       </span>
-                      <span className="ml-auto shrink-0 font-mono text-[11px] leading-6 text-ui-muted">
+                      <span className="ml-auto shrink-0 text-[13px] leading-6 text-ui-muted">
                         {clockTime(line.tStart)}
                       </span>
                     </li>

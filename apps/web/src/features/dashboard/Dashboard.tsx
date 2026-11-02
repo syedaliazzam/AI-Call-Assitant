@@ -2,8 +2,8 @@
  * File: apps/web/src/features/dashboard/Dashboard.tsx
  * Purpose: The dashboard ("Call Sessions"): the user's sessions on this computer, with type tabs
  *          and their counts (All / Interview / Regular / Mock), search by role or company, sort,
- *          grid or list, a "Create session" menu of types, empty states, and a note about the
- *          desktop app in the browser. Starting a session goes through Choose platform in the
+ *          grid or list, a "Create session" menu of types, empty states, and a dismissible banner
+ *          about the desktop app in the browser. Starting a session goes through Choose platform in the
  *          browser and straight to the live screen in the desktop app.
  * Used by: app/(app)/page.tsx
  * Depends on: src/core/storage (sessions.ts, dashboardPrefs.ts), src/platform (offersPlatformChoice,
@@ -16,8 +16,10 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
+  dismissDesktopBanner,
   getDashboardLayout,
   getDashboardSort,
+  getDesktopBannerDismissed,
   setDashboardLayout,
   setDashboardSort,
   type DashboardLayout,
@@ -33,10 +35,10 @@ import {
 } from '@/core/storage/sessions';
 import type { Session, SessionType } from '@/core/storage/types';
 import { ChoosePlatformDialog } from '@/features/session-setup/ChoosePlatformDialog';
-import { SESSION_TYPE_OPTIONS } from '@/features/session-setup/labels';
+import { DESKTOP_DOWNLOAD_URL, SESSION_TYPE_OPTIONS } from '@/features/session-setup/labels';
 import { getPlatform } from '@/platform';
 import { Eyebrow } from '@/ui/Eyebrow';
-import { GridIcon, ListIcon } from '@/ui/icons';
+import { CloseIcon, GridIcon, ListIcon, MonitorIcon } from '@/ui/icons';
 import { LinkButton } from '@/ui/LinkButton';
 import { Menu } from '@/ui/Menu';
 import { Select } from '@/ui/Select';
@@ -98,6 +100,12 @@ export function Dashboard() {
     getDashboardSort,
     () => 'newest',
   );
+  const bannerDismissed = useSyncExternalStore(
+    subscribeNever,
+    getDesktopBannerDismissed,
+    () => true,
+  );
+  const [bannerClosed, setBannerClosed] = useState(false);
   const [chosenLayout, setChosenLayout] = useState<DashboardLayout | null>(null);
   const [chosenSort, setChosenSort] = useState<SessionSort | null>(null);
   const layout = chosenLayout ?? savedLayout;
@@ -184,7 +192,7 @@ export function Dashboard() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-end justify-between gap-4">
           <div>
             <Eyebrow>Kite · call assistant</Eyebrow>
-            <h1 className="text-[28px] font-bold text-ui-heading">Call Sessions</h1>
+            <h1 className="text-[24px] font-semibold text-ui-heading">Call Sessions</h1>
             <p className="mt-1 max-w-prose text-[15px] text-ui-muted">
               Prepare a session before each call, then get live answers while you talk.
             </p>
@@ -204,10 +212,35 @@ export function Dashboard() {
 
       <section aria-label="Sessions" className="flex-1 bg-ui-band px-4 py-8 sm:px-8">
         <div className="mx-auto max-w-5xl">
-          {kind === 'browser' && (
-            <aside className="mb-6 border border-l-[3px] border-ui-border border-l-ui-accent bg-ui-surface px-5 py-3 text-[15px] text-ui-text">
-              The desktop app hears calls from any meeting app, with global hotkeys. Ask your admin
-              for the installer.
+          {kind === 'browser' && !bannerDismissed && !bannerClosed && (
+            <aside
+              aria-label="Desktop app"
+              className="mb-6 flex flex-wrap items-center gap-3 rounded-card border border-ui-border bg-ui-surface px-5 py-3 text-[15px] text-ui-text shadow-card"
+            >
+              <MonitorIcon size={20} />
+              <p className="min-w-0 flex-1 basis-56">
+                The desktop app hears calls from any meeting app, with global hotkeys.
+              </p>
+              <a
+                href={DESKTOP_DOWNLOAD_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center rounded-control text-[15px] font-medium text-ui-link hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+              >
+                Get the desktop app
+              </a>
+              <button
+                type="button"
+                aria-label="Dismiss"
+                title="Dismiss"
+                onClick={() => {
+                  setBannerClosed(true);
+                  dismissDesktopBanner();
+                }}
+                className="flex size-8 items-center justify-center text-ui-muted hover:bg-ui-hover hover:text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:size-11"
+              >
+                <CloseIcon />
+              </button>
             </aside>
           )}
 
@@ -252,9 +285,9 @@ export function Dashboard() {
                       setDashboardLayout(value);
                     }}
                     className={[
-                      'flex h-10 w-10 items-center justify-center border border-ui-border focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11',
+                      'flex h-10 w-10 items-center justify-center rounded-none border border-ui-border first:rounded-l-control last:rounded-r-control focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11',
                       layout === value
-                        ? 'bg-ui-pale text-ui-heading'
+                        ? 'bg-ui-subtle text-ui-heading'
                         : 'bg-ui-surface text-ui-muted',
                     ].join(' ')}
                   >
@@ -266,7 +299,7 @@ export function Dashboard() {
           </div>
 
           {failed && (
-            <p role="alert" className="mt-8 text-sm text-ui-danger">
+            <p role="alert" className="mt-8 text-[13px] text-ui-danger">
               Kite could not open its local storage. Reload the page to try again.
             </p>
           )}
@@ -296,8 +329,8 @@ export function Dashboard() {
 
           {sessions && shown.length === 0 && (
             // Empty state (theme §6): a headline, one line, one primary button.
-            <section className="mt-6 flex flex-col items-center border border-ui-border bg-ui-surface px-6 py-14 text-center">
-              <h2 className="text-[20px] font-semibold text-ui-heading">
+            <section className="mt-6 flex flex-col items-center border border-ui-border rounded-card bg-ui-surface shadow-card px-6 py-14 text-center">
+              <h2 className="text-[18px] font-semibold text-ui-heading">
                 {filtering ? 'No sessions match' : 'No sessions yet'}
               </h2>
               <p className="mt-1 max-w-sm text-[15px] text-ui-muted">

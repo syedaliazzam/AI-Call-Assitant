@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/features/session-setup/AnswerPreferencesDialog.tsx
- * Purpose: The Answer preferences window: format, length and tone, with an Answer preview per
- *          question type. A preview is written only when asked for (one Haiku request) and kept
+ * Purpose: The Answer preferences window, in two panes: format, length and tone on the left, an
+ *          Answer preview per question type on the right. A preview is written only when asked for (one Haiku request) and kept
  *          for that combination of settings. "Set as default" saves the choice for new sessions.
  * Used by: src/features/session-setup/PreferencesStep.tsx
  * Depends on: src/core/answer/preview.ts, src/core/answer/format.ts (splitAnswer),
@@ -55,10 +55,7 @@ function Choices<T extends string>({
   const id = useId();
   return (
     <div className="flex flex-col gap-1">
-      <span
-        id={id}
-        className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted"
-      >
+      <span id={id} className="text-[13px] font-medium text-ui-muted">
         {label}
       </span>
       <div role="radiogroup" aria-labelledby={id} className="flex flex-wrap gap-1">
@@ -70,10 +67,10 @@ function Choices<T extends string>({
             aria-checked={option.value === value}
             onClick={() => onChange(option.value)}
             className={[
-              'border px-3 py-1.5 text-[14px] focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11',
+              'border px-3 py-1.5 text-[15px] focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11',
               option.value === value
-                ? 'border-ui-primary bg-ui-primary font-semibold text-ui-primary-text'
-                : 'border-ui-border bg-ui-surface text-ui-text hover:bg-ui-band',
+                ? 'border-ui-primary bg-ui-primary font-medium text-ui-on-primary'
+                : 'border-ui-border bg-ui-surface text-ui-text hover:bg-ui-hover',
             ].join(' ')}
           >
             {option.label}
@@ -108,7 +105,7 @@ export interface AnswerPreferencesDialogProps {
  */
 export function AnswerPreferencesDialog(props: AnswerPreferencesDialogProps) {
   return (
-    <Dialog open={props.open} onClose={props.onClose} title="Answer preferences" size="lg">
+    <Dialog open={props.open} onClose={props.onClose} title="Answer preferences" size="xl">
       {props.open && <PreferencesForm {...props} />}
     </Dialog>
   );
@@ -161,58 +158,64 @@ function PreferencesForm({ style, language, onApply, onClose }: AnswerPreference
 
   const parts = text ? splitAnswer(text) : null;
   return (
-    <div className="flex flex-col gap-4 text-ui-text">
-      <Choices
-        label="Format"
-        options={FORMAT_OPTIONS}
-        value={draft.format}
-        onChange={(format) => setDraft({ ...draft, format })}
-      />
-      <Choices
-        label="Length"
-        options={LENGTH_OPTIONS}
-        value={draft.length}
-        onChange={(length) => setDraft({ ...draft, length })}
-      />
-      <Choices
-        label="Tone"
-        options={TONE_OPTIONS}
-        value={draft.tone}
-        onChange={(tone) => setDraft({ ...draft, tone })}
-      />
-
-      <section aria-label="Answer preview" className="flex flex-col gap-2 bg-ui-band p-4">
-        <Choices
-          label="Answer preview"
-          options={QUESTION_OPTIONS}
-          value={question}
-          onChange={setQuestion}
-        />
-        {parts ? (
-          <div aria-live="polite" className="text-[15px]">
-            <p className="font-semibold text-ui-heading">{parts.headline}</p>
-            {parts.bullets.length > 0 && (
-              <ul className="mt-1 list-disc space-y-1 pl-5">
-                {parts.bullets.map((bullet) => (
-                  <li key={bullet}>{bullet}</li>
-                ))}
-              </ul>
-            )}
-            {parts.tip && <p className="mt-2">{parts.tip}</p>}
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <Button variant="secondary" size="sm" onClick={() => void show()} disabled={loading}>
-              {loading ? 'Writing…' : 'Show preview'}
-            </Button>
-            <span className="text-[13px] text-ui-muted">
-              {failed
-                ? 'Kite could not write a preview just now. Try again.'
-                : 'An invented example, written with these settings.'}
-            </span>
-          </div>
-        )}
-      </section>
+    <div className="flex flex-col gap-5 text-ui-text">
+      <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+        <div className="flex flex-col gap-4">
+          <Choices
+            label="Format"
+            options={FORMAT_OPTIONS}
+            value={draft.format}
+            onChange={(format) => setDraft({ ...draft, format })}
+          />
+          <Choices
+            label="Length"
+            options={LENGTH_OPTIONS}
+            value={draft.length}
+            onChange={(length) => setDraft({ ...draft, length })}
+          />
+          <Choices
+            label="Tone"
+            options={TONE_OPTIONS}
+            value={draft.tone}
+            onChange={(tone) => setDraft({ ...draft, tone })}
+          />
+        </div>
+        <section
+          aria-label="Answer preview"
+          className="flex min-h-64 flex-col gap-3 rounded-card bg-ui-band p-4"
+        >
+          <Choices
+            label="Answer preview"
+            options={QUESTION_OPTIONS}
+            value={question}
+            onChange={setQuestion}
+          />
+          {parts ? (
+            <div aria-live="polite" className="text-[15px]">
+              <p className="font-semibold text-ui-heading">{parts.headline}</p>
+              {parts.bullets.length > 0 && (
+                <ul className="mt-1 list-disc space-y-1 pl-5">
+                  {parts.bullets.map((bullet) => (
+                    <li key={bullet}>{bullet}</li>
+                  ))}
+                </ul>
+              )}
+              {parts.tip && <p className="mt-2">{parts.tip}</p>}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="secondary" size="sm" onClick={() => void show()} disabled={loading}>
+                {loading ? 'Writing…' : 'Show preview'}
+              </Button>
+              <span className="text-[13px] text-ui-muted">
+                {failed
+                  ? 'Kite could not write a preview just now. Try again.'
+                  : 'An invented example, written with these settings.'}
+              </span>
+            </div>
+          )}
+        </section>
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">

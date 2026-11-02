@@ -60,12 +60,12 @@ export function HotkeyList() {
   const conflicts = HOTKEY_ROWS.filter((row) => rowHasConflict(row, statuses));
   return (
     <>
-      <p className="mb-3 text-sm text-ui-muted">
+      <p className="mb-3 text-[13px] text-ui-muted">
         &ldquo;Any app&rdquo; shortcuts work from every app in the desktop app, during a call; Open
         Ask Kite works whenever the desktop app is running. &ldquo;Kite in front&rdquo; ones never
         take keys from other apps. In a browser, all of them work while Kite has focus.
       </p>
-      <table className="w-full text-left text-sm">
+      <table className="w-full text-left text-[13px]">
         <thead>
           <tr className="border-b border-ui-border text-ui-muted">
             <th scope="col" className="py-2 pr-4 font-semibold">
@@ -86,7 +86,7 @@ export function HotkeyList() {
                 {row.label}
               </th>
               <td className="py-2 pr-4 text-ui-muted">
-                <kbd className="font-mono text-xs">
+                <kbd className="text-[13px]">
                   {hotkeyLabel(row.keysOverride ?? row.accelerator, mac)}
                 </kbd>
               </td>
@@ -101,7 +101,7 @@ export function HotkeyList() {
         </tbody>
       </table>
       {conflicts.length > 0 && (
-        <p role="status" className="mt-3 text-sm text-ui-danger">
+        <p role="status" className="mt-3 text-[13px] text-ui-danger">
           Another app uses {conflicts.map((row) => row.label).join(', ')}. Close that app or change
           its shortcut. Answer and Screenshot still work while Kite is in front.
         </p>

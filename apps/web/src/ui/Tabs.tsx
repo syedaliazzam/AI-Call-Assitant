@@ -5,7 +5,7 @@
  * Used by: src/features/dashboard/Dashboard.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F1 filter by type), §9.1
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
  */
 
 /** One tab. */
@@ -48,11 +48,11 @@ export function Tabs<T extends string>({ label, options, value, onChange }: Tabs
             aria-pressed={selected}
             onClick={() => onChange(option.value)}
             className={[
-              '-mb-px border-b-[3px] px-3 py-2 text-[13.5px] font-semibold transition-colors duration-150',
+              '-mb-px rounded-none border-b-2 px-3 py-2 text-[13px] font-medium transition-colors duration-150',
               'pointer-coarse:min-h-11',
               'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
               selected
-                ? 'border-ui-accent text-ui-heading'
+                ? 'border-ui-primary text-ui-heading'
                 : 'border-transparent text-ui-muted hover:text-ui-heading',
             ].join(' ')}
           >

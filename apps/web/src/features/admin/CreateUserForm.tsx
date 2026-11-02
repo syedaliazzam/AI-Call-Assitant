@@ -42,8 +42,8 @@ export function CreateUserForm({ action }: CreateUserFormProps) {
   }, [state]);
 
   return (
-    <section className="border border-ui-border bg-ui-surface p-6">
-      <h2 className="text-[20px] text-ui-subheading">Create user</h2>
+    <section className="border border-ui-border rounded-card bg-ui-surface shadow-card p-6">
+      <h2 className="text-[18px] font-semibold text-ui-heading">Create user</h2>
       <form
         ref={formRef}
         action={formAction}
@@ -62,10 +62,7 @@ export function CreateUserForm({ action }: CreateUserFormProps) {
           error={errors?.email}
         />
         <div className="flex flex-col gap-1">
-          <label
-            htmlFor="create-user-role"
-            className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted"
-          >
+          <label htmlFor="create-user-role" className="text-[13px] font-medium text-ui-muted">
             Role
           </label>
           <select
@@ -84,7 +81,10 @@ export function CreateUserForm({ action }: CreateUserFormProps) {
         </Button>
       </form>
       {state.status === 'error' && state.error && (
-        <p role="alert" className="mt-4 bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger">
+        <p
+          role="alert"
+          className="mt-4 rounded-control bg-ui-danger-bg px-3 py-2 text-[13px] text-ui-danger"
+        >
           {state.error}
         </p>
       )}

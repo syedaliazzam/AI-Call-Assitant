@@ -3,7 +3,7 @@
  * real components on invented data and a mocked /api/answer (no Claude call, no microphone, no
  * speech model) it covers:
  * - the live view: transcript left and answers right in a wide view, stacked (answers first)
- *   in a narrower one; You in cyan, Them in blue-300, words still being heard grey italic;
+ *   in a narrower one; You in the accent, Them in light grey, words still being heard grey italic;
  * - no layout shift while an answer streams: between the headline arriving and the bullets
  *   arriving, the action row, the answer panel's size and its footer (Cancel) do not move;
  * - the "Claude unavailable" message in the answer panel;
@@ -150,8 +150,8 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
       // The brand fonts for screenshots only (the app self-hosts them with next/font; CI does
       // not need them, and makes no request to Google).
       const fonts = SHOT_DIR
-        ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Montserrat:wght@400;600;700&display=block">' +
-          "<style>:root{--font-montserrat:'Montserrat';--font-plex-mono:'IBM Plex Mono'}</style>"
+        ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=block">' +
+          "<style>:root{--font-inter:'Inter'}</style>"
         : '';
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(
@@ -279,9 +279,9 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
     };
   });
   expect(colours).toEqual({
-    you: 'rgb(9, 182, 249)',
-    them: 'rgb(107, 168, 255)',
-    provisional: 'rgb(143, 164, 196)',
+    you: 'rgb(96, 165, 250)',
+    them: 'rgb(212, 212, 216)',
+    provisional: 'rgb(161, 161, 170)',
     italic: 'italic',
   });
   await shot(watched, size, 'live-empty');
@@ -609,4 +609,78 @@ test('error states: microphone denied and speech model download failed', async (
     await shot(watched, size, 'error-connect');
     await watched.context.close();
   }
+});
+
+/** Busy backgrounds behind the overlay: thin stripes, so a bad blur or weak panel would show. */
+const BACKDROPS = {
+  light:
+    'repeating-linear-gradient(45deg, rgb(255, 255, 255) 0 18px, rgb(235, 235, 240) 18px 36px, rgb(255, 214, 102) 36px 54px, rgb(255, 255, 255) 54px 72px)',
+  dark: 'repeating-linear-gradient(45deg, rgb(10, 10, 12) 0 18px, rgb(60, 60, 70) 18px 36px, rgb(120, 30, 30) 36px 54px, rgb(10, 10, 12) 54px 72px)',
+} as const;
+
+/** The desktop overlay window's sizes (apps/desktop/src/windows.ts). */
+const OVERLAY_SIZES = {
+  default: { width: 720, height: 520, touch: false },
+  min: { width: 460, height: 260, touch: false },
+} as const;
+
+test('overlay look: see-through panel over light and dark busy backgrounds, default and min size', async () => {
+  for (const [sizeName, size] of Object.entries(OVERLAY_SIZES)) {
+    for (const [backdropName, backdrop] of Object.entries(BACKDROPS)) {
+      const context = await browser!.newContext({
+        viewport: { width: size.width, height: size.height },
+        userAgent: WINDOWS_UA,
+      });
+      const page = await context.newPage();
+      await page.goto(`${origin}/?view=compact&glass=1`);
+      // The window's own material is the desktop's job; here the backdrop sits on the page, and
+      // the panel's backdrop-filter blurs it.
+      await page.evaluate((image) => {
+        document.documentElement.style.backgroundImage = image;
+        document.documentElement.style.backgroundAttachment = 'fixed';
+      }, backdrop);
+      const panel = page.locator('.k-overlay.k-glass');
+      await expect(panel).toBeVisible();
+      // Every control of the top bar stays inside the window, End above all.
+      const end = await page.getByRole('button', { name: 'End', exact: true }).boundingBox();
+      expect(end!.x + end!.width).toBeLessThanOrEqual(size.width);
+      const look = await panel.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const end = [...element.querySelectorAll('button')].find((b) => b.textContent === 'End')!;
+        return {
+          background: style.backgroundColor,
+          radius: style.borderRadius,
+          blur: style.backdropFilter,
+          end: getComputedStyle(end).backgroundColor,
+          bodyBackground: getComputedStyle(document.body).backgroundColor,
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+      });
+      expect(look).toEqual({
+        background: 'rgba(24, 24, 27, 0.82)',
+        radius: '16px',
+        blur: 'blur(16px)',
+        end: 'rgb(220, 38, 38)',
+        // Clear: otherwise the window's material could not show through.
+        bodyBackground: 'rgba(0, 0, 0, 0)',
+        overflow: 0,
+      });
+      if (SHOT_DIR) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({
+          path: path.join(SHOT_DIR, `overlay-${sizeName}-${backdropName}.png`),
+        });
+      }
+      await context.close();
+    }
+  }
+});
+
+test('overlay look: picture-in-picture stays solid', async () => {
+  const watched = await open('compact', OVERLAY_SIZES.default);
+  const panel = watched.page.locator('.k-overlay');
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveCSS('background-color', 'rgb(24, 24, 27)');
+  await expect(watched.page.locator('.k-glass')).toHaveCount(0);
+  await watched.context.close();
 });

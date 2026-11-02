@@ -483,7 +483,7 @@ export function SttTest() {
         <Button variant="secondary" onClick={stop} disabled={phase !== 'listening'}>
           Stop
         </Button>
-        <label className="flex items-center gap-2 text-sm text-ui-text">
+        <label className="flex items-center gap-2 text-[13px] text-ui-text">
           <input
             type="checkbox"
             checked={micOn}
@@ -492,13 +492,13 @@ export function SttTest() {
           />
           You: microphone
         </label>
-        <label className="flex items-center gap-2 text-sm text-ui-text">
+        <label className="flex items-center gap-2 text-[13px] text-ui-text">
           Them:
           <select
             value={themSource}
             disabled={phase === 'loading'}
             onChange={(event) => void setThem(event.target.value as ThemSource)}
-            className="h-9 border border-ui-border bg-ui-surface px-2 text-sm"
+            className="h-9 border border-ui-border rounded-control bg-ui-surface px-2 text-[13px]"
           >
             <option value="off">off</option>
             <option value="recordings">test recordings (looped)</option>
@@ -506,16 +506,18 @@ export function SttTest() {
           </select>
         </label>
         {callSource && (
-          <span className="text-xs text-ui-success">Them = {CALL_SOURCE_LABEL[callSource]}</span>
+          <span className="text-[13px] text-ui-success">
+            Them = {CALL_SOURCE_LABEL[callSource]}
+          </span>
         )}
-        <label className="flex items-center gap-2 text-sm text-ui-text">
+        <label className="flex items-center gap-2 text-[13px] text-ui-text">
           Beam width:
           {/* Read on Start only: the worker builds its recognizer once per load. */}
           <select
             value={beamWidth}
             disabled={phase === 'loading' || phase === 'listening'}
             onChange={(event) => setBeamWidth(Number(event.target.value) as BeamWidth)}
-            className="h-9 border border-ui-border bg-ui-surface px-2 text-sm"
+            className="h-9 border border-ui-border rounded-control bg-ui-surface px-2 text-[13px]"
           >
             <option value={4}>4 (live sessions)</option>
             <option value={8}>8 (more CPU)</option>
@@ -531,13 +533,13 @@ export function SttTest() {
         <Button variant="ghost" onClick={() => void navigator.clipboard.writeText(resultsText())}>
           Copy results
         </Button>
-        <span className="text-xs text-ui-muted">
+        <span className="text-[13px] text-ui-muted">
           {where} · {model.label} · {formatMb(totalBytes)} · source {source}
         </span>
       </section>
 
       <section className="flex flex-col gap-1">
-        <label htmlFor="stt-hotword-source" className="text-sm font-semibold text-ui-text">
+        <label htmlFor="stt-hotword-source" className="text-[13px] font-semibold text-ui-text">
           Hotwords from
         </label>
         <select
@@ -545,7 +547,7 @@ export function SttTest() {
           value={hotwordSource}
           disabled={phase === 'loading'}
           onChange={(event) => void chooseHotwordSource(event.target.value)}
-          className="mb-2 h-9 max-w-xl border border-ui-border bg-ui-surface px-2 text-sm"
+          className="mb-2 h-9 max-w-xl border border-ui-border rounded-control bg-ui-surface px-2 text-[13px]"
         >
           <option value="test">Test list (Bluefin Route, Northwind Logistics)</option>
           <option value="none">No hotwords</option>
@@ -555,7 +557,7 @@ export function SttTest() {
             </option>
           ))}
         </select>
-        <label htmlFor="stt-hotwords" className="text-sm font-semibold text-ui-text">
+        <label htmlFor="stt-hotwords" className="text-[13px] font-semibold text-ui-text">
           Hotwords (one phrase per line, optional boost score after &quot; :&quot;)
         </label>
         <textarea
@@ -564,10 +566,10 @@ export function SttTest() {
           value={hotwordsText}
           disabled={phase === 'loading'}
           onChange={(event) => setHotwordsText(event.target.value)}
-          className="max-w-xl border border-ui-border bg-ui-surface px-3 py-2 font-mono text-sm"
+          className="max-w-xl border border-ui-border rounded-card bg-ui-surface shadow-card px-3 py-2 text-[13px]"
         />
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-xs text-ui-muted">
+          <p className="text-[13px] text-ui-muted">
             {hotwordsPreview.hotwords.length === 0
               ? 'No hotwords: plain beam search.'
               : `Sent to the model: ${hotwordsPreview.hotwords.map((hotword) => `${hotword.phrase} (${hotword.score})`).join(', ')}`}
@@ -596,7 +598,7 @@ export function SttTest() {
               style={{ width: `${(progress?.fraction ?? 0) * 100}%` }}
             />
           </div>
-          <p className="text-sm text-ui-muted tabular-nums">
+          <p className="text-[13px] text-ui-muted tabular-nums">
             {progress
               ? `${Math.round(progress.fraction * 100)}% · ${formatMb(progress.loadedBytes)} of ${formatMb(progress.totalBytes)} · ${progress.file}`
               : 'Starting…'}
@@ -605,15 +607,18 @@ export function SttTest() {
         </section>
       )}
       {phase === 'listening' && loads.length > 0 && (
-        <p className="text-sm font-semibold text-ui-success">Ready</p>
+        <p className="text-[13px] font-semibold text-ui-success">Ready</p>
       )}
       {loads.at(-1)?.cacheAvailable === false && (
-        <p className="bg-ui-warning-bg px-3 py-2 text-sm text-ui-warning">
+        <p className="rounded-control bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-warning">
           This browser does not allow Kite to store the model, so it downloads again on every start.
         </p>
       )}
       {error && (
-        <p role="alert" className="bg-ui-warning-bg px-3 py-2 text-sm text-ui-warning">
+        <p
+          role="alert"
+          className="rounded-control bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-warning"
+        >
           {error}
         </p>
       )}
@@ -622,8 +627,8 @@ export function SttTest() {
           role="status"
           className={
             healthTone(health) === 'hint'
-              ? 'bg-ui-band px-3 py-2 text-sm text-ui-muted'
-              : 'bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger'
+              ? 'rounded-control bg-ui-band px-3 py-2 text-[13px] text-ui-muted'
+              : 'rounded-control bg-ui-danger-bg px-3 py-2 text-[13px] text-ui-danger'
           }
         >
           {message}
@@ -632,7 +637,7 @@ export function SttTest() {
 
       <section
         aria-live="polite"
-        className="min-h-32 border border-ui-border bg-ui-surface p-4 text-ui-heading"
+        className="min-h-32 border border-ui-border rounded-card bg-ui-surface shadow-card p-4 text-ui-heading"
       >
         {finals.map((line, i) => (
           <p key={i}>
@@ -640,7 +645,7 @@ export function SttTest() {
               {CHANNEL_LABEL[line.channel]}:
             </span>{' '}
             {line.text}{' '}
-            <span className="text-xs text-ui-muted" title="Which rule ended this utterance">
+            <span className="text-[13px] text-ui-muted" title="Which rule ended this utterance">
               · {line.reason}
             </span>
           </p>
@@ -661,7 +666,7 @@ export function SttTest() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
-        <div className="border border-ui-border bg-ui-surface p-4 text-sm">
+        <div className="border border-ui-border rounded-card bg-ui-surface shadow-card p-4 text-[13px]">
           <h2 className="mb-2 font-semibold text-ui-heading">Loading</h2>
           {loads.length === 0 && <p className="text-ui-muted">Not loaded yet.</p>}
           <ul className="flex flex-col gap-1 tabular-nums">
@@ -675,7 +680,7 @@ export function SttTest() {
             ))}
           </ul>
         </div>
-        <div className="border border-ui-border bg-ui-surface p-4 text-sm tabular-nums">
+        <div className="border border-ui-border rounded-card bg-ui-surface shadow-card p-4 text-[13px] tabular-nums">
           <h2 className="mb-2 font-semibold text-ui-heading">Live</h2>
           <p>
             Combined real-time factor: <strong>{stats ? stats.combinedRtf.toFixed(3) : '–'}</strong>{' '}
@@ -700,7 +705,7 @@ export function SttTest() {
         </div>
       </section>
 
-      <section className="border border-ui-border bg-ui-surface p-4 text-sm">
+      <section className="border border-ui-border rounded-card bg-ui-surface shadow-card p-4 text-[13px]">
         <h2 className="mb-1 font-semibold text-ui-heading">Accuracy test (You channel)</h2>
         <p className="mb-3 text-ui-muted">
           Click a sentence, pause for a second, read it aloud at normal speed, then pause until it
@@ -740,10 +745,10 @@ export function SttTest() {
                             step.type === 'ok'
                               ? 'text-ui-text'
                               : step.type === 'sub'
-                                ? 'bg-ui-warning-bg px-1 text-ui-warning'
+                                ? 'rounded-control bg-ui-warning-bg px-1 text-ui-warning'
                                 : step.type === 'del'
-                                  ? 'bg-ui-danger-bg px-1 text-ui-danger line-through'
-                                  : 'bg-ui-pale px-1 text-ui-heading'
+                                  ? 'rounded-control bg-ui-danger-bg px-1 text-ui-danger line-through'
+                                  : 'rounded-control bg-ui-pale px-1 text-ui-heading'
                           }
                           title={step.type}
                         >

@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.10.0"
+version: "3.11.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-03"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -144,6 +144,8 @@ export interface Platform {
 Kite never hides from the taskbar, Dock or process lists, and does not try to evade monitoring or proctoring software.
 
 ## 5. Main application screens
+
+**Look (v3.11, ADR-0031):** neutral theme and a see-through desktop overlay; layout, flow and hotkeys unchanged. Sidebar groups, session cards, the wizard rows and the upload window are described in `docs/design/kite-ui-theme.md` §6.
 
 | Screen | Route | Content (mirrors ParakeetAI) |
 |---|---|---|

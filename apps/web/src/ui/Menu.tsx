@@ -104,7 +104,7 @@ export function Menu({ label, ariaLabel, variant = 'secondary', items }: MenuPro
           ref={list}
           role="menu"
           onKeyDown={onKeyDown}
-          className="absolute right-0 top-full z-20 mt-1 flex min-w-44 flex-col border border-ui-border bg-ui-surface py-1 shadow-md"
+          className="absolute right-0 top-full z-20 mt-1 flex min-w-44 flex-col overflow-hidden rounded-control border border-ui-border bg-ui-surface py-1 shadow-modal"
         >
           {items.map((item) => (
             <button
@@ -116,7 +116,7 @@ export function Menu({ label, ariaLabel, variant = 'secondary', items }: MenuPro
                 item.onSelect();
               }}
               className={[
-                'px-4 py-2 text-left text-[14px] hover:bg-ui-band focus-visible:bg-ui-band focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11',
+                'rounded-none px-4 py-2 text-left text-[15px] hover:bg-ui-hover focus-visible:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11',
                 item.danger ? 'text-ui-danger' : 'text-ui-text',
               ].join(' ')}
             >

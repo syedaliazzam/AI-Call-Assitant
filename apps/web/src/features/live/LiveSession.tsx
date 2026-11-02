@@ -148,13 +148,13 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
   return (
     <div className="k-dark min-h-screen bg-ui-bg px-4 py-10 text-ui-text sm:px-8">
       {loaded.state === 'loading' ? (
-        <p className="text-sm text-ui-muted">Opening the session…</p>
+        <p className="text-[13px] text-ui-muted">Opening the session…</p>
       ) : (
         <>
-          <h1 className="text-[28px] font-bold text-ui-heading">
+          <h1 className="text-[24px] font-semibold text-ui-heading">
             {loaded.state === 'not-found' ? 'Session not found' : 'Could not open the session'}
           </h1>
-          <p className="mt-2 text-sm text-ui-muted">
+          <p className="mt-2 text-[13px] text-ui-muted">
             {loaded.state === 'not-found'
               ? 'This session does not exist on this computer. Sessions are saved per browser and per desktop app, so a session created elsewhere does not appear here.'
               : 'Kite could not open its local storage. Reload the page to try again.'}

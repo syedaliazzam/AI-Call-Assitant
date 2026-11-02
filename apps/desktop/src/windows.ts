@@ -108,12 +108,32 @@ export function restoreBounds(
 }
 
 /**
+ * The window options that blur what is behind the overlay. A web page cannot blur other windows, so
+ * this has to be the window's own material. Measured on Windows 11 (3 Nov 2026): acrylic blurs the
+ * desktop behind a frameless window, which still resizes from its edges. Where a system has no
+ * material (Windows 10), the clear background shows the panel over black: dark and readable.
+ *
+ * @param platform The operating system.
+ * @returns The options to add.
+ * Called from: compactWindowOptions(); tests
+ */
+export function overlayGlass(platform: NodeJS.Platform): BrowserWindowConstructorOptions {
+  if (platform === 'darwin') {
+    return { transparent: true, vibrancy: 'hud', visualEffectState: 'active' };
+  }
+  // A clear background, not a colour: a colour would hide the material.
+  if (platform === 'win32') return { backgroundMaterial: 'acrylic', backgroundColor: '#00000000' };
+  return { backgroundColor: '#18181b' };
+}
+
+/**
  * The compact window's options.
  *
  * @param bounds      Where to open it.
  * @param preloadPath The preload script (window.kiteDesktop).
  * @param appVersion  The shell version (for the bridge).
- * @returns BrowserWindow options: frameless, always on top, resizable, hidden until shown
+ * @param platform    The operating system (tests pass one; the app uses process.platform).
+ * @returns BrowserWindow options: frameless, always on top, resizable, see-through, hidden until shown
  *          without focus, with the same secure web preferences as the main window.
  * Called from: createCompactWindows(); tests
  */
@@ -121,6 +141,7 @@ export function compactWindowOptions(
   bounds: Bounds,
   preloadPath: string,
   appVersion: string,
+  platform: NodeJS.Platform = process.platform,
 ): BrowserWindowConstructorOptions {
   return {
     ...bounds,
@@ -133,8 +154,7 @@ export function compactWindowOptions(
     // Visible in the taskbar and Alt+Tab like any window (never hidden: CLAUDE.md).
     skipTaskbar: false,
     show: false,
-    // Kite's dark navy, so opening the overlay never flashes white over the meeting.
-    backgroundColor: '#0b1630',
+    ...overlayGlass(platform),
     webPreferences: secureWebPreferences(preloadPath, appVersion),
   };
 }

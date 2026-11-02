@@ -138,7 +138,7 @@ export function DetailsStep({
         onRemove={onRemoveDocument}
         onBusy={onBusy}
       />
-      <p className="font-mono text-[12px] text-ui-muted">
+      <p className="text-[13px] text-ui-muted">
         {count(roomLeft(used))} of {count(MAX_SESSION_CHARS)} characters left in this session
       </p>
     </div>

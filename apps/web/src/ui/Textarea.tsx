@@ -5,7 +5,7 @@
  *          src/features/settings/Settings.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
  */
 import { useId, type TextareaHTMLAttributes } from 'react';
 
@@ -34,10 +34,7 @@ export function Textarea({ label, hint, error, id, className = '', ...rest }: Te
   const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;
   return (
     <div className="flex flex-col gap-1">
-      <label
-        htmlFor={fieldId}
-        className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted"
-      >
+      <label htmlFor={fieldId} className="text-[13px] font-medium text-ui-muted">
         {label}
       </label>
       <textarea

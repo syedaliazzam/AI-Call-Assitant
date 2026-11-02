@@ -85,7 +85,7 @@ function PickRow({
         {checked && <span className="h-1.5 w-1.5 bg-ui-surface" />}
       </span>
       <span className="min-w-0 flex-1 truncate text-[15px] text-ui-text">{name}</span>
-      {detail && <span className="shrink-0 font-mono text-[12px] text-ui-muted">{detail}</span>}
+      {detail && <span className="shrink-0 text-[13px] text-ui-muted">{detail}</span>}
     </button>
   );
 }
@@ -163,17 +163,14 @@ export function LibraryPicker({
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h3
-        id={headingId}
-        className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted"
-      >
+      <h3 id={headingId} className="text-[13px] font-medium text-ui-muted">
         {title}
       </h3>
       {(items.length > 0 || onlyHere.length > 0) && (
         <div
           role={single ? 'radiogroup' : 'group'}
           aria-labelledby={headingId}
-          className="flex flex-col divide-y divide-ui-border border border-ui-border bg-ui-surface"
+          className="flex flex-col divide-y divide-ui-border overflow-hidden rounded-card border border-ui-border bg-ui-surface"
         >
           {items.map((item) => {
             const chosen = mine.find((document) => document.sourceId === item.id);
@@ -197,7 +194,7 @@ export function LibraryPicker({
                 {document.name}
               </span>
               <span className="flex shrink-0 items-center gap-3">
-                <span className="font-mono text-[12px] text-ui-muted">{size(document.chars)}</span>
+                <span className="text-[13px] text-ui-muted">{size(document.chars)}</span>
                 <Button
                   variant="ghost"
                   size="sm"

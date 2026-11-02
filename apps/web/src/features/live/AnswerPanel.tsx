@@ -90,7 +90,7 @@ function RatingControls({ entry, onRate, onNote }: RatingControlsProps) {
     onRate(entry.id, entry.rating === rating ? null : rating);
   return (
     <div className="mt-3 flex flex-col gap-2 border-t border-ui-border pt-3">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-ui-muted">
+      <div className="flex flex-wrap items-center gap-2 text-[13px] text-ui-muted">
         <span>Was this answer good?</span>
         <Button
           size="sm"
@@ -139,7 +139,7 @@ function RatingControls({ entry, onRate, onNote }: RatingControlsProps) {
         >
           <textarea
             aria-label="What was wrong / better answer"
-            className="border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] md:text-sm"
+            className="border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] md:text-[13px]"
             placeholder="What was wrong, or what would a better answer say?"
             rows={2}
             maxLength={2_000}
@@ -209,15 +209,15 @@ export function AnswerPanel(props: AnswerPanelProps) {
         ? 'typed question'
         : `from ${entry.fromLines} ${entry.fromLines === 1 ? 'line' : 'lines'}`;
 
-  // Theme §6: a mono eyebrow, a 3 px cyan bar, a bold headline. A minimum height with the
+  // Theme §6: a small label, then a semibold headline. A minimum height with the
   // footer pinned to the bottom: the footer does not move while the bullets stream in.
   return (
     <section
       aria-label="Answer"
-      className="flex min-h-[20rem] flex-col border border-l-[3px] border-ui-border border-l-ui-accent bg-ui-surface p-5"
+      className="flex min-h-[20rem] flex-col border border-ui-border rounded-card bg-ui-surface shadow-card p-5"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted">
+        <p className="text-[13px] font-medium text-ui-muted">
           Answer
           {/* Kite answered by itself (auto-answer beta, Day 6 Stage 4f). */}
           {entry.auto ? (
@@ -244,7 +244,7 @@ export function AnswerPanel(props: AnswerPanelProps) {
           >
             ←
           </Button>
-          <span className="font-mono text-[11px] text-ui-muted">
+          <span className="text-[13px] text-ui-muted">
             {props.index + 1} of {props.total}
           </span>
           <Button
@@ -298,12 +298,10 @@ export function AnswerPanel(props: AnswerPanelProps) {
           // transcript keeps recording (core/answer/unavailable.ts).
           <div
             role="alert"
-            className="mt-3 border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2"
+            className="mt-3 rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2"
           >
-            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-warning">
-              Claude unavailable
-            </p>
-            <p className="mt-1 text-[14px] text-ui-text">{entry.error}</p>
+            <p className="text-[13px] font-medium text-ui-warning">Claude unavailable</p>
+            <p className="mt-1 text-[15px] text-ui-text">{entry.error}</p>
           </div>
         )}
 
@@ -312,12 +310,12 @@ export function AnswerPanel(props: AnswerPanelProps) {
           // without leaving the call) or no connection. Same box as "Claude unavailable".
           <div
             role="alert"
-            className="mt-3 border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2"
+            className="mt-3 rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2"
           >
-            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-warning">
+            <p className="text-[13px] font-medium text-ui-warning">
               {entry.problem === 'signed-out' ? 'Signed out' : 'No connection'}
             </p>
-            <p className="mt-1 text-[14px] text-ui-text">{entry.error}</p>
+            <p className="mt-1 text-[15px] text-ui-text">{entry.error}</p>
             {entry.problem === 'signed-out' && props.onSignInAgain && (
               <Button className="mt-2" variant="secondary" onClick={props.onSignInAgain}>
                 Sign in again
@@ -327,7 +325,7 @@ export function AnswerPanel(props: AnswerPanelProps) {
         )}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-ui-muted">
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-[13px] text-ui-muted">
         {entry.status !== 'done' && !entry.unavailable && !entry.problem && (
           <span role={entry.status === 'error' ? 'alert' : 'status'}>
             {entry.status === 'error' && entry.error ? entry.error : STATUS_TEXT[entry.status]}
@@ -360,9 +358,7 @@ export function AnswerPanel(props: AnswerPanelProps) {
       )}
       {others.length > 0 && props.onShow && (
         <div className="mt-3 border-t border-ui-border pt-2">
-          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted">
-            Other answers, newest first
-          </p>
+          <p className="text-[13px] font-medium text-ui-muted">Other answers, newest first</p>
           <ul aria-label="Other answers" className="mt-1 flex flex-col gap-0.5">
             {others.map((other) => (
               <li key={other.id}>

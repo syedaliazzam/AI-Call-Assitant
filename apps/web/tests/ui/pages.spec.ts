@@ -1,6 +1,6 @@
 /**
- * Screenshots of the light pages (UI theme stage U2) at 1440, 900 and 390 px (the 390 px run as
- * a touch phone): sign-in, change password, the empty dashboard, the wizard (Details with a
+ * Screenshots of the light pages (UI theme stage U2) at 1440 and 390 px (the 390 px run as a touch
+ * phone), with the desktop-app banner, the sidebar's collapse toggle and the mock presets: sign-in, change password, the empty dashboard, the wizard (Details with a
  * document attached, then Preferences), the dashboard with a session, the Choose platform
  * dialog, the session review (an invented ended session seeded into this browser's IndexedDB),
  * Settings and Users. Each page is checked (shots.ts): no sideways scroll, touch targets
@@ -156,6 +156,34 @@ for (const size of WIDTHS) {
     await expect(page.getByText('No sessions yet')).toBeVisible();
     await check(watched, size, 'dashboard-empty');
 
+    // The desktop-app banner: dismissed once, it stays dismissed after a reload.
+    const banner = page.getByRole('complementary', { name: 'Desktop app' });
+    await expect(banner).toBeVisible();
+    await expect(banner.getByRole('link', { name: 'Get the desktop app' })).toHaveAttribute(
+      'href',
+      /kite-releases/,
+    );
+
+    // The sidebar's collapse toggle exists from 768 px, and is remembered.
+    if (!size.touch) {
+      await page.getByRole('button', { name: 'Collapse the sidebar' }).click();
+      await page.reload();
+      await expect(page.locator('aside[data-collapsed="true"]')).toBeVisible();
+      // Collapsed, each link keeps its name for screen readers.
+      await expect(page.getByRole('link', { name: 'Question bank' })).toBeVisible();
+      await check(watched, size, 'sidebar-collapsed');
+      await page.getByRole('button', { name: 'Expand the sidebar' }).click();
+      await expect(page.locator('aside[data-collapsed="false"]')).toBeVisible();
+    }
+
+    // The mock presets fill in the details.
+    await page.goto(`${BASE_URL}/sessions/new`);
+    await page.getByRole('button', { name: 'Customer success' }).click();
+    await expect(page.getByLabel('Session type')).toHaveValue('mock');
+    await expect(page.getByLabel('Role')).toHaveValue('Customer success manager');
+    await page.goto(`${BASE_URL}/`);
+    await expect(page.getByText('No sessions yet')).toBeVisible();
+
     // Change password (also reachable when signed in); nothing is submitted.
     await page.goto(`${BASE_URL}/change-password`);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -175,9 +203,21 @@ for (const size of WIDTHS) {
     });
     await expect(page.getByText('price-list.txt')).toBeVisible();
     await check(watched, size, 'wizard-details');
+    await page.getByRole('button', { name: 'Upload a document' }).click();
+    await expect(page.getByRole('dialog', { name: 'Choose files' })).toBeVisible();
+    await check(watched, size, 'upload-modal');
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'View tutorial' }).click();
+    await expect(page.getByRole('dialog', { name: 'How a session works' })).toBeVisible();
+    await check(watched, size, 'wizard-tutorial');
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByLabel('Key terms (optional)')).toBeVisible();
     await check(watched, size, 'wizard-preferences');
+    await page.getByRole('button', { name: 'Configure: Answer preferences' }).click();
+    await expect(page.getByRole('dialog', { name: 'Answer preferences' })).toBeVisible();
+    await check(watched, size, 'answer-preferences');
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Create session' }).click();
 
     // Dashboard with the session, and the Choose platform dialog (never opened further).
@@ -186,8 +226,15 @@ for (const size of WIDTHS) {
       .filter({ has: page.getByRole('heading', { name: COMPANY }) });
     await expect(card).toBeVisible();
     await check(watched, size, 'dashboard');
+    await banner.getByRole('button', { name: 'Dismiss' }).click();
+    await expect(banner).toHaveCount(0);
+    await check(watched, size, 'dashboard-banner-dismissed');
+    await page.reload();
+    await expect(card).toBeVisible();
+    await expect(banner).toHaveCount(0);
     await card.getByRole('button', { name: 'Start session' }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'How do you want to join?' })).toBeVisible();
+    await page.getByRole('button', { name: 'What’s the difference?' }).click();
     await check(watched, size, 'choose-platform');
     await page.keyboard.press('Escape');
 
@@ -223,6 +270,13 @@ for (const size of WIDTHS) {
     await page.getByRole('button', { name: 'Attach' }).click();
     await expect(page.getByRole('dialog', { name: 'Attach to this chat' })).toBeVisible();
     await check(watched, size, 'ask-kite-attach');
+
+    await page.goto(`${BASE_URL}/question-bank`);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await check(watched, size, 'question-bank');
+    await page.goto(`${BASE_URL}/mock`);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await check(watched, size, 'mock-interview');
 
     await page.goto(`${BASE_URL}/settings`);
     await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();

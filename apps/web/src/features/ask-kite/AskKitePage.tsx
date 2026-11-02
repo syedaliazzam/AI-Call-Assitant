@@ -93,11 +93,11 @@ function Message({
   if (message.role === 'you') {
     return (
       <li aria-label="You asked" className="flex max-w-[85%] flex-col items-end self-end">
-        <span className="whitespace-pre-wrap bg-ui-pale px-3 py-1.5 text-[15px] text-ui-text">
+        <span className="whitespace-pre-wrap rounded-control bg-ui-pale px-3 py-1.5 text-[15px] text-ui-text">
           {message.text}
         </span>
         {message.images ? (
-          <span className="mt-0.5 font-mono text-[11px] text-ui-muted">
+          <span className="mt-0.5 text-[13px] text-ui-muted">
             {message.images} {message.images === 1 ? 'screenshot' : 'screenshots'}, not kept
           </span>
         ) : null}
@@ -107,7 +107,7 @@ function Message({
   return (
     <li
       aria-label="Kite answered"
-      className="border border-l-[3px] border-ui-border border-l-ui-accent bg-ui-surface p-3"
+      className="border border-ui-border rounded-card bg-ui-surface shadow-card p-3"
     >
       <AnswerBody text={message.text} target="kite" size="chat" />
       {!streaming && (
@@ -340,18 +340,16 @@ export function AskKitePage() {
 
   const library = (label: string, items: readonly LibraryItem[]) => (
     <section aria-label={label}>
-      <h3 className="mb-1 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted">
-        {label}
-      </h3>
+      <h3 className="mb-1 text-[13px] font-medium text-ui-muted">{label}</h3>
       {items.length === 0 ? (
-        <p className="text-sm text-ui-muted">Nothing here yet.</p>
+        <p className="text-[13px] text-ui-muted">Nothing here yet.</p>
       ) : (
         <ul className="flex flex-col gap-0.5">
           {items.map((item) => (
             <li key={item.id}>
               <button
                 type="button"
-                className="w-full truncate py-1 text-left text-sm text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+                className="w-full truncate py-1 text-left text-[13px] text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
                 onClick={() => attach({ name: item.name, kind: item.kind, text: item.text })}
               >
                 {item.name}
@@ -381,7 +379,7 @@ export function AskKitePage() {
                 <button
                   type="button"
                   aria-current={item.id === chat.id ? 'true' : undefined}
-                  className={`min-w-0 flex-1 truncate px-2 py-1 text-left text-sm focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 ${item.id === chat.id ? 'bg-ui-band font-semibold text-ui-heading' : 'text-ui-text hover:bg-ui-band'}`}
+                  className={`min-w-0 flex-1 truncate px-2 py-1 text-left text-[13px] focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 ${item.id === chat.id ? 'bg-ui-band font-semibold text-ui-heading' : 'text-ui-text hover:bg-ui-band'}`}
                   onClick={() => open(item)}
                 >
                   {item.title}
@@ -389,7 +387,7 @@ export function AskKitePage() {
                 <button
                   type="button"
                   aria-label={`Delete ${item.title}`}
-                  className="px-1.5 py-1 text-sm text-ui-muted hover:text-ui-danger focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+                  className="px-1.5 py-1 text-[13px] text-ui-muted hover:text-ui-danger focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11"
                   onClick={() => remove(item.id)}
                 >
                   ×
@@ -427,7 +425,7 @@ export function AskKitePage() {
           )}
 
           {chat.messages.length === 0 && !reply ? (
-            <p className="border border-dashed border-ui-border p-5 text-[15px] text-ui-muted">
+            <p className="rounded-card border border-dashed border-ui-border p-5 text-[15px] text-ui-muted">
               Ask anything: an explanation, some maths, a piece of code. Attach a resume, a document
               or a past session to talk about it, or paste a screenshot.
             </p>
@@ -444,7 +442,7 @@ export function AskKitePage() {
           {notice && (
             <p
               role="alert"
-              className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
+              className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
             >
               {notice}
             </p>
@@ -464,7 +462,7 @@ export function AskKitePage() {
                   <button
                     type="button"
                     aria-label="Remove this screenshot"
-                    className="absolute right-0 top-0 bg-ui-surface px-1.5 text-sm text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+                    className="absolute right-0 top-0 bg-ui-surface px-1.5 text-[13px] text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11"
                     onClick={() =>
                       setImages((current) => current.filter((item) => item.id !== image.id))
                     }
@@ -487,7 +485,7 @@ export function AskKitePage() {
               aria-label="Ask Kite"
               rows={3}
               maxLength={MAX_KITE_QUESTION_CHARS}
-              className="border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] md:text-sm"
+              className="border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] md:text-[13px]"
               placeholder="Ask anything. Enter sends; Shift+Enter starts a new line. Paste a screenshot here."
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
@@ -524,27 +522,25 @@ export function AskKitePage() {
 
       <Dialog open={attachOpen} onClose={() => setAttachOpen(false)} title="Attach to this chat">
         {!choices ? (
-          <p className="text-sm text-ui-muted">Loading…</p>
+          <p className="text-[13px] text-ui-muted">Loading…</p>
         ) : (
           <div className="flex flex-col gap-4">
-            <p className="text-sm text-ui-muted">
+            <p className="text-[13px] text-ui-muted">
               The chat keeps its own copy, and sends it to Claude with each message.
             </p>
             {library('Resumes', choices.resumes)}
             {library('Documents', choices.documents)}
             <section aria-label="Past sessions">
-              <h3 className="mb-1 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted">
-                Past sessions
-              </h3>
+              <h3 className="mb-1 text-[13px] font-medium text-ui-muted">Past sessions</h3>
               {choices.sessions.length === 0 ? (
-                <p className="text-sm text-ui-muted">Nothing here yet.</p>
+                <p className="text-[13px] text-ui-muted">Nothing here yet.</p>
               ) : (
                 <ul className="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
                   {choices.sessions.map((session) => (
                     <li key={session.id}>
                       <button
                         type="button"
-                        className="w-full truncate py-1 text-left text-sm text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+                        className="w-full truncate py-1 text-left text-[13px] text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
                         onClick={() => attachSession(session.id)}
                       >
                         {session.company || 'No company'}

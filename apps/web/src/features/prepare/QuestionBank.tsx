@@ -124,7 +124,7 @@ export function QuestionBank() {
       width="lg"
     >
       {sessions && sessions.length === 0 && (
-        <section className="border border-ui-border bg-ui-surface px-6 py-10 text-center">
+        <section className="border border-ui-border rounded-card bg-ui-surface shadow-card px-6 py-10 text-center">
           <p className="text-[15px] text-ui-muted">
             Create an Interview or Mock session first: its job description and resume are what the
             questions come from.
@@ -135,7 +135,7 @@ export function QuestionBank() {
         </section>
       )}
       {sessions && sessions.length > 0 && (
-        <section className="flex flex-wrap items-end gap-3 border border-ui-border bg-ui-surface p-5">
+        <section className="flex flex-wrap items-end gap-3 border border-ui-border rounded-card bg-ui-surface shadow-card p-5">
           <div className="min-w-0 flex-1 basis-64">
             <Select
               label="Session"
@@ -157,12 +157,12 @@ export function QuestionBank() {
         </section>
       )}
       {writing && (
-        <p role="status" className="text-sm text-ui-muted">
+        <p role="status" className="text-[13px] text-ui-muted">
           Writing the questions and answers. This can take up to a minute.
         </p>
       )}
       {failure && (
-        <p role="alert" className="text-sm text-ui-danger">
+        <p role="alert" className="text-[13px] text-ui-danger">
           {failure}
         </p>
       )}
@@ -170,9 +170,9 @@ export function QuestionBank() {
         <section
           key={group.type}
           aria-label={GROUP_LABELS[group.type]}
-          className="border border-ui-border bg-ui-surface p-5"
+          className="border border-ui-border rounded-card bg-ui-surface shadow-card p-5"
         >
-          <h2 className="text-[20px] text-ui-subheading">{GROUP_LABELS[group.type]}</h2>
+          <h2 className="text-[18px] font-semibold text-ui-heading">{GROUP_LABELS[group.type]}</h2>
           <ul className="mt-3 flex flex-col gap-3">
             {group.questions.map((item) => {
               const parts = splitAnswer(item.answer);

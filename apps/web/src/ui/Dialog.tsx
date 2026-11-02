@@ -7,7 +7,7 @@
  *          and more; DialogPanel also by src/features/dev/UiGallery.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
  */
 'use client';
 
@@ -25,8 +25,8 @@ export interface DialogProps {
   children: ReactNode;
   /** Buttons at the bottom, right-aligned (for example Cancel and Delete). */
   footer?: ReactNode;
-  /** Width: 'md' (default, about 28 rem) or 'lg' (about 42 rem, for tables). */
-  size?: 'md' | 'lg';
+  /** Width: 'md' (default, about 28 rem), 'lg' (about 42 rem, tables) or 'xl' (about 56 rem, two panes). */
+  size?: 'md' | 'lg' | 'xl';
 }
 
 /**
@@ -64,9 +64,10 @@ export function Dialog({ open, onClose, title, children, footer, size = 'md' }: 
         if (event.target === event.currentTarget) onClose();
       }}
       className={[
-        // Square, flat, 1 px border; the navy backdrop at 60% (theme §5 Modal).
-        'm-auto w-full border border-ui-border bg-ui-surface p-0 text-ui-text backdrop:bg-ui-overlay',
-        size === 'lg' ? 'max-w-2xl' : 'max-w-md',
+        // Theme §5 Modal: the modal radius and shadow, over a dim backdrop. The width leaves a
+        // margin on a phone, so the rounded corners stay visible.
+        'm-auto w-[calc(100%-2rem)] rounded-modal border border-ui-border bg-ui-surface p-0 text-ui-text shadow-modal backdrop:bg-ui-overlay',
+        { md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-4xl' }[size],
       ].join(' ')}
     >
       <DialogPanel titleId={titleId} title={title} onClose={onClose} footer={footer}>
@@ -102,14 +103,14 @@ export function DialogPanel({ titleId, title, onClose, children, footer }: Dialo
   return (
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-start justify-between gap-4">
-        <h2 id={titleId} className="text-[20px] font-semibold text-ui-heading">
+        <h2 id={titleId} className="text-[18px] font-semibold text-ui-heading">
           {title}
         </h2>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="px-2 pointer-coarse:min-h-11 pointer-coarse:min-w-11 text-xl leading-none text-ui-muted hover:bg-ui-hover hover:text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+          className="px-2 pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-control text-xl leading-none text-ui-muted hover:bg-ui-hover hover:text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
         >
           ×
         </button>

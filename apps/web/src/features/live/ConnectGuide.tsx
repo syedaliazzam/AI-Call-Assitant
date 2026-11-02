@@ -114,14 +114,14 @@ export function ConnectGuide({
 }) {
   const [app, setApp] = useState<CallApp | null>(null);
   return (
-    <div className="flex flex-col gap-3 text-sm text-ui-text">
+    <div className="flex flex-col gap-3 text-[13px] text-ui-text">
       <ul aria-label="Ways of calling" className="flex flex-wrap gap-2">
         {APPS.map((item) => (
           <li key={item.name}>
             <button
               type="button"
               onClick={() => setApp(item)}
-              className="flex min-w-20 flex-col items-center gap-1 border border-ui-border bg-ui-surface px-3 py-2 text-[13px] text-ui-text hover:border-ui-link focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+              className="flex min-w-20 flex-col items-center gap-1 border border-ui-border rounded-card bg-ui-surface shadow-card px-3 py-2 text-[13px] text-ui-text hover:border-ui-link focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
             >
               {item.icon}
               {item.name}

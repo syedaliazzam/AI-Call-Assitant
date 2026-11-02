@@ -62,9 +62,12 @@ export function AskSection({
   }
 
   return (
-    <section aria-label="Ask AI" className="border border-ui-border bg-ui-surface p-5">
-      <h2 className="text-[20px] text-ui-subheading">Ask AI</h2>
-      <p className="mt-1 text-sm text-ui-muted">
+    <section
+      aria-label="Ask AI"
+      className="border border-ui-border rounded-card bg-ui-surface shadow-card p-5"
+    >
+      <h2 className="text-[18px] font-semibold text-ui-heading">Ask AI</h2>
+      <p className="mt-1 text-[13px] text-ui-muted">
         Ask anything about this call: what was agreed, what they asked, what to follow up on.
       </p>
       {turns.length > 0 && (
@@ -74,7 +77,7 @@ export function AskSection({
               key={index}
               className={
                 turn.role === 'you'
-                  ? 'ml-8 self-end bg-ui-pale px-3 py-2 text-[15px] text-ui-text sm:ml-16'
+                  ? 'ml-8 self-end rounded-control bg-ui-pale px-3 py-2 text-[15px] text-ui-text sm:ml-16'
                   : 'mr-8 self-start whitespace-pre-line border border-ui-border px-3 py-2 text-[15px] text-ui-text sm:mr-16'
               }
             >
@@ -84,12 +87,12 @@ export function AskSection({
         </ol>
       )}
       {asking && (
-        <p role="status" className="mt-3 text-sm text-ui-muted">
+        <p role="status" className="mt-3 text-[13px] text-ui-muted">
           Kite is reading the call…
         </p>
       )}
       {failure && (
-        <p role="alert" className="mt-3 text-sm text-ui-danger">
+        <p role="alert" className="mt-3 text-[13px] text-ui-danger">
           {failure}
         </p>
       )}
@@ -108,7 +111,7 @@ export function AskSection({
           </Button>
         </form>
       ) : (
-        <p className="mt-4 text-sm text-ui-muted">
+        <p className="mt-4 text-[13px] text-ui-muted">
           There is nothing saved from a call in this session to ask about yet.
         </p>
       )}

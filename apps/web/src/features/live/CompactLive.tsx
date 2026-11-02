@@ -152,6 +152,7 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
         mac={mac}
         chatOpen={chatOpen}
         onChatOpen={setChatOpen}
+        glass={windowControls}
         onCommand={(command) => channel.current?.send(command)}
         onCollapsed={(collapsed) => getPlatform().setOverlayCollapsed(collapsed)}
         onProtection={(on) => {

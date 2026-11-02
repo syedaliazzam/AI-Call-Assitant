@@ -1,6 +1,6 @@
 /**
  * File: apps/web/src/ui/Badge.tsx
- * Purpose: A status label (UI theme stage U1): mono uppercase text with a 6 px square dot, for
+ * Purpose: A status label (UI theme stage U1): small text with a 6 px round dot, for
  *          example green "CONNECTED", amber "WARMING", red "ERROR".
  * Used by: src/features/dev/UiGallery.tsx (and the pages restyled in UI stages U2–U3)
  * Depends on: React
@@ -46,10 +46,9 @@ const TEXT_CLASSES: Record<BadgeTone, string> = {
 export function Badge({ tone, children }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em] ${TEXT_CLASSES[tone]}`}
+      className={`inline-flex items-center gap-1.5 text-[13px] font-medium ${TEXT_CLASSES[tone]}`}
     >
-      {/* Square, like every corner in the theme. */}
-      <span aria-hidden="true" className={`size-1.5 ${DOT_CLASSES[tone]}`} />
+      <span aria-hidden="true" className={`size-1.5 rounded-full ${DOT_CLASSES[tone]}`} />
       {children}
     </span>
   );

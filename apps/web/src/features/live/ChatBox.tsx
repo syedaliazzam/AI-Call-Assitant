@@ -81,7 +81,7 @@ export function ChatBox({ onSend, onAskScreen, target, onTarget }: ChatBoxProps)
         title="Auto decides for each question. For the call: words to say. Ask Kite: a private answer on any topic."
         value={target}
         onChange={(event) => onTarget(event.target.value as TargetChoice)}
-        className="border border-ui-border bg-ui-input px-2 py-2 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-sm"
+        className="border border-ui-border bg-ui-input px-2 py-2 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-[13px]"
       >
         {TARGET_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
@@ -93,7 +93,7 @@ export function ChatBox({ onSend, onAskScreen, target, onTarget }: ChatBoxProps)
         aria-label="Type a question"
         // The box opens when the user presses Chat, so it should take the typing at once.
         autoFocus
-        className="min-w-0 flex-1 basis-56 border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-sm"
+        className="min-w-0 flex-1 basis-56 border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-[13px]"
         placeholder="Type a question for Kite, then press Enter"
         value={text}
         onChange={(event) => setText(event.target.value)}

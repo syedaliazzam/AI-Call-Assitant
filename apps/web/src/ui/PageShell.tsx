@@ -14,7 +14,7 @@ import { Eyebrow } from './Eyebrow';
 
 /** Props for PageShell. */
 export interface PageShellProps {
-  /** The page title (28 px, bold). */
+  /** The page title (24 px, semibold). */
   title: string;
   /** The small mono label above the title, or none. */
   eyebrow?: string;
@@ -55,7 +55,7 @@ export function PageShell({
         <div className={`mx-auto flex flex-wrap items-end justify-between gap-4 ${WIDTH[width]}`}>
           <div className="min-w-0">
             {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
-            <h1 className="break-words text-[28px] font-bold text-ui-heading">{title}</h1>
+            <h1 className="break-words text-[24px] font-semibold text-ui-heading">{title}</h1>
             {description && (
               <div className="mt-1 max-w-prose text-[15px] text-ui-muted">{description}</div>
             )}

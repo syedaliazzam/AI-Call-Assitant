@@ -47,7 +47,7 @@ export function ProposedLessons(props: ProposedLessonsProps) {
   return (
     <div>
       <h3 className="font-semibold text-ui-heading">Proposed lessons</h3>
-      <p className="text-xs text-ui-muted">
+      <p className="text-[13px] text-ui-muted">
         Suggestions only: Kite learns nothing until you approve a lesson. Approved lessons are sent
         with later answers, exactly as shown, as your preferences.
       </p>
@@ -117,17 +117,17 @@ function ProposedLessonItem(props: ProposedLessonItemProps) {
   }
 
   return (
-    <li aria-label="Proposed lesson" className="bg-ui-band px-3 py-2">
+    <li aria-label="Proposed lesson" className="rounded-control bg-ui-band px-3 py-2">
       <p>{decision ? decision.text : cleanLessonText(proposal.text)}</p>
-      <p className="text-xs text-ui-muted">Based on: {proposal.evidence}</p>
+      <p className="text-[13px] text-ui-muted">Based on: {proposal.evidence}</p>
       {decision ? (
-        <div className="mt-1 flex items-center gap-2 text-xs">
+        <div className="mt-1 flex items-center gap-2 text-[13px]">
           <span
             aria-label="Decision"
             className={
               decision.status === 'approved'
-                ? 'bg-ui-success-bg px-2 py-0.5 font-semibold text-ui-success'
-                : 'bg-ui-band px-2 py-0.5 font-semibold text-ui-text'
+                ? 'rounded-control bg-ui-success-bg px-2 py-0.5 font-semibold text-ui-success'
+                : 'rounded-control bg-ui-band px-2 py-0.5 font-semibold text-ui-text'
             }
           >
             {decision.status === 'approved'
@@ -174,13 +174,13 @@ function ProposedLessonItem(props: ProposedLessonItemProps) {
         </div>
       )}
       {!decision && !editing && (
-        <p className="mt-1 text-xs text-ui-muted">
+        <p className="mt-1 text-[13px] text-ui-muted">
           Approve applies it to {lessonScopeLabel(props.sessionType).toLowerCase()}; use Edit to
           change the text or apply it to all calls.
         </p>
       )}
       {failed && (
-        <p role="alert" className="mt-1 text-xs text-ui-danger">
+        <p role="alert" className="mt-1 text-[13px] text-ui-danger">
           That could not be saved. Try again.
         </p>
       )}

@@ -38,20 +38,20 @@ export function SavedTranscript({ lines, saving, terms = [] }: SavedTranscriptPr
   return (
     <section className="mx-auto max-w-3xl px-8 pb-10">
       {lines.length === 0 ? (
-        <p className="text-sm text-ui-muted">
+        <p className="text-[13px] text-ui-muted">
           {saving
             ? 'This session saves its transcript on this computer. Nothing saved yet.'
             : 'This session does not save its transcript: it is discarded when the call ends.'}
         </p>
       ) : (
-        <details className="border border-ui-border bg-ui-surface p-5">
-          <summary className="cursor-pointer text-sm font-semibold text-ui-heading">
+        <details className="border border-ui-border rounded-card bg-ui-surface shadow-card p-5">
+          <summary className="cursor-pointer text-[13px] font-semibold text-ui-heading">
             Saved transcript ({lines.length} {lines.length === 1 ? 'line' : 'lines'})
           </summary>
           <ol className="mt-3 flex flex-col gap-2">
             {[...lines].reverse().map((line) => (
-              <li key={line.id} className="text-sm">
-                <span className="mr-2 text-xs text-ui-muted">
+              <li key={line.id} className="text-[13px]">
+                <span className="mr-2 text-[13px] text-ui-muted">
                   {TIME_FORMAT.format(line.tStart)}
                 </span>
                 <span className={`mr-2 font-semibold ${SPEAKER_STYLE[line.speaker].label}`}>

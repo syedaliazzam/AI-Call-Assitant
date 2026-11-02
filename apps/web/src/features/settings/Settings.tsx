@@ -52,8 +52,11 @@ import { OverlaySetting } from './OverlaySetting';
  */
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section aria-label={title} className="border border-ui-border bg-ui-surface p-6">
-      <h2 className="mb-4 text-[20px] text-ui-subheading">{title}</h2>
+    <section
+      aria-label={title}
+      className="border border-ui-border rounded-card bg-ui-surface shadow-card p-6"
+    >
+      <h2 className="mb-4 text-[18px] font-semibold text-ui-heading">{title}</h2>
       {children}
     </section>
   );
@@ -74,10 +77,10 @@ function ShareProtectionSetting() {
       .then(setState)
       .catch(() => undefined);
   }, []);
-  if (!state) return <p className="text-sm text-ui-muted">Checking…</p>;
+  if (!state) return <p className="text-[13px] text-ui-muted">Checking…</p>;
   if (!state.supported) {
     return (
-      <p className="text-sm text-ui-muted">
+      <p className="text-[13px] text-ui-muted">
         {getPlatform().kind === 'desktop'
           ? 'This computer cannot hide a window from screen sharing. Share a single window instead of the whole screen, or keep Kite on another monitor.'
           : 'A browser cannot hide its windows from screen sharing. In the meeting, share a single tab or window instead of the whole screen, or keep Kite on another monitor. The Kite desktop app can hide its compact window.'}
@@ -166,7 +169,7 @@ export function Settings() {
   return (
     <PageShell eyebrow="Kite" title="Settings" description="Saved on this computer only.">
       {error && (
-        <p role="alert" className="text-sm text-ui-danger">
+        <p role="alert" className="text-[13px] text-ui-danger">
           {error}
         </p>
       )}
@@ -174,7 +177,7 @@ export function Settings() {
       <Section title="Defaults for new sessions">
         {defaults ? (
           <div className="flex flex-col gap-5">
-            <p className="text-sm text-ui-muted">
+            <p className="text-[13px] text-ui-muted">
               New sessions start with these; each session can change them. Existing sessions keep
               their own.
             </p>
@@ -219,14 +222,14 @@ export function Settings() {
             <div className="flex items-center gap-3">
               <Button onClick={() => void save()}>Save defaults</Button>
               {saved && (
-                <span role="status" className="text-sm text-ui-success">
+                <span role="status" className="text-[13px] text-ui-success">
                   Saved.
                 </span>
               )}
             </div>
           </div>
         ) : (
-          <p className="text-sm text-ui-muted">Loading…</p>
+          <p className="text-[13px] text-ui-muted">Loading…</p>
         )}
       </Section>
 
@@ -256,7 +259,7 @@ export function Settings() {
 
       <Section title="Local data">
         <DataTransfer />
-        <p className="mb-4 text-sm text-ui-muted">
+        <p className="mb-4 text-[13px] text-ui-muted">
           Deletes every session, document, transcript, answer, Ask Kite chat and learned lesson
           saved by Kite on this computer, and these settings. The speech model stays (it holds no
           personal data and is 204 MB to download again). Sessions in another browser or in the
@@ -266,7 +269,7 @@ export function Settings() {
           Delete all local data
         </Button>
         {deleted && (
-          <p role="status" className="mt-3 text-sm text-ui-success">
+          <p role="status" className="mt-3 text-[13px] text-ui-success">
             Deleted {deleted.sessions} sessions, {deleted.documents} documents, {deleted.utterances}{' '}
             transcript lines, {deleted.answers} answers, {deleted.notes} notes, {deleted.lessons}{' '}
             lessons and {deleted.chats} Ask Kite chats.

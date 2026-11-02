@@ -5,7 +5,7 @@
  * Used by: src/features/session-setup/PreferencesStep.tsx, src/features/settings/Settings.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css; square corners)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
  */
 import { useId } from 'react';
 
@@ -45,29 +45,29 @@ export function Toggle({ label, hint, checked, onChange, disabled = false }: Tog
         onClick={() => onChange(!checked)}
         // The button is the hit area: at least 44 px on touch screens (theme review, UI U1).
         className={[
-          'inline-flex shrink-0 items-center justify-center pointer-coarse:min-h-11 pointer-coarse:min-w-11',
+          'inline-flex shrink-0 items-center justify-center rounded-full pointer-coarse:min-h-11 pointer-coarse:min-w-11',
           'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
           'disabled:cursor-not-allowed',
         ].join(' ')}
       >
-        {/* Square track and knob (theme: square corners everywhere). */}
+        {/* A pill track and a round knob. */}
         <span
           aria-hidden="true"
           className={[
-            'relative mt-0.5 inline-flex h-5 w-9 border transition-colors duration-150',
-            checked ? 'border-ui-primary bg-ui-primary' : 'border-ui-border bg-ui-band',
+            'relative mt-0.5 inline-flex h-5 w-9 rounded-full border transition-colors duration-150',
+            checked ? 'border-ui-primary bg-ui-primary' : 'border-ui-border bg-ui-subtle',
           ].join(' ')}
         >
           <span
             className={[
-              'absolute top-[1px] size-4 transition-transform duration-150',
+              'absolute top-[1px] size-4 rounded-full transition-transform duration-150',
               checked ? 'translate-x-4 bg-ui-on-primary' : 'translate-x-[1px] bg-ui-muted',
             ].join(' ')}
           />
         </span>
       </button>
       <div className="flex flex-col">
-        <span id={labelId} className="text-[15px] font-semibold text-ui-heading">
+        <span id={labelId} className="text-[15px] font-medium text-ui-heading">
           {label}
         </span>
         {hint && (

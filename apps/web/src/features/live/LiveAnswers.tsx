@@ -340,14 +340,14 @@ export function LiveAnswers(props: LiveAnswersProps) {
         }}
       />
       {compactNotice && (
-        <p role="status" className="bg-ui-surface px-3 py-2 text-sm text-ui-text">
+        <p role="status" className="bg-ui-surface px-3 py-2 text-[13px] text-ui-text">
           {compactNotice}
         </p>
       )}
       {taken.length > 0 && (
         <p
           role="status"
-          className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
+          className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
         >
           Another app already uses {taken.join(', ')}, so{' '}
           {taken.length === 1 ? 'it works' : 'they work'} only while Kite is in front. Close that
@@ -357,11 +357,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
       {!online && (
         <div
           role="alert"
-          className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
+          className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
         >
-          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-warning">
-            No connection
-          </p>
+          <p className="text-[13px] font-medium text-ui-warning">No connection</p>
           <p className="mt-1">
             Answers are paused until the connection is back. The transcript keeps going on this
             computer.
@@ -405,7 +403,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       {answers.saveFailed && (
         <p
           role="alert"
-          className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
+          className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
         >
           An answer, rating or note could not be saved on this computer (is the disk full?).
         </p>

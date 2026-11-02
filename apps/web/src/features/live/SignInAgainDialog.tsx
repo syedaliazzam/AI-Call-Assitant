@@ -67,7 +67,7 @@ export function SignInAgainDialog({ open, onClose, onSignedIn }: SignInAgainDial
 
   return (
     <Dialog open={open} onClose={onClose} title="Sign in again">
-      <p className="mb-4 text-sm text-ui-text">
+      <p className="mb-4 text-[13px] text-ui-text">
         Your sign-in has expired. Sign in to keep getting answers. This call, its transcript and its
         answers stay as they are.
       </p>
@@ -81,7 +81,7 @@ export function SignInAgainDialog({ open, onClose, onSignedIn }: SignInAgainDial
           required
         />
         {error && (
-          <p role="alert" className="text-sm text-ui-danger">
+          <p role="alert" className="text-[13px] text-ui-danger">
             {error}
           </p>
         )}

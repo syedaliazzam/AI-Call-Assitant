@@ -81,28 +81,30 @@ export interface CompactViewProps {
   chatOpen: boolean;
   /** Opens or closes the Chat box (also the Chat shortcut's job). */
   onChatOpen: (open: boolean) => void;
+  /** True for the see-through panel (the desktop window); otherwise the panel is solid. */
+  glass?: boolean;
   /** Puts text on the clipboard (tests pass a fake). */
   copy?: (text: string) => Promise<void>;
 }
 
-/** Small mono uppercase label style (the "eyebrow" style). */
-const EYEBROW = 'font-mono text-[10px] font-medium uppercase tracking-[0.08em]';
+/** Small label style. */
+const EYEBROW = 'text-[13px] font-medium';
 
-/** A bar's look: the dark surface, a thin border, and no shrinking below its content. */
-const BAR = 'flex shrink-0 items-center gap-1.5 border border-ui-border bg-ui-surface px-1.5 py-1';
+/** A bar's look: part of the one panel, split by a thin line, with no shrinking below its content. */
+const BAR = 'flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1.5';
 
 /** A button in a bar: not part of the drag handle, always a clear focus ring. */
 const BUTTON_BASE =
-  'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 border px-2 text-[13px] font-semibold hover:bg-ui-band disabled:opacity-50 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]';
+  'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-control px-2.5 text-[13px] font-medium disabled:opacity-50 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]';
 
 /** A button in a bar, in the normal colours. */
-const BUTTON = `${BUTTON_BASE} border-ui-border text-ui-text`;
+const BUTTON = `${BUTTON_BASE} bg-ui-overlay-button text-ui-text hover:bg-ui-overlay-button-hover`;
 
-/** A square icon button. */
+/** An icon button, as wide as it is tall. */
 const ICON_BUTTON = `${BUTTON} w-8 px-0 pointer-coarse:min-w-11`;
 
-/** A square button with no border, for the answer footer; the caller adds its colour. */
-const FOOTER_BUTTON = `${BUTTON_BASE} w-8 border-transparent px-0 pointer-coarse:min-w-11`;
+/** A quiet icon button for the answer footer; the caller adds its colour. */
+const FOOTER_BUTTON = `${BUTTON_BASE} w-8 px-0 hover:bg-ui-overlay-button pointer-coarse:min-w-11`;
 
 /**
  * A shortcut shown on a button; hidden when the overlay is narrow and from screen readers (the
@@ -120,7 +122,7 @@ function Keys({
   return (
     <kbd
       aria-hidden="true"
-      className="hidden font-mono text-[10px] font-normal opacity-75 @min-[640px]:inline"
+      className="hidden rounded-full bg-ui-overlay-button px-1.5 text-[12px] font-normal @min-[640px]:inline"
     >
       {children}
     </kbd>
@@ -192,7 +194,7 @@ function OverlayMenu({
       aria-label="Overlay settings"
       data-menu="overlay"
       // Kept inside the window at its smallest size: the menu scrolls rather than being cut off.
-      className="absolute right-1 top-11 z-10 flex max-h-[calc(100vh-3rem)] w-64 flex-col gap-3 overflow-y-auto border border-ui-border bg-ui-surface p-3 text-[13px] [-webkit-app-region:no-drag]"
+      className="k-overlay-menu absolute right-1 top-11 z-10 flex max-h-[calc(100vh-3rem)] w-64 flex-col gap-3 overflow-y-auto rounded-control border border-ui-border p-3 text-[13px] text-ui-text shadow-modal [-webkit-app-region:no-drag]"
     >
       {style && (
         <div className="flex flex-col gap-2">
@@ -209,7 +211,7 @@ function OverlayMenu({
               <select
                 value={style[field]}
                 onChange={(event) => onStyle({ ...style, [field]: event.target.value })}
-                className="w-36 border border-ui-border bg-ui-input px-1 py-0.5 text-[14px] text-ui-text"
+                className="w-36 border border-ui-border bg-ui-input px-2 py-1 text-[13px] text-ui-text"
               >
                 {options.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -335,8 +337,11 @@ export function CompactView(props: CompactViewProps) {
   const hasHistory = (state?.total ?? 0) > 1;
 
   return (
-    // Theme §6: the dark tokens. @container: buttons drop their shortcut labels when it is narrow.
-    <div className="k-dark @container flex h-screen flex-col gap-1 bg-ui-bg p-1 text-[16px] text-ui-text">
+    // Theme §6: one rounded panel, in the dark tokens; see-through in the desktop app (k-glass).
+    // @container: buttons drop their shortcut labels when it is narrow.
+    <div
+      className={`k-dark k-overlay ${props.glass ? 'k-glass' : ''} @container flex h-screen flex-col overflow-hidden rounded-card border border-ui-border text-[16px] text-ui-text`}
+    >
       <div
         role="toolbar"
         aria-label="Overlay controls"
@@ -350,7 +355,7 @@ export function CompactView(props: CompactViewProps) {
         />
         <button
           type="button"
-          className={`${BUTTON_BASE} border-ui-primary bg-ui-primary text-ui-on-primary hover:bg-ui-primary`}
+          className={`${BUTTON_BASE} bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover`}
           onClick={() => onCommand({ type: 'answer' })}
           disabled={!state || state.ended}
           title={`Answer the latest question (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)})`}
@@ -413,7 +418,7 @@ export function CompactView(props: CompactViewProps) {
         </button>
         <button
           type="button"
-          className={`${BUTTON_BASE} border-ui-danger text-ui-danger`}
+          className={`${BUTTON_BASE} bg-ui-end text-ui-on-end`}
           onClick={() => onCommand({ type: 'end' })}
           disabled={!state || state.ended}
         >
@@ -444,7 +449,7 @@ export function CompactView(props: CompactViewProps) {
                   chips.map((chip) => (
                     <span
                       key={chip.id}
-                      className={`shrink-0 border px-2 py-0.5 text-[13px] leading-5 ${chip.speaker === 'you' ? 'border-ui-you text-ui-you' : 'border-ui-border text-ui-text'}`}
+                      className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[13px] leading-5 ${chip.speaker === 'you' ? 'border-ui-you text-ui-you' : 'border-ui-border text-ui-text'}`}
                     >
                       {chip.text}
                     </span>
@@ -478,7 +483,7 @@ export function CompactView(props: CompactViewProps) {
 
           <section
             aria-label={transcriptOpen ? 'Transcript' : 'Latest answer'}
-            className="flex min-h-0 flex-1 flex-col border border-ui-border border-l-[3px] border-l-ui-accent bg-ui-surface"
+            className="flex min-h-0 flex-1 flex-col"
           >
             {transcriptOpen ? (
               <div className="min-h-0 flex-1 overflow-y-auto p-3 text-[16px] leading-relaxed">
@@ -501,7 +506,7 @@ export function CompactView(props: CompactViewProps) {
               </div>
             ) : (
               <>
-                <div className="flex shrink-0 items-center gap-1.5 border-b border-ui-border px-1.5 py-1">
+                <div className="flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1.5">
                   <button
                     type="button"
                     className={BUTTON}
@@ -618,8 +623,8 @@ export function CompactView(props: CompactViewProps) {
                           role="alert"
                           className={
                             answer.unavailable
-                              ? 'mt-2 border-l-[3px] border-ui-warning bg-ui-warning-bg px-2 py-1 text-[14px]'
-                              : 'mt-2 text-[14px] text-ui-danger'
+                              ? 'mt-2 rounded-control border border-ui-warning bg-ui-warning-bg px-2 py-1 text-[15px]'
+                              : 'mt-2 text-[15px] text-ui-danger'
                           }
                         >
                           {answer.error ?? 'The answer failed.'}
@@ -700,7 +705,7 @@ export function CompactView(props: CompactViewProps) {
                           <input
                             autoFocus
                             aria-label="What was wrong?"
-                            className="h-8 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-[14px] text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+                            className="h-8 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-[15px] text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
                             placeholder="What was wrong? (optional)"
                             value={reportNote}
                             maxLength={2_000}
@@ -729,7 +734,7 @@ export function CompactView(props: CompactViewProps) {
                           <li key={other.id}>
                             <button
                               type="button"
-                              className="w-full truncate py-0.5 text-left text-[14px] text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+                              className="w-full truncate py-0.5 text-left text-[15px] text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
                               onClick={() => onCommand({ type: 'show', id: other.id })}
                             >
                               {other.question || other.headline}

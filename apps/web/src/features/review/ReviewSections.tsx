@@ -19,7 +19,7 @@ import { ProposedLessons } from './ProposedLessons';
 const DATE_TIME = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 /** Shared look of a review section. */
-const SECTION_CLASSES = 'border border-ui-border bg-ui-surface p-5';
+const SECTION_CLASSES = 'border border-ui-border rounded-card bg-ui-surface shadow-card p-5';
 
 /** Labels for the answered field of a notes question. */
 const ANSWERED_LABELS: Record<'yes' | 'partly' | 'no', string> = {
@@ -79,9 +79,9 @@ export function NotesSection(props: NotesSectionProps) {
     <section aria-label="AI notes" className={SECTION_CLASSES}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-[20px] text-ui-subheading">AI notes</h2>
+          <h2 className="text-[18px] font-semibold text-ui-heading">AI notes</h2>
           {notes?.fromAnswersOnly && (
-            <span className="bg-ui-warning-bg px-2 py-0.5 text-xs font-semibold text-ui-warning">
+            <span className="rounded-control bg-ui-warning-bg px-2 py-0.5 text-[13px] font-semibold text-ui-warning">
               Written from answers only
             </span>
           )}
@@ -98,20 +98,20 @@ export function NotesSection(props: NotesSectionProps) {
       {props.status && (
         <p
           role={props.failed ? 'alert' : 'status'}
-          className={`mt-2 text-sm ${props.failed ? 'text-ui-warning' : 'text-ui-muted'}`}
+          className={`mt-2 text-[13px] ${props.failed ? 'text-ui-warning' : 'text-ui-muted'}`}
         >
           {props.status}
         </p>
       )}
       {!props.canWrite && !notes && (
-        <p className="mt-2 text-sm text-ui-muted">
+        <p className="mt-2 text-[13px] text-ui-muted">
           Nothing was saved from this session to write notes from.
         </p>
       )}
 
       {notes ? (
-        <div className="mt-4 space-y-4 text-sm text-ui-text">
-          <p className="text-xs text-ui-muted">
+        <div className="mt-4 space-y-4 text-[13px] text-ui-text">
+          <p className="text-[13px] text-ui-muted">
             Notes of the call that started {DATE_TIME.format(notes.callStartedAt)}; written{' '}
             {DATE_TIME.format(notes.createdAt)}.
           </p>
@@ -129,11 +129,9 @@ export function NotesSection(props: NotesSectionProps) {
               <ul aria-label="Questions asked" className="mt-1 space-y-1">
                 {notes.notes.questions.map((question, i) => (
                   <li key={i}>
-                    <span className="font-mono text-xs text-ui-muted">
-                      {formatCallTime(question.at)}
-                    </span>{' '}
+                    <span className="text-[13px] text-ui-muted">{formatCallTime(question.at)}</span>{' '}
                     {question.question}{' '}
-                    <span className="text-xs text-ui-muted">
+                    <span className="text-[13px] text-ui-muted">
                       ({ANSWERED_LABELS[question.answered]}
                       {question.rating ? `, ${ratingLabel(question.rating)}` : ''})
                     </span>
@@ -161,7 +159,7 @@ export function NotesSection(props: NotesSectionProps) {
               <ul aria-label="Unclear parts" className="mt-1 space-y-1">
                 {notes.notes.unclear.map((part, i) => (
                   <li key={i}>
-                    <span className="font-mono text-xs text-ui-muted">
+                    <span className="text-[13px] text-ui-muted">
                       {formatCallTime(part.from)}–{formatCallTime(part.to)}
                     </span>{' '}
                     {part.reason}
@@ -182,7 +180,9 @@ export function NotesSection(props: NotesSectionProps) {
         </div>
       ) : (
         props.canWrite && (
-          <p className="mt-2 text-sm text-ui-muted">No notes have been written for this session.</p>
+          <p className="mt-2 text-[13px] text-ui-muted">
+            No notes have been written for this session.
+          </p>
         )
       )}
     </section>

@@ -78,7 +78,7 @@ function GallerySet({ name }: { name: string }) {
     <div className="flex flex-col gap-6">
       <div>
         <Eyebrow>{name} surface</Eyebrow>
-        <h2 className="text-[28px] font-bold text-ui-heading">Answers while you talk.</h2>
+        <h2 className="text-[24px] font-semibold text-ui-heading">Answers while you talk.</h2>
       </div>
 
       <Row label="Lockup">
@@ -89,7 +89,7 @@ function GallerySet({ name }: { name: string }) {
       </Row>
 
       <Row label="Typography">
-        <p className="text-[20px] text-ui-subheading">Section heading, 20 px</p>
+        <p className="text-[18px] font-semibold text-ui-heading">Section heading, 18 px</p>
         <p className="max-w-prose text-[15px] leading-relaxed text-ui-text">
           Body text, 15 px with a 1.6 line height. Kite listens to both sides of the call and writes
           a short answer you can say right away.
@@ -105,7 +105,7 @@ function GallerySet({ name }: { name: string }) {
           <Eyebrow className="text-ui-them">Them</Eyebrow>
           <Eyebrow>Answer · 0.9 s</Eyebrow>
           <Eyebrow>Ctrl + Enter</Eyebrow>
-          <span className="font-mono text-[15px] text-ui-heading">2,080 · 15,600</span>
+          <span className="text-[15px] text-ui-heading">2,080 · 15,600</span>
         </div>
       </Row>
 
@@ -161,7 +161,7 @@ function GallerySet({ name }: { name: string }) {
       <Row label="Card">
         <Card eyebrow="Step 1 of 2" title="Session details">
           <p className="text-[15px] text-ui-text">
-            Cards are flat: a 1 px border, square corners, no shadow.
+            Cards have a 1 px border, a 16 px radius and a faint shadow.
           </p>
         </Card>
       </Row>
@@ -206,10 +206,10 @@ export function UiGallery() {
     <div id="ui-gallery" className="flex flex-col">
       <header className="k-light bg-ui-bg px-4 py-8 sm:px-8">
         <Eyebrow>Dev Tools</Eyebrow>
-        <h1 className="text-[28px] font-bold text-ui-heading">UI components</h1>
+        <h1 className="text-[24px] font-semibold text-ui-heading">UI components</h1>
         <p className="mt-1 max-w-prose text-[15px] text-ui-muted">
-          The Kite theme (docs/design/kite-ui-theme.md): navy, one cyan action colour, Montserrat
-          with IBM Plex Mono labels, square corners and flat 1 px borders.
+          The Kite theme (docs/design/kite-ui-theme.md): neutral greys, one blue accent, Inter, soft
+          radii and thin borders.
         </p>
       </header>
       <section aria-label="Light surface" className="k-light bg-ui-bg px-4 py-8 sm:px-8">
@@ -217,7 +217,7 @@ export function UiGallery() {
       </section>
       <section aria-label="Grey band" className="k-light bg-ui-band px-4 py-8 sm:px-8">
         <Eyebrow>Grey band (--k-band)</Eyebrow>
-        <h2 className="text-[20px] text-ui-subheading">Alternating sections</h2>
+        <h2 className="text-[18px] font-semibold text-ui-heading">Alternating sections</h2>
         <p className="mt-1 max-w-prose text-[15px] leading-relaxed text-ui-text">
           Long pages alternate white and grey-band sections, as on the company site. On the band,
           body text, headings, muted text and status colours all pass 4.5:1; links and the

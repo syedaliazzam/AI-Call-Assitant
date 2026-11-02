@@ -3,32 +3,22 @@
  * Purpose: Root HTML frame for every page (signed-in or not): <html>, <body>, font, global CSS
  *          and the page title "Kite".
  * Used by: Next.js App Router (wraps every route)
- * Depends on: next/font/google (Montserrat, IBM Plex Mono), app/globals.css
+ * Depends on: next/font/google (Inter), app/globals.css
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1; docs/design/kite-ui-theme.md §4
  */
 import type { Metadata } from 'next';
-import { IBM_Plex_Mono, Montserrat } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
 import './globals.css';
 
 /**
- * Montserrat, the brand font (UI theme §4): body and headings. Self-hosted by Next.js at build
- * time, so users' browsers never request Google. Exposed as --font-montserrat (src/ui/theme.css).
+ * Inter, Kite's only font (UI theme §4), in three weights. Self-hosted by Next.js at build time, so
+ * users' browsers never request Google. Exposed as --font-inter (src/ui/theme.css).
  */
-const montserrat = Montserrat({
+const inter = Inter({
   subsets: ['latin'],
-  weight: ['400', '600', '700'],
-  variable: '--font-montserrat',
-});
-
-/**
- * IBM Plex Mono for eyebrows, labels, timestamps, shortcuts and numbers (UI theme §4).
- * Exposed as --font-plex-mono.
- */
-const plexMono = IBM_Plex_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
-  variable: '--font-plex-mono',
+  weight: ['400', '500', '600'],
+  variable: '--font-inter',
 });
 
 /** Page title and description shown in the browser tab and the desktop window title. */
@@ -54,8 +44,8 @@ export const metadata: Metadata = {
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${montserrat.variable} ${plexMono.variable}`}>
-      <body className="bg-ui-band font-sans text-ui-text antialiased">{children}</body>
+    <html lang="en" className={inter.variable}>
+      <body className="bg-ui-bg font-sans text-[15px] text-ui-text antialiased">{children}</body>
     </html>
   );
 }

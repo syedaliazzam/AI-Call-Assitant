@@ -17,6 +17,9 @@ import {
   type SessionType,
 } from '@/core/storage/types';
 
+/** Where the newest desktop installer is published (docs/user-guide; ADR-0028). */
+export const DESKTOP_DOWNLOAD_URL = 'https://github.com/Zainpak123/kite-releases/releases/latest';
+
 /** Display name of each session type. */
 export const SESSION_TYPE_LABELS: Record<SessionType, string> = {
   interview: 'Interview',
@@ -37,10 +40,10 @@ export const STATUS_LABELS: Record<SessionStatus, string> = {
   ended: 'Ended',
 };
 
-/** The model choices: Fast = Haiku (live answers), Smart = Sonnet (architecture F3). */
+/** The model choices: Fast = Haiku (live answers), Accurate = Sonnet (stored as 'smart'; architecture F3). */
 export const MODEL_OPTIONS: readonly { value: AnswerModel; label: string }[] = [
   { value: 'fast', label: 'Fast (best for live answers)' },
-  { value: 'smart', label: 'Smart (slower, more careful)' },
+  { value: 'smart', label: 'Accurate (slower, more careful)' },
 ];
 
 /** Answer format choices. */

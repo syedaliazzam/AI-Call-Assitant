@@ -41,16 +41,16 @@ const TOOLS = [
 export default function DevToolsPage() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 px-8 py-10">
-      <h1 className="text-[28px] font-bold text-ui-heading">Dev Tools</h1>
+      <h1 className="text-[24px] font-semibold text-ui-heading">Dev Tools</h1>
       <ul className="grid gap-4 md:grid-cols-2">
         {TOOLS.map((tool) => (
           <li key={tool.href}>
             <Link
               href={tool.href}
-              className="block border border-ui-border bg-ui-surface p-4 hover:border-ui-accent"
+              className="block border border-ui-border rounded-card bg-ui-surface shadow-card p-4 hover:border-ui-accent"
             >
               <span className="font-semibold text-ui-heading">{tool.title}</span>
-              <span className="mt-1 block text-sm text-ui-muted">{tool.description}</span>
+              <span className="mt-1 block text-[13px] text-ui-muted">{tool.description}</span>
             </Link>
           </li>
         ))}

@@ -305,13 +305,13 @@ export function MockInterview({
       width="md"
     >
       {failure && (
-        <p role="alert" className="text-sm text-ui-danger">
+        <p role="alert" className="text-[13px] text-ui-danger">
           {failure}
         </p>
       )}
 
       {phase === 'choose' && sessions && sessions.length === 0 && (
-        <section className="border border-ui-border bg-ui-surface px-6 py-10 text-center">
+        <section className="border border-ui-border rounded-card bg-ui-surface shadow-card px-6 py-10 text-center">
           <p className="text-[15px] text-ui-muted">
             Create an Interview or Mock session first: its job description and resume are what the
             questions come from.
@@ -323,7 +323,7 @@ export function MockInterview({
       )}
 
       {phase === 'choose' && sessions && sessions.length > 0 && (
-        <section className="flex flex-col gap-4 border border-ui-border bg-ui-surface p-5">
+        <section className="flex flex-col gap-4 border border-ui-border rounded-card bg-ui-surface shadow-card p-5">
           <Select
             label="Session"
             options={sessions.map((session) => ({
@@ -345,7 +345,7 @@ export function MockInterview({
       )}
 
       {phase === 'writing' && (
-        <p role="status" className="text-sm text-ui-muted">
+        <p role="status" className="text-[13px] text-ui-muted">
           Writing your questions…
         </p>
       )}
@@ -353,28 +353,31 @@ export function MockInterview({
       {inInterview && (
         <section
           aria-label="Interview"
-          className="flex flex-col gap-4 border border-ui-border bg-ui-surface p-5"
+          className="flex flex-col gap-4 border border-ui-border rounded-card bg-ui-surface shadow-card p-5"
         >
-          <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted">
+          <p className="text-[13px] font-medium text-ui-muted">
             Question {index + 1} of {questions.length}
           </p>
           <p aria-label="Question" className="text-[18px] font-semibold text-ui-heading">
             {question}
           </p>
           {phase === 'asking' && (
-            <p role="status" className="text-sm text-ui-muted">
+            <p role="status" className="text-[13px] text-ui-muted">
               Kite is asking…
             </p>
           )}
           {listening && (
             <>
-              <p role="status" className="text-sm text-ui-muted">
+              <p role="status" className="text-[13px] text-ui-muted">
                 {micProblem
                   ? 'The microphone is not available. Type your answer below.'
                   : 'Listening. Answer out loud, then press Done.'}
               </p>
               {(heard || partial) && (
-                <p aria-label="What Kite heard" className="bg-ui-band px-3 py-2 text-[15px]">
+                <p
+                  aria-label="What Kite heard"
+                  className="rounded-control bg-ui-band px-3 py-2 text-[15px]"
+                >
                   {heard} <span className="text-ui-muted">{partial}</span>
                 </p>
               )}
@@ -391,7 +394,7 @@ export function MockInterview({
             </>
           )}
           {phase === 'judging' && (
-            <p role="status" className="text-sm text-ui-muted">
+            <p role="status" className="text-[13px] text-ui-muted">
               Kite is thinking about your answer…
             </p>
           )}
@@ -399,7 +402,7 @@ export function MockInterview({
             <>
               <p
                 aria-label="Feedback"
-                className="border-l-[3px] border-ui-accent bg-ui-pale px-3 py-2 text-[15px] text-ui-text"
+                className="rounded-control border border-ui-accent bg-ui-pale px-3 py-2 text-[15px] text-ui-text"
               >
                 {feedback}
               </p>
@@ -421,7 +424,7 @@ export function MockInterview({
       )}
 
       {phase === 'finishing' && (
-        <p role="status" className="text-sm text-ui-muted">
+        <p role="status" className="text-[13px] text-ui-muted">
           Summing up and saving…
         </p>
       )}
@@ -429,9 +432,9 @@ export function MockInterview({
       {phase === 'done' && (
         <section
           aria-label="Summary"
-          className="flex flex-col gap-3 border border-ui-border bg-ui-surface p-5"
+          className="flex flex-col gap-3 border border-ui-border rounded-card bg-ui-surface shadow-card p-5"
         >
-          <h2 className="text-[20px] text-ui-subheading">How it went</h2>
+          <h2 className="text-[18px] font-semibold text-ui-heading">How it went</h2>
           {summary && (
             <>
               <ul className="list-disc space-y-1 pl-5 text-[15px] text-ui-text">

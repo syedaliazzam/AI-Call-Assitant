@@ -19,7 +19,9 @@ export const OVERLAY_OPACITY_KEY = 'kite.overlayOpacity';
 export const OVERLAY_FADE_KEY = 'kite.overlayFade';
 
 /** The opacity range the slider offers (the shell keeps the window in a readable range too). */
-export const OVERLAY_OPACITY = { min: 0.4, max: 1, default: 0.92 };
+// Default 1: the panel is see-through already (theme §6), and dimming the window as well would take
+// its text below 4.5:1 over a bright background (tests/unit/ui/theme.test.ts).
+export const OVERLAY_OPACITY = { min: 0.4, max: 1, default: 1 };
 
 /**
  * Reads a stored value.

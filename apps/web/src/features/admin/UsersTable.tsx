@@ -31,16 +31,24 @@ export interface UsersTableProps {
  */
 function StatusBadge({ user }: { user: UserRow }) {
   if (user.disabled) {
-    return <span className="bg-ui-danger-bg px-2 py-0.5 text-xs text-ui-danger">Disabled</span>;
+    return (
+      <span className="rounded-control bg-ui-danger-bg px-2 py-0.5 text-[13px] text-ui-danger">
+        Disabled
+      </span>
+    );
   }
   if (user.mustChangePassword) {
     return (
-      <span className="bg-ui-warning-bg px-2 py-0.5 text-xs text-ui-warning">
+      <span className="rounded-control bg-ui-warning-bg px-2 py-0.5 text-[13px] text-ui-warning">
         Must change password
       </span>
     );
   }
-  return <span className="bg-ui-success-bg px-2 py-0.5 text-xs text-ui-success">Active</span>;
+  return (
+    <span className="rounded-control bg-ui-success-bg px-2 py-0.5 text-[13px] text-ui-success">
+      Active
+    </span>
+  );
 }
 
 /**
@@ -127,13 +135,16 @@ export function UsersTable({ users, currentUserId, actions }: UsersTableProps) {
         />
       )}
       {error && (
-        <p role="alert" className="bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger">
+        <p
+          role="alert"
+          className="rounded-control bg-ui-danger-bg px-3 py-2 text-[13px] text-ui-danger"
+        >
           {error}
         </p>
       )}
-      <div className="overflow-x-auto border border-ui-border bg-ui-surface">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-ui-border bg-ui-band text-xs text-ui-muted uppercase">
+      <div className="overflow-x-auto rounded-card border border-ui-border bg-ui-surface shadow-card">
+        <table className="w-full text-left text-[13px]">
+          <thead className="border-b border-ui-border bg-ui-band text-[13px] text-ui-muted">
             <tr>
               <th className="px-4 py-3 font-semibold">Name</th>
               <th className="px-4 py-3 font-semibold">Email</th>
@@ -152,7 +163,7 @@ export function UsersTable({ users, currentUserId, actions }: UsersTableProps) {
                 <tr key={user.id}>
                   <td className="px-4 py-3 font-semibold text-ui-heading">
                     {user.name}
-                    {isSelf && <span className="ml-2 text-xs text-ui-muted">(you)</span>}
+                    {isSelf && <span className="ml-2 text-[13px] text-ui-muted">(you)</span>}
                   </td>
                   <td className="px-4 py-3 text-ui-muted">{user.email}</td>
                   <td className="px-4 py-3 text-ui-muted capitalize">{user.role}</td>

@@ -112,7 +112,7 @@ transcript.addPartial('you', 'LET ME CHECK THE PRICE LIST', Date.now() - 2_000);
 function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      <div aria-hidden="true" className="h-16 shrink-0 bg-ui-nav md:h-auto md:w-60" />
+      <div aria-hidden="true" className="h-16 shrink-0 bg-ui-surface md:h-auto md:w-60" />
       <main className="relative min-w-0 flex-1 overflow-y-auto">{children}</main>
     </div>
   );
@@ -265,6 +265,8 @@ function CompactHarness({
       onProtection={() => undefined}
       chatOpen={chatOpen}
       onChatOpen={setChatOpen}
+      // ?glass=1: the see-through panel of the desktop window (the overlay look test).
+      glass={new URLSearchParams(window.location.search).has('glass')}
     />
   );
 }

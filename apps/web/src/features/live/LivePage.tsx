@@ -479,7 +479,7 @@ export function LivePage({
           onContinue={() => setView('live')}
         />
         {notesStatus !== 'idle' && (
-          <p role="status" className="mx-auto mt-4 max-w-3xl px-8 text-sm text-ui-muted">
+          <p role="status" className="mx-auto mt-4 max-w-3xl px-8 text-[13px] text-ui-muted">
             {notesStatus === 'writing'
               ? 'Writing the call notes…'
               : notesStatus === 'saved'
@@ -527,7 +527,7 @@ export function LivePage({
                   <div
                     key={speaker}
                     role="alert"
-                    className="flex flex-wrap items-center justify-between gap-3 border-l-[3px] border-ui-danger bg-ui-danger-bg px-3 py-2 text-sm text-ui-text"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-ui-danger bg-ui-danger-bg px-3 py-2 text-[13px] text-ui-text"
                   >
                     <span>{channelErrors[speaker]}</span>
                     <Button
@@ -545,7 +545,7 @@ export function LivePage({
             {saveFailed && (
               <p
                 role="alert"
-                className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
+                className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
               >
                 Some transcript lines could not be saved on this computer (is the disk full?). The
                 call continues; Kite keeps trying.
@@ -555,7 +555,7 @@ export function LivePage({
                 microphone) are hidden from the transcript (core/transcript/echo.ts); say so while
                 it is happening. */}
             {echoNoteVisible && (
-              <p role="status" className="bg-ui-surface px-3 py-2 text-sm text-ui-muted">
+              <p role="status" className="bg-ui-surface px-3 py-2 text-[13px] text-ui-muted">
                 Hiding echo from your speakers ({echoStats.count}{' '}
                 {echoStats.count === 1 ? 'line' : 'lines'} so far). Headphones work best.
               </p>
