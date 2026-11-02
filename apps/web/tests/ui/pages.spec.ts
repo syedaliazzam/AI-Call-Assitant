@@ -201,8 +201,13 @@ for (const size of WIDTHS) {
     await seedEndedCall(page, sessionId);
     await page.goto(`${BASE_URL}/sessions/${sessionId}`);
     await expect(page.getByRole('heading', { name: COMPANY })).toBeVisible();
-    await expect(page.getByRole('listitem', { name: 'Saved answer' })).toHaveCount(2);
     await check(watched, size, 'review');
+    await page.getByRole('button', { name: 'Transcript', exact: true }).click();
+    await expect(page.getByRole('listitem', { name: 'Saved answer' })).toHaveCount(2);
+    await check(watched, size, 'review-transcript');
+    await page.getByRole('button', { name: 'Ask AI', exact: true }).click();
+    await expect(page.getByLabel('Ask about this call')).toBeVisible();
+    await check(watched, size, 'review-ask');
 
     await page.goto(`${BASE_URL}/resumes`);
     await expect(page.getByRole('heading', { name: 'Resumes' })).toBeVisible();

@@ -1,10 +1,8 @@
 /**
  * File: apps/web/src/features/review/ReviewSections.tsx
- * Purpose: The three content sections of the session review page: the AI notes (with their
- *          Regenerate button and status), every saved answer (question, rating, note), and the
- *          saved transcript (You/Them with clock times, or a note when it was not saved).
+ * Purpose: The AI notes section of the session window, with its Regenerate button and status.
  * Used by: src/features/review/SessionReview.tsx
- * Depends on: src/core/review/load.ts (formatCallTime), src/core/answer/format.ts (splitAnswer),
+ * Depends on: src/core/review/load.ts (formatCallTime),
  *             src/features/review/ProposedLessons.tsx (Stage 7),
  *             src/core/storage/types.ts, src/ui/Button.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review);
@@ -12,21 +10,10 @@
  */
 'use client';
 
-import { splitAnswer } from '@/core/answer/format';
 import { formatCallTime } from '@/core/review/load';
-import { sentenceCase } from '@/core/transcript/display';
-import type {
-  SessionType,
-  StoredAnswer,
-  StoredLesson,
-  StoredNotes,
-  StoredUtterance,
-} from '@/core/storage/types';
+import type { SessionType, StoredLesson, StoredNotes } from '@/core/storage/types';
 import { Button } from '@/ui/Button';
 import { ProposedLessons } from './ProposedLessons';
-
-/** Clock time of a line or answer, in the user's locale (for example "14:05:32"). */
-const CLOCK = new Intl.DateTimeFormat(undefined, { timeStyle: 'medium' });
 
 /** Date and time, for when the notes' call started and when they were written. */
 const DATE_TIME = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -41,19 +28,12 @@ const ANSWERED_LABELS: Record<'yes' | 'partly' | 'no', string> = {
   no: 'Not answered',
 };
 
-/** Labels for how an answer was asked. */
-const MODE_LABELS: Record<StoredAnswer['mode'], string> = {
-  answer: 'Answer',
-  chat: 'Typed question',
-  screenshot: 'Screenshot',
-};
-
 /**
  * A rating as shown on the page.
  *
  * @param rating The rating.
  * @returns "👍 Helpful", "👎 Not helpful" or "Not rated".
- * Called from: NotesSection, AnswersSection
+ * Called from: NotesSection
  */
 function ratingLabel(rating: 'up' | 'down' | null | undefined): string {
   if (rating === 'up') return '👍 Helpful';
@@ -204,113 +184,6 @@ export function NotesSection(props: NotesSectionProps) {
         props.canWrite && (
           <p className="mt-2 text-sm text-ui-muted">No notes have been written for this session.</p>
         )
-      )}
-    </section>
-  );
-}
-
-/** Props for AnswersSection. */
-export interface AnswersSectionProps {
-  /** The saved answers, oldest first. */
-  answers: readonly StoredAnswer[];
-}
-
-/**
- * Every saved answer: when, how it was asked, the question, the answer, rating and note.
- *
- * @param props See AnswersSectionProps.
- * @returns The section.
- * Rendered by: SessionReview.tsx
- */
-export function AnswersSection({ answers }: AnswersSectionProps) {
-  return (
-    <section aria-label="Answers" className={SECTION_CLASSES}>
-      <h2 className="text-[20px] text-ui-subheading">Answers ({answers.length})</h2>
-      {answers.length === 0 ? (
-        <p className="mt-2 text-sm text-ui-muted">Kite gave no answers in this session.</p>
-      ) : (
-        <ol className="mt-3 space-y-3">
-          {answers.map((answer) => {
-            const parts = splitAnswer(answer.text);
-            return (
-              <li
-                key={answer.id}
-                aria-label="Saved answer"
-                className="border border-ui-border p-3 text-sm"
-              >
-                <p className="text-xs text-ui-muted">
-                  {CLOCK.format(answer.createdAt)} · {MODE_LABELS[answer.mode]} · Question:{' '}
-                  <span className="text-ui-text">{answer.question || 'the latest from Them'}</span>
-                </p>
-                <p className="mt-1 font-semibold text-ui-heading">{parts.headline}</p>
-                {parts.bullets.length > 0 && (
-                  <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ui-text">
-                    {parts.bullets.map((bullet, i) => (
-                      <li key={i}>{bullet}</li>
-                    ))}
-                  </ul>
-                )}
-                <p className="mt-2 text-xs text-ui-muted">
-                  <span aria-label="Rating">{ratingLabel(answer.rating)}</span>
-                  {answer.note && (
-                    <>
-                      {' · '}
-                      <span aria-label="Your note">Your note: {answer.note}</span>
-                    </>
-                  )}
-                </p>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </section>
-  );
-}
-
-/** Props for TranscriptSection. */
-export interface TranscriptSectionProps {
-  /** The saved lines, oldest first. */
-  lines: readonly StoredUtterance[];
-  /** The session's own spellings to restore in each line (displayTerms()); none by default. */
-  terms?: readonly string[];
-  /** The session's "Save transcript" setting. */
-  saveTranscript: boolean;
-}
-
-/**
- * The saved transcript, or a note that it was not saved (only answers and notes were kept).
- *
- * @param props See TranscriptSectionProps.
- * @returns The section.
- * Rendered by: SessionReview.tsx
- */
-export function TranscriptSection({ lines, saveTranscript, terms = [] }: TranscriptSectionProps) {
-  return (
-    <section aria-label="Transcript" className={SECTION_CLASSES}>
-      <h2 className="text-[20px] text-ui-subheading">Transcript</h2>
-      {lines.length === 0 ? (
-        <p className="mt-2 text-sm text-ui-muted">
-          {saveTranscript
-            ? 'No transcript lines were saved for this session.'
-            : 'The transcript was not saved for this session ("Save transcript" was off). Only the answers and the notes were kept.'}
-        </p>
-      ) : (
-        <ol aria-label="Transcript lines" className="mt-3 space-y-1 text-sm">
-          {lines.map((line) => (
-            <li key={line.id} className="flex gap-3">
-              <span className="w-20 shrink-0 font-mono text-xs leading-5 text-ui-muted">
-                {CLOCK.format(line.tStart)}
-              </span>
-              <span
-                className={`w-12 shrink-0 font-mono text-[11px] font-medium uppercase leading-6 tracking-[0.08em] ${line.speaker === 'you' ? 'text-ui-you' : 'text-ui-them'}`}
-              >
-                {line.speaker === 'you' ? 'You' : 'Them'}
-              </span>
-              <span className="text-ui-text">{sentenceCase(line.text, terms)}</span>
-            </li>
-          ))}
-        </ol>
       )}
     </section>
   );

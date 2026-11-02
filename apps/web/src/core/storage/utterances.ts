@@ -47,3 +47,14 @@ export async function listUtterances(sessionId: string): Promise<StoredUtterance
 export async function deleteUtterance(id: string): Promise<void> {
   await getDb().utterances.delete(id);
 }
+
+/**
+ * Clears a session's saved transcript. Its answers and notes stay.
+ *
+ * @param sessionId The session.
+ * @returns How many lines were removed.
+ * Called from: the session window's Clear transcript; tests
+ */
+export async function clearTranscript(sessionId: string): Promise<number> {
+  return getDb().utterances.where('sessionId').equals(sessionId).delete();
+}

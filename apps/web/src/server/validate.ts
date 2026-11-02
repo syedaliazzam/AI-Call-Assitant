@@ -26,7 +26,12 @@ import {
   estimateItemTokens,
   type AnswerRequest,
   type NotesRequest,
+  MAX_ASK_HISTORY,
+  MAX_ASK_NOTES_CHARS,
+  MAX_ASK_QUESTION_CHARS,
+  MAX_ASK_TURN_CHARS,
   MAX_JOB_URL_CHARS,
+  type AskRequest,
   type AnswerPreviewRequest,
   type JobImportRequest,
 } from '@kite/shared';
@@ -337,4 +342,31 @@ const previewSchema = z.object({
  */
 export function parsePreviewRequest(body: unknown): SmallParseResult<AnswerPreviewRequest> {
   return parseSmall<AnswerPreviewRequest>(previewSchema as z.ZodType<AnswerPreviewRequest>, body);
+}
+
+/** The body of POST /api/ask: a notes request, plus its notes, the question and the chat so far. */
+const askRequestSchema = notesRequestSchema.extend({
+  notes: z.string().max(MAX_ASK_NOTES_CHARS),
+  question: z.string().trim().min(1).max(MAX_ASK_QUESTION_CHARS),
+  history: z
+    .array(
+      z
+        .object({
+          role: z.enum(['you', 'kite']),
+          text: z.string().max(MAX_ASK_TURN_CHARS),
+        })
+        .strict(),
+    )
+    .max(MAX_ASK_HISTORY),
+});
+
+/**
+ * Validates an Ask AI request.
+ *
+ * @param body The JSON value from the request.
+ * @returns The validated request, or a message.
+ * Called from: POST handler in app/api/ask/route.ts
+ */
+export function parseAskRequest(body: unknown): SmallParseResult<AskRequest> {
+  return parseSmall<AskRequest>(askRequestSchema as unknown as z.ZodType<AskRequest>, body);
 }

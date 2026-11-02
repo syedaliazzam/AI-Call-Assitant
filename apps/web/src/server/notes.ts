@@ -159,21 +159,18 @@ function answerText(answer: NotesAnswer, index: number): string {
 }
 
 /**
- * The notes prompt: the cached rules and session block, and the call as the user turn.
+ * A call's record as prompt lines: its transcript and Kite's answers.
  *
- * @param request A validated notes request.
- * @returns The system blocks and the user turn's text.
- * Called from: generateCallNotes(); tests
+ * @param request The call.
+ * @returns The lines.
+ * Called from: notesPrompt(); server/ask.ts
  */
-export function notesPrompt(request: NotesRequest) {
+export function callRecord(request: Pick<NotesRequest, 'lines' | 'answers'>): string[] {
   const lines = request.lines.map(
     (line) =>
       `[${clockTime(line.at)}] ${line.speaker === 'you' ? 'You' : 'Them'}: ${escape(line.text)}`,
   );
-  const last = request.lines.at(-1)?.at ?? 0;
-  const prompt = [
-    `The call lasted about ${clockTime(last)} (times are minutes:seconds since it started; "at" values are seconds).`,
-    '',
+  return [
     '<transcript>',
     ...(lines.length > 0 ? lines : ['(nothing was transcribed)']),
     '</transcript>',
@@ -183,6 +180,22 @@ export function notesPrompt(request: NotesRequest) {
       ? request.answers.map((answer, index) => answerText(answer, index))
       : ['(Kite gave no answers)']),
     '</answers>',
+  ];
+}
+
+/**
+ * The notes prompt: the cached rules and session block, and the call as the user turn.
+ *
+ * @param request A validated notes request.
+ * @returns The system blocks and the user turn's text.
+ * Called from: generateCallNotes(); tests
+ */
+export function notesPrompt(request: NotesRequest) {
+  const last = request.lines.at(-1)?.at ?? 0;
+  const prompt = [
+    `The call lasted about ${clockTime(last)} (times are minutes:seconds since it started; "at" values are seconds).`,
+    '',
+    ...callRecord(request),
     '',
     'Write the notes.',
   ].join('\n');

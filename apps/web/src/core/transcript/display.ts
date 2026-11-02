@@ -94,7 +94,7 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
  * @param text  The line as the engine wrote it.
  * @param terms Spellings to restore (displayTerms()), longest first.
  * @returns The line for display.
- * Called from: TranscriptStrip.tsx, SavedTranscript.tsx, ReviewSections.tsx (TranscriptSection)
+ * Called from: TranscriptStrip.tsx, SavedTranscript.tsx, ReviewSections.tsx (ConversationSection)
  */
 export function sentenceCase(text: string, terms: readonly string[] = []): string {
   let line = /[a-z]/.test(text) ? text : text.toLowerCase();

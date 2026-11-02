@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: parity Phase 2 (session setup).
+**Kept up to date:** each later stage adds its human checks here. Last updated: parity Phase 3 (after the call).
 
 ---
 
@@ -114,6 +114,17 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 5.6 | Back on the first review page press **Regenerate**. | New notes; your lesson decisions are kept. |
 | 5.7 | Delete that session (in-app dialog). | Back on the dashboard; the session is gone. |
 | 5.8 | Settings → **Clear all lessons**. | The list is empty. |
+
+## 5b. The session window (parity Phase 3)
+
+| # | Do | Expect |
+|---|---|---|
+| 5b.1 | Open a finished call. Use the side menu. | AI notes, Transcript, Ask AI and Call details each show their own content. |
+| 5b.2 | Read the transcript. | Them on the left, You on the right, Kite's answers inline at the right moments. |
+| 5b.3 | Rate an answer, then report it with a short reason. Reload. | Both stay. |
+| 5b.4 | **Download TXT** and **Download PDF**; open both. | Same content, readable, no private notes. Each opens in Notepad and in a PDF reader. |
+| 5b.5 | Ask AI: "What did they ask about?", then a follow-up, then something the call never covered. | Short answers from the call; the follow-up understands the first question; the last says it is not there. |
+| 5b.6 | **Clear transcript**: cancel once, then confirm. | Only the transcript goes; answers and notes stay. |
 
 ## 6. New speech engine (Day 6, only if adopted)
 

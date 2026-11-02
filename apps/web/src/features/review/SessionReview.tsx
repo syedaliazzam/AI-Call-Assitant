@@ -1,12 +1,14 @@
 /**
  * File: apps/web/src/features/review/SessionReview.tsx
- * Purpose: The session review page's content (Day 5 Stage 6): call details, the AI notes with
- *          Regenerate, every saved answer with its rating and note, the saved transcript, and
- *          Delete session (confirmed in an in-app dialog). Everything is read from this device.
+ * Purpose: The session window (Day 5 Stage 6, parity Phase 3): a side menu of four sections, AI
+ *          notes with Regenerate, the Transcript with Kite's answers inline, Ask AI, and Call
+ *          details; and Delete session (confirmed in an in-app dialog). Everything is read from
+ *          this device.
  * Used by: src/features/review/ReviewPage.tsx; tests/integration/harness/review.tsx
  * Depends on: next/link, src/core/review/load.ts, src/core/notes/regenerate.ts,
  *             src/core/answer/unavailable.ts (notesFailureText), src/core/storage/sessions.ts
  *             (deleteSession), src/features/review/ReviewSections.tsx,
+ *             src/features/review/ConversationSection.tsx, src/features/review/AskSection.tsx,
  *             src/features/session-setup/labels.ts, src/ui (Button, Dialog)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review), §7.4;
  *               day-05-overlay-screenshots-notes.md Stage 6
@@ -33,7 +35,20 @@ import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { LinkButton } from '@/ui/LinkButton';
 import { PageShell } from '@/ui/PageShell';
-import { AnswersSection, NotesSection, TranscriptSection } from './ReviewSections';
+import { AskSection } from './AskSection';
+import { ConversationSection } from './ConversationSection';
+import { NotesSection } from './ReviewSections';
+
+/** The session window's sections. */
+type SectionName = 'notes' | 'transcript' | 'ask' | 'details';
+
+/** The side menu, in order. */
+const SECTIONS: readonly { value: SectionName; label: string }[] = [
+  { value: 'notes', label: 'AI notes' },
+  { value: 'transcript', label: 'Transcript' },
+  { value: 'ask', label: 'Ask AI' },
+  { value: 'details', label: 'Call details' },
+];
 
 /** Props for SessionReview. */
 export interface SessionReviewProps {
@@ -86,6 +101,7 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
     status: '',
     failed: false,
   });
+  const [section, setSection] = useState<SectionName>('notes');
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
@@ -185,64 +201,104 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
         </>
       }
     >
-      <section aria-label="Call details" className="border border-ui-border bg-ui-surface p-5">
-        <h2 className="text-[20px] text-ui-subheading">Call details</h2>
-        <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-xs text-ui-muted">Type</dt>
-            <dd>{SESSION_TYPE_LABELS[session.type]}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-ui-muted">Created</dt>
-            <dd>{DATE_FORMAT.format(session.createdAt)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-ui-muted">Last call started</dt>
-            <dd>{notes ? DATE_FORMAT.format(notes.callStartedAt) : 'Not known (no notes yet)'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-ui-muted">Answers</dt>
-            <dd>
-              {labelOf(MODEL_OPTIONS, session.preferences.model)};{' '}
-              {labelOf(FORMAT_OPTIONS, style.format)},{' '}
-              {labelOf(LENGTH_OPTIONS, style.length).toLowerCase()},{' '}
-              {labelOf(TONE_OPTIONS, style.tone).toLowerCase()}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-ui-muted">Documents</dt>
-            <dd>
-              {review.documents.length === 0
-                ? 'None'
-                : review.documents.map((document) => document.name).join(', ')}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-ui-muted">Save transcript</dt>
-            <dd>{session.saveTranscript ? 'On' : 'Off'}</dd>
-          </div>
-        </dl>
-        {session.description && <p className="mt-3 text-sm text-ui-text">{session.description}</p>}
-      </section>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start">
+        <nav
+          aria-label="Session sections"
+          className="flex shrink-0 flex-wrap gap-1 md:w-40 md:flex-col"
+        >
+          {SECTIONS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              aria-current={section === item.value ? 'page' : undefined}
+              onClick={() => setSection(item.value)}
+              className={[
+                'border-l-[3px] px-3 py-2 text-left text-[14px] font-medium focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11',
+                section === item.value
+                  ? 'border-ui-primary bg-ui-surface text-ui-heading'
+                  : 'border-transparent text-ui-muted hover:bg-ui-surface',
+              ].join(' ')}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        <div className="flex min-w-0 flex-1 flex-col gap-6">
+          {section === 'details' && (
+            <section
+              aria-label="Call details"
+              className="border border-ui-border bg-ui-surface p-5"
+            >
+              <h2 className="text-[20px] text-ui-subheading">Call details</h2>
+              <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-ui-muted">Type</dt>
+                  <dd>{SESSION_TYPE_LABELS[session.type]}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-ui-muted">Created</dt>
+                  <dd>{DATE_FORMAT.format(session.createdAt)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-ui-muted">Last call started</dt>
+                  <dd>
+                    {notes ? DATE_FORMAT.format(notes.callStartedAt) : 'Not known (no notes yet)'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-ui-muted">Answers</dt>
+                  <dd>
+                    {labelOf(MODEL_OPTIONS, session.preferences.model)};{' '}
+                    {labelOf(FORMAT_OPTIONS, style.format)},{' '}
+                    {labelOf(LENGTH_OPTIONS, style.length).toLowerCase()},{' '}
+                    {labelOf(TONE_OPTIONS, style.tone).toLowerCase()}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-ui-muted">Documents</dt>
+                  <dd>
+                    {review.documents.length === 0
+                      ? 'None'
+                      : review.documents.map((document) => document.name).join(', ')}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-ui-muted">Save transcript</dt>
+                  <dd>{session.saveTranscript ? 'On' : 'Off'}</dd>
+                </div>
+              </dl>
+              {session.description && (
+                <p className="mt-3 text-sm text-ui-text">{session.description}</p>
+              )}
+            </section>
+          )}
 
-      <NotesSection
-        notes={notes}
-        canWrite={lines.length > 0 || answers.length > 0}
-        writing={notesState.writing}
-        status={notesState.status}
-        failed={notesState.failed}
-        onRegenerate={() => void regenerate()}
-        sessionId={session.id}
-        sessionType={session.type}
-        lessonDecisions={review.lessonDecisions}
-        onLessonsChanged={() => void reload()}
-      />
-      <AnswersSection answers={answers} />
-      <TranscriptSection
-        lines={lines}
-        saveTranscript={session.saveTranscript}
-        terms={displayTerms(session)}
-      />
+          {section === 'notes' && (
+            <NotesSection
+              notes={notes}
+              canWrite={lines.length > 0 || answers.length > 0}
+              writing={notesState.writing}
+              status={notesState.status}
+              failed={notesState.failed}
+              onRegenerate={() => void regenerate()}
+              sessionId={session.id}
+              sessionType={session.type}
+              lessonDecisions={review.lessonDecisions}
+              onLessonsChanged={() => void reload()}
+            />
+          )}
+          {section === 'transcript' && (
+            <ConversationSection
+              session={session}
+              lines={lines}
+              answers={answers}
+              terms={displayTerms(session)}
+              onChanged={() => void reload()}
+            />
+          )}
+          {section === 'ask' && <AskSection review={review} />}
+        </div>
+      </div>
 
       <Dialog
         open={confirming}
