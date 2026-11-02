@@ -49,6 +49,16 @@ Phase 2 (session setup) decisions:
 
 **Icons on the Connect screen** are generic line drawings, not the apps' logos. The video tutorial is a placeholder.
 
+Phase 3 (after the call) decisions:
+
+**Session window.** A side menu of four sections: AI notes, Transcript, Ask AI, Call details. One section shows at a time.
+
+**Transcript.** A chat: Them on the left, You on the right, Kite's answers inline as cards in time order, each with its time, thumbs and "Report this answer". Reports stay on the device with the answer, and are sent nowhere. Clear transcript asks first, and keeps the answers and notes.
+
+**Downloads.** TXT and PDF say the same thing and leave out each answer's private note. The PDF is written by a small module with no new dependency (`core/review/pdf.ts`), using the PDF standard fonts. They cover Western European letters; others, such as Arabic or Chinese in an answer, show as "?", and the page says so and points to TXT. Embedding a font that covers every script would add several megabytes to the page for a rare case.
+
+**Ask AI.** Sonnet, with the rules, the session and the call as three cached blocks and the question outside them, so later questions read the cache. The chat lasts while the page is open and is not stored. Its cost is logged in development only.
+
 ## Consequences
 
 - The rules block changes, so its hash and every session's first prompt cache entry change.

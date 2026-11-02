@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.7.0"
+version: "3.8.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-02"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.7.0, **Current**: the only document to build from |
+| Version | 3.8.0, **Current**: the only document to build from |
+| Changes in 3.8.0 | Parity Phase 3, after the call (ADR-0029). §5: the session window has a side menu; the transcript is a chat with answers inline; Report, Download (TXT and PDF), Clear transcript, Ask AI. §7.2: `/api/ask`. |
 | Changes in 3.7.0 | Parity Phase 2, session setup (ADR-0029). §5: dashboard, wizard, Connect screen; new Resumes and Documents pages. §7.2: `/api/job-import` and `/api/preview`; `language` in the session details. §7.4: new session types, `library` store (schema version 4), documents keep `kind` and `sourceId`. |
 | Date | 2 November 2026 |
 | Changes in 3.6.0 | Parity Phase 1, the live call (ADR-0029; plan in `docs/design/parakeet-parity.md`). §3.3: new hotkey actions and optional bridge methods. §5: the overlay has three stacked bars; "Start calls in the overlay". §6: first-person answers with an optional tip and a private note. §7.3: new default hotkeys; only Answer, Screenshot, show or hide and move are global; opacity and collapse. |
@@ -154,7 +155,7 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 | Connect | `/live/[id]` (first view) | A sentence saying what the session is, "Listening for N key terms" (the session hotwords, Day 3), how to connect (generic icons for Zoom, Teams, Google Meet, Webex and phone, each with a short how-to for this platform; a video tutorial placeholder; a link to a practice video), "Connect" button, audio test meters, Back. Underneath: the transcript saved by earlier calls of this session, or a note that the session does not save its transcript |
 | Live session | `/live/[id]` | Top bar: Answer · Screenshot · Chat · Clear · End. Transcript strip (live chips). Answer panel (Question, Answer headline, bullets, time, copy, prev/next). Chat input. |
 | Overlay (compact view) | `/compact/[id]` (desktop window, outside the app layout: no sidebar) / Document PiP | **Built Day 5, rebuilt in parity Phase 1 (ADR-0029).** Three stacked bars: controls (mic and system-audio status, Answer, Screenshot, Chat, move, collapse, menu, End); the live transcript (latest words as chips, Clear, expand); the answer card (question, answer line, bullets, optional tip, private note apart and muted; time, thumbs, copy, report; history; Clear; expand). One scroll area, 16–18 px text. Desktop: opacity 35–100% and fade when the pointer is elsewhere. Default 720 × 520, smallest 460 × 260. With "Start calls in the overlay" (Settings, on by default), Go live opens it and minimises the main window; closing it brings the main window back; a browser asks for a click, because picture-in-picture needs one. The "Claude is unavailable" message shows on the card. It talks to the live page over a per-session `BroadcastChannel` (`kite-live-<id>`): the live page publishes its state and runs the commands; the compact view never calls Claude itself. Desktop: the protection label |
-| Session review | `/sessions/[id]` | **Built Day 5.** Call details; AI notes (summary, questions with ratings, next steps with owners, parts too unclear to summarise, proposed lessons with Approve / Edit / Reject and a scope) with Regenerate, labelled "Written from answers only" when no transcript was saved; every answer with its rating and note; the saved transcript (or a note that it was not saved); Delete session (in-app dialog). The dashboard shows "Review" on ended sessions |
+| Session window | `/sessions/[id]` | **Built Day 5, reworked in parity Phase 3.** A side menu of four sections. AI notes: summary, questions with ratings, next steps with owners, parts too unclear to summarise, proposed lessons with Approve / Edit / Reject and a scope, with Regenerate, labelled "Written from answers only" when no transcript was saved. Transcript: a chat (Them left, You right) with Kite's answers inline, each with its time, thumbs and Report this answer; Download TXT or PDF; Clear transcript. Ask AI: a short chat about this call. Call details. Delete session asks first. |
 | Settings | `/settings` | **Built Day 3.** Default preferences for new sessions, hotkeys list (read-only; shortcuts arrive Day 4), share-protection switch (desktop, Day 5, off by default), "What Kite has learned" (Day 5: approved lessons with edit, delete and "Clear all lessons"), "Delete all local data" (asks first, then shows what was deleted; the downloaded speech model is kept) |
 
 ## 6. Live answer flow and latency
@@ -237,6 +238,7 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 |---|---|---|
 | `/api/auth/[...all]` | GET, POST | Better Auth handler: sign-in, sign-out, session, change password, and admin operations (admin plugin). Public sign-up is disabled. |
 | `/api/answer` | POST, SSE response | `mode`: `hello` (Day 1 test) / `warm` (Day 3) / `answer` / `chat` / `screenshot` → builds the prompt, calls Claude, streams text. `answer` and `chat` built on Day 4; `screenshot` built on Day 5 (a JPEG data URL ≤ 1,400,000 characters, checked by its bytes, placed uncached before the question) |
+| `/api/ask` | POST, JSON response | **Built parity Phase 3.** Answers a question about a finished call with Sonnet, from its transcript, answers, notes and documents. Rules, session and call are cached blocks. Logs token counts only; the cost in development only. |
 | `/api/job-import` | POST, JSON response | **Built parity Phase 2.** Fetches a public job page (public addresses only: `server/job-page.ts`) and extracts the company, role and description with Haiku for the user to check. Logs sizes and token counts only. |
 | `/api/preview` | POST, JSON response | **Built parity Phase 2.** One Answer preview on an invented interview, with Haiku and the real rules. Only known settings are accepted. The browser keeps each result. |
 | `/api/notes` | POST, JSON response | **Built Day 5.** Post-call notes with Sonnet in one structured-output request (110 s limit): summary (≤ 6 bullets), questions (their ratings taken from the request, never from the model), next steps with owners, parts too unclear to summarise (with a time range), up to 3 proposed lessons. Not streamed: nobody waits word by word after a call |

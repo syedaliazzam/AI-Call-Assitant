@@ -92,4 +92,6 @@ Global shortcuts need the desktop app; in a browser all shortcuts work only whil
 - **Job links:** some job sites refuse automatic reading, and pages built only by scripts have no text. Kite says so and the user pastes the details.
 - **Answer preferences during a call:** format, length and tone are in the overlay's menu, without a preview: the overlay is small, and a preview would cost a request mid-call.
 - **Connect icons:** generic drawings instead of the apps' logos; the licensing is unclear. The video tutorial is a placeholder until one is recorded.
+- **PDF download:** Western European letters only; others show as "?", and the TXT download keeps them. The page says so when it happens.
+- **Ask AI:** the chat is not stored; it lasts while the page is open.
 - **Local data:** sessions, documents and libraries stay on the device, so they do not follow a user between computers (Export and Import cover that).

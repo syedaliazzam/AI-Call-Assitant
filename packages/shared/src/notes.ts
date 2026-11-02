@@ -121,3 +121,39 @@ export const MAX_NOTES_CHARS = 240_000;
 
 /** Most answers a notes request may carry. */
 export const MAX_NOTES_ANSWERS = 300;
+
+/** Longest question in Ask AI, in characters. */
+export const MAX_ASK_QUESTION_CHARS = 2_000;
+
+/** Most earlier chat turns sent with a question. */
+export const MAX_ASK_HISTORY = 20;
+
+/** Longest chat turn sent back as history, in characters (long enough for any reply). */
+export const MAX_ASK_TURN_CHARS = 4_000;
+
+/** Longest AI notes text sent with a question, in characters. */
+export const MAX_ASK_NOTES_CHARS = 20_000;
+
+/** One turn of the Ask AI chat. */
+export interface AskTurn {
+  /** 'you' for the user's question, 'kite' for the reply. */
+  role: 'you' | 'kite';
+  /** What was said. Never logged. */
+  text: string;
+}
+
+/** Body of POST /api/ask: the call as for the notes, its notes, and the question. */
+export interface AskRequest extends NotesRequest {
+  /** The AI notes as text ('' when there are none). */
+  notes: string;
+  /** The user's question. */
+  question: string;
+  /** The chat so far, oldest first. */
+  history: AskTurn[];
+}
+
+/** Response of POST /api/ask. */
+export interface AskResponse {
+  /** Kite's reply. */
+  text: string;
+}

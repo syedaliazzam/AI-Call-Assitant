@@ -22,7 +22,7 @@ import { saveAnswer } from '@/core/storage/answers';
 import { addDocument } from '@/core/storage/documents';
 import { listLessons } from '@/core/storage/lessons';
 import { saveNotes } from '@/core/storage/notes';
-import { createSession } from '@/core/storage/sessions';
+import { createSession, deleteSession } from '@/core/storage/sessions';
 import { saveUtterance } from '@/core/storage/utterances';
 import { SessionReview } from '@/features/review/SessionReview';
 import { DataTransfer } from '@/features/settings/DataTransfer';
@@ -62,6 +62,8 @@ export interface KiteReviewHarness {
   showData: () => void;
   /** Deletes the whole local database, as "Delete all local data" does (Day 6). */
   wipe: () => Promise<void>;
+  /** Deletes one session and what is stored for it. */
+  remove: (id: string) => Promise<void>;
 }
 
 declare global {
@@ -237,5 +239,8 @@ window.kiteReviewHarness = {
   },
   wipe: async () => {
     await deleteAllLocalData();
+  },
+  remove: async (id) => {
+    await deleteSession(id);
   },
 };

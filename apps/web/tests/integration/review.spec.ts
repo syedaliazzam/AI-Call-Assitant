@@ -10,6 +10,8 @@
  * sent), are labelled "Written from answers only"; Delete asks in an in-app dialog, removes
  * everything stored for the session, and goes to the dashboard. Settings' "What Kite has
  * learned" lists the approved lesson as sent, edits it, and clears all lessons after a dialog.
+ * Parity Phase 3: a side menu of sections; the transcript as a chat with answers inline, thumbs and
+ * reports; TXT and PDF downloads; Ask AI with a mocked /api/ask; Clear transcript.
  * Set KITE_SCREENSHOT_DIR to save screenshots of the page (for stage reports; never in CI).
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -19,7 +21,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
-import { CLAUDE_UNAVAILABLE_MESSAGES, type NotesRequest } from '@kite/shared';
+import { CLAUDE_UNAVAILABLE_MESSAGES, type AskRequest, type NotesRequest } from '@kite/shared';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 
@@ -136,6 +138,18 @@ async function shot(name: string): Promise<void> {
 }
 
 /**
+ * Opens one section of the session window.
+ *
+ * @param name The section's name in the side menu.
+ */
+async function openSection(name: string): Promise<void> {
+  await page
+    .getByRole('navigation', { name: 'Session sections' })
+    .getByRole('button', { name, exact: true })
+    .click();
+}
+
+/**
  * Compiles the app's real stylesheet (app/globals.css, Tailwind) into review.css, so the page
  * looks as it does in the app. Uses the postcss that @tailwindcss/postcss itself depends on
  * (no extra dependency).
@@ -206,9 +220,13 @@ test.afterAll(async () => {
 });
 
 test('shows the call details, notes, answers and transcript', async () => {
+  // The notes come first.
+  await expect(page.getByRole('region', { name: 'AI notes' })).toBeVisible();
+  await openSection('Call details');
   const details = page.getByRole('region', { name: 'Call details' });
   await expect(details).toContainText('Regular');
   await expect(details).toContainText('price-list.txt');
+  await openSection('AI notes');
   const notes = page.getByRole('region', { name: 'AI notes' });
   await expect(notes.getByRole('list', { name: 'Summary' }).getByRole('listitem')).toHaveCount(2);
   await expect(notes.getByRole('list', { name: 'Questions asked' })).toContainText(
@@ -226,6 +244,7 @@ test('shows the call details, notes, answers and transcript', async () => {
   await expect(notes).toContainText('Suggestions only');
   await expect(notes).not.toContainText('Written from answers only');
 
+  await openSection('Transcript');
   const answers = page.getByRole('listitem', { name: 'Saved answer' });
   await expect(answers).toHaveCount(2);
   await expect(answers.first()).toContainText('What would forty seats on Professional cost?');
@@ -234,10 +253,12 @@ test('shows the call details, notes, answers and transcript', async () => {
   await expect(answers.nth(1)).toContainText('Typed question');
   await expect(answers.nth(1).getByLabel('Rating')).toHaveText('👍 Helpful');
 
-  const transcript = page.getByRole('list', { name: 'Transcript lines' }).getByRole('listitem');
+  const transcript = page.getByRole('listitem', { name: /said$/ });
   await expect(transcript).toHaveCount(6);
   await expect(transcript.first()).toContainText('You');
   await expect(transcript.nth(1)).toContainText('Them');
+  await shot('review-transcript');
+  await openSection('AI notes');
   await shot('review-full');
 });
 
@@ -299,9 +320,11 @@ test('with "Save transcript" off: says so, and notes are written from answers on
   const offId = await page.evaluate(() => window.kiteReviewHarness.seed('transcript-off'));
   await page.evaluate((id) => window.kiteReviewHarness.show(id), offId);
   await expect(page.getByRole('heading', { name: 'Pinecrest Clinics (invented)' })).toBeVisible();
+  await openSection('Transcript');
   await expect(page.getByRole('region', { name: 'Transcript' })).toContainText(
     'The transcript was not saved for this session ("Save transcript" was off). Only the answers and the notes were kept.',
   );
+  await openSection('AI notes');
   received.length = 0;
   await page.getByRole('button', { name: 'Write the notes' }).click();
   await expect(page.getByText('Written from answers only')).toBeVisible();
@@ -311,6 +334,118 @@ test('with "Save transcript" off: says so, and notes are written from answers on
   // Back to the full session for the delete test.
   await page.evaluate((id) => window.kiteReviewHarness.show(id), fullId);
   await expect(page.getByRole('heading', { name: 'Northwind Logistics (invented)' })).toBeVisible();
+});
+
+test('Transcript: a chat with answers inline; thumbs and reports are stored here', async () => {
+  await page.evaluate((id) => window.kiteReviewHarness.show(id), fullId);
+  await openSection('Transcript');
+  const conversation = page.getByRole('list', { name: 'Conversation' });
+  // Time order: the 24 s question, then the answer given at 26 s, then the next line.
+  const order = await conversation
+    .locator('> li')
+    .evaluateAll((items) => items.map((item) => item.getAttribute('aria-label')));
+  expect(order.indexOf('Saved answer')).toBeGreaterThan(0);
+  expect(order.filter((label) => label === 'Saved answer')).toHaveLength(2);
+  // Them on the left, You on the right.
+  const you = await page.getByRole('listitem', { name: 'You said' }).first().boundingBox();
+  const them = await page.getByRole('listitem', { name: 'Them said' }).first().boundingBox();
+  const area = (await conversation.boundingBox())!;
+  expect(Math.round(them!.x)).toBe(Math.round(area.x));
+  expect(Math.round(you!.x + you!.width)).toBe(Math.round(area.x + area.width));
+
+  const card = page.getByRole('listitem', { name: 'Saved answer' }).first();
+  await card.getByRole('button', { name: 'Good answer' }).click();
+  await expect(card.getByLabel('Rating')).toHaveText('👍 Helpful');
+  await card.getByRole('button', { name: 'Good answer' }).click();
+  await expect(card.getByLabel('Rating')).toHaveCount(0);
+  await card.getByRole('button', { name: 'Bad answer' }).click();
+  await expect(card.getByLabel('Rating')).toHaveText('👎 Not helpful');
+
+  await card.getByRole('button', { name: 'Report this answer' }).click();
+  await card.getByLabel('What was wrong?').fill('The total is wrong (invented).');
+  await card.getByRole('button', { name: 'Report', exact: true }).click();
+  await expect(card.getByRole('button', { name: 'Reported' })).toBeVisible();
+  await expect(card.getByLabel('Your note')).toContainText('The total is wrong');
+  await shot('review-conversation');
+});
+
+test('Download gives TXT and PDF with the conversation, not the private notes', async () => {
+  await page.evaluate((id) => window.kiteReviewHarness.show(id), fullId);
+  await openSection('Transcript');
+  const [txt] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Download TXT' }).click(),
+  ]);
+  expect(txt.suggestedFilename()).toMatch(/^kite-transcript-.*\.txt$/);
+  const text = readFileSync(await txt.path(), 'utf8');
+  expect(text).toContain('Kite transcript: Northwind Logistics (invented)');
+  expect(text).toContain('Them: ');
+  expect(text).toContain('Kite answer');
+  const [pdf] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Download PDF' }).click(),
+  ]);
+  expect(pdf.suggestedFilename()).toMatch(/^kite-transcript-.*\.pdf$/);
+  const bytes = readFileSync(await pdf.path());
+  expect(bytes.subarray(0, 8).toString('latin1')).toBe('%PDF-1.4');
+  expect(bytes.toString('latin1')).toContain('Kite transcript');
+});
+
+test('Ask AI: sends the call and the chat, shows replies, and keeps a failed question', async () => {
+  await page.evaluate((id) => window.kiteReviewHarness.show(id), fullId);
+  await openSection('Ask AI');
+  const bodies: AskRequest[] = [];
+  let fail = false;
+  await page.route('**/api/ask', async (route) => {
+    bodies.push(route.request().postDataJSON() as AskRequest);
+    if (fail) {
+      await route.fulfill({ status: 502, json: { code: 'upstream_error', message: 'detail' } });
+    } else {
+      await route.fulfill({ json: { text: `Reply ${bodies.length}: they asked about seats.` } });
+    }
+  });
+  const box = page.getByLabel('Ask about this call');
+  await box.fill('What did they ask?');
+  await box.press('Enter');
+  await expect(page.getByRole('list', { name: 'Chat' })).toContainText('Reply 1');
+  expect(bodies[0]!.question).toBe('What did they ask?');
+  expect(bodies[0]!.history).toEqual([]);
+  expect(bodies[0]!.lines.length).toBeGreaterThan(0);
+  expect(bodies[0]!.notes).toContain('Summary:');
+  await shot('review-ask');
+
+  await box.fill('And then?');
+  await page.getByRole('button', { name: 'Ask', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'Chat' })).toContainText('Reply 2');
+  expect(bodies[1]!.history.map((turn) => turn.role)).toEqual(['you', 'kite']);
+
+  fail = true;
+  await box.fill('One more?');
+  await box.press('Enter');
+  await expect(page.getByRole('region', { name: 'Ask AI' }).getByRole('alert')).toContainText(
+    'could not answer',
+  );
+  await expect(box).toHaveValue('One more?');
+  await page.unroute('**/api/ask');
+});
+
+test('Clear transcript asks first, and keeps the answers and notes', async () => {
+  const id = await page.evaluate(() => window.kiteReviewHarness.seed('full'));
+  await page.evaluate((target) => window.kiteReviewHarness.show(target), id);
+  await openSection('Transcript');
+  await expect(page.getByRole('listitem', { name: /said$/ }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'Clear transcript' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Clear this transcript?' });
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByRole('listitem', { name: /said$/ })).toHaveCount(6);
+  await page.getByRole('button', { name: 'Clear transcript' }).click();
+  await dialog.getByRole('button', { name: 'Clear transcript' }).click();
+  await expect(page.getByRole('listitem', { name: /said$/ })).toHaveCount(0);
+  await expect(page.getByRole('listitem', { name: 'Saved answer' })).toHaveCount(2);
+  await openSection('AI notes');
+  await expect(page.getByRole('list', { name: 'Summary' })).toBeVisible();
+  await page.evaluate((target) => window.kiteReviewHarness.remove(target), id);
+  await page.evaluate((target) => window.kiteReviewHarness.show(target), fullId);
 });
 
 test('Settings lists the approved lesson as sent; edit, then clear all in a dialog', async () => {
