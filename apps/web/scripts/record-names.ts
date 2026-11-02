@@ -147,7 +147,7 @@ async function main(): Promise<void> {
   const order = values.only
     ? // Commas or spaces: PowerShell turns --only=2,21,33 into '--only=2 21 33'.
       values.only
-        .split(/[s,]+/)
+        .split(/[\s,]+/)
         .filter(Boolean)
         .map((number) => Number(number) - 1)
     : sentences.map((_, index) => index).slice(from);
