@@ -18,6 +18,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing);
  *               docs/design/kite-ui-theme.md §6
  */
+import { useState } from 'react';
 import { CLAUDE_UNAVAILABLE_MESSAGES } from '@kite/shared';
 import { createRoot } from 'react-dom/client';
 import type { CompactState } from '@/core/live/liveChannel';
@@ -241,6 +242,78 @@ const COMPACT_STATE: CompactState = {
   ended: false,
 };
 
+/**
+ * The compact view on a fixed state, with its Chat button working (CompactLive holds this state in
+ * the app).
+ *
+ * @param props.state What to show.
+ * @returns The view.
+ * Rendered by: the bottom of this file
+ */
+function CompactHarness({
+  state,
+}: {
+  /** What to show. */
+  state: CompactState;
+}) {
+  const [chatOpen, setChatOpen] = useState(false);
+  return (
+    <CompactView
+      state={state}
+      protection={{ supported: true, on: true }}
+      onCommand={() => undefined}
+      onProtection={() => undefined}
+      chatOpen={chatOpen}
+      onChatOpen={setChatOpen}
+    />
+  );
+}
+
+/** The compact view with a coding answer, a figure to check and other answers (ADR-0030). */
+const CODING_STATE: CompactState = {
+  ...COMPACT_STATE,
+  chatTarget: 'kite',
+  sessionType: 'interview',
+  earlier: [{ id: 'a1', question: 'What does the pilot cost?', headline: 'It costs 28 dollars.' }],
+  answer: {
+    ...COMPACT_STATE.answer!,
+    id: 'a4',
+    question: 'Reverse a list, please.',
+    text: [
+      'I would walk the list once and swap from both ends.',
+      '- Steps: keep two pointers, swap, and move them inward.',
+      '- Complexity: O(n) time, O(1) space.',
+      '- Edge cases: an empty list and a single item.',
+      '```python',
+      'def reverse(items):',
+      '    left, right = 0, len(items) - 1',
+      '    while left < right:',
+      '        items[left], items[right] = items[right], items[left]',
+      '        left, right = left + 1, right - 1',
+      '    return items',
+      '```',
+      'Say: I swap from both ends, so it takes one pass, and last year that saved 37 percent.',
+    ].join('\n'),
+    headline: 'I would walk the list once and swap from both ends.',
+    claims: ['37'],
+    meta: { type: 'coding', target: 'call', source: 'general' },
+  },
+};
+
+/** The compact view with a private answer (ADR-0030). */
+const PRIVATE_STATE: CompactState = {
+  ...CODING_STATE,
+  answer: {
+    ...CODING_STATE.answer!,
+    id: 'a5',
+    question: 'What is 17% of 2,340?',
+    text: '**397.8**\n\nWorking:\n1. 10% of 2,340 is 234.\n2. 7% of 2,340 is 163.8.\n3. 234 + 163.8 = 397.8.',
+    headline: '397.8',
+    claims: [],
+    meta: { type: 'concept', target: 'kite', source: 'general' },
+  },
+};
+
 /** The same, when Claude is unavailable. */
 const UNAVAILABLE_STATE: CompactState = {
   ...COMPACT_STATE,
@@ -274,15 +347,23 @@ if (view === 'connect' || view === 'connect-errors') {
       <LiveCallsUnsupported />
     ),
   );
-} else if (view === 'compact' || view === 'compact-unavailable') {
+} else if (
+  view === 'compact' ||
+  view === 'compact-unavailable' ||
+  view === 'compact-coding' ||
+  view === 'compact-private'
+) {
   root.render(
-    <CompactView
-      state={view === 'compact' ? COMPACT_STATE : UNAVAILABLE_STATE}
-      protection={{ supported: true, on: true }}
-      onCommand={() => undefined}
-      onProtection={() => undefined}
-      chatOpen={false}
-      onChatOpen={() => undefined}
+    <CompactHarness
+      state={
+        view === 'compact'
+          ? COMPACT_STATE
+          : view === 'compact-coding'
+            ? CODING_STATE
+            : view === 'compact-private'
+              ? PRIVATE_STATE
+              : UNAVAILABLE_STATE
+      }
     />,
   );
 } else {

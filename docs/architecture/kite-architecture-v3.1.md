@@ -1,8 +1,8 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.9.0"
+version: "3.10.0"
 status: "Current: the single document the team builds from"
-date: "2026-11-02"
+date: "2026-11-03"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.9.0, **Current**: the only document to build from |
+| Version | 3.10.0, **Current**: the only document to build from |
+| Changes in 3.10.0 | Ask Kite and answer quality (ADR-0030). §3.3: `ask-kite` hotkey action, `onAskKiteHotkey`. §5: newest first in the live view, overlay and review, no jump-to-latest button; the Ask Kite page; the type label, source tag and claim check on answer cards; the chat switch. §6: every reply opens with a hidden line, removed by the server and sent as a `meta` event; the answer limit is 1,500 tokens; `temperature` cannot be set on the fast model. §7.2: `/api/answer` mode `kite`. §7.4: `chats` store (schema version 6); `meta` and `claims` on answers. |
 | Changes in 3.9.0 | Parity Phase 4, the Prepare tools (ADR-0029). §5: Mock Interview and Question Bank pages. §7.2: `/api/prepare`. §7.4: `questionBanks` store (schema version 5). |
 | Changes in 3.8.0 | Parity Phase 3, after the call (ADR-0029). §5: the session window has a side menu; the transcript is a chat with answers inline; Report, Download (TXT and PDF), Clear transcript, Ask AI. §7.2: `/api/ask`. |
 | Changes in 3.7.0 | Parity Phase 2, session setup (ADR-0029). §5: dashboard, wizard, Connect screen; new Resumes and Documents pages. §7.2: `/api/job-import` and `/api/preview`; `language` in the session details. §7.4: new session types, `library` store (schema version 4), documents keep `kind` and `sourceId`. |
@@ -105,7 +106,7 @@ The web app calls one interface. At start-up it picks the desktop implementation
 
 ```ts
 // apps/web/src/platform/types.ts
-export type HotkeyAction = 'answer' | 'screenshot' | 'chat' | 'clear' | 'prev' | 'next';
+export type HotkeyAction = 'answer' | 'screenshot' | 'chat' | 'clear' | 'prev' | 'next' | 'ask-kite';
 
 export interface Platform {
   kind: 'desktop' | 'browser';
@@ -354,6 +355,7 @@ Built on Day 3 (`core/storage`, ADR-0024). One IndexedDB database, `kite`, opene
 
 | Store (indexes) | Fields |
 |---|---|
+| `chats` (id; updatedAt), schema version 6 | id, title, createdAt, updatedAt, attachments (its own copies), messages (role, text, at, screenshot count, meta). Ask Kite chats. Screenshots are never stored (ADR-0030). |
 | `questionBanks` (sessionId), schema version 5 | sessionId, groups (type; questions with suggested answers), createdAt. Goes with its session. |
 | `library` (id, kind), schema version 4 | id, kind (`resume` / `document`), name, text, chars, addedAt. A session keeps its own copy of what it uses. |
 | `sessions` (id, createdAt, type, status) | id, type (`interview` / `regular` / `mock`; older types become `regular` in schema version 4), company, role, description, preferences (language `en`, model `fast`/`smart`, style {format, length, tone}, keyTerms: one per line), instructions, saveTranscript, autoAnswer, createdAt, status (`not-started` / `live` / `ended`), lastActiveAt |

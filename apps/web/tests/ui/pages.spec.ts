@@ -216,6 +216,14 @@ for (const size of WIDTHS) {
     await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
     await check(watched, size, 'documents');
 
+    // Ask Kite (ADR-0030): the empty chat; nothing is sent, so no Claude call is made.
+    await page.goto(`${BASE_URL}/ask-kite`);
+    await expect(page.getByLabel('Ask Kite', { exact: true })).toBeVisible();
+    await check(watched, size, 'ask-kite');
+    await page.getByRole('button', { name: 'Attach' }).click();
+    await expect(page.getByRole('dialog', { name: 'Attach to this chat' })).toBeVisible();
+    await check(watched, size, 'ask-kite-attach');
+
     await page.goto(`${BASE_URL}/settings`);
     await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
     await expect(page.getByText('No lessons yet.')).toBeVisible();

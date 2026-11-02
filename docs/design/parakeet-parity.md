@@ -78,6 +78,7 @@ On macOS, Ctrl means ⌘. The current app registers Clear, previous and next as 
 | Screenshot | Ctrl+Shift+Enter | Global |
 | Show or hide overlay | Ctrl+Alt+H | Global |
 | Move overlay | Ctrl+Alt+Arrows (add Shift for bigger steps) | Global |
+| Open Ask Kite (Kite's own, ADR-0030) | Ctrl+Alt+K | Global, whenever the desktop app runs; during a call it opens the chat box |
 | Chat | Ctrl+Shift+Backspace | Kite focused only |
 | Clear answer | Ctrl+Backspace | Kite focused only |
 | Previous or next answer | Ctrl+Left or Ctrl+Right | Kite focused only |
@@ -93,6 +94,7 @@ Global shortcuts need the desktop app; in a browser all shortcuts work only whil
 - **Answer preferences during a call:** format, length and tone are in the overlay's menu, without a preview: the overlay is small, and a preview would cost a request mid-call.
 - **Connect icons:** generic drawings instead of the apps' logos; the licensing is unclear. The video tutorial is a placeholder until one is recorded.
 - **PDF download:** Western European letters only; others show as "?", and the TXT download keeps them. The page says so when it happens.
-- **Ask AI:** the chat is not stored; it lasts while the page is open.
+- **Ask AI:** the chat is not stored; it lasts while the page is open. The separate Ask Kite page (ADR-0030) stores its chats on the device.
+- **Answer history:** one answer card with the call's other answers listed under it, newest first, rather than a stack of cards, and newest-first transcripts (ADR-0030).
 - **Mock Interview voice:** the browser's own voices, which vary by computer; where there is none, the question is on screen. English-only, because the transcription is.
 - **Local data:** sessions, documents and libraries stay on the device, so they do not follow a user between computers (Export and Import cover that).

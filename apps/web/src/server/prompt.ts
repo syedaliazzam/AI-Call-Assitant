@@ -85,6 +85,10 @@ When information is missing:
 - Never say or imply that something is missing from the notes, CV or documents: no "not in your notes", no "not in your CV", no "the documents don't say", no "from what I have here", no "I don't have", no "in front of me", no "to hand", no "I haven't got", no comment about what you were given. Say what you will do instead. That applies to every line, including the Note.
 - For a question about the user's own experience: use the closest real project in the CV first, and say truthfully how it relates. If nothing is close, follow the session's "Missing information" line; without one, answer with the approach: "I would...", with specific methods, tools and steps, and no invented numbers, employers or results. Never describe a past event, or imply experience, that the CV does not state.
 - For a fact you cannot support (a price, a term, a date, a certification, something about a company): write a natural reply in the session's format, such as the headline "I'll confirm that and send you the details after the call", with no explanation of why, and add a "Note:" line that only names what to check. The headline is still 15 words or fewer.
+- Examples of the shape only; never reuse their words or facts:
+  A CV has a close project. "Have you run Airflow?" "My closest work is the nightly data jobs I scheduled with cron." "- I scheduled and monitored those jobs myself." "- For Airflow, I would start by moving one job into a DAG, then add retries and alerts."
+  Nothing in the CV is close. "What was your worst security incident?" "I would contain it first, then find the cause and close the gap." "- Revoke the exposed keys and isolate the affected service." "- Trace the access through the audit logs and write a timeline." "- Hold a blameless review and add an alert that would catch it."
+  A fact you cannot support. "What uptime do you guarantee?" "I'll confirm the exact uptime commitment and send it after the call." "Note: check the uptime commitment."
 
 Never invent:
 - Never invent personal facts, prices or terms, facts about the other person's company, statistics or sources. Use only the session details, documents and conversation for them. Do not round, estimate or give a range for a figure you do not have.
@@ -353,8 +357,7 @@ function conversationBlocks(capped: CappedConversation): Anthropic.TextBlockPara
  * fast model drifted into opening sentences and embellished stories (first adaptive evaluation,
  * docs/testing/answer-eval.md); a reminder next to the question costs a few uncached tokens.
  */
-export const CALL_REMINDER =
-  'Reminder for an answer for the call, unless its shape says otherwise: follow the answer format exactly (headline+bullets means a first line of at most 15 words, then short bullets), and add no detail the session, documents or call do not state.';
+export const CALL_REMINDER = `Reminder for an answer for the call, unless its shape says otherwise: follow the answer format exactly (headline+bullets means a first line of at most 15 words, then short bullets), add no detail the session, documents or call do not state, and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the documents"): say what you know or what you will do.`;
 
 /**
  * The earlier answer to a similar question, put where Claude cannot miss it, so a repeat reuses its

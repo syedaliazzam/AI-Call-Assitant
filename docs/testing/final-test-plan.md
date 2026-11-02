@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: parity Phase 4 (Prepare tools).
+**Kept up to date:** each later stage adds its human checks here. Last updated: Ask Kite and answer quality (ADR-0030).
 
 ---
 
@@ -136,6 +136,27 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 5c.4 | Finish, then **Review this interview**. | A Mock session: the questions and answers as a chat, feedback inline, the summary in AI notes. It is on the dashboard as Ended. |
 | 5c.5 | Refuse the microphone (browser setting), then start again. | Kite says so, and typed answers work. |
 | 5c.6 | **Question Bank**: write one for an Interview session. Open answers. Leave and come back. | Questions by type; answers in your format, with nothing made up (gaps in square brackets). It shows again at once, with no waiting. |
+
+## 5d. Ask Kite and answer quality (ADR-0030)
+
+| # | Do | Expect |
+|---|---|---|
+| 5d.1 | During a call, with lines arriving, look at the live view and at the overlay's expanded transcript. | The newest line is at the top. There is no "Jump to latest" button. |
+| 5d.2 | Scroll down in the transcript while lines keep arriving. | Your place stays put. Scrolling back to the top shows the newest. |
+| 5d.3 | Open the finished call's Transcript. Tick **Oldest first**, reload the page, then untick it. | Newest first by default; the tick survives the reload. |
+| 5d.4 | In a call, press **Chat** and type "what is 17% of 2,340?" on Auto. | A private answer with the working, marked "Just for you". It appears nowhere as a "You" line. |
+| 5d.5 | Type "what should I say to their last question?" on Auto. | A speakable first-person answer. |
+| 5d.6 | Set the switch to **Ask Kite**, close and reopen the session. | Still on Ask Kite. Set it back to Auto. |
+| 5d.7 | Have them ask a coding question ("write a function that reverses a list"), then press Answer. | Approach, steps, complexity, edge cases, a code block with **Copy code**, and a "Say" line; in Python by default. Readable in the overlay at its smallest size. |
+| 5d.8 | Settings → Answers: change the coding language to JavaScript, then repeat 5d.7 in a new call. | The code is JavaScript. Set it back. |
+| 5d.9 | On that answer card, change the type from the small muted label to "System design". | A new answer in the design shape. |
+| 5d.10 | Ask something your CV does not cover. Then switch Settings → "When your CV has no example" to **Full example story** and ask again in a new call. | Never "not in your notes" or similar. First: "I would…" with specific steps. Then: a generic story tagged **Example**. |
+| 5d.11 | Ask for a price your documents do not have. | No figure; a natural offer to confirm. If any figure appears, it is underlined with **Check before saying**. |
+| 5d.12 | Ask the same question twice in one call. | The same figures and nearly the same words. |
+| 5d.13 | Open **Ask Kite** in the sidebar. Ask something, attach a resume, then attach a past session; paste a screenshot with Ctrl+V. | Answers use them. The chat is still there after a reload. The screenshot shows "not kept". |
+| 5d.14 | With another app in front and no call on, press **Ctrl+Alt+K** in the desktop app. | Kite comes forward on the Ask Kite page. |
+| 5d.15 | Press **Ctrl+Alt+K** during a call. | The call keeps running; the overlay's chat box opens set to Ask Kite. |
+| 5d.16 | Settings → Hotkeys. If another app holds Ctrl+Alt+K, it says so. | "Open Ask Kite" is listed as "Any app". |
 
 ## 6. New speech engine (Day 6, only if adopted)
 

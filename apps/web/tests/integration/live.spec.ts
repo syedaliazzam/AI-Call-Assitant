@@ -456,6 +456,44 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
   await unavailable.context.close();
 });
 
+test('overlay: a coding answer, a figure to check and a private answer fit (ADR-0030)', async () => {
+  for (const size of [
+    { width: 720, height: 520, touch: false },
+    { width: 460, height: 260, touch: false },
+  ] satisfies Width[]) {
+    const coding = await open('compact-coding', size);
+    const { page } = coding;
+    await expect(page.getByLabel('About this answer')).toContainText('General knowledge');
+    await expect(page.getByLabel('Question type: choose another to answer again')).toHaveValue(
+      'coding',
+    );
+    await expect(page.locator('pre')).toContainText('def reverse');
+    await expect(page.getByLabel('How to say it')).toContainText('one pass');
+    await expect(page.locator('[data-claim]')).toHaveText('37');
+    await expect(page.getByLabel('Check before saying')).toContainText('37');
+    await expect(page.getByRole('list', { name: 'Other answers' })).toContainText('pilot cost');
+    // Long code scrolls inside its own block: never the window, and never sideways.
+    const fits = await page.evaluate(
+      () =>
+        document.documentElement.scrollHeight <= window.innerHeight + 1 &&
+        document.documentElement.scrollWidth <= window.innerWidth,
+    );
+    expect(fits, 'the window itself does not scroll').toBe(true);
+    await shot(coding, size, `overlay-coding-${size.width}`);
+    // The chat box's switch sits next to it, on the choice the live page holds.
+    await page.getByRole('button', { name: 'Chat', exact: false }).first().click();
+    await expect(page.getByLabel('Who the answer is for')).toHaveValue('kite');
+    await shot(coding, size, `overlay-chat-${size.width}`);
+    await coding.context.close();
+
+    const privately = await open('compact-private', size);
+    await expect(privately.page.getByLabel('Private answer')).toContainText('397.8');
+    await expect(privately.page.getByLabel('About this answer')).toContainText('Just for you');
+    await shot(privately, size, `overlay-private-${size.width}`);
+    await privately.context.close();
+  }
+});
+
 test('auto-answer: answers a finished question by itself, at most once per 15 s', async () => {
   test.setTimeout(60_000);
   const size: Width = { width: 1440, height: 900, touch: false };

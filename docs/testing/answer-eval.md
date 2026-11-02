@@ -26,6 +26,11 @@ Re-run only the groups a change touches; run the full suite once, at release (`p
 | `lessons` | 19–20 (Day 5 Stage 7: answers with an approved lesson) | `pnpm --filter web eval:answers --only=lessons`, then the same with `--without-lessons` | 2 × 2 × 2 = 8 per command, 16 for the pair | with lessons ≥ 8 and higher than without |
 | `preferences` | 21–23 (parity Phase 2: bullets only, an answer language, the technical tone) | `pnpm --filter web eval:answers --only=preferences` | 3 × 2 × 2 = 12 | ≥ 8 |
 | `notes` | n1–n3 (Day 5) | `pnpm --filter web eval:notes --only=notes` | 3 × 3 runs × (notes + grade) = 18 | ≥ 8 |
+| `adaptive` | 24, in `tests/eval/groups/adaptive.ts` (ADR-0030: 6 roles × 4 question types; code is run) | `pnpm --filter web eval:answers --only=adaptive` | 24 × 2 × 2 = 96 | ≥ 8 |
+| `missing-info` | 8, in `tests/eval/groups/quality.ts` (4 questions under both settings) | `--only=missing-info` | 8 × 2 × 2 = 32 | ≥ 8 |
+| `hallucination-bait` | 6, same file | `--only=hallucination-bait` | 6 × 2 × 2 = 24 | **Zero invented prices or personal numbers** (the developer's gate). The score is reported, with no gate of its own |
+| `consistency` | 3, same file (the same question twice in one call) | `--only=consistency` | 3 × 2 × 3 = 18 | ≥ 8, and the same numbers both times |
+| `ask-kite` | 6, same file (3 typed in a call, 3 on the page; code is run) | `--only=ask-kite` | 6 × 2 × 2 = 24 (the page's answers use the smart model) | ≥ 8, and for the call or private as expected |
 
 `--only=<id>` runs one scenario; `--runs=N` sets the runs (default 2 for answers, 3 for notes). Which group a change touches: the rules block or the conversation part of `server/prompt.ts` → `answers` and `screenshots`; the screenshot tail only → `screenshots`; the learned-preferences part of the rules block (`rulesBlock()` with lessons) → `lessons` (a session without lessons sends the Day 4 rules block byte for byte, pinned by a unit test, so `answers` and `screenshots` need no re-run); `server/notes.ts` → `notes`.
 
@@ -346,3 +351,28 @@ Per-scenario scores of these runs were not kept, so which scenarios lost points 
 **Reading these numbers:** the same shared rules scored 9.18 in Phase 1 and 9.31 here, with only the session type's name changed, so about 0.13 can be noise between one 3-run mean and another. The baseline stays 9.18 unless the developer changes it. Why round 1 scored lower is not established: scenario 05, first suspected, scored 8 in all six runs; 15, 10 and 03 moved most.
 
 **For the Day 7 release run:** scenario 05 (same question twice) scores 8 every time, and 13 (off-topic) fell to about 8 in round 2. In `preferences`, 21 (bullets only) scored 8.0: read the saved reasons.
+
+### Ask Kite and answer quality (ADR-0030)
+
+**What changed:** the rules gained the hidden first line, shapes per question type, the missing-information rules and private answers; the tail gained a closing reminder. Each answer is graded without its hidden line.
+
+**What else changed, so read comparisons with care:**
+- **Scenarios 08, 13 and 14** required "not in your notes", which ADR-0030 forbids. They now require a natural reply offering to confirm the detail.
+- **The rubric** now accepts the coding shape, a free-form private answer, a headline-only reply and a brief "As I mentioned", and marks down a spoken comment on what Kite was given. The grader also lists anything invented.
+- So `answers` scores from here are not strictly comparable with the 9.18 baseline.
+
+**New checks made in code**, saved per run in `apps/web/eval-results/`: the hidden line is present; the question type and the target are as expected; no comment on what Kite was given; no number outside the documents and the call (`core/answer/claimCheck.ts`); code runs in the sandbox (`scripts/lib/code-sandbox.ts`: Python in Pyodide, JavaScript in a fresh V8 context, no environment variables, a time limit); a repeat states the same numbers. Each paid run adds its real token cost to `eval-results/spend.jsonl`.
+
+**Runs:** 2026-11-02 and 03, same laptop; answers by `claude-haiku-5-5`, the page's by `claude-sonnet-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario.
+
+| Group | Round 1 | Round 2: reminder, no embellishing, stricter rubric wording | Round 3: worked examples, sharper reminder |
+|---|---|---|---|
+| `adaptive` | 7.90 | 8.71 (type as expected 44/48, code ran 6/6) | not measured yet |
+| `missing-info` | 6.06 | 6.69 | **8.25** (invented details found by the grader in 6 of 16 answers; no numbers) |
+| `hallucination-bait` | 6.67 (no invented price or personal number in 12/12) | 7.08 (the same, 12/12) | not measured yet |
+| `consistency` | 9.00 | 10.00 (same numbers 6/6) | not measured yet |
+| `ask-kite` | 9.67 (target 12/12, code 4/4) | 9.42 (the same) | not measured yet |
+
+Round 3 was approved by the developer after `missing-info` failed its recheck. Its other groups, and `answers`, `screenshots`, `lessons`, `preferences` and `notes`, could not run: the account's credit balance ran out during round 3 ("Your credit balance is too low"), 2026-11-03.
+
+**Still weak in round 2's `hallucination-bait` scores** (no gate on them, and round 3's sharper reminder is aimed at this): spoken lines such as "I don't have a figure" still implied a gap, and headlines ran over 15 words. Embellishment of real CV projects with plausible details also remains in round 3's `missing-info`.
