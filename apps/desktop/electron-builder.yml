@@ -76,7 +76,8 @@ mac:
 dmg:
   artifactName: Kite-${version}-${arch}.dmg
 
-# Microsoft Store package (MSIX/AppX; investigated 2 Nov as the no-purchase alternative to code
+# Microsoft Store package (MSIX/AppX), POST-V1 (developer decision, 2 Nov): kept, not used for v1.
+# Investigated 2 Nov as the no-purchase alternative to code
 # signing: the Store signs the package with Microsoft's certificate, which Smart App Control
 # trusts). Build with "pnpm dist:store". The identity values below are placeholders until
 # Partner Center reserves the name: copy Package/Identity/Name, Package/Identity/Publisher and

@@ -1,5 +1,7 @@
 # Publishing Kite through the Microsoft Store (private audience)
 
+**Status: post-v1** (developer decision, 2 Nov 2026: desktop users turn Smart App Control off for now; the Store route is kept for after v1.0, with its build target `pnpm --filter desktop dist:store` and the manual CI job). Nothing below is needed for v1.
+
 **Why:** an unsigned Kite installer can be blocked by Windows Smart App Control, which has no "Run anyway" (ADR-0028). The Microsoft Store signs every package with Microsoft's certificate, which Windows trusts, so no code-signing certificate has to be bought. This page covers distributing Kite **only to the team**, through a *private audience*.
 
 **Status (2 Nov 2026):**

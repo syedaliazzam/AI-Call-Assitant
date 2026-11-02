@@ -49,6 +49,11 @@ The Kite desktop app needs an installer for the team's Windows laptops, and a wa
    - An OV or EV code-signing certificate removes or reduces the warning; an EV certificate is trusted immediately. Prices vary by vendor.
    - Nothing was bought.
 
+**Decided 2 Nov 2026 (developer):**
+- For v1, desktop users turn Smart App Control off if it blocks Kite, ask their IT lead, or use the browser version ().
+- The Microsoft Store route is post-v1. Its build target, manual CI job and guide are kept.
+- A code-signing certificate stays a lead decision for after v1.
+
 ## Consequences
 
 - **Installers are public.** Anyone with the link can download them. They contain the Kite web address and no secrets, and are useless without an account from an administrator.

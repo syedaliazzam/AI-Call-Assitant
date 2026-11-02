@@ -23,7 +23,8 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | F.1 | On a **teammate's** Windows 11 laptop, open **Windows Security → App & browser control → Smart App Control settings**. | Write down: **On**, **Evaluation** or **Off**. (Do not change it.) |
 | F.2 | Download `Kite-Setup-<version>.exe` from the releases page and open it. | Write down exactly what Windows shows: nothing, the SmartScreen "Windows protected your PC" (then **More info → Run anyway**), or a Smart App Control block ("Part of this app has been blocked…"), which cannot be bypassed. |
 | F.3 | If it installed, open Kite from the Start menu. | Write down whether it opens or is blocked. |
-| F.4 | Send the developer the three answers and a photo of any block message. | If Smart App Control blocks it on a teammate's laptop, code signing is required before release (lead decision, ADR-0028). |
+| F.4 | If Kite was blocked, follow the user guide's "If Windows blocks Kite" section (`docs/user-guide/install-windows.md`): turn Smart App Control off (with the IT lead's OK) and install again. | Kite installs and opens. Also check the guide's steps match what Windows shows. |
+| F.5 | Send the developer the answers and a photo of any block message. | The v1 decision (2 Nov) is to turn Smart App Control off; the Microsoft Store route is post-v1 (`docs/deploy/microsoft-store.md`). |
 
 ## 0. Setup
 
