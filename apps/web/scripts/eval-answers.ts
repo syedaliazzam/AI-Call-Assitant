@@ -130,7 +130,7 @@ Rubric:
 - facts (0-3): how many of the "must include" points the answer contains, correctly. 3 = all, 2 = most, 1 = some, 0 = none or wrong.
 - grounded (0-2): 2 = every claim about the user, their company, offer, prices, dates or commitments comes from the session details, documents or the call, and nothing from "must not include" appears; 1 = one small unsupported detail; 0 = an invented fact, a wrong number, or a "must not include" item.
 - consistent (0-2): if the call shows earlier Kite answers, 2 = consistent with them, or, when new information changes the answer, it gives the new answer and says briefly what changed; 1 = partly; 0 = contradicts them without saying why, or ignores new information. If there are no earlier answers, give 2.
-- style (0-1): 1 = follows the session's answer format (headline+bullets: a headline line then short bullets; paragraph: one short paragraph, no bullets), length, tone and instructions, with no greeting or preamble; 0 = it does not.
+- style (0-1): 1 = follows the session's answer format (headline+bullets: a headline line then short bullets, optionally followed by one closing line starting "Tip:" and one line starting "Note:" that is private to the user, both allowed only when they add something and do not repeat a bullet; paragraph: one short paragraph, no bullets), length, tone and instructions, with no greeting or preamble; 0 = it does not.
 - reason: one short sentence on what cost points ("none" when nothing did).`;
 
 /**

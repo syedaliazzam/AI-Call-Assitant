@@ -22,7 +22,7 @@ import {
 import { parseAnswerRequest } from '@/server/validate';
 
 /** SHA-256 of the rules block, changed on purpose for first-person answers (ADR-0029). */
-const RULES_SHA256 = '62bf557105bf46b2fcdec04868dc8255565996b4cc4062705ff0aa03aed3183a';
+const RULES_SHA256 = '758505448180b4b00c602deaddf5b1300b4e38e3735c53c4667adc0081f1ce96';
 
 /** An invented request. */
 const REQUEST: AnswerRequest = {

@@ -304,3 +304,19 @@ The follow-up scenario (04) went over 15 words in one run on 1 Nov without any l
 | **Overall** | | | **9.89** | 9.33 |
 
 **Result: passes** (≥ 8; n3's faithfulness and unclear scores both went up).
+
+### Parity Phase 1: first-person answers, optional tip and private note (not yet accepted)
+
+**What changed** (`server/prompt.ts`, ADR-0029): answers are written in the first person, the headline is one sentence, and an answer may end with a "Tip:" line and a private "Note:" line. The grader's rubric now allows those two lines; the grader is still Sonnet, so these scores are not strictly comparable with earlier ones.
+
+**Round 1 (rejected):** 8.57, before the rubric change. Style scored near 0 because the rubric did not know the new lines, and the tip was a real problem: in scenario 01 it brought up a discount nobody asked about.
+
+**Round 2:** tips and notes only when needed, and never for a price, discount, exception or commitment the other person did not ask about. 2026-11-02, same laptop, 2 runs per scenario per run.
+
+| Group | Runs | Result | Gate |
+|---|---|---|---|
+| `answers` (15 scenarios) | 9.17, 9.07, 9.30 | **mean 9.18** | at least 9.28: **fails by 0.10** |
+| `screenshots` (3) | 8.00 | 8.00 | at least 8: passes, at the limit (8.83 before) |
+| `lessons` (2) | 9.00 | 9.00 | at least 8 and above 8.50: passes (10.00 before) |
+
+Per-scenario scores of these runs were not kept, so which scenarios lost points is not known.

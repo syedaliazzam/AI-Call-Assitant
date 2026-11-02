@@ -81,6 +81,9 @@ test('1. sign in, and the dashboard is empty (separate desktop data)', async () 
   // Fresh: the desktop app keeps its own cookies (separate from the browser suites).
   await signIn(page, testAccount(), true);
   report('desktop sign in', true);
+  // The first call runs with the main window in front, so the page can be driven; test 4 covers
+  // the default, starting in the overlay.
+  await page.evaluate(() => localStorage.setItem('kite.startInOverlay', 'off'));
   await expect(page.getByText('No sessions yet')).toBeVisible();
   report('desktop dashboard empty', true, {
     sessions: await page
@@ -197,7 +200,37 @@ test('3. Connect needs no picker; Go live shows lines; a Chat answer is rated; E
   report('desktop end', true);
 });
 
-test('4. Settings → Delete all local data → empty dashboard', async () => {
+test('4. starting in the overlay: it opens, the main window minimises, End restores it', async () => {
+  await page.evaluate(() => localStorage.removeItem('kite.startInOverlay'));
+  await page.reload();
+  await expect(page.getByText('Speech model ready')).toBeVisible({ timeout: 120_000 });
+  await page.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByRole('button', { name: 'Go live' })).toBeVisible({ timeout: 30_000 });
+  const overlayOpened = app.waitForEvent('window');
+  await page.getByRole('button', { name: 'Go live' }).click();
+  const overlay = await overlayOpened;
+  await overlay.waitForLoadState();
+  await expect(overlay.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
+  /**
+   * Whether the main window is minimised.
+   *
+   * @returns True when minimised.
+   */
+  const minimized = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .filter((window) => !new URL(window.webContents.getURL()).pathname.startsWith('/compact/'))
+        .some((window) => window.isMinimized()),
+    );
+  await expect.poll(minimized, { timeout: 10_000 }).toBe(true);
+  report('desktop overlay start minimises', true);
+  await overlay.getByRole('button', { name: 'End', exact: true }).click();
+  await expect.poll(minimized, { timeout: 15_000 }).toBe(false);
+  report('desktop overlay end restores', true);
+  await page.getByRole('button', { name: 'Connect' }).waitFor({ timeout: 30_000 });
+});
+
+test('5. Settings → Delete all local data → empty dashboard', async () => {
   await page.goto(`${PRODUCTION_URL}/settings`);
   await page.getByRole('button', { name: 'Delete all local data' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete everything' }).click();

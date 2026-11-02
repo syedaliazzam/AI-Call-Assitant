@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Day 6 (export and import).
+**Kept up to date:** each later stage adds its human checks here. Last updated: parity Phase 1 (overlay and hotkeys).
 
 ---
 
@@ -46,25 +46,35 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 1.6 | Look at the final transcript lines (live view, then the review page). | Sentence case: a capital first letter and "I"; your key terms and company spelled as you typed them (for example "Bluefin Route", "CRM"). |
 | 1.7 | **Interview** session: say "we used RAG with embeddings in a vector database to cut latency". | RAG, embeddings, vector database and latency come out right more often than before (built-in technical vocabulary). |
 
-## 2. Desktop hotkeys (Day 4)
+## 2. Desktop hotkeys
 
 | # | Do | Expect |
 |---|---|---|
 | 2.1 | Open Notepad and click inside it. Make a "Them" line appear, press **Ctrl+Enter**. | Kite answers; Notepad keeps focus and nothing is typed into it. |
 | 2.2 | With Notepad focused: **Ctrl+Shift+Enter**. | A screenshot answer about what is on screen (§4). |
-| 2.3 | With Notepad focused: **Ctrl+Left**, **Ctrl+Right**, **Ctrl+Backspace**. | Previous answer, next answer, answers cleared. |
+| 2.3 | With Notepad focused: **Ctrl+Alt+H** twice. | The overlay hides, then comes back; Notepad keeps focus. |
+| 2.4 | With Notepad focused: **Ctrl+Alt+Arrows**, then with **Shift**. | The overlay moves in small steps, then bigger ones. If Windows rotates the screen instead, your graphics driver holds these keys: Settings → Hotkeys should say so. Press Ctrl+Alt+Up to rotate back. |
+| 2.5 | With Notepad focused: **Ctrl+Backspace**, **Ctrl+Left**, **Ctrl+Right**. | Notepad deletes and moves by word as usual: Kite does not take these keys. |
+| 2.6 | Click the overlay, then **Ctrl+Shift+Backspace**, **Ctrl+Left**, **Ctrl+Right**, **Ctrl+Backspace**. | The Chat box opens and closes; earlier and later answers show; the answer clears. |
+| 2.7 | Settings → Hotkeys. | Every shortcut is listed with where it works; any conflict is named. |
 
-## 3. Compact window and screen-share protection (Day 5)
+## 3. Overlay and screen-share protection
 
 | # | Do | Expect |
 |---|---|---|
-| 3.1 | In the live view press **Compact view**. | A small window opens on top of other windows, without taking focus. |
-| 3.2 | Click **Type a question**, type "What are our next steps?", press Enter. | The answer's headline streams into the compact window. |
-| 3.3 | Click the answer to expand the details, then click again. | Details show, then collapse. |
-| 3.4 | Check the compact window's toggle says **Hidden from screen share**. In Chrome start a Google Meet, join it from your phone, then on the laptop **Present now → Entire screen**. | — |
-| 3.5 | Look at the shared screen on the phone. | The compact window is **not** visible (black or empty there); the rest of the screen is. |
-| 3.6 | Switch the toggle to **Visible in screen share**; look at the phone. | The compact window **is** visible. Switch it back to hidden. |
-| 3.7 | In Chrome (browser Kite), start a live call and open the compact view. | A picture-in-picture window with the latest answer and an Answer button. |
+| 3.1 | With **Start calls in the overlay** on (Settings; the default), press **Connect**, then **Go live**. | The overlay opens on top of other windows without taking focus; the main window minimises. |
+| 3.2 | Look at the three bars during a call. | Mic and audio status; the latest words as chips; the answer card with its question line, answer line, bullets and any tip. Any private note sits apart and looks muted. |
+| 3.3 | Press **Chat**, type "What are our next steps?", press Enter. | The answer streams into the card. |
+| 3.4 | Rate an answer, copy it, and report it with a short reason. | The thumb stays lit; pasting gives the answer without the private note; the flag shows it is reported. |
+| 3.5 | Use the ← and → buttons after two answers; **Clear** on the card and on the transcript bar. | History moves; the answer clears; only the words on screen clear, new ones still appear. |
+| 3.6 | Press both expand buttons, then collapse. | One takes the space for the transcript, the other hides the transcript bar; collapse leaves only the controls. Only the card scrolls, never the whole window. |
+| 3.7 | Menu: move the opacity slider, then move the pointer away and back. | The window gets more see-through and stays readable; with fading on, it is solid under the pointer. |
+| 3.8 | Resize to the smallest size. | Nothing is cut off; button labels lose their shortcuts. |
+| 3.9 | Press **End** in the overlay. | The call ends, the overlay closes, the main window comes back with the notes. |
+| 3.10 | Menu: check **Hidden from screen share**. In Chrome start a Google Meet, join it from your phone, then on the laptop **Present now → Entire screen**. | — |
+| 3.11 | Look at the shared screen on the phone. | The overlay is **not** visible (black or empty there); the rest of the screen is. |
+| 3.12 | Turn it off in the menu; look at the phone. | The overlay **is** visible. Turn it back on. |
+| 3.13 | In Chrome (browser Kite), start a call and press **Overlay**. | A picture-in-picture window with the same three bars; its menu says opacity works in the desktop app. |
 
 ## 4. Screenshot answers (Day 5)
 

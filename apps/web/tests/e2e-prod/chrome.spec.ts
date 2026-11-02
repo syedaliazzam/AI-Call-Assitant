@@ -68,6 +68,8 @@ test.afterAll(async () => {
 
 test('1. sign in', async () => {
   await signIn(page, testAccount());
+  // This suite drives the main page; a browser needs a fresh click for the overlay anyway.
+  await page.evaluate(() => localStorage.setItem('kite.startInOverlay', 'off'));
   report('sign in', true);
 });
 
