@@ -138,7 +138,7 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 
 | # | Do | Expect |
 |---|---|---|
-| 9c.1 | In the **browser**: Settings → Local data → **Export my data**. | A file  downloads; Settings says how many sessions it holds. |
+| 9c.1 | In the **browser**: Settings → Local data → **Export my data**. | A file `kite-export-<date>.json` downloads; Settings says how many sessions it holds. |
 | 9c.2 | In the **desktop app**: Settings → Local data → **Import data**, pick that file. | "Added N sessions…"; the dashboard shows them with their transcripts, answers and notes; documents need attaching again (it says how many). |
 | 9c.3 | Import the same file again. | "Added 0 sessions… already on this computer"; nothing appears twice. |
 | 9c.4 | Pick any other file (a photo, a random .json). | A clear message; nothing changes. |
