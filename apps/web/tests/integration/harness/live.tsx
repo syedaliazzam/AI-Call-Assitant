@@ -26,6 +26,7 @@ import type { Session } from '@/core/storage/types';
 import { createTranscript } from '@/core/transcript/transcript';
 import { AudioMeter } from '@/features/live/AudioMeter';
 import { CompactView } from '@/features/live/CompactView';
+import { BrowserCallLayout } from '@/features/live/BrowserCallLayout';
 import { ConnectPanel } from '@/features/live/ConnectPanel';
 import { LiveAnswers } from '@/features/live/LiveAnswers';
 import { ThemSilentNotice } from '@/features/live/ThemSilentNotice';
@@ -167,6 +168,60 @@ function LiveView() {
             copy={async () => undefined}
           />
         }
+      />
+    </AppShell>
+  );
+}
+
+/**
+ * The browser split call view (live-ui-split): the shared-tab preview and transcript on the left,
+ * the answers on the right. The preview has no real stream in the harness, so it shows its
+ * placeholder; the control strip and the layout are what the screenshots check.
+ *
+ * @returns The view.
+ */
+function SplitView() {
+  return (
+    <AppShell>
+      <BrowserCallLayout
+        title="Sales call"
+        name={SESSION.company}
+        status={{ tone: 'success', label: 'Connected' }}
+        meters={(['you', 'them'] as const).map((speaker) => (
+          <AudioMeter
+            key={speaker}
+            speaker={speaker}
+            level={speaker === 'you' ? 0.35 : 0.6}
+            inactive={false}
+            compact
+          />
+        ))}
+        callStartedAt={callStartedAt}
+        preview={{
+          stream: null,
+          themLabel: "the shared tab's audio",
+          micOn: true,
+          language: 'en',
+          onLanguage: () => undefined,
+          onStop: () => undefined,
+          onClear: () => undefined,
+          onMinimize: () => undefined,
+          onChangeTab: () => undefined,
+        }}
+        transcript={<TranscriptStrip lines={transcript.lines()} health="ok" />}
+        answers={
+          <LiveAnswers
+            session={SESSION}
+            documents={[]}
+            transcript={transcript}
+            callStartedAt={callStartedAt}
+            ending={false}
+            onEnd={() => undefined}
+            copy={async () => undefined}
+          />
+        }
+        onExit={() => undefined}
+        onOverlay={() => undefined}
       />
     </AppShell>
   );
@@ -397,6 +452,8 @@ if (view === 'connect' || view === 'connect-errors') {
       }
     />,
   );
+} else if (view === 'split') {
+  root.render(<SplitView />);
 } else {
   if (AUTO_VIEW) {
     // The test adds a finished "Them" line that ended just now (invented text).

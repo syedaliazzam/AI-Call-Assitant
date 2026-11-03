@@ -84,13 +84,27 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 3.4 | Rate an answer, copy it, and report it with a short reason. | The thumb stays lit; pasting gives the answer without the private note; the flag shows it is reported. |
 | 3.5 | Use the ← and → buttons after two answers; **Clear** on the card and on the transcript bar. | History moves; the answer clears; only the words on screen clear, new ones still appear. |
 | 3.6 | Press both expand buttons, then collapse. | One takes the space for the transcript, the other hides the transcript bar; collapse leaves only the controls. Only the card scrolls, never the whole window. |
-| 3.7 | Menu: move the opacity slider, then move the pointer away and back. | The window gets more see-through and stays readable; with fading on, it is solid under the pointer. |
+| 3.7 | Menu: move the opacity slider to its minimum (40%) over a light, a dark and a busy meeting background, then move the pointer away and back. | Only the panel background gets more see-through; the text stays fully opaque with its shadow and readable (ADR-0033). With fading on, the panel is solid under the pointer. Default is 70%. |
 | 3.8 | Resize to the smallest size. | Nothing is cut off; button labels lose their shortcuts. |
 | 3.9 | Press **End** in the overlay. | The call ends, the overlay closes, the main window comes back with the notes. |
 | 3.10 | Menu: check **Hidden from screen share**. In Chrome start a Google Meet, join it from your phone, then on the laptop **Present now → Entire screen**. | — |
 | 3.11 | Look at the shared screen on the phone. | The overlay is **not** visible (black or empty there); the rest of the screen is. |
 | 3.12 | Turn it off in the menu; look at the phone. | The overlay **is** visible. Turn it back on. |
 | 3.13 | In Chrome (browser Kite), start a call and press **Overlay**. | A picture-in-picture window with the same three bars; its menu says opacity works in the desktop app. |
+
+## 3b. Browser split call view (live-ui-split)
+
+In Chrome, on a laptop (1280 px or wider), start a call sharing a real tab (for example a YouTube video).
+
+| # | Do | Expect |
+|---|---|---|
+| 3b.1 | Look at the call screen. | Left: the shared tab plays as a live preview with a translucent control strip on top (Stop with a mic dot, Clear, Language, Change tab, Minimize) and the transcript below it, newest line first. Right: the call timer, a ⋮ menu, Exit, the answers, the message box and the big Answer and Screenshot buttons. |
+| 3b.2 | Drag the divider between the halves, then reload. | The halves resize; the position is remembered after the reload. |
+| 3b.3 | Narrow the window below 1280 px (or open on a phone). | The two halves stack, the preview above the answers; no divider. |
+| 3b.4 | Press **Change tab** and pick a different tab. | The preview and the transcript follow the new tab; the call, answers and transcript so far are kept (the call does not end). |
+| 3b.5 | Change **Language** to Spanish, then press **Answer**. | The next answer is in Spanish; the transcript stays English. |
+| 3b.6 | Press **Clear** on the control strip. | The transcript on screen clears; new lines still appear. The answers are untouched. |
+| 3b.7 | Press **Minimize**, then the side arrow. | Minimize opens the picture-in-picture overlay; the side arrow collapses the answers panel, leaving the preview the whole width. |
 
 ## 4. Screenshot answers (Day 5)
 

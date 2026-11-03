@@ -698,3 +698,46 @@ test('overlay look: picture-in-picture stays solid', async () => {
   await expect(watched.page.locator('.k-glass')).toHaveCount(0);
   await watched.context.close();
 });
+
+test('browser split view: preview and transcript left, answers right; side by side at 1280+, stacked below (live-ui-split)', async () => {
+  const CASES = [
+    { name: '1440', size: { width: 1440, height: 900, touch: false }, split: true },
+    { name: '1280', size: { width: 1280, height: 900, touch: false }, split: true },
+    { name: '390', size: { width: 390, height: 844, touch: true }, split: false },
+  ] as const;
+  for (const { name, size, split } of CASES) {
+    const watched = await open('split', size);
+    // Both halves are present, with the control strip and the right-side header.
+    await expect(
+      watched.page.getByRole('region', { name: 'Shared tab and transcript' }),
+    ).toBeVisible();
+    await expect(watched.page.getByRole('region', { name: 'Answers' })).toBeVisible();
+    await expect(watched.page.getByRole('button', { name: 'Stop' })).toBeVisible();
+    await expect(watched.page.getByLabel('Answer language')).toBeVisible();
+    await expect(watched.page.getByRole('button', { name: 'Exit' })).toBeVisible();
+    await expect(watched.page.getByLabel('Call time')).toBeVisible();
+    const divider = watched.page.getByRole('separator', { name: 'Resize' });
+    const left = await box(watched.page, '[aria-label="Shared tab and transcript"]');
+    const right = await box(watched.page, '[aria-label="Answers"]');
+    if (split) {
+      await expect(divider).toBeVisible();
+      // Side by side: the answers start to the right of the preview, at about the same height.
+      expect(left.x).toBeLessThan(right.x);
+      expect(Math.abs(left.y - right.y)).toBeLessThan(40);
+    } else {
+      await expect(divider).toHaveCount(0);
+      // Stacked: the answers sit below the preview column.
+      expect(right.y).toBeGreaterThan(left.y);
+    }
+    if (split) {
+      await shot(watched, size, `split-${name}`);
+    } else if (SHOT_DIR) {
+      // The real app never shows the split view on a touch device (phones get "Live calls need a
+      // computer"), so the stacked layout is screenshotted for the record without the mobile
+      // touch-target audit that shot() applies.
+      await watched.page.evaluate(() => document.fonts.ready);
+      await watched.page.screenshot({ path: path.join(SHOT_DIR!, `split-${name}.png`) });
+    }
+    await watched.context.close();
+  }
+});

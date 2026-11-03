@@ -10,7 +10,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { CallCaptureError, startCallCapture } from '@/core/audio/capture';
-import { CaptureError } from '@/platform';
+import { CaptureError, type OtherSideSource } from '@/platform';
 
 /**
  * A fake audio track that records stop() and lets the test fire 'ended'.
@@ -56,7 +56,7 @@ function setup(options: { themError?: Error; micError?: Error } = {}) {
     getOtherSideStream: vi.fn(async () => {
       order.push('them');
       if (options.themError) throw options.themError;
-      return { stream: them.stream, source: 'tab-audio' as const };
+      return { stream: them.stream, source: 'tab-audio' as OtherSideSource };
     }),
     getMicStream: vi.fn(async () => {
       order.push('mic');
@@ -84,6 +84,7 @@ function setup(options: { themError?: Error; micError?: Error } = {}) {
       connect: (analyser: { level: number }) => {
         analyser.level = stream.level;
       },
+      disconnect: () => {},
     }),
     close: vi.fn(async () => {}),
   };
@@ -208,5 +209,28 @@ describe('CallCapture.reattach (Day 6 Stage 4, stuck-engine restart)', () => {
     expect(next.detach).toHaveBeenCalledWith('them');
     expect(next.detach).toHaveBeenCalledWith('you');
     expect(s.engine.detach).not.toHaveBeenCalled();
+  });
+});
+
+describe('CallCapture.changeOtherSide (browser split view, Change tab)', () => {
+  it('re-picks the other side, swaps the Them channel, and stops the old tracks', async () => {
+    const s = setup();
+    const capture = await s.start();
+    expect(capture.otherSideStream()).toBe(s.them.stream);
+    // The next share is a different tab/screen.
+    const second = fakeStream(0.2);
+    s.platform.getOtherSideStream.mockResolvedValueOnce({
+      stream: second.stream,
+      source: 'screen-audio' as OtherSideSource,
+    });
+    const source = await capture.changeOtherSide();
+    expect(source).toBe('screen-audio');
+    expect(capture.themSource).toBe('screen-audio');
+    // The current other-side stream (what the preview shows) is the new one.
+    expect(capture.otherSideStream()).toBe(second.stream);
+    // The Them channel was re-attached to the engine for the new share.
+    expect(s.engine.attach).toHaveBeenCalledWith('them', second.stream);
+    // The old share's track was stopped.
+    expect(s.them.track.stop).toHaveBeenCalled();
   });
 });

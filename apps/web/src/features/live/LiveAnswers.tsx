@@ -28,9 +28,8 @@ import {
 import type { Session, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
-import { createRoot } from 'react-dom/client';
 import { AnswerPanel } from './AnswerPanel';
-import { CompactLive } from './CompactLive';
+import { openOverlay } from './openOverlay';
 import { ChatBox } from './ChatBox';
 import { TopBar } from './TopBar';
 import { isOnline, subscribeOnline } from '@/core/net/online';
@@ -79,24 +78,6 @@ const subscribeNever = () => () => {};
  * @returns True on macOS.
  */
 const isMac = () => getPlatform().hotkeyModifier() === '⌘';
-
-/**
- * Opens the overlay for a session.
- *
- * @param sessionId The session.
- * @returns Resolves when it is open.
- * @throws What the platform throws when it cannot open one.
- * Called from: LiveAnswers (Overlay button; a call starting in the overlay)
- */
-function openOverlay(sessionId: string): Promise<void> {
-  return getPlatform().openCompactView(sessionId, (container) => {
-    // Browser: the overlay in the picture-in-picture window (same page, so it reaches this live
-    // view over the session channel like the desktop window does).
-    const root = createRoot(container);
-    root.render(<CompactLive sessionId={sessionId} closeOnEnd={false} />);
-    return () => root.unmount();
-  });
-}
 
 /**
  * The answer part of the live view.
