@@ -24,6 +24,7 @@ The developer asked for the call experience to match ParakeetAI's structure, in 
 
 - A simulated call in the real shell against the rig: the real sidebar, layout, transcript strip, answers hook, channel and overlay window, with scripted lines and a mocked `/api/answer`. **41 of 41 on-screen checks pass** (`apps/desktop/tests/visual/call-window-shots.ts`), and every capture was looked at: `docs/testing/v1.0.4-screenshots/`.
 - The browser view in real Edge, including the picture-in-picture round trip: 8 of 8 (`apps/web/tests/visual/browser-shots.ts`).
+- Production, with real answers: the real shell 1.0.4 against the deployed app, 2 real answers on the fast model, 7 of 7 steps (`apps/web/tests/e2e-prod/call-window.spec.ts`). The packaged build passes the smoke suite, 15 of 15.
 - Found only by running it on screen, and fixed: the question cut to "Have you built?" in the middle of a line; the message box pushed below the fold; "Answer this" doing nothing on a question still in grey.
 
 ## Consequences
