@@ -160,6 +160,11 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
   const expectedOs = { darwin: 'mac', win32: 'windows' }[process.platform as string] ?? 'linux';
 
   expect(bridge.keys).toEqual([
+    // v1.0.1 (ADR-0034): accurate transcription.
+    'accurateDownload',
+    'accurateRemove',
+    'accurateStatus',
+    'accurateTranscribe',
     'captureScreenshot',
     'checkHotkeys',
     'closeCompactView',
