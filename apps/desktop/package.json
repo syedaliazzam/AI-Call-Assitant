@@ -29,9 +29,5 @@
     "sherpa-onnx-node": "1.13.8",
     "typescript": "~6.0.3",
     "vitest": "^5.0.5"
-  },
-  "optionalDependencies": {
-    "sherpa-onnx-darwin-arm64": "1.13.8",
-    "sherpa-onnx-win-x64": "1.13.8"
   }
 }

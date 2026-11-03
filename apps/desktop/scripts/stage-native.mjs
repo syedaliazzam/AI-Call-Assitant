@@ -2,7 +2,8 @@
  * File: apps/desktop/scripts/stage-native.mjs
  * Purpose: Copies the accurate-transcription engine's native runtime (sherpa-onnx-node, the
  *          JavaScript wrapper, and its build for this OS and CPU) as real files into
- *          native/sherpa-onnx/node_modules/, where the engine's utility process loads it and from
+ *          native/sherpa-onnx/modules/ (not "node_modules": electron-builder leaves folders of that
+ *          name out of extraResources), where the engine's utility process loads it and from
  *          where the installer ships it (electron-builder extraResources). pnpm links packages, so
  *          they are copied with links resolved. When there is no build for this OS, nothing is
  *          staged and the feature reports "not available on this computer".
@@ -16,7 +17,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const target = path.join(desktopDir, 'native', 'sherpa-onnx', 'node_modules');
+const target = path.join(desktopDir, 'native', 'sherpa-onnx', 'modules');
 const require = createRequire(path.join(desktopDir, 'package.json'));
 
 /** The platform package name sherpa-onnx-node looks for ("win" for Windows). */

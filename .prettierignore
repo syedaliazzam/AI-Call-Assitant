@@ -25,3 +25,7 @@ CLAUDE.md
 # Playwright (desktop smoke test) results and HTML report.
 test-results
 playwright-report
+
+# Desktop build output (v1.0.1): the staged sherpa-onnx runtime and the installers.
+apps/desktop/native
+apps/desktop/release
