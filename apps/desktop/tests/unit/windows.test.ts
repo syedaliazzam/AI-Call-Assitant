@@ -1,7 +1,7 @@
 /**
  * Tests for apps/desktop/src/windows.ts, protection.ts and store.ts, with Electron faked:
  * - compactUrl() builds /compact/[id] on the Kite URL for plain ids only;
- * - restoreBounds() keeps saved bounds that are still on a screen, else 560 × 420 at the
+ * - restoreBounds() keeps saved bounds that are still on a screen, else 640 × 480 at the
  *   remembered preset (top centre by default; v1.0.2, ADR-0035);
  * - compactWindowOptions(): frameless, always on top, resizable, see-through (transparent), in the
  *   taskbar, hidden until shown, the same secure web preferences as the main window;
@@ -175,36 +175,37 @@ describe('compactUrl and restoreBounds', () => {
     }
   });
 
-  it('keeps saved bounds still on a screen, else 560 × 420 at the top centre (ADR-0035)', () => {
+  it('keeps saved bounds still on a screen, else 640 × 480 at the top centre (ADR-0035)', () => {
     const saved = { x: 100, y: 100, width: 400, height: 300 };
     expect(restoreBounds(saved, [PRIMARY], PRIMARY)).toEqual(saved);
-    const topCentre = { x: 680, y: 24, width: 560, height: 420 };
-    expect(COMPACT_DEFAULT_SIZE).toEqual({ width: 560, height: 420 });
+    const topCentre = { x: 640, y: 24, width: 640, height: 480 };
+    expect(COMPACT_DEFAULT_SIZE).toEqual({ width: 640, height: 480 });
     // On a monitor that was unplugged.
     const gone = { x: 3000, y: 100, width: 400, height: 300 };
     expect(restoreBounds(gone, [PRIMARY], PRIMARY)).toEqual(topCentre);
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY)).toEqual(topCentre);
     // The remembered preset decides the default place.
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY, 'top-right')).toEqual({
-      x: 1920 - 560 - 24,
+      x: 1920 - 640 - 24,
       y: 24,
-      width: 560,
-      height: 420,
+      width: 640,
+      height: 480,
     });
   });
 
-  it('see-through on every system: transparent, with acrylic or vibrancy as a bonus (ADR-0035)', () => {
+  it('see-through on every system: transparent; vibrancy on macOS, no acrylic on Windows (ADR-0039)', () => {
     const bounds = { x: 1, y: 2, width: 380, height: 320 };
     const win = compactWindowOptions(bounds, '/p.js', '1', 'win32');
     // v1.0.1 had the clear colour without `transparent`, which Electron ignores: solid black.
     expect(win).toMatchObject({
       transparent: true,
       backgroundColor: '#00000000',
-      backgroundMaterial: 'acrylic',
       hasShadow: false,
       maximizable: false,
       fullscreenable: false,
     });
+    // v1.0.3: acrylic blurred what is behind into unreadable colour on the real screen.
+    expect(win.backgroundMaterial).toBeUndefined();
     const mac = compactWindowOptions(bounds, '/p.js', '1', 'darwin');
     expect(mac).toMatchObject({ transparent: true, vibrancy: 'hud', maximizable: false });
     expect(mac.backgroundColor).toBeUndefined();
@@ -419,20 +420,20 @@ describe('the overlay window (ADR-0029)', () => {
 
 describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
   it('puts the overlay at each preset, shrunk to fit a small screen', () => {
-    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 680, y: 24, width: 560, height: 420 });
-    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1336, y: 24, width: 560, height: 420 });
+    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 640, y: 24, width: 640, height: 480 });
+    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1256, y: 24, width: 640, height: 480 });
     expect(presetBounds('bottom-center', PRIMARY)).toEqual({
-      x: 680,
-      y: 1040 - 420 - 24,
-      width: 560,
-      height: 420,
+      x: 640,
+      y: 1040 - 480 - 24,
+      width: 640,
+      height: 480,
     });
     // A second display to the right, and a screen smaller than the overlay.
     expect(presetBounds('top-center', { x: 1920, y: 0, width: 1280, height: 720 })).toEqual({
-      x: 1920 + 360,
+      x: 1920 + 320,
       y: 24,
-      width: 560,
-      height: 420,
+      width: 640,
+      height: 480,
     });
     expect(presetBounds('top-center', { x: 0, y: 0, width: 500, height: 400 })).toEqual({
       x: 0,
@@ -521,10 +522,10 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
     compact.open('s1');
     const window = FakeWindow.created.at(-1)!;
     // Opens at the remembered preset (nothing saved yet).
-    expect(window.options).toMatchObject({ x: 1336, y: 24, width: 560, height: 420 });
+    expect(window.options).toMatchObject({ x: 1256, y: 24, width: 640, height: 480 });
     compact.place('bottom-center');
-    expect(window.bounds).toEqual({ x: 680, y: 596, width: 560, height: 420 });
-    expect(store.read().compactBounds).toEqual({ x: 680, y: 596, width: 560, height: 420 });
+    expect(window.bounds).toEqual({ x: 640, y: 536, width: 640, height: 480 });
+    expect(store.read().compactBounds).toEqual({ x: 640, y: 536, width: 640, height: 480 });
   });
 
   it('script bar: slim at the top centre, input row, and back to where the overlay was', () => {

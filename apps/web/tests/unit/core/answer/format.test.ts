@@ -151,3 +151,11 @@ describe('v1.0.2 fail-safes and the card question (ADR-0037)', () => {
     expect(cardQuestion('', '  ', [], 'What is on screen')).toBe('What is on screen');
   });
 });
+
+describe('the "Answer:" label (v1.0.3)', () => {
+  it('drops a label the model wrote: the card adds its own bold "Answer:"', () => {
+    expect(splitAnswer('**Answer:** I cut the latency to 250 ms.\n- Read replicas').headline).toBe(
+      'I cut the latency to 250 ms.',
+    );
+  });
+});

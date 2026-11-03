@@ -54,13 +54,23 @@ import { secureWebPreferences } from './security';
 import type { Bounds, ShellStore } from './store';
 
 /**
- * The overlay's default size, in DIPs (v1.0.2, ADR-0035): three bars with readable 16–18 px text,
- * small enough to sit above a meeting's video at the top centre.
+ * The overlay's default size, in DIPs (v1.0.3, ADR-0039; 560 × 420 in v1.0.2): three bars with a
+ * typical answer (answer line, three bullets, footer) visible without scrolling, still small
+ * enough to sit above a meeting's video at the top centre.
  */
-export const COMPACT_DEFAULT_SIZE = { width: 560, height: 420 };
+export const COMPACT_DEFAULT_SIZE = { width: 640, height: 480 };
 
-/** The overlay's smallest size, in DIPs. */
-export const COMPACT_MIN_SIZE = { width: 460, height: 260 };
+/**
+ * The overlay's smallest size, in DIPs (v1.0.3: 560 wide, the narrowest that still shows the
+ * key hints on Answer, Screenshot and Chat).
+ */
+export const COMPACT_MIN_SIZE = { width: 560, height: 260 };
+
+/**
+ * The expanded overlay (v1.0.3, ⛶): this wide at most, and as tall as the screen allows, with
+ * this margin from the work area's edges.
+ */
+export const EXPANDED_SIZE = { width: 960, margin: 24 };
 
 /** The overlay's height when collapsed to its controls bar, in DIPs. */
 export const COMPACT_COLLAPSED_HEIGHT = 60;
@@ -247,11 +257,11 @@ export function isOverlayPreset(value: unknown): value is OverlayPreset {
  * Whether a value from the page is an overlay mode.
  *
  * @param value What arrived over IPC.
- * @returns True for 'full', 'collapsed', 'script' or 'script-input'.
+ * @returns True for 'full', 'collapsed', 'expanded', 'script' or 'script-input'.
  * Called from: installCompactWindows(); tests
  */
 export function isOverlayMode(value: unknown): value is OverlayMode {
-  return ['full', 'collapsed', 'script', 'script-input'].includes(value as string);
+  return ['full', 'collapsed', 'expanded', 'script', 'script-input'].includes(value as string);
 }
 
 /**
@@ -311,7 +321,10 @@ export function overlayGlass(platform: NodeJS.Platform): BrowserWindowConstructo
     backgroundColor: '#00000000',
     hasShadow: false,
   };
-  if (platform === 'win32') return { ...clear, backgroundMaterial: 'acrylic' };
+  // Windows (v1.0.3, ADR-0039): no acrylic. Measured on the real screen, Windows' acrylic blurs what
+  // is behind into unreadable colour (and is drawn only for a focused window), which read as "not
+  // see-through". Plain transparency shows the meeting behind the 70% panel; the panel's tint and
+  // the text shadow keep the text readable.
   return clear;
 }
 
@@ -503,7 +516,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
    * @returns Width and height in DIPs.
    */
   const minFor = (which: OverlayMode) => {
-    if (which === 'full') return COMPACT_MIN_SIZE;
+    if (which === 'full' || which === 'expanded') return COMPACT_MIN_SIZE;
     if (which === 'collapsed') {
       return { width: COMPACT_MIN_SIZE.width, height: COMPACT_COLLAPSED_HEIGHT };
     }
@@ -590,6 +603,22 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       // From full: same place and width. From the script bar: the full overlay's place and width.
       const base = previous === 'full' || fullBounds === null ? bounds : fullBounds;
       apply({ ...base, height: COMPACT_COLLAPSED_HEIGHT }, min);
+      return;
+    }
+    // Expanded (v1.0.3, ⛶): the answer large, centred on the display the overlay is on, as tall
+    // as the work area allows; Back (full) returns to where the overlay was.
+    if (next === 'expanded') {
+      const area = areaFor(bounds);
+      const width = Math.min(EXPANDED_SIZE.width, area.width - EXPANDED_SIZE.margin * 2);
+      apply(
+        {
+          x: area.x + Math.round((area.width - width) / 2),
+          y: area.y + EXPANDED_SIZE.margin,
+          width,
+          height: area.height - EXPANDED_SIZE.margin * 2,
+        },
+        min,
+      );
       return;
     }
     // The script bar: opening or closing its input keeps the bar where the user put it;
@@ -727,7 +756,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       const start = resizeStart;
       if (!start) return;
       // The slim modes have a fixed height: only their left or right edge resizes them.
-      const slim = mode !== 'full';
+      const slim = mode !== 'full' && mode !== 'expanded';
       const edge = (slim ? step.edge.replace(/[ns]/g, '') : step.edge) as OverlayEdge | '';
       if (edge !== '') {
         const target = resizeBounds(

@@ -137,6 +137,10 @@ export interface CompactState {
   dictationSupported?: boolean;
   /** True while a spoken question is being dictated. */
   dictating?: boolean;
+  /** Why the last dictation ended without a question (v1.0.3), or null. */
+  dictationNotice?: string | null;
+  /** When the call connected (Unix ms), for the overlay's call timer (v1.0.3). */
+  startedAt?: number;
 }
 
 /** A command without details. */

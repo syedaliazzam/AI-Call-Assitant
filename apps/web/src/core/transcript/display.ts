@@ -246,8 +246,46 @@ export interface TranscriptChip {
 }
 
 /**
- * The latest words as chips, newest last: each line in sentence case, cut every CHIP_WORDS
- * words. Ids stay the same as a line grows, so Clear can hide what was on screen.
+ * Hesitation sounds the live-words chips leave out (v1.0.3): they carry no meaning and crowd the
+ * few chips there are. The transcript itself keeps every word.
+ */
+export const CHIP_FILLERS: ReadonlySet<string> = new Set([
+  'um',
+  'umm',
+  'uh',
+  'uhh',
+  'uhm',
+  'er',
+  'erm',
+  'hmm',
+  'hm',
+  'mm',
+  'mhm',
+]);
+
+/**
+ * A line's words for the chips: without hesitation sounds, and with a capital first word when the
+ * line started with one ("Um what…" becomes "What…").
+ *
+ * @param text The line, in sentence case.
+ * @returns The words.
+ * Called from: transcriptChips(); tests
+ */
+export function chipWords(text: string): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const kept = words.filter(
+    (word) => !CHIP_FILLERS.has(word.toLowerCase().replace(/[^\p{L}]+/gu, '')),
+  );
+  if (kept.length > 0 && kept[0] !== words[0]) {
+    kept[0] = kept[0]!.charAt(0).toUpperCase() + kept[0]!.slice(1);
+  }
+  return kept;
+}
+
+/**
+ * The latest words as chips, newest last: each line in sentence case, without hesitation sounds
+ * (v1.0.3), cut every CHIP_WORDS words. Ids stay the same as a line grows, so Clear can hide
+ * what was on screen.
  *
  * @param lines The visible lines, in order.
  * @param terms Spellings to restore (displayTerms()).
@@ -263,7 +301,7 @@ export function transcriptChips(
   const chips: TranscriptChip[] = [];
   for (let l = lines.length - 1; l >= 0 && chips.length < max; l -= 1) {
     const line = lines[l]!;
-    const words = sentenceCase(line.text, terms).split(/\s+/).filter(Boolean);
+    const words = chipWords(sentenceCase(line.text, terms));
     const lineChips: TranscriptChip[] = [];
     for (let i = 0; i < words.length; i += CHIP_WORDS) {
       lineChips.push({

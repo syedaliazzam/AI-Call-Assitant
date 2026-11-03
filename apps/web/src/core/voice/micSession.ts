@@ -65,6 +65,11 @@ export function micErrorMessage(error: unknown): string {
   if (name === 'NotAllowedError' || name === 'SecurityError') {
     return 'Kite can’t use the microphone. Allow it for this site (or for Kite in your system settings), then try again.';
   }
+  // v1.0.3: Windows reports a microphone that its privacy settings block, or that another app holds,
+  // as NotReadableError; say where to look instead of the generic sentence.
+  if (name === 'NotReadableError' || name === 'AbortError') {
+    return 'The microphone is blocked or busy. In Windows, check Settings → Privacy & security → Microphone (allow desktop apps), close other apps using it, then try again.';
+  }
   if (name === 'NotFoundError' || name === 'OverconstrainedError') {
     return 'No microphone was found. Connect one, then try again.';
   }

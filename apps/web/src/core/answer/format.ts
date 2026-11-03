@@ -41,8 +41,11 @@ export interface AnswerParts {
   note: string;
 }
 
-/** A "Headline:" label at the start of the first line (any case, after Markdown is removed). */
-const HEADLINE_LABEL = /^headline\s*:\s*/i;
+/**
+ * A "Headline:" or (v1.0.3) "Answer:" label at the start of the first line (any case, after Markdown
+ * is removed): the card adds its own bold "Answer:", so one written by the model is dropped.
+ */
+const HEADLINE_LABEL = /^(?:headline|answer)\s*:\s*/i;
 
 /** The label of a closing tip line. */
 const TIP_LABEL = /^tip\s*:\s*/i;

@@ -253,11 +253,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
       scriptBar,
       dictationSupported: props.dictation?.supported ?? false,
       dictating: props.dictation?.listening ?? false,
+      dictationNotice: props.dictation?.notice ?? null,
+      startedAt: props.callStartedAt,
     };
   }, [
     scriptBar,
+    props.callStartedAt,
     props.dictation?.supported,
     props.dictation?.listening,
+    props.dictation?.notice,
     lines,
     terms,
     entry,
@@ -514,6 +518,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
           ? {
               dictation: {
                 listening: dictation.listening,
+                notice: dictation.notice,
                 onToggle: () =>
                   dictation.listening ? dictation.stop() : dictation.start(chatTarget),
               },

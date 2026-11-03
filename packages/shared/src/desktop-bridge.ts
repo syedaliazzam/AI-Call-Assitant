@@ -200,10 +200,10 @@ export type OverlayEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 /**
  * The overlay window's mode (ADR-0035): `full` (the three bars), `collapsed` (the controls bar
- * only), `script` (a slim bar with the answer line) and `script-input` (the slim bar with its
- * one-line input open).
+ * only), `expanded` (v1.0.3: the answer large, most of the screen's height), `script` (a slim
+ * bar with the answer line) and `script-input` (the slim bar with its one-line input open).
  */
-export type OverlayMode = 'full' | 'collapsed' | 'script' | 'script-input';
+export type OverlayMode = 'full' | 'collapsed' | 'expanded' | 'script' | 'script-input';
 
 /** One step of a page-driven overlay resize (ADR-0035). */
 export interface OverlayResizeStep {

@@ -31,9 +31,11 @@ import { parseAnswerRequest } from '@/server/validate';
  * call added (employer or platform names, data sources, scores, process steps). Not evaluated
  * (lean release; v-previous is unchanged for rollback). v1.0.2 (ADR-0037): the hidden last line with the
  * cleaned question, and no filler openers or lines about the other person (depth only as the
- * Tip). Not evaluated (the developer asked for no paid evaluations); v-previous unchanged.
+ * Tip). Not evaluated (the developer asked for no paid evaluations); v-previous unchanged. v1.0.3
+ * (ADR-0039): one short answer line (at most 12 words, never "Here are…", "based on my CV" or a
+ * label), list questions name the items then one bullet each; checked on 3 real answers only.
  */
-const RULES_SHA256 = '1bad8ce8feb12bd386c175e8191f000bcb61c8c4c40dde7f95fe234e5b9bea67';
+const RULES_SHA256 = '3014fcf74af9c390bec07af7862c6b8ab78f0709af8d500300affaa6023e5f78';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte

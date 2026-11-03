@@ -372,7 +372,7 @@ describe('sessionBlock', () => {
 
 describe('SYSTEM_RULES', () => {
   it('includes the answer, imperfect-transcript and consistency rules, and the slot', () => {
-    expect(SYSTEM_RULES).toContain('headline: one sentence of at most 15 words');
+    expect(SYSTEM_RULES).toContain('headline: one sentence of at most 12 words');
     expect(SYSTEM_RULES).toContain('2 to 4 short bullet points');
     // v1.0.1: question types are defined, and the CV rule names what a real call added.
     expect(SYSTEM_RULES).toContain('concept (how something works or behaves');
@@ -393,11 +393,11 @@ describe('SYSTEM_RULES', () => {
     );
     expect(SYSTEM_RULES).toContain('Learned preferences');
     // Day 4 Stage 10 (round 2, kept): short headlines, bullets only from session facts.
-    expect(SYSTEM_RULES).toContain('keep conditions and details out of it');
+    expect(SYSTEM_RULES).toContain('numbers, names, conditions and steps go in the bullets');
     expect(SYSTEM_RULES).toContain('Each bullet must state a fact from the session details');
     expect(SYSTEM_RULES).toContain('Never offer or hint at a price, discount, exception');
     // Round 3 (kept): a short headline even when the session cannot answer.
-    expect(SYSTEM_RULES).toContain('The headline is still 15 words or fewer');
+    expect(SYSTEM_RULES).toContain('The headline is still 12 words or fewer');
   });
 });
 

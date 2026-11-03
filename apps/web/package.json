@@ -23,6 +23,8 @@
     "eval:notes": "tsx --env-file=.env.local --conditions=react-server scripts/eval-notes.ts",
     "eval:answers": "tsx --env-file=.env.local --conditions=react-server scripts/eval-answers.ts",
     "eval:all": "pnpm run eval:answers && pnpm run eval:notes",
+    "visual:rig": "tsx tests/visual/overlay-rig.ts",
+    "check:answer-shape": "tsx --env-file=.env.local --conditions=react-server scripts/check-answer-shape.ts",
     "record:streams": "tsx --env-file=.env.local --conditions=react-server scripts/record-answer-streams.ts",
     "e2e-admin": "tsx --env-file=.env.local --conditions=react-server scripts/e2e-admin.ts",
     "rotate-e2e-password": "tsx --env-file=.env.local --conditions=react-server scripts/rotate-e2e-password.ts",

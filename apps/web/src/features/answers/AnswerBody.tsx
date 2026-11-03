@@ -46,6 +46,11 @@ export interface AnswerBodyProps {
   size: keyof typeof SIZES;
   /** The screen-reader name of the answer line (tests and assistive tools read it). */
   headlineLabel?: string;
+  /**
+   * Starts the answer line with a bold "Answer:" (v1.0.3, reference card): the words to say first
+   * are marked as such. For the call only; a private answer has no answer line.
+   */
+  answerLabel?: boolean;
   /** Hides the placeholder before the first word (a failed answer has its own message). */
   hideEmptyHeadline?: boolean;
   /** Puts text on the clipboard (tests pass a fake). */
@@ -252,13 +257,14 @@ export function AnswerBody(props: AnswerBodyProps) {
           aria-label={props.headlineLabel ?? 'Answer headline'}
           className={`font-semibold leading-snug text-ui-heading [text-wrap:pretty] ${sizes.headline}`}
         >
+          {props.answerLabel && <span className="mr-1.5 font-extrabold">Answer:</span>}
           {headline ? <ClaimText text={headline} claims={claims} /> : '…'}
         </h2>
       )}
       {bullets.length > 0 && (
         <ul
           aria-label="Answer details"
-          className={`mt-2.5 list-disc space-y-1.5 pl-5 leading-relaxed text-ui-text marker:text-ui-muted ${sizes.body}`}
+          className={`mt-2 list-disc space-y-1 pl-5 leading-snug text-ui-text marker:text-ui-muted ${sizes.body}`}
         >
           {bullets.map((bullet, i) => (
             <li key={i}>
