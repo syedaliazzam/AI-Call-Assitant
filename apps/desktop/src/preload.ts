@@ -44,6 +44,7 @@ import {
   OVERLAY_PLACE_CHANNEL,
   OVERLAY_PRESET_CHANNEL,
   OVERLAY_RESIZE_CHANNEL,
+  SHOW_CALL_WINDOW_CHANNEL,
   SET_HOTKEYS_CHANNEL,
   SET_PROTECTION_CHANNEL,
 } from './channels';
@@ -128,6 +129,8 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
   setOverlayCollapsed: (collapsed: boolean) =>
     ipcRenderer.invoke(OVERLAY_COLLAPSE_CHANNEL, collapsed === true),
   minimizeMainWindow: () => ipcRenderer.invoke(MINIMIZE_MAIN_CHANNEL),
+  // v1.0.4 (ADR-0040): the overlay's ⛶ and its menu's "Open call window".
+  showCallWindow: () => ipcRenderer.invoke(SHOW_CALL_WINDOW_CHANNEL),
   // v1.0.2 (ADR-0035): presets, page-driven resizing and modes. Only a string or four plain fields
   // cross (copied here, so no page object is passed on); the shell checks each value again.
   placeOverlay: (preset: OverlayPreset) =>

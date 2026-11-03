@@ -57,6 +57,8 @@ export interface BrowserCallLayoutProps {
   answers: ReactNode;
   /** Notices across the full width (channel errors, restarts), or nothing. */
   notices?: ReactNode;
+  /** Receives the element the call's top bar goes in (LiveAnswers renders into it). */
+  topBarSlot?: (element: HTMLDivElement | null) => void;
 }
 
 /**
@@ -96,7 +98,7 @@ function useMediaQuery(query: string): boolean {
  * @returns The split screen.
  * Rendered by: LivePage.tsx (browser)
  */
-export function BrowserCallLayout(props: BrowserCallLayoutProps) {
+export function BrowserCallLayout({ topBarSlot, ...props }: BrowserCallLayoutProps) {
   // 1280 px and wider: the two halves sit side by side with a draggable divider; narrower: stacked.
   const wide = useMediaQuery('(min-width: 1280px)');
   // The remembered divider position (server render uses the default, so the two renders match);
@@ -142,10 +144,11 @@ export function BrowserCallLayout(props: BrowserCallLayoutProps) {
     </section>
   );
   const right = (
-    // Stacked (narrow) the panel needs its own height: the answers scroll inside it.
+    // Stacked (narrow) the panel needs its own height: the answers scroll inside it. Hidden, not
+    // removed (v1.0.4): this panel owns the call's answers and the overlay's link.
     <section
       aria-label="Answers panel"
-      className={`flex min-h-0 min-w-0 flex-col ${sideBySide ? '' : 'h-[40rem]'}`}
+      className={`min-h-0 min-w-0 flex-col ${collapsed ? 'hidden' : 'flex'} ${sideBySide ? '' : 'h-[40rem]'}`}
     >
       {props.answers}
     </section>
@@ -180,13 +183,19 @@ export function BrowserCallLayout(props: BrowserCallLayoutProps) {
         </div>
       </header>
 
+      {/* empty:hidden: in a harness with no top bar in the slot, no empty band shows. */}
+      <div
+        ref={topBarSlot}
+        className="border-b border-ui-border bg-ui-band px-4 py-2 empty:hidden sm:px-6"
+      />
+
       {props.notices && (
         <div className="flex flex-col gap-2 px-4 pt-4 sm:px-6">{props.notices}</div>
       )}
 
       <div
         ref={bodyRef}
-        className={`flex-1 gap-4 p-4 sm:p-6 ${sideBySide ? 'grid h-[calc(100vh-4.5rem)] items-stretch' : 'flex flex-col'}`}
+        className={`gap-4 p-4 sm:p-6 ${sideBySide ? 'grid h-[calc(100vh-7.5rem)] items-stretch' : 'flex flex-1 flex-col'}`}
         style={
           sideBySide ? { gridTemplateColumns: `${fraction}fr 0.5rem ${1 - fraction}fr` } : undefined
         }
@@ -207,7 +216,7 @@ export function BrowserCallLayout(props: BrowserCallLayoutProps) {
             <span className="h-16 w-1 rounded-full bg-ui-border group-hover:bg-ui-muted" />
           </div>
         )}
-        {!collapsed && right}
+        {right}
       </div>
     </div>
   );

@@ -14,7 +14,7 @@
  * ADR-0030: the switch next to the chat box goes in the request and is remembered; a private answer
  * shows code with its own Copy; the type and source tags show, and choosing another type answers
  * again; a figure in no document is underlined with a "check before saying" note; a repeated
- * question sends the earlier answer; other answers are listed newest first.
+ * question sends the earlier answer.
  * All text is invented.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -419,7 +419,7 @@ test('tags show, a figure in no document is flagged, and another type answers ag
   expect(received.slice(before).find((body) => body.answerType)?.answerType).toBe('design');
 });
 
-test('a repeated question sends the earlier answer, and other answers are newest first', async () => {
+test('a repeated question sends the earlier answer', async () => {
   const ask = async (question: string) => {
     await page.getByLabel('Type a question').fill(question);
     await page.getByLabel('Type a question').press('Enter');
@@ -436,11 +436,6 @@ test('a repeated question sends the earlier answer, and other answers are newest
   const repeat = received.slice(before).find((body) => body.mode === 'chat')!;
   expect(repeat.similar?.question).toBe('what does the seat cost');
   expect(repeat.similar?.text).toContain('52 dollars');
-
-  const others = page.getByRole('list', { name: 'Other answers' }).getByRole('button');
-  await expect(others.first()).toHaveText('what does the seat cost');
-  await others.first().click();
-  await expect(page.getByLabel('Question used')).toHaveText('what does the seat cost');
 });
 
 test('an answer survives the parent re-rendering with a fresh session object (v1.0.0 fix)', async () => {

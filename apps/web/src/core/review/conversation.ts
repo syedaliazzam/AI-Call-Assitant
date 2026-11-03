@@ -4,13 +4,15 @@
  *          order, for the Transcript section's chat layout and for its TXT and PDF downloads. The
  *          downloads leave out each answer's private note: it was never meant to be said or shared.
  * Used by: src/features/review/ConversationSection.tsx
- * Depends on: src/core/answer/format.ts (splitAnswer), src/core/transcript/display.ts (sentenceCase),
+ * Depends on: src/core/answer/format.ts (splitAnswer, cardQuestion), src/core/answer/history.ts
+ *             (one entry per question, v1.0.4), src/core/transcript/display.ts (sentenceCase),
  *             src/core/transcript/group.ts (bubbles), src/core/storage/types.ts, ./pdf.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review); ADR-0029
  *
  * Runs on this device only; nothing here is sent or logged.
  */
-import { splitAnswer } from '../answer/format';
+import { cardQuestion, splitAnswer } from '../answer/format';
+import { mergeAnswers } from '../answer/history';
 import type { Session, StoredAnswer, StoredUtterance } from '../storage/types';
 import { sentenceCase, type DisplayTerm } from '../transcript/display';
 import { groupLines, type TranscriptGroup } from '../transcript/group';
@@ -36,8 +38,8 @@ export type ConversationItem =
     };
 
 /**
- * Merges lines and answers in time order. At the same moment the line comes first: an answer
- * follows what it answers.
+ * Merges lines and answers in time order, with one answer per question (v1.0.4, ADR-0040). At the
+ * same moment the line comes first: an answer follows what it answers.
  *
  * @param lines   The saved lines.
  * @param answers The saved answers.
@@ -50,7 +52,11 @@ export function conversationItems(
 ): ConversationItem[] {
   const items: ConversationItem[] = [
     ...lines.map((line) => ({ kind: 'line' as const, at: line.tStart, line })),
-    ...answers.map((answer) => ({ kind: 'answer' as const, at: answer.createdAt, answer })),
+    ...mergeAnswers(answers, (answer) => answer.createdAt).list.map((answer) => ({
+      kind: 'answer' as const,
+      at: answer.createdAt,
+      answer,
+    })),
   ];
   return items.sort((a, b) => a.at - b.at || (a.kind === 'line' ? -1 : 1));
 }
@@ -150,7 +156,10 @@ function paragraphs(
       continue;
     }
     const { headline, bullets, code, say, tip } = splitAnswer(item.answer.text);
-    const question = item.answer.question ? ` (question: ${item.answer.question})` : '';
+    const question =
+      item.answer.question || item.answer.cleanQuestion
+        ? ` (question: ${cardQuestion(item.answer.question, item.answer.cleanQuestion, terms)})`
+        : '';
     // A private answer was read by the user, not said on the call: the file says which it was.
     const kind = item.answer.meta?.target === 'kite' ? 'private answer' : 'answer';
     out.push({ text: `[${CLOCK.format(item.at)}] Kite ${kind}${question}`, bold: true });

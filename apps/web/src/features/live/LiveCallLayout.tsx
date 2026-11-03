@@ -1,10 +1,11 @@
 /**
  * File: apps/web/src/features/live/LiveCallLayout.tsx
- * Purpose: The layout of the desktop main window's live call view (v1.0.2, reference layout) on the
- *          dark tokens: a top bar (logo, session name, status badge, where "Them" comes from, audio
- *          meters, and the collapse arrow), notices across the full width, then the transcript on
- *          the LEFT and the answers panel on the RIGHT (LiveAnswers.tsx: call timer, ⋮ menu, Exit,
- *          the answers newest first, the message box, and the large Answer and Screenshot buttons).
+ * Purpose: The full call window (v1.0.4, ADR-0040): the desktop main window's live call view on the
+ *          solid dark tokens: a header (logo, session name, status badge, where "Them" comes from,
+ *          audio meters, and the collapse arrow), the call's top bar across the full width (a slot
+ *          LiveAnswers fills: mic, Answer, Screenshot, Chat, timer, Back to compact, ⋮, End), notices,
+ *          then the transcript on the LEFT and the answers panel on the RIGHT (LiveAnswers.tsx: the
+ *          answers newest first, the message box, and the large Answer and Screenshot buttons).
  *          The collapse arrow hides the answers panel, leaving the transcript the whole width.
  *          Below a 900 px wide view (Kite docked beside a meeting) they stack, the answers first.
  *          Layout only: the live page and the live harness pass in the real parts.
@@ -49,6 +50,8 @@ export interface LiveCallLayoutProps {
   transcript: ReactNode;
   /** The answers panel (right). */
   answers: ReactNode;
+  /** Receives the element the call's top bar goes in (LiveAnswers renders into it). */
+  topBarSlot?: (element: HTMLDivElement | null) => void;
 }
 
 /**
@@ -58,7 +61,7 @@ export interface LiveCallLayoutProps {
  * @returns The dark call screen.
  * Rendered by: LivePage.tsx (live view); the live harness
  */
-export function LiveCallLayout(props: LiveCallLayoutProps) {
+export function LiveCallLayout({ topBarSlot, ...props }: LiveCallLayoutProps) {
   // The collapse arrow: the answers panel hides and the transcript takes the whole width.
   const [collapsed, setCollapsed] = useState(false);
   return (
@@ -89,6 +92,12 @@ export function LiveCallLayout(props: LiveCallLayoutProps) {
         </div>
       </header>
 
+      {/* empty:hidden: in a harness with no top bar in the slot, no empty band shows. */}
+      <div
+        ref={topBarSlot}
+        className="border-b border-ui-border bg-ui-band px-4 py-2 empty:hidden sm:px-6"
+      />
+
       {props.notices && (
         <div className="flex flex-col gap-2 px-4 pt-4 sm:px-6">{props.notices}</div>
       )}
@@ -96,17 +105,18 @@ export function LiveCallLayout(props: LiveCallLayoutProps) {
       {/* Stacked (answers first) below a 900 px wide view; side by side from 900 px, with the
           page then exactly one screen high so each column scrolls on its own. */}
       <div
-        className={`grid flex-1 gap-4 p-4 sm:p-6 @min-[900px]:h-[calc(100vh-4.5rem)] @min-[900px]:grid-rows-1 ${collapsed ? '' : '@min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]'}`}
+        className={`grid flex-1 gap-4 p-4 sm:p-6 @min-[900px]:h-[calc(100vh-7.5rem)] @min-[900px]:flex-none @min-[900px]:grid-rows-1 ${collapsed ? '' : '@min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]'}`}
       >
         {/* Plain columns: the transcript and answers panel name their own regions. */}
         <div className="order-2 flex min-h-[22rem] flex-col @min-[900px]:order-1 @min-[900px]:min-h-0">
           {props.transcript}
         </div>
-        {!collapsed && (
-          <div className="order-1 flex h-[40rem] min-h-0 flex-col @min-[900px]:order-2 @min-[900px]:h-auto">
-            {props.answers}
-          </div>
-        )}
+        {/* Hidden, not removed (v1.0.4): this panel owns the call's answers and the overlay's link. */}
+        <div
+          className={`order-1 h-[40rem] min-h-0 flex-col @min-[900px]:order-2 @min-[900px]:h-auto ${collapsed ? 'hidden' : 'flex'}`}
+        >
+          {props.answers}
+        </div>
       </div>
     </div>
   );

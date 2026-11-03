@@ -65,6 +65,34 @@ function text(bytes: Uint8Array): string {
   return String.fromCharCode(...bytes);
 }
 
+describe('one entry per question (v1.0.4, ADR-0040)', () => {
+  it('leaves out an answer repeated for the same question, keeping the newest', () => {
+    const items = conversationItems(
+      [],
+      [answer('a1', 'First.', 100), answer('a2', 'Second.', 200), answer('a3', 'Third.', 300)],
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: 'answer', answer: { id: 'a3' } });
+  });
+
+  it('downloads the clean question, or the raw words cut at the question mark', () => {
+    const clean = {
+      ...answer('c', 'Clean answer.', 100),
+      question: 'UM WHAT IS THE PRICE',
+      cleanQuestion: 'What is the seat price?',
+    };
+    const old = {
+      ...answer('o', 'Old answer.', 200),
+      question: 'HOW LONG DOES IT RUN? OKAY THANKS',
+    };
+    const text = transcriptText(SESSION, conversationItems([], [clean, old]), []);
+    expect(text).toContain('(question: What is the seat price?)');
+    expect(text).toContain('(question: How long does it run?)');
+    expect(text).not.toContain('UM WHAT');
+    expect(text).not.toContain('OKAY THANKS');
+  });
+});
+
 describe('conversationItems', () => {
   it('merges in time order, a line before an answer at the same moment', () => {
     const items = conversationItems(

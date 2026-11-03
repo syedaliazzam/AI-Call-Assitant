@@ -1,7 +1,7 @@
 # File: apps/desktop/tests/visual/capture.ps1
 # Purpose: Saves a real screen capture (what the user sees, with every window composited, so a
 #          see-through overlay shows what is behind it) of one rectangle, in physical pixels.
-# Used by: apps/desktop/tests/visual/overlay-shots.ts (v1.0.3 visual checks)
+# Used by: apps/desktop/tests/visual/call-window-shots.ts (v1.0.3 visual checks)
 # Usage: powershell -File capture.ps1 -X 0 -Y 0 -W 800 -H 600 -Out shot.png
 param([int]$X, [int]$Y, [int]$W, [int]$H, [string]$Out)
 Add-Type -AssemblyName System.Drawing

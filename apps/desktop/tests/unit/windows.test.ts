@@ -488,6 +488,8 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
     expect(isOverlayPreset('middle')).toBe(false);
     expect(isOverlayMode('script-input')).toBe(true);
     expect(isOverlayMode('fullscreen')).toBe(false);
+    // v1.0.4: ⛶ opens the full call window; the overlay no longer expands.
+    expect(isOverlayMode('expanded')).toBe(false);
     expect(isResizeStep({ phase: 'move', edge: 'se', dx: 3, dy: -4 })).toBe(true);
     expect(isResizeStep({ phase: 'move', edge: 'x', dx: 3, dy: 4 })).toBe(false);
     expect(isResizeStep({ phase: 'move', edge: 'e', dx: Number.NaN, dy: 4 })).toBe(false);

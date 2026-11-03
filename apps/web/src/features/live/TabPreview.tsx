@@ -86,9 +86,9 @@ export function TabPreview(props: TabPreviewProps) {
         </div>
       )}
 
-      {/* The translucent control strip over the top, using the overlay tokens (ADR-0033): the
-          preview stays visible behind it. */}
-      <div className="k-overlay k-glass absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 border-b border-ui-border p-2">
+      {/* The control strip over the top, in the overlay's tokens but solid (v1.0.4, ADR-0040): only
+          the overlay itself is ever see-through. */}
+      <div className="k-overlay absolute inset-x-0 top-0 flex flex-wrap items-center gap-2 border-b border-ui-border p-2">
         <button type="button" className={STRIP_BUTTON} onClick={props.onStop}>
           <span
             aria-hidden="true"

@@ -86,6 +86,7 @@ describe('the exposed bridge', () => {
       'setOverlayMode',
       'setOverlayOpacity',
       'setShareProtection',
+      'showCallWindow',
       'version',
     ]);
     expect(Object.isFrozen(api)).toBe(true);

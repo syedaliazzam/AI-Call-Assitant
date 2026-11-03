@@ -64,7 +64,7 @@ import {
 } from './ConnectPanel';
 import { SavedTranscript } from './SavedTranscript';
 import { TranscriptStrip } from './TranscriptStrip';
-import type { TranscriptGroup } from '@/core/transcript/group';
+import { groupWords, type TranscriptGroup } from '@/core/transcript/group';
 import { useCallDictation } from './useCallDictation';
 
 /**
@@ -205,6 +205,8 @@ export function LivePage({
   // v1.0.2: the transcript's "Answer this" buttons use the answers panel's guarded ask, and show
   // which questions were answered; the panel hands both over once it is mounted.
   const [answerBridge, setAnswerBridge] = useState<AnswerThisBridge | null>(null);
+  // v1.0.4: the layouts' full-width band the answers panel renders the call's top bar into.
+  const [topBarSlot, setTopBarSlot] = useState<HTMLDivElement | null>(null);
   const [levels, setLevels] = useState<ChannelLevels>({ you: 0, them: 0 });
   // Day 6 Stage 4e: when "Them" last had sound (or the call connected), and whether it has been
   // silent for 20 s (then a notice suggests checking the shared tab or app).
@@ -671,7 +673,7 @@ export function LivePage({
       {...(answerBridge
         ? {
             onAnswerThis: (group: TranscriptGroup) =>
-              answerBridge.answerThis(group.finalText, { start: group.tStart, end: group.tEnd }),
+              answerBridge.answerThis(groupWords(group), { start: group.tStart, end: group.tEnd }),
             answeredSpans: answerBridge.answeredSpans,
           }
         : {})}
@@ -693,6 +695,7 @@ export function LivePage({
         onEnd={() => void end()}
         dictation={dictation}
         onAnswerThis={setAnswerBridge}
+        topBarSlot={topBarSlot}
       />
     ) : (
       <div className="flex justify-end">
@@ -778,6 +781,7 @@ export function LivePage({
         }}
         transcript={transcriptNode}
         answers={answersNode}
+        topBarSlot={setTopBarSlot}
       />
     );
   }
@@ -792,6 +796,7 @@ export function LivePage({
       notices={notices}
       transcript={transcriptNode}
       answers={answersNode}
+      topBarSlot={setTopBarSlot}
     />
   );
 }

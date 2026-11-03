@@ -1,12 +1,13 @@
 /**
  * File: apps/web/src/features/live/LiveAnswers.tsx
- * Purpose: The answers panel of the live view (v1.0.2, reference layout; the same in the desktop
- *          main window and the browser split view): the top bar (call timer, ⋮ menu, Exit), the
- *          answers newest first, the message box, and the large Answer and Screenshot buttons with
- *          their keys; plus the hotkeys (through the platform adapter: in-page shortcuts, and the
- *          desktop app's global shortcuts), the link to the overlay (core/live/liveChannel.ts:
- *          state out, commands in, including the script bar and dictation), and the duplicate-safe
- *          "Answer this" for transcript bubbles (registered with the live page).
+ * Purpose: The answers panel of the full call window (v1.0.2, reference layout; v1.0.4, ADR-0040;
+ *          the same in the desktop main window and the browser split view): the top bar (TopBar.tsx,
+ *          in the layout's full-width slot), the answers newest first, the message box, and the large
+ *          Answer and Screenshot buttons with their keys; plus the hotkeys (through the platform
+ *          adapter: in-page shortcuts, and the desktop app's global shortcuts), the link to the
+ *          overlay (core/live/liveChannel.ts: state out, commands in, including the script bar and
+ *          dictation), going between the overlay and this window (⛶, Back to compact, Esc), and the
+ *          duplicate-safe "Answer this" for transcript bubbles (registered with the live page).
  * Used by: src/features/live/LivePage.tsx (live view);
  *          tests/integration/harness/answers.tsx (the answer harness test)
  * Depends on: src/features/live (useLiveAnswers, TopBar, ChatBox, AnswerPanel, useCallDictation),
@@ -22,8 +23,9 @@ import {
   type OverlayPreset,
   type TargetChoice,
 } from '@kite/shared';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { cardQuestion, splitAnswer } from '@/core/answer/format';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
+import { splitAnswer } from '@/core/answer/format';
 import type { SpeechSpan } from '@/core/answer/repeatGuard';
 import { getChatTarget, setChatTarget } from '@/core/storage/answerPrefs';
 import { AnswerPreferencesDialog } from '@/features/session-setup/AnswerPreferencesDialog';
@@ -31,6 +33,7 @@ import type { MenuItem } from '@/ui/Menu';
 import { updateSession } from '@/core/storage/sessions';
 import { getStartInOverlay } from '@/core/storage/overlayPrefs';
 import { displayTerms, sentenceCase, transcriptChips } from '@/core/transcript/display';
+import { liveQuestion } from '@/core/transcript/liveQuestion';
 import {
   openLiveChannel,
   type CompactAudio,
@@ -87,6 +90,11 @@ export interface LiveAnswersProps {
    * this panel.
    */
   onAnswerThis?: (bridge: AnswerThisBridge) => void;
+  /**
+   * Where the top bar goes: the layout's full-width band (v1.0.4). Without one (harnesses) it stays
+   * at the top of this panel.
+   */
+  topBarSlot?: HTMLElement | null;
 }
 
 /** What the transcript's "Answer this" buttons need from the answers (v1.0.2). */
@@ -149,8 +157,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
   });
   // Grows with each Chat or Ask Kite shortcut: the message box (always shown) takes the typing.
   const [focusSignal, setFocusSignal] = useState(0);
-  // Clear hides the answers asked until then from the list (Unix ms; 0: none hidden).
+  // ⋮ "Clear answers" hides the answers asked until then from the list (Unix ms; 0: none hidden).
   const [hiddenBefore, setHiddenBefore] = useState(0);
+  // Clear also takes the live question off the overlay until a new one is asked (Unix ms).
+  const [questionClearedAt, setQuestionClearedAt] = useState(0);
   // The overlay as the slim script bar (v1.0.2; Ctrl+Alt+S or a ⋮ menu).
   const [scriptBar, setScriptBar] = useState(false);
   // The Answer preferences dialog (⋮ menu).
@@ -199,14 +209,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     return {
       audio: { you: audioYou, them: audioThem },
       chips: transcriptChips(lines, terms),
-      lines: lines.slice(-30).map((line) => ({
-        id: line.id,
-        speaker: line.speaker,
-        text: sentenceCase(line.text, terms),
-        final: line.final,
-        tStart: line.tStart,
-        tEnd: line.tEnd,
-      })),
+      liveQuestion: liveQuestion(lines, terms, questionClearedAt),
       answer:
         entry && parts
           ? {
@@ -227,19 +230,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
               unavailable: entry.unavailable ?? false,
             }
           : null,
-      // Newest first (ADR-0030). A cap, because this goes over the channel on every word.
-      earlier: answers.entries
-        .filter((other) => other.id !== entry?.id && other.text.trim() !== '')
-        .slice(-20)
-        .reverse()
-        .map((other) => ({
-          id: other.id,
-          question:
-            other.question || other.cleanQuestion
-              ? cardQuestion(other.question, other.cleanQuestion, terms)
-              : '',
-          headline: splitAnswer(other.text).headline,
-        })),
       chatTarget,
       askKiteCount,
       sessionType: props.session.type,
@@ -263,6 +253,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     props.dictation?.listening,
     props.dictation?.notice,
     lines,
+    questionClearedAt,
     terms,
     entry,
     answers.index,
@@ -287,13 +278,13 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const sessionIdRef = useRef(props.session.id);
   const dictationRef = useRef(props.dictation);
   const chatTargetRef = useRef(chatTarget);
-  /** Clear: stops a streaming answer, or hides the answers on screen (the overlay too). */
+  /** Clear: stops a streaming answer, goes back to the newest one, and clears the live question. */
   const clearView = useRef(() => {
-    if (!actions.current.entries.some((candidate) => candidate.status === 'streaming')) {
-      setHiddenBefore(Date.now());
-    }
+    setQuestionClearedAt(Date.now());
     actions.current.clear();
   });
+  // Whether the overlay has been open in this call: only then does Escape go back to it.
+  const overlayOpened = useRef(false);
   useEffect(() => {
     sessionIdRef.current = props.session.id;
     dictationRef.current = props.dictation;
@@ -312,21 +303,20 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'answer') actions.current.answer();
       else if (command.type === 'screenshot') actions.current.screenshot();
       else if (command.type === 'clear') clearView.current();
-      else if (command.type === 'latest') {
-        // The overlay expanded: it shows the newest answer (v1.0.2).
-        const newest = actions.current.entries.at(-1);
-        if (newest) actions.current.show(newest.id);
+      else if (command.type === 'call-window') {
+        // ⛶ (v1.0.4): the full call window, at the newest answer. The shell hides the overlay.
+        actions.current.showLatest();
+        void getPlatform()
+          .showCallWindow()
+          .catch(() => undefined);
       } else if (command.type === 'script-bar') setScriptBar(command.on);
       else if (command.type === 'dictate') {
         if (command.on) dictationRef.current?.start(chatTargetRef.current);
         else dictationRef.current?.stop();
-      } else if (command.type === 'answer-this') {
-        actions.current.answerThis(command.question, { start: command.start, end: command.end });
       } else if (command.type === 'prev') actions.current.prev();
       else if (command.type === 'next') actions.current.next();
       else if (command.type === 'rate') actions.current.rate(command.id, command.rating);
       else if (command.type === 'report') actions.current.report(command.id, command.note);
-      else if (command.type === 'show') actions.current.show(command.id);
       else if (command.type === 'reanswer')
         actions.current.reanswer(command.id, command.answerType);
       else if (command.type === 'chat-target') {
@@ -362,8 +352,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
   useEffect(() => {
     if (!(startInOverlay ?? getStartInOverlay())) return;
     openOverlay(props.session.id).then(
-      () => getPlatform().minimizeMainWindow(),
-      () => setCompactNotice('To follow the call in the overlay, press Overlay.'),
+      () => {
+        overlayOpened.current = true;
+        getPlatform().minimizeMainWindow();
+      },
+      () => setCompactNotice('To follow the call in the overlay, press Back to compact.'),
     );
   }, [props.session.id, startInOverlay]);
 
@@ -414,13 +407,38 @@ export function LiveAnswers(props: LiveAnswersProps) {
     onAnswerThis?.({ answerThis, answeredSpans });
   }, [onAnswerThis, answerThis, answeredSpans]);
 
-  /** Opens the overlay (or says why it could not). */
-  const showOverlay = () => {
+  const sessionId = props.session.id;
+  /** Back to the overlay (v1.0.4): it opens and this window steps aside, or says why it could not. */
+  const backToCompact = useCallback(() => {
     setCompactNotice(null);
-    openOverlay(props.session.id).catch((error: unknown) =>
-      setCompactNotice(error instanceof Error ? error.message : 'Kite could not open the overlay.'),
+    openOverlay(sessionId).then(
+      () => {
+        overlayOpened.current = true;
+        getPlatform().minimizeMainWindow();
+      },
+      (error: unknown) =>
+        setCompactNotice(
+          error instanceof Error ? error.message : 'Kite could not open the overlay.',
+        ),
     );
-  };
+  }, [sessionId]);
+
+  // Escape goes back to the overlay (v1.0.4), once it has been open in this call. A menu, a dialog,
+  // or a box with text in it keeps its own Escape; a browser may refuse, as Escape does not count as
+  // a click for picture-in-picture, and the notice then says to press Back to compact.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || !overlayOpened.current) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (tag === 'INPUT' && (target as HTMLInputElement).value !== '') return;
+      if (document.querySelector('dialog[open], [role="dialog"], [role="menu"]')) return;
+      backToCompact();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [backToCompact]);
 
   /**
    * Moves the overlay to a preset place at its default size (desktop app, ADR-0035).
@@ -433,34 +451,53 @@ export function LiveAnswers(props: LiveAnswersProps) {
 
   // The ⋮ menu, in the reference order; desktop-only entries only where the shell can do them.
   const menu: MenuItem[] = [
-    { label: 'Open overlay', onSelect: showOverlay },
     ...(placement
       ? [
           {
             label: scriptBar ? 'Full overlay' : 'Script bar',
             onSelect: () => {
               setScriptBar((on) => !on);
-              showOverlay();
+              backToCompact();
             },
           },
         ]
       : []),
     { label: 'Answer preferences', onSelect: () => setPrefsOpen(true) },
-    { label: 'Clear answers', onSelect: () => clearView.current() },
+    {
+      label: 'Clear answers',
+      onSelect: () => {
+        // The cards asked until now leave the list, except the newest (selected): never empty.
+        if (!answering) setHiddenBefore(Date.now());
+        clearView.current();
+      },
+    },
     ...(placement
       ? [{ label: 'Reset overlay size and position', onSelect: () => place('top-center') }]
       : []),
     { label: 'End call', onSelect: props.onEnd, danger: true },
   ];
 
+  const topBar = (
+    <TopBar
+      callStartedAt={props.callStartedAt}
+      menu={menu}
+      onEnd={props.onEnd}
+      ending={props.ending}
+      mac={mac}
+      onAnswer={answers.answer}
+      answering={answering}
+      onScreenshot={() => answers.screenshot()}
+      capturing={answers.capturing}
+      onChat={() => setFocusSignal((count) => count + 1)}
+      onBack={backToCompact}
+      dictation={dictation?.supported ? dictation : undefined}
+      target={chatTarget}
+    />
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <TopBar
-        callStartedAt={props.callStartedAt}
-        menu={menu}
-        onExit={props.onEnd}
-        ending={props.ending}
-      />
+      {props.topBarSlot ? createPortal(topBar, props.topBarSlot) : topBar}
       {compactNotice && (
         <p role="status" className="bg-ui-surface px-3 py-2 text-[13px] text-ui-text">
           {compactNotice}

@@ -1,6 +1,6 @@
 {
   "name": "@kite/desktop",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "description": "Kite desktop shell (Electron): opens the deployed Kite web app in a locked-down window and adds native features via window.kiteDesktop.",
   "author": "Paramount Intelligence",

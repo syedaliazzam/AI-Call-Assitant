@@ -47,7 +47,7 @@ function fakeNetwork() {
 const STATE: CompactState = {
   audio: { you: true, them: true },
   chips: [{ id: 'l1:0', speaker: 'them', text: 'What does it' }],
-  lines: [{ id: 'l1', speaker: 'them', text: 'What does it cost', final: true }],
+  liveQuestion: 'What does it cost?',
   index: 0,
   total: 1,
   answer: {
@@ -140,18 +140,18 @@ describe('isCommand and isState', () => {
   });
 });
 
-describe('isCommand: v1.0.2 commands', () => {
-  it('accepts latest, the script bar, dictation and "Answer this" only in their shapes', () => {
-    expect(isCommand({ type: 'latest' })).toBe(true);
+describe('isCommand: overlay commands', () => {
+  it('accepts the call window, the script bar and dictation only in their shapes', () => {
+    expect(isCommand({ type: 'call-window' })).toBe(true);
     expect(isCommand({ type: 'script-bar', on: true })).toBe(true);
     expect(isCommand({ type: 'script-bar' })).toBe(false);
     expect(isCommand({ type: 'dictate', on: false })).toBe(true);
     expect(isCommand({ type: 'dictate', on: 'yes' })).toBe(false);
-    expect(isCommand({ type: 'answer-this', question: 'Price?', start: 1, end: 2 })).toBe(true);
-    expect(isCommand({ type: 'answer-this', question: 'Price?' })).toBe(false);
-    expect(isCommand({ type: 'answer-this', question: ' ', start: 1, end: 2 })).toBe(false);
-    expect(isCommand({ type: 'answer-this', question: 'x'.repeat(2_001), start: 1, end: 2 })).toBe(
-      false,
-    );
+  });
+
+  it('rejects the commands v1.0.4 removed (the expanded overlay and its answer list)', () => {
+    expect(isCommand({ type: 'latest' })).toBe(false);
+    expect(isCommand({ type: 'show', id: 'a1' })).toBe(false);
+    expect(isCommand({ type: 'answer-this', question: 'Price?', start: 1, end: 2 })).toBe(false);
   });
 });

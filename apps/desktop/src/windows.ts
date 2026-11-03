@@ -11,6 +11,8 @@
  *          bonus), opens at the top centre at 560 × 420, can be put at a preset place, snaps to the
  *          screen's edges after a move, is resized from its edges by the page, and has a slim
  *          script-bar mode next to its full and collapsed modes.
+ *          v1.0.4 (ADR-0040): ⛶ opens the full call window (the main window) and hides the overlay;
+ *          the expanded overlay mode is gone.
  * Used by: src/main.ts
  * Depends on: electron (BrowserWindow, Screen, IpcMain types), src/security.ts
  *             (secureWebPreferences), src/protection.ts, src/store.ts, src/channels.ts,
@@ -47,6 +49,7 @@ import {
   OVERLAY_PLACE_CHANNEL,
   OVERLAY_PRESET_CHANNEL,
   OVERLAY_RESIZE_CHANNEL,
+  SHOW_CALL_WINDOW_CHANNEL,
 } from './channels';
 import { isKiteSender } from './hotkeys';
 import type { Protection } from './protection';
@@ -65,12 +68,6 @@ export const COMPACT_DEFAULT_SIZE = { width: 640, height: 480 };
  * key hints on Answer, Screenshot and Chat).
  */
 export const COMPACT_MIN_SIZE = { width: 560, height: 260 };
-
-/**
- * The expanded overlay (v1.0.3, ⛶): this wide at most, and as tall as the screen allows, with
- * this margin from the work area's edges.
- */
-export const EXPANDED_SIZE = { width: 960, margin: 24 };
 
 /** The overlay's height when collapsed to its controls bar, in DIPs. */
 export const COMPACT_COLLAPSED_HEIGHT = 60;
@@ -257,11 +254,11 @@ export function isOverlayPreset(value: unknown): value is OverlayPreset {
  * Whether a value from the page is an overlay mode.
  *
  * @param value What arrived over IPC.
- * @returns True for 'full', 'collapsed', 'expanded', 'script' or 'script-input'.
+ * @returns True for 'full', 'collapsed', 'script' or 'script-input'.
  * Called from: installCompactWindows(); tests
  */
 export function isOverlayMode(value: unknown): value is OverlayMode {
-  return ['full', 'collapsed', 'expanded', 'script', 'script-input'].includes(value as string);
+  return ['full', 'collapsed', 'script', 'script-input'].includes(value as string);
 }
 
 /**
@@ -516,7 +513,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
    * @returns Width and height in DIPs.
    */
   const minFor = (which: OverlayMode) => {
-    if (which === 'full' || which === 'expanded') return COMPACT_MIN_SIZE;
+    if (which === 'full') return COMPACT_MIN_SIZE;
     if (which === 'collapsed') {
       return { width: COMPACT_MIN_SIZE.width, height: COMPACT_COLLAPSED_HEIGHT };
     }
@@ -603,22 +600,6 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       // From full: same place and width. From the script bar: the full overlay's place and width.
       const base = previous === 'full' || fullBounds === null ? bounds : fullBounds;
       apply({ ...base, height: COMPACT_COLLAPSED_HEIGHT }, min);
-      return;
-    }
-    // Expanded (v1.0.3, ⛶): the answer large, centred on the display the overlay is on, as tall
-    // as the work area allows; Back (full) returns to where the overlay was.
-    if (next === 'expanded') {
-      const area = areaFor(bounds);
-      const width = Math.min(EXPANDED_SIZE.width, area.width - EXPANDED_SIZE.margin * 2);
-      apply(
-        {
-          x: area.x + Math.round((area.width - width) / 2),
-          y: area.y + EXPANDED_SIZE.margin,
-          width,
-          height: area.height - EXPANDED_SIZE.margin * 2,
-        },
-        min,
-      );
       return;
     }
     // The script bar: opening or closing its input keeps the bar where the user put it;
@@ -756,7 +737,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       const start = resizeStart;
       if (!start) return;
       // The slim modes have a fixed height: only their left or right edge resizes them.
-      const slim = mode !== 'full' && mode !== 'expanded';
+      const slim = mode !== 'full';
       const edge = (slim ? step.edge.replace(/[ns]/g, '') : step.edge) as OverlayEdge | '';
       if (edge !== '') {
         const target = resizeBounds(
@@ -785,6 +766,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
  * @param compact       The controller.
  * @param allowedOrigin The Kite origin.
  * @param minimizeMain  Minimises the main window (a call starting in the overlay).
+ * @param showCall      Brings the full call window forward and hides the overlay (v1.0.4).
  * Called from: start() in main.ts; tests
  */
 export function installCompactWindows(
@@ -792,6 +774,7 @@ export function installCompactWindows(
   compact: CompactWindows,
   allowedOrigin: string,
   minimizeMain: () => void = () => undefined,
+  showCall: () => void = () => undefined,
 ): void {
   ipcMain.handle(OPEN_COMPACT_CHANNEL, (event, sessionId: unknown) => {
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can open it');
@@ -834,5 +817,9 @@ export function installCompactWindows(
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can do this');
     // Only with the overlay open: never leave the user with no Kite window in view.
     if (compact.window()) minimizeMain();
+  });
+  ipcMain.handle(SHOW_CALL_WINDOW_CHANNEL, (event) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can do this');
+    showCall();
   });
 }

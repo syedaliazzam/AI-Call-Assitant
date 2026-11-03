@@ -110,6 +110,14 @@ export interface KiteDesktopApi {
    */
   minimizeMainWindow?: () => Promise<void>;
   /**
+   * v1.0.4 (ADR-0040): brings the full call window (the main window) forward and hides the overlay.
+   * Optional: a shell before 1.0.4 has no such call, and the page closes the overlay instead (which
+   * also brings the main window back).
+   *
+   * @returns Resolves when done.
+   */
+  showCallWindow?: () => Promise<void>;
+  /**
    * Day 6: tells the shell whether a live call is going on, so an update never asks to restart
    * during a call.
    *
@@ -200,10 +208,10 @@ export type OverlayEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 /**
  * The overlay window's mode (ADR-0035): `full` (the three bars), `collapsed` (the controls bar
- * only), `expanded` (v1.0.3: the answer large, most of the screen's height), `script` (a slim
- * bar with the answer line) and `script-input` (the slim bar with its one-line input open).
+ * only), `script` (a slim bar with the answer line) and `script-input` (the slim bar with its
+ * one-line input open). v1.0.4: ⛶ opens the full call window, so there is no expanded overlay.
  */
-export type OverlayMode = 'full' | 'collapsed' | 'expanded' | 'script' | 'script-input';
+export type OverlayMode = 'full' | 'collapsed' | 'script' | 'script-input';
 
 /** One step of a page-driven overlay resize (ADR-0035). */
 export interface OverlayResizeStep {
