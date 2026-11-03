@@ -93,6 +93,17 @@ export interface Transcript {
    * @returns The line as stored (new or merged).
    */
   addFinal(line: { speaker: Speaker; text: string; tStart: number; tEnd: number }): Utterance;
+  /**
+   * v1.0.1 (ADR-0034): replaces the words one utterance added to a final line with the accurate
+   * engine's text. A line can hold several merged utterances, so only the last place where the
+   * heard words appear is replaced, never the whole line.
+   *
+   * @param id      The final line's id (as addFinal returned it).
+   * @param heard   The words the live engine heard for that utterance.
+   * @param refined The accurate engine's text for the same audio.
+   * @returns True when the line was changed; false when it is gone or no longer holds the words.
+   */
+  refineFinal(id: string, heard: string, refined: string): boolean;
   /** Visible lines (no echoes), finals and partials, in time order. Same array until a change. */
   lines(): readonly Utterance[];
   /**
@@ -310,6 +321,22 @@ export function createTranscript(
       }
       changed();
       return stored;
+    },
+
+    refineFinal(id, heard, refined) {
+      const index = finals.findIndex((line) => line.id === id);
+      const line = finals[index];
+      const text = refined.trim();
+      if (!line || heard === '' || text === '') return false;
+      const at = line.text.lastIndexOf(heard);
+      if (at === -1) return false;
+      const next = {
+        ...line,
+        text: line.text.slice(0, at) + text + line.text.slice(at + heard.length),
+      };
+      finals = [...finals.slice(0, index), next, ...finals.slice(index + 1)];
+      changed();
+      return true;
     },
 
     lines() {

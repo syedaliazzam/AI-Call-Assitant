@@ -13,7 +13,7 @@
  *
  * The file holds the user's own call content; it is never logged or sent anywhere.
  */
-import { ANSWER_TYPES, type AnswerType } from '@kite/shared';
+import { ANSWER_TYPES, normaliseKeyTerms, type AnswerType } from '@kite/shared';
 import { z } from 'zod';
 import { getDb } from './db';
 import { currentSessionType, currentTone } from './migrate';
@@ -110,7 +110,8 @@ const SessionSchema = z.object({
       length: z.enum(['short', 'medium', 'detailed']),
       tone: z.enum(['simple', 'professional', 'technical', 'friendly']).transform(currentTone),
     }),
-    keyTerms: z.string(),
+    // An older export may hold a pasted comma list as one term: one clean term per line (v1.0.1).
+    keyTerms: z.string().transform(normaliseKeyTerms),
   }),
   instructions: z.string(),
   saveTranscript: z.boolean(),

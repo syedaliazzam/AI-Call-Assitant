@@ -9,9 +9,10 @@
  */
 export * from './answer-meta';
 export * from './api';
-export type * from './desktop-bridge';
+export * from './desktop-bridge';
 export * from './hotkeys';
 export * from './screenshot';
 export * from './notes';
 export * from './lessons';
 export * from './prepare';
+export * from './keyTerms';

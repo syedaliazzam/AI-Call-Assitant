@@ -1,13 +1,13 @@
 {
   "name": "@kite/desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Kite desktop shell (Electron): opens the deployed Kite web app in a locked-down window and adds native features via window.kiteDesktop.",
   "author": "Paramount Intelligence",
   "main": "dist/main.js",
   "scripts": {
     "electron:install": "install-electron",
-    "build": "esbuild src/main.ts src/preload.ts --bundle --platform=node --format=cjs --target=node22 --external:electron --outdir=dist",
+    "build": "esbuild src/main.ts src/preload.ts --bundle --platform=node --format=cjs --target=node22 --external:electron --outdir=dist && esbuild src/accurate/worker.ts --bundle --platform=node --format=cjs --target=node22 --outfile=dist/accurate-worker.js && node scripts/stage-native.mjs",
     "dev": "pnpm electron:install && pnpm build && electron . --kite-url=http://localhost:3000",
     "start": "pnpm electron:install && pnpm build && electron .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -26,7 +26,12 @@
     "electron-builder": "26.17.0",
     "electron-updater": "6.8.10",
     "esbuild": "0.28.2",
+    "sherpa-onnx-node": "1.13.8",
     "typescript": "~6.0.3",
     "vitest": "^5.0.5"
+  },
+  "optionalDependencies": {
+    "sherpa-onnx-darwin-arm64": "1.13.8",
+    "sherpa-onnx-win-x64": "1.13.8"
   }
 }

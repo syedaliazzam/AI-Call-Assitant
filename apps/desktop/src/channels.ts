@@ -43,3 +43,15 @@ export const MINIMIZE_MAIN_CHANNEL = 'kite:minimize-main';
 
 /** The page says whether a live call is going on (send; a boolean). Updates wait for it. */
 export const CALL_ACTIVE_CHANNEL = 'kite:call-active';
+
+/** v1.0.1 (ADR-0034): the accurate-transcription engine's state (invoke; returns AccurateStatus). */
+export const ACCURATE_STATUS_CHANNEL = 'kite:accurate-status';
+
+/** v1.0.1: start or resume the model download (invoke; returns AccurateStatus at once). */
+export const ACCURATE_DOWNLOAD_CHANNEL = 'kite:accurate-download';
+
+/** v1.0.1: delete the downloaded model (invoke; returns AccurateStatus). */
+export const ACCURATE_REMOVE_CHANNEL = 'kite:accurate-remove';
+
+/** v1.0.1: transcribe one utterance (invoke; carries a Float32Array, returns AccurateResult). */
+export const ACCURATE_TRANSCRIBE_CHANNEL = 'kite:accurate-transcribe';

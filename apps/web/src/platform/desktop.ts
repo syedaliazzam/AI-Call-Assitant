@@ -273,6 +273,25 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       bridge.setCallActive?.(active);
     },
 
+    // v1.0.1 (ADR-0034): present only when this desktop app has the four methods; a failed call
+    // reads as "the engine failed", so the page keeps the live engine's line.
+    accurate:
+      bridge.accurateStatus &&
+      bridge.accurateDownload &&
+      bridge.accurateRemove &&
+      bridge.accurateTranscribe
+        ? {
+            status: () => bridge.accurateStatus!(),
+            download: () => bridge.accurateDownload!(),
+            remove: () => bridge.accurateRemove!(),
+            transcribe: (samples: Float32Array) =>
+              bridge.accurateTranscribe!(samples).catch(() => ({
+                ok: false as const,
+                code: 'engine' as const,
+              })),
+          }
+        : null,
+
     /**
      * The hotkeys: the shell's global shortcuts (work from any app, Stage 8) and the in-page
      * shortcuts (while the Kite window has focus; the only ones in a desktop app installed

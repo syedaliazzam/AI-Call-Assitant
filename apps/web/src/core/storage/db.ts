@@ -15,6 +15,7 @@
  * The database opens lazily (getDb()), so importing this module during server rendering never
  * touches IndexedDB, which only exists in the browser.
  */
+import { normaliseKeyTerms } from '@kite/shared';
 import Dexie, { type EntityTable } from 'dexie';
 import { currentLessonScope, currentSessionType, currentTone } from './migrate';
 import type {
@@ -128,6 +129,22 @@ export class KiteDb extends Dexie {
     this.version(6).stores({
       chats: 'id, updatedAt',
     });
+    // Version 7 (v1.0.1): no new store. Key terms pasted as one comma-separated line were stored
+    // as one over-long term; rewrite every session's key terms as one clean term per line (split on
+    // commas, semicolons and new lines, trimmed, deduplicated, each at most 60 characters). Only
+    // that field changes, and only when it differs. An older build can still open this database
+    // (Dexie opens a newer version as installed; checked for the v1.0.0 rollback).
+    this.version(7)
+      .stores({})
+      .upgrade(async (tx) => {
+        await tx
+          .table<Session, string>('sessions')
+          .toCollection()
+          .modify((session) => {
+            const clean = normaliseKeyTerms(session.preferences.keyTerms ?? '');
+            if (clean !== session.preferences.keyTerms) session.preferences.keyTerms = clean;
+          });
+      });
   }
 }
 

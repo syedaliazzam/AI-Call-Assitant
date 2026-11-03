@@ -63,6 +63,11 @@ describe('the exposed bridge', () => {
     const [name, api] = exposeCalls[0]!;
     expect(name).toBe('kiteDesktop');
     expect(Object.keys(api).sort()).toEqual([
+      // v1.0.1 (ADR-0034): accurate transcription.
+      'accurateDownload',
+      'accurateRemove',
+      'accurateStatus',
+      'accurateTranscribe',
       'captureScreenshot',
       'checkHotkeys',
       'closeCompactView',

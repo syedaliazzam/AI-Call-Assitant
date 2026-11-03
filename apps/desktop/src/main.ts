@@ -6,7 +6,8 @@
  *          (src/windows.ts) and its screen-share protection (src/protection.ts), Day 5.
  * Used by: Electron (package.json "main": dist/main.js, built by esbuild)
  * Depends on: electron, src/config.ts, src/security.ts, src/media.ts, src/hotkeys.ts,
- *             src/screenshot.ts, src/windows.ts, src/protection.ts, src/store.ts, src/icon.ts
+ *             src/screenshot.ts, src/windows.ts, src/protection.ts, src/store.ts, src/icon.ts,
+ *             src/accurate/host.ts (accurate transcription, ADR-0034)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * Kite never hides from the taskbar, Dock or process lists, and does not try to evade
@@ -24,7 +25,10 @@ import {
   screen,
   session,
   systemPreferences,
+  utilityProcess,
 } from 'electron';
+import { installAccurate, type WorkerProcess } from './accurate/host';
+import { MODEL_FOLDER } from './accurate/model';
 import { APP_NAME, loadConfig, type DesktopConfig } from './config';
 import { startUpdater } from './updater';
 import { installHotkeys, type HotkeyController } from './hotkeys';
@@ -196,6 +200,27 @@ function start(): void {
       },
     });
     installCompactWindows(ipcMain, compact, config.allowedOrigin, () => mainWindow?.minimize());
+    // Accurate transcription (v1.0.1, ADR-0034; opt-in, off by default in the page's Settings):
+    // the model downloads to the app's data folder only when the user turns it on; the engine
+    // runs in a utility process. KITE_ACCURATE_MODEL_DIR points tests at an existing copy.
+    installAccurate({
+      ipcMain,
+      allowedOrigin: config.allowedOrigin,
+      modelDir:
+        process.env.KITE_ACCURATE_MODEL_DIR ??
+        path.join(app.getPath('userData'), 'models', MODEL_FOLDER),
+      // Installed: shipped next to the app (extraResources); development: staged by the build.
+      nativeDir: app.isPackaged
+        ? path.join(process.resourcesPath, 'sherpa-onnx')
+        : path.join(__dirname, '..', 'native', 'sherpa-onnx'),
+      workerPath: path.join(__dirname, 'accurate-worker.js'),
+      fork: (modulePath, env) =>
+        utilityProcess.fork(modulePath, [], {
+          env,
+          serviceName: 'Kite accurate transcription',
+          stdio: 'ignore',
+        }) as unknown as WorkerProcess,
+    });
     installProtection(ipcMain, protection, () => compact?.window() ?? null, config.allowedOrigin);
     mainWindow = createMainWindow(config);
     // Updates (Day 6, ADR-0028): installed builds only; tests turn them off. Store builds

@@ -26,9 +26,12 @@ import { parseAnswerRequest } from '@/server/validate';
  * SHA-256 of the v-current rules block, changed on purpose for the honesty and shape change
  * (ADR-0032) and again for the release fix: the spoken lines leave an unsupported CV detail out
  * without remarking on it, and never promise to fetch the user's own past figures (answer-eval.md,
- * release run; a second, stricter fix scored lower and was reverted).
+ * release run; a second, stricter fix scored lower and was reverted). v1.0.1: each question type is
+ * defined (a technical "what happens when…" is a concept), and the CV rule names the details a real
+ * call added (employer or platform names, data sources, scores, process steps). Not evaluated
+ * (lean release; v-previous is unchanged for rollback).
  */
-const RULES_SHA256 = '935d159a232c1e66a402146fdf630a831f70471fa41f81400910cfe50d94ad9b';
+const RULES_SHA256 = '35e327702996993b58973607fa58f4439b1c3deacc0109e6ff2587462fd7b722';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte

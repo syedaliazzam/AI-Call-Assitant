@@ -16,6 +16,12 @@ directories:
 files:
   - dist/**
   - package.json
+# The accurate-transcription engine's native runtime (v1.0.1, ADR-0034), staged by
+# scripts/stage-native.mjs. Outside the app archive, because native code cannot load from it.
+# The model itself is not shipped: it downloads only when the user turns the setting on.
+extraResources:
+  - from: native/sherpa-onnx
+    to: sherpa-onnx
 extraMetadata:
   # The installed folder (%LOCALAPPDATA%Programskite) comes from the package name; the
   # workspace name "@kite/desktop" would give "@kitedesktop".

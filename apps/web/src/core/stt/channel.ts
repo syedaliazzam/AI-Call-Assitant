@@ -22,7 +22,9 @@
  * the channel is idle, so a silent channel costs almost no CPU and cannot produce phantom words.
  */
 import { TARGET_SAMPLE_RATE } from '../audio/resample';
-import { lastLoudSampleEnd, SilenceGate, type GateChunk } from './gate';
+import { chunkRms, lastLoudSampleEnd, SilenceGate, type GateChunk } from './gate';
+import { isNoiseLine } from './noiseLine';
+import { ACCURATE_MAX_SECONDS } from '@kite/shared';
 import { OnsetDetector, realTimeFactor } from './metrics';
 import type { ChannelId, ChannelStats, EndpointReason, FromWorker } from './protocol';
 
@@ -80,6 +82,8 @@ export interface ChannelOptions {
   inputSampleRate?: number;
   /** Energy gate (default: a new SilenceGate; null = decode every chunk, for tests). */
   gate?: SilenceGate | null;
+  /** v1.0.1 (ADR-0034): attach each final line's audio (for the accurate engine). */
+  keepAudio?: boolean;
 }
 
 /** One channel's decoder. */
@@ -126,6 +130,16 @@ export class ChannelDecoder {
   private readonly stats: ChannelStats;
   /** Worker time (capture) where the last loud 10 ms frame of this utterance ended, or null. */
   private lastLoudAt: number | null = null;
+  /** v1.0.1: whether final lines carry their audio. */
+  private readonly keepAudio: boolean;
+  /** The audio decoded since the last final line (only with keepAudio). */
+  private utteranceAudio: Float32Array[] = [];
+  /** Samples in utteranceAudio. */
+  private utteranceSamples = 0;
+  /** The loudest chunk (RMS) decoded in this utterance, for the lone-word noise rule. */
+  private utterancePeakRms = 0;
+  /** Worker time where this channel's previous final line ended, or null before the first. */
+  private lastFinalEndAt: number | null = null;
 
   /**
    * @param id         Which channel.
@@ -148,6 +162,7 @@ export class ChannelDecoder {
       timeOrigin: performance.timeOrigin,
     };
     this.gate = options.gate === undefined ? new SilenceGate() : options.gate;
+    this.keepAudio = options.keepAudio === true;
     const inputSampleRate = options.inputSampleRate ?? TARGET_SAMPLE_RATE;
     this.stats = {
       audioMs: 0,
@@ -217,6 +232,12 @@ export class ChannelDecoder {
     const capturedEndAt = this.capturedAt(chunk.endTime);
     const chunkAudioMs = (chunk.samples.length / TARGET_SAMPLE_RATE) * 1000;
     this.stream.acceptWaveform(TARGET_SAMPLE_RATE, chunk.samples);
+    this.utterancePeakRms = Math.max(this.utterancePeakRms, chunkRms(chunk.samples));
+    // Kept only up to the accurate engine's limit; a longer utterance keeps the live text only.
+    if (this.keepAudio && this.utteranceSamples <= ACCURATE_MAX_SECONDS * TARGET_SAMPLE_RATE) {
+      this.utteranceAudio.push(chunk.samples);
+      this.utteranceSamples += chunk.samples.length;
+    }
     const loudEnd = lastLoudSampleEnd(chunk.samples, this.gate?.threshold ?? DEFAULT_SPEECH_RMS);
     if (loudEnd >= 0) {
       this.lastLoudAt =
@@ -286,10 +307,22 @@ export class ChannelDecoder {
       this.stream.free();
       this.stream = this.recognizer.createStream();
     }
-    if (text !== '') {
+    const start = this.utteranceStartAt ?? this.lastChangeAt;
+    const end = Math.max(start, this.lastChangeAt);
+    // A lone, quiet word is noise the model turned into a word (v1.0.1: "Tree", "Um" at the start
+    // of a call, before the gate knows the room). Real short answers and louder speech are kept.
+    const noise =
+      text !== '' &&
+      isNoiseLine({
+        text,
+        peakRms: this.utterancePeakRms,
+        threshold: this.gate?.threshold ?? DEFAULT_SPEECH_RMS,
+        msSincePrevious:
+          this.lastFinalEndAt === null ? Number.POSITIVE_INFINITY : start - this.lastFinalEndAt,
+      });
+    if (text !== '' && !noise) {
       this.stats.endpoints[reason] += 1;
-      const start = this.utteranceStartAt ?? this.lastChangeAt;
-      const end = Math.max(start, this.lastChangeAt);
+      this.lastFinalEndAt = end;
       // End of speech: the last loud frame, but never after the last word changed (noise after
       // speech must not count) and never before the start.
       const speechEndAt = Math.max(start, Math.min(this.lastLoudAt ?? end, end));
@@ -298,6 +331,7 @@ export class ChannelDecoder {
         channel: this.id,
         text,
         reason,
+        ...(this.utteranceAudioIfKept() ?? {}),
         tStart: this.toUnix(start),
         tEnd: this.toUnix(end),
         speechEnd: this.toUnix(speechEndAt),
@@ -369,9 +403,31 @@ export class ChannelDecoder {
     this.stream.free();
   }
 
+  /**
+   * The current utterance's audio as one array, when this channel keeps audio and the utterance
+   * is within the accurate engine's limit.
+   *
+   * @returns { audio } to spread into the final message, or null.
+   * Called from: endUtterance()
+   */
+  private utteranceAudioIfKept(): { audio: Float32Array } | null {
+    if (!this.keepAudio || this.utteranceSamples === 0) return null;
+    if (this.utteranceSamples > ACCURATE_MAX_SECONDS * TARGET_SAMPLE_RATE) return null;
+    const audio = new Float32Array(this.utteranceSamples);
+    let at = 0;
+    for (const piece of this.utteranceAudio) {
+      audio.set(piece, at);
+      at += piece.length;
+    }
+    return { audio };
+  }
+
   /** Forgets the current utterance's state (text, timers, onset). */
   private clearUtterance(): void {
     this.lastLoudAt = null;
+    this.utterancePeakRms = 0;
+    this.utteranceAudio = [];
+    this.utteranceSamples = 0;
     this.lastText = '';
     this.msSinceTextChange = 0;
     this.pendingOnsetAt = null;

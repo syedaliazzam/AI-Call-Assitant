@@ -15,6 +15,7 @@
  * call), and hotwords fixed the test names exactly in a clean test (Day 1). Session text is the
  * user's content: this module never logs it.
  */
+import { parseKeyTerms } from '@kite/shared';
 import type { Session, StoredDocument } from '../storage/types';
 import { formatHotwords, MAX_HOTWORD_SCORE, type Hotword } from './hotwords';
 import { spokenVariants } from './spokenNumbers';
@@ -261,10 +262,11 @@ export function buildHotwords(
     }
   };
 
-  // 1. Key terms: one per line. A " :score" the user typed is respected. The raw text (digits and
-  //    all) goes to add(), so a term like "BM25" becomes spoken-word hotwords instead of losing its
-  //    number to the model's letter-only alphabet (ADR-0027).
-  for (const rawLine of session.preferences.keyTerms.split(/\r?\n/)) {
+  // 1. Key terms: split on commas, semicolons and new lines (shared rule, v1.0.1). A " :score"
+  //    the user typed is respected. The raw text (digits and all) goes to add(), so a term like
+  //    "BM25" becomes spoken-word hotwords instead of losing its number to the model's letter-only
+  //    alphabet (ADR-0027).
+  for (const rawLine of parseKeyTerms(session.preferences.keyTerms)) {
     const line = rawLine.trim();
     if (line === '') continue;
     const match = /\s:\s*(\S+)\s*$/.exec(` ${line}`);

@@ -14,6 +14,7 @@
  * spoken sentences) is cut into equal parts. The model gives no per-word times, so each part's
  * start and end are estimated in proportion to its words.
  */
+import { parseKeyTerms } from '@kite/shared';
 import { spokenVariants } from '../stt/spokenNumbers';
 import type { Session } from '../storage/types';
 import type { Utterance } from './transcript';
@@ -91,7 +92,7 @@ export function splitForDisplay(line: Utterance): Utterance[] {
 export function displayTerms(
   session: Pick<Session, 'company'> & { preferences: Pick<Session['preferences'], 'keyTerms'> },
 ): DisplayTerm[] {
-  const typed = [session.company, ...session.preferences.keyTerms.split(/\r?\n/)]
+  const typed = [session.company, ...parseKeyTerms(session.preferences.keyTerms)]
     .map((term) => term.replace(/\s*:\s*[\d.]+\s*$/, '').trim())
     .filter((term) => /[A-Za-z]/.test(term) && term.length <= 50);
   const terms: DisplayTerm[] = [];

@@ -8,6 +8,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F2, F3), §7.4;
  *               day-03-sessions.md Stage 3
  */
+import { normaliseKeyTerms } from '@kite/shared';
 import type { DocumentText, NewSessionInput } from '@/core/storage/sessions';
 import type {
   LibraryItem,
@@ -164,7 +165,8 @@ export function draftToInput(draft: SessionDraft): NewSessionInput {
     company: draft.company.trim(),
     role: draft.role.trim(),
     description: draft.description.trim(),
-    preferences: { ...draft.preferences, keyTerms: draft.preferences.keyTerms.trim() },
+    // One clean term per line, however they were pasted (commas, semicolons, new lines; v1.0.1).
+    preferences: { ...draft.preferences, keyTerms: normaliseKeyTerms(draft.preferences.keyTerms) },
     instructions: draft.instructions.trim(),
     saveTranscript: draft.saveTranscript,
     autoAnswer: draft.autoAnswer,

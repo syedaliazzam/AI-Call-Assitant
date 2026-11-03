@@ -13,6 +13,7 @@
 import 'server-only';
 import {
   ANSWER_STYLE_VERSIONS,
+  parseKeyTerms,
   ANSWER_TYPES,
   MAX_ACTIVE_LESSONS,
   MAX_ANSWER_CHARS,
@@ -56,8 +57,11 @@ export const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 /** Largest total length of all session document texts, in characters (architecture §7.2). */
 export const MAX_DOCUMENT_CHARS = 150_000;
 
-/** Most key terms a session may send (the hotword list keeps at most 100 phrases). */
-export const MAX_KEY_TERMS = 100;
+/**
+ * Most key terms kept from a request (shared rule, packages/shared/src/keyTerms.ts). Extra terms are
+ * dropped, not rejected: key terms never make an answer fail (v1.0.1).
+ */
+export { MAX_KEY_TERMS } from '@kite/shared';
 
 /** How answers should look (AnswerStyle). */
 const styleSchema = z.object({
@@ -81,7 +85,12 @@ const sessionSchema = z
     // Same limit as the wizard's description box.
     description: z.string().max(5_000),
     instructions: z.string().max(5_000),
-    keyTerms: z.array(z.string().max(200)).max(MAX_KEY_TERMS),
+    // Sanitised, not rejected (v1.0.1): a pasted comma list or an over-long term is split, cut and
+    // deduplicated here. The raw bounds only stop absurd input (the 4 MB body cap applies too).
+    keyTerms: z
+      .array(z.string().max(5_000))
+      .max(1_000)
+      .transform((terms) => parseKeyTerms(terms)),
     style: styleSchema,
     language: z.string().max(50).optional(),
     codingLanguage: z.string().max(50).optional(),

@@ -157,16 +157,36 @@ describe('parseAnswerRequest', () => {
     });
   });
 
-  it('rejects a session without key terms, and more than the key-term limit', () => {
+  it('rejects a session without key terms, and keeps only the key-term limit', () => {
     const { keyTerms: _omitted, ...withoutKeyTerms } = SESSION;
     expect(parseAnswerRequest({ mode: 'warm', session: withoutKeyTerms })).toMatchObject({
       ok: false,
       message: expect.stringContaining('session.keyTerms'),
     });
     const tooMany = Array.from({ length: MAX_KEY_TERMS + 1 }, (_, i) => `Term ${i}`);
-    expect(
-      parseAnswerRequest({ mode: 'warm', session: { ...SESSION, keyTerms: tooMany } }).ok,
-    ).toBe(false);
+    const parsed = parseAnswerRequest({ mode: 'warm', session: { ...SESSION, keyTerms: tooMany } });
+    expect(parsed.ok && parsed.data.session?.keyTerms).toHaveLength(MAX_KEY_TERMS);
+  });
+
+  it('sanitises a pasted comma list sent as one long term instead of failing (v1.0.1)', () => {
+    // The real failure: one 200+ character "term" made every answer fail with
+    // "session.keyTerms.0: Too big".
+    const pasted = `${'Kubernetes, Terraform; BM25, H100, Retrieval-augmented generation, '.repeat(4)}${'x'.repeat(90)}`;
+    const parsed = parseAnswerRequest({
+      mode: 'warm',
+      session: { ...SESSION, keyTerms: [pasted] },
+    });
+    expect(parsed.ok).toBe(true);
+    const terms = parsed.ok ? (parsed.data.session?.keyTerms ?? []) : [];
+    expect(terms.slice(0, 5)).toEqual([
+      'Kubernetes',
+      'Terraform',
+      'BM25',
+      'H100',
+      'Retrieval-augmented generation',
+    ]);
+    expect(terms).toHaveLength(6);
+    expect(terms.every((term) => term.length <= 60)).toBe(true);
   });
 
   it('rejects an unknown mode', () => {

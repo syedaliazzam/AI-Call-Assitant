@@ -5,6 +5,7 @@
  * Used by: apps/desktop/src/preload.ts (Stage 5, implements it),
  *          apps/web/src/platform/desktop.ts and apps/web/src/platform/index.ts (read it)
  * Depends on: ./hotkeys.ts, ./screenshot.ts (types only)
+ * Also: the accurate-transcription contract (v1.0.1, ADR-0034): status, download, remove, transcribe.
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 and §7.3 (preload.ts)
  */
 import type { HotkeyAction, HotkeyStatus } from './hotkeys';
@@ -120,7 +121,80 @@ export interface KiteDesktopApi {
    * @returns The state, and whether this OS supports it.
    */
   getShareProtection?: () => Promise<ShareProtectionState>;
+  /**
+   * v1.0.1 (ADR-0034): the accurate-transcription engine's state (Parakeet, opt-in). Optional: a
+   * desktop app installed earlier does not have it.
+   *
+   * @returns Whether the engine is available on this computer, downloaded, downloading or failed.
+   */
+  accurateStatus?: () => Promise<AccurateStatus>;
+  /**
+   * v1.0.1: starts (or resumes) the model download, each file checked against its SHA-256.
+   * Returns at once; call accurateStatus() for progress.
+   *
+   * @returns The state after starting.
+   */
+  accurateDownload?: () => Promise<AccurateStatus>;
+  /**
+   * v1.0.1: deletes the downloaded model (and stops a download), freeing the disk space.
+   *
+   * @returns The state afterwards.
+   */
+  accurateRemove?: () => Promise<AccurateStatus>;
+  /**
+   * v1.0.1: transcribes one finished utterance again with the accurate engine. Never stored or
+   * logged by the shell (only its length and the time taken).
+   *
+   * @param samples The utterance's audio: mono, 16 kHz, -1…1, at most ACCURATE_MAX_SECONDS long.
+   * @returns The text, or a failure the page answers by keeping the live engine's line.
+   */
+  accurateTranscribe?: (samples: Float32Array) => Promise<AccurateResult>;
 }
+
+/** Longest utterance the accurate engine transcribes, in seconds (longer ones keep the live text). */
+export const ACCURATE_MAX_SECONDS = 30;
+
+/** Where the accurate-transcription engine stands on this computer (ADR-0034). */
+export type AccurateState =
+  /** No engine build for this computer (only Windows x64 and macOS arm64 ship one). */
+  | 'unavailable'
+  /** Available; the model is not downloaded. */
+  | 'not-downloaded'
+  /** The model is downloading (or being checked). */
+  | 'downloading'
+  /** Downloaded and checked: ready to use. */
+  | 'ready'
+  /** The last download or start failed (see `error`); downloading again resumes it. */
+  | 'error';
+
+/** The accurate engine's status (ADR-0034). */
+export interface AccurateStatus {
+  /** Where it stands. */
+  state: AccurateState;
+  /** Bytes of the model already on disk (for the progress bar). */
+  receivedBytes: number;
+  /** The model's total size in bytes. */
+  totalBytes: number;
+  /** A short plain-language reason, with state 'error'. */
+  error?: string;
+}
+
+/** One accurate transcription (ADR-0034). */
+export type AccurateResult =
+  | {
+      /** Transcribed. */
+      ok: true;
+      /** The text (never logged). */
+      text: string;
+      /** Decoding time, in ms. */
+      ms: number;
+    }
+  | {
+      /** Not transcribed: the page keeps the live line. */
+      ok: false;
+      /** Why: the model is missing, the audio was refused, or the engine failed. */
+      code: 'not-ready' | 'bad-audio' | 'engine';
+    };
 
 /** Screen-share protection of the compact window (Day 5). */
 export interface ShareProtectionState {

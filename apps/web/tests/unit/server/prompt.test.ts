@@ -374,6 +374,11 @@ describe('SYSTEM_RULES', () => {
   it('includes the answer, imperfect-transcript and consistency rules, and the slot', () => {
     expect(SYSTEM_RULES).toContain('headline: one sentence of at most 15 words');
     expect(SYSTEM_RULES).toContain('2 to 4 short bullet points');
+    // v1.0.1: question types are defined, and the CV rule names what a real call added.
+    expect(SYSTEM_RULES).toContain('concept (how something works or behaves');
+    expect(SYSTEM_RULES).toContain('never a question about the work');
+    expect(SYSTEM_RULES).toContain('state only facts written in the CV');
+    expect(SYSTEM_RULES).toContain('employer, client or platform name, data source');
     expect(SYSTEM_RULES).toContain('Use only the session details, documents and conversation');
     // The new rule on missing information (ADR-0030): never a comment on what Kite was given.
     expect(SYSTEM_RULES).toContain('no "not in your notes"');

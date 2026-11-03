@@ -225,3 +225,28 @@ describe('desktop captureScreenshot', () => {
     ).toBe('failed');
   });
 });
+
+describe('createDesktopPlatform: accurate transcription (v1.0.1, ADR-0034)', () => {
+  it('has no accurate engine in a desktop app without the four methods', () => {
+    expect(windows.accurate).toBeNull();
+  });
+
+  it('passes calls to the shell, and turns a failed transcription into "engine"', async () => {
+    const status = { state: 'ready' as const, receivedBytes: 1, totalBytes: 1 };
+    const platform = createDesktopPlatform({
+      version: '1.0.1',
+      os: 'windows',
+      accurateStatus: vi.fn(async () => status),
+      accurateDownload: vi.fn(async () => status),
+      accurateRemove: vi.fn(async () => status),
+      accurateTranscribe: vi.fn(async () => {
+        throw new Error('ipc closed');
+      }),
+    });
+    expect(await platform.accurate?.status()).toEqual(status);
+    expect(await platform.accurate?.transcribe(new Float32Array(16_000))).toEqual({
+      ok: false,
+      code: 'engine',
+    });
+  });
+});

@@ -51,3 +51,6 @@ apps/web/tests/fixtures/stt/names-audio/
 
 # Day 6 Stage 3: Windows installers built by electron-builder
 apps/desktop/release/
+
+# v1.0.1: the accurate-transcription native runtime, staged by apps/desktop/scripts/stage-native.mjs
+apps/desktop/native/
