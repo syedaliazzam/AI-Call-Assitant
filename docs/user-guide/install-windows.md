@@ -9,7 +9,17 @@ Kite is an internal Paramount Intelligence tool. You need an account from a Kite
 3. **If Windows shows "Windows protected your PC":** click **More info**, check that the app is `Kite-Setup-<version>.exe`, then click **Run anyway**. Windows shows this because the installer is not code-signed yet. It is the file from the link above.
 4. Kite opens. Sign in with the email and password your administrator gave you; the first time, you choose a new password.
 
-Kite is then in the Start menu as **Kite**.
+Kite is then in the Start menu as **Kite**. To learn how to use it, see [Using Kite](using-kite.md).
+
+### Check the download (optional)
+
+Each release lists the files' SHA-256 checksums in `SHA256SUMS.txt`. To check the installer, open PowerShell in your Downloads folder and run:
+
+```powershell
+Get-FileHash .\Kite-Setup-1.0.0.exe -Algorithm SHA256
+```
+
+The hash must match the `Kite-Setup-1.0.0.exe` line in `SHA256SUMS.txt`.
 
 ## If Windows blocks Kite (Smart App Control)
 
