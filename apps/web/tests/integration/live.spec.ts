@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Harness test for the dark call screens (UI theme stage U3), no sign-in, runs in CI. With the
  * real components on invented data and a mocked /api/answer (no Claude call, no microphone, no
  * speech model) it covers:
@@ -225,8 +225,8 @@ async function box(page: Page, selector: string) {
   };
 }
 
-test.describe.configure({ mode: 'serial' });
-
+// Each test opens its own context, so one failure must not hide the others (v1.1.0: serial mode
+// hid 26 tests behind one stale selector).
 test.beforeAll(async () => {
   bundleDir = mkdtempSync(path.join(tmpdir(), 'kite-live-test-'));
   await build({
@@ -260,15 +260,17 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
   const watched = await open('live', size);
   const { page } = watched;
   const transcriptBox = await box(page, '[aria-label="Live transcript"]');
-  const panel = '[aria-label="Answer"]';
+  const panel = '[aria-label="Answers"]';
   expect(transcriptBox.x).toBeLessThan((await box(page, panel)).x);
 
-  // Speaker colours and the provisional line (theme §6).
+  // Speaker colours and the provisional line (theme Â§6).
   const colours = await page.evaluate(() => {
     const items = [...document.querySelectorAll('[aria-label="Live transcript"] li')];
     const label = (name: string) =>
-      getComputedStyle(items.find((li) => li.textContent?.startsWith(name))!.firstElementChild!)
-        .color;
+      // A bubble starts with its name and time; the name carries the speaker's colour.
+      getComputedStyle(
+        items.find((li) => li.textContent?.startsWith(name))!.firstElementChild!.firstElementChild!,
+      ).color;
     const provisional = document.querySelector('[aria-label="Live transcript"] li span.italic');
     if (!provisional) return { lines: items.map((li) => li.textContent) };
     return {
@@ -288,13 +290,15 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
 
   // Stream an answer: measure when only the headline is there, then when the bullets are.
   await page.getByRole('button', { name: 'Answer', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Answer headline' })).toHaveText(HEADLINE);
+  await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
   await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
-  const toolbar = '[aria-label="Call actions"]';
+  // The card grows as words arrive (its footer follows them); everything around it stays still.
+  const toolbar = '[aria-label="Call controls"]';
+  const message = '[aria-label="Message"]';
   const before = {
     toolbar: await box(page, toolbar),
     panel: await box(page, panel),
-    footer: await box(page, 'button:has-text("Cancel")'),
+    message: await box(page, message),
   };
   await expect(
     page.getByRole('list', { name: 'Answer details' }).getByRole('listitem'),
@@ -303,7 +307,7 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
   const after = {
     toolbar: await box(page, toolbar),
     panel: await box(page, panel),
-    footer: await box(page, 'button:has-text("Cancel")'),
+    message: await box(page, message),
   };
   expect(after).toEqual(before);
   await shot(watched, size, 'live-streaming');
@@ -320,7 +324,7 @@ test('live view stacks answers above the transcript when narrower than 900 px', 
   ] as const) {
     const watched = await open('live', size);
     const { page } = watched;
-    const panel = await box(page, '[aria-label="Answer"]');
+    const panel = await box(page, '[aria-label="Answers"]');
     const transcript = await box(page, '[aria-label="Live transcript"]');
     expect(panel.y).toBeLessThan(transcript.y);
     await shot(watched, size, 'live');
@@ -410,7 +414,7 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
     await expect(page.getByRole('region', { name: 'Live transcript bar' })).toBeVisible();
     await expect(page.getByLabel('Latest words')).toContainText('the Professional plan');
     await expect(page.getByLabel('Question', { exact: true })).toContainText('Professional plan');
-    await expect(page.getByRole('heading', { name: 'Answer line' })).toHaveText(
+    await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText(
       'Forty seats cost 2,080 dollars a month.',
     );
     // Nothing is hidden behind a click, and the note is set apart from what to say.
@@ -424,7 +428,7 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
     expect(fits, 'the window itself does not scroll').toBe(true);
     await shot(watched, size, `overlay-${size.width}`);
 
-    // The current live question sits above the answer (v1.0.4); ⛶ is the call window's button.
+    // The current live question sits above the answer (v1.0.4); â›¶ is the call window's button.
     await expect(page.getByLabel('Current question from the other person')).toContainText(
       'What would the Professional plan cost',
     );
@@ -708,14 +712,14 @@ test('browser split view: preview and transcript left, answers right; side by si
     await expect(
       watched.page.getByRole('region', { name: 'Shared tab and transcript' }),
     ).toBeVisible();
-    await expect(watched.page.getByRole('region', { name: 'Answers' })).toBeVisible();
+    await expect(watched.page.getByRole('region', { name: 'Answers', exact: true })).toBeVisible();
     await expect(watched.page.getByRole('button', { name: 'Stop' })).toBeVisible();
     await expect(watched.page.getByLabel('Answer language')).toBeVisible();
     await expect(watched.page.getByRole('button', { name: 'End', exact: true })).toBeVisible();
     await expect(watched.page.getByLabel('Call time')).toBeVisible();
     const divider = watched.page.getByRole('separator', { name: 'Resize' });
     const left = await box(watched.page, '[aria-label="Shared tab and transcript"]');
-    const right = await box(watched.page, '[aria-label="Answers"]');
+    const right = await box(watched.page, '[aria-label="Answers panel"]');
     if (split) {
       await expect(divider).toBeVisible();
       // Side by side: the answers start to the right of the preview, at about the same height.

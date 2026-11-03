@@ -260,9 +260,12 @@ export async function answerAndRate(page: Page, how: 'hotkey' | 'chat'): Promise
     await box.fill('How much planning time did the pilot save per dispatcher?');
     await box.press('Enter');
   }
-  const headline = page.getByRole('heading', { name: 'Answer headline' });
-  // The headline shows "…" until the first words arrive.
-  await expect(headline).not.toHaveText('…', { timeout: 30_000 });
+  // The selected card: the answer just asked for (v1.0.4, ADR-0040).
+  const headline = page
+    .locator('article[aria-current="true"]')
+    .getByRole('heading', { name: 'Answer line' });
+  // The answer line shows "…" until the first words arrive.
+  await expect(headline).not.toContainText('…', { timeout: 30_000 });
   const good = page.getByRole('button', { name: 'Good answer' });
   // The rating buttons appear when the answer is complete.
   await expect(good).toBeVisible({ timeout: 60_000 });
