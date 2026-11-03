@@ -155,7 +155,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         entry && parts
           ? {
               id: entry.id,
-              question: entry.question,
+              question: sentenceCase(entry.question, terms),
               text: entry.text,
               headline: parts.headline,
               ...(entry.meta ? { meta: entry.meta } : {}),
@@ -177,7 +177,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         .reverse()
         .map((other) => ({
           id: other.id,
-          question: other.question,
+          question: sentenceCase(other.question, terms),
           headline: splitAnswer(other.text).headline,
         })),
       chatTarget,
@@ -360,6 +360,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       )}
       <AnswerPanel
         entry={entry}
+        terms={terms}
         index={answers.index}
         total={answers.entries.length}
         mac={mac}

@@ -21,3 +21,14 @@ allowBuilds:
   # Comes with electron-builder (Day 6). Its script prepares Squirrel.Windows installers, which
   # Kite does not build (it uses NSIS), so the script is not needed.
   electron-winstaller: false
+
+# Exact versions for the accurate-transcription engine (v1.0.1, ADR-0034). sherpa-onnx-node asks for
+# its platform package as "^1.13.8", which would install a newer native build than the measured,
+# two-week-old 1.13.8 JavaScript wrapper expects; these pin every platform build to it.
+overrides:
+  sherpa-onnx-win-x64: 1.13.8
+  sherpa-onnx-darwin-arm64: 1.13.8
+  sherpa-onnx-darwin-x64: 1.13.8
+  sherpa-onnx-linux-x64: 1.13.8
+  sherpa-onnx-linux-arm64: 1.13.8
+  sherpa-onnx-win-ia32: 1.13.8

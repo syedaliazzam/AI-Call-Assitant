@@ -12,6 +12,7 @@
  */
 'use client';
 
+import { parseKeyTerms } from '@kite/shared';
 import { useState, type ReactNode } from 'react';
 import { ANSWER_LANGUAGES, type AnswerModel } from '@/core/storage/types';
 import { Button } from '@/ui/Button';
@@ -99,6 +100,36 @@ function RowIcon({
     <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-ui-subtle text-ui-heading">
       {children}
     </span>
+  );
+}
+
+/**
+ * The key terms as Kite will use them, one chip each (split on commas, semicolons and new lines,
+ * trimmed, deduplicated, each at most 60 characters), so a pasted list shows how it was read.
+ *
+ * @param props.text The key-terms box's text.
+ * @returns The chips, or nothing when there are no terms.
+ * Rendered by: PreferencesStep
+ */
+function KeyTermChips({
+  text,
+}: {
+  /** The key-terms box's text. */
+  text: string;
+}) {
+  const terms = parseKeyTerms(text);
+  if (terms.length === 0) return null;
+  return (
+    <ul aria-label="Key terms Kite will use" className="mt-2 flex flex-wrap gap-1.5">
+      {terms.map((term) => (
+        <li
+          key={term}
+          className="rounded-full border border-ui-border bg-ui-subtle px-2.5 py-0.5 text-[13px] text-ui-text"
+        >
+          {term}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -243,10 +274,11 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
               onChange={(event) =>
                 onChange({ preferences: { ...preferences, keyTerms: event.target.value } })
               }
-              hint="Names and terms Kite should listen for, one per line: people, products, companies. They help the transcript spell them right."
+              hint="Names and terms Kite should listen for, separated by commas or new lines: people, products, companies. They help the transcript spell them right."
               rows={3}
               maxLength={5_000}
             />
+            <KeyTermChips text={preferences.keyTerms} />
           </div>
         </div>
       </div>

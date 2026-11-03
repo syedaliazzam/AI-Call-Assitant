@@ -19,6 +19,7 @@ import type { AnswerType } from '@kite/shared';
 import { useState } from 'react';
 import type { AnswerRating } from '@/core/storage/types';
 import { answerText, splitAnswer } from '@/core/answer/format';
+import { sentenceCase, type DisplayTerm } from '@/core/transcript/display';
 import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { Button } from '@/ui/Button';
@@ -28,6 +29,8 @@ import type { AnswerEntry } from './useLiveAnswers';
 export interface AnswerPanelProps {
   /** The answer shown, or null (none yet, or cleared). */
   entry: AnswerEntry | null;
+  /** The session's spellings for the question's sentence-case display (displayTerms()). */
+  terms?: readonly DisplayTerm[];
   /** Its position (0-based) among this call's answers. */
   index: number;
   /** How many answers this call has. */
@@ -273,7 +276,8 @@ export function AnswerPanel(props: AnswerPanelProps) {
       <p className="mt-1 text-[13px] text-ui-muted">
         Question ({source}):{' '}
         <span aria-label="Question used" className="text-ui-text">
-          {entry.question || 'the latest from Them'}
+          {/* Sentence case, as in the transcript (v1.0.1): the speech engine writes capitals. */}
+          {entry.question ? sentenceCase(entry.question, props.terms) : 'the latest from Them'}
         </span>
       </p>
       <AnswerTags
@@ -385,7 +389,9 @@ export function AnswerPanel(props: AnswerPanelProps) {
                   className="w-full truncate py-0.5 text-left text-[13px] text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
                   onClick={() => props.onShow?.(other.id)}
                 >
-                  {other.question || splitAnswer(other.text).headline}
+                  {other.question
+                    ? sentenceCase(other.question, props.terms)
+                    : splitAnswer(other.text).headline}
                 </button>
               </li>
             ))}

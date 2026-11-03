@@ -78,3 +78,25 @@ describe('transcriptChips (ADR-0029)', () => {
     expect(after).toHaveLength(2);
   });
 });
+
+describe('the answer card question (v1.0.1)', () => {
+  it('shows a heard question in sentence case with the session spellings, as the transcript does', () => {
+    const terms = displayTerms({
+      company: 'Harbor Lane',
+      preferences: { keyTerms: 'BM25, Retrieval' },
+    });
+    expect(sentenceCase('HOW DOES BM TWENTY FIVE RANK THE DOCUMENTS FOR HARBOR LANE', terms)).toBe(
+      'How does BM25 rank the documents for Harbor Lane',
+    );
+  });
+
+  it('leaves a typed question as the user wrote it', () => {
+    expect(sentenceCase('What does BM25 do?')).toBe('What does BM25 do?');
+  });
+
+  it('reads comma-separated key terms (v1.0.1 key-term rule)', () => {
+    expect(
+      displayTerms({ company: 'Acme', preferences: { keyTerms: 'Terraform, Kubernetes' } }),
+    ).toEqual(expect.arrayContaining(['Terraform', 'Kubernetes']));
+  });
+});

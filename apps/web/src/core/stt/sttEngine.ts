@@ -63,6 +63,11 @@ export interface FinalEvent {
   speechEnd: number;
   /** End of speech → this final line reached the page, in ms. */
   latencyMs: number;
+  /**
+   * v1.0.1 (ADR-0034): the utterance's audio (mono 16 kHz), only with the engine's keepAudio
+   * option, for the desktop app's accurate engine. Never stored or logged.
+   */
+  audio?: Float32Array;
 }
 
 /** An engine failure. */
@@ -92,6 +97,11 @@ export interface SttEngineOptions {
   onPartial?: (event: PartialEvent) => void;
   /** Final lines. */
   onFinal?: (event: FinalEvent) => void;
+  /**
+   * v1.0.1 (ADR-0034): give each final line its audio, for accurate transcription. Off by default,
+   * so no audio leaves the worker unless the user turned the setting on.
+   */
+  keepAudio?: boolean;
   /** Statistics, about once a second. */
   onStats?: (stats: EngineStats) => void;
   /** Failures (loading, decoding). */
@@ -254,6 +264,7 @@ export function createSttEngine(
           speechEnd: message.speechEnd,
           // Measured on the page, so it includes the worker → page hop.
           latencyMs: Math.round(deps.now() - message.speechEnd),
+          ...(message.audio ? { audio: message.audio } : {}),
         });
         break;
       case 'stats':
@@ -336,9 +347,16 @@ export function createSttEngine(
       // The worklet posts straight to the worker, so audio does not pass through the main thread.
       const pipe = new MessageChannel();
       node.port.postMessage({ type: 'connect', port: pipe.port1 }, [pipe.port1]);
-      post({ type: 'attach', channel, port: pipe.port2, inputSampleRate: audio.sampleRate }, [
-        pipe.port2,
-      ]);
+      post(
+        {
+          type: 'attach',
+          channel,
+          port: pipe.port2,
+          inputSampleRate: audio.sampleRate,
+          ...(options.keepAudio ? { keepAudio: true } : {}),
+        },
+        [pipe.port2],
+      );
       sourceNode.connect(node);
       attached.set(channel, { source: sourceNode, node });
     },

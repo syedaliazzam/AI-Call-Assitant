@@ -7,7 +7,13 @@
  * Depends on: @kite/shared (HotkeyAction)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (the platform adapter)
  */
-import type { HotkeyAction, HotkeyStatus, ShareProtectionState } from '@kite/shared';
+import type {
+  AccurateResult,
+  AccurateStatus,
+  HotkeyAction,
+  HotkeyStatus,
+  ShareProtectionState,
+} from '@kite/shared';
 import type { PipRenderer } from './pip';
 
 // Re-exported so code using the platform can import every platform type from one place.
@@ -170,6 +176,12 @@ export interface Platform {
   setCallActive(active: boolean): void;
 
   /**
+   * v1.0.1 (ADR-0034): the accurate-transcription engine (Parakeet, opt-in), or null where there
+   * is none: the browser, and a desktop app installed before v1.0.1.
+   */
+  readonly accurate: AccurateEngine | null;
+
+  /**
    * Listens for hotkey actions (answer, screenshot, chat, clear, prev, next). Call it for the length
    * of a live call only: in the desktop app it takes the shortcuts from every other app.
    * - Desktop: Electron global shortcuts, which work from any app, forwarded to the page (turned
@@ -223,4 +235,34 @@ export interface Platform {
    * @returns The state and whether this platform supports it.
    */
   getShareProtection(): Promise<ShareProtectionState>;
+}
+
+/** The accurate-transcription engine of the desktop app (ADR-0034). */
+export interface AccurateEngine {
+  /**
+   * Where the engine stands: unavailable on this computer, not downloaded, downloading, ready or
+   * failed.
+   *
+   * @returns The status, with the download's progress in bytes.
+   */
+  status(): Promise<AccurateStatus>;
+  /**
+   * Starts or resumes the model download (about 661 MB, each file checked).
+   *
+   * @returns The status after starting.
+   */
+  download(): Promise<AccurateStatus>;
+  /**
+   * Deletes the downloaded model.
+   *
+   * @returns The status afterwards.
+   */
+  remove(): Promise<AccurateStatus>;
+  /**
+   * Transcribes one finished utterance again (mono 16 kHz audio, at most 30 s).
+   *
+   * @param samples The utterance's audio.
+   * @returns The text, or why not (the page then keeps the live line).
+   */
+  transcribe(samples: Float32Array): Promise<AccurateResult>;
 }

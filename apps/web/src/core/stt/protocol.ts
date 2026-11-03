@@ -144,6 +144,11 @@ export type ToWorker =
       port: MessagePort;
       /** Sample rate of the AudioContext feeding the worklet. */
       inputSampleRate: number;
+      /**
+       * v1.0.1 (ADR-0034): send each final line's audio too, for the desktop app's accurate engine
+       * (only when the user turned it on; otherwise no audio leaves the worker).
+       */
+      keepAudio?: boolean;
     }
   | {
       /** Feed one chunk directly (tests and recordings; live audio uses 'attach'). */
@@ -230,6 +235,12 @@ export type FromWorker =
       text: string;
       /** Which rule ended it. */
       reason: EndpointReason;
+      /**
+       * v1.0.1 (ADR-0034): the utterance's audio as decoded (mono 16 kHz), only when the channel
+       * was attached with keepAudio and the utterance is at most ACCURATE_MAX_SECONDS long. Never
+       * stored or logged; the page passes it to the accurate engine and drops it.
+       */
+      audio?: Float32Array;
       /** When it started (Unix ms, capture time of the detected speech onset or first text). */
       tStart: number;
       /** When its last word changed (Unix ms, capture time). */

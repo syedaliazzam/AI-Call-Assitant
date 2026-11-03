@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.11.0"
+version: "3.12.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-03"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.10.0, **Current**: the only document to build from |
+| Version | 3.12.0, **Current**: the only document to build from |
+| Changes in 3.12.0 | v1.0.1 (ADR-0034). §6.1: optional **accurate transcription (beta)**, desktop app only, off by default: each final line's audio is transcribed again by Parakeet TDT 0.6B v2 (sherpa-onnx 1.13.8) in an Electron utility process and replaces the line's words; the live engine's line is the fallback. A lone, quiet one-word line is dropped as noise. §3.3: `accurateStatus`, `accurateDownload`, `accurateRemove`, `accurateTranscribe` on `window.kiteDesktop`; `platform.accurate`. §7.3: `src/accurate/` (model, verified resumable download, worker, host). §7.4: schema version 7 rewrites key terms one per line. Key terms are split on commas, semicolons and new lines and sanitised, never a reason for an answer to fail; Answer is idempotent for 3 s. |
 | Changes in 3.10.0 | Ask Kite and answer quality (ADR-0030). §3.3: `ask-kite` hotkey action, `onAskKiteHotkey`. §5: newest first in the live view, overlay and review, no jump-to-latest button; the Ask Kite page; the type label, source tag and claim check on answer cards; the chat switch. §6: every reply opens with a hidden line, removed by the server and sent as a `meta` event; the answer limit is 1,500 tokens; `temperature` cannot be set on the fast model. §7.2: `/api/answer` mode `kite`. §7.4: `chats` store (schema version 6); `meta` and `claims` on answers. |
 | Changes in 3.9.0 | Parity Phase 4, the Prepare tools (ADR-0029). §5: Mock Interview and Question Bank pages. §7.2: `/api/prepare`. §7.4: `questionBanks` store (schema version 5). |
 | Changes in 3.8.0 | Parity Phase 3, after the call (ADR-0029). §5: the session window has a side menu; the transcript is a chat with answers inline; Report, Download (TXT and PDF), Clear transcript, Ask AI. §7.2: `/api/ask`. |

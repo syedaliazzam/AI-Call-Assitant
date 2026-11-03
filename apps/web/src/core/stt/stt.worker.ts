@@ -113,6 +113,11 @@ const scope = globalThis as unknown as WorkerScope;
  * @param message The message (its transcript text is never logged).
  */
 function send(message: FromWorker): void {
+  // A final line's audio (v1.0.1, only with keepAudio) is moved, not copied.
+  if (message.type === 'final' && message.audio) {
+    scope.postMessage(message, [message.audio.buffer]);
+    return;
+  }
   scope.postMessage(message);
 }
 
@@ -305,13 +310,18 @@ async function loadModel(message: Extract<ToWorker, { type: 'load' }>): Promise<
  *
  * @param channel         Which channel.
  * @param inputSampleRate Rate of its AudioContext (statistics only).
+ * @param keepAudio       v1.0.1: attach each final line's audio (accurate transcription).
  * @returns The decoder, or null before the recognizer is ready.
  */
-function channelDecoder(channel: ChannelId, inputSampleRate?: number): ChannelDecoder | null {
+function channelDecoder(
+  channel: ChannelId,
+  inputSampleRate?: number,
+  keepAudio = false,
+): ChannelDecoder | null {
   if (!recognizer) return null;
   let decoder = channels.get(channel);
   if (!decoder) {
-    decoder = new ChannelDecoder(channel, recognizer, send, { inputSampleRate });
+    decoder = new ChannelDecoder(channel, recognizer, send, { inputSampleRate, keepAudio });
     channels.set(channel, decoder);
   }
   return decoder;
@@ -390,7 +400,7 @@ scope.onmessage = (event: MessageEvent<ToWorker>) => {
       break;
     case 'attach': {
       detachChannel(message.channel);
-      channelDecoder(message.channel, message.inputSampleRate);
+      channelDecoder(message.channel, message.inputSampleRate, message.keepAudio === true);
       const channel = message.channel;
       message.port.onmessage = (port: MessageEvent<{ samples: Float32Array; endTime: number }>) =>
         decodeChunk(channel, port.data.samples, port.data.endTime);

@@ -27,6 +27,8 @@ import {
 } from '@kite/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAnswerRunner, type AnswerTimeline } from '@/core/answer/answerClient';
+import { settleAnswerType, type LabelledQuestion } from '@/core/answer/answerType';
+import { createRepeatGuard } from '@/core/answer/repeatGuard';
 import { buildClaimCorpus, checkClaims, needsClaimCheck } from '@/core/answer/claimCheck';
 import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/context';
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
@@ -289,9 +291,13 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const [saveFailed, setSaveFailed] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [runner] = useState(() => createAnswerRunner());
+  // Ignores a repeat Answer for the same question (core/answer/repeatGuard.ts, v1.0.1).
+  const [repeatGuard] = useState(() => createRepeatGuard());
   // What the conversation has sent so far, and the finished answers (refs: read when asked).
   const logRef = useRef(emptyLog());
   const finishedRef = useRef<CallAnswer[]>([]);
+  // This call's questions with the type each was shown with (core/answer/answerType.ts).
+  const labelsRef = useRef<LabelledQuestion[]>([]);
   const keepWarmRef = useRef<KeepWarm | null>(null);
   const storeRef = useRef(store);
   // The chat switch, read when a question is sent: changing it must not rebuild the actions.
@@ -330,6 +336,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   useEffect(() => {
     logRef.current = emptyLog();
     finishedRef.current = [];
+    labelsRef.current = [];
     const keepWarm = startKeepWarm({
       warm: () => {
         const latest = warmInputRef.current;
@@ -432,6 +439,20 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(answerType ? { answerType } : {}),
         ...(options.question ? { question: options.question } : {}),
       });
+      // Answer is idempotent (v1.0.1): the shortcut, the overlay and auto-answer can all fire for
+      // one question. Ignored before anything changes (the log, the cards). A re-answer with a
+      // chosen type (options.question) is a deliberate new request and is not guarded.
+      if (
+        mode === 'answer' &&
+        !options.question &&
+        !repeatGuard.accept({
+          question: built.request.question ?? '',
+          streaming: runner.busy(),
+          now: Date.now(),
+        })
+      ) {
+        return;
+      }
       logRef.current = built.log;
       keepWarmRef.current?.noteActivity();
       const entry: AnswerEntry = {
@@ -462,8 +483,17 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       let meta: AnswerMeta | undefined;
       runner.run(built.request, keyPressAt, {
         onMeta: (received) => {
-          meta = received;
-          update(entry.id, { meta: received });
+          // A steady label (v1.0.1): the same question keeps its first type, and a clearly
+          // technical question is not shown as behavioural or small talk. A type the user chose
+          // on the card (answerType) is shown as chosen.
+          const type = answerType
+            ? received.type
+            : settleAnswerType(entry.question, received.type, labelsRef.current);
+          meta = { ...received, type };
+          if (entry.question.trim() !== '') {
+            labelsRef.current = [...labelsRef.current, { question: entry.question, type }];
+          }
+          update(entry.id, { meta });
         },
         onText: (text) => update(entry.id, { text }),
         onDone: (text, done, timeline) => {
@@ -526,7 +556,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         },
       });
     },
-    [session, documents, lessons, transcript, callStartedAt, runner, update],
+    [session, documents, lessons, transcript, callStartedAt, runner, repeatGuard, update],
   );
 
   const clear = useCallback(() => {

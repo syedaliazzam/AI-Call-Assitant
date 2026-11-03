@@ -13,6 +13,7 @@ import {
   answerFailureText,
   notesFailureText,
   OFFLINE_TEXT,
+  REQUEST_PROBLEM_TEXT,
   SIGNED_OUT_TEXT,
   unavailableReason,
 } from '@/core/answer/unavailable';
@@ -94,5 +95,23 @@ describe('answerFailureText: problems the user can act on (Day 6 Stage 4e)', () 
     expect(
       answerFailureText({ code: 'internal', message: 'Malformed reply from server' }).problem,
     ).toBeUndefined();
+  });
+});
+
+describe('answerFailureText: never an internal reason (v1.0.1)', () => {
+  it('turns a rejected request into plain words, not the validation path', () => {
+    const shown = answerFailureText({
+      code: 'bad_request',
+      message: 'session.keyTerms.0: Too big: expected string to have <=200 characters',
+    });
+    expect(shown.text).toBe(REQUEST_PROBLEM_TEXT);
+    expect(shown.text).not.toMatch(/session\.|keyTerms|Too big/);
+    expect(shown.unavailable).toBe(false);
+  });
+
+  it('does not show a bare HTTP status either', () => {
+    expect(answerFailureText({ code: 'internal', message: 'Request failed (HTTP 500)' }).text).toBe(
+      REQUEST_PROBLEM_TEXT,
+    );
   });
 });

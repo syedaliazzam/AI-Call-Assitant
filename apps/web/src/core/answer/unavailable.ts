@@ -80,8 +80,17 @@ export function answerFailureText(failure: AnswerFailure): FailureText {
   if (failure.code === 'internal' && CONNECTION_MESSAGES.has(failure.message)) {
     return { text: OFFLINE_TEXT, unavailable: false, problem: 'offline' };
   }
+  // A rejected request or a bare HTTP status: the server's text names validation paths
+  // ("session.keyTerms.0: Too big"), which mean nothing to the user (v1.0.1).
+  if (failure.code === 'bad_request' || /^Request failed \(HTTP \d+\)$/.test(failure.message)) {
+    return { text: REQUEST_PROBLEM_TEXT, unavailable: false };
+  }
   return { text: `The answer failed. ${failure.message}`.trim(), unavailable: false };
 }
+
+/** Shown when Kite could not send the question as it is (never the server's internal reason). */
+export const REQUEST_PROBLEM_TEXT =
+  'Kite could not send this question. Try again; if it keeps happening, check the session details and documents.';
 
 /**
  * The notes status line after a failure. The call has ended, so it says what is kept instead of

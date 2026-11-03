@@ -254,6 +254,9 @@ export const browserPlatform: Platform = {
    */
   setCallActive(_active: boolean) {},
 
+  /** No accurate engine in the browser (ADR-0034: the desktop app only). */
+  accurate: null,
+
   /**
    * A picture-in-picture window cannot change its opacity or be resized by the page.
    *

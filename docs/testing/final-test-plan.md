@@ -172,9 +172,21 @@ In Chrome, on a laptop (1280 px or wider), start a call sharing a real tab (for 
 | 5d.15 | Press **Ctrl+Alt+K** during a call. | The call keeps running; the overlay's chat box opens set to Ask Kite. |
 | 5d.16 | Settings → Hotkeys. If another app holds Ctrl+Alt+K, it says so. | "Open Ask Kite" is listed as "Any app". |
 
-## 6. New speech engine (Day 6) — not adopted, skip
+## 6. Accurate transcription (beta) — v1.0.1, ADR-0034
 
-**The speech engine trial (ADR-0027) adopted nothing:** no candidate met the on-battery speed bar (Parakeet missed p50 and p95; Whisper by 10–65×). There is no second decode pass and no "Accurate transcription" setting, so **this section does not apply.** The desktop keeps the current streaming engine. The number-key-term check that did ship is §6b.5.
+ADR-0027 adopted nothing as the default engine; v1.0.1 adds Parakeet as an **opt-in second pass** (desktop app only, off by default). Do these once on Windows:
+
+| # | Step | Expected |
+|---|---|---|
+| 6.1 | Desktop app → Settings → Transcription. | "Accurate transcription (beta)" is **off**. |
+| 6.2 | Turn it on. | A download starts (about 661 MB) with a progress line. |
+| 6.3 | Quit Kite halfway, start it again, open Settings → Transcription. | It shows the bytes already done; **Download** continues from there, not from zero. |
+| 6.4 | Let it finish. | "The accurate engine is downloaded and ready." |
+| 6.5 | Start a call; say a sentence with names from your key terms. | The line appears as before; about a second later its words change to the improved text (mixed case, punctuation). |
+| 6.6 | Same on battery. | The improved line still arrives; note how long it takes. |
+| 6.7 | Turn it off; start a call. | Lines are never replaced. |
+| 6.8 | Settings → **Delete the download**. | The model is removed; the setting can download it again. |
+| 6.9 | Open Kite in Chrome → Settings → Transcription. | It says the setting needs the desktop app. |
 
 ## 6b. Responses and speech (Part 1 — responses-and-speech)
 

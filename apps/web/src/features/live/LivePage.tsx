@@ -39,6 +39,8 @@ import { generateNotes, type NotesLine } from '@/core/notes/generate';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
 import { TranscriptWatchdog } from '@/core/stt/watchdog';
+import { getAccurateTranscription } from '@/core/storage/transcriptionPrefs';
+import { refineLine } from '@/core/transcript/refine';
 import { displayTerms } from '@/core/transcript/display';
 import { isSound, themSilent } from '@/core/audio/silence';
 import { ThemSilentNotice } from './ThemSilentNotice';
@@ -262,9 +264,13 @@ export function LivePage({
   // restart share this, so a restarted engine behaves exactly like the first one. isActive() lets
   // a replaced or torn-down engine's late messages be ignored (dev double-mount; restart).
   const makeEngine = useCallback(
-    (isActive: () => boolean): SttEngine =>
-      createSttEngine({
+    (isActive: () => boolean): SttEngine => {
+      // Accurate transcription (v1.0.1, ADR-0034): only in a desktop app that has the engine, and
+      // only when the user turned it on in Settings. Otherwise no audio leaves the speech worker.
+      const accurate = getAccurateTranscription() ? getPlatform().accurate : null;
+      return createSttEngine({
         hotwords,
+        keepAudio: accurate !== null,
         onProgress: (progress) => {
           if (isActive()) setModel((current) => ({ ...current, progress }));
         },
@@ -274,16 +280,19 @@ export function LivePage({
           noteHeard(channel, text);
           watchdog.current.noteProgress(performance.now());
         },
-        onFinal: ({ channel, text, tStart, tEnd }) => {
+        onFinal: ({ channel, text, tStart, tEnd, audio }) => {
           if (!isActive()) return;
-          transcript.addFinal({ speaker: channel, text, tStart, tEnd });
+          const line = transcript.addFinal({ speaker: channel, text, tStart, tEnd });
           noteHeard(channel, text);
           watchdog.current.noteProgress(performance.now());
+          // The second pass replaces the words a moment later; the live line is the fallback.
+          if (accurate && audio) void refineLine(accurate, transcript, line.id, text, audio);
         },
         onStats: (stats) => {
           if (isActive()) monitor.current.push(stats, performance.now());
         },
-      }),
+      });
+    },
     [hotwords, transcript, noteHeard],
   );
 

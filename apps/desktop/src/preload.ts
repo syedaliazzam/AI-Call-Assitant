@@ -3,7 +3,8 @@
  * Purpose: Runs inside the Kite window before the page and exposes exactly one object to it:
  *          window.kiteDesktop = { version, os, setHotkeysEnabled, onHotkey, captureScreenshot,
  *          openCompactView, closeCompactView, setShareProtection, getShareProtection,
- *          setCallActive } (frozen). Nothing
+ *          setCallActive, the overlay methods, and accurateStatus / accurateDownload /
+ *          accurateRemove / accurateTranscribe (v1.0.1, ADR-0034) } (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
  * Depends on: electron (contextBridge, ipcRenderer); @kite/shared (KiteDesktopApi,
@@ -21,6 +22,10 @@ import {
 } from '@kite/shared';
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import {
+  ACCURATE_DOWNLOAD_CHANNEL,
+  ACCURATE_REMOVE_CHANNEL,
+  ACCURATE_STATUS_CHANNEL,
+  ACCURATE_TRANSCRIBE_CHANNEL,
   CAPTURE_SCREENSHOT_CHANNEL,
   CALL_ACTIVE_CHANNEL,
   CHECK_HOTKEYS_CHANNEL,
@@ -115,6 +120,16 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
   setOverlayCollapsed: (collapsed: boolean) =>
     ipcRenderer.invoke(OVERLAY_COLLAPSE_CHANNEL, collapsed === true),
   minimizeMainWindow: () => ipcRenderer.invoke(MINIMIZE_MAIN_CHANNEL),
+  // v1.0.1 (ADR-0034): accurate transcription. Nothing but a Float32Array of audio crosses (the
+  // shell checks its type and length again); the text comes back in memory only.
+  accurateStatus: () => ipcRenderer.invoke(ACCURATE_STATUS_CHANNEL),
+  accurateDownload: () => ipcRenderer.invoke(ACCURATE_DOWNLOAD_CHANNEL),
+  accurateRemove: () => ipcRenderer.invoke(ACCURATE_REMOVE_CHANNEL),
+  accurateTranscribe: (samples: Float32Array) =>
+    ipcRenderer.invoke(
+      ACCURATE_TRANSCRIBE_CHANNEL,
+      samples instanceof Float32Array ? samples : new Float32Array(0),
+    ),
 });
 
 contextBridge.exposeInMainWorld('kiteDesktop', kiteDesktop);

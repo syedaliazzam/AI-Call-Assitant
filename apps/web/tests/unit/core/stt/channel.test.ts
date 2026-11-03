@@ -341,3 +341,27 @@ describe('ChannelDecoder end of speech', () => {
     expect(final?.type === 'final' && final.speechEnd).toBe(final?.type === 'final' && final.tEnd);
   });
 });
+
+describe('ChannelDecoder: audio for accurate transcription (v1.0.1, ADR-0034)', () => {
+  it("attaches the utterance's decoded audio to its final line only with keepAudio", () => {
+    for (const keepAudio of [true, false]) {
+      const { recognizer } = fakeRecognizer(['', 'HELLO', 'HELLO THERE'], [3]);
+      const events: ChannelEvent[] = [];
+      const decoder = new ChannelDecoder('them', recognizer, (e) => events.push(e), {
+        clock: fakeClock(),
+        gate: null,
+        keepAudio,
+      });
+      for (let i = 0; i < 4; i += 1) decoder.accept(loud(), i * 0.1 + 0.1);
+      const final = events.find((e) => e.type === 'final');
+      if (final?.type !== 'final') throw new Error('no final line');
+      if (keepAudio) {
+        // Four 0.1 s chunks at 16 kHz, in order.
+        expect(final.audio).toBeInstanceOf(Float32Array);
+        expect(final.audio).toHaveLength(4 * CHUNK);
+      } else {
+        expect(final.audio).toBeUndefined();
+      }
+    }
+  });
+});

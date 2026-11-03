@@ -42,6 +42,7 @@ import { DataTransfer } from './DataTransfer';
 import { HotkeyList } from './HotkeyList';
 import { LearnedLessons } from './LearnedLessons';
 import { OverlaySetting } from './OverlaySetting';
+import { TranscriptionSetting } from './TranscriptionSetting';
 
 /**
  * A titled section of the page.
@@ -250,6 +251,11 @@ export function Settings({ isAdmin }: SettingsProps) {
 
       <Section title="Screen-share protection">
         <ShareProtectionSetting />
+      </Section>
+
+      {/* v1.0.1 (ADR-0034): the opt-in accurate engine (desktop app only). */}
+      <Section title="Transcription">
+        <TranscriptionSetting />
       </Section>
 
       <Section title="Answers">

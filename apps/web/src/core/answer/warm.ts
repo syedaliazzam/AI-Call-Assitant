@@ -15,7 +15,12 @@
  *
  * Logs only the session id, timings and token counts; never session or document text.
  */
-import { DEFAULT_CODING_LANGUAGE, type ConversationChunk, type SessionContext } from '@kite/shared';
+import {
+  DEFAULT_CODING_LANGUAGE,
+  parseKeyTerms,
+  type ConversationChunk,
+  type SessionContext,
+} from '@kite/shared';
 import {
   getAnswerStyleVersion,
   getCodingLanguage,
@@ -50,10 +55,8 @@ export function toSessionContext(
     role: session.role,
     description: session.description,
     instructions: session.instructions,
-    keyTerms: session.preferences.keyTerms
-      .split('\n')
-      .map((term) => term.trim())
-      .filter((term) => term !== ''),
+    // Commas, semicolons and new lines all separate terms (shared rule, v1.0.1).
+    keyTerms: parseKeyTerms(session.preferences.keyTerms),
     // Copied field by field so the order is fixed (JSON follows insertion order).
     style: {
       format: session.preferences.style.format,
