@@ -54,3 +54,7 @@ apps/desktop/release/
 
 # v1.0.1: the accurate-transcription native runtime, staged by apps/desktop/scripts/stage-native.mjs
 apps/desktop/native/
+
+# v1.1.0: copies of another company's screens, for side-by-side checks only. Never committed;
+# docs/design/reference-catalog.md describes them in words.
+docs/design/references/
