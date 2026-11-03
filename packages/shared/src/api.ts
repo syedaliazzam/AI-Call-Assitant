@@ -345,6 +345,8 @@ export interface AnswerTimings {
  * - `claude_unavailable`: Claude cannot answer for anyone right now (the team's usage limit is
  *   reached, or Claude is overloaded); the message is one of CLAUDE_UNAVAILABLE_MESSAGES and is
  *   shown as it is.
+ * - `daily_limit`: this user has used today's Claude requests (v1.0.2, ADR-0036); HTTP 429, with
+ *   dailyLimitMessage() shown as it is. Nothing was sent to Claude.
  * - `internal`: any other server failure.
  */
 export type AnswerErrorCode =
@@ -355,7 +357,21 @@ export type AnswerErrorCode =
   | 'timeout'
   | 'refused'
   | 'claude_unavailable'
+  | 'daily_limit'
   | 'internal';
+
+/**
+ * The friendly message sent with `daily_limit` (ADR-0036), shown as it is wherever answers,
+ * notes or Ask Kite replies appear.
+ *
+ * @param limit The daily limit that was reached.
+ * @returns For example "You've reached today's limit of 300 answers. It resets at midnight UTC;
+ *          an admin can raise it."
+ * Called from: apps/web/src/server/usage.ts (limitError()); tests
+ */
+export function dailyLimitMessage(limit: number): string {
+  return `You've reached today's limit of ${limit} answers. It resets at midnight UTC; an admin can raise it.`;
+}
 
 /**
  * The messages sent with `claude_unavailable`, shown as they are in the live view, the compact
@@ -391,6 +407,16 @@ export type AnswerEvent =
       type: 'delta';
       /** Next piece of answer text, to append to what was already shown. */
       text: string;
+    }
+  | {
+      /** Event name. */
+      type: 'question';
+      /**
+       * The question the answer is for, cleaned up by Claude (the hidden last line, removed from
+       * the text; v1.0.2, ADR-0037). Arrives after the answer's words, before `done`; absent when
+       * Claude did not write it (for example the v-previous rules).
+       */
+      question: string;
     }
   | {
       /** Event name. */

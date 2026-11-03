@@ -4,7 +4,7 @@
  *          public job page (only public addresses: server/job-page.ts), extracts the company, role
  *          and description with the fast model, and returns them for the user to check and edit.
  * Used by: src/core/session/jobImport.ts (browser)
- * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts
+ * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts (and src/server/usage.ts: the daily limit, ADR-0036)
  *             (parseJobImportRequest), src/server/job-page.ts, src/server/job-import.ts,
  *             src/server/claude.ts (errors)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2, §8; ADR-0029
@@ -12,8 +12,10 @@
  * Logs ids, sizes, timings and token counts only: never the page text, what was extracted, or the
  * full address (it can carry personal tokens); the host name at most.
  */
+import { dailyLimitMessage } from '@kite/shared';
 import type { AnswerErrorCode, JobImportResponse } from '@kite/shared';
 import { getCachedSession } from '@/server/auth';
+import { countRequest } from '@/server/usage';
 import { describeClaudeError, errorLogDetails } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { extractJobDetails } from '@/server/job-import';
@@ -55,7 +57,7 @@ function jsonError(status: number, code: AnswerErrorCode, message: string): Resp
  * Handles POST /api/job-import.
  *
  * @param request The incoming request; body is a JobImportRequest (JSON).
- * @returns 401, 400, 422 (the page could not be read), 500, 502/503/504, or 200 with a
+ * @returns 401, 429 (daily limit), 400, 422 (the page could not be read), 500, 502/503/504, or 200 with a
  *          JobImportResponse; each with any Set-Cookie from the session check.
  */
 export async function POST(request: Request): Promise<Response> {
@@ -114,6 +116,13 @@ async function respond(
   if (text.length < MIN_PAGE_CHARS) {
     console.info('job-import: page empty', { userId: user.id, chars: text.length });
     return jsonError(422, 'bad_request', PAGE_MESSAGES.unreadable);
+  }
+
+  // The per-user daily limit (ADR-0036): counted before Claude is called; over it, nothing is sent.
+  const counted = await countRequest(user.id);
+  if (!counted.allowed) {
+    console.info('job-import: daily limit reached', { userId: user.id, limit: counted.limit });
+    return jsonError(429, 'daily_limit', dailyLimitMessage(counted.limit));
   }
 
   try {

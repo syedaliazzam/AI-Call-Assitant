@@ -19,9 +19,10 @@
  * - `clear`: clear the current answer.
  * - `prev` / `next`: move through earlier answers.
  * - `ask-kite`: open Ask Kite (ADR-0030).
+ * - `script-bar`: show or hide the overlay's slim script bar (v1.0.2, ADR-0035).
  */
 export type HotkeyAction =
-  'answer' | 'screenshot' | 'chat' | 'clear' | 'prev' | 'next' | 'ask-kite';
+  'answer' | 'screenshot' | 'chat' | 'clear' | 'prev' | 'next' | 'ask-kite' | 'script-bar';
 
 /** Every action the Kite page carries out (messages from the shell are checked against it). */
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
@@ -32,6 +33,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
   'prev',
   'next',
   'ask-kite',
+  'script-bar',
 ];
 
 /** A direction the overlay can move in. */
@@ -41,8 +43,11 @@ export type OverlayDirection = 'up' | 'down' | 'left' | 'right';
 export type OverlayAction =
   'overlay-toggle' | `overlay-${OverlayDirection}` | `overlay-${OverlayDirection}-big`;
 
-/** A shortcut that works from any app while a call is on. */
-export type CallHotkey = 'answer' | 'screenshot' | OverlayAction;
+/**
+ * A shortcut that works from any app while a call is on. `script-bar` goes to the page like Answer
+ * (the live page decides what the overlay shows); the overlay actions are done by the shell.
+ */
+export type CallHotkey = 'answer' | 'screenshot' | 'script-bar' | OverlayAction;
 
 /** A shortcut that works from any app, or the shortcut held for as long as the app runs. */
 export type GlobalHotkey = CallHotkey | 'ask-kite';
@@ -63,6 +68,10 @@ export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
   answer: 'CommandOrControl+Enter',
   screenshot: 'CommandOrControl+Shift+Enter',
   'overlay-toggle': 'CommandOrControl+Alt+H',
+  // v1.0.2 (ADR-0035): the script bar. Registered only during a call, like the others. On layouts
+  // where Ctrl+Alt types a letter (AltGr; Polish: AltGr+S types "ś") it can clash, and on macOS
+  // ⌘⌥S is "Save All" in some apps; Settings → Hotkeys reports a shortcut another app holds.
+  'script-bar': 'CommandOrControl+Alt+S',
   'overlay-up': 'CommandOrControl+Alt+Up',
   'overlay-down': 'CommandOrControl+Alt+Down',
   'overlay-left': 'CommandOrControl+Alt+Left',
@@ -133,6 +142,12 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     accelerator: DEFAULT_GLOBAL_HOTKEYS['overlay-toggle'],
     scope: 'global',
     actions: ['overlay-toggle'],
+  },
+  {
+    label: 'Script bar',
+    accelerator: DEFAULT_GLOBAL_HOTKEYS['script-bar'],
+    scope: 'global',
+    actions: ['script-bar'],
   },
   {
     label: 'Move overlay (add Shift for bigger steps)',

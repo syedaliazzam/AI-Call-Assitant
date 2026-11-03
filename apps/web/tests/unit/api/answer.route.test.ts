@@ -12,10 +12,18 @@
  * cache usage; a failure before any text is an error event; 401 when signed out; logs carry
  * sizes, timings and token counts, never transcript, question, answer or session text. The usage
  * limit and an overload (even mid-stream) end with claude_unavailable and the fixed message.
+ * v1.0.2 (ADR-0036): over the daily limit, 429 daily_limit and Claude is never called; answer,
+ * chat and screenshot count (msLimit logged), warm-ups and hello never do.
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { CLAUDE_UNAVAILABLE_MESSAGES, type AnswerTimings } from '@kite/shared';
+import { CLAUDE_UNAVAILABLE_MESSAGES, dailyLimitMessage, type AnswerTimings } from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+/** Spy standing in for countRequest() (the daily limit, ADR-0036): allows every request by default. */
+const countRequestMock = vi.hoisted(() =>
+  vi.fn(async (_userId: string) => ({ allowed: true, count: 1, limit: 300, ms: 0 })),
+);
+vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
 import { fakeMessageStream } from '../../helpers/fakeClaude';
 
 /** Spy standing in for client.messages.stream(). */
@@ -539,5 +547,44 @@ describe('POST /api/answer, mode screenshot (Day 5)', () => {
     ]);
     expect(logged).toContain(`"imageChars":${JPEG.length}`);
     expect(logged).not.toContain('SECRETPIXELS');
+  });
+});
+
+describe('POST /api/answer, daily limit (v1.0.2, ADR-0036)', () => {
+  it('returns 429 daily_limit with the friendly message and never calls Claude', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    countRequestMock.mockResolvedValueOnce({ allowed: false, count: 301, limit: 300, ms: 4 });
+    const response = await POST(post(JSON.stringify(ANSWER_REQUEST)));
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({
+      code: 'daily_limit',
+      message: dailyLimitMessage(300),
+    });
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(countRequestMock).toHaveBeenLastCalledWith('u1');
+  });
+
+  it('counts answer, chat and screenshot requests, and logs the check time as msLimit', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    countRequestMock.mockClear();
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
+    await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    await (await POST(post(JSON.stringify({ ...ANSWER_REQUEST, mode: 'chat' })))).text();
+    expect(countRequestMock).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(vi.mocked(console.info).mock.calls)).toContain('"msLimit":0');
+  });
+
+  it('never counts warm-ups or the hello test', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    countRequestMock.mockClear();
+    createMock.mockResolvedValue({
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 1, output_tokens: 0 },
+      content: [],
+    });
+    await (await POST(post(JSON.stringify({ mode: 'warm', session: SESSION })))).text();
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Hi'] }));
+    await (await POST(post('{"mode":"hello"}'))).text();
+    expect(countRequestMock).not.toHaveBeenCalled();
   });
 });

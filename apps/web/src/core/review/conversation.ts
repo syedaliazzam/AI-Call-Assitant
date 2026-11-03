@@ -5,7 +5,7 @@
  *          downloads leave out each answer's private note: it was never meant to be said or shared.
  * Used by: src/features/review/ConversationSection.tsx
  * Depends on: src/core/answer/format.ts (splitAnswer), src/core/transcript/display.ts (sentenceCase),
- *             src/core/storage/types.ts, ./pdf.ts
+ *             src/core/transcript/group.ts (bubbles), src/core/storage/types.ts, ./pdf.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review); ADR-0029
  *
  * Runs on this device only; nothing here is sent or logged.
@@ -13,6 +13,7 @@
 import { splitAnswer } from '../answer/format';
 import type { Session, StoredAnswer, StoredUtterance } from '../storage/types';
 import { sentenceCase, type DisplayTerm } from '../transcript/display';
+import { groupLines, type TranscriptGroup } from '../transcript/group';
 import { writePdf, type PdfLine, type PdfResult } from './pdf';
 
 /** One thing in the conversation. */
@@ -52,6 +53,55 @@ export function conversationItems(
     ...answers.map((answer) => ({ kind: 'answer' as const, at: answer.createdAt, answer })),
   ];
   return items.sort((a, b) => a.at - b.at || (a.kind === 'line' ? -1 : 1));
+}
+
+/** One thing on screen in the chat layout: a bubble of grouped lines, or one of Kite's answers. */
+export type ConversationEntry =
+  | {
+      /** A bubble: one speaker's lines with short pauses between them (v1.0.2). */
+      kind: 'group';
+      /** When its first line started (Unix ms). */
+      at: number;
+      /** The bubble. */
+      group: TranscriptGroup;
+    }
+  | Extract<ConversationItem, { kind: 'answer' }>;
+
+/**
+ * The conversation for the chat layout (v1.0.2): each run of lines between two answers is
+ * grouped into bubbles (groupLines(): same speaker, pauses up to 4 s), so a turn cut by pauses
+ * reads as one bubble. Answers stay where they were in time order. The downloads keep one row per
+ * line (transcriptText(), transcriptPdf()).
+ *
+ * @param items The conversation (conversationItems()), in time order.
+ * @param terms The session's spellings to restore.
+ * @returns The bubbles and answers, in time order.
+ * Called from: ConversationSection.tsx; tests
+ */
+export function conversationEntries(
+  items: readonly ConversationItem[],
+  terms: readonly DisplayTerm[] = [],
+): ConversationEntry[] {
+  const entries: ConversationEntry[] = [];
+  let run: StoredUtterance[] = [];
+  const flush = () => {
+    // Saved lines are all final (only finished lines are stored).
+    const groups = groupLines(
+      run.map((line) => ({ ...line, final: true })),
+      { terms },
+    );
+    for (const group of groups) entries.push({ kind: 'group', at: group.tStart, group });
+    run = [];
+  };
+  for (const item of items) {
+    if (item.kind === 'line') run.push(item.line);
+    else {
+      flush();
+      entries.push(item);
+    }
+  }
+  flush();
+  return entries;
 }
 
 /**

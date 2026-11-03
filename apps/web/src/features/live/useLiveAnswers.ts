@@ -28,7 +28,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAnswerRunner, type AnswerTimeline } from '@/core/answer/answerClient';
 import { settleAnswerType, type LabelledQuestion } from '@/core/answer/answerType';
-import { createRepeatGuard } from '@/core/answer/repeatGuard';
+import { createRepeatGuard, themSpan, type SpeechSpan } from '@/core/answer/repeatGuard';
 import { buildClaimCorpus, checkClaims, needsClaimCheck } from '@/core/answer/claimCheck';
 import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/context';
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
@@ -86,6 +86,11 @@ export interface AnswerEntry {
   thumbnail?: string;
   /** The question answered ('' when Claude was asked to answer the latest "Them" lines). */
   question: string;
+  /**
+   * The question as Claude cleaned it up (the hidden last line, v1.0.2, ADR-0037), once it has
+   * arrived; the card shows it instead of `question`, which stays the raw words on hover.
+   */
+  cleanQuestion?: string;
   /** How many transcript lines the question came from (0 for chat). */
   fromLines: number;
   /** The answer text so far. */
@@ -135,6 +140,7 @@ function fromStored(saved: StoredAnswer): AnswerEntry {
     id: saved.id,
     mode: saved.mode,
     question: saved.question,
+    ...(saved.cleanQuestion ? { cleanQuestion: saved.cleanQuestion } : {}),
     fromLines: 0,
     text: saved.text,
     status: 'done',
@@ -163,6 +169,7 @@ function toStored(entry: AnswerEntry, sessionId: string): StoredAnswer {
     sessionId,
     mode: entry.mode,
     question: entry.question,
+    ...(entry.cleanQuestion ? { cleanQuestion: entry.cleanQuestion } : {}),
     text: entry.text,
     model: entry.model,
     msFirstToken: entry.timeline && entry.text ? entry.timeline.toFirstWord : null,
@@ -244,6 +251,19 @@ export interface LiveAnswers {
   autoAnswer: () => void;
   /** Answers a typed question. */
   chat: (question: string) => void;
+  /**
+   * Answers one transcript bubble's question (its "Answer this" button, v1.0.2). Guarded like
+   * Answer: speech already answered shows its answer instead of asking again.
+   *
+   * @param question The bubble's words.
+   * @param span     The time span of the bubble's lines.
+   */
+  answerThis: (question: string, span: SpeechSpan) => void;
+  /**
+   * The ids of answers already given for some speech, with that speech's span (so a transcript
+   * bubble can show it was answered).
+   */
+  answeredSpans: readonly { span: SpeechSpan; answerId: string }[];
   /** Cancels a streaming answer; otherwise hides the answer shown. */
   clear: () => void;
   /** Shows the previous answer. */
@@ -291,8 +311,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const [saveFailed, setSaveFailed] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [runner] = useState(() => createAnswerRunner());
-  // Ignores a repeat Answer for the same question (core/answer/repeatGuard.ts, v1.0.1).
+  // Ignores a repeat Answer for the same question (core/answer/repeatGuard.ts, v1.0.1), and
+  // speech already answered (v1.0.2).
   const [repeatGuard] = useState(() => createRepeatGuard());
+  const [answeredSpans, setAnsweredSpans] = useState<{ span: SpeechSpan; answerId: string }[]>([]);
   // What the conversation has sent so far, and the finished answers (refs: read when asked).
   const logRef = useRef(emptyLog());
   const finishedRef = useRef<CallAnswer[]>([]);
@@ -399,8 +421,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         auto?: boolean;
         /** The question type chosen on the answer card. */
         answerType?: AnswerType;
-        /** A re-answer's question. */
+        /** A re-answer's question, or a transcript bubble's words ("Answer this"). */
         question?: string;
+        /** The speech a bubble's question came from ("Answer this"): guarded like Answer. */
+        span?: SpeechSpan;
       } = {},
     ) => {
       const { typed, image, auto = false, answerType } = options;
@@ -439,19 +463,23 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(answerType ? { answerType } : {}),
         ...(options.question ? { question: options.question } : {}),
       });
-      // Answer is idempotent (v1.0.1): the shortcut, the overlay and auto-answer can all fire for
-      // one question. Ignored before anything changes (the log, the cards). A re-answer with a
-      // chosen type (options.question) is a deliberate new request and is not guarded.
-      if (
-        mode === 'answer' &&
-        !options.question &&
-        !repeatGuard.accept({
+      // Answer is idempotent (v1.0.1): the shortcut, the overlay, auto-answer and a bubble's
+      // "Answer this" can all fire for one question. Decided before anything changes (the log,
+      // the cards). A re-answer with a chosen type (a question without a span) is a deliberate
+      // new request and is not guarded.
+      const span =
+        options.span ?? (built.selected ? themSpan(lines, built.selected.lineIds) : null);
+      const guarded = mode === 'answer' && (!options.question || options.span !== undefined);
+      if (guarded) {
+        const decision = repeatGuard.decide({
           question: built.request.question ?? '',
           streaming: runner.busy(),
           now: Date.now(),
-        })
-      ) {
-        return;
+          ...(span ? { span } : {}),
+          ...(auto ? { auto: true } : {}),
+        });
+        if (decision.kind === 'show') setShownId(decision.answerId);
+        if (decision.kind !== 'answer') return;
       }
       logRef.current = built.log;
       keepWarmRef.current?.noteActivity();
@@ -479,9 +507,18 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         entry,
       ]);
       setShownId(entry.id);
-      // Kept here as well as in state: the answer's end needs it in the same tick.
+      if (guarded && span) {
+        repeatGuard.remember(span, entry.id, Date.now());
+        setAnsweredSpans((current) => [...current, { span, answerId: entry.id }]);
+      }
+      // Kept here as well as in state: the answer's end needs them in the same tick.
       let meta: AnswerMeta | undefined;
+      let cleanQuestion: string | undefined;
       runner.run(built.request, keyPressAt, {
+        onQuestion: (received) => {
+          cleanQuestion = received;
+          update(entry.id, { cleanQuestion });
+        },
         onMeta: (received) => {
           // A steady label (v1.0.1): the same question keeps its first type, and a clearly
           // technical question is not shown as behavioural or small talk. A type the user chose
@@ -513,6 +550,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             timeline,
             usage: done.usage,
             ...(meta ? { meta } : {}),
+            ...(cleanQuestion ? { cleanQuestion } : {}),
             ...(claims.length > 0 ? { claims } : {}),
           };
           update(entry.id, finished);
@@ -670,6 +708,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     answer: useCallback(() => ask('answer'), [ask]),
     autoAnswer: useCallback(() => ask('answer', { auto: true }), [ask]),
     chat: useCallback((question: string) => ask('chat', { typed: question }), [ask]),
+    answerThis: useCallback(
+      (question: string, span: SpeechSpan) => ask('answer', { question, span }),
+      [ask],
+    ),
+    answeredSpans,
     clear,
     prev,
     next,

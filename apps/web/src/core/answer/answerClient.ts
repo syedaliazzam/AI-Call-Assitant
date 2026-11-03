@@ -44,6 +44,11 @@ export interface AnswerHandlers {
   onDelta: (text: string) => void;
   /** Called once before the first word, with the answer's type, target and source (ADR-0030). */
   onMeta?: (meta: AnswerMeta) => void;
+  /**
+   * Called at most once, after the answer's words, with the cleaned question from the hidden last
+   * line (v1.0.2, ADR-0037). Not called when the reply has none.
+   */
+  onQuestion?: (question: string) => void;
   /** Called once when the answer is complete. */
   onDone: (done: AnswerDone) => void;
   /** Called once when the answer fails. */
@@ -162,6 +167,11 @@ export function streamAnswer(
     }
     if (event === 'meta') {
       handlers.onMeta?.(payload.meta as AnswerMeta);
+    } else if (event === 'question') {
+      // Only a non-empty string is a question; anything else is ignored, never shown.
+      if (typeof payload.question === 'string' && payload.question.trim() !== '') {
+        handlers.onQuestion?.(payload.question.trim());
+      }
     } else if (event === 'delta') {
       firstTextAt ??= performance.now();
       handlers.onDelta(String(payload.text ?? ''));
@@ -246,6 +256,8 @@ export interface RunHandlers {
   onText: (text: string) => void;
   /** The answer's type, target and source, before its first word (ADR-0030). */
   onMeta?: (meta: AnswerMeta) => void;
+  /** The cleaned question, after the answer's words (v1.0.2, ADR-0037). */
+  onQuestion?: (question: string) => void;
   /** The answer finished: its full text, the server's details and the timeline. */
   onDone: (text: string, done: AnswerDone, timeline: AnswerTimeline) => void;
   /** The answer failed (the text so far is kept by the caller). */
@@ -303,6 +315,9 @@ export function createAnswerRunner(options: AnswerRunnerOptions = {}): AnswerRun
       current = send(request, {
         onMeta: (meta) => {
           if (live()) handlers.onMeta?.(meta);
+        },
+        onQuestion: (question) => {
+          if (live()) handlers.onQuestion?.(question);
         },
         onDelta: (piece) => {
           if (!live()) return;

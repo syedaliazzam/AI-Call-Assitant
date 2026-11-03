@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.12.0"
+version: "3.13.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-03"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.12.0, **Current**: the only document to build from |
+| Version | 3.13.0, **Current**: the only document to build from |
+| Changes in 3.13.0 | v1.0.2. **Daily limit and usage counts (ADR-0036):** the accounts database now also holds per-user daily Claude request **counts** (`usage_day`) and one admin setting (`app_setting`: the daily limit, default 300); never text. Every Claude route (`/api/answer` modes answer, chat, screenshot and kite; `/api/notes`, `/api/ask`, `/api/prepare`, `/api/job-import`, `/api/preview`) counts the request before calling Claude and, over the limit, answers 429 `daily_limit` with a friendly message; warm-ups and hello never count. §5: Admin → Usage (`/admin/usage`). §7.2: error code `daily_limit`. §8.1: what the accounts database holds. **Live view and overlay (ADR-0035, ADR-0037, ADR-0038):** §5: the desktop main window and the browser split view share one answers panel (call timer, ⋮ menu, Exit; the answers as a list, newest first; the message box always shown, with screenshot attach, microphone and Send; large Answer and Screenshot buttons with their keys; a collapse arrow); transcript bubbles (same speaker within 4 s, Them left, You right, "Answer this" on Them questions); the overlay window is truly transparent (see-through first, acrylic or vibrancy blur where the system draws it), resizable from its edges, with presets (Top centre default, Top right, Bottom centre), Reset size and position, edge snapping, "Back to compact" and Escape, and a script bar (Ctrl+Alt+S). §6: every current-rules reply also ends with a hidden **last** line `[[question\|…]]` (the cleaned question), removed by the server and sent as a `question` event after the words, so the first word is not delayed; the card shows the raw words until it arrives; the v-previous rules are unchanged. The rules forbid filler openers and lines about the other person (depth only as the Tip). Answer is idempotent per speech: auto-answer never repeats answered speech, and a manual press within 10 s shows the existing answer. §3.3: `placeOverlay`, `getOverlayPreset`, `resizeOverlay`, `setOverlayMode` on `window.kiteDesktop`; hotkey `script-bar`. Voice: dictation in calls turns speech into text only (kept out of the transcript unless the mode is For the call); read-aloud and hands-free only on the Ask Kite page. |
 | Changes in 3.12.0 | v1.0.1 (ADR-0034). §6.1: optional **accurate transcription (beta)**, desktop app only, off by default: each final line's audio is transcribed again by Parakeet TDT 0.6B v2 (sherpa-onnx 1.13.8) in an Electron utility process and replaces the line's words; the live engine's line is the fallback. A lone, quiet one-word line is dropped as noise. §3.3: `accurateStatus`, `accurateDownload`, `accurateRemove`, `accurateTranscribe` on `window.kiteDesktop`; `platform.accurate`. §7.3: `src/accurate/` (model, verified resumable download, worker, host). §7.4: schema version 7 rewrites key terms one per line. Key terms are split on commas, semicolons and new lines and sanitised, never a reason for an answer to fail; Answer is idempotent for 3 s. |
 | Changes in 3.10.0 | Ask Kite and answer quality (ADR-0030). §3.3: `ask-kite` hotkey action, `onAskKiteHotkey`. §5: newest first in the live view, overlay and review, no jump-to-latest button; the Ask Kite page; the type label, source tag and claim check on answer cards; the chat switch. §6: every reply opens with a hidden line, removed by the server and sent as a `meta` event; the answer limit is 1,500 tokens; `temperature` cannot be set on the fast model. §7.2: `/api/answer` mode `kite`. §7.4: `chats` store (schema version 6); `meta` and `claims` on answers. |
 | Changes in 3.9.0 | Parity Phase 4, the Prepare tools (ADR-0029). §5: Mock Interview and Question Bank pages. §7.2: `/api/prepare`. §7.4: `questionBanks` store (schema version 5). |
@@ -34,7 +35,7 @@ page_breaks: "1,3,5,7,9,11,13"
 | Replaces | v3.0; before that the v2.0 plan (desktop-only) and v1.1 (fully local), kept for reference only. |
 | Build window | 7 working days: Day 1 = Mon 26 Oct 2026 … Day 7 = Mon 2 Nov 2026 (Sunday off) |
 | Platforms | Desktop app for macOS and Windows, **and** the same app in a browser (Chrome or Edge) |
-| Paid services | Claude API (usage-based) and Vercel Pro hosting (section 10.4). The Neon database free plan covers user accounts. |
+| Paid services | Claude API (usage-based) and Vercel Pro hosting (section 10.4). The Neon database free plan covers user accounts and daily request counts (ADR-0036). |
 
 ## 1. Summary
 
@@ -56,7 +57,7 @@ Like ParakeetAI, Kite can be used in two ways from the same dashboard:
 | Speech-to-text | Runs **on the laptop** inside the page (sherpa-onnx compiled to WebAssembly) with Silero VAD. Audio never leaves the device. |
 | Storage | On the device, in the browser database (IndexedDB). Desktop and browser each keep their own sessions. |
 | Sign-in | Email + password accounts created by an admin on an admin page; no public sign-up (Better Auth with its admin plugin) |
-| Accounts database | Neon Postgres (free plan, added from the Vercel Marketplace) holding **only** user accounts and sign-in sessions. Call data never goes there. |
+| Accounts database | Neon Postgres (free plan, added from the Vercel Marketplace) holding **only** user accounts, sign-in sessions and, since v1.0.2, per-user daily Claude request **counts** and the daily-limit setting (ADR-0036). Call data, and any text, never goes there. |
 | API key | Stored only in Vercel environment variables, never on laptops |
 
 **Latency target (better than ParakeetAI):** first answer words **≤ 1.0 s** (p50) after the hotkey, and a readable headline **≤ 1.5 s** (p50). ParakeetAI publishes no figure; third-party reviews report 2 to 4 s pauses. Kite's targets are measured on Day 4 and Day 7 (section 6).
@@ -91,7 +92,7 @@ Not in v3.0: mock interviews, question bank, resume maker, headshots, multi-lang
 There are three parts:
 
 1. **Kite web app** (runs in the user's desktop app or browser). It renders all screens, captures audio, runs speech-to-text locally, stores sessions locally, and shows streamed answers.
-2. **Kite server** (Vercel functions in the same Next.js project). It handles sign-in (accounts in a small Neon Postgres database) and `/api/answer` + `/api/notes`, which add the system prompt and the Claude key, call Claude and stream the reply back. It **stores no call data**.
+2. **Kite server** (Vercel functions in the same Next.js project). It handles sign-in (accounts in a small Neon Postgres database) and `/api/answer` + `/api/notes`, which add the system prompt and the Claude key, call Claude and stream the reply back. It **stores no call data**; it only counts each user's Claude requests per day for the daily limit (ADR-0036).
 3. **Kite desktop shell** (Electron). It opens `kite.company.com` in its own window and adds native features through a small, typed bridge (`window.kiteDesktop`).
 
 ### 3.2 Why this shape
@@ -153,6 +154,7 @@ Kite never hides from the taskbar, Dock or process lists, and does not try to ev
 | Sign in | `/login` | Email and password form (no sign-up link) |
 | Change password | `/change-password` | Forced on first sign-in and after an admin password reset |
 | Admin: users | `/admin/users` | Admins only: list users, create user (name, email, role; the server generates the temporary password and shows it once), reset password (new generated temporary password), disable or enable, change role |
+| Admin: usage | `/admin/usage` | **v1.0.2 (ADR-0036).** Admins only: the daily limit (Claude requests per person per day, UTC; default 300), and each person's requests today and over the last 7 days. Counts only, never text. Linked from Admin: users |
 | Dashboard | `/` | **Built Day 3, rebuilt in parity Phase 2.** "Call Sessions": type tabs with counts (All / Interview / Regular / Mock), search by role or company, sort, grid or list (remembered in this browser), and a Create session menu of types. Each card shows date, company, role or topic, type and transcript chips, and status (Ready to start / Live / Ended; a "live" session idle for 12 hours shows as Ended), with Start session or Review, and a ⋮ menu: Edit, Rename, Duplicate, Delete (asks first). |
 | Create / edit session | `/sessions/new`, `/sessions/[id]/edit` | **Built Day 3, reworked in parity Phase 2.** Step 1 Details: type, "Paste a job link" (Interview and Mock), company, role or topic, job description, Resume picker (Interview and Mock) and Documents picker, from the libraries with upload; files are converted to text on this computer, at most 100,000 characters per document and 150,000 per session. Step 2 Preferences: Answer preferences (a window with format, length, tone, a preview per question type, Set as default), AI instructions (a window), answer language, model, key terms, save transcript, auto-answer. |
 | Mock Interview | `/mock` | **Built parity Phase 4.** Kite asks questions written from a session's job description and resume, read aloud by the browser's own voice; listens through the microphone with on-device speech-to-text, or takes typed answers; gives brief feedback on each and a summary; saves it as a Mock session. |
@@ -298,6 +300,7 @@ Differences decided on Day 4 (ADR-0025):
 Differences decided on Day 5:
 - `image` (mode `screenshot` only, and required there).
 - `lessons`: the approved lessons for the session's type (at most 20, each ≤ 200 characters, oldest approval first), sent with every warm-up and answer of a call (loaded once when the session opens). They go in the rules block's "Learned preferences" (§7.6).
+- Error code **`daily_limit`** (v1.0.2, ADR-0036): this user has made more Claude requests today (UTC) than the daily limit; HTTP 429 before anything is sent to Claude, with the message "You've reached today's limit of N answers. It resets at midnight UTC; an admin can raise it.", shown as it is in the live view, the overlay, Ask Kite, the notes status, the review and Prepare. Refused requests are counted too.
 - Error code **`claude_unavailable`**: Claude cannot answer for anyone right now: the usage limit (HTTP 400 "usage limits", `billing_error`, "credit balance") or an overload (529, or `overloaded_error` mid-stream). The message is fixed ("Answers are unavailable right now: the team's Claude usage limit has been reached. Your transcript is still being recorded.", or the overload version) and shown as it is in the live view and the compact view; `/api/notes` answers 503 and the notes status says why. Listening, the transcript and saving keep working.
 
 **Response:** `text/event-stream` with events `delta` (`{ "text": "..." }`), `done` (`{ "usage": {...}, "ms": {...} }`) and `error` (`{ "code": "...", "message": "..." }`). A warm-up sends only `done` (cache counts and timings) or `error`.
@@ -407,6 +410,7 @@ How Kite gets better for each user, from their own ratings (ADR-0025):
 | Text for an answer (session block, approved lessons, the call so far and the earlier answers in it, question) and screenshots on request | Sent over HTTPS to Vercel, then to Claude. Not stored by Kite's server. Screenshots exist only in memory until the request is sent; never saved to disk or logged |
 | Claude API key | Vercel environment variable only |
 | User accounts (name, email, role, password hash, sign-in sessions) | Neon Postgres on Vercel. Passwords are hashed (scrypt) and never stored or logged in plain text. |
+| Daily request counts (user id, UTC day, number of Claude requests) and the daily-limit setting | Neon Postgres on Vercel (`usage_day`, `app_setting`; v1.0.2, ADR-0036). Counts only: no question, answer, transcript or document text. Deleted with the account. |
 
 Internal approval is needed that transcript text, documents and screenshots are sent to Anthropic's API to generate answers.
 
@@ -733,7 +737,7 @@ Release checks (all must pass):
 | Screenshots cover one monitor only | Day 5 | The desktop app captures the display the Kite window is on (the primary one if that cannot be told). A known v1 limit; a display picker is backlog |
 | macOS system-audio loopback fails in Electron | Day 2 (not yet verified: no Mac; deferred to Day 6/7) | Use the browser path inside the shell (share-picker with audio), or a free virtual audio device (BlackHole) |
 | **Claude usage limit reached**: every answer, warm-up, screenshot and note fails until the limit is raised or the month resets | Day 5 (happened on 30 Oct; access back 1 Nov 00:00 UTC) | The live view, the compact view and the notes say so plainly (`claude_unavailable`); the transcript and saving keep working. One spend limit for everything, the cost agreed before every paid run, evaluations by touched group only |
-| Neon free-plan limits reached | Any | Upgrade the Neon plan; only accounts and sessions are stored, so data is tiny |
+| Neon free-plan limits reached | Any | Upgrade the Neon plan; only accounts, sessions and daily request counts (one small row per user per day) are stored, so data is tiny |
 | Latency above target **from far regions** | Day 4 (measured) | First word p50 about 1.1 s from Pakistan, of which about 0.5 s is the network to the US function; the server part (0.56–0.64 s) is within target. The §6.2 levers did not help further. Options: measure from the team's main location; Better Auth's cookie cache to skip the sign-in database lookup per request; a region near most users if they are not in the US (with the database and Claude a round trip away); keep Haiku; trim context |
 | Behind schedule by Day 5 | Day 5 | Drop auto-answer (F12) and notes (F11) to v1.1; keep F1 to F10 |
 

@@ -5,7 +5,8 @@
  * Used by: apps/desktop/src/preload.ts (Stage 5, implements it),
  *          apps/web/src/platform/desktop.ts and apps/web/src/platform/index.ts (read it)
  * Depends on: ./hotkeys.ts, ./screenshot.ts (types only)
- * Also: the accurate-transcription contract (v1.0.1, ADR-0034): status, download, remove, transcribe.
+ * Also: the accurate-transcription contract (v1.0.1, ADR-0034): status, download, remove, transcribe;
+ *       the overlay's presets, page-driven resizing and modes (v1.0.2, ADR-0035).
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 and §7.3 (preload.ts)
  */
 import type { HotkeyAction, HotkeyStatus } from './hotkeys';
@@ -149,6 +150,71 @@ export interface KiteDesktopApi {
    * @returns The text, or a failure the page answers by keeping the live engine's line.
    */
   accurateTranscribe?: (samples: Float32Array) => Promise<AccurateResult>;
+  /**
+   * v1.0.2 (ADR-0035): puts the overlay at a preset place, at its default size (560 × 420), on the
+   * display it is on, and remembers the preset as where it opens next time. With no overlay open it
+   * only remembers. Optional: a desktop app installed earlier does not have it.
+   *
+   * @param preset Where to put it.
+   * @returns Resolves when done.
+   */
+  placeOverlay?: (preset: OverlayPreset) => Promise<void>;
+  /**
+   * v1.0.2: the remembered overlay preset ('top-center' until the user picks another).
+   *
+   * @returns The preset.
+   */
+  getOverlayPreset?: () => Promise<OverlayPreset>;
+  /**
+   * v1.0.2: resizes the overlay from one of its edges, driven by the page (a see-through window
+   * cannot always be resized by the system's own frame). One drag sends 'start', any number of
+   * 'move' and one 'end'; the shell keeps it above its minimum size and on its display.
+   *
+   * @param step The drag's phase, edge and distance from where it started.
+   * @returns Resolves when applied.
+   */
+  resizeOverlay?: (step: OverlayResizeStep) => Promise<void>;
+  /**
+   * v1.0.2: switches the overlay window between its full size, its controls bar (collapsed) and
+   * the slim script bar (with or without its input row). Leaving a slim mode brings back the size
+   * and place the overlay had.
+   *
+   * @param mode The mode.
+   * @returns Resolves when done.
+   */
+  setOverlayMode?: (mode: OverlayMode) => Promise<void>;
+}
+
+/** Where the overlay can be put by a preset (ADR-0035). */
+export type OverlayPreset = 'top-center' | 'top-right' | 'bottom-center';
+
+/** Every overlay preset, in the order Settings lists them (the first is the default). */
+export const OVERLAY_PRESETS: readonly OverlayPreset[] = [
+  'top-center',
+  'top-right',
+  'bottom-center',
+];
+
+/** An edge or corner of the overlay that the page resizes it from (ADR-0035). */
+export type OverlayEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+/**
+ * The overlay window's mode (ADR-0035): `full` (the three bars), `collapsed` (the controls bar
+ * only), `script` (a slim bar with the answer line) and `script-input` (the slim bar with its
+ * one-line input open).
+ */
+export type OverlayMode = 'full' | 'collapsed' | 'script' | 'script-input';
+
+/** One step of a page-driven overlay resize (ADR-0035). */
+export interface OverlayResizeStep {
+  /** 'start' when the drag begins, 'move' while it goes on, 'end' when it is let go. */
+  phase: 'start' | 'move' | 'end';
+  /** The edge or corner being dragged. */
+  edge: OverlayEdge;
+  /** Horizontal distance from where the drag started, in DIPs (screenX difference). */
+  dx: number;
+  /** Vertical distance from where the drag started, in DIPs (screenY difference). */
+  dy: number;
 }
 
 /** Longest utterance the accurate engine transcribes, in seconds (longer ones keep the live text). */

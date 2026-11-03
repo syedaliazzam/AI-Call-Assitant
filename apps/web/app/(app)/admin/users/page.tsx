@@ -3,7 +3,8 @@
  * Purpose: The /admin/users route: lists accounts and lets the admin create and manage them.
  *          Kept thin: loads the data and passes it, with the server actions, to the feature UI.
  * Used by: Next.js App Router (admins only, see ../layout.tsx)
- * Depends on: src/server/guard.ts, src/server/users.ts, src/features/admin/*, ./actions.ts
+ * Depends on: src/server/guard.ts, src/server/users.ts, src/features/admin/*, ./actions.ts,
+ *             src/ui/LinkButton.tsx (link to Admin → Usage)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Admin: users), §8.2
  */
 import { headers } from 'next/headers';
@@ -11,6 +12,7 @@ import { CreateUserForm } from '@/features/admin/CreateUserForm';
 import { UsersTable } from '@/features/admin/UsersTable';
 import { requireAdmin } from '@/server/guard';
 import { listUserAccounts } from '@/server/users';
+import { LinkButton } from '@/ui/LinkButton';
 import { PageShell } from '@/ui/PageShell';
 import {
   createUserAction,
@@ -35,6 +37,12 @@ export default async function AdminUsersPage() {
       title="Users"
       width="lg"
       description="Create accounts and share the temporary password with each person directly."
+      // Admin → Usage (v1.0.2, ADR-0036): request counts and the daily limit.
+      actions={
+        <LinkButton href="/admin/usage" variant="secondary">
+          Usage
+        </LinkButton>
+      }
     >
       <CreateUserForm action={createUserAction} />
       <UsersTable

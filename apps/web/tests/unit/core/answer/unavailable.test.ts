@@ -5,12 +5,14 @@
  * (they say the transcript is still being recorded), a 401 as "signed out" and a lost
  * connection as "offline" (Day 6 Stage 4e), and any other failure as "The answer
  * failed." with the server's reason; notesFailureText() names the usage limit or overload, and
- * mentions the session review only when the transcript is saved.
+ * mentions the session review only when the transcript is saved. v1.0.2 (ADR-0036): the daily
+ * limit (code 'daily_limit') shows the server's message as it is, and in the notes status.
  */
-import { CLAUDE_UNAVAILABLE_MESSAGES } from '@kite/shared';
+import { CLAUDE_UNAVAILABLE_MESSAGES, dailyLimitMessage } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
 import {
   answerFailureText,
+  DAILY_LIMIT_FALLBACK_TEXT,
   notesFailureText,
   OFFLINE_TEXT,
   REQUEST_PROBLEM_TEXT,
@@ -113,5 +115,23 @@ describe('answerFailureText: never an internal reason (v1.0.1)', () => {
     expect(answerFailureText({ code: 'internal', message: 'Request failed (HTTP 500)' }).text).toBe(
       REQUEST_PROBLEM_TEXT,
     );
+  });
+});
+
+describe('daily limit (v1.0.2, ADR-0036)', () => {
+  it('shows the server message for daily_limit as it is, as a notice', () => {
+    const message = dailyLimitMessage(300);
+    expect(unavailableReason('daily_limit', message)).toBe('dailyLimit');
+    expect(answerFailureText({ code: 'daily_limit', message })).toEqual({
+      text: message,
+      unavailable: true,
+    });
+    expect(answerFailureText({ code: 'daily_limit', message: '' }).text).toBe(
+      DAILY_LIMIT_FALLBACK_TEXT,
+    );
+  });
+
+  it('says so in the notes status', () => {
+    expect(notesFailureText('dailyLimit', false)).toMatch(/today's limit of answers/);
   });
 });

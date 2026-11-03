@@ -1,7 +1,7 @@
 /**
  * Tests for apps/web/app/api/notes/route.ts (POST) and apps/web/src/server/notes.ts, with
  * sign-in and the Anthropic SDK mocked: 401 when signed out (or with a temporary password),
- * with the session cookie forwarded; 400 for a bad body, too many lines, too many characters
+ * with the session cookie forwarded; 429 over the daily limit (ADR-0036, never calling Claude); 400 for a bad body, too many lines, too many characters
  * and unknown fields, without echoing content; a valid call goes to the smart model as one
  * structured request with the cached notes rules and session block, and the JSON notes come
  * back with question ratings taken from the request (never from the model; linked by answer id,
@@ -18,6 +18,12 @@ import {
   type NotesResponse,
 } from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+/** Spy standing in for countRequest() (the daily limit, ADR-0036): allows every request by default. */
+const countRequestMock = vi.hoisted(() =>
+  vi.fn(async (_userId: string) => ({ allowed: true, count: 1, limit: 300, ms: 0 })),
+);
+vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
 
 /** Spy standing in for client.messages.create(). */
 const createMock = vi.fn();
@@ -238,5 +244,16 @@ describe('POST /api/notes', () => {
     expect(logged).toContain('"lines":2');
     expect(logged).toContain('"lessons":3');
     expect(logged).not.toContain('SECRET');
+  });
+});
+
+describe('POST /api/notes, daily limit (v1.0.2, ADR-0036)', () => {
+  it('returns 429 daily_limit and never calls Claude', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    countRequestMock.mockResolvedValueOnce({ allowed: false, count: 301, limit: 300, ms: 2 });
+    const response = await POST(post(JSON.stringify(BODY)));
+    expect(response.status).toBe(429);
+    expect(((await response.json()) as { code: string }).code).toBe('daily_limit');
+    expect(createMock).not.toHaveBeenCalled();
   });
 });

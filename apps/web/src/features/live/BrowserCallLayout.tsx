@@ -1,9 +1,9 @@
 /**
  * File: apps/web/src/features/live/BrowserCallLayout.tsx
  * Purpose: The browser live call view as a split screen (live-ui-split): on the left the shared-tab
- *          preview (TabPreview) with the live transcript under it; on the right the call timer, a
- *          menu, Exit, and the answers (the message box, the Answer and Screenshot buttons and the
- *          answer card, passed in as `answers`). A divider between the halves is draggable and
+ *          preview (TabPreview) with the live transcript under it; on the right the answers panel
+ *          (passed in as `answers`: the same panel as the desktop main window since v1.0.2, with
+ *          its own call timer, ⋮ menu and Exit). A divider between the halves is draggable and
  *          remembered per device; at 1280 px and wider the halves sit side by side, below that they
  *          stack (preview above answers). The right panel can be collapsed to a side arrow.
  * Used by: src/features/live/LivePage.tsx (browser only; the desktop keeps LiveCallLayout)
@@ -25,7 +25,7 @@ import {
 import { clampSplit, getSplit, setSplit, SPLIT_RANGE } from '@/core/live/splitPane';
 import { BrandLockup } from '@/ui/BrandLockup';
 import { Badge, type BadgeTone } from '@/ui/Badge';
-import { CollapseIcon, ExpandIcon, MenuIcon } from '@/ui/icons';
+import { CollapseIcon, ExpandIcon } from '@/ui/icons';
 import { TabPreview, type TabPreviewProps } from './TabPreview';
 
 /** The call's status badge in the top bar. */
@@ -46,34 +46,17 @@ export interface BrowserCallLayoutProps {
   status: BrowserCallStatus;
   /** The audio meters (top bar). */
   meters: ReactNode;
-  /** When the call connected (Unix ms), for the timer; null before it connects. */
-  callStartedAt: number | null;
   /** The shared-tab preview and its control strip. */
   preview: TabPreviewProps;
   /** The live transcript (shown under the preview). */
   transcript: ReactNode;
-  /** The answers side: the message box, Answer/Screenshot buttons and the answer card. */
+  /**
+   * The answers panel (LiveAnswers.tsx): its own top bar (call timer, ⋮ menu, Exit), the answers,
+   * the message box and the Answer and Screenshot buttons (v1.0.2: the same panel as the desktop).
+   */
   answers: ReactNode;
   /** Notices across the full width (channel errors, restarts), or nothing. */
   notices?: ReactNode;
-  /** Ends the call (the Exit button and the menu). */
-  onExit: () => void;
-  /** Opens the overlay (the menu). */
-  onOverlay: () => void;
-}
-
-/**
- * Formats a number of whole seconds as mm:ss (or h:mm:ss from an hour) for the call timer.
- *
- * @param seconds Whole seconds since the call connected.
- * @returns For example "03:12" or "1:04:09".
- */
-function clock(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  const mmss = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  return h > 0 ? `${h}:${mmss}` : mmss;
 }
 
 /**
@@ -122,21 +105,8 @@ export function BrowserCallLayout(props: BrowserCallLayoutProps) {
   const [dragFraction, setDragFraction] = useState<number | null>(null);
   const fraction = dragFraction ?? savedFraction;
   const [collapsed, setCollapsed] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
-
-  // The call timer ticks from a clock state the interval advances (no setState in the effect body).
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  useEffect(() => {
-    if (props.callStartedAt === null) return;
-    const timer = setInterval(() => setNowMs(Date.now()), 1_000);
-    return () => clearInterval(timer);
-  }, [props.callStartedAt]);
-  const elapsed =
-    props.callStartedAt === null
-      ? 0
-      : Math.max(0, Math.floor((nowMs - props.callStartedAt) / 1_000));
 
   // Dragging the divider: the left column's width is the pointer's share of the body's width.
   const onPointerMove = useCallback((event: PointerEvent) => {
@@ -172,63 +142,11 @@ export function BrowserCallLayout(props: BrowserCallLayoutProps) {
     </section>
   );
   const right = (
+    // Stacked (narrow) the panel needs its own height: the answers scroll inside it.
     <section
-      aria-label="Answers"
-      className="flex min-h-0 min-w-0 flex-col gap-3 @min-[900px]:overflow-y-auto"
+      aria-label="Answers panel"
+      className={`flex min-h-0 min-w-0 flex-col ${sideBySide ? '' : 'h-[40rem]'}`}
     >
-      <div className="flex items-center gap-3 border-b border-ui-border pb-3">
-        <span className="font-mono text-[15px] tabular-nums text-ui-text" aria-label="Call time">
-          {clock(elapsed)}
-        </span>
-        <div className="relative ml-auto">
-          <button
-            type="button"
-            aria-label="More"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-control text-ui-muted hover:bg-ui-surface hover:text-ui-text focus-visible:[box-shadow:var(--k-focus)] focus:outline-none pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-          >
-            <MenuIcon />
-          </button>
-          {menuOpen && (
-            <div
-              role="menu"
-              className="absolute right-0 top-9 z-10 flex min-w-40 flex-col rounded-control border border-ui-border bg-ui-surface py-1 text-[13px] shadow-modal"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                className="px-3 py-2 text-left text-ui-text hover:bg-ui-subtle pointer-coarse:min-h-11"
-                onClick={() => {
-                  setMenuOpen(false);
-                  props.onOverlay();
-                }}
-              >
-                Open overlay
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="px-3 py-2 text-left text-ui-danger hover:bg-ui-subtle pointer-coarse:min-h-11"
-                onClick={() => {
-                  setMenuOpen(false);
-                  props.onExit();
-                }}
-              >
-                End call
-              </button>
-            </div>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={props.onExit}
-          className="inline-flex h-8 items-center rounded-control border border-ui-border px-3 text-[13px] font-medium text-ui-text hover:bg-ui-surface focus-visible:[box-shadow:var(--k-focus)] focus:outline-none pointer-coarse:min-h-11"
-        >
-          Exit
-        </button>
-      </div>
       {props.answers}
     </section>
   );

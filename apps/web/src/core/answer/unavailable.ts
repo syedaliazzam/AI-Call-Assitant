@@ -3,17 +3,23 @@
  * Purpose: The text Kite shows when an answer or the call notes fail. When Claude cannot answer
  *          for anyone right now (the team's usage limit is reached, or Claude is overloaded:
  *          code 'claude_unavailable'), the live view, the compact view and the notes status show
- *          that plainly, and say the transcript keeps working, instead of a generic failure.
+ *          that plainly, and say the transcript keeps working, instead of a generic failure. The
+ *          same goes for the user's own daily limit (code 'daily_limit', v1.0.2, ADR-0036): the
+ *          server's friendly message is shown as it is.
  * Used by: src/features/live/useLiveAnswers.ts, LiveAnswers.tsx (compact view state),
- *          AnswerPanel.tsx; src/core/notes/generate.ts; src/features/live/LivePage.tsx (notes)
+ *          AnswerPanel.tsx; src/core/notes/generate.ts; src/features/live/LivePage.tsx (notes);
+ *          src/features/ask-kite/AskKitePage.tsx; src/core/prepare/client.ts; src/core/review/ask.ts
  * Depends on: @kite/shared (AnswerErrorCode, CLAUDE_UNAVAILABLE_MESSAGES), answerClient.ts (type)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (error codes)
  */
 import { CLAUDE_UNAVAILABLE_MESSAGES, type AnswerErrorCode } from '@kite/shared';
 import type { AnswerFailure } from './answerClient';
 
-/** Why Claude is unavailable: a key of CLAUDE_UNAVAILABLE_MESSAGES. */
-export type UnavailableReason = keyof typeof CLAUDE_UNAVAILABLE_MESSAGES;
+/**
+ * Why Claude is unavailable: a key of CLAUDE_UNAVAILABLE_MESSAGES (for everyone), or 'dailyLimit'
+ * (this user has used today's requests; ADR-0036).
+ */
+export type UnavailableReason = keyof typeof CLAUDE_UNAVAILABLE_MESSAGES | 'dailyLimit';
 
 /**
  * A failure the user can act on, shown in its own box (Day 6 Stage 4e): 'signed-out' (the
@@ -36,15 +42,16 @@ const CONNECTION_MESSAGES = new Set(['Network error', 'The connection closed bef
 export interface FailureText {
   /** The text, ready to show. */
   text: string;
-  /** True when Claude is unavailable for everyone (shown as a notice, not as this answer's failure). */
+  /** True when Claude is unavailable (for everyone, or for this user until tomorrow: the daily
+   *  limit), shown as a notice, not as this answer's failure. */
   unavailable: boolean;
   /** A failure the user can act on (its own box), or undefined for any other failure. */
   problem?: AnswerProblem;
 }
 
 /**
- * Finds why Claude is unavailable from a server error: only the code 'claude_unavailable' with
- * one of the known messages counts (the server sends exactly those).
+ * Finds why Claude is unavailable from a server error: the code 'claude_unavailable' with one of
+ * the known messages (the server sends exactly those), or the code 'daily_limit'.
  *
  * @param code    The error code.
  * @param message The server's message.
@@ -55,8 +62,11 @@ export function unavailableReason(
   code: AnswerErrorCode | string | undefined,
   message: string | undefined,
 ): UnavailableReason | null {
+  if (code === 'daily_limit') return 'dailyLimit';
   if (code !== 'claude_unavailable') return null;
-  const reasons = Object.keys(CLAUDE_UNAVAILABLE_MESSAGES) as UnavailableReason[];
+  const reasons = Object.keys(
+    CLAUDE_UNAVAILABLE_MESSAGES,
+  ) as (keyof typeof CLAUDE_UNAVAILABLE_MESSAGES)[];
   // An unknown message with this code (a newer server) still means unavailable: the usage limit
   // is the likelier reason.
   return reasons.find((reason) => CLAUDE_UNAVAILABLE_MESSAGES[reason] === message) ?? 'usageLimit';
@@ -72,6 +82,10 @@ export function unavailableReason(
  */
 export function answerFailureText(failure: AnswerFailure): FailureText {
   const reason = unavailableReason(failure.code, failure.message);
+  // The daily limit's message names the limit (dailyLimitMessage()), so it is shown as sent.
+  if (reason === 'dailyLimit') {
+    return { text: failure.message || DAILY_LIMIT_FALLBACK_TEXT, unavailable: true };
+  }
   if (reason) return { text: CLAUDE_UNAVAILABLE_MESSAGES[reason], unavailable: true };
   // The server's 401: the session cookie has expired or the account was signed out.
   if (failure.code === 'unauthorized') {
@@ -87,6 +101,10 @@ export function answerFailureText(failure: AnswerFailure): FailureText {
   }
   return { text: `The answer failed. ${failure.message}`.trim(), unavailable: false };
 }
+
+/** Shown for the daily limit if the server's message is missing (it always sends one). */
+export const DAILY_LIMIT_FALLBACK_TEXT =
+  "You've reached today's limit of answers. It resets at midnight UTC; an admin can raise it.";
 
 /** Shown when Kite could not send the question as it is (never the server's internal reason). */
 export const REQUEST_PROBLEM_TEXT =
@@ -111,6 +129,9 @@ export function notesFailureText(
     : '';
   if (reason === 'usageLimit') {
     return `The call notes could not be written: the team's Claude usage limit has been reached.${later}`;
+  }
+  if (reason === 'dailyLimit') {
+    return `The call notes could not be written: you've reached today's limit of answers (it resets at midnight UTC).${later}`;
   }
   if (reason === 'overloaded') {
     return `The call notes could not be written: Claude is overloaded.${later}`;

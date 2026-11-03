@@ -6,6 +6,12 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+/** Spy standing in for countRequest() (the daily limit, ADR-0036): allows every request by default. */
+const countRequestMock = vi.hoisted(() =>
+  vi.fn(async (_userId: string) => ({ allowed: true, count: 1, limit: 300, ms: 0 })),
+);
+vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
+
 vi.mock('server-only', () => ({}));
 const mocks = vi.hoisted(() => ({
   jsonReply: vi.fn(),

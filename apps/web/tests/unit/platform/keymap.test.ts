@@ -3,6 +3,7 @@
  * ⌘ on macOS and Ctrl elsewhere (Answer, Screenshot, Clear, Previous, Next); the other
  * platform's modifier, Alt, held-down repeats and keys typed in a text box are not shortcuts;
  * listenForHotkeys() calls the handler, prevents the browser's default and stops listening.
+ * The two Alt shortcuts: Ask Kite (ADR-0030) and the script bar (v1.0.2, ADR-0035).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { hotkeyFor, listenForHotkeys, type KeyPress } from '@/platform/keymap';
@@ -52,6 +53,18 @@ describe('hotkeyFor', () => {
     expect(hotkeyFor(press('j', { ctrlKey: true, altKey: true }), false)).toBeNull();
     const input = { tagName: 'INPUT' } as unknown as EventTarget;
     expect(hotkeyFor(press('k', { ctrlKey: true, altKey: true, target: input }), false)).toBeNull();
+  });
+
+  it('maps the script bar (Ctrl+Alt+S, ⌘⌥S), not with Shift, not the AltGr letter (ADR-0035)', () => {
+    expect(hotkeyFor(press('s', { ctrlKey: true, altKey: true }), false)).toBe('script-bar');
+    expect(hotkeyFor(press('S', { ctrlKey: true, altKey: true }), false)).toBe('script-bar');
+    expect(hotkeyFor(press('s', { metaKey: true, altKey: true }), true)).toBe('script-bar');
+    expect(hotkeyFor(press('s', { ctrlKey: true, altKey: true }), true)).toBeNull();
+    expect(
+      hotkeyFor(press('s', { ctrlKey: true, altKey: true, shiftKey: true }), false),
+    ).toBeNull();
+    // A Polish layout: Ctrl+Alt is AltGr and types "ś"; that is typing, not the shortcut.
+    expect(hotkeyFor(press('ś', { ctrlKey: true, altKey: true }), false)).toBeNull();
   });
 
   it('ignores other keys, Alt, repeats, both modifiers and typing in a text box', () => {

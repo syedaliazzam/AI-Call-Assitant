@@ -1,10 +1,12 @@
 /**
  * File: apps/web/src/features/live/ChatBox.tsx
- * Purpose: The typed-question box of the live view: Enter sends the question (mode 'chat'),
- *          Escape clears it, and "Ask about my screen" sends it with a screenshot (Day 5). The switch
- *          next to it says who the answer is for: Auto, For the call or Ask Kite (ADR-0030).
+ * Purpose: The message box of the live view (v1.0.2, reference layout: always shown, above the
+ *          Answer and Screenshot buttons): who the answer is for (Auto, For the call or Ask Kite;
+ *          ADR-0030), "Type a manual message…", × to clear it, the microphone to dictate it
+ *          (ADR-0038; speech becomes text only), a screenshot attach switch (the message is then
+ *          asked about a screenshot of the screen, Day 5), and Send. Enter sends; Escape clears.
  * Used by: src/features/live/LiveAnswers.tsx
- * Depends on: src/ui/Button.tsx, @kite/shared (TargetChoice)
+ * Depends on: src/ui (Button, icons), @kite/shared (TargetChoice)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session); day-04-answers.md
  *               Stage 6
  *
@@ -13,8 +15,9 @@
 'use client';
 
 import type { TargetChoice } from '@kite/shared';
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Button } from '@/ui/Button';
+import { CloseIcon, MicIcon, MonitorIcon } from '@/ui/icons';
 
 /** The switch's choices, in the order shown. */
 export const TARGET_OPTIONS: readonly { value: TargetChoice; label: string }[] = [
@@ -22,6 +25,14 @@ export const TARGET_OPTIONS: readonly { value: TargetChoice; label: string }[] =
   { value: 'call', label: 'For the call' },
   { value: 'kite', label: 'Ask Kite' },
 ];
+
+/** The dictation controls the box shows when speech can be dictated in this call. */
+export interface ChatBoxDictation {
+  /** True while listening. */
+  listening: boolean;
+  /** Starts or stops listening. */
+  onToggle: () => void;
+}
 
 /** Props for ChatBox. */
 export interface ChatBoxProps {
@@ -33,24 +44,49 @@ export interface ChatBoxProps {
   target: TargetChoice;
   /** Changes who answers are for (remembered for this session). */
   onTarget: (target: TargetChoice) => void;
+  /** Grows each time the Chat or Ask Kite shortcut is pressed: the box then takes the typing. */
+  focusSignal?: number;
+  /** The microphone button; absent when dictation is not available. */
+  dictation?: ChatBoxDictation;
 }
 
+/** The look of the box's small icon buttons. */
+const ICON_BUTTON =
+  'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-ui-muted hover:bg-ui-hover hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+
 /**
- * The typed-question box.
+ * The message box.
  *
  * @param props See ChatBoxProps.
  * @returns The box.
- * Rendered by: LiveAnswers.tsx (while Chat is open)
+ * Rendered by: LiveAnswers.tsx
  */
-export function ChatBox({ onSend, onAskScreen, target, onTarget }: ChatBoxProps) {
+export function ChatBox({
+  onSend,
+  onAskScreen,
+  target,
+  onTarget,
+  focusSignal = 0,
+  dictation,
+}: ChatBoxProps) {
   const [text, setText] = useState('');
+  // The next message goes with a screenshot of the screen.
+  const [attach, setAttach] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
 
-  /** Sends the question, unless it is empty, and clears the box. */
+  // Chat or Ask Kite pressed: the box takes the typing (only then; updates never take focus).
+  useEffect(() => {
+    if (focusSignal > 0) input.current?.focus();
+  }, [focusSignal]);
+
+  /** Sends the message, unless it is empty, and clears the box. */
   const send = () => {
     const question = text.trim();
     if (!question) return;
-    onSend(question);
+    if (attach) onAskScreen(question);
+    else onSend(question);
     setText('');
+    setAttach(false);
   };
 
   /**
@@ -70,18 +106,29 @@ export function ChatBox({ onSend, onAskScreen, target, onTarget }: ChatBoxProps)
 
   return (
     <form
-      className="flex flex-wrap gap-2"
+      aria-label="Message"
+      className="flex items-center gap-1 rounded-card border border-ui-border bg-ui-input p-1"
       onSubmit={(event) => {
         event.preventDefault();
         send();
       }}
     >
+      <button
+        type="button"
+        className={`${ICON_BUTTON} ${attach ? 'bg-ui-hover text-ui-accent' : ''}`}
+        aria-label="Attach a screenshot of my screen"
+        aria-pressed={attach}
+        title={attach ? 'This message will be asked about a screenshot' : 'Attach a screenshot'}
+        onClick={() => setAttach((on) => !on)}
+      >
+        <MonitorIcon />
+      </button>
       <select
         aria-label="Who the answer is for"
         title="Auto decides for each question. For the call: words to say. Ask Kite: a private answer on any topic."
         value={target}
         onChange={(event) => onTarget(event.target.value as TargetChoice)}
-        className="border border-ui-border bg-ui-input px-2 py-2 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-[13px]"
+        className="h-9 shrink-0 border-0 bg-transparent px-1 text-base text-ui-muted hover:text-ui-text focus:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-[13px]"
       >
         {TARGET_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
@@ -90,32 +137,41 @@ export function ChatBox({ onSend, onAskScreen, target, onTarget }: ChatBoxProps)
         ))}
       </select>
       <input
+        ref={input}
         aria-label="Type a question"
-        // The box opens when the user presses Chat, so it should take the typing at once.
-        autoFocus
-        className="min-w-0 flex-1 basis-56 border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-[13px]"
-        placeholder="Type a question for Kite, then press Enter"
+        className="h-9 min-w-0 flex-1 border-0 bg-transparent px-2 text-base text-ui-text placeholder:text-ui-muted focus:outline-none pointer-coarse:min-h-11 md:text-[15px]"
+        placeholder={
+          dictation?.listening ? 'Listening… speak your question' : 'Type a manual message…'
+        }
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
         maxLength={2_000}
       />
-      <Button type="submit" variant="secondary" disabled={!text.trim()}>
+      {text && (
+        <button
+          type="button"
+          className={ICON_BUTTON}
+          aria-label="Clear the message"
+          onClick={() => setText('')}
+        >
+          <CloseIcon />
+        </button>
+      )}
+      {dictation && (
+        <button
+          type="button"
+          className={`${ICON_BUTTON} ${dictation.listening ? 'bg-ui-danger-bg text-ui-danger' : ''}`}
+          aria-label={dictation.listening ? 'Stop listening' : 'Speak a question'}
+          aria-pressed={dictation.listening}
+          title="Speak your question; it is sent when you pause (it becomes text only)"
+          onClick={dictation.onToggle}
+        >
+          <MicIcon />
+        </button>
+      )}
+      <Button type="submit" size="sm" disabled={!text.trim()}>
         Send
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={!text.trim()}
-        title="Ask this about a screenshot of your screen"
-        onClick={() => {
-          const question = text.trim();
-          if (!question) return;
-          onAskScreen(question);
-          setText('');
-        }}
-      >
-        Ask about my screen
       </Button>
     </form>
   );

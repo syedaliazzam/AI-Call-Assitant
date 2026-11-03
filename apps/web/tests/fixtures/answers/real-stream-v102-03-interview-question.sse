@@ -1,0 +1,81 @@
+event: meta
+data: {"meta":{"type":"behavioural","target":"call","source":"docs"}}
+
+event: delta
+data: {"text":"At"}
+
+event: delta
+data: {"text":" Copperleaf Pay"}
+
+event: delta
+data: {"text":"ments I led the move of our"}
+
+event: delta
+data: {"text":" invoice API to"}
+
+event: delta
+data: {"text":" read replicas plus a"}
+
+event: delta
+data: {"text":" Redis cache.\n- The"}
+
+event: delta
+data: {"text":" inv"}
+
+event: delta
+data: {"text":"oice API was slow"}
+
+event: delta
+data: {"text":"ed"}
+
+event: delta
+data: {"text":" by"}
+
+event: delta
+data: {"text":" load"}
+
+event: delta
+data: {"text":" on a"}
+
+event: delta
+data: {"text":" single Postgres server."}
+
+event: delta
+data: {"text":"\n- I mo"}
+
+event: delta
+data: {"text":"ved re"}
+
+event: delta
+data: {"text":"ads to replicas and put"}
+
+event: delta
+data: {"text":" a"}
+
+event: delta
+data: {"text":" Redis cache in"}
+
+event: delta
+data: {"text":" front of the"}
+
+event: delta
+data: {"text":" hot paths.\n- p"}
+
+event: delta
+data: {"text":"95 latency fell from "}
+
+event: delta
+data: {"text":"900 ms to 250 "}
+
+event: delta
+data: {"text":"ms, and database CPU"}
+
+event: delta
+data: {"text":" dropped by half.\n"}
+
+event: question
+data: {"question":"Tell me about a time you improved the performance of a system?"}
+
+event: done
+data: {"usage":{"input_tokens":348,"output_tokens":157,"cache_creation_input_tokens":324,"cache_read_input_tokens":3446},"ms":{"auth":0,"toStreamOpen":0,"streamOpenToFirstText":0,"toFirstText":940,"total":1415}}
+

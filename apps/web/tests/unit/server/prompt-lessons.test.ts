@@ -29,9 +29,11 @@ import { parseAnswerRequest } from '@/server/validate';
  * release run; a second, stricter fix scored lower and was reverted). v1.0.1: each question type is
  * defined (a technical "what happens when…" is a concept), and the CV rule names the details a real
  * call added (employer or platform names, data sources, scores, process steps). Not evaluated
- * (lean release; v-previous is unchanged for rollback).
+ * (lean release; v-previous is unchanged for rollback). v1.0.2 (ADR-0037): the hidden last line with the
+ * cleaned question, and no filler openers or lines about the other person (depth only as the
+ * Tip). Not evaluated (the developer asked for no paid evaluations); v-previous unchanged.
  */
-const RULES_SHA256 = '35e327702996993b58973607fa58f4439b1c3deacc0109e6ff2587462fd7b722';
+const RULES_SHA256 = '1bad8ce8feb12bd386c175e8191f000bcb61c8c4c40dde7f95fe234e5b9bea67';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte

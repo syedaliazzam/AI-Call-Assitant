@@ -6,7 +6,7 @@
  *          as plain text for Copy.
  * Used by: src/features/answers/AnswerBody.tsx, src/features/live/AnswerPanel.tsx,
  *          src/features/live/LiveAnswers.tsx (the overlay), src/core/review/conversation.ts
- * Depends on: nothing
+ * Depends on: src/core/transcript/display.ts (sentenceCase, for the card's question)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 step 6 (headline, then
  *               bullets); day-04-answers.md Stage 6; ADR-0030 (the coding shape)
  *
@@ -14,6 +14,8 @@
  * text arrives a few words at a time, and Claude sometimes adds Markdown marks (**bold**, "- ",
  * "• ", "1. "). Those marks are removed so the panel shows clean text.
  */
+
+import { sentenceCase, type DisplayTerm } from '../transcript/display';
 
 /** A code block in an answer. */
 export interface AnswerCode {
@@ -53,6 +55,20 @@ const NOTE_LABEL = /^(?:private\s+)?note\s*:\s*/i;
 
 /** Bullet marks at the start of a line: "-", "*", "•", or "1." / "1)". */
 const BULLET_MARK = /^\s*(?:[-*•]|\d+[.)])\s+/;
+
+/**
+ * A hidden line ("[[coding|call|docs]]", "[[question|…]]"). The server removes them (server/
+ * answer-meta.ts); this is the second fail-safe, so one that slipped through is never shown.
+ */
+const HIDDEN_LINE = /^\s*\[\[/;
+
+/**
+ * A line about the other person rather than words to say ("If they want more depth, …", "You
+ * could mention …"). The rules ask for depth only as the Tip (v1.0.2); a line like this that still
+ * arrives is shown as the Tip, never as a bullet.
+ */
+const DEPTH_OFFER =
+  /^(?:if (?:they|he|she|the (?:interviewer|client|customer|other person))\b[^.]*\b(?:want|wants|ask|asks|need|needs|press|presses)\b|(?:you|I) (?:could|can) (?:also )?(?:mention|add|offer)\b)/i;
 
 /** A line that opens or closes a code block, with the language it may name. */
 const CODE_FENCE = /^\s*```\s*([\w+#-]*)\s*$/;
@@ -98,6 +114,7 @@ export function splitAnswer(text: string): AnswerParts {
       continue;
     }
     if (line.trim() === '') continue;
+    if (HIDDEN_LINE.test(line)) continue;
     if (headline === '' && bullets.length === 0 && code.length === 0) {
       // A model sometimes labels the first line "Headline:"; the panel shows the headline itself.
       headline = plain(line.replace(BULLET_MARK, '')).replace(HEADLINE_LABEL, '');
@@ -108,6 +125,8 @@ export function splitAnswer(text: string): AnswerParts {
     if (TIP_LABEL.test(clean)) tip = clean.replace(TIP_LABEL, '');
     else if (SAY_LABEL.test(clean)) say = clean.replace(SAY_LABEL, '');
     else if (NOTE_LABEL.test(clean)) note = clean.replace(NOTE_LABEL, '');
+    // A depth offer is the Tip when there is none; a second one adds nothing to say.
+    else if (DEPTH_OFFER.test(clean)) tip ||= clean;
     else bullets.push(clean);
   }
   return { headline, bullets, code, say, tip, note };
@@ -130,4 +149,26 @@ export function answerText(text: string): string {
     ...(say ? [say] : []),
     ...(tip ? [tip] : []),
   ].join('\n');
+}
+
+/**
+ * The question to show on an answer card (v1.0.2, ADR-0037): Claude's cleaned question once it has
+ * arrived, otherwise the raw words in sentence case (the speech model writes capitals), otherwise a
+ * fallback.
+ *
+ * @param raw      The question as picked from the transcript or typed ('' when none).
+ * @param clean    Claude's cleaned question, if it has arrived.
+ * @param terms    The session's spellings to restore in the raw words (displayTerms()).
+ * @param fallback What to show when there is no question at all.
+ * @returns The words to show.
+ * Called from: AnswerPanel.tsx, LiveAnswers.tsx (the overlay's state); tests
+ */
+export function cardQuestion(
+  raw: string,
+  clean: string | undefined,
+  terms: readonly DisplayTerm[] = [],
+  fallback = 'The latest from Them',
+): string {
+  if (clean?.trim()) return clean.trim();
+  return raw.trim() ? sentenceCase(raw.trim(), terms) : fallback;
 }

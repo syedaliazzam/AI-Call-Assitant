@@ -1,8 +1,9 @@
 /**
  * File: apps/desktop/src/hotkeys.ts
  * Purpose: The desktop app's global shortcuts (architecture §7.3; ADR-0029): Electron
- *          globalShortcut with the default accelerators. Answer and Screenshot are forwarded to
- *          the Kite page as `kite:hotkey` messages (preload.ts hands them to
+ *          globalShortcut with the default accelerators. Answer, Screenshot and (v1.0.2,
+ *          ADR-0035) the script bar are forwarded to the Kite page as `kite:hotkey` messages
+ *          (preload.ts hands them to
  *          window.kiteDesktop.onHotkey); showing, hiding and moving the overlay is done by the
  *          shell itself. The page turns them on for a live call and off at End
  *          (`kite:set-hotkeys`, from the Kite origin only); they are also released when the app

@@ -3,7 +3,8 @@
  * Purpose: Runs inside the Kite window before the page and exposes exactly one object to it:
  *          window.kiteDesktop = { version, os, setHotkeysEnabled, onHotkey, captureScreenshot,
  *          openCompactView, closeCompactView, setShareProtection, getShareProtection,
- *          setCallActive, the overlay methods, and accurateStatus / accurateDownload /
+ *          setCallActive, the overlay methods (v1.0.2: placeOverlay, getOverlayPreset,
+ *          resizeOverlay, setOverlayMode; ADR-0035), and accurateStatus / accurateDownload /
  *          accurateRemove / accurateTranscribe (v1.0.1, ADR-0034) } (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
@@ -19,6 +20,9 @@ import {
   type DesktopOs,
   type HotkeyAction,
   type KiteDesktopApi,
+  type OverlayMode,
+  type OverlayPreset,
+  type OverlayResizeStep,
 } from '@kite/shared';
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import {
@@ -35,7 +39,11 @@ import {
   MINIMIZE_MAIN_CHANNEL,
   OPEN_COMPACT_CHANNEL,
   OVERLAY_COLLAPSE_CHANNEL,
+  OVERLAY_MODE_CHANNEL,
   OVERLAY_OPACITY_CHANNEL,
+  OVERLAY_PLACE_CHANNEL,
+  OVERLAY_PRESET_CHANNEL,
+  OVERLAY_RESIZE_CHANNEL,
   SET_HOTKEYS_CHANNEL,
   SET_PROTECTION_CHANNEL,
 } from './channels';
@@ -120,6 +128,19 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
   setOverlayCollapsed: (collapsed: boolean) =>
     ipcRenderer.invoke(OVERLAY_COLLAPSE_CHANNEL, collapsed === true),
   minimizeMainWindow: () => ipcRenderer.invoke(MINIMIZE_MAIN_CHANNEL),
+  // v1.0.2 (ADR-0035): presets, page-driven resizing and modes. Only a string or four plain fields
+  // cross (copied here, so no page object is passed on); the shell checks each value again.
+  placeOverlay: (preset: OverlayPreset) =>
+    ipcRenderer.invoke(OVERLAY_PLACE_CHANNEL, String(preset)),
+  getOverlayPreset: () => ipcRenderer.invoke(OVERLAY_PRESET_CHANNEL),
+  resizeOverlay: (step: OverlayResizeStep) =>
+    ipcRenderer.invoke(OVERLAY_RESIZE_CHANNEL, {
+      phase: String(step?.phase),
+      edge: String(step?.edge),
+      dx: Number(step?.dx),
+      dy: Number(step?.dy),
+    }),
+  setOverlayMode: (mode: OverlayMode) => ipcRenderer.invoke(OVERLAY_MODE_CHANNEL, String(mode)),
   // v1.0.1 (ADR-0034): accurate transcription. Nothing but a Float32Array of audio crosses (the
   // shell checks its type and length again); the text comes back in memory only.
   accurateStatus: () => ipcRenderer.invoke(ACCURATE_STATUS_CHANNEL),

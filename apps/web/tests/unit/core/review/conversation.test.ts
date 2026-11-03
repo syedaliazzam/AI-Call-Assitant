@@ -1,11 +1,13 @@
 /**
  * Tests: apps/web/src/core/review/conversation.ts and pdf.ts. Lines and answers merge in time order;
+ * on screen, runs of lines between answers become bubbles (v1.0.2);
  * downloads say the same in TXT and PDF, and leave out the private note; the PDF is a well-formed
  * file (its table of offsets points at its objects) that wraps, pages and escapes correctly, and it
  * says when letters could not be drawn.
  */
 import { describe, expect, it } from 'vitest';
 import {
+  conversationEntries,
   conversationItems,
   transcriptFileName,
   transcriptPdf,
@@ -75,6 +77,25 @@ describe('conversationItems', () => {
       'c',
       'x',
     ]);
+  });
+});
+
+describe('conversationEntries (v1.0.2 bubbles)', () => {
+  it('groups each run of lines into bubbles and keeps answers in place', () => {
+    const items = conversationItems(
+      [
+        line('a', 'them', 'WHAT IS', 1_000),
+        line('b', 'them', 'THE PRICE', 3_000),
+        line('c', 'them', 'FOR FORTY SEATS', 20_000),
+      ],
+      [answer('x', 'It is 52 dollars per seat.', 10_000)],
+    );
+    const entries = conversationEntries(items);
+    expect(
+      entries.map((entry) => (entry.kind === 'group' ? entry.group.lineIds : entry.kind)),
+    ).toEqual([['a', 'b'], 'answer', ['c']]);
+    const first = entries[0]!;
+    expect(first.kind === 'group' && first.group.finalText).toBe('What is the price');
   });
 });
 

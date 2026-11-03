@@ -5,7 +5,7 @@
  * for Copy. All text is invented.
  */
 import { describe, expect, it } from 'vitest';
-import { answerText, splitAnswer } from '@/core/answer/format';
+import { answerText, cardQuestion, splitAnswer } from '@/core/answer/format';
 
 describe('splitAnswer', () => {
   it('splits the headline and bullets, removing marks', () => {
@@ -124,5 +124,30 @@ describe('the coding shape (ADR-0030)', () => {
     expect(copied).toContain('x = 1');
     expect(copied).toContain('I count, then scan.');
     expect(copied).not.toContain('check the version');
+  });
+});
+
+describe('v1.0.2 fail-safes and the card question (ADR-0037)', () => {
+  it('never shows a hidden line, first or last', () => {
+    const parts = splitAnswer(
+      '[[concept|call|general]]\nIt resolves the host.\n- DNS.\n[[question|Wh',
+    );
+    expect(parts.headline).toBe('It resolves the host.');
+    expect(parts.bullets).toEqual(['DNS.']);
+  });
+
+  it('shows a line about the other person as the Tip, never as a bullet', () => {
+    const parts = splitAnswer(
+      'I use Postgres.\n- Row-level locks.\nIf they want more depth, mention MVCC.\nYou could mention the WAL.',
+    );
+    expect(parts.bullets).toEqual(['Row-level locks.']);
+    expect(parts.tip).toBe('If they want more depth, mention MVCC.');
+  });
+
+  it('cardQuestion: the clean question, else the raw words in sentence case, else the fallback', () => {
+    expect(cardQuestion('WHAT DOES IT COST', 'What does it cost?')).toBe('What does it cost?');
+    expect(cardQuestion('WHAT DOES IT COST', undefined)).toBe('What does it cost');
+    expect(cardQuestion('', undefined)).toBe('The latest from Them');
+    expect(cardQuestion('', '  ', [], 'What is on screen')).toBe('What is on screen');
   });
 });

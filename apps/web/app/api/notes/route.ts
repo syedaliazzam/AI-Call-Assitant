@@ -5,15 +5,17 @@
  *          the smart model (server/notes.ts), and returns them as JSON (not streamed: the notes
  *          are written after the call, and nobody waits word by word).
  * Used by: src/core/notes/generate.ts (browser)
- * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts
+ * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts (and src/server/usage.ts: the daily limit, ADR-0036)
  *             (parseNotesRequest), src/server/notes.ts, src/server/claude.ts (errors)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (/api/notes);
  *               day-05-overlay-screenshots-notes.md Stage 5
  *
  * Logs ids, sizes, timings and token counts only: never transcript, answer, note or session text.
  */
+import { dailyLimitMessage } from '@kite/shared';
 import type { AnswerErrorCode, NotesResponse } from '@kite/shared';
 import { getCachedSession } from '@/server/auth';
+import { countRequest } from '@/server/usage';
 import { describeClaudeError, errorLogDetails } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { generateCallNotes } from '@/server/notes';
@@ -43,7 +45,7 @@ function jsonError(status: number, code: AnswerErrorCode, message: string): Resp
  * Handles POST /api/notes.
  *
  * @param request The incoming request; body is a NotesRequest (JSON).
- * @returns 401 (not signed in), 400 (bad body), 500 (not configured), 502/504 (Claude failed),
+ * @returns 401 (not signed in), 429 (daily limit), 400 (bad body), 500 (not configured), 502/504 (Claude failed),
  *          503 (Claude unavailable: usage limit or overload),
  *          or 200 with a NotesResponse; each with any Set-Cookie from the session check.
  */
@@ -104,6 +106,13 @@ async function respond(
       reason: error instanceof Error ? error.message : 'unknown',
     });
     return jsonError(500, 'internal', 'Claude is not configured on the server');
+  }
+
+  // The per-user daily limit (ADR-0036): counted before Claude is called; over it, nothing is sent.
+  const counted = await countRequest(user.id);
+  if (!counted.allowed) {
+    console.info('notes: daily limit reached', { userId: user.id, limit: counted.limit });
+    return jsonError(429, 'daily_limit', dailyLimitMessage(counted.limit));
   }
 
   // Sizes only (never text).

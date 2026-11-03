@@ -12,7 +12,7 @@
  */
 'use client';
 
-import type { ShareProtectionState } from '@kite/shared';
+import type { OverlayPreset, OverlayResizeStep, ShareProtectionState } from '@kite/shared';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { openLiveChannel, type CompactState, type LiveChannel } from '@/core/live/liveChannel';
 import {
@@ -67,6 +67,17 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
   const [hovered, setHovered] = useState(true);
   const channel = useRef<LiveChannel | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  // The latest state, for the shortcut handler (added once).
+  const stateRef = useRef<CompactState | null>(null);
+  useEffect(() => {
+    stateRef.current = state;
+  });
+  // The desktop shell can place, resize and reshape the see-through window (1.0.2+, ADR-0035).
+  const placement = useSyncExternalStore(
+    subscribeNever,
+    () => getPlatform().overlayPlacement(),
+    () => false,
+  );
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
   const windowControls = useSyncExternalStore(
     subscribeNever,
@@ -106,7 +117,10 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
     if (!target) return;
     return getPlatform().listenForFocusedHotkeys(target, (action) => {
       if (action === 'chat') setChatOpen((open) => !open);
-      else if (action === 'ask-kite') {
+      else if (action === 'script-bar') {
+        // Ctrl+Alt+S with the overlay focused: the live page holds the switch (v1.0.2).
+        channel.current?.send({ type: 'script-bar', on: !(stateRef.current?.scriptBar ?? false) });
+      } else if (action === 'ask-kite') {
         channel.current?.send({ type: 'chat-target', target: 'kite' });
         setChatOpen(true);
       } else channel.current?.send({ type: action });
@@ -138,7 +152,13 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
         onChatOpen={setChatOpen}
         glass={windowControls}
         onCommand={(command) => channel.current?.send(command)}
-        onCollapsed={(collapsed) => getPlatform().setOverlayCollapsed(collapsed)}
+        onMode={(mode) => getPlatform().setOverlayMode(mode)}
+        {...(placement
+          ? {
+              onResize: (step: OverlayResizeStep) => getPlatform().resizeOverlay(step),
+              onPlace: (preset: OverlayPreset) => getPlatform().placeOverlay(preset),
+            }
+          : {})}
         onProtection={(on) => {
           getPlatform()
             .setShareProtection(on)

@@ -195,6 +195,11 @@ export interface StoredAnswer {
   mode: 'answer' | 'chat' | 'screenshot';
   /** The question it answers ('' for a screenshot without a question). */
   question: string;
+  /**
+   * The question as Claude cleaned it up (v1.0.2, ADR-0037). Missing on answers saved before
+   * v1.0.2 and on answers from the v-previous rules; the card then shows `question`.
+   */
+  cleanQuestion?: string;
   /** The answer text. */
   text: string;
   /** Which model answered. */

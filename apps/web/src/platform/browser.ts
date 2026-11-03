@@ -26,7 +26,13 @@ import {
   pictureInPicture,
   type PipRenderer,
 } from './pip';
-import type { OtherSideSource, Platform } from './types';
+import type {
+  OtherSideSource,
+  OverlayMode,
+  OverlayPreset,
+  OverlayResizeStep,
+  Platform,
+} from './types';
 
 /**
  * What the browser asks for when sharing the other side (Chrome's official screen-sharing
@@ -279,6 +285,45 @@ export const browserPlatform: Platform = {
    * @param _collapsed Ignored.
    */
   setOverlayCollapsed(_collapsed: boolean) {},
+
+  /**
+   * A picture-in-picture window cannot be placed, resized or switched by the page (ADR-0035).
+   *
+   * @returns False.
+   */
+  overlayPlacement() {
+    return false;
+  },
+
+  /**
+   * Nothing to do (see overlayPlacement).
+   *
+   * @param _preset Ignored.
+   */
+  placeOverlay(_preset: OverlayPreset) {},
+
+  /**
+   * No overlay preset in a browser.
+   *
+   * @returns Null.
+   */
+  async getOverlayPreset() {
+    return null;
+  },
+
+  /**
+   * Nothing to do (see overlayPlacement).
+   *
+   * @param _step Ignored.
+   */
+  resizeOverlay(_step: OverlayResizeStep) {},
+
+  /**
+   * Nothing to do to the window (see overlayPlacement); the view still shows its mode.
+   *
+   * @param _mode Ignored.
+   */
+  setOverlayMode(_mode: OverlayMode) {},
 
   /** Nothing to do: a web page cannot minimise its window. */
   minimizeMainWindow() {},

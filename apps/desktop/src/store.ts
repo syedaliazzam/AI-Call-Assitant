@@ -1,15 +1,16 @@
 /**
  * File: apps/desktop/src/store.ts
  * Purpose: The shell's own small settings file (Day 5): the compact window's last position and
- *          size, and the screen-share protection setting. A JSON file in Electron's userData
- *          folder; holds no call content.
+ *          size, the screen-share protection setting and (v1.0.2) the overlay preset. A JSON file
+ *          in Electron's userData folder; holds no call content.
  * Used by: src/windows.ts, src/protection.ts, src/main.ts
- * Depends on: node:fs
+ * Depends on: node:fs, @kite/shared (OVERLAY_PRESETS)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3; day-05-overlay-screenshots-notes.md
- *               Stage 3
+ *               Stage 3; ADR-0035
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { OVERLAY_PRESETS, type OverlayPreset } from '@kite/shared';
 
 /** A window position and size, in screen DIPs. */
 export interface Bounds {
@@ -29,6 +30,11 @@ export interface ShellSettings {
   compactBounds?: Bounds;
   /** Screen-share protection of the compact window (absent: off). */
   shareProtection?: boolean;
+  /**
+   * v1.0.2 (ADR-0035): the overlay preset the user last chose; where the overlay opens when no
+   * saved position fits a screen (absent: 'top-center').
+   */
+  overlayPreset?: OverlayPreset;
 }
 
 /** Reads and updates the settings file. */
@@ -79,6 +85,9 @@ export function createStore(file: string): ShellStore {
       const settings: ShellSettings = {};
       if (isBounds(raw.compactBounds)) settings.compactBounds = raw.compactBounds;
       if (typeof raw.shareProtection === 'boolean') settings.shareProtection = raw.shareProtection;
+      if ((OVERLAY_PRESETS as readonly unknown[]).includes(raw.overlayPreset)) {
+        settings.overlayPreset = raw.overlayPreset as OverlayPreset;
+      }
       return settings;
     } catch {
       return {};

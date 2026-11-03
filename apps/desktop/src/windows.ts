@@ -7,12 +7,16 @@
  *          (`kite:open-compact`, `kite:close-compact`), and closed with the main window. The page
  *          sets its opacity and collapses it; global shortcuts show, hide and move it. Closing
  *          it brings back the main window, which a call may have minimised.
+ *          v1.0.2 (ADR-0035): the window is see-through (transparent, with the native blur as a
+ *          bonus), opens at the top centre at 560 × 420, can be put at a preset place, snaps to the
+ *          screen's edges after a move, is resized from its edges by the page, and has a slim
+ *          script-bar mode next to its full and collapsed modes.
  * Used by: src/main.ts
  * Depends on: electron (BrowserWindow, Screen, IpcMain types), src/security.ts
  *             (secureWebPreferences), src/protection.ts, src/store.ts, src/channels.ts,
- *             src/hotkeys.ts (isKiteSender)
+ *             src/hotkeys.ts (isKiteSender), @kite/shared (overlay types)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (compact view), §7.3 (windows.ts);
- *               day-05-overlay-screenshots-notes.md Stage 3
+ *               day-05-overlay-screenshots-notes.md Stage 3; ADR-0029, ADR-0033, ADR-0035
  *
  * Focus: the window appears and updates without taking focus (showInactive; the page's updates
  * never call focus()), so the meeting keeps the keyboard. Clicking into it focuses it like any
@@ -25,27 +29,53 @@ import type {
   Rectangle,
   Screen,
 } from 'electron';
-import type { GlobalHotkey } from '@kite/shared';
+import {
+  OVERLAY_PRESETS,
+  type GlobalHotkey,
+  type OverlayEdge,
+  type OverlayMode,
+  type OverlayPreset,
+  type OverlayResizeStep,
+} from '@kite/shared';
 import {
   CLOSE_COMPACT_CHANNEL,
   MINIMIZE_MAIN_CHANNEL,
   OPEN_COMPACT_CHANNEL,
   OVERLAY_COLLAPSE_CHANNEL,
+  OVERLAY_MODE_CHANNEL,
   OVERLAY_OPACITY_CHANNEL,
+  OVERLAY_PLACE_CHANNEL,
+  OVERLAY_PRESET_CHANNEL,
+  OVERLAY_RESIZE_CHANNEL,
 } from './channels';
 import { isKiteSender } from './hotkeys';
 import type { Protection } from './protection';
 import { secureWebPreferences } from './security';
 import type { Bounds, ShellStore } from './store';
 
-/** The overlay's default size, in DIPs: three bars with readable 16–18 px text. */
-export const COMPACT_DEFAULT_SIZE = { width: 720, height: 520 };
+/**
+ * The overlay's default size, in DIPs (v1.0.2, ADR-0035): three bars with readable 16–18 px text,
+ * small enough to sit above a meeting's video at the top centre.
+ */
+export const COMPACT_DEFAULT_SIZE = { width: 560, height: 420 };
 
 /** The overlay's smallest size, in DIPs. */
 export const COMPACT_MIN_SIZE = { width: 460, height: 260 };
 
 /** The overlay's height when collapsed to its controls bar, in DIPs. */
 export const COMPACT_COLLAPSED_HEIGHT = 60;
+
+/**
+ * The script bar (v1.0.2, ADR-0035): a slim bar with the answer line, and the height its one-line
+ * input adds. `minWidth` is as narrow as it may be resized.
+ */
+export const SCRIPT_BAR_SIZE = { width: 640, height: 64, inputHeight: 48, minWidth: 360 };
+
+/** Distance from the top of the screen of the script bar, in DIPs: close to the camera. */
+const SCRIPT_BAR_TOP = 8;
+
+/** How close to a screen edge a moved overlay snaps flush to it, in DIPs (ADR-0035). */
+export const SNAP_DISTANCE = 16;
 
 /** The overlay's opacity range: below this the text is no longer readable. */
 export const OVERLAY_OPACITY_RANGE = { min: 0.35, max: 1 };
@@ -74,13 +104,43 @@ export function compactUrl(kiteUrl: string, sessionId: unknown): string | null {
 }
 
 /**
+ * The overlay at a preset place in a work area, at the default size (shrunk to fit a small
+ * screen): top centre and top right sit EDGE_MARGIN below the top, bottom centre EDGE_MARGIN above
+ * the bottom (the taskbar is already outside the work area).
+ *
+ * @param preset Where.
+ * @param area   The display's work area.
+ * @returns The bounds, in whole DIPs.
+ * Called from: restoreBounds(), createCompactWindows() (place); tests
+ */
+export function presetBounds(preset: OverlayPreset, area: Rectangle): Bounds {
+  const width = Math.min(COMPACT_DEFAULT_SIZE.width, area.width);
+  const height = Math.min(COMPACT_DEFAULT_SIZE.height, area.height);
+  const centreX = area.x + Math.round((area.width - width) / 2);
+  const top = area.y + Math.min(EDGE_MARGIN, area.height - height);
+  if (preset === 'top-right') {
+    return { x: area.x + Math.max(0, area.width - width - EDGE_MARGIN), y: top, width, height };
+  }
+  if (preset === 'bottom-center') {
+    return {
+      x: centreX,
+      y: area.y + Math.max(0, area.height - height - EDGE_MARGIN),
+      width,
+      height,
+    };
+  }
+  return { x: centreX, y: top, width, height };
+}
+
+/**
  * Where to open the window: the saved bounds if they still overlap a screen's work area by at
  * least 80 × 40 DIPs (a monitor may have been unplugged), otherwise the default size at the
- * bottom right of the primary screen.
+ * remembered preset on the primary screen (top centre unless the user chose another; ADR-0035).
  *
  * @param saved     The saved bounds, if any.
  * @param workAreas Every display's work area.
  * @param primary   The primary display's work area.
+ * @param preset    The remembered preset (default 'top-center').
  * @returns The bounds.
  * Called from: createCompactWindows(); tests
  */
@@ -88,6 +148,7 @@ export function restoreBounds(
   saved: Bounds | undefined,
   workAreas: readonly Rectangle[],
   primary: Rectangle,
+  preset: OverlayPreset = 'top-center',
 ): Bounds {
   if (saved) {
     const visible = workAreas.some((area) => {
@@ -99,31 +160,159 @@ export function restoreBounds(
     });
     if (visible) return saved;
   }
+  return presetBounds(preset, primary);
+}
+
+/**
+ * Snaps bounds flush to the edges of a work area they are within SNAP_DISTANCE of (ADR-0035): each
+ * side is checked on its own, so a window near a corner snaps into the corner. The size never
+ * changes.
+ *
+ * @param bounds   The window's bounds after a move.
+ * @param area     The work area of the display it is on.
+ * @param distance How close counts as near (default SNAP_DISTANCE).
+ * @returns The snapped bounds (the same values when nothing was near an edge).
+ * Called from: createCompactWindows() (after a move); tests
+ */
+export function snapBounds(bounds: Bounds, area: Rectangle, distance = SNAP_DISTANCE): Bounds {
+  let { x, y } = bounds;
+  const right = area.x + area.width;
+  const bottom = area.y + area.height;
+  if (Math.abs(x - area.x) <= distance) x = area.x;
+  else if (Math.abs(x + bounds.width - right) <= distance) x = right - bounds.width;
+  if (Math.abs(y - area.y) <= distance) y = area.y;
+  else if (Math.abs(y + bounds.height - bottom) <= distance) y = bottom - bounds.height;
+  return { ...bounds, x, y };
+}
+
+/**
+ * The bounds after dragging an edge or corner by (dx, dy) from where the drag started (ADR-0035):
+ * east and south grow the size; west and north also move the window, so the opposite edge stays
+ * where it was. The size never goes below the minimum (the dragged edge stops instead), and the
+ * dragged edge never leaves the work area.
+ *
+ * @param start The bounds when the drag started.
+ * @param edge  The edge or corner dragged.
+ * @param dx    Horizontal distance from the start, in DIPs.
+ * @param dy    Vertical distance from the start, in DIPs.
+ * @param min   The smallest size.
+ * @param area  The work area of the display the window is on.
+ * @returns The new bounds, in whole DIPs.
+ * Called from: createCompactWindows() (resize); tests
+ */
+export function resizeBounds(
+  start: Bounds,
+  edge: OverlayEdge,
+  dx: number,
+  dy: number,
+  min: { width: number; height: number },
+  area: Rectangle,
+): Bounds {
+  let left = start.x;
+  let top = start.y;
+  let right = start.x + start.width;
+  let bottom = start.y + start.height;
+  if (edge.includes('e')) {
+    right = Math.min(area.x + area.width, Math.max(left + min.width, right + dx));
+  }
+  if (edge.includes('w')) {
+    left = Math.max(area.x, Math.min(right - min.width, left + dx));
+  }
+  if (edge.includes('s')) {
+    bottom = Math.min(area.y + area.height, Math.max(top + min.height, bottom + dy));
+  }
+  if (edge.includes('n')) {
+    top = Math.max(area.y, Math.min(bottom - min.height, top + dy));
+  }
   return {
-    width: COMPACT_DEFAULT_SIZE.width,
-    height: COMPACT_DEFAULT_SIZE.height,
-    x: primary.x + primary.width - COMPACT_DEFAULT_SIZE.width - EDGE_MARGIN,
-    y: primary.y + primary.height - COMPACT_DEFAULT_SIZE.height - EDGE_MARGIN,
+    x: Math.round(left),
+    y: Math.round(top),
+    width: Math.round(right - left),
+    height: Math.round(bottom - top),
   };
 }
 
 /**
- * The window options that blur what is behind the overlay. A web page cannot blur other windows, so
- * this has to be the window's own material. Measured on Windows 11 (3 Nov 2026): acrylic blurs the
- * desktop behind a frameless window, which still resizes from its edges. Where a system has no
- * material (Windows 10), the clear background shows the panel over black: dark and readable.
+ * Whether a value from the page is an overlay preset.
+ *
+ * @param value What arrived over IPC.
+ * @returns True for one of OVERLAY_PRESETS.
+ * Called from: installCompactWindows(); tests
+ */
+export function isOverlayPreset(value: unknown): value is OverlayPreset {
+  return (OVERLAY_PRESETS as readonly unknown[]).includes(value);
+}
+
+/**
+ * Whether a value from the page is an overlay mode.
+ *
+ * @param value What arrived over IPC.
+ * @returns True for 'full', 'collapsed', 'script' or 'script-input'.
+ * Called from: installCompactWindows(); tests
+ */
+export function isOverlayMode(value: unknown): value is OverlayMode {
+  return ['full', 'collapsed', 'script', 'script-input'].includes(value as string);
+}
+
+/**
+ * Whether a value from the page is one step of a resize: a known phase and edge, and finite
+ * distances no larger than any screen (a bad value cannot throw the window off the screen).
+ *
+ * @param value What arrived over IPC.
+ * @returns True for a usable step.
+ * Called from: installCompactWindows(); tests
+ */
+export function isResizeStep(value: unknown): value is OverlayResizeStep {
+  const step = value as Partial<OverlayResizeStep> | null;
+  return (
+    !!step &&
+    ['start', 'move', 'end'].includes(step.phase as string) &&
+    ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].includes(step.edge as string) &&
+    [step.dx, step.dy].every(
+      (n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 20_000,
+    )
+  );
+}
+
+/**
+ * The window options that make the overlay see-through (ADR-0035; adjusts ADR-0031 and ADR-0033).
+ *
+ * See-through is the main effect: the window is `transparent`, so wherever the page paints nothing
+ * the meeting shows, and the panel's own background (70 % by default, the opacity slider) keeps
+ * the text readable over a busy window. Electron honours a clear `backgroundColor` only on a
+ * transparent window (Electron 44 docs: "Alpha in #AARRGGBB format is supported if transparent is
+ * set to true"), which is why v1.0.1's overlay painted solid black behind its panel on Windows.
+ *
+ * The blur is a bonus: Windows' acrylic material and macOS's vibrancy blur what is behind. Windows
+ * appears to draw acrylic only while the window is the focused one, and the overlay is shown
+ * without focus (the meeting keeps the keyboard), so on Windows the blur is mostly seen while the
+ * user is clicking or typing in the overlay. Windows 10 has no acrylic: the panel is then simply
+ * see-through. A transparent window has no system frame, so it is not maximisable or full-screen
+ * (double-clicking the drag bar must not cover the meeting), and on Windows and Linux its shadow
+ * is off: the system shadow is a rectangle around the rounded panel. macOS draws the shadow from
+ * the window's content, so it stays.
  *
  * @param platform The operating system.
  * @returns The options to add.
  * Called from: compactWindowOptions(); tests
  */
 export function overlayGlass(platform: NodeJS.Platform): BrowserWindowConstructorOptions {
+  const seeThrough: BrowserWindowConstructorOptions = {
+    transparent: true,
+    maximizable: false,
+    fullscreenable: false,
+  };
   if (platform === 'darwin') {
-    return { transparent: true, vibrancy: 'hud', visualEffectState: 'active' };
+    return { ...seeThrough, vibrancy: 'hud', visualEffectState: 'active' };
   }
-  // A clear background, not a colour: a colour would hide the material.
-  if (platform === 'win32') return { backgroundMaterial: 'acrylic', backgroundColor: '#00000000' };
-  return { backgroundColor: '#18181b' };
+  // A clear background, not a colour: a colour would hide what is behind the window.
+  const clear: BrowserWindowConstructorOptions = {
+    ...seeThrough,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+  };
+  if (platform === 'win32') return { ...clear, backgroundMaterial: 'acrylic' };
+  return clear;
 }
 
 /**
@@ -133,8 +322,10 @@ export function overlayGlass(platform: NodeJS.Platform): BrowserWindowConstructo
  * @param preloadPath The preload script (window.kiteDesktop).
  * @param appVersion  The shell version (for the bridge).
  * @param platform    The operating system (tests pass one; the app uses process.platform).
- * @returns BrowserWindow options: frameless, always on top, resizable, see-through, hidden until shown
- *          without focus, with the same secure web preferences as the main window.
+ * @returns BrowserWindow options: frameless, always on top, resizable (from the system's edges where
+ *          it allows, and always by the page's own edge handles: resizeBounds()), see-through,
+ *          hidden until shown without focus, with the same secure web preferences as the main
+ *          window.
  * Called from: createCompactWindows(); tests
  */
 export function compactWindowOptions(
@@ -163,8 +354,8 @@ export function compactWindowOptions(
 export interface CompactDeps {
   /** Creates a window (new BrowserWindow in the app; a fake in tests). */
   createWindow: (options: BrowserWindowConstructorOptions) => BrowserWindow;
-  /** Electron's screen module. */
-  screen: Pick<Screen, 'getAllDisplays' | 'getPrimaryDisplay'>;
+  /** Electron's screen module (getDisplayMatching: the display the overlay is on, ADR-0035). */
+  screen: Pick<Screen, 'getAllDisplays' | 'getPrimaryDisplay' | 'getDisplayMatching'>;
   /** The Kite URL. */
   kiteUrl: string;
   /** The preload script path. */
@@ -209,11 +400,38 @@ export interface CompactWindows {
    */
   setOpacity(value: unknown): void;
   /**
-   * Collapses the overlay to its controls bar, or opens it to the size it had.
+   * Collapses the overlay to its controls bar, or opens it to the size it had
+   * (setMode('collapsed') / setMode('full')).
    *
    * @param collapsed True to collapse.
    */
   setCollapsed(collapsed: boolean): void;
+  /**
+   * v1.0.2 (ADR-0035): switches between full, collapsed and the script bar. Leaving a slim mode
+   * for full brings back the bounds the overlay had in full mode.
+   *
+   * @param mode The mode.
+   */
+  setMode(mode: OverlayMode): void;
+  /** The current mode ('full' when no overlay is open). */
+  mode(): OverlayMode;
+  /**
+   * v1.0.2: puts the overlay at a preset place at its default size, on the display it is on, and
+   * remembers the preset. With no overlay open it only remembers. In a slim mode the full-mode
+   * bounds move there (and a collapsed bar moves with them), so the page's mode stays as it is.
+   *
+   * @param preset Where.
+   */
+  place(preset: OverlayPreset): void;
+  /** The remembered preset ('top-center' until the user chooses another). */
+  preset(): OverlayPreset;
+  /**
+   * v1.0.2: one step of a page-driven resize. 'move' and 'end' without a 'start' are ignored. In
+   * the slim modes only the width changes.
+   *
+   * @param step The step.
+   */
+  resize(step: OverlayResizeStep): void;
 }
 
 /**
@@ -260,17 +478,137 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
   let current: BrowserWindow | null = null;
   let loadedUrl = '';
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The height to go back to when the overlay opens again; null while it is open. */
-  let heightBeforeCollapse: number | null = null;
+  /** The window's mode (ADR-0035). */
+  let mode: OverlayMode = 'full';
+  /** The bounds the overlay had in full mode, kept while it is in a slim mode; null in full. */
+  let fullBounds: Bounds | null = null;
+  /** The bounds when the current page-driven resize started; null when none is going on. */
+  let resizeStart: Bounds | null = null;
+  /** True when the window moved since the last save (only a move snaps to the edges). */
+  let movedSinceSave = false;
 
-  /** Saves the window's position and size (the open size, also while collapsed). */
+  /**
+   * The work area of the display a rectangle is mostly on (the primary one if none matches).
+   *
+   * @param bounds The rectangle.
+   * @returns The work area.
+   */
+  const areaFor = (bounds: Bounds): Rectangle =>
+    deps.screen.getDisplayMatching(bounds)?.workArea ?? deps.screen.getPrimaryDisplay().workArea;
+
+  /**
+   * The smallest size the window may have in a mode.
+   *
+   * @param which The mode.
+   * @returns Width and height in DIPs.
+   */
+  const minFor = (which: OverlayMode) => {
+    if (which === 'full') return COMPACT_MIN_SIZE;
+    if (which === 'collapsed') {
+      return { width: COMPACT_MIN_SIZE.width, height: COMPACT_COLLAPSED_HEIGHT };
+    }
+    return {
+      width: SCRIPT_BAR_SIZE.minWidth,
+      height: SCRIPT_BAR_SIZE.height + (which === 'script-input' ? SCRIPT_BAR_SIZE.inputHeight : 0),
+    };
+  };
+
+  /**
+   * Sets the window's bounds and minimum size. When the window shrinks the minimum goes down first,
+   * and when it grows it goes up last, so the system never refuses the new size.
+   *
+   * @param target The new bounds.
+   * @param min    The new minimum size.
+   */
+  const apply = (target: Bounds, min: { width: number; height: number }) => {
+    if (!current) return;
+    const growing = target.height >= current.getBounds().height;
+    if (!growing) current.setMinimumSize(min.width, min.height);
+    current.setBounds(target);
+    if (growing) current.setMinimumSize(min.width, min.height);
+  };
+
+  /**
+   * The bounds to remember: the full-mode bounds, also in a slim mode. Collapsing keeps the
+   * window's place and width, so a collapsed bar that was moved or widened is remembered moved
+   * or widened, at its open height.
+   *
+   * @returns The bounds.
+   */
+  const fullModeBounds = (): Bounds => {
+    const bounds = current!.getBounds();
+    if (mode === 'full' || fullBounds === null) return bounds;
+    if (mode === 'collapsed') return { ...bounds, height: fullBounds.height };
+    return fullBounds;
+  };
+
+  /**
+   * Saves the window's position and size (the full-mode bounds). After a move in full or
+   * collapsed mode it first snaps the window flush to a screen edge it ended up near; the script
+   * bar sits a little below the top on purpose and is never snapped.
+   */
   const save = () => {
     if (!current || current.isDestroyed()) return;
+    if (movedSinceSave && (mode === 'full' || mode === 'collapsed')) {
+      const bounds = current.getBounds();
+      const snapped = snapBounds(bounds, areaFor(bounds));
+      // Only when it changes: setBounds fires 'moved' again, and an unchanged window must not loop.
+      if (snapped.x !== bounds.x || snapped.y !== bounds.y) current.setBounds(snapped);
+    }
+    movedSinceSave = false;
+    deps.store.write({ compactBounds: fullModeBounds() });
+  };
+
+  /**
+   * Switches the window's mode (see CompactWindows.setMode).
+   *
+   * @param next The mode.
+   */
+  const setMode = (next: OverlayMode) => {
+    if (!current || current.isDestroyed() || next === mode) return;
     const bounds = current.getBounds();
-    deps.store.write({
-      compactBounds:
-        heightBeforeCollapse === null ? bounds : { ...bounds, height: heightBeforeCollapse },
-    });
+    const previous = mode;
+    if (next === 'full') {
+      const full = fullBounds;
+      mode = 'full';
+      fullBounds = null;
+      // From the controls bar: where the bar is now, at the open height. From the script bar:
+      // back where the overlay was.
+      const target =
+        full === null
+          ? bounds
+          : previous === 'collapsed'
+            ? { ...bounds, height: full.height }
+            : full;
+      apply(target, COMPACT_MIN_SIZE);
+      return;
+    }
+    if (previous === 'full') fullBounds = bounds;
+    mode = next;
+    const min = minFor(next);
+    if (next === 'collapsed') {
+      // From full: same place and width. From the script bar: the full overlay's place and width.
+      const base = previous === 'full' || fullBounds === null ? bounds : fullBounds;
+      apply({ ...base, height: COMPACT_COLLAPSED_HEIGHT }, min);
+      return;
+    }
+    // The script bar: opening or closing its input keeps the bar where the user put it;
+    // arriving from another mode puts it at the top centre of the display the overlay is on.
+    if (previous === 'script' || previous === 'script-input') {
+      apply({ ...bounds, height: min.height }, min);
+      return;
+    }
+    const area = areaFor(bounds);
+    const width = Math.min(SCRIPT_BAR_SIZE.width, area.width);
+    apply(
+      {
+        x: area.x + Math.round((area.width - width) / 2),
+        y: area.y + SCRIPT_BAR_TOP,
+        width,
+        height: min.height,
+      },
+      min,
+    );
   };
 
   return {
@@ -286,11 +624,16 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
         return true;
       }
       const displays = deps.screen.getAllDisplays();
+      const settings = deps.store.read();
       const bounds = restoreBounds(
-        deps.store.read().compactBounds,
+        settings.compactBounds,
         displays.map((display) => display.workArea),
         deps.screen.getPrimaryDisplay().workArea,
+        settings.overlayPreset,
       );
+      mode = 'full';
+      fullBounds = null;
+      resizeStart = null;
       const window = deps.createWindow(
         compactWindowOptions(bounds, deps.preloadPath, deps.appVersion),
       );
@@ -305,13 +648,24 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
         if (saveTimer) clearTimeout(saveTimer);
         saveTimer = setTimeout(save, SAVE_DELAY_MS);
       };
-      window.on('moved', later);
+      // Snapping waits for the same quiet moment as saving: on macOS 'moved' fires all through a
+      // drag, and moving the window under the user's pointer mid-drag would fight them.
+      window.on('moved', () => {
+        movedSinceSave = true;
+        later();
+      });
       window.on('resized', later);
-      window.on('close', save);
+      window.on('close', () => {
+        // Closing ends any move: remember the place without snapping it now.
+        movedSinceSave = false;
+        save();
+      });
       window.on('closed', () => {
         if (saveTimer) clearTimeout(saveTimer);
         if (current === window) current = null;
-        heightBeforeCollapse = null;
+        mode = 'full';
+        fullBounds = null;
+        resizeStart = null;
         deps.onClosed?.();
       });
       void window.loadURL(url);
@@ -339,17 +693,57 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       current.setOpacity(Math.min(max, Math.max(min, value)));
     },
     setCollapsed(collapsed) {
+      // The pre-1.0.2 call: opening again only leaves the controls bar, never the script bar.
+      if (collapsed) setMode('collapsed');
+      else if (mode === 'collapsed') setMode('full');
+    },
+    setMode,
+    mode: () => (current && !current.isDestroyed() ? mode : 'full'),
+    place(preset) {
+      deps.store.write({ overlayPreset: preset });
       if (!current || current.isDestroyed()) return;
-      const bounds = current.getBounds();
-      if (collapsed && heightBeforeCollapse === null) {
-        heightBeforeCollapse = bounds.height;
-        current.setMinimumSize(COMPACT_MIN_SIZE.width, COMPACT_COLLAPSED_HEIGHT);
-        current.setBounds({ ...bounds, height: COMPACT_COLLAPSED_HEIGHT });
-      } else if (!collapsed && heightBeforeCollapse !== null) {
-        const height = heightBeforeCollapse;
-        heightBeforeCollapse = null;
-        current.setBounds({ ...bounds, height });
-        current.setMinimumSize(COMPACT_MIN_SIZE.width, COMPACT_MIN_SIZE.height);
+      const target = presetBounds(preset, areaFor(fullBounds ?? current.getBounds()));
+      if (mode === 'full') {
+        current.setBounds(target);
+      } else {
+        // The page stays in its mode; the overlay opens there when it goes back to full.
+        fullBounds = target;
+        if (mode === 'collapsed') {
+          current.setBounds({ ...target, height: COMPACT_COLLAPSED_HEIGHT });
+        }
+      }
+      // A preset is an exact place: saved as it is, not snapped.
+      movedSinceSave = false;
+      if (saveTimer) clearTimeout(saveTimer);
+      deps.store.write({ compactBounds: fullModeBounds() });
+    },
+    preset: () => deps.store.read().overlayPreset ?? 'top-center',
+    resize(step) {
+      if (!current || current.isDestroyed()) return;
+      if (step.phase === 'start') {
+        resizeStart = current.getBounds();
+        return;
+      }
+      const start = resizeStart;
+      if (!start) return;
+      // The slim modes have a fixed height: only their left or right edge resizes them.
+      const slim = mode !== 'full';
+      const edge = (slim ? step.edge.replace(/[ns]/g, '') : step.edge) as OverlayEdge | '';
+      if (edge !== '') {
+        const target = resizeBounds(
+          start,
+          edge,
+          step.dx,
+          slim ? 0 : step.dy,
+          minFor(mode),
+          areaFor(start),
+        );
+        current.setBounds(slim ? { ...target, height: start.height } : target);
+      }
+      if (step.phase === 'end') {
+        resizeStart = null;
+        if (saveTimer) clearTimeout(saveTimer);
+        save();
       }
     },
   };
@@ -385,6 +779,27 @@ export function installCompactWindows(
   ipcMain.handle(OVERLAY_COLLAPSE_CHANNEL, (event, collapsed: unknown) => {
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
     compact.setCollapsed(collapsed === true);
+  });
+  // v1.0.2 (ADR-0035): presets, page-driven resizing and modes. Each value is checked: only a
+  // known preset, mode or a well-formed resize step reaches the window.
+  ipcMain.handle(OVERLAY_PLACE_CHANNEL, (event, preset: unknown) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isOverlayPreset(preset)) throw new Error('Not an overlay preset');
+    compact.place(preset);
+  });
+  ipcMain.handle(OVERLAY_PRESET_CHANNEL, (event) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can read it');
+    return compact.preset();
+  });
+  ipcMain.handle(OVERLAY_RESIZE_CHANNEL, (event, step: unknown) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isResizeStep(step)) throw new Error('Not a resize step');
+    compact.resize(step);
+  });
+  ipcMain.handle(OVERLAY_MODE_CHANNEL, (event, mode: unknown) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isOverlayMode(mode)) throw new Error('Not an overlay mode');
+    compact.setMode(mode);
   });
   ipcMain.handle(MINIMIZE_MAIN_CHANNEL, (event) => {
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can do this');
