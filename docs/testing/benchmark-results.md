@@ -94,3 +94,35 @@ Record **real measurements** here, never targets. The targets are in `docs/archi
 | 2026-11-03 | Parity Phase 4 | Same laptop | Playwright, on production | Routes on Vercel (`tests/e2e-prod/routes.spec.ts`) | 6 private or local addresses refused; job link read a real public page; preview written; Ask AI answered from the call; Question Bank 4 groups, 12 questions | |
 | 2026-11-03 | Parity Phase 4 | Same laptop | Production suites | Chrome and desktop | 8 of 8, and 5 of 5 | |
 | 2026-11-03 | Parity Phase 4 | Same laptop | Installed `Kite-Setup-1.0.0-rc.3.exe` (120,631,528 bytes) | Desktop smoke test | 15 of 15 | Not published. Earlier data on this laptop was not re-checked by this run: human check 1b.1. |
+
+## Day 6 Stage 1 — speech engine trial (ADR-0027)
+
+Measure only, no product change. `pnpm --filter web stt:trial --engine=<id> [--terms=none|list|pack]`, one process per run, on the names set (42 recorded sentences, levelled to a 0.5 peak) and the two read recordings. The control is the app's real `stt.worker.ts` (sherpa-onnx WebAssembly) in Chromium, fed at real-time speed; the candidates run native through sherpa-onnx-node (Parakeet) and whisper-server (Whisper). Transcript text is never printed; the per-clip hypotheses stay in a local results file. Hardware: Intel Core i5-8350U, Windows 11 Pro 10.0.26200.
+
+**Plugged in (2026-11-02/03).** "Name accuracy" is the share of all listed terms written exactly right; the rule compares a candidate (no session terms, unless its decoder takes them) against the control **without** session terms (name accuracy 15.3%, WER 43.3%).
+
+| Engine | Terms | Name acc (all) | WER overall | Final p50 / p95 | RTF | Peak mem | Cold start | Extra download |
+|---|---|---|---|---|---|---|---|---|
+| control | none | 15.3% | 43.3% | 1 / 70 ms | 0.27 | 648 MB | 6.8 s | 0 |
+| control | list | 25.9% | 40.9% | 2 / 73 ms | 0.30 | 746 MB | 4.3 s | 0 |
+| control | pack | 15.3% | 43.1% | 1 / 76 ms | 0.26 | 750 MB | 7.8 s | 0 |
+| **parakeet** | none | **52.9%** | **17.3%** | **830 / 1356 ms** | 0.19 | 1056 MB | 4.1 s | 506 MB |
+| whisper-small | none | 42.4% | 22.8% | 9223 / 10882 ms | 1.86 | 711 MB | 1.9 s | 496 MB |
+| whisper-small | list | 77.6% | 10.7% | 11844 / 15312 ms | 2.47 | 748 MB | 2.1 s | 496 MB |
+| whisper-turbo | list | 65.9% | 11.4% | 53313 / 68973 ms | 11.07 | 839 MB | 2.2 s | 582 MB |
+
+**Reading against the rule (criteria 1, 2, 4; criterion 3 needs paid Claude requests and is deferred until credit):**
+- **Accuracy (criterion 1):** parakeet passes clearly — name accuracy 52.9% vs the control's 15.3% is **+37.6 pp** (rule: ≥ 15 pp), and WER 17.3% vs 43.3% is a **60% relative** drop (rule: ≥ 25%). Whisper is even more accurate but see speed. Hotwords: the published Parakeet archive has no tokenizer to encode session terms, so it runs without; Whisper takes them as an initial prompt (the `list` rows).
+- **Speed (criterion 2, p50 ≤ 0.8 s and p95 ≤ 1.5 s):** parakeet's p95 (1356 ms) passes but its **p50 (830 ms) is 30 ms over** the 0.8 s bar, plugged in. Both Whisper variants are 9–53 s per utterance (RTF 1.9–11.1) — far over; unusable for a per-utterance final pass on this CPU.
+- **Download (criterion 4, ≤ 700 MB):** parakeet 506 MB passes; Whisper 496–582 MB pass.
+
+**On battery (2026-11-03, BatteryStatus discharging, 98%).** The decisive pair — the control and the only accuracy/download pass, parakeet — both without session terms. Whisper was not re-run on battery: it misses the speed bar by 10–65× plugged in, which battery can only worsen.
+
+| Engine | Terms | Name acc (all) | WER overall | Final p50 / p95 | RTF | Peak mem |
+|---|---|---|---|---|---|---|
+| control | none | 15.3% | 43.3% | 4 / 173 ms | 0.58 | 688 MB |
+| **parakeet** | none | **52.9%** | **17.3%** | **1195 / 1730 ms** | 0.26 | 1056 MB |
+
+Accuracy is power-independent (identical to the plugged-in run), as expected for the same model and audio. Only speed changes: on battery parakeet's final-text **p50 is 1195 ms and p95 is 1730 ms**, so it now fails **both** of criterion 2's bounds (p50 ≤ 0.8 s, p95 ≤ 1.5 s).
+
+**Decision (ADR-0027): adopt nothing.** No candidate meets the on-battery speed criterion. Parakeet — the only one passing accuracy (+37.6 pp name accuracy, −60% WER) and download (506 MB) — misses p50 and p95 on battery; both Whisper variants miss by 10–65×. The desktop keeps the current streaming engine; Stage 2 (integration) is skipped. Criterion 3 (answer latency during decoding) was never reached, so no paid Claude requests were spent on the trial.

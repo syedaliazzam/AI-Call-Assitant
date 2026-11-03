@@ -1,6 +1,6 @@
 # ADR-0027: Desktop speech engine (hybrid final pass)
 
-- **Status:** Proposed. The decision rule below was written on 2026-11-01, **before** the trial was run. The decision is added after Day 6 Stage 1.
+- **Status:** Accepted (developer, 3 Nov 2026): **adopt nothing** (see Decision). The decision rule below was written on 2026-11-01, **before** the trial was run.
 - **Date:** 2026-11-01
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5 (speech-to-text), §7 (desktop shell)
 - **Supersedes / superseded by:** none (builds on ADR-0020, the browser speech model)
@@ -101,11 +101,32 @@ Every engine also runs **without terms**, which is what happens when a user type
 
 ## Decision
 
-Pending: added after the trial, with the results table.
+**Adopt nothing. The desktop keeps the current streaming Zipformer engine, and Stage 2 is skipped.** (Developer accepted, 3 Nov 2026.)
+
+The trial ran on the developer's laptop (Intel Core i5-8350U, Windows 11), plugged in and, for the decisive pair, on battery. Full tables are in `docs/testing/benchmark-results.md` (Day 6 Stage 1). Measured against the fixed rule (criteria 1, 2 and 4; criterion 3 needs paid Claude requests and was never reached):
+
+| Engine | Name accuracy vs control | WER vs control | Final p50 / p95 on battery | Download |
+|---|---|---|---|---|
+| Control (no terms) | 15.3% | 43.3% | 4 / 173 ms | 0 |
+| **Parakeet TDT 0.6B** (no terms) | 52.9% (**+37.6 pp**, rule ≥ 15) | 17.3% (**−60%**, rule ≥ 25%) | **1195 / 1730 ms** | 506 MB |
+| Whisper small.en (terms) | 77.6% | 10.7% | 11844 / 15312 ms (plugged in) | 496 MB |
+| Whisper large-v3-turbo (terms) | 65.9% | 11.4% | 53313 / 68973 ms (plugged in) | 582 MB |
+
+- **Parakeet** passes criterion 1 (accuracy) by a wide margin and criterion 4 (download, 506 MB ≤ 700 MB), but **fails criterion 2 (speed)**: on battery its final-text p50 is 1195 ms (bar 0.8 s) and p95 is 1730 ms (bar 1.5 s), over on both. Even plugged in, at its fastest, its p50 was 830 ms — already over. (The published int8 archive has no tokenizer to encode session terms, so it ran without hotwords; it still beat the control-with-terms on accuracy.)
+- **Whisper** (both sizes) is the most accurate but is 9–53 s per utterance on this CPU (RTF 1.9–11.1), failing criterion 2 by 10–65×. Unusable as a per-utterance final pass here.
+
+No candidate passes all of criteria 1, 2 and 4, so by the rule ("If none passes, adopt nothing"), nothing is integrated. This is a near miss for Parakeet on speed, reported as a miss with its numbers, exactly as the rule requires.
 
 ## Consequences
 
-Pending.
+- The desktop and the browser keep the current streaming engine. The known accuracy limits (about 17% word error on read sentences, worse on names) stand; the session hotwords (now number-aware, ADR-0032 companion work) remain the main mitigation, together with the sentence-case display and the user's key terms.
+- **Stage 2 is not built.** There is no Electron utility-process engine, no second decode pass, and no "Accurate transcription (beta)" setting. `docs/testing/final-test-plan.md` §6 ("New speech engine, only if adopted") does not apply and is marked so.
+- No paid Claude requests were spent: criterion 3 (answer latency during decoding) is only measured for a candidate that already passes 1, 2 and 4, and none did.
+- The trial code (`scripts/stt-trial.ts`, `scripts/lib/stt-score.ts`) and the downloads stay available (measure-only, outside the repo), so the trial can be re-run if a faster native model or a stronger laptop changes the speed picture. A future revisit would need a new ADR, not a change to this rule.
+
+## Revisit triggers
+
+Worth re-running the trial if any of these change the speed picture: a Parakeet build with a streaming or chunked decoder; a quantisation or runtime that roughly halves its per-utterance decode time; or a target machine clearly faster than the test laptop. Accuracy is already well past the bar, so only speed needs to move.
 
 ## Alternatives considered
 

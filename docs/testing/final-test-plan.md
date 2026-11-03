@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: Ask Kite and answer quality (ADR-0030).
+**Kept up to date:** each later stage adds its human checks here. Last updated: responses and speech — honesty, answer shape, admin rollback and number key terms (ADR-0032, §6b).
 
 ---
 
@@ -158,13 +158,20 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 5d.15 | Press **Ctrl+Alt+K** during a call. | The call keeps running; the overlay's chat box opens set to Ask Kite. |
 | 5d.16 | Settings → Hotkeys. If another app holds Ctrl+Alt+K, it says so. | "Open Ask Kite" is listed as "Any app". |
 
-## 6. New speech engine (Day 6, only if adopted)
+## 6. New speech engine (Day 6) — not adopted, skip
+
+**The speech engine trial (ADR-0027) adopted nothing:** no candidate met the on-battery speed bar (Parakeet missed p50 and p95; Whisper by 10–65×). There is no second decode pass and no "Accurate transcription" setting, so **this section does not apply.** The desktop keeps the current streaming engine. The number-key-term check that did ship is §6b.5.
+
+## 6b. Responses and speech (Part 1 — responses-and-speech)
 
 | # | Do | Expect |
 |---|---|---|
-| 6.1 | In the desktop app, start a call for the first time after the update. | The model downloads once with progress, then the call starts. |
-| 6.2 | Read 10 sentences from the names list (`apps/web/tests/fixtures/stt/names-sentences.txt`). | Grey words are replaced with the final text within about a second; at least 8 of the 10 names come out right. |
-| 6.3 | Settings → turn **Accurate transcription (desktop)** off, then on. | Off: the old engine only. On: the final replacement again. |
+| 6b.1 | **Honesty:** Interview session with a short CV (for example "packaged three Python services in Docker"). Ask about a detail the CV does not give ("what was your rollback strategy and how long did deploys take?"), press Answer. | The CV project is kept as written; extra depth is given as the approach ("I'd typically…"), with no invented tool, number, team size or result. |
+| 6b.2 | **Answer length:** a Balanced (medium-length) session; ask a broad question. | The answer is a full reply of about 20–40 seconds to say (one line + 2–4 bullets), not a bare line and not a ramble. |
+| 6b.3 | **Behavioural:** ask "tell me about a time you led a difficult migration". | A short STAR answer built from the closest real CV project, with no result invented if the CV states none. |
+| 6b.4 | **Rollback (admin):** Settings → Answers → set **Answer style version** to **v-previous**, reopen a session and ask a question. Then set it back to v-current. | The setting shows only for an admin. On v-previous the answers follow the earlier style; on v-current the new style. A non-admin never sees the switch. |
+| 6b.5 | **Number key terms:** add key terms "BM25", "H100" and "2026"; in a call say a sentence containing each. | The transcript shows them spelled as typed ("BM25", "H100", "2026"), not as "BM", "H" or spelled-out words. |
+| 6b.6 | **Stuck-transcript guard:** if a call ever shows audio meters moving but the transcript stays frozen for about 8 s. | Kite shows "Transcription restarted" and the transcript resumes without the call ending. (Hard to force on purpose; note it if it happens.) |
 
 ## 7. Error screens (Day 6 Stage 4)
 
