@@ -567,6 +567,16 @@ export function LivePage({
     summary: sessionSummary(session),
   };
 
+  // The answer language the control strip can change takes effect from the next answer.
+  // Memoised: useLiveAnswers treats a new session object as a new call and cancels the answer in
+  // flight, and this page re-renders on every transcript line and meter tick. A fresh object here
+  // aborted every answer within milliseconds (production check, v1.0.0 release, 3 Nov 2026).
+  // Above the Connect view's early return: a hook must run on every render, in the same order.
+  const liveSession = useMemo(
+    () => ({ ...session, preferences: { ...session.preferences, language } }),
+    [session, language],
+  );
+
   if (view === 'connect') {
     return (
       // The Connect view is a call screen too: dark tokens (theme §2).
@@ -610,8 +620,6 @@ export function LivePage({
         : { tone: 'neutral', label: 'Not connected' };
 
   const themQuietShown = connection === 'connected' && themQuiet && !channelErrors.them;
-  // The answer language the control strip can change takes effect from the next answer.
-  const liveSession = { ...session, preferences: { ...session.preferences, language } };
   // The transcript hides lines from before a "Clear" on the control strip; new lines still show.
   const shownLines =
     transcriptClearedAt > 0 ? lines.filter((line) => line.tStart >= transcriptClearedAt) : lines;

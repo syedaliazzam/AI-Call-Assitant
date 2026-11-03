@@ -21,8 +21,13 @@ import { expect, type Page, type Response } from '@playwright/test';
 import type { AnswerUsage } from '@kite/shared';
 import { signInOnce } from '../lib/sign-in';
 
-/** The production site the suites run against. */
-export const PRODUCTION_URL = 'https://kite-call-assistant.vercel.app';
+/**
+ * The site the suites run against: production, or KITE_E2E_URL to check a preview deployment (or a
+ * local `pnpm dev`) with the same steps before it is promoted (v1.0.0 release, 3 Nov 2026).
+ */
+export const PRODUCTION_URL = (
+  process.env.KITE_E2E_URL ?? 'https://kite-call-assistant.vercel.app'
+).replace(/\/+$/, '');
 
 /** apps/web (this file is in apps/web/tests/e2e-prod; the package is an ES module). */
 export const WEB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
