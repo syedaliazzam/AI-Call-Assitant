@@ -27,7 +27,14 @@ import {
   type ShareProtectionState,
   type TargetChoice,
 } from '@kite/shared';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { answerText } from '@/core/answer/format';
 import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
@@ -51,9 +58,11 @@ import {
 
 /** The overlay's window-level settings (desktop app; a browser window cannot do these). */
 export interface OverlayWindowSettings {
-  /** The opacity, 0.4–1. */
+  /** The chosen panel-background opacity, 0.4–1 (the slider's value and label; ADR-0033). */
   opacity: number;
-  /** True to fade when the pointer is elsewhere. */
+  /** The opacity to paint right now: the chosen value, or 1 under the pointer when fading is on. */
+  panelAlpha: number;
+  /** True to make the panel more see-through when the pointer is elsewhere. */
   fade: boolean;
   /** Sets the opacity. */
   onOpacity: (value: number) => void;
@@ -341,6 +350,15 @@ export function CompactView(props: CompactViewProps) {
     // @container: buttons drop their shortcut labels when it is narrow.
     <div
       className={`k-dark k-overlay ${props.glass ? 'k-glass' : ''} @container flex h-screen flex-col overflow-hidden rounded-card border border-ui-border text-[16px] text-ui-text`}
+      // ADR-0033: the glass panel's background opacity (never the text). Only the see-through panel
+      // uses it; the solid picture-in-picture panel ignores it.
+      style={
+        props.glass
+          ? ({
+              '--k-overlay-alpha': props.windowSettings?.panelAlpha ?? OVERLAY_OPACITY.default,
+            } as CSSProperties)
+          : undefined
+      }
     >
       <div
         role="toolbar"

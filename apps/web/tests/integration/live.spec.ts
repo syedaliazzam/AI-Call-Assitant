@@ -628,54 +628,64 @@ const OVERLAY_SIZES = {
   min: { width: 460, height: 260, touch: false },
 } as const;
 
-test('overlay look: see-through panel over light and dark busy backgrounds, default and min size', async () => {
-  for (const [sizeName, size] of Object.entries(OVERLAY_SIZES)) {
-    for (const [backdropName, backdrop] of Object.entries(BACKDROPS)) {
-      const context = await browser!.newContext({
-        viewport: { width: size.width, height: size.height },
-        userAgent: WINDOWS_UA,
-      });
-      const page = await context.newPage();
-      await page.goto(`${origin}/?view=compact&glass=1`);
-      // The window's own material is the desktop's job; here the backdrop sits on the page, and
-      // the panel's backdrop-filter blurs it.
-      await page.evaluate((image) => {
-        document.documentElement.style.backgroundImage = image;
-        document.documentElement.style.backgroundAttachment = 'fixed';
-      }, backdrop);
-      const panel = page.locator('.k-overlay.k-glass');
-      await expect(panel).toBeVisible();
-      // Every control of the top bar stays inside the window, End above all.
-      const end = await page.getByRole('button', { name: 'End', exact: true }).boundingBox();
-      expect(end!.x + end!.width).toBeLessThanOrEqual(size.width);
-      const look = await panel.evaluate((element) => {
-        const style = getComputedStyle(element);
-        const end = [...element.querySelectorAll('button')].find((b) => b.textContent === 'End')!;
-        return {
-          background: style.backgroundColor,
-          radius: style.borderRadius,
-          blur: style.backdropFilter,
-          end: getComputedStyle(end).backgroundColor,
-          bodyBackground: getComputedStyle(document.body).backgroundColor,
-          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        };
-      });
-      expect(look).toEqual({
-        background: 'rgba(24, 24, 27, 0.82)',
-        radius: '16px',
-        blur: 'blur(16px)',
-        end: 'rgb(220, 38, 38)',
-        // Clear: otherwise the window's material could not show through.
-        bodyBackground: 'rgba(0, 0, 0, 0)',
-        overflow: 0,
-      });
-      if (SHOT_DIR) {
-        await page.evaluate(() => document.fonts.ready);
-        await page.screenshot({
-          path: path.join(SHOT_DIR, `overlay-${sizeName}-${backdropName}.png`),
+test('overlay look: panel background at 40% and 70% over light and dark busy backgrounds (ADR-0033)', async () => {
+  // The opacity slider dims the panel background only; the text stays opaque with a shadow. Render
+  // the minimum (0.4) and the default (0.7) over each backdrop and size.
+  for (const alpha of [0.4, 0.7]) {
+    for (const [sizeName, size] of Object.entries(OVERLAY_SIZES)) {
+      for (const [backdropName, backdrop] of Object.entries(BACKDROPS)) {
+        const context = await browser!.newContext({
+          viewport: { width: size.width, height: size.height },
+          userAgent: WINDOWS_UA,
         });
+        const page = await context.newPage();
+        await page.goto(`${origin}/?view=compact&glass=1&alpha=${alpha}`);
+        // The window's own material is the desktop's job; here the backdrop sits on the page, and
+        // the panel's backdrop-filter blurs it.
+        await page.evaluate((image) => {
+          document.documentElement.style.backgroundImage = image;
+          document.documentElement.style.backgroundAttachment = 'fixed';
+        }, backdrop);
+        const panel = page.locator('.k-overlay.k-glass');
+        await expect(panel).toBeVisible();
+        // Every control of the top bar stays inside the window, End above all.
+        const end = await page.getByRole('button', { name: 'End', exact: true }).boundingBox();
+        expect(end!.x + end!.width).toBeLessThanOrEqual(size.width);
+        const look = await panel.evaluate((element) => {
+          const style = getComputedStyle(element);
+          const end = [...element.querySelectorAll('button')].find((b) => b.textContent === 'End')!;
+          return {
+            background: style.backgroundColor,
+            // The text itself is fully opaque with a shadow, whatever the background opacity.
+            textShadow: style.textShadow,
+            radius: style.borderRadius,
+            blur: style.backdropFilter,
+            end: getComputedStyle(end).backgroundColor,
+            bodyBackground: getComputedStyle(document.body).backgroundColor,
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          };
+        });
+        expect(look).toEqual({
+          background: `rgba(24, 24, 27, ${alpha})`,
+          textShadow: 'rgba(0, 0, 0, 0.6) 0px 1px 2px',
+          radius: '16px',
+          blur: 'blur(16px)',
+          end: 'rgb(220, 38, 38)',
+          // Clear: otherwise the window's material could not show through.
+          bodyBackground: 'rgba(0, 0, 0, 0)',
+          overflow: 0,
+        });
+        if (SHOT_DIR) {
+          await page.evaluate(() => document.fonts.ready);
+          await page.screenshot({
+            path: path.join(
+              SHOT_DIR,
+              `overlay-${Math.round(alpha * 100)}-${sizeName}-${backdropName}.png`,
+            ),
+          });
+        }
+        await context.close();
       }
-      await context.close();
     }
   }
 });

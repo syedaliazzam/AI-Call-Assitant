@@ -319,49 +319,76 @@ describe('contrast of the theme tokens', () => {
   });
 });
 
-describe('overlay text over a busy background', () => {
-  /** The panel at its lightest: the see-through colour over pure white. */
-  const panel = over(resolve('--k-overlay-glass'), WHITE);
-  /** A button on that panel, at rest and on hover. */
-  const button = over(resolve('--k-overlay-button'), panel);
-  const buttonHover = over(resolve('--k-overlay-button-hover'), panel);
+describe('overlay panel background opacity (ADR-0033)', () => {
+  /** Pure black and a busy mid-grey, the other backgrounds a meeting could show behind the panel. */
+  const BLACK: Rgba = [0, 0, 0, 1];
+  const BUSY: Rgba = [128, 128, 128, 1];
+  /**
+   * The glass panel painted at a background-opacity over a background behind the window.
+   *
+   * @param alpha The panel's background opacity (0.4–1).
+   * @param bg    The solid colour behind the window.
+   * @returns The panel's resulting solid colour.
+   */
+  const panelAt = (alpha: number, bg: Rgba): Rgba => over([24, 24, 27, alpha], bg);
+  const glassScope = new Map([...DARK, ...GLASS]);
+  const text = resolve('--ui-text', glassScope);
+  const them = resolve('--ui-them', glassScope);
 
-  it('starts at full window opacity: the panel alone sets how see-through it is', () => {
-    expect(OVERLAY_OPACITY.default).toBe(1);
+  it('defaults to 70% background opacity, with 40% the minimum and 100% the maximum', () => {
+    expect(OVERLAY_OPACITY.default).toBe(0.7);
+    expect(OVERLAY_OPACITY.min).toBe(0.4);
+    expect(OVERLAY_OPACITY.max).toBe(1);
   });
 
-  it('every text token is at least 4.5:1 on the panel over pure white', () => {
-    for (const token of TEXT_TOKENS) {
-      const colour = resolve(token, new Map([...DARK, ...GLASS]));
-      expect(contrast(colour, panel), token).toBeGreaterThanOrEqual(4.5);
+  it('dims the panel background (a variable alpha), never the text, and adds a text shadow', () => {
+    expect(THEME).toContain('background: rgba(24, 24, 27, var(--k-overlay-alpha, 0.7))');
+    expect(THEME).toContain('text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6)');
+  });
+
+  it('at the default (70%) the primary text stays readable over the worst case, pure white', () => {
+    // body 6.26:1, them 5.15:1 (computed from theme.css).
+    expect(contrast(text, panelAt(0.7, WHITE))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(them, panelAt(0.7, WHITE))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('over a dark background every text token passes at both the default and the minimum', () => {
+    // A dark background only helps: the panel stays near black whatever the opacity.
+    for (const alpha of [OVERLAY_OPACITY.default, OVERLAY_OPACITY.min]) {
+      for (const token of TEXT_TOKENS) {
+        const colour = resolve(token, glassScope);
+        expect(
+          contrast(colour, panelAt(alpha, BLACK)),
+          `${token} @${alpha}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 
-  it('text on the buttons is at least 4.5:1, at rest and on hover', () => {
-    expect(contrast(resolve('--k-dark-text'), button)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(resolve('--k-dark-text'), buttonHover)).toBeGreaterThanOrEqual(4.5);
+  it('at the default the primary text passes over a busy background too', () => {
+    // body 11.3:1, them 9.3:1 over a mid-grey at 0.7 (the full per-token table is in ADR-0033).
+    expect(contrast(text, panelAt(0.7, BUSY))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(them, panelAt(0.7, BUSY))).toBeGreaterThanOrEqual(4.5);
+    // At the minimum, the primary text still passes over the busy mid-grey (body 6.98:1).
+    expect(contrast(text, panelAt(0.4, BUSY))).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('the solid buttons do not depend on what is behind them', () => {
+  it('at the minimum (40%) over a bright background the nominal contrast is low (shadow-aided)', () => {
+    // ADR-0033 reports this honestly rather than raising the minimum. Pinned so a token or alpha
+    // change is caught; the text shadow carries legibility here.
+    const bright = contrast(text, panelAt(0.4, WHITE));
+    expect(bright).toBeLessThan(4.5);
+    expect(bright).toBeGreaterThan(2.0); // ~2.43
+  });
+
+  it('the solid buttons and the solid picture-in-picture panel do not depend on the background', () => {
     expect(
       contrast(resolve('--k-dark-on-primary'), resolve('--k-dark-primary')),
     ).toBeGreaterThanOrEqual(4.5);
     expect(
       contrast(resolve('--k-overlay-on-end'), resolve('--k-overlay-end')),
     ).toBeGreaterThanOrEqual(4.5);
-  });
-
-  it('dark backgrounds only help: every text token passes over pure black too', () => {
-    const dark = over(resolve('--k-overlay-glass'), [0, 0, 0, 1]);
-    for (const token of TEXT_TOKENS) {
-      const colour = resolve(token, new Map([...DARK, ...GLASS]));
-      expect(contrast(colour, dark), token).toBeGreaterThanOrEqual(4.5);
-    }
-  });
-
-  it('the solid panel (picture-in-picture) keeps the muted grey that was asked for', () => {
+    // The picture-in-picture panel is solid --k-dark-bg (nothing shows through it).
     expect(contrast(resolve('--k-dark-muted'), resolve('--k-dark-bg'))).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(resolve('--k-dark-muted'), panel)).toBeLessThan(4.5);
-    expect(THEME).toContain("The spec's #a1a1aa is only 3.9:1 there");
   });
 });

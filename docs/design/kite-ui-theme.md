@@ -46,7 +46,7 @@ All values are in `apps/web/src/ui/theme.css`, the only file allowed to contain 
 
 | Use | Value |
 |---|---|
-| Panel | `rgba(24,24,27,.82)`, blurred (desktop); `#18181B` (picture-in-picture) |
+| Panel | `rgba(24,24,27,α)`, blurred (desktop); α is the opacity slider, 0.4–1, default 0.7 (ADR-0033). `#18181B` solid (picture-in-picture) |
 | Border | `rgba(255,255,255,.08)` |
 | Text / secondary | `#FAFAFA` / `#A1A1AA` on the solid panel, `#B4B4BB` on glass |
 | Buttons | `rgba(255,255,255,.08)`, hover `.14` |
@@ -66,7 +66,7 @@ All values are in `apps/web/src/ui/theme.css`, the only file allowed to contain 
 **Limits to remember** (each is tested)
 - Muted text is 4.3:1 on the subtle background, so text there uses the body colour.
 - `#16A34A` is 3.3:1 on white: dots only.
-- On glass, text is checked over pure white, the worst case. That is why glass has its own lighter colours, and why the overlay's default window opacity is 1.
+- On glass, text is checked over pure white, the worst case. That is why glass has its own lighter colours. The opacity slider dims only the panel background, never the text (ADR-0033); at the default 0.7 the primary text is 6.3:1 over white, and a text shadow carries legibility at lower settings.
 
 ## 4. Typography
 Inter only, in 400, 500 and 600, self-hosted through `next/font` (no request to Google from users' browsers).

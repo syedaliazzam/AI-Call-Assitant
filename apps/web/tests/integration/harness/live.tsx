@@ -270,6 +270,11 @@ function CompactHarness({
   state: CompactState;
 }) {
   const [chatOpen, setChatOpen] = useState(false);
+  const params = new URLSearchParams(window.location.search);
+  // ?alpha=0.4|0.7: the panel-background opacity, so the overlay look test can render the slider's
+  // settings (ADR-0033). The desktop window's settings are only present with the glass panel.
+  const alphaParam = params.get('alpha');
+  const alpha = alphaParam === null ? null : Number(alphaParam);
   return (
     <CompactView
       state={state}
@@ -279,7 +284,18 @@ function CompactHarness({
       chatOpen={chatOpen}
       onChatOpen={setChatOpen}
       // ?glass=1: the see-through panel of the desktop window (the overlay look test).
-      glass={new URLSearchParams(window.location.search).has('glass')}
+      glass={params.has('glass')}
+      {...(alpha !== null
+        ? {
+            windowSettings: {
+              opacity: alpha,
+              panelAlpha: alpha,
+              fade: false,
+              onOpacity: () => undefined,
+              onFade: () => undefined,
+            },
+          }
+        : {})}
     />
   );
 }
