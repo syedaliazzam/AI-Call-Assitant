@@ -596,6 +596,10 @@ test('error states: Them silent for 20 s', async () => {
     await expect(
       watched.page.getByRole('alert').filter({ hasText: 'Nothing heard from Them' }),
     ).toBeVisible();
+    // Day 6 Stage 4: the stuck-engine watchdog's note (shown here alongside the silent notice).
+    await expect(
+      watched.page.getByRole('status').filter({ hasText: 'Transcription restarted' }),
+    ).toBeVisible();
     await shot(watched, size, 'error-them-silent');
     await watched.context.close();
   }

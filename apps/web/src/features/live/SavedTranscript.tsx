@@ -11,7 +11,7 @@
 'use client';
 
 import type { StoredUtterance } from '@/core/storage/types';
-import { sentenceCase } from '@/core/transcript/display';
+import { sentenceCase, type DisplayTerm } from '@/core/transcript/display';
 import { SPEAKER_STYLE } from './speakers';
 
 /** Props for SavedTranscript. */
@@ -19,7 +19,7 @@ export interface SavedTranscriptProps {
   /** Lines saved by earlier calls, oldest first. */
   lines: readonly StoredUtterance[];
   /** The session's own spellings to restore in each line (displayTerms()); none by default. */
-  terms?: readonly string[];
+  terms?: readonly DisplayTerm[];
   /** The session's "save transcript" setting. */
   saving: boolean;
 }

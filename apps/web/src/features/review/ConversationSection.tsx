@@ -28,7 +28,7 @@ import {
 import { rateAnswer, reportAnswer } from '@/core/storage/answers';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
 import { clearTranscript } from '@/core/storage/utterances';
-import { sentenceCase } from '@/core/transcript/display';
+import { sentenceCase, type DisplayTerm } from '@/core/transcript/display';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { FlagIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
@@ -63,7 +63,7 @@ export interface ConversationSectionProps {
   /** The saved answers, oldest first. */
   answers: readonly StoredAnswer[];
   /** The session's own spellings to restore in each line (displayTerms()). */
-  terms: readonly string[];
+  terms: readonly DisplayTerm[];
   /** Reads the data again after a change. */
   onChanged: () => void;
 }

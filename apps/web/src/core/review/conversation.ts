@@ -12,7 +12,7 @@
  */
 import { splitAnswer } from '../answer/format';
 import type { Session, StoredAnswer, StoredUtterance } from '../storage/types';
-import { sentenceCase } from '../transcript/display';
+import { sentenceCase, type DisplayTerm } from '../transcript/display';
 import { writePdf, type PdfLine, type PdfResult } from './pdf';
 
 /** One thing in the conversation. */
@@ -85,7 +85,7 @@ const CLOCK = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle
 function paragraphs(
   session: Pick<Session, 'company' | 'role'>,
   items: readonly ConversationItem[],
-  terms: readonly string[],
+  terms: readonly DisplayTerm[],
 ): PdfLine[] {
   const out: PdfLine[] = [
     { text: `Kite transcript: ${session.company} (${session.role})`, bold: true },
@@ -127,7 +127,7 @@ function paragraphs(
 export function transcriptText(
   session: Pick<Session, 'company' | 'role'>,
   items: readonly ConversationItem[],
-  terms: readonly string[] = [],
+  terms: readonly DisplayTerm[] = [],
 ): string {
   return `${paragraphs(session, items, terms)
     .map((line) => `${line.indent ? '    ' : ''}${line.text}`)
@@ -146,7 +146,7 @@ export function transcriptText(
 export function transcriptPdf(
   session: Pick<Session, 'company' | 'role'>,
   items: readonly ConversationItem[],
-  terms: readonly string[] = [],
+  terms: readonly DisplayTerm[] = [],
 ): PdfResult {
   return writePdf(`Kite transcript: ${session.company}`, paragraphs(session, items, terms));
 }

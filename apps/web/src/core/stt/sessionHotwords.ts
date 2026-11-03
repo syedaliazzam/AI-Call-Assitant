@@ -16,7 +16,8 @@
  * user's content: this module never logs it.
  */
 import type { Session, StoredDocument } from '../storage/types';
-import { formatHotwords, type Hotword } from './hotwords';
+import { formatHotwords, MAX_HOTWORD_SCORE, type Hotword } from './hotwords';
+import { spokenVariants } from './spokenNumbers';
 
 /**
  * Boost for the user's key terms and the company: the strongest, because the user named them
@@ -242,21 +243,35 @@ export function buildHotwords(
   const result: Hotword[] = [];
   const seen = new Set<string>();
   /**
-   * Adds a phrase unless it is unusable, already present, or the list is full.
+   * Adds a phrase unless it is unusable, already present, or the list is full. A term that
+   * contains a digit is added as its spoken-word variants instead (ADR-0027): the model's alphabet
+   * has no digits, so "BM25" is added as "BM TWENTY FIVE" (and "BM TWO FIVE"), not as "BM". Each
+   * variant counts towards the cap, so the user's own key terms (added first) keep their place.
    *
    * @param text  The phrase as written.
    * @param score Its boost.
    */
   const add = (text: string, score: number) => {
-    const phrase = cleanPhrase(text);
-    if (!phrase || seen.has(phrase) || result.length >= MAX_HOTWORDS) return;
-    seen.add(phrase);
-    result.push({ phrase, score });
+    const variants = spokenVariants(text);
+    for (const candidate of variants.length > 0 ? variants : [text]) {
+      const phrase = cleanPhrase(candidate);
+      if (!phrase || seen.has(phrase) || result.length >= MAX_HOTWORDS) continue;
+      seen.add(phrase);
+      result.push({ phrase, score });
+    }
   };
 
-  // 1. Key terms: one per line. A " :score" the user typed is respected.
-  for (const hotword of formatHotwords(session.preferences.keyTerms, KEY_TERM_SCORE).hotwords) {
-    add(hotword.phrase, hotword.score);
+  // 1. Key terms: one per line. A " :score" the user typed is respected. The raw text (digits and
+  //    all) goes to add(), so a term like "BM25" becomes spoken-word hotwords instead of losing its
+  //    number to the model's letter-only alphabet (ADR-0027).
+  for (const rawLine of session.preferences.keyTerms.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === '') continue;
+    const match = /\s:\s*(\S+)\s*$/.exec(` ${line}`);
+    const score = match ? Number(match[1]) : KEY_TERM_SCORE;
+    // An invalid score is skipped, as formatHotwords() does.
+    if (match && (!Number.isFinite(score) || score <= 0 || score > MAX_HOTWORD_SCORE)) continue;
+    add(match ? ` ${line}`.slice(0, match.index).trim() : line, score);
   }
   // 2. Company, then 3. role or topic.
   add(session.company, KEY_TERM_SCORE);

@@ -89,6 +89,15 @@ export interface CallCapture {
   themSource: OtherSideSource;
   /** The latest meter levels. */
   levels(): ChannelLevels;
+  /**
+   * Moves the capture's channels to a fresh engine, keeping the same audio streams, so the live
+   * page can restart a stuck engine without re-asking for the microphone or the shared tab
+   * (watchdog.ts; Day 6 Stage 4). Channels that have already ended are left detached. From now on
+   * the capture detaches this new engine when it stops or a channel ends.
+   *
+   * @param engine The replacement engine (already created; attach waits until it is ready).
+   */
+  reattach(engine: Pick<SttEngine, 'attach' | 'detach'>): Promise<void>;
   /** Stops both channels, the meters and every captured track. */
   stop(): void;
 }
@@ -171,6 +180,9 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
   const streams: Record<ChannelId, MediaStream> = { you: mic, them: them.stream };
   let stopped = false;
   const ended = new Set<ChannelId>();
+  // The engine the capture feeds. A watchdog restart swaps it (reattach); release() and the
+  // channel-ended handlers always detach the current one.
+  let engine = options.engine;
 
   // 3. Meters: an AnalyserNode per channel in an AudioContext of their own (never played back).
   const context = deps.createAudioContext();
@@ -214,7 +226,7 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
     deps.clearInterval(timer);
     void context.close();
     for (const channel of ['you', 'them'] as const) {
-      options.engine.detach(channel);
+      engine.detach(channel);
       for (const track of streams[channel].getTracks()) track.stop();
     }
   };
@@ -226,7 +238,7 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
       track.addEventListener('ended', () => {
         if (stopped || ended.has(channel)) return;
         ended.add(channel);
-        options.engine.detach(channel);
+        engine.detach(channel);
         options.onEvent?.({ type: 'channel-ended', channel });
       });
     }
@@ -234,8 +246,8 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
 
   // 5. Transcribe both, as separate channels.
   try {
-    await options.engine.attach('them', them.stream);
-    await options.engine.attach('you', mic);
+    await engine.attach('them', them.stream);
+    await engine.attach('you', mic);
   } catch (error) {
     release();
     throw error;
@@ -244,6 +256,13 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
   return {
     themSource: them.source,
     levels: () => ({ ...current }),
+    async reattach(nextEngine) {
+      engine = nextEngine;
+      // Re-attach only the channels that are still live; an ended one stays detached.
+      for (const channel of ['them', 'you'] as const) {
+        if (!stopped && !ended.has(channel)) await engine.attach(channel, streams[channel]);
+      }
+    },
     stop: release,
   };
 }

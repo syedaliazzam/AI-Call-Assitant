@@ -194,3 +194,19 @@ describe('startCallCapture', () => {
     expect(s.context.resume).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('CallCapture.reattach (Day 6 Stage 4, stuck-engine restart)', () => {
+  it('attaches both live channels to the new engine, keeping the same streams', async () => {
+    const s = setup();
+    const capture = await s.start();
+    const next = { attach: vi.fn(async () => {}), detach: vi.fn() };
+    await capture.reattach(next);
+    expect(next.attach).toHaveBeenCalledWith('them', s.them.stream);
+    expect(next.attach).toHaveBeenCalledWith('you', s.mic.stream);
+    // Stopping now detaches the new engine, not the old one.
+    capture.stop();
+    expect(next.detach).toHaveBeenCalledWith('them');
+    expect(next.detach).toHaveBeenCalledWith('you');
+    expect(s.engine.detach).not.toHaveBeenCalled();
+  });
+});

@@ -4,7 +4,12 @@
  * with ids <id>#n, the same speaker, all the words in order, and times spread across the line.
  */
 import { describe, expect, it } from 'vitest';
-import { MAX_LINE_WORDS, splitForDisplay } from '@/core/transcript/display';
+import {
+  MAX_LINE_WORDS,
+  displayTerms,
+  sentenceCase,
+  splitForDisplay,
+} from '@/core/transcript/display';
 import type { Utterance } from '@/core/transcript/transcript';
 
 /**
@@ -48,5 +53,22 @@ describe('splitForDisplay', () => {
     const parts = splitForDisplay(wordy);
     expect(parts).toHaveLength(2);
     expect(parts.map((p) => p.text).join(' ')).toBe(wordy.text);
+  });
+});
+
+describe('number terms in display (ADR-0027)', () => {
+  it('maps a spoken number back to its typed spelling, longest pattern first', () => {
+    const terms = displayTerms({
+      company: 'Northwind',
+      preferences: { keyTerms: 'BM25\nH100' },
+    });
+    // The recognizer wrote the spoken form; display shows the typed spelling.
+    expect(sentenceCase('WE RANKED WITH BM TWENTY FIVE', terms)).toBe('We ranked with BM25');
+    expect(sentenceCase('THE H ONE HUNDRED IS FAST', terms)).toBe('The H100 is fast');
+  });
+
+  it('leaves a line without a number term unchanged but for sentence case', () => {
+    const terms = displayTerms({ company: 'Northwind', preferences: { keyTerms: 'BM25' } });
+    expect(sentenceCase('WE MET THE TEAM', terms)).toBe('We met the team');
   });
 });

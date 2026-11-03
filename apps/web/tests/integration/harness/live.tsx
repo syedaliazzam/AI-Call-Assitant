@@ -131,7 +131,20 @@ function LiveView() {
         name={SESSION.company}
         themSource="the shared tab's audio"
         status={{ tone: 'success', label: 'Connected' }}
-        notices={VIEW === 'live-errors' ? <ThemSilentNotice /> : undefined}
+        notices={
+          VIEW === 'live-errors' ? (
+            <>
+              <ThemSilentNotice />
+              {/* Day 6 Stage 4: the note the watchdog shows after restarting a stuck engine. */}
+              <p
+                role="status"
+                className="rounded-control border border-ui-border bg-ui-surface px-3 py-2 text-[13px] text-ui-muted"
+              >
+                Transcription restarted.
+              </p>
+            </>
+          ) : undefined
+        }
         meters={(['you', 'them'] as const).map((speaker) => (
           <AudioMeter
             key={speaker}

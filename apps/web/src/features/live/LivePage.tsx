@@ -38,6 +38,7 @@ import { notesFailureText, type UnavailableReason } from '@/core/answer/unavaila
 import { generateNotes, type NotesLine } from '@/core/notes/generate';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
+import { TranscriptWatchdog } from '@/core/stt/watchdog';
 import { displayTerms } from '@/core/transcript/display';
 import { isSound, themSilent } from '@/core/audio/silence';
 import { ThemSilentNotice } from './ThemSilentNotice';
@@ -68,6 +69,9 @@ const ACTIVE_REFRESH_MS = 60_000;
 
 /** How long the echo note stays after the latest hidden echo line, in ms. */
 const ECHO_NOTE_MS = 60_000;
+
+/** How long the "Transcription restarted" note stays after a watchdog restart, in ms. */
+const RESTART_NOTE_MS = 8_000;
 
 /** Length of the sound check, in seconds. */
 const SOUND_CHECK_SECONDS = 5;
@@ -230,6 +234,11 @@ export function LivePage({
   const captureRef = useRef<CallCapture | null>(null);
   const saverRef = useRef<TranscriptSaver | null>(null);
   const monitor = useRef(new SttHealthMonitor());
+  // Day 6 Stage 4: watches for a stuck engine (audio in, no transcript out) and a flag so a
+  // restart cannot overlap with itself. restartedAt drives the "Transcription restarted" note.
+  const watchdog = useRef(new TranscriptWatchdog());
+  const restartingRef = useRef(false);
+  const [restartedAt, setRestartedAt] = useState<number | null>(null);
   /** The running sound check: when it ends and what each channel said so far. */
   const checkRef = useRef<{ endsAt: number; heard: Record<Speaker, string> } | null>(null);
 
@@ -241,6 +250,35 @@ export function LivePage({
     setSoundCheck((current) => (current ? { ...current, heard: check.heard } : current));
   }, []);
 
+  // Builds the speech engine with the standard callbacks. The initial effect and a watchdog
+  // restart share this, so a restarted engine behaves exactly like the first one. isActive() lets
+  // a replaced or torn-down engine's late messages be ignored (dev double-mount; restart).
+  const makeEngine = useCallback(
+    (isActive: () => boolean): SttEngine =>
+      createSttEngine({
+        hotwords,
+        onProgress: (progress) => {
+          if (isActive()) setModel((current) => ({ ...current, progress }));
+        },
+        onPartial: ({ channel, text, tStart }) => {
+          if (!isActive()) return;
+          transcript.addPartial(channel, text, tStart);
+          noteHeard(channel, text);
+          watchdog.current.noteProgress(performance.now());
+        },
+        onFinal: ({ channel, text, tStart, tEnd }) => {
+          if (!isActive()) return;
+          transcript.addFinal({ speaker: channel, text, tStart, tEnd });
+          noteHeard(channel, text);
+          watchdog.current.noteProgress(performance.now());
+        },
+        onStats: (stats) => {
+          if (isActive()) monitor.current.push(stats, performance.now());
+        },
+      }),
+    [hotwords, transcript, noteHeard],
+  );
+
   // The engine: created when the page opens (so the model downloads while the user reads the
   // instructions), re-created on "Try again", stopped when the page closes.
   useEffect(() => {
@@ -249,25 +287,7 @@ export function LivePage({
     // development, and a stopped engine's late messages (or its 'aborted' rejection) must not
     // reach the screen.
     let active = true;
-    const engine = createSttEngine({
-      hotwords,
-      onProgress: (progress) => {
-        if (active) setModel((current) => ({ ...current, progress }));
-      },
-      onPartial: ({ channel, text, tStart }) => {
-        if (!active) return;
-        transcript.addPartial(channel, text, tStart);
-        noteHeard(channel, text);
-      },
-      onFinal: ({ channel, text, tStart, tEnd }) => {
-        if (!active) return;
-        transcript.addFinal({ speaker: channel, text, tStart, tEnd });
-        noteHeard(channel, text);
-      },
-      onStats: (stats) => {
-        if (active) monitor.current.push(stats, performance.now());
-      },
-    });
+    const engine = makeEngine(() => active);
     engineRef.current = engine;
     engine.ready.then(
       () => {
@@ -286,7 +306,42 @@ export function LivePage({
       engine.stop();
       engineRef.current = null;
     };
-  }, [modelAttempt, transcript, noteHeard, hotwords]);
+  }, [modelAttempt, makeEngine]);
+
+  // Day 6 Stage 4: restart a stuck engine (audio arriving, no transcript) without ending the call.
+  // A fresh engine is created, the call's existing streams are moved to it (capture.reattach), and
+  // the old engine is stopped. The transcript, the session and the call all stay. The log carries
+  // timings only, never transcript text, to help find the Connect hang.
+  const restartEngine = useCallback(async () => {
+    const capture = captureRef.current;
+    if (!capture || restartingRef.current) return;
+    restartingRef.current = true;
+    console.info('stt: transcription restarted', {
+      sessionId: session.id,
+      msSinceProgress: watchdog.current.msSinceProgress(performance.now()),
+    });
+    const old = engineRef.current;
+    // The guard reads `next` only when a callback fires (after this line), so const is safe.
+    const next: SttEngine = makeEngine(() => engineRef.current === next);
+    engineRef.current = next;
+    setRestartedAt(Date.now());
+    try {
+      await next.ready;
+      await capture.reattach(next);
+      monitor.current.reset();
+      watchdog.current.start(performance.now());
+      old?.stop();
+    } catch (error) {
+      // The replacement could not load or attach: fall back to a channel-lost message, as a lost
+      // capture does. The old engine is already gone, so the call cannot continue silently.
+      if (engineRef.current === next) {
+        setChannelErrors((current) => ({ ...current, them: modelErrorMessage(error) }));
+      }
+      old?.stop();
+    } finally {
+      restartingRef.current = false;
+    }
+  }, [makeEngine, session.id]);
 
   // While connected: keep the session's lastActiveAt fresh, so the dashboard shows it as live
   // (and as ended once a crash or a closed window stops the refreshes for 12 hours).
@@ -304,6 +359,8 @@ export function LivePage({
     const timer = setInterval(() => {
       setHealth(monitor.current.status(performance.now()));
       setNow(Date.now());
+      // Day 6 Stage 4: if speech has been arriving with no transcript for 8 s, restart the engine.
+      if (watchdog.current.isStuck(performance.now())) void restartEngine();
       const check = checkRef.current;
       if (check) {
         const left = Math.max(0, Math.ceil((check.endsAt - performance.now()) / 1000));
@@ -312,7 +369,7 @@ export function LivePage({
       }
     }, 1_000);
     return () => clearInterval(timer);
-  }, [connection]);
+  }, [connection, restartEngine]);
 
   /** Retries loading the speech model. */
   const retryModel = () => {
@@ -339,6 +396,10 @@ export function LivePage({
         onLevels: (next) => {
           setLevels(next);
           if (isSound(next.them)) themSoundAt.current = Date.now();
+          // Speech on either channel is audio the engine should be turning into text; the
+          // watchdog uses it to notice a stuck engine (no transcript progress).
+          if (isSound(next.you) || isSound(next.them))
+            watchdog.current.noteSound(performance.now());
         },
         onEvent: (event) =>
           setChannelErrors((current) => ({
@@ -349,6 +410,8 @@ export function LivePage({
       captureRef.current = capture;
       setThemSource(capture.themSource);
       themSoundAt.current = Date.now();
+      // Start the stuck-engine watchdog for this connection (Day 6 Stage 4).
+      watchdog.current.start(performance.now());
       setConnection('connected');
       setCallStartedAt((current) => current ?? Date.now());
       // Warm Claude's prompt cache again: the warm-up from when the page opened may have
@@ -391,6 +454,8 @@ export function LivePage({
     if (ending) return;
     setEnding(true);
     checkRef.current = null;
+    watchdog.current.stop();
+    setRestartedAt(null);
     const saver = saverRef.current;
     saverRef.current = null;
     const capture = captureRef.current;
@@ -452,6 +517,8 @@ export function LivePage({
 
   const echoStats = transcript.echoStats();
   const echoNoteVisible = echoStats.lastAt !== null && now - echoStats.lastAt < ECHO_NOTE_MS;
+  // Shown for a few seconds after the watchdog restarted a stuck engine (Day 6 Stage 4).
+  const restartNoteVisible = restartedAt !== null && now - restartedAt < RESTART_NOTE_MS;
 
   const call: CallInfo = {
     title: `${SESSION_TYPE_LABELS[session.type]} call`,
@@ -519,8 +586,16 @@ export function LivePage({
         />
       ))}
       notices={
-        lostChannel || saveFailed || echoNoteVisible || themQuietShown ? (
+        lostChannel || saveFailed || echoNoteVisible || themQuietShown || restartNoteVisible ? (
           <>
+            {restartNoteVisible && (
+              <p
+                role="status"
+                className="rounded-control border border-ui-border bg-ui-surface px-3 py-2 text-[13px] text-ui-muted"
+              >
+                Transcription restarted.
+              </p>
+            )}
             {(['you', 'them'] as const).map(
               (speaker) =>
                 channelErrors[speaker] && (

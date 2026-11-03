@@ -14,8 +14,27 @@
  * spoken sentences) is cut into equal parts. The model gives no per-word times, so each part's
  * start and end are estimated in proportion to its words.
  */
+import { spokenVariants } from '../stt/spokenNumbers';
 import type { Session } from '../storage/types';
 import type { Utterance } from './transcript';
+
+/**
+ * A spelling to restore in a displayed line: either a plain term (matched and shown as itself), or
+ * a [pattern, replacement] pair, which shows the typed spelling where the recognizer wrote the
+ * spoken form of a number (ADR-0027): ['BM TWENTY FIVE', 'BM25'].
+ */
+export type DisplayTerm = string | readonly [pattern: string, replacement: string];
+
+/**
+ * A display term as a [pattern, replacement] pair (a plain term is its own replacement).
+ *
+ * @param term The display term.
+ * @returns The pattern to match and the text to show.
+ * Called from: sentenceCase()
+ */
+function termPair(term: DisplayTerm): readonly [string, string] {
+  return typeof term === 'string' ? [term, term] : term;
+}
 
 /** Longest line shown in one piece, in ms. */
 export const MAX_LINE_MS = 20_000;
@@ -61,17 +80,32 @@ export function splitForDisplay(line: Utterance): Utterance[] {
  * The spellings to restore in displayed lines: the session's key terms (one per line, without a
  * typed " :score") and its company, as the user wrote them (Day 6 Stage 4d).
  *
+ * A term that contains a digit also adds a pair for each spoken-word variant the recognizer might
+ * have written (ADR-0027), so "BM25" is restored from "BM TWENTY FIVE" (and "BM TWO FIVE").
+ *
  * @param session The session's company and key terms.
- * @returns The terms, longest first (so "Bluefin Route" wins over "Route").
+ * @returns The terms and spoken-form pairs, longest pattern first (so "Bluefin Route" wins over
+ *          "Route", and "BM TWENTY FIVE" over "TWENTY").
  * Called from: LivePage.tsx, SessionReview.tsx (passed to the transcript components)
  */
 export function displayTerms(
   session: Pick<Session, 'company'> & { preferences: Pick<Session['preferences'], 'keyTerms'> },
-): string[] {
-  const terms = [session.company, ...session.preferences.keyTerms.split(/\r?\n/)]
+): DisplayTerm[] {
+  const typed = [session.company, ...session.preferences.keyTerms.split(/\r?\n/)]
     .map((term) => term.replace(/\s*:\s*[\d.]+\s*$/, '').trim())
     .filter((term) => /[A-Za-z]/.test(term) && term.length <= 50);
-  return [...new Set(terms)].sort((a, b) => b.length - a.length);
+  const terms: DisplayTerm[] = [];
+  const seen = new Set<string>();
+  for (const term of typed) {
+    if (!seen.has(term.toLowerCase())) {
+      seen.add(term.toLowerCase());
+      terms.push(term);
+      // Map each spoken reading of the term's numbers back to the typed spelling.
+      for (const variant of spokenVariants(term)) terms.push([variant, term] as const);
+    }
+  }
+  const pattern = (term: DisplayTerm) => (typeof term === 'string' ? term : term[0]);
+  return terms.sort((a, b) => pattern(b).length - pattern(a).length);
 }
 
 /**
@@ -92,15 +126,19 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
  * answers and notes use, are unchanged.
  *
  * @param text  The line as the engine wrote it.
- * @param terms Spellings to restore (displayTerms()), longest first.
+ * @param terms Spellings to restore (displayTerms()), longest pattern first.
  * @returns The line for display.
  * Called from: TranscriptStrip.tsx, SavedTranscript.tsx, ReviewSections.tsx (ConversationSection)
  */
-export function sentenceCase(text: string, terms: readonly string[] = []): string {
+export function sentenceCase(text: string, terms: readonly DisplayTerm[] = []): string {
   let line = /[a-z]/.test(text) ? text : text.toLowerCase();
   for (const term of terms) {
+    const [pattern, replacement] = termPair(term);
     // Whole words only: "route" inside "routes" or "reroute" is left alone.
-    line = line.replace(new RegExp(`(?<![\\w'])${escapeRegExp(term)}(?![\\w'])`, 'gi'), () => term);
+    line = line.replace(
+      new RegExp(`(?<![\\w'])${escapeRegExp(pattern)}(?![\\w'])`, 'gi'),
+      () => replacement,
+    );
   }
   line = line.replace(/(?<![\w'])i(?=$|[\s'’,.?!])/g, 'I');
   return line.replace(
@@ -134,7 +172,7 @@ export interface TranscriptChip {
  */
 export function transcriptChips(
   lines: readonly Utterance[],
-  terms: readonly string[] = [],
+  terms: readonly DisplayTerm[] = [],
   max = 6,
 ): TranscriptChip[] {
   const chips: TranscriptChip[] = [];

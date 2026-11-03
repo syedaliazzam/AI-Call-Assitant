@@ -16,7 +16,7 @@
 
 import { memo } from 'react';
 import type { SttHealthStatus } from '@/core/stt/health';
-import { sentenceCase, splitForDisplay } from '@/core/transcript/display';
+import { sentenceCase, splitForDisplay, type DisplayTerm } from '@/core/transcript/display';
 import type { Utterance } from '@/core/transcript/transcript';
 import { HealthNotice } from './HealthNotice';
 import { SPEAKER_STYLE } from './speakers';
@@ -26,7 +26,7 @@ export interface TranscriptStripProps {
   /** Lines in time order (from transcript.lines()); they are shown newest first. */
   lines: readonly Utterance[];
   /** The session's own spellings to restore in each line (displayTerms()); none by default. */
-  terms?: readonly string[];
+  terms?: readonly DisplayTerm[];
   /** Speech-to-text health. */
   health: SttHealthStatus;
 }
