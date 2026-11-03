@@ -20,6 +20,9 @@ import type { TargetChoice } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createDictation, shouldDivert, type Dictation } from '@/core/voice/dictation';
 
+/** What the user sees when listening stopped because nothing was heard (v1.0.3). */
+export const IDLE_NOTICE = "Didn't catch a question. Press the microphone and speak.";
+
 /** Receives a dictated question and the chat mode it was spoken in. */
 export type DictationHandler = (text: string, target: TargetChoice) => void;
 
@@ -31,6 +34,11 @@ export interface CallDictation {
   listening: boolean;
   /** Starts listening; `target` is the current chat mode. */
   start: (target: TargetChoice) => void;
+  /**
+   * Why the last listen ended without a question, for the user (v1.0.3: "didn't catch a question"
+   * after 15 s of silence), or null. Cleared when listening starts again.
+   */
+  notice: string | null;
   /** Stops listening without sending. */
   stop: () => void;
   /**
@@ -82,6 +90,7 @@ export function useCallDictation(input: CallDictationInput): {
   route: DictationRoute;
 } {
   const [listening, setListening] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const targetRef = useRef<TargetChoice>('auto');
   const handlerRef = useRef<DictationHandler | null>(input.onText ?? null);
   const listeningRef = useRef(false);
@@ -99,7 +108,9 @@ export function useCallDictation(input: CallDictationInput): {
         setListening(false);
         handlerRef.current?.(text, targetRef.current);
       },
-      onStop: () => {
+      onStop: (reason) => {
+        // Nothing heard for a while: say so, instead of the button simply going quiet (v1.0.3).
+        if (reason === 'idle') setNotice(IDLE_NOTICE);
         listeningRef.current = false;
         setListening(false);
       },
@@ -129,6 +140,7 @@ export function useCallDictation(input: CallDictationInput): {
       targetRef.current = target;
       listeningRef.current = true;
       setListening(true);
+      setNotice(null);
       dictationRef.current?.start();
     },
     [available],
@@ -155,8 +167,8 @@ export function useCallDictation(input: CallDictationInput): {
   );
 
   const dictation = useMemo<CallDictation>(
-    () => ({ supported: available, listening, start, stop, setOnText }),
-    [available, listening, start, stop, setOnText],
+    () => ({ supported: available, listening, notice, start, stop, setOnText }),
+    [available, listening, notice, start, stop, setOnText],
   );
 
   return { dictation, route };

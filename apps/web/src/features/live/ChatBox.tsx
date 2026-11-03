@@ -30,6 +30,8 @@ export const TARGET_OPTIONS: readonly { value: TargetChoice; label: string }[] =
 export interface ChatBoxDictation {
   /** True while listening. */
   listening: boolean;
+  /** Why the last listen ended without a question (shown in the box), or null. */
+  notice?: string | null;
   /** Starts or stops listening. */
   onToggle: () => void;
 }
@@ -53,6 +55,13 @@ export interface ChatBoxProps {
 /** The look of the box's small icon buttons. */
 const ICON_BUTTON =
   'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-ui-muted hover:bg-ui-hover hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11';
+
+/**
+ * The microphone while listening (v1.0.3): solid red and pulsing. Its own class list, without the
+ * grey text and hover colours above, which would otherwise win over the red.
+ */
+const MIC_LISTENING =
+  'inline-flex h-9 w-9 shrink-0 animate-pulse items-center justify-center rounded-control bg-ui-danger text-white focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 
 /**
  * The message box.
@@ -141,7 +150,9 @@ export function ChatBox({
         aria-label="Type a question"
         className="h-9 min-w-0 flex-1 border-0 bg-transparent px-2 text-base text-ui-text placeholder:text-ui-muted focus:outline-none pointer-coarse:min-h-11 md:text-[15px]"
         placeholder={
-          dictation?.listening ? 'Listening… speak your question' : 'Type a manual message…'
+          dictation?.listening
+            ? 'Listening… speak your question'
+            : (dictation?.notice ?? 'Type a manual message…')
         }
         value={text}
         onChange={(event) => setText(event.target.value)}
@@ -161,7 +172,8 @@ export function ChatBox({
       {dictation && (
         <button
           type="button"
-          className={`${ICON_BUTTON} ${dictation.listening ? 'bg-ui-danger-bg text-ui-danger' : ''}`}
+          // Listening (v1.0.3): solid red with a pulse, so the state is obvious at a glance.
+          className={dictation.listening ? MIC_LISTENING : ICON_BUTTON}
           aria-label={dictation.listening ? 'Stop listening' : 'Speak a question'}
           aria-pressed={dictation.listening}
           title="Speak your question; it is sent when you pause (it becomes text only)"

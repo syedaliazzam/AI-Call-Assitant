@@ -186,12 +186,15 @@ function ResizeGrips({
   );
 }
 
-/** A bar's look: part of the one panel, split by a thin line, with no shrinking below its content. */
-const BAR = 'flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1.5';
+/**
+ * A bar's look: part of the one panel, split by a thin line, with no shrinking below its content.
+ * v1.0.3: tighter (py-1), so a typical answer fits the default size without scrolling.
+ */
+const BAR = 'flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1';
 
 /** A button in a bar: not part of the drag handle, always a clear focus ring. */
 const BUTTON_BASE =
-  'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-control px-2.5 text-[13px] font-medium disabled:opacity-50 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]';
+  'inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-control px-2 text-[13px] font-medium disabled:opacity-50 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]';
 
 /** A button in a bar, in the normal colours. */
 const BUTTON = `${BUTTON_BASE} bg-ui-overlay-button text-ui-text hover:bg-ui-overlay-button-hover`;
@@ -203,8 +206,9 @@ const ICON_BUTTON = `${BUTTON} w-8 px-0 pointer-coarse:min-w-11`;
 const FOOTER_BUTTON = `${BUTTON_BASE} w-8 px-0 hover:bg-ui-overlay-button pointer-coarse:min-w-11`;
 
 /**
- * A shortcut shown on a button; hidden when the overlay is narrow and from screen readers (the
- * title still says it, and the button keeps its plain name).
+ * A shortcut shown on a button, hidden from screen readers (the title still says it, and the button
+ * keeps its plain name). v1.0.3: shown at every width the window allows (its minimum is 560 DIPs);
+ * hidden only below that, for example in a browser picture-in-picture window made narrower.
  *
  * @param props.children The keys.
  * @returns The label.
@@ -218,10 +222,95 @@ function Keys({
   return (
     <kbd
       aria-hidden="true"
-      className="hidden rounded-full bg-ui-overlay-button px-1.5 text-[12px] font-normal @min-[640px]:inline"
+      className="hidden whitespace-nowrap rounded-full bg-ui-overlay-button px-1 text-[12px] font-normal @min-[540px]:inline"
     >
       {children}
     </kbd>
+  );
+}
+
+/**
+ * A shortcut in the short form the reference shows on its buttons: "Ctrl↵", "Ctrl⇧↵", "Ctrl⇧⌫"
+ * (⌘↵, ⌘⇧↵, ⌘⇧⌫ on macOS).
+ *
+ * @param accelerator An Electron accelerator, for example 'CommandOrControl+Shift+Enter'.
+ * @param mac         True on macOS.
+ * @returns The short label.
+ * Called from: CompactView; tests
+ */
+export function shortKeys(accelerator: string, mac: boolean): string {
+  const glyphs: Record<string, string> = {
+    CommandOrControl: mac ? '⌘' : 'Ctrl',
+    Shift: '⇧',
+    Alt: mac ? '⌥' : 'Alt',
+    Enter: '↵',
+    Backspace: '⌫',
+    Left: '←',
+    Right: '→',
+  };
+  const parts = accelerator.split('+').map((part) => glyphs[part] ?? part);
+  // No spaces, as the reference writes them (⌘⇧↵): they must fit the 560 px top bar.
+  return parts.join('');
+}
+
+/**
+ * The call's running time (v1.0.3), from when the call connected.
+ *
+ * @param props.startedAt When the call connected (Unix ms).
+ * @returns The timer.
+ */
+function CallTimer({
+  startedAt,
+}: {
+  /** When the call connected (Unix ms). */
+  startedAt: number;
+}) {
+  // The clock is a state the interval advances (no setState in the effect body).
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.floor((now - startedAt) / 1_000));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = String(seconds % 60).padStart(2, '0');
+  return (
+    <span
+      role="timer"
+      aria-label="Call time"
+      className="shrink-0 px-1 font-mono text-[13px] tabular-nums text-ui-muted"
+    >
+      {h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`}
+    </span>
+  );
+}
+
+/**
+ * The level bars at the start of the live-words row (reference layout): green while the other
+ * side's audio comes through, red when it does not. They show the channel's state, not a live level.
+ *
+ * @param props.on True while the other side's audio comes through.
+ * @returns The bars.
+ */
+function LevelBars({
+  on,
+}: {
+  /** True while the other side's audio comes through. */
+  on: boolean;
+}) {
+  return (
+    <span
+      role="img"
+      aria-label={
+        on ? "The other side's audio: connected" : "The other side's audio: not connected"
+      }
+      className={`inline-flex h-7 w-7 shrink-0 items-end justify-center gap-[3px] pb-1.5 ${on ? 'text-ui-success' : 'text-ui-danger'}`}
+    >
+      {[8, 14, 10, 16].map((height, i) => (
+        <span key={i} className="w-[3px] rounded-full bg-current" style={{ height }} />
+      ))}
+    </span>
   );
 }
 
@@ -250,7 +339,7 @@ function AudioStatus({
       role="img"
       aria-label={`${label}: ${on ? 'connected' : 'not connected'}`}
       title={`${label}: ${on ? 'connected' : 'not connected'}`}
-      className={`relative inline-flex h-8 w-7 shrink-0 items-center justify-center ${on ? 'text-ui-success' : 'text-ui-danger'}`}
+      className={`relative inline-flex h-8 w-6 shrink-0 items-center justify-center ${on ? 'text-ui-success' : 'text-ui-danger'}`}
     >
       {icon}
     </span>
@@ -393,7 +482,7 @@ function OverlayMenu({
               checked={windowSettings.fade}
               onChange={(event) => windowSettings.onFade(event.target.checked)}
             />
-            Fade when the pointer is elsewhere
+            More see-through when the pointer is elsewhere
           </label>
         </>
       ) : (
@@ -619,7 +708,9 @@ export function CompactView(props: CompactViewProps) {
       : 'script'
     : collapsed
       ? 'collapsed'
-      : 'full';
+      : answerOnly
+        ? 'expanded'
+        : 'full';
   const onMode = useRef(props.onMode);
   useEffect(() => {
     onMode.current = props.onMode;
@@ -629,7 +720,8 @@ export function CompactView(props: CompactViewProps) {
   }, [mode]);
 
   /**
-   * Expands the answer (the newest one is shown, v1.0.2) or goes back to the compact view.
+   * Expands the answer: the newest one is shown (v1.0.2), and since v1.0.3 the window itself grows
+   * (mode 'expanded'), so ⛶ visibly opens the answer large.
    *
    * @param next True to expand.
    */
@@ -716,14 +808,40 @@ export function CompactView(props: CompactViewProps) {
       <div
         role="toolbar"
         aria-label="Overlay controls"
-        className={`${BAR} relative [-webkit-app-region:drag]`}
+        // gap-1 (v1.0.3): Answer, Screenshot and Chat with their keys, the timer and End fit 560 DIPs.
+        className="relative flex shrink-0 items-center gap-1 border-b border-ui-border px-2 py-1 [-webkit-app-region:drag]"
       >
-        <AudioStatus on={state?.audio.you ?? false} label="Your microphone" icon={<MicIcon />} />
-        <AudioStatus
-          on={state?.audio.them ?? false}
-          label="The other side's audio"
-          icon={<SpeakerIcon />}
-        />
+        {state?.dictationSupported ? (
+          // v1.0.3: the microphone at the start of the bar is a real button (it was only a status
+          // icon, so pressing it did nothing): speak a question to the current chat mode; it is
+          // sent when you pause. Red while listening; the box below says why it stopped.
+          <button
+            type="button"
+            className={`${BUTTON_BASE} w-8 px-0 ${state.dictating ? 'animate-pulse bg-ui-danger-bg text-ui-danger' : 'text-ui-success hover:bg-ui-overlay-button'}`}
+            aria-label={state.dictating ? 'Stop listening' : 'Speak a question'}
+            aria-pressed={state.dictating ?? false}
+            title={
+              state.dictating
+                ? 'Listening… speak your question (press to stop)'
+                : (state.dictationNotice ??
+                  'Speak a question: it is sent when you pause (it becomes text only)')
+            }
+            onClick={() => onCommand({ type: 'dictate', on: !state.dictating })}
+          >
+            <MicIcon />
+          </button>
+        ) : (
+          <AudioStatus on={state?.audio.you ?? false} label="Your microphone" icon={<MicIcon />} />
+        )}
+        {/* Hidden below 620 px (v1.0.3): the level bars on the words row show the same, and at the
+            560 px minimum the key hints, the timer and End must still fit. */}
+        <span className="hidden @min-[620px]:inline-flex">
+          <AudioStatus
+            on={state?.audio.them ?? false}
+            label="The other side's audio"
+            icon={<SpeakerIcon />}
+          />
+        </span>
         <button
           type="button"
           className={`${BUTTON_BASE} bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover`}
@@ -731,7 +849,7 @@ export function CompactView(props: CompactViewProps) {
           disabled={!state || state.ended}
           title={`Answer the latest question (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)})`}
         >
-          Answer <Keys>{hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)}</Keys>
+          Answer <Keys>{shortKeys(DEFAULT_GLOBAL_HOTKEYS.answer, mac)}</Keys>
         </button>
         <button
           type="button"
@@ -741,7 +859,7 @@ export function CompactView(props: CompactViewProps) {
           title={`Answer from a screenshot (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)})`}
         >
           {state?.capturing ? 'Screenshot…' : 'Screenshot'}{' '}
-          <Keys>{hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)}</Keys>
+          <Keys>{shortKeys(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)}</Keys>
         </button>
         <button
           type="button"
@@ -754,15 +872,19 @@ export function CompactView(props: CompactViewProps) {
           disabled={!state || state.ended}
           title={`Type a question (${hotkeyLabel(FOCUSED_HOTKEYS.chat, mac)})`}
         >
-          Chat <Keys>{hotkeyLabel(FOCUSED_HOTKEYS.chat, mac)}</Keys>
+          Chat <Keys>{shortKeys(FOCUSED_HOTKEYS.chat, mac)}</Keys>
         </button>
+        {/* The call timer (v1.0.3, reference layout). */}
+        {state?.startedAt !== undefined && !state.ended && (
+          <CallTimer startedAt={state.startedAt} />
+        )}
         <span className="min-w-1 flex-1" />
         {/* The whole bar drags the window; this is where people look for it (hidden when narrow). */}
         <span
           role="img"
           aria-label="Drag here to move"
           title="Drag to move"
-          className="hidden h-8 w-7 shrink-0 cursor-move items-center justify-center text-ui-muted @min-[520px]:inline-flex"
+          className="hidden h-8 w-7 shrink-0 cursor-move items-center justify-center text-ui-muted @min-[700px]:inline-flex"
         >
           <MoveIcon />
         </span>
@@ -823,10 +945,19 @@ export function CompactView(props: CompactViewProps) {
       ) : (
         <>
           {!answerOnly && (
+            // v1.0.3 (reference layout): only the level bars and the latest words. One Clear and one
+            // ⛶ live on the answer row; clicking the words opens the transcript.
             <section aria-label="Live transcript bar" className={BAR}>
-              <div
-                aria-label="Latest words"
-                className="flex h-8 min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden"
+              <LevelBars on={state?.audio.them ?? false} />
+              <button
+                type="button"
+                aria-label="Latest words: show the transcript"
+                title="Show the transcript"
+                onClick={() => {
+                  setAnswerOnly(false);
+                  setTranscriptOpen((open) => !open);
+                }}
+                className="flex h-8 min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden rounded-control focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]"
               >
                 {chips.length > 0 ? (
                   chips.map((chip) => (
@@ -842,39 +973,7 @@ export function CompactView(props: CompactViewProps) {
                     {state ? 'Nothing said yet.' : 'Connecting to the call…'}
                   </span>
                 )}
-              </div>
-              <button
-                type="button"
-                className={BUTTON}
-                onClick={() => setClearedChips((state?.chips ?? []).map((chip) => chip.id))}
-                title="Clear these words from view (the transcript is kept)"
-              >
-                Clear
               </button>
-              {transcriptOpen ? (
-                // A clear way back (v1.0.2): words, not a second ⛶.
-                <button
-                  type="button"
-                  className={BUTTON}
-                  onClick={backToCompact}
-                  title="Back to the compact view (Esc)"
-                >
-                  Back to compact
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className={ICON_BUTTON}
-                  aria-label="Expand the transcript"
-                  title="Expand the transcript"
-                  onClick={() => {
-                    setAnswerOnly(false);
-                    setTranscriptOpen(true);
-                  }}
-                >
-                  <ExpandIcon />
-                </button>
-              )}
             </section>
           )}
 
@@ -883,29 +982,43 @@ export function CompactView(props: CompactViewProps) {
             className="flex min-h-0 flex-1 flex-col"
           >
             {transcriptOpen ? (
-              <div
-                aria-live="polite"
-                className="min-h-0 flex-1 overflow-y-auto p-3 text-[16px] leading-relaxed"
-              >
-                {/* Bubbles, newest first (ADR-0030, v1.0.2): Them left, You right. "Answer this"
+              <>
+                <div className="flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1">
+                  <span className={`${EYEBROW} px-1 text-ui-muted`}>Transcript</span>
+                  <span className="flex-1" />
+                  <button
+                    type="button"
+                    className={BUTTON}
+                    onClick={backToCompact}
+                    title="Back to the compact view (Esc)"
+                  >
+                    Back to compact
+                  </button>
+                </div>
+                <div
+                  aria-live="polite"
+                  className="min-h-0 flex-1 overflow-y-auto p-3 text-[16px] leading-relaxed"
+                >
+                  {/* Bubbles, newest first (ADR-0030, v1.0.2): Them left, You right. "Answer this"
                     goes through the live page's guarded ask, so it never duplicates an answer. */}
-                <TranscriptBubbles
-                  groups={groups}
-                  size="overlay"
-                  emptyText="Nothing said yet."
-                  onAnswerThis={(group) =>
-                    onCommand({
-                      type: 'answer-this',
-                      question: group.finalText.slice(0, 2_000),
-                      start: group.tStart,
-                      end: group.tEnd,
-                    })
-                  }
-                />
-              </div>
+                  <TranscriptBubbles
+                    groups={groups}
+                    size="overlay"
+                    emptyText="Nothing said yet."
+                    onAnswerThis={(group) =>
+                      onCommand({
+                        type: 'answer-this',
+                        question: group.finalText.slice(0, 2_000),
+                        start: group.tStart,
+                        end: group.tEnd,
+                      })
+                    }
+                  />
+                </div>
+              </>
             ) : (
               <>
-                <div className="flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1.5">
+                <div className="flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1">
                   <button
                     type="button"
                     className={BUTTON}
@@ -919,7 +1032,7 @@ export function CompactView(props: CompactViewProps) {
                     onClick={() => onCommand({ type: 'prev' })}
                     title={`Previous answer (${hotkeyLabel(FOCUSED_HOTKEYS.prev, mac)})`}
                   >
-                    ← <Keys>{hotkeyLabel(FOCUSED_HOTKEYS.prev, mac)}</Keys>
+                    ← <Keys>{shortKeys(FOCUSED_HOTKEYS.prev, mac)}</Keys>
                   </button>
                   <button
                     type="button"
@@ -930,7 +1043,7 @@ export function CompactView(props: CompactViewProps) {
                     onClick={() => onCommand({ type: 'next' })}
                     title={`Next answer (${hotkeyLabel(FOCUSED_HOTKEYS.next, mac)})`}
                   >
-                    → <Keys>{hotkeyLabel(FOCUSED_HOTKEYS.next, mac)}</Keys>
+                    → <Keys>{shortKeys(FOCUSED_HOTKEYS.next, mac)}</Keys>
                   </button>
                   {/* Only when an answer is shown: "0 of N" after Clear meant nothing (v1.0.2). */}
                   {hasHistory && index >= 0 && (
@@ -942,11 +1055,15 @@ export function CompactView(props: CompactViewProps) {
                   <button
                     type="button"
                     className={BUTTON}
-                    onClick={() => onCommand({ type: 'clear' })}
+                    // The one Clear (v1.0.3): the answer and the latest words on screen.
+                    onClick={() => {
+                      setClearedChips((state?.chips ?? []).map((chip) => chip.id));
+                      onCommand({ type: 'clear' });
+                    }}
                     disabled={!state}
-                    title={`Clear the answer (${hotkeyLabel(FOCUSED_HOTKEYS.clear, mac)})`}
+                    title={`Clear the answer and the latest words (${hotkeyLabel(FOCUSED_HOTKEYS.clear, mac)})`}
                   >
-                    Clear <Keys>{hotkeyLabel(FOCUSED_HOTKEYS.clear, mac)}</Keys>
+                    Clear <Keys>{shortKeys(FOCUSED_HOTKEYS.clear, mac)}</Keys>
                   </button>
                   {answerOnly ? (
                     // A clear toggle back (v1.0.2), also Escape.
@@ -971,6 +1088,17 @@ export function CompactView(props: CompactViewProps) {
                   )}
                 </div>
 
+                {(state?.dictating || state?.dictationNotice) && (
+                  // The microphone's state in words (v1.0.3): listening, or why it stopped.
+                  <p
+                    role="status"
+                    className={`shrink-0 border-b border-ui-border px-3 py-1 text-[13px] ${state.dictating ? 'text-ui-danger' : 'text-ui-warning'}`}
+                  >
+                    {state.dictating
+                      ? 'Listening… speak your question; it is sent when you pause.'
+                      : state.dictationNotice}
+                  </p>
+                )}
                 {props.chatOpen && (
                   <div className="flex shrink-0 gap-1 border-b border-ui-border p-1.5">
                     <select
@@ -1017,20 +1145,22 @@ export function CompactView(props: CompactViewProps) {
                 )}
 
                 {/* The one scroll area. */}
-                <div ref={scrollArea} className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+                <div ref={scrollArea} className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5">
                   {answer ? (
                     <>
-                      <p aria-label="Question" className="text-[15px] text-ui-muted">
-                        <strong className="font-semibold text-ui-text">Question:</strong>{' '}
+                      <p aria-label="Question" className="text-[15px] leading-snug text-ui-text">
+                        {/* v1.0.3: readable, in the normal text colour (it was faint grey). */}
+                        <strong className="font-semibold">Question:</strong>{' '}
                         {/* Claude's cleaned question once it arrives; the raw words on hover. */}
                         <span title={answer.question || undefined}>
                           {cardQuestion(answer.question, answer.cleanQuestion)}
                         </span>
                       </p>
-                      <div className="mt-2">
+                      <div className="mt-1.5">
                         <AnswerBody
                           text={answer.text}
                           size="overlay"
+                          answerLabel
                           headlineLabel="Answer line"
                           claims={answer.claims}
                           {...(answer.meta?.target ? { target: answer.meta.target } : {})}
@@ -1054,7 +1184,7 @@ export function CompactView(props: CompactViewProps) {
                       )}
 
                       {/* The quiet footer (v1.0.2): tags, how and when, then the actions. */}
-                      <div className="mt-3 flex flex-wrap items-center gap-1 text-[12px] text-ui-muted">
+                      <div className="mt-2 flex flex-wrap items-center gap-1 text-[12px] text-ui-muted">
                         <AnswerTags
                           compact
                           meta={answer.meta}

@@ -18,6 +18,7 @@ import { openLiveChannel, type CompactState, type LiveChannel } from '@/core/liv
 import {
   getOverlayFade,
   getOverlayOpacity,
+  paintedOpacity,
   setOverlayFadePref,
   setOverlayOpacityPref,
 } from '@/core/storage/overlayPrefs';
@@ -63,8 +64,9 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
   const [opacity, setOpacity] = useState(getOverlayOpacity);
   const [fade, setFade] = useState(getOverlayFade);
   // The pointer is over the overlay: a state (not a ref) so the panel's background opacity
-  // re-paints when fading is on and the pointer comes and goes (ADR-0033).
-  const [hovered, setHovered] = useState(true);
+  // re-paints when fading is on and the pointer comes and goes (ADR-0033). It starts false: the
+  // overlay opens without the pointer on it (v1.0.2 started it true, which kept the panel solid).
+  const [hovered, setHovered] = useState(false);
   const channel = useRef<LiveChannel | null>(null);
   const root = useRef<HTMLDivElement>(null);
   // The latest state, for the shortcut handler (added once).
@@ -103,8 +105,9 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
 
   // ADR-0033: the slider dims only the panel's background, not the window; the text stays opaque.
   // The window itself is kept fully opaque (older shells could dim it; set it back once). The
-  // background opacity painted now is the chosen value, or 1 under the pointer when fading is on.
-  const panelAlpha = fade && hovered ? 1 : opacity;
+  // background opacity painted now is the chosen value; with fading on, more see-through away from
+  // the pointer (v1.0.3, ADR-0039: never more solid, so the slider always shows at once).
+  const panelAlpha = paintedOpacity(opacity, fade, hovered);
   useEffect(() => {
     getPlatform().setOverlayOpacity(1);
   }, []);

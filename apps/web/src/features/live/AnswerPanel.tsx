@@ -178,6 +178,7 @@ function AnswerCard(props: AnswerCardProps) {
         <AnswerBody
           text={entry.text}
           size="panel"
+          answerLabel
           headlineLabel="Answer line"
           claims={entry.claims ?? []}
           hideEmptyHeadline={Boolean(entry.unavailable || entry.problem || stoppedEmpty(entry))}

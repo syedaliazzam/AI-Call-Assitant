@@ -6,9 +6,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   MAX_LINE_WORDS,
+  chipWords,
   displayTerms,
   sentenceCase,
   splitForDisplay,
+  transcriptChips,
 } from '@/core/transcript/display';
 import type { Utterance } from '@/core/transcript/transcript';
 
@@ -70,5 +72,35 @@ describe('number terms in display (ADR-0027)', () => {
   it('leaves a line without a number term unchanged but for sentence case', () => {
     const terms = displayTerms({ company: 'Northwind', preferences: { keyTerms: 'BM25' } });
     expect(sentenceCase('WE MET THE TEAM', terms)).toBe('We met the team');
+  });
+});
+
+describe('chips without hesitation sounds (v1.0.3, ADR-0039)', () => {
+  it('drops um and uh from the live-words chips and capitalises a new first word', () => {
+    expect(chipWords('Um what production grade applications have you uh built')).toEqual([
+      'What',
+      'production',
+      'grade',
+      'applications',
+      'have',
+      'you',
+      'built',
+    ]);
+    expect(chipWords('Hmm, okay')).toEqual(['Okay']);
+    expect(chipWords('Umbrella insurance')).toEqual(['Umbrella', 'insurance']);
+  });
+
+  it('transcriptChips never shows a filler', () => {
+    const chips = transcriptChips([
+      {
+        id: 'l1',
+        speaker: 'them',
+        text: 'UM WHAT DO YOU UH BUILD',
+        tStart: 0,
+        tEnd: 1,
+        final: true,
+      },
+    ]);
+    expect(chips.map((chip) => chip.text).join(' ')).toBe('What do you build');
   });
 });

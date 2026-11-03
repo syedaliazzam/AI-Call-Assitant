@@ -57,7 +57,7 @@ export function MicButton({ state, disabled, onStart, onStop }: MicButtonProps) 
       <span aria-hidden="true" className="mr-1.5 inline-flex">
         <MicIcon />
       </span>
-      {state === 'loading' ? 'Starting…' : 'Talk'}
+      {state === 'loading' ? 'Loading speech…' : 'Talk'}
     </Button>
   );
 }
