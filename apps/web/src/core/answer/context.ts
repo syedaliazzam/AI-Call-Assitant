@@ -39,6 +39,7 @@ import type { Session, StoredDocument } from '../storage/types';
 import { selectQuestion, type SelectedQuestion } from '../transcript/question';
 import { splitStable } from '../transcript/stability';
 import type { Utterance } from '../transcript/transcript';
+import { getAnswerStyleVersion } from '../storage/answerPrefs';
 import { findSimilarAnswer } from './similar';
 import { toSessionContext } from './warm';
 
@@ -246,6 +247,8 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
     ...(input.lessons?.length ? { lessons: [...input.lessons] } : {}),
     ...(input.target ? { target: input.target } : {}),
     ...(input.answerType ? { answerType: input.answerType } : {}),
+    // Absent on the default, so a normal request keeps its cached bytes (ADR-0032).
+    ...(getAnswerStyleVersion() === 'previous' ? { styleVersion: 'previous' as const } : {}),
     ...(similar
       ? {
           similar: {

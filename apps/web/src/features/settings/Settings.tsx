@@ -102,13 +102,20 @@ function ShareProtectionSetting() {
   );
 }
 
+/** Props for Settings. */
+export interface SettingsProps {
+  /** True for an admin: passed to the Answers section for the answer-style rollback switch (ADR-0032). */
+  isAdmin: boolean;
+}
+
 /**
  * The Settings page.
  *
+ * @param props See SettingsProps.
  * @returns The page content.
  * Rendered by: app/(app)/settings/page.tsx
  */
-export function Settings() {
+export function Settings({ isAdmin }: SettingsProps) {
   const [defaults, setDefaults] = useState<SessionDefaults | null>(null);
   const [saved, setSaved] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -248,7 +255,7 @@ export function Settings() {
       <Section title="Answers">
         <div className="flex flex-col gap-5">
           <AutoAnswerSetting />
-          <AnswerPrefsSetting />
+          <AnswerPrefsSetting isAdmin={isAdmin} />
         </div>
       </Section>
 

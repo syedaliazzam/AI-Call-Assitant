@@ -15,6 +15,7 @@
 import {
   CODING_LANGUAGES,
   DEFAULT_CODING_LANGUAGE,
+  type AnswerStyleVersion,
   type MissingInfoMode,
   type TargetChoice,
 } from '@kite/shared';
@@ -24,6 +25,9 @@ export const CODING_LANGUAGE_KEY = 'kite.codingLanguage';
 
 /** The localStorage key of what to do when information is missing. */
 export const MISSING_INFO_KEY = 'kite.missingInfo';
+
+/** The localStorage key of the answer rules' version (admins only; ADR-0032). */
+export const STYLE_VERSION_KEY = 'kite.answerStyleVersion';
 
 /** The localStorage key of the review page's order. */
 export const REVIEW_OLDEST_FIRST_KEY = 'kite.reviewOldestFirst';
@@ -104,6 +108,28 @@ export function getMissingInfoMode(): MissingInfoMode {
  */
 export function setMissingInfoMode(mode: MissingInfoMode): void {
   write(MISSING_INFO_KEY, mode === 'story' ? 'story' : null);
+}
+
+/**
+ * Which answer rules this device asks for. Only an admin can change it, and the server ignores
+ * the choice for anyone else (ADR-0032).
+ *
+ * @returns 'current' (the default) or 'previous'.
+ * Called from: warm.ts, context.ts, AnswerPrefsSetting.tsx
+ */
+export function getAnswerStyleVersion(): AnswerStyleVersion {
+  return read(STYLE_VERSION_KEY) === 'previous' ? 'previous' : 'current';
+}
+
+/**
+ * Saves which answer rules this device asks for.
+ *
+ * @param version The choice.
+ * @returns Nothing.
+ * Called from: AnswerPrefsSetting.tsx
+ */
+export function setAnswerStyleVersion(version: AnswerStyleVersion): void {
+  write(STYLE_VERSION_KEY, version === 'previous' ? 'previous' : null);
 }
 
 /**

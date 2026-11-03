@@ -16,13 +16,21 @@ import {
   CORE_RULES,
   LESSONS_HEADING,
   SYSTEM_RULES,
+  SYSTEM_RULES_PREVIOUS,
   buildPrompt,
   rulesBlock,
 } from '@/server/prompt';
 import { parseAnswerRequest } from '@/server/validate';
 
-/** SHA-256 of the rules block, changed on purpose for first-person answers (ADR-0029). */
-const RULES_SHA256 = 'c65daf3bf1ebb586ad21252c94695dafa3f5c9c703564e3e23e504338eee2a75';
+/** SHA-256 of the v-current rules block, changed on purpose for the honesty and shape change (ADR-0032). */
+const RULES_SHA256 = 'c0ea13e30a694ca9af3044000380e848e10d41d7a4cf161a4bdf9ae43963aa3e';
+
+/**
+ * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte
+ * the block measured before this change (the earlier RULES_SHA256), so the scores in
+ * docs/testing/answer-eval.md still describe what a rollback sends.
+ */
+const RULES_PREVIOUS_SHA256 = 'c65daf3bf1ebb586ad21252c94695dafa3f5c9c703564e3e23e504338eee2a75';
 
 /** An invented request. */
 const REQUEST: AnswerRequest = {
@@ -46,6 +54,17 @@ describe('rulesBlock', () => {
     expect(rulesBlock()).toBe(SYSTEM_RULES);
     expect(rulesBlock([])).toBe(SYSTEM_RULES);
     expect(rulesBlock(['   ', '\n'])).toBe(SYSTEM_RULES);
+  });
+
+  it('v-previous is byte-for-byte the rollback rules block, unchanged by this release', () => {
+    // The rollback target must keep the bytes the earlier baselines were measured on (ADR-0032).
+    expect(createHash('sha256').update(SYSTEM_RULES_PREVIOUS).digest('hex')).toBe(
+      RULES_PREVIOUS_SHA256,
+    );
+    expect(rulesBlock([], 'previous')).toBe(SYSTEM_RULES_PREVIOUS);
+    expect(rulesBlock(['   '], 'previous')).toBe(SYSTEM_RULES_PREVIOUS);
+    // v-current and v-previous are different blocks (the change is real).
+    expect(SYSTEM_RULES_PREVIOUS).not.toBe(SYSTEM_RULES);
   });
 
   it('puts the lessons after the unchanged core rules, under the preferences heading', () => {

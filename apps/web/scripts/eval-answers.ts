@@ -64,6 +64,7 @@ import { getClaudeEnv } from '@/server/env';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
 import { ADAPTIVE_SCENARIOS } from '../tests/eval/groups/adaptive';
+import { HONESTY_SCENARIOS } from '../tests/eval/groups/honesty';
 import { QUALITY_SCENARIOS } from '../tests/eval/groups/quality';
 import type { Scenario } from '../tests/eval/groups/types';
 import { runAnswerCode, type CodeResult } from './lib/code-sandbox';
@@ -159,7 +160,7 @@ function loadScenarios(only: string | null): Scenario[] {
     (name) => JSON.parse(readFileSync(path.join(SCENARIO_DIR, name), 'utf8')) as Scenario,
   );
   return selectScenarios(
-    [...scenarios, ...ADAPTIVE_SCENARIOS, ...QUALITY_SCENARIOS],
+    [...scenarios, ...ADAPTIVE_SCENARIOS, ...QUALITY_SCENARIOS, ...HONESTY_SCENARIOS],
     answerGroup,
     only,
   );

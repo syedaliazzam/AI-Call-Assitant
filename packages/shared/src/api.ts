@@ -213,6 +213,16 @@ export interface KiteTurn {
   text: string;
 }
 
+/**
+ * The versions of Kite's answer rules (ADR-0032): 'current' is "v-current", and 'previous' is
+ * "v-previous", kept word for word so an admin can roll back if the new answers do worse on real
+ * calls.
+ */
+export const ANSWER_STYLE_VERSIONS = ['current', 'previous'] as const;
+
+/** One version of Kite's answer rules. */
+export type AnswerStyleVersion = (typeof ANSWER_STYLE_VERSIONS)[number];
+
 /** An earlier answer in this call to a question like the current one (core/answer/similar.ts). */
 export interface SimilarAnswer {
   /** The earlier question. Never logged. */
@@ -279,6 +289,12 @@ export interface AnswerRequest {
   answerType?: AnswerType;
   /** An earlier answer to a similar question, to reuse its facts and wording. Uncached. */
   similar?: SimilarAnswer;
+  /**
+   * Which version of the answer rules to use (ADR-0032). Absent means 'current'. It decides the
+   * cached rules block, so the warm-up and every answer of a call must send the same value. The
+   * server honours 'previous' only for an admin.
+   */
+  styleVersion?: AnswerStyleVersion;
   /** Mode `kite` only: the language for code, when it is not Python. */
   codingLanguage?: string;
   /** Mode `kite` only: the chat so far, oldest first. */

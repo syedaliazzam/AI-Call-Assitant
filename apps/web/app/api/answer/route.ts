@@ -173,11 +173,15 @@ async function respond(
   }
   const parsed = parseAnswerRequest(json);
   if (!parsed.ok) return jsonError(400, 'bad_request', parsed.message);
+  // The rollback switch is for admins (ADR-0032): the setting is shown only to them, and this is
+  // what enforces it. Anyone else gets the current rules whatever the request asked for.
+  const data: AnswerRequest =
+    session.user.role === 'admin' ? parsed.data : { ...parsed.data, styleVersion: undefined };
 
-  const { mode } = parsed.data;
+  const { mode } = data;
 
   // Ask Kite has no call to keep up with, so it defaults to the smart model (ADR-0030).
-  const tier: ModelTier = parsed.data.model ?? (mode === 'kite' ? 'smart' : 'fast');
+  const tier: ModelTier = data.model ?? (mode === 'kite' ? 'smart' : 'fast');
   let model: string;
   try {
     const env = getClaudeEnv();
@@ -199,20 +203,22 @@ async function respond(
   };
   // Sizes only (never text), so the logs show how much context each answer carried.
   const context = {
-    chunks: parsed.data.conversation?.length ?? 0,
-    tailLines: parsed.data.tail?.length ?? 0,
+    chunks: data.conversation?.length ?? 0,
+    tailLines: data.tail?.length ?? 0,
     // The screenshot's size only (Day 5), never its content.
-    imageChars: parsed.data.image?.length ?? 0,
+    imageChars: data.image?.length ?? 0,
     // How many approved lessons were sent (Day 5 Stage 7), never their text.
-    lessons: parsed.data.lessons?.length ?? 0,
+    lessons: data.lessons?.length ?? 0,
     // Counts only for the Ask Kite page (ADR-0030), never their text.
-    historyTurns: parsed.data.history?.length ?? 0,
-    attachments: parsed.data.attachments?.length ?? 0,
-    images: parsed.data.images?.length ?? 0,
+    historyTurns: data.history?.length ?? 0,
+    attachments: data.attachments?.length ?? 0,
+    images: data.images?.length ?? 0,
+    // Which answer rules were used: 'previous' only after an admin's rollback (ADR-0032).
+    styleVersion: data.styleVersion ?? 'current',
   };
   let source: AsyncGenerator<ReplyItem, ReplyResult, undefined>;
   if (mode === 'warm') {
-    source = warmReply(parsed.data, { model, tier, signal, onResponse: markOpen });
+    source = warmReply(data, { model, tier, signal, onResponse: markOpen });
   } else if (mode === 'hello') {
     source = streamReply({
       model,
@@ -227,7 +233,7 @@ async function respond(
     // 'answer', 'chat' and 'screenshot': the three cached parts, then the uncached tail
     // (with the screenshot first for 'screenshot'; server/prompt.ts). 'kite': the Ask Kite page.
     // The SDK's single retry happens only before any text arrives (server/claude.ts).
-    const prompt = mode === 'kite' ? buildKiteChatPrompt(parsed.data) : buildPrompt(parsed.data);
+    const prompt = mode === 'kite' ? buildKiteChatPrompt(data) : buildPrompt(data);
     // The hidden first line becomes its own event, so the first delta is the first real word.
     source = withAnswerMeta(
       streamReply({

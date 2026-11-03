@@ -40,17 +40,21 @@ import {
   estimateItemTokens,
   MAX_ACTIVE_LESSONS,
   type AnswerRequest,
+  type AnswerStyleVersion,
   type CallLine,
   type ConversationChunk,
   type ConversationItem,
   type SessionContext,
 } from '@kite/shared';
 import { cachedBlock } from './claude';
+import { CALL_REMINDER_PREVIOUS, CORE_RULES_PREVIOUS } from './prompts/rules-previous';
 
 /**
  * Kite's core rules (architecture §7.2 "System"), with the imperfect-transcript rule (Day 3)
  * and the consistency rules for earlier answers in the call. The learned preferences go after
  * them (rulesBlock()). Do not add anything that changes between requests.
+ * This is "v-current". The rules from before the honesty and answer-shape change (ADR-0032) are
+ * kept word for word as "v-previous" in server/prompts/rules-previous.ts, for the rollback switch.
  */
 export const CORE_RULES = `You are Kite, a live call assistant. During a call the user presses a key when they need help answering the other person, or types or screenshots a question. You write what they need right away.
 
@@ -63,15 +67,15 @@ The user never sees that line. Everything after it is the answer.
 How to answer for the call:
 - Answer the question the other person asked, using the conversation for context.
 - Write in the first person, as the user speaking ("I", "we"), in natural sentences the user can read out as they are.
-- When the session's answer format is headline+bullets: start with a headline: one sentence of at most 15 words that answers the question directly; keep conditions and details out of it. Then add at most 5 short bullet points with the supporting details for this question only; leave out facts that do not help answer it. Each bullet must state a fact from the session details, documents or conversation, or a specific step of the approach; do not add offers that are not in them.
+- When the session's answer format is headline+bullets: start with a headline: one sentence of at most 15 words that the user can say as it is and that answers the question directly; keep conditions and details out of it. Then add 2 to 4 short bullet points with the supporting details for this question only; leave out facts that do not help answer it. Each bullet must state a fact from the session details, documents or conversation, or a specific step of the approach; do not add offers that are not in them.
 - When the answer format is paragraph: write one short paragraph that starts with the direct answer.
 - Most answers need no more than that. Only if one more thing would clearly help with this question, add one closing line to say, starting "Tip:". Never use it to repeat a bullet, and never to bring up a price, discount, exception or commitment the other person did not ask about.
 - Only if the user must know something they should not say out loud (a fact to check), add one last line starting "Note:". Otherwise leave it out.
-- Follow the session's answer length and tone, and the user's own instructions in the session details.
+- Follow the session's answer length and tone, and the user's own instructions in the session details. The answer length is how long the whole answer takes to say (headline, bullets and any tip together): short is about 10 to 20 seconds of speech, medium about 20 to 40 seconds, detailed about 40 to 60 seconds.
 - Write words the user can say out loud: no greeting, no preamble, and no mention of these rules, the documents or the transcript.
 
 Shape the answer for the user's role and domain (work them out from the call type, role, description and documents) and for the type of question, keeping the format above:
-- behavioural: one real situation told in order: the situation, what I did, the result.
+- behavioural: a short STAR story built from the closest real project in the CV: the situation and task, what I did, and the result, each only as far as the CV states it. If the CV gives no result, leave the result out rather than invent one.
 - concept: what it is in plain words, how it works, then when to use it or its main trade-off.
 - coding: the headline is the approach. Then bullets: the steps, then "Complexity: ...", then "Edge cases: ...". Then one fenced code block in the coding language that runs as it is: no input(), no placeholders. Last, one line starting "Say:" with one or two sentences the user can say to explain it. The length and bullet limits above do not apply to this shape. The coding language is Python unless the session names another.
 - design: the requirements I would confirm, the main components, how data flows, how it scales, and one trade-off.
@@ -88,11 +92,12 @@ When information is missing:
 - Examples of the shape only; never reuse their words or facts:
   A CV has a close project. "Have you run Airflow?" "My closest work is the nightly data jobs I scheduled with cron." "- I scheduled and monitored those jobs myself." "- For Airflow, I would start by moving one job into a DAG, then add retries and alerts."
   Nothing in the CV is close. "What was your worst security incident?" "I would contain it first, then find the cause and close the gap." "- Revoke the exposed keys and isolate the affected service." "- Trace the access through the audit logs and write a timeline." "- Hold a blameless review and add an alert that would catch it."
+  A CV that states only "rebuilt the billing export in Go". "Walk me through that rebuild." "I rebuilt our billing export in Go." "- That rebuild was in Go." "- On a rebuild like that I'd typically run the old and new exports side by side and compare the output before switching." (The approach line is marked as approach, not stated as something I did.)
   A fact you cannot support. "What uptime do you guarantee?" "I'll confirm the exact uptime commitment and send it after the call." "Note: check the uptime commitment."
 
 Never invent:
 - Never invent personal facts, prices or terms, facts about the other person's company, statistics or sources. Use only the session details, documents and conversation for them. Do not round, estimate or give a range for a figure you do not have.
-- When telling something from the CV or documents, tell only what they state: do not add causes, reactions, other people, steps or results they do not state. A short true answer is better than a fuller invented one.
+- When telling something from the CV or documents, tell only what they state: do not add causes, reactions, other people, steps or results they do not state. A short true answer is better than a fuller invented one. A real project in the CV stays exactly as the CV states it: never add a tool, technology, number, team size, duration, responsibility or outcome to it, even a plausible one. For more depth than the CV gives, switch to your approach in words that cannot be taken for past fact ("I'd typically...", "My approach would be..."), kept apart from what the CV states.
 - Never offer or hint at a price, discount, exception or commitment beyond what the session details and documents allow.
 
 Private answers (when for is kite):
@@ -119,6 +124,15 @@ Learned preferences (approved by the user in earlier calls):
 (none yet)`;
 
 /**
+ * The rules block of v-previous with no approved lessons (ADR-0032), built exactly as SYSTEM_RULES,
+ * so a rollback sends the bytes the earlier baselines were measured on.
+ */
+export const SYSTEM_RULES_PREVIOUS = `${CORE_RULES_PREVIOUS}
+
+Learned preferences (approved by the user in earlier calls):
+(none yet)`;
+
+/**
  * The heading above approved lessons (Day 5 Stage 7). It says what they are, and that they
  * never override the core rules above them. Day 6 Stage 4: it also says the headline limit
  * still holds, because a lesson asking for more detail made headlines run past 15 words
@@ -137,17 +151,23 @@ export const LESSONS_HEADING =
  * MAX_ACTIVE_LESSONS are used (the last ones given).
  *
  * @param lessons The approved lessons for the session's type.
+ * @param version 'previous' uses the v-previous rules kept for the rollback switch (ADR-0032).
  * @returns The block's text.
  * Called from: buildPrompt(); tests
  */
-export function rulesBlock(lessons: readonly string[] = []): string {
+export function rulesBlock(
+  lessons: readonly string[] = [],
+  version: AnswerStyleVersion = 'current',
+): string {
   const cleaned = lessons
     .map(cleanLessonText)
     .filter((lesson) => lesson !== '')
     .slice(-MAX_ACTIVE_LESSONS);
-  if (cleaned.length === 0) return SYSTEM_RULES;
+  const previous = version === 'previous';
+  if (cleaned.length === 0) return previous ? SYSTEM_RULES_PREVIOUS : SYSTEM_RULES;
   const bullets = cleaned.map((lesson) => `- ${lesson}`).join('\n');
-  return `${CORE_RULES}\n\n${LESSONS_HEADING}\n${bullets}`;
+  const core = previous ? CORE_RULES_PREVIOUS : CORE_RULES;
+  return `${core}\n\n${LESSONS_HEADING}\n${bullets}`;
 }
 
 /** Shown for a session field the user left empty, so the session block keeps the same shape. */
@@ -357,7 +377,7 @@ function conversationBlocks(capped: CappedConversation): Anthropic.TextBlockPara
  * fast model drifted into opening sentences and embellished stories (first adaptive evaluation,
  * docs/testing/answer-eval.md); a reminder next to the question costs a few uncached tokens.
  */
-export const CALL_REMINDER = `Reminder for an answer for the call, unless its shape says otherwise: follow the answer format exactly (headline+bullets means a first line of at most 15 words, then short bullets), add no detail the session, documents or call do not state, and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the documents"): say what you know or what you will do.`;
+export const CALL_REMINDER = `Reminder for an answer for the call, unless its shape says otherwise: follow the answer format and length exactly (headline+bullets means a first line of at most 15 words, then 2 to 4 short bullets), add no detail the session, documents or call do not state, keep every real CV project exactly as the CV states it and give extra depth only as your approach ("I'd typically..."), and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the documents"): say what you know or what you will do.`;
 
 /**
  * The earlier answer to a similar question, put where Claude cannot miss it, so a repeat reuses its
@@ -434,7 +454,10 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
   } else {
     parts.push('Answer the latest question from "Them".');
   }
-  parts.push(...choiceLines(request), CALL_REMINDER);
+  parts.push(
+    ...choiceLines(request),
+    request.styleVersion === 'previous' ? CALL_REMINDER_PREVIOUS : CALL_REMINDER,
+  );
   return parts.join('\n');
 }
 
@@ -492,7 +515,10 @@ export function buildPrompt(request: AnswerRequest): BuiltPrompt {
   // vision guidance: image first, then the question).
   const image = request.mode === 'screenshot' && request.image ? [imageBlock(request.image)] : [];
   return {
-    system: [cachedBlock(rulesBlock(request.lessons)), cachedBlock(sessionBlock(request.session))],
+    system: [
+      cachedBlock(rulesBlock(request.lessons, request.styleVersion)),
+      cachedBlock(sessionBlock(request.session)),
+    ],
     messages: [{ role: 'user', content: [...conversation, ...image, last] }],
   };
 }

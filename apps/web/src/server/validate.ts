@@ -12,6 +12,7 @@
  */
 import 'server-only';
 import {
+  ANSWER_STYLE_VERSIONS,
   ANSWER_TYPES,
   MAX_ACTIVE_LESSONS,
   MAX_ANSWER_CHARS,
@@ -186,6 +187,8 @@ export const answerRequestSchema = z
       })
       .strict()
       .optional(),
+    // The answer rules' version (ADR-0032); the route ignores it for anyone but an admin.
+    styleVersion: z.enum(ANSWER_STYLE_VERSIONS).optional(),
     // The Ask Kite page's chat: mode 'kite' only (checked below).
     codingLanguage: z.string().max(50).optional(),
     history: z

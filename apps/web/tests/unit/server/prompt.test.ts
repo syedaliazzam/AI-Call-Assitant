@@ -373,7 +373,7 @@ describe('sessionBlock', () => {
 describe('SYSTEM_RULES', () => {
   it('includes the answer, imperfect-transcript and consistency rules, and the slot', () => {
     expect(SYSTEM_RULES).toContain('headline: one sentence of at most 15 words');
-    expect(SYSTEM_RULES).toContain('at most 5 short bullet points');
+    expect(SYSTEM_RULES).toContain('2 to 4 short bullet points');
     expect(SYSTEM_RULES).toContain('Use only the session details, documents and conversation');
     // The new rule on missing information (ADR-0030): never a comment on what Kite was given.
     expect(SYSTEM_RULES).toContain('no "not in your notes"');
