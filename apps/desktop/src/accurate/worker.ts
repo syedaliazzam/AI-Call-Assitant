@@ -20,7 +20,7 @@ export type ToWorker =
       type: 'load';
       /** The model folder. */
       modelDir: string;
-      /** The staged native runtime folder (holds node_modules/sherpa-onnx-node). */
+      /** The staged native runtime folder (holds modules/sherpa-onnx-node). */
       nativeDir: string;
       /** Decoding threads (4, as measured in the ADR-0027 trial). */
       threads: number;
@@ -88,7 +88,7 @@ function load(message: Extract<ToWorker, { type: 'load' }>): number {
   // createRequire, so the bundler leaves this runtime path alone (it is outside the bundle).
   const requireNative = createRequire(__filename);
   const sherpa = requireNative(
-    path.join(message.nativeDir, 'node_modules', 'sherpa-onnx-node'),
+    path.join(message.nativeDir, 'modules', 'sherpa-onnx-node'),
   ) as Sherpa;
   const file = (name: string) => path.join(message.modelDir, name);
   recognizer = new sherpa.OfflineRecognizer({

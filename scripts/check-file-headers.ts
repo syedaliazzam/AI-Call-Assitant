@@ -47,6 +47,10 @@ const SKIP_DIRS = new Set([
   'drizzle',
   'test-results',
   'playwright-report',
+  // apps/desktop build output (v1.0.1): the staged sherpa-onnx runtime (third-party, unmodified)
+  // and the packaged installers.
+  'native',
+  'release',
 ]);
 
 /** Single generated files (written by Next.js on every dev, build or typegen run). */

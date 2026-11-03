@@ -62,6 +62,9 @@ export default defineConfig([
     'apps/web/public/models/**',
     // The official sherpa-onnx runtime (downloaded, used unmodified; never linted or reformatted).
     'apps/web/public/stt-runtime/**',
+    // Build output: the staged sherpa-onnx runtime (v1.0.1, used unmodified) and the installers.
+    'apps/desktop/native/**',
+    'apps/desktop/release/**',
   ]),
 
   // apps/web: the official Next.js rules (React, hooks, accessibility, Core Web Vitals, TypeScript).

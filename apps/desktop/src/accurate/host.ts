@@ -82,7 +82,7 @@ export interface AccurateHost {
  */
 function hasNativeBuild(nativeDir: string | null): nativeDir is string {
   if (!nativeDir) return false;
-  const modules = path.join(nativeDir, 'node_modules');
+  const modules = path.join(nativeDir, 'modules');
   return (
     existsSync(path.join(modules, 'sherpa-onnx-node')) &&
     existsSync(path.join(modules, `sherpa-onnx-${platformArch()}`, 'sherpa-onnx.node'))
@@ -192,7 +192,7 @@ export function createAccurateHost(
     if (loaded) return loaded;
     const nativeDir = deps.nativeDir!;
     // Windows finds the engine's DLLs through PATH (sherpa-onnx-node's documentation).
-    const dllDir = path.join(nativeDir, 'node_modules', `sherpa-onnx-${platformArch()}`);
+    const dllDir = path.join(nativeDir, 'modules', `sherpa-onnx-${platformArch()}`);
     const child = deps.fork(deps.workerPath, {
       ...process.env,
       PATH: `${dllDir}${path.delimiter}${process.env.PATH ?? ''}`,
