@@ -6,7 +6,7 @@
  *          as plain text for Copy.
  * Used by: src/features/answers/AnswerBody.tsx, src/features/live/AnswerPanel.tsx,
  *          src/features/live/LiveAnswers.tsx (the overlay), src/core/review/conversation.ts
- * Depends on: src/core/transcript/display.ts (sentenceCase, for the card's question)
+ * Depends on: src/core/transcript/display.ts (sentenceCase, chipWords: for the card's question)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 step 6 (headline, then
  *               bullets); day-04-answers.md Stage 6; ADR-0030 (the coding shape)
  *
@@ -15,7 +15,7 @@
  * "• ", "1. "). Those marks are removed so the panel shows clean text.
  */
 
-import { sentenceCase, type DisplayTerm } from '../transcript/display';
+import { chipWords, sentenceCase, type DisplayTerm } from '../transcript/display';
 
 /** A code block in an answer. */
 export interface AnswerCode {
@@ -156,15 +156,17 @@ export function answerText(text: string): string {
 
 /**
  * The question to show on an answer card (v1.0.2, ADR-0037): Claude's cleaned question once it has
- * arrived, otherwise the raw words in sentence case (the speech model writes capitals), otherwise a
- * fallback.
+ * arrived, otherwise the raw words in sentence case (the speech model writes capitals), without
+ * hesitation sounds, and cut after the last question mark (v1.0.4: an answer saved before clean
+ * questions existed often has the talk that followed the question), otherwise a fallback.
  *
  * @param raw      The question as picked from the transcript or typed ('' when none).
  * @param clean    Claude's cleaned question, if it has arrived.
  * @param terms    The session's spellings to restore in the raw words (displayTerms()).
  * @param fallback What to show when there is no question at all.
  * @returns The words to show.
- * Called from: AnswerPanel.tsx, LiveAnswers.tsx (the overlay's state); tests
+ * Called from: AnswerPanel.tsx, CompactView.tsx, ConversationSection.tsx, core/review/conversation.ts;
+ *              tests
  */
 export function cardQuestion(
   raw: string,
@@ -173,5 +175,8 @@ export function cardQuestion(
   fallback = 'The latest from Them',
 ): string {
   if (clean?.trim()) return clean.trim();
-  return raw.trim() ? sentenceCase(raw.trim(), terms) : fallback;
+  if (!raw.trim()) return fallback;
+  const cased = chipWords(sentenceCase(raw.trim(), terms)).join(' ');
+  const end = cased.lastIndexOf('?');
+  return end === -1 ? cased : cased.slice(0, end + 1);
 }

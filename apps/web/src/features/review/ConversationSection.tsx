@@ -17,6 +17,7 @@
 'use client';
 
 import { useState, useSyncExternalStore } from 'react';
+import { cardQuestion } from '@/core/answer/format';
 import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { getReviewOldestFirst, setReviewOldestFirst } from '@/core/storage/answerPrefs';
@@ -94,6 +95,7 @@ function download(name: string, type: string, data: BlobPart) {
  *
  * @param props.answer      The answer.
  * @param props.sessionType The session's type.
+ * @param props.terms     The session's own spellings, for a question with no cleaned form.
  * @param props.onChanged Reads the data again after a change.
  * @returns The card.
  * Rendered by: ConversationSection
@@ -101,12 +103,15 @@ function download(name: string, type: string, data: BlobPart) {
 function AnswerCard({
   answer,
   sessionType,
+  terms,
   onChanged,
 }: {
   /** The answer. */
   answer: StoredAnswer;
   /** The session's type, for the source tag's words. */
   sessionType: string;
+  /** The session's own spellings, for a question with no cleaned form. */
+  terms: readonly DisplayTerm[];
   /** Reads the data again after a change. */
   onChanged: () => void;
 }) {
@@ -135,7 +140,9 @@ function AnswerCard({
     >
       <p className="text-[13px] text-ui-muted">
         Kite · {MODE_LABELS[answer.mode]} · Question:{' '}
-        <span className="text-ui-text">{answer.question || 'the latest from Them'}</span>
+        <span className="text-ui-text" title={answer.question || undefined}>
+          {cardQuestion(answer.question, answer.cleanQuestion, terms, 'the latest from Them')}
+        </span>
       </p>
       <AnswerTags meta={answer.meta} sessionType={sessionType} />
       <div className="mt-1">
@@ -305,6 +312,7 @@ export function ConversationSection({
                 key={entry.answer.id}
                 answer={entry.answer}
                 sessionType={session.type}
+                terms={terms}
                 onChanged={onChanged}
               />
             ) : (

@@ -91,6 +91,34 @@ describe('createDesktopPlatform', () => {
   });
 });
 
+describe('createDesktopPlatform: the full call window (v1.0.4, ADR-0040)', () => {
+  it('asks the shell, which brings it forward and hides the overlay', async () => {
+    const showCallWindow = vi.fn(async () => undefined);
+    const closeCompactView = vi.fn(async () => undefined);
+    const platform = createDesktopPlatform({
+      version: '1.0.4',
+      os: 'windows',
+      showCallWindow,
+      closeCompactView,
+    });
+    await platform.showCallWindow();
+    expect(showCallWindow).toHaveBeenCalledOnce();
+    expect(closeCompactView).not.toHaveBeenCalled();
+  });
+
+  it('on an older shell, closes the overlay: that brings the main window back', async () => {
+    const closeCompactView = vi.fn(async () => undefined);
+    const platform = createDesktopPlatform({ version: '1.0.3', os: 'windows', closeCompactView });
+    await platform.showCallWindow();
+    expect(closeCompactView).toHaveBeenCalledOnce();
+  });
+
+  it('on a shell with neither, does nothing', async () => {
+    const platform = createDesktopPlatform({ version: '0.1.0', os: 'windows' });
+    await expect(platform.showCallWindow()).resolves.toBeUndefined();
+  });
+});
+
 describe('desktop getOtherSideStream', () => {
   it('asks for audio + video, stops the video track at once, and returns system audio', async () => {
     const video = fakeTrack('video');

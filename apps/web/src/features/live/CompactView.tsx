@@ -1,15 +1,15 @@
 /**
  * File: apps/web/src/features/live/CompactView.tsx
  * Purpose: The overlay (the compact live view; architecture §5, ADR-0029): three stacked bars.
- *          Controls: audio status, Answer, Screenshot, Chat, move, collapse, menu (Script bar,
- *          position presets and Reset size and position, answer preferences, opacity, fade,
- *          screen-share protection), End. Transcript: the latest words as chips, Clear, expand
- *          (bubbles, newest first, with "Answer this"). Answer card: "Question:" (Claude's cleaned
- *          question once it arrives), the answer (shared with the main window: AnswerBody), and a
- *          quiet footer with the type and source tags, time, thumbs, copy and report; history,
- *          with the other answers listed newest first; Clear; expand. An expanded view shows
- *          "Back to compact" and Escape returns (v1.0.2). The script bar (v1.0.2) replaces all of
- *          it with one slim bar. Resize grips on the see-through window's edges (ADR-0035).
+ *          Controls: audio status, Answer, Screenshot, Chat, move, collapse, menu (Open call window,
+ *          Script bar, position presets and Reset size and position, answer preferences, opacity,
+ *          fade, screen-share protection), End. Transcript: the latest words as chips, then the
+ *          current live question from the other person, highlighted (v1.0.4). Answer card: "Question:"
+ *          (Claude's cleaned question once it arrives), the answer (shared with the call window:
+ *          AnswerBody), and a quiet footer with the type and source tags, time, thumbs, copy and
+ *          report; history; Clear; ⛶, which opens the full call window (v1.0.4, ADR-0040), as do the
+ *          chips. The script bar (v1.0.2) replaces all of it with one slim bar. Resize grips on the
+ *          see-through window's edges (ADR-0035).
  *          Presentational: CompactLive.tsx gives it the state.
  * Used by: src/features/live/CompactLive.tsx (desktop overlay window; browser picture-in-picture)
  * Depends on: src/core/live/liveChannel.ts (types), @kite/shared (hotkeys), src/ui/icons.tsx,
@@ -37,7 +37,6 @@ import {
 } from '@kite/shared';
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -46,11 +45,9 @@ import {
   type ReactNode,
 } from 'react';
 import { answerText, cardQuestion, splitAnswer } from '@/core/answer/format';
-import { groupLines } from '@/core/transcript/group';
 import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { TARGET_OPTIONS } from './ChatBox';
-import { TranscriptBubbles } from './TranscriptBubbles';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import type { AnswerStyle } from '@/core/storage/types';
 import { FORMAT_OPTIONS, LENGTH_OPTIONS, TONE_OPTIONS } from '@/features/session-setup/labels';
@@ -350,6 +347,7 @@ function AudioStatus({
  * The menu's contents: answer preferences, opacity and fade (desktop), and what a screen share
  * can see.
  *
+ * @param props.onCallWindow   Opens the full call window.
  * @param props.windowSettings Opacity and fade, where the window can do them.
  * @param props.protection     Protection of this window.
  * @param props.onProtection   Turns protection on or off.
@@ -363,6 +361,7 @@ function OverlayMenu({
   onProtection,
   onScriptBar,
   onPlace,
+  onCallWindow,
 }: {
   /** How answers are written now (absent until the live page has said). */
   style: AnswerStyle | undefined;
@@ -378,6 +377,8 @@ function OverlayMenu({
   onScriptBar?: () => void;
   /** Moves the window to a preset place at its default size (desktop 1.0.2+). */
   onPlace?: (preset: OverlayPreset) => void;
+  /** Opens the full call window (v1.0.4). */
+  onCallWindow: () => void;
 }) {
   return (
     <div
@@ -387,52 +388,62 @@ function OverlayMenu({
       // Kept inside the window at its smallest size: the menu scrolls rather than being cut off.
       className="k-overlay-menu absolute right-1 top-11 z-30 flex max-h-[calc(100vh-3rem)] w-64 flex-col gap-3 overflow-y-auto rounded-control border border-ui-border p-3 text-[13px] text-ui-text shadow-modal [-webkit-app-region:no-drag]"
     >
-      {(onScriptBar || onPlace) && (
-        <div className="flex flex-col gap-2">
-          {onScriptBar && (
-            <button
-              type="button"
-              className="rounded-control border border-ui-border px-2 py-1.5 text-left hover:bg-ui-overlay-button focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
-              onClick={onScriptBar}
-              title="A slim bar at the top with the answer line (Ctrl+Alt+S)"
-            >
-              Script bar
-            </button>
-          )}
-          {onPlace && (
-            <>
-              <label className="flex items-center justify-between gap-2">
-                Position
-                <select
-                  aria-label="Overlay position"
-                  defaultValue=""
-                  onChange={(event) => {
-                    if (event.target.value) onPlace(event.target.value as OverlayPreset);
-                    event.target.value = '';
-                  }}
-                  className="w-40 border border-ui-border bg-ui-input px-2 py-1 text-[13px] text-ui-text"
-                >
-                  <option value="" disabled>
-                    Move to…
-                  </option>
-                  {PRESETS.map((preset) => (
-                    <option key={preset.value} value={preset.value}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          className="rounded-control border border-ui-border px-2 py-1.5 text-left hover:bg-ui-overlay-button focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+          onClick={onCallWindow}
+          title="The full window: transcript on the left, every answer on the right"
+        >
+          Open call window
+        </button>
+        {(onScriptBar || onPlace) && (
+          <>
+            {onScriptBar && (
               <button
                 type="button"
                 className="rounded-control border border-ui-border px-2 py-1.5 text-left hover:bg-ui-overlay-button focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
-                onClick={() => onPlace('top-center')}
+                onClick={onScriptBar}
+                title="A slim bar at the top with the answer line (Ctrl+Alt+S)"
               >
-                Reset size and position
+                Script bar
               </button>
-            </>
-          )}
-        </div>
-      )}
+            )}
+            {onPlace && (
+              <>
+                <label className="flex items-center justify-between gap-2">
+                  Position
+                  <select
+                    aria-label="Overlay position"
+                    defaultValue=""
+                    onChange={(event) => {
+                      if (event.target.value) onPlace(event.target.value as OverlayPreset);
+                      event.target.value = '';
+                    }}
+                    className="w-40 border border-ui-border bg-ui-input px-2 py-1 text-[13px] text-ui-text"
+                  >
+                    <option value="" disabled>
+                      Move to…
+                    </option>
+                    {PRESETS.map((preset) => (
+                      <option key={preset.value} value={preset.value}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="rounded-control border border-ui-border px-2 py-1.5 text-left hover:bg-ui-overlay-button focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+                  onClick={() => onPlace('top-center')}
+                >
+                  Reset size and position
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </div>
       {style && (
         <div className="flex flex-col gap-2">
           <span className={`${EYEBROW} text-ui-muted`}>Answer preferences</span>
@@ -660,10 +671,6 @@ export function CompactView(props: CompactViewProps) {
   const [question, setQuestion] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  // Expanding the transcript shows its lines where the answer is; expanding the answer hides the
-  // transcript bar. Either way there is one scroll area.
-  const [transcriptOpen, setTranscriptOpen] = useState(false);
-  const [answerOnly, setAnswerOnly] = useState(false);
   // Clear hides the words on screen; newer words still appear.
   const [clearedChips, setClearedChips] = useState<readonly string[]>([]);
   const [reporting, setReporting] = useState(false);
@@ -708,9 +715,7 @@ export function CompactView(props: CompactViewProps) {
       : 'script'
     : collapsed
       ? 'collapsed'
-      : answerOnly
-        ? 'expanded'
-        : 'full';
+      : 'full';
   const onMode = useRef(props.onMode);
   useEffect(() => {
     onMode.current = props.onMode;
@@ -719,24 +724,10 @@ export function CompactView(props: CompactViewProps) {
     onMode.current?.(mode);
   }, [mode]);
 
-  /**
-   * Expands the answer: the newest one is shown (v1.0.2), and since v1.0.3 the window itself grows
-   * (mode 'expanded'), so ⛶ visibly opens the answer large.
-   *
-   * @param next True to expand.
-   */
-  const expandAnswer = (next: boolean) => {
-    setAnswerOnly(next);
-    if (next) {
-      setTranscriptOpen(false);
-      onCommand({ type: 'latest' });
-    }
-  };
-
-  /** Back to the compact view from either expanded view (the button and Escape). */
-  const backToCompact = () => {
-    setAnswerOnly(false);
-    setTranscriptOpen(false);
+  /** Opens the full call window (v1.0.4, ADR-0040): the live page brings it forward. */
+  const openCallWindow = () => {
+    setMenuOpen(false);
+    onCommand({ type: 'call-window' });
   };
 
   /** Sends the report, with what the user wrote. */
@@ -754,19 +745,8 @@ export function CompactView(props: CompactViewProps) {
     if (scrollArea.current) scrollArea.current.scrollTop = 0;
   }, [answerId]);
   const chips = (state?.chips ?? []).filter((chip) => !clearedChips.includes(chip.id));
-  const hasHistory = (state?.total ?? 0) > 1;
+  const total = state?.total ?? 0;
   const index = state?.index ?? -1;
-  const expanded = answerOnly || transcriptOpen;
-  // The expanded transcript as bubbles (v1.0.2); lines from an older live page have no times and
-  // then each stays its own bubble.
-  const groups = useMemo(() => {
-    const lines = state?.lines ?? [];
-    const timed = lines.every((line) => line.tStart !== undefined && line.tEnd !== undefined);
-    return groupLines(
-      lines.map((line) => ({ ...line, tStart: line.tStart ?? 0, tEnd: line.tEnd ?? 0 })),
-      timed ? {} : { gapMs: -1 },
-    );
-  }, [state?.lines]);
 
   if (scriptBar && state && !state.ended) {
     return (
@@ -786,14 +766,6 @@ export function CompactView(props: CompactViewProps) {
     // @container: buttons drop their shortcut labels when it is narrow.
     <div
       className={`k-dark k-overlay ${props.glass ? 'k-glass' : ''} @container relative flex h-screen flex-col overflow-hidden rounded-card border border-ui-border text-[16px] text-ui-text`}
-      // Escape goes back from an expanded view to the compact one (v1.0.2); a box that takes text
-      // handles its own Escape first.
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape' || !expanded || event.defaultPrevented) return;
-        const tag = (event.target as HTMLElement).tagName;
-        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-        backToCompact();
-      }}
       // ADR-0033: the glass panel's background opacity (never the text). Only the see-through panel
       // uses it; the solid picture-in-picture panel ignores it.
       style={
@@ -921,6 +893,7 @@ export function CompactView(props: CompactViewProps) {
           <OverlayMenu
             style={state?.style}
             onStyle={(style) => onCommand({ type: 'style', style })}
+            onCallWindow={openCallWindow}
             protection={props.protection}
             {...(props.windowSettings ? { windowSettings: props.windowSettings } : {})}
             {...(props.onProtection ? { onProtection: props.onProtection } : {})}
@@ -944,380 +917,313 @@ export function CompactView(props: CompactViewProps) {
         <p className="p-3 text-ui-muted">The call has ended.</p>
       ) : (
         <>
-          {!answerOnly && (
-            // v1.0.3 (reference layout): only the level bars and the latest words. One Clear and one
-            // ⛶ live on the answer row; clicking the words opens the transcript.
-            <section aria-label="Live transcript bar" className={BAR}>
-              <LevelBars on={state?.audio.them ?? false} />
-              <button
-                type="button"
-                aria-label="Latest words: show the transcript"
-                title="Show the transcript"
-                onClick={() => {
-                  setAnswerOnly(false);
-                  setTranscriptOpen((open) => !open);
-                }}
-                className="flex h-8 min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden rounded-control focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]"
-              >
-                {chips.length > 0 ? (
-                  chips.map((chip) => (
-                    <span
-                      key={chip.id}
-                      className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[13px] leading-5 ${chip.speaker === 'you' ? 'border-ui-you text-ui-you' : 'border-ui-border text-ui-text'}`}
-                    >
-                      {chip.text}
-                    </span>
-                  ))
-                ) : (
-                  <span className="truncate text-[13px] text-ui-muted">
-                    {state ? 'Nothing said yet.' : 'Connecting to the call…'}
+          {/* v1.0.3 (reference layout): only the level bars and the latest words. Clicking the words
+              opens the full call window (v1.0.4), where the transcript is. */}
+          <section aria-label="Live transcript bar" className={BAR}>
+            <LevelBars on={state?.audio.them ?? false} />
+            <button
+              type="button"
+              aria-label="Latest words: open the call window"
+              title="Open the call window, with the whole transcript"
+              onClick={openCallWindow}
+              className="flex h-8 min-w-0 flex-1 items-center justify-end gap-1 overflow-hidden rounded-control focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]"
+            >
+              {chips.length > 0 ? (
+                chips.map((chip) => (
+                  <span
+                    key={chip.id}
+                    className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[13px] leading-5 ${chip.speaker === 'you' ? 'border-ui-you text-ui-you' : 'border-ui-border text-ui-text'}`}
+                  >
+                    {chip.text}
                   </span>
-                )}
-              </button>
-            </section>
+                ))
+              ) : (
+                <span className="truncate text-[13px] text-ui-muted">
+                  {state ? 'Nothing said yet.' : 'Connecting to the call…'}
+                </span>
+              )}
+            </button>
+          </section>
+
+          {state?.liveQuestion && (
+            // The current live question (v1.0.4, ADR-0040): what the other person just asked,
+            // updating as they speak. Two rows at most, so the answer keeps the space.
+            <p
+              aria-label="Current question from the other person"
+              aria-live="polite"
+              className="line-clamp-2 shrink-0 border-b border-l-2 border-b-ui-border border-l-ui-accent bg-ui-overlay-button px-3 py-1 text-[15px] font-medium leading-snug text-ui-text"
+            >
+              <span className="text-ui-accent">Them:</span> {state.liveQuestion}
+            </p>
           )}
 
-          <section
-            aria-label={transcriptOpen ? 'Transcript' : 'Latest answer'}
-            className="flex min-h-0 flex-1 flex-col"
-          >
-            {transcriptOpen ? (
-              <>
-                <div className="flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1">
-                  <span className={`${EYEBROW} px-1 text-ui-muted`}>Transcript</span>
-                  <span className="flex-1" />
-                  <button
-                    type="button"
-                    className={BUTTON}
-                    onClick={backToCompact}
-                    title="Back to the compact view (Esc)"
-                  >
-                    Back to compact
-                  </button>
-                </div>
-                <div
-                  aria-live="polite"
-                  className="min-h-0 flex-1 overflow-y-auto p-3 text-[16px] leading-relaxed"
+          <section aria-label="Latest answer" className="flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1">
+              <button
+                type="button"
+                className={BUTTON}
+                aria-label="Previous answer"
+                disabled={index <= 0}
+                onClick={() => onCommand({ type: 'prev' })}
+                title={`Previous answer (${hotkeyLabel(FOCUSED_HOTKEYS.prev, mac)})`}
+              >
+                ← <Keys>{shortKeys(FOCUSED_HOTKEYS.prev, mac)}</Keys>
+              </button>
+              <button
+                type="button"
+                className={BUTTON}
+                aria-label="Next answer"
+                disabled={index < 0 || index >= total - 1}
+                onClick={() => onCommand({ type: 'next' })}
+                title={`Next answer (${hotkeyLabel(FOCUSED_HOTKEYS.next, mac)})`}
+              >
+                → <Keys>{shortKeys(FOCUSED_HOTKEYS.next, mac)}</Keys>
+              </button>
+              {total > 1 && index >= 0 && (
+                <span className={`${EYEBROW} text-ui-muted`}>
+                  {index + 1} of {total}
+                </span>
+              )}
+              <span className="flex-1" />
+              <button
+                type="button"
+                className={BUTTON}
+                // The one Clear (v1.0.3): since v1.0.4 the latest words and the live question; the
+                // card goes back to the newest answer, and never to an empty state.
+                onClick={() => {
+                  setClearedChips((state?.chips ?? []).map((chip) => chip.id));
+                  onCommand({ type: 'clear' });
+                }}
+                disabled={!state}
+                title={`Clear the latest words and go back to the newest answer (${hotkeyLabel(FOCUSED_HOTKEYS.clear, mac)})`}
+              >
+                Clear <Keys>{shortKeys(FOCUSED_HOTKEYS.clear, mac)}</Keys>
+              </button>
+              <button
+                type="button"
+                className={ICON_BUTTON}
+                aria-label="Open call window"
+                title="Open the full call window: the transcript and every answer"
+                onClick={openCallWindow}
+              >
+                <ExpandIcon />
+              </button>
+            </div>
+
+            {(state?.dictating || state?.dictationNotice) && (
+              // The microphone's state in words (v1.0.3): listening, or why it stopped.
+              <p
+                role="status"
+                className={`shrink-0 border-b border-ui-border px-3 py-1 text-[13px] ${state.dictating ? 'text-ui-danger' : 'text-ui-warning'}`}
+              >
+                {state.dictating
+                  ? 'Listening… speak your question; it is sent when you pause.'
+                  : state.dictationNotice}
+              </p>
+            )}
+            {props.chatOpen && (
+              <div className="flex shrink-0 gap-1 border-b border-ui-border p-1.5">
+                <select
+                  aria-label="Who the answer is for"
+                  title="Auto decides for each question. For the call: words to say. Ask Kite: a private answer on any topic."
+                  value={state?.chatTarget ?? 'auto'}
+                  onChange={(event) =>
+                    onCommand({
+                      type: 'chat-target',
+                      target: event.target.value as TargetChoice,
+                    })
+                  }
+                  className="h-9 shrink-0 border border-ui-border bg-ui-input px-1 text-[13px] text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
                 >
-                  {/* Bubbles, newest first (ADR-0030, v1.0.2): Them left, You right. "Answer this"
-                    goes through the live page's guarded ask, so it never duplicates an answer. */}
-                  <TranscriptBubbles
-                    groups={groups}
-                    size="overlay"
-                    emptyText="Nothing said yet."
-                    onAnswerThis={(group) =>
-                      onCommand({
-                        type: 'answer-this',
-                        question: group.finalText.slice(0, 2_000),
-                        start: group.tStart,
-                        end: group.tEnd,
-                      })
-                    }
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1">
+                  {TARGET_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  autoFocus
+                  aria-label="Type a question"
+                  className="h-9 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+                  placeholder="Type a question, then Enter"
+                  value={question}
+                  maxLength={2_000}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  onKeyDown={onKeyDown}
+                />
+                {state?.dictationSupported && (
+                  // Speak the question (ADR-0038): it becomes text only, sent on a pause.
                   <button
                     type="button"
-                    className={BUTTON}
-                    aria-label="Previous answer"
-                    // After Clear (nothing shown), Previous brings back the newest answer.
-                    disabled={
-                      index === 0 ||
-                      (state?.total ?? 0) === 0 ||
-                      (hasHistory === false && index >= 0)
-                    }
-                    onClick={() => onCommand({ type: 'prev' })}
-                    title={`Previous answer (${hotkeyLabel(FOCUSED_HOTKEYS.prev, mac)})`}
+                    className={`${ICON_BUTTON} ${state.dictating ? 'text-ui-danger' : ''}`}
+                    aria-label={state.dictating ? 'Stop listening' : 'Speak a question'}
+                    aria-pressed={state.dictating ?? false}
+                    onClick={() => onCommand({ type: 'dictate', on: !state.dictating })}
                   >
-                    ← <Keys>{shortKeys(FOCUSED_HOTKEYS.prev, mac)}</Keys>
+                    <MicIcon />
                   </button>
-                  <button
-                    type="button"
-                    className={BUTTON}
-                    aria-label="Next answer"
-                    // Nothing shown (after Clear): Next has nowhere to go (v1.0.2: it did nothing).
-                    disabled={!hasHistory || index < 0 || index >= (state?.total ?? 0) - 1}
-                    onClick={() => onCommand({ type: 'next' })}
-                    title={`Next answer (${hotkeyLabel(FOCUSED_HOTKEYS.next, mac)})`}
-                  >
-                    → <Keys>{shortKeys(FOCUSED_HOTKEYS.next, mac)}</Keys>
-                  </button>
-                  {/* Only when an answer is shown: "0 of N" after Clear meant nothing (v1.0.2). */}
-                  {hasHistory && index >= 0 && (
-                    <span className={`${EYEBROW} text-ui-muted`}>
-                      {index + 1} of {state?.total}
+                )}
+              </div>
+            )}
+
+            {/* The one scroll area. */}
+            <div ref={scrollArea} className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5">
+              {answer ? (
+                <>
+                  <p aria-label="Question" className="text-[15px] leading-snug text-ui-text">
+                    {/* v1.0.3: readable, in the normal text colour (it was faint grey). */}
+                    <strong className="font-semibold">Question:</strong>{' '}
+                    {/* Claude's cleaned question once it arrives; the raw words on hover. */}
+                    <span title={answer.question || undefined}>
+                      {cardQuestion(answer.question, answer.cleanQuestion)}
                     </span>
-                  )}
-                  <span className="flex-1" />
-                  <button
-                    type="button"
-                    className={BUTTON}
-                    // The one Clear (v1.0.3): the answer and the latest words on screen.
-                    onClick={() => {
-                      setClearedChips((state?.chips ?? []).map((chip) => chip.id));
-                      onCommand({ type: 'clear' });
-                    }}
-                    disabled={!state}
-                    title={`Clear the answer and the latest words (${hotkeyLabel(FOCUSED_HOTKEYS.clear, mac)})`}
-                  >
-                    Clear <Keys>{shortKeys(FOCUSED_HOTKEYS.clear, mac)}</Keys>
-                  </button>
-                  {answerOnly ? (
-                    // A clear toggle back (v1.0.2), also Escape.
-                    <button
-                      type="button"
-                      className={BUTTON}
-                      onClick={backToCompact}
-                      title="Back to the compact view (Esc)"
-                    >
-                      Back to compact
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className={ICON_BUTTON}
-                      aria-label="Expand the answer"
-                      title="Expand the answer (shows the newest)"
-                      onClick={() => expandAnswer(true)}
-                    >
-                      <ExpandIcon />
-                    </button>
-                  )}
-                </div>
-
-                {(state?.dictating || state?.dictationNotice) && (
-                  // The microphone's state in words (v1.0.3): listening, or why it stopped.
-                  <p
-                    role="status"
-                    className={`shrink-0 border-b border-ui-border px-3 py-1 text-[13px] ${state.dictating ? 'text-ui-danger' : 'text-ui-warning'}`}
-                  >
-                    {state.dictating
-                      ? 'Listening… speak your question; it is sent when you pause.'
-                      : state.dictationNotice}
                   </p>
-                )}
-                {props.chatOpen && (
-                  <div className="flex shrink-0 gap-1 border-b border-ui-border p-1.5">
-                    <select
-                      aria-label="Who the answer is for"
-                      title="Auto decides for each question. For the call: words to say. Ask Kite: a private answer on any topic."
-                      value={state?.chatTarget ?? 'auto'}
-                      onChange={(event) =>
-                        onCommand({
-                          type: 'chat-target',
-                          target: event.target.value as TargetChoice,
-                        })
-                      }
-                      className="h-9 shrink-0 border border-ui-border bg-ui-input px-1 text-[13px] text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
-                    >
-                      {TARGET_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      autoFocus
-                      aria-label="Type a question"
-                      className="h-9 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
-                      placeholder="Type a question, then Enter"
-                      value={question}
-                      maxLength={2_000}
-                      onChange={(event) => setQuestion(event.target.value)}
-                      onKeyDown={onKeyDown}
+                  <div className="mt-1.5">
+                    <AnswerBody
+                      text={answer.text}
+                      size="overlay"
+                      answerLabel
+                      headlineLabel="Answer line"
+                      hideEmptyHeadline={answer.status === 'cancelled'}
+                      claims={answer.claims}
+                      {...(answer.meta?.target ? { target: answer.meta.target } : {})}
+                      {...(props.copy ? { copy: props.copy } : {})}
                     />
-                    {state?.dictationSupported && (
-                      // Speak the question (ADR-0038): it becomes text only, sent on a pause.
-                      <button
-                        type="button"
-                        className={`${ICON_BUTTON} ${state.dictating ? 'text-ui-danger' : ''}`}
-                        aria-label={state.dictating ? 'Stop listening' : 'Speak a question'}
-                        aria-pressed={state.dictating ?? false}
-                        onClick={() => onCommand({ type: 'dictate', on: !state.dictating })}
-                      >
-                        <MicIcon />
-                      </button>
-                    )}
                   </div>
-                )}
-
-                {/* The one scroll area. */}
-                <div ref={scrollArea} className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5">
-                  {answer ? (
-                    <>
-                      <p aria-label="Question" className="text-[15px] leading-snug text-ui-text">
-                        {/* v1.0.3: readable, in the normal text colour (it was faint grey). */}
-                        <strong className="font-semibold">Question:</strong>{' '}
-                        {/* Claude's cleaned question once it arrives; the raw words on hover. */}
-                        <span title={answer.question || undefined}>
-                          {cardQuestion(answer.question, answer.cleanQuestion)}
-                        </span>
-                      </p>
-                      <div className="mt-1.5">
-                        <AnswerBody
-                          text={answer.text}
-                          size="overlay"
-                          answerLabel
-                          headlineLabel="Answer line"
-                          claims={answer.claims}
-                          {...(answer.meta?.target ? { target: answer.meta.target } : {})}
-                          {...(props.copy ? { copy: props.copy } : {})}
-                        />
-                      </div>
-                      {answer.status === 'streaming' && (
-                        <p className={`${EYEBROW} mt-2 text-ui-muted`}>Answering…</p>
-                      )}
-                      {answer.status === 'error' && (
-                        <p
-                          role="alert"
-                          className={
-                            answer.unavailable
-                              ? 'mt-2 rounded-control border border-ui-warning bg-ui-warning-bg px-2 py-1 text-[15px]'
-                              : 'mt-2 text-[15px] text-ui-danger'
-                          }
-                        >
-                          {answer.error ?? 'The answer failed.'}
-                        </p>
-                      )}
-
-                      {/* The quiet footer (v1.0.2): tags, how and when, then the actions. */}
-                      <div className="mt-2 flex flex-wrap items-center gap-1 text-[12px] text-ui-muted">
-                        <AnswerTags
-                          compact
-                          meta={answer.meta}
-                          {...(state?.sessionType ? { sessionType: state.sessionType } : {})}
-                          {...(answer.status !== 'streaming'
-                            ? {
-                                onChangeType: (answerType: AnswerType) =>
-                                  onCommand({ type: 'reanswer', id: answer.id, answerType }),
-                              }
-                            : {})}
-                        />
-                        {answer.meta && <span aria-hidden="true">·</span>}
-                        <span className="mr-1">
-                          {answer.auto
-                            ? 'Auto'
-                            : answer.mode === 'answer'
-                              ? 'Answer'
-                              : answer.mode === 'chat'
-                                ? 'Typed'
-                                : 'Screenshot'}{' '}
-                          ·{' '}
-                          {new Date(answer.askedAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                        <button
-                          type="button"
-                          className={`${FOOTER_BUTTON} ${answer.rating === 'up' ? 'text-ui-success' : 'text-ui-muted'}`}
-                          aria-label="Good answer"
-                          aria-pressed={answer.rating === 'up'}
-                          onClick={() =>
-                            onCommand({
-                              type: 'rate',
-                              id: answer.id,
-                              rating: answer.rating === 'up' ? null : 'up',
-                            })
-                          }
-                        >
-                          <ThumbUpIcon />
-                        </button>
-                        <button
-                          type="button"
-                          className={`${FOOTER_BUTTON} ${answer.rating === 'down' ? 'text-ui-danger' : 'text-ui-muted'}`}
-                          aria-label="Bad answer"
-                          aria-pressed={answer.rating === 'down'}
-                          onClick={() =>
-                            onCommand({
-                              type: 'rate',
-                              id: answer.id,
-                              rating: answer.rating === 'down' ? null : 'down',
-                            })
-                          }
-                        >
-                          <ThumbDownIcon />
-                        </button>
-                        <button
-                          type="button"
-                          className={`${FOOTER_BUTTON} text-ui-muted`}
-                          aria-label={copied ? 'Copied' : 'Copy the answer'}
-                          onClick={() => {
-                            // A private answer is read as written; for the call, Copy leaves out
-                            // the private note.
-                            const text =
-                              answer.meta?.target === 'kite'
-                                ? answer.text
-                                : answerText(answer.text);
-                            void copy(text).then(() => {
-                              setCopied(true);
-                              setTimeout(() => setCopied(false), 1_500);
-                            });
-                          }}
-                        >
-                          <CopyIcon />
-                        </button>
-                        <button
-                          type="button"
-                          className={`${FOOTER_BUTTON} ${answer.reported ? 'text-ui-warning' : 'text-ui-muted'}`}
-                          aria-label={answer.reported ? 'Reported' : 'Report this answer'}
-                          aria-pressed={reporting}
-                          disabled={answer.reported}
-                          onClick={() => setReporting((open) => !open)}
-                        >
-                          <FlagIcon />
-                        </button>
-                      </div>
-                      {reporting && !answer.reported && (
-                        <div className="mt-1 flex gap-1.5">
-                          <input
-                            autoFocus
-                            aria-label="What was wrong?"
-                            className="h-8 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-[15px] text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
-                            placeholder="What was wrong? (optional)"
-                            value={reportNote}
-                            maxLength={2_000}
-                            onChange={(event) => setReportNote(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') sendReport();
-                              if (event.key === 'Escape') setReporting(false);
-                            }}
-                          />
-                          <button type="button" className={BUTTON} onClick={sendReport}>
-                            Report
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-ui-muted">
-                      {state?.notice ?? 'Press Answer when they ask something.'}
+                  {answer.status === 'streaming' && (
+                    <p className={`${EYEBROW} mt-2 text-ui-muted`}>Answering…</p>
+                  )}
+                  {answer.status === 'cancelled' && !answer.text.trim() && (
+                    <p className="mt-1 text-[15px] text-ui-muted">
+                      Stopped before any words arrived. Press Answer to ask again.
                     </p>
                   )}
-                  {(state?.earlier ?? []).length > 0 && (
-                    <div className="mt-3 border-t border-ui-border pt-2">
-                      <p className={`${EYEBROW} text-ui-muted`}>Other answers, newest first</p>
-                      <ul aria-label="Other answers" className="mt-1">
-                        {(state?.earlier ?? []).map((other) => (
-                          <li key={other.id}>
-                            <button
-                              type="button"
-                              className="w-full truncate py-0.5 text-left text-[15px] text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
-                              onClick={() => onCommand({ type: 'show', id: other.id })}
-                            >
-                              {other.question || other.headline}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
+                  {answer.status === 'error' && (
+                    <p
+                      role="alert"
+                      className={
+                        answer.unavailable
+                          ? 'mt-2 rounded-control border border-ui-warning bg-ui-warning-bg px-2 py-1 text-[15px]'
+                          : 'mt-2 text-[15px] text-ui-danger'
+                      }
+                    >
+                      {answer.error ?? 'The answer failed.'}
+                    </p>
+                  )}
+
+                  {/* The quiet footer (v1.0.2): tags, how and when, then the actions. */}
+                  <div className="mt-2 flex flex-wrap items-center gap-1 text-[12px] text-ui-muted">
+                    <AnswerTags
+                      compact
+                      meta={answer.meta}
+                      {...(state?.sessionType ? { sessionType: state.sessionType } : {})}
+                      {...(answer.status !== 'streaming'
+                        ? {
+                            onChangeType: (answerType: AnswerType) =>
+                              onCommand({ type: 'reanswer', id: answer.id, answerType }),
+                          }
+                        : {})}
+                    />
+                    {answer.meta && <span aria-hidden="true">·</span>}
+                    <span className="mr-1">
+                      {answer.auto
+                        ? 'Auto'
+                        : answer.mode === 'answer'
+                          ? 'Answer'
+                          : answer.mode === 'chat'
+                            ? 'Typed'
+                            : 'Screenshot'}{' '}
+                      ·{' '}
+                      {new Date(answer.askedAt).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                    <button
+                      type="button"
+                      className={`${FOOTER_BUTTON} ${answer.rating === 'up' ? 'text-ui-success' : 'text-ui-muted'}`}
+                      aria-label="Good answer"
+                      aria-pressed={answer.rating === 'up'}
+                      onClick={() =>
+                        onCommand({
+                          type: 'rate',
+                          id: answer.id,
+                          rating: answer.rating === 'up' ? null : 'up',
+                        })
+                      }
+                    >
+                      <ThumbUpIcon />
+                    </button>
+                    <button
+                      type="button"
+                      className={`${FOOTER_BUTTON} ${answer.rating === 'down' ? 'text-ui-danger' : 'text-ui-muted'}`}
+                      aria-label="Bad answer"
+                      aria-pressed={answer.rating === 'down'}
+                      onClick={() =>
+                        onCommand({
+                          type: 'rate',
+                          id: answer.id,
+                          rating: answer.rating === 'down' ? null : 'down',
+                        })
+                      }
+                    >
+                      <ThumbDownIcon />
+                    </button>
+                    <button
+                      type="button"
+                      className={`${FOOTER_BUTTON} text-ui-muted`}
+                      aria-label={copied ? 'Copied' : 'Copy the answer'}
+                      onClick={() => {
+                        // A private answer is read as written; for the call, Copy leaves out
+                        // the private note.
+                        const text =
+                          answer.meta?.target === 'kite' ? answer.text : answerText(answer.text);
+                        void copy(text).then(() => {
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 1_500);
+                        });
+                      }}
+                    >
+                      <CopyIcon />
+                    </button>
+                    <button
+                      type="button"
+                      className={`${FOOTER_BUTTON} ${answer.reported ? 'text-ui-warning' : 'text-ui-muted'}`}
+                      aria-label={answer.reported ? 'Reported' : 'Report this answer'}
+                      aria-pressed={reporting}
+                      disabled={answer.reported}
+                      onClick={() => setReporting((open) => !open)}
+                    >
+                      <FlagIcon />
+                    </button>
+                  </div>
+                  {reporting && !answer.reported && (
+                    <div className="mt-1 flex gap-1.5">
+                      <input
+                        autoFocus
+                        aria-label="What was wrong?"
+                        className="h-8 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-[15px] text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+                        placeholder="What was wrong? (optional)"
+                        value={reportNote}
+                        maxLength={2_000}
+                        onChange={(event) => setReportNote(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') sendReport();
+                          if (event.key === 'Escape') setReporting(false);
+                        }}
+                      />
+                      <button type="button" className={BUTTON} onClick={sendReport}>
+                        Report
+                      </button>
                     </div>
                   )}
-                </div>
-              </>
-            )}
+                </>
+              ) : (
+                <p className="text-ui-muted">
+                  {state?.notice ?? 'Press Answer when they ask something.'}
+                </p>
+              )}
+            </div>
           </section>
         </>
       )}

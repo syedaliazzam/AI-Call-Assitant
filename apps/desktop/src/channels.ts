@@ -53,6 +53,9 @@ export const OVERLAY_MODE_CHANNEL = 'kite:overlay-mode';
 /** The live page minimises the main window when a call starts in the overlay (invoke). */
 export const MINIMIZE_MAIN_CHANNEL = 'kite:minimize-main';
 
+/** v1.0.4: the live page brings the full call window forward and hides the overlay (invoke). */
+export const SHOW_CALL_WINDOW_CHANNEL = 'kite:show-call-window';
+
 /** The page says whether a live call is going on (send; a boolean). Updates wait for it. */
 export const CALL_ACTIVE_CHANNEL = 'kite:call-active';
 

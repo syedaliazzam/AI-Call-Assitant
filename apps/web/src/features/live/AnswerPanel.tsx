@@ -1,13 +1,14 @@
 /**
  * File: apps/web/src/features/live/AnswerPanel.tsx
- * Purpose: The call's answers as a chat-style list, NEWEST AT THE TOP (v1.0.2; ADR-0030 order),
- *          in the main window and the browser split view. Each card: "Question: …" (Claude's
- *          cleaned question once it arrives, the raw words on hover), the answer (AnswerBody: the
- *          answer line large and bold, then the bullets, then the Tip on its own line), and a quiet
- *          footer with the type and source tags, how it was asked, the time and the time to the
- *          first word, then 👍 / 👎, Copy and Report (Cancel while it streams). The answer
- *          selected with ←/→ (or in the overlay) is outlined and scrolled into view. A screenshot
- *          answer shows a small thumbnail, from memory only (Day 5).
+ * Purpose: The call's answers as a list of cards, NEWEST AT THE TOP (v1.0.2; ADR-0030 order), in the
+ *          full call window and the browser split view. The selected answer (the newest unless
+ *          another is chosen) is expanded: the question in bold (Claude's cleaned question once it
+ *          arrives, the raw words on hover), the answer (AnswerBody: the answer line large and bold,
+ *          then the bullets, then the Tip on its own line), and a quiet footer with the type and
+ *          source tags, how it was asked, the time and the time to the first word, then 👍 / 👎,
+ *          Copy and Report (Cancel while it streams). The others are collapsed to the question and
+ *          the answer line; clicking one selects it (v1.0.4, ADR-0040). A screenshot answer shows a
+ *          small thumbnail, from memory only (Day 5).
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/core/answer/format.ts, src/features/answers (AnswerBody, AnswerTags),
  *             src/features/live/useLiveAnswers.ts (AnswerEntry), src/ui (Button, icons)
@@ -21,7 +22,8 @@
 import type { AnswerType } from '@kite/shared';
 import { useEffect, useRef, useState } from 'react';
 import type { AnswerRating } from '@/core/storage/types';
-import { answerText, cardQuestion } from '@/core/answer/format';
+import { answerText, cardQuestion, splitAnswer } from '@/core/answer/format';
+import { stoppedEmpty } from '@/core/answer/history';
 import { sentenceCase, type DisplayTerm } from '@/core/transcript/display';
 import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
@@ -33,7 +35,7 @@ import type { AnswerEntry } from './useLiveAnswers';
 export interface AnswerPanelProps {
   /** The call's answers, oldest first (shown newest first). */
   entries: readonly AnswerEntry[];
-  /** The answer selected (outlined; ←/→ and the overlay move it), or null. */
+  /** The answer selected (expanded and outlined; ←/→ and clicking a card move it), or null. */
   shownId: string | null;
   /**
    * Clear hides the answers asked up to this time (Unix ms; 0: none hidden). The selected answer
@@ -62,7 +64,7 @@ export interface AnswerPanelProps {
   sessionType?: string;
   /** Answers again in another shape (the type menu in the footer). */
   onReanswer?: (id: string, answerType: AnswerType) => void;
-  /** Selects an answer (clicking a card). */
+  /** Selects an answer (clicking a collapsed card). */
   onShow?: (id: string) => void;
 }
 
@@ -76,18 +78,6 @@ const STATUS_TEXT: Record<Exclude<AnswerEntry['status'], 'done'>, string> = {
 /** A quiet icon button in a card's footer; the caller adds its colour. */
 const FOOTER_BUTTON =
   'inline-flex h-7 w-7 items-center justify-center rounded-control hover:bg-ui-hover disabled:opacity-50 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11';
-
-/**
- * Whether an answer was stopped before any words arrived, so its card must say so instead of
- * showing the "…" placeholder of an answer still on its way.
- *
- * @param entry The answer.
- * @returns True for a cancelled answer with no text.
- * Called from: AnswerCard
- */
-export function stoppedEmpty(entry: Pick<AnswerEntry, 'status' | 'text'>): boolean {
-  return entry.status === 'cancelled' && entry.text.trim() === '';
-}
 
 /**
  * How an answer was asked, for its footer.
@@ -139,6 +129,8 @@ function AnswerCard(props: AnswerCardProps) {
   const copyText = entry.meta?.target === 'kite' ? entry.text : answerText(entry.text);
   const fallback = entry.mode === 'screenshot' ? 'What is on screen' : 'The latest from Them';
   const rawQuestion = entry.question ? sentenceCase(entry.question, props.terms) : '';
+  // Claude's cleaned question once it arrives; the raw words stay on hover (ADR-0037).
+  const question = cardQuestion(entry.question, entry.cleanQuestion, props.terms, fallback);
 
   /** Sends the report, with what the user wrote. */
   const sendReport = () => {
@@ -147,20 +139,47 @@ function AnswerCard(props: AnswerCardProps) {
     setReportNote('');
   };
 
+  if (!props.selected) {
+    // Collapsed (v1.0.4): the question and the answer line; a click selects it, which expands it.
+    const line = splitAnswer(entry.text).headline;
+    return (
+      <article ref={card} aria-label="Answer" className="shrink-0">
+        <button
+          type="button"
+          aria-expanded="false"
+          title={rawQuestion || undefined}
+          onClick={() => props.onShow?.(entry.id)}
+          className="block w-full rounded-card border border-ui-border bg-ui-surface px-4 py-2.5 text-left shadow-card hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+        >
+          <span className="block truncate text-[15px] font-semibold leading-snug text-ui-text">
+            {question}
+          </span>
+          <span className="mt-0.5 block truncate text-[14px] leading-5 text-ui-muted">
+            {line ||
+              (entry.status === 'error'
+                ? (entry.error ?? STATUS_TEXT.error)
+                : entry.status === 'cancelled'
+                  ? STATUS_TEXT.cancelled
+                  : STATUS_TEXT.streaming)}
+          </span>
+        </button>
+      </article>
+    );
+  }
+
   return (
     <article
       ref={card}
       aria-label="Answer"
-      aria-current={props.selected ? 'true' : undefined}
-      onClick={() => props.onShow?.(entry.id)}
-      className={`rounded-card border bg-ui-surface p-4 shadow-card ${props.selected ? 'border-ui-accent' : 'border-ui-border'}`}
+      aria-current="true"
+      className="shrink-0 rounded-card border border-ui-accent bg-ui-surface p-4 shadow-card"
     >
-      <p aria-label="Question" className="text-[14px] leading-5 text-ui-muted">
-        <strong className="font-semibold text-ui-text">Question:</strong>{' '}
-        {/* Claude's cleaned question once it arrives; the raw words stay on hover (ADR-0037). */}
-        <span title={rawQuestion || undefined}>
-          {cardQuestion(entry.question, entry.cleanQuestion, props.terms, fallback)}
-        </span>
+      <p
+        aria-label="Question"
+        title={rawQuestion || undefined}
+        className="text-[15px] font-semibold leading-snug text-ui-text"
+      >
+        {question}
       </p>
 
       <div className="mt-2">
@@ -241,13 +260,15 @@ function AnswerCard(props: AnswerCardProps) {
             · {entry.status === 'error' && entry.error ? entry.error : STATUS_TEXT[entry.status]}
           </span>
         )}
-        <span className="min-w-2 flex-1" />
         {entry.status === 'streaming' ? (
-          <Button size="sm" variant="secondary" onClick={props.onCancel}>
-            Cancel
-          </Button>
+          <span className="ml-auto">
+            <Button size="sm" variant="secondary" onClick={props.onCancel}>
+              Cancel
+            </Button>
+          </span>
         ) : (
-          <>
+          // Together at the end, so a narrow card wraps them as one group.
+          <span className="ml-auto flex items-center gap-x-1.5">
             <button
               type="button"
               className={`${FOOTER_BUTTON} ${entry.rating === 'up' ? 'text-ui-success' : ''}`}
@@ -304,7 +325,7 @@ function AnswerCard(props: AnswerCardProps) {
             >
               <FlagIcon />
             </button>
-          </>
+          </span>
         )}
       </div>
       {entry.note && (
@@ -330,7 +351,11 @@ function AnswerCard(props: AnswerCardProps) {
             maxLength={2_000}
             onChange={(event) => setReportNote(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Escape') setReporting(false);
+              if (event.key === 'Escape') {
+                // Closes only this box: the window's Escape goes back to the overlay.
+                event.preventDefault();
+                setReporting(false);
+              }
             }}
           />
           <Button size="sm" type="submit">

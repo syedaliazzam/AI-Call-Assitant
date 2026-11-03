@@ -329,6 +329,17 @@ export const browserPlatform: Platform = {
   minimizeMainWindow() {},
 
   /**
+   * The call's tab is the full call window: closes the picture-in-picture window and asks the
+   * browser to bring the tab forward (it may decline; the user still has the tab).
+   *
+   * @returns Resolves at once.
+   */
+  async showCallWindow() {
+    closePictureInPicture();
+    window.focus();
+  },
+
+  /**
    * A browser has no global shortcuts.
    *
    * @returns Null.

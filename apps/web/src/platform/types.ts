@@ -181,6 +181,15 @@ export interface Platform {
   minimizeMainWindow(): void;
 
   /**
+   * Brings the full call window forward and puts the overlay away (v1.0.4, ADR-0040): the desktop
+   * app's main window, or the browser's tab (the picture-in-picture window closes; a browser may
+   * not let a page bring its tab to the front).
+   *
+   * @returns Resolves when done.
+   */
+  showCallWindow(): Promise<void>;
+
+  /**
    * Which global shortcuts another app already uses (Settings → Hotkeys).
    *
    * @returns The statuses, or null where there are no global shortcuts (a browser).

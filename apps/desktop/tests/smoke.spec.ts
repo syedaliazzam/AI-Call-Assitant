@@ -156,6 +156,8 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.getOverlayPreset,
       typeof window.kiteDesktop?.resizeOverlay,
       typeof window.kiteDesktop?.setOverlayMode,
+      // v1.0.4 (ADR-0040): the full call window.
+      typeof window.kiteDesktop?.showCallWindow,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -187,9 +189,10 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'setOverlayMode',
     'setOverlayOpacity',
     'setShareProtection',
+    'showCallWindow',
     'version',
   ]);
-  expect(bridge.methods).toEqual(Array(16).fill('function'));
+  expect(bridge.methods).toEqual(Array(17).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);

@@ -150,6 +150,20 @@ describe('v1.0.2 fail-safes and the card question (ADR-0037)', () => {
     expect(cardQuestion('', undefined)).toBe('The latest from Them');
     expect(cardQuestion('', '  ', [], 'What is on screen')).toBe('What is on screen');
   });
+
+  it('cardQuestion: an answer with no clean question stops at the last question mark (v1.0.4)', () => {
+    expect(cardQuestion('What does it cost? So anyway we were thinking', undefined)).toBe(
+      'What does it cost?',
+    );
+    expect(cardQuestion('What does it cost? And for how long? Okay then', undefined)).toBe(
+      'What does it cost? And for how long?',
+    );
+    expect(cardQuestion('UM TELL ME ABOUT YOURSELF? UH OKAY', undefined)).toBe(
+      'Tell me about yourself?',
+    );
+    // The clean question is never cut.
+    expect(cardQuestion('Raw words?', 'Is this clean? Yes.')).toBe('Is this clean? Yes.');
+  });
 });
 
 describe('the "Answer:" label (v1.0.3)', () => {

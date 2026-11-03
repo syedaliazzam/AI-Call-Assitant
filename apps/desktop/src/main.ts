@@ -100,6 +100,11 @@ function createMainWindow(config: DesktopConfig): BrowserWindow {
     },
   });
   window.once('ready-to-show', () => window.show());
+  // v1.0.4 (ADR-0040): one call view at a time. Bringing this window back (the taskbar, the Dock, or
+  // the overlay's ⛶) hides the overlay, which would otherwise float over it; minimising it brings
+  // the overlay back, so the user is never left with neither during a call.
+  window.on('restore', () => compact?.window()?.hide());
+  window.on('minimize', () => compact?.window()?.showInactive());
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null;
     // The compact window belongs to the main window's call.
@@ -157,7 +162,9 @@ function start(): void {
       // otherwise the main window opens the Ask Kite page.
       showForAskKite: () => {
         const overlay = compact?.window();
-        if (overlay) {
+        // v1.0.4: a hidden overlay means the full call window is in front: its message box takes
+        // the typing (the page handles the shortcut too), so the overlay stays hidden.
+        if (overlay?.isVisible()) {
           overlay.show();
           overlay.focus();
           return;
@@ -199,7 +206,19 @@ function start(): void {
         if (mainWindow?.isMinimized()) mainWindow.restore();
       },
     });
-    installCompactWindows(ipcMain, compact, config.allowedOrigin, () => mainWindow?.minimize());
+    installCompactWindows(
+      ipcMain,
+      compact,
+      config.allowedOrigin,
+      () => mainWindow?.minimize(),
+      () => {
+        if (!mainWindow) return;
+        compact?.window()?.hide();
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      },
+    );
     // Accurate transcription (v1.0.1, ADR-0034; opt-in, off by default in the page's Settings):
     // the model downloads to the app's data folder only when the user turns it on; the engine
     // runs in a utility process. KITE_ACCURATE_MODEL_DIR points tests at an existing copy.

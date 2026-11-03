@@ -3,11 +3,12 @@
  * Purpose: React state for the answers of a live call: Answer (question from the transcript)
  *          and Chat (typed question) build a request from the session, the transcript and the
  *          earlier answers (core/answer/context.ts) and stream it (one at a time); Clear
- *          cancels; Previous/Next move through the session's answers. Each finished answer is
- *          saved on this device with its rating and note (Stage 7). While the call runs, the
- *          idle re-warm keeps Claude's cache warm (core/answer/keepWarm.ts).
+ *          cancels; Previous/Next move through the session's answers, one entry per question
+ *          (core/answer/history.ts, v1.0.4); the newest is selected unless another is chosen. Each
+ *          finished answer is saved on this device with its rating and note (Stage 7). While the
+ *          call runs, the idle re-warm keeps Claude's cache warm (core/answer/keepWarm.ts).
  * Used by: src/features/live/LiveAnswers.tsx
- * Depends on: src/core/answer (context.ts, answerClient.ts, warm.ts, keepWarm.ts,
+ * Depends on: src/core/answer (context.ts, answerClient.ts, history.ts, warm.ts, keepWarm.ts,
  *             unavailable.ts),
  *             src/core/transcript/transcript.ts, src/core/storage (answers.ts, types.ts)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1, §6.3; day-04-answers.md
@@ -25,9 +26,10 @@ import {
   type ModelTier,
   type TargetChoice,
 } from '@kite/shared';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAnswerRunner, type AnswerTimeline } from '@/core/answer/answerClient';
 import { settleAnswerType, type LabelledQuestion } from '@/core/answer/answerType';
+import { mergeAnswers, stoppedEmpty } from '@/core/answer/history';
 import { createRepeatGuard, themSpan, type SpeechSpan } from '@/core/answer/repeatGuard';
 import { buildClaimCorpus, checkClaims, needsClaimCheck } from '@/core/answer/claimCheck';
 import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/context';
@@ -239,9 +241,9 @@ export interface LiveAnswersInput {
 
 /** What useLiveAnswers() returns. */
 export interface LiveAnswers {
-  /** This call's answers, oldest first. */
+  /** This call's answers, oldest first: one entry per question (v1.0.4, ADR-0040). */
   entries: AnswerEntry[];
-  /** Index of the answer shown, or -1 for none (after Clear). */
+  /** Index of the answer shown: the newest unless another is chosen; -1 only with no answers. */
   index: number;
   /** A short notice for the user (for example "nothing to answer yet"), or null. */
   notice: string | null;
@@ -264,14 +266,16 @@ export interface LiveAnswers {
    * bubble can show it was answered).
    */
   answeredSpans: readonly { span: SpeechSpan; answerId: string }[];
-  /** Cancels a streaming answer; otherwise hides the answer shown. */
+  /** Cancels a streaming answer, and goes back to the newest answer. */
   clear: () => void;
   /** Shows the previous answer. */
   prev: () => void;
   /** Shows the next answer. */
   next: () => void;
-  /** Shows one answer of the call (the list under the answer shown, ADR-0030). */
+  /** Shows one answer of the call (clicking a collapsed card, v1.0.4). */
   show: (id: string) => void;
+  /** Goes back to the newest answer (opening the call window, v1.0.4). */
+  showLatest: () => void;
   /** Answers again in another shape (the answer card's menu, ADR-0030). */
   reanswer: (id: string, answerType: AnswerType) => void;
   /** Rates an answer (saved at once). */
@@ -598,6 +602,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   );
 
   const clear = useCallback(() => {
+    // Selection falls back to the newest answer (v1.0.4): never an empty card while answers exist.
+    setShownId(null);
     if (runner.busy()) {
       runner.cancel();
       setEntries((current) =>
@@ -607,7 +613,6 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       );
       return;
     }
-    setShownId(null);
     setNotice(null);
   }, [runner]);
 
@@ -635,13 +640,18 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     [update],
   );
 
-  const index = entries.findIndex((entry) => entry.id === shownId);
+  // One entry per question (v1.0.4, ADR-0040); the state keeps every answer, this is what shows.
+  const history = useMemo(() => mergeAnswers(entries, (entry) => entry.askedAt), [entries]);
+  const list = history.list;
+  const selectedId = shownId === null ? null : (history.winnerOf.get(shownId) ?? shownId);
+  // With nothing chosen, the newest answer that has something to show.
+  const selected = list.findIndex((entry) => entry.id === selectedId);
+  const newest = list.findLastIndex((entry) => !stoppedEmpty(entry));
+  const index = selected !== -1 ? selected : newest !== -1 ? newest : list.length - 1;
 
   const prev = useCallback(() => {
-    // After Clear, Previous shows the latest answer again.
-    const target = index === -1 ? entries.length - 1 : Math.max(0, index - 1);
-    setShownId(entries[target]?.id ?? null);
-  }, [entries, index]);
+    setShownId(list[Math.max(0, index - 1)]?.id ?? null);
+  }, [list, index]);
 
   const screenshot = useCallback(
     (question?: string) => {
@@ -681,9 +691,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   );
 
   const next = useCallback(() => {
-    if (index === -1) return;
-    setShownId(entries[Math.min(entries.length - 1, index + 1)]?.id ?? null);
-  }, [entries, index]);
+    setShownId(list[Math.min(list.length - 1, index + 1)]?.id ?? null);
+  }, [list, index]);
+
+  const showLatest = useCallback(() => setShownId(null), []);
 
   const reanswer = useCallback(
     (id: string, answerType: AnswerType) => {
@@ -702,7 +713,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   );
 
   return {
-    entries,
+    entries: list,
     index,
     notice,
     answer: useCallback(() => ask('answer'), [ask]),
@@ -717,6 +728,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     prev,
     next,
     show: setShownId,
+    showLatest,
     reanswer,
     rate,
     saveNote,

@@ -268,15 +268,7 @@ const COMPACT_STATE: CompactState = {
     { id: 'l1:2', speaker: 'them', text: 'cost for forty' },
     { id: 'l1:3', speaker: 'them', text: 'seats' },
   ],
-  lines: [
-    { id: 'l0', speaker: 'you', text: 'Thanks for joining', final: true },
-    {
-      id: 'l1',
-      speaker: 'them',
-      text: 'So what would the Professional plan cost for forty seats',
-      final: true,
-    },
-  ],
+  liveQuestion: 'What would the Professional plan cost for forty seats?',
   index: 1,
   total: 2,
   answer: {
@@ -357,7 +349,6 @@ const CODING_STATE: CompactState = {
   ...COMPACT_STATE,
   chatTarget: 'kite',
   sessionType: 'interview',
-  earlier: [{ id: 'a1', question: 'What does the pilot cost?', headline: 'It costs 28 dollars.' }],
   answer: {
     ...COMPACT_STATE.answer!,
     id: 'a4',

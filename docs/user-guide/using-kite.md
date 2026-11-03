@@ -36,7 +36,8 @@ Your sessions, documents, transcripts and answers are stored **on this computer 
 The browser shows the call side by side from 1280 px wide, and stacked on smaller screens:
 
 - **Left:** a live preview of the shared tab with a control strip (**Stop**, **Clear**, the answer **Language**, **Change tab** to share another tab without ending the call, and **Minimize** to the overlay), and the transcript below it.
-- **Right:** the call timer, the **⋮** menu, **Exit**, and your answers. The arrow at the top hides or shows this side.
+- **Right:** your answers, the message box, and the big **Answer** and **Screenshot** buttons. The arrow at the top hides or shows this side.
+- **Across the top:** the microphone, **Answer**, **Screenshot**, **Chat**, the call timer, **Back to compact**, the **⋮** menu and **End**.
 - Drag the divider to resize the two sides. Kite remembers where you left it.
 
 ### The overlay (desktop app)
@@ -45,7 +46,10 @@ The overlay is a small floating window for answers while you look at the call.
 
 - **Ctrl+Alt+H** shows or hides it. **Ctrl+Alt+Arrow** moves it (add **Shift** for bigger steps).
 - **Settings → Overlay** sets how see-through its background is (40–100 %, 70 % by default). The text always stays fully solid. Over a bright page, a lower value makes text harder to read. At the default 70 % the answer text meets the contrast target even over a white page; at 40 % over a white page it does not, so raise the value if you share a bright screen.
-- The overlay is hidden from screen sharing. Kite does not hide itself from the taskbar or from monitoring tools.
+- The overlay shows the question the other person just asked, highlighted, above your answer. It updates as they speak.
+- **⛶** (or **⋮ → Open call window**, or Kite in the taskbar) opens the **full call window**: the transcript on the left, every answer on the right. **Back to compact** or **Esc** returns to the overlay.
+- A question asked twice shows once, with the newest answer.
+- The overlay can be hidden from screen sharing, in its **⋮** menu. **The full call window is a normal window: a screen share can show it.** Kite does not hide itself from the taskbar or from monitoring tools.
 
 ### If the transcript stops
 

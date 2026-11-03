@@ -8,14 +8,14 @@
  * Used by: src/features/live/TranscriptStrip.tsx, src/features/live/TranscriptBubbles.tsx,
  *          src/features/review/ConversationSection.tsx, the overlay's expanded transcript
  *          (src/features/live/CompactView.tsx)
- * Depends on: src/core/transcript/display.ts (sentence case), src/core/answer/autoAnswer.ts
- *             (isAutoQuestion), src/core/transcript/transcript.ts (Speaker)
+ * Depends on: src/core/transcript/display.ts (sentence case), src/core/transcript/question.ts
+ *             (questionSpan), src/core/transcript/transcript.ts (Speaker)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session: transcript strip)
  *
  * Transcript text is only arranged for the screen here; it is never logged.
  */
-import { isAutoQuestion } from '../answer/autoAnswer';
 import { continuationCase, sentenceCase, type DisplayTerm } from './display';
+import { questionSpan } from './question';
 import type { Speaker } from './transcript';
 
 /**
@@ -63,6 +63,18 @@ export interface TranscriptGroup {
   question: boolean;
   /** True when every line is final. */
   final: boolean;
+}
+
+/**
+ * All the words of a bubble, finished and still being heard: what "Answer this" asks (v1.0.4). A
+ * question is often still grey when the button is pressed.
+ *
+ * @param group The bubble.
+ * @returns The words.
+ * Called from: LivePage.tsx, tests/visual/rig-live.tsx; tests
+ */
+export function groupWords(group: Pick<TranscriptGroup, 'finalText' | 'provisionalText'>): string {
+  return `${group.finalText} ${group.provisionalText}`.trim();
 }
 
 /** Options for groupLines(). */
@@ -158,10 +170,13 @@ export function groupLines(
     }
   }
   groups.forEach((group, index) => {
+    // v1.0.4: questionSpan() also finds a question after a lead-in or in the middle of a line, which
+    // the speech model joins without punctuation ("GREAT SO HOW WOULD YOU…"). Same as the overlay's
+    // live question, so the "?" mark and that line agree.
     group.question =
       group.speaker === 'them' &&
       (`${group.finalText} ${group.provisionalText}`.includes('?') ||
-        raws[index]!.some((raw) => isAutoQuestion(raw)));
+        raws[index]!.some((raw) => questionSpan(raw) !== null));
   });
   return groups;
 }

@@ -53,6 +53,14 @@ describe('browserPlatform', () => {
     await expect(browserPlatform.closeCompactView()).resolves.toBeUndefined();
   });
 
+  it('showCallWindow: the call is in this tab, so it asks the browser to bring it forward', async () => {
+    const focus = vi.fn();
+    vi.stubGlobal('window', { focus });
+    await expect(browserPlatform.showCallWindow()).resolves.toBeUndefined();
+    expect(focus).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it('cannot place, resize or switch a picture-in-picture window (v1.0.2, ADR-0035)', async () => {
     expect(browserPlatform.overlayPlacement()).toBe(false);
     await expect(browserPlatform.getOverlayPreset()).resolves.toBeNull();

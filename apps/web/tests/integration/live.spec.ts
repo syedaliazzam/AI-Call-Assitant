@@ -424,15 +424,11 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
     expect(fits, 'the window itself does not scroll').toBe(true);
     await shot(watched, size, `overlay-${size.width}`);
 
-    // The transcript and the answer can each take the space.
-    await page.getByRole('button', { name: 'Expand the transcript' }).click();
-    await expect(page.getByRole('region', { name: 'Transcript', exact: true })).toContainText(
-      'forty seats',
+    // The current live question sits above the answer (v1.0.4); ⛶ is the call window's button.
+    await expect(page.getByLabel('Current question from the other person')).toContainText(
+      'What would the Professional plan cost',
     );
-    await page.getByRole('button', { name: 'Show the answer' }).click();
-    await page.getByRole('button', { name: 'Expand the answer' }).click();
-    await expect(page.getByRole('region', { name: 'Live transcript bar' })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Show the transcript bar' }).click();
+    await expect(page.getByRole('button', { name: 'Open call window' })).toBeVisible();
     // Collapse leaves only the controls.
     await page.getByRole('button', { name: 'Collapse the overlay' }).click();
     await expect(page.getByRole('region', { name: 'Latest answer' })).toHaveCount(0);
@@ -440,7 +436,7 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
     await expect(page.getByRole('region', { name: 'Latest answer' })).toBeVisible();
     // Clear hides the words on screen.
     await page
-      .getByRole('region', { name: 'Live transcript bar' })
+      .getByRole('region', { name: 'Latest answer' })
       .getByRole('button', { name: 'Clear' })
       .click();
     await expect(page.getByLabel('Latest words')).not.toContainText('the Professional plan');
@@ -471,7 +467,8 @@ test('overlay: a coding answer, a figure to check and a private answer fit (ADR-
     await expect(page.getByLabel('How to say it')).toContainText('one pass');
     await expect(page.locator('[data-claim]')).toHaveText('37');
     await expect(page.getByLabel('Check before saying')).toContainText('37');
-    await expect(page.getByRole('list', { name: 'Other answers' })).toContainText('pilot cost');
+    // v1.0.4: no list of other answers under the card (the call window has them).
+    await expect(page.getByRole('list', { name: 'Other answers' })).toHaveCount(0);
     // Long code scrolls inside its own block: never the window, and never sideways.
     const fits = await page.evaluate(
       () =>
@@ -714,7 +711,7 @@ test('browser split view: preview and transcript left, answers right; side by si
     await expect(watched.page.getByRole('region', { name: 'Answers' })).toBeVisible();
     await expect(watched.page.getByRole('button', { name: 'Stop' })).toBeVisible();
     await expect(watched.page.getByLabel('Answer language')).toBeVisible();
-    await expect(watched.page.getByRole('button', { name: 'Exit' })).toBeVisible();
+    await expect(watched.page.getByRole('button', { name: 'End', exact: true })).toBeVisible();
     await expect(watched.page.getByLabel('Call time')).toBeVisible();
     const divider = watched.page.getByRole('separator', { name: 'Resize' });
     const left = await box(watched.page, '[aria-label="Shared tab and transcript"]');

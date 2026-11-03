@@ -2,7 +2,7 @@
  * File: apps/web/src/core/live/liveChannel.ts
  * Purpose: The link between a live call's page and its overlay (the compact view; Day 5,
  *          ADR-0029): the live page publishes what the overlay shows (audio status, the latest
- *          words and lines, the answer shown with its place in the history, whether it is
+ *          words, the live question, the answer shown with its place in the history, whether it is
  *          answering or taking a screenshot, a notice, and when the call ended), and the overlay
  *          sends back what the user pressed. One BroadcastChannel per session, so it works between
  *          the desktop app's two windows and with a browser picture-in-picture window.
@@ -17,22 +17,6 @@
  */
 import { ANSWER_TYPES, type AnswerMeta, type AnswerType, type TargetChoice } from '@kite/shared';
 import type { AnswerStyle } from '@/core/storage/types';
-
-/** A transcript line, as the overlay shows it when the transcript is expanded. */
-export interface CompactLine {
-  /** The line's id. */
-  id: string;
-  /** Who said it. */
-  speaker: 'you' | 'them';
-  /** What was said, in sentence case. */
-  text: string;
-  /** False while the words are still changing. */
-  final: boolean;
-  /** Start (Unix ms): the overlay groups lines into bubbles by time (v1.0.2). */
-  tStart?: number;
-  /** End (Unix ms). */
-  tEnd?: number;
-}
 
 /** A few of the latest words, as one chip in the overlay's transcript bar. */
 export interface CompactChip {
@@ -89,28 +73,16 @@ export interface CompactAnswer {
   unavailable: boolean;
 }
 
-/** An earlier answer of this call, in the list under the answer shown. */
-export interface CompactEarlier {
-  /** The answer's id. */
-  id: string;
-  /** The question it answers. */
-  question: string;
-  /** Its answer line. */
-  headline: string;
-}
-
 /** Everything the overlay shows. */
 export interface CompactState {
   /** Whether each side of the call is coming through. */
   audio: CompactAudio;
   /** The latest words, as chips. */
   chips: CompactChip[];
-  /** The latest lines, oldest first (shown when the transcript is expanded). */
-  lines: CompactLine[];
-  /** The answer shown, or null (none yet, or cleared). */
+  /** The latest question from the other person, updating live (v1.0.4), or null when none. */
+  liveQuestion?: string | null;
+  /** The answer shown, or null only when the call has no answers yet (v1.0.4, ADR-0040). */
   answer: CompactAnswer | null;
-  /** The call's other answers, newest first (ADR-0030). */
-  earlier?: CompactEarlier[];
   /** The chat box's switch: Auto, For the call or Ask Kite (ADR-0030). */
   chatTarget?: TargetChoice;
   /** Grows each time the Ask Kite shortcut is pressed, so the overlay opens its chat box. */
@@ -147,10 +119,11 @@ export interface CompactState {
 export interface SimpleCommand {
   /**
    * 'answer': answer the latest question; 'screenshot': answer from a screenshot;
-   * 'clear': stop or clear the answer; 'prev' / 'next': move through the history; 'end': end the
-   * call; 'hello': the overlay just opened, send the state.
+   * 'clear': stop the answer and go back to the newest one; 'prev' / 'next': move through the
+   * history; 'end': end the call; 'hello': the overlay just opened, send the state;
+   * 'call-window': open the full call window at the newest answer (v1.0.4, ADR-0040).
    */
-  type: 'answer' | 'screenshot' | 'clear' | 'prev' | 'next' | 'end' | 'hello' | 'latest';
+  type: 'answer' | 'screenshot' | 'clear' | 'prev' | 'next' | 'end' | 'hello' | 'call-window';
 }
 
 /** Opens or closes the script bar (v1.0.2). */
@@ -167,18 +140,6 @@ export interface DictateCommand {
   type: 'dictate';
   /** True to start listening, false to stop. */
   on: boolean;
-}
-
-/** A transcript bubble's "Answer this" (v1.0.2). */
-export interface AnswerThisCommand {
-  /** Command type. */
-  type: 'answer-this';
-  /** The bubble's words (1–2,000 characters). Never logged. */
-  question: string;
-  /** Start of the bubble's speech (Unix ms). */
-  start: number;
-  /** End of the bubble's speech (Unix ms). */
-  end: number;
 }
 
 /** A rating from the overlay. */
@@ -225,14 +186,6 @@ export interface ChatTargetCommand {
   target: TargetChoice;
 }
 
-/** Shows one of the call's answers, from the list in the overlay. */
-export interface ShowCommand {
-  /** Command type. */
-  type: 'show';
-  /** The answer's id. */
-  id: string;
-}
-
 /** Answers again in another shape, from the answer card's menu. */
 export interface ReanswerCommand {
   /** Command type. */
@@ -251,11 +204,9 @@ export type CompactCommand =
   | ReportCommand
   | StyleCommand
   | ChatTargetCommand
-  | ShowCommand
   | ReanswerCommand
   | ScriptBarCommand
-  | DictateCommand
-  | AnswerThisCommand;
+  | DictateCommand;
 
 /** One message on the channel. */
 type Message =
@@ -364,7 +315,6 @@ export function isCommand(value: unknown): value is CompactCommand {
   if (command.type === 'chat-target') {
     return ['auto', 'call', 'kite'].includes(String((value as { target?: unknown }).target));
   }
-  if (command.type === 'show') return typeof command.id === 'string';
   if (command.type === 'reanswer') {
     return (
       typeof command.id === 'string' &&
@@ -373,19 +323,17 @@ export function isCommand(value: unknown): value is CompactCommand {
       )
     );
   }
-  if (command.type === 'chat' || command.type === 'answer-this') {
-    const times = value as { start?: unknown; end?: unknown };
+  if (command.type === 'chat') {
     return (
       typeof command.question === 'string' &&
       command.question.trim().length > 0 &&
-      command.question.length <= 2_000 &&
-      (command.type === 'chat' || (Number.isFinite(times.start) && Number.isFinite(times.end)))
+      command.question.length <= 2_000
     );
   }
   if (command.type === 'script-bar' || command.type === 'dictate') {
     return typeof (value as { on?: unknown }).on === 'boolean';
   }
-  return ['answer', 'screenshot', 'clear', 'prev', 'next', 'end', 'hello', 'latest'].includes(
+  return ['answer', 'screenshot', 'clear', 'prev', 'next', 'end', 'hello', 'call-window'].includes(
     command.type,
   );
 }
@@ -405,7 +353,6 @@ export function isState(value: unknown): value is CompactState {
     typeof state.capturing === 'boolean' &&
     typeof state.ended === 'boolean' &&
     Array.isArray(state.chips) &&
-    Array.isArray(state.lines) &&
     (state.answer === null || typeof state.answer?.headline === 'string')
   );
 }

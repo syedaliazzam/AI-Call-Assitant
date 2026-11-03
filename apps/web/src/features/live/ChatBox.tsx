@@ -4,7 +4,8 @@
  *          Answer and Screenshot buttons): who the answer is for (Auto, For the call or Ask Kite;
  *          ADR-0030), "Type a manual message…", × to clear it, the microphone to dictate it
  *          (ADR-0038; speech becomes text only), a screenshot attach switch (the message is then
- *          asked about a screenshot of the screen, Day 5), and Send. Enter sends; Escape clears.
+ *          asked about a screenshot of the screen, Day 5), and Send. Enter sends; Escape clears
+ *          the text (with none, it goes on to the window: back to the overlay, v1.0.4).
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/ui (Button, icons), @kite/shared (TargetChoice)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session); day-04-answers.md
@@ -107,7 +108,7 @@ export function ChatBox({
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       send();
-    } else if (event.key === 'Escape') {
+    } else if (event.key === 'Escape' && text) {
       event.preventDefault();
       setText('');
     }

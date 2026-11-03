@@ -1,182 +1,254 @@
 /**
  * File: apps/web/tests/visual/rig-live.tsx
- * Purpose: The overlay rig's stand-in for the live call page (v1.0.3 visual checks): it publishes
- *          a realistic overlay state (invented call: live words with fillers, a transcript, two
- *          answers, the call start) on the session's real channel, answers the overlay's commands
- *          (hello, latest, clear, prev, next, show, script-bar, dictate) the way LiveAnswers does,
- *          and asks the desktop shell to open the overlay through the real bridge. Served at / by
- *          overlay-rig.ts, so the real desktop shell (dev build) opens the real overlay window.
- * Used by: tests/visual/overlay-rig.ts (bundled with esbuild); apps/desktop/tests/visual/overlay-shots.ts
- * Depends on: src/core/live/liveChannel.ts, @kite/shared (desktop bridge type)
- * Architecture: docs/decisions/ADR-0039-v1.0.3-overlay-fixes-and-visual-checks.md
+ * Purpose: The overlay rig's simulated call (v1.0.4 visual checks): the REAL full call window (the
+ *          real sidebar, LiveCallLayout, TranscriptStrip and LiveAnswers, with the real answer hook,
+ *          channel, platform and hotkeys) on an invented session. Only the ends are simulated: the
+ *          driver feeds Them and You lines through window.rig instead of a speech engine, and
+ *          answers come from the rig server's mocked /api/answer (overlay-rig.ts) unless it is
+ *          started with real answers. An in-memory store starts with answers saved "before clean
+ *          questions existed" (raw text, no cleaned question, one duplicate). Calls start in the
+ *          overlay as in the app, so the real desktop shell opens the real overlay window. Served at
+ *          / by overlay-rig.ts.
+ * Used by: tests/visual/overlay-rig.ts (bundled with esbuild); apps/desktop/tests/visual/*-shots.ts
+ * Depends on: src/features/live, src/core/transcript/transcript.ts, src/ui/Sidebar.tsx
+ * Architecture: docs/decisions/ADR-0040-full-call-window-and-one-entry-per-question.md
  *
- * Invented data only; nothing is sent anywhere.
+ * Invented data only; nothing is saved but this rig's own browser storage.
  */
-import type { KiteDesktopApi } from '@kite/shared';
-import { sentenceCase, transcriptChips } from '@/core/transcript/display';
-import type { Utterance } from '@/core/transcript/transcript';
-import { openLiveChannel, type CompactAnswer, type CompactState } from '@/core/live/liveChannel';
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+import { createRoot } from 'react-dom/client';
+import { displayTerms } from '@/core/transcript/display';
+import { createTranscript, type Speaker } from '@/core/transcript/transcript';
+import type { Session, StoredAnswer } from '@/core/storage/types';
+import { groupWords, type TranscriptGroup } from '@/core/transcript/group';
+import { AudioMeter } from '@/features/live/AudioMeter';
+import { LiveAnswers, type AnswerThisBridge } from '@/features/live/LiveAnswers';
+import { BrowserCallLayout } from '@/features/live/BrowserCallLayout';
+import { LiveCallLayout } from '@/features/live/LiveCallLayout';
+import { TranscriptStrip } from '@/features/live/TranscriptStrip';
+import type { AnswerStore } from '@/features/live/useLiveAnswers';
+import { Sidebar } from '@/ui/Sidebar';
 
 /** The session id the rig uses (the overlay page is /compact/<this>). */
-const SESSION = 'harness-session';
+const SESSION_ID = 'harness-session';
 
 /** When the invented call started: 4 min 12 s ago. */
 const STARTED_AT = Date.now() - 252_000;
 
-/** The two invented answers, oldest first. */
-const ANSWERS: CompactAnswer[] = [
-  {
-    id: 'a1',
-    question: 'TELL ME ABOUT YOURSELF',
-    cleanQuestion: 'Tell me about yourself.',
-    text: [
-      'I build AI systems that answer questions from company documents.',
-      '- Search with a vector database over internal files',
-      '- Claude drafts, people review before sending',
-    ].join('\n'),
-    headline: 'I build AI systems that answer questions from company documents.',
-    claims: [],
-    meta: { type: 'behavioural', target: 'call', source: 'docs' },
-    askedAt: STARTED_AT + 60_000,
-    rating: null,
-    reported: false,
-    auto: false,
-    status: 'done',
-    mode: 'answer',
-    error: null,
-    unavailable: false,
+/** An invented session. */
+const SESSION: Session = {
+  id: SESSION_ID,
+  type: 'interview',
+  company: 'Northwind Robotics (invented)',
+  role: 'AI engineer',
+  description: 'Invented rig session.',
+  preferences: {
+    language: 'en',
+    model: 'fast',
+    style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
+    keyTerms: '',
   },
-  {
-    id: 'a2',
-    question: 'UM WHAT PRODUCTION GRADE APPLICATIONS HAVE YOU BUILT',
-    cleanQuestion: 'What production-grade applications have you built?',
-    text: [
-      'A document search assistant and real-time voice agents, both in production.',
-      '- Document search: vector database, Claude drafts, human review',
-      '- Voice agents: Deepgram speech and ElevenLabs voices',
-      '- Deployed with Docker on Azure Kubernetes Service',
-      'Tip: Offer to walk through the search pipeline in more detail.',
-    ].join('\n'),
-    headline: 'A document search assistant and real-time voice agents, both in production.',
-    claims: [],
-    meta: { type: 'behavioural', target: 'call', source: 'docs' },
-    askedAt: STARTED_AT + 240_000,
-    rating: null,
-    reported: false,
-    auto: false,
-    status: 'done',
-    mode: 'answer',
-    error: null,
-    unavailable: false,
-  },
-];
-
-/** The invented transcript (the last line has fillers, as the speech engine writes them). */
-const LINES: Utterance[] = [
-  {
-    id: 'l1',
-    speaker: 'them',
-    text: 'Tell me about yourself',
-    final: true,
-    tStart: STARTED_AT + 50_000,
-    tEnd: STARTED_AT + 52_000,
-  },
-  {
-    id: 'l2',
-    speaker: 'you',
-    text: 'Sure. I build AI systems',
-    final: true,
-    tStart: STARTED_AT + 62_000,
-    tEnd: STARTED_AT + 64_000,
-  },
-  {
-    id: 'l2b',
-    speaker: 'you',
-    text: 'that answer questions from documents',
-    final: true,
-    tStart: STARTED_AT + 65_000,
-    tEnd: STARTED_AT + 68_000,
-  },
-  {
-    id: 'l3',
-    speaker: 'them',
-    text: 'UM WHAT PRODUCTION GRADE APPLICATIONS HAVE YOU UH BUILT',
-    final: true,
-    tStart: STARTED_AT + 230_000,
-    tEnd: STARTED_AT + 236_000,
-  },
-];
-
-/** The live state; the commands change it. */
-let index = ANSWERS.length - 1;
-let scriptBar = false;
-let dictating = false;
+  instructions: '',
+  saveTranscript: false,
+  autoAnswer: false,
+  createdAt: 1,
+  status: 'live',
+  lastActiveAt: null,
+};
 
 /**
- * The overlay state for the current index and switches.
+ * An answer saved before clean questions existed: raw words, no cleaned question.
  *
- * @returns The state.
+ * @param id        Its id.
+ * @param createdAt When it was asked.
+ * @param question  The raw words.
+ * @param text      The answer.
+ * @returns The saved answer.
  */
-function state(): CompactState {
-  const answer = index >= 0 ? (ANSWERS[index] ?? null) : null;
+function oldAnswer(id: string, createdAt: number, question: string, text: string): StoredAnswer {
   return {
-    audio: { you: true, them: true },
-    // Live words as LiveAnswers makes them (transcriptChips): the fillers in the line must not show.
-    chips: transcriptChips(LINES),
-    lines: LINES.map((line) => ({ ...line, text: sentenceCase(line.text) })),
-    answer,
-    earlier: ANSWERS.filter((other) => other.id !== answer?.id)
-      .reverse()
-      .map((other) => ({
-        id: other.id,
-        question: other.cleanQuestion ?? other.question,
-        headline: other.headline,
-      })),
-    chatTarget: 'auto',
-    sessionType: 'interview',
-    index,
-    total: ANSWERS.length,
-    answering: false,
-    capturing: false,
-    notice: null,
-    ended: false,
-    style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
-    scriptBar,
-    dictationSupported: true,
-    dictating,
-    startedAt: STARTED_AT,
+    id,
+    sessionId: SESSION_ID,
+    mode: 'answer',
+    question,
+    text,
+    model: 'fast',
+    msFirstToken: 900,
+    msTotal: 3_000,
+    createdAt,
+    rating: null,
+    note: '',
   };
 }
 
-const channel = openLiveChannel(SESSION);
-/**
- * Sends the current state to the overlay.
- *
- * @returns Nothing.
- */
-const publish = () => {
-  channel.publish(state());
-};
-channel.onCommand((command) => {
-  if (command.type === 'latest') index = ANSWERS.length - 1;
-  else if (command.type === 'clear') index = -1;
-  else if (command.type === 'prev')
-    index = index === -1 ? ANSWERS.length - 1 : Math.max(0, index - 1);
-  else if (command.type === 'next')
-    index = index === -1 ? -1 : Math.min(ANSWERS.length - 1, index + 1);
-  else if (command.type === 'show') index = ANSWERS.findIndex((answer) => answer.id === command.id);
-  else if (command.type === 'script-bar') scriptBar = command.on;
-  else if (command.type === 'dictate') dictating = command.on;
-  publish();
-});
-// The overlay asks with 'hello' when it opens; publish now and then too, like a live page.
-setInterval(publish, 1_000);
+/** The store's rows: an old answer, and a near-identical one 20 s later. */
+const saved: StoredAnswer[] = [
+  oldAnswer(
+    'old-1',
+    STARTED_AT - 40_000,
+    'TELL ME ABOUT YOURSELF? OKAY AND THEN WE CAN MOVE ON TO THE NEXT PART',
+    'I build AI systems that answer questions from company documents.\n- Search with a vector database',
+  ),
+  oldAnswer(
+    'old-2',
+    STARTED_AT - 20_000,
+    'UM TELL ME ABOUT YOURSELF? OKAY AND THEN WE CAN MOVE ON TO THE NEXT PART',
+    'I build AI systems that answer questions from company documents.\n- Search with a vector database\n- Claude drafts, people review',
+  ),
+];
 
-/** The desktop bridge (absent in a plain browser). */
-const bridge = (window as unknown as { kiteDesktop?: KiteDesktopApi }).kiteDesktop;
-document.body.insertAdjacentHTML(
-  'beforeend',
-  `<p style="font:16px sans-serif;padding:16px">Overlay rig (live page stand-in). Bridge: ${bridge ? 'yes' : 'no'}</p>`,
-);
-// As the real live page does when a call starts in the overlay: open it, then step aside.
-void bridge?.openCompactView?.(SESSION).then(() => bridge.minimizeMainWindow?.());
+/** An in-memory answer store, so each run starts from the same rows. */
+const store: AnswerStore = {
+  save: async (answer) => {
+    saved.push(answer);
+  },
+  list: async () => [...saved],
+  rate: async () => undefined,
+  report: async () => undefined,
+  note: async () => undefined,
+};
+
+/** The call's transcript; the driver feeds it. */
+const transcript = createTranscript();
+
+/** What the driver can do from outside the page. */
+export interface RigControls {
+  /**
+   * Feeds a line as the speech engine would.
+   *
+   * @param speaker Who speaks.
+   * @param text    The words, in the engine's capitals.
+   * @param final   False for words still being heard (grey).
+   */
+  say: (speaker: Speaker, text: string, final?: boolean) => void;
+}
+
+(window as unknown as { rig: RigControls }).rig = {
+  say(speaker, text, final = true) {
+    if (!final) {
+      transcript.addPartial(speaker, text, Date.now() - 800);
+      return;
+    }
+    const now = Date.now();
+    transcript.addFinal({ speaker, text, tStart: now - 1_500, tEnd: now });
+  },
+};
+
+/**
+ * The call screen, wired as LivePage wires it.
+ *
+ * @returns The screen.
+ */
+function CallRig() {
+  const lines = useSyncExternalStore(
+    transcript.subscribe,
+    transcript.displayLines,
+    transcript.displayLines,
+  );
+  const terms = useMemo(() => displayTerms(SESSION), []);
+  const [bridge, setBridge] = useState<AnswerThisBridge | null>(null);
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  // Dictation's state only: the rig has no speech engine, so nothing is ever heard.
+  const [listening, setListening] = useState(false);
+  const setOnText = useCallback(() => undefined, []);
+  const dictation = useMemo(
+    () => ({
+      supported: true,
+      listening,
+      notice: null,
+      start: () => setListening(true),
+      stop: () => setListening(false),
+      setOnText,
+    }),
+    [listening, setOnText],
+  );
+  const meters = (['you', 'them'] as const).map((speaker) => (
+    <AudioMeter
+      key={speaker}
+      speaker={speaker}
+      level={speaker === 'you' ? 0.3 : 0.55}
+      inactive={false}
+      compact
+    />
+  ));
+  const transcriptNode = (
+    <TranscriptStrip
+      lines={lines}
+      health="ok"
+      terms={terms}
+      {...(bridge
+        ? {
+            onAnswerThis: (group: TranscriptGroup) =>
+              bridge.answerThis(groupWords(group), { start: group.tStart, end: group.tEnd }),
+            answeredSpans: bridge.answeredSpans,
+          }
+        : {})}
+    />
+  );
+  /**
+   * The answers panel.
+   *
+   * @param startInOverlay True to open the overlay when the call starts, as the desktop app does.
+   * @returns The panel.
+   */
+  const answersNode = (startInOverlay: boolean) => (
+    <LiveAnswers
+      session={SESSION}
+      documents={[]}
+      transcript={transcript}
+      callStartedAt={STARTED_AT}
+      startInOverlay={startInOverlay}
+      ending={false}
+      onEnd={() => undefined}
+      store={store}
+      copy={async () => undefined}
+      onAnswerThis={setBridge}
+      dictation={dictation}
+      topBarSlot={slot}
+    />
+  );
+  // ?layout=browser: the browser's call view around the same transcript and answers.
+  if (new URLSearchParams(window.location.search).get('layout') === 'browser') {
+    return (
+      <BrowserCallLayout
+        title="Interview call"
+        name={SESSION.company}
+        status={{ tone: 'success', label: 'Connected' }}
+        meters={meters}
+        topBarSlot={setSlot}
+        preview={{
+          stream: null,
+          themLabel: 'the shared tab',
+          micOn: true,
+          language: 'en',
+          onLanguage: () => undefined,
+          onStop: () => undefined,
+          onClear: () => undefined,
+          onMinimize: () => undefined,
+          onChangeTab: () => undefined,
+        }}
+        transcript={transcriptNode}
+        answers={answersNode(false)}
+      />
+    );
+  }
+  return (
+    <div className="flex min-h-screen flex-col md:flex-row">
+      <Sidebar user={{ name: 'Rig user', email: 'rig@invented.example', role: 'user' }} />
+      <main className="relative min-w-0 flex-1 overflow-y-auto">
+        <LiveCallLayout
+          title="Interview call"
+          name={SESSION.company}
+          themSource="your computer's sound"
+          status={{ tone: 'success', label: 'Connected' }}
+          meters={meters}
+          topBarSlot={setSlot}
+          transcript={transcriptNode}
+          answers={answersNode(true)}
+        />
+      </main>
+    </div>
+  );
+}
+
+createRoot(document.getElementById('root')!).render(<CallRig />);

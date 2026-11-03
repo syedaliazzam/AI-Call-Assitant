@@ -283,6 +283,17 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * Brings the full call window forward (v1.0.4). A shell before 1.0.4 cannot: closing the overlay
+     * brings the main window back there.
+     *
+     * @returns Resolves when done.
+     */
+    async showCallWindow() {
+      if (bridge.showCallWindow) await bridge.showCallWindow();
+      else await bridge.closeCompactView?.();
+    },
+
+    /**
      * Which global shortcuts another app already uses.
      *
      * @returns The statuses, or null on a shell that cannot check.
