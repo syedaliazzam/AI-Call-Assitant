@@ -98,6 +98,9 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
           return;
         }
         const headline = request.mode === 'chat' ? 'The seat price is 52 dollars.' : HEADLINE;
+        // As the real server does for every answer: the hidden line's contents come first, as their
+        // own event (recorded streams in tests/fixtures/answers: meta → delta… → done).
+        event('meta', { meta: { type: 'sales', target: 'call', source: 'docs' } });
         event('delta', { text: headline });
         await new Promise((resolve) => setTimeout(resolve, BULLET_DELAY_MS));
         if (res.destroyed) return;
@@ -438,4 +441,21 @@ test('a repeated question sends the earlier answer, and other answers are newest
   await expect(others.first()).toHaveText('what does the seat cost');
   await others.first().click();
   await expect(page.getByLabel('Question used')).toHaveText('what does the seat cost');
+});
+
+test('an answer survives the parent re-rendering with a fresh session object (v1.0.0 fix)', async () => {
+  // The production failure: the live page passed a new (equal) session object on every render,
+  // the answer hook took it for a new call and cancelled the answer in flight, and the card sat on
+  // "…". Here the parent re-renders every 50 ms through a slow (1.5 s) stream.
+  const context = await browser!.newContext();
+  const rerendering = await context.newPage();
+  await rerendering.goto(`${origin}/?rerender`);
+  await rerendering.locator('body').click();
+  await rerendering.keyboard.press('Control+Enter');
+  await expect(rerendering.getByRole('heading', { name: 'Answer headline' })).toHaveText(HEADLINE);
+  await expect(
+    rerendering.getByRole('list', { name: 'Answer details' }).getByRole('listitem'),
+  ).toHaveText(BULLETS, { timeout: 10_000 });
+  await expect(rerendering.getByText('Stopped.')).toHaveCount(0);
+  await context.close();
 });

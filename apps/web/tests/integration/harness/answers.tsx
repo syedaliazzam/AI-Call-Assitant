@@ -16,6 +16,7 @@
  * have. The harness uses the same components and modules; only sign-in, the session loader and
  * the microphone are left out. All text here is invented.
  */
+import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { listAnswers } from '@/core/storage/answers';
 import { deleteSession } from '@/core/storage/sessions';
@@ -95,16 +96,36 @@ window.kiteAnswerHarness = {
   },
 };
 
-createRoot(document.getElementById('root')!).render(
-  <LiveAnswers
-    session={SESSION}
-    documents={[]}
-    transcript={transcript}
-    callStartedAt={callStartedAt}
-    ending={false}
-    onEnd={() => undefined}
-    copy={async (text) => {
-      window.kiteAnswerHarness.copied.push(text);
-    }}
-  />,
-);
+/**
+ * The answer UI. With `?rerender` in the URL the parent re-renders every 50 ms and passes a fresh
+ * (equal) session object each time, as the live page does on every transcript line and meter
+ * tick: an answer in flight must survive that (the v1.0.0 production failure, where each
+ * re-render cancelled the answer and left its card on "…").
+ *
+ * @returns LiveAnswers for the harness session.
+ */
+function Harness() {
+  const rerender = new URLSearchParams(window.location.search).has('rerender');
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!rerender) return;
+    const timer = setInterval(() => setTick((tick) => tick + 1), 50);
+    return () => clearInterval(timer);
+  }, [rerender]);
+  const session = rerender ? { ...SESSION, preferences: { ...SESSION.preferences } } : SESSION;
+  return (
+    <LiveAnswers
+      session={session}
+      documents={[]}
+      transcript={transcript}
+      callStartedAt={callStartedAt}
+      ending={false}
+      onEnd={() => undefined}
+      copy={async (text) => {
+        window.kiteAnswerHarness.copied.push(text);
+      }}
+    />
+  );
+}
+
+createRoot(document.getElementById('root')!).render(<Harness />);

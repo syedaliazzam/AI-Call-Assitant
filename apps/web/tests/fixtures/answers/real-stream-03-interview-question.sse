@@ -1,0 +1,63 @@
+event: meta
+data: {"meta":{"type":"behavioural","target":"call","source":"docs"}}
+
+event: delta
+data: {"text":"At Copperleaf"}
+
+event: delta
+data: {"text":" Payments I"}
+
+event: delta
+data: {"text":" c"}
+
+event: delta
+data: {"text":"ut inv"}
+
+event: delta
+data: {"text":"oice API latency by"}
+
+event: delta
+data: {"text":" moving re"}
+
+event: delta
+data: {"text":"ads onto repl"}
+
+event: delta
+data: {"text":"icas with a"}
+
+event: delta
+data: {"text":" Redis cache.\n-"}
+
+event: delta
+data: {"text":" I led"}
+
+event: delta
+data: {"text":" the move of the invoice API"}
+
+event: delta
+data: {"text":" from one Postgres server to"}
+
+event: delta
+data: {"text":" read replicas plus a"}
+
+event: delta
+data: {"text":" Redis cache.\n- p"}
+
+event: delta
+data: {"text":"95 latency fell from "}
+
+event: delta
+data: {"text":"900 ms to 250 "}
+
+event: delta
+data: {"text":"ms."}
+
+event: delta
+data: {"text":"\n- Database CPU d"}
+
+event: delta
+data: {"text":"ropped by half."}
+
+event: done
+data: {"usage":{"input_tokens":319,"output_tokens":121,"cache_creation_input_tokens":324,"cache_read_input_tokens":3070},"ms":{"auth":0,"toStreamOpen":0,"streamOpenToFirstText":0,"toFirstText":0,"total":0}}
+

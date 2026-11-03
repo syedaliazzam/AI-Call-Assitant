@@ -1,0 +1,63 @@
+event: meta
+data: {"meta":{"type":"sales","target":"call","source":"docs"}}
+
+event: delta
+data: {"text":"For"}
+
+event: delta
+data: {"text":"ty seats on"}
+
+event: delta
+data: {"text":" the Professional plan com"}
+
+event: delta
+data: {"text":"es to "}
+
+event: delta
+data: {"text":"2,080 dollars a"}
+
+event: delta
+data: {"text":" month.\n- That"}
+
+event: delta
+data: {"text":" is 52 dollars per"}
+
+event: delta
+data: {"text":" seat per month, billed y"}
+
+event: delta
+data: {"text":"early.\n- It includes"}
+
+event: delta
+data: {"text":" single sign-on and"}
+
+event: delta
+data: {"text":" live re-routing for the wh"}
+
+event: delta
+data: {"text":"ole dispatch team."}
+
+event: delta
+data: {"text":"\n- There"}
+
+event: delta
+data: {"text":" is also"}
+
+event: delta
+data: {"text":" a one-time on"}
+
+event: delta
+data: {"text":"boarding fee of 1"}
+
+event: delta
+data: {"text":",500 dollars, cov"}
+
+event: delta
+data: {"text":"ering setup and two"}
+
+event: delta
+data: {"text":" training days."}
+
+event: done
+data: {"usage":{"input_tokens":301,"output_tokens":122,"cache_creation_input_tokens":512,"cache_read_input_tokens":3070},"ms":{"auth":0,"toStreamOpen":0,"streamOpenToFirstText":0,"toFirstText":0,"total":0}}
+

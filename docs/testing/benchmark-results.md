@@ -126,3 +126,13 @@ Measure only, no product change. `pnpm --filter web stt:trial --engine=<id> [--t
 Accuracy is power-independent (identical to the plugged-in run), as expected for the same model and audio. Only speed changes: on battery parakeet's final-text **p50 is 1195 ms and p95 is 1730 ms**, so it now fails **both** of criterion 2's bounds (p50 ≤ 0.8 s, p95 ≤ 1.5 s).
 
 **Decision (ADR-0027): adopt nothing.** No candidate meets the on-battery speed criterion. Parakeet — the only one passing accuracy (+37.6 pp name accuracy, −60% WER) and download (506 MB) — misses p50 and p95 on battery; both Whisper variants miss by 10–65×. The desktop keeps the current streaming engine; Stage 2 (integration) is skipped. Criterion 3 (answer latency during decoding) was never reached, so no paid Claude requests were spent on the trial.
+
+## v1.0.0 release: production checks (3 Nov 2026)
+
+Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200), Chrome (Playwright) and the desktop app (Electron 44.9.3).
+
+| Date | Run | Target | Result | Notes |
+|---|---|---|---|---|
+| 2026-11-03 | `test:e2e-prod` (incl. latency) + `test:ui-shots` | Production `dpl_CgEEN7ZzJboS6pKatKkewnPKADFP` (merge `a85a103`) | e2e-prod **16 of 18**; ui-shots passed | **Failed:** Chrome step 6 and desktop step 3. The answer request was sent and aborted by the browser within 37 ms (`net::ERR_ABORTED`), and the card stayed on "…". Cause: `LivePage` passed a new session object to the answers on every render (the live-ui-split language picker); `useLiveAnswers` took each one for a new call and cancelled the answer in flight. Production rolled back to `dpl_F8pKo6VfbGTtSwxRuvTp2cV1Agug` the same hour. The IndexedDB schema had gone from v5 to v6; Dexie 4.4.6 opens a newer database at its installed version, and a test opening a v6 database with the v5 build's exact `db.ts` passed, so no browser needed recovery. |
+| 2026-11-03 | Chrome + desktop production suites (`KITE_E2E_URL`) | Local production build (`next build` + `next start`) of the fix | **13 of 13** | Fix: the session object is memoised (above the Connect view's early return), the call lifecycle is keyed on session id and call start, and a cancelled answer with no words says so instead of "…". A preview deployment was not used: previews sit behind Vercel's SSO protection. |
+| 2026-11-03 | Real answer streams, recorded through the route's pipeline | 3 eval scenarios, `claude-haiku-5-5` | `meta` → `delta` ×19–21 → `done` | The harness mock sent no `meta` event for ordinary answers; it now does. The recordings are fixtures for `tests/unit/core/answer/recorded-stream.test.ts`. |

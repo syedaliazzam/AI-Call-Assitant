@@ -296,9 +296,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const storeRef = useRef(store);
   // The chat switch, read when a question is sent: changing it must not rebuild the actions.
   const chatTargetRef = useRef<TargetChoice>(input.chatTarget ?? 'auto');
+  // The latest session, documents and lessons for the idle re-warm. Refs, so the call's lifecycle
+  // below depends only on what makes a new call (session id, call start): a caller passing a
+  // fresh but equal session object on each render must not cancel the answer in flight (v1.0.0).
+  const warmInputRef = useRef({ session, documents, lessons });
   useEffect(() => {
     storeRef.current = store;
     chatTargetRef.current = input.chatTarget ?? 'auto';
+    warmInputRef.current = { session, documents, lessons };
   });
 
   // The session's saved answers (earlier calls, or before a reload), shown before this call's.
@@ -321,19 +326,33 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   }, [session.id]);
 
   // A new call: a new conversation and the idle re-warm; End (unmount) stops both.
+  const sessionId = session.id;
   useEffect(() => {
     logRef.current = emptyLog();
     finishedRef.current = [];
     const keepWarm = startKeepWarm({
-      warm: () => warmSession(session, documents, { conversation: logRef.current.chunks, lessons }),
+      warm: () => {
+        const latest = warmInputRef.current;
+        return warmSession(latest.session, latest.documents, {
+          conversation: logRef.current.chunks,
+          lessons: latest.lessons,
+        });
+      },
     });
     keepWarmRef.current = keepWarm;
     return () => {
       keepWarm.stop();
       keepWarmRef.current = null;
       runner.cancel();
+      // Fail safe: an answer stopped here must not stay "streaming" (its card would show "…" for
+      // ever, as when a re-render cancelled every answer before the v1.0.0 fix in LivePage).
+      setEntries((current) =>
+        current.map((entry) =>
+          entry.status === 'streaming' ? { ...entry, status: 'cancelled' as const } : entry,
+        ),
+      );
     };
-  }, [callStartedAt, session, documents, lessons, runner]);
+  }, [callStartedAt, sessionId, runner]);
 
   /**
    * Replaces one entry's fields.

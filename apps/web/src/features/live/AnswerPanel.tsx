@@ -168,6 +168,18 @@ const STATUS_TEXT: Record<Exclude<AnswerEntry['status'], 'done'>, string> = {
 };
 
 /**
+ * Whether an answer was stopped before any words arrived, so its card must say so instead of
+ * showing the "…" placeholder of an answer still on its way.
+ *
+ * @param entry The answer.
+ * @returns True for a cancelled answer with no text.
+ * Called from: AnswerPanel()
+ */
+export function stoppedEmpty(entry: Pick<AnswerEntry, 'status' | 'text'>): boolean {
+  return entry.status === 'cancelled' && entry.text.trim() === '';
+}
+
+/**
  * The answer panel.
  *
  * @param props See AnswerPanelProps.
@@ -282,16 +294,22 @@ export function AnswerPanel(props: AnswerPanelProps) {
             className="mb-3 max-h-24 border border-ui-border"
           />
         )}
-        {/* No placeholder headline when Claude was unavailable or the answer has a problem box:
-            the message says it all. */}
+        {/* No placeholder headline when Claude was unavailable, the answer has a problem box, or it
+            was stopped before any words arrived: the message says it all. */}
         <AnswerBody
           text={entry.text}
           size="panel"
           claims={entry.claims ?? []}
-          hideEmptyHeadline={Boolean(entry.unavailable || entry.problem)}
+          hideEmptyHeadline={Boolean(entry.unavailable || entry.problem || stoppedEmpty(entry))}
           {...(entry.meta?.target ? { target: entry.meta.target } : {})}
           {...(props.copy ? { copy: props.copy } : {})}
         />
+        {stoppedEmpty(entry) && (
+          // Fail safe (v1.0.0): a stopped answer must never look like one still on its way.
+          <p className="text-[15px] text-ui-muted">
+            Stopped before any words arrived. Press Answer to ask again.
+          </p>
+        )}
 
         {entry.unavailable && (
           // Claude is down for everyone (usage limit or overload): say so plainly, and that the

@@ -58,6 +58,16 @@ describe('withAnswerMeta', () => {
     expect(items).toEqual(['[[not a line, just text\n', 'more']);
   });
 
+  it('releases an unclosed line once it is too long to be one, without waiting for the end', async () => {
+    // Fail safe (v1.0.0 review): a model that starts "[[" and never closes it must not hold the
+    // answer back. Read piece by piece: text arrives before the reply ends.
+    const long = `[[coding|call|${'x'.repeat(80)}`;
+    const source = withAnswerMeta(reply([long, ' and the rest']));
+    const first = await source.next();
+    expect(first).toEqual({ done: false, value: long });
+    await source.return('result');
+  });
+
   it('keeps a reply that ended while it could still have been the line', async () => {
     const { items } = await read(['[[cod']);
     expect(items).toEqual(['[[cod']);
