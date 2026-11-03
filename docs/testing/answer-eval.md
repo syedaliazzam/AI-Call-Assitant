@@ -385,8 +385,37 @@ Round 3 was approved by the developer after `missing-info` failed its recheck. I
 
 **So read comparisons with care:** the shape and the honesty rule both changed, so `answers` scores from here are **not strictly comparable** with the 9.18 baseline. v-previous is byte-for-byte the earlier block (hash `c65daf3b…`, pinned), so a rollback reproduces the earlier baselines exactly.
 
-**New groups** (`tests/eval/groups/honesty.ts`), defined but **not run** until the developer agrees the cost (Part E):
+**New groups** (`tests/eval/groups/honesty.ts`), first run in the release run below:
 - `cv-embellishment` (4): questions that bait an invented tool, number, team size or result on the Priya Rao CV. Gate: zero invented items (claim check + grader `invented` list); score reported.
 - `answer-length` (2): questions whose good answer is a full Balanced-length reply. Gate: ≥ 8 (the grader's style score covers length).
 
-**Release run (Part E):** re-run `answers`, `screenshots`, `lessons`, `preferences`, `notes`, the ADR-0030 groups (`adaptive`, `missing-info`, `hallucination-bait`, `consistency`, `ask-kite`) and these two new groups on the final v-current prompt. Results and any new baseline go here. **Not yet measured — waiting for credit.**
+**Release run (Part E):** re-run `answers`, `screenshots`, `lessons`, `preferences`, `notes`, the ADR-0030 groups (`adaptive`, `missing-info`, `hallucination-bait`, `consistency`, `ask-kite`) and these two new groups on the final v-current prompt.
+
+### Release run (2026-11-03, v1.0.0)
+
+Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario (notes 3). Groups ran in parallel. Spend for the whole release run (evaluations, both fixes, the v-previous comparison): **about $1.49**, from the shared limit, within the $3.50 the developer approved.
+
+**First pass (ADR-0032 v-current as committed):** every group passed except `missing-info` (7.31) and `cv-embellishment` (invented items in 5 of 8 runs). The grader's reasons showed one pattern: the spoken lines remarked on what the CV lacks ("I don't have a measured figure I can quote", "I can't claim a team size"), which the style rule scores 0, and answers promised to fetch the user's own past figures after the call ("I'll pull the numbers and send them over"), carried over from the "confirm after the call" shape meant for facts about an offer.
+
+**Fix 1 (kept):** two lines. In the rules, under "When information is missing": the ban list gains "a figure I can quote", "I can't claim", "on record" and "my CV says", and a new bullet says that for a number, size, tool or result of a real project that the CV does not give, the headline says what the CV does state, the missing detail is left out of every spoken line without remark, and the user's own past figures or records are never promised after the call (a Note may name what to check). The closing reminder says the same in one clause. v-current hash `935d159a…`; v-previous unchanged (`c65daf3b…`).
+
+**Fix 2 (reverted):** also banned "the CV does not state…" and required the CV's own verb for the user's part (no "led", "owned"). It scored lower everywhere it was measured (`answers` 8.90 / 8.80 / 8.93, mean 8.88; `cv-embellishment` 7.13 with 10 invented items; `missing-info` 7.56), so it was reverted.
+
+| Group | Gate | First pass | Fix 1 (released) | Result |
+|---|---|---|---|---|
+| `answers` (15) | 3-run mean ≥ 9.03 | 9.07, 9.10 | 9.07, 8.83, 9.13 = **9.01** | **passes** under the release rule (within 0.15 of the gate counts as noise, developer, 2026-11-03) |
+| `screenshots` (3) | ≥ 8 | 8.17 | 8.83 | passes |
+| `lessons` (2) | ≥ 8 and above without | 9.00 | 8.50 (without 8.25) | passes |
+| `preferences` (3) | ≥ 8 | 9.33 | 9.00 | passes |
+| `notes` (3) | ≥ 8 | 9.67 | not re-run (own prompt) | passes |
+| `adaptive` (24) | ≥ 8 | 8.44 | 8.40 | passes |
+| `missing-info` (8) | ≥ 8 | 7.31 | **7.75** | **fails** |
+| `hallucination-bait` (6) | zero invented prices or personal numbers | 7.33; numbers outside the documents 0/12 | 7.50; 0/12 | passes (no price or personal number invented; the grader's `invented` list flags wording such as "priced per seat") |
+| `consistency` (3) | ≥ 8, same numbers both times | 9.83; 6/6 | 10.00; 5/6 | score passes; one repeat in six changed a number |
+| `ask-kite` (6) | ≥ 8 | 9.58 | 9.67 | passes |
+| `cv-embellishment` (4) | zero invented items | 6.50; 7 items, 5/8 runs | **7.25; 6 items, 5/8 runs** | **fails** |
+| `answer-length` (2) | ≥ 8 | 8.75 | 8.50 | passes |
+
+**Default chosen by measurement (developer's rule, 2026-11-03):** with `cv-embellishment` still failing, it was run once on v-previous (`eval:answers --only=cv-embellishment --style=previous`, new option): **6.00, 9 invented items, 6 of 8 runs flagged**, against v-current's 7.25, 6 items, 5 of 8. v-current invents fewer, so **v-current stays the default**; v-previous stays available through Settings → Answers → Answer style version (admin only).
+
+**Still open:** what remains invented is mostly a claimed role beyond the CV ("I led the move", "working with my team") and small causal links ("so it could be deployed on its own"); `missing-info` loses most points to the style rule when an answer says a detail is absent. A stricter wording (fix 2) made both worse, so the next attempt should change the examples rather than add bans. New baseline for `answers`: **9.01** (gate 8.86 from here).

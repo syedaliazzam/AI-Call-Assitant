@@ -89,6 +89,8 @@ export interface EvalResultsFile {
   only: string | null;
   /** Whether lessons were withheld (the lesson group's comparison run). */
   withoutLessons: boolean;
+  /** The answer style version evaluated ('current' or 'previous', ADR-0032); answers only. */
+  style?: 'current' | 'previous';
   /** When the run finished (ISO 8601). */
   finishedAt: string;
   /** The model that wrote the answers or notes. */

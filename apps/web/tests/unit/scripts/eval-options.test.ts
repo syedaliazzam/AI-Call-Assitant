@@ -32,6 +32,7 @@ describe('parseEvalArgs', () => {
       show: false,
       dryRun: true,
       withoutLessons: false,
+      style: null,
     });
     expect(parseEvalArgs(['--only', '01-a', '--runs', '1', '--show'], 2)).toEqual({
       runs: 1,
@@ -39,6 +40,7 @@ describe('parseEvalArgs', () => {
       show: true,
       dryRun: false,
       withoutLessons: false,
+      style: null,
     });
     expect(parseEvalArgs([], 3)).toEqual({
       runs: 3,
@@ -46,8 +48,15 @@ describe('parseEvalArgs', () => {
       show: false,
       dryRun: false,
       withoutLessons: false,
+      style: null,
     });
     expect(parseEvalArgs(['--without-lessons'], 2).withoutLessons).toBe(true);
+  });
+
+  it('reads --style: previous selects the rollback prompt, current is the default', () => {
+    expect(parseEvalArgs(['--style=previous'], 2).style).toBe('previous');
+    expect(parseEvalArgs(['--style', 'current'], 2).style).toBeNull();
+    expect(() => parseEvalArgs(['--style=old'], 2)).toThrow('--style');
   });
 
   it('refuses a --runs that is not a whole number of at least 1', () => {

@@ -44,3 +44,7 @@ Changing the shared rules is risky: it is the cached block every session reads, 
 - `tests/unit/server/prompt.test.ts`: the new bullet wording.
 - The `cv-embellishment` and `answer-length` groups, with the claim check and the grader's `invented` list (release run, after the developer agrees the cost).
 - Human checks in `docs/testing/final-test-plan.md` (the rollback switch).
+
+## Release result (3 Nov 2026)
+
+Measured in `docs/testing/answer-eval.md` (Release run). One fix was kept: the spoken lines leave an unsupported CV detail out without remarking on it, and never promise to fetch the user's own past figures (v-current hash `935d159a…`). `cv-embellishment` still fails its zero-invented gate, but v-current invents fewer items than v-previous (6 against 9 in 8 runs), so by the developer's rule **v-current stays the default** and v-previous stays behind the admin switch. `missing-info` (7.75) is below its gate and is the next prompt work.

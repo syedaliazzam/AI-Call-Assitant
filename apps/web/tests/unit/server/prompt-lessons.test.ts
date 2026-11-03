@@ -22,8 +22,13 @@ import {
 } from '@/server/prompt';
 import { parseAnswerRequest } from '@/server/validate';
 
-/** SHA-256 of the v-current rules block, changed on purpose for the honesty and shape change (ADR-0032). */
-const RULES_SHA256 = 'c0ea13e30a694ca9af3044000380e848e10d41d7a4cf161a4bdf9ae43963aa3e';
+/**
+ * SHA-256 of the v-current rules block, changed on purpose for the honesty and shape change
+ * (ADR-0032) and again for the release fix: the spoken lines leave an unsupported CV detail out
+ * without remarking on it, and never promise to fetch the user's own past figures (answer-eval.md,
+ * release run; a second, stricter fix scored lower and was reverted).
+ */
+const RULES_SHA256 = '935d159a232c1e66a402146fdf630a831f70471fa41f81400910cfe50d94ad9b';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte

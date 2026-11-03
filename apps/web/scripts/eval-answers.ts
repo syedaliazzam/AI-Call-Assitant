@@ -17,6 +17,7 @@
  *            --only=consistency  ADR-0030: the same question twice in one call
  *            --only=ask-kite     ADR-0030: private answers, in a call and on the page
  *            --without-lessons   send no lessons (the lesson group's comparison run)
+ *            --style=previous    answer with the v-previous rules (ADR-0032 rollback switch)
  *            --only=<id>         one scenario (its file name without .json)
  *            --runs=N   answers per scenario (default 2; scores are averaged, because answers
  *                       vary from run to run)
@@ -244,6 +245,7 @@ interface ScenarioAnswer {
  * @param scenario       The scenario.
  * @param models         The two models' names.
  * @param withoutLessons True to leave out the scenario's lessons (the comparison run).
+ * @param style          'previous' to answer with the v-previous rules (ADR-0032), else null.
  * @param meter          Counts the spend.
  * @param earlier        Consistency scenarios: the first answer, in the conversation, and the
  *                       question asked again.
@@ -254,6 +256,7 @@ async function answerScenario(
   scenario: Scenario,
   models: { fast: string; smart: string },
   withoutLessons: boolean,
+  style: 'previous' | null,
   meter: SpendMeter,
   earlier?: { question: string; text: string },
 ): Promise<ScenarioAnswer> {
@@ -289,6 +292,7 @@ async function answerScenario(
     ...(scenario.image ? { image: imageDataUrl(scenario.image) } : {}),
     ...(scenario.lessons?.length && !withoutLessons ? { lessons: scenario.lessons } : {}),
     ...(scenario.target ? { target: scenario.target } : {}),
+    ...(style ? { styleVersion: style } : {}),
     ...(similar
       ? { similar: { question: similar.question, text: similar.text, at: similar.at } }
       : {}),
@@ -546,12 +550,19 @@ async function main(): Promise<void> {
     const runs: ScenarioRunResult[] = [];
     for (let run = 1; run <= options.runs; run += 1) {
       const models = { fast: env.modelFast, smart: env.modelSmart };
-      let answer = await answerScenario(scenario, models, options.withoutLessons, meter);
+      let answer = await answerScenario(
+        scenario,
+        models,
+        options.withoutLessons,
+        options.style,
+        meter,
+      );
       // Consistency: the first answer goes into the conversation, and the question comes again.
       const first = scenario.repeat
         ? { question: scenario.question, text: answer.text }
         : undefined;
-      if (first) answer = await answerScenario(scenario, models, false, meter, first);
+      if (first)
+        answer = await answerScenario(scenario, models, false, options.style, meter, first);
       const { text, meta } = answer;
       const graded = await grade(scenario, text, env.modelSmart, meter, first);
       const shape = shapeChecks(text, scenario.session.style.format, meta);
@@ -605,6 +616,7 @@ async function main(): Promise<void> {
     evaluation: 'answers',
     only: options.only,
     withoutLessons: options.withoutLessons,
+    style: options.style ?? 'current',
     finishedAt: new Date().toISOString(),
     model: env.modelFast,
     grader: env.modelSmart,
