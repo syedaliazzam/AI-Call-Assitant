@@ -22,9 +22,10 @@
  * The app runs with KITE_TEST_NO_EXTERNAL_OPEN=1, so this test never launches a real browser.
  */
 import { GLOBAL_HOTKEYS } from '@kite/shared';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   _electron as electron,
@@ -85,7 +86,14 @@ test.beforeAll(async () => {
   // instead of the development build, with the same checks.
   const installed = process.env.KITE_INSTALLED_EXE;
   app = await electron.launch({
-    ...(installed ? { executablePath: installed, args: [] } : { args: [APP_DIR] }),
+    // Its own profile: on the default one this test overwrites the person's real overlay settings
+    // (it did, on 4 Nov 2026), and a running Kite would hold the single-instance lock.
+    ...(installed
+      ? {
+          executablePath: installed,
+          args: [`--user-data-dir=${mkdtempSync(path.join(tmpdir(), 'kite-smoke-'))}`],
+        }
+      : { args: [APP_DIR] }),
     env: {
       ...parentEnv,
       KITE_URL: `${kite.origin}/`,
