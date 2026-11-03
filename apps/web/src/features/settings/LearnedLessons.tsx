@@ -71,14 +71,14 @@ export function LearnedLessons() {
     await reload();
   }
 
-  if (lessons === null) return <p className="text-sm text-ui-muted">Loading…</p>;
+  if (lessons === null) return <p className="text-[13px] text-ui-muted">Loading…</p>;
   const approved = lessons
     .filter((lesson) => lesson.status === 'approved')
     .sort((a, b) => (a.approvedAt ?? 0) - (b.approvedAt ?? 0));
   const rejected = lessons.length - approved.length;
 
   return (
-    <div className="space-y-3 text-sm">
+    <div className="space-y-3 text-[13px]">
       <p className="text-ui-muted">
         Lessons you approved after a call. Kite sends them, exactly as shown, with every answer in
         the calls they apply to, as your preferences: they adjust the style and content of answers
@@ -103,7 +103,7 @@ export function LearnedLessons() {
               ) : (
                 <>
                   <p className="text-ui-heading">{lesson.text}</p>
-                  <p className="mt-1 text-xs text-ui-muted">
+                  <p className="mt-1 text-[13px] text-ui-muted">
                     {lessonScopeLabel(lesson.scope)} · approved{' '}
                     {DATE_FORMAT.format(lesson.approvedAt ?? lesson.decidedAt)}
                     {lesson.evidence && ` · based on: ${lesson.evidence}`}
@@ -127,7 +127,7 @@ export function LearnedLessons() {
         </ul>
       )}
       {rejected > 0 && (
-        <p className="text-xs text-ui-muted">
+        <p className="text-[13px] text-ui-muted">
           {rejected} rejected{' '}
           {rejected === 1
             ? 'proposal is remembered, so it is not offered again.'

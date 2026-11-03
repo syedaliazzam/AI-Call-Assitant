@@ -38,6 +38,7 @@ describe('deleteAllLocalData', () => {
       lessons: 0,
       library: 0,
       questionBanks: 0,
+      chats: 0,
     });
     expect(await listSessions()).toEqual([]);
     expect(await getDb().documents.count()).toBe(0);
@@ -58,6 +59,7 @@ describe('deleteAllLocalData', () => {
       lessons: 0,
       library: 0,
       questionBanks: 0,
+      chats: 0,
     });
   });
 });

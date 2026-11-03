@@ -15,7 +15,9 @@
  * BroadcastChannel stays inside this browser profile and origin: nothing leaves the computer.
  * Messages are checked before use, and their text is never logged.
  */
+import { ANSWER_TYPES, type AnswerMeta, type AnswerType, type TargetChoice } from '@kite/shared';
 import type { AnswerStyle } from '@/core/storage/types';
+
 /** A transcript line, as the overlay shows it when the transcript is expanded. */
 export interface CompactLine {
   /** The line's id. */
@@ -52,14 +54,14 @@ export interface CompactAnswer {
   id: string;
   /** The question it answers ('' when Claude was asked to answer the latest "Them" lines). */
   question: string;
-  /** The answer line (first line). */
+  /** The answer's text so far: the overlay shows it with AnswerBody, the same as the main window. */
+  text: string;
+  /** The answer line (first line); empty until it has arrived. */
   headline: string;
-  /** The bullets. */
-  bullets: string[];
-  /** The closing tip to say, or ''. */
-  tip: string;
-  /** A private note for the user, not to be said, or ''. */
-  note: string;
+  /** Its question type, target and source, once they have arrived (ADR-0030). */
+  meta?: AnswerMeta;
+  /** Words the claim check could not find, to underline (ADR-0030). */
+  claims: string[];
   /** When it was asked (Unix ms). */
   askedAt: number;
   /** The user's rating. */
@@ -81,6 +83,16 @@ export interface CompactAnswer {
   unavailable: boolean;
 }
 
+/** An earlier answer of this call, in the list under the answer shown. */
+export interface CompactEarlier {
+  /** The answer's id. */
+  id: string;
+  /** The question it answers. */
+  question: string;
+  /** Its answer line. */
+  headline: string;
+}
+
 /** Everything the overlay shows. */
 export interface CompactState {
   /** Whether each side of the call is coming through. */
@@ -91,6 +103,14 @@ export interface CompactState {
   lines: CompactLine[];
   /** The answer shown, or null (none yet, or cleared). */
   answer: CompactAnswer | null;
+  /** The call's other answers, newest first (ADR-0030). */
+  earlier?: CompactEarlier[];
+  /** The chat box's switch: Auto, For the call or Ask Kite (ADR-0030). */
+  chatTarget?: TargetChoice;
+  /** Grows each time the Ask Kite shortcut is pressed, so the overlay opens its chat box. */
+  askKiteCount?: number;
+  /** The session's type, for the source tag's words. */
+  sessionType?: string;
   /** The answer's place in this call's history, from 0 (-1 when none is shown). */
   index: number;
   /** How many answers the history holds. */
@@ -153,9 +173,42 @@ export interface ChatCommand {
   question: string;
 }
 
+/** The chat box's switch, from the overlay. */
+export interface ChatTargetCommand {
+  /** Command type. */
+  type: 'chat-target';
+  /** The new choice. */
+  target: TargetChoice;
+}
+
+/** Shows one of the call's answers, from the list in the overlay. */
+export interface ShowCommand {
+  /** Command type. */
+  type: 'show';
+  /** The answer's id. */
+  id: string;
+}
+
+/** Answers again in another shape, from the answer card's menu. */
+export interface ReanswerCommand {
+  /** Command type. */
+  type: 'reanswer';
+  /** The answer's id. */
+  id: string;
+  /** The question type chosen. */
+  answerType: AnswerType;
+}
+
 /** What the compact view can ask the live page to do. */
 export type CompactCommand =
-  SimpleCommand | ChatCommand | RateCommand | ReportCommand | StyleCommand;
+  | SimpleCommand
+  | ChatCommand
+  | RateCommand
+  | ReportCommand
+  | StyleCommand
+  | ChatTargetCommand
+  | ShowCommand
+  | ReanswerCommand;
 
 /** One message on the channel. */
 type Message =
@@ -259,6 +312,18 @@ export function isCommand(value: unknown): value is CompactCommand {
       ['headline+bullets', 'bullets', 'paragraph'].includes(String(style.format)) &&
       ['short', 'medium', 'detailed'].includes(String(style.length)) &&
       ['simple', 'professional', 'technical'].includes(String(style.tone))
+    );
+  }
+  if (command.type === 'chat-target') {
+    return ['auto', 'call', 'kite'].includes(String((value as { target?: unknown }).target));
+  }
+  if (command.type === 'show') return typeof command.id === 'string';
+  if (command.type === 'reanswer') {
+    return (
+      typeof command.id === 'string' &&
+      (ANSWER_TYPES as readonly string[]).includes(
+        String((value as { answerType?: unknown }).answerType),
+      )
     );
   }
   if (command.type === 'chat') {

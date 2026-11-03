@@ -6,9 +6,11 @@
  * Used by: apps/web/src/server/validate.ts, apps/web/src/server/prompt.ts,
  *          apps/web/app/api/answer/route.ts, apps/web/src/core/answer/answerClient.ts,
  *          apps/web/src/core/answer/warm.ts
- * Depends on: nothing (types, limits and one pure helper; no Node or browser APIs)
+ * Depends on: ./answer-meta.ts (types); otherwise nothing (types, limits and one pure helper; no
+ *             Node or browser APIs)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (POST /api/answer)
  */
+import type { AnswerMeta, AnswerTarget, AnswerType, MissingInfoMode } from './answer-meta';
 
 /**
  * What kind of answer the client is asking for.
@@ -17,9 +19,10 @@
  * - `answer`: answers the latest question from the other side (Day 4).
  * - `chat`: answers a question the user typed (Day 4).
  * - `screenshot`: answers from a screenshot of the screen (Day 5).
+ * - `kite`: the Ask Kite page, outside any call (ADR-0030).
  * All modes work: `hello`, `warm` (Day 3), `answer` and `chat` (Day 4), `screenshot` (Day 5).
  */
-export type AnswerMode = 'hello' | 'warm' | 'answer' | 'chat' | 'screenshot';
+export type AnswerMode = 'hello' | 'warm' | 'answer' | 'chat' | 'screenshot' | 'kite';
 
 /**
  * Which Claude model tier to use. The real model names come from server environment variables
@@ -78,6 +81,16 @@ export interface SessionContext {
    * English session's prompt, and its cache entry, stay exactly as they were (parity Phase 2).
    */
   language?: string;
+  /**
+   * The language for code in answers (Settings → Answers). Absent means Python, so a session on
+   * the default sends nothing extra and its cache entry stays the same (ADR-0030).
+   */
+  codingLanguage?: string;
+  /**
+   * What to do when the documents have no real example. Absent means 'approach' (specific methods
+   * and steps, nothing invented); only 'story' is ever sent (ADR-0030).
+   */
+  missingInfo?: MissingInfoMode;
   /** Attached documents (total capped at about 150k characters by the server). */
   documents: SessionDocument[];
 }
@@ -116,6 +129,8 @@ export interface ConversationAnswer {
   text: string;
   /** When the user asked for it, in whole seconds since the call connected. */
   at: number;
+  /** 'kite' when this was a private answer to the user; absent for words said on the call. */
+  target?: AnswerTarget;
 }
 
 /** One item of the conversation timeline. */
@@ -169,8 +184,54 @@ export const MAX_IMAGE_CHARS = 1_400_000;
 /** The question a screenshot answer uses when the user typed none. */
 export const DEFAULT_SCREENSHOT_QUESTION = "What's on screen and how should I respond?";
 
-/** Longest earlier answer in the conversation, in characters (400 tokens is about 1,600). */
-export const MAX_ANSWER_CHARS = 4_000;
+/**
+ * Longest earlier answer in the conversation, in characters. A coding answer or a private Ask Kite
+ * answer can reach the answer limit of 1,500 tokens, about 6,000 characters.
+ */
+export const MAX_ANSWER_CHARS = 6_000;
+
+/** Most turns of an Ask Kite chat sent with one request (older turns stay on the device only). */
+export const MAX_KITE_HISTORY = 40;
+
+/** Longest single turn of an Ask Kite chat, in characters. */
+export const MAX_KITE_TURN_CHARS = 16_000;
+
+/** Longest question typed on the Ask Kite page, in characters. */
+export const MAX_KITE_QUESTION_CHARS = 8_000;
+
+/** Most files or session contexts attached to one Ask Kite chat. */
+export const MAX_KITE_ATTACHMENTS = 10;
+
+/** Most screenshots pasted into one Ask Kite message. */
+export const MAX_KITE_IMAGES = 3;
+
+/** One earlier turn of an Ask Kite chat. */
+export interface KiteTurn {
+  /** Who wrote it. */
+  role: 'you' | 'kite';
+  /** What was written. Never logged. */
+  text: string;
+}
+
+/**
+ * The versions of Kite's answer rules (ADR-0032): 'current' is "v-current", and 'previous' is
+ * "v-previous", kept word for word so an admin can roll back if the new answers do worse on real
+ * calls.
+ */
+export const ANSWER_STYLE_VERSIONS = ['current', 'previous'] as const;
+
+/** One version of Kite's answer rules. */
+export type AnswerStyleVersion = (typeof ANSWER_STYLE_VERSIONS)[number];
+
+/** An earlier answer in this call to a question like the current one (core/answer/similar.ts). */
+export interface SimilarAnswer {
+  /** The earlier question. Never logged. */
+  question: string;
+  /** The earlier answer. Never logged. */
+  text: string;
+  /** When it was asked, in whole seconds since the call connected. */
+  at: number;
+}
 
 /**
  * Estimated token count of one conversation item (the text it adds to the prompt).
@@ -219,6 +280,29 @@ export interface AnswerRequest {
    * Omitted or empty: the rules block is unchanged. Never logged (only their count).
    */
   lessons?: string[];
+  /**
+   * Who the answer is for, when the user chose (the switch next to the chat box). Absent: Claude
+   * decides. Goes in the uncached tail, so changing it costs no cache.
+   */
+  target?: AnswerTarget;
+  /** The question type the user chose from the answer card's menu (a re-answer). Uncached. */
+  answerType?: AnswerType;
+  /** An earlier answer to a similar question, to reuse its facts and wording. Uncached. */
+  similar?: SimilarAnswer;
+  /**
+   * Which version of the answer rules to use (ADR-0032). Absent means 'current'. It decides the
+   * cached rules block, so the warm-up and every answer of a call must send the same value. The
+   * server honours 'previous' only for an admin.
+   */
+  styleVersion?: AnswerStyleVersion;
+  /** Mode `kite` only: the language for code, when it is not Python. */
+  codingLanguage?: string;
+  /** Mode `kite` only: the chat so far, oldest first. */
+  history?: KiteTurn[];
+  /** Mode `kite` only: library items and past sessions attached to the chat. */
+  attachments?: SessionDocument[];
+  /** Mode `kite` only: screenshots pasted into this message, as JPEG data URLs. Never stored. */
+  images?: string[];
 }
 
 /** Token counts reported by the Claude API for one reply. Names match the API's usage fields. */
@@ -290,11 +374,18 @@ export const CLAUDE_UNAVAILABLE_MESSAGES = {
 /**
  * One server-sent event from /api/answer. The SSE event name equals `type`; the remaining fields
  * are the JSON `data` payload.
+ * - `meta`: the answer's type, target and source, sent once before its first word.
  * - `delta`: the next piece of answer text.
  * - `done`: the reply finished; carries token usage and server timings.
  * - `error`: the reply failed; no more events follow.
  */
 export type AnswerEvent =
+  | {
+      /** Event name. */
+      type: 'meta';
+      /** What Claude said about the answer (the hidden first line, removed from the text). */
+      meta: AnswerMeta;
+    }
   | {
       /** Event name. */
       type: 'delta';

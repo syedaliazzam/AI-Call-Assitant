@@ -6,8 +6,8 @@
  *          and an optional "What was wrong / better answer" note; for a screenshot answer, a
  *          small thumbnail of the screenshot, from memory only (Day 5).
  * Used by: src/features/live/LiveAnswers.tsx
- * Depends on: src/core/answer/format.ts, src/features/live/useLiveAnswers.ts (AnswerEntry),
- *             src/ui/Button.tsx
+ * Depends on: src/core/answer/format.ts, src/features/answers (AnswerBody, AnswerTags),
+ *             src/features/live/useLiveAnswers.ts (AnswerEntry), src/ui/Button.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (answer panel), §6.1 step 6;
  *               day-04-answers.md Stage 6
  *
@@ -15,9 +15,12 @@
  */
 'use client';
 
+import type { AnswerType } from '@kite/shared';
 import { useState } from 'react';
 import type { AnswerRating } from '@/core/storage/types';
 import { answerText, splitAnswer } from '@/core/answer/format';
+import { AnswerBody } from '@/features/answers/AnswerBody';
+import { AnswerTags } from '@/features/answers/AnswerTags';
 import { Button } from '@/ui/Button';
 import type { AnswerEntry } from './useLiveAnswers';
 
@@ -47,6 +50,14 @@ export interface AnswerPanelProps {
   onNote: (id: string, note: string) => void;
   /** Puts text on the clipboard (resolves when done). */
   copy?: (text: string) => Promise<void>;
+  /** The session's type, for the source tag's words. */
+  sessionType?: string;
+  /** Answers again in another shape (the card's type menu). */
+  onReanswer?: (id: string, answerType: AnswerType) => void;
+  /** The call's answers, oldest first: the others are listed below, newest first (ADR-0030). */
+  entries?: readonly AnswerEntry[];
+  /** Shows one of them. */
+  onShow?: (id: string) => void;
 }
 
 /** Props for RatingControls. */
@@ -79,7 +90,7 @@ function RatingControls({ entry, onRate, onNote }: RatingControlsProps) {
     onRate(entry.id, entry.rating === rating ? null : rating);
   return (
     <div className="mt-3 flex flex-col gap-2 border-t border-ui-border pt-3">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-ui-muted">
+      <div className="flex flex-wrap items-center gap-2 text-[13px] text-ui-muted">
         <span>Was this answer good?</span>
         <Button
           size="sm"
@@ -128,7 +139,7 @@ function RatingControls({ entry, onRate, onNote }: RatingControlsProps) {
         >
           <textarea
             aria-label="What was wrong / better answer"
-            className="border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] md:text-sm"
+            className="border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] md:text-[13px]"
             placeholder="What was wrong, or what would a better answer say?"
             rows={2}
             maxLength={2_000}
@@ -185,7 +196,11 @@ export function AnswerPanel(props: AnswerPanelProps) {
     );
   }
 
-  const { headline, bullets, tip, note } = splitAnswer(entry.text);
+  // A private answer is read as written; for the call, Copy leaves out the private note.
+  const copyText = entry.meta?.target === 'kite' ? entry.text : answerText(entry.text);
+  const others = [...(props.entries ?? [])]
+    .reverse()
+    .filter((other) => other.id !== entry.id && other.text.trim() !== '');
   const source = entry.earlier
     ? 'earlier'
     : entry.mode === 'screenshot'
@@ -194,15 +209,15 @@ export function AnswerPanel(props: AnswerPanelProps) {
         ? 'typed question'
         : `from ${entry.fromLines} ${entry.fromLines === 1 ? 'line' : 'lines'}`;
 
-  // Theme §6: a mono eyebrow, a 3 px cyan bar, a bold headline. A minimum height with the
+  // Theme §6: a small label, then a semibold headline. A minimum height with the
   // footer pinned to the bottom: the footer does not move while the bullets stream in.
   return (
     <section
       aria-label="Answer"
-      className="flex min-h-[20rem] flex-col border border-l-[3px] border-ui-border border-l-ui-accent bg-ui-surface p-5"
+      className="flex min-h-[20rem] flex-col border border-ui-border rounded-card bg-ui-surface shadow-card p-5"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted">
+        <p className="text-[13px] font-medium text-ui-muted">
           Answer
           {/* Kite answered by itself (auto-answer beta, Day 6 Stage 4f). */}
           {entry.auto ? (
@@ -229,7 +244,7 @@ export function AnswerPanel(props: AnswerPanelProps) {
           >
             ←
           </Button>
-          <span className="font-mono text-[11px] text-ui-muted">
+          <span className="text-[13px] text-ui-muted">
             {props.index + 1} of {props.total}
           </span>
           <Button
@@ -249,6 +264,13 @@ export function AnswerPanel(props: AnswerPanelProps) {
           {entry.question || 'the latest from Them'}
         </span>
       </p>
+      <AnswerTags
+        meta={entry.meta}
+        {...(props.sessionType ? { sessionType: props.sessionType } : {})}
+        {...(props.onReanswer && entry.status !== 'streaming'
+          ? { onChangeType: (type: AnswerType) => props.onReanswer?.(entry.id, type) }
+          : {})}
+      />
 
       <div className="mt-3 flex-1">
         {entry.thumbnail && (
@@ -262,53 +284,24 @@ export function AnswerPanel(props: AnswerPanelProps) {
         )}
         {/* No placeholder headline when Claude was unavailable or the answer has a problem box:
             the message says it all. */}
-        {!((entry.unavailable || entry.problem) && !headline) && (
-          <h2
-            aria-label="Answer headline"
-            className="text-[17px] font-bold leading-snug text-ui-heading"
-          >
-            {headline || '…'}
-          </h2>
-        )}
-        {bullets.length > 0 && (
-          <ul
-            aria-label="Answer details"
-            className="mt-2 list-disc space-y-1 pl-5 text-[14px] leading-relaxed text-ui-text"
-          >
-            {bullets.map((bullet, i) => (
-              <li key={i}>{bullet}</li>
-            ))}
-          </ul>
-        )}
-        {tip && (
-          <p aria-label="Tip" className="mt-2 text-[14px] leading-relaxed text-ui-text">
-            {tip}
-          </p>
-        )}
-        {note && (
-          // For the user only, not to be said: set apart and muted.
-          <p
-            aria-label="Private note"
-            className="mt-2 border-t border-ui-border pt-1.5 text-[13px] italic text-ui-muted"
-          >
-            <span className="mr-1 font-mono text-[10px] font-medium uppercase not-italic tracking-[0.08em]">
-              Just for you
-            </span>
-            {note}
-          </p>
-        )}
+        <AnswerBody
+          text={entry.text}
+          size="panel"
+          claims={entry.claims ?? []}
+          hideEmptyHeadline={Boolean(entry.unavailable || entry.problem)}
+          {...(entry.meta?.target ? { target: entry.meta.target } : {})}
+          {...(props.copy ? { copy: props.copy } : {})}
+        />
 
         {entry.unavailable && (
           // Claude is down for everyone (usage limit or overload): say so plainly, and that the
           // transcript keeps recording (core/answer/unavailable.ts).
           <div
             role="alert"
-            className="mt-3 border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2"
+            className="mt-3 rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2"
           >
-            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-warning">
-              Claude unavailable
-            </p>
-            <p className="mt-1 text-[14px] text-ui-text">{entry.error}</p>
+            <p className="text-[13px] font-medium text-ui-warning">Claude unavailable</p>
+            <p className="mt-1 text-[15px] text-ui-text">{entry.error}</p>
           </div>
         )}
 
@@ -317,12 +310,12 @@ export function AnswerPanel(props: AnswerPanelProps) {
           // without leaving the call) or no connection. Same box as "Claude unavailable".
           <div
             role="alert"
-            className="mt-3 border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2"
+            className="mt-3 rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2"
           >
-            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-warning">
+            <p className="text-[13px] font-medium text-ui-warning">
               {entry.problem === 'signed-out' ? 'Signed out' : 'No connection'}
             </p>
-            <p className="mt-1 text-[14px] text-ui-text">{entry.error}</p>
+            <p className="mt-1 text-[15px] text-ui-text">{entry.error}</p>
             {entry.problem === 'signed-out' && props.onSignInAgain && (
               <Button className="mt-2" variant="secondary" onClick={props.onSignInAgain}>
                 Sign in again
@@ -332,7 +325,7 @@ export function AnswerPanel(props: AnswerPanelProps) {
         )}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-ui-muted">
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-[13px] text-ui-muted">
         {entry.status !== 'done' && !entry.unavailable && !entry.problem && (
           <span role={entry.status === 'error' ? 'alert' : 'status'}>
             {entry.status === 'error' && entry.error ? entry.error : STATUS_TEXT[entry.status]}
@@ -349,7 +342,7 @@ export function AnswerPanel(props: AnswerPanelProps) {
               size="sm"
               variant="secondary"
               onClick={() => {
-                copy(answerText(entry.text))
+                copy(copyText)
                   .then(() => setCopiedId(entry.id))
                   .catch(() => undefined);
               }}
@@ -362,6 +355,24 @@ export function AnswerPanel(props: AnswerPanelProps) {
       {entry.status === 'done' && (
         // key: a different answer starts with its own note draft.
         <RatingControls key={entry.id} entry={entry} onRate={props.onRate} onNote={props.onNote} />
+      )}
+      {others.length > 0 && props.onShow && (
+        <div className="mt-3 border-t border-ui-border pt-2">
+          <p className="text-[13px] font-medium text-ui-muted">Other answers, newest first</p>
+          <ul aria-label="Other answers" className="mt-1 flex flex-col gap-0.5">
+            {others.map((other) => (
+              <li key={other.id}>
+                <button
+                  type="button"
+                  className="w-full truncate py-0.5 text-left text-[13px] text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+                  onClick={() => props.onShow?.(other.id)}
+                >
+                  {other.question || splitAnswer(other.text).headline}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   );

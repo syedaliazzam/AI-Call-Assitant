@@ -23,7 +23,7 @@ export function LiveCallsUnsupported() {
     <div className="k-dark flex min-h-screen flex-col justify-center bg-ui-bg px-6 py-12 text-ui-text">
       <div className="mx-auto max-w-md">
         <Eyebrow>Live call</Eyebrow>
-        <h1 className="mt-1 text-[28px] font-bold leading-tight text-ui-heading">
+        <h1 className="mt-1 text-[24px] font-semibold leading-tight text-ui-heading">
           Live calls need a computer
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed">

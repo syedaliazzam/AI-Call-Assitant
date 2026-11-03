@@ -16,13 +16,26 @@ import {
   CORE_RULES,
   LESSONS_HEADING,
   SYSTEM_RULES,
+  SYSTEM_RULES_PREVIOUS,
   buildPrompt,
   rulesBlock,
 } from '@/server/prompt';
 import { parseAnswerRequest } from '@/server/validate';
 
-/** SHA-256 of the rules block, changed on purpose for first-person answers (ADR-0029). */
-const RULES_SHA256 = '758505448180b4b00c602deaddf5b1300b4e38e3735c53c4667adc0081f1ce96';
+/**
+ * SHA-256 of the v-current rules block, changed on purpose for the honesty and shape change
+ * (ADR-0032) and again for the release fix: the spoken lines leave an unsupported CV detail out
+ * without remarking on it, and never promise to fetch the user's own past figures (answer-eval.md,
+ * release run; a second, stricter fix scored lower and was reverted).
+ */
+const RULES_SHA256 = '935d159a232c1e66a402146fdf630a831f70471fa41f81400910cfe50d94ad9b';
+
+/**
+ * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte
+ * the block measured before this change (the earlier RULES_SHA256), so the scores in
+ * docs/testing/answer-eval.md still describe what a rollback sends.
+ */
+const RULES_PREVIOUS_SHA256 = 'c65daf3bf1ebb586ad21252c94695dafa3f5c9c703564e3e23e504338eee2a75';
 
 /** An invented request. */
 const REQUEST: AnswerRequest = {
@@ -48,6 +61,17 @@ describe('rulesBlock', () => {
     expect(rulesBlock(['   ', '\n'])).toBe(SYSTEM_RULES);
   });
 
+  it('v-previous is byte-for-byte the rollback rules block, unchanged by this release', () => {
+    // The rollback target must keep the bytes the earlier baselines were measured on (ADR-0032).
+    expect(createHash('sha256').update(SYSTEM_RULES_PREVIOUS).digest('hex')).toBe(
+      RULES_PREVIOUS_SHA256,
+    );
+    expect(rulesBlock([], 'previous')).toBe(SYSTEM_RULES_PREVIOUS);
+    expect(rulesBlock(['   '], 'previous')).toBe(SYSTEM_RULES_PREVIOUS);
+    // v-current and v-previous are different blocks (the change is real).
+    expect(SYSTEM_RULES_PREVIOUS).not.toBe(SYSTEM_RULES);
+  });
+
   it('puts the lessons after the unchanged core rules, under the preferences heading', () => {
     const block = rulesBlock(['Give prices per seat and per month.', 'Answer in first person.']);
     expect(block.startsWith(`${CORE_RULES}\n\n`)).toBe(true);
@@ -67,7 +91,8 @@ describe('rulesBlock', () => {
     const block = rulesBlock(attack);
     // The core rules are all there, unchanged, before anything from a lesson.
     expect(block.indexOf(CORE_RULES)).toBe(0);
-    expect(block.split('How to answer:')).toHaveLength(3); // the rule's own heading + one inside a bullet
+    expect(block.split('How to answer for the call:')).toHaveLength(2); // the rule's own heading
+    expect(block.split('How to answer:')).toHaveLength(2); // only inside the lesson's own bullet
     const afterHeading = block.slice(block.indexOf(LESSONS_HEADING) + LESSONS_HEADING.length);
     const lines = afterHeading.split('\n').filter((line) => line !== '');
     // Each lesson is exactly one bullet line: it cannot start a heading or a rule of its own.

@@ -88,7 +88,7 @@ export function LibraryPage({
       <header className="border-b border-ui-border bg-ui-surface px-4 py-8 sm:px-8">
         <div className="mx-auto max-w-3xl">
           <Eyebrow>Kite · library</Eyebrow>
-          <h1 className="text-[28px] font-bold text-ui-heading">{words.title}</h1>
+          <h1 className="text-[24px] font-semibold text-ui-heading">{words.title}</h1>
           <p className="mt-1 max-w-prose text-[15px] text-ui-muted">
             Saved on this computer. A session keeps its own copy of what it uses, so deleting here
             never changes a past session.
@@ -109,17 +109,17 @@ export function LibraryPage({
             onDismiss={dismiss}
           />
           {failed && (
-            <p role="alert" className="text-sm text-ui-danger">
+            <p role="alert" className="text-[13px] text-ui-danger">
               Kite could not open its local storage. Reload the page to try again.
             </p>
           )}
           {items && items.length === 0 && (
-            <p className="border border-ui-border bg-ui-surface px-6 py-10 text-center text-[15px] text-ui-muted">
+            <p className="border border-ui-border rounded-card bg-ui-surface shadow-card px-6 py-10 text-center text-[15px] text-ui-muted">
               {words.empty}
             </p>
           )}
           {items && items.length > 0 && (
-            <ul className="flex flex-col divide-y divide-ui-border border border-ui-border bg-ui-surface">
+            <ul className="flex flex-col divide-y divide-ui-border overflow-hidden rounded-card border border-ui-border bg-ui-surface">
               {items.map((item) => (
                 <li
                   key={item.id}
@@ -129,7 +129,7 @@ export function LibraryPage({
                     {item.name}
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
-                    <span className="font-mono text-[12px] text-ui-muted">
+                    <span className="text-[13px] text-ui-muted">
                       {item.chars.toLocaleString('en-US')} characters ·{' '}
                       {DATE_FORMAT.format(item.addedAt)}
                     </span>

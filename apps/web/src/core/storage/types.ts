@@ -9,7 +9,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (data model), §8.1 (where
  *               data lives); day-03-sessions.md Stage 1
  */
-import type { BankGroup, CallNotes } from '@kite/shared';
+import type { AnswerMeta, BankGroup, CallNotes } from '@kite/shared';
 
 /** What kind of call a session is for (the dashboard's type filter tabs). */
 export type SessionType = 'interview' | 'regular' | 'mock';
@@ -218,6 +218,16 @@ export interface StoredAnswer {
    * database version.
    */
   reported?: boolean;
+  /**
+   * The answer's question type, who it is for and its source (ADR-0030). Missing on answers saved
+   * earlier. No index uses it, so no new database version.
+   */
+  meta?: AnswerMeta;
+  /**
+   * The numbers, dates and names the claim check could not find in the documents or the call
+   * (core/answer/claimCheck.ts), to underline again in the review. Missing means none.
+   */
+  claims?: string[];
 }
 
 /**
@@ -306,6 +316,50 @@ export interface StoredLesson {
    * first, so editing a lesson never moves it.
    */
   approvedAt: number | null;
+}
+
+/** A file or past session attached to an Ask Kite chat: the chat keeps its own copy (ADR-0030). */
+export interface ChatAttachment {
+  /** Random id. */
+  id: string;
+  /** What to show and to tell Claude, for example 'resume.pdf'. */
+  name: string;
+  /** Where it came from. */
+  kind: LibraryKind | 'session';
+  /** Its text. The user's content; never logged. */
+  text: string;
+}
+
+/** One message of an Ask Kite chat. */
+export interface ChatMessage {
+  /** Random id. */
+  id: string;
+  /** Who wrote it. */
+  role: 'you' | 'kite';
+  /** What was written. The user's content; never logged. */
+  text: string;
+  /** When it was written (Unix ms). */
+  at: number;
+  /** How many screenshots were pasted with it. The images themselves are never stored. */
+  images?: number;
+  /** Kite's message: its question type and source. */
+  meta?: AnswerMeta;
+}
+
+/** An Ask Kite chat, stored on this device (ADR-0030). */
+export interface StoredChat {
+  /** Random id. */
+  id: string;
+  /** The chat's name: the start of its first question. */
+  title: string;
+  /** When it was started (Unix ms). */
+  createdAt: number;
+  /** When it last changed (Unix ms). The page lists the latest first. */
+  updatedAt: number;
+  /** What is attached to it. */
+  attachments: ChatAttachment[];
+  /** Its messages, oldest first. */
+  messages: ChatMessage[];
 }
 
 /** A session's question bank (parity Phase 4). */

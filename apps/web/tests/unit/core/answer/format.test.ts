@@ -14,22 +14,35 @@ describe('splitAnswer', () => {
     expect(splitAnswer(text)).toEqual({
       headline: 'Forty seats cost 2,080 dollars a month.',
       bullets: ['52 dollars per seat', 'Billed yearly', 'Fixed for two years'],
+      code: [],
+      say: '',
       tip: '',
       note: '',
     });
   });
 
   it('works while the answer is still streaming', () => {
-    expect(splitAnswer('')).toEqual({ headline: '', bullets: [], tip: '', note: '' });
+    expect(splitAnswer('')).toEqual({
+      headline: '',
+      bullets: [],
+      code: [],
+      say: '',
+      tip: '',
+      note: '',
+    });
     expect(splitAnswer('Forty seats')).toEqual({
       headline: 'Forty seats',
       bullets: [],
+      code: [],
+      say: '',
       tip: '',
       note: '',
     });
     expect(splitAnswer('# Forty seats\n- 52')).toEqual({
       headline: 'Forty seats',
       bullets: ['52'],
+      code: [],
+      say: '',
       tip: '',
       note: '',
     });
@@ -41,6 +54,8 @@ describe('splitAnswer', () => {
     expect(splitAnswer(text)).toEqual({
       headline: 'I can start next week.',
       bullets: ['We finished the pilot'],
+      code: [],
+      say: '',
       tip: 'mention the Lahore rollout.',
       note: 'check the date with finance.',
     });
@@ -70,5 +85,44 @@ describe('the "Headline:" label (Day 5)', () => {
     expect(splitAnswer('The headline figure is 6,656 dollars.').headline).toBe(
       'The headline figure is 6,656 dollars.',
     );
+  });
+});
+
+describe('the coding shape (ADR-0030)', () => {
+  /** A coding answer. */
+  const CODING = [
+    'Use a dictionary to count.',
+    '- Complexity: O(n) time',
+    '```python',
+    '- not a bullet',
+    '',
+    'x = 1',
+    '```',
+    'Say: I count, then scan.',
+    'Note: check the version.',
+  ].join('\n');
+
+  it('takes out the code and what to say, and never reads code as bullets', () => {
+    expect(splitAnswer(CODING)).toEqual({
+      headline: 'Use a dictionary to count.',
+      bullets: ['Complexity: O(n) time'],
+      code: [{ language: 'python', text: '- not a bullet\n\nx = 1' }],
+      say: 'I count, then scan.',
+      tip: '',
+      note: 'check the version.',
+    });
+  });
+
+  it('shows a code block still arriving', () => {
+    expect(splitAnswer('Approach\n```js\nconst a').code).toEqual([
+      { language: 'js', text: 'const a' },
+    ]);
+  });
+
+  it('copies the code and what to say, but not the private note', () => {
+    const copied = answerText(CODING);
+    expect(copied).toContain('x = 1');
+    expect(copied).toContain('I count, then scan.');
+    expect(copied).not.toContain('check the version');
   });
 });

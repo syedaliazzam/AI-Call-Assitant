@@ -46,8 +46,8 @@
   "mode": "answer",
   "question": "BY THE WAY DO YOU KNOW A GOOD PLACE FOR LUNCH NEAR THE STATION",
   "mustInclude": [
-    "says this is not in the session or notes, briefly",
-    "suggests a short, friendly way to reply or steer back to the call",
+    "a short, friendly reply the user can say, with no comment about the session or notes",
+    "steers back to the call",
     "the headline (first line) is 15 words or fewer; any explanation is in the bullets"
   ],
   "mustNotInclude": ["an invented restaurant or place"]

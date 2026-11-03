@@ -101,6 +101,36 @@ describe('notesRequest', () => {
     expect(request.session.company).toBe('Northwind (invented)');
   });
 
+  it('leaves out a private Ask Kite answer: it was never part of the call (ADR-0030)', () => {
+    const answer = {
+      id: 'a',
+      sessionId: 's',
+      mode: 'chat' as const,
+      question: 'What is 2 + 2?',
+      text: 'It is 4.',
+      model: 'fast' as const,
+      msFirstToken: 1,
+      msTotal: 2,
+      createdAt: Date.now() + 1_000,
+      rating: null,
+      note: '',
+    };
+    const base = {
+      session: { ...SESSION },
+      documents: [],
+      lines: [],
+      callStartedAt: Date.now(),
+    };
+    const request = notesRequest({
+      ...base,
+      answers: [
+        answer,
+        { ...answer, id: 'b', meta: { type: 'concept', target: 'kite', source: 'general' } },
+      ],
+    });
+    expect(request.answers).toHaveLength(1);
+  });
+
   it('keeps the newest lines when the call is over the character limit', () => {
     const lines = Array.from({ length: 200 }, (_, i) => ({
       speaker: 'them' as const,

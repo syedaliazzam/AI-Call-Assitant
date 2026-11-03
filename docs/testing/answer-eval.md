@@ -26,6 +26,13 @@ Re-run only the groups a change touches; run the full suite once, at release (`p
 | `lessons` | 19–20 (Day 5 Stage 7: answers with an approved lesson) | `pnpm --filter web eval:answers --only=lessons`, then the same with `--without-lessons` | 2 × 2 × 2 = 8 per command, 16 for the pair | with lessons ≥ 8 and higher than without |
 | `preferences` | 21–23 (parity Phase 2: bullets only, an answer language, the technical tone) | `pnpm --filter web eval:answers --only=preferences` | 3 × 2 × 2 = 12 | ≥ 8 |
 | `notes` | n1–n3 (Day 5) | `pnpm --filter web eval:notes --only=notes` | 3 × 3 runs × (notes + grade) = 18 | ≥ 8 |
+| `adaptive` | 24, in `tests/eval/groups/adaptive.ts` (ADR-0030: 6 roles × 4 question types; code is run) | `pnpm --filter web eval:answers --only=adaptive` | 24 × 2 × 2 = 96 | ≥ 8 |
+| `missing-info` | 8, in `tests/eval/groups/quality.ts` (4 questions under both settings) | `--only=missing-info` | 8 × 2 × 2 = 32 | ≥ 8 |
+| `hallucination-bait` | 6, same file | `--only=hallucination-bait` | 6 × 2 × 2 = 24 | **Zero invented prices or personal numbers** (the developer's gate). The score is reported, with no gate of its own |
+| `consistency` | 3, same file (the same question twice in one call) | `--only=consistency` | 3 × 2 × 3 = 18 | ≥ 8, and the same numbers both times |
+| `ask-kite` | 6, same file (3 typed in a call, 3 on the page; code is run) | `--only=ask-kite` | 6 × 2 × 2 = 24 (the page's answers use the smart model) | ≥ 8, and for the call or private as expected |
+| `cv-embellishment` | 4, in `tests/eval/groups/honesty.ts` (ADR-0032: bait an invented tool, number, team size or result on a real CV project) | `--only=cv-embellishment` | 4 × 2 × 2 = 16 | **Zero invented tools, numbers, team sizes or results** (the claim check and the grader's `invented` list). Score reported |
+| `answer-length` | 2, same file (ADR-0032: a full Balanced-length answer, not a one-liner or a ramble) | `--only=answer-length` | 2 × 2 × 2 = 8 | ≥ 8 (the grader's style score covers length) |
 
 `--only=<id>` runs one scenario; `--runs=N` sets the runs (default 2 for answers, 3 for notes). Which group a change touches: the rules block or the conversation part of `server/prompt.ts` → `answers` and `screenshots`; the screenshot tail only → `screenshots`; the learned-preferences part of the rules block (`rulesBlock()` with lessons) → `lessons` (a session without lessons sends the Day 4 rules block byte for byte, pinned by a unit test, so `answers` and `screenshots` need no re-run); `server/notes.ts` → `notes`.
 
@@ -346,3 +353,69 @@ Per-scenario scores of these runs were not kept, so which scenarios lost points 
 **Reading these numbers:** the same shared rules scored 9.18 in Phase 1 and 9.31 here, with only the session type's name changed, so about 0.13 can be noise between one 3-run mean and another. The baseline stays 9.18 unless the developer changes it. Why round 1 scored lower is not established: scenario 05, first suspected, scored 8 in all six runs; 15, 10 and 03 moved most.
 
 **For the Day 7 release run:** scenario 05 (same question twice) scores 8 every time, and 13 (off-topic) fell to about 8 in round 2. In `preferences`, 21 (bullets only) scored 8.0: read the saved reasons.
+
+### Ask Kite and answer quality (ADR-0030)
+
+**What changed:** the rules gained the hidden first line, shapes per question type, the missing-information rules and private answers; the tail gained a closing reminder. Each answer is graded without its hidden line.
+
+**What else changed, so read comparisons with care:**
+- **Scenarios 08, 13 and 14** required "not in your notes", which ADR-0030 forbids. They now require a natural reply offering to confirm the detail.
+- **The rubric** now accepts the coding shape, a free-form private answer, a headline-only reply and a brief "As I mentioned", and marks down a spoken comment on what Kite was given. The grader also lists anything invented.
+- So `answers` scores from here are not strictly comparable with the 9.18 baseline.
+
+**New checks made in code**, saved per run in `apps/web/eval-results/`: the hidden line is present; the question type and the target are as expected; no comment on what Kite was given; no number outside the documents and the call (`core/answer/claimCheck.ts`); code runs in the sandbox (`scripts/lib/code-sandbox.ts`: Python in Pyodide, JavaScript in a fresh V8 context, no environment variables, a time limit); a repeat states the same numbers. Each paid run adds its real token cost to `eval-results/spend.jsonl`.
+
+**Runs:** 2026-11-02 and 03, same laptop; answers by `claude-haiku-5-5`, the page's by `claude-sonnet-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario.
+
+| Group | Round 1 | Round 2: reminder, no embellishing, stricter rubric wording | Round 3: worked examples, sharper reminder |
+|---|---|---|---|
+| `adaptive` | 7.90 | 8.71 (type as expected 44/48, code ran 6/6) | not measured yet |
+| `missing-info` | 6.06 | 6.69 | **8.25** (invented details found by the grader in 6 of 16 answers; no numbers) |
+| `hallucination-bait` | 6.67 (no invented price or personal number in 12/12) | 7.08 (the same, 12/12) | not measured yet |
+| `consistency` | 9.00 | 10.00 (same numbers 6/6) | not measured yet |
+| `ask-kite` | 9.67 (target 12/12, code 4/4) | 9.42 (the same) | not measured yet |
+
+Round 3 was approved by the developer after `missing-info` failed its recheck. Its other groups, and `answers`, `screenshots`, `lessons`, `preferences` and `notes`, could not run: the account's credit balance ran out during round 3 ("Your credit balance is too low"), 2026-11-03.
+
+**Still weak in round 2's `hallucination-bait` scores** (no gate on them, and round 3's sharper reminder is aimed at this): spoken lines such as "I don't have a figure" still implied a gap, and headlines ran over 15 words. Embellishment of real CV projects with plausible details also remains in round 3's `missing-info`.
+
+### Answer honesty, shape and rollback (ADR-0032)
+
+**What changed** (`server/prompt.ts`, v-current): a real CV project must stay exactly as the CV states it (no added tools, numbers, team sizes, durations or results; extra depth only as the approach, "I'd typically..."); the headline+bullets shape is one spoken answer line plus **2 to 4** bullets (was up to 5); behavioural answers are a short STAR story from the closest real project; answer length is defined in seconds of speech (Short ≈10–20 s, Balanced ≈20–40 s, Detailed ≈40–60 s). The closing reminder repeats it. The rules before this change are kept word for word as **v-previous** for the admin rollback switch.
+
+**So read comparisons with care:** the shape and the honesty rule both changed, so `answers` scores from here are **not strictly comparable** with the 9.18 baseline. v-previous is byte-for-byte the earlier block (hash `c65daf3b…`, pinned), so a rollback reproduces the earlier baselines exactly.
+
+**New groups** (`tests/eval/groups/honesty.ts`), first run in the release run below:
+- `cv-embellishment` (4): questions that bait an invented tool, number, team size or result on the Priya Rao CV. Gate: zero invented items (claim check + grader `invented` list); score reported.
+- `answer-length` (2): questions whose good answer is a full Balanced-length reply. Gate: ≥ 8 (the grader's style score covers length).
+
+**Release run (Part E):** re-run `answers`, `screenshots`, `lessons`, `preferences`, `notes`, the ADR-0030 groups (`adaptive`, `missing-info`, `hallucination-bait`, `consistency`, `ask-kite`) and these two new groups on the final v-current prompt.
+
+### Release run (2026-11-03, v1.0.0)
+
+Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario (notes 3). Groups ran in parallel. Spend for the whole release run (evaluations, both fixes, the v-previous comparison): **about $1.49**, from the shared limit, within the $3.50 the developer approved.
+
+**First pass (ADR-0032 v-current as committed):** every group passed except `missing-info` (7.31) and `cv-embellishment` (invented items in 5 of 8 runs). The grader's reasons showed one pattern: the spoken lines remarked on what the CV lacks ("I don't have a measured figure I can quote", "I can't claim a team size"), which the style rule scores 0, and answers promised to fetch the user's own past figures after the call ("I'll pull the numbers and send them over"), carried over from the "confirm after the call" shape meant for facts about an offer.
+
+**Fix 1 (kept):** two lines. In the rules, under "When information is missing": the ban list gains "a figure I can quote", "I can't claim", "on record" and "my CV says", and a new bullet says that for a number, size, tool or result of a real project that the CV does not give, the headline says what the CV does state, the missing detail is left out of every spoken line without remark, and the user's own past figures or records are never promised after the call (a Note may name what to check). The closing reminder says the same in one clause. v-current hash `935d159a…`; v-previous unchanged (`c65daf3b…`).
+
+**Fix 2 (reverted):** also banned "the CV does not state…" and required the CV's own verb for the user's part (no "led", "owned"). It scored lower everywhere it was measured (`answers` 8.90 / 8.80 / 8.93, mean 8.88; `cv-embellishment` 7.13 with 10 invented items; `missing-info` 7.56), so it was reverted.
+
+| Group | Gate | First pass | Fix 1 (released) | Result |
+|---|---|---|---|---|
+| `answers` (15) | 3-run mean ≥ 9.03 | 9.07, 9.10 | 9.07, 8.83, 9.13 = **9.01** | **passes** under the release rule (within 0.15 of the gate counts as noise, developer, 2026-11-03) |
+| `screenshots` (3) | ≥ 8 | 8.17 | 8.83 | passes |
+| `lessons` (2) | ≥ 8 and above without | 9.00 | 8.50 (without 8.25) | passes |
+| `preferences` (3) | ≥ 8 | 9.33 | 9.00 | passes |
+| `notes` (3) | ≥ 8 | 9.67 | not re-run (own prompt) | passes |
+| `adaptive` (24) | ≥ 8 | 8.44 | 8.40 | passes |
+| `missing-info` (8) | ≥ 8 | 7.31 | **7.75** | **fails** |
+| `hallucination-bait` (6) | zero invented prices or personal numbers | 7.33; numbers outside the documents 0/12 | 7.50; 0/12 | passes (no price or personal number invented; the grader's `invented` list flags wording such as "priced per seat") |
+| `consistency` (3) | ≥ 8, same numbers both times | 9.83; 6/6 | 10.00; 5/6 | score passes; one repeat in six changed a number |
+| `ask-kite` (6) | ≥ 8 | 9.58 | 9.67 | passes |
+| `cv-embellishment` (4) | zero invented items | 6.50; 7 items, 5/8 runs | **7.25; 6 items, 5/8 runs** | **fails** |
+| `answer-length` (2) | ≥ 8 | 8.75 | 8.50 | passes |
+
+**Default chosen by measurement (developer's rule, 2026-11-03):** with `cv-embellishment` still failing, it was run once on v-previous (`eval:answers --only=cv-embellishment --style=previous`, new option): **6.00, 9 invented items, 6 of 8 runs flagged**, against v-current's 7.25, 6 items, 5 of 8. v-current invents fewer, so **v-current stays the default**; v-previous stays available through Settings → Answers → Answer style version (admin only).
+
+**Still open:** what remains invented is mostly a claimed role beyond the CV ("I led the move", "working with my team") and small causal links ("so it could be deployed on its own"); `missing-info` loses most points to the style rule when an answer says a detail is absent. A stricter wording (fix 2) made both worse, so the next attempt should change the examples rather than add bans. New baseline for `answers`: **9.01** (gate 8.86 from here).

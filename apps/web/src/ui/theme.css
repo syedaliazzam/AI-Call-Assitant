@@ -1,187 +1,266 @@
 /**
  * File: apps/web/src/ui/theme.css
- * Purpose: Kite's design tokens (UI theme stage U1): the Paramount Intelligence brand colours,
- *          Kite's semantic tokens for light pages and dark surfaces, shape and type. The ONLY
- *          file allowed to contain hex or rgb() colours (tests/unit/ui/theme.test.ts checks it).
+ * Purpose: Kite's design tokens: a neutral, minimal theme (light pages, dark live view, overlay),
+ *          with shape, shadow and type. The ONLY file allowed to contain hex or rgb() colours
+ *          (tests/unit/ui/theme.test.ts checks it).
  * Used by: app/globals.css (imported after Tailwind), every component in src/ui
- * Depends on: tailwindcss v4 (@theme), the fonts set in app/layout.tsx (next/font)
- * Architecture: docs/design/kite-ui-theme.md §3 (tokens), §5 (components), §8 (rules)
+ * Depends on: tailwindcss v4 (@theme), the font set in app/layout.tsx (next/font)
+ * Architecture: docs/design/kite-ui-theme.md §3 (tokens), §5 (components), §8 (rules); ADR-0031
  *
  * Three layers:
- * 1. Brand and semantic tokens (--pi-*, --k-*), copied from the theme document.
- * 2. Surface tokens (--ui-*): what a component uses. They point at the light tokens by default
- *    and at the dark ones inside an element with class "k-dark", so one component works on a
- *    light page and on the dark live view without a second style.
+ * 1. Semantic tokens (--k-*), copied from the theme document.
+ * 2. Surface tokens (--ui-*): what a component uses. They point at the light tokens by default,
+ *    at the dark ones inside an element with class "k-dark", and at the see-through ones inside
+ *    "k-glass" (the desktop overlay), so one component works everywhere without a second style.
  * 3. Tailwind names for the surface tokens (@theme inline): bg-ui-surface, text-ui-muted, …
  *
  * Contrast (computed, WCAG 2.x; tested in tests/unit/ui/theme.test.ts): every text token is at
- * least 4.5:1 on its surfaces, except --k-link and --k-you on the grey band (4.37:1 and 4.36:1):
- * use links and the "You" label on white surfaces only.
+ * least 4.5:1 on the surfaces it is used on. Two limits to remember:
+ * - muted text is 4.3:1 on --k-subtle: on a subtle background use --ui-text;
+ * - --k-success (#16A34A) is 3.3:1 on white, so it is for dots only; text uses --k-success-text.
  */
 
-/* Brand tokens, copied from paramountintelligence.co :root (30 Oct 2026). */
 :root {
-  /* Navy scale */
-  --pi-navy-900: #060d1a;
-  --pi-navy-800: #0d1f3c;
-  --pi-navy-700: #152d56;
-  --pi-navy-600: #1b3a6b;
-  --pi-navy-500: #1e4d8c;
-  /* Blues */
-  --pi-blue-500: #1e6fd9;
-  --pi-blue-400: #3b88f5;
-  --pi-blue-300: #6ba8ff;
-  --pi-royal: #204ecf;
-  --pi-navy: #0f256e;
-  --pi-cyan: #09b6f9;
-  /* Silvers / neutrals */
-  --pi-silver-400: #8fa4c4;
-  --pi-silver-300: #b5c8e2;
-  --pi-silver-200: #d4e0f0;
-  --pi-silver-100: #eef3fa;
-  --pi-text: #2b3245;
-  --pi-muted: #646c7e;
-  --pi-line: #d9dbe0;
-  --pi-band: #f3f3f3;
-  --pi-pale: #eaf1ff;
-  --pi-on-dark: #c9d4f2;
-  --pi-on-dark-2: #9fb3e8;
-  /* Status (the site has green and amber; red is a Kite addition) */
-  --pi-green: #3dbe8b;
-  --pi-amber: #f5b83d;
-
-  /* ---- Kite semantic tokens: LIGHT pages ---- */
-  --k-bg: #ffffff;
-  --k-band: var(--pi-band);
+  /* ---- LIGHT pages ---- */
+  --k-page: #f7f7f8;
   --k-surface: #ffffff;
-  --k-border: var(--pi-line);
-  --k-text: var(--pi-text); /* 12.8:1 on white */
-  --k-heading: var(--pi-navy-800);
-  --k-subheading: var(--pi-royal); /* 6.9:1 */
-  --k-muted: var(--pi-muted); /* 5.3:1 on white, 4.75:1 on band */
-  --k-link: var(--pi-blue-500); /* 4.85:1 on white; white surfaces only */
-  --k-success-text: #17784f; /* 5.5:1; --pi-green is too light for text on white (2.35:1) */
-  --k-warning-text: #8a5a0b; /* 5.9:1 */
-  --k-danger-text: #b42d2d; /* 6.3:1 */
-  --k-you: #0a79ab; /* "You" label on light, 4.8:1 on white; white surfaces only */
-  --k-them: var(--pi-royal);
-  /* Notice backgrounds (Kite, UI U2): pale tints; the matching text token is ≥ 4.5:1 on each. */
-  --k-success-bg: #e8f6ef;
-  --k-warning-bg: #fdf3df;
-  --k-danger-bg: #fbeaea;
+  --k-subtle: #f2f2f4;
+  --k-border: #e4e4e7;
+  --k-text: #18181b; /* 17.7:1 on white */
+  --k-muted: #71717a; /* 4.8:1 on white, 4.5:1 on the page */
+  --k-primary: #18181b;
+  --k-on-primary: #ffffff;
+  --k-primary-hover: #27272a;
+  --k-accent: #2563eb; /* links and focus; 5.2:1 on white */
+  --k-success: #16a34a; /* dots and icons only */
+  --k-success-text: #15803d; /* 5.0:1 on white */
+  --k-warning: #b45309; /* 5.0:1 on white */
+  --k-danger: #dc2626; /* 4.8:1 on white */
+  /* Notice backgrounds: pale tints; the matching text token is at least 4.5:1 on each. */
+  --k-success-bg: #f2fbf5;
+  --k-warning-bg: #fffbeb;
+  --k-danger-bg: #fef6f6;
 
-  /* ---- Kite semantic tokens: DARK surfaces (live view, overlay) ---- */
-  --k-dark-bg: var(--pi-navy-800);
-  --k-dark-bar: var(--pi-navy-900);
-  --k-dark-surface: var(--pi-navy-700);
-  --k-dark-border: rgba(201, 212, 242, 0.14);
-  --k-dark-text: var(--pi-on-dark); /* 11.1:1 */
-  --k-dark-strong: #ffffff;
-  --k-dark-muted: var(--pi-on-dark-2); /* 7.9:1 */
-  --k-dark-provisional: var(--pi-silver-400); /* still-changing transcript words, 6.5:1 */
-  --k-dark-you: var(--pi-cyan); /* 7.1:1 */
-  --k-dark-them: var(--pi-blue-300); /* 6.8:1 */
-  --k-dark-success: var(--pi-green); /* 7.0:1 */
-  --k-dark-warning: var(--pi-amber); /* 9.2:1 */
-  --k-dark-danger: #ff7a7a; /* 6.5:1 */
-  /* Notice backgrounds on dark: faint tints of the status colours over the dark surface. */
-  --k-dark-success-bg: rgba(61, 190, 139, 0.12);
-  --k-dark-warning-bg: rgba(245, 184, 61, 0.12);
-  --k-dark-danger-bg: rgba(255, 122, 122, 0.12);
-  --k-hero-gradient: linear-gradient(160deg, #060d1a, #0d1f3c 40%, #152d56 80%, #0d1f3c);
+  /* ---- DARK surfaces (live view, sign-in panel, browser picture-in-picture) ---- */
+  --k-dark-bg: #18181b;
+  --k-dark-bar: #111113;
+  --k-dark-surface: #27272a;
+  --k-dark-raised: #3f3f46; /* hover and selected rows */
+  --k-dark-border: rgba(255, 255, 255, 0.08);
+  --k-dark-outline: rgba(255, 255, 255, 0.24); /* secondary button border */
+  --k-dark-text: #fafafa;
+  --k-dark-muted: #a1a1aa; /* 6.9:1 on --k-dark-bg, 5.6:1 on --k-dark-surface */
+  --k-dark-primary: #ffffff;
+  --k-dark-on-primary: #18181b;
+  --k-dark-primary-hover: #e4e4e7;
+  --k-dark-accent: #60a5fa; /* links, focus and the "You" label on dark */
+  --k-dark-them: #d4d4d8;
+  --k-dark-success: #4ade80;
+  --k-dark-warning: #fbbf24;
+  --k-dark-danger: #f87171;
+  --k-dark-success-bg: rgba(74, 222, 128, 0.12);
+  --k-dark-warning-bg: rgba(251, 191, 36, 0.12);
+  --k-dark-danger-bg: rgba(248, 113, 113, 0.12);
 
-  /* ---- Component details from the theme document §5 ---- */
-  --k-primary-hover: #2cc2fa; /* primary button hover; navy text on it is 6.8:1 */
-  --k-primary-inset: inset 0 -3px 0 rgba(15, 37, 110, 0.18);
-  --k-on-dark-outline: rgba(255, 255, 255, 0.55); /* secondary button border on dark */
-  --k-overlay: rgba(6, 13, 26, 0.6); /* modal backdrop */
+  /* ---- The overlay ---- */
+  /* The see-through panel of the desktop overlay; --k-dark-bg is its solid form (picture-in-
+     picture, where nothing behind a window can show through). */
+  --k-overlay-glass: rgba(24, 24, 27, 0.82);
+  --k-overlay-border: rgba(255, 255, 255, 0.08);
+  --k-overlay-button: rgba(255, 255, 255, 0.08);
+  --k-overlay-button-hover: rgba(255, 255, 255, 0.14);
+  --k-overlay-end: #dc2626; /* with white text: 4.8:1 */
+  --k-overlay-on-end: #ffffff;
+  --k-overlay-blur: 16px;
+  /* Text over the see-through panel. These are lighter than the spec's greys so the primary text
+     stays readable as the panel's background opacity drops (ADR-0033, default 0.7): at 0.7 over the
+     worst case, pure white, the body text is 6.3:1 and "them" 5.1:1. Below the default, and for the
+     secondary muted grey, nominal contrast falls (at 0.4 over white the body is ~2.4:1); the text
+     shadow carries legibility there. Measured table in ADR-0033. The solid panel keeps #a1a1aa. */
+  --k-glass-muted: #b4b4bb;
+  --k-glass-accent: #a5cbfd;
+  --k-glass-them: #e4e4e7;
+  --k-glass-success: #86efac;
+  --k-glass-warning: #fde68a;
+  --k-glass-danger: #fecaca;
+
+  /* ---- Details ---- */
+  --k-backdrop: rgba(24, 24, 27, 0.45); /* behind a modal */
   --k-topbar: rgba(255, 255, 255, 0.95); /* light top bar, with a backdrop blur */
-  /* The logo tile (UI U4): the company mark has no light version, so on dark surfaces it sits
-     on a small white tile, as on the company site's white header. */
+  /* The logo tile: the company mark has no light version, so on dark surfaces it sits on a small
+     white tile. */
   --k-logo-tile: #ffffff;
 
-  /* ---- Shape, type, spacing ---- */
-  --k-radius: 0; /* signature: square corners */
+  /* ---- Shape, shadow, type ---- */
+  --k-radius-control: 10px;
+  --k-radius-card: 16px;
+  --k-radius-modal: 20px;
+  --k-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --k-shadow-modal: 0 20px 40px rgba(0, 0, 0, 0.12);
   --k-border-w: 1px;
   --k-font:
-    var(--font-montserrat), 'Montserrat', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
-    sans-serif;
-  --k-mono: var(--font-plex-mono), 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
-  --k-focus: 0 0 0 2px var(--pi-cyan); /* visible on light and dark */
+    var(--font-inter), 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --k-dur: 150ms;
 }
 
 /* ---- Surface tokens: light by default (and inside .k-light) ---- */
 :root,
 .k-light {
-  --ui-bg: var(--k-bg);
-  --ui-band: var(--k-band);
+  --ui-bg: var(--k-page);
+  --ui-band: var(--k-page);
   --ui-surface: var(--k-surface);
+  --ui-subtle: var(--k-subtle);
   --ui-border: var(--k-border);
   --ui-input: var(--k-surface);
   --ui-text: var(--k-text);
-  --ui-heading: var(--k-heading);
-  --ui-subheading: var(--k-subheading);
+  --ui-heading: var(--k-text);
+  --ui-subheading: var(--k-text);
   --ui-muted: var(--k-muted);
-  --ui-link: var(--k-link);
+  --ui-link: var(--k-accent);
+  --ui-accent: var(--k-accent);
   --ui-success: var(--k-success-text);
-  --ui-warning: var(--k-warning-text);
-  --ui-danger: var(--k-danger-text);
-  --ui-you: var(--k-you);
-  --ui-them: var(--k-them);
-  /* Secondary button on light (Kite): navy text and border, pale on hover. */
-  --ui-secondary: var(--pi-navy);
-  --ui-secondary-border: var(--pi-navy);
-  --ui-secondary-hover-bg: var(--pi-pale);
-  --ui-secondary-hover-border: var(--pi-navy);
+  --ui-warning: var(--k-warning);
+  --ui-danger: var(--k-danger);
+  /* "You" stands out in the accent; "Them" stays in the body colour. */
+  --ui-you: var(--k-accent);
+  --ui-them: var(--k-text);
+  --ui-primary: var(--k-primary);
+  --ui-on-primary: var(--k-on-primary);
+  --ui-primary-hover: var(--k-primary-hover);
+  /* Secondary button: white with a thin border. */
+  --ui-secondary: var(--k-text);
+  --ui-secondary-bg: var(--k-surface);
+  --ui-secondary-border: var(--k-border);
+  --ui-secondary-hover-bg: var(--k-subtle);
+  --ui-secondary-hover-border: var(--k-border);
   /* A quiet hover background (ghost buttons, menu items). */
-  --ui-hover: var(--pi-band);
-  /* Notice backgrounds, and the pale blue highlight. */
+  --ui-hover: var(--k-subtle);
   --ui-success-bg: var(--k-success-bg);
   --ui-warning-bg: var(--k-warning-bg);
   --ui-danger-bg: var(--k-danger-bg);
-  --ui-pale: var(--pi-pale);
+  --ui-pale: var(--k-subtle);
   /* Transcript words that may still change (light pages: muted). */
   --ui-provisional: var(--k-muted);
+  --ui-focus: var(--k-accent);
+  /* Declared here, not once at :root: a var() inside a custom property is resolved where it is
+     declared, so the ring takes the right colour only if each surface declares it. */
+  --k-focus: 0 0 0 2px var(--ui-focus);
 }
 
-/* ---- Surface tokens: dark (live view, compact overlay, PiP, the sidebar) ---- */
+/* ---- Surface tokens: dark (live view, sign-in panel, overlay) ---- */
 .k-dark {
   color-scheme: dark;
   --ui-bg: var(--k-dark-bg);
   --ui-band: var(--k-dark-bar);
   --ui-surface: var(--k-dark-surface);
+  --ui-subtle: var(--k-dark-raised);
   --ui-border: var(--k-dark-border);
-  --ui-input: var(--pi-navy-900);
+  --ui-input: var(--k-dark-bg);
   --ui-text: var(--k-dark-text);
-  --ui-heading: var(--k-dark-strong);
-  --ui-subheading: var(--k-dark-strong);
+  --ui-heading: var(--k-dark-text);
+  --ui-subheading: var(--k-dark-text);
   --ui-muted: var(--k-dark-muted);
-  --ui-link: var(--pi-blue-300); /* 6.8:1 on the dark background */
+  --ui-link: var(--k-dark-accent);
+  --ui-accent: var(--k-dark-accent);
   --ui-success: var(--k-dark-success);
   --ui-warning: var(--k-dark-warning);
   --ui-danger: var(--k-dark-danger);
-  --ui-you: var(--k-dark-you);
+  --ui-you: var(--k-dark-accent);
   --ui-them: var(--k-dark-them);
-  /* Secondary button on dark (site): white text, a 55% white border, white on hover. */
-  --ui-secondary: var(--k-dark-strong);
-  --ui-secondary-border: var(--k-on-dark-outline);
-  --ui-secondary-hover-bg: transparent;
-  --ui-secondary-hover-border: var(--k-dark-strong);
-  --ui-hover: var(--pi-navy-600);
+  --ui-primary: var(--k-dark-primary);
+  --ui-on-primary: var(--k-dark-on-primary);
+  --ui-primary-hover: var(--k-dark-primary-hover);
+  --ui-secondary: var(--k-dark-text);
+  --ui-secondary-bg: transparent;
+  --ui-secondary-border: var(--k-dark-outline);
+  --ui-secondary-hover-bg: var(--k-dark-raised);
+  --ui-secondary-hover-border: var(--k-dark-outline);
+  --ui-hover: var(--k-dark-raised);
   --ui-success-bg: var(--k-dark-success-bg);
   --ui-warning-bg: var(--k-dark-warning-bg);
   --ui-danger-bg: var(--k-dark-danger-bg);
-  --ui-pale: var(--pi-navy-600);
-  /* Transcript words that may still change: grey (6.5:1), shown in italics. */
-  --ui-provisional: var(--k-dark-provisional);
+  --ui-pale: var(--k-dark-raised);
+  /* Transcript words that may still change: grey, shown in italics. */
+  --ui-provisional: var(--k-dark-muted);
+  --ui-focus: var(--k-dark-accent);
+  --k-focus: 0 0 0 2px var(--ui-focus);
 }
 
-/* Focus (theme §5, UI U4): every interactive element shows the cyan ring when focused from the
-   keyboard. Components draw it themselves (box-shadow var(--k-focus)); this outline is the
-   fallback for anything that does not, for example plain links in text. */
+/* ---- The overlay's panel: solid by default; see-through in the desktop app (.k-glass) ---- */
+.k-overlay {
+  --ui-overlay-button: var(--k-overlay-button);
+  --ui-overlay-button-hover: var(--k-overlay-button-hover);
+  --ui-border: var(--k-overlay-border);
+  --ui-surface: transparent;
+  background: var(--k-dark-bg);
+}
+
+.k-overlay.k-glass {
+  /* The blur itself comes from the window's native material (apps/desktop/src/windows.ts): a page
+     cannot blur what is behind its window. backdrop-filter covers anything inside the page.
+     ADR-0033: the opacity slider sets --k-overlay-alpha (0.4-1, default 0.7) — only the panel's
+     background dims, never the text, which stays fully opaque. The window itself stays opaque, so
+     dimming the panel does not fade the text with it (the problem ADR-0031 avoided by pinning the
+     old window-opacity default to 1). A text shadow keeps the text readable as more of the
+     background shows through at lower settings. */
+  background: rgba(24, 24, 27, var(--k-overlay-alpha, 0.7));
+  -webkit-backdrop-filter: blur(var(--k-overlay-blur));
+  backdrop-filter: blur(var(--k-overlay-blur));
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  --ui-muted: var(--k-glass-muted);
+  --ui-provisional: var(--k-glass-muted);
+  --ui-link: var(--k-glass-accent);
+  --ui-accent: var(--k-glass-accent);
+  --ui-you: var(--k-glass-accent);
+  --ui-them: var(--k-glass-them);
+  --ui-success: var(--k-glass-success);
+  --ui-warning: var(--k-glass-warning);
+  --ui-danger: var(--k-glass-danger);
+  --ui-focus: var(--k-glass-accent);
+  --k-focus: 0 0 0 2px var(--ui-focus);
+}
+
+/* The overlay's menu floats over the answer, so it is always solid. */
+.k-overlay-menu {
+  --ui-muted: var(--k-dark-muted);
+  --ui-link: var(--k-dark-accent);
+  background: var(--k-dark-surface);
+}
+
+/* The page behind the overlay: dark from the first paint, so opening it never flashes white over
+   the meeting; clear once the panel is see-through, or the window's material would not show. */
+html:has(.k-overlay),
+html:has(.k-overlay) body {
+  background: var(--k-dark-bg);
+}
+
+html:has(.k-glass),
+html:has(.k-glass) body {
+  background: transparent;
+}
+
+/* Every control gets the control radius, so a one-off button in a feature cannot stay square.
+   Tailwind utilities come later, so rounded-full or rounded-card still win. Range and box inputs
+   keep the browser's own shape. */
+@layer base {
+  /* A browser draws kbd in a wide monospace font; Kite uses one font everywhere. */
+  kbd {
+    font-family: inherit;
+  }
+
+  button,
+  select,
+  textarea,
+  input:not([type='range'], [type='checkbox'], [type='radio']) {
+    border-radius: var(--k-radius-control);
+  }
+}
+
+/* Focus: every interactive element shows the accent ring when focused from the keyboard.
+   Components draw it themselves (box-shadow var(--k-focus)); this outline is the fallback for
+   anything that does not, for example plain links in text. */
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--pi-cyan);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
 
@@ -191,6 +270,7 @@
   --color-ui-bg: var(--ui-bg);
   --color-ui-band: var(--ui-band);
   --color-ui-surface: var(--ui-surface);
+  --color-ui-subtle: var(--ui-subtle);
   --color-ui-border: var(--ui-border);
   --color-ui-input: var(--ui-input);
   --color-ui-text: var(--ui-text);
@@ -204,6 +284,7 @@
   --color-ui-you: var(--ui-you);
   --color-ui-them: var(--ui-them);
   --color-ui-secondary: var(--ui-secondary);
+  --color-ui-secondary-bg: var(--ui-secondary-bg);
   --color-ui-secondary-border: var(--ui-secondary-border);
   --color-ui-secondary-hover-bg: var(--ui-secondary-hover-bg);
   --color-ui-secondary-hover-border: var(--ui-secondary-hover-border);
@@ -213,18 +294,24 @@
   --color-ui-danger-bg: var(--ui-danger-bg);
   --color-ui-pale: var(--ui-pale);
   --color-ui-provisional: var(--ui-provisional);
-  /* Fixed brand colours (the same on light and dark). */
-  --color-ui-primary: var(--pi-cyan);
-  --color-ui-primary-hover: var(--k-primary-hover);
-  --color-ui-on-primary: var(--pi-navy);
-  --color-ui-accent: var(--pi-cyan);
-  --color-ui-nav: var(--pi-navy-900);
-  --color-ui-dot-success: var(--pi-green);
-  --color-ui-dot-warning: var(--pi-amber);
-  --color-ui-dot-danger: var(--k-dark-danger);
-  --color-ui-overlay: var(--k-overlay);
+  --color-ui-primary: var(--ui-primary);
+  --color-ui-primary-hover: var(--ui-primary-hover);
+  --color-ui-on-primary: var(--ui-on-primary);
+  --color-ui-accent: var(--ui-accent);
+  --color-ui-overlay-button: var(--ui-overlay-button);
+  --color-ui-overlay-button-hover: var(--ui-overlay-button-hover);
+  --color-ui-end: var(--k-overlay-end);
+  --color-ui-on-end: var(--k-overlay-on-end);
+  --color-ui-dot-success: var(--k-success);
+  --color-ui-dot-warning: var(--k-warning);
+  --color-ui-dot-danger: var(--k-danger);
+  --color-ui-overlay: var(--k-backdrop);
   --color-ui-topbar: var(--k-topbar);
   --color-ui-logo-tile: var(--k-logo-tile);
+  --radius-control: var(--k-radius-control);
+  --radius-card: var(--k-radius-card);
+  --radius-modal: var(--k-radius-modal);
+  --shadow-card: var(--k-shadow-card);
+  --shadow-modal: var(--k-shadow-modal);
   --font-sans: var(--k-font);
-  --font-mono: var(--k-mono);
 }

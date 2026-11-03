@@ -3,7 +3,8 @@
  * Purpose: Kite's small line icons, drawn for Kite (no icon library and no other product's marks):
  *          simple strokes that take the current text colour.
  * Used by: src/features/live/CompactView.tsx, src/features/live/ConnectGuide.tsx,
- *          src/features/dashboard/*
+ *          src/features/dashboard/*, src/features/session-setup/*, src/features/library/UploadBox.tsx,
+ *          src/ui/Sidebar.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
  * Theme: docs/design/kite-ui-theme.md
@@ -326,6 +327,315 @@ export function PhoneIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M3.5 2.5h2l1 3-1.5 1a7 7 0 0 0 4.5 4.5l1-1.5 3 1v2a1 1 0 0 1-1 1C7.5 13.5 2.5 8.5 2.5 3.5a1 1 0 0 1 1-1z" />
+    </Icon>
+  );
+}
+
+/**
+ * A plus sign.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function PlusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 3v10M3 8h10" />
+    </Icon>
+  );
+}
+
+/**
+ * A page with a person on it.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function ResumeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 2h8v12H4z" />
+      <circle cx="8" cy="6" r="1.5" />
+      <path d="M6 11c0-1.2.9-2 2-2s2 .8 2 2" />
+    </Icon>
+  );
+}
+
+/**
+ * A page with lines of text.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function DocumentIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 2h5l3 3v9H4z" />
+      <path d="M9 2v3h3M6 8h4M6 11h4" />
+    </Icon>
+  );
+}
+
+/**
+ * A speech bubble.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function ChatIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2.5 3.5h11v8H7l-3 2v-2H2.5z" />
+    </Icon>
+  );
+}
+
+/**
+ * An open book.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function BookIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 4c-1.5-1-3.5-1-5.5-1v9.5c2 0 4 0 5.5 1 1.5-1 3.5-1 5.5-1V3C11.5 3 9.5 3 8 4zM8 4v9.5" />
+    </Icon>
+  );
+}
+
+/**
+ * A settings dial: a circle with sliders.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function GearIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="8" r="2" />
+      <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" />
+    </Icon>
+  );
+}
+
+/**
+ * A shield.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function ShieldIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 2l5 2v4c0 3-2.2 5-5 6-2.8-1-5-3-5-6V4z" />
+    </Icon>
+  );
+}
+
+/**
+ * A code bracket pair, for developer tools.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function ToolIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6 4L2.5 8 6 12M10 4l3.5 4-3.5 4" />
+    </Icon>
+  );
+}
+
+/**
+ * A window with a side panel, for the sidebar toggle.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function PanelIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2.5 3h11v10h-11zM6 3v10" />
+    </Icon>
+  );
+}
+
+/**
+ * An arrow going up into a tray.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function UploadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 10V3M5 5.5L8 3l3 2.5M3 10v3h10v-3" />
+    </Icon>
+  );
+}
+
+/**
+ * A globe, for the browser or a language.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function GlobeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M2.5 8h11M8 2.5c1.8 1.6 2.5 3.5 2.5 5.5S9.8 11.9 8 13.500C6.2 11.9 5.5 10 5.5 8S6.2 4.1 8 2.500z" />
+    </Icon>
+  );
+}
+
+/**
+ * A computer screen, for the desktop app.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function MonitorIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2 3h12v8H2zM6 14h4M8 11v3" />
+    </Icon>
+  );
+}
+
+/**
+ * A small star, for the answer model.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function SparkIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M8 2l1.5 4.500L14 8l-4.5 1.500L8 14l-1.5-4.500L2 8l4.5-1.500z" />
+    </Icon>
+  );
+}
+
+/**
+ * Two sliders, for answer preferences.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function SlidersIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2.5 5h6M11.5 5h2M2.5 11h2M7.5 11h6" />
+      <circle cx="10" cy="5" r="1.5" />
+      <circle cx="6" cy="11" r="1.5" />
+    </Icon>
+  );
+}
+
+/**
+ * A pen, for written instructions.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function PenIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 13l.8-3L10.5 3.300l2.2 2.200L6 12.200z" />
+    </Icon>
+  );
+}
+
+/**
+ * A label tag, for key terms.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function TagIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2.5 2.500h5l6 6-5 5-6-6z" />
+      <circle cx="5.5" cy="5.5" r=".8" />
+    </Icon>
+  );
+}
+
+/**
+ * A lightning bolt, for auto-answer.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function BoltIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M9 1.500L3.5 9H8l-1 5.500L12.5 7H8z" />
+    </Icon>
+  );
+}
+
+/**
+ * A page with a tick, for saving the transcript.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function SaveIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 2h8v12H4z" />
+      <path d="M6 8.500l1.5 1.500L10 7" />
+    </Icon>
+  );
+}
+
+/**
+ * A play triangle, for the tutorial.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function PlayIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 3l8 5-8 5z" />
+    </Icon>
+  );
+}
+
+/**
+ * A cross, for closing a banner.
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/Sidebar.tsx, src/features/session-setup/*, src/features/library/UploadBox.tsx
+ */
+export function CloseIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 4l8 8M12 4l-8 8" />
     </Icon>
   );
 }

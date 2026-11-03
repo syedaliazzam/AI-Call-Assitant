@@ -18,7 +18,7 @@ export interface EyebrowProps {
 }
 
 /**
- * A mono eyebrow label: IBM Plex Mono, 11 px, uppercase, 0.08em letter spacing, muted colour.
+ * A small label: Inter, 13 px, medium weight, muted colour.
  *
  * @param props See EyebrowProps.
  * @returns A <span>, shown as a block above titles by the caller when needed.
@@ -26,10 +26,6 @@ export interface EyebrowProps {
  */
 export function Eyebrow({ children, className = '' }: EyebrowProps) {
   return (
-    <span
-      className={`block font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-ui-muted ${className}`}
-    >
-      {children}
-    </span>
+    <span className={`block text-[13px] font-medium text-ui-muted ${className}`}>{children}</span>
   );
 }

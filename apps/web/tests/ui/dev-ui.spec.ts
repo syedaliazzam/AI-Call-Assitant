@@ -2,7 +2,7 @@
  * Screenshots of the UI gallery /dev/ui (UI theme stage U1) at 1440, 900 and 390 px (the 390 px
  * run as a touch phone), signed in as the admin test account (the gallery is admin-only; the
  * account stays disabled except during this run). Each width checks: the gallery rendered, with
- * Montserrat and IBM Plex Mono; no sideways scroll; touch targets ≥ 44 px on the phone; no
+ * Inter; no sideways scroll; touch targets ≥ 44 px on the phone; no
  * console errors. Saves the screenshots in KITE_SCREENSHOT_DIR. Runs against KITE_UI_URL
  * (default http://localhost:3000, `pnpm dev`). No Claude call: the gallery makes none.
  */
@@ -30,12 +30,10 @@ for (const size of WIDTHS) {
     await expect(page.getByRole('heading', { name: 'UI components' })).toBeVisible();
     await expect(page.getByRole('region', { name: 'Grey band' })).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
-    const fonts = await page.evaluate(() => ({
-      heading: getComputedStyle(document.querySelector('h1')!).fontFamily,
-      mono: getComputedStyle(document.querySelector('.font-mono')!).fontFamily,
-    }));
-    expect(fonts.heading).toMatch(/Montserrat/i);
-    expect(fonts.mono).toMatch(/IBM Plex Mono/i);
+    const heading = await page.evaluate(
+      () => getComputedStyle(document.querySelector('h1')!).fontFamily,
+    );
+    expect(heading).toMatch(/inter/i);
     await check(watched, size, 'dev-ui');
     await watched.context.close();
   });

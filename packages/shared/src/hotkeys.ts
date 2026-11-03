@@ -18,8 +18,10 @@
  * - `chat`: open the box for a typed question.
  * - `clear`: clear the current answer.
  * - `prev` / `next`: move through earlier answers.
+ * - `ask-kite`: open Ask Kite (ADR-0030).
  */
-export type HotkeyAction = 'answer' | 'screenshot' | 'chat' | 'clear' | 'prev' | 'next';
+export type HotkeyAction =
+  'answer' | 'screenshot' | 'chat' | 'clear' | 'prev' | 'next' | 'ask-kite';
 
 /** Every action the Kite page carries out (messages from the shell are checked against it). */
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
@@ -29,6 +31,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
   'clear',
   'prev',
   'next',
+  'ask-kite',
 ];
 
 /** A direction the overlay can move in. */
@@ -39,14 +42,24 @@ export type OverlayAction =
   'overlay-toggle' | `overlay-${OverlayDirection}` | `overlay-${OverlayDirection}-big`;
 
 /** A shortcut that works from any app while a call is on. */
-export type GlobalHotkey = 'answer' | 'screenshot' | OverlayAction;
+export type CallHotkey = 'answer' | 'screenshot' | OverlayAction;
+
+/** A shortcut that works from any app, or the shortcut held for as long as the app runs. */
+export type GlobalHotkey = CallHotkey | 'ask-kite';
+
+/**
+ * Opens Ask Kite from any app, for as long as the desktop app runs (ADR-0030). It is the one global
+ * shortcut held outside a call: unlike the others its keys edit nothing in other apps. On layouts
+ * where Ctrl+Alt types a letter (AltGr), it can clash, which Settings → Hotkeys reports.
+ */
+export const ASK_KITE_HOTKEY = 'CommandOrControl+Alt+K';
 
 /**
  * The global shortcuts, as Electron accelerators. "CommandOrControl" is ⌘ on macOS and Ctrl on
  * Windows and Linux. Registered only during a call (a global shortcut takes its keys from every
  * other app while it is registered).
  */
-export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<GlobalHotkey, string>> = {
+export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
   answer: 'CommandOrControl+Enter',
   screenshot: 'CommandOrControl+Shift+Enter',
   'overlay-toggle': 'CommandOrControl+Alt+H',
@@ -61,7 +74,7 @@ export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<GlobalHotkey, string>> = {
 };
 
 /** The global shortcuts, in the order the shell registers them. */
-export const GLOBAL_HOTKEYS = Object.keys(DEFAULT_GLOBAL_HOTKEYS) as readonly GlobalHotkey[];
+export const GLOBAL_HOTKEYS = Object.keys(DEFAULT_GLOBAL_HOTKEYS) as readonly CallHotkey[];
 
 /**
  * The shortcuts that work only while Kite has focus (the page's own key handling), never
@@ -136,6 +149,12 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
       'overlay-left-big',
       'overlay-right-big',
     ],
+  },
+  {
+    label: 'Open Ask Kite',
+    accelerator: ASK_KITE_HOTKEY,
+    scope: 'global',
+    actions: ['ask-kite'],
   },
   { label: 'Chat', accelerator: FOCUSED_HOTKEYS.chat, scope: 'focused', actions: [] },
   { label: 'Clear answer', accelerator: FOCUSED_HOTKEYS.clear, scope: 'focused', actions: [] },

@@ -247,16 +247,24 @@ test('shows the call details, notes, answers and transcript', async () => {
   await openSection('Transcript');
   const answers = page.getByRole('listitem', { name: 'Saved answer' });
   await expect(answers).toHaveCount(2);
-  await expect(answers.first()).toContainText('What would forty seats on Professional cost?');
-  await expect(answers.first().getByLabel('Rating')).toHaveText('👎 Not helpful');
-  await expect(answers.first().getByLabel('Your note')).toContainText('monthly and yearly totals');
-  await expect(answers.nth(1)).toContainText('Typed question');
-  await expect(answers.nth(1).getByLabel('Rating')).toHaveText('👍 Helpful');
+  // Newest first by default (ADR-0030).
+  await expect(answers.nth(1)).toContainText('What would forty seats on Professional cost?');
+  await expect(answers.nth(1).getByLabel('Rating')).toHaveText('👎 Not helpful');
+  await expect(answers.nth(1).getByLabel('Your note')).toContainText('monthly and yearly totals');
+  await expect(answers.first()).toContainText('Typed question');
+  await expect(answers.first().getByLabel('Rating')).toHaveText('👍 Helpful');
 
   const transcript = page.getByRole('listitem', { name: /said$/ });
   await expect(transcript).toHaveCount(6);
+  // "Oldest first" turns it round, and is remembered.
+  const newestFirst = await transcript.allTextContents();
+  await page.getByRole('checkbox', { name: 'Oldest first' }).check();
   await expect(transcript.first()).toContainText('You');
   await expect(transcript.nth(1)).toContainText('Them');
+  expect(await transcript.allTextContents()).toEqual([...newestFirst].reverse());
+  await expect(answers.first()).toContainText('What would forty seats on Professional cost?');
+  await page.getByRole('checkbox', { name: 'Oldest first' }).uncheck();
+  await expect(answers.first()).toContainText('Typed question');
   await shot('review-transcript');
   await openSection('AI notes');
   await shot('review-full');
@@ -340,7 +348,7 @@ test('Transcript: a chat with answers inline; thumbs and reports are stored here
   await page.evaluate((id) => window.kiteReviewHarness.show(id), fullId);
   await openSection('Transcript');
   const conversation = page.getByRole('list', { name: 'Conversation' });
-  // Time order: the 24 s question, then the answer given at 26 s, then the next line.
+  // Newest first (ADR-0030): the line after the answer given at 26 s comes above that answer.
   const order = await conversation
     .locator('> li')
     .evaluateAll((items) => items.map((item) => item.getAttribute('aria-label')));
@@ -353,7 +361,10 @@ test('Transcript: a chat with answers inline; thumbs and reports are stored here
   expect(Math.round(them!.x)).toBe(Math.round(area.x));
   expect(Math.round(you!.x + you!.width)).toBe(Math.round(area.x + area.width));
 
-  const card = page.getByRole('listitem', { name: 'Saved answer' }).first();
+  // The oldest answer, which has no rating of its own to begin with.
+  const card = page.getByRole('listitem', { name: 'Saved answer' }).last();
+  await card.getByRole('button', { name: 'Bad answer' }).click();
+  await card.getByRole('button', { name: 'Bad answer' }).click();
   await card.getByRole('button', { name: 'Good answer' }).click();
   await expect(card.getByLabel('Rating')).toHaveText('👍 Helpful');
   await card.getByRole('button', { name: 'Good answer' }).click();
@@ -525,7 +536,7 @@ test('Export my data, wipe, Import data restores it; importing again adds nothin
     documents: { text?: string }[];
   };
   expect(exported.format).toBe('kite-export');
-  expect(exported.version).toBe(4);
+  expect(exported.version).toBe(5);
   // Documents with their text, so a restore is complete.
   expect(exported.documents.length).toBeGreaterThan(0);
   expect(exported.documents.every((document) => typeof document.text === 'string')).toBe(true);

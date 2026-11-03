@@ -17,8 +17,8 @@ export default function LatencyPage() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 px-8 py-10">
       <header>
-        <h1 className="text-[28px] font-bold text-ui-heading">Answer latency</h1>
-        <p className="mt-1 text-sm text-ui-muted">
+        <h1 className="text-[24px] font-semibold text-ui-heading">Answer latency</h1>
+        <p className="mt-1 text-[13px] text-ui-muted">
           Sends a warm-up, then 20 answers one after another on an invented session and call,
           through the same client code as the live page. Each answer adds two lines to the call, so
           the conversation grows as in a real call.

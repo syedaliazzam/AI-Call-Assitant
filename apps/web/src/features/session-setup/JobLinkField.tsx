@@ -110,8 +110,8 @@ export function JobLinkField({ onImported }: JobLinkFieldProps) {
           role={result.good ? 'status' : 'alert'}
           className={
             result.good
-              ? 'border-l-[3px] border-ui-accent bg-ui-pale px-3 py-2 text-sm text-ui-text'
-              : 'border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text'
+              ? 'rounded-control border border-ui-accent bg-ui-pale px-3 py-2 text-[13px] text-ui-text'
+              : 'rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text'
           }
         >
           {result.text}

@@ -5,7 +5,8 @@
  *          'warm' (Day 3: writes a session's prompt cache; no text, just done with usage), and
  *          'answer' and 'chat' (Day 4: an answer built on the session, the conversation so far
  *          and the earlier answers, from server/prompt.ts), and 'screenshot' (Day 5: the same,
- *          with the screenshot in the uncached part).
+ *          with the screenshot in the uncached part), and 'kite' (ADR-0030: the Ask Kite page, from
+ *          server/kite-chat.ts). Answers open with a hidden line that becomes a 'meta' event.
  * Used by: src/core/answer/answerClient.ts (browser)
  * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts, src/server/claude.ts,
  *             src/server/sse.ts, src/server/prompts/hello.ts, src/server/prompt.ts
@@ -35,7 +36,9 @@ import {
   warmCache,
   type ReplyResult,
 } from '@/server/claude';
+import { withAnswerMeta, type ReplyItem } from '@/server/answer-meta';
 import { getClaudeEnv } from '@/server/env';
+import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
 import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts/hello';
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
@@ -170,10 +173,15 @@ async function respond(
   }
   const parsed = parseAnswerRequest(json);
   if (!parsed.ok) return jsonError(400, 'bad_request', parsed.message);
+  // The rollback switch is for admins (ADR-0032): the setting is shown only to them, and this is
+  // what enforces it. Anyone else gets the current rules whatever the request asked for.
+  const data: AnswerRequest =
+    session.user.role === 'admin' ? parsed.data : { ...parsed.data, styleVersion: undefined };
 
-  const { mode } = parsed.data;
+  const { mode } = data;
 
-  const tier: ModelTier = parsed.data.model ?? 'fast';
+  // Ask Kite has no call to keep up with, so it defaults to the smart model (ADR-0030).
+  const tier: ModelTier = data.model ?? (mode === 'kite' ? 'smart' : 'fast');
   let model: string;
   try {
     const env = getClaudeEnv();
@@ -195,16 +203,22 @@ async function respond(
   };
   // Sizes only (never text), so the logs show how much context each answer carried.
   const context = {
-    chunks: parsed.data.conversation?.length ?? 0,
-    tailLines: parsed.data.tail?.length ?? 0,
+    chunks: data.conversation?.length ?? 0,
+    tailLines: data.tail?.length ?? 0,
     // The screenshot's size only (Day 5), never its content.
-    imageChars: parsed.data.image?.length ?? 0,
+    imageChars: data.image?.length ?? 0,
     // How many approved lessons were sent (Day 5 Stage 7), never their text.
-    lessons: parsed.data.lessons?.length ?? 0,
+    lessons: data.lessons?.length ?? 0,
+    // Counts only for the Ask Kite page (ADR-0030), never their text.
+    historyTurns: data.history?.length ?? 0,
+    attachments: data.attachments?.length ?? 0,
+    images: data.images?.length ?? 0,
+    // Which answer rules were used: 'previous' only after an admin's rollback (ADR-0032).
+    styleVersion: data.styleVersion ?? 'current',
   };
-  let source: AsyncGenerator<string, ReplyResult, undefined>;
+  let source: AsyncGenerator<ReplyItem, ReplyResult, undefined>;
   if (mode === 'warm') {
-    source = warmReply(parsed.data, { model, tier, signal, onResponse: markOpen });
+    source = warmReply(data, { model, tier, signal, onResponse: markOpen });
   } else if (mode === 'hello') {
     source = streamReply({
       model,
@@ -217,18 +231,21 @@ async function respond(
     });
   } else {
     // 'answer', 'chat' and 'screenshot': the three cached parts, then the uncached tail
-    // (with the screenshot first for 'screenshot'; server/prompt.ts).
+    // (with the screenshot first for 'screenshot'; server/prompt.ts). 'kite': the Ask Kite page.
     // The SDK's single retry happens only before any text arrives (server/claude.ts).
-    const prompt = buildPrompt(parsed.data);
-    source = streamReply({
-      model,
-      tier,
-      system: prompt.system,
-      messages: prompt.messages,
-      maxTokens: ANSWER_MAX_TOKENS,
-      signal,
-      onStreamOpen: markOpen,
-    });
+    const prompt = mode === 'kite' ? buildKiteChatPrompt(data) : buildPrompt(data);
+    // The hidden first line becomes its own event, so the first delta is the first real word.
+    source = withAnswerMeta(
+      streamReply({
+        model,
+        tier,
+        system: prompt.system,
+        messages: prompt.messages,
+        maxTokens: mode === 'kite' ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS,
+        signal,
+        onStreamOpen: markOpen,
+      }),
+    );
   }
 
   const body = toEventStream(source, {

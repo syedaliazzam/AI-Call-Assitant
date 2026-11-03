@@ -41,8 +41,8 @@
   "mode": "answer",
   "question": "WHAT WOULD YOUR PRICE PER SEAT BE FOR FORTY USERS",
   "mustInclude": [
-    "says the price is not in the session details",
-    "names what to check (the price list) or offers to follow up",
+    "a natural reply the user can say, without saying or implying that the price is missing from the notes",
+    "offers to confirm the price and follow up; a \"Note:\" line may name what to check",
     "the headline (first line) is 15 words or fewer; any explanation is in the bullets"
   ],
   "mustNotInclude": ["any price or discount"]

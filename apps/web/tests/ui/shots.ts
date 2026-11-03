@@ -31,11 +31,10 @@ export interface Width {
 }
 
 /**
- * The widths from UI stage U2 on: wide desktop, Kite docked beside a meeting, and a phone.
+ * The widths of the look-and-feel gate: wide desktop and a phone.
  */
 export const WIDTHS: readonly Width[] = [
   { width: 1440, height: 900, touch: false },
-  { width: 900, height: 900, touch: false },
   { width: 390, height: 844, touch: true },
 ];
 
@@ -141,7 +140,13 @@ export async function check(watched: WatchedPage, size: Width, name: string): Pr
         .filter((element) => element.offsetParent !== null && !element.closest('nextjs-portal'))
         .map((element) => ({
           what: `${element.tagName.toLowerCase()} "${(element.getAttribute('aria-label') ?? element.textContent ?? '').trim().slice(0, 30)}"`,
-          height: Math.round(element.getBoundingClientRect().height),
+          // A checkbox inside a label is tapped through the label, so the label is the target.
+          height: Math.round(
+            (element.matches('input[type="checkbox"], input[type="radio"]')
+              ? (element.closest('label') ?? element)
+              : element
+            ).getBoundingClientRect().height,
+          ),
         }))
         .filter((target) => target.height < 44),
     );

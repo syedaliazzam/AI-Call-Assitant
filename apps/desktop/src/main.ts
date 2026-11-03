@@ -149,6 +149,23 @@ function start(): void {
       overlayAction: (action) => {
         if (compact) overlayShortcut(compact, action);
       },
+      // During a call the overlay opens its chat box, and the main window stays where it is;
+      // otherwise the main window opens the Ask Kite page.
+      showForAskKite: () => {
+        const overlay = compact?.window();
+        if (overlay) {
+          overlay.show();
+          overlay.focus();
+          return;
+        }
+        if (!mainWindow) {
+          mainWindow = createMainWindow(config);
+          return;
+        }
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      },
       allowedOrigin: config.allowedOrigin,
     });
     // Screenshot answers (Day 5): the display under the Kite window, scaled, in memory only.
@@ -197,7 +214,7 @@ function start(): void {
   });
 
   // Global shortcuts must be released before the app exits (Electron docs).
-  app.on('will-quit', () => hotkeys?.disable());
+  app.on('will-quit', () => hotkeys?.releaseAll());
 
   // Quit when the window is closed, except on macOS, where apps stay in the Dock.
   app.on('window-all-closed', () => {

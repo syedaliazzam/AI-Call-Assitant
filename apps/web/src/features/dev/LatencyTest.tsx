@@ -78,11 +78,11 @@ export function LatencyTest() {
         <Button onClick={() => void run()} disabled={running}>
           {running ? 'Running…' : 'Run 20 answers'}
         </Button>
-        <span role="status" className="text-sm text-ui-muted">
+        <span role="status" className="text-[13px] text-ui-muted">
           {running ? `Answer ${samples.length + 1} of 20…` : finished ? 'Done: 20 answers.' : ''}
         </span>
         {error && (
-          <span role="alert" className="text-sm text-ui-danger">
+          <span role="alert" className="text-[13px] text-ui-danger">
             {error}
           </span>
         )}
@@ -90,7 +90,7 @@ export function LatencyTest() {
 
       {summary && (
         <>
-          <table aria-label="Latency summary" className="w-full text-left text-sm">
+          <table aria-label="Latency summary" className="w-full text-left text-[13px]">
             <thead>
               <tr className="text-ui-muted">
                 <th className="py-1">Stage (ms)</th>
@@ -110,10 +110,10 @@ export function LatencyTest() {
               ))}
             </tbody>
           </table>
-          <p className="text-sm text-ui-muted">
+          <p className="text-[13px] text-ui-muted">
             Cache read on {summary.cacheHits} of {summary.count} answers.
           </p>
-          <table aria-label="Per answer" className="w-full text-left text-xs text-ui-muted">
+          <table aria-label="Per answer" className="w-full text-left text-[13px] text-ui-muted">
             <thead>
               <tr>
                 <th>#</th>
@@ -154,7 +154,7 @@ export function LatencyTest() {
             >
               {copied ? 'Copied' : 'Copy results'}
             </Button>
-            <span className="text-xs text-ui-muted">
+            <span className="text-[13px] text-ui-muted">
               Numbers only (no question or answer text).
             </span>
           </div>

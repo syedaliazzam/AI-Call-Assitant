@@ -3,7 +3,7 @@
  * Purpose: Command-line options shared by the evaluations (eval-answers.ts, eval-notes.ts), so
  *          a change re-runs only the scenario groups it touches (CLAUDE.md "Evaluation cost"):
  *          --only=<group or scenario id>, --runs=N, --show, --dry-run and --without-lessons; and
- *          the estimated
+ *          --style=previous (the ADR-0032 rollback prompt) and the estimated
  *          number of Claude requests, printed before anything is sent.
  *          Groups: 'answers' (the Day 4 scenarios 01–15, the baseline group), 'screenshots'
  *          (16–18, Day 5), 'lessons' (19–20, Day 5 Stage 7), 'preferences' (21–23, parity Phase 2), in eval-answers.ts; 'notes'
@@ -25,6 +25,8 @@ export interface EvalOptions {
   dryRun: boolean;
   /** Send no lessons (the lesson group's comparison run, Day 5 Stage 7). */
   withoutLessons: boolean;
+  /** The answer style version to evaluate (ADR-0032 rollback switch); null means v-current. */
+  style: 'previous' | null;
 }
 
 /**
@@ -33,7 +35,8 @@ export interface EvalOptions {
  * @param argv        process.argv.slice(2).
  * @param defaultRuns Runs when --runs is not given.
  * @returns The options.
- * @throws Error when --runs is not a whole number of at least 1.
+ * @throws Error when --runs is not a whole number of at least 1, or --style is not 'current' or
+ *         'previous'.
  * Called from: main() of eval-answers.ts and eval-notes.ts; tests
  */
 export function parseEvalArgs(argv: readonly string[], defaultRuns: number): EvalOptions {
@@ -46,12 +49,17 @@ export function parseEvalArgs(argv: readonly string[], defaultRuns: number): Eva
   const runsText = value('--runs');
   const runs = runsText === null ? defaultRuns : Number(runsText);
   if (!Number.isInteger(runs) || runs < 1) throw new Error('--runs must be a whole number ≥ 1');
+  const style = value('--style') ?? 'current';
+  if (style !== 'current' && style !== 'previous') {
+    throw new Error("--style must be 'current' or 'previous'");
+  }
   return {
     runs,
     only: value('--only'),
     show: argv.includes('--show'),
     dryRun: argv.includes('--dry-run'),
     withoutLessons: argv.includes('--without-lessons'),
+    style: style === 'previous' ? 'previous' : null,
   };
 }
 

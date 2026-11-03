@@ -168,7 +168,7 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
   if (review === null) {
     return (
       <div className="px-4 py-8 sm:px-8">
-        <h1 className="text-[28px] font-bold text-ui-heading">Session not found</h1>
+        <h1 className="text-[24px] font-semibold text-ui-heading">Session not found</h1>
         <p className="mt-2 max-w-prose text-[15px] text-ui-muted">
           This session is not on this computer. Sessions are stored on the device they were created
           on.
@@ -213,7 +213,7 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
               aria-current={section === item.value ? 'page' : undefined}
               onClick={() => setSection(item.value)}
               className={[
-                'border-l-[3px] px-3 py-2 text-left text-[14px] font-medium focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11',
+                'border px-3 py-2 text-left text-[15px] font-medium focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11',
                 section === item.value
                   ? 'border-ui-primary bg-ui-surface text-ui-heading'
                   : 'border-transparent text-ui-muted hover:bg-ui-surface',
@@ -227,26 +227,26 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
           {section === 'details' && (
             <section
               aria-label="Call details"
-              className="border border-ui-border bg-ui-surface p-5"
+              className="border border-ui-border rounded-card bg-ui-surface shadow-card p-5"
             >
-              <h2 className="text-[20px] text-ui-subheading">Call details</h2>
-              <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+              <h2 className="text-[18px] font-semibold text-ui-heading">Call details</h2>
+              <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-[13px] sm:grid-cols-2">
                 <div>
-                  <dt className="text-xs text-ui-muted">Type</dt>
+                  <dt className="text-[13px] text-ui-muted">Type</dt>
                   <dd>{SESSION_TYPE_LABELS[session.type]}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-ui-muted">Created</dt>
+                  <dt className="text-[13px] text-ui-muted">Created</dt>
                   <dd>{DATE_FORMAT.format(session.createdAt)}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-ui-muted">Last call started</dt>
+                  <dt className="text-[13px] text-ui-muted">Last call started</dt>
                   <dd>
                     {notes ? DATE_FORMAT.format(notes.callStartedAt) : 'Not known (no notes yet)'}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-ui-muted">Answers</dt>
+                  <dt className="text-[13px] text-ui-muted">Answers</dt>
                   <dd>
                     {labelOf(MODEL_OPTIONS, session.preferences.model)};{' '}
                     {labelOf(FORMAT_OPTIONS, style.format)},{' '}
@@ -255,7 +255,7 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-ui-muted">Documents</dt>
+                  <dt className="text-[13px] text-ui-muted">Documents</dt>
                   <dd>
                     {review.documents.length === 0
                       ? 'None'
@@ -263,12 +263,12 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-ui-muted">Save transcript</dt>
+                  <dt className="text-[13px] text-ui-muted">Save transcript</dt>
                   <dd>{session.saveTranscript ? 'On' : 'Off'}</dd>
                 </div>
               </dl>
               {session.description && (
-                <p className="mt-3 text-sm text-ui-text">{session.description}</p>
+                <p className="mt-3 text-[13px] text-ui-text">{session.description}</p>
               )}
             </section>
           )}
@@ -321,7 +321,7 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
           Settings.
         </p>
         {deleteFailed && (
-          <p role="alert" className="mt-2 text-sm text-ui-danger">
+          <p role="alert" className="mt-2 text-[13px] text-ui-danger">
             The session could not be deleted. Try again.
           </p>
         )}

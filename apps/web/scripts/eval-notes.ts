@@ -37,6 +37,10 @@ import { sessionBlock } from '@/server/prompt';
 import { requireKey } from './lib/require-key';
 import { estimateLine, parseEvalArgs, selectScenarios } from './lib/eval-options';
 import { saveEvalResults, type ScenarioResult, type ScenarioRunResult } from './lib/eval-results';
+import { createSpendMeter } from './lib/spend';
+
+/** Adds up this run's spend (scripts/lib/spend.ts). */
+const METER = createSpendMeter();
 
 /** tests/eval/notes. */
 const SCENARIO_DIR = path.join(
@@ -177,7 +181,7 @@ async function grade(
     'The notes to grade:',
     JSON.stringify(notes, null, 1),
   ].join('\n');
-  const { value } = await jsonReply({
+  const { value, usage } = await jsonReply({
     model,
     tier: 'smart',
     system: GRADER_SYSTEM,
@@ -185,6 +189,7 @@ async function grade(
     schema: GRADE_SCHEMA,
     maxTokens: 400,
   });
+  METER.add(model, usage);
   return value as NotesGrade;
 }
 
@@ -218,7 +223,8 @@ async function main(): Promise<void> {
     const totals = { faithful: 0, coverage: 0, unclear: 0, lessons: 0, format: 0 };
     const runs: ScenarioRunResult[] = [];
     for (let run = 1; run <= options.runs; run += 1) {
-      const { notes } = await generateCallNotes(scenario.request, env.modelSmart);
+      const { notes, usage } = await generateCallNotes(scenario.request, env.modelSmart);
+      METER.add(env.modelSmart, usage);
       const graded = await grade(scenario, notes, env.modelSmart);
       totals.faithful += graded.faithful;
       totals.coverage += graded.coverage;
@@ -271,6 +277,7 @@ async function main(): Promise<void> {
     scenarios: results,
   });
   console.log(`Scores and grader reasons saved to ${saved}`);
+  console.log(METER.finish(`notes ${options.only ?? 'all'}`));
 }
 
 main().catch((error: unknown) => {

@@ -61,7 +61,10 @@ export function LoginForm() {
         required
       />
       {error && (
-        <p role="alert" className="bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger">
+        <p
+          role="alert"
+          className="rounded-control bg-ui-danger-bg px-3 py-2 text-[13px] text-ui-danger"
+        >
           {error}
         </p>
       )}

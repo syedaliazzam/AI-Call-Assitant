@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: parity Phase 4 (Prepare tools).
+**Kept up to date:** each later stage adds its human checks here. Last updated: responses and speech — honesty, answer shape, admin rollback and number key terms (ADR-0032, §6b).
 
 ---
 
@@ -84,13 +84,27 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 3.4 | Rate an answer, copy it, and report it with a short reason. | The thumb stays lit; pasting gives the answer without the private note; the flag shows it is reported. |
 | 3.5 | Use the ← and → buttons after two answers; **Clear** on the card and on the transcript bar. | History moves; the answer clears; only the words on screen clear, new ones still appear. |
 | 3.6 | Press both expand buttons, then collapse. | One takes the space for the transcript, the other hides the transcript bar; collapse leaves only the controls. Only the card scrolls, never the whole window. |
-| 3.7 | Menu: move the opacity slider, then move the pointer away and back. | The window gets more see-through and stays readable; with fading on, it is solid under the pointer. |
+| 3.7 | Menu: move the opacity slider to its minimum (40%) over a light, a dark and a busy meeting background, then move the pointer away and back. | Only the panel background gets more see-through; the text stays fully opaque with its shadow and readable (ADR-0033). With fading on, the panel is solid under the pointer. Default is 70%. |
 | 3.8 | Resize to the smallest size. | Nothing is cut off; button labels lose their shortcuts. |
 | 3.9 | Press **End** in the overlay. | The call ends, the overlay closes, the main window comes back with the notes. |
 | 3.10 | Menu: check **Hidden from screen share**. In Chrome start a Google Meet, join it from your phone, then on the laptop **Present now → Entire screen**. | — |
 | 3.11 | Look at the shared screen on the phone. | The overlay is **not** visible (black or empty there); the rest of the screen is. |
 | 3.12 | Turn it off in the menu; look at the phone. | The overlay **is** visible. Turn it back on. |
 | 3.13 | In Chrome (browser Kite), start a call and press **Overlay**. | A picture-in-picture window with the same three bars; its menu says opacity works in the desktop app. |
+
+## 3b. Browser split call view (live-ui-split)
+
+In Chrome, on a laptop (1280 px or wider), start a call sharing a real tab (for example a YouTube video).
+
+| # | Do | Expect |
+|---|---|---|
+| 3b.1 | Look at the call screen. | Left: the shared tab plays as a live preview with a translucent control strip on top (Stop with a mic dot, Clear, Language, Change tab, Minimize) and the transcript below it, newest line first. Right: the call timer, a ⋮ menu, Exit, the answers, the message box and the big Answer and Screenshot buttons. |
+| 3b.2 | Drag the divider between the halves, then reload. | The halves resize; the position is remembered after the reload. |
+| 3b.3 | Narrow the window below 1280 px (or open on a phone). | The two halves stack, the preview above the answers; no divider. |
+| 3b.4 | Press **Change tab** and pick a different tab. | The preview and the transcript follow the new tab; the call, answers and transcript so far are kept (the call does not end). |
+| 3b.5 | Change **Language** to Spanish, then press **Answer**. | The next answer is in Spanish; the transcript stays English. |
+| 3b.6 | Press **Clear** on the control strip. | The transcript on screen clears; new lines still appear. The answers are untouched. |
+| 3b.7 | Press **Minimize**, then the side arrow. | Minimize opens the picture-in-picture overlay; the side arrow collapses the answers panel, leaving the preview the whole width. |
 
 ## 4. Screenshot answers (Day 5)
 
@@ -137,13 +151,41 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 5c.5 | Refuse the microphone (browser setting), then start again. | Kite says so, and typed answers work. |
 | 5c.6 | **Question Bank**: write one for an Interview session. Open answers. Leave and come back. | Questions by type; answers in your format, with nothing made up (gaps in square brackets). It shows again at once, with no waiting. |
 
-## 6. New speech engine (Day 6, only if adopted)
+## 5d. Ask Kite and answer quality (ADR-0030)
 
 | # | Do | Expect |
 |---|---|---|
-| 6.1 | In the desktop app, start a call for the first time after the update. | The model downloads once with progress, then the call starts. |
-| 6.2 | Read 10 sentences from the names list (`apps/web/tests/fixtures/stt/names-sentences.txt`). | Grey words are replaced with the final text within about a second; at least 8 of the 10 names come out right. |
-| 6.3 | Settings → turn **Accurate transcription (desktop)** off, then on. | Off: the old engine only. On: the final replacement again. |
+| 5d.1 | During a call, with lines arriving, look at the live view and at the overlay's expanded transcript. | The newest line is at the top. There is no "Jump to latest" button. |
+| 5d.2 | Scroll down in the transcript while lines keep arriving. | Your place stays put. Scrolling back to the top shows the newest. |
+| 5d.3 | Open the finished call's Transcript. Tick **Oldest first**, reload the page, then untick it. | Newest first by default; the tick survives the reload. |
+| 5d.4 | In a call, press **Chat** and type "what is 17% of 2,340?" on Auto. | A private answer with the working, marked "Just for you". It appears nowhere as a "You" line. |
+| 5d.5 | Type "what should I say to their last question?" on Auto. | A speakable first-person answer. |
+| 5d.6 | Set the switch to **Ask Kite**, close and reopen the session. | Still on Ask Kite. Set it back to Auto. |
+| 5d.7 | Have them ask a coding question ("write a function that reverses a list"), then press Answer. | Approach, steps, complexity, edge cases, a code block with **Copy code**, and a "Say" line; in Python by default. Readable in the overlay at its smallest size. |
+| 5d.8 | Settings → Answers: change the coding language to JavaScript, then repeat 5d.7 in a new call. | The code is JavaScript. Set it back. |
+| 5d.9 | On that answer card, change the type from the small muted label to "System design". | A new answer in the design shape. |
+| 5d.10 | Ask something your CV does not cover. Then switch Settings → "When your CV has no example" to **Full example story** and ask again in a new call. | Never "not in your notes" or similar. First: "I would…" with specific steps. Then: a generic story tagged **Example**. |
+| 5d.11 | Ask for a price your documents do not have. | No figure; a natural offer to confirm. If any figure appears, it is underlined with **Check before saying**. |
+| 5d.12 | Ask the same question twice in one call. | The same figures and nearly the same words. |
+| 5d.13 | Open **Ask Kite** in the sidebar. Ask something, attach a resume, then attach a past session; paste a screenshot with Ctrl+V. | Answers use them. The chat is still there after a reload. The screenshot shows "not kept". |
+| 5d.14 | With another app in front and no call on, press **Ctrl+Alt+K** in the desktop app. | Kite comes forward on the Ask Kite page. |
+| 5d.15 | Press **Ctrl+Alt+K** during a call. | The call keeps running; the overlay's chat box opens set to Ask Kite. |
+| 5d.16 | Settings → Hotkeys. If another app holds Ctrl+Alt+K, it says so. | "Open Ask Kite" is listed as "Any app". |
+
+## 6. New speech engine (Day 6) — not adopted, skip
+
+**The speech engine trial (ADR-0027) adopted nothing:** no candidate met the on-battery speed bar (Parakeet missed p50 and p95; Whisper by 10–65×). There is no second decode pass and no "Accurate transcription" setting, so **this section does not apply.** The desktop keeps the current streaming engine. The number-key-term check that did ship is §6b.5.
+
+## 6b. Responses and speech (Part 1 — responses-and-speech)
+
+| # | Do | Expect |
+|---|---|---|
+| 6b.1 | **Honesty:** Interview session with a short CV (for example "packaged three Python services in Docker"). Ask about a detail the CV does not give ("what was your rollback strategy and how long did deploys take?"), press Answer. | The CV project is kept as written; extra depth is given as the approach ("I'd typically…"), with no invented tool, number, team size or result. |
+| 6b.2 | **Answer length:** a Balanced (medium-length) session; ask a broad question. | The answer is a full reply of about 20–40 seconds to say (one line + 2–4 bullets), not a bare line and not a ramble. |
+| 6b.3 | **Behavioural:** ask "tell me about a time you led a difficult migration". | A short STAR answer built from the closest real CV project, with no result invented if the CV states none. |
+| 6b.4 | **Rollback (admin):** Settings → Answers → set **Answer style version** to **v-previous**, reopen a session and ask a question. Then set it back to v-current. | The setting shows only for an admin. On v-previous the answers follow the earlier style; on v-current the new style. A non-admin never sees the switch. |
+| 6b.5 | **Number key terms:** add key terms "BM25", "H100" and "2026"; in a call say a sentence containing each. | The transcript shows them spelled as typed ("BM25", "H100", "2026"), not as "BM", "H" or spelled-out words. |
+| 6b.6 | **Stuck-transcript guard:** if a call ever shows audio meters moving but the transcript stays frozen for about 8 s. | Kite shows "Transcription restarted" and the transcript resumes without the call ending. (Hard to force on purpose; note it if it happens.) |
 
 ## 7. Error screens (Day 6 Stage 4)
 

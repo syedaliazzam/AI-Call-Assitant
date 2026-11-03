@@ -7,7 +7,7 @@
  * any other sender, and logs only the taken accelerators; overlay shortcuts go to the shell,
  * text-editing keys are never global, and check() finds conflicts without keeping anything.
  */
-import { DEFAULT_GLOBAL_HOTKEYS, FOCUSED_HOTKEYS } from '@kite/shared';
+import { ASK_KITE_HOTKEY, DEFAULT_GLOBAL_HOTKEYS, FOCUSED_HOTKEYS } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { HOTKEY_CHANNEL, SET_HOTKEYS_CHANNEL } from '../../src/channels';
 import { createHotkeys, installHotkeys, isKiteSender } from '../../src/hotkeys';
@@ -132,12 +132,13 @@ describe('installHotkeys', () => {
     expect(sendToPage).toHaveBeenCalledWith(HOTKEY_CHANNEL, 'answer');
 
     expect(() => setHotkeys(eventFrom('https://example.com/'), false)).toThrow(/Kite page/);
-    expect(callbacks.size).toBe(Object.keys(DEFAULT_GLOBAL_HOTKEYS).length - 1);
+    // Every call shortcut but the taken one, and Ask Kite, which is held for as long as the app runs.
+    expect(callbacks.size).toBe(Object.keys(DEFAULT_GLOBAL_HOTKEYS).length);
     expect(await setHotkeys(eventFrom(`${ORIGIN}/`), false)).toEqual([]);
-    expect(callbacks.size).toBe(0);
+    expect([...callbacks.keys()]).toEqual([ASK_KITE_HOTKEY]);
     // Anything but true turns them off.
     await setHotkeys(eventFrom(`${ORIGIN}/`), 'yes');
-    expect(callbacks.size).toBe(0);
+    expect([...callbacks.keys()]).toEqual([ASK_KITE_HOTKEY]);
   });
 });
 
@@ -182,8 +183,54 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     const { globalShortcut } = fakeGlobalShortcut();
     const hotkeys = createHotkeys(globalShortcut, vi.fn());
     const statuses = hotkeys.enable();
-    expect(hotkeys.check()).toBe(statuses);
+    expect(hotkeys.check()).toEqual(statuses);
     expect(hotkeys.enabled()).toBe(true);
     expect(globalShortcut.unregister).not.toHaveBeenCalled();
+  });
+});
+
+describe('the Ask Kite shortcut (ADR-0030)', () => {
+  it('is held from the start, outside any call, and reaches the page in view', () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const { globalShortcut, press } = fakeGlobalShortcut();
+    const sendToPage = vi.fn();
+    const showForAskKite = vi.fn();
+    const hotkeys = installHotkeys({
+      globalShortcut,
+      ipcMain: { handle: vi.fn() },
+      sendToPage,
+      showForAskKite,
+      allowedOrigin: ORIGIN,
+    });
+    expect(hotkeys.enabled()).toBe(false);
+    press(ASK_KITE_HOTKEY);
+    expect(showForAskKite).toHaveBeenCalledOnce();
+    expect(sendToPage).toHaveBeenCalledWith(HOTKEY_CHANNEL, 'ask-kite');
+  });
+
+  it('survives the end of a call, and goes when the app quits', () => {
+    const { globalShortcut, callbacks } = fakeGlobalShortcut();
+    const hotkeys = createHotkeys(globalShortcut, vi.fn());
+    hotkeys.enableAskKite();
+    hotkeys.enable();
+    hotkeys.disable();
+    expect([...callbacks.keys()]).toEqual([ASK_KITE_HOTKEY]);
+    hotkeys.releaseAll();
+    expect(callbacks.size).toBe(0);
+  });
+
+  it('reports a clash in the conflict check, without giving up the key', () => {
+    const { globalShortcut, callbacks } = fakeGlobalShortcut([ASK_KITE_HOTKEY]);
+    const hotkeys = createHotkeys(globalShortcut, vi.fn());
+    expect(hotkeys.enableAskKite().registered).toBe(false);
+    const found = hotkeys.check().find((status) => status.action === 'ask-kite');
+    expect(found?.registered).toBe(false);
+
+    const free = fakeGlobalShortcut();
+    const other = createHotkeys(free.globalShortcut, vi.fn());
+    other.enableAskKite();
+    expect(other.check().find((status) => status.action === 'ask-kite')?.registered).toBe(true);
+    expect(free.callbacks.has(ASK_KITE_HOTKEY)).toBe(true);
+    expect(callbacks.has(ASK_KITE_HOTKEY)).toBe(false);
   });
 });

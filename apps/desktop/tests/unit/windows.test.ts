@@ -179,6 +179,31 @@ describe('compactUrl and restoreBounds', () => {
     });
   });
 
+  it('glass: acrylic on Windows, vibrancy on macOS, solid elsewhere', () => {
+    const win = compactWindowOptions(
+      { x: 1, y: 2, width: 380, height: 320 },
+      '/p.js',
+      '1',
+      'win32',
+    );
+    expect(win).toMatchObject({ backgroundMaterial: 'acrylic', backgroundColor: '#00000000' });
+    const mac = compactWindowOptions(
+      { x: 1, y: 2, width: 380, height: 320 },
+      '/p.js',
+      '1',
+      'darwin',
+    );
+    expect(mac).toMatchObject({ transparent: true, vibrancy: 'hud' });
+    const other = compactWindowOptions(
+      { x: 1, y: 2, width: 380, height: 320 },
+      '/p.js',
+      '1',
+      'linux',
+    );
+    expect(other.backgroundColor).toBe('#18181b');
+    expect(other.backgroundMaterial).toBeUndefined();
+  });
+
   it('options: frameless, on top, resizable, in the taskbar, hidden until shown, secure', () => {
     const options = compactWindowOptions({ x: 1, y: 2, width: 380, height: 320 }, '/p.js', '1');
     expect(options).toMatchObject({

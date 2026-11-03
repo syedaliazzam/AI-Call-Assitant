@@ -136,7 +136,7 @@ export function DataTransfer() {
 
   return (
     <div className="mb-6">
-      <p className="mb-4 text-sm text-ui-muted">
+      <p className="mb-4 text-[13px] text-ui-muted">
         Export saves your sessions, documents, saved transcripts, answers, notes and lessons in one
         file (never audio). Import adds a file&rsquo;s data here; anything already on this computer
         stays as it is.
@@ -173,21 +173,21 @@ export function DataTransfer() {
           </>
         }
       >
-        <p className="text-sm text-ui-text">{EXPORT_WARNING}</p>
+        <p className="text-[13px] text-ui-text">{EXPORT_WARNING}</p>
       </Dialog>
       {outcome?.kind === 'exported' && (
-        <p role="status" className="mt-3 text-sm text-ui-success">
+        <p role="status" className="mt-3 text-[13px] text-ui-success">
           Exported {outcome.sessions} sessions. Keep the file somewhere safe: it holds your call
           transcripts and answers.
         </p>
       )}
       {outcome?.kind === 'imported' && (
-        <p role="status" className="mt-3 text-sm text-ui-success">
+        <p role="status" className="mt-3 text-[13px] text-ui-success">
           {importSentence(outcome.summary)}
         </p>
       )}
       {outcome?.kind === 'error' && (
-        <p role="alert" className="mt-3 text-sm text-ui-danger">
+        <p role="alert" className="mt-3 text-[13px] text-ui-danger">
           {outcome.message}
         </p>
       )}

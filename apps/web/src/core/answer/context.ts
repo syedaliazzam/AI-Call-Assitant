@@ -29,6 +29,8 @@ import {
   MAX_TAIL_LINES,
   estimateItemTokens,
   type AnswerRequest,
+  type AnswerTarget,
+  type AnswerType,
   type CallLine,
   type ConversationChunk,
   type ConversationItem,
@@ -37,6 +39,8 @@ import type { Session, StoredDocument } from '../storage/types';
 import { selectQuestion, type SelectedQuestion } from '../transcript/question';
 import { splitStable } from '../transcript/stability';
 import type { Utterance } from '../transcript/transcript';
+import { getAnswerStyleVersion } from '../storage/answerPrefs';
+import { findSimilarAnswer } from './similar';
 import { toSessionContext } from './warm';
 
 /** An answer given earlier in this call, as the live page keeps it in memory. */
@@ -51,6 +55,8 @@ export interface CallAnswer {
   text: string;
   /** When the user asked for it (Unix ms). */
   askedAt: number;
+  /** 'kite' when it was a private answer for the user, not words said on the call. */
+  target?: AnswerTarget;
 }
 
 /** The conversation sent so far in this call (start a call with emptyLog()). */
@@ -90,6 +96,12 @@ export interface AnswerContextInput {
    * when the session opened; the same list as the warm-ups, so the rules block stays cached.
    */
   lessons?: readonly string[];
+  /** The chat switch's choice, or absent for Auto (ADR-0030). */
+  target?: AnswerTarget;
+  /** The question type chosen from the answer card's menu (a re-answer, ADR-0030). */
+  answerType?: AnswerType;
+  /** A re-answer's question: used instead of picking one from the transcript. */
+  question?: string;
 }
 
 /** What buildAnswerRequest() returns. */
@@ -196,6 +208,7 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
         question: answer.question.trim().slice(0, MAX_LINE_CHARS),
         text: answer.text.trim().slice(0, MAX_ANSWER_CHARS),
         at: secondsSince(answer.askedAt, input.callStartedAt),
+        ...(answer.target === 'kite' ? { target: 'kite' as const } : {}),
       },
     });
   }
@@ -215,9 +228,13 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
       at: secondsSince(line.tStart, input.callStartedAt),
     }));
 
-  const selected = input.mode === 'answer' ? selectQuestion(input.lines) : null;
+  const selected = input.mode === 'answer' && !input.question ? selectQuestion(input.lines) : null;
   const question =
-    input.mode === 'answer' ? (selected?.text ?? '') : (input.typedQuestion ?? '').trim();
+    input.question?.trim() ||
+    (input.mode === 'answer' ? (selected?.text ?? '') : (input.typedQuestion ?? '').trim());
+  // No model call: the words of the questions are compared here. A re-answer asks for a different
+  // shape on purpose, so it does not reuse the earlier wording.
+  const similar = question && !input.answerType ? findSimilarAnswer(question, input.answers) : null;
 
   const request: AnswerRequest = {
     mode: input.mode,
@@ -228,6 +245,19 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
     ...(question ? { question: question.slice(0, MAX_LINE_CHARS) } : {}),
     ...(input.mode === 'screenshot' && input.image ? { image: input.image } : {}),
     ...(input.lessons?.length ? { lessons: [...input.lessons] } : {}),
+    ...(input.target ? { target: input.target } : {}),
+    ...(input.answerType ? { answerType: input.answerType } : {}),
+    // Absent on the default, so a normal request keeps its cached bytes (ADR-0032).
+    ...(getAnswerStyleVersion() === 'previous' ? { styleVersion: 'previous' as const } : {}),
+    ...(similar
+      ? {
+          similar: {
+            question: similar.question.trim().slice(0, MAX_LINE_CHARS),
+            text: similar.text.trim().slice(0, MAX_ANSWER_CHARS),
+            at: secondsSince(similar.askedAt, input.callStartedAt),
+          },
+        }
+      : {}),
   };
   return { request, log: { chunks, sentLines, sentAnswers }, selected };
 }

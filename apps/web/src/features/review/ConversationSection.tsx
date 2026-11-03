@@ -2,7 +2,9 @@
  * File: apps/web/src/features/review/ConversationSection.tsx
  * Purpose: The Transcript section of the session window: the call as a chat (Them on the left, You
  *          on the right) with Kite's answers inline as cards, each with its time, thumbs and
- *          "Report this answer". Also Download (TXT and PDF) and Clear transcript (asks first).
+ *          "Report this answer", newest first, with an "Oldest first" toggle that is remembered
+ *          (ADR-0030). Also Download (TXT and PDF, always in time order) and Clear transcript
+ *          (asks first).
  * Used by: src/features/review/SessionReview.tsx
  * Depends on: src/core/review/conversation.ts, src/core/answer/format.ts (splitAnswer),
  *             src/core/storage/answers.ts (rating, report), src/core/storage/utterances.ts (clear),
@@ -13,8 +15,10 @@
  */
 'use client';
 
-import { useState } from 'react';
-import { splitAnswer } from '@/core/answer/format';
+import { useState, useSyncExternalStore } from 'react';
+import { AnswerBody } from '@/features/answers/AnswerBody';
+import { AnswerTags } from '@/features/answers/AnswerTags';
+import { getReviewOldestFirst, setReviewOldestFirst } from '@/core/storage/answerPrefs';
 import {
   conversationItems,
   transcriptFileName,
@@ -24,7 +28,7 @@ import {
 import { rateAnswer, reportAnswer } from '@/core/storage/answers';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
 import { clearTranscript } from '@/core/storage/utterances';
-import { sentenceCase } from '@/core/transcript/display';
+import { sentenceCase, type DisplayTerm } from '@/core/transcript/display';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { FlagIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
@@ -39,6 +43,14 @@ const MODE_LABELS: Record<StoredAnswer['mode'], string> = {
   screenshot: 'Screenshot',
 };
 
+/**
+ * Nothing to subscribe to: only this page changes the setting.
+ *
+ * @returns An unsubscribe function that does nothing.
+ * Called from: ConversationSection (useSyncExternalStore)
+ */
+const subscribeNever = () => () => undefined;
+
 /** Words for a rating. */
 const RATING_LABELS = { up: '👍 Helpful', down: '👎 Not helpful' } as const;
 
@@ -51,7 +63,7 @@ export interface ConversationSectionProps {
   /** The saved answers, oldest first. */
   answers: readonly StoredAnswer[];
   /** The session's own spellings to restore in each line (displayTerms()). */
-  terms: readonly string[];
+  terms: readonly DisplayTerm[];
   /** Reads the data again after a change. */
   onChanged: () => void;
 }
@@ -78,23 +90,26 @@ function download(name: string, type: string, data: BlobPart) {
 /**
  * One of Kite's answers in the conversation.
  *
- * @param props.answer    The answer.
+ * @param props.answer      The answer.
+ * @param props.sessionType The session's type.
  * @param props.onChanged Reads the data again after a change.
  * @returns The card.
  * Rendered by: ConversationSection
  */
 function AnswerCard({
   answer,
+  sessionType,
   onChanged,
 }: {
   /** The answer. */
   answer: StoredAnswer;
+  /** The session's type, for the source tag's words. */
+  sessionType: string;
   /** Reads the data again after a change. */
   onChanged: () => void;
 }) {
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState('');
-  const parts = splitAnswer(answer.text);
 
   /**
    * Sets or removes a rating.
@@ -114,27 +129,22 @@ function AnswerCard({
   return (
     <li
       aria-label="Saved answer"
-      className="my-1 border border-l-[3px] border-ui-border border-l-ui-accent bg-ui-surface p-3 text-sm"
+      className="my-1 border border-ui-border rounded-card bg-ui-surface shadow-card p-3 text-[13px]"
     >
-      <p className="text-xs text-ui-muted">
+      <p className="text-[13px] text-ui-muted">
         Kite · {MODE_LABELS[answer.mode]} · Question:{' '}
         <span className="text-ui-text">{answer.question || 'the latest from Them'}</span>
       </p>
-      <p className="mt-1 font-semibold text-ui-heading">{parts.headline}</p>
-      {parts.bullets.length > 0 && (
-        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-ui-text">
-          {parts.bullets.map((bullet, i) => (
-            <li key={i}>{bullet}</li>
-          ))}
-        </ul>
-      )}
-      {parts.tip && <p className="mt-1 text-ui-text">{parts.tip}</p>}
-      {parts.note && (
-        <p aria-label="Private note" className="mt-1 text-xs italic text-ui-muted">
-          Just for you: {parts.note}
-        </p>
-      )}
-      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ui-muted">
+      <AnswerTags meta={answer.meta} sessionType={sessionType} />
+      <div className="mt-1">
+        <AnswerBody
+          text={answer.text}
+          size="review"
+          claims={answer.claims ?? []}
+          {...(answer.meta?.target ? { target: answer.meta.target } : {})}
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ui-muted">
         <span>{CLOCK.format(answer.createdAt)}</span>
         <button
           type="button"
@@ -175,7 +185,7 @@ function AnswerCard({
             onChange={(event) => setReason(event.target.value)}
             maxLength={2_000}
             placeholder="What was wrong? (optional)"
-            className="h-9 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-[14px] text-ui-text pointer-coarse:min-h-11"
+            className="h-9 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-[15px] text-ui-text pointer-coarse:min-h-11"
           />
           <Button size="sm" variant="secondary" onClick={sendReport}>
             Report
@@ -203,6 +213,11 @@ export function ConversationSection({
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const items = conversationItems(lines, answers);
+  // Newest first unless the user chose otherwise (remembered on this device).
+  const savedOldestFirst = useSyncExternalStore(subscribeNever, getReviewOldestFirst, () => false);
+  const [oldestChoice, setOldestChoice] = useState<boolean | null>(null);
+  const oldestFirst = oldestChoice ?? savedOldestFirst;
+  const shown = oldestFirst ? items : [...items].reverse();
 
   /** Downloads the conversation as text. */
   function downloadText() {
@@ -233,11 +248,25 @@ export function ConversationSection({
   }
 
   return (
-    <section aria-label="Transcript" className="border border-ui-border bg-ui-surface p-5">
+    <section
+      aria-label="Transcript"
+      className="border border-ui-border rounded-card bg-ui-surface shadow-card p-5"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-[20px] text-ui-subheading">Transcript</h2>
+        <h2 className="text-[18px] font-semibold text-ui-heading">Transcript</h2>
         {items.length > 0 && (
           <div className="flex flex-wrap gap-2">
+            <label className="flex items-center gap-1.5 text-[13px] text-ui-text pointer-coarse:min-h-11">
+              <input
+                type="checkbox"
+                checked={oldestFirst}
+                onChange={(event) => {
+                  setOldestChoice(event.target.checked);
+                  setReviewOldestFirst(event.target.checked);
+                }}
+              />
+              Oldest first
+            </label>
             <Button variant="secondary" size="sm" onClick={downloadText}>
               Download TXT
             </Button>
@@ -253,12 +282,12 @@ export function ConversationSection({
         )}
       </div>
       {notice && (
-        <p role="status" className="mt-2 text-sm text-ui-muted">
+        <p role="status" className="mt-2 text-[13px] text-ui-muted">
           {notice}
         </p>
       )}
       {lines.length === 0 && (
-        <p className="mt-2 text-sm text-ui-muted">
+        <p className="mt-2 text-[13px] text-ui-muted">
           {session.saveTranscript
             ? 'No transcript lines are saved for this session.'
             : 'The transcript was not saved for this session ("Save transcript" was off). Only the answers and the notes were kept.'}
@@ -266,9 +295,14 @@ export function ConversationSection({
       )}
       {items.length > 0 && (
         <ol aria-label="Conversation" className="mt-3 flex flex-col gap-1.5">
-          {items.map((item) =>
+          {shown.map((item) =>
             item.kind === 'answer' ? (
-              <AnswerCard key={item.answer.id} answer={item.answer} onChanged={onChanged} />
+              <AnswerCard
+                key={item.answer.id}
+                answer={item.answer}
+                sessionType={session.type}
+                onChanged={onChanged}
+              />
             ) : (
               <li
                 key={item.line.id}
@@ -276,11 +310,11 @@ export function ConversationSection({
                 className={`flex max-w-[85%] flex-col ${item.line.speaker === 'you' ? 'items-end self-end' : 'items-start self-start'}`}
               >
                 <span
-                  className={`px-3 py-1.5 text-[15px] text-ui-text ${item.line.speaker === 'you' ? 'bg-ui-pale' : 'bg-ui-band'}`}
+                  className={`rounded-control px-3 py-1.5 text-[15px] text-ui-text ${item.line.speaker === 'you' ? 'bg-ui-pale' : 'rounded-control bg-ui-band'}`}
                 >
                   {sentenceCase(item.line.text, terms)}
                 </span>
-                <span className="mt-0.5 font-mono text-[11px] text-ui-muted">
+                <span className="mt-0.5 text-[13px] text-ui-muted">
                   {item.line.speaker === 'you' ? 'You' : 'Them'} · {CLOCK.format(item.line.tStart)}
                 </span>
               </li>

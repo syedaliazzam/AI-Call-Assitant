@@ -7,7 +7,7 @@
  * Used by: app/(app)/sessions/new/page.tsx, app/(app)/sessions/[id]/edit/page.tsx
  * Depends on: src/core/storage (sessions, documents, settings, persist),
  *             src/core/documents/limits.ts, ./DetailsStep.tsx, ./PreferencesStep.tsx,
- *             ./draft.ts, src/ui/Button.tsx
+ *             ./draft.ts, ./WizardGuide.tsx, src/ui/Button.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F2, F3), §5 (Create session),
  *               §7.4; day-03-sessions.md Stage 3
  *
@@ -44,6 +44,7 @@ import {
   type SessionDraft,
 } from './draft';
 import { PreferencesStep } from './PreferencesStep';
+import { WizardGuide } from './WizardGuide';
 
 /** Props for SessionWizard. */
 export interface SessionWizardProps {
@@ -194,7 +195,7 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
   if (load !== 'ready' || !draft) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
-        <h1 className="text-[28px] font-bold text-ui-heading">{title}</h1>
+        <h1 className="text-[24px] font-semibold text-ui-heading">{title}</h1>
         <p className="mt-4 text-[15px] text-ui-muted">
           {load === 'loading' && 'Loading…'}
           {load === 'not-found' &&
@@ -220,58 +221,67 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
           <Eyebrow>
             Step {step} of 2 · {step === 1 ? 'Details' : 'Preferences'}
           </Eyebrow>
-          <h1 className="text-[28px] font-bold text-ui-heading">{title}</h1>
-          {/* Two square segments: the current and done steps in cyan. */}
+          <h1 className="text-[24px] font-semibold text-ui-heading">{title}</h1>
+          {/* Two segments: the current and done steps are filled in. */}
           <div aria-hidden="true" className="mt-4 grid max-w-xs grid-cols-2 gap-1">
-            <span className="h-1 bg-ui-primary" />
-            <span className={`h-1 ${step === 2 ? 'bg-ui-primary' : 'bg-ui-border'}`} />
+            <span className="h-1 rounded-full bg-ui-primary" />
+            <span className={`h-1 rounded-full ${step === 2 ? 'bg-ui-primary' : 'bg-ui-border'}`} />
           </div>
         </div>
       </header>
 
       <div className="flex-1 bg-ui-band px-4 py-8 sm:px-8">
-        <div className="mx-auto max-w-3xl">
-          <div className="border border-ui-border bg-ui-surface p-6">
-            {step === 1 ? (
-              <DetailsStep
-                draft={draft}
-                errors={errors}
-                onChange={change}
-                onPick={pick}
-                onRemoveDocument={removeDocument}
-                onBusy={(delta) => setReadingCount((n) => n + delta)}
-              />
-            ) : (
-              <PreferencesStep draft={draft} onChange={change} />
+        <div
+          className={
+            step === 1 && mode === 'create'
+              ? 'mx-auto grid max-w-5xl items-start gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]'
+              : 'mx-auto max-w-3xl'
+          }
+        >
+          {step === 1 && mode === 'create' && <WizardGuide onPreset={change} />}
+          <div className="min-w-0">
+            <div className="rounded-card border border-ui-border bg-ui-surface p-6 shadow-card">
+              {step === 1 ? (
+                <DetailsStep
+                  draft={draft}
+                  errors={errors}
+                  onChange={change}
+                  onPick={pick}
+                  onRemoveDocument={removeDocument}
+                  onBusy={(delta) => setReadingCount((n) => n + delta)}
+                />
+              ) : (
+                <PreferencesStep draft={draft} onChange={change} />
+              )}
+            </div>
+
+            {saveError && (
+              <p role="alert" className="mt-4 text-[13px] text-ui-danger">
+                {saveError}
+              </p>
             )}
+
+            <footer className="mt-6 flex items-center justify-between">
+              {step === 1 ? (
+                <LinkButton href="/" variant="ghost">
+                  Cancel
+                </LinkButton>
+              ) : (
+                <Button variant="ghost" onClick={() => setStep(1)} disabled={saving}>
+                  Back
+                </Button>
+              )}
+              {step === 1 ? (
+                <Button onClick={next} disabled={readingCount > 0}>
+                  Next
+                </Button>
+              ) : (
+                <Button onClick={() => void save()} disabled={saving}>
+                  {saving ? 'Saving…' : mode === 'create' ? 'Create session' : 'Save changes'}
+                </Button>
+              )}
+            </footer>
           </div>
-
-          {saveError && (
-            <p role="alert" className="mt-4 text-sm text-ui-danger">
-              {saveError}
-            </p>
-          )}
-
-          <footer className="mt-6 flex items-center justify-between">
-            {step === 1 ? (
-              <LinkButton href="/" variant="ghost">
-                Cancel
-              </LinkButton>
-            ) : (
-              <Button variant="ghost" onClick={() => setStep(1)} disabled={saving}>
-                Back
-              </Button>
-            )}
-            {step === 1 ? (
-              <Button onClick={next} disabled={readingCount > 0}>
-                Next
-              </Button>
-            ) : (
-              <Button onClick={() => void save()} disabled={saving}>
-                {saving ? 'Saving…' : mode === 'create' ? 'Create session' : 'Save changes'}
-              </Button>
-            )}
-          </footer>
         </div>
       </div>
     </div>

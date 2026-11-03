@@ -48,7 +48,7 @@ export interface TopBarProps {
  */
 function Hint({ children }: { children: string }) {
   return (
-    <span aria-hidden="true" className="font-mono text-[11px] font-medium opacity-75">
+    <span aria-hidden="true" className="text-[13px] font-medium opacity-75">
       {children}
     </span>
   );

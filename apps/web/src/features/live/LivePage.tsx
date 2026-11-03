@@ -38,6 +38,7 @@ import { notesFailureText, type UnavailableReason } from '@/core/answer/unavaila
 import { generateNotes, type NotesLine } from '@/core/notes/generate';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
+import { TranscriptWatchdog } from '@/core/stt/watchdog';
 import { displayTerms } from '@/core/transcript/display';
 import { isSound, themSilent } from '@/core/audio/silence';
 import { ThemSilentNotice } from './ThemSilentNotice';
@@ -50,6 +51,8 @@ import { Button } from '@/ui/Button';
 import { AudioMeter } from './AudioMeter';
 import { LiveAnswers } from './LiveAnswers';
 import { LiveCallLayout, type LiveCallStatus } from './LiveCallLayout';
+import { BrowserCallLayout } from './BrowserCallLayout';
+import { openOverlay } from './openOverlay';
 import {
   ConnectPanel,
   type CallInfo,
@@ -68,6 +71,9 @@ const ACTIVE_REFRESH_MS = 60_000;
 
 /** How long the echo note stays after the latest hidden echo line, in ms. */
 const ECHO_NOTE_MS = 60_000;
+
+/** How long the "Transcription restarted" note stays after a watchdog restart, in ms. */
+const RESTART_NOTE_MS = 8_000;
 
 /** Length of the sound check, in seconds. */
 const SOUND_CHECK_SECONDS = 5;
@@ -208,6 +214,12 @@ export function LivePage({
   }, [connection]);
   const [channelErrors, setChannelErrors] = useState<Partial<Record<Speaker, string>>>({});
   const [themSource, setThemSource] = useState<OtherSideSource | null>(null);
+  // The browser split view (live-ui-split): the shared-tab stream for the preview, the answer
+  // language the control strip can change, and a transcript "clear" time (lines before it are
+  // hidden, later ones still show).
+  const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
+  const [language, setLanguage] = useState(session.preferences.language);
+  const [transcriptClearedAt, setTranscriptClearedAt] = useState(0);
   const [soundCheck, setSoundCheck] = useState<SoundCheck | null>(null);
   const [health, setHealth] = useState<SttHealthStatus>('ok');
   // Unix ms, refreshed once a second while connected (for the echo note; render must stay pure).
@@ -230,6 +242,11 @@ export function LivePage({
   const captureRef = useRef<CallCapture | null>(null);
   const saverRef = useRef<TranscriptSaver | null>(null);
   const monitor = useRef(new SttHealthMonitor());
+  // Day 6 Stage 4: watches for a stuck engine (audio in, no transcript out) and a flag so a
+  // restart cannot overlap with itself. restartedAt drives the "Transcription restarted" note.
+  const watchdog = useRef(new TranscriptWatchdog());
+  const restartingRef = useRef(false);
+  const [restartedAt, setRestartedAt] = useState<number | null>(null);
   /** The running sound check: when it ends and what each channel said so far. */
   const checkRef = useRef<{ endsAt: number; heard: Record<Speaker, string> } | null>(null);
 
@@ -241,6 +258,35 @@ export function LivePage({
     setSoundCheck((current) => (current ? { ...current, heard: check.heard } : current));
   }, []);
 
+  // Builds the speech engine with the standard callbacks. The initial effect and a watchdog
+  // restart share this, so a restarted engine behaves exactly like the first one. isActive() lets
+  // a replaced or torn-down engine's late messages be ignored (dev double-mount; restart).
+  const makeEngine = useCallback(
+    (isActive: () => boolean): SttEngine =>
+      createSttEngine({
+        hotwords,
+        onProgress: (progress) => {
+          if (isActive()) setModel((current) => ({ ...current, progress }));
+        },
+        onPartial: ({ channel, text, tStart }) => {
+          if (!isActive()) return;
+          transcript.addPartial(channel, text, tStart);
+          noteHeard(channel, text);
+          watchdog.current.noteProgress(performance.now());
+        },
+        onFinal: ({ channel, text, tStart, tEnd }) => {
+          if (!isActive()) return;
+          transcript.addFinal({ speaker: channel, text, tStart, tEnd });
+          noteHeard(channel, text);
+          watchdog.current.noteProgress(performance.now());
+        },
+        onStats: (stats) => {
+          if (isActive()) monitor.current.push(stats, performance.now());
+        },
+      }),
+    [hotwords, transcript, noteHeard],
+  );
+
   // The engine: created when the page opens (so the model downloads while the user reads the
   // instructions), re-created on "Try again", stopped when the page closes.
   useEffect(() => {
@@ -249,25 +295,7 @@ export function LivePage({
     // development, and a stopped engine's late messages (or its 'aborted' rejection) must not
     // reach the screen.
     let active = true;
-    const engine = createSttEngine({
-      hotwords,
-      onProgress: (progress) => {
-        if (active) setModel((current) => ({ ...current, progress }));
-      },
-      onPartial: ({ channel, text, tStart }) => {
-        if (!active) return;
-        transcript.addPartial(channel, text, tStart);
-        noteHeard(channel, text);
-      },
-      onFinal: ({ channel, text, tStart, tEnd }) => {
-        if (!active) return;
-        transcript.addFinal({ speaker: channel, text, tStart, tEnd });
-        noteHeard(channel, text);
-      },
-      onStats: (stats) => {
-        if (active) monitor.current.push(stats, performance.now());
-      },
-    });
+    const engine = makeEngine(() => active);
     engineRef.current = engine;
     engine.ready.then(
       () => {
@@ -286,7 +314,42 @@ export function LivePage({
       engine.stop();
       engineRef.current = null;
     };
-  }, [modelAttempt, transcript, noteHeard, hotwords]);
+  }, [modelAttempt, makeEngine]);
+
+  // Day 6 Stage 4: restart a stuck engine (audio arriving, no transcript) without ending the call.
+  // A fresh engine is created, the call's existing streams are moved to it (capture.reattach), and
+  // the old engine is stopped. The transcript, the session and the call all stay. The log carries
+  // timings only, never transcript text, to help find the Connect hang.
+  const restartEngine = useCallback(async () => {
+    const capture = captureRef.current;
+    if (!capture || restartingRef.current) return;
+    restartingRef.current = true;
+    console.info('stt: transcription restarted', {
+      sessionId: session.id,
+      msSinceProgress: watchdog.current.msSinceProgress(performance.now()),
+    });
+    const old = engineRef.current;
+    // The guard reads `next` only when a callback fires (after this line), so const is safe.
+    const next: SttEngine = makeEngine(() => engineRef.current === next);
+    engineRef.current = next;
+    setRestartedAt(Date.now());
+    try {
+      await next.ready;
+      await capture.reattach(next);
+      monitor.current.reset();
+      watchdog.current.start(performance.now());
+      old?.stop();
+    } catch (error) {
+      // The replacement could not load or attach: fall back to a channel-lost message, as a lost
+      // capture does. The old engine is already gone, so the call cannot continue silently.
+      if (engineRef.current === next) {
+        setChannelErrors((current) => ({ ...current, them: modelErrorMessage(error) }));
+      }
+      old?.stop();
+    } finally {
+      restartingRef.current = false;
+    }
+  }, [makeEngine, session.id]);
 
   // While connected: keep the session's lastActiveAt fresh, so the dashboard shows it as live
   // (and as ended once a crash or a closed window stops the refreshes for 12 hours).
@@ -304,6 +367,8 @@ export function LivePage({
     const timer = setInterval(() => {
       setHealth(monitor.current.status(performance.now()));
       setNow(Date.now());
+      // Day 6 Stage 4: if speech has been arriving with no transcript for 8 s, restart the engine.
+      if (watchdog.current.isStuck(performance.now())) void restartEngine();
       const check = checkRef.current;
       if (check) {
         const left = Math.max(0, Math.ceil((check.endsAt - performance.now()) / 1000));
@@ -312,7 +377,7 @@ export function LivePage({
       }
     }, 1_000);
     return () => clearInterval(timer);
-  }, [connection]);
+  }, [connection, restartEngine]);
 
   /** Retries loading the speech model. */
   const retryModel = () => {
@@ -339,6 +404,10 @@ export function LivePage({
         onLevels: (next) => {
           setLevels(next);
           if (isSound(next.them)) themSoundAt.current = Date.now();
+          // Speech on either channel is audio the engine should be turning into text; the
+          // watchdog uses it to notice a stuck engine (no transcript progress).
+          if (isSound(next.you) || isSound(next.them))
+            watchdog.current.noteSound(performance.now());
         },
         onEvent: (event) =>
           setChannelErrors((current) => ({
@@ -348,7 +417,11 @@ export function LivePage({
       });
       captureRef.current = capture;
       setThemSource(capture.themSource);
+      // The shared-tab video for the browser split-view preview (no video on desktop system audio).
+      setPreviewStream(capture.otherSideStream());
       themSoundAt.current = Date.now();
+      // Start the stuck-engine watchdog for this connection (Day 6 Stage 4).
+      watchdog.current.start(performance.now());
       setConnection('connected');
       setCallStartedAt((current) => current ?? Date.now());
       // Warm Claude's prompt cache again: the warm-up from when the page opened may have
@@ -391,6 +464,8 @@ export function LivePage({
     if (ending) return;
     setEnding(true);
     checkRef.current = null;
+    watchdog.current.stop();
+    setRestartedAt(null);
     const saver = saverRef.current;
     saverRef.current = null;
     const capture = captureRef.current;
@@ -419,6 +494,8 @@ export function LivePage({
     setChannelErrors({});
     setView('connect');
     setCallStartedAt(null);
+    setPreviewStream(null);
+    setTranscriptClearedAt(0);
     setEnding(false);
     updateSession(session.id, { status: 'ended' }).catch(() => undefined);
     // The call's notes (Day 5): written after the call by the server, saved here. Not awaited:
@@ -450,8 +527,38 @@ export function LivePage({
     }
   };
 
+  /**
+   * Re-picks the shared tab without ending the call (the control strip's Change tab). Runs straight
+   * from the click so the browser allows getDisplayMedia. A cancelled picker keeps the current share.
+   */
+  const changeTab = async () => {
+    const capture = captureRef.current;
+    if (!capture) return;
+    try {
+      setThemSource(await capture.changeOtherSide());
+      setPreviewStream(capture.otherSideStream());
+      themSoundAt.current = Date.now();
+    } catch {
+      // The picker was cancelled or denied: the current share stays.
+    }
+  };
+
+  /**
+   * Changes the answer language for the rest of the call (the control strip's picker).
+   *
+   * @param code A language code from ANSWER_LANGUAGES.
+   * @returns Nothing.
+   */
+  const changeLanguage = (code: string) => {
+    setLanguage(code);
+    const preferences = { ...session.preferences, language: code };
+    updateSession(session.id, { preferences }).catch(() => undefined);
+  };
+
   const echoStats = transcript.echoStats();
   const echoNoteVisible = echoStats.lastAt !== null && now - echoStats.lastAt < ECHO_NOTE_MS;
+  // Shown for a few seconds after the watchdog restarted a stuck engine (Day 6 Stage 4).
+  const restartNoteVisible = restartedAt !== null && now - restartedAt < RESTART_NOTE_MS;
 
   const call: CallInfo = {
     title: `${SESSION_TYPE_LABELS[session.type]} call`,
@@ -479,7 +586,7 @@ export function LivePage({
           onContinue={() => setView('live')}
         />
         {notesStatus !== 'idle' && (
-          <p role="status" className="mx-auto mt-4 max-w-3xl px-8 text-sm text-ui-muted">
+          <p role="status" className="mx-auto mt-4 max-w-3xl px-8 text-[13px] text-ui-muted">
             {notesStatus === 'writing'
               ? 'Writing the call notes…'
               : notesStatus === 'saved'
@@ -503,90 +610,137 @@ export function LivePage({
         : { tone: 'neutral', label: 'Not connected' };
 
   const themQuietShown = connection === 'connected' && themQuiet && !channelErrors.them;
+  // The answer language the control strip can change takes effect from the next answer.
+  const liveSession = { ...session, preferences: { ...session.preferences, language } };
+  // The transcript hides lines from before a "Clear" on the control strip; new lines still show.
+  const shownLines =
+    transcriptClearedAt > 0 ? lines.filter((line) => line.tStart >= transcriptClearedAt) : lines;
+  const meters = (['you', 'them'] as const).map((speaker) => (
+    <AudioMeter
+      key={speaker}
+      speaker={speaker}
+      level={levels[speaker]}
+      inactive={connection !== 'connected' || channelErrors[speaker] !== undefined}
+      compact
+    />
+  ));
+  const transcriptNode = <TranscriptStrip lines={shownLines} health={health} terms={terms} />;
+  const answersNode =
+    callStartedAt !== null ? (
+      <LiveAnswers
+        session={liveSession}
+        documents={documents}
+        lessons={lessons}
+        transcript={transcript}
+        callStartedAt={callStartedAt}
+        audio={{
+          you: connection === 'connected' && !channelErrors.you,
+          them: connection === 'connected' && !channelErrors.them,
+        }}
+        ending={ending}
+        onEnd={() => void end()}
+      />
+    ) : (
+      <div className="flex justify-end">
+        <Button variant="danger" onClick={() => void end()} disabled={ending}>
+          {ending ? 'Ending…' : 'End'}
+        </Button>
+      </div>
+    );
+  const notices =
+    lostChannel || saveFailed || echoNoteVisible || themQuietShown || restartNoteVisible ? (
+      <>
+        {restartNoteVisible && (
+          <p
+            role="status"
+            className="rounded-control border border-ui-border bg-ui-surface px-3 py-2 text-[13px] text-ui-muted"
+          >
+            Transcription restarted.
+          </p>
+        )}
+        {(['you', 'them'] as const).map(
+          (speaker) =>
+            channelErrors[speaker] && (
+              <div
+                key={speaker}
+                role="alert"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-ui-danger bg-ui-danger-bg px-3 py-2 text-[13px] text-ui-text"
+              >
+                <span>{channelErrors[speaker]}</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => void connect()}
+                  disabled={ending}
+                >
+                  Reconnect
+                </Button>
+              </div>
+            ),
+        )}
+        {themQuietShown && <ThemSilentNotice />}
+        {saveFailed && (
+          <p
+            role="alert"
+            className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
+          >
+            Some transcript lines could not be saved on this computer (is the disk full?). The call
+            continues; Kite keeps trying.
+          </p>
+        )}
+        {/* Echo lines (the other side's voice from the speakers, picked up by the
+                microphone) are hidden from the transcript (core/transcript/echo.ts); say so while
+                it is happening. */}
+        {echoNoteVisible && (
+          <p role="status" className="bg-ui-surface px-3 py-2 text-[13px] text-ui-muted">
+            Hiding echo from your speakers ({echoStats.count}{' '}
+            {echoStats.count === 1 ? 'line' : 'lines'} so far). Headphones work best.
+          </p>
+        )}
+      </>
+    ) : null;
+
+  // In a browser the live view is a split screen: the shared-tab preview and transcript on the
+  // left, the answers on the right (live-ui-split). On the desktop the other side is system audio
+  // with no tab to show, so it keeps the two-column LiveCallLayout.
+  if (platform === 'browser') {
+    return (
+      <BrowserCallLayout
+        title={call.title}
+        name={call.company}
+        status={status}
+        meters={meters}
+        callStartedAt={callStartedAt}
+        notices={notices}
+        preview={{
+          stream: previewStream,
+          themLabel: themSource ? THEM_SOURCE_LABEL[themSource] : null,
+          micOn: connection === 'connected' && !channelErrors.you,
+          language,
+          onLanguage: changeLanguage,
+          onStop: () => void end(),
+          onClear: () => setTranscriptClearedAt(Date.now()),
+          onMinimize: () => void openOverlay(session.id).catch(() => undefined),
+          onChangeTab: () => void changeTab(),
+        }}
+        transcript={transcriptNode}
+        answers={answersNode}
+        onExit={() => void end()}
+        onOverlay={() => void openOverlay(session.id).catch(() => undefined)}
+      />
+    );
+  }
+
   return (
     <LiveCallLayout
       title={call.title}
       name={call.company}
       themSource={themSource ? THEM_SOURCE_LABEL[themSource] : null}
       status={status}
-      meters={(['you', 'them'] as const).map((speaker) => (
-        <AudioMeter
-          key={speaker}
-          speaker={speaker}
-          level={levels[speaker]}
-          inactive={connection !== 'connected' || channelErrors[speaker] !== undefined}
-          compact
-        />
-      ))}
-      notices={
-        lostChannel || saveFailed || echoNoteVisible || themQuietShown ? (
-          <>
-            {(['you', 'them'] as const).map(
-              (speaker) =>
-                channelErrors[speaker] && (
-                  <div
-                    key={speaker}
-                    role="alert"
-                    className="flex flex-wrap items-center justify-between gap-3 border-l-[3px] border-ui-danger bg-ui-danger-bg px-3 py-2 text-sm text-ui-text"
-                  >
-                    <span>{channelErrors[speaker]}</span>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void connect()}
-                      disabled={ending}
-                    >
-                      Reconnect
-                    </Button>
-                  </div>
-                ),
-            )}
-            {themQuietShown && <ThemSilentNotice />}
-            {saveFailed && (
-              <p
-                role="alert"
-                className="border-l-[3px] border-ui-warning bg-ui-warning-bg px-3 py-2 text-sm text-ui-text"
-              >
-                Some transcript lines could not be saved on this computer (is the disk full?). The
-                call continues; Kite keeps trying.
-              </p>
-            )}
-            {/* Echo lines (the other side's voice from the speakers, picked up by the
-                microphone) are hidden from the transcript (core/transcript/echo.ts); say so while
-                it is happening. */}
-            {echoNoteVisible && (
-              <p role="status" className="bg-ui-surface px-3 py-2 text-sm text-ui-muted">
-                Hiding echo from your speakers ({echoStats.count}{' '}
-                {echoStats.count === 1 ? 'line' : 'lines'} so far). Headphones work best.
-              </p>
-            )}
-          </>
-        ) : null
-      }
-      transcript={<TranscriptStrip lines={lines} health={health} terms={terms} />}
-      answers={
-        callStartedAt !== null ? (
-          <LiveAnswers
-            session={session}
-            documents={documents}
-            lessons={lessons}
-            transcript={transcript}
-            callStartedAt={callStartedAt}
-            audio={{
-              you: connection === 'connected' && !channelErrors.you,
-              them: connection === 'connected' && !channelErrors.them,
-            }}
-            ending={ending}
-            onEnd={() => void end()}
-          />
-        ) : (
-          <div className="flex justify-end">
-            <Button variant="danger" onClick={() => void end()} disabled={ending}>
-              {ending ? 'Ending…' : 'End'}
-            </Button>
-          </div>
-        )
-      }
+      meters={meters}
+      notices={notices}
+      transcript={transcriptNode}
+      answers={answersNode}
     />
   );
 }

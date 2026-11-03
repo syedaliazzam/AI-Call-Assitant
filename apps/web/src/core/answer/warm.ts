@@ -15,7 +15,12 @@
  *
  * Logs only the session id, timings and token counts; never session or document text.
  */
-import type { ConversationChunk, SessionContext } from '@kite/shared';
+import { DEFAULT_CODING_LANGUAGE, type ConversationChunk, type SessionContext } from '@kite/shared';
+import {
+  getAnswerStyleVersion,
+  getCodingLanguage,
+  getMissingInfoMode,
+} from '@/core/storage/answerPrefs';
 import { answerLanguageName, type Session, type StoredDocument } from '@/core/storage/types';
 import { streamAnswer, type AnswerDone } from './answerClient';
 
@@ -36,6 +41,9 @@ export function toSessionContext(
     a.addedAt !== b.addedAt ? a.addedAt - b.addedAt : a.id < b.id ? -1 : 1,
   );
   const language = answerLanguageName(session.preferences.language);
+  // Settings → Answers (ADR-0030). The defaults send nothing, so a session on them keeps its bytes.
+  const codingLanguage = getCodingLanguage();
+  const missingInfo = getMissingInfoMode();
   return {
     type: session.type,
     company: session.company,
@@ -53,6 +61,8 @@ export function toSessionContext(
       tone: session.preferences.style.tone,
     },
     ...(language ? { language } : {}),
+    ...(codingLanguage !== DEFAULT_CODING_LANGUAGE ? { codingLanguage } : {}),
+    ...(missingInfo === 'story' ? { missingInfo } : {}),
     documents: sorted.map((document) => ({ name: document.name, text: document.text })),
   };
 }
@@ -99,6 +109,8 @@ export function warmSession(
           session: toSessionContext(session, documents),
           ...(options.conversation?.length ? { conversation: options.conversation } : {}),
           ...(options.lessons?.length ? { lessons: [...options.lessons] } : {}),
+          // The same rules version the answers send, so the warm-up writes what they read (ADR-0032).
+          ...(getAnswerStyleVersion() === 'previous' ? { styleVersion: 'previous' as const } : {}),
         },
         {
           // A warm-up produces no text.

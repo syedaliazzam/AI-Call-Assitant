@@ -3,7 +3,7 @@
  * real components on invented data and a mocked /api/answer (no Claude call, no microphone, no
  * speech model) it covers:
  * - the live view: transcript left and answers right in a wide view, stacked (answers first)
- *   in a narrower one; You in cyan, Them in blue-300, words still being heard grey italic;
+ *   in a narrower one; You in the accent, Them in light grey, words still being heard grey italic;
  * - no layout shift while an answer streams: between the headline arriving and the bullets
  *   arriving, the action row, the answer panel's size and its footer (Cancel) do not move;
  * - the "Claude unavailable" message in the answer panel;
@@ -150,8 +150,8 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
       // The brand fonts for screenshots only (the app self-hosts them with next/font; CI does
       // not need them, and makes no request to Google).
       const fonts = SHOT_DIR
-        ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Montserrat:wght@400;600;700&display=block">' +
-          "<style>:root{--font-montserrat:'Montserrat';--font-plex-mono:'IBM Plex Mono'}</style>"
+        ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=block">' +
+          "<style>:root{--font-inter:'Inter'}</style>"
         : '';
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(
@@ -279,9 +279,9 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
     };
   });
   expect(colours).toEqual({
-    you: 'rgb(9, 182, 249)',
-    them: 'rgb(107, 168, 255)',
-    provisional: 'rgb(143, 164, 196)',
+    you: 'rgb(96, 165, 250)',
+    them: 'rgb(212, 212, 216)',
+    provisional: 'rgb(161, 161, 170)',
     italic: 'italic',
   });
   await shot(watched, size, 'live-empty');
@@ -456,6 +456,44 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
   await unavailable.context.close();
 });
 
+test('overlay: a coding answer, a figure to check and a private answer fit (ADR-0030)', async () => {
+  for (const size of [
+    { width: 720, height: 520, touch: false },
+    { width: 460, height: 260, touch: false },
+  ] satisfies Width[]) {
+    const coding = await open('compact-coding', size);
+    const { page } = coding;
+    await expect(page.getByLabel('About this answer')).toContainText('General knowledge');
+    await expect(page.getByLabel('Question type: choose another to answer again')).toHaveValue(
+      'coding',
+    );
+    await expect(page.locator('pre')).toContainText('def reverse');
+    await expect(page.getByLabel('How to say it')).toContainText('one pass');
+    await expect(page.locator('[data-claim]')).toHaveText('37');
+    await expect(page.getByLabel('Check before saying')).toContainText('37');
+    await expect(page.getByRole('list', { name: 'Other answers' })).toContainText('pilot cost');
+    // Long code scrolls inside its own block: never the window, and never sideways.
+    const fits = await page.evaluate(
+      () =>
+        document.documentElement.scrollHeight <= window.innerHeight + 1 &&
+        document.documentElement.scrollWidth <= window.innerWidth,
+    );
+    expect(fits, 'the window itself does not scroll').toBe(true);
+    await shot(coding, size, `overlay-coding-${size.width}`);
+    // The chat box's switch sits next to it, on the choice the live page holds.
+    await page.getByRole('button', { name: 'Chat', exact: false }).first().click();
+    await expect(page.getByLabel('Who the answer is for')).toHaveValue('kite');
+    await shot(coding, size, `overlay-chat-${size.width}`);
+    await coding.context.close();
+
+    const privately = await open('compact-private', size);
+    await expect(privately.page.getByLabel('Private answer')).toContainText('397.8');
+    await expect(privately.page.getByLabel('About this answer')).toContainText('Just for you');
+    await shot(privately, size, `overlay-private-${size.width}`);
+    await privately.context.close();
+  }
+});
+
 test('auto-answer: answers a finished question by itself, at most once per 15 s', async () => {
   test.setTimeout(60_000);
   const size: Width = { width: 1440, height: 900, touch: false };
@@ -558,6 +596,10 @@ test('error states: Them silent for 20 s', async () => {
     await expect(
       watched.page.getByRole('alert').filter({ hasText: 'Nothing heard from Them' }),
     ).toBeVisible();
+    // Day 6 Stage 4: the stuck-engine watchdog's note (shown here alongside the silent notice).
+    await expect(
+      watched.page.getByRole('status').filter({ hasText: 'Transcription restarted' }),
+    ).toBeVisible();
     await shot(watched, size, 'error-them-silent');
     await watched.context.close();
   }
@@ -569,6 +611,133 @@ test('error states: microphone denied and speech model download failed', async (
     await expect(watched.page.getByRole('alert').filter({ hasText: 'microphone' })).toBeVisible();
     await expect(watched.page.getByRole('alert').filter({ hasText: 'disk space' })).toBeVisible();
     await shot(watched, size, 'error-connect');
+    await watched.context.close();
+  }
+});
+
+/** Busy backgrounds behind the overlay: thin stripes, so a bad blur or weak panel would show. */
+const BACKDROPS = {
+  light:
+    'repeating-linear-gradient(45deg, rgb(255, 255, 255) 0 18px, rgb(235, 235, 240) 18px 36px, rgb(255, 214, 102) 36px 54px, rgb(255, 255, 255) 54px 72px)',
+  dark: 'repeating-linear-gradient(45deg, rgb(10, 10, 12) 0 18px, rgb(60, 60, 70) 18px 36px, rgb(120, 30, 30) 36px 54px, rgb(10, 10, 12) 54px 72px)',
+} as const;
+
+/** The desktop overlay window's sizes (apps/desktop/src/windows.ts). */
+const OVERLAY_SIZES = {
+  default: { width: 720, height: 520, touch: false },
+  min: { width: 460, height: 260, touch: false },
+} as const;
+
+test('overlay look: panel background at 40% and 70% over light and dark busy backgrounds (ADR-0033)', async () => {
+  // The opacity slider dims the panel background only; the text stays opaque with a shadow. Render
+  // the minimum (0.4) and the default (0.7) over each backdrop and size.
+  for (const alpha of [0.4, 0.7]) {
+    for (const [sizeName, size] of Object.entries(OVERLAY_SIZES)) {
+      for (const [backdropName, backdrop] of Object.entries(BACKDROPS)) {
+        const context = await browser!.newContext({
+          viewport: { width: size.width, height: size.height },
+          userAgent: WINDOWS_UA,
+        });
+        const page = await context.newPage();
+        await page.goto(`${origin}/?view=compact&glass=1&alpha=${alpha}`);
+        // The window's own material is the desktop's job; here the backdrop sits on the page, and
+        // the panel's backdrop-filter blurs it.
+        await page.evaluate((image) => {
+          document.documentElement.style.backgroundImage = image;
+          document.documentElement.style.backgroundAttachment = 'fixed';
+        }, backdrop);
+        const panel = page.locator('.k-overlay.k-glass');
+        await expect(panel).toBeVisible();
+        // Every control of the top bar stays inside the window, End above all.
+        const end = await page.getByRole('button', { name: 'End', exact: true }).boundingBox();
+        expect(end!.x + end!.width).toBeLessThanOrEqual(size.width);
+        const look = await panel.evaluate((element) => {
+          const style = getComputedStyle(element);
+          const end = [...element.querySelectorAll('button')].find((b) => b.textContent === 'End')!;
+          return {
+            background: style.backgroundColor,
+            // The text itself is fully opaque with a shadow, whatever the background opacity.
+            textShadow: style.textShadow,
+            radius: style.borderRadius,
+            blur: style.backdropFilter,
+            end: getComputedStyle(end).backgroundColor,
+            bodyBackground: getComputedStyle(document.body).backgroundColor,
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          };
+        });
+        expect(look).toEqual({
+          background: `rgba(24, 24, 27, ${alpha})`,
+          textShadow: 'rgba(0, 0, 0, 0.6) 0px 1px 2px',
+          radius: '16px',
+          blur: 'blur(16px)',
+          end: 'rgb(220, 38, 38)',
+          // Clear: otherwise the window's material could not show through.
+          bodyBackground: 'rgba(0, 0, 0, 0)',
+          overflow: 0,
+        });
+        if (SHOT_DIR) {
+          await page.evaluate(() => document.fonts.ready);
+          await page.screenshot({
+            path: path.join(
+              SHOT_DIR,
+              `overlay-${Math.round(alpha * 100)}-${sizeName}-${backdropName}.png`,
+            ),
+          });
+        }
+        await context.close();
+      }
+    }
+  }
+});
+
+test('overlay look: picture-in-picture stays solid', async () => {
+  const watched = await open('compact', OVERLAY_SIZES.default);
+  const panel = watched.page.locator('.k-overlay');
+  await expect(panel).toBeVisible();
+  await expect(panel).toHaveCSS('background-color', 'rgb(24, 24, 27)');
+  await expect(watched.page.locator('.k-glass')).toHaveCount(0);
+  await watched.context.close();
+});
+
+test('browser split view: preview and transcript left, answers right; side by side at 1280+, stacked below (live-ui-split)', async () => {
+  const CASES = [
+    { name: '1440', size: { width: 1440, height: 900, touch: false }, split: true },
+    { name: '1280', size: { width: 1280, height: 900, touch: false }, split: true },
+    { name: '390', size: { width: 390, height: 844, touch: true }, split: false },
+  ] as const;
+  for (const { name, size, split } of CASES) {
+    const watched = await open('split', size);
+    // Both halves are present, with the control strip and the right-side header.
+    await expect(
+      watched.page.getByRole('region', { name: 'Shared tab and transcript' }),
+    ).toBeVisible();
+    await expect(watched.page.getByRole('region', { name: 'Answers' })).toBeVisible();
+    await expect(watched.page.getByRole('button', { name: 'Stop' })).toBeVisible();
+    await expect(watched.page.getByLabel('Answer language')).toBeVisible();
+    await expect(watched.page.getByRole('button', { name: 'Exit' })).toBeVisible();
+    await expect(watched.page.getByLabel('Call time')).toBeVisible();
+    const divider = watched.page.getByRole('separator', { name: 'Resize' });
+    const left = await box(watched.page, '[aria-label="Shared tab and transcript"]');
+    const right = await box(watched.page, '[aria-label="Answers"]');
+    if (split) {
+      await expect(divider).toBeVisible();
+      // Side by side: the answers start to the right of the preview, at about the same height.
+      expect(left.x).toBeLessThan(right.x);
+      expect(Math.abs(left.y - right.y)).toBeLessThan(40);
+    } else {
+      await expect(divider).toHaveCount(0);
+      // Stacked: the answers sit below the preview column.
+      expect(right.y).toBeGreaterThan(left.y);
+    }
+    if (split) {
+      await shot(watched, size, `split-${name}`);
+    } else if (SHOT_DIR) {
+      // The real app never shows the split view on a touch device (phones get "Live calls need a
+      // computer"), so the stacked layout is screenshotted for the record without the mobile
+      // touch-target audit that shot() applies.
+      await watched.page.evaluate(() => document.fonts.ready);
+      await watched.page.screenshot({ path: path.join(SHOT_DIR!, `split-${name}.png`) });
+    }
     await watched.context.close();
   }
 });

@@ -152,6 +152,16 @@ export interface Platform {
   ): () => void;
 
   /**
+   * Listens for the Ask Kite shortcut on every signed-in page. It never turns on the call's global
+   * shortcuts. In the desktop app the shell holds the key from any app; everywhere it also works
+   * while Kite has focus.
+   *
+   * @param handler Called each time it is pressed.
+   * @returns A function that stops listening.
+   */
+  onAskKiteHotkey(handler: () => void): () => void;
+
+  /**
    * Says whether a live call is going on (Day 6): the desktop app then never asks to restart
    * for an update during a call. Nothing happens in the browser.
    *

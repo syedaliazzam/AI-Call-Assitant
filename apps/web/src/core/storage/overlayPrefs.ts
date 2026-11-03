@@ -18,8 +18,14 @@ export const OVERLAY_OPACITY_KEY = 'kite.overlayOpacity';
 /** The localStorage key for fading when not hovered. */
 export const OVERLAY_FADE_KEY = 'kite.overlayFade';
 
-/** The opacity range the slider offers (the shell keeps the window in a readable range too). */
-export const OVERLAY_OPACITY = { min: 0.4, max: 1, default: 0.92 };
+/** The opacity range the slider offers for the overlay panel's background (ADR-0033). */
+// ADR-0033: the slider now dims only the panel's background (--k-overlay-alpha), never the text,
+// and the window stays opaque. So a lower setting no longer fades the text, and a readable default
+// of 0.7 is safe over any background (0.7 over pure white gives the body text about 6.3:1;
+// tests/unit/ui/theme.test.ts). The minimum stays 0.4 — at that setting over a bright background the
+// nominal text contrast is low (~2.4:1) and the text shadow carries legibility; the developer chose
+// not to raise it.
+export const OVERLAY_OPACITY = { min: 0.4, max: 1, default: 0.7 };
 
 /**
  * Reads a stored value.

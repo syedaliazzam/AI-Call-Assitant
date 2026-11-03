@@ -10,7 +10,13 @@
  * Depends on: @kite/shared (AnswerRequest, AnswerEvent types), browser fetch and streams
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 (flow), §7.1 (core/answer)
  */
-import type { AnswerErrorCode, AnswerRequest, AnswerTimings, AnswerUsage } from '@kite/shared';
+import type {
+  AnswerErrorCode,
+  AnswerMeta,
+  AnswerRequest,
+  AnswerTimings,
+  AnswerUsage,
+} from '@kite/shared';
 
 /** Final details of a successful answer. */
 export interface AnswerDone {
@@ -36,6 +42,8 @@ export interface AnswerFailure {
 export interface AnswerHandlers {
   /** Called with each new piece of answer text, in order. */
   onDelta: (text: string) => void;
+  /** Called once before the first word, with the answer's type, target and source (ADR-0030). */
+  onMeta?: (meta: AnswerMeta) => void;
   /** Called once when the answer is complete. */
   onDone: (done: AnswerDone) => void;
   /** Called once when the answer fails. */
@@ -152,7 +160,9 @@ export function streamAnswer(
       finish(() => handlers.onError({ code: 'internal', message: 'Malformed reply from server' }));
       return;
     }
-    if (event === 'delta') {
+    if (event === 'meta') {
+      handlers.onMeta?.(payload.meta as AnswerMeta);
+    } else if (event === 'delta') {
       firstTextAt ??= performance.now();
       handlers.onDelta(String(payload.text ?? ''));
     } else if (event === 'done') {
@@ -234,6 +244,8 @@ export interface AnswerTimeline {
 export interface RunHandlers {
   /** The answer text so far (the whole text, each time a piece arrives). */
   onText: (text: string) => void;
+  /** The answer's type, target and source, before its first word (ADR-0030). */
+  onMeta?: (meta: AnswerMeta) => void;
   /** The answer finished: its full text, the server's details and the timeline. */
   onDone: (text: string, done: AnswerDone, timeline: AnswerTimeline) => void;
   /** The answer failed (the text so far is kept by the caller). */
@@ -289,6 +301,9 @@ export function createAnswerRunner(options: AnswerRunnerOptions = {}): AnswerRun
       let headlineAt: number | null = null;
       const sentAt = now();
       current = send(request, {
+        onMeta: (meta) => {
+          if (live()) handlers.onMeta?.(meta);
+        },
         onDelta: (piece) => {
           if (!live()) return;
           firstWordAt ??= now();

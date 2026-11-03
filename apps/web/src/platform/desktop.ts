@@ -12,7 +12,7 @@
  */
 import type { DesktopOs, KiteDesktopApi, ShareProtectionState } from '@kite/shared';
 import { CaptureError } from './errors';
-import { listenForHotkeys } from './keymap';
+import { listenForAskKite, listenForHotkeys } from './keymap';
 import {
   openMicrophone,
   requestDisplayMedia,
@@ -225,6 +225,32 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
      */
     async checkHotkeys() {
       return bridge.checkHotkeys ? bridge.checkHotkeys() : null;
+    },
+
+    /**
+     * The Ask Kite shortcut: from the shell, which holds it for as long as the app runs, and while
+     * this window has focus. A press that reaches both is handled once. An older shell has only
+     * the in-page one.
+     *
+     * @param handler Called each time it is pressed.
+     * @returns A function that stops listening.
+     */
+    onAskKiteHotkey(handler) {
+      let lastAt = -Infinity;
+      const once = () => {
+        const now = performance.now();
+        if (now - lastAt < DUPLICATE_PRESS_MS) return;
+        lastAt = now;
+        handler();
+      };
+      const stopPage = listenForAskKite(window, bridge.os === 'mac', once);
+      const stopGlobal = bridge.onHotkey?.((action) => {
+        if (action === 'ask-kite') once();
+      });
+      return () => {
+        stopPage();
+        stopGlobal?.();
+      };
     },
 
     /**

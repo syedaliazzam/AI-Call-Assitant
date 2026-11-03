@@ -5,10 +5,12 @@
  *          requireUser() sends signed-out visitors to /login and users with a temporary
  *          password to /change-password before anything renders.
  * Used by: Next.js App Router (wraps app/(app)/**)
- * Depends on: src/server/guard.ts, src/ui/Sidebar.tsx, src/features/auth/SignOutButton.tsx
+ * Depends on: src/server/guard.ts, src/ui/Sidebar.tsx, src/features/auth/SignOutButton.tsx,
+ *             src/features/ask-kite/AskKiteHotkey.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §8.2 (sign-in)
  */
 import type { ReactNode } from 'react';
+import { AskKiteHotkey } from '@/features/ask-kite/AskKiteHotkey';
 import { SignOutButton } from '@/features/auth/SignOutButton';
 import { requireUser } from '@/server/guard';
 import { Sidebar } from '@/ui/Sidebar';
@@ -25,6 +27,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     // Stacked on narrow screens (the sidebar becomes a top bar), side by side from 768 px.
     <div className="flex min-h-screen flex-col md:flex-row">
+      <AskKiteHotkey />
       <Sidebar
         user={{
           name: user.name,

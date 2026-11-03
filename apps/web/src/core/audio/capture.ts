@@ -85,16 +85,40 @@ export interface CallCaptureOptions {
 
 /** A running capture. */
 export interface CallCapture {
-  /** Where "Them" comes from (system sound, a tab, or a screen). */
-  themSource: OtherSideSource;
+  /** Where "Them" comes from now (system sound, a tab, or a screen); changeOtherSide() can change it. */
+  readonly themSource: OtherSideSource;
+  /**
+   * The current other-side ("Them") MediaStream. In a browser it carries the shared tab's video
+   * track, which the split-view preview renders; on the desktop (system audio) it has no video.
+   */
+  otherSideStream(): MediaStream;
   /** The latest meter levels. */
   levels(): ChannelLevels;
+  /**
+   * Moves the capture's channels to a fresh engine, keeping the same audio streams, so the live
+   * page can restart a stuck engine without re-asking for the microphone or the shared tab
+   * (watchdog.ts; Day 6 Stage 4). Channels that have already ended are left detached. From now on
+   * the capture detaches this new engine when it stops or a channel ends.
+   *
+   * @param engine The replacement engine (already created; attach waits until it is ready).
+   */
+  reattach(engine: Pick<SttEngine, 'attach' | 'detach'>): Promise<void>;
+  /**
+   * Re-picks the other side (a fresh share) without ending the call: swaps the "Them" stream on the
+   * engine and the meter, stops the old one, and returns where the new share comes from. Must be
+   * called straight from a user gesture (a browser needs one for getDisplayMedia).
+   *
+   * @returns The new other-side source.
+   */
+  changeOtherSide(): Promise<OtherSideSource>;
   /** Stops both channels, the meters and every captured track. */
   stop(): void;
 }
 
 /** The meter of one channel. */
 interface Meter {
+  /** The stream source feeding the analyser (replaced when the shared tab changes). */
+  source: MediaStreamAudioSourceNode;
   /** Reads the channel's latest samples. */
   analyser: AnalyserNode;
   /** Sample buffer for getFloatTimeDomainData. */
@@ -171,6 +195,11 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
   const streams: Record<ChannelId, MediaStream> = { you: mic, them: them.stream };
   let stopped = false;
   const ended = new Set<ChannelId>();
+  // Where "Them" comes from now; the shared tab can be changed mid-call (changeOtherSide).
+  let themSourceValue = them.source;
+  // The engine the capture feeds. A watchdog restart swaps it (reattach); release() and the
+  // channel-ended handlers always detach the current one.
+  let engine = options.engine;
 
   // 3. Meters: an AnalyserNode per channel in an AudioContext of their own (never played back).
   const context = deps.createAudioContext();
@@ -188,8 +217,10 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
   for (const channel of ['you', 'them'] as const) {
     const analyser = context.createAnalyser();
     analyser.fftSize = 1024;
-    context.createMediaStreamSource(streams[channel]).connect(analyser);
+    const source = context.createMediaStreamSource(streams[channel]);
+    source.connect(analyser);
     meters[channel] = {
+      source,
       analyser,
       buffer: new Float32Array(analyser.fftSize),
       smoother: new LevelSmoother(),
@@ -214,36 +245,71 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
     deps.clearInterval(timer);
     void context.close();
     for (const channel of ['you', 'them'] as const) {
-      options.engine.detach(channel);
+      engine.detach(channel);
       for (const track of streams[channel].getTracks()) track.stop();
     }
   };
 
   // 4. A channel ends when its audio track ends (for example "Stop sharing", a closed tab, an
   //    unplugged microphone): detach it and tell the UI, which offers to reconnect.
-  for (const channel of ['you', 'them'] as const) {
+  /**
+   * Watches a channel's current audio track(s) for their 'ended' event.
+   *
+   * @param channel Which channel.
+   */
+  const watchEnds = (channel: ChannelId) => {
     for (const track of streams[channel].getAudioTracks()) {
       track.addEventListener('ended', () => {
         if (stopped || ended.has(channel)) return;
         ended.add(channel);
-        options.engine.detach(channel);
+        engine.detach(channel);
         options.onEvent?.({ type: 'channel-ended', channel });
       });
     }
-  }
+  };
+  for (const channel of ['you', 'them'] as const) watchEnds(channel);
 
   // 5. Transcribe both, as separate channels.
   try {
-    await options.engine.attach('them', them.stream);
-    await options.engine.attach('you', mic);
+    await engine.attach('them', them.stream);
+    await engine.attach('you', mic);
   } catch (error) {
     release();
     throw error;
   }
 
   return {
-    themSource: them.source,
+    get themSource() {
+      return themSourceValue;
+    },
+    otherSideStream: () => streams.them,
     levels: () => ({ ...current }),
+    async reattach(nextEngine) {
+      engine = nextEngine;
+      // Re-attach only the channels that are still live; an ended one stays detached.
+      for (const channel of ['them', 'you'] as const) {
+        if (!stopped && !ended.has(channel)) await engine.attach(channel, streams[channel]);
+      }
+    },
+    async changeOtherSide() {
+      if (stopped) return themSourceValue;
+      // A fresh user gesture is needed for getDisplayMedia, so this runs straight from the click.
+      const next = await platform.getOtherSideStream();
+      const old = streams.them;
+      streams.them = next.stream;
+      themSourceValue = next.source;
+      ended.delete('them');
+      // Move the "Them" meter onto the new stream.
+      meters.them.source.disconnect();
+      meters.them.source = context.createMediaStreamSource(next.stream);
+      meters.them.source.connect(meters.them.analyser);
+      meters.them.smoother = new LevelSmoother();
+      watchEnds('them');
+      // attach() replaces the channel's current stream in the engine.
+      await engine.attach('them', next.stream);
+      for (const track of old.getTracks()) track.stop();
+      return next.source;
+    },
     stop: release,
   };
 }

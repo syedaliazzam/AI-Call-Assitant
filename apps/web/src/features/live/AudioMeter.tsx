@@ -33,9 +33,9 @@ export function AudioMeter({ speaker, level, inactive = false, compact = false }
   const percent = inactive ? 0 : Math.round(Math.min(1, Math.max(0, level)) * 100);
   return (
     <div className={`flex items-center gap-2 ${compact ? 'w-40' : 'w-full'}`}>
-      <span className={`w-12 shrink-0 text-sm font-semibold ${style.label}`}>{style.name}</span>
+      <span className={`w-12 shrink-0 text-[13px] font-semibold ${style.label}`}>{style.name}</span>
       <div
-        className="h-2 flex-1 overflow-hidden bg-ui-band"
+        className="h-2 flex-1 overflow-hidden rounded-full bg-ui-band"
         role="meter"
         aria-label={`${style.name} audio level`}
         aria-valuemin={0}
@@ -44,7 +44,7 @@ export function AudioMeter({ speaker, level, inactive = false, compact = false }
       >
         {/* No transition: the level already arrives smoothed (levels.ts) about 20 times a second. */}
         <div
-          className={`h-full ${inactive ? 'bg-ui-border' : style.bar}`}
+          className={`h-full rounded-full ${inactive ? 'bg-ui-border' : style.bar}`}
           style={{ width: `${percent}%` }}
         />
       </div>

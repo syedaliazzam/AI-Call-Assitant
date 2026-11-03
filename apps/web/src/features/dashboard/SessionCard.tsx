@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/features/dashboard/SessionCard.tsx
- * Purpose: One session on the dashboard: date, company, role or topic, type and transcript chips,
- *          status, Start session or Review, and a ⋮ menu with Edit, Rename, Duplicate and Delete
+ * Purpose: One session on the dashboard: date, an initial avatar, company, role or topic, type and
+ *          transcript chips, a status dot, Start session or Review, and a ⋮ menu with Edit, Rename, Duplicate and Delete
  *          (Delete asks for confirmation first).
  * Used by: src/features/dashboard/Dashboard.tsx
  * Depends on: src/core/storage (types, shownStatus), src/ui (Button, Dialog, Input, LinkButton,
@@ -40,18 +40,29 @@ export interface SessionCardProps {
   onDuplicate: (session: Session) => Promise<void>;
 }
 
-/** Badge colours per shown status. */
-const STATUS_CLASSES: Record<SessionStatus, string> = {
-  'not-started': 'bg-ui-band text-ui-text',
-  live: 'bg-ui-success-bg text-ui-success',
-  ended: 'bg-ui-band text-ui-muted',
+/** Dot colour per shown status. */
+const STATUS_DOTS: Record<SessionStatus, string> = {
+  'not-started': 'bg-ui-muted',
+  live: 'bg-ui-dot-success',
+  ended: 'bg-ui-border',
 };
 
-/** The look shared by the small chips on a card. */
-const CHIP = 'px-2 py-0.5 font-mono text-[11px] font-medium uppercase tracking-[0.08em]';
+/** The look shared by the small chips on a card. Text colour: muted is too faint on subtle. */
+const CHIP = 'rounded-full bg-ui-subtle px-2.5 py-0.5 text-[13px] text-ui-text';
 
 /** Date and time format for the card, in the user's locale (for example "28 Oct 2026, 14:05"). */
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+/**
+ * The first letter of a session's name, for its avatar.
+ *
+ * @param title The session's name.
+ * @returns One capital letter.
+ * Called from: SessionCard
+ */
+function initial(title: string): string {
+  return title.trim().charAt(0).toUpperCase();
+}
 
 /**
  * One session card.
@@ -100,25 +111,30 @@ export function SessionCard({
   return (
     <li
       className={[
-        'flex flex-col gap-4 border border-ui-border bg-ui-surface p-5',
+        'flex flex-col gap-4 rounded-card border border-ui-border bg-ui-surface p-5 shadow-card',
         grid ? 'justify-between' : 'md:flex-row md:items-center md:justify-between',
       ].join(' ')}
     >
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="truncate text-[17px] font-semibold text-ui-heading">{title}</h2>
-          <span className={`bg-ui-pale text-ui-subheading ${CHIP}`}>
-            {SESSION_TYPE_LABELS[session.type]}
-          </span>
-          {session.saveTranscript && (
-            <span className={`bg-ui-band text-ui-muted ${CHIP}`}>Transcript</span>
-          )}
-          <span className={`${CHIP} ${STATUS_CLASSES[status]}`}>{STATUS_LABELS[status]}</span>
+      <div className="flex min-w-0 gap-3">
+        <span
+          aria-hidden="true"
+          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-ui-subtle text-[15px] font-semibold text-ui-heading"
+        >
+          {initial(title)}
+        </span>
+        <div className="min-w-0">
+          <p className="text-[13px] text-ui-muted">{DATE_FORMAT.format(session.createdAt)}</p>
+          <h2 className="truncate text-[15px] font-semibold text-ui-heading">{title}</h2>
+          <p className="truncate text-[15px] text-ui-text">{session.role}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className={CHIP}>{SESSION_TYPE_LABELS[session.type]}</span>
+            {session.saveTranscript && <span className={CHIP}>Transcript</span>}
+            <span className="inline-flex items-center gap-1.5 text-[13px] text-ui-muted">
+              <span aria-hidden="true" className={`size-2 rounded-full ${STATUS_DOTS[status]}`} />
+              {STATUS_LABELS[status]}
+            </span>
+          </div>
         </div>
-        <p className="mt-1 truncate text-[15px] text-ui-text">{session.role}</p>
-        <p className="mt-1 font-mono text-[12px] text-ui-muted">
-          {DATE_FORMAT.format(session.createdAt)}
-        </p>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         {ended ? (

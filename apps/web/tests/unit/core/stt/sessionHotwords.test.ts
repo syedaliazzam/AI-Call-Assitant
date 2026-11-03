@@ -167,3 +167,24 @@ describe('buildHotwords: Interview vocabulary and the document cap (Day 6 Stage 
     );
   });
 });
+
+describe('buildHotwords with numbers in terms (ADR-0027)', () => {
+  it('adds spoken-word variants for a term with digits, keeping typed terms first', () => {
+    // "H100" alone cannot be a hotword (the model has no digits); its spoken forms can.
+    const hotwords = buildHotwords(session('H100\nBM25\nBluefin Route'), []);
+    const phrases = hotwords.map((hotword) => hotword.phrase);
+    expect(phrases).toContain('H ONE HUNDRED');
+    expect(phrases).toContain('H ONE ZERO ZERO');
+    expect(phrases).toContain('BM TWENTY FIVE');
+    expect(phrases).toContain('BLUEFIN ROUTE');
+    // The user's key terms (and their variants) come before the company.
+    expect(phrases.indexOf('H ONE HUNDRED')).toBeLessThan(phrases.indexOf('NORTHWIND LOGISTICS'));
+    // Each variant keeps the key-term score.
+    expect(hotwords.find((h) => h.phrase === 'BM TWENTY FIVE')?.score).toBe(KEY_TERM_SCORE);
+  });
+
+  it('respects a typed score on a number term', () => {
+    const hotwords = buildHotwords(session('BM25 :3'), []);
+    expect(hotwords.find((h) => h.phrase === 'BM TWENTY FIVE')?.score).toBe(3);
+  });
+});

@@ -20,8 +20,10 @@
  * Electron's register() returns false, silently, when another app already holds a shortcut.
  */
 import {
+  ASK_KITE_HOTKEY,
   DEFAULT_GLOBAL_HOTKEYS,
   GLOBAL_HOTKEYS,
+  type CallHotkey,
   type GlobalHotkey,
   type HotkeyStatus,
 } from '@kite/shared';
@@ -40,6 +42,14 @@ export interface HotkeyController {
   disable(): void;
   /** True while the shortcuts are on. */
   enabled(): boolean;
+  /**
+   * Holds the Ask Kite shortcut for as long as the app runs (ADR-0030). disable() leaves it.
+   *
+   * @returns Whether it could be registered.
+   */
+  enableAskKite(): HotkeyStatus;
+  /** Releases everything, the Ask Kite shortcut too (the app is quitting). */
+  releaseAll(): void;
   /**
    * Finds which shortcuts another app already uses (Settings). Outside a call it registers each
    * one for a moment and releases it again; during a call it reports the current state.
@@ -62,8 +72,10 @@ export interface HotkeyController {
 export function createHotkeys(
   globalShortcut: Pick<GlobalShortcut, 'register' | 'unregister'>,
   send: (action: GlobalHotkey) => void,
-  accelerators: Readonly<Record<GlobalHotkey, string>> = DEFAULT_GLOBAL_HOTKEYS,
+  accelerators: Readonly<Record<CallHotkey, string>> = DEFAULT_GLOBAL_HOTKEYS,
 ): HotkeyController {
+  /** The Ask Kite shortcut, once the app has asked for it. */
+  let askKite: HotkeyStatus | null = null;
   /** Accelerators this controller registered (and so may release). */
   let registered: string[] = [];
   let on = false;
@@ -102,11 +114,28 @@ export function createHotkeys(
     enable,
     disable,
     enabled: () => on,
+    enableAskKite() {
+      let ok = false;
+      try {
+        ok = globalShortcut.register(ASK_KITE_HOTKEY, () => send('ask-kite'));
+      } catch {
+        // An accelerator the OS cannot register at all counts as unavailable.
+        ok = false;
+      }
+      askKite = { action: 'ask-kite', accelerator: ASK_KITE_HOTKEY, registered: ok };
+      return askKite;
+    },
+    releaseAll() {
+      disable();
+      if (askKite?.registered) globalShortcut.unregister(ASK_KITE_HOTKEY);
+      askKite = null;
+    },
     check() {
-      if (on) return statuses;
+      const always = askKite ? [askKite] : [];
+      if (on) return [...statuses, ...always];
       const found = enable();
       disable();
-      return found;
+      return [...found, ...always];
     },
   };
 }
@@ -143,6 +172,8 @@ export interface HotkeyDeps {
   sendToPage: (channel: string, action: GlobalHotkey) => void;
   /** Carries out an overlay shortcut (show, hide, move). Optional in tests. */
   overlayAction?: (action: GlobalHotkey) => void;
+  /** Brings up the window where Ask Kite will open (ADR-0030). Optional in tests. */
+  showForAskKite?: () => void;
   /** The Kite origin. */
   allowedOrigin: string;
 }
@@ -158,8 +189,14 @@ export interface HotkeyDeps {
 export function installHotkeys(deps: HotkeyDeps): HotkeyController {
   const controller = createHotkeys(deps.globalShortcut, (action) => {
     if (action.startsWith('overlay-')) deps.overlayAction?.(action);
-    else deps.sendToPage(HOTKEY_CHANNEL, action);
+    else {
+      // The page has to be in view for Ask Kite: main.ts brings up the right window first.
+      if (action === 'ask-kite') deps.showForAskKite?.();
+      deps.sendToPage(HOTKEY_CHANNEL, action);
+    }
   });
+  const askKite = controller.enableAskKite();
+  if (!askKite.registered) console.info('desktop: Ask Kite shortcut taken by another app');
   deps.ipcMain.handle(CHECK_HOTKEYS_CHANNEL, (event) => {
     if (!isKiteSender(event, deps.allowedOrigin)) {
       throw new Error('Hotkeys can only be checked by the Kite page');

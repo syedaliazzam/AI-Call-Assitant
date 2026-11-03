@@ -21,6 +21,7 @@ import type {
   Session,
   LibraryItem,
   StoredAnswer,
+  StoredChat,
   StoredDocument,
   StoredLesson,
   StoredNotes,
@@ -54,6 +55,8 @@ export class KiteDb extends Dexie {
   declare library: EntityTable<LibraryItem, 'id'>;
   /** Question banks, one per session (version 5, parity Phase 4). */
   declare questionBanks: EntityTable<StoredQuestionBank, 'sessionId'>;
+  /** Ask Kite chats (version 6, ADR-0030). */
+  declare chats: EntityTable<StoredChat, 'id'>;
 
   /**
    * Declares the schema. Only indexed fields are listed (Dexie stores every field of a row);
@@ -119,6 +122,11 @@ export class KiteDb extends Dexie {
     // Version 5 (parity Phase 4): adds the question banks. No existing row changes.
     this.version(5).stores({
       questionBanks: 'sessionId',
+    });
+    // Version 6 (ADR-0030): adds the Ask Kite chats (updatedAt: the page's order). No existing row
+    // changes: new fields on answers (meta, claims) are optional and not indexed.
+    this.version(6).stores({
+      chats: 'id, updatedAt',
     });
   }
 }

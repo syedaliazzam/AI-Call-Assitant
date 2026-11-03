@@ -39,13 +39,13 @@ export function HealthNotice({ status }: HealthNoticeProps) {
     return (
       <p
         role="status"
-        className="flex items-center justify-between gap-3 bg-ui-band px-3 py-2 text-sm text-ui-muted"
+        className="flex items-center justify-between gap-3 rounded-control bg-ui-band px-3 py-2 text-[13px] text-ui-muted"
       >
         {message}
         <button
           type="button"
           onClick={() => setDismissedFor(status)}
-          className="text-xs font-semibold text-ui-muted hover:text-ui-heading"
+          className="text-[13px] font-semibold text-ui-muted hover:text-ui-heading"
           aria-label="Dismiss this hint"
         >
           Dismiss
@@ -54,7 +54,10 @@ export function HealthNotice({ status }: HealthNoticeProps) {
     );
   }
   return (
-    <p role="alert" className="bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger">
+    <p
+      role="alert"
+      className="rounded-control bg-ui-danger-bg px-3 py-2 text-[13px] text-ui-danger"
+    >
       {message}
     </p>
   );

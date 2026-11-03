@@ -37,6 +37,7 @@
     "test:live-ui": "playwright test -c tests/integration/playwright.config.ts live.spec.ts",
     "test:setup": "playwright test -c tests/integration/playwright.config.ts setup.spec.ts",
     "test:prepare": "playwright test -c tests/integration/playwright.config.ts prepare.spec.ts",
+    "test:ask-kite": "playwright test -c tests/integration/playwright.config.ts ask-kite.spec.ts",
     "test:ui-shots": "playwright test -c tests/ui/playwright.config.ts",
     "test:e2e-prod": "pnpm --filter @kite/desktop build && playwright test -c tests/e2e-prod/playwright.config.ts"
   },
@@ -64,6 +65,7 @@
     "drizzle-kit": "^0.31.11",
     "esbuild": "0.28.2",
     "fake-indexeddb": "6.2.5",
+    "pyodide": "314.0.7",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",

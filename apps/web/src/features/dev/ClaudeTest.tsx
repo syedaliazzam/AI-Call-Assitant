@@ -130,17 +130,20 @@ export function ClaudeTest() {
 
       <section
         aria-live="polite"
-        className="min-h-20 border border-ui-border bg-ui-surface p-4 text-ui-heading"
+        className="min-h-20 border border-ui-border rounded-control bg-ui-surface p-4 text-ui-heading"
       >
         {text || <span className="text-ui-muted">The reply streams here.</span>}
       </section>
       {error && (
-        <p role="alert" className="bg-ui-danger-bg px-3 py-2 text-sm text-ui-danger">
+        <p
+          role="alert"
+          className="rounded-control bg-ui-danger-bg px-3 py-2 text-[13px] text-ui-danger"
+        >
           {error}
         </p>
       )}
 
-      <p className="text-sm text-ui-muted">
+      <p className="text-[13px] text-ui-muted">
         The first click writes the prompt to Claude&apos;s cache (cache write &gt; 0). Clicks within
         5 minutes of the previous one should read it back (cache read &gt; 0) and usually reach the
         first word sooner. Browser times include the network; server times start when the request
@@ -150,8 +153,8 @@ export function ClaudeTest() {
       </p>
 
       <div className="overflow-x-auto border border-ui-border bg-ui-surface">
-        <table className="w-full text-right text-sm">
-          <thead className="border-b border-ui-border bg-ui-band text-xs text-ui-muted uppercase">
+        <table className="w-full text-right text-[13px]">
+          <thead className="border-b border-ui-border bg-ui-band text-[13px] text-ui-muted">
             <tr>
               <th className="px-3 py-2 text-left font-semibold">#</th>
               <th className="px-3 py-2 font-semibold">First word (browser)</th>
@@ -195,14 +198,14 @@ export function ClaudeTest() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-semibold text-ui-heading">Warm with session</h2>
-        <p className="text-sm text-ui-muted">
+        <p className="text-[13px] text-ui-muted">
           Sends mode &quot;warm&quot; (max_tokens 0, no answer) twice for a session on this
           computer, with its details and documents. The first warm-up writes the cache (cache write
           &gt; 0); the second, within 5 minutes, reads it (cache read &gt; 0). A session whose
           prompt is under 512 tokens (no documents, few details) is not cached at all: both show 0.
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="warm-session" className="text-sm text-ui-text">
+          <label htmlFor="warm-session" className="text-[13px] text-ui-text">
             Session
           </label>
           <select
@@ -210,7 +213,7 @@ export function ClaudeTest() {
             value={warmId}
             disabled={warming || sessions.length === 0}
             onChange={(event) => setWarmId(event.target.value)}
-            className="h-9 max-w-md border border-ui-border bg-ui-surface px-2 text-sm"
+            className="h-9 max-w-md border border-ui-border rounded-control bg-ui-surface px-2 text-[13px]"
           >
             {sessions.length === 0 && <option value="">No sessions on this computer</option>}
             {sessions.map((session) => (
@@ -224,8 +227,8 @@ export function ClaudeTest() {
           </Button>
         </div>
         <div className="overflow-x-auto border border-ui-border bg-ui-surface">
-          <table className="w-full text-right text-sm">
-            <thead className="border-b border-ui-border bg-ui-band text-xs text-ui-muted uppercase">
+          <table className="w-full text-right text-[13px]">
+            <thead className="border-b border-ui-border bg-ui-band text-[13px] text-ui-muted">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold">#</th>
                 <th className="px-3 py-2 text-left font-semibold">Session</th>

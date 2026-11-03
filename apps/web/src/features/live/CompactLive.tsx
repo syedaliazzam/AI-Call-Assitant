@@ -13,7 +13,7 @@
 'use client';
 
 import type { ShareProtectionState } from '@kite/shared';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { openLiveChannel, type CompactState, type LiveChannel } from '@/core/live/liveChannel';
 import {
   getOverlayFade,
@@ -62,7 +62,9 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
   const [chatOpen, setChatOpen] = useState(false);
   const [opacity, setOpacity] = useState(getOverlayOpacity);
   const [fade, setFade] = useState(getOverlayFade);
-  const hovered = useRef(true);
+  // The pointer is over the overlay: a state (not a ref) so the panel's background opacity
+  // re-paints when fading is on and the pointer comes and goes (ADR-0033).
+  const [hovered, setHovered] = useState(true);
   const channel = useRef<LiveChannel | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
@@ -88,21 +90,13 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
     };
   }, [sessionId]);
 
-  /**
-   * Applies the opacity the window should have now: fully visible while the pointer is over it
-   * when fading is on, the chosen opacity otherwise.
-   *
-   * @param value The chosen opacity.
-   * @param fades Whether fading is on.
-   * @returns Nothing.
-   */
-  const apply = useCallback((value: number, fades: boolean) => {
-    getPlatform().setOverlayOpacity(fades && hovered.current ? 1 : value);
-  }, []);
-
+  // ADR-0033: the slider dims only the panel's background, not the window; the text stays opaque.
+  // The window itself is kept fully opaque (older shells could dim it; set it back once). The
+  // background opacity painted now is the chosen value, or 1 under the pointer when fading is on.
+  const panelAlpha = fade && hovered ? 1 : opacity;
   useEffect(() => {
-    apply(opacity, fade);
-  }, [apply, opacity, fade]);
+    getPlatform().setOverlayOpacity(1);
+  }, []);
 
   // The shortcuts while the overlay has focus (the page's window: the picture-in-picture window's
   // own document in a browser). Answer and Screenshot reach this only when another app holds the
@@ -112,9 +106,20 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
     if (!target) return;
     return getPlatform().listenForFocusedHotkeys(target, (action) => {
       if (action === 'chat') setChatOpen((open) => !open);
-      else channel.current?.send({ type: action });
+      else if (action === 'ask-kite') {
+        channel.current?.send({ type: 'chat-target', target: 'kite' });
+        setChatOpen(true);
+      } else channel.current?.send({ type: action });
     });
   }, []);
+
+  // The Ask Kite shortcut was pressed (the live page counts the presses, ADR-0030): open the box.
+  const askKiteCount = state?.askKiteCount ?? 0;
+  const [seenAskKite, setSeenAskKite] = useState(0);
+  if (askKiteCount !== seenAskKite) {
+    setSeenAskKite(askKiteCount);
+    if (askKiteCount > seenAskKite) setChatOpen(true);
+  }
 
   // The call ended: close this window shortly (the live page also asks the shell to close it).
   useEffect(() => {
@@ -124,23 +129,14 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
   }, [state?.ended, closeOnEnd]);
 
   return (
-    <div
-      ref={root}
-      onMouseEnter={() => {
-        hovered.current = true;
-        apply(opacity, fade);
-      }}
-      onMouseLeave={() => {
-        hovered.current = false;
-        apply(opacity, fade);
-      }}
-    >
+    <div ref={root} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
       <CompactView
         state={state}
         protection={protection}
         mac={mac}
         chatOpen={chatOpen}
         onChatOpen={setChatOpen}
+        glass={windowControls}
         onCommand={(command) => channel.current?.send(command)}
         onCollapsed={(collapsed) => getPlatform().setOverlayCollapsed(collapsed)}
         onProtection={(on) => {
@@ -153,6 +149,7 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
           ? {
               windowSettings: {
                 opacity,
+                panelAlpha,
                 fade,
                 onOpacity: (value: number) => {
                   setOpacity(value);
