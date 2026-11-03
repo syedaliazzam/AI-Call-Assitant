@@ -59,10 +59,16 @@ function isTyping(target: EventTarget | null): boolean {
  */
 export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
   if (press.repeat || isTyping(press.target)) return null;
-  // The one shortcut with Alt: Ask Kite (ADR-0030). Every other Alt combination stays the browser's.
+  // The shortcuts with Alt: Ask Kite (ADR-0030) and the script bar (v1.0.2, ADR-0035). Every other
+  // Alt combination stays the browser's.
   if (press.altKey) {
     const held = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;
-    return held && !press.shiftKey && press.key.toLowerCase() === 'k' ? 'ask-kite' : null;
+    if (!held || press.shiftKey) return null;
+    // Where Ctrl+Alt is AltGr, e.key is the letter it types ("ś" on a Polish layout), so typing that
+    // letter in the page is never taken as a shortcut.
+    const key = press.key.toLowerCase();
+    if (key === 'k') return 'ask-kite';
+    return key === 's' ? 'script-bar' : null;
   }
   // Exactly the platform's modifier: Ctrl+⌘ together is not a shortcut.
   const modifier = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;

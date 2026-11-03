@@ -196,7 +196,6 @@ function SplitView() {
             compact
           />
         ))}
-        callStartedAt={callStartedAt}
         preview={{
           stream: null,
           themLabel: "the shared tab's audio",
@@ -220,8 +219,6 @@ function SplitView() {
             copy={async () => undefined}
           />
         }
-        onExit={() => undefined}
-        onOverlay={() => undefined}
       />
     </AppShell>
   );

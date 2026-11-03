@@ -2,12 +2,19 @@
  * Tests for sentenceCase() and displayTerms() in apps/web/src/core/transcript/display.ts (Day 6
  * Stage 4d), on invented lines: an all-capitals line becomes sentence case with a capital
  * first letter and "I"; the session's spellings are restored as whole words only; a line that
- * already has lower-case letters keeps its case; displayTerms() drops a typed " :score",
+ * already has lower-case letters keeps its case, except for long all-capitals stretches left by the
+ * live engine in a partly refined line (v1.0.2), while acronyms stay; continuationCase() carries a
+ * sentence on without a capital; displayTerms() drops a typed " :score",
  * removes duplicates and puts the longest terms first; transcriptChips() cuts the latest words
  * into chips with stable ids.
  */
 import { describe, expect, it } from 'vitest';
-import { displayTerms, sentenceCase, transcriptChips } from '@/core/transcript/display';
+import {
+  continuationCase,
+  displayTerms,
+  sentenceCase,
+  transcriptChips,
+} from '@/core/transcript/display';
 import type { Utterance } from '@/core/transcript/transcript';
 
 describe('sentenceCase', () => {
@@ -38,6 +45,41 @@ describe('sentenceCase', () => {
     expect(sentenceCase('iPhone sales in Q3')).toBe('IPhone sales in Q3');
     expect(sentenceCase('Already Cased')).toBe('Already Cased');
     expect(sentenceCase('')).toBe('');
+  });
+
+  it('lowers the live engine capitals left in a partly refined line (v1.0.2)', () => {
+    // The live engine's part first, then the accurate engine's cased rewrite.
+    expect(sentenceCase('SO TELL ME ABOUT the project you built last year.')).toBe(
+      'So tell me about the project you built last year.',
+    );
+    expect(sentenceCase('We shipped it in March. THEN WE MOVED TO KAFKA')).toBe(
+      'We shipped it in March. Then we moved to kafka',
+    );
+    // "I" stays a capital inside a lowered stretch.
+    expect(sentenceCase('Right. I THINK I CAN DO IT')).toBe('Right. I think I can do it');
+    // A two-word shout with a long word counts.
+    expect(sentenceCase('Okay THANK YOU for that.')).toBe('Okay thank you for that.');
+  });
+
+  it('keeps acronyms in a cased line (v1.0.2)', () => {
+    expect(sentenceCase('We run it on AWS with an API gateway.')).toBe(
+      'We run it on AWS with an API gateway.',
+    );
+    expect(sentenceCase('The AWS API is rate limited.')).toBe('The AWS API is rate limited.');
+    expect(sentenceCase('We moved from SQL to NoSQL in Q3 2024.')).toBe(
+      'We moved from SQL to NoSQL in Q3 2024.',
+    );
+  });
+});
+
+describe('continuationCase (v1.0.2)', () => {
+  it('continues a sentence without a capital, keeping "I" and the session spellings', () => {
+    expect(continuationCase('ABOUT YOUR PROJECT')).toBe('about your project');
+    expect(continuationCase('AND I USED BLUEFIN ROUTE', ['Bluefin Route'])).toBe(
+      'and I used Bluefin Route',
+    );
+    // A cased engine line keeps its own first letter.
+    expect(continuationCase('How would you size it?')).toBe('How would you size it?');
   });
 });
 

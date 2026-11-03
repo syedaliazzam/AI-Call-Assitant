@@ -28,6 +28,10 @@ export interface CompactLine {
   text: string;
   /** False while the words are still changing. */
   final: boolean;
+  /** Start (Unix ms): the overlay groups lines into bubbles by time (v1.0.2). */
+  tStart?: number;
+  /** End (Unix ms). */
+  tEnd?: number;
 }
 
 /** A few of the latest words, as one chip in the overlay's transcript bar. */
@@ -54,6 +58,8 @@ export interface CompactAnswer {
   id: string;
   /** The question it answers ('' when Claude was asked to answer the latest "Them" lines). */
   question: string;
+  /** The question as Claude cleaned it up, once it has arrived (v1.0.2, ADR-0037). */
+  cleanQuestion?: string;
   /** The answer's text so far: the overlay shows it with AnswerBody, the same as the main window. */
   text: string;
   /** The answer line (first line); empty until it has arrived. */
@@ -125,6 +131,12 @@ export interface CompactState {
   ended: boolean;
   /** How answers are written now; the overlay's menu can change it during a call. */
   style?: AnswerStyle;
+  /** True while the overlay is the slim script bar (v1.0.2; Ctrl+Alt+S or the ⋮ menu). */
+  scriptBar?: boolean;
+  /** True when spoken questions can be dictated in this call (the microphone is running). */
+  dictationSupported?: boolean;
+  /** True while a spoken question is being dictated. */
+  dictating?: boolean;
 }
 
 /** A command without details. */
@@ -134,7 +146,35 @@ export interface SimpleCommand {
    * 'clear': stop or clear the answer; 'prev' / 'next': move through the history; 'end': end the
    * call; 'hello': the overlay just opened, send the state.
    */
-  type: 'answer' | 'screenshot' | 'clear' | 'prev' | 'next' | 'end' | 'hello';
+  type: 'answer' | 'screenshot' | 'clear' | 'prev' | 'next' | 'end' | 'hello' | 'latest';
+}
+
+/** Opens or closes the script bar (v1.0.2). */
+export interface ScriptBarCommand {
+  /** Command type. */
+  type: 'script-bar';
+  /** True to show the script bar, false for the full overlay. */
+  on: boolean;
+}
+
+/** Starts or stops dictating a spoken question (v1.0.2, ADR-0038). */
+export interface DictateCommand {
+  /** Command type. */
+  type: 'dictate';
+  /** True to start listening, false to stop. */
+  on: boolean;
+}
+
+/** A transcript bubble's "Answer this" (v1.0.2). */
+export interface AnswerThisCommand {
+  /** Command type. */
+  type: 'answer-this';
+  /** The bubble's words (1–2,000 characters). Never logged. */
+  question: string;
+  /** Start of the bubble's speech (Unix ms). */
+  start: number;
+  /** End of the bubble's speech (Unix ms). */
+  end: number;
 }
 
 /** A rating from the overlay. */
@@ -208,7 +248,10 @@ export type CompactCommand =
   | StyleCommand
   | ChatTargetCommand
   | ShowCommand
-  | ReanswerCommand;
+  | ReanswerCommand
+  | ScriptBarCommand
+  | DictateCommand
+  | AnswerThisCommand;
 
 /** One message on the channel. */
 type Message =
@@ -326,14 +369,21 @@ export function isCommand(value: unknown): value is CompactCommand {
       )
     );
   }
-  if (command.type === 'chat') {
+  if (command.type === 'chat' || command.type === 'answer-this') {
+    const times = value as { start?: unknown; end?: unknown };
     return (
       typeof command.question === 'string' &&
       command.question.trim().length > 0 &&
-      command.question.length <= 2_000
+      command.question.length <= 2_000 &&
+      (command.type === 'chat' || (Number.isFinite(times.start) && Number.isFinite(times.end)))
     );
   }
-  return ['answer', 'screenshot', 'clear', 'prev', 'next', 'end', 'hello'].includes(command.type);
+  if (command.type === 'script-bar' || command.type === 'dictate') {
+    return typeof (value as { on?: unknown }).on === 'boolean';
+  }
+  return ['answer', 'screenshot', 'clear', 'prev', 'next', 'end', 'hello', 'latest'].includes(
+    command.type,
+  );
 }
 
 /**

@@ -38,6 +38,18 @@ export const OVERLAY_OPACITY_CHANNEL = 'kite:overlay-opacity';
 /** The overlay collapses to its controls bar, or opens again (invoke; carries a boolean). */
 export const OVERLAY_COLLAPSE_CHANNEL = 'kite:overlay-collapse';
 
+/** v1.0.2 (ADR-0035): put the overlay at a preset place and remember it (invoke; an OverlayPreset). */
+export const OVERLAY_PLACE_CHANNEL = 'kite:overlay-place';
+
+/** v1.0.2: read the remembered overlay preset (invoke; answers an OverlayPreset). */
+export const OVERLAY_PRESET_CHANNEL = 'kite:overlay-preset';
+
+/** v1.0.2: one step of a page-driven overlay resize (invoke; an OverlayResizeStep). */
+export const OVERLAY_RESIZE_CHANNEL = 'kite:overlay-resize';
+
+/** v1.0.2: switch the overlay between full, collapsed and the script bar (invoke; an OverlayMode). */
+export const OVERLAY_MODE_CHANNEL = 'kite:overlay-mode';
+
 /** The live page minimises the main window when a call starts in the overlay (invoke). */
 export const MINIMIZE_MAIN_CHANNEL = 'kite:minimize-main';
 

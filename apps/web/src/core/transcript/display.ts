@@ -4,6 +4,7 @@
  *          writes lines in sentence case with the session's own spellings (Day 6 Stage 4d). Display
  *          only: the stored line (and what answers and notes use) is unchanged.
  * Used by: src/features/live/TranscriptStrip.tsx, src/features/live/SavedTranscript.tsx,
+ *          src/core/transcript/group.ts,
  *          src/features/review/ReviewSections.tsx, src/features/live/LivePage.tsx,
  *          src/features/review/SessionReview.tsx
  * Depends on: src/core/transcript/transcript.ts (Utterance type), src/core/storage/types.ts (Session)
@@ -119,20 +120,69 @@ export function displayTerms(
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Writes a transcript line in sentence case for display (Day 6 Stage 4d): the speech model
- * writes all capitals and no punctuation, which is hard to read. An all-capitals line is
- * lower-cased; then the session's own spellings of its terms are restored, "I" (and I'm, I'll,
- * I've, I'd) is capitalised, and so is the first letter. A line that already has lower-case
- * letters (an engine that writes case) keeps its case. Display only: the stored line, and what
- * answers and notes use, are unchanged.
+ * Whether a word is written in capitals: it has a letter and no lower-case letter ("WHAT",
+ * "I'M", "AWS"). Words without letters ("25", "-") are neither.
  *
- * @param text  The line as the engine wrote it.
- * @param terms Spellings to restore (displayTerms()), longest pattern first.
- * @returns The line for display.
- * Called from: TranscriptStrip.tsx, SavedTranscript.tsx, ReviewSections.tsx (ConversationSection)
+ * @param word One word.
+ * @returns True for an all-capitals word.
+ * Called from: lowerCapitalRuns()
  */
-export function sentenceCase(text: string, terms: readonly DisplayTerm[] = []): string {
-  let line = /[a-z]/.test(text) ? text : text.toLowerCase();
+function isCapitalWord(word: string): boolean {
+  return /\p{Lu}/u.test(word) && !/\p{Ll}/u.test(word);
+}
+
+/**
+ * Lower-cases the all-capitals stretches of a line that also has lower-case letters (v1.0.2). A
+ * line becomes mixed when the accurate engine (ADR-0034) rewrote the words one utterance added
+ * to a merged line: the live engine's part is in capitals, the refined part is cased. A stretch
+ * counts when it has 3 or more capital words, or 2 where one is longer than 4 letters
+ * ("THANK YOU"); shorter pairs ("AWS API") and single words are taken for acronyms and kept.
+ * A lowered stretch that starts the line or follows ".", "?" or "!" gets a capital first letter.
+ *
+ * @param text A line with some lower-case letters.
+ * @returns The line with its shouted stretches in lower case.
+ * Called from: caseLine()
+ */
+function lowerCapitalRuns(text: string): string {
+  // Words and the white space between them, so the line is put back exactly as it was.
+  const parts = text.split(/(\s+)/);
+  /** Indexes (into parts) of the current run of capital words. */
+  let run: number[] = [];
+  const flush = () => {
+    const long = run.some((index) => parts[index]!.replace(/[^\p{L}]/gu, '').length > 4);
+    if (run.length >= 3 || (run.length === 2 && long)) {
+      for (const index of run) parts[index] = parts[index]!.toLowerCase();
+      // A new sentence (or the line's start) begins with a capital letter.
+      const before = parts.slice(0, run[0]).join('').trimEnd();
+      if (before === '' || /[.?!]$/.test(before)) {
+        parts[run[0]!] = parts[run[0]!]!.replace(/\p{Ll}/u, (letter) => letter.toUpperCase());
+      }
+    }
+    run = [];
+  };
+  parts.forEach((part, index) => {
+    if (index % 2 === 1 || part === '') return; // white space
+    if (isCapitalWord(part)) run.push(index);
+    // A word with no letters (a number) neither starts nor ends a run.
+    else if (/\p{L}/u.test(part)) flush();
+  });
+  flush();
+  return parts.join('');
+}
+
+/**
+ * Writes a transcript line for display: lower-cases capitals, restores the session's spellings
+ * and capitalises "I"; with capitalizeFirst, also the first letter.
+ *
+ * @param text            The line as the engine wrote it.
+ * @param terms           Spellings to restore (displayTerms()), longest pattern first.
+ * @param capitalizeFirst True to start with a capital (a line or sentence of its own).
+ * @returns The line for display.
+ * Called from: sentenceCase(), continuationCase()
+ */
+function caseLine(text: string, terms: readonly DisplayTerm[], capitalizeFirst: boolean): string {
+  // All capitals: the live engine's line. Mixed: an accurate rewrite inside a merged line.
+  let line = /\p{Ll}/u.test(text) ? lowerCapitalRuns(text) : text.toLowerCase();
   for (const term of terms) {
     const [pattern, replacement] = termPair(term);
     // Whole words only: "route" inside "routes" or "reroute" is left alone.
@@ -142,10 +192,44 @@ export function sentenceCase(text: string, terms: readonly DisplayTerm[] = []): 
     );
   }
   line = line.replace(/(?<![\w'])i(?=$|[\s'’,.?!])/g, 'I');
+  if (!capitalizeFirst) return line;
   return line.replace(
     /^(\s*)([a-z])/,
     (_match, space: string, letter: string) => space + letter.toUpperCase(),
   );
+}
+
+/**
+ * Writes a transcript line in sentence case for display (Day 6 Stage 4d): the speech model
+ * writes all capitals and no punctuation, which is hard to read. An all-capitals line is
+ * lower-cased; then the session's own spellings of its terms are restored, "I" (and I'm, I'll,
+ * I've, I'd) is capitalised, and so is the first letter. A line that already has lower-case
+ * letters (an engine that writes case) keeps its case, except for long all-capitals stretches
+ * left by the live engine in a partly refined line (v1.0.2: lowerCapitalRuns()). Display only:
+ * the stored line, and what answers and notes use, are unchanged.
+ *
+ * @param text  The line as the engine wrote it.
+ * @param terms Spellings to restore (displayTerms()), longest pattern first.
+ * @returns The line for display.
+ * Called from: TranscriptStrip.tsx, SavedTranscript.tsx, ReviewSections.tsx (ConversationSection),
+ *              core/transcript/group.ts
+ */
+export function sentenceCase(text: string, terms: readonly DisplayTerm[] = []): string {
+  return caseLine(text, terms, true);
+}
+
+/**
+ * Writes a line that continues the sentence before it (v1.0.2 transcript bubbles): as
+ * sentenceCase(), but the first letter keeps the case the line gives it, so a live-engine line
+ * that carries on after a pause reads "…tell me about your project", not "…tell me About".
+ *
+ * @param text  The line as the engine wrote it.
+ * @param terms Spellings to restore (displayTerms()), longest pattern first.
+ * @returns The line for display.
+ * Called from: core/transcript/group.ts
+ */
+export function continuationCase(text: string, terms: readonly DisplayTerm[] = []): string {
+  return caseLine(text, terms, false);
 }
 
 /** Words in one transcript chip (the overlay shows the latest words as small chips). */

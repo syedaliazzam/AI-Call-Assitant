@@ -139,3 +139,19 @@ describe('isCommand and isState', () => {
     expect(isState({ ...STATE, chips: 'words' })).toBe(false);
   });
 });
+
+describe('isCommand: v1.0.2 commands', () => {
+  it('accepts latest, the script bar, dictation and "Answer this" only in their shapes', () => {
+    expect(isCommand({ type: 'latest' })).toBe(true);
+    expect(isCommand({ type: 'script-bar', on: true })).toBe(true);
+    expect(isCommand({ type: 'script-bar' })).toBe(false);
+    expect(isCommand({ type: 'dictate', on: false })).toBe(true);
+    expect(isCommand({ type: 'dictate', on: 'yes' })).toBe(false);
+    expect(isCommand({ type: 'answer-this', question: 'Price?', start: 1, end: 2 })).toBe(true);
+    expect(isCommand({ type: 'answer-this', question: 'Price?' })).toBe(false);
+    expect(isCommand({ type: 'answer-this', question: ' ', start: 1, end: 2 })).toBe(false);
+    expect(isCommand({ type: 'answer-this', question: 'x'.repeat(2_001), start: 1, end: 2 })).toBe(
+      false,
+    );
+  });
+});

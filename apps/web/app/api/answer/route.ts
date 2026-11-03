@@ -9,7 +9,8 @@
  *          server/kite-chat.ts). Answers open with a hidden line that becomes a 'meta' event.
  * Used by: src/core/answer/answerClient.ts (browser)
  * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts, src/server/claude.ts,
- *             src/server/sse.ts, src/server/prompts/hello.ts, src/server/prompt.ts
+ *             src/server/sse.ts, src/server/prompts/hello.ts, src/server/prompt.ts,
+ *             src/server/usage.ts (the daily limit, ADR-0036)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6 (answer flow), §7.2 (/api/answer);
  *               day-04-answers.md Stage 3
  *
@@ -27,6 +28,7 @@ import type {
   AnswerTimings,
   ModelTier,
 } from '@kite/shared';
+import { dailyLimitMessage } from '@kite/shared';
 import { getCachedSession, type AuthSession } from '@/server/auth';
 import {
   CLAUDE_TIMEOUT_MS,
@@ -42,7 +44,19 @@ import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
 import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts/hello';
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
+import { countRequest } from '@/server/usage';
 import { MAX_REQUEST_BYTES, parseAnswerRequest } from '@/server/validate';
+
+/**
+ * Modes that count towards the daily limit: what the user asked for. Warm-ups and the Day 1 hello
+ * test are automatic or for developers, so they never count (ADR-0036).
+ */
+const COUNTED_MODES: ReadonlySet<AnswerRequest['mode']> = new Set([
+  'answer',
+  'chat',
+  'screenshot',
+  'kite',
+]);
 
 /** Next.js route setting: the Anthropic SDK and streaming bodies need Node.js (not Edge). */
 export const runtime = 'nodejs';
@@ -195,6 +209,23 @@ async function respond(
     return jsonError(500, 'internal', 'Claude is not configured on the server');
   }
 
+  // The per-user daily limit (ADR-0036): counted before Claude is called; over it, nothing is
+  // sent. One database round trip; its time is logged as msLimit.
+  let msLimit: number | null = null;
+  if (COUNTED_MODES.has(mode)) {
+    const counted = await countRequest(session.user.id);
+    msLimit = counted.ms;
+    if (!counted.allowed) {
+      console.info('answer: daily limit reached', {
+        requestId,
+        userId: session.user.id,
+        mode,
+        limit: counted.limit,
+      });
+      return jsonError(429, 'daily_limit', dailyLimitMessage(counted.limit));
+    }
+  }
+
   // Stop Claude when the browser disconnects or the 60 s limit passes, whichever comes first.
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(CLAUDE_TIMEOUT_MS)]);
   let streamOpenAt: number | null = null;
@@ -215,6 +246,8 @@ async function respond(
     images: data.images?.length ?? 0,
     // Which answer rules were used: 'previous' only after an admin's rollback (ADR-0032).
     styleVersion: data.styleVersion ?? 'current',
+    // How long the daily-limit check took (ADR-0036); null for modes that do not count.
+    msLimit,
   };
   let source: AsyncGenerator<ReplyItem, ReplyResult, undefined>;
   if (mode === 'warm') {

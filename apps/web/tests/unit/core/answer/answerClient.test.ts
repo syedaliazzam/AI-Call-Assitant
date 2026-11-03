@@ -161,3 +161,28 @@ describe('streamAnswer', () => {
     expect(handlers.onError).not.toHaveBeenCalled();
   });
 });
+
+describe('streamAnswer: the cleaned question (v1.0.2, ADR-0037)', () => {
+  it('reports the question event once, after the words, and ignores an empty one', async () => {
+    const body = [
+      'event: delta\ndata: {"text":"Yes."}\n\n',
+      'event: question\ndata: {"question":"  Is it priced per seat? "}\n\n',
+      'event: question\ndata: {"question":""}\n\n',
+      'event: done\ndata: {"usage":{},"ms":{}}\n\n',
+    ].join('');
+    const questions: string[] = [];
+    await new Promise<void>((resolve, reject) => {
+      streamAnswer(
+        { mode: 'answer' },
+        {
+          onDelta: () => undefined,
+          onQuestion: (question) => questions.push(question),
+          onDone: () => resolve(),
+          onError: (failure) => reject(new Error(failure.code)),
+        },
+        { fetchImpl: fakeFetch([new TextEncoder().encode(body)]) },
+      );
+    });
+    expect(questions).toEqual(['Is it priced per seat?']);
+  });
+});

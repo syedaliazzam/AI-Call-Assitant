@@ -3,15 +3,17 @@
  * Purpose: POST /api/prepare (parity Phase 4): checks sign-in and the body, runs one Prepare tool
  *          request (server/prepare.ts), and returns the reply as JSON.
  * Used by: src/core/prepare/client.ts (browser)
- * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts
+ * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts (and src/server/usage.ts: the daily limit, ADR-0036)
  *             (parsePrepareRequest), src/server/prepare.ts, src/server/claude.ts (errors)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2; ADR-0029
  *
  * Logs ids, the request's kind, timings and token counts only: never the session, questions or
  * answers.
  */
+import { dailyLimitMessage } from '@kite/shared';
 import type { AnswerErrorCode } from '@kite/shared';
 import { getCachedSession } from '@/server/auth';
+import { countRequest } from '@/server/usage';
 import { describeClaudeError, errorLogDetails } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { runPrepare, type PrepareModels } from '@/server/prepare';
@@ -41,7 +43,7 @@ function jsonError(status: number, code: AnswerErrorCode, message: string): Resp
  * Handles POST /api/prepare.
  *
  * @param request The incoming request; body is a PrepareRequest (JSON).
- * @returns 401, 400, 500, 502/503/504, or 200 with the reply; each with any Set-Cookie from the
+ * @returns 401, 429 (daily limit), 400, 500, 502/503/504, or 200 with the reply; each with any Set-Cookie from the
  *          session check.
  */
 export async function POST(request: Request): Promise<Response> {
@@ -89,6 +91,13 @@ async function respond(
     models = { fast: env.modelFast, smart: env.modelSmart };
   } catch {
     return jsonError(500, 'internal', 'Claude is not configured on the server');
+  }
+
+  // The per-user daily limit (ADR-0036): counted before Claude is called; over it, nothing is sent.
+  const counted = await countRequest(user.id);
+  if (!counted.allowed) {
+    console.info('prepare: daily limit reached', { userId: user.id, limit: counted.limit });
+    return jsonError(429, 'daily_limit', dailyLimitMessage(counted.limit));
   }
   const { kind } = parsed.data;
   try {

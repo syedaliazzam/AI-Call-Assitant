@@ -11,6 +11,8 @@
  * off, forwards each press once and reports shortcuts another app holds (acceleratorLabel);
  * captureScreenshot() returns the shell PNG and maps its failures; the compact view and share
  * protection go through the Day 5 bridge, and a shell from before Day 5 reports them unsupported.
+ * v1.0.2 (ADR-0035): overlay placement, resizing and modes go through a 1.0.2 shell; an older
+ * shell reports no placement and its modes fall back to collapsing.
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -248,5 +250,49 @@ describe('createDesktopPlatform: accurate transcription (v1.0.1, ADR-0034)', () 
       ok: false,
       code: 'engine',
     });
+  });
+});
+
+describe('createDesktopPlatform: overlay placement, resizing and modes (v1.0.2, ADR-0035)', () => {
+  it('a shell without the methods: no placement, no preset, and modes fall back to collapse', async () => {
+    const setOverlayCollapsed = vi.fn(async () => undefined);
+    const platform = createDesktopPlatform({
+      version: '1.0.1',
+      os: 'windows',
+      setOverlayCollapsed,
+    });
+    expect(platform.overlayPlacement()).toBe(false);
+    expect(await platform.getOverlayPreset()).toBeNull();
+    platform.placeOverlay('top-right');
+    platform.resizeOverlay({ phase: 'start', edge: 'e', dx: 0, dy: 0 });
+    platform.setOverlayMode('collapsed');
+    platform.setOverlayMode('script');
+    platform.setOverlayMode('full');
+    expect(setOverlayCollapsed.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('a 1.0.2 shell: passes each call through, and a failed one stays quiet', async () => {
+    const bridge = {
+      version: '1.0.2',
+      os: 'windows' as const,
+      placeOverlay: vi.fn(async () => undefined),
+      getOverlayPreset: vi.fn(async () => 'bottom-center' as const),
+      resizeOverlay: vi.fn(async () => {
+        throw new Error('ipc closed');
+      }),
+      setOverlayMode: vi.fn(async () => undefined),
+      setOverlayCollapsed: vi.fn(async () => undefined),
+    };
+    const platform = createDesktopPlatform(bridge);
+    expect(platform.overlayPlacement()).toBe(true);
+    platform.placeOverlay('top-right');
+    expect(await platform.getOverlayPreset()).toBe('bottom-center');
+    platform.resizeOverlay({ phase: 'move', edge: 'se', dx: 3, dy: 4 });
+    platform.setOverlayMode('script-input');
+    await Promise.resolve();
+    expect(bridge.placeOverlay).toHaveBeenCalledWith('top-right');
+    expect(bridge.resizeOverlay).toHaveBeenCalledWith({ phase: 'move', edge: 'se', dx: 3, dy: 4 });
+    expect(bridge.setOverlayMode).toHaveBeenCalledWith('script-input');
+    expect(bridge.setOverlayCollapsed).not.toHaveBeenCalled();
   });
 });

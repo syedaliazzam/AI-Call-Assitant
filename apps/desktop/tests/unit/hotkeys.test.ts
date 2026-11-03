@@ -158,8 +158,25 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     press('CommandOrControl+Enter');
     press('CommandOrControl+Alt+H');
     press('CommandOrControl+Alt+Shift+Up');
-    expect(sendToPage.mock.calls).toEqual([[HOTKEY_CHANNEL, 'answer']]);
+    // v1.0.2 (ADR-0035): the script bar goes to the page, which decides what the overlay shows.
+    press('CommandOrControl+Alt+S');
+    expect(sendToPage.mock.calls).toEqual([
+      [HOTKEY_CHANNEL, 'answer'],
+      [HOTKEY_CHANNEL, 'script-bar'],
+    ]);
     expect(overlayAction.mock.calls).toEqual([['overlay-toggle'], ['overlay-up-big']]);
+  });
+
+  it('registers the script bar only during a call, and reports it when taken (v1.0.2)', () => {
+    const { globalShortcut } = fakeGlobalShortcut();
+    const controller = createHotkeys(globalShortcut, vi.fn());
+    expect(controller.check().find((s) => s.action === 'script-bar')).toMatchObject({
+      accelerator: 'CommandOrControl+Alt+S',
+    });
+    const statuses = controller.enable();
+    expect(statuses.find((s) => s.action === 'script-bar')?.registered).toBe(true);
+    controller.disable();
+    expect(globalShortcut.unregister).toHaveBeenCalledWith('CommandOrControl+Alt+S');
   });
 
   it('never registers the shortcuts that edit text in other apps', () => {

@@ -1,0 +1,57 @@
+event: meta
+data: {"meta":{"type":"concept","target":"call","source":"docs"}}
+
+event: delta
+data: {"text":"Error E42"}
+
+event: delta
+data: {"text":" means the sync token has exp"}
+
+event: delta
+data: {"text":"ired, so we"}
+
+event: delta
+data: {"text":" need to re-link the"}
+
+event: delta
+data: {"text":" calendar.\n- Open"}
+
+event: delta
+data: {"text":" Settings, then"}
+
+event: delta
+data: {"text":" Integrations, and click Re"}
+
+event: delta
+data: {"text":"-link calendar,"}
+
+event: delta
+data: {"text":" then sign in again.\n-"}
+
+event: delta
+data: {"text":" Restart SyncAg"}
+
+event: delta
+data: {"text":"ent from the tray icon."}
+
+event: delta
+data: {"text":"\n- If it"}
+
+event: delta
+data: {"text":" still fails after 15 min"}
+
+event: delta
+data: {"text":"utes, send us"}
+
+event: delta
+data: {"text":" the SyncAgent log"}
+
+event: delta
+data: {"text":" file.\n"}
+
+event: question
+data: {"question":"What should we try for error E42?"}
+
+event: done
+data: {"usage":{"input_tokens":324,"output_tokens":131,"cache_creation_input_tokens":394,"cache_read_input_tokens":3446},"ms":{"auth":0,"toStreamOpen":0,"streamOpenToFirstText":0,"toFirstText":871,"total":1154}}
+

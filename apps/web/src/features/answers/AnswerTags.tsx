@@ -26,6 +26,11 @@ export interface AnswerTagsProps {
   sessionType?: string;
   /** Answers again in another shape; without it the type is plain text. */
   onChangeType?: (type: AnswerType) => void;
+  /**
+   * Footer size (v1.0.2): 12 px and inline, so the tags sit quietly next to the time and the
+   * buttons instead of competing with the answer.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -35,12 +40,13 @@ export interface AnswerTagsProps {
  * @returns The row, or nothing when there is no meta yet.
  * Rendered by: AnswerPanel.tsx, CompactView.tsx, ConversationSection.tsx, AskKitePage.tsx
  */
-export function AnswerTags({ meta, sessionType, onChangeType }: AnswerTagsProps) {
+export function AnswerTags({ meta, sessionType, onChangeType, compact }: AnswerTagsProps) {
   if (!meta) return null;
+  const size = compact ? 'text-[12px]' : 'text-[13px]';
   return (
     <p
       aria-label="About this answer"
-      className="flex flex-wrap items-center gap-x-1.5 text-[13px] leading-5 text-ui-muted"
+      className={`${compact ? 'inline-flex' : 'flex'} flex-wrap items-center gap-x-1.5 leading-5 text-ui-muted ${size}`}
     >
       {onChangeType ? (
         <select
@@ -48,7 +54,7 @@ export function AnswerTags({ meta, sessionType, onChangeType }: AnswerTagsProps)
           title="Choose another type to answer again in that shape"
           value={meta.type}
           onChange={(event) => onChangeType(event.target.value as AnswerType)}
-          className="max-w-[10rem] border-0 bg-transparent [field-sizing:content] py-0 pr-1 text-[13px] text-ui-muted hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]"
+          className={`max-w-[10rem] border-0 bg-transparent [field-sizing:content] py-0 pr-1 ${size} text-ui-muted hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]`}
         >
           {ANSWER_TYPES.map((type) => (
             <option key={type} value={type}>

@@ -51,7 +51,7 @@ import { SESSION_TYPE_LABELS, sessionSummary } from '@/features/session-setup/la
 import { getPlatform, type OtherSideSource } from '@/platform';
 import { Button } from '@/ui/Button';
 import { AudioMeter } from './AudioMeter';
-import { LiveAnswers } from './LiveAnswers';
+import { LiveAnswers, type AnswerThisBridge } from './LiveAnswers';
 import { LiveCallLayout, type LiveCallStatus } from './LiveCallLayout';
 import { BrowserCallLayout } from './BrowserCallLayout';
 import { openOverlay } from './openOverlay';
@@ -64,6 +64,8 @@ import {
 } from './ConnectPanel';
 import { SavedTranscript } from './SavedTranscript';
 import { TranscriptStrip } from './TranscriptStrip';
+import type { TranscriptGroup } from '@/core/transcript/group';
+import { useCallDictation } from './useCallDictation';
 
 /**
  * How often a running call refreshes the session's lastActiveAt, in ms. Well under the 12-hour
@@ -195,6 +197,14 @@ export function LivePage({
   });
   const [modelAttempt, setModelAttempt] = useState(0);
   const [connection, setConnection] = useState<ConnectionState>('idle');
+  // Item 8 (ADR-0038): talking to Kite during the call uses the "You" channel; words dictated to
+  // Kite are routed away from the transcript in the engine callbacks below (route is stable).
+  const { dictation, route: dictationRoute } = useCallDictation({
+    available: connection === 'connected',
+  });
+  // v1.0.2: the transcript's "Answer this" buttons use the answers panel's guarded ask, and show
+  // which questions were answered; the panel hands both over once it is mounted.
+  const [answerBridge, setAnswerBridge] = useState<AnswerThisBridge | null>(null);
   const [levels, setLevels] = useState<ChannelLevels>({ you: 0, them: 0 });
   // Day 6 Stage 4e: when "Them" last had sound (or the call connected), and whether it has been
   // silent for 20 s (then a notice suggests checking the shared tab or app).
@@ -276,12 +286,24 @@ export function LivePage({
         },
         onPartial: ({ channel, text, tStart }) => {
           if (!isActive()) return;
+          if (channel === 'you' && dictationRoute.partial(text)) {
+            // Words for Kite, not the call: clear any grey "You" line and show nothing.
+            transcript.addPartial(channel, '', null);
+            watchdog.current.noteProgress(performance.now());
+            return;
+          }
           transcript.addPartial(channel, text, tStart);
           noteHeard(channel, text);
           watchdog.current.noteProgress(performance.now());
         },
         onFinal: ({ channel, text, tStart, tEnd, audio }) => {
           if (!isActive()) return;
+          if (channel === 'you' && dictationRoute.final(text)) {
+            // A question dictated to Kite: never a transcript line, never saved or sent later.
+            transcript.addPartial(channel, '', null);
+            watchdog.current.noteProgress(performance.now());
+            return;
+          }
           const line = transcript.addFinal({ speaker: channel, text, tStart, tEnd });
           noteHeard(channel, text);
           watchdog.current.noteProgress(performance.now());
@@ -293,7 +315,7 @@ export function LivePage({
         },
       });
     },
-    [hotwords, transcript, noteHeard],
+    [hotwords, transcript, noteHeard, dictationRoute],
   );
 
   // The engine: created when the page opens (so the model downloads while the user reads the
@@ -641,7 +663,20 @@ export function LivePage({
       compact
     />
   ));
-  const transcriptNode = <TranscriptStrip lines={shownLines} health={health} terms={terms} />;
+  const transcriptNode = (
+    <TranscriptStrip
+      lines={shownLines}
+      health={health}
+      terms={terms}
+      {...(answerBridge
+        ? {
+            onAnswerThis: (group: TranscriptGroup) =>
+              answerBridge.answerThis(group.finalText, { start: group.tStart, end: group.tEnd }),
+            answeredSpans: answerBridge.answeredSpans,
+          }
+        : {})}
+    />
+  );
   const answersNode =
     callStartedAt !== null ? (
       <LiveAnswers
@@ -656,6 +691,8 @@ export function LivePage({
         }}
         ending={ending}
         onEnd={() => void end()}
+        dictation={dictation}
+        onAnswerThis={setAnswerBridge}
       />
     ) : (
       <div className="flex justify-end">
@@ -727,7 +764,6 @@ export function LivePage({
         name={call.company}
         status={status}
         meters={meters}
-        callStartedAt={callStartedAt}
         notices={notices}
         preview={{
           stream: previewStream,
@@ -742,8 +778,6 @@ export function LivePage({
         }}
         transcript={transcriptNode}
         answers={answersNode}
-        onExit={() => void end()}
-        onOverlay={() => void openOverlay(session.id).catch(() => undefined)}
       />
     );
   }

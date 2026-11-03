@@ -4,13 +4,21 @@
  *          It wraps `window.kiteDesktop`, the bridge exposed by the shell's preload script.
  *          It reports the shell version and OS, opens the microphone (Day 1) and the other side as
  *          system audio (Day 2), the hotkeys (Day 4), and screenshots, the compact live window and
- *          its screen-share protection through the shell (Day 5).
+ *          its screen-share protection through the shell (Day 5), and the overlay's presets,
+ *          page-driven resizing and modes (v1.0.2, ADR-0035).
  * Used by: src/platform/index.ts (getPlatform)
  * Depends on: @kite/shared (KiteDesktopApi), src/platform/types.ts, errors.ts, media.ts,
  *             keymap.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (desktop column), §7.3
  */
-import type { DesktopOs, KiteDesktopApi, ShareProtectionState } from '@kite/shared';
+import type {
+  DesktopOs,
+  KiteDesktopApi,
+  OverlayMode,
+  OverlayPreset,
+  OverlayResizeStep,
+  ShareProtectionState,
+} from '@kite/shared';
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
 import {
@@ -211,6 +219,62 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
      */
     setOverlayCollapsed(collapsed: boolean) {
       void bridge.setOverlayCollapsed?.(collapsed).catch(() => undefined);
+    },
+
+    /**
+     * Whether this shell can place, resize and switch the overlay (1.0.2 and later, ADR-0035).
+     *
+     * @returns True when it has all four methods.
+     */
+    overlayPlacement() {
+      return (
+        typeof bridge.placeOverlay === 'function' &&
+        typeof bridge.getOverlayPreset === 'function' &&
+        typeof bridge.resizeOverlay === 'function' &&
+        typeof bridge.setOverlayMode === 'function'
+      );
+    },
+
+    /**
+     * Puts the overlay at a preset place (older shells ignore it).
+     *
+     * @param preset Where.
+     */
+    placeOverlay(preset: OverlayPreset) {
+      void bridge.placeOverlay?.(preset).catch(() => undefined);
+    },
+
+    /**
+     * The remembered overlay preset.
+     *
+     * @returns The preset, or null on an older shell or when the shell does not answer.
+     */
+    async getOverlayPreset() {
+      if (!bridge.getOverlayPreset) return null;
+      return bridge.getOverlayPreset().catch(() => null);
+    },
+
+    /**
+     * One step of resizing the overlay from an edge (older shells ignore it).
+     *
+     * @param step The step.
+     */
+    resizeOverlay(step: OverlayResizeStep) {
+      void bridge.resizeOverlay?.(step).catch(() => undefined);
+    },
+
+    /**
+     * Switches the overlay's mode. A shell before 1.0.2 has no modes: it can only collapse the
+     * overlay ('collapsed') and open it again ('full'); the script bar then stays full size.
+     *
+     * @param mode The mode.
+     */
+    setOverlayMode(mode: OverlayMode) {
+      if (bridge.setOverlayMode) {
+        void bridge.setOverlayMode(mode).catch(() => undefined);
+      } else if (mode === 'collapsed' || mode === 'full') {
+        void bridge.setOverlayCollapsed?.(mode === 'collapsed').catch(() => undefined);
+      }
     },
 
     /** Minimises the main window (older shells ignore it). */

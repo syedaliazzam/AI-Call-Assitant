@@ -1,7 +1,8 @@
 /**
  * File: apps/web/src/server/sse.ts
  * Purpose: Turns a streamed Claude reply into a `text/event-stream` (server-sent events) response
- *          body with `meta`, `delta`, `done` and `error` events. Each text piece is written the
+ *          body with `meta`, `delta`, `question` (v1.0.2), `done` and `error` events. Each text
+ *          piece is written the
  *          moment it arrives; nothing is collected first.
  * Used by: app/api/answer/route.ts (and app/api/notes/route.ts, Day 5)
  * Depends on: @kite/shared (AnswerEvent, AnswerMeta)
@@ -81,7 +82,7 @@ const encoder = new TextEncoder();
  * Called from: POST handler in app/api/answer/route.ts
  */
 export function toEventStream<R>(
-  source: AsyncGenerator<string | { meta: AnswerMeta }, R, undefined>,
+  source: AsyncGenerator<string | { meta: AnswerMeta } | { question: string }, R, undefined>,
   handlers: EventStreamHandlers<R>,
 ): ReadableStream<Uint8Array> {
   const stats: StreamStats = { firstDeltaAt: null };
@@ -95,11 +96,13 @@ export function toEventStream<R>(
           controller.close();
           return;
         }
-        // The hidden line's contents: not text, so it does not count as the first word.
+        // A hidden line's contents: not text, so it does not count as the first word.
         if (typeof next.value !== 'string') {
-          controller.enqueue(
-            encoder.encode(formatAnswerEvent({ type: 'meta', meta: next.value.meta })),
-          );
+          const event: AnswerEvent =
+            'meta' in next.value
+              ? { type: 'meta', meta: next.value.meta }
+              : { type: 'question', question: next.value.question };
+          controller.enqueue(encoder.encode(formatAnswerEvent(event)));
           return;
         }
         stats.firstDeltaAt ??= performance.now();

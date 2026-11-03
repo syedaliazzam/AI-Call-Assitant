@@ -1,11 +1,15 @@
 /**
  * File: apps/web/src/features/live/CompactView.tsx
  * Purpose: The overlay (the compact live view; architecture §5, ADR-0029): three stacked bars.
- *          Controls: audio status, Answer, Screenshot, Chat, move, collapse, menu (opacity, fade,
+ *          Controls: audio status, Answer, Screenshot, Chat, move, collapse, menu (Script bar,
+ *          position presets and Reset size and position, answer preferences, opacity, fade,
  *          screen-share protection), End. Transcript: the latest words as chips, Clear, expand
- *          (newest line first). Answer card: question, type and source tags, the answer (shared
- *          with the main window: AnswerBody), time, thumbs, copy and report; history, with the
- *          other answers listed newest first; Clear; expand. One scroll area, 16–18 px text.
+ *          (bubbles, newest first, with "Answer this"). Answer card: "Question:" (Claude's cleaned
+ *          question once it arrives), the answer (shared with the main window: AnswerBody), and a
+ *          quiet footer with the type and source tags, time, thumbs, copy and report; history,
+ *          with the other answers listed newest first; Clear; expand. An expanded view shows
+ *          "Back to compact" and Escape returns (v1.0.2). The script bar (v1.0.2) replaces all of
+ *          it with one slim bar. Resize grips on the see-through window's edges (ADR-0035).
  *          Presentational: CompactLive.tsx gives it the state.
  * Used by: src/features/live/CompactLive.tsx (desktop overlay window; browser picture-in-picture)
  * Depends on: src/core/live/liveChannel.ts (types), @kite/shared (hotkeys), src/ui/icons.tsx,
@@ -24,21 +28,29 @@ import {
   FOCUSED_HOTKEYS,
   hotkeyLabel,
   type AnswerType,
+  type OverlayEdge,
+  type OverlayMode,
+  type OverlayPreset,
+  type OverlayResizeStep,
   type ShareProtectionState,
   type TargetChoice,
 } from '@kite/shared';
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type PointerEvent,
   type ReactNode,
 } from 'react';
-import { answerText } from '@/core/answer/format';
+import { answerText, cardQuestion, splitAnswer } from '@/core/answer/format';
+import { groupLines } from '@/core/transcript/group';
 import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { TARGET_OPTIONS } from './ChatBox';
+import { TranscriptBubbles } from './TranscriptBubbles';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import type { AnswerStyle } from '@/core/storage/types';
 import { FORMAT_OPTIONS, LENGTH_OPTIONS, TONE_OPTIONS } from '@/features/session-setup/labels';
@@ -84,8 +96,15 @@ export interface CompactViewProps {
   mac?: boolean;
   /** Opacity and fade; undefined where the window cannot do them (a browser). */
   windowSettings?: OverlayWindowSettings;
-  /** Tells the window the overlay collapsed or opened (desktop: it changes size). */
-  onCollapsed?: (collapsed: boolean) => void;
+  /**
+   * Tells the window which shape the overlay has (desktop: it changes size): full, collapsed to
+   * its controls bar, or the script bar with or without its input (v1.0.2, ADR-0035).
+   */
+  onMode?: (mode: OverlayMode) => void;
+  /** Resizes the window from an edge (desktop 1.0.2+: the see-through window has no frame). */
+  onResize?: (step: OverlayResizeStep) => void;
+  /** Moves the window to a preset place at its default size (desktop 1.0.2+). */
+  onPlace?: (preset: OverlayPreset) => void;
   /** Whether the Chat box is open. */
   chatOpen: boolean;
   /** Opens or closes the Chat box (also the Chat shortcut's job). */
@@ -98,6 +117,74 @@ export interface CompactViewProps {
 
 /** Small label style. */
 const EYEBROW = 'text-[13px] font-medium';
+
+/** The overlay's preset places, in the order the menu lists them (ADR-0035). */
+const PRESETS: readonly { value: OverlayPreset; label: string }[] = [
+  { value: 'top-center', label: 'Top centre (default)' },
+  { value: 'top-right', label: 'Top right' },
+  { value: 'bottom-center', label: 'Bottom centre' },
+];
+
+/** The resize grips: each edge and corner, with where it sits and its cursor. */
+const GRIPS: readonly { edge: OverlayEdge; className: string }[] = [
+  { edge: 'n', className: 'left-3 right-3 top-0 h-1.5 cursor-ns-resize' },
+  { edge: 's', className: 'bottom-0 left-3 right-3 h-1.5 cursor-ns-resize' },
+  { edge: 'e', className: 'bottom-3 right-0 top-3 w-1.5 cursor-ew-resize' },
+  { edge: 'w', className: 'bottom-3 left-0 top-3 w-1.5 cursor-ew-resize' },
+  { edge: 'ne', className: 'right-0 top-0 h-3 w-3 cursor-nesw-resize' },
+  { edge: 'nw', className: 'left-0 top-0 h-3 w-3 cursor-nwse-resize' },
+  { edge: 'se', className: 'bottom-0 right-0 h-3 w-3 cursor-nwse-resize' },
+  { edge: 'sw', className: 'bottom-0 left-0 h-3 w-3 cursor-nesw-resize' },
+];
+
+/**
+ * The see-through window's resize grips (desktop 1.0.2+). A pointer drag on an edge sends the
+ * distance moved since the drag started; the shell applies it to the bounds it had then.
+ *
+ * @param props.onResize Sends each step to the shell.
+ * @returns The grips (invisible, over the panel's edges).
+ */
+function ResizeGrips({
+  onResize,
+}: {
+  /** Sends each step to the shell. */
+  onResize: (step: OverlayResizeStep) => void;
+}) {
+  const start = useRef<{ x: number; y: number; edge: OverlayEdge } | null>(null);
+  /**
+   * One step of a drag.
+   *
+   * @param event The pointer event.
+   * @param phase 'start', 'move' or 'end'.
+   */
+  const step = (event: PointerEvent<HTMLSpanElement>, phase: OverlayResizeStep['phase']) => {
+    const from = start.current;
+    if (!from) return;
+    // Screen coordinates: the window moves under the pointer while it resizes.
+    onResize({ phase, edge: from.edge, dx: event.screenX - from.x, dy: event.screenY - from.y });
+    if (phase === 'end') start.current = null;
+  };
+  return (
+    <>
+      {GRIPS.map(({ edge, className }) => (
+        <span
+          key={edge}
+          aria-hidden="true"
+          data-grip={edge}
+          className={`absolute z-20 [-webkit-app-region:no-drag] ${className}`}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            start.current = { x: event.screenX, y: event.screenY, edge };
+            step(event, 'start');
+          }}
+          onPointerMove={(event) => step(event, 'move')}
+          onPointerUp={(event) => step(event, 'end')}
+          onPointerCancel={(event) => step(event, 'end')}
+        />
+      ))}
+    </>
+  );
+}
 
 /** A bar's look: part of the one panel, split by a thin line, with no shrinking below its content. */
 const BAR = 'flex shrink-0 items-center gap-1.5 border-b border-ui-border px-2 py-1.5';
@@ -185,6 +272,8 @@ function OverlayMenu({
   windowSettings,
   protection,
   onProtection,
+  onScriptBar,
+  onPlace,
 }: {
   /** How answers are written now (absent until the live page has said). */
   style: AnswerStyle | undefined;
@@ -196,6 +285,10 @@ function OverlayMenu({
   protection: ShareProtectionState | null;
   /** Turns protection on or off. */
   onProtection?: (on: boolean) => void;
+  /** Switches to the script bar (desktop 1.0.2+). */
+  onScriptBar?: () => void;
+  /** Moves the window to a preset place at its default size (desktop 1.0.2+). */
+  onPlace?: (preset: OverlayPreset) => void;
 }) {
   return (
     <div
@@ -203,8 +296,54 @@ function OverlayMenu({
       aria-label="Overlay settings"
       data-menu="overlay"
       // Kept inside the window at its smallest size: the menu scrolls rather than being cut off.
-      className="k-overlay-menu absolute right-1 top-11 z-10 flex max-h-[calc(100vh-3rem)] w-64 flex-col gap-3 overflow-y-auto rounded-control border border-ui-border p-3 text-[13px] text-ui-text shadow-modal [-webkit-app-region:no-drag]"
+      className="k-overlay-menu absolute right-1 top-11 z-30 flex max-h-[calc(100vh-3rem)] w-64 flex-col gap-3 overflow-y-auto rounded-control border border-ui-border p-3 text-[13px] text-ui-text shadow-modal [-webkit-app-region:no-drag]"
     >
+      {(onScriptBar || onPlace) && (
+        <div className="flex flex-col gap-2">
+          {onScriptBar && (
+            <button
+              type="button"
+              className="rounded-control border border-ui-border px-2 py-1.5 text-left hover:bg-ui-overlay-button focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+              onClick={onScriptBar}
+              title="A slim bar at the top with the answer line (Ctrl+Alt+S)"
+            >
+              Script bar
+            </button>
+          )}
+          {onPlace && (
+            <>
+              <label className="flex items-center justify-between gap-2">
+                Position
+                <select
+                  aria-label="Overlay position"
+                  defaultValue=""
+                  onChange={(event) => {
+                    if (event.target.value) onPlace(event.target.value as OverlayPreset);
+                    event.target.value = '';
+                  }}
+                  className="w-40 border border-ui-border bg-ui-input px-2 py-1 text-[13px] text-ui-text"
+                >
+                  <option value="" disabled>
+                    Move to…
+                  </option>
+                  {PRESETS.map((preset) => (
+                    <option key={preset.value} value={preset.value}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="rounded-control border border-ui-border px-2 py-1.5 text-left hover:bg-ui-overlay-button focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+                onClick={() => onPlace('top-center')}
+              >
+                Reset size and position
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {style && (
         <div className="flex flex-col gap-2">
           <span className={`${EYEBROW} text-ui-muted`}>Answer preferences</span>
@@ -277,6 +416,149 @@ function OverlayMenu({
   );
 }
 
+/** Props for ScriptBar. */
+interface ScriptBarProps {
+  /** What the live page shows. */
+  state: CompactState;
+  /** True for the see-through panel (the desktop window). */
+  glass: boolean;
+  /** The panel's background opacity (ADR-0033), when the window can change it. */
+  panelAlpha: number | undefined;
+  /** Whether the one-line input is open. */
+  inputOpen: boolean;
+  /** Opens or closes the input (the window grows by one row for it). */
+  onInputOpen: (open: boolean) => void;
+  /** Sends a command to the live page. */
+  onCommand: (command: CompactCommand) => void;
+}
+
+/**
+ * The script bar (v1.0.2, item 7): a slim bar at the top centre with the answer line and its first
+ * bullet, to read while looking at the camera. A microphone and a one-line input talk or type to
+ * the current chat mode; Escape closes the input; clicking the words goes back to the full overlay.
+ * The whole bar drags the window, like the overlay's controls bar.
+ *
+ * @param props See ScriptBarProps.
+ * @returns The bar.
+ * Rendered by: CompactView (when state.scriptBar is on)
+ */
+function ScriptBar({
+  state,
+  glass,
+  panelAlpha,
+  inputOpen,
+  onInputOpen,
+  onCommand,
+}: ScriptBarProps) {
+  const [text, setText] = useState('');
+  const answer = state.answer;
+  const parts = answer ? splitAnswer(answer.text) : null;
+  const line = parts?.headline || (answer?.status === 'streaming' ? 'Answering…' : '');
+  const first = parts?.bullets[0] ?? '';
+  /** Back to the full overlay. */
+  const full = () => {
+    onCommand({ type: 'script-bar', on: false });
+  };
+
+  return (
+    <div
+      className={`k-dark k-overlay ${glass ? 'k-glass' : ''} flex h-screen flex-col overflow-hidden rounded-card border border-ui-border text-ui-text`}
+      style={
+        glass
+          ? ({ '--k-overlay-alpha': panelAlpha ?? OVERLAY_OPACITY.default } as CSSProperties)
+          : undefined
+      }
+    >
+      <div
+        role="toolbar"
+        aria-label="Script bar"
+        className="flex h-16 shrink-0 items-center gap-2 px-3 [-webkit-app-region:drag]"
+      >
+        <button
+          type="button"
+          className="min-w-0 flex-1 text-left [-webkit-app-region:no-drag] focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+          onClick={full}
+          title="Back to the full overlay"
+        >
+          <span aria-label="Answer line" className="block truncate text-[17px] font-bold leading-6">
+            {line || state.notice || 'Press Answer when they ask something.'}
+          </span>
+          {first && (
+            <span className="block truncate text-[14px] leading-5 text-ui-muted">{first}</span>
+          )}
+        </button>
+        {state.dictationSupported && (
+          <button
+            type="button"
+            className={`${ICON_BUTTON} ${state.dictating ? 'text-ui-danger' : ''}`}
+            aria-label={state.dictating ? 'Stop listening' : 'Speak a question'}
+            aria-pressed={state.dictating ?? false}
+            onClick={() => onCommand({ type: 'dictate', on: !state.dictating })}
+          >
+            <MicIcon />
+          </button>
+        )}
+        <button
+          type="button"
+          className={BUTTON}
+          aria-pressed={inputOpen}
+          onClick={() => onInputOpen(!inputOpen)}
+          title="Type to Kite"
+        >
+          Type
+        </button>
+        <button
+          type="button"
+          className={`${BUTTON_BASE} bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover`}
+          onClick={() => onCommand({ type: 'answer' })}
+          disabled={state.ended || state.answering}
+        >
+          Answer
+        </button>
+        <button
+          type="button"
+          className={ICON_BUTTON}
+          aria-label="Full overlay"
+          title="Back to the full overlay"
+          onClick={full}
+        >
+          <ExpandIcon />
+        </button>
+      </div>
+      {inputOpen && (
+        <form
+          className="flex shrink-0 gap-1 border-t border-ui-border px-2 py-1.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const question = text.trim();
+            if (!question) return;
+            onCommand({ type: 'chat', question });
+            setText('');
+            onInputOpen(false);
+          }}
+        >
+          <input
+            autoFocus
+            aria-label="Type a question"
+            className="h-9 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)]"
+            placeholder={`Type to Kite (${TARGET_OPTIONS.find((option) => option.value === (state.chatTarget ?? 'auto'))?.label ?? 'Auto'}), then Enter`}
+            value={text}
+            maxLength={2_000}
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                setText('');
+                onInputOpen(false);
+              }
+            }}
+          />
+        </form>
+      )}
+    </div>
+  );
+}
+
 /**
  * The overlay.
  *
@@ -325,7 +607,44 @@ export function CompactView(props: CompactViewProps) {
   const collapse = (next: boolean) => {
     setCollapsed(next);
     setMenuOpen(false);
-    props.onCollapsed?.(next);
+  };
+
+  // The script bar (v1.0.2): the live page holds whether it is on (Ctrl+Alt+S reaches it there).
+  const scriptBar = state?.scriptBar ?? false;
+  const [scriptInput, setScriptInput] = useState(false);
+  // The window's shape follows the view: the shell resizes it (ADR-0035).
+  const mode: OverlayMode = scriptBar
+    ? scriptInput
+      ? 'script-input'
+      : 'script'
+    : collapsed
+      ? 'collapsed'
+      : 'full';
+  const onMode = useRef(props.onMode);
+  useEffect(() => {
+    onMode.current = props.onMode;
+  });
+  useEffect(() => {
+    onMode.current?.(mode);
+  }, [mode]);
+
+  /**
+   * Expands the answer (the newest one is shown, v1.0.2) or goes back to the compact view.
+   *
+   * @param next True to expand.
+   */
+  const expandAnswer = (next: boolean) => {
+    setAnswerOnly(next);
+    if (next) {
+      setTranscriptOpen(false);
+      onCommand({ type: 'latest' });
+    }
+  };
+
+  /** Back to the compact view from either expanded view (the button and Escape). */
+  const backToCompact = () => {
+    setAnswerOnly(false);
+    setTranscriptOpen(false);
   };
 
   /** Sends the report, with what the user wrote. */
@@ -344,12 +663,45 @@ export function CompactView(props: CompactViewProps) {
   }, [answerId]);
   const chips = (state?.chips ?? []).filter((chip) => !clearedChips.includes(chip.id));
   const hasHistory = (state?.total ?? 0) > 1;
+  const index = state?.index ?? -1;
+  const expanded = answerOnly || transcriptOpen;
+  // The expanded transcript as bubbles (v1.0.2); lines from an older live page have no times and
+  // then each stays its own bubble.
+  const groups = useMemo(() => {
+    const lines = state?.lines ?? [];
+    const timed = lines.every((line) => line.tStart !== undefined && line.tEnd !== undefined);
+    return groupLines(
+      lines.map((line) => ({ ...line, tStart: line.tStart ?? 0, tEnd: line.tEnd ?? 0 })),
+      timed ? {} : { gapMs: -1 },
+    );
+  }, [state?.lines]);
+
+  if (scriptBar && state && !state.ended) {
+    return (
+      <ScriptBar
+        state={state}
+        glass={props.glass ?? false}
+        panelAlpha={props.windowSettings?.panelAlpha}
+        inputOpen={scriptInput}
+        onInputOpen={setScriptInput}
+        onCommand={onCommand}
+      />
+    );
+  }
 
   return (
     // Theme §6: one rounded panel, in the dark tokens; see-through in the desktop app (k-glass).
     // @container: buttons drop their shortcut labels when it is narrow.
     <div
-      className={`k-dark k-overlay ${props.glass ? 'k-glass' : ''} @container flex h-screen flex-col overflow-hidden rounded-card border border-ui-border text-[16px] text-ui-text`}
+      className={`k-dark k-overlay ${props.glass ? 'k-glass' : ''} @container relative flex h-screen flex-col overflow-hidden rounded-card border border-ui-border text-[16px] text-ui-text`}
+      // Escape goes back from an expanded view to the compact one (v1.0.2); a box that takes text
+      // handles its own Escape first.
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || !expanded || event.defaultPrevented) return;
+        const tag = (event.target as HTMLElement).tagName;
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+        backToCompact();
+      }}
       // ADR-0033: the glass panel's background opacity (never the text). Only the see-through panel
       // uses it; the solid picture-in-picture panel ignores it.
       style={
@@ -360,6 +712,7 @@ export function CompactView(props: CompactViewProps) {
           : undefined
       }
     >
+      {props.onResize && !collapsed && <ResizeGrips onResize={props.onResize} />}
       <div
         role="toolbar"
         aria-label="Overlay controls"
@@ -449,6 +802,18 @@ export function CompactView(props: CompactViewProps) {
             protection={props.protection}
             {...(props.windowSettings ? { windowSettings: props.windowSettings } : {})}
             {...(props.onProtection ? { onProtection: props.onProtection } : {})}
+            {...(props.onPlace
+              ? {
+                  onPlace: (preset: OverlayPreset) => {
+                    setMenuOpen(false);
+                    props.onPlace?.(preset);
+                  },
+                  onScriptBar: () => {
+                    setMenuOpen(false);
+                    onCommand({ type: 'script-bar', on: true });
+                  },
+                }
+              : {})}
           />
         )}
       </div>
@@ -486,16 +851,30 @@ export function CompactView(props: CompactViewProps) {
               >
                 Clear
               </button>
-              <button
-                type="button"
-                className={ICON_BUTTON}
-                aria-label={transcriptOpen ? 'Show the answer' : 'Expand the transcript'}
-                aria-pressed={transcriptOpen}
-                title={transcriptOpen ? 'Show the answer' : 'Expand the transcript'}
-                onClick={() => setTranscriptOpen((open) => !open)}
-              >
-                <ExpandIcon />
-              </button>
+              {transcriptOpen ? (
+                // A clear way back (v1.0.2): words, not a second ⛶.
+                <button
+                  type="button"
+                  className={BUTTON}
+                  onClick={backToCompact}
+                  title="Back to the compact view (Esc)"
+                >
+                  Back to compact
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className={ICON_BUTTON}
+                  aria-label="Expand the transcript"
+                  title="Expand the transcript"
+                  onClick={() => {
+                    setAnswerOnly(false);
+                    setTranscriptOpen(true);
+                  }}
+                >
+                  <ExpandIcon />
+                </button>
+              )}
             </section>
           )}
 
@@ -504,23 +883,25 @@ export function CompactView(props: CompactViewProps) {
             className="flex min-h-0 flex-1 flex-col"
           >
             {transcriptOpen ? (
-              <div className="min-h-0 flex-1 overflow-y-auto p-3 text-[16px] leading-relaxed">
-                {(state?.lines ?? []).length === 0 && (
-                  <p className="text-ui-muted">Nothing said yet.</p>
-                )}
-                {/* Newest first (ADR-0030). */}
-                {[...(state?.lines ?? [])].reverse().map((line) => (
-                  <p key={line.id} className="mb-1.5">
-                    <span
-                      className={`${EYEBROW} mr-2 ${line.speaker === 'you' ? 'text-ui-you' : 'text-ui-them'}`}
-                    >
-                      {line.speaker === 'you' ? 'You' : 'Them'}
-                    </span>
-                    <span className={line.final ? '' : 'italic text-ui-provisional'}>
-                      {line.text}
-                    </span>
-                  </p>
-                ))}
+              <div
+                aria-live="polite"
+                className="min-h-0 flex-1 overflow-y-auto p-3 text-[16px] leading-relaxed"
+              >
+                {/* Bubbles, newest first (ADR-0030, v1.0.2): Them left, You right. "Answer this"
+                    goes through the live page's guarded ask, so it never duplicates an answer. */}
+                <TranscriptBubbles
+                  groups={groups}
+                  size="overlay"
+                  emptyText="Nothing said yet."
+                  onAnswerThis={(group) =>
+                    onCommand({
+                      type: 'answer-this',
+                      question: group.finalText.slice(0, 2_000),
+                      start: group.tStart,
+                      end: group.tEnd,
+                    })
+                  }
+                />
               </div>
             ) : (
               <>
@@ -529,7 +910,12 @@ export function CompactView(props: CompactViewProps) {
                     type="button"
                     className={BUTTON}
                     aria-label="Previous answer"
-                    disabled={!hasHistory || (state?.index ?? 0) <= 0}
+                    // After Clear (nothing shown), Previous brings back the newest answer.
+                    disabled={
+                      index === 0 ||
+                      (state?.total ?? 0) === 0 ||
+                      (hasHistory === false && index >= 0)
+                    }
                     onClick={() => onCommand({ type: 'prev' })}
                     title={`Previous answer (${hotkeyLabel(FOCUSED_HOTKEYS.prev, mac)})`}
                   >
@@ -539,15 +925,17 @@ export function CompactView(props: CompactViewProps) {
                     type="button"
                     className={BUTTON}
                     aria-label="Next answer"
-                    disabled={!hasHistory || (state?.index ?? 0) >= (state?.total ?? 0) - 1}
+                    // Nothing shown (after Clear): Next has nowhere to go (v1.0.2: it did nothing).
+                    disabled={!hasHistory || index < 0 || index >= (state?.total ?? 0) - 1}
                     onClick={() => onCommand({ type: 'next' })}
                     title={`Next answer (${hotkeyLabel(FOCUSED_HOTKEYS.next, mac)})`}
                   >
                     → <Keys>{hotkeyLabel(FOCUSED_HOTKEYS.next, mac)}</Keys>
                   </button>
-                  {hasHistory && (
+                  {/* Only when an answer is shown: "0 of N" after Clear meant nothing (v1.0.2). */}
+                  {hasHistory && index >= 0 && (
                     <span className={`${EYEBROW} text-ui-muted`}>
-                      {(state?.index ?? 0) + 1} of {state?.total}
+                      {index + 1} of {state?.total}
                     </span>
                   )}
                   <span className="flex-1" />
@@ -560,16 +948,27 @@ export function CompactView(props: CompactViewProps) {
                   >
                     Clear <Keys>{hotkeyLabel(FOCUSED_HOTKEYS.clear, mac)}</Keys>
                   </button>
-                  <button
-                    type="button"
-                    className={ICON_BUTTON}
-                    aria-label={answerOnly ? 'Show the transcript bar' : 'Expand the answer'}
-                    aria-pressed={answerOnly}
-                    title={answerOnly ? 'Show the transcript bar' : 'Expand the answer'}
-                    onClick={() => setAnswerOnly((only) => !only)}
-                  >
-                    <ExpandIcon />
-                  </button>
+                  {answerOnly ? (
+                    // A clear toggle back (v1.0.2), also Escape.
+                    <button
+                      type="button"
+                      className={BUTTON}
+                      onClick={backToCompact}
+                      title="Back to the compact view (Esc)"
+                    >
+                      Back to compact
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className={ICON_BUTTON}
+                      aria-label="Expand the answer"
+                      title="Expand the answer (shows the newest)"
+                      onClick={() => expandAnswer(true)}
+                    >
+                      <ExpandIcon />
+                    </button>
+                  )}
                 </div>
 
                 {props.chatOpen && (
@@ -602,6 +1001,18 @@ export function CompactView(props: CompactViewProps) {
                       onChange={(event) => setQuestion(event.target.value)}
                       onKeyDown={onKeyDown}
                     />
+                    {state?.dictationSupported && (
+                      // Speak the question (ADR-0038): it becomes text only, sent on a pause.
+                      <button
+                        type="button"
+                        className={`${ICON_BUTTON} ${state.dictating ? 'text-ui-danger' : ''}`}
+                        aria-label={state.dictating ? 'Stop listening' : 'Speak a question'}
+                        aria-pressed={state.dictating ?? false}
+                        onClick={() => onCommand({ type: 'dictate', on: !state.dictating })}
+                      >
+                        <MicIcon />
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -611,18 +1022,11 @@ export function CompactView(props: CompactViewProps) {
                     <>
                       <p aria-label="Question" className="text-[15px] text-ui-muted">
                         <strong className="font-semibold text-ui-text">Question:</strong>{' '}
-                        {answer.question || 'the latest from Them'}
+                        {/* Claude's cleaned question once it arrives; the raw words on hover. */}
+                        <span title={answer.question || undefined}>
+                          {cardQuestion(answer.question, answer.cleanQuestion)}
+                        </span>
                       </p>
-                      <AnswerTags
-                        meta={answer.meta}
-                        {...(state?.sessionType ? { sessionType: state.sessionType } : {})}
-                        {...(answer.status !== 'streaming'
-                          ? {
-                              onChangeType: (answerType: AnswerType) =>
-                                onCommand({ type: 'reanswer', id: answer.id, answerType }),
-                            }
-                          : {})}
-                      />
                       <div className="mt-2">
                         <AnswerBody
                           text={answer.text}
@@ -649,9 +1053,28 @@ export function CompactView(props: CompactViewProps) {
                         </p>
                       )}
 
-                      <div className="mt-3 flex flex-wrap items-center gap-1 text-[13px] text-ui-muted">
+                      {/* The quiet footer (v1.0.2): tags, how and when, then the actions. */}
+                      <div className="mt-3 flex flex-wrap items-center gap-1 text-[12px] text-ui-muted">
+                        <AnswerTags
+                          compact
+                          meta={answer.meta}
+                          {...(state?.sessionType ? { sessionType: state.sessionType } : {})}
+                          {...(answer.status !== 'streaming'
+                            ? {
+                                onChangeType: (answerType: AnswerType) =>
+                                  onCommand({ type: 'reanswer', id: answer.id, answerType }),
+                              }
+                            : {})}
+                        />
+                        {answer.meta && <span aria-hidden="true">·</span>}
                         <span className="mr-1">
-                          {answer.auto ? 'Auto' : answer.mode === 'answer' ? 'Answer' : answer.mode}{' '}
+                          {answer.auto
+                            ? 'Auto'
+                            : answer.mode === 'answer'
+                              ? 'Answer'
+                              : answer.mode === 'chat'
+                                ? 'Typed'
+                                : 'Screenshot'}{' '}
                           ·{' '}
                           {new Date(answer.askedAt).toLocaleTimeString([], {
                             hour: '2-digit',

@@ -3,7 +3,8 @@
  * the version is read from the --kite-version argument, platforms map to mac/windows/linux,
  * and exactly one frozen object { version, os, setHotkeysEnabled, onHotkey } is exposed as
  * `kiteDesktop`; setHotkeysEnabled sends only a boolean on its fixed channel; onHotkey passes
- * only valid actions to the page (never the IPC event) and stops when asked.
+ * only valid actions to the page (never the IPC event) and stops when asked. v1.0.2 (ADR-0035):
+ * the overlay's place, preset, resize and mode methods send only plain values on fixed channels.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -71,14 +72,18 @@ describe('the exposed bridge', () => {
       'captureScreenshot',
       'checkHotkeys',
       'closeCompactView',
+      'getOverlayPreset',
       'getShareProtection',
       'minimizeMainWindow',
       'onHotkey',
       'openCompactView',
       'os',
+      'placeOverlay',
+      'resizeOverlay',
       'setCallActive',
       'setHotkeysEnabled',
       'setOverlayCollapsed',
+      'setOverlayMode',
       'setOverlayOpacity',
       'setShareProtection',
       'version',
@@ -110,6 +115,36 @@ describe('the exposed bridge', () => {
     stop();
     emit('next');
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('the overlay methods send only plain values on their channels (v1.0.2, ADR-0035)', async () => {
+    const [, api] = exposeCalls[0]!;
+    const {
+      OVERLAY_MODE_CHANNEL,
+      OVERLAY_PLACE_CHANNEL,
+      OVERLAY_PRESET_CHANNEL,
+      OVERLAY_RESIZE_CHANNEL,
+    } = await import('../../src/channels');
+    await api.placeOverlay('top-right');
+    await api.getOverlayPreset();
+    // An object with extra fields: only the four plain fields are copied across.
+    await api.resizeOverlay({ phase: 'move', edge: 'se', dx: 12, dy: '7', extra: () => 1 });
+    await api.setOverlayMode('script');
+    expect(ipcRenderer.invoke.mock.calls).toEqual([
+      [OVERLAY_PLACE_CHANNEL, 'top-right'],
+      [OVERLAY_PRESET_CHANNEL],
+      [OVERLAY_RESIZE_CHANNEL, { phase: 'move', edge: 'se', dx: 12, dy: 7 }],
+      [OVERLAY_MODE_CHANNEL, 'script'],
+    ]);
+  });
+
+  it('onHotkey passes the script bar shortcut (v1.0.2)', () => {
+    const [, api] = exposeCalls[0]!;
+    const handler = vi.fn();
+    const stop = api.onHotkey(handler);
+    for (const listener of listeners.get(HOTKEY_CHANNEL) ?? []) listener({}, 'script-bar');
+    expect(handler.mock.calls).toEqual([['script-bar']]);
+    stop();
   });
 });
 

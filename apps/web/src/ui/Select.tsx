@@ -38,7 +38,7 @@ export interface SelectProps<T extends string> {
  *
  * @param props See SelectProps.
  * @returns The label, the select and the hint.
- * Rendered by: DetailsStep.tsx, PreferencesStep.tsx, Settings.tsx
+ * Rendered by: DetailsStep.tsx, PreferencesStep.tsx, Settings.tsx, OverlaySetting.tsx
  */
 export function Select<T extends string>({
   label,

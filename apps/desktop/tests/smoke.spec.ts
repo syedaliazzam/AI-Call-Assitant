@@ -151,6 +151,11 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.setOverlayOpacity,
       typeof window.kiteDesktop?.setOverlayCollapsed,
       typeof window.kiteDesktop?.minimizeMainWindow,
+      // v1.0.2 (ADR-0035): overlay presets, resizing and modes.
+      typeof window.kiteDesktop?.placeOverlay,
+      typeof window.kiteDesktop?.getOverlayPreset,
+      typeof window.kiteDesktop?.resizeOverlay,
+      typeof window.kiteDesktop?.setOverlayMode,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -168,19 +173,23 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'captureScreenshot',
     'checkHotkeys',
     'closeCompactView',
+    'getOverlayPreset',
     'getShareProtection',
     'minimizeMainWindow',
     'onHotkey',
     'openCompactView',
     'os',
+    'placeOverlay',
+    'resizeOverlay',
     'setCallActive',
     'setHotkeysEnabled',
     'setOverlayCollapsed',
+    'setOverlayMode',
     'setOverlayOpacity',
     'setShareProtection',
     'version',
   ]);
-  expect(bridge.methods).toEqual(Array(12).fill('function'));
+  expect(bridge.methods).toEqual(Array(16).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);

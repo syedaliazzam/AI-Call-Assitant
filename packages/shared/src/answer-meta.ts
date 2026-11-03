@@ -3,7 +3,9 @@
  * Purpose: What Kite knows about an answer besides its words: the question type, who it is for
  *          (the call, or the user privately) and where its facts come from. Claude writes them in
  *          the same request, as one hidden first line ("[[coding|call|docs]]"), and the server
- *          removes that line before the first word reaches the browser.
+ *          removes that line before the first word reaches the browser. Since v1.0.2 (ADR-0037)
+ *          Claude also ends the answer with a hidden last line holding the cleaned question
+ *          ("[[question|…]]"), which the server takes out of the text the same way.
  * Used by: apps/web/src/server/answer-meta.ts, src/server/prompt.ts, src/server/validate.ts,
  *          src/core/answer, src/core/storage/types.ts, src/features (labels), scripts/eval-answers.ts
  * Depends on: nothing (types, constants and pure helpers)
@@ -190,4 +192,175 @@ export function splitMetaLine(text: string): MetaSplit {
   return couldBe && trimmed.length < MAX_META_LINE_CHARS && !trimmed.includes('\n')
     ? { state: 'waiting' }
     : { state: 'none' };
+}
+
+/**
+ * The start of the hidden LAST line (v1.0.2, ADR-0037): "[[question|<the question, cleaned>]]".
+ * It comes after the answer, so the first word is never delayed by it; the card shows the raw
+ * question until it arrives. Rules from before v1.0.2 (the v-previous rollback) never write it.
+ */
+export const QUESTION_LINE_PREFIX = '[[question|';
+
+/** Longest hidden question line: anything longer is treated as broken and dropped, not shown. */
+export const MAX_QUESTION_LINE_CHARS = 240;
+
+/** The prefix with any white space Claude put inside it, for a complete line. */
+const QUESTION_LINE_START = /^\[\[\s*question\s*\|/i;
+
+/** What one look at text that starts with "[" finds. */
+type QuestionLineCheck =
+  | {
+      /** Not a hidden question line: the "[" is answer text. */
+      kind: 'no';
+    }
+  | {
+      /** Could still become one: hold the text until more arrives. */
+      kind: 'maybe';
+    }
+  | {
+      /** A complete hidden line. */
+      kind: 'found';
+      /** The cleaned question ('' when Claude left it empty). */
+      question: string;
+      /** The text after the line, without the line break that ends it. */
+      rest: string;
+    }
+  | {
+      /** A hidden line that broke (a line break before "]]"): dropped, never shown. */
+      kind: 'broken';
+      /** The text after the line break. */
+      rest: string;
+    }
+  | {
+      /** A hidden line longer than the limit with no end yet: drop it up to its line break. */
+      kind: 'overflow';
+    };
+
+/**
+ * Looks at text that starts with "[" and says whether it is (or may become) the hidden question
+ * line.
+ *
+ * @param text Text starting with "[".
+ * @param ended True when no more text will come (the reply finished).
+ * @returns See QuestionLineCheck.
+ * Called from: createQuestionLineFilter()
+ */
+function checkQuestionLine(text: string, ended: boolean): QuestionLineCheck {
+  const start = QUESTION_LINE_START.exec(text);
+  if (!start) {
+    // Too short to tell yet? Compare without white space, so "[[ quest" still counts.
+    const compact = text.replace(/\s+/g, '').toLowerCase();
+    const couldBe =
+      !text.includes('\n') &&
+      compact.length < QUESTION_LINE_PREFIX.length &&
+      QUESTION_LINE_PREFIX.startsWith(compact);
+    return couldBe && !ended ? { kind: 'maybe' } : { kind: 'no' };
+  }
+  const close = text.indexOf(']]', start[0].length);
+  const lineBreak = text.indexOf('\n');
+  if (close !== -1 && (lineBreak === -1 || close < lineBreak)) {
+    const question = text.slice(start[0].length, close).replace(/\s+/g, ' ').trim();
+    // The line's own line break goes with it.
+    const rest = text.slice(close + 2).replace(/^[ \t]*\n/, '');
+    return { kind: 'found', question, rest };
+  }
+  if (lineBreak !== -1) return { kind: 'broken', rest: text.slice(lineBreak + 1) };
+  if (ended || text.length > MAX_QUESTION_LINE_CHARS) return { kind: 'overflow' };
+  return { kind: 'maybe' };
+}
+
+/** What a question-line filter hands back for each piece. */
+export interface QuestionLineOutput {
+  /** Answer text that can be shown now ('' when everything is held or dropped). */
+  text: string;
+  /** The cleaned question, when its hidden line completed in this piece. */
+  question?: string;
+}
+
+/** A streaming filter that takes the hidden question line out of an answer's text. */
+export interface QuestionLineFilter {
+  /**
+   * Feeds the next piece of answer text.
+   *
+   * @param piece The piece.
+   * @returns The text that can be shown now, and the question if its line completed.
+   */
+  push(piece: string): QuestionLineOutput;
+  /**
+   * The reply finished: releases held text that turned out to be answer text. A hidden line that
+   * never closed is dropped (fail-safe: "[[" never reaches the card).
+   *
+   * @returns The rest of the text, and the question if its line completed only now.
+   */
+  end(): QuestionLineOutput;
+}
+
+/**
+ * Creates the filter that removes the hidden question line from a streaming answer. Text without
+ * "[" passes straight through; only from a "[" that could start the line is text held, and only
+ * until it is clear (a different character, a line break, the length limit or the end). So the
+ * answer is never held back, and a malformed line is dropped rather than shown.
+ *
+ * @returns The filter.
+ * Called from: apps/web/src/server/answer-meta.ts (withAnswerMeta); scripts; tests
+ */
+export function createQuestionLineFilter(): QuestionLineFilter {
+  let held = '';
+  // Dropping the rest of an over-long hidden line, up to its line break.
+  let skipping = false;
+
+  const run = (input: string, ended: boolean): QuestionLineOutput => {
+    let text = input;
+    let out = '';
+    let question: string | undefined;
+    while (text !== '') {
+      if (skipping) {
+        const lineBreak = text.indexOf('\n');
+        if (lineBreak === -1) return { text: out, ...(question !== undefined ? { question } : {}) };
+        text = text.slice(lineBreak + 1);
+        skipping = false;
+        continue;
+      }
+      const bracket = text.indexOf('[');
+      if (bracket === -1) {
+        out += text;
+        break;
+      }
+      out += text.slice(0, bracket);
+      text = text.slice(bracket);
+      const check = checkQuestionLine(text, ended);
+      if (check.kind === 'maybe') {
+        held = text;
+        break;
+      }
+      if (check.kind === 'no') {
+        out += '[';
+        text = text.slice(1);
+      } else if (check.kind === 'found') {
+        question = check.question;
+        text = check.rest;
+      } else if (check.kind === 'broken') {
+        text = check.rest;
+      } else {
+        skipping = true;
+        text = '';
+      }
+    }
+    return { text: out, ...(question !== undefined ? { question } : {}) };
+  };
+
+  return {
+    push(piece) {
+      const input = held + piece;
+      held = '';
+      return run(input, false);
+    },
+    end() {
+      const input = held;
+      held = '';
+      const result = run(input, true);
+      skipping = false;
+      return result;
+    },
+  };
 }

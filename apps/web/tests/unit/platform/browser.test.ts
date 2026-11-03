@@ -8,7 +8,8 @@
  * ticked, and maps a cancelled picker, an OS refusal and a missing API to typed errors;
  * onHotkey() listens for the in-page shortcuts with the Mac modifier on a Mac (Day 4);
  * captureScreenshot() needs an active share (Day 5); share protection is never supported; and
- * openCompactView() says clearly when the browser has no Document Picture-in-Picture (Day 5).
+ * openCompactView() says clearly when the browser has no Document Picture-in-Picture (Day 5);
+ * the overlay cannot be placed, resized or switched in a browser (v1.0.2, ADR-0035).
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -50,6 +51,16 @@ describe('browserPlatform', () => {
     expect(error.code).toBe('not-supported');
     expect(error.message).toBe(NO_PIP_MESSAGE);
     await expect(browserPlatform.closeCompactView()).resolves.toBeUndefined();
+  });
+
+  it('cannot place, resize or switch a picture-in-picture window (v1.0.2, ADR-0035)', async () => {
+    expect(browserPlatform.overlayPlacement()).toBe(false);
+    await expect(browserPlatform.getOverlayPreset()).resolves.toBeNull();
+    expect(() => {
+      browserPlatform.placeOverlay('top-right');
+      browserPlatform.resizeOverlay({ phase: 'start', edge: 'e', dx: 0, dy: 0 });
+      browserPlatform.setOverlayMode('script');
+    }).not.toThrow();
   });
 
   it('onHotkey listens for the in-page shortcuts (⌘ on a Mac, Ctrl elsewhere)', () => {

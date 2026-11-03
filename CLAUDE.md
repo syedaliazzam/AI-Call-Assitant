@@ -33,7 +33,7 @@ If code and these documents disagree, stop and ask. Do not silently change the a
   - `/api/answer` and `/api/notes`, which hold the Claude key and stream Claude replies.
 - **`apps/desktop`:** a thin Electron app that opens the deployed web app and adds native features through `window.kiteDesktop`.
 - **`packages/shared`:** TypeScript types used by both apps: API request/response, desktop bridge, hotkeys.
-- **Accounts database:** Neon Postgres (via Vercel), for user accounts and sign-in sessions **only**.
+- **Accounts database:** Neon Postgres (via Vercel), for user accounts and sign-in sessions **only**, and per-user daily request counts (ADR-0036; counts, never text).
 - **Call data** (sessions, documents, transcripts, answers) is stored on the user's device in IndexedDB. Audio never leaves the device.
 - **Models:** `claude-haiku-5-5` (fast, live answers) and `claude-sonnet-5-5` (smart, notes). Model names come from environment variables.
 

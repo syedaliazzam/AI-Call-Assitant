@@ -1,174 +1,81 @@
 /**
  * File: apps/web/src/features/live/AnswerPanel.tsx
- * Purpose: Shows one answer of the call: the question it answers (with "from N lines"), the
- *          headline as it streams, then the bullets; Cancel while it streams; Previous / Next
- *          through the session's answers; Copy; the time to the first word; and (Stage 7) 👍 / 👎
- *          and an optional "What was wrong / better answer" note; for a screenshot answer, a
- *          small thumbnail of the screenshot, from memory only (Day 5).
+ * Purpose: The call's answers as a chat-style list, NEWEST AT THE TOP (v1.0.2; ADR-0030 order),
+ *          in the main window and the browser split view. Each card: "Question: …" (Claude's
+ *          cleaned question once it arrives, the raw words on hover), the answer (AnswerBody: the
+ *          answer line large and bold, then the bullets, then the Tip on its own line), and a quiet
+ *          footer with the type and source tags, how it was asked, the time and the time to the
+ *          first word, then 👍 / 👎, Copy and Report (Cancel while it streams). The answer
+ *          selected with ←/→ (or in the overlay) is outlined and scrolled into view. A screenshot
+ *          answer shows a small thumbnail, from memory only (Day 5).
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/core/answer/format.ts, src/features/answers (AnswerBody, AnswerTags),
- *             src/features/live/useLiveAnswers.ts (AnswerEntry), src/ui/Button.tsx
+ *             src/features/live/useLiveAnswers.ts (AnswerEntry), src/ui (Button, icons)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (answer panel), §6.1 step 6;
- *               day-04-answers.md Stage 6
+ *               day-04-answers.md Stage 6; ADR-0037
  *
  * Question and answer text is only rendered (and copied when the user asks); never logged.
  */
 'use client';
 
 import type { AnswerType } from '@kite/shared';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AnswerRating } from '@/core/storage/types';
-import { answerText, splitAnswer } from '@/core/answer/format';
+import { answerText, cardQuestion } from '@/core/answer/format';
 import { sentenceCase, type DisplayTerm } from '@/core/transcript/display';
 import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { Button } from '@/ui/Button';
+import { CopyIcon, FlagIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
 import type { AnswerEntry } from './useLiveAnswers';
 
 /** Props for AnswerPanel. */
 export interface AnswerPanelProps {
-  /** The answer shown, or null (none yet, or cleared). */
-  entry: AnswerEntry | null;
+  /** The call's answers, oldest first (shown newest first). */
+  entries: readonly AnswerEntry[];
+  /** The answer selected (outlined; ←/→ and the overlay move it), or null. */
+  shownId: string | null;
+  /**
+   * Clear hides the answers asked up to this time (Unix ms; 0: none hidden). The selected answer
+   * always shows.
+   */
+  hiddenBefore: number;
+  /** Shows the answers Clear hid. */
+  onShowHidden: () => void;
   /** The session's spellings for the question's sentence-case display (displayTerms()). */
   terms?: readonly DisplayTerm[];
-  /** Its position (0-based) among this call's answers. */
-  index: number;
-  /** How many answers this call has. */
-  total: number;
   /** True on macOS (for the shortcut hint). */
   mac: boolean;
-  /** A notice to show instead of an answer (for example "nothing to answer yet"). */
+  /** A notice to show above the answers (for example "nothing to answer yet"), or null. */
   notice: string | null;
-  /** Shows the previous answer. */
-  onPrev: () => void;
-  /** Shows the next answer. */
-  onNext: () => void;
   /** Stops the answer streaming. */
   onCancel: () => void;
   /** Rates an answer. */
   onRate: (id: string, rating: AnswerRating) => void;
+  /** Reports an answer, with what was wrong (stays on this device). */
+  onReport: (id: string, note: string) => void;
   /** Opens the in-call sign-in (after a "Signed out" failure, Day 6 Stage 4e). */
   onSignInAgain?: () => void;
-  /** Saves an answer's note. */
-  onNote: (id: string, note: string) => void;
   /** Puts text on the clipboard (resolves when done). */
   copy?: (text: string) => Promise<void>;
   /** The session's type, for the source tag's words. */
   sessionType?: string;
-  /** Answers again in another shape (the card's type menu). */
+  /** Answers again in another shape (the type menu in the footer). */
   onReanswer?: (id: string, answerType: AnswerType) => void;
-  /** The call's answers, oldest first: the others are listed below, newest first (ADR-0030). */
-  entries?: readonly AnswerEntry[];
-  /** Shows one of them. */
+  /** Selects an answer (clicking a card). */
   onShow?: (id: string) => void;
 }
 
-/** Props for RatingControls. */
-interface RatingControlsProps {
-  /** The answer being rated. */
-  entry: AnswerEntry;
-  /** Rates it. */
-  onRate: (id: string, rating: AnswerRating) => void;
-  /** Saves its note. */
-  onNote: (id: string, note: string) => void;
-}
-
-/**
- * 👍 / 👎 (pressing the chosen one again removes the rating) and the note box.
- *
- * @param props See RatingControlsProps.
- * @returns The controls.
- * Rendered by: AnswerPanel (for a finished answer)
- */
-function RatingControls({ entry, onRate, onNote }: RatingControlsProps) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(entry.note);
-  /**
-   * Sets or toggles off a rating.
-   *
-   * @param rating The rating pressed.
-   * @returns Nothing.
-   */
-  const toggle = (rating: 'up' | 'down') =>
-    onRate(entry.id, entry.rating === rating ? null : rating);
-  return (
-    <div className="mt-3 flex flex-col gap-2 border-t border-ui-border pt-3">
-      <div className="flex flex-wrap items-center gap-2 text-[13px] text-ui-muted">
-        <span>Was this answer good?</span>
-        <Button
-          size="sm"
-          variant={entry.rating === 'up' ? 'primary' : 'secondary'}
-          aria-pressed={entry.rating === 'up'}
-          aria-label="Good answer"
-          onClick={() => toggle('up')}
-        >
-          👍
-        </Button>
-        <Button
-          size="sm"
-          variant={entry.rating === 'down' ? 'primary' : 'secondary'}
-          aria-pressed={entry.rating === 'down'}
-          aria-label="Bad answer"
-          onClick={() => toggle('down')}
-        >
-          👎
-        </Button>
-        {!editing && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setDraft(entry.note);
-              setEditing(true);
-            }}
-          >
-            {entry.note ? 'Edit note' : 'Add a note'}
-          </Button>
-        )}
-        {!editing && entry.note && (
-          <span aria-label="Your note" className="text-ui-muted">
-            “{entry.note}”
-          </span>
-        )}
-      </div>
-      {editing && (
-        <form
-          className="flex flex-col gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onNote(entry.id, draft);
-            setEditing(false);
-          }}
-        >
-          <textarea
-            aria-label="What was wrong / better answer"
-            className="border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] md:text-[13px]"
-            placeholder="What was wrong, or what would a better answer say?"
-            rows={2}
-            maxLength={2_000}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-          <div className="flex gap-2">
-            <Button size="sm" type="submit">
-              Save note
-            </Button>
-            <Button size="sm" variant="ghost" type="button" onClick={() => setEditing(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
-      )}
-    </div>
-  );
-}
-
-/** Status line under a finished, failed or cancelled answer. */
+/** Status line under a failed, cancelled or streaming answer. */
 const STATUS_TEXT: Record<Exclude<AnswerEntry['status'], 'done'>, string> = {
   streaming: 'Answering…',
   error: 'The answer failed.',
   cancelled: 'Stopped.',
 };
+
+/** A quiet icon button in a card's footer; the caller adds its colour. */
+const FOOTER_BUTTON =
+  'inline-flex h-7 w-7 items-center justify-center rounded-control hover:bg-ui-hover disabled:opacity-50 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11';
 
 /**
  * Whether an answer was stopped before any words arrived, so its card must say so instead of
@@ -176,133 +83,102 @@ const STATUS_TEXT: Record<Exclude<AnswerEntry['status'], 'done'>, string> = {
  *
  * @param entry The answer.
  * @returns True for a cancelled answer with no text.
- * Called from: AnswerPanel()
+ * Called from: AnswerCard
  */
 export function stoppedEmpty(entry: Pick<AnswerEntry, 'status' | 'text'>): boolean {
   return entry.status === 'cancelled' && entry.text.trim() === '';
 }
 
 /**
- * The answer panel.
+ * How an answer was asked, for its footer.
  *
- * @param props See AnswerPanelProps.
- * @returns The panel.
- * Rendered by: LiveAnswers.tsx
+ * @param entry The answer.
+ * @returns For example "Auto", "Answer", "Typed", "Screenshot" or "Earlier".
+ * Called from: AnswerCard
  */
-export function AnswerPanel(props: AnswerPanelProps) {
+function askedHow(entry: AnswerEntry): string {
+  if (entry.earlier) return 'Earlier';
+  if (entry.auto) return 'Auto';
+  if (entry.mode === 'chat') return 'Typed';
+  if (entry.mode === 'screenshot') return 'Screenshot';
+  return 'Answer';
+}
+
+/** Props for AnswerCard. */
+interface AnswerCardProps extends Omit<
+  AnswerPanelProps,
+  'entries' | 'shownId' | 'hiddenBefore' | 'onShowHidden' | 'notice' | 'mac'
+> {
+  /** The answer. */
+  entry: AnswerEntry;
+  /** True when it is the selected answer. */
+  selected: boolean;
+}
+
+/**
+ * One answer card.
+ *
+ * @param props See AnswerCardProps.
+ * @returns The card.
+ * Rendered by: AnswerPanel
+ */
+function AnswerCard(props: AnswerCardProps) {
   const { entry } = props;
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [reportNote, setReportNote] = useState('');
+  const card = useRef<HTMLElement>(null);
   const copy = props.copy ?? ((text: string) => navigator.clipboard.writeText(text));
 
-  if (!entry) {
-    return (
-      <section
-        aria-label="Answer"
-        className="flex min-h-[20rem] flex-col items-start justify-center gap-3 border border-dashed border-ui-border p-5 text-[15px] text-ui-muted"
-      >
-        {props.notice ??
-          `Press Answer (${props.mac ? '⌘' : 'Ctrl+'}Enter) when they ask something, or type a question with Chat.`}
-        {props.total > 0 && (
-          <Button size="sm" variant="secondary" onClick={props.onPrev}>
-            Show last answer
-          </Button>
-        )}
-      </section>
-    );
-  }
+  // The selected answer comes into view (←/→, or chosen in the overlay); never steals focus.
+  useEffect(() => {
+    if (props.selected) card.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [props.selected]);
 
   // A private answer is read as written; for the call, Copy leaves out the private note.
   const copyText = entry.meta?.target === 'kite' ? entry.text : answerText(entry.text);
-  const others = [...(props.entries ?? [])]
-    .reverse()
-    .filter((other) => other.id !== entry.id && other.text.trim() !== '');
-  const source = entry.earlier
-    ? 'earlier'
-    : entry.mode === 'screenshot'
-      ? 'screenshot'
-      : entry.mode === 'chat'
-        ? 'typed question'
-        : `from ${entry.fromLines} ${entry.fromLines === 1 ? 'line' : 'lines'}`;
+  const fallback = entry.mode === 'screenshot' ? 'What is on screen' : 'The latest from Them';
+  const rawQuestion = entry.question ? sentenceCase(entry.question, props.terms) : '';
 
-  // Theme §6: a small label, then a semibold headline. A minimum height with the
-  // footer pinned to the bottom: the footer does not move while the bullets stream in.
+  /** Sends the report, with what the user wrote. */
+  const sendReport = () => {
+    props.onReport(entry.id, reportNote);
+    setReporting(false);
+    setReportNote('');
+  };
+
   return (
-    <section
+    <article
+      ref={card}
       aria-label="Answer"
-      className="flex min-h-[20rem] flex-col border border-ui-border rounded-card bg-ui-surface shadow-card p-5"
+      aria-current={props.selected ? 'true' : undefined}
+      onClick={() => props.onShow?.(entry.id)}
+      className={`rounded-card border bg-ui-surface p-4 shadow-card ${props.selected ? 'border-ui-accent' : 'border-ui-border'}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[13px] font-medium text-ui-muted">
-          Answer
-          {/* Kite answered by itself (auto-answer beta, Day 6 Stage 4f). */}
-          {entry.auto ? (
-            <span className="ml-2 border border-ui-primary px-1 text-ui-primary">Auto</span>
-          ) : null}
-          {entry.timeline ? (
-            <>
-              {' · '}
-              <span aria-label="Time to first word">
-                {(entry.timeline.toFirstWord / 1000).toFixed(2)} s
-              </span>
-            </>
-          ) : entry.status === 'streaming' ? (
-            ' · …'
-          ) : null}
-        </p>
-        <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={props.onPrev}
-            disabled={props.index <= 0}
-            aria-label="Previous answer"
-          >
-            ←
-          </Button>
-          <span className="text-[13px] text-ui-muted">
-            {props.index + 1} of {props.total}
-          </span>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={props.onNext}
-            disabled={props.index >= props.total - 1}
-            aria-label="Next answer"
-          >
-            →
-          </Button>
-        </div>
-      </div>
-      <p className="mt-1 text-[13px] text-ui-muted">
-        Question ({source}):{' '}
-        <span aria-label="Question used" className="text-ui-text">
-          {/* Sentence case, as in the transcript (v1.0.1): the speech engine writes capitals. */}
-          {entry.question ? sentenceCase(entry.question, props.terms) : 'the latest from Them'}
+      <p aria-label="Question" className="text-[14px] leading-5 text-ui-muted">
+        <strong className="font-semibold text-ui-text">Question:</strong>{' '}
+        {/* Claude's cleaned question once it arrives; the raw words stay on hover (ADR-0037). */}
+        <span title={rawQuestion || undefined}>
+          {cardQuestion(entry.question, entry.cleanQuestion, props.terms, fallback)}
         </span>
       </p>
-      <AnswerTags
-        meta={entry.meta}
-        {...(props.sessionType ? { sessionType: props.sessionType } : {})}
-        {...(props.onReanswer && entry.status !== 'streaming'
-          ? { onChangeType: (type: AnswerType) => props.onReanswer?.(entry.id, type) }
-          : {})}
-      />
 
-      <div className="mt-3 flex-1">
+      <div className="mt-2">
         {entry.thumbnail && (
           // The screenshot, from memory (a data URL; never saved). Small, for context only.
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={entry.thumbnail}
             alt="Screenshot this answer is about"
-            className="mb-3 max-h-24 border border-ui-border"
+            className="mb-2 max-h-20 border border-ui-border"
           />
         )}
-        {/* No placeholder headline when Claude was unavailable, the answer has a problem box, or it
-            was stopped before any words arrived: the message says it all. */}
+        {/* No placeholder answer line when Claude was unavailable, the answer has a problem box,
+            or it was stopped before any words arrived: the message says it all. */}
         <AnswerBody
           text={entry.text}
           size="panel"
+          headlineLabel="Answer line"
           claims={entry.claims ?? []}
           hideEmptyHeadline={Boolean(entry.unavailable || entry.problem || stoppedEmpty(entry))}
           {...(entry.meta?.target ? { target: entry.meta.target } : {})}
@@ -314,28 +190,19 @@ export function AnswerPanel(props: AnswerPanelProps) {
             Stopped before any words arrived. Press Answer to ask again.
           </p>
         )}
-
-        {entry.unavailable && (
-          // Claude is down for everyone (usage limit or overload): say so plainly, and that the
-          // transcript keeps recording (core/answer/unavailable.ts).
+        {(entry.unavailable || entry.problem) && (
+          // Claude down for everyone, the daily limit, signed out, or no connection: one box that
+          // says so plainly (core/answer/unavailable.ts); the transcript keeps recording.
           <div
             role="alert"
-            className="mt-3 rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2"
-          >
-            <p className="text-[13px] font-medium text-ui-warning">Claude unavailable</p>
-            <p className="mt-1 text-[15px] text-ui-text">{entry.error}</p>
-          </div>
-        )}
-
-        {entry.problem && (
-          // A failure the user can act on (Day 6 Stage 4e): signed out (sign in again here,
-          // without leaving the call) or no connection. Same box as "Claude unavailable".
-          <div
-            role="alert"
-            className="mt-3 rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2"
+            className="mt-2 rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2"
           >
             <p className="text-[13px] font-medium text-ui-warning">
-              {entry.problem === 'signed-out' ? 'Signed out' : 'No connection'}
+              {entry.problem === 'signed-out'
+                ? 'Signed out'
+                : entry.problem === 'offline'
+                  ? 'No connection'
+                  : 'Claude unavailable'}
             </p>
             <p className="mt-1 text-[15px] text-ui-text">{entry.error}</p>
             {entry.problem === 'signed-out' && props.onSignInAgain && (
@@ -347,57 +214,201 @@ export function AnswerPanel(props: AnswerPanelProps) {
         )}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3 text-[13px] text-ui-muted">
-        {entry.status !== 'done' && !entry.unavailable && !entry.problem && (
-          <span role={entry.status === 'error' ? 'alert' : 'status'}>
-            {entry.status === 'error' && entry.error ? entry.error : STATUS_TEXT[entry.status]}
+      {/* The quiet footer: tags, how and when, then the actions (v1.0.2, reference layout). */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-ui-muted">
+        <AnswerTags
+          compact
+          meta={entry.meta}
+          {...(props.sessionType ? { sessionType: props.sessionType } : {})}
+          {...(props.onReanswer && entry.status !== 'streaming'
+            ? { onChangeType: (type: AnswerType) => props.onReanswer?.(entry.id, type) }
+            : {})}
+        />
+        {entry.meta && <span aria-hidden="true">·</span>}
+        <span>{askedHow(entry)}</span>
+        <span aria-hidden="true">·</span>
+        <span>
+          {new Date(entry.askedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </span>
+        {entry.timeline && entry.text && (
+          <span aria-label="Time to first word">
+            · {(entry.timeline.toFirstWord / 1000).toFixed(1)} s
           </span>
         )}
-        <span className="flex-1" />
+        {entry.status !== 'done' && !entry.unavailable && !entry.problem && (
+          <span role={entry.status === 'error' ? 'alert' : 'status'}>
+            · {entry.status === 'error' && entry.error ? entry.error : STATUS_TEXT[entry.status]}
+          </span>
+        )}
+        <span className="min-w-2 flex-1" />
         {entry.status === 'streaming' ? (
           <Button size="sm" variant="secondary" onClick={props.onCancel}>
             Cancel
           </Button>
         ) : (
-          entry.text && (
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                copy(copyText)
-                  .then(() => setCopiedId(entry.id))
-                  .catch(() => undefined);
+          <>
+            <button
+              type="button"
+              className={`${FOOTER_BUTTON} ${entry.rating === 'up' ? 'text-ui-success' : ''}`}
+              aria-label="Good answer"
+              aria-pressed={entry.rating === 'up'}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onRate(entry.id, entry.rating === 'up' ? null : 'up');
               }}
             >
-              {copiedId === entry.id ? 'Copied' : 'Copy'}
-            </Button>
-          )
+              <ThumbUpIcon />
+            </button>
+            <button
+              type="button"
+              className={`${FOOTER_BUTTON} ${entry.rating === 'down' ? 'text-ui-danger' : ''}`}
+              aria-label="Bad answer"
+              aria-pressed={entry.rating === 'down'}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onRate(entry.id, entry.rating === 'down' ? null : 'down');
+              }}
+            >
+              <ThumbDownIcon />
+            </button>
+            {entry.text && (
+              <button
+                type="button"
+                className={FOOTER_BUTTON}
+                aria-label={copied ? 'Copied' : 'Copy the answer'}
+                title={copied ? 'Copied' : 'Copy'}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  copy(copyText)
+                    .then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1_500);
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                <CopyIcon />
+              </button>
+            )}
+            <button
+              type="button"
+              className={`${FOOTER_BUTTON} ${entry.reported ? 'text-ui-warning' : ''}`}
+              aria-label={entry.reported ? 'Reported' : 'Report this answer'}
+              aria-pressed={reporting}
+              disabled={entry.reported}
+              onClick={(event) => {
+                event.stopPropagation();
+                setReporting((open) => !open);
+              }}
+            >
+              <FlagIcon />
+            </button>
+          </>
         )}
       </div>
-      {entry.status === 'done' && (
-        // key: a different answer starts with its own note draft.
-        <RatingControls key={entry.id} entry={entry} onRate={props.onRate} onNote={props.onNote} />
+      {entry.note && (
+        <p aria-label="Your note" className="mt-1 text-[12px] text-ui-muted">
+          “{entry.note}”
+        </p>
       )}
-      {others.length > 0 && props.onShow && (
-        <div className="mt-3 border-t border-ui-border pt-2">
-          <p className="text-[13px] font-medium text-ui-muted">Other answers, newest first</p>
-          <ul aria-label="Other answers" className="mt-1 flex flex-col gap-0.5">
-            {others.map((other) => (
-              <li key={other.id}>
-                <button
-                  type="button"
-                  className="w-full truncate py-0.5 text-left text-[13px] text-ui-text hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
-                  onClick={() => props.onShow?.(other.id)}
-                >
-                  {other.question
-                    ? sentenceCase(other.question, props.terms)
-                    : splitAnswer(other.text).headline}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {reporting && !entry.reported && (
+        <form
+          className="mt-2 flex gap-2"
+          onClick={(event) => event.stopPropagation()}
+          onSubmit={(event) => {
+            event.preventDefault();
+            sendReport();
+          }}
+        >
+          <input
+            autoFocus
+            aria-label="What was wrong?"
+            className="min-w-0 flex-1 border border-ui-border bg-ui-input px-3 py-1.5 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-[13px]"
+            placeholder="What was wrong, or what would a better answer say? (optional)"
+            value={reportNote}
+            maxLength={2_000}
+            onChange={(event) => setReportNote(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setReporting(false);
+            }}
+          />
+          <Button size="sm" type="submit">
+            Report
+          </Button>
+        </form>
       )}
+    </article>
+  );
+}
+
+/**
+ * The answer list.
+ *
+ * @param props See AnswerPanelProps.
+ * @returns The list, newest first.
+ * Rendered by: LiveAnswers.tsx
+ */
+export function AnswerPanel(props: AnswerPanelProps) {
+  const visible = props.entries.filter(
+    (entry) => entry.askedAt > props.hiddenBefore || entry.id === props.shownId,
+  );
+  const hidden = props.entries.length - visible.length;
+  const newestId = props.entries.at(-1)?.id;
+  const list = useRef<HTMLDivElement>(null);
+  // A new answer starts at the top, wherever the list was scrolled to.
+  useEffect(() => {
+    if (list.current) list.current.scrollTop = 0;
+  }, [newestId]);
+
+  return (
+    <section aria-label="Answers" className="flex min-h-0 flex-1 flex-col">
+      <div
+        ref={list}
+        aria-live="polite"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-0.5"
+      >
+        {props.notice && (
+          <p
+            role="status"
+            className="rounded-control bg-ui-subtle px-3 py-2 text-[13px] text-ui-text"
+          >
+            {props.notice}
+          </p>
+        )}
+        {visible.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-10 text-center text-[15px] text-ui-muted">
+            <p>No answers yet.</p>
+            <p>
+              Press Answer ({props.mac ? '⌘' : 'Ctrl+'}Enter) when they ask something, or type a
+              message below.
+            </p>
+          </div>
+        ) : (
+          [...visible]
+            .reverse()
+            .map((entry) => (
+              <AnswerCard
+                key={entry.id}
+                entry={entry}
+                selected={entry.id === props.shownId}
+                onCancel={props.onCancel}
+                onRate={props.onRate}
+                onReport={props.onReport}
+                {...(props.terms ? { terms: props.terms } : {})}
+                {...(props.onSignInAgain ? { onSignInAgain: props.onSignInAgain } : {})}
+                {...(props.copy ? { copy: props.copy } : {})}
+                {...(props.sessionType ? { sessionType: props.sessionType } : {})}
+                {...(props.onReanswer ? { onReanswer: props.onReanswer } : {})}
+                {...(props.onShow ? { onShow: props.onShow } : {})}
+              />
+            ))
+        )}
+        {hidden > 0 && (
+          <Button size="sm" variant="ghost" className="self-center" onClick={props.onShowHidden}>
+            Show {hidden} cleared {hidden === 1 ? 'answer' : 'answers'}
+          </Button>
+        )}
+      </div>
     </section>
   );
 }

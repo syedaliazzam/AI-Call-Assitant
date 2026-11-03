@@ -20,10 +20,13 @@ import { claimSegments } from '@/core/answer/claimCheck';
 import { splitAnswer } from '@/core/answer/format';
 import { inlinePieces, markdownBlocks } from '@/core/answer/markdown';
 
-/** Text sizes for each place an answer is shown. */
+/**
+ * Text sizes for each place an answer is shown. v1.0.2: during a call the answer line is 19 px bold
+ * and the bullets 15–16 px, so the words to say stand out from everything around them.
+ */
 const SIZES = {
-  panel: { headline: 'text-[15px]', body: 'text-[15px]', small: 'text-[13px]' },
-  overlay: { headline: 'text-[18px]', body: 'text-[16px]', small: 'text-[13px]' },
+  panel: { headline: 'text-[19px] font-bold', body: 'text-[15px]', small: 'text-[13px]' },
+  overlay: { headline: 'text-[19px] font-bold', body: 'text-[16px]', small: 'text-[13px]' },
   review: { headline: 'text-[13px]', body: 'text-[13px]', small: 'text-[13px]' },
   chat: { headline: 'text-[15px]', body: 'text-[15px]', small: 'text-[13px]' },
 } as const;
@@ -247,7 +250,7 @@ export function AnswerBody(props: AnswerBodyProps) {
       {!(props.hideEmptyHeadline && !headline) && (
         <h2
           aria-label={props.headlineLabel ?? 'Answer headline'}
-          className={`font-semibold leading-snug text-ui-heading ${sizes.headline}`}
+          className={`font-semibold leading-snug text-ui-heading [text-wrap:pretty] ${sizes.headline}`}
         >
           {headline ? <ClaimText text={headline} claims={claims} /> : '…'}
         </h2>
@@ -255,7 +258,7 @@ export function AnswerBody(props: AnswerBodyProps) {
       {bullets.length > 0 && (
         <ul
           aria-label="Answer details"
-          className={`mt-2 list-disc space-y-1 pl-5 leading-relaxed text-ui-text ${sizes.body}`}
+          className={`mt-2.5 list-disc space-y-1.5 pl-5 leading-relaxed text-ui-text marker:text-ui-muted ${sizes.body}`}
         >
           {bullets.map((bullet, i) => (
             <li key={i}>
@@ -273,7 +276,9 @@ export function AnswerBody(props: AnswerBodyProps) {
         </p>
       )}
       {tip && (
-        <p aria-label="Tip" className={`mt-2 leading-relaxed text-ui-text ${sizes.body}`}>
+        // Its own subtle line: optional extra depth, so it must not compete with the answer.
+        <p aria-label="Tip" className={`mt-2.5 leading-relaxed text-ui-muted ${sizes.body}`}>
+          <span className="mr-1 font-medium">Tip:</span>
           <ClaimText text={tip} claims={claims} />
         </p>
       )}

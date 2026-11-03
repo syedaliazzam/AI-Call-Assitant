@@ -4,20 +4,24 @@
  *          between the desktop app (Electron) and a normal browser (Chrome / Edge).
  * Used by: src/platform/browser.ts, src/platform/desktop.ts, src/platform/index.ts, and any code
  *          that calls getPlatform()
- * Depends on: @kite/shared (HotkeyAction)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (the platform adapter)
+ * Depends on: @kite/shared (HotkeyAction, the overlay types)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (the platform adapter); ADR-0035
  */
 import type {
   AccurateResult,
   AccurateStatus,
   HotkeyAction,
   HotkeyStatus,
+  OverlayEdge,
+  OverlayMode,
+  OverlayPreset,
+  OverlayResizeStep,
   ShareProtectionState,
 } from '@kite/shared';
 import type { PipRenderer } from './pip';
 
 // Re-exported so code using the platform can import every platform type from one place.
-export type { HotkeyAction };
+export type { HotkeyAction, OverlayEdge, OverlayMode, OverlayPreset, OverlayResizeStep };
 
 /**
  * Where the other side's sound comes from:
@@ -130,6 +134,45 @@ export interface Platform {
    * @param collapsed True to collapse.
    */
   setOverlayCollapsed(collapsed: boolean): void;
+
+  /**
+   * v1.0.2 (ADR-0035): whether the overlay window can be put at a preset place, resized by the
+   * page from its edges and switched to the script bar (a desktop app from 1.0.2).
+   *
+   * @returns True where placeOverlay, resizeOverlay and setOverlayMode do something.
+   */
+  overlayPlacement(): boolean;
+
+  /**
+   * Puts the overlay at a preset place at its default size and remembers the preset (also with no
+   * overlay open: then it only remembers). Nothing happens where it is not supported.
+   *
+   * @param preset Where.
+   */
+  placeOverlay(preset: OverlayPreset): void;
+
+  /**
+   * The remembered overlay preset.
+   *
+   * @returns The preset, or null where there is none (a browser, an older desktop app).
+   */
+  getOverlayPreset(): Promise<OverlayPreset | null>;
+
+  /**
+   * One step of resizing the overlay window from one of its edges (the page's edge handles).
+   * Nothing happens where it is not supported.
+   *
+   * @param step The drag's phase, edge and distance from where it started.
+   */
+  resizeOverlay(step: OverlayResizeStep): void;
+
+  /**
+   * Switches the overlay window between full, collapsed and the script bar. An older desktop app
+   * only collapses ('collapsed') and opens ('full') it; elsewhere nothing happens to the window.
+   *
+   * @param mode The mode.
+   */
+  setOverlayMode(mode: OverlayMode): void;
 
   /**
    * Minimises the main window when a call starts in the overlay. Nothing happens in a browser

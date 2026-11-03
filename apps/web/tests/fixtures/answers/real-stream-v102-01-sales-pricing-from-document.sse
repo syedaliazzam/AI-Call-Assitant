@@ -1,0 +1,81 @@
+event: meta
+data: {"meta":{"type":"sales","target":"call","source":"docs"}}
+
+event: delta
+data: {"text":"Professional is"}
+
+event: delta
+data: {"text":" 52 dollars per se"}
+
+event: delta
+data: {"text":"at per month, so forty se"}
+
+event: delta
+data: {"text":"ats com"}
+
+event: delta
+data: {"text":"es to "}
+
+event: delta
+data: {"text":"2,080 dollars a"}
+
+event: delta
+data: {"text":" month.\n- For"}
+
+event: delta
+data: {"text":"ty seats at"}
+
+event: delta
+data: {"text":" 52 dollars each is"}
+
+event: delta
+data: {"text":" 2,080 dollars"}
+
+event: delta
+data: {"text":" per"}
+
+event: delta
+data: {"text":" month, billed yearly."}
+
+event: delta
+data: {"text":"\n- That"}
+
+event: delta
+data: {"text":" pl"}
+
+event: delta
+data: {"text":"an includes single sign-on"}
+
+event: delta
+data: {"text":" and live re-routing for"}
+
+event: delta
+data: {"text":" the wh"}
+
+event: delta
+data: {"text":"ole team"}
+
+event: delta
+data: {"text":".\n- There"}
+
+event: delta
+data: {"text":" is also a one-time "}
+
+event: delta
+data: {"text":"1,500 dollar on"}
+
+event: delta
+data: {"text":"boarding fee, which"}
+
+event: delta
+data: {"text":" covers setup and two training days"}
+
+event: delta
+data: {"text":".\n"}
+
+event: question
+data: {"question":"So what would that cost us per month for forty seats?"}
+
+event: done
+data: {"usage":{"input_tokens":330,"output_tokens":162,"cache_creation_input_tokens":3958,"cache_read_input_tokens":0},"ms":{"auth":0,"toStreamOpen":0,"streamOpenToFirstText":0,"toFirstText":1624,"total":2105}}
+

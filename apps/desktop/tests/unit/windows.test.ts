@@ -1,9 +1,12 @@
 /**
  * Tests for apps/desktop/src/windows.ts, protection.ts and store.ts, with Electron faked:
  * - compactUrl() builds /compact/[id] on the Kite URL for plain ids only;
- * - restoreBounds() keeps saved bounds that are still on a screen, else the bottom-right default;
- * - compactWindowOptions(): frameless, always on top, resizable, in the taskbar, hidden until
- *   shown, the same secure web preferences as the main window;
+ * - restoreBounds() keeps saved bounds that are still on a screen, else 560 × 420 at the
+ *   remembered preset (top centre by default; v1.0.2, ADR-0035);
+ * - compactWindowOptions(): frameless, always on top, resizable, see-through (transparent), in the
+ *   taskbar, hidden until shown, the same secure web preferences as the main window;
+ * - v1.0.2: preset places, snapping to edges after a move, page-driven resizing from each edge,
+ *   the script-bar modes and their way back, and the IPC checks for those values;
  * - the controller opens one window, shows it without focus (showInactive), never calls focus,
  *   switches session without a new window, applies protection and re-applies it on show,
  *   saves its position after a move, and closes; IPC answers the Kite page only;
@@ -19,6 +22,10 @@ import {
   CLOSE_COMPACT_CHANNEL,
   GET_PROTECTION_CHANNEL,
   OPEN_COMPACT_CHANNEL,
+  OVERLAY_MODE_CHANNEL,
+  OVERLAY_PLACE_CHANNEL,
+  OVERLAY_PRESET_CHANNEL,
+  OVERLAY_RESIZE_CHANNEL,
   SET_PROTECTION_CHANNEL,
 } from '../../src/channels';
 import { createProtection, installProtection, protectionSupported } from '../../src/protection';
@@ -31,11 +38,18 @@ import {
   COMPACT_COLLAPSED_HEIGHT,
   COMPACT_DEFAULT_SIZE,
   COMPACT_MIN_SIZE,
+  isOverlayMode,
+  isOverlayPreset,
+  isResizeStep,
   OVERLAY_OPACITY_RANGE,
   OVERLAY_STEP,
   overlayMove,
   overlayShortcut,
+  presetBounds,
+  resizeBounds,
   restoreBounds,
+  SCRIPT_BAR_SIZE,
+  snapBounds,
 } from '../../src/windows';
 
 /** The Kite URL and origin used in these tests. */
@@ -129,6 +143,7 @@ function setup(initial: ShellSettings = {}) {
     screen: {
       getAllDisplays: () => [{ workArea: PRIMARY }] as never,
       getPrimaryDisplay: () => ({ workArea: PRIMARY }) as never,
+      getDisplayMatching: () => ({ workArea: PRIMARY }) as never,
     },
     kiteUrl: KITE,
     preloadPath: '/app/preload.js',
@@ -160,47 +175,41 @@ describe('compactUrl and restoreBounds', () => {
     }
   });
 
-  it('keeps saved bounds still on a screen, else the bottom-right default', () => {
+  it('keeps saved bounds still on a screen, else 560 × 420 at the top centre (ADR-0035)', () => {
     const saved = { x: 100, y: 100, width: 400, height: 300 };
     expect(restoreBounds(saved, [PRIMARY], PRIMARY)).toEqual(saved);
+    const topCentre = { x: 680, y: 24, width: 560, height: 420 };
+    expect(COMPACT_DEFAULT_SIZE).toEqual({ width: 560, height: 420 });
     // On a monitor that was unplugged.
     const gone = { x: 3000, y: 100, width: 400, height: 300 };
-    expect(restoreBounds(gone, [PRIMARY], PRIMARY)).toEqual({
-      x: PRIMARY.x + PRIMARY.width - COMPACT_DEFAULT_SIZE.width - 24,
-      y: PRIMARY.y + PRIMARY.height - COMPACT_DEFAULT_SIZE.height - 24,
-      width: COMPACT_DEFAULT_SIZE.width,
-      height: COMPACT_DEFAULT_SIZE.height,
-    });
-    expect(restoreBounds(undefined, [PRIMARY], PRIMARY)).toEqual({
-      x: PRIMARY.x + PRIMARY.width - COMPACT_DEFAULT_SIZE.width - 24,
-      y: PRIMARY.y + PRIMARY.height - COMPACT_DEFAULT_SIZE.height - 24,
-      width: COMPACT_DEFAULT_SIZE.width,
-      height: COMPACT_DEFAULT_SIZE.height,
+    expect(restoreBounds(gone, [PRIMARY], PRIMARY)).toEqual(topCentre);
+    expect(restoreBounds(undefined, [PRIMARY], PRIMARY)).toEqual(topCentre);
+    // The remembered preset decides the default place.
+    expect(restoreBounds(undefined, [PRIMARY], PRIMARY, 'top-right')).toEqual({
+      x: 1920 - 560 - 24,
+      y: 24,
+      width: 560,
+      height: 420,
     });
   });
 
-  it('glass: acrylic on Windows, vibrancy on macOS, solid elsewhere', () => {
-    const win = compactWindowOptions(
-      { x: 1, y: 2, width: 380, height: 320 },
-      '/p.js',
-      '1',
-      'win32',
-    );
-    expect(win).toMatchObject({ backgroundMaterial: 'acrylic', backgroundColor: '#00000000' });
-    const mac = compactWindowOptions(
-      { x: 1, y: 2, width: 380, height: 320 },
-      '/p.js',
-      '1',
-      'darwin',
-    );
-    expect(mac).toMatchObject({ transparent: true, vibrancy: 'hud' });
-    const other = compactWindowOptions(
-      { x: 1, y: 2, width: 380, height: 320 },
-      '/p.js',
-      '1',
-      'linux',
-    );
-    expect(other.backgroundColor).toBe('#18181b');
+  it('see-through on every system: transparent, with acrylic or vibrancy as a bonus (ADR-0035)', () => {
+    const bounds = { x: 1, y: 2, width: 380, height: 320 };
+    const win = compactWindowOptions(bounds, '/p.js', '1', 'win32');
+    // v1.0.1 had the clear colour without `transparent`, which Electron ignores: solid black.
+    expect(win).toMatchObject({
+      transparent: true,
+      backgroundColor: '#00000000',
+      backgroundMaterial: 'acrylic',
+      hasShadow: false,
+      maximizable: false,
+      fullscreenable: false,
+    });
+    const mac = compactWindowOptions(bounds, '/p.js', '1', 'darwin');
+    expect(mac).toMatchObject({ transparent: true, vibrancy: 'hud', maximizable: false });
+    expect(mac.backgroundColor).toBeUndefined();
+    const other = compactWindowOptions(bounds, '/p.js', '1', 'linux');
+    expect(other).toMatchObject({ transparent: true, backgroundColor: '#00000000' });
     expect(other.backgroundMaterial).toBeUndefined();
   });
 
@@ -405,5 +414,196 @@ describe('the overlay window (ADR-0029)', () => {
       COMPACT_MIN_SIZE.width,
       COMPACT_MIN_SIZE.height,
     );
+  });
+});
+
+describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
+  it('puts the overlay at each preset, shrunk to fit a small screen', () => {
+    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 680, y: 24, width: 560, height: 420 });
+    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1336, y: 24, width: 560, height: 420 });
+    expect(presetBounds('bottom-center', PRIMARY)).toEqual({
+      x: 680,
+      y: 1040 - 420 - 24,
+      width: 560,
+      height: 420,
+    });
+    // A second display to the right, and a screen smaller than the overlay.
+    expect(presetBounds('top-center', { x: 1920, y: 0, width: 1280, height: 720 })).toEqual({
+      x: 1920 + 360,
+      y: 24,
+      width: 560,
+      height: 420,
+    });
+    expect(presetBounds('top-center', { x: 0, y: 0, width: 500, height: 400 })).toEqual({
+      x: 0,
+      y: 0,
+      width: 500,
+      height: 400,
+    });
+  });
+
+  it('snaps each side near an edge flush to it, and leaves the size alone', () => {
+    const size = { width: 560, height: 420 };
+    expect(snapBounds({ x: 9, y: 14, ...size }, PRIMARY)).toEqual({ x: 0, y: 0, ...size });
+    expect(snapBounds({ x: 1920 - 560 - 16, y: 1040 - 420 + 5, ...size }, PRIMARY)).toEqual({
+      x: 1920 - 560,
+      y: 1040 - 420,
+      ...size,
+    });
+    const free = { x: 17, y: 300, ...size };
+    expect(snapBounds(free, PRIMARY)).toEqual(free);
+  });
+
+  it('resizes from each edge, keeps the opposite edge, the minimum and the screen', () => {
+    const start = { x: 600, y: 200, width: 560, height: 420 };
+    const min = COMPACT_MIN_SIZE;
+    expect(resizeBounds(start, 'se', 40, 30, min, PRIMARY)).toEqual({
+      x: 600,
+      y: 200,
+      width: 600,
+      height: 450,
+    });
+    // West and north move the window; the right and bottom edges stay.
+    expect(resizeBounds(start, 'nw', -50, -20, min, PRIMARY)).toEqual({
+      x: 550,
+      y: 180,
+      width: 610,
+      height: 440,
+    });
+    // Never below the minimum: the dragged edge stops.
+    expect(resizeBounds(start, 'w', 500, 0, min, PRIMARY)).toEqual({
+      x: 600 + 560 - min.width,
+      y: 200,
+      width: min.width,
+      height: 420,
+    });
+    // Never off the screen.
+    expect(resizeBounds(start, 'e', 5_000, 0, min, PRIMARY).width).toBe(1920 - 600);
+    expect(resizeBounds(start, 'n', 0, -5_000, min, PRIMARY)).toMatchObject({ y: 0, height: 620 });
+  });
+
+  it('checks the values the page sends', () => {
+    expect(isOverlayPreset('top-right')).toBe(true);
+    expect(isOverlayPreset('middle')).toBe(false);
+    expect(isOverlayMode('script-input')).toBe(true);
+    expect(isOverlayMode('fullscreen')).toBe(false);
+    expect(isResizeStep({ phase: 'move', edge: 'se', dx: 3, dy: -4 })).toBe(true);
+    expect(isResizeStep({ phase: 'move', edge: 'x', dx: 3, dy: 4 })).toBe(false);
+    expect(isResizeStep({ phase: 'move', edge: 'e', dx: Number.NaN, dy: 4 })).toBe(false);
+    expect(isResizeStep({ phase: 'move', edge: 'e', dx: 1e9, dy: 4 })).toBe(false);
+    expect(isResizeStep(null)).toBe(false);
+  });
+
+  it('snaps after a move near an edge, then saves the snapped place', () => {
+    vi.useFakeTimers();
+    const { compact, store } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { x: 8, y: 300, width: 560, height: 420 };
+    window.emit('moved');
+    vi.advanceTimersByTime(600);
+    expect(window.bounds).toEqual({ x: 0, y: 300, width: 560, height: 420 });
+    expect(store.read().compactBounds).toEqual({ x: 0, y: 300, width: 560, height: 420 });
+    // A resize alone never moves the window.
+    window.setBounds.mockClear();
+    window.bounds = { x: 5, y: 300, width: 600, height: 420 };
+    window.emit('resized');
+    vi.advanceTimersByTime(600);
+    expect(window.setBounds).not.toHaveBeenCalled();
+  });
+
+  it('places at a preset, remembers it, and only remembers when no overlay is open', () => {
+    const { compact, store } = setup();
+    expect(compact.preset()).toBe('top-center');
+    compact.place('top-right');
+    expect(store.read().overlayPreset).toBe('top-right');
+    expect(compact.preset()).toBe('top-right');
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    // Opens at the remembered preset (nothing saved yet).
+    expect(window.options).toMatchObject({ x: 1336, y: 24, width: 560, height: 420 });
+    compact.place('bottom-center');
+    expect(window.bounds).toEqual({ x: 680, y: 596, width: 560, height: 420 });
+    expect(store.read().compactBounds).toEqual({ x: 680, y: 596, width: 560, height: 420 });
+  });
+
+  it('script bar: slim at the top centre, input row, and back to where the overlay was', () => {
+    const { compact, store } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    const full = { x: 300, y: 500, width: 600, height: 450 };
+    window.bounds = { ...full };
+    compact.setMode('script');
+    expect(compact.mode()).toBe('script');
+    expect(window.bounds).toEqual({ x: 640, y: 8, width: 640, height: SCRIPT_BAR_SIZE.height });
+    compact.setMode('script-input');
+    expect(window.bounds).toEqual({
+      x: 640,
+      y: 8,
+      width: 640,
+      height: SCRIPT_BAR_SIZE.height + SCRIPT_BAR_SIZE.inputHeight,
+    });
+    // The old collapse call never leaves the script bar.
+    compact.setCollapsed(false);
+    expect(compact.mode()).toBe('script-input');
+    // Saved while slim: the full overlay's bounds are what is remembered.
+    window.emit('close');
+    expect(store.read().compactBounds).toEqual(full);
+    compact.setMode('full');
+    expect(window.bounds).toEqual(full);
+    expect(window.setMinimumSize).toHaveBeenLastCalledWith(
+      COMPACT_MIN_SIZE.width,
+      COMPACT_MIN_SIZE.height,
+    );
+    // From the script bar to the controls bar: the full overlay's place, at the bar's height.
+    compact.setMode('script');
+    compact.setMode('collapsed');
+    expect(window.bounds).toEqual({ ...full, height: COMPACT_COLLAPSED_HEIGHT });
+  });
+
+  it('page-driven resize: from a start, any edge in full mode, width only when slim', () => {
+    const { compact, store } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { x: 600, y: 200, width: 560, height: 420 };
+    // No start: ignored.
+    compact.resize({ phase: 'move', edge: 'se', dx: 50, dy: 50 });
+    expect(window.setBounds).not.toHaveBeenCalled();
+    compact.resize({ phase: 'start', edge: 'se', dx: 0, dy: 0 });
+    compact.resize({ phase: 'move', edge: 'se', dx: 20, dy: 10 });
+    compact.resize({ phase: 'end', edge: 'se', dx: 40, dy: 30 });
+    expect(window.bounds).toEqual({ x: 600, y: 200, width: 600, height: 450 });
+    expect(store.read().compactBounds).toEqual({ x: 600, y: 200, width: 600, height: 450 });
+    compact.setMode('script');
+    const bar = { ...window.bounds };
+    compact.resize({ phase: 'start', edge: 'n', dx: 0, dy: 0 });
+    compact.resize({ phase: 'end', edge: 'n', dx: 0, dy: -100 });
+    expect(window.bounds).toEqual(bar);
+    compact.resize({ phase: 'start', edge: 'se', dx: 0, dy: 0 });
+    compact.resize({ phase: 'end', edge: 'se', dx: 60, dy: 200 });
+    expect(window.bounds).toEqual({ ...bar, width: bar.width + 60 });
+  });
+
+  it('IPC: presets, resize steps and modes from the Kite page only, and only valid ones', async () => {
+    const { compact, store } = setup();
+    compact.open('s1');
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+    installCompactWindows({ handle: (c: string, f: never) => handlers.set(c, f) }, compact, ORIGIN);
+    const page = from(`${ORIGIN}/compact/s1`);
+    const evil = from('https://evil.example/');
+    expect(() => handlers.get(OVERLAY_PLACE_CHANNEL)!(page, 'middle')).toThrow(/preset/);
+    expect(() => handlers.get(OVERLAY_PLACE_CHANNEL)!(evil, 'top-right')).toThrow();
+    await handlers.get(OVERLAY_PLACE_CHANNEL)!(page, 'top-right');
+    expect(store.read().overlayPreset).toBe('top-right');
+    expect(await handlers.get(OVERLAY_PRESET_CHANNEL)!(page)).toBe('top-right');
+    expect(() => handlers.get(OVERLAY_PRESET_CHANNEL)!(evil)).toThrow();
+    expect(() =>
+      handlers.get(OVERLAY_RESIZE_CHANNEL)!(page, { phase: 'move', edge: 'up', dx: 1, dy: 1 }),
+    ).toThrow(/resize/);
+    await handlers.get(OVERLAY_RESIZE_CHANNEL)!(page, { phase: 'start', edge: 'e', dx: 0, dy: 0 });
+    expect(() => handlers.get(OVERLAY_MODE_CHANNEL)!(page, 'huge')).toThrow(/mode/);
+    expect(() => handlers.get(OVERLAY_MODE_CHANNEL)!(evil, 'script')).toThrow();
+    await handlers.get(OVERLAY_MODE_CHANNEL)!(page, 'script');
+    expect(compact.mode()).toBe('script');
   });
 });

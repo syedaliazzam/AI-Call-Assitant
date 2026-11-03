@@ -2,12 +2,15 @@
  * File: apps/web/src/features/ask-kite/AskKitePage.tsx
  * Purpose: The Ask Kite page: a private chat about anything, outside a call. Chats are stored on
  *          this device. A chat can have items from the Resume and Document libraries or a past
- *          session attached, and screenshots pasted into a message.
+ *          session attached, and screenshots pasted into a message. Voice (item 8): talk instead of
+ *          typing (sent when you pause), "Read replies aloud" and "Hands-free" (listen again after
+ *          each reply); this page only, outside calls (ADR-0038).
  * Used by: app/(app)/ask-kite/page.tsx
  * Depends on: src/core/askKite/chat.ts, src/core/answer (answerClient.ts, unavailable.ts),
- *             src/core/screenshot/prepare.ts, src/core/storage (chats, library, sessions),
- *             src/core/review/load.ts, src/features/answers, src/ui
- * Architecture: docs/decisions/ADR-0030-ask-kite-and-adaptive-answers.md
+ *             src/core/screenshot/prepare.ts, src/core/storage (chats, library, sessions,
+ *             voicePrefs), src/core/review/load.ts, src/core/voice/speak.ts, ./useVoiceInput.ts,
+ *             ./VoiceControls.tsx, src/features/answers, src/ui
+ * Architecture: docs/decisions/ADR-0030-ask-kite-and-adaptive-answers.md; ADR-0038
  *
  * Questions and answers are only rendered and stored on this device; never logged. Pasted
  * screenshots stay in memory until they are sent, and are not kept afterwards.
@@ -25,6 +28,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ClipboardEvent,
   type KeyboardEvent,
 } from 'react';
@@ -42,6 +46,8 @@ import { prepareScreenshot } from '@/core/screenshot/prepare';
 import { deleteChat, listChats, newChat, saveChat } from '@/core/storage/chats';
 import { listLibrary } from '@/core/storage/library';
 import { listSessions } from '@/core/storage/sessions';
+import { getHandsFree, getReadAloud, setHandsFree, setReadAloud } from '@/core/storage/voicePrefs';
+import { createSpeaker } from '@/core/voice/speak';
 import type {
   ChatAttachment,
   ChatMessage,
@@ -54,6 +60,16 @@ import { AnswerTags } from '@/features/answers/AnswerTags';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { PageShell } from '@/ui/PageShell';
+import { useVoiceInput } from './useVoiceInput';
+import { MicButton, VoiceOptions } from './VoiceControls';
+
+/**
+ * Nothing to subscribe to: the stored voice switches and the browser's speech support do not
+ * change by themselves while the page is open (the page's own state takes over once changed).
+ *
+ * @returns An unsubscribe function that does nothing.
+ */
+const subscribeNever = () => () => {};
 
 /** What can be attached, as shown in the dialog. */
 interface AttachChoices {
@@ -137,8 +153,71 @@ export function AskKitePage() {
   const cancel = useRef<(() => void) | null>(null);
   const end = useRef<HTMLDivElement>(null);
 
-  // A request still running when the page closes is stopped: nobody would read it.
-  useEffect(() => () => cancel.current?.(), []);
+  // Voice (item 8, ADR-0038). This page is never open during a call (leaving the live page ends
+  // it), so reading aloud cannot be picked up as the other side or reach a meeting.
+  const [speaker] = useState(() => createSpeaker());
+  const canSpeak = useSyncExternalStore(subscribeNever, speaker.supported, () => false);
+  const [speaking, setSpeaking] = useState(false);
+  // The stored switches are read after hydration (the server has no localStorage); a change on
+  // the page then takes over.
+  const storedReadAloud = useSyncExternalStore(subscribeNever, getReadAloud, () => false);
+  const storedHandsFree = useSyncExternalStore(subscribeNever, getHandsFree, () => false);
+  const [readAloudChoice, setReadAloudChoice] = useState<boolean | null>(null);
+  const [handsFreeChoice, setHandsFreeChoice] = useState<boolean | null>(null);
+  const readAloud = canSpeak && (readAloudChoice ?? storedReadAloud);
+  const handsFree = handsFreeChoice ?? storedHandsFree;
+  // The latest send() and switches, for callbacks that run later (a pause, the end of a reply).
+  const sendRef = useRef<(spoken?: string) => void>(() => undefined);
+  const voiceRef = useRef({ readAloud, handsFree });
+  useEffect(() => {
+    voiceRef.current = { readAloud, handsFree };
+  });
+  const voice = useVoiceInput({
+    onPreview: setDraft,
+    onSend: (text) => sendRef.current(text),
+  });
+  const startListening = voice.start;
+
+  // A request still running when the page closes is stopped: nobody would read it. Reading aloud
+  // stops too.
+  useEffect(
+    () => () => {
+      cancel.current?.();
+      speaker.stop();
+    },
+    [speaker],
+  );
+
+  /**
+   * After a reply: read it aloud if that is on, then (hands-free) listen for the next message.
+   *
+   * @param text The finished reply.
+   * @returns Nothing.
+   */
+  const afterReply = useCallback(
+    (text: string) => {
+      const { readAloud: read, handsFree: again } = voiceRef.current;
+      if (read) {
+        setSpeaking(true);
+        speaker.speak(text, {
+          onEnd: () => {
+            setSpeaking(false);
+            if (voiceRef.current.handsFree) startListening('');
+          },
+        });
+      } else if (again) {
+        startListening('');
+      }
+    },
+    [speaker, startListening],
+  );
+
+  /** Stops reading the reply; hands-free then listens, as if the reading had ended. */
+  function stopSpeaking() {
+    speaker.stop();
+    setSpeaking(false);
+    if (handsFree) startListening('');
+  }
 
   const reload = useCallback(() => {
     listChats()
@@ -168,11 +247,20 @@ export function AskKitePage() {
       .catch(() => setNotice('The chat could not be saved on this computer (is the disk full?).'));
   }
 
-  /** Sends the message being written. */
-  function send() {
-    const question = draft.trim();
+  /**
+   * Sends the message being written, or the one just dictated.
+   *
+   * @param spoken The dictated message (the microphone sends it on a pause); default the box.
+   * @returns Nothing.
+   */
+  function send(spoken?: string) {
+    const question = (spoken ?? draft).trim();
     if ((!question && images.length === 0) || reply) return;
     setNotice(null);
+    // A new message stops reading the last reply, and a typed one stops the microphone.
+    speaker.stop();
+    setSpeaking(false);
+    if (spoken === undefined) voice.stop();
     const pasted = images.map((image) => image.dataUrl);
     const mine: ChatMessage = {
       id: crypto.randomUUID(),
@@ -215,6 +303,7 @@ export function AskKitePage() {
             { id: answerId, role: 'kite', text, at, ...(meta ? { meta } : {}) },
           ],
         });
+        afterReply(text);
       },
       onError: (failure) => {
         cancel.current = null;
@@ -224,6 +313,10 @@ export function AskKitePage() {
     });
     cancel.current = running.cancel;
   }
+  // The microphone's pause calls the newest send() (with this render's chat and draft).
+  useEffect(() => {
+    sendRef.current = send;
+  });
 
   /**
    * Enter sends; Shift+Enter starts a new line.
@@ -318,6 +411,9 @@ export function AskKitePage() {
   function open(next: StoredChat) {
     cancel.current?.();
     cancel.current = null;
+    speaker.stop();
+    setSpeaking(false);
+    voice.stop();
     setReply(null);
     setNotice(null);
     setChat(next);
@@ -499,6 +595,16 @@ export function AskKitePage() {
               >
                 Send
               </Button>
+              <MicButton
+                state={voice.state}
+                disabled={Boolean(reply)}
+                onStart={() => {
+                  speaker.stop();
+                  setSpeaking(false);
+                  voice.start(draft);
+                }}
+                onStop={voice.stop}
+              />
               <Button type="button" variant="secondary" onClick={openAttach}>
                 Attach
               </Button>
@@ -516,6 +622,32 @@ export function AskKitePage() {
                 </Button>
               )}
             </div>
+            {voice.error && (
+              <p role="alert" className="text-[13px] text-ui-danger">
+                {voice.error}
+              </p>
+            )}
+            <VoiceOptions
+              canSpeak={canSpeak}
+              readAloud={readAloud}
+              onReadAloud={(on) => {
+                setReadAloudChoice(on);
+                setReadAloud(on);
+                if (!on) {
+                  speaker.stop();
+                  setSpeaking(false);
+                }
+              }}
+              handsFree={handsFree}
+              onHandsFree={(on) => {
+                setHandsFreeChoice(on);
+                setHandsFree(on);
+                // Turning hands-free off ends the loop: stop listening now.
+                if (!on) voice.stop();
+              }}
+              speaking={speaking}
+              onStopSpeaking={stopSpeaking}
+            />
           </form>
         </section>
       </div>

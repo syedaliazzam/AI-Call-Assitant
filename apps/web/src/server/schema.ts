@@ -1,7 +1,9 @@
 /**
  * File: apps/web/src/server/schema.ts
  * Purpose: Drizzle table definitions for the accounts database (Neon Postgres). It holds user
- *          accounts and sign-in sessions ONLY; call data stays on the user's device (IndexedDB).
+ *          accounts and sign-in sessions, and (v1.0.2, ADR-0036) per-user daily request COUNTS and
+ *          app settings: never transcript, document, answer or question text. Call data stays on
+ *          the user's device (IndexedDB).
  *          Generated with the Better Auth CLI (`auth generate --adapter drizzle --dialect
  *          postgresql`, better-auth 1.7.13) for email + password, the admin plugin and our
  *          `mustChangePassword` field; comments added by hand. If the Better Auth config gains
@@ -9,10 +11,11 @@
  * Used by: src/server/db.ts, src/server/auth.ts (drizzleAdapter), src/server/users.ts,
  *          drizzle.config.ts (migrations)
  * Depends on: drizzle-orm
- * Architecture: docs/architecture/kite-architecture-v3.1.md §8.1, §8.2 (ADR-0022)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §8.1, §8.2 (ADR-0022); ADR-0036
+ *               (usage_day and app_setting are written by hand, not by the Better Auth CLI)
  */
 import { relations } from 'drizzle-orm';
-import { boolean, index, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, pgTable, primaryKey, text, timestamp } from 'drizzle-orm/pg-core';
 
 /** One row per Kite account. Created only by an admin (no public sign-up). */
 export const user = pgTable('user', {
@@ -169,3 +172,39 @@ export const accountRelations = relations(account, ({ one }) => ({
     references: [user.id],
   }),
 }));
+
+/**
+ * How many Claude requests each user made on each day (UTC), for the daily limit and the
+ * Admin → Usage page (ADR-0036). Counts only: no text of any kind is stored here.
+ */
+export const usageDay = pgTable(
+  'usage_day',
+  {
+    /** The account the requests belong to; its rows go when the account is deleted. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** The day, as 'YYYY-MM-DD' in UTC (the limit resets at midnight UTC). */
+    day: text('day').notNull(),
+    /** Claude requests made that day (answers, chat, screenshots, Ask Kite, notes, review, prepare). */
+    requests: integer('requests').default(0).notNull(),
+  },
+  // One row per user and day: the counter is increased in place (INSERT … ON CONFLICT).
+  (table) => [primaryKey({ columns: [table.userId, table.day] })],
+);
+
+/**
+ * Small app-wide settings an admin can change, as text keyed by name (ADR-0036). Today only
+ * 'daily_limit' (Claude requests per user per day).
+ */
+export const appSetting = pgTable('app_setting', {
+  /** The setting's name, for example 'daily_limit'. */
+  key: text('key').primaryKey(),
+  /** Its value, as text (numbers are parsed by the code that reads them). */
+  value: text('value').notNull(),
+  /** When an admin last changed it. */
+  updatedAt: timestamp('updated_at')
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});

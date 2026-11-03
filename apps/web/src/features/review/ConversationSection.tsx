@@ -1,7 +1,8 @@
 /**
  * File: apps/web/src/features/review/ConversationSection.tsx
  * Purpose: The Transcript section of the session window: the call as a chat (Them on the left, You
- *          on the right) with Kite's answers inline as cards, each with its time, thumbs and
+ *          on the right; each turn one bubble, v1.0.2) with Kite's answers inline as cards, each
+ *          with its time, thumbs and
  *          "Report this answer", newest first, with an "Oldest first" toggle that is remembered
  *          (ADR-0030). Also Download (TXT and PDF, always in time order) and Clear transcript
  *          (asks first).
@@ -20,6 +21,7 @@ import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { getReviewOldestFirst, setReviewOldestFirst } from '@/core/storage/answerPrefs';
 import {
+  conversationEntries,
   conversationItems,
   transcriptFileName,
   transcriptPdf,
@@ -28,7 +30,7 @@ import {
 import { rateAnswer, reportAnswer } from '@/core/storage/answers';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
 import { clearTranscript } from '@/core/storage/utterances';
-import { sentenceCase, type DisplayTerm } from '@/core/transcript/display';
+import type { DisplayTerm } from '@/core/transcript/display';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { FlagIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
@@ -213,11 +215,13 @@ export function ConversationSection({
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const items = conversationItems(lines, answers);
+  // On screen, each turn is one bubble; the downloads below keep one row per line.
+  const entries = conversationEntries(items, terms);
   // Newest first unless the user chose otherwise (remembered on this device).
   const savedOldestFirst = useSyncExternalStore(subscribeNever, getReviewOldestFirst, () => false);
   const [oldestChoice, setOldestChoice] = useState<boolean | null>(null);
   const oldestFirst = oldestChoice ?? savedOldestFirst;
-  const shown = oldestFirst ? items : [...items].reverse();
+  const shown = oldestFirst ? entries : [...entries].reverse();
 
   /** Downloads the conversation as text. */
   function downloadText() {
@@ -295,27 +299,29 @@ export function ConversationSection({
       )}
       {items.length > 0 && (
         <ol aria-label="Conversation" className="mt-3 flex flex-col gap-1.5">
-          {shown.map((item) =>
-            item.kind === 'answer' ? (
+          {shown.map((entry) =>
+            entry.kind === 'answer' ? (
               <AnswerCard
-                key={item.answer.id}
-                answer={item.answer}
+                key={entry.answer.id}
+                answer={entry.answer}
                 sessionType={session.type}
                 onChanged={onChanged}
               />
             ) : (
+              // One bubble per turn: a speaker's lines with short pauses between them (v1.0.2).
               <li
-                key={item.line.id}
-                aria-label={item.line.speaker === 'you' ? 'You said' : 'Them said'}
-                className={`flex max-w-[85%] flex-col ${item.line.speaker === 'you' ? 'items-end self-end' : 'items-start self-start'}`}
+                key={entry.group.id}
+                aria-label={entry.group.speaker === 'you' ? 'You said' : 'Them said'}
+                className={`flex max-w-[85%] flex-col ${entry.group.speaker === 'you' ? 'items-end self-end' : 'items-start self-start'}`}
               >
                 <span
-                  className={`rounded-control px-3 py-1.5 text-[15px] text-ui-text ${item.line.speaker === 'you' ? 'bg-ui-pale' : 'rounded-control bg-ui-band'}`}
+                  className={`rounded-control px-3 py-1.5 text-[15px] text-ui-text ${entry.group.speaker === 'you' ? 'bg-ui-pale' : 'bg-ui-band'}`}
                 >
-                  {sentenceCase(item.line.text, terms)}
+                  {entry.group.finalText}
                 </span>
                 <span className="mt-0.5 text-[13px] text-ui-muted">
-                  {item.line.speaker === 'you' ? 'You' : 'Them'} · {CLOCK.format(item.line.tStart)}
+                  {entry.group.speaker === 'you' ? 'You' : 'Them'} ·{' '}
+                  {CLOCK.format(entry.group.tStart)}
                 </span>
               </li>
             ),
