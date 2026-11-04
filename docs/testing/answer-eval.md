@@ -33,8 +33,14 @@ Re-run only the groups a change touches; run the full suite once, at release (`p
 | `ask-kite` | 6, same file (3 typed in a call, 3 on the page; code is run) | `--only=ask-kite` | 6 × 2 × 2 = 24 (the page's answers use the smart model) | ≥ 8, and for the call or private as expected |
 | `cv-embellishment` | 4, in `tests/eval/groups/honesty.ts` (ADR-0032: bait an invented tool, number, team size or result on a real CV project) | `--only=cv-embellishment` | 4 × 2 × 2 = 16 | **Zero invented tools, numbers, team sizes or results** (the claim check and the grader's `invented` list). Score reported |
 | `answer-length` | 2, same file (ADR-0032: a full Balanced-length answer, not a one-liner or a ramble) | `--only=answer-length` | 2 × 2 × 2 = 8 | ≥ 8 (the grader's style score covers length) |
+| `question-detection` | 11, in `tests/eval/groups/detection.ts` (ADR-0043: garbled lines and remarks are not answered as questions; real questions in messy transcripts still are) | `--only=question-detection` | at most 11 × 2 × 2 = 44 (a reply with no answer in it needs no grade) | ≥ 8 |
+| `screenshot-types` | 7, same file (ADR-0043: a coding problem, a code error, a slide, a chart, a document, a web page, an unreadable screen; code is run) | `--only=screenshot-types` | 7 × 2 × 2 = 28 | ≥ 8, and the code runs |
 
 `--only=<id>` runs one scenario; `--runs=N` sets the runs (default 2 for answers, 3 for notes). Which group a change touches: the rules block or the conversation part of `server/prompt.ts` → `answers` and `screenshots`; the screenshot tail only → `screenshots`; the learned-preferences part of the rules block (`rulesBlock()` with lessons) → `lessons` (a session without lessons sends the Day 4 rules block byte for byte, pinned by a unit test, so `answers` and `screenshots` need no re-run); `server/notes.ts` → `notes`.
+
+**Answer line (v1.1.0, ADR-0043).** Every run also records the words in the answer line as the model wrote it and as the card shows it after its cut at a clause, not counting a label, and prints both rates. The gate is **at least 95% as shown**, across all groups (the developer's decision, 4 Nov 2026). The Headline point in the rubric stays at 15 words of what the model wrote, so scores remain comparable.
+
+**The hidden question line (v1.1.0).** The evaluation now takes out the hidden `[[question|…]]` line before grading, as the route's pipeline does. v1.0.2 added that line and this evaluation had not run since, so the baselines were measured without it; the first v1.1.0 pass graded it as stray text until this was fixed.
 
 ## Rubric (10 points per scenario)
 
@@ -419,3 +425,32 @@ Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 run
 **Default chosen by measurement (developer's rule, 2026-11-03):** with `cv-embellishment` still failing, it was run once on v-previous (`eval:answers --only=cv-embellishment --style=previous`, new option): **6.00, 9 invented items, 6 of 8 runs flagged**, against v-current's 7.25, 6 items, 5 of 8. v-current invents fewer, so **v-current stays the default**; v-previous stays available through Settings → Answers → Answer style version (admin only).
 
 **Still open:** what remains invented is mostly a claimed role beyond the CV ("I led the move", "working with my team") and small causal links ("so it could be deployed on its own"); `missing-info` loses most points to the style rule when an answer says a detail is absent. A stricter wording (fix 2) made both worse, so the next attempt should change the examples rather than add bans. New baseline for `answers`: **9.01** (gate 8.86 from here).
+
+### v1.1.0, 4 Nov 2026
+
+Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario unless noted. Evaluation spend for the whole release: **$2.07 for 1,608 requests** (eight paid runs, including the wording that was tried and dropped).
+
+**The prompt that shipped.** Tightening the general reminder for the 12-word line was tried three ways. Each made raw lines no shorter and answers less careful (`answers` 8.80 and 8.67, `cv-embellishment` down to 6.50), so the reminder went back to v1.0.4's words. The card's cut enforces the limit instead. The coding, screenshot and small-talk rules state it, because those lines have nothing else limiting them.
+
+| Group | Gate | Result on the final prompt | Result |
+|---|---|---|---|
+| `answers` (15) | 3-run mean ≥ 8.86 | **9.07** | passes |
+| `screenshots` (3) | ≥ 8 | 9.50 | passes |
+| `lessons` (2) | ≥ 8 and above without | 9.25 (without: 8.25) | passes |
+| `preferences` (3) | ≥ 8 | 9.33 | passes |
+| `notes` (3) | ≥ 8 | 9.44 (own prompt, unchanged; from the pass before) | passes |
+| `adaptive` (24) | ≥ 8 | 8.81; code ran 6/6 | passes |
+| `missing-info` (8) | ≥ 7.60 (absolute target 8 unmet at the last release) | 8.13 | passes, and also meets 8 in this run |
+| `hallucination-bait` (6) | no invented price or personal number | 7.92; numbers outside the documents 0/12 | passes |
+| `consistency` (3) | ≥ 8, same numbers | 8.67; 5/6 repeats kept the numbers, as at the baseline | score passes |
+| `ask-kite` (6) | ≥ 8 | 9.75; code ran 4/4 | passes |
+| `cv-embellishment` (4) | ≥ 7.10, at most 6 invented items | **6.75 (6.58 at 6 runs)**; 6 items | **fails on score; released by the developer's decision** |
+| `answer-length` (2) | ≥ 8 | 8.75 | passes |
+| `question-detection` (11) | ≥ 8 | 9.27 | passes |
+| `screenshot-types` (7) | ≥ 8, code runs | 9.50; code ran 4/4 | passes |
+| Answer line, as shown | ≥ 95% within 12 words | **98%** (166 of 170) | passes |
+| Answer line, as written | reported | 36% (62 of 170) | reported: the card does this work |
+
+**`cv-embellishment`.** The gate was set from v1.0.4's best reading, 7.25. All the 2-run readings on 3 Nov were 6.50, 7.25, 7.13 and 6.00, an average of 6.72; the six-run reading on the final prompt is 6.58. That looks like noise, not a regression, but it is below the gate and well below an honest answer's 10. The usual fault is an answer saying "the CV doesn't state…" aloud, and adding "the CV states" to the banned phrases moved it less than the noise (7.13, then 6.50). A real fix is its own piece of work.
+
+**Lessons from this release.** A group of 2 to 4 scenarios at 2 runs moves by about a point between identical runs, so a single reading of one is weak evidence either way. Read more than one before believing a change helped.

@@ -15,6 +15,7 @@
  * text is never logged.
  */
 import { isQuestionLike } from '../transcript/question';
+import { lineKind } from '../transcript/questionKind';
 import type { Utterance } from '../transcript/transcript';
 
 /** Silence after the question before Kite answers, ms (the question has ended). */
@@ -43,6 +44,8 @@ export function isAutoQuestion(text: string): boolean {
   const trimmed = text.trim();
   const words = trimmed.split(/\s+/).filter(Boolean);
   if (words.length < 3) return false;
+  // v1.1.0 (ADR-0043): "how are you", "are you ready" and noise are never answered by themselves.
+  if (lineKind(trimmed) !== 'question') return false;
   return trimmed.endsWith('?') || (STARTS_QUESTION.test(trimmed) && isQuestionLike(trimmed));
 }
 

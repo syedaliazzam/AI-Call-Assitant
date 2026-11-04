@@ -144,8 +144,8 @@ test('5. Connect (fake mic + fake tab), Go live, lines appear', async () => {
   // Final lines use the normal text colour (TranscriptStrip: text-ui-text, UI theme U3); grey lines are still
   // being heard. Only final lines are saved, so the test waits for final ones.
   const finals = lines.filter({ has: page.locator('span.text-ui-text') });
-  const you = finals.filter({ hasText: /^\s*You/ });
-  const themLines = finals.filter({ hasText: /^\s*Them/ });
+  const you = page.getByLabel('Live transcript').getByRole('listitem', { name: 'You said' });
+  const themLines = page.getByLabel('Live transcript').getByRole('listitem', { name: 'Them said' });
   // Wait for final lines, then a little longer for more. In headless Chromium the fake
   // microphone also carries the shared tab's sound (measured 2026-10-30: the You and Them meters
   // move together), so "You" repeats "Them" and the echo filter correctly hides those lines.
@@ -160,6 +160,14 @@ test('5. Connect (fake mic + fake tab), Go live, lines appear', async () => {
   };
   report('live lines appear', counts.final > 0, counts);
   liveFinals = counts.final;
+  // The offline punctuation pass runs on the deployed site (v1.1.0): the words get marks. The model and
+  // runtime load from our own origin, in a worker of their own.
+  await expect
+    .poll(async () => (await finals.allTextContents()).some((text) => /[a-z][.,?]/.test(text)), {
+      timeout: 60_000,
+    })
+    .toBe(true);
+  report('offline punctuation on the deployed site', true);
 });
 
 test('6. Answer (Ctrl+Enter): the headline streams in, and the answer is rated', async () => {

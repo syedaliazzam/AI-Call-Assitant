@@ -1,7 +1,7 @@
 /**
  * Tests for apps/desktop/src/windows.ts, protection.ts and store.ts, with Electron faked:
  * - compactUrl() builds /compact/[id] on the Kite URL for plain ids only;
- * - restoreBounds() keeps saved bounds that are still on a screen, else 640 × 480 at the
+ * - restoreBounds() keeps saved bounds that are still on a screen, else 680 × 480 at the
  *   remembered preset (top centre by default; v1.0.2, ADR-0035);
  * - compactWindowOptions(): frameless, always on top, resizable, see-through (transparent), in the
  *   taskbar, hidden until shown, the same secure web preferences as the main window;
@@ -175,20 +175,20 @@ describe('compactUrl and restoreBounds', () => {
     }
   });
 
-  it('keeps saved bounds still on a screen, else 640 × 480 at the top centre (ADR-0035)', () => {
+  it('keeps saved bounds still on a screen, else 680 × 480 at the top centre (ADR-0035)', () => {
     const saved = { x: 100, y: 100, width: 400, height: 300 };
     expect(restoreBounds(saved, [PRIMARY], PRIMARY)).toEqual(saved);
-    const topCentre = { x: 640, y: 24, width: 640, height: 480 };
-    expect(COMPACT_DEFAULT_SIZE).toEqual({ width: 640, height: 480 });
+    const topCentre = { x: 620, y: 24, width: 680, height: 480 };
+    expect(COMPACT_DEFAULT_SIZE).toEqual({ width: 680, height: 480 });
     // On a monitor that was unplugged.
     const gone = { x: 3000, y: 100, width: 400, height: 300 };
     expect(restoreBounds(gone, [PRIMARY], PRIMARY)).toEqual(topCentre);
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY)).toEqual(topCentre);
     // The remembered preset decides the default place.
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY, 'top-right')).toEqual({
-      x: 1920 - 640 - 24,
+      x: 1920 - 680 - 24,
       y: 24,
-      width: 640,
+      width: 680,
       height: 480,
     });
   });
@@ -303,7 +303,7 @@ describe('protection', () => {
   it('is off by default, remembers a change and applies it; IPC takes a boolean from Kite only', async () => {
     const store = memoryStore();
     const protection = createProtection(store, 'win32', '10.0.26200');
-    expect(protection.state()).toEqual({ on: false, supported: true });
+    expect(protection.state()).toEqual({ on: false, supported: true, scope: 'all' });
     const fresh = { setContentProtection: vi.fn(), on: vi.fn() };
     protection.attach(fresh);
     expect(fresh.setContentProtection).toHaveBeenCalledWith(false);
@@ -312,13 +312,14 @@ describe('protection', () => {
     installProtection(
       { handle: (c: string, f: never) => handlers.set(c, f) },
       protection,
-      () => window,
+      () => [window],
       ORIGIN,
     );
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
     expect(await handlers.get(SET_PROTECTION_CHANNEL)!(from(`${ORIGIN}/settings`), false)).toEqual({
       on: false,
       supported: true,
+      scope: 'all',
     });
     expect(window.setContentProtection).toHaveBeenCalledWith(false);
     expect(store.read().shareProtection).toBe(false);
@@ -330,6 +331,7 @@ describe('protection', () => {
     expect(await handlers.get(GET_PROTECTION_CHANNEL)!(from(`${ORIGIN}/`))).toEqual({
       on: false,
       supported: true,
+      scope: 'all',
     });
   });
 });
@@ -420,19 +422,20 @@ describe('the overlay window (ADR-0029)', () => {
 
 describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
   it('puts the overlay at each preset, shrunk to fit a small screen', () => {
-    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 640, y: 24, width: 640, height: 480 });
-    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1256, y: 24, width: 640, height: 480 });
+    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 620, y: 24, width: 680, height: 480 });
+    expect(presetBounds('top-left', PRIMARY)).toEqual({ x: 24, y: 24, width: 680, height: 480 });
+    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1216, y: 24, width: 680, height: 480 });
     expect(presetBounds('bottom-center', PRIMARY)).toEqual({
-      x: 640,
+      x: 620,
       y: 1040 - 480 - 24,
-      width: 640,
+      width: 680,
       height: 480,
     });
     // A second display to the right, and a screen smaller than the overlay.
     expect(presetBounds('top-center', { x: 1920, y: 0, width: 1280, height: 720 })).toEqual({
-      x: 1920 + 320,
+      x: 1920 + 300,
       y: 24,
-      width: 640,
+      width: 680,
       height: 480,
     });
     expect(presetBounds('top-center', { x: 0, y: 0, width: 500, height: 400 })).toEqual({
@@ -524,10 +527,10 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
     compact.open('s1');
     const window = FakeWindow.created.at(-1)!;
     // Opens at the remembered preset (nothing saved yet).
-    expect(window.options).toMatchObject({ x: 1256, y: 24, width: 640, height: 480 });
+    expect(window.options).toMatchObject({ x: 1216, y: 24, width: 680, height: 480 });
     compact.place('bottom-center');
-    expect(window.bounds).toEqual({ x: 640, y: 536, width: 640, height: 480 });
-    expect(store.read().compactBounds).toEqual({ x: 640, y: 536, width: 640, height: 480 });
+    expect(window.bounds).toEqual({ x: 620, y: 536, width: 680, height: 480 });
+    expect(store.read().compactBounds).toEqual({ x: 620, y: 536, width: 680, height: 480 });
   });
 
   it('script bar: slim at the top centre, input row, and back to where the overlay was', () => {

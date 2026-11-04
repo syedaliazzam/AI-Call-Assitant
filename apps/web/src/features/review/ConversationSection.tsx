@@ -1,11 +1,11 @@
 /**
  * File: apps/web/src/features/review/ConversationSection.tsx
- * Purpose: The Transcript section of the session window: the call as a chat (Them on the left, You
- *          on the right; each turn one bubble, v1.0.2) with Kite's answers inline as cards, each
- *          with its time, thumbs and
- *          "Report this answer", newest first, with an "Oldest first" toggle that is remembered
- *          (ADR-0030). Also Download (TXT and PDF, always in time order) and Clear transcript
- *          (asks first).
+ * Purpose: The Transcript section of the session window, with two tabs (v1.1.0). Conversation: the
+ *          calls as a chat (Them on the left, You on the right; each turn one bubble with its speaker
+ *          above it), with a "Kite answered ▸" chip that opens each answer in place, and a divider
+ *          between calls. Answers: every answer as a card, with its time, thumbs and "Report this
+ *          answer". Oldest first by default, with a toggle that is remembered. Also Download (TXT and
+ *          PDF, always in time order) and Clear transcript (asks first).
  * Used by: src/features/review/SessionReview.tsx
  * Depends on: src/core/review/conversation.ts, src/core/answer/format.ts (splitAnswer),
  *             src/core/storage/answers.ts (rating, report), src/core/storage/utterances.ts (clear),
@@ -16,7 +16,7 @@
  */
 'use client';
 
-import { useState, useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { cardQuestion } from '@/core/answer/format';
 import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
@@ -24,6 +24,7 @@ import { getReviewOldestFirst, setReviewOldestFirst } from '@/core/storage/answe
 import {
   conversationEntries,
   conversationItems,
+  orderEntries,
   transcriptFileName,
   transcriptPdf,
   transcriptText,
@@ -34,10 +35,20 @@ import { clearTranscript } from '@/core/storage/utterances';
 import type { DisplayTerm } from '@/core/transcript/display';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
-import { FlagIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
+import { ChevronDownIcon, FlagIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
+import { Tabs } from '@/ui/Tabs';
 
 /** Clock time of a line or answer, in the user's locale (for example "14:05:32"). */
 const CLOCK = new Intl.DateTimeFormat(undefined, { timeStyle: 'medium' });
+
+/** A call's date and time, on its divider. */
+const CALL_CLOCK = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+/** The section's tabs. */
+const VIEWS = [
+  { value: 'conversation', label: 'Conversation' },
+  { value: 'answers', label: 'Answers' },
+] as const;
 
 /** How each answer was asked. */
 const MODE_LABELS: Record<StoredAnswer['mode'], string> = {
@@ -148,6 +159,7 @@ function AnswerCard({
       <div className="mt-1">
         <AnswerBody
           text={answer.text}
+          finished
           size="review"
           claims={answer.claims ?? []}
           {...(answer.meta?.target ? { target: answer.meta.target } : {})}
@@ -206,6 +218,64 @@ function AnswerCard({
 }
 
 /**
+ * One answer in the conversation: a chip that opens the card in place, so the talk stays readable.
+ *
+ * @param props.children The card.
+ * @returns The chip and, once opened, the card.
+ * Rendered by: ConversationSection
+ */
+function AnswerChip({
+  children,
+}: {
+  /** The card. */
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li className="flex flex-col">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex w-fit items-center gap-1 self-center rounded-full border border-ui-border bg-ui-band px-3 py-1 text-[13px] font-medium text-ui-text hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+      >
+        Kite answered
+        <span aria-hidden="true" className={open ? '' : '-rotate-90'}>
+          <ChevronDownIcon />
+        </span>
+      </button>
+      {open && <ul className="mt-1 list-none">{children}</ul>}
+    </li>
+  );
+}
+
+/**
+ * A divider before a call, when a session has several.
+ *
+ * @param props.at When the call started (Unix ms).
+ * @returns The divider.
+ * Rendered by: ConversationSection
+ */
+function CallDivider({
+  at,
+}: {
+  /** When the call started (Unix ms). */
+  at: number;
+}) {
+  return (
+    <li
+      role="separator"
+      aria-label={`Call of ${CALL_CLOCK.format(at)}`}
+      className="my-2 flex items-center gap-2 text-[13px] font-medium text-ui-muted"
+    >
+      <span aria-hidden="true" className="h-px flex-1 bg-ui-border" />
+      Call of {CALL_CLOCK.format(at)}
+      <span aria-hidden="true" className="h-px flex-1 bg-ui-border" />
+    </li>
+  );
+}
+
+/**
  * The transcript with answers inline.
  *
  * @param props See ConversationSectionProps.
@@ -221,14 +291,32 @@ export function ConversationSection({
 }: ConversationSectionProps) {
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [view, setView] = useState<(typeof VIEWS)[number]['value']>('conversation');
   const items = conversationItems(lines, answers);
   // On screen, each turn is one bubble; the downloads below keep one row per line.
   const entries = conversationEntries(items, terms);
-  // Newest first unless the user chose otherwise (remembered on this device).
-  const savedOldestFirst = useSyncExternalStore(subscribeNever, getReviewOldestFirst, () => false);
+  // Oldest first unless the user chose otherwise (remembered on this device; v1.1.0, was newest).
+  const savedOldestFirst = useSyncExternalStore(subscribeNever, getReviewOldestFirst, () => true);
   const [oldestChoice, setOldestChoice] = useState<boolean | null>(null);
   const oldestFirst = oldestChoice ?? savedOldestFirst;
-  const shown = oldestFirst ? entries : [...entries].reverse();
+  const shown = orderEntries(entries, oldestFirst);
+  const themName = session.contactName?.trim() || 'Them';
+
+  /**
+   * One answer's card.
+   *
+   * @param answer The answer.
+   * @returns The card.
+   */
+  const card = (answer: StoredAnswer) => (
+    <AnswerCard
+      key={answer.id}
+      answer={answer}
+      sessionType={session.type}
+      terms={terms}
+      onChanged={onChanged}
+    />
+  );
 
   /** Downloads the conversation as text. */
   function downloadText() {
@@ -305,34 +393,48 @@ export function ConversationSection({
         </p>
       )}
       {items.length > 0 && (
+        <div className="mt-3">
+          <Tabs label="Transcript view" options={VIEWS} value={view} onChange={setView} />
+        </div>
+      )}
+      {items.length > 0 && view === 'conversation' && (
         <ol aria-label="Conversation" className="mt-3 flex flex-col gap-1.5">
-          {shown.map((entry) =>
-            entry.kind === 'answer' ? (
-              <AnswerCard
-                key={entry.answer.id}
-                answer={entry.answer}
-                sessionType={session.type}
-                terms={terms}
-                onChanged={onChanged}
-              />
-            ) : (
-              // One bubble per turn: a speaker's lines with short pauses between them (v1.0.2).
+          {shown.map((entry) => {
+            if (entry.kind === 'call')
+              return <CallDivider key={`call-${entry.at}`} at={entry.at} />;
+            if (entry.kind === 'answer') {
+              return <AnswerChip key={entry.answer.id}>{card(entry.answer)}</AnswerChip>;
+            }
+            // One bubble per turn: a speaker's lines with short pauses between them (v1.0.2).
+            const who = entry.group.speaker === 'you' ? 'You' : themName;
+            return (
               <li
                 key={entry.group.id}
-                aria-label={entry.group.speaker === 'you' ? 'You said' : 'Them said'}
+                aria-label={`${who} said`}
                 className={`flex max-w-[85%] flex-col ${entry.group.speaker === 'you' ? 'items-end self-end' : 'items-start self-start'}`}
               >
+                <span className="mb-0.5 text-[13px] text-ui-muted">
+                  {who} · {CLOCK.format(entry.group.tStart)}
+                </span>
                 <span
                   className={`rounded-control px-3 py-1.5 text-[15px] text-ui-text ${entry.group.speaker === 'you' ? 'bg-ui-pale' : 'bg-ui-band'}`}
                 >
                   {entry.group.finalText}
                 </span>
-                <span className="mt-0.5 text-[13px] text-ui-muted">
-                  {entry.group.speaker === 'you' ? 'You' : 'Them'} ·{' '}
-                  {CLOCK.format(entry.group.tStart)}
-                </span>
               </li>
-            ),
+            );
+          })}
+        </ol>
+      )}
+      {items.length > 0 && view === 'answers' && (
+        <ol aria-label="Answers" className="mt-3 flex flex-col gap-1.5">
+          {shown.flatMap((entry) => {
+            if (entry.kind === 'call')
+              return [<CallDivider key={`call-${entry.at}`} at={entry.at} />];
+            return entry.kind === 'answer' ? [card(entry.answer)] : [];
+          })}
+          {!shown.some((entry) => entry.kind === 'answer') && (
+            <li className="text-[13px] text-ui-muted">Kite gave no answers in this session.</li>
           )}
         </ol>
       )}

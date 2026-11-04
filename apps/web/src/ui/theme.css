@@ -83,6 +83,17 @@
   --k-glass-success: #86efac;
   --k-glass-warning: #fde68a;
   --k-glass-danger: #fecaca;
+  /* v1.1.0 (ADR-0041): the light theme's see-through panel. Text is checked over pure black, its
+     worst case: at the default 0.7 the panel is about #adadad there, the body text 7.6:1 and the
+     muted text 5.1:1 (tests/unit/ui/theme.test.ts). */
+  --k-glass-light-muted: #3f3f46;
+  --k-glass-light-accent: #1e3a8a;
+  --k-glass-light-success: #0f4a27;
+  --k-glass-light-warning: #6b2410;
+  --k-glass-light-danger: #7f1616;
+  --k-light-overlay-border: rgba(24, 24, 27, 0.14);
+  --k-light-overlay-button: rgba(24, 24, 27, 0.07);
+  --k-light-overlay-button-hover: rgba(24, 24, 27, 0.14);
 
   /* ---- Details ---- */
   --k-backdrop: rgba(24, 24, 27, 0.45); /* behind a modal */
@@ -220,11 +231,79 @@
   --k-focus: 0 0 0 2px var(--ui-focus);
 }
 
+/* v1.1.0 (ADR-0041): the ghost layouts while the overlay is dragged. */
+.k-snap-zone {
+  --k-snap-ghost: rgba(255, 255, 255, 0.42);
+}
+
+.k-snap-zone[data-active='true'] {
+  --k-snap-ghost: rgba(255, 255, 255, 0.72);
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+}
+
+.k-snap-ghost {
+  background: var(--k-snap-ghost);
+}
+
+/* v1.1.0 (ADR-0041): the overlay in the light theme. */
+.k-light .k-overlay {
+  --ui-overlay-button: var(--k-light-overlay-button);
+  --ui-overlay-button-hover: var(--k-light-overlay-button-hover);
+  --ui-border: var(--k-light-overlay-border);
+  background: var(--k-page);
+}
+
+.k-light .k-overlay.k-glass {
+  background: rgba(247, 247, 248, var(--k-overlay-alpha, 0.7));
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.6);
+  --ui-muted: var(--k-glass-light-muted);
+  --ui-provisional: var(--k-glass-light-muted);
+  --ui-link: var(--k-glass-light-accent);
+  --ui-accent: var(--k-glass-light-accent);
+  --ui-you: var(--k-glass-light-accent);
+  --ui-them: var(--k-text);
+  --ui-success: var(--k-glass-light-success);
+  --ui-warning: var(--k-glass-light-warning);
+  --ui-danger: var(--k-glass-light-danger);
+  --ui-focus: var(--k-glass-light-accent);
+  --k-focus: 0 0 0 2px var(--ui-focus);
+}
+
 /* The overlay's menu floats over the answer, so it is always solid. */
 .k-overlay-menu {
   --ui-muted: var(--k-dark-muted);
   --ui-link: var(--k-dark-accent);
+  --ui-surface: var(--k-dark-surface);
   background: var(--k-dark-surface);
+  text-shadow: none;
+}
+
+.k-light .k-overlay-menu {
+  --ui-muted: var(--k-muted);
+  --ui-link: var(--k-accent);
+  --ui-surface: var(--k-surface);
+  --ui-border: var(--k-border);
+  background: var(--k-surface);
+}
+
+/* v1.1.0 (ADR-0042): inside the overlay a <select> lists its choices in the page. A browser's own
+   list is a separate window, which screen-share protection may not reach. */
+.k-overlay select,
+.k-overlay select::picker(select) {
+  appearance: base-select;
+}
+
+.k-overlay select::picker(select) {
+  background: var(--k-dark-surface);
+  border: 1px solid var(--k-dark-border);
+  border-radius: var(--k-radius-control);
+  color: var(--k-dark-text);
+}
+
+.k-light .k-overlay select::picker(select) {
+  background: var(--k-surface);
+  border-color: var(--k-border);
+  color: var(--k-text);
 }
 
 /* The page behind the overlay: dark from the first paint, so opening it never flashes white over
@@ -232,6 +311,11 @@
 html:has(.k-overlay),
 html:has(.k-overlay) body {
   background: var(--k-dark-bg);
+}
+
+/* v1.1.0: the stacked overlay's pieces sit apart; the gaps between them show what is behind. */
+.k-overlay-root {
+  background: transparent;
 }
 
 html:has(.k-glass),

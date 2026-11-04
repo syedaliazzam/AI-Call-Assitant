@@ -13,10 +13,12 @@
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
 import {
+  listMicrophones,
   openMicrophone,
   requestDisplayMedia,
   startFrameSource,
   stopAllTracks,
+  watchBatteryState,
   type DisplayCaptureOptions,
   type FrameSource,
 } from './media';
@@ -28,6 +30,7 @@ import {
 } from './pip';
 import type {
   OtherSideSource,
+  OverlayLayout,
   OverlayMode,
   OverlayPreset,
   OverlayResizeStep,
@@ -144,6 +147,18 @@ export const browserPlatform: Platform = {
 
   /** Opens the microphone with getUserMedia (the browser asks the user for permission). */
   getMicStream: openMicrophone,
+  listMicrophones,
+  watchBattery: watchBatteryState,
+
+  /**
+   * A browser draws no snap zones.
+   *
+   * @param _handler Ignored.
+   * @returns A function that does nothing.
+   */
+  onSnapZone(_handler) {
+    return () => undefined;
+  },
 
   /**
    * Opens the share picker (tab pane first). The user picks the meeting tab and ticks "Also share
@@ -324,6 +339,47 @@ export const browserPlatform: Platform = {
    * @param _mode Ignored.
    */
   setOverlayMode(_mode: OverlayMode) {},
+
+  /**
+   * A browser has no home panel: its tab shows the dashboard.
+   *
+   * @returns False.
+   */
+  hasHomePanel() {
+    return false;
+  },
+
+  /**
+   * A new tab: this tab may be running a call, and navigating it would end the call.
+   *
+   * @param path The page's path.
+   */
+  openPagesWindow(path: string) {
+    window.open(path, '_blank', 'noopener');
+  },
+
+  /**
+   * Nothing to do: a web page cannot minimise or close its window.
+   *
+   * @param _action Ignored.
+   */
+  windowControl(_action) {},
+
+  /**
+   * A picture-in-picture window cannot be resized by the page.
+   *
+   * @returns False.
+   */
+  overlayFitsPanels() {
+    return false;
+  },
+
+  /**
+   * Nothing to do (see overlayFitsPanels).
+   *
+   * @param _layout Ignored.
+   */
+  setOverlayLayout(_layout: OverlayLayout) {},
 
   /** Nothing to do: a web page cannot minimise its window. */
   minimizeMainWindow() {},

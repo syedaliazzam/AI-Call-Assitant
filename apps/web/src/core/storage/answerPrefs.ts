@@ -159,11 +159,11 @@ export function setChatTarget(sessionId: string, choice: TargetChoice): void {
 /**
  * Whether the review page shows the oldest lines first.
  *
- * @returns True when the user turned it on; newest first by default.
+ * @returns False only when the user chose newest first (v1.1.0: oldest first by default, as live).
  * Called from: ConversationSection.tsx
  */
 export function getReviewOldestFirst(): boolean {
-  return read(REVIEW_OLDEST_FIRST_KEY) === 'on';
+  return read(REVIEW_OLDEST_FIRST_KEY) !== 'off';
 }
 
 /**
@@ -174,5 +174,5 @@ export function getReviewOldestFirst(): boolean {
  * Called from: ConversationSection.tsx
  */
 export function setReviewOldestFirst(on: boolean): void {
-  write(REVIEW_OLDEST_FIRST_KEY, on ? 'on' : null);
+  write(REVIEW_OLDEST_FIRST_KEY, on ? 'on' : 'off');
 }

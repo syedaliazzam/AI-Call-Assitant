@@ -1,10 +1,12 @@
 /**
  * File: apps/web/src/core/answer/history.ts
- * Purpose: One entry per question in a call's answer history (v1.0.4, ADR-0040): answers whose
- *          questions are the same, or near-identical within a minute, count as one entry, shown as
- *          the newest good answer. Display only: every answer stays saved on this device, and the
- *          conversation sent to Claude is unchanged. Failed answers and screenshots are never merged
- *          (a failure must stay visible, and two screenshots show different screens).
+ * Purpose: One entry per question in a call's answer history (v1.0.4, ADR-0040; v1.1.0): answers from
+ *          the same call whose questions overlap by at least 80% within a minute count as one entry,
+ *          shown as the newest good answer. Separate calls of a session are never merged, and the same
+ *          question asked again later in a call gets its own entry. Display only: every answer stays
+ *          saved on this device, and the conversation sent to Claude is unchanged. Failed answers and
+ *          screenshots are never merged (a failure must stay visible, and two screenshots show
+ *          different screens).
  * Used by: src/features/live/useLiveAnswers.ts, src/core/review/conversation.ts
  * Depends on: src/core/answer/similar.ts (meaningful words), src/core/transcript/display.ts (fillers)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (answers); ADR-0040
@@ -40,6 +42,8 @@ export interface HistoryAnswer {
   text: string;
   /** Its state; absent on a saved answer, which is always finished. */
   status?: 'streaming' | 'done' | 'error' | 'cancelled';
+  /** When its call connected (Unix ms; v1.1.0). Answers of different calls never merge. */
+  callStartedAt?: number | undefined;
 }
 
 /** The result of merging. */
@@ -110,8 +114,9 @@ export function nearQuestion(a: string, b: string): boolean {
 }
 
 /**
- * Whether two answers are for one question: their cleaned or raw words are the same at any time, or
- * near-identical within NEAR_WINDOW_MS.
+ * Whether two answers are for one question: from the same call and asked within NEAR_WINDOW_MS, with
+ * their cleaned or raw words the same or near-identical (v1.1.0: "the same words at any time" also merged
+ * separate calls, which hid one call's answer inside another's).
  *
  * @param a      One answer.
  * @param aAt    When it was asked (Unix ms).
@@ -123,9 +128,9 @@ export function nearQuestion(a: string, b: string): boolean {
 function oneQuestion(a: HistoryAnswer, aAt: number, b: HistoryAnswer, bAt: number): boolean {
   const forms = (answer: HistoryAnswer) =>
     [answer.cleanQuestion, answer.question].filter((form): form is string => Boolean(form?.trim()));
-  const close = Math.abs(aAt - bAt) <= NEAR_WINDOW_MS;
+  if (a.callStartedAt !== b.callStartedAt || Math.abs(aAt - bAt) > NEAR_WINDOW_MS) return false;
   return forms(a).some((left) =>
-    forms(b).some((right) => sameQuestion(left, right) || (close && nearQuestion(left, right))),
+    forms(b).some((right) => sameQuestion(left, right) || nearQuestion(left, right)),
   );
 }
 

@@ -1,9 +1,10 @@
 /**
  * File: apps/web/src/core/storage/overlayPrefs.ts
  * Purpose: The overlay's preferences on this device: whether calls start in the overlay (default
- *          on), the panel's background opacity (default 70%), and whether the panel grows more
- *          see-through when the pointer is elsewhere (default off). Kept in localStorage:
- *          per-device conveniences, not session data.
+ *          on), the panel's background opacity (default 70%), whether the panel grows more
+ *          see-through when the pointer is elsewhere (default off), and (v1.1.0) which panels are open
+ *          and which microphone is chosen. Kept in localStorage: per-device conveniences, not session
+ *          data.
  * Used by: src/features/live/LiveAnswers.tsx, src/features/live/CompactLive.tsx,
  *          src/features/settings/OverlaySetting.tsx
  * Depends on: nothing (localStorage)
@@ -33,6 +34,12 @@ export const OVERLAY_FADE_KEY = 'kite.overlayFade';
 
 /** The key for "More see-through when the pointer is elsewhere" (v1.0.3, default off). */
 export const OVERLAY_FADE_AWAY_KEY = 'kite.overlayFadeAway';
+
+/** v1.1.0: the key for which of the overlay's panels are open. */
+export const OVERLAY_PANELS_KEY = 'kite.overlayPanels';
+
+/** v1.1.0: the key for the microphone chosen in the overlay's device list. */
+export const MIC_DEVICE_KEY = 'kite.micDevice';
 
 /** How much of the chosen opacity the panel keeps when fading away from the pointer. */
 export const FADE_AWAY_FACTOR = 0.6;
@@ -97,6 +104,56 @@ export function getStartInOverlay(): boolean {
  */
 export function setStartInOverlay(on: boolean): void {
   write(START_IN_OVERLAY_KEY, on ? 'on' : 'off');
+}
+
+/** Which of the overlay's panels are open (v1.1.0). */
+export interface OverlayPanels {
+  /** The transcript panel. */
+  transcript: boolean;
+  /** The answer panel. */
+  answer: boolean;
+}
+
+/**
+ * Which panels were open last (both closed the first time: an answer opens its panel).
+ *
+ * @returns The panels.
+ * Called from: CompactLive.tsx; tests
+ */
+export function getOverlayPanels(): OverlayPanels {
+  const stored = read(OVERLAY_PANELS_KEY) ?? '';
+  return { transcript: stored.includes('transcript'), answer: stored.includes('answer') };
+}
+
+/**
+ * Remembers which panels are open.
+ *
+ * @param panels The panels.
+ * Called from: CompactLive.tsx; tests
+ */
+export function setOverlayPanels(panels: OverlayPanels): void {
+  const open = [panels.transcript ? 'transcript' : '', panels.answer ? 'answer' : ''];
+  write(OVERLAY_PANELS_KEY, open.filter(Boolean).join(',') || 'none');
+}
+
+/**
+ * The microphone chosen in the overlay's device list.
+ *
+ * @returns Its device id, or '' for the system's default.
+ * Called from: LivePage.tsx; tests
+ */
+export function getMicDevice(): string {
+  return read(MIC_DEVICE_KEY) ?? '';
+}
+
+/**
+ * Remembers the chosen microphone.
+ *
+ * @param deviceId Its device id, or '' for the system's default.
+ * Called from: LivePage.tsx; tests
+ */
+export function setMicDevice(deviceId: string): void {
+  write(MIC_DEVICE_KEY, deviceId);
 }
 
 /**

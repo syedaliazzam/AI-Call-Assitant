@@ -27,6 +27,8 @@ export interface SignInOptions {
   fresh?: boolean;
   /** How long to wait for the dashboard, ms (default 30 s). */
   timeout?: number;
+  /** True on the desktop app's home panel, which comes back to itself instead of the dashboard. */
+  panel?: boolean;
 }
 
 /** Session cookies by "address|email", for this test run only (in memory). */
@@ -70,6 +72,24 @@ export async function clearPasswordOnFailure(
 }
 
 /**
+ * Closes the one-time acceptable-use notice (v1.1.0), which covers the page on a new device. A site from
+ * before 1.1.0 has none, and this returns after a moment.
+ *
+ * @param page The signed-in page.
+ * @returns True when the notice was showing.
+ * Called from: tests/e2e-prod/helpers.ts signIn(), tests/ui/shots.ts signIn()
+ */
+export async function closeUseNotice(page: Page): Promise<boolean> {
+  const button = page.getByRole('dialog', { name: 'Using Kite' }).getByRole('button', {
+    name: 'Got it',
+  });
+  return button.click({ timeout: 4_000 }).then(
+    () => true,
+    () => false,
+  );
+}
+
+/**
  * Signs in and waits for the dashboard, reusing this run's session for the account when
  * there is one (unless `fresh`).
  *
@@ -80,9 +100,11 @@ export async function clearPasswordOnFailure(
  * Called from: tests/e2e-prod/helpers.ts signIn(), tests/ui/shots.ts signIn()
  */
 export async function signInOnce(page: Page, options: SignInOptions): Promise<void> {
-  const { baseUrl, email, password, fresh = false, timeout = 30_000 } = options;
+  const { baseUrl, email, password, fresh = false, timeout = 30_000, panel = false } = options;
   const key = `${baseUrl}|${email}`;
-  const dashboard = page.getByRole('heading', { name: 'Call Sessions' });
+  const dashboard = panel
+    ? page.getByLabel('Search sessions')
+    : page.getByRole('heading', { name: 'Call Sessions' });
 
   const saved = sessions.get(key);
   if (!fresh && saved) {
@@ -96,7 +118,8 @@ export async function signInOnce(page: Page, options: SignInOptions): Promise<vo
     // The session ended (for example the account was disabled): sign in again below.
   }
 
-  await page.goto(`${baseUrl}/login`);
+  // The panel has already gone to the sign-in page by itself.
+  if (!panel) await page.goto(`${baseUrl}/login`);
   await clearPasswordOnFailure(page, email, async () => {
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password').fill(password);

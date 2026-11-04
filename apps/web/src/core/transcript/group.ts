@@ -9,13 +9,15 @@
  *          src/features/review/ConversationSection.tsx, the overlay's expanded transcript
  *          (src/features/live/CompactView.tsx)
  * Depends on: src/core/transcript/display.ts (sentence case), src/core/transcript/question.ts
- *             (questionSpan), src/core/transcript/transcript.ts (Speaker)
+ *             (questionSpan), src/core/transcript/questionKind.ts (lineKind),
+ *             src/core/transcript/transcript.ts (Speaker)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session: transcript strip)
  *
  * Transcript text is only arranged for the screen here; it is never logged.
  */
-import { continuationCase, sentenceCase, type DisplayTerm } from './display';
+import { continuationCase, sentenceCase, splitAtQuestions, type DisplayTerm } from './display';
 import { questionSpan } from './question';
+import { lineKind, looksGarbled } from './questionKind';
 import type { Speaker } from './transcript';
 
 /**
@@ -114,10 +116,71 @@ function joinText(before: string, raw: string, terms: readonly DisplayTerm[]): s
   return before.trim() === '' ? next : `${before.trimEnd()} ${next}`;
 }
 
+/** A sentence end at the end of a text, allowing for closing quotes and brackets. */
+const SENTENCE_END = /[.?!]["'’)\]]*\s*$/;
+
+/** A question mark at the end of a text, allowing for closing quotes and brackets. */
+const QUESTION_END = /\?["'’)\]]*\s*$/;
+
+/**
+ * Whether two lines of one speaker stay apart because a question is complete (v1.1.0, item 19): one
+ * bubble holds one thing to answer. A pause can still cut one question in two ("what would it cost /
+ * for forty seats"), so words that do not start a question stay with it, unless they follow a "?".
+ *
+ * @param before The line before, as the engine wrote it.
+ * @param next   The next line, as the engine wrote it.
+ * @returns True when the next line starts a new bubble.
+ * Called from: groupLines(); tests
+ */
+export function questionEndsBubble(before: string, next: string): boolean {
+  if (QUESTION_END.test(before)) return true;
+  if (questionSpan(next)?.start !== 0) return false;
+  return SENTENCE_END.test(before) || questionSpan(before) !== null;
+}
+
+/**
+ * A finished line's pieces: written text splits at its questions (splitAtQuestions()), with times in
+ * proportion to the words. A line still being heard stays whole: its words may change.
+ *
+ * @param line The line.
+ * @returns The pieces, sharing the line's id.
+ * Called from: groupLines()
+ */
+function linePieces(line: GroupLine): GroupLine[] {
+  const texts = line.final ? splitAtQuestions(line.text) : [line.text];
+  if (texts.length < 2) return [line];
+  const total = texts.reduce((sum, text) => sum + wordCount(text), 0);
+  const duration = Math.max(0, line.tEnd - line.tStart);
+  let done = 0;
+  return texts.map((text) => {
+    const tStart = Math.round(line.tStart + (duration * done) / total);
+    done += wordCount(text);
+    return { ...line, text, tStart, tEnd: Math.round(line.tStart + (duration * done) / total) };
+  });
+}
+
+/**
+ * Finishes a bubble's text that came from an engine that writes marks (v1.1.0): the model leaves the end
+ * of a line open, as more may follow, and by now nothing has. Text in capitals, from before the
+ * punctuation pass, stays as it is.
+ *
+ * @param text The bubble's finished words.
+ * @param raws Its lines, as the engine wrote them.
+ * @returns The text with a mark at its end.
+ * Called from: groupLines()
+ */
+function closeText(text: string, raws: readonly string[]): string {
+  if (text === '' || SENTENCE_END.test(text)) return text;
+  if (!raws.every((raw) => raw !== raw.toUpperCase())) return text;
+  const lastSentence = text.split(/(?<=[.?!])\s+/).at(-1) ?? text;
+  return `${text.replace(/[,;:]$/, '')}${questionSpan(lastSentence) !== null ? '?' : '.'}`;
+}
+
 /**
  * Groups lines into bubbles. A line joins the bubble before it when the speaker is the same, the
- * pause from the bubble's end to the line's start is at most gapMs, and the bubble has fewer than
- * GROUP_MAX_WORDS words; otherwise it starts a new bubble. Empty lines are left out.
+ * pause from the bubble's end to the line's start is at most gapMs, the bubble has fewer than
+ * GROUP_MAX_WORDS words, and no question has just ended; otherwise it starts a new bubble. Empty lines
+ * are left out.
  *
  * @param lines   The lines in time order (finals and lines still being heard).
  * @param options The longest pause and the session's spellings.
@@ -133,19 +196,28 @@ export function groupLines(
   const groups: TranscriptGroup[] = [];
   /** The raw text of each bubble's lines, to look for a question in each line on its own. */
   const raws: string[][] = [];
-  for (const line of lines) {
+  /** The ids handed out, so a line split into two bubbles still gives each its own. */
+  const usedIds = new Set<string>();
+  for (const line of lines.flatMap(linePieces)) {
     if (line.text.trim() === '') continue;
     const last = groups.at(-1);
+    const lastRaw = raws.at(-1)?.at(-1);
     const joins =
       last !== undefined &&
       last.speaker === line.speaker &&
       line.tStart - last.tEnd <= gapMs &&
       // Words still settling are always the end of a bubble: nothing is joined after them.
       last.provisionalText === '' &&
-      wordCount(last.finalText) < GROUP_MAX_WORDS;
+      wordCount(last.finalText) < GROUP_MAX_WORDS &&
+      !(lastRaw !== undefined && questionEndsBubble(lastRaw, line.text)) &&
+      // Noise stays apart from speech, so it can collapse (v1.1.0) and a question stays clean.
+      !(lastRaw !== undefined && line.final && looksGarbled(line.text) !== looksGarbled(lastRaw));
     if (!joins) {
+      let id = line.id;
+      for (let n = 1; usedIds.has(id); n += 1) id = `${line.id}#${n}`;
+      usedIds.add(id);
       groups.push({
-        id: line.id,
+        id,
         speaker: line.speaker,
         lineIds: [],
         finalText: '',
@@ -158,7 +230,7 @@ export function groupLines(
       raws.push([]);
     }
     const group = groups.at(-1)!;
-    group.lineIds.push(line.id);
+    if (group.lineIds.at(-1) !== line.id) group.lineIds.push(line.id);
     group.tEnd = Math.max(group.tEnd, line.tEnd);
     raws.at(-1)!.push(line.text);
     if (line.final) group.finalText = joinText(group.finalText, line.text, terms);
@@ -172,11 +244,14 @@ export function groupLines(
   groups.forEach((group, index) => {
     // v1.0.4: questionSpan() also finds a question after a lead-in or in the middle of a line, which
     // the speech model joins without punctuation ("GREAT SO HOW WOULD YOU…"). Same as the overlay's
-    // live question, so the "?" mark and that line agree.
+    // live question, so the "?" mark and that line agree. v1.1.0: a greeting or an instruction worded
+    // as a question ("how are you", "are you ready") is not one (ADR-0043).
     group.question =
       group.speaker === 'them' &&
       (`${group.finalText} ${group.provisionalText}`.includes('?') ||
-        raws[index]!.some((raw) => questionSpan(raw) !== null));
+        raws[index]!.some((raw) => questionSpan(raw) !== null)) &&
+      raws[index]!.some((raw) => lineKind(raw) === 'question');
+    if (group.final) group.finalText = closeText(group.finalText, raws[index]!);
   });
   return groups;
 }

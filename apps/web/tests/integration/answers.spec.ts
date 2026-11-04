@@ -177,7 +177,7 @@ test.beforeAll(async () => {
   // A context of its own, so the compact view test can open a second page in it.
   page = await (await browser.newContext()).newPage();
   await page.goto(origin);
-  await expect(page.getByRole('button', { name: 'Answer', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Answer', exact: true }).first()).toBeVisible();
 });
 
 test.afterAll(async () => {
@@ -186,22 +186,19 @@ test.afterAll(async () => {
   if (bundleDir) rmSync(bundleDir, { recursive: true, force: true });
 });
 
-test('the Answer hotkey streams the headline before the bullets', async () => {
+test('the Answer hotkey streams the answer line before the bullets', async () => {
   // Focus the page body (not a text box), then the §7.3 Windows/Linux shortcut.
   await page.locator('body').click();
   await page.keyboard.press('Control+Enter');
-  const headline = page.getByRole('heading', { name: 'Answer headline' });
-  await expect(headline).toHaveText(HEADLINE);
+  await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
   // The bullets have not arrived yet: the server waits before sending them.
   await expect(page.getByRole('list', { name: 'Answer details' })).toHaveCount(0);
   await expect(page.getByRole('list', { name: 'Answer details' }).getByRole('listitem')).toHaveText(
     BULLETS,
     { timeout: 10_000 },
   );
-  await expect(page.getByText('1 of 1')).toBeVisible();
-  await expect(page.getByText('from 2 lines')).toBeVisible();
-  await expect(page.getByLabel('Question used')).toHaveText(
-    'SO WHAT WOULD THE PROFESSIONAL PLAN COST FOR FORTY SEATS',
+  await expect(page.getByLabel('Question', { exact: true })).toContainText(
+    /what would the professional plan cost for forty seats/i,
   );
   await expect(page.getByLabel('Time to first word')).toBeVisible();
 
@@ -212,16 +209,18 @@ test('the Answer hotkey streams the headline before the bullets', async () => {
 });
 
 test('Copy puts the clean answer on the clipboard', async () => {
-  await page.getByRole('button', { name: 'Copy' }).click();
+  await page.getByRole('button', { name: 'Copy the answer' }).click();
   await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible();
   const copied = await page.evaluate(() => window.kiteAnswerHarness.copied);
   expect(copied).toEqual([`${HEADLINE}\n- ${BULLETS[0]}\n- ${BULLETS[1]}`]);
 });
 
 test('Cancel stops a streaming answer', async () => {
-  await page.getByRole('button', { name: 'Answer', exact: true }).click();
-  await expect(page.getByText('2 of 2')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Answer headline' })).toHaveText(HEADLINE);
+  // New speech: pressing Answer again on the same speech would show the answer it already has.
+  await page.evaluate(() => window.kiteAnswerHarness.addThem('HOW LONG DOES ONBOARDING TAKE'));
+  await page.getByRole('button', { name: 'Answer', exact: true }).first().click();
+  await expect(page.getByRole('article', { name: 'Answer' })).toHaveCount(2);
+  await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByText('Stopped.')).toBeVisible();
   // Longer than the server's pause: the bullets never arrive.
@@ -231,31 +230,34 @@ test('Cancel stops a streaming answer', async () => {
   // Append-only: the second request repeats the first chunk and adds the earlier answer.
   const [first, second] = received.filter((body) => body.mode === 'answer');
   expect(second!.conversation![0]).toEqual(first!.conversation![0]);
-  expect(second!.conversation![1]).toEqual([
-    expect.objectContaining({ kind: 'answer', mode: 'answer', question: first!.question }),
-  ]);
+  expect(second!.conversation![1]).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ kind: 'answer', mode: 'answer', question: first!.question }),
+    ]),
+  );
 });
 
 test('Previous and Next move between answers', async () => {
-  await page.getByRole('button', { name: 'Previous answer' }).click();
-  await expect(page.getByText('1 of 2')).toBeVisible();
-  await expect(page.getByRole('list', { name: 'Answer details' }).getByRole('listitem')).toHaveText(
-    BULLETS,
-  );
+  const selected = page.locator('article[aria-current="true"]');
+  await page.locator('body').click();
+  await page.keyboard.press('Control+ArrowLeft');
+  await expect(
+    selected.getByRole('list', { name: 'Answer details' }).getByRole('listitem'),
+  ).toHaveText(BULLETS);
   await page.keyboard.press('Control+ArrowRight');
-  await expect(page.getByText('2 of 2')).toBeVisible();
-  await expect(page.getByText('Stopped.')).toBeVisible();
+  await expect(selected.getByText('Stopped.')).toBeVisible();
 });
 
 test('Chat sends a typed question', async () => {
   await page.getByRole('button', { name: 'Chat' }).click();
   const box = page.getByLabel('Type a question');
+  await expect(box).toBeFocused();
   await box.fill('What is the seat price?');
   await box.press('Enter');
-  await expect(page.getByRole('heading', { name: 'Answer headline' })).toHaveText(
+  await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText(
     'The seat price is 52 dollars.',
   );
-  await expect(page.getByText('typed question')).toBeVisible();
+  await expect(page.locator('article[aria-current="true"]').getByText('Typed')).toBeVisible();
   await expect(box).toHaveValue('');
   const chat = received.find((body) => body.mode === 'chat')!;
   expect(chat.question).toBe('What is the seat price?');
@@ -265,15 +267,15 @@ test('Chat sends a typed question', async () => {
   await expect(box).toHaveValue('');
 });
 
-test('a rating and a note survive a reload', async () => {
+test('a rating and a report are saved, and survive a reload', async () => {
   await page.getByRole('button', { name: 'Bad answer' }).click();
   await expect(page.getByRole('button', { name: 'Bad answer' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  await page.getByRole('button', { name: 'Add a note' }).click();
-  await page.getByLabel('What was wrong / better answer').fill('Give the monthly total too.');
-  await page.getByRole('button', { name: 'Save note' }).click();
+  await page.getByRole('button', { name: 'Report this answer' }).click();
+  await page.getByLabel('What was wrong?').fill('Give the monthly total too.');
+  await page.getByRole('button', { name: 'Report', exact: true }).click();
   await expect(page.getByLabel('Your note')).toContainText('Give the monthly total too.');
 
   // Finished answers are saved; the cancelled one is not.
@@ -284,20 +286,24 @@ test('a rating and a note survive a reload', async () => {
       { mode: 'chat', rating: 'down', note: 'Give the monthly total too.' },
     ]);
 
+  // v1.1.0: the panel holds this call's answers only, and a reload starts a new call. What was saved
+  // stays saved, for the session's review.
   await page.reload();
-  await page.getByRole('button', { name: 'Show last answer' }).click();
-  await expect(page.getByText('2 of 2')).toBeVisible();
-  await expect(page.getByText('(earlier)')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Bad answer' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
-  await expect(page.getByLabel('Your note')).toContainText('Give the monthly total too.');
+  await expect(page.locator('article[aria-current="true"]')).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.kiteAnswerHarness.saved()))
+    .toEqual([
+      { mode: 'answer', rating: null, note: '' },
+      { mode: 'chat', rating: 'down', note: 'Give the monthly total too.' },
+    ]);
 });
 
 test('deleting the session removes its answers', async () => {
   await page.evaluate(() => window.kiteAnswerHarness.deleteSession());
   expect(await page.evaluate(() => window.kiteAnswerHarness.saved())).toEqual([]);
+  // The panel holds what it loaded until the page reloads.
+  await page.reload();
+  await expect(page.getByRole('article', { name: 'Answer' })).toHaveCount(0);
 });
 
 test('the compact view shows the live answer and its Answer button asks the live page (Day 5)', async () => {
@@ -305,25 +311,27 @@ test('the compact view shows the live answer and its Answer button asks the live
   const compact = await page.context().newPage();
   await compact.goto(`${origin}/compact-harness`);
   // Nothing has been answered since the reload: the live page says so.
-  await expect(compact.getByLabel('Latest words')).toContainText('For forty seats');
+  await expect(compact.getByLabel('Latest words')).toContainText(/forty/i);
   await expect(compact.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
   await compact.getByRole('button', { name: 'Answer', exact: true }).click();
-  await expect(compact.getByRole('heading', { name: 'Answer line' })).toHaveText(HEADLINE);
+  await expect(compact.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
   // The live page answered it (the same answer shows there).
-  await expect(page.getByRole('heading', { name: 'Answer headline' })).toHaveText(HEADLINE);
+  await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
   // A typed question from the overlay goes to the live page as chat.
   await compact.getByRole('button', { name: 'Chat' }).click();
   await compact.getByLabel('Type a question').fill('What is the seat price?');
   await compact.getByLabel('Type a question').press('Enter');
-  await expect(compact.getByRole('heading', { name: 'Answer line' })).toHaveText(
+  await expect(compact.getByRole('heading', { name: 'Answer line' })).toContainText(
     'The seat price is 52 dollars.',
   );
   // Answer preferences change from the overlay's menu; the next answer uses them.
   await compact.getByRole('button', { name: 'Overlay menu' }).click();
-  await expect(compact.getByLabel('Tone')).toHaveValue('simple');
-  await compact.getByLabel('Tone').selectOption('technical');
-  await compact.getByLabel('Format').selectOption('bullets');
-  await expect(compact.getByLabel('Tone')).toHaveValue('technical');
+  await expect(compact.getByRole('button', { name: 'Tone: Simple' })).toBeVisible();
+  await compact.getByRole('button', { name: /^Tone:/ }).click();
+  await compact.getByRole('option', { name: 'Technical' }).click();
+  await compact.getByRole('button', { name: /^Format:/ }).click();
+  await compact.getByRole('option', { name: 'Bullets only' }).click();
+  await expect(compact.getByRole('button', { name: 'Tone: Technical' })).toBeVisible();
   await compact.getByRole('button', { name: 'Overlay menu' }).click();
   await compact.getByRole('button', { name: 'Chat' }).click();
   await compact.getByLabel('Type a question').fill('What is the seat price?');
@@ -334,9 +342,9 @@ test('the compact view shows the live answer and its Answer button asks the live
   await compact.close();
 });
 
-test('Compact view in the browser: picture-in-picture, or a clear message where unsupported (Day 5)', async () => {
+test('the browser overlay: picture-in-picture, or a clear message where unsupported (Day 5)', async () => {
   const supported = await page.evaluate(() => 'documentPictureInPicture' in window);
-  await page.getByRole('button', { name: 'Overlay' }).click();
+  await page.getByRole('button', { name: 'Back to compact' }).click();
   if (!supported) {
     await expect(
       page.getByText('This browser cannot show a small window on top of the meeting'),
@@ -356,7 +364,10 @@ test('Compact view in the browser: picture-in-picture, or a clear message where 
       ),
     )
     .toContain('Screenshot');
-  const headline = await page.getByRole('heading', { name: 'Answer headline' }).textContent();
+  const headline = await page
+    .locator('article[aria-current="true"]')
+    .getByRole('heading', { name: 'Answer line' })
+    .textContent();
   await expect
     .poll(() =>
       page.evaluate(
@@ -372,8 +383,7 @@ test('Compact view in the browser: picture-in-picture, or a clear message where 
 
 test('the chat switch goes in the request, a private answer has code with Copy, and it is remembered', async () => {
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Answer', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Chat', exact: false }).first().click();
+  await expect(page.getByRole('button', { name: 'Answer', exact: true }).first()).toBeVisible();
   const before = received.length;
   await page.getByLabel('Who the answer is for').selectOption('kite');
   await page.getByLabel('Type a question').fill('rich: how do I loop?');
@@ -391,8 +401,7 @@ test('the chat switch goes in the request, a private answer has code with Copy, 
   expect(JSON.stringify(sent.tail ?? [])).not.toContain('how do I loop');
 
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Answer', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Chat', exact: false }).first().click();
+  await expect(page.getByRole('button', { name: 'Answer', exact: true }).first()).toBeVisible();
   await expect(page.getByLabel('Who the answer is for')).toHaveValue('kite');
   await page.getByLabel('Who the answer is for').selectOption('auto');
 });
@@ -400,39 +409,46 @@ test('the chat switch goes in the request, a private answer has code with Copy, 
 test('tags show, a figure in no document is flagged, and another type answers again', async () => {
   await page.getByLabel('Type a question').fill('rich: what did you save?');
   await page.getByLabel('Type a question').press('Enter');
-  await expect(page.getByRole('heading', { name: 'Answer headline' })).toContainText('37 percent');
-  const tags = page.getByLabel('About this answer');
+  const card = page.locator('article[aria-current="true"]');
+  await expect(card.getByRole('heading', { name: 'Answer line' })).toContainText('37 percent');
+  const tags = card.getByLabel('About this answer');
   await expect(tags).toContainText('General knowledge');
-  await expect(page.getByLabel('How to say it')).toContainText('keep it short');
+  await expect(card.getByLabel('How to say it')).toContainText('keep it short');
   // The claim check, with no model call: underlined, with a private note.
-  await expect(page.locator('[data-claim]').first()).toHaveText('37');
-  await expect(page.getByLabel('Check before saying')).toContainText('37');
+  await expect(card.locator('[data-claim]').first()).toHaveText('37');
+  await expect(card.getByLabel('Check before saying')).toContainText('37');
   // Copy leaves the note and the tags out.
-  await page.getByRole('button', { name: 'Copy', exact: true }).click();
+  await card.getByRole('button', { name: 'Copy the answer' }).click();
   const copied = await page.evaluate(() => window.kiteAnswerHarness.copied);
   expect(copied.at(-1)).not.toContain('Check before');
   expect(copied.at(-1)).not.toContain('General knowledge');
 
   const before = received.length;
   await tags.getByRole('combobox').selectOption('design');
-  await expect(page.getByLabel('About this answer').getByRole('combobox')).toHaveValue('design');
+  await expect(
+    page
+      .locator('article[aria-current="true"]')
+      .getByLabel('About this answer')
+      .getByRole('combobox'),
+  ).toHaveValue('design');
   expect(received.slice(before).find((body) => body.answerType)?.answerType).toBe('design');
 });
 
 test('a repeated question sends the earlier answer', async () => {
+  const card = page.locator('article[aria-current="true"]');
   const ask = async (question: string) => {
     await page.getByLabel('Type a question').fill(question);
     await page.getByLabel('Type a question').press('Enter');
   };
   await ask('what does the seat cost');
-  await expect(page.getByRole('heading', { name: 'Answer headline' })).toHaveText(
+  await expect(card.getByRole('heading', { name: 'Answer line' })).toContainText(
     'The seat price is 52 dollars.',
   );
-  await expect(page.getByRole('list', { name: 'Answer details' })).toBeVisible({ timeout: 10_000 });
+  await expect(card.getByRole('list', { name: 'Answer details' })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText('Answering…')).toHaveCount(0);
   const before = received.length;
   await ask('sorry what does the seat cost again');
-  await expect(page.getByRole('list', { name: 'Answer details' })).toBeVisible({ timeout: 10_000 });
+  await expect(card.getByRole('list', { name: 'Answer details' })).toBeVisible({ timeout: 10_000 });
   const repeat = received.slice(before).find((body) => body.mode === 'chat')!;
   expect(repeat.similar?.question).toBe('what does the seat cost');
   expect(repeat.similar?.text).toContain('52 dollars');
@@ -447,7 +463,7 @@ test('an answer survives the parent re-rendering with a fresh session object (v1
   await rerendering.goto(`${origin}/?rerender`);
   await rerendering.locator('body').click();
   await rerendering.keyboard.press('Control+Enter');
-  await expect(rerendering.getByRole('heading', { name: 'Answer headline' })).toHaveText(HEADLINE);
+  await expect(rerendering.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
   await expect(
     rerendering.getByRole('list', { name: 'Answer details' }).getByRole('listitem'),
   ).toHaveText(BULLETS, { timeout: 10_000 });

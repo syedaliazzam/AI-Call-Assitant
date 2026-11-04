@@ -50,6 +50,11 @@ export interface AnswerTrigger {
   span?: SpeechSpan;
   /** True for auto-answer: it never repeats speech that was already answered. */
   auto?: boolean;
+  /**
+   * True when the question was found by looking back past a greeting or an instruction (v1.1.0): the
+   * user did not ask for it again, so speech already answered shows its answer however long ago.
+   */
+  lookedBack?: boolean;
 }
 
 /** What to do with a trigger. */
@@ -176,7 +181,14 @@ export function createRepeatGuard(windowMs: number = REPEAT_WINDOW_MS): RepeatGu
   // Every span answered in this call, newest last (a call has tens of answers, not thousands).
   const answered: { span: SpeechSpan; answerId: string; at: number }[] = [];
 
-  const decide = ({ question, streaming, now, span, auto }: AnswerTrigger): TriggerDecision => {
+  const decide = ({
+    question,
+    streaming,
+    now,
+    span,
+    auto,
+    lookedBack,
+  }: AnswerTrigger): TriggerDecision => {
     // One answer at a time: a second trigger while one streams is the same press seen again.
     if (streaming) return { kind: 'ignore' };
     if (span) {
@@ -185,8 +197,9 @@ export function createRepeatGuard(windowMs: number = REPEAT_WINDOW_MS): RepeatGu
         // Auto-answer never answers the same speech twice, however long ago.
         if (auto) return { kind: 'ignore' };
         // A quick second press shows what is there; a later one is a deliberate new answer.
-        if (now - earlier.at < SHOW_EXISTING_MS)
+        if (lookedBack || now - earlier.at < SHOW_EXISTING_MS) {
           return { kind: 'show', answerId: earlier.answerId };
+        }
       }
     }
     const key = keyOf(question);

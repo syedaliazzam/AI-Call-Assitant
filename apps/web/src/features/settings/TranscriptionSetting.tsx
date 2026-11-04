@@ -1,14 +1,15 @@
 /**
  * File: apps/web/src/features/settings/TranscriptionSetting.tsx
- * Purpose: Settings → Transcription (v1.0.1, ADR-0034): the "Accurate transcription (beta)" switch,
- *          off by default. Turning it on downloads the Parakeet model once (about 661 MB, resumable,
- *          each file checked); during a call each finished line is then transcribed again by it,
- *          and the live engine's text stays wherever the accurate engine is not ready or fails. Shows
- *          the download's progress, a retry after a failure, and a way to delete the download. In
- *          the browser (or an older desktop app) it explains that this needs the desktop app.
+ * Purpose: Settings → Transcription (v1.0.1, ADR-0034; v1.1.0, ADR-0044): "Accurate transcription":
+ *          Auto (the default: when plugged in), On or Off. The Parakeet model (about 661 MB, resumable,
+ *          each file checked) downloads only when the user asks: Auto never starts it. During a call
+ *          each finished line is then transcribed again by it, and the live engine's text stays
+ *          wherever the accurate engine is not ready or fails. Shows the download's progress, a retry
+ *          after a failure, and a way to delete the download. In the browser (or an older desktop app)
+ *          it explains that this needs the desktop app.
  * Used by: src/features/settings/Settings.tsx
  * Depends on: src/platform (accurate engine), src/core/storage/transcriptionPrefs.ts,
- *             src/ui/Toggle.tsx, src/ui/Button.tsx
+ *             src/ui/Select.tsx, src/ui/Button.tsx
  * Architecture: docs/decisions/ADR-0034-accurate-transcription-opt-in.md
  */
 'use client';
@@ -16,12 +17,20 @@
 import type { AccurateStatus } from '@kite/shared';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
-  getAccurateTranscription,
-  setAccurateTranscription,
+  getTranscriptionMode,
+  setTranscriptionMode,
+  type TranscriptionMode,
 } from '@/core/storage/transcriptionPrefs';
 import { getPlatform } from '@/platform';
 import { Button } from '@/ui/Button';
-import { Toggle } from '@/ui/Toggle';
+import { Select } from '@/ui/Select';
+
+/** The setting's choices, in the order shown. */
+const MODE_OPTIONS: readonly { value: TranscriptionMode; label: string }[] = [
+  { value: 'auto', label: 'Auto: when plugged in (default)' },
+  { value: 'on', label: 'On' },
+  { value: 'off', label: 'Off' },
+];
 
 /**
  * The switch is changed only on this page, so nothing needs to be subscribed to.
@@ -48,9 +57,13 @@ function megabytes(bytes: number): string {
  */
 export function TranscriptionSetting() {
   const engine = getPlatform().accurate;
-  const saved = useSyncExternalStore(subscribeNever, getAccurateTranscription, () => false);
-  const [choice, setChoice] = useState<boolean | null>(null);
-  const on = choice ?? saved;
+  const saved = useSyncExternalStore<TranscriptionMode>(
+    subscribeNever,
+    getTranscriptionMode,
+    () => 'auto',
+  );
+  const [choice, setChoice] = useState<TranscriptionMode | null>(null);
+  const mode = choice ?? saved;
   const [status, setStatus] = useState<AccurateStatus | null>(null);
 
   // The status on opening, then once a second while the model downloads.
@@ -76,16 +89,16 @@ export function TranscriptionSetting() {
   if (!engine) {
     return (
       <p className="text-[13px] text-ui-muted">
-        Accurate transcription (beta) needs the Kite desktop app, version 1.0.1 or later. The
-        browser keeps the standard transcription.
+        Accurate transcription needs the Kite desktop app, version 1.0.1 or later. The browser keeps
+        the standard transcription.
       </p>
     );
   }
   if (status?.state === 'unavailable') {
     return (
       <p className="text-[13px] text-ui-muted">
-        Accurate transcription (beta) is not available on this computer (it needs Windows on a
-        64-bit Intel or AMD processor, or a Mac with Apple silicon).
+        Accurate transcription is not available on this computer (it needs Windows on a 64-bit Intel
+        or AMD processor, or a Mac with Apple silicon).
       </p>
     );
   }
@@ -100,14 +113,14 @@ export function TranscriptionSetting() {
 
   return (
     <div className="flex flex-col gap-3">
-      <Toggle
-        label="Accurate transcription (beta)"
-        hint={`On: after each line appears, a second, more accurate engine transcribes it again and replaces it about a second later, with better names and fewer mistakes. Turning it on downloads a ${megabytes(status?.totalBytes ?? 661_000_000)} model once. It uses more processor time, so on battery the improved line can take longer to arrive. Off (default): the standard transcription only.`}
-        checked={on}
+      <Select
+        label="Accurate transcription"
+        hint={`After each line appears, a second, more accurate engine transcribes it again and replaces it about a second later, with better names and fewer mistakes. It uses more processor time, so Auto runs it only when this computer is plugged in. It needs a one-time ${megabytes(status?.totalBytes ?? 661_000_000)} download, which only starts when you press Download.`}
+        options={MODE_OPTIONS}
+        value={mode}
         onChange={(next) => {
-          setAccurateTranscription(next);
+          setTranscriptionMode(next);
           setChoice(next);
-          if (next && status?.state !== 'ready') start();
         }}
       />
       {status && (
@@ -126,7 +139,7 @@ export function TranscriptionSetting() {
               />
             </>
           )}
-          {status.state === 'not-downloaded' && on && (
+          {status.state === 'not-downloaded' && mode !== 'off' && (
             <>
               <span>
                 Not downloaded yet

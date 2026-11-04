@@ -83,11 +83,10 @@ const FOOTER_BUTTON =
  * How an answer was asked, for its footer.
  *
  * @param entry The answer.
- * @returns For example "Auto", "Answer", "Typed", "Screenshot" or "Earlier".
+ * @returns For example "Auto", "Answer", "Typed" or "Screenshot".
  * Called from: AnswerCard
  */
 function askedHow(entry: AnswerEntry): string {
-  if (entry.earlier) return 'Earlier';
   if (entry.auto) return 'Auto';
   if (entry.mode === 'chat') return 'Typed';
   if (entry.mode === 'screenshot') return 'Screenshot';
@@ -196,6 +195,7 @@ function AnswerCard(props: AnswerCardProps) {
             or it was stopped before any words arrived: the message says it all. */}
         <AnswerBody
           text={entry.text}
+          finished={entry.status !== 'streaming'}
           size="panel"
           answerLabel
           headlineLabel="Answer line"

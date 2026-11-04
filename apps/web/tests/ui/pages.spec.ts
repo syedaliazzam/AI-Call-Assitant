@@ -250,6 +250,9 @@ for (const size of WIDTHS) {
     await expect(page.getByRole('heading', { name: COMPANY })).toBeVisible();
     await check(watched, size, 'review');
     await page.getByRole('button', { name: 'Transcript', exact: true }).click();
+    // Conversation has a chip for each answer; Answers lists them as cards (v1.1.0).
+    await expect(page.getByRole('button', { name: 'Kite answered' })).toHaveCount(2);
+    await page.getByRole('button', { name: 'Answers', exact: true }).click();
     await expect(page.getByRole('listitem', { name: 'Saved answer' })).toHaveCount(2);
     await check(watched, size, 'review-transcript');
     await page.getByRole('button', { name: 'Ask AI', exact: true }).click();

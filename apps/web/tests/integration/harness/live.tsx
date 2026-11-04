@@ -22,6 +22,7 @@ import { useState } from 'react';
 import { CLAUDE_UNAVAILABLE_MESSAGES } from '@kite/shared';
 import { createRoot } from 'react-dom/client';
 import type { CompactState } from '@/core/live/liveChannel';
+import type { OverlayPanels } from '@/core/storage/overlayPrefs';
 import type { Session } from '@/core/storage/types';
 import { createTranscript } from '@/core/transcript/transcript';
 import { AudioMeter } from '@/features/live/AudioMeter';
@@ -269,6 +270,39 @@ const COMPACT_STATE: CompactState = {
     { id: 'l1:3', speaker: 'them', text: 'seats' },
   ],
   liveQuestion: 'What would the Professional plan cost for forty seats?',
+  themName: 'Dana',
+  groups: [
+    {
+      id: 'g1',
+      speaker: 'them',
+      finalText: 'Great, the operations team liked the results.',
+      provisionalText: '',
+      tStart: Date.now() - 60_000,
+      question: false,
+      answered: false,
+      unclear: false,
+    },
+    {
+      id: 'g2',
+      speaker: 'you',
+      finalText: 'Good to hear. The night shift felt it too.',
+      provisionalText: '',
+      tStart: Date.now() - 50_000,
+      question: false,
+      answered: false,
+      unclear: false,
+    },
+    {
+      id: 'g3',
+      speaker: 'them',
+      finalText: 'So what would the Professional plan cost for forty seats?',
+      provisionalText: '',
+      tStart: Date.now() - 40_000,
+      question: true,
+      answered: false,
+      unclear: false,
+    },
+  ],
   index: 1,
   total: 2,
   answer: {
@@ -315,6 +349,11 @@ function CompactHarness({
 }) {
   const [chatOpen, setChatOpen] = useState(false);
   const params = new URLSearchParams(window.location.search);
+  // ?panels=transcript,answer: which panels start open (the answer panel by default here).
+  const [panels, setPanels] = useState<OverlayPanels>(() => {
+    const open = params.get('panels') ?? 'answer';
+    return { transcript: open.includes('transcript'), answer: open.includes('answer') };
+  });
   // ?alpha=0.4|0.7: the panel-background opacity, so the overlay look test can render the slider's
   // settings (ADR-0033). The desktop window's settings are only present with the glass panel.
   const alphaParam = params.get('alpha');
@@ -327,16 +366,18 @@ function CompactHarness({
       onProtection={() => undefined}
       chatOpen={chatOpen}
       onChatOpen={setChatOpen}
+      panels={panels}
+      onPanels={setPanels}
       // ?glass=1: the see-through panel of the desktop window (the overlay look test).
       glass={params.has('glass')}
+      // ?theme=light: the overlay's light theme.
+      resolvedTheme={params.get('theme') === 'light' ? 'light' : 'dark'}
       {...(alpha !== null
         ? {
             windowSettings: {
               opacity: alpha,
               panelAlpha: alpha,
-              fade: false,
               onOpacity: () => undefined,
-              onFade: () => undefined,
             },
           }
         : {})}

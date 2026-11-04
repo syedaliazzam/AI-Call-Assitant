@@ -56,6 +56,18 @@ export const MINIMIZE_MAIN_CHANNEL = 'kite:minimize-main';
 /** v1.0.4: the live page brings the full call window forward and hides the overlay (invoke). */
 export const SHOW_CALL_WINDOW_CHANNEL = 'kite:show-call-window';
 
+/** v1.1.0: open a Kite page in a normal window (invoke; a path). See KiteDesktopApi. */
+export const OPEN_PAGES_CHANNEL = 'kite:open-pages';
+
+/** v1.1.0: minimise or close the sender's own window (invoke; a WindowControlAction). */
+export const WINDOW_CONTROL_CHANNEL = 'kite:window-control';
+
+/** v1.1.0: which of the overlay's panels are open (invoke; an OverlayLayout). */
+export const OVERLAY_LAYOUT_CHANNEL = 'kite:overlay-layout';
+
+/** v1.1.0: the snap zone under the pointer during a drag (send; an OverlayPreset, or null). */
+export const SNAP_ZONE_CHANNEL = 'kite:snap-zone';
+
 /** The page says whether a live call is going on (send; a boolean). Updates wait for it. */
 export const CALL_ACTIVE_CHANNEL = 'kite:call-active';
 

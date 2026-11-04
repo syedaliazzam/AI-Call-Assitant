@@ -34,8 +34,9 @@ import { parseAnswerRequest } from '@/server/validate';
  * Tip). Not evaluated (the developer asked for no paid evaluations); v-previous unchanged. v1.0.3
  * (ADR-0039): one short answer line (at most 12 words, never "Here are…", "based on my CV" or a
  * label), list questions name the items then one bullet each; checked on 3 real answers only.
+ * v1.1.0 (ADR-0043): the screen types and garbled in the hidden line; the coding shape from item 7.
  */
-const RULES_SHA256 = '3014fcf74af9c390bec07af7862c6b8ab78f0709af8d500300affaa6023e5f78';
+const RULES_SHA256 = '01fd469b2967217e9e6aa39678d2bc2ee91b35565acd9bfd3e7d396d51ab52a0';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte

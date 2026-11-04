@@ -14,17 +14,21 @@
 import type {
   DesktopOs,
   KiteDesktopApi,
+  OverlayLayout,
   OverlayMode,
   OverlayPreset,
   OverlayResizeStep,
   ShareProtectionState,
+  WindowControlAction,
 } from '@kite/shared';
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
 import {
+  listMicrophones,
   openMicrophone,
   requestDisplayMedia,
   stopAllTracks,
+  watchBatteryState,
   type DisplayCaptureOptions,
 } from './media';
 import type { Platform } from './types';
@@ -117,6 +121,18 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     // permission for the Kite origin only (Stage 5, security.ts). Needed on Day 1 for the
     // speech-to-text spike inside the desktop app (Stage 6).
     getMicStream: openMicrophone,
+    listMicrophones,
+    watchBattery: watchBatteryState,
+
+    /**
+     * The snap zone under the pointer (a shell before 1.1.0 draws no zones).
+     *
+     * @param handler Called with the zone.
+     * @returns A function that stops listening.
+     */
+    onSnapZone(handler) {
+      return bridge.onSnapZone?.(handler) ?? (() => undefined);
+    },
 
     /**
      * System audio ("Them"): getDisplayMedia, answered by the shell with loopback and no picker.
@@ -275,6 +291,55 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       } else if (mode === 'collapsed' || mode === 'full') {
         void bridge.setOverlayCollapsed?.(mode === 'collapsed').catch(() => undefined);
       }
+    },
+
+    /**
+     * Whether this shell has the home panel's calls (1.1.0 and later, ADR-0041).
+     *
+     * @returns True when it has them.
+     */
+    hasHomePanel() {
+      return (
+        typeof bridge.openPagesWindow === 'function' && typeof bridge.windowControl === 'function'
+      );
+    },
+
+    /**
+     * Opens a Kite page: through the shell where it can (a page must not navigate the window running
+     * a call), otherwise in this window, as a shell before 1.1.0 expects.
+     *
+     * @param path The page's path.
+     */
+    openPagesWindow(path: string) {
+      if (bridge.openPagesWindow) void bridge.openPagesWindow(path).catch(() => undefined);
+      else window.location.assign(path);
+    },
+
+    /**
+     * Minimises or closes this window (older shells ignore it).
+     *
+     * @param action What to do.
+     */
+    windowControl(action: WindowControlAction) {
+      void bridge.windowControl?.(action).catch(() => undefined);
+    },
+
+    /**
+     * Whether the overlay's window fits its panels (1.1.0 and later).
+     *
+     * @returns True when it does.
+     */
+    overlayFitsPanels() {
+      return typeof bridge.setOverlayLayout === 'function';
+    },
+
+    /**
+     * Tells the window which panels are open (older shells ignore it).
+     *
+     * @param layout The open panels.
+     */
+    setOverlayLayout(layout: OverlayLayout) {
+      void bridge.setOverlayLayout?.(layout).catch(() => undefined);
     },
 
     /** Minimises the main window (older shells ignore it). */

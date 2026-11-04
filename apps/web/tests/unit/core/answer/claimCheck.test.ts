@@ -106,3 +106,48 @@ describe('claimSegments', () => {
     expect(claimSegments('Fine.', [])).toEqual([{ text: 'Fine.', claim: false }]);
   });
 });
+
+describe('possessive and hyphen forms (v1.1.0, item 24)', () => {
+  /**
+   * The claims in an answer, by their words.
+   *
+   * @param answer  The answer.
+   * @param sources What it is checked against.
+   * @returns The claims' words.
+   */
+  const claimsIn = (answer: string, sources: string) =>
+    checkClaims(answer, buildClaimCorpus([sources])).map((claim) => claim.text);
+
+  it('finds a possessive in the plain name, either way round', () => {
+    expect(
+      claimsIn(
+        'We talked about Northwind Logistics\u2019s routes.',
+        'Northwind Logistics runs routes.',
+      ),
+    ).toEqual([]);
+    expect(
+      claimsIn("We talked about Northwind Logistics's routes.", 'Northwind Logistics runs routes.'),
+    ).toEqual([]);
+    expect(
+      claimsIn('We talked about Northwind Logistics routes.', "Northwind Logistics's routes."),
+    ).toEqual([]);
+    expect(
+      claimsIn('We asked the Harbor Clients\u2019 team.', 'Harbor Clients is a team.'),
+    ).toEqual([]);
+  });
+
+  it('finds a hyphenated name in the spaced one, either way round', () => {
+    expect(claimsIn('We used Bluefin-Route for it.', 'Bluefin Route is the tool.')).toEqual([]);
+    expect(claimsIn('We used Bluefin Route for it.', 'Bluefin-Route is the tool.')).toEqual([]);
+  });
+
+  it('still flags a name that is really not there', () => {
+    expect(claimsIn('We used Crimson Bridge for it.', 'Bluefin Route is the tool.')).toEqual([
+      'Crimson Bridge',
+    ]);
+  });
+
+  it('keeps a name with an apostrophe inside it', () => {
+    expect(claimsIn("We met Dana O'Neil there.", "Dana O'Neil runs operations.")).toEqual([]);
+  });
+});

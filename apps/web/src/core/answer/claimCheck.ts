@@ -123,7 +123,8 @@ export interface Claim {
 }
 
 /**
- * Lower-cases text and closes up what varies, so "Bluefin-Route" finds "bluefin route".
+ * Lower-cases text and closes up what varies, so "Bluefin-Route" finds "bluefin route", and "Acme's"
+ * or "clients'" find "acme" and "clients" (v1.1.0).
  *
  * @param text Any text.
  * @returns The text for comparing names.
@@ -133,6 +134,8 @@ function normalise(text: string): string {
   return text
     .toLowerCase()
     .replace(/[’']/g, "'")
+    .replace(/'s\b/g, '')
+    .replace(/(?<=\p{L})'(?!\p{L})/gu, '')
     .replace(/[^\p{L}\p{N}'\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();

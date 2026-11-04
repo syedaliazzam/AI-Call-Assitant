@@ -155,3 +155,40 @@ describe('isCommand: overlay commands', () => {
     expect(isCommand({ type: 'answer-this', question: 'Price?', start: 1, end: 2 })).toBe(false);
   });
 });
+
+describe('the channel in v1.1.0 (ADR-0041)', () => {
+  it('carries the level bars as their own small message', () => {
+    const network = fakeNetwork();
+    const live = openLiveChannel('s1', network.open);
+    const compact = openLiveChannel('s1', network.open);
+    const seen: unknown[] = [];
+    compact.onLevels((levels) => seen.push(levels));
+    live.publishLevels({ you: 0.5, them: 0.25 });
+    expect(seen).toEqual([{ you: 0.5, them: 0.25 }]);
+  });
+
+  it('accepts the new commands in their shapes, and refuses others', () => {
+    for (const command of [
+      { type: 'stop' },
+      { type: 'clear-transcript' },
+      { type: 'still-here' },
+      { type: 'resume' },
+      { type: 'headphones-seen' },
+      { type: 'answer-this', groupId: 'g1' },
+      { type: 'language', code: 'en' },
+      { type: 'auto-answer', on: true },
+      { type: 'mic', deviceId: 'headset' },
+    ]) {
+      expect(isCommand(command), JSON.stringify(command)).toBe(true);
+    }
+    for (const command of [
+      { type: 'answer-this' },
+      { type: 'answer-this', groupId: 5 },
+      { type: 'language' },
+      { type: 'auto-answer', on: 'yes' },
+      { type: 'mic', deviceId: 3 },
+    ]) {
+      expect(isCommand(command), JSON.stringify(command)).toBe(false);
+    }
+  });
+});

@@ -15,7 +15,7 @@
  * to IndexedDB (utterances store, §7.4) when the session's "save transcript" setting is on
  * (echo lines are not saved).
  */
-import { ECHO_WINDOW_AFTER_MS, ECHO_WINDOW_BEFORE_MS, isEcho } from './echo';
+import { ECHO_SHORT_WINDOW_MS, ECHO_WINDOW_AFTER_MS, ECHO_WINDOW_BEFORE_MS, isEcho } from './echo';
 import { mergeLines, shouldMerge } from './merge';
 
 /**
@@ -226,11 +226,18 @@ export function createTranscript(
    *
    * @param tStart Start of the "You" line.
    * @param tEnd   End of the "You" line.
+   * @param before How far before the line to look (default ECHO_WINDOW_BEFORE_MS).
+   * @param after  How far after the line to look (default ECHO_WINDOW_AFTER_MS).
    * @returns The text, joined with spaces.
    */
-  const themTextAround = (tStart: number, tEnd: number): string => {
-    const from = tStart - ECHO_WINDOW_BEFORE_MS;
-    const to = tEnd + ECHO_WINDOW_AFTER_MS;
+  const themTextAround = (
+    tStart: number,
+    tEnd: number,
+    before = ECHO_WINDOW_BEFORE_MS,
+    after = ECHO_WINDOW_AFTER_MS,
+  ): string => {
+    const from = tStart - before;
+    const to = tEnd + after;
     const them = finals.filter(
       (line) => line.speaker === 'them' && line.tEnd >= from && line.tStart <= to,
     );
@@ -241,6 +248,21 @@ export function createTranscript(
       .map((line) => line.text)
       .join(' ');
   };
+
+  /**
+   * Whether a "You" line is the speakers' echo of what "Them" said around it.
+   *
+   * @param text   The line's words.
+   * @param tStart Its start.
+   * @param tEnd   Its end.
+   * @returns True for an echo.
+   */
+  const echoOfThem = (text: string, tStart: number, tEnd: number): boolean =>
+    isEcho(
+      text,
+      themTextAround(tStart, tEnd),
+      themTextAround(tStart, tEnd, ECHO_SHORT_WINDOW_MS, ECHO_SHORT_WINDOW_MS),
+    );
 
   /**
    * Marks a final "You" line as an echo and counts it for the "Hiding echo" notice.
@@ -271,7 +293,7 @@ export function createTranscript(
         final: false,
         // A grey "You" line that is only the speakers' echo is hidden too (not counted: it is
         // counted once, when it becomes final).
-        echo: speaker === 'you' && isEcho(text, themTextAround(start, now)),
+        echo: speaker === 'you' && echoOfThem(text, start, now),
         heldUntil: holdFor(speaker, existing?.heldUntil, existing !== undefined),
       });
       changed();
@@ -281,8 +303,7 @@ export function createTranscript(
       const partial = partials.get(line.speaker);
       partials.delete(line.speaker);
       if (line.speaker === 'them') lastThemFinalAt = clock();
-      const echo =
-        line.speaker === 'you' && isEcho(line.text, themTextAround(line.tStart, line.tEnd));
+      const echo = line.speaker === 'you' && echoOfThem(line.text, line.tStart, line.tEnd);
       const index = insertionIndex(finals, line.tStart);
       let stored: Utterance;
 
@@ -314,7 +335,7 @@ export function createTranscript(
           !candidate.echo &&
           candidate.tStart >= line.tStart - ECHO_WINDOW_BEFORE_MS &&
           candidate.tStart <= line.tEnd + ECHO_WINDOW_AFTER_MS &&
-          isEcho(candidate.text, themTextAround(candidate.tStart, candidate.tEnd))
+          echoOfThem(candidate.text, candidate.tStart, candidate.tEnd)
             ? markEcho(candidate)
             : candidate,
         );

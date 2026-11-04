@@ -38,7 +38,9 @@ export interface AutoAnswerInput {
  */
 export function useAutoAnswer(input: AutoAnswerInput): boolean {
   // Read once per call: the setting is changed on the Settings page, not during a call.
-  const [enabled] = useState(() => input.enabled ?? getAutoAnswer());
+  // v1.1.0: the overlay's ⋮ can change it during a call, so the choice is read on every render.
+  const [fallback] = useState(getAutoAnswer);
+  const enabled = input.enabled ?? fallback;
   const latest = useRef(input);
   const last = useRef<{ at: number | null; lineEnd: number | null }>({ at: null, lineEnd: null });
 

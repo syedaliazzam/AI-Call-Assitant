@@ -252,6 +252,28 @@ describe('the values in the brief', () => {
   });
 });
 
+describe('contrast of the overlay in the light theme (v1.1.0, ADR-0041)', () => {
+  it('the glass text tokens reach 4.5:1 over a dark background at the default opacity', () => {
+    // The worst case for dark text on light glass: pure black behind the panel.
+    const alpha = OVERLAY_OPACITY.default;
+    const pane = [247, 247, 248].map((channel) => Math.round(channel * alpha));
+    const surface: Rgba = [pane[0]!, pane[1]!, pane[2]!, 1];
+    const themeVars = block(':root {');
+    for (const token of [
+      '--k-glass-light-muted',
+      '--k-glass-light-accent',
+      '--k-glass-light-success',
+      '--k-glass-light-warning',
+      '--k-glass-light-danger',
+      '--k-text',
+    ]) {
+      const raw = themeVars.get(token);
+      expect(raw, token).toBeTruthy();
+      expect(contrast(resolve(token), surface), token).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+});
+
 describe('contrast of the theme tokens', () => {
   it('light text tokens are at least 4.5:1 on white and on the page', () => {
     for (const surface of ['--k-surface', '--k-page']) {

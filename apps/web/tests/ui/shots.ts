@@ -12,7 +12,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { testAccount } from '../e2e-prod/helpers';
-import { signInOnce } from '../lib/sign-in';
+import { closeUseNotice, signInOnce } from '../lib/sign-in';
 
 /** The Kite to screenshot (default the local `pnpm dev`). */
 export const BASE_URL = (process.env.KITE_UI_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
@@ -87,6 +87,7 @@ export async function openAt(browser: Browser, size: Width): Promise<WatchedPage
  */
 export async function signIn(page: Page): Promise<void> {
   await signInOnce(page, { baseUrl: BASE_URL, ...testAccount('admin') });
+  await closeUseNotice(page);
 }
 
 /**

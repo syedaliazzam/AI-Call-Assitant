@@ -15,7 +15,10 @@
  * The image stays in memory: it is never written to disk and never logged (only its size and
  * the time taken). On macOS, desktopCapturer needs the Screen Recording permission; without it
  * macOS returns only the wallpaper, so a denied permission is reported instead of capturing.
- * Multiple monitors: only the display under the Kite window is captured (a known v1 limit).
+ * Multiple monitors: only the display under the Kite window is captured (a known v1 limit); from
+ * v1.1.0 that is the overlay's display during a call, because the main window sits minimised then.
+ * v1.1.0 (ADR-0043): Kite's own windows are left out of the image for the moment it is taken, so the
+ * answer is about what is behind them, not about Kite.
  */
 import { fitWithin, type DesktopScreenshot } from '@kite/shared';
 import type { BrowserWindow, DesktopCapturer, IpcMain, Screen, SystemPreferences } from 'electron';
@@ -93,6 +96,11 @@ export interface ScreenshotInstallDeps extends Omit<ScreenshotDeps, 'window'> {
   getWindow: () => Pick<BrowserWindow, 'getBounds'> | null;
   /** The Kite origin. */
   allowedOrigin: string;
+  /**
+   * Leaves Kite's windows out of captures until the function it returns is called (v1.1.0). Optional
+   * in tests.
+   */
+  hideOwnWindows?: () => Promise<() => void>;
 }
 
 /**
@@ -107,7 +115,10 @@ export function installScreenshot(deps: ScreenshotInstallDeps): void {
     if (!isKiteSender(event, deps.allowedOrigin)) {
       throw new Error('Screenshots can only be taken for the Kite page');
     }
-    const result = await captureScreenshot({ ...deps, window: deps.getWindow() });
+    const restore = await deps.hideOwnWindows?.();
+    const result = await captureScreenshot({ ...deps, window: deps.getWindow() }).finally(() =>
+      restore?.(),
+    );
     if (result.ok) {
       console.info('desktop: screenshot', {
         width: result.width,

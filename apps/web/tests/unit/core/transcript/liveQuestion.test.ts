@@ -166,7 +166,8 @@ describe('liveQuestion', () => {
   });
 
   it('cuts a very long question', () => {
-    const words = Array.from({ length: LIVE_QUESTION_WORDS + 5 }, () => 'WORD').join(' ');
+    // Different words: one word many times over counts as garbled (questionKind.ts).
+    const words = Array.from({ length: LIVE_QUESTION_WORDS + 5 }, (_, i) => `WORD${i}`).join(' ');
     const shown = liveQuestion([line('them', `WHAT IS ${words}`, 0)]);
     expect(shown?.endsWith('…')).toBe(true);
     expect(shown?.split(' ')).toHaveLength(LIVE_QUESTION_WORDS);

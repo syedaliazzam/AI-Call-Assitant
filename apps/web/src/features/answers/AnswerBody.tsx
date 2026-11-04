@@ -38,6 +38,8 @@ const CLAIM_TITLE = 'Not found in your documents or the call. Check before sayin
 export interface AnswerBodyProps {
   /** The answer's text so far. */
   text: string;
+  /** True when no more text will come (v1.1.0): a short one-line answer can then be cut too. */
+  finished?: boolean;
   /** Who it is for; 'kite' shows it as a private answer. Absent: for the call. */
   target?: AnswerTarget;
   /** Words the claim check could not find; each is underlined. */
@@ -249,7 +251,10 @@ export function AnswerBody(props: AnswerBodyProps) {
       <p className={`text-ui-muted ${sizes.body}`}>…</p>
     );
   }
-  const { headline, bullets, code, say, tip, note } = splitAnswer(text);
+  const { headline, bullets, keySteps, code, complexity, say, tip, note } = splitAnswer(
+    text,
+    props.finished ?? false,
+  );
   return (
     <>
       {!(props.hideEmptyHeadline && !headline) && (
@@ -260,6 +265,9 @@ export function AnswerBody(props: AnswerBodyProps) {
           {props.answerLabel && <span className="mr-1.5 font-extrabold">Answer:</span>}
           {headline ? <ClaimText text={headline} claims={claims} /> : '…'}
         </h2>
+      )}
+      {keySteps && bullets.length > 0 && (
+        <p className={`mt-2 font-semibold text-ui-heading ${sizes.body}`}>Key steps</p>
       )}
       {bullets.length > 0 && (
         <ul
@@ -276,6 +284,12 @@ export function AnswerBody(props: AnswerBodyProps) {
       {code.map((block, i) => (
         <CodeBlock key={i} language={block.language} text={block.text} copy={copy} />
       ))}
+      {complexity && (
+        <p aria-label="Complexity" className={`mt-2 leading-relaxed text-ui-text ${sizes.body}`}>
+          <span className="mr-1 font-semibold text-ui-heading">Complexity:</span>
+          <ClaimText text={complexity} claims={claims} />
+        </p>
+      )}
       {say && (
         <p aria-label="How to say it" className={`mt-2 leading-relaxed text-ui-text ${sizes.body}`}>
           <ClaimText text={say} claims={claims} />

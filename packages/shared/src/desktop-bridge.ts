@@ -6,7 +6,8 @@
  *          apps/web/src/platform/desktop.ts and apps/web/src/platform/index.ts (read it)
  * Depends on: ./hotkeys.ts, ./screenshot.ts (types only)
  * Also: the accurate-transcription contract (v1.0.1, ADR-0034): status, download, remove, transcribe;
- *       the overlay's presets, page-driven resizing and modes (v1.0.2, ADR-0035).
+ *       the overlay's presets, page-driven resizing and modes (v1.0.2, ADR-0035); opening pages from
+ *       the home panel, window controls and the stacked overlay's layout (v1.1.0, ADR-0041).
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 and §7.3 (preload.ts)
  */
 import type { HotkeyAction, HotkeyStatus } from './hotkeys';
@@ -72,11 +73,11 @@ export interface KiteDesktopApi {
    */
   closeCompactView?: () => Promise<void>;
   /**
-   * Day 5: turns screen-share protection of the compact window on or off
-   * (setContentProtection only; the window stays in the taskbar and Alt+Tab). Remembered by
-   * the shell.
+   * Day 5: turns screen-share protection on or off (setContentProtection only; the windows stay in
+   * the taskbar and Alt+Tab). Remembered by the shell. From shell 1.1.0 it covers every Kite window;
+   * before that, only the compact window.
    *
-   * @param on True to hide the compact window from screen capture.
+   * @param on True to hide Kite's windows from screen capture.
    * @returns The new state, and whether this OS supports it.
    */
   setShareProtection?: (on: boolean) => Promise<ShareProtectionState>;
@@ -191,17 +192,81 @@ export interface KiteDesktopApi {
    * @returns Resolves when done.
    */
   setOverlayMode?: (mode: OverlayMode) => Promise<void>;
+  /**
+   * v1.1.0 (ADR-0041): opens a Kite page in a normal window. With no call running it goes to the main
+   * window; during a call it goes to a separate window, because the main window is running the call
+   * and navigating it would end the call. Optional: a shell before 1.1.0 has only one window, where
+   * the page simply navigates.
+   *
+   * @param path A path on the Kite origin (PAGES_WINDOW_PATH), for example '/sessions/new'.
+   * @returns Resolves when the window is showing.
+   */
+  openPagesWindow?: (path: string) => Promise<void>;
+  /**
+   * v1.1.0 (ADR-0041): minimises or closes the window this page is in (the frameless home panel draws
+   * its own buttons). Optional, as above.
+   *
+   * @param action What to do.
+   * @returns Resolves when done.
+   */
+  windowControl?: (action: WindowControlAction) => Promise<void>;
+  /**
+   * v1.1.0 (ADR-0041): tells the shell which of the stacked overlay's panels are open, so it sizes the
+   * window to fit them. Optional, as above: an older shell keeps its fixed window, and the panels
+   * share its height.
+   *
+   * @param layout The open panels, and how tall an open menu needs the window to be.
+   * @returns Resolves when applied.
+   */
+  setOverlayLayout?: (layout: OverlayLayout) => Promise<void>;
+  /**
+   * v1.1.0 (ADR-0041): the snap zone under the pointer while the overlay is dragged (the zones
+   * window's page).
+   *
+   * @param handler Called with the zone, or null when the pointer is on none.
+   * @returns A function that removes the listener.
+   */
+  onSnapZone?: (handler: (zone: OverlayPreset | null) => void) => () => void;
 }
 
-/** Where the overlay can be put by a preset (ADR-0035). */
-export type OverlayPreset = 'top-center' | 'top-right' | 'bottom-center';
+/** What windowControl() can do (v1.1.0). */
+export type WindowControlAction = 'minimize' | 'close';
 
-/** Every overlay preset, in the order Settings lists them (the first is the default). */
+/** The paths openPagesWindow() accepts: Kite's own pages, nothing else (v1.1.0). */
+export const PAGES_WINDOW_PATH =
+  /^\/(?:|sessions(?:\/[\w-]+(?:\/edit)?|\/new)?|live\/[\w-]+|settings|ask-kite|resumes|documents|question-bank|mock)$/;
+
+/** Which of the stacked overlay's panels are open (v1.1.0, ADR-0041). */
+export interface OverlayLayout {
+  /** The transcript panel is open. */
+  transcript: boolean;
+  /** The answer panel is open. */
+  answer: boolean;
+  /**
+   * The height an open menu or device list needs, in DIPs (0 when none is open): the window grows to
+   * at least this for as long as it is open, and goes back afterwards.
+   */
+  popupHeight: number;
+  /** The page's UI scale (Zoom in the ⋮ menu, default 1): the default heights grow with it. */
+  scale?: number;
+}
+
+/** Where the overlay can be put by a preset (ADR-0035; top-left from v1.1.0). */
+export type OverlayPreset = 'top-center' | 'top-left' | 'top-right' | 'bottom-center';
+
+/**
+ * Every overlay preset (the first is the default). 'bottom-center' stays valid for positions saved by
+ * an earlier version, but is no longer offered (v1.1.0).
+ */
 export const OVERLAY_PRESETS: readonly OverlayPreset[] = [
   'top-center',
+  'top-left',
   'top-right',
   'bottom-center',
 ];
+
+/** The three places the overlay snaps to while it is dragged, left to right (v1.1.0, ADR-0041). */
+export const SNAP_PRESETS: readonly OverlayPreset[] = ['top-left', 'top-center', 'top-right'];
 
 /** An edge or corner of the overlay that the page resizes it from (ADR-0035). */
 export type OverlayEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -270,10 +335,15 @@ export type AccurateResult =
       code: 'not-ready' | 'bad-audio' | 'engine';
     };
 
-/** Screen-share protection of the compact window (Day 5). */
+/** Screen-share protection (Day 5; every Kite window from v1.1.0, ADR-0042). */
 export interface ShareProtectionState {
-  /** True when the user wants the compact window hidden from screen capture. */
+  /** True when the user wants Kite's windows hidden from screen capture. */
   on: boolean;
+  /**
+   * What it covers: 'all' from shell 1.1.0. A shell before that sends nothing and covers only the
+   * overlay, and the page says so.
+   */
+  scope?: 'all';
   /**
    * True when this OS can hide a window from capture at all (Windows 10 2004+ and macOS;
    * on macOS, apps built on ScreenCaptureKit may still capture it).

@@ -1,15 +1,14 @@
 /**
  * Production end-to-end suite, desktop app: the real Electron shell (apps/desktop, built to
  * dist/) opening https://kite-call-assistant.vercel.app with a fresh, empty profile, signed in
- * as the test account. Covers, in order: sign in; the dashboard is empty (the desktop app keeps
- * its own data, separate from Chrome); create a session, which survives a reload; Open goes
- * straight to Connect (no
- * Choose platform dialog); Connect needs no picker (system audio + Chromium's fake microphone
- * playing the official recording 0.wav); Go live shows final lines; a typed Chat question
- * streams an answer, which is rated (Day 4); the compact window (Day 5) opens on top without
- * focus, shows the live answer, and a question typed into it is answered; End closes it;
- * Settings → Delete all
- * local data → the dashboard is empty again. Manual run only (never in CI). Prints numbers only.
+ * as the test account. Covers the v1.1.0 flow, in order: sign in on the home panel, with the
+ * acceptable-use notice; the panel opens the main window, where a session is created, and shows it;
+ * a call starts from the panel's card, in the overlay, with the main window minimised and the panel
+ * aside; lines in the transcript panel; a real answer in the answer panel, rated; asking again adds no
+ * entry; Private covers every window; Dashboard opens a side window and the call carries on; the full
+ * call window and back; End asks first, closes the overlay and brings the panel back; Settings →
+ * Delete all local data empties the panel. Manual run only (never in CI). Prints numbers only, and
+ * takes no screenshots: "Them" is this computer's real sound. Paid: 2 answers on the fast model.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -26,7 +25,6 @@ import {
   PRODUCTION_URL,
   RECORDINGS,
   WEB_DIR,
-  answerAndRate,
   isMode,
   createSession,
   report,
@@ -59,9 +57,10 @@ test.beforeAll(async () => {
     executablePath: ELECTRON_PATH,
     args: [
       `--user-data-dir=${PROFILE_DIR}`,
-      // Fake microphone: the recording once, then silence (no real microphone is used).
+      // Fake microphone: the recording on a loop, so a line is sure to come however long the panel takes
+      // to open (no real microphone is used).
       '--use-fake-device-for-media-stream',
-      `--use-file-for-fake-audio-capture=${RECORDINGS.you}%noloop`,
+      `--use-file-for-fake-audio-capture=${RECORDINGS.you}`,
       DESKTOP_DIR,
     ],
     env: { ...parentEnv, KITE_URL: `${PRODUCTION_URL}/` },
@@ -77,172 +76,182 @@ test.afterAll(async () => {
   rmSync(PROFILE_DIR, { recursive: true, force: true });
 });
 
-test('1. sign in, and the dashboard is empty (separate desktop data)', async () => {
-  // Fresh: the desktop app keeps its own cookies (separate from the browser suites).
-  await signIn(page, testAccount(), true);
-  report('desktop sign in', true);
-  // The first call runs with the main window in front, so the page can be driven; test 4 covers
-  // the default, starting in the overlay.
-  await page.evaluate(() => localStorage.setItem('kite.startInOverlay', 'off'));
+/** The main window, once the panel has opened it. */
+let main: Page;
+
+test('1. sign in on the home panel, which is empty (separate desktop data)', async () => {
+  // Fresh: the desktop app keeps its own cookies (separate from the browser suites). The panel keeps to
+  // its own pages, so a sign-in comes back to it rather than going on to the dashboard.
+  await signIn(page, testAccount(), true, true);
+  await expect(page).toHaveURL(/\/home$/);
+  await expect(page.getByRole('dialog', { name: 'Using Kite' })).toBeVisible();
+  await page.getByRole('button', { name: 'Got it' }).click();
   await expect(page.getByText('No sessions yet')).toBeVisible();
-  report('desktop dashboard empty', true, {
-    sessions: await page
-      .getByRole('listitem')
-      .filter({ has: page.getByRole('button', { name: 'Start session' }) })
-      .count(),
-  });
+  report('desktop sign in, home panel empty', true);
 });
 
-test('2. create a session (survives a reload); Open goes straight to Connect', async () => {
-  await createSession(page, { company: COMPANY, keyTerms: ['Bluefin Route', 'Northwind'] });
-  report('desktop create session', true);
-  // The session is stored in the desktop app's own IndexedDB: still there after a reload.
-  await page.reload();
-  await expect(sessionCard(page, COMPANY)).toBeVisible();
-  report('desktop session survives reload', true);
-  await sessionCard(page, COMPANY).getByRole('button', { name: 'Start session' }).click();
-  await expect(page).toHaveURL(/\/live\//);
-  await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
-  const dialogs = await page.getByRole('dialog').count();
-  report('desktop open without dialog', dialogs === 0, { dialogs });
-  expect(dialogs).toBe(0);
+test('2. create a session in the main window; it shows on the panel, and survives a reload', async () => {
+  const opened = app.waitForEvent('window');
+  await page.getByRole('button', { name: 'Create session' }).click();
+  main = await opened;
+  await main.waitForLoadState();
+  await expect(main).toHaveURL(/\/sessions\/new/);
+  report('desktop panel opens the main window', true);
+  await createSession(main, { company: COMPANY, keyTerms: ['Bluefin Route', 'Northwind'] });
+  await main.reload();
+  await expect(sessionCard(main, COMPANY)).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Sessions' })).toContainText(COMPANY);
+  report('desktop session on the panel, survives reload', true);
 });
 
-test('3. Connect needs no picker; Go live shows lines; a Chat answer is rated; End', async () => {
+test('3. a call: the overlay, Private on every window, a real answer, the side window, End', async () => {
+  // Start from the panel's card: the main window goes to the call.
+  await page
+    .getByRole('list', { name: 'Sessions' })
+    .getByRole('button', { name: 'Start' })
+    .first()
+    .click();
+  await expect(main).toHaveURL(/\/live\//);
   const startedAt = Date.now();
-  await expect(page.getByText('Speech model ready')).toBeVisible({ timeout: 480_000 });
+  await expect(main.getByText('Speech model ready')).toBeVisible({ timeout: 480_000 });
   report('desktop speech model ready', true, {
     seconds: Math.round((Date.now() - startedAt) / 1000),
   });
-
-  await page.getByRole('button', { name: 'Connect' }).click();
+  await main.getByRole('button', { name: 'Connect' }).click();
   // No picker exists in the desktop app: the shell approves system audio itself (media.ts).
-  await expect(page.getByRole('button', { name: 'Go live' })).toBeVisible({ timeout: 30_000 });
-  report('desktop connect (no picker)', true);
-  await page.getByRole('button', { name: 'Go live' }).click();
-
-  const lines = page.getByLabel('Live transcript').getByRole('listitem');
-  // Final lines use the normal text colour (TranscriptStrip: text-ui-text, UI theme U3).
-  const finals = lines.filter({ has: page.locator('span.text-ui-text') });
-  await expect(finals.first()).toBeVisible({ timeout: 120_000 });
-  const counts = {
-    final: await finals.count(),
-    finalYou: await finals.filter({ hasText: /^\s*You/ }).count(),
-    finalThem: await finals.filter({ hasText: /^\s*Them/ }).count(),
-  };
-  report('desktop live lines appear', counts.final > 0, counts);
-
-  // Answer with a typed Chat question: on this test machine "Them" (system audio) is silent,
-  // so there is no question from the other side for the Answer key.
-  const check = await answerAndRate(page, 'chat');
-  report('desktop chat answer streams and is rated', check.headlineWords > 0, { ...check });
-  expect(check.headlineWords).toBeGreaterThan(0);
-
-  // The compact window (Day 5): a second Electron window with the real compact view.
-  const compactOpened = app.waitForEvent('window');
-  await page.getByRole('button', { name: 'Overlay' }).click();
-  const compact = await compactOpened;
-  await compact.waitForLoadState();
-  const liveHeadline = page.getByRole('heading', { name: 'Answer headline' });
-  const compactHeadline = compact.getByRole('heading', { name: 'Answer line' });
-  // (b) The live answer reaches the compact window over the session's BroadcastChannel.
-  await expect(compactHeadline).toHaveText((await liveHeadline.textContent()) ?? '', {
-    timeout: 20_000,
-  });
-  const shown = await app.evaluate(({ BrowserWindow }) => {
-    const w = BrowserWindow.getAllWindows().find((x) =>
-      new URL(x.webContents.getURL()).pathname.startsWith('/compact/'),
-    )!;
-    return {
-      onTop: w.isAlwaysOnTop(),
-      focused: w.isFocused(),
-      protectedOn: w.isContentProtected(),
-    };
-  });
-  report('desktop compact window shows the live answer', shown.onTop && !shown.focused, {
-    onTop: shown.onTop ? 1 : 0,
-    focusedWhenShown: shown.focused ? 1 : 0,
-    protectedByDefault: shown.protectedOn ? 1 : 0,
-  });
-  expect(shown).toMatchObject({ onTop: true, focused: false, protectedOn: false });
-  // The protection state lives in the overlay's menu since parity Phase 1.
-  await compact.getByRole('button', { name: 'Overlay menu' }).click();
-  await expect(compact.getByText('Visible in screen share')).toBeVisible();
-  await compact.getByRole('button', { name: 'Overlay menu' }).click();
-
-  // (a) Click into the compact window's question box, type, Enter: the live page answers it.
-  const before = (await liveHeadline.textContent()) ?? '';
-  const chatResponse = page.waitForResponse((r) => isMode(r, 'chat'), { timeout: 60_000 });
-  // The question box opens from Chat since parity Phase 1.
-  await compact.getByRole('button', { name: 'Chat' }).click();
-  const box = compact.getByLabel('Type a question');
-  await box.click();
-  await box.pressSequentially('What was the late delivery change in the pilot?');
-  await expect(box).toHaveValue('What was the late delivery change in the pilot?');
-  await box.press('Enter');
-  // Wait for the whole answer (the stream's end), then for the panel to finish showing it.
-  await (await chatResponse).text();
-  await expect(page.getByText('Answering…')).toHaveCount(0, { timeout: 30_000 });
-  await expect(liveHeadline).not.toHaveText(before);
-  await expect(compactHeadline).toHaveText((await liveHeadline.textContent()) ?? '', {
-    timeout: 20_000,
-  });
-  const focusedAfterClick = await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()
-      .find((x) => new URL(x.webContents.getURL()).pathname.startsWith('/compact/'))!
-      .isFocused(),
-  );
-  report('desktop compact question box: typed question answered', true, {
-    focusedAfterClick: focusedAfterClick ? 1 : 0,
-  });
-
-  await page.getByRole('button', { name: 'End', exact: true }).click();
-  // End closes the compact window.
-  await expect
-    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length))
-    .toBe(1);
-  await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
-  report('desktop end', true);
-});
-
-test('4. starting in the overlay: it opens, the main window minimises, End restores it', async () => {
-  await page.evaluate(() => localStorage.removeItem('kite.startInOverlay'));
-  await page.reload();
-  await expect(page.getByText('Speech model ready')).toBeVisible({ timeout: 120_000 });
-  await page.getByRole('button', { name: 'Connect' }).click();
-  await expect(page.getByRole('button', { name: 'Go live' })).toBeVisible({ timeout: 30_000 });
+  await expect(main.getByRole('button', { name: 'Go live' })).toBeVisible({ timeout: 30_000 });
   const overlayOpened = app.waitForEvent('window');
-  await page.getByRole('button', { name: 'Go live' }).click();
+  await main.getByRole('button', { name: 'Go live' }).click();
   const overlay = await overlayOpened;
   await overlay.waitForLoadState();
   await expect(overlay.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
+
   /**
-   * Whether the main window is minimised.
+   * What the shell's windows are doing.
    *
-   * @returns True when minimised.
+   * @returns The state of each by its page.
    */
-  const minimized = () =>
+  const windows = () =>
     app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getAllWindows()
-        .filter((window) => !new URL(window.webContents.getURL()).pathname.startsWith('/compact/'))
-        .some((window) => window.isMinimized()),
+      BrowserWindow.getAllWindows().map((window) => ({
+        path: new URL(window.webContents.getURL()).pathname,
+        visible: window.isVisible(),
+        minimized: window.isMinimized(),
+        shielded: window.isContentProtected(),
+        onTop: window.isAlwaysOnTop(),
+        focused: window.isFocused(),
+      })),
     );
-  await expect.poll(minimized, { timeout: 10_000 }).toBe(true);
-  report('desktop overlay start minimises', true);
-  await overlay.getByRole('button', { name: 'End', exact: true }).click();
-  await expect.poll(minimized, { timeout: 15_000 }).toBe(false);
-  report('desktop overlay end restores', true);
-  await page.getByRole('button', { name: 'Connect' }).waitFor({ timeout: 30_000 });
+  await expect
+    .poll(async () => (await windows()).find((w) => w.path.startsWith('/live/'))?.minimized, {
+      timeout: 10_000,
+    })
+    .toBe(true);
+  await expect
+    .poll(async () => (await windows()).find((w) => w.path === '/home')?.visible)
+    .toBe(false);
+  const overlayState = (await windows()).find((w) => w.path.startsWith('/compact/'))!;
+  report('desktop call: overlay on top, main minimised, panel aside', overlayState.onTop, {
+    focused: overlayState.focused ? 1 : 0,
+  });
+  expect(overlayState).toMatchObject({ onTop: true, shielded: false });
+
+  // The microphone's fake recording reaches the transcript panel.
+  await overlay.getByRole('button', { name: 'Open the transcript', exact: true }).click();
+  const panel = overlay.getByRole('region', { name: 'Transcript panel' });
+  await expect(panel.getByRole('listitem', { name: 'You said' }).first()).toBeVisible({
+    timeout: 120_000,
+  });
+  report('desktop transcript panel shows lines', true);
+
+  // A typed question gets a real answer, in the answer panel. "Them" is this computer's real sound,
+  // which may be silent, so there may be no question for the Answer key.
+  const question = 'What was the late delivery change in the pilot?';
+  const ask = async () => {
+    const response = main.waitForResponse((r) => isMode(r, 'chat'), { timeout: 60_000 });
+    await overlay.getByRole('button', { name: /^Chat/ }).click();
+    // For the call: on Auto, a question with no documents behind it may rightly go to Ask Kite.
+    await overlay.getByRole('radio', { name: 'For the call' }).click();
+    const box = overlay.getByLabel('Type a question');
+    await box.fill(question);
+    await box.press('Enter');
+    await (await response).text();
+  };
+  await ask();
+  const answer = overlay.getByRole('region', { name: 'Latest answer' });
+  await expect(answer.getByRole('heading', { name: 'Answer line' })).not.toBeEmpty({
+    timeout: 30_000,
+  });
+  await expect(answer.getByLabel('Question', { exact: true })).toContainText('?');
+  await answer.getByRole('button', { name: 'Good answer' }).click();
+  await expect(answer.getByRole('button', { name: 'Good answer' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const words = (
+    (await answer.getByRole('heading', { name: 'Answer line' }).textContent()) ?? ''
+  ).split(/\s+/).length;
+  report('desktop real answer on the card, rated', words > 0, { lineWords: words });
+  // The same question again, and still one entry.
+  await ask();
+  await expect(overlay.getByText(/^\d+ of \d+$/)).toHaveCount(0);
+  report('desktop asking again adds no entry', true);
+
+  // Private: one switch, every window, on and off.
+  await overlay.getByRole('button', { name: 'Overlay menu' }).click();
+  const menu = overlay.getByRole('group', { name: 'Overlay settings' });
+  await menu.getByRole('switch', { name: 'Private' }).click();
+  await expect.poll(async () => (await windows()).every((w) => w.shielded)).toBe(true);
+  report('desktop Private covers every window', true, { windows: (await windows()).length });
+
+  // Dashboard during the call: a window of its own, also covered, and the call carries on.
+  const sideOpened = app.waitForEvent('window');
+  await menu.getByRole('button', { name: 'Dashboard' }).click();
+  const side = await sideOpened;
+  await side.waitForLoadState();
+  await expect.poll(async () => (await windows()).every((w) => w.shielded)).toBe(true);
+  expect((await windows()).some((w) => w.path.startsWith('/live/'))).toBe(true);
+  report('desktop side window during the call', true);
+  await side.close();
+  // Dashboard closed the menu.
+  await overlay.getByRole('button', { name: 'Overlay menu' }).click();
+  await menu.getByRole('switch', { name: 'Private' }).click();
+  await expect.poll(async () => (await windows()).some((w) => w.shielded)).toBe(false);
+
+  // Open call window: the full view, solid, with the overlay hidden; Back to compact returns.
+  await menu.getByRole('button', { name: 'Open call window' }).click();
+  await expect
+    .poll(async () => (await windows()).find((w) => w.path.startsWith('/compact/'))?.visible)
+    .toBe(false);
+  await expect(main.getByRole('toolbar', { name: 'Call controls' })).toBeVisible();
+  await expect(main.getByRole('article', { name: 'Answer' })).toHaveCount(1);
+  await expect(main.locator('.k-glass')).toHaveCount(0);
+  await main.getByRole('button', { name: 'Back to compact' }).click();
+  await expect
+    .poll(async () => (await windows()).find((w) => w.path.startsWith('/compact/'))?.visible)
+    .toBe(true);
+  report('desktop call window and back', true);
+
+  // End asks first; the overlay closes, the panel comes back.
+  const closed = overlay.waitForEvent('close', { timeout: 15_000 });
+  await overlay.getByRole('button', { name: 'End call' }).click();
+  await overlay.getByRole('button', { name: 'End call?' }).click();
+  await closed;
+  await expect
+    .poll(async () => (await windows()).find((w) => w.path === '/home')?.visible, {
+      timeout: 15_000,
+    })
+    .toBe(true);
+  report('desktop end: overlay closes, panel returns', true);
 });
 
-test('5. Settings → Delete all local data → empty dashboard', async () => {
-  await page.goto(`${PRODUCTION_URL}/settings`);
-  await page.getByRole('button', { name: 'Delete all local data' }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete everything' }).click();
-  const deleted = page.getByText(/Deleted (\d+) sessions/);
+test('4. Settings → Delete all local data → an empty panel', async () => {
+  await main.goto(`${PRODUCTION_URL}/settings`);
+  await main.getByRole('button', { name: 'Delete all local data' }).click();
+  await main.getByRole('dialog').getByRole('button', { name: 'Delete everything' }).click();
+  const deleted = main.getByText(/Deleted (\d+) sessions/);
   await expect(deleted).toBeVisible();
   const sessions = Number(/Deleted (\d+)/.exec((await deleted.textContent()) ?? '')?.[1]);
-  await page.goto(PRODUCTION_URL);
   await expect(page.getByText('No sessions yet')).toBeVisible();
   report('desktop delete all local data', sessions >= 1, { sessionsDeleted: sessions });
   expect(sessions).toBeGreaterThanOrEqual(1);

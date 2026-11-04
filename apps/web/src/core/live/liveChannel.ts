@@ -5,7 +5,9 @@
  *          words, the live question, the answer shown with its place in the history, whether it is
  *          answering or taking a screenshot, a notice, and when the call ended), and the overlay
  *          sends back what the user pressed. One BroadcastChannel per session, so it works between
- *          the desktop app's two windows and with a browser picture-in-picture window.
+ *          the desktop app's two windows and with a browser picture-in-picture window. v1.1.0
+ *          (ADR-0041): also the transcript's bubbles, the audio levels and the stacked overlay's
+ *          commands.
  * Used by: src/features/live/LiveAnswers.tsx (publishes, takes commands),
  *          src/features/live/CompactLive.tsx (shows, sends commands)
  * Depends on: the browser's BroadcastChannel (injectable for tests)
@@ -26,6 +28,34 @@ export interface CompactChip {
   speaker: 'you' | 'them';
   /** The words. */
   text: string;
+}
+
+/** One transcript bubble for the overlay's transcript panel (v1.1.0). */
+export interface CompactGroup {
+  /** Stable id (the bubble's first line). */
+  id: string;
+  /** Who spoke. */
+  speaker: 'you' | 'them';
+  /** The finished words, ready to show. */
+  finalText: string;
+  /** Words that may still change, or ''. */
+  provisionalText: string;
+  /** When it started (Unix ms). */
+  tStart: number;
+  /** True for a "Them" bubble that holds a question. */
+  question: boolean;
+  /** True when this speech has been answered. */
+  answered: boolean;
+  /** True when its words look like noise (it collapses into "Unclear speech"; ADR-0044). */
+  unclear: boolean;
+}
+
+/** Audio levels, 0 to 1, sent on their own because they change many times a second (v1.1.0). */
+export interface CompactLevels {
+  /** The microphone. */
+  you: number;
+  /** The other side. */
+  them: number;
 }
 
 /** Whether each side of the call is coming through. */
@@ -113,6 +143,26 @@ export interface CompactState {
   dictationNotice?: string | null;
   /** When the call connected (Unix ms), for the overlay's call timer (v1.0.3). */
   startedAt?: number;
+  /** v1.1.0: the latest transcript bubbles, oldest first. */
+  groups?: CompactGroup[];
+  /** v1.1.0: the name on the other person's bubbles ("Client 1" when the session has none). */
+  themName?: string;
+  /** v1.1.0: the answer language's code. */
+  language?: string;
+  /** v1.1.0: whether Kite answers finished questions by itself in this call. */
+  autoAnswer?: boolean;
+  /** v1.1.0: grows each time the Chat shortcut is pressed, so the overlay opens its input. */
+  chatCount?: number;
+  /** v1.1.0: "Still in a call?" (ask) or listening paused (paused); ADR-0044. */
+  hygiene?: 'ok' | 'ask' | 'paused';
+  /** v1.1.0: true to show the one-time "Use headphones" hint (ADR-0044). */
+  headphonesHint?: boolean;
+  /** v1.1.0: the session's id, for Edit session. */
+  sessionId?: string;
+  /** v1.1.0: the microphone in use ('' for the system's default). */
+  micDeviceId?: string;
+  /** v1.1.0: where "Them" comes from, in words. */
+  themSourceLabel?: string;
 }
 
 /** A command without details. */
@@ -121,9 +171,57 @@ export interface SimpleCommand {
    * 'answer': answer the latest question; 'screenshot': answer from a screenshot;
    * 'clear': stop the answer and go back to the newest one; 'prev' / 'next': move through the
    * history; 'end': end the call; 'hello': the overlay just opened, send the state;
-   * 'call-window': open the full call window at the newest answer (v1.0.4, ADR-0040).
+   * 'call-window': open the full call window at the newest answer (v1.0.4, ADR-0040);
+   * v1.1.0: 'stop': stop the answer streaming, keeping what arrived; 'clear-transcript': clear the
+   * words on screen; 'still-here': yes, still in a call; 'resume': listen again after a pause;
+   * 'headphones-seen': the hint was closed.
    */
-  type: 'answer' | 'screenshot' | 'clear' | 'prev' | 'next' | 'end' | 'hello' | 'call-window';
+  type:
+    | 'answer'
+    | 'screenshot'
+    | 'clear'
+    | 'prev'
+    | 'next'
+    | 'end'
+    | 'hello'
+    | 'call-window'
+    | 'stop'
+    | 'clear-transcript'
+    | 'still-here'
+    | 'resume'
+    | 'headphones-seen';
+}
+
+/** Answers one transcript bubble, from the overlay's transcript panel (v1.1.0). */
+export interface AnswerThisCommand {
+  /** Command type. */
+  type: 'answer-this';
+  /** The bubble's id. */
+  groupId: string;
+}
+
+/** Changes the answer language, from the overlay (v1.1.0). */
+export interface LanguageCommand {
+  /** Command type. */
+  type: 'language';
+  /** The language's code. */
+  code: string;
+}
+
+/** Turns auto-answer on or off for this call, from the overlay's menu (v1.1.0). */
+export interface AutoAnswerCommand {
+  /** Command type. */
+  type: 'auto-answer';
+  /** True to turn it on. */
+  on: boolean;
+}
+
+/** Switches the microphone, from the overlay's device list (v1.1.0). */
+export interface MicCommand {
+  /** Command type. */
+  type: 'mic';
+  /** The device's id ('' for the system's default). */
+  deviceId: string;
 }
 
 /** Opens or closes the script bar (v1.0.2). */
@@ -206,7 +304,11 @@ export type CompactCommand =
   | ChatTargetCommand
   | ReanswerCommand
   | ScriptBarCommand
-  | DictateCommand;
+  | DictateCommand
+  | AnswerThisCommand
+  | LanguageCommand
+  | AutoAnswerCommand
+  | MicCommand;
 
 /** One message on the channel. */
 type Message =
@@ -221,6 +323,12 @@ type Message =
       kind: 'command';
       /** The command. */
       command: CompactCommand;
+    }
+  | {
+      /** The audio levels from the live page (v1.1.0). */
+      kind: 'levels';
+      /** The levels. */
+      levels: CompactLevels;
     };
 
 /** The parts of a BroadcastChannel used here (a fake in tests). */
@@ -242,6 +350,13 @@ export interface LiveChannel {
    */
   publish(state: CompactState): void;
   /**
+   * Publishes the audio levels (live page; v1.1.0). Separate from the state: they change many times
+   * a second and only the level bars need them.
+   *
+   * @param levels The levels.
+   */
+  publishLevels(levels: CompactLevels): void;
+  /**
    * Sends a command (compact view).
    *
    * @param command What the user pressed.
@@ -253,6 +368,12 @@ export interface LiveChannel {
    * @param listener Called with each state.
    */
   onState(listener: (state: CompactState) => void): void;
+  /**
+   * Listens for the audio levels (compact view; v1.1.0).
+   *
+   * @param listener Called with each update.
+   */
+  onLevels(listener: (levels: CompactLevels) => void): void;
   /**
    * Listens for commands (live page).
    *
@@ -330,12 +451,39 @@ export function isCommand(value: unknown): value is CompactCommand {
       command.question.length <= 2_000
     );
   }
-  if (command.type === 'script-bar' || command.type === 'dictate') {
+  if (
+    command.type === 'script-bar' ||
+    command.type === 'dictate' ||
+    command.type === 'auto-answer'
+  ) {
     return typeof (value as { on?: unknown }).on === 'boolean';
   }
-  return ['answer', 'screenshot', 'clear', 'prev', 'next', 'end', 'hello', 'call-window'].includes(
-    command.type,
-  );
+  if (command.type === 'answer-this') {
+    return typeof (value as { groupId?: unknown }).groupId === 'string';
+  }
+  if (command.type === 'language') {
+    const code = (value as { code?: unknown }).code;
+    return typeof code === 'string' && code.length > 0 && code.length <= 16;
+  }
+  if (command.type === 'mic') {
+    const deviceId = (value as { deviceId?: unknown }).deviceId;
+    return typeof deviceId === 'string' && deviceId.length <= 256;
+  }
+  return [
+    'answer',
+    'screenshot',
+    'clear',
+    'prev',
+    'next',
+    'end',
+    'hello',
+    'call-window',
+    'stop',
+    'clear-transcript',
+    'still-here',
+    'resume',
+    'headphones-seen',
+  ].includes(command.type);
 }
 
 /**
@@ -372,18 +520,27 @@ export function openLiveChannel(
   const port = open(channelName(sessionId));
   const stateListeners: ((state: CompactState) => void)[] = [];
   const commandListeners: ((command: CompactCommand) => void)[] = [];
+  const levelListeners: ((levels: CompactLevels) => void)[] = [];
   port.onmessage = (event: MessageEvent) => {
     const message = event.data as Partial<Message> | null;
     if (message?.kind === 'state' && isState(message.state)) {
       for (const listener of stateListeners) listener(message.state);
     } else if (message?.kind === 'command' && isCommand(message.command)) {
       for (const listener of commandListeners) listener(message.command);
+    } else if (
+      message?.kind === 'levels' &&
+      typeof message.levels?.you === 'number' &&
+      typeof message.levels?.them === 'number'
+    ) {
+      for (const listener of levelListeners) listener(message.levels);
     }
   };
   return {
     publish: (state) => port.postMessage({ kind: 'state', state } satisfies Message),
+    publishLevels: (levels) => port.postMessage({ kind: 'levels', levels } satisfies Message),
     send: (command) => port.postMessage({ kind: 'command', command } satisfies Message),
     onState: (listener) => stateListeners.push(listener),
+    onLevels: (listener) => levelListeners.push(listener),
     onCommand: (listener) => commandListeners.push(listener),
     close: () => {
       port.onmessage = null;

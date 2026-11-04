@@ -5,7 +5,7 @@
  * for Copy. All text is invented.
  */
 import { describe, expect, it } from 'vitest';
-import { answerText, cardQuestion, splitAnswer } from '@/core/answer/format';
+import { answerText, cardQuestion, splitAnswer, splitLongLine } from '@/core/answer/format';
 
 describe('splitAnswer', () => {
   it('splits the headline and bullets, removing marks', () => {
@@ -14,7 +14,9 @@ describe('splitAnswer', () => {
     expect(splitAnswer(text)).toEqual({
       headline: 'Forty seats cost 2,080 dollars a month.',
       bullets: ['52 dollars per seat', 'Billed yearly', 'Fixed for two years'],
+      keySteps: false,
       code: [],
+      complexity: '',
       say: '',
       tip: '',
       note: '',
@@ -25,7 +27,9 @@ describe('splitAnswer', () => {
     expect(splitAnswer('')).toEqual({
       headline: '',
       bullets: [],
+      keySteps: false,
       code: [],
+      complexity: '',
       say: '',
       tip: '',
       note: '',
@@ -33,7 +37,9 @@ describe('splitAnswer', () => {
     expect(splitAnswer('Forty seats')).toEqual({
       headline: 'Forty seats',
       bullets: [],
+      keySteps: false,
       code: [],
+      complexity: '',
       say: '',
       tip: '',
       note: '',
@@ -41,7 +47,9 @@ describe('splitAnswer', () => {
     expect(splitAnswer('# Forty seats\n- 52')).toEqual({
       headline: 'Forty seats',
       bullets: ['52'],
+      keySteps: false,
       code: [],
+      complexity: '',
       say: '',
       tip: '',
       note: '',
@@ -54,7 +62,9 @@ describe('splitAnswer', () => {
     expect(splitAnswer(text)).toEqual({
       headline: 'I can start next week.',
       bullets: ['We finished the pilot'],
+      keySteps: false,
       code: [],
+      complexity: '',
       say: '',
       tip: 'mention the Lahore rollout.',
       note: 'check the date with finance.',
@@ -105,8 +115,10 @@ describe('the coding shape (ADR-0030)', () => {
   it('takes out the code and what to say, and never reads code as bullets', () => {
     expect(splitAnswer(CODING)).toEqual({
       headline: 'Use a dictionary to count.',
-      bullets: ['Complexity: O(n) time'],
+      bullets: [],
+      keySteps: false,
       code: [{ language: 'python', text: '- not a bullet\n\nx = 1' }],
+      complexity: 'O(n) time',
       say: 'I count, then scan.',
       tip: '',
       note: 'check the version.',
@@ -171,5 +183,118 @@ describe('the "Answer:" label (v1.0.3)', () => {
     expect(splitAnswer('**Answer:** I cut the latency to 250 ms.\n- Read replicas').headline).toBe(
       'I cut the latency to 250 ms.',
     );
+  });
+});
+
+describe('the coding shape (v1.1.0, item 7)', () => {
+  const ANSWER = [
+    'Count the vowels with one pass over the lower-cased text.',
+    'Key steps:',
+    '- Lower-case the text.',
+    '- Count the characters in a set of vowels.',
+    '```python',
+    'def count_vowels(text):',
+    '    return sum(c in "aeiou" for c in text.lower())',
+    '```',
+    'Complexity: O(n) time, O(1) space.',
+    'Say: I walk the string once and count what is in the vowel set.',
+  ].join('\n');
+
+  it('splits the answer line, key steps, code, complexity and what to say', () => {
+    const parts = splitAnswer(ANSWER);
+    expect(parts.headline).toBe('Count the vowels with one pass over the lower-cased text.');
+    expect(parts.keySteps).toBe(true);
+    expect(parts.bullets).toEqual([
+      'Lower-case the text.',
+      'Count the characters in a set of vowels.',
+    ]);
+    expect(parts.code).toHaveLength(1);
+    expect(parts.code[0]?.language).toBe('python');
+    expect(parts.complexity).toBe('O(n) time, O(1) space.');
+    expect(parts.say).toBe('I walk the string once and count what is in the vowel set.');
+  });
+
+  it('copies every part, with the complexity labelled', () => {
+    const copied = answerText(ANSWER);
+    expect(copied).toContain('Complexity: O(n) time, O(1) space.');
+    expect(copied).toContain('def count_vowels(text):');
+    expect(copied).not.toContain('Key steps');
+  });
+
+  it('leaves an answer of the old shape as it was', () => {
+    const parts = splitAnswer('Use a queue.\n- Workers pull jobs.\n- Retries back off.');
+    expect(parts.keySteps).toBe(false);
+    expect(parts.complexity).toBe('');
+    expect(parts.bullets).toHaveLength(2);
+  });
+
+  it('reads "Time complexity:" as the complexity line', () => {
+    expect(splitAnswer('Approach.\nTime complexity: O(n).').complexity).toBe('O(n).');
+  });
+});
+
+describe('the 12-word answer line (v1.1.0, item 16)', () => {
+  const LONG =
+    'We cut late deliveries by a third across the northern routes, mostly by rerouting at night';
+
+  it('leaves a line of up to 12 words alone', () => {
+    const line = 'One two three four five six seven eight nine ten eleven twelve';
+    expect(splitLongLine(line)).toEqual({ line, rest: '' });
+  });
+
+  it('cuts at the last clause break within the limit, with the rest capitalised', () => {
+    expect(splitLongLine(LONG)).toEqual({
+      line: 'We cut late deliveries by a third across the northern routes.',
+      rest: 'Mostly by rerouting at night',
+    });
+  });
+
+  it('cuts before a joining word too', () => {
+    const { line, rest } = splitLongLine(
+      'I rebuilt the billing export in Go last year and it now finishes within ten minutes',
+    );
+    expect(line).toBe('I rebuilt the billing export in Go last year.');
+    expect(rest).toBe('And it now finishes within ten minutes');
+  });
+
+  it('cuts before a word that starts a phrase, when there is no clause', () => {
+    const { line, rest } = splitLongLine(
+      'I run the nightly route planning jobs on Kubernetes for the whole freight team',
+    );
+    expect(line).toBe('I run the nightly route planning jobs on Kubernetes.');
+    expect(rest).toBe('For the whole freight team');
+  });
+
+  it('keeps the line whole when no break leaves at least three words within the limit', () => {
+    const line =
+      'One two, three four five six seven eight nine ten eleven twelve thirteen fourteen';
+    expect(splitLongLine(line)).toEqual({ line, rest: '' });
+  });
+
+  it('puts the rest in front of the bullets when the answer has bullets', () => {
+    const parts = splitAnswer(`${LONG}\n- A bullet.`);
+    expect(parts.headline).toBe('We cut late deliveries by a third across the northern routes.');
+    expect(parts.bullets).toEqual(['Mostly by rerouting at night', 'A bullet.']);
+  });
+
+  it('never cuts a line with nothing under it while it may still grow', () => {
+    expect(splitAnswer(LONG).headline).toBe(LONG);
+    expect(splitAnswer(LONG).bullets).toEqual([]);
+  });
+
+  it('cuts a finished one-line answer, but never a paragraph', () => {
+    const cut = splitAnswer(LONG, true);
+    expect(cut.headline).toBe('We cut late deliveries by a third across the northern routes.');
+    expect(cut.bullets).toEqual(['Mostly by rerouting at night']);
+    const paragraph = new Array(8)
+      .fill('We cut late deliveries by a third, on most of the routes.')
+      .join(' ');
+    expect(splitAnswer(paragraph, true).headline).toBe(paragraph);
+    expect(splitAnswer(paragraph, true).bullets).toEqual([]);
+  });
+
+  it('copies the same words that were shown', () => {
+    const copied = answerText(`${LONG}\n- A bullet.`);
+    expect(copied).toContain('- Mostly by rerouting at night');
   });
 });

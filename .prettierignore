@@ -17,6 +17,7 @@ apps/web/drizzle
 # Downloaded speech-to-text files: model files (Day 1) and the official runtime (Day 2), unmodified.
 apps/web/public/models
 apps/web/public/stt-runtime
+apps/web/public/punct
 # Hand-written planning documents (architecture, ADRs, day plans, CLAUDE.md). They are kept
 # exactly as approved; reformatting them would realign every table and hide real edits in diffs.
 docs

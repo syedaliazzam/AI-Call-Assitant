@@ -33,17 +33,19 @@ describe('answer settings', () => {
     expect(getCodingLanguage()).toBe('Python');
     expect(getMissingInfoMode()).toBe('approach');
     expect(getChatTarget('s1')).toBe('auto');
-    expect(getReviewOldestFirst()).toBe(false);
+    expect(getReviewOldestFirst()).toBe(true);
   });
 
   it('remembers each choice', () => {
     setCodingLanguage('Go');
     setMissingInfoMode('story');
     setChatTarget('s1', 'kite');
-    setReviewOldestFirst(true);
+    setReviewOldestFirst(false);
     expect(getCodingLanguage()).toBe('Go');
     expect(getMissingInfoMode()).toBe('story');
     expect(getChatTarget('s1')).toBe('kite');
+    expect(getReviewOldestFirst()).toBe(false);
+    setReviewOldestFirst(true);
     expect(getReviewOldestFirst()).toBe(true);
   });
 

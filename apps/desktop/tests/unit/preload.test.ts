@@ -76,18 +76,22 @@ describe('the exposed bridge', () => {
       'getShareProtection',
       'minimizeMainWindow',
       'onHotkey',
+      'onSnapZone',
       'openCompactView',
+      'openPagesWindow',
       'os',
       'placeOverlay',
       'resizeOverlay',
       'setCallActive',
       'setHotkeysEnabled',
       'setOverlayCollapsed',
+      'setOverlayLayout',
       'setOverlayMode',
       'setOverlayOpacity',
       'setShareProtection',
       'showCallWindow',
       'version',
+      'windowControl',
     ]);
     expect(Object.isFrozen(api)).toBe(true);
   });

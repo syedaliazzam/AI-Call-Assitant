@@ -33,19 +33,88 @@ export const MIC_CONSTRAINTS: MediaStreamConstraints = {
 };
 
 /**
- * Opens the default microphone with MIC_CONSTRAINTS.
+ * Opens a microphone with MIC_CONSTRAINTS.
  *
+ * @param deviceId The device to open (v1.1.0: the overlay's device list); the system's default when
+ *                 absent, or when that device has gone.
  * @returns A live audio-only MediaStream.
  * @throws Error if the MediaDevices API is missing (old browser, or a page not served over HTTPS).
  * @throws DOMException('NotAllowedError') if the user or the system denies the microphone.
  * Called from: browserPlatform.getMicStream(), createDesktopPlatform().getMicStream()
  */
-export async function openMicrophone(): Promise<MediaStream> {
+export async function openMicrophone(deviceId?: string): Promise<MediaStream> {
   // mediaDevices is only defined in secure contexts (HTTPS or localhost).
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
     throw new Error('Microphone access is not available in this browser or on this page.');
   }
-  return navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+  if (!deviceId) return navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS);
+  // 'ideal': an unplugged device falls back to the default rather than failing the call.
+  return navigator.mediaDevices.getUserMedia({
+    ...MIC_CONSTRAINTS,
+    audio: { ...(MIC_CONSTRAINTS.audio as MediaTrackConstraints), deviceId: { ideal: deviceId } },
+  });
+}
+
+/** A microphone in the overlay's device list (v1.1.0). */
+export interface MicDevice {
+  /** The device's id. */
+  id: string;
+  /** Its name. */
+  label: string;
+}
+
+/**
+ * The microphones on this computer. Their names are available once the microphone has been allowed,
+ * as it has during a call.
+ *
+ * @returns The microphones ([] where the browser cannot list them).
+ * Called from: browserPlatform.listMicrophones(), createDesktopPlatform().listMicrophones(); tests
+ */
+export async function listMicrophones(): Promise<MicDevice[]> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return [];
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  return devices
+    .filter((device) => device.kind === 'audioinput' && device.deviceId !== '')
+    .map((device, index) => ({
+      id: device.deviceId,
+      label: device.label || `Microphone ${index + 1}`,
+    }));
+}
+
+/**
+ * Watches whether the computer is on battery (v1.1.0, ADR-0044: Accurate transcription on Auto). The
+ * page's own Battery API, so it also works in a desktop app before 1.1.0.
+ *
+ * @param handler Called now and on every change, with true on battery, false plugged in, or null when
+ *                it cannot be told (a browser without the API).
+ * @returns A function that stops watching.
+ * Called from: browserPlatform.watchBattery(), createDesktopPlatform().watchBattery(); tests
+ */
+export function watchBatteryState(handler: (onBattery: boolean | null) => void): () => void {
+  const nav = navigator as Navigator & {
+    /** Chromium's Battery Status API. */
+    getBattery?: () => Promise<EventTarget & { charging: boolean }>;
+  };
+  if (!nav.getBattery) {
+    handler(null);
+    return () => undefined;
+  }
+  let stop = () => undefined as void;
+  let active = true;
+  nav
+    .getBattery()
+    .then((battery) => {
+      if (!active) return;
+      const report = () => handler(!battery.charging);
+      report();
+      battery.addEventListener('chargingchange', report);
+      stop = () => battery.removeEventListener('chargingchange', report);
+    })
+    .catch(() => handler(null));
+  return () => {
+    active = false;
+    stop();
+  };
 }
 
 /**

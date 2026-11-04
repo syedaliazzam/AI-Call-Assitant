@@ -16,6 +16,8 @@
  *            --only=hallucination-bait  ADR-0030: gate is zero invented prices or personal numbers
  *            --only=consistency  ADR-0030: the same question twice in one call
  *            --only=ask-kite     ADR-0030: private answers, in a call and on the page
+ *            --only=question-detection  ADR-0043: non-questions and garbled lines are not answered
+ *            --only=screenshot-types    ADR-0043: coding, code error, slide, table, document, web page
  *            --without-lessons   send no lessons (the lesson group's comparison run)
  *            --style=previous    answer with the v-previous rules (ADR-0032 rollback switch)
  *            --only=<id>         one scenario (its file name without .json)
@@ -53,6 +55,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_SCREENSHOT_QUESTION,
+  createQuestionLineFilter,
   splitMetaLine,
   type AnswerMeta,
   type AnswerRequest,
@@ -66,6 +69,8 @@ import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
 import { ADAPTIVE_SCENARIOS } from '../tests/eval/groups/adaptive';
 import { HONESTY_SCENARIOS } from '../tests/eval/groups/honesty';
+import { DETECTION_SCENARIOS } from '../tests/eval/groups/detection';
+import { callAnswerLine } from './lib/answer-line';
 import { QUALITY_SCENARIOS } from '../tests/eval/groups/quality';
 import type { Scenario } from '../tests/eval/groups/types';
 import { runAnswerCode, type CodeResult } from './lib/code-sandbox';
@@ -126,7 +131,7 @@ Rubric:
 - facts (0-3): how many of the "must include" points the answer contains, correctly. 3 = all, 2 = most, 1 = some, 0 = none or wrong.
 - grounded (0-2): 2 = every claim about the user, their company, offer, prices, dates or commitments comes from the session details, documents or the call, and nothing from "must not include" appears; 1 = one small unsupported detail; 0 = an invented fact, a wrong number, or a "must not include" item.
 - consistent (0-2): if the call shows earlier Kite answers, 2 = consistent with them, or, when new information changes the answer, it gives the new answer and says briefly what changed; 1 = partly; 0 = contradicts them without saying why, or ignores new information. If there are no earlier answers, give 2.
-- style (0-1): 1 = follows the session's answer format (bullets: only short bullets with no headline line, the first giving the direct answer, optionally followed by the same two lines; headline+bullets: a headline line, which is one plain sentence of at most 15 words, then short bullets (a reply that needs nothing more may be the headline alone, and a brief "As I mentioned" may open a repeated answer), optionally followed by one closing line starting "Tip:" and one line starting "Note:" that is private to the user, both allowed only when they add something and do not repeat a bullet; paragraph: one short paragraph, no bullets), length, tone and instructions, with no greeting or preamble; 0 = it does not, or the spoken part says or implies that something is missing from the notes, CV or documents (a "Note:" line may name what to check). A coding answer has its own shape: an approach line, bullets for the steps, "Complexity:" and "Edge cases:", a code block and a "Say:" line, whatever the format. A private answer is free in shape, and only has to be direct and clear.
+- style (0-1): 1 = follows the session's answer format (bullets: only short bullets with no headline line, the first giving the direct answer, optionally followed by the same two lines; headline+bullets: a headline line, which is one plain sentence of at most 15 words, then short bullets (a reply that needs nothing more may be the headline alone, and a brief "As I mentioned" may open a repeated answer), optionally followed by one closing line starting "Tip:" and one line starting "Note:" that is private to the user, both allowed only when they add something and do not repeat a bullet; paragraph: one short paragraph, no bullets), length, tone and instructions, with no greeting or preamble; 0 = it does not, or the spoken part says or implies that something is missing from the notes, CV or documents (a "Note:" line may name what to check). A coding answer has its own shape: an approach line, "Key steps:" with bullets, a code block, a "Complexity:" line and a "Say:" line, whatever the format. A screenshot answer follows what the screen shows: code with an error gives the cause, the fix and corrected code; a slide or document its key points and how to respond; a table or chart its takeaway and key numbers; a screen that cannot be read says so in one line. A private answer is free in shape, and only has to be direct and clear.
 - reason: one short sentence on what cost points ("none" when nothing did).
 - invented: every price, personal number, statistic, source or fact about a company that the answer states and that the session details, documents and call do not support, in the answer's own words. General technical knowledge, stated assumptions in an estimate and simple arithmetic on supported figures are not invented. Empty when there are none.`;
 
@@ -161,7 +166,13 @@ function loadScenarios(only: string | null): Scenario[] {
     (name) => JSON.parse(readFileSync(path.join(SCENARIO_DIR, name), 'utf8')) as Scenario,
   );
   return selectScenarios(
-    [...scenarios, ...ADAPTIVE_SCENARIOS, ...QUALITY_SCENARIOS, ...HONESTY_SCENARIOS],
+    [
+      ...scenarios,
+      ...ADAPTIVE_SCENARIOS,
+      ...QUALITY_SCENARIOS,
+      ...HONESTY_SCENARIOS,
+      ...DETECTION_SCENARIOS,
+    ],
     answerGroup,
     only,
   );
@@ -213,6 +224,26 @@ export function shapeChecks(
   return {
     headline: words > 0 && words <= 15 ? 1 : 0,
     bullets: lines.slice(1).filter(isBullet).length <= 5 ? 1 : 0,
+  };
+}
+
+/**
+ * The grade of a reply with no answer in it: full marks where none was wanted.
+ *
+ * @param scenario The scenario.
+ * @returns The grade.
+ * Called from: main()
+ */
+function noAnswerGrade(scenario: Scenario): Grade {
+  const expected = [scenario.expectType].flat();
+  const right = expected.includes('garbled');
+  return {
+    facts: right ? 3 : 0,
+    grounded: 2,
+    consistent: 2,
+    style: right ? 1 : 0,
+    reason: right ? 'none' : 'a real question got no answer',
+    invented: [],
   };
 }
 
@@ -312,10 +343,24 @@ async function answerScenario(
   meter.add(model, next.value.usage);
   const split = splitMetaLine(raw);
   return {
-    text: split.state === 'found' ? split.rest : raw.trim(),
+    text: withoutQuestionLine(split.state === 'found' ? split.rest : raw.trim()),
     meta: split.state === 'found' ? split.meta : null,
     usage: next.value.usage,
   };
+}
+
+/**
+ * An answer without its hidden last line, as the route's pipeline takes it out (answer-meta.ts): the
+ * person never sees that line, so it must not be graded. v1.0.2 added the line; this evaluation had not
+ * run since, so its baselines were measured without it.
+ *
+ * @param text The answer.
+ * @returns What the card shows.
+ * Called from: answerScenario()
+ */
+function withoutQuestionLine(text: string): string {
+  const filter = createQuestionLineFilter();
+  return `${filter.push(text).text}${filter.end().text}`.trim();
 }
 
 /** A comment about what Kite was given: never allowed in an answer's spoken part. */
@@ -462,6 +507,9 @@ async function extraChecks(
   const claims = needsClaimCheck(meta, scenario.mode) ? checkClaims(text, corpus) : [];
   return {
     hiddenLine: meta !== null,
+    // v1.1.0 (item 16): reported beside the Headline point, which stays at 15 words so scores remain
+    // comparable with the baselines.
+    ...(callAnswerLine(text, scenario.session.style.format, meta) ?? {}),
     ...(expected
       ? {
           typeOk: (Array.isArray(expected) ? expected : [expected]).includes(
@@ -505,6 +553,12 @@ function summariseChecks(results: readonly ScenarioResult[]): string[] {
   return [
     ...line('Hidden line present', (checks) => checks.hiddenLine),
     ...line('Question type as expected', (checks) => checks.typeOk),
+    ...line('Answer line 12 words or fewer', (checks) =>
+      checks.answerLineWords === undefined ? undefined : checks.answerLineWords <= 12,
+    ),
+    ...line('Answer line as shown, 12 words or fewer', (checks) =>
+      checks.shownLineWords === undefined ? undefined : checks.shownLineWords <= 12,
+    ),
     ...line('For the call / Ask Kite as expected', (checks) => checks.targetOk),
     ...line('No comment on what Kite was given', (checks) => !checks.metaComment),
     ...line('Grader found nothing invented', (checks) => checks.invented.length === 0),
@@ -564,8 +618,15 @@ async function main(): Promise<void> {
       if (first)
         answer = await answerScenario(scenario, models, false, options.style, meter, first);
       const { text, meta } = answer;
-      const graded = await grade(scenario, text, env.modelSmart, meter, first);
-      const shape = shapeChecks(text, scenario.session.style.format, meta);
+      // A garbled line must get no answer at all (ADR-0043): nothing to grade, and no grader's request
+      // to pay for. It scores in full when Claude said so, and nothing when it answered anyway.
+      const nothingToGrade = meta?.type === 'garbled' && text.trim() === '';
+      const graded = nothingToGrade
+        ? noAnswerGrade(scenario)
+        : await grade(scenario, text, env.modelSmart, meter, first);
+      const shape = nothingToGrade
+        ? { headline: 1, bullets: 1 }
+        : shapeChecks(text, scenario.session.style.format, meta);
       totals.facts += graded.facts;
       totals.grounded += graded.grounded;
       totals.consistent += graded.consistent;

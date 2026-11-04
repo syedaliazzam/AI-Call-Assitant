@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Page, type Response } from '@playwright/test';
 import type { AnswerUsage } from '@kite/shared';
-import { signInOnce } from '../lib/sign-in';
+import { closeUseNotice, signInOnce } from '../lib/sign-in';
 
 /**
  * The site the suites run against: production, or KITE_E2E_URL to check a preview deployment (or a
@@ -130,11 +130,19 @@ export function inventedDocument(): TextFile {
  * @param page    The page.
  * @param account The test account.
  * @param fresh   True to always sign in with the form (the sign-in cache test; the desktop app).
+ * @param panel   True on the desktop app's home panel.
  * @returns Nothing.
  * Called from: the suites
  */
-export async function signIn(page: Page, account: TestAccount, fresh = false): Promise<void> {
-  await signInOnce(page, { baseUrl: PRODUCTION_URL, ...account, fresh });
+export async function signIn(
+  page: Page,
+  account: TestAccount,
+  fresh = false,
+  panel = false,
+): Promise<void> {
+  await signInOnce(page, { baseUrl: PRODUCTION_URL, ...account, fresh, panel });
+  // On the panel the suite looks at the notice itself.
+  if (!panel) await closeUseNotice(page);
 }
 
 /** Details of a session created through the wizard. */
@@ -260,9 +268,12 @@ export async function answerAndRate(page: Page, how: 'hotkey' | 'chat'): Promise
     await box.fill('How much planning time did the pilot save per dispatcher?');
     await box.press('Enter');
   }
-  const headline = page.getByRole('heading', { name: 'Answer headline' });
-  // The headline shows "…" until the first words arrive.
-  await expect(headline).not.toHaveText('…', { timeout: 30_000 });
+  // The selected card: the answer just asked for (v1.0.4, ADR-0040).
+  const headline = page
+    .locator('article[aria-current="true"]')
+    .getByRole('heading', { name: 'Answer line' });
+  // The answer line shows "…" until the first words arrive.
+  await expect(headline).not.toContainText('…', { timeout: 30_000 });
   const good = page.getByRole('button', { name: 'Good answer' });
   // The rating buttons appear when the answer is complete.
   await expect(good).toBeVisible({ timeout: 60_000 });

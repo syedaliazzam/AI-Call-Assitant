@@ -106,7 +106,7 @@ export function MoveIcon(props: IconProps) {
 export function CollapseIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <path d="M6.5 2v4.5H2M9.5 2v4.5H14M6.5 14V9.5H2M9.5 14V9.5H14" />
+      <path d="M14 2 9.5 6.5M9.5 2.5v4h4M2 14l4.5-4.5M6.5 13.5v-4h-4" />
     </Icon>
   );
 }
@@ -121,7 +121,7 @@ export function CollapseIcon(props: IconProps) {
 export function ExpandIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" />
+      <path d="M9.5 6.5 14 2M10 2h4v4M6.5 9.5 2 14M6 14H2v-4" />
     </Icon>
   );
 }
@@ -636,6 +636,207 @@ export function CloseIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M4 4l8 8M12 4l-8 8" />
+    </Icon>
+  );
+}
+
+/**
+ * A minus sign (minimise a window, make something smaller).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/features/home/HomePanel.tsx, src/ui/PanelMenu.tsx
+ */
+export function MinusIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3.5 8h9" />
+    </Icon>
+  );
+}
+
+/**
+ * An arrow going round (reset to the default).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/PanelMenu.tsx
+ */
+export function ResetIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 8a5 5 0 1 0 1.6-3.7L3 5.8" />
+      <path d="M3 2.8v3h3" />
+    </Icon>
+  );
+}
+
+/**
+ * A sun (the light theme).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/PanelMenu.tsx
+ */
+export function SunIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="8" r="2.6" />
+      <path d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.6 3.6l1 1M11.4 11.4l1 1M12.4 3.6l-1 1M4.6 11.4l-1 1" />
+    </Icon>
+  );
+}
+
+/**
+ * A crescent moon (the dark theme).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/PanelMenu.tsx
+ */
+export function MoonIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M13.2 9.8A5.6 5.6 0 0 1 6.2 2.8a5.6 5.6 0 1 0 7 7Z" />
+    </Icon>
+  );
+}
+
+/**
+ * A circle half filled in (the theme follows the system).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/PanelMenu.tsx
+ */
+export function SystemThemeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 2.5v11a5.5 5.5 0 0 0 0-11Z" fill="currentColor" />
+    </Icon>
+  );
+}
+
+/**
+ * A small i in a circle (more information).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/PanelMenu.tsx
+ */
+export function InfoIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 7.4v3.2M8 5.2v.2" />
+    </Icon>
+  );
+}
+
+/**
+ * An arrow pointing out at the top right (opens elsewhere).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/features/home/HomePanel.tsx, src/ui/PanelMenu.tsx
+ */
+export function OutIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 11l6-6M6 5h5v5" />
+    </Icon>
+  );
+}
+
+/**
+ * Two arrows, up and down (sort).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/features/home/HomePanel.tsx
+ */
+export function SortIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M5 13V3M5 3 2.8 5.2M5 3l2.2 2.2M11 3v10M11 13l-2.2-2.2M11 13l2.2-2.2" />
+    </Icon>
+  );
+}
+
+/**
+ * A magnifying glass (search).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/features/home/HomePanel.tsx
+ */
+export function SearchIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="7" cy="7" r="4.2" />
+      <path d="m10.2 10.2 3.3 3.3" />
+    </Icon>
+  );
+}
+
+/**
+ * A door with an arrow leaving it (sign out).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/features/home/HomeMenu.tsx
+ */
+export function SignOutIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6.5 2.8H3.5v10.4h3M10 5.2 13 8l-3 2.8M13 8H6.5" />
+    </Icon>
+  );
+}
+
+/**
+ * A person's head and shoulders (the account).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/ui/PanelMenu.tsx
+ */
+export function PersonIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="5.4" r="2.6" />
+      <path d="M3 13.5c.5-2.6 2.5-4 5-4s4.500 1.400 5 4" />
+    </Icon>
+  );
+}
+
+/**
+ * A small arrow pointing down (a list opens here).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/features/live/overlay/*, src/ui/PanelMenu.tsx
+ */
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m4.5 6.5 3.500 3.500 3.500-3.500" />
+    </Icon>
+  );
+}
+
+/**
+ * A solid square (stop).
+ *
+ * @param props See IconProps.
+ * @returns The icon.
+ * Rendered by: src/features/live/overlay/AnswerCard.tsx
+ */
+export function StopIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4.500" y="4.500" width="7" height="7" rx="1" fill="currentColor" />
     </Icon>
   );
 }

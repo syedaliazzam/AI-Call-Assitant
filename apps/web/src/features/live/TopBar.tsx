@@ -5,22 +5,19 @@
  *          call timer, Back to compact, the ⋮ menu (Script bar, Answer preferences, Clear answers,
  *          Reset overlay size and position, End call) and End.
  * Used by: src/features/live/LiveAnswers.tsx
- * Depends on: src/ui (Menu, icons), @kite/shared (hotkeys), src/features/live/CompactView.tsx
- *             (shortKeys), src/features/live/useCallDictation.ts (CallDictation)
+ * Depends on: src/ui (Menu, icons), @kite/shared (hotkeys), src/features/live/overlay/parts.tsx
+ *             (shortKeys), src/features/live/callClock.ts, src/features/live/useCallDictation.ts
+ *             (CallDictation)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session); ADR-0040
  */
 'use client';
 
-import {
-  DEFAULT_GLOBAL_HOTKEYS,
-  FOCUSED_HOTKEYS,
-  hotkeyLabel,
-  type TargetChoice,
-} from '@kite/shared';
+import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel, type TargetChoice } from '@kite/shared';
 import { useEffect, useState, type ReactNode } from 'react';
 import { MenuIcon, MicIcon } from '@/ui/icons';
 import { Menu, type MenuItem } from '@/ui/Menu';
-import { shortKeys } from './CompactView';
+import { callClock } from './callClock';
+import { shortKeys } from './overlay/parts';
 import type { CallDictation } from './useCallDictation';
 
 /** Props for TopBar. */
@@ -83,20 +80,6 @@ function Keys({
 }
 
 /**
- * Writes a call time as m:ss, or h:mm:ss from one hour.
- *
- * @param seconds Whole seconds.
- * @returns For example "4:07".
- * Called from: TopBar; tests
- */
-export function callClock(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = String(seconds % 60).padStart(2, '0');
-  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
-}
-
-/**
  * The top bar.
  *
  * @param props See TopBarProps.
@@ -156,9 +139,9 @@ export function TopBar(props: TopBarProps) {
         className={BUTTON}
         onClick={props.onChat}
         disabled={props.ending}
-        title={`Type a question (${hotkeyLabel(FOCUSED_HOTKEYS.chat, mac)})`}
+        title={`Type a question (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.chat, mac)})`}
       >
-        Chat <Keys>{shortKeys(FOCUSED_HOTKEYS.chat, mac)}</Keys>
+        Chat <Keys>{shortKeys(DEFAULT_GLOBAL_HOTKEYS.chat, mac)}</Keys>
       </button>
       <span
         className="px-1.5 font-mono text-[14px] tabular-nums text-ui-text"

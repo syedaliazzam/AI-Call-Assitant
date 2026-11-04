@@ -1,8 +1,8 @@
 /**
  * File: apps/web/src/features/session-setup/DetailsStep.tsx
  * Purpose: Step 1 of the Create/Edit session wizard: session type, "Paste a job link", company,
- *          role or topic, job description, and the Resume and Documents pickers (from the
- *          libraries, with upload), with the room left against the session's character cap.
+ *          role or topic, contact name (v1.1.0), job description, and the Resume and Documents pickers
+ *          (from the libraries, with upload), with the room left against the session's character cap.
  * Used by: src/features/session-setup/SessionWizard.tsx
  * Depends on: src/ui (Input, Select, Textarea), src/core/documents/limits.ts, ./draft.ts,
  *             ./labels.ts, ./JobLinkField.tsx, ./LibraryPicker.tsx
@@ -108,6 +108,13 @@ export function DetailsStep({
           maxLength={200}
         />
       </div>
+      <Input
+        label="Contact name (optional)"
+        value={draft.contactName}
+        onChange={(event) => onChange({ contactName: event.target.value })}
+        hint="Shown on their lines in the live transcript. Empty: they show as Client 1."
+        maxLength={100}
+      />
       <Textarea
         label={aboutJob ? 'Job description (optional)' : 'Description (optional)'}
         value={draft.description}

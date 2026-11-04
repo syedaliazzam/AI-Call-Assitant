@@ -27,6 +27,13 @@
 | 2.2 | For the other side, Kite asks to record the screen and system audio. | macOS asks for **Screen & System Audio Recording** permission, with Kite's reason. Allow it in System Settings, then quit and reopen Kite if macOS asks. |
 | 2.3 | Click **Connect** again. | Both meters (You and Them) move when you speak and when the video plays. |
 
+## 2b. Home panel (v1.1.0, 1 min)
+
+| # | Do | Expect |
+|---|---|---|
+| 2b.1 | Open Kite. | A small panel opens first, with your sessions. **⋮** has Zoom, Theme and Private. Kite is in the Dock. |
+| 2b.2 | Click the Dock icon with the panel closed. | The panel comes back. |
+
 ## 3. Live call (4 min)
 
 | # | Do | Expect |
@@ -35,6 +42,14 @@
 | 3.2 | Press **Answer** (or **⌘+Enter**). | An answer streams within about 2 seconds. |
 | 3.3 | Click into another app (Notes), then press **⌘+Enter**. | Kite answers; Notes keeps focus. |
 | 3.4 | Press **Compact view**. | A small window floats above other apps. |
+
+### During the call (v1.1.0)
+
+| # | Do | Expect |
+|---|---|---|
+| 3b.1 | Look at the bars, then open both panels. | The window fits them and grows downward. The background is see-through. |
+| 3b.2 | Drag the bars by the move handle, and let go on a place along the top. | Three places light up while you drag; **macOS reports a move throughout a drag**, so the bars snap a moment after you let go. Note if this feels wrong. |
+| 3b.3 | **⌘+Shift+Space**. | Chat opens with the keyboard. |
 
 ## 4. Screen-share protection (3 min)
 

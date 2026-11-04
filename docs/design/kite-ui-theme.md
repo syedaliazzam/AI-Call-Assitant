@@ -11,10 +11,11 @@ Neutral greys, one blue accent for links and focus, Inter, soft radii, thin bord
 | Screen | Theme | Why |
 |---|---|---|
 | Dashboard, wizard, libraries, Ask Kite, Prepare, settings, admin, review, sidebar | **Light** | The working pages |
+| Home panel, overlay, call window (v1.1.0) | **The one Theme setting**: Light, Dark or System (the default) | They sit beside a meeting, so they follow what the person chose |
 | Sign-in | Dark panel beside a light form card | Same layout as before, in neutral colours |
-| Live call and Connect views | **Dark** | Low glare during calls |
-| Overlay in the desktop app | **See-through** (`k-glass`) | Sits on top of the meeting |
-| Overlay in browser picture-in-picture | **Solid dark** | Nothing can show through this window |
+| Connect view | **Dark** | Low glare during calls |
+| Overlay in the desktop app | **See-through** (`k-glass`), in either theme | Sits on top of the meeting |
+| Overlay in browser picture-in-picture | **Solid**, in either theme | Nothing can show through this window |
 
 ## 3. Tokens
 All values are in `apps/web/src/ui/theme.css`, the only file allowed to contain colours.
@@ -102,7 +103,8 @@ Two sizes sit outside this scale on purpose: overlay answers stay at 16 to 18 px
 - **Upload:** a button opens a drag-and-drop window. Files can also be dropped on the row.
 - **Wizard step 2:** rows with icons: Language, Model (Fast or Accurate; stored as `fast` and `smart`), Answer preferences (Configure), AI instructions (Add or Edit). Then Extra: Auto-answer (beta), Save transcript with a consent note, and key terms.
 - **Answer preferences:** two panes: choices on the left, preview on the right; stacked on a phone.
-- **Overlay:** one rounded panel with three bars split by thin lines. See ADR-0031 for how the blur works on each system.
+- **Overlay (v1.1.0, ADR-0041):** slim bars with panels under them, each its own rounded piece of glass with a small gap between. See ADR-0031 for how the blur works on each system. Text on light glass reaches 4.5:1 over a black background at the default opacity (`--k-glass-light-*`).
+- **Home panel (v1.1.0):** header, search and sort, session cards (date, title, description, chips, status, action), two buttons at the bottom. The menus (`ui/PanelMenu.tsx`) stay inside their window, with no native select.
 - **Empty states:** a headline, one line, one primary button.
 
 ## 7. Brand assets

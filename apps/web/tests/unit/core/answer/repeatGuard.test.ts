@@ -112,3 +112,21 @@ describe('sameSpeech', () => {
     expect(sameSpeech({ start: 0, end: 200 }, answered)).toBe(false);
   });
 });
+
+describe('createRepeatGuard: looking back (v1.1.0, ADR-0043)', () => {
+  it('shows the answer that exists, however long ago, when Answer went back to a question', () => {
+    const guard = createRepeatGuard();
+    const span = { start: 1_000, end: 2_000 };
+    expect(guard.decide({ question: QUESTION, streaming: false, now: 5_000, span }).kind).toBe(
+      'answer',
+    );
+    guard.remember(span, 'a1', 5_000);
+    const later = 5_000 + 60 * 60_000;
+    expect(guard.decide({ question: QUESTION, streaming: false, now: later, span }).kind).toBe(
+      'answer',
+    );
+    expect(
+      guard.decide({ question: QUESTION, streaming: false, now: later, span, lookedBack: true }),
+    ).toEqual({ kind: 'show', answerId: 'a1' });
+  });
+});

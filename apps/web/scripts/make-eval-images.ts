@@ -1,8 +1,10 @@
 /**
  * File: apps/web/scripts/make-eval-images.ts
  * Purpose: Draws the invented screenshots used by the answer evaluation's screenshot scenarios
- *          (tests/eval/scenarios/16–18) and saves them as JPEGs in tests/eval/images/: a slide
- *          with numbers, a code snippet with a bug, and a pricing table. Each is an invented HTML
+ *          (tests/eval/scenarios/16–18, and v1.1.0's screenshot-types group) and saves them as JPEGs in
+ *          tests/eval/images/: a slide with numbers, a code snippet with a bug, a pricing table, a
+ *          coding problem, a Python error, a chart, a document, a web page and an unreadable screen.
+ *          Each is an invented HTML
  *          page rendered by Playwright's Chromium at 1,280 × 720 (under the 1,568 px limit), so
  *          the images are reproducible and contain no real company, person or customer.
  *          Usage: pnpm --filter web exec tsx scripts/make-eval-images.ts
@@ -61,6 +63,54 @@ export function cartTotal(items: { price: number }[]): number {
 <tr><td>Professional</td><td>52 dollars / seat / month</td><td>any</td><td>Yes</td></tr>
 <tr><td>Enterprise</td><td>custom</td><td>200 or more</td><td>Yes</td></tr></table>
 <p class="note">Billed yearly · onboarding 1,500 dollars one-time</p></div>`,
+  },
+  // v1.1.0 (ADR-0043): the screenshot-types group.
+  {
+    name: 'coding-problem.jpg',
+    html: `${STYLE}<div class="slide"><h1>Practice problem: Count Vowels</h1>
+<p>Write a function <b>count_vowels(text)</b> that returns how many vowels (a, e, i, o, u, in either
+case) a string has.</p><pre>count_vowels("Harbor")  # 2
+count_vowels("sky")     # 0
+count_vowels("AEIOU")   # 5</pre><p class="note">Easy · strings</p></div>`,
+  },
+  {
+    name: 'code-error.jpg',
+    html: `${STYLE}<div class="slide"><h1>report.py</h1><pre>
+def average(values):
+    return sum(values) / len(values)
+
+print(average([]))</pre><pre style="background:#450a0a">Traceback (most recent call last):
+  File "report.py", line 4, in &lt;module&gt;
+ZeroDivisionError: division by zero</pre></div>`,
+  },
+  {
+    name: 'chart-bars.jpg',
+    html: `${STYLE}<div class="slide"><h1>Support tickets per week</h1>
+<div style="display:flex;gap:48px;align-items:flex-end;height:330px;font-size:24px">
+<div style="text-align:center">420<div style="background:#2563eb;width:110px;height:252px"></div>Week 1</div>
+<div style="text-align:center">310<div style="background:#2563eb;width:110px;height:186px"></div>Week 2</div>
+<div style="text-align:center">180<div style="background:#2563eb;width:110px;height:108px"></div>Week 3</div>
+<div style="text-align:center">95<div style="background:#2563eb;width:110px;height:57px"></div>Week 4</div>
+</div></div>`,
+  },
+  {
+    name: 'document-terms.jpg',
+    html: `${STYLE}<div class="slide"><h1>Service agreement, section 4</h1>
+<p><b>4.1 Notice.</b> Either side may end this agreement with 60 days' written notice.</p>
+<p><b>4.2 Refunds.</b> Fees paid in advance are refunded for any full months left after the notice ends.</p>
+<p><b>4.3 Data.</b> Customer data is deleted within 30 days after the agreement ends.</p></div>`,
+  },
+  {
+    name: 'web-page.jpg',
+    html: `${STYLE}<div style="background:#e2e8f0;padding:10px 24px;font-size:20px">https://status.example/route-planning</div>
+<div class="slide"><h1>Route planning service status</h1>
+<p style="color:#b91c1c"><b>Partial outage:</b> route planning is delayed in the EU region.</p>
+<p>Started 09:40 UTC. Live tracking and billing are not affected. Next update at 11:00 UTC.</p></div>`,
+  },
+  {
+    name: 'unreadable.jpg',
+    html: `${STYLE}<div class="slide" style="filter:blur(26px)"><h1>Quarterly numbers</h1>
+<ul><li>First figure 1,284</li><li>Second figure 937</li><li>Third figure 2,410</li></ul></div>`,
   },
 ];
 

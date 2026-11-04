@@ -75,6 +75,8 @@ export interface CallCaptureOptions {
   engine: Pick<SttEngine, 'attach' | 'detach'>;
   /** The platform (default getPlatform()). */
   platform?: Pick<Platform, 'getMicStream' | 'getOtherSideStream'>;
+  /** The microphone to open (v1.1.0); the system's default when absent. */
+  micDeviceId?: string;
   /** Meter levels, about every LEVEL_INTERVAL_MS. */
   onLevels?: (levels: ChannelLevels) => void;
   /** Channel events (a channel ended). */
@@ -111,6 +113,22 @@ export interface CallCapture {
    * @returns The new other-side source.
    */
   changeOtherSide(): Promise<OtherSideSource>;
+  /**
+   * Switches the microphone without ending the call (v1.1.0, the overlay's device list): swaps the
+   * "You" stream on the engine and the meter, and stops the old one. "Them" is not touched.
+   *
+   * @param deviceId The device's id ('' for the system's default).
+   * @throws CallCaptureError when that microphone cannot be opened; the current one keeps running.
+   */
+  changeMic(deviceId: string): Promise<void>;
+  /**
+   * Stops listening without ending the call (v1.1.0, ADR-0044: nobody spoke for 30 minutes): the
+   * speech engine gets no audio, while the streams stay open, so resume() needs no new permission and
+   * no new share.
+   */
+  pause(): void;
+  /** Listens again after pause(). */
+  resume(): Promise<void>;
   /** Stops both channels, the meters and every captured track. */
   stop(): void;
 }
@@ -186,7 +204,9 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
   // 2. The microphone.
   let mic: MediaStream;
   try {
-    mic = await platform.getMicStream();
+    mic = await (options.micDeviceId
+      ? platform.getMicStream(options.micDeviceId)
+      : platform.getMicStream());
   } catch (error) {
     for (const track of them.stream.getTracks()) track.stop();
     throw micError(error);
@@ -309,6 +329,34 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
       await engine.attach('them', next.stream);
       for (const track of old.getTracks()) track.stop();
       return next.source;
+    },
+    async changeMic(deviceId) {
+      if (stopped) return;
+      let next: MediaStream;
+      try {
+        next = await (deviceId ? platform.getMicStream(deviceId) : platform.getMicStream());
+      } catch (error) {
+        throw micError(error);
+      }
+      const old = streams.you;
+      streams.you = next;
+      ended.delete('you');
+      meters.you.source.disconnect();
+      meters.you.source = context.createMediaStreamSource(next);
+      meters.you.source.connect(meters.you.analyser);
+      meters.you.smoother = new LevelSmoother();
+      watchEnds('you');
+      // attach() replaces the channel's current stream in the engine.
+      await engine.attach('you', next);
+      for (const track of old.getTracks()) track.stop();
+    },
+    pause() {
+      for (const channel of ['them', 'you'] as const) engine.detach(channel);
+    },
+    async resume() {
+      for (const channel of ['them', 'you'] as const) {
+        if (!stopped && !ended.has(channel)) await engine.attach(channel, streams[channel]);
+      }
     },
     stop: release,
   };

@@ -1,7 +1,8 @@
 /**
  * Production latency measurement (day-04-answers.md Stage 11), as the admin test account
  * (KITE_E2E_ADMIN_*): opens /dev/latency on https://kite-call-assistant.vercel.app in Chrome
- * (Playwright's Chromium) and in the desktop app (the real Electron shell, fresh profile), runs
+ * (Playwright's Chromium) and in the desktop app (the real Electron shell, fresh profile, with
+ * the page in the main window: the home panel keeps to its own pages since v1.1.0), runs
  * the 20 answers there (the real client path), and prints p50/p95 for key press → request sent
  * → first word → headline → done, and the cache hits. Manual run only (never in CI); numbers
  * only. Run it alone with: pnpm --filter web test:e2e-prod latency.spec.ts
@@ -54,9 +55,30 @@ interface Summary {
  */
 async function measure(page: Page, label: string): Promise<Summary> {
   await signIn(page, testAccount('admin'));
+  await runLatencyPage(page);
+  return summarise(page, label);
+}
+
+/**
+ * Starts the 20 answers.
+ *
+ * @param page A signed-in page in a normal window.
+ * @returns When they are done.
+ */
+async function runLatencyPage(page: Page): Promise<void> {
   await page.goto(`${PRODUCTION_URL}/dev/latency`);
   await page.getByRole('button', { name: 'Run 20 answers' }).click();
   await expect(page.getByText('Done: 20 answers.')).toBeVisible({ timeout: 300_000 });
+}
+
+/**
+ * Reads and reports the summary.
+ *
+ * @param page  The page that ran them.
+ * @param label 'chrome' or 'desktop', for the report.
+ * @returns The summary.
+ */
+async function summarise(page: Page, label: string): Promise<Summary> {
   const text = (await page.getByLabel('Latency results').textContent()) ?? '';
   const { summary } = JSON.parse(text) as { summary: Summary };
   report(`${label} latency (20 answers)`, summary.count === 20, {
@@ -75,6 +97,32 @@ async function measure(page: Page, label: string): Promise<Summary> {
   return summary;
 }
 
+/**
+ * In the page: whether the shell has the home panel (1.1.0 or later).
+ *
+ * @returns True when it has.
+ */
+function shellHasPanel(): boolean {
+  return 'openPagesWindow' in ((window as unknown as { kiteDesktop?: object }).kiteDesktop ?? {});
+}
+
+/**
+ * In the page: opens the main window through the shell.
+ *
+ * @returns Nothing.
+ */
+function openMainWindow(): void {
+  (
+    window as unknown as {
+      /** The desktop bridge. */
+      kiteDesktop: {
+        /** Opens a page in the main window. */
+        openPagesWindow: (path: string) => void;
+      };
+    }
+  ).kiteDesktop.openPagesWindow('/');
+}
+
 test('Chrome: 20 answers on /dev/latency', async () => {
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   try {
@@ -88,13 +136,31 @@ test('Chrome: 20 answers on /dev/latency', async () => {
 test('Desktop app: 20 answers on /dev/latency', async () => {
   const profile = mkdtempSync(path.join(tmpdir(), 'kite-e2e-latency-'));
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
+  // KITE_INSTALLED_EXE: an installed Kite.exe, to measure a release as its users have it.
+  const installed = process.env.KITE_INSTALLED_EXE;
   const app = await electron.launch({
-    executablePath: ELECTRON_PATH,
-    args: [`--user-data-dir=${profile}`, DESKTOP_DIR],
-    env: { ...parentEnv, KITE_URL: `${PRODUCTION_URL}/` },
+    executablePath: installed ?? ELECTRON_PATH,
+    args: installed ? [`--user-data-dir=${profile}`] : [`--user-data-dir=${profile}`, DESKTOP_DIR],
+    env: { ...parentEnv, KITE_URL: `${PRODUCTION_URL}/`, KITE_NO_UPDATE_CHECK: '1' },
   });
   try {
-    const summary = await measure(await app.firstWindow(), 'desktop');
+    // v1.1.0: the app starts on the home panel, which keeps to its own pages, so the answers run in
+    // the main window, as a call does. A shell before 1.1.0 opens the main window first.
+    const first = await app.firstWindow();
+    await first.waitForLoadState();
+    const hasPanel = await first.evaluate(shellHasPanel);
+    let page = first;
+    if (hasPanel) {
+      await signIn(first, testAccount('admin'), true, true);
+      const opened = app.waitForEvent('window');
+      await first.evaluate(openMainWindow);
+      page = await opened;
+      await page.waitForLoadState();
+    } else {
+      await signIn(first, testAccount('admin'));
+    }
+    await runLatencyPage(page);
+    const summary = await summarise(page, 'desktop');
     expect(summary.count).toBe(20);
   } finally {
     await app.close();

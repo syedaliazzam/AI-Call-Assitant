@@ -4,14 +4,16 @@
  */
 import { DEFAULT_GLOBAL_HOTKEYS, FOCUSED_HOTKEYS } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
-import { shortKeys } from '@/features/live/CompactView';
+import { shortKeys } from '@/features/live/overlay/parts';
 
 describe('shortKeys', () => {
   it('writes Answer, Screenshot and Chat as Ctrl↵, Ctrl⇧↵ and Ctrl⇧⌫ (⌘↵… on a Mac)', () => {
     expect(shortKeys(DEFAULT_GLOBAL_HOTKEYS.answer, false)).toBe('Ctrl↵');
     expect(shortKeys(DEFAULT_GLOBAL_HOTKEYS.screenshot, false)).toBe('Ctrl⇧↵');
-    expect(shortKeys(FOCUSED_HOTKEYS.chat, false)).toBe('Ctrl⇧⌫');
+    expect(shortKeys(DEFAULT_GLOBAL_HOTKEYS.chat, false)).toBe('Ctrl⇧␣');
+    expect(shortKeys(FOCUSED_HOTKEYS['clear-transcript'], false)).toBe('Ctrl⇧⌫');
     expect(shortKeys(DEFAULT_GLOBAL_HOTKEYS.answer, true)).toBe('⌘↵');
-    expect(shortKeys(FOCUSED_HOTKEYS.chat, true)).toBe('⌘⇧⌫');
+    expect(shortKeys(DEFAULT_GLOBAL_HOTKEYS.chat, true)).toBe('⌘⇧␣');
+    expect(shortKeys(FOCUSED_HOTKEYS['clear-transcript'], true)).toBe('⌘⇧⌫');
   });
 });

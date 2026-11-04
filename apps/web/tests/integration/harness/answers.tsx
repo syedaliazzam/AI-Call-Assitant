@@ -32,6 +32,8 @@ export interface KiteAnswerHarness {
   saved: () => Promise<{ mode: string; rating: string | null; note: string }[]>;
   /** Deletes the harness session and everything stored for it. */
   deleteSession: () => Promise<void>;
+  /** Adds a finished "Them" line that ended just now (new speech, so Answer is not a repeat). */
+  addThem: (text: string) => void;
 }
 
 declare global {
@@ -93,6 +95,10 @@ window.kiteAnswerHarness = {
     (await listAnswers(SESSION.id)).map(({ mode, rating, note }) => ({ mode, rating, note })),
   deleteSession: async () => {
     await deleteSession(SESSION.id);
+  },
+  addThem: (text) => {
+    const now = Date.now();
+    transcript.addFinal({ speaker: 'them', text, tStart: now - 1_500, tEnd: now });
   },
 };
 
