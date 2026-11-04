@@ -282,10 +282,8 @@ async function main(): Promise<void> {
   await say(split, 'them', 'THANKS FOR JOINING LET US START');
   await say(split, 'you', 'SOUNDS GOOD I AM READY WHEN YOU ARE');
   await say(split, 'them', 'HOW WOULD YOU DESIGN A VOICE AGENT FOR A HOSPITAL');
-  await split
-    .getByRole('button', { name: /^Answer/ })
-    .first()
-    .click();
+  // Not "Answer this" on a bubble: the transcript now comes first on this page.
+  await split.getByRole('button', { name: /^Answer(?! this)/ }).click();
   await split.waitForTimeout(2_500);
   await shot(split, 'browser-split');
   await split.getByRole('button', { name: 'More' }).click();

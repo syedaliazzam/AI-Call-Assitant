@@ -819,6 +819,7 @@ export function LivePage({
       health={health}
       terms={terms}
       themName={session.contactName}
+      flush={platform === 'browser'}
       {...(answerBridge
         ? {
             onAnswerThis: (group: TranscriptGroup) =>
@@ -845,6 +846,7 @@ export function LivePage({
         dictation={dictation}
         onAnswerThis={setAnswerBridge}
         topBarSlot={topBarSlot}
+        slimTopBar={platform === 'browser'}
         levels={levels}
         transcriptClearedAt={transcriptClearedAt}
         onClearTranscript={clearTranscriptNow}

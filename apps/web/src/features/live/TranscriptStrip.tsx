@@ -46,6 +46,8 @@ export interface TranscriptStripProps {
   answeredSpans?: readonly SpeechSpan[];
   /** The name on the other person's bubbles ("Client 1" when the session has none). */
   themName?: string | undefined;
+  /** True for the browser call view: no card around the lines, they sit on the page. */
+  flush?: boolean;
 }
 
 /** No terms: one shared empty list, so the memoised grouping is not redone on every render. */
@@ -65,6 +67,7 @@ export const TranscriptStrip = memo(function TranscriptStrip({
   onAnswerThis,
   answeredSpans,
   themName,
+  flush = false,
 }: TranscriptStripProps) {
   const groups = useMemo(() => groupLines(lines, { terms }), [lines, terms]);
   const { fontScale } = useAppearance(false);
@@ -83,7 +86,9 @@ export const TranscriptStrip = memo(function TranscriptStrip({
         <div
           ref={ref}
           onScroll={onScroll}
-          className="h-full overflow-y-auto border border-ui-border rounded-card bg-ui-surface shadow-card p-4 sm:p-5"
+          // Flush on the light theme: the other person's bubbles are the page's colour, so they need
+          // the card's colour behind them to show.
+          className={`h-full overflow-y-auto p-4 sm:p-5 ${flush ? '[.k-light_&]:bg-ui-surface' : 'border border-ui-border rounded-card bg-ui-surface shadow-card'}`}
           aria-live="polite"
           aria-label="Live transcript"
         >

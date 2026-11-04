@@ -263,7 +263,9 @@ export async function answerAndRate(page: Page, how: 'hotkey' | 'chat'): Promise
     await page.locator('body').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('Control+Enter');
   } else {
-    await page.getByRole('button', { name: 'Chat' }).click();
+    // The browser's call view has no Chat button: its message box is always there.
+    const chat = page.getByRole('button', { name: 'Chat' });
+    if ((await chat.count()) > 0) await chat.click();
     const box = page.getByLabel('Type a question');
     await box.fill('How much planning time did the pilot save per dispatcher?');
     await box.press('Enter');

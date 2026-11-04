@@ -48,6 +48,11 @@ export interface TopBarProps {
   dictation?: CallDictation | undefined;
   /** Who a dictated question is for. */
   target: TargetChoice;
+  /**
+   * True for the browser call view: only the timer, ⋮ and End. The other controls are already there:
+   * the big Answer and Screenshot buttons, the message box with its microphone, and Minimize.
+   */
+  slim?: boolean | undefined;
 }
 
 /** A button in the bar: its normal size and focus ring; the caller adds its colours. */
@@ -94,7 +99,30 @@ export function TopBar(props: TopBarProps) {
     return () => clearInterval(timer);
   }, []);
   const elapsed = Math.max(0, Math.floor((nowMs - props.callStartedAt) / 1_000));
-  const { dictation, mac } = props;
+  const { dictation, mac, slim } = props;
+
+  if (slim) {
+    return (
+      <div role="toolbar" aria-label="Call controls" className="flex items-center gap-2">
+        <span
+          className="inline-flex h-8 items-center rounded-control border border-ui-border bg-ui-surface px-3 font-mono text-[14px] tabular-nums text-ui-text"
+          aria-label="Call time"
+          role="timer"
+        >
+          {callClock(elapsed)}
+        </span>
+        <Menu label={<MenuIcon />} ariaLabel="More" variant="ghost" items={props.menu} />
+        <button
+          type="button"
+          className={`${BUTTON_BASE} bg-ui-end text-ui-on-end hover:opacity-90`}
+          onClick={props.onEnd}
+          disabled={props.ending}
+        >
+          {props.ending ? 'Ending…' : 'End'}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div role="toolbar" aria-label="Call controls" className="flex flex-wrap items-center gap-1.5">

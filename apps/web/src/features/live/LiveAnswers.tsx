@@ -111,6 +111,8 @@ export interface LiveAnswersProps {
    * at the top of this panel.
    */
   topBarSlot?: HTMLElement | null;
+  /** True for the browser call view: the top bar shows only the timer, ⋮ and End (TopBar `slim`). */
+  slimTopBar?: boolean;
   /** v1.1.0: the audio levels, for the overlay's level bars. */
   levels?: CompactLevels;
   /** v1.1.0: lines that started before this time are off the overlay too (Unix ms; 0: none). */
@@ -692,6 +694,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       onBack={backToCompact}
       dictation={dictation?.supported ? dictation : undefined}
       target={chatTarget}
+      slim={props.slimTopBar}
     />
   );
 

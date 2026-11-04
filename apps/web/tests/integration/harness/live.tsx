@@ -175,13 +175,37 @@ function LiveView() {
 }
 
 /**
+ * A moving picture as a stream, in place of a shared tab: 1920 × 950, about what a browser tab
+ * measures.
+ *
+ * @returns The stream, with one video track.
+ */
+function fakeTabStream(): MediaStream {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1920;
+  canvas.height = 950;
+  const context = canvas.getContext('2d')!;
+  let frame = 0;
+  // A stream only carries frames while the canvas keeps changing.
+  setInterval(() => {
+    frame += 1;
+    context.fillStyle = frame % 2 ? '#334155' : '#475569';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }, 100);
+  return canvas.captureStream(10);
+}
+
+/**
  * The browser split call view (live-ui-split): the shared-tab preview and transcript on the left,
- * the answers on the right. The preview has no real stream in the harness, so it shows its
- * placeholder; the control strip and the layout are what the screenshots check.
+ * the answers on the right. With ?novideo the preview has no stream and shows its placeholder.
  *
  * @returns The view.
  */
 function SplitView() {
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  const [stream] = useState(() =>
+    new URLSearchParams(window.location.search).has('novideo') ? null : fakeTabStream(),
+  );
   return (
     <AppShell>
       <BrowserCallLayout
@@ -197,8 +221,9 @@ function SplitView() {
             compact
           />
         ))}
+        topBarSlot={setSlot}
         preview={{
-          stream: null,
+          stream,
           themLabel: "the shared tab's audio",
           micOn: true,
           language: 'en',
@@ -208,7 +233,7 @@ function SplitView() {
           onMinimize: () => undefined,
           onChangeTab: () => undefined,
         }}
-        transcript={<TranscriptStrip lines={transcript.lines()} health="ok" />}
+        transcript={<TranscriptStrip lines={transcript.lines()} health="ok" flush />}
         answers={
           <LiveAnswers
             session={SESSION}
@@ -218,6 +243,8 @@ function SplitView() {
             ending={false}
             onEnd={() => undefined}
             copy={async () => undefined}
+            topBarSlot={slot}
+            slimTopBar
           />
         }
       />

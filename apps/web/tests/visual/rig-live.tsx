@@ -134,6 +134,33 @@ export interface RigControls {
 };
 
 /**
+ * An invented meeting as a stream, in place of a shared tab: 1920 × 950, about what a tab measures.
+ *
+ * @returns The stream, with one video track.
+ */
+function inventedTabStream(): MediaStream {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1920;
+  canvas.height = 950;
+  const context = canvas.getContext('2d')!;
+  // A stream only carries frames while the canvas keeps changing: the dot moves.
+  let frame = 0;
+  setInterval(() => {
+    frame += 1;
+    context.fillStyle = '#f8fafc';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#0f172a';
+    context.font = '600 64px sans-serif';
+    context.fillText('Northwind Robotics: route planning', 120, 400);
+    context.font = '40px sans-serif';
+    context.fillText('Invented slide, in place of a shared tab', 120, 480);
+    context.fillStyle = '#2563eb';
+    context.fillRect(120 + (frame % 40), 540, 16, 16);
+  }, 100);
+  return canvas.captureStream(10);
+}
+
+/**
  * The call screen, wired as LivePage wires it.
  *
  * @returns The screen.
@@ -147,6 +174,9 @@ function CallRig() {
   const terms = useMemo(() => displayTerms(SESSION), []);
   const [bridge, setBridge] = useState<AnswerThisBridge | null>(null);
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  const browserLayout = new URLSearchParams(window.location.search).get('layout') === 'browser';
+  // Only the browser's call view shows a shared tab.
+  const [tabStream] = useState(() => (browserLayout ? inventedTabStream() : null));
   // Dictation's state only: the rig has no speech engine, so nothing is ever heard.
   const [listening, setListening] = useState(false);
   const setOnText = useCallback(() => undefined, []);
@@ -175,6 +205,7 @@ function CallRig() {
       lines={lines}
       health="ok"
       terms={terms}
+      flush={browserLayout}
       {...(bridge
         ? {
             onAnswerThis: (group: TranscriptGroup) =>
@@ -204,10 +235,11 @@ function CallRig() {
       onAnswerThis={setBridge}
       dictation={dictation}
       topBarSlot={slot}
+      slimTopBar={browserLayout}
     />
   );
   // ?layout=browser: the browser's call view around the same transcript and answers.
-  if (new URLSearchParams(window.location.search).get('layout') === 'browser') {
+  if (browserLayout) {
     return (
       <BrowserCallLayout
         title="Interview call"
@@ -216,7 +248,7 @@ function CallRig() {
         meters={meters}
         topBarSlot={setSlot}
         preview={{
-          stream: null,
+          stream: tabStream,
           themLabel: 'the shared tab',
           micOn: true,
           language: 'en',
