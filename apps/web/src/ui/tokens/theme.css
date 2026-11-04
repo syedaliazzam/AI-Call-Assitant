@@ -40,6 +40,15 @@
   --k-accent-hover: #1d4ed8;
   --k-accent-tint: rgba(37, 99, 235, 0.12); /* the plus tile in the sidebar */
   --k-control-strong: #e4e4e7; /* a ghost button's hover, a toggle that is off */
+  /* The session card's letter tiles, chosen by a hash of the name, with white letters. */
+  --k-tile-0: #1d4ed8;
+  --k-tile-1: #6d28d9;
+  --k-tile-2: #be185d;
+  --k-tile-3: #0e7490;
+  --k-tile-4: #15803d;
+  --k-tile-5: #b45309;
+  --k-tile-6: #be123c;
+  --k-tile-7: #4338ca;
   --k-dot-ended: #a1a1aa; /* the Ended status dot */
   --k-dot-recording: #ef4444; /* the Live status dot and the red recording dots */
   --k-success: #16a34a; /* dots and icons only */

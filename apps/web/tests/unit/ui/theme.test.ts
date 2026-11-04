@@ -349,6 +349,14 @@ describe('contrast of the theme tokens', () => {
     ).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('white letters are at least 4.5:1 on every letter tile', () => {
+    for (let tile = 0; tile < 8; tile += 1) {
+      expect(contrast(WHITE, resolve(`--k-tile-${tile}`)), `tile ${tile}`).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    }
+  });
+
   it('the focus ring is at least 3:1 on the surfaces around it', () => {
     expect(contrast(resolve('--k-accent'), WHITE)).toBeGreaterThanOrEqual(3);
     expect(contrast(resolve('--k-accent'), resolve('--k-page'))).toBeGreaterThanOrEqual(3);

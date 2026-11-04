@@ -1,9 +1,9 @@
 /**
  * Harness test for session setup (parity Phase 2, ADR-0029), no sign-in, runs in CI. With the real
  * Dashboard, SessionWizard and LibraryPage on the browser's real IndexedDB, and /api/job-import and
- * /api/preview mocked (no Claude call), it covers: the dashboard's tabs with counts, search, sort,
- * grid or list, the session card's chips and menu (rename, duplicate, delete), and Create session's
- * menu of types; the job link filling in details, saying what was imported, and failing kindly;
+ * /api/preview mocked (no Claude call), it covers: the sessions page's tabs, count, Active and Past
+ * sections, search, sort, grid or list and empty state, the session card's shape, chips and menu (rename,
+ * duplicate, delete), and the split button's types; the job link filling in details, saying what was imported, and failing kindly;
  * the Resume and Documents pickers with upload; a session keeping its copy when a library item is
  * deleted; the Answer preferences window with a preview asked for once and kept, and Set as
  * default; language and AI instructions.
@@ -26,7 +26,6 @@ import {
 import type { AnswerPreviewRequest } from '@kite/shared';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
-import { pickOption } from '../lib/pick-option';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -173,7 +172,7 @@ async function seedDashboard(): Promise<void> {
     await h.seedSession('mock', 'Zephyr Labs (invented)', 'Data Analyst', 1_000, 'ended');
   });
   await go('/');
-  await expect(page.getByRole('heading', { name: 'Alder Foods (invented)' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Renewal review' })).toBeVisible();
 }
 
 /**
@@ -185,24 +184,46 @@ function titles() {
   return page.getByRole('heading', { level: 2 }).allTextContents();
 }
 
-test('dashboard: tabs with counts, search, sort, and grid or list', async () => {
-  await seedDashboard();
-  const tabs = page.getByRole('group', { name: 'Session type' }).or(page.getByRole('tablist'));
-  await expect(tabs.first()).toContainText('All (3)');
-  await expect(tabs.first()).toContainText('Interview (1)');
-  await expect(tabs.first()).toContainText('Regular (1)');
-  await expect(tabs.first()).toContainText('Mock (1)');
-  await shots('dashboard-list');
+/**
+ * Chooses a sort order.
+ *
+ * @param name The order's words.
+ */
+async function sortBy(name: string): Promise<void> {
+  await page.getByRole('button', { name: 'Sort' }).click();
+  await page.getByRole('menuitemradio', { name }).click();
+}
 
+test('sessions page: tabs, the count, sections, search, sort, and grid or list', async () => {
+  await seedDashboard();
+  const tabs = page.getByRole('group', { name: 'Session type' });
+  await expect(tabs.getByRole('button')).toHaveText(['All', 'Interview', 'Regular', 'Mock']);
+  await expect(page.getByText('3 Sessions')).toBeVisible();
+  await shots('dashboard-grid');
+
+  // Active sessions first, each section newest first, with its count.
+  const activeSection = page.getByRole('region', { name: 'Active sessions' });
+  const pastSection = page.getByRole('region', { name: 'Past sessions' });
+  await expect(activeSection.getByRole('button', { name: 'Active sessions' })).toContainText('2');
+  await expect(pastSection.getByRole('button', { name: 'Past sessions' })).toContainText('1');
   expect(await titles()).toEqual([
-    'Alder Foods (invented)',
+    'Renewal review',
     'Lantern Freight (invented)',
     'Zephyr Labs (invented)',
   ]);
-  await pickOption(page, page.getByLabel('Sort'), 'Oldest first');
-  expect((await titles())[0]).toBe('Zephyr Labs (invented)');
-  await pickOption(page, page.getByLabel('Sort'), 'Company A–Z');
-  expect((await titles())[0]).toBe('Alder Foods (invented)');
+  await sortBy('Oldest first');
+  expect((await titles())[0]).toBe('Lantern Freight (invented)');
+  await sortBy('A–Z');
+  expect(await titles()).toEqual([
+    'Renewal review',
+    'Lantern Freight (invented)',
+    'Zephyr Labs (invented)',
+  ]);
+
+  // A section collapses.
+  await pastSection.getByRole('button', { name: 'Past sessions' }).click();
+  await expect(page.getByRole('heading', { name: 'Zephyr Labs (invented)' })).toHaveCount(0);
+  await pastSection.getByRole('button', { name: 'Past sessions' }).click();
 
   await page.getByLabel('Search sessions').fill('analyst');
   await expect(page.getByRole('heading', { level: 2 })).toHaveCount(2);
@@ -210,18 +231,28 @@ test('dashboard: tabs with counts, search, sort, and grid or list', async () => 
   await expect(page.getByText('No sessions match')).toBeVisible();
   await page.getByLabel('Search sessions').fill('');
 
-  await page.getByText('Mock (1)').click();
+  await tabs.getByRole('button', { name: 'Mock' }).click();
   await expect(page.getByRole('heading', { level: 2 })).toHaveCount(1);
-  await page.getByText('All (3)').click();
+  await expect(page.getByText('1 Session', { exact: true })).toBeVisible();
+  await tabs.getByRole('button', { name: 'All' }).click();
 
-  await page.getByRole('radio', { name: 'Grid' }).click();
+  // The grid by default; the choice of list is remembered.
   await expect(page.getByRole('radio', { name: 'Grid' })).toBeChecked();
-  await shots('dashboard-grid');
-  // The choice is remembered.
+  await page.getByRole('radio', { name: 'List' }).click();
+  await expect(page.getByRole('radio', { name: 'List' })).toBeChecked();
+  await shots('dashboard-list');
   await page.reload();
   await page.waitForFunction(() => 'kiteSetupHarness' in window);
   await go('/');
-  await expect(page.getByRole('radio', { name: 'Grid' })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'List' })).toBeChecked();
+});
+
+test('the empty state offers the split button', async () => {
+  await go('/');
+  await expect(page.getByText('No sessions yet. Create one to get started.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create session' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose a session type' })).toBeVisible();
+  await shots('dashboard-empty');
 });
 
 test('session card: chips, status, Start or Review, and its menu', async () => {
@@ -232,11 +263,39 @@ test('session card: chips, status, Start or Review, and its menu', async () => {
   await expect(ready).toContainText('Interview');
   await expect(ready).toContainText('Transcript');
   await expect(ready).toContainText('Ready to start');
+  await expect(ready).toContainText('Not started yet');
+  await expect(ready).toContainText('Data Analyst');
   await expect(ready.getByRole('button', { name: 'Start session' })).toBeVisible();
+  // The card's shape (spec §1).
+  await expect(ready).toHaveCSS('border-top-left-radius', '20px');
+  await expect(ready).toHaveCSS('padding-top', '8px');
+  await expect(ready.getByRole('heading', { level: 2 })).toHaveCSS('font-size', '18px');
   const ended = card('Zephyr Labs (invented)');
   await expect(ended).toContainText('Ended');
+  await expect(ended).toContainText('6m 53s');
   await expect(ended).not.toContainText('Transcript');
-  await expect(ended.getByRole('link', { name: 'Review' })).toBeVisible();
+  await expect(ended.getByRole('link', { name: 'View transcript' })).toHaveAttribute(
+    'href',
+    /^\/sessions\/[\w-]+$/,
+  );
+  // A regular call's title is its topic.
+  const regular = card('Renewal review');
+  await expect(regular).toContainText('Alder Foods (invented)');
+
+  // The menu's rows; there is nothing to download yet.
+  await ready.getByRole('button', { name: /^More for / }).click();
+  await expect(page.getByRole('menuitem')).toHaveText([
+    'Edit',
+    'Rename',
+    'Duplicate',
+    'Download transcript',
+    'Delete',
+  ]);
+  await expect(page.getByRole('menuitem', { name: 'Download transcript' })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await ended.getByRole('button', { name: /^More for / }).click();
+  await expect(page.getByRole('menuitem').first()).toHaveText('Start again');
+  await page.keyboard.press('Escape');
 
   // Rename.
   await ready.getByRole('button', { name: /^More for / }).click();
@@ -256,7 +315,7 @@ test('session card: chips, status, Start or Review, and its menu', async () => {
     .click();
   await page.getByRole('menuitem', { name: 'Duplicate' }).click();
   await expect(page.getByRole('heading', { name: 'Zephyr Labs (invented)' })).toHaveCount(2);
-  await expect(page.getByText('All (4)')).toBeVisible();
+  await expect(page.getByText('4 Sessions')).toBeVisible();
   await expect(
     page
       .getByRole('listitem')
@@ -265,7 +324,7 @@ test('session card: chips, status, Start or Review, and its menu', async () => {
   ).toHaveCount(1);
 
   // Delete asks first.
-  await card('Alder Foods (invented)')
+  await card('Renewal review')
     .getByRole('button', { name: /^More for / })
     .click();
   await page.getByRole('menuitem', { name: 'Delete' }).click();
@@ -273,14 +332,18 @@ test('session card: chips, status, Start or Review, and its menu', async () => {
     .getByRole('dialog', { name: 'Delete this session?' })
     .getByRole('button', { name: 'Delete' })
     .click();
-  await expect(page.getByRole('heading', { name: 'Alder Foods (invented)' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Renewal review' })).toHaveCount(0);
 });
 
-test('Create session offers the types, and the wizard starts with the one chosen', async () => {
-  await seedDashboard();
-  await page.getByRole('button', { name: 'Create session' }).click();
-  await expect(page.getByRole('menuitem')).toHaveText(['Interview', 'Regular', 'Mock']);
-  await page.getByRole('menuitem', { name: 'Mock' }).click();
+test('the wizard starts with the type chosen in the split button', async () => {
+  await go('/');
+  await page.getByRole('button', { name: 'Choose a session type' }).click();
+  await expect(page.getByRole('menuitem')).toHaveText([
+    'Interview call',
+    'Regular call',
+    'Mock interview',
+  ]);
+  await page.getByRole('menuitem', { name: 'Mock interview' }).click();
   await expect(page.getByLabel('Session type')).toHaveText('Mock');
 });
 

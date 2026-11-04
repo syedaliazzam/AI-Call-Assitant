@@ -1,25 +1,33 @@
 /**
  * File: apps/web/src/features/dashboard/Dashboard.tsx
- * Purpose: The dashboard ("Call Sessions"): the user's sessions on this computer, with type tabs
- *          and their counts (All / Interview / Regular / Mock), search by role or company, sort,
- *          grid or list, a "Create session" menu of types, empty states, and a dismissible banner
- *          about the desktop app in the browser. Starting a session goes through Choose platform in the
- *          browser and straight to the live screen in the desktop app.
+ * Purpose: The sessions page ("Call Sessions", spec S3): tabs by type with the count at the right, a
+ *          search box joined to a sort button, grid or list (remembered), collapsible Active and Past
+ *          sections of session cards, and an empty state. Starting a session goes through Choose
+ *          platform in the browser and straight to the live screen in the desktop app.
  * Used by: app/(app)/page.tsx
- * Depends on: src/core/storage (sessions.ts, dashboardPrefs.ts), src/platform (offersPlatformChoice,
- *             kind for the note), ./SessionCard.tsx,
- *             src/features/session-setup/ChoosePlatformDialog.tsx, src/ui (Menu, Select, Tabs, icons)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F1, F4), §5 (Dashboard); ADR-0029
+ * Depends on: lucide-react, src/core/storage (sessions.ts, answers.ts, dashboardPrefs.ts), src/platform
+ *             (offersPlatformChoice), ./SessionCard.tsx, src/features/shell/CreateSessionButton.tsx,
+ *             src/features/session-setup/ChoosePlatformDialog.tsx, src/ui (Menu, Tabs)
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S3); docs/architecture/kite-architecture-v3.1.md §5
  */
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
-  dismissDesktopBanner,
+  ArrowUpDown,
+  Bot,
+  Briefcase,
+  ChevronDown,
+  LayoutGrid,
+  List,
+  Phone,
+  Search,
+} from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { countAnswersBySession } from '@/core/storage/answers';
+import {
   getDashboardLayout,
   getDashboardSort,
-  getDesktopBannerDismissed,
   setDashboardLayout,
   setDashboardSort,
   type DashboardLayout,
@@ -29,30 +37,39 @@ import {
   duplicateSession,
   filterSessions,
   listSessions,
+  shownStatus,
   sortSessions,
   updateSession,
   type SessionSort,
 } from '@/core/storage/sessions';
 import type { Session, SessionType } from '@/core/storage/types';
 import { ChoosePlatformDialog } from '@/features/session-setup/ChoosePlatformDialog';
-import { DESKTOP_DOWNLOAD_URL, SESSION_TYPE_OPTIONS } from '@/features/session-setup/labels';
+import { SESSION_TYPE_LABELS } from '@/features/session-setup/labels';
+import { CreateSessionButton } from '@/features/shell/CreateSessionButton';
 import { getPlatform } from '@/platform';
-import { Eyebrow } from '@/ui/Eyebrow';
-import { CloseIcon, GridIcon, ListIcon, MonitorIcon } from '@/ui/icons';
-import { LinkButton } from '@/ui/LinkButton';
 import { Menu } from '@/ui/Menu';
-import { Select } from '@/ui/Select';
 import { Tabs } from '@/ui/Tabs';
 import { SessionCard } from './SessionCard';
 
 /** The type filter: one session type, or all of them. */
 type TypeFilter = SessionType | 'all';
 
+/** The tab icons' size and stroke. */
+const TAB_ICON = { size: 18, strokeWidth: 1.75, 'aria-hidden': true } as const;
+
+/** The tabs, in display order. */
+const TABS: readonly { value: TypeFilter; label: string; icon?: ReactNode }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'interview', label: SESSION_TYPE_LABELS.interview, icon: <Briefcase {...TAB_ICON} /> },
+  { value: 'regular', label: SESSION_TYPE_LABELS.regular, icon: <Phone {...TAB_ICON} /> },
+  { value: 'mock', label: SESSION_TYPE_LABELS.mock, icon: <Bot {...TAB_ICON} /> },
+];
+
 /** The sort choices. */
 const SORT_OPTIONS: readonly { value: SessionSort; label: string }[] = [
   { value: 'newest', label: 'Newest first' },
   { value: 'oldest', label: 'Oldest first' },
-  { value: 'company', label: 'Company A–Z' },
+  { value: 'company', label: 'A–Z' },
 ];
 
 /**
@@ -64,14 +81,50 @@ const SORT_OPTIONS: readonly { value: SessionSort; label: string }[] = [
 const subscribeNever = () => () => {};
 
 /**
- * Which platform the page runs on, for display only (the note about the desktop app).
+ * A collapsible group of sessions.
  *
- * @returns 'desktop' or 'browser'.
+ * @param props.title    The group's name.
+ * @param props.count    How many sessions it holds.
+ * @param props.children The sessions.
+ * @returns The heading and, while open, the sessions.
+ * Rendered by: Dashboard
  */
-const platformKind = () => getPlatform().kind;
+function Section({
+  title,
+  count,
+  children,
+}: {
+  /** The group's name. */
+  title: string;
+  /** How many sessions it holds. */
+  count: number;
+  /** The sessions. */
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <section aria-label={title} className="flex flex-col gap-3">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        className="flex h-9 items-center gap-2 self-start rounded-control px-2.5 text-[15px] font-medium text-ui-heading hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+      >
+        <ChevronDown
+          aria-hidden="true"
+          size={16}
+          className={`transition-transform duration-150 ${open ? '' : '-rotate-90'}`}
+        />
+        {title}
+        <span className="font-normal text-ui-muted">{count}</span>
+      </button>
+      {open && children}
+    </section>
+  );
+}
 
 /**
- * The Call Sessions dashboard.
+ * The sessions page.
  *
  * @returns The page content.
  * Rendered by: app/(app)/page.tsx
@@ -82,30 +135,24 @@ export function Dashboard() {
   const [type, setType] = useState<TypeFilter>('all');
   // null while loading; the list as stored on this computer otherwise.
   const [sessions, setSessions] = useState<Session[] | null>(null);
+  const [answerCounts, setAnswerCounts] = useState<ReadonlyMap<string, number>>(new Map());
   const [failed, setFailed] = useState(false);
   // Bumped to reload the list (after a change).
   const [version, setVersion] = useState(0);
   const [choosing, setChoosing] = useState<Session | null>(null);
   // Fixed per render pass so every card judges "live for over 12 hours" the same way.
   const [now, setNow] = useState(() => Date.now());
-  // The server cannot know the platform or saved choices; the browser decides after load.
-  const kind = useSyncExternalStore(subscribeNever, platformKind, () => null);
+  // The server cannot know the saved choices; the browser decides after load.
   const savedLayout = useSyncExternalStore<DashboardLayout>(
     subscribeNever,
     getDashboardLayout,
-    () => 'list',
+    () => 'grid',
   );
   const savedSort = useSyncExternalStore<SessionSort>(
     subscribeNever,
     getDashboardSort,
     () => 'newest',
   );
-  const bannerDismissed = useSyncExternalStore(
-    subscribeNever,
-    getDesktopBannerDismissed,
-    () => true,
-  );
-  const [bannerClosed, setBannerClosed] = useState(false);
   const [chosenLayout, setChosenLayout] = useState<DashboardLayout | null>(null);
   const [chosenSort, setChosenSort] = useState<SessionSort | null>(null);
   const layout = chosenLayout ?? savedLayout;
@@ -113,10 +160,11 @@ export function Dashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    listSessions()
-      .then((rows) => {
+    Promise.all([listSessions(), countAnswersBySession()])
+      .then(([rows, counts]) => {
         if (cancelled) return;
         setSessions(rows);
+        setAnswerCounts(counts);
         setNow(Date.now());
       })
       .catch(() => {
@@ -171,181 +219,153 @@ export function Dashboard() {
   }
 
   const all = sessions ?? [];
-  const tabs: readonly { value: TypeFilter; label: string }[] = [
-    { value: 'all', label: `All (${all.length})` },
-    ...SESSION_TYPE_OPTIONS.map((option) => ({
-      value: option.value,
-      label: `${option.label} (${all.filter((session) => session.type === option.value).length})`,
-    })),
-  ];
+  const inTab = type === 'all' ? all : all.filter((session) => session.type === type);
   const shown = sortSessions(
     filterSessions(all, { search, ...(type === 'all' ? {} : { type }) }),
     sort,
   );
+  const active = shown.filter((session) => shownStatus(session, now) !== 'ended');
+  const past = shown.filter((session) => shownStatus(session, now) === 'ended');
   const filtering = search.trim() !== '' || type !== 'all';
-  // The empty state has its own primary button; the header's is hidden then (one per view).
-  const firstRun = sessions !== null && sessions.length === 0;
+
+  /**
+   * The cards of one section.
+   *
+   * @param rows The sessions.
+   * @returns The grid or list.
+   */
+  const cards = (rows: readonly Session[]) => (
+    <ul
+      className={
+        layout === 'grid'
+          ? 'grid grid-cols-1 gap-4 min-[1100px]:grid-cols-2'
+          : 'flex flex-col gap-3'
+      }
+    >
+      {rows.map((session) => (
+        <SessionCard
+          key={session.id}
+          session={session}
+          now={now}
+          grid={layout === 'grid'}
+          answers={answerCounts.get(session.id) ?? 0}
+          onOpen={open}
+          onDelete={remove}
+          onRename={rename}
+          onDuplicate={duplicate}
+        />
+      ))}
+    </ul>
+  );
+
   return (
     <div className="flex flex-col">
-      {/* White header band, then the list on the grey band (theme §5: alternating sections). */}
-      <header className="border-b border-ui-border bg-ui-surface px-4 py-8 sm:px-8">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-end justify-between gap-4">
-          <div>
-            <Eyebrow>Paramount AI · call assistant</Eyebrow>
-            <h1 className="text-[24px] font-semibold text-ui-heading">Call Sessions</h1>
-            <p className="mt-1 max-w-prose text-[15px] text-ui-muted">
-              Prepare a session before each call, then get live answers while you talk.
-            </p>
-          </div>
-          {!firstRun && (
-            <Menu
-              label="Create session"
-              variant="primary"
-              items={SESSION_TYPE_OPTIONS.map((option) => ({
-                label: option.label,
-                onSelect: () => router.push(`/sessions/new?type=${option.value}`),
-              }))}
+      {/* The header above shows the name; this <h1> is for screen readers. */}
+      <h1 className="sr-only">Call Sessions</h1>
+      <Tabs
+        label="Session type"
+        options={TABS}
+        value={type}
+        onChange={setType}
+        inset
+        end={
+          <p className="text-[15px] text-ui-muted">
+            {inTab.length} {inTab.length === 1 ? 'Session' : 'Sessions'}
+          </p>
+        }
+      />
+
+      <section aria-label="Sessions" className="flex flex-col gap-5 px-5 py-5">
+        <div className="flex items-center justify-between gap-3">
+          {/* The search box and the sort button read as one control. */}
+          <div className="flex h-10 w-full max-w-xs items-center rounded-control border border-ui-border bg-ui-input focus-within:border-ui-link pointer-coarse:min-h-11">
+            <Search aria-hidden="true" size={18} className="ml-3 shrink-0 text-ui-muted" />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by company or role"
+              aria-label="Search sessions"
+              className="h-full min-w-0 flex-1 bg-transparent px-2 text-base text-ui-text placeholder:text-ui-muted focus:outline-none md:text-input"
             />
-          )}
-        </div>
-      </header>
-
-      <section aria-label="Sessions" className="flex-1 bg-ui-band px-4 py-8 sm:px-8">
-        <div className="mx-auto max-w-5xl">
-          {kind === 'browser' && !bannerDismissed && !bannerClosed && (
-            <aside
-              aria-label="Desktop app"
-              className="mb-6 flex flex-wrap items-center gap-3 rounded-card border border-ui-border bg-ui-surface px-5 py-3 text-[15px] text-ui-text shadow-card"
-            >
-              <MonitorIcon size={20} />
-              <p className="min-w-0 flex-1 basis-56">
-                The desktop app hears calls from any meeting app, with global hotkeys.
-              </p>
-              <a
-                href={DESKTOP_DOWNLOAD_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center rounded-control text-[15px] font-medium text-ui-link hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
-              >
-                Get the desktop app
-              </a>
-              <button
-                type="button"
-                aria-label="Dismiss"
-                title="Dismiss"
-                onClick={() => {
-                  setBannerClosed(true);
-                  dismissDesktopBanner();
-                }}
-                className="flex size-8 items-center justify-center text-ui-muted hover:bg-ui-hover hover:text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:size-11"
-              >
-                <CloseIcon />
-              </button>
-            </aside>
-          )}
-
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <Tabs label="Session type" options={tabs} value={type} onChange={setType} />
-            <div className="flex flex-wrap items-end gap-3">
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search role or company"
-                aria-label="Search sessions"
-                className="h-10 w-full border border-ui-border bg-ui-input px-3 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 sm:w-60 md:text-[15px]"
+            <div className="h-full border-l border-ui-border">
+              <Menu
+                label={<ArrowUpDown aria-hidden="true" size={18} strokeWidth={1.75} />}
+                ariaLabel="Sort"
+                variant="plain"
+                size="md"
+                fillHeight
+                buttonClassName="h-full rounded-l-none px-3"
+                items={SORT_OPTIONS.map((option) => ({
+                  label: option.label,
+                  selected: option.value === sort,
+                  onSelect: () => {
+                    setChosenSort(option.value);
+                    setDashboardSort(option.value);
+                  },
+                }))}
               />
-              <div className="w-40">
-                <Select
-                  label="Sort"
-                  options={SORT_OPTIONS}
-                  value={sort}
-                  onChange={(next) => {
-                    setChosenSort(next);
-                    setDashboardSort(next);
-                  }}
-                />
-              </div>
-              <div role="radiogroup" aria-label="Layout" className="flex">
-                {(
-                  [
-                    ['list', 'List', <ListIcon key="list" />],
-                    ['grid', 'Grid', <GridIcon key="grid" />],
-                  ] as const
-                ).map(([value, name, icon]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    role="radio"
-                    aria-checked={layout === value}
-                    aria-label={name}
-                    title={name}
-                    onClick={() => {
-                      setChosenLayout(value);
-                      setDashboardLayout(value);
-                    }}
-                    className={[
-                      'flex h-10 w-10 items-center justify-center rounded-none border border-ui-border first:rounded-l-control last:rounded-r-control focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11',
-                      layout === value
-                        ? 'bg-ui-subtle text-ui-heading'
-                        : 'bg-ui-surface text-ui-muted',
-                    ].join(' ')}
-                  >
-                    {icon}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
-
-          {failed && (
-            <p role="alert" className="mt-8 text-[13px] text-ui-danger">
-              Paramount AI could not open its local storage. Reload the page to try again.
-            </p>
-          )}
-
-          {shown.length > 0 && (
-            <ul
-              className={
-                layout === 'grid'
-                  ? 'mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3'
-                  : 'mt-6 flex flex-col gap-3'
-              }
-            >
-              {shown.map((session) => (
-                <SessionCard
-                  key={session.id}
-                  session={session}
-                  now={now}
-                  grid={layout === 'grid'}
-                  onOpen={open}
-                  onDelete={remove}
-                  onRename={rename}
-                  onDuplicate={duplicate}
-                />
-              ))}
-            </ul>
-          )}
-
-          {sessions && shown.length === 0 && (
-            // Empty state (theme §6): a headline, one line, one primary button.
-            <section className="mt-6 flex flex-col items-center border border-ui-border rounded-card bg-ui-surface shadow-card px-6 py-14 text-center">
-              <h2 className="text-[18px] font-semibold text-ui-heading">
-                {filtering ? 'No sessions match' : 'No sessions yet'}
-              </h2>
-              <p className="mt-1 max-w-sm text-[15px] text-ui-muted">
-                {filtering
-                  ? 'Try another search or type.'
-                  : 'Create a session before your next call: its details and documents help Paramount AI answer. Sessions are saved on this computer.'}
-              </p>
-              {!filtering && (
-                <LinkButton href="/sessions/new" variant="primary" className="mt-6">
-                  Start your first session
-                </LinkButton>
-              )}
-            </section>
-          )}
+          <div
+            role="radiogroup"
+            aria-label="Layout"
+            className="flex shrink-0 gap-0.5 rounded-control bg-ui-subtle p-1"
+          >
+            {(
+              [
+                ['grid', 'Grid', <LayoutGrid key="grid" aria-hidden="true" size={18} />],
+                ['list', 'List', <List key="list" aria-hidden="true" size={18} />],
+              ] as const
+            ).map(([value, name, icon]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={layout === value}
+                aria-label={name}
+                onClick={() => {
+                  setChosenLayout(value);
+                  setDashboardLayout(value);
+                }}
+                className={[
+                  'flex size-8 items-center justify-center rounded-[8px] transition-colors duration-150 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:size-11',
+                  layout === value ? 'bg-ui-segment text-ui-heading' : 'text-ui-muted',
+                ].join(' ')}
+              >
+                {icon}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {failed && (
+          <p role="alert" className="text-helper text-ui-danger">
+            Paramount AI could not open its local storage. Reload the page to try again.
+          </p>
+        )}
+
+        {sessions && active.length > 0 && (
+          <Section title="Active sessions" count={active.length}>
+            {cards(active)}
+          </Section>
+        )}
+        {sessions && past.length > 0 && (
+          <Section title="Past sessions" count={past.length}>
+            {cards(past)}
+          </Section>
+        )}
+
+        {sessions && shown.length === 0 && (
+          <div className="flex flex-col items-center gap-4 px-6 py-14 text-center">
+            <p className="text-[15px] text-ui-muted">
+              {filtering
+                ? 'No sessions match. Try another search or type.'
+                : 'No sessions yet. Create one to get started.'}
+            </p>
+            {!filtering && <CreateSessionButton />}
+          </div>
+        )}
       </section>
 
       <ChoosePlatformDialog

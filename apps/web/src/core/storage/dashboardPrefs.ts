@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/core/storage/dashboardPrefs.ts
- * Purpose: How this person likes the dashboard laid out (grid or list) and sorted, and whether they
- *          dismissed the desktop-app banner, kept in this browser. A convenience only: without storage the defaults apply.
+ * Purpose: How this person likes the sessions page laid out (grid or list) and sorted, kept in this
+ *          browser. A convenience only: without storage the defaults apply.
  * Used by: src/features/dashboard/Dashboard.tsx
  * Depends on: src/core/storage/sessions.ts (SessionSort)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Dashboard); ADR-0029
@@ -16,9 +16,6 @@ export const DASHBOARD_LAYOUT_KEY = 'kite.dashboardLayout';
 
 /** Where the sort order is kept. */
 export const DASHBOARD_SORT_KEY = 'kite.dashboardSort';
-
-/** Where dismissing the desktop-app banner is kept. */
-export const DESKTOP_BANNER_KEY = 'kite.desktopBannerDismissed';
 
 /**
  * Reads a setting, guarding against storage being unavailable (a private window).
@@ -53,11 +50,11 @@ function write(key: string, value: string): void {
 /**
  * The saved layout.
  *
- * @returns 'grid' or 'list' (the default).
+ * @returns 'list' or 'grid' (the default).
  * Called from: Dashboard.tsx; tests
  */
 export function getDashboardLayout(): DashboardLayout {
-  return read(DASHBOARD_LAYOUT_KEY) === 'grid' ? 'grid' : 'list';
+  return read(DASHBOARD_LAYOUT_KEY) === 'list' ? 'list' : 'grid';
 }
 
 /**
@@ -89,23 +86,4 @@ export function getDashboardSort(): SessionSort {
  */
 export function setDashboardSort(sort: SessionSort): void {
   write(DASHBOARD_SORT_KEY, sort);
-}
-
-/**
- * Whether the desktop-app banner was dismissed in this browser.
- *
- * @returns True once dismissed.
- * Called from: Dashboard.tsx; tests
- */
-export function getDesktopBannerDismissed(): boolean {
-  return read(DESKTOP_BANNER_KEY) === 'true';
-}
-
-/**
- * Remembers that the desktop-app banner was dismissed.
- *
- * Called from: Dashboard.tsx; tests
- */
-export function dismissDesktopBanner(): void {
-  write(DESKTOP_BANNER_KEY, 'true');
 }

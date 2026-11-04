@@ -1,15 +1,17 @@
 /**
  * File: apps/web/src/features/dashboard/SessionMenu.tsx
- * Purpose: A session's ⋮ menu with its rename and delete dialogs: Start again (once ended), Edit,
- *          Rename, Duplicate and Delete (which asks first). Shared by the dashboard's cards and the
- *          home panel's (v1.1.0).
+ * Purpose: A session's ⋮ menu with its rename and delete dialogs (spec S3): Start again (once ended),
+ *          Edit, Rename, Duplicate, Download transcript and Delete (which asks first). Shared by the
+ *          sessions page's cards and the home panel's.
  * Used by: src/features/dashboard/SessionCard.tsx, src/features/home/HomeCard.tsx
- * Depends on: src/core/storage (types, shownStatus), src/ui (Button, Dialog, Input, Menu, icons)
+ * Depends on: src/core/review/downloadTranscript.ts, src/core/storage (types, shownStatus),
+ *             src/ui (Button, Dialog, Input, Menu, icons)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Dashboard); ADR-0029, ADR-0041
  */
 'use client';
 
 import { useState } from 'react';
+import { downloadSessionTranscript } from '@/core/review/downloadTranscript';
 import { shownStatus } from '@/core/storage/sessions';
 import type { Session } from '@/core/storage/types';
 import { Button } from '@/ui/Button';
@@ -82,7 +84,8 @@ export function SessionMenu({
       <Menu
         label={<MoreIcon />}
         ariaLabel={`More for ${title}`}
-        variant="ghost"
+        variant="plain"
+        size="icon"
         items={[
           ...(ended ? [{ label: 'Start again', onSelect: () => onOpen(session) }] : []),
           { label: 'Edit', onSelect: () => onEdit(session) },
@@ -95,6 +98,12 @@ export function SessionMenu({
             },
           },
           { label: 'Duplicate', onSelect: () => void onDuplicate(session) },
+          {
+            label: 'Download transcript',
+            // Nothing to download before a first call, or with Save transcript off.
+            disabled: session.lastActiveAt === null || !session.saveTranscript,
+            onSelect: () => void downloadSessionTranscript(session),
+          },
           { label: 'Delete', danger: true, onSelect: () => setConfirming(true) },
         ]}
       />

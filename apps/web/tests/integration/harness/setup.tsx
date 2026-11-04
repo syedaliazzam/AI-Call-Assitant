@@ -128,7 +128,11 @@ window.kiteSetupHarness = {
     );
     if (status === 'ended') {
       const { updateSession } = await import('@/core/storage/sessions');
-      await updateSession(session.id, { status: 'ended' });
+      await updateSession(session.id, {
+        status: 'ended',
+        lastActiveAt: createdAt,
+        lastCallMs: 413_000,
+      });
     }
     return session.id;
   },

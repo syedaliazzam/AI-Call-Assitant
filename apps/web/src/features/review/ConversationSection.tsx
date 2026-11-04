@@ -29,6 +29,7 @@ import {
   transcriptPdf,
   transcriptText,
 } from '@/core/review/conversation';
+import { downloadFile } from '@/core/review/downloadTranscript';
 import { rateAnswer, reportAnswer } from '@/core/storage/answers';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
 import { clearTranscript } from '@/core/storage/utterances';
@@ -80,25 +81,6 @@ export interface ConversationSectionProps {
   terms: readonly DisplayTerm[];
   /** Reads the data again after a change. */
   onChanged: () => void;
-}
-
-/**
- * Hands a file to the browser as a download.
- *
- * @param name The file's name.
- * @param type Its media type.
- * @param data Its contents.
- * @returns Nothing.
- * Called from: ConversationSection
- */
-function download(name: string, type: string, data: BlobPart) {
-  const url = URL.createObjectURL(new Blob([data], { type }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  link.click();
-  // The download has started; the address is no longer needed.
-  URL.revokeObjectURL(url);
 }
 
 /**
@@ -321,7 +303,7 @@ export function ConversationSection({
   /** Downloads the conversation as text. */
   function downloadText() {
     setNotice(null);
-    download(
+    downloadFile(
       transcriptFileName(session, 'txt'),
       'text/plain;charset=utf-8',
       transcriptText(session, items, terms),
@@ -331,7 +313,7 @@ export function ConversationSection({
   /** Downloads the conversation as a PDF, saying so if some letters cannot be shown in it. */
   function downloadPdf() {
     const { bytes, lossy } = transcriptPdf(session, items, terms);
-    download(transcriptFileName(session, 'pdf'), 'application/pdf', bytes.slice());
+    downloadFile(transcriptFileName(session, 'pdf'), 'application/pdf', bytes.slice());
     setNotice(
       lossy
         ? 'Some letters cannot be shown in the PDF and appear as "?". TXT keeps them all.'

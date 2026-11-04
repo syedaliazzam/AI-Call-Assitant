@@ -231,6 +231,8 @@ export interface MenuProps {
   items: readonly MenuEntry[];
   /** Where the list opens against the button (default 'bottom-end'). */
   placement?: PopupPlacement;
+  /** True to fill its parent's height (a button joined to a search box). */
+  fillHeight?: boolean;
 }
 
 /**
@@ -248,13 +250,14 @@ export function Menu({
   buttonClassName = '',
   items,
   placement = 'bottom-end',
+  fillHeight = false,
 }: MenuProps) {
   const { open, setOpen, anchorRef, popupRef } = useAnchoredPopup<HTMLDivElement, HTMLDivElement>({
     placement,
   });
   return (
-    <div className="inline-block">
-      <div ref={anchorRef}>
+    <div className={fillHeight ? 'h-full' : 'inline-block'}>
+      <div ref={anchorRef} className={fillHeight ? 'h-full' : undefined}>
         <Button
           variant={variant}
           size={size}
