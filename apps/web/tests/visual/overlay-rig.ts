@@ -86,6 +86,17 @@ async function bundle(): Promise<string> {
     define: { 'process.env.NODE_ENV': '"production"' },
     logLevel: 'error',
   });
+  // The punctuation worker, the same way (core/punctuation/punctuator.ts).
+  await build({
+    entryPoints: [path.join(WEB_DIR, 'src', 'core', 'punctuation', 'punct.worker.ts')],
+    bundle: true,
+    platform: 'browser',
+    format: 'iife',
+    outfile: path.join(outDir, 'punct.worker.ts'),
+    tsconfig: path.join(WEB_DIR, 'tsconfig.json'),
+    define: { 'process.env.NODE_ENV': '"production"' },
+    logLevel: 'error',
+  });
   const fromTailwind = createRequire(
     createRequire(import.meta.url).resolve('@tailwindcss/postcss'),
   );
@@ -231,7 +242,7 @@ async function main(): Promise<void> {
     if (pathname !== '/' && asset.startsWith(publicDir + path.sep) && existsSync(asset)) {
       const type = asset.endsWith('.wasm')
         ? 'application/wasm'
-        : asset.endsWith('.js')
+        : asset.endsWith('.js') || asset.endsWith('.mjs')
           ? 'text/javascript'
           : 'application/octet-stream';
       res.writeHead(200, { 'Content-Type': type }).end(readFileSync(asset));

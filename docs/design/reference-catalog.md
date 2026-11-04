@@ -33,7 +33,7 @@
 |---|---|---|---|---|
 | `browser-split.png` | `yp2XySwT….png`, in the saved page's `_files` folder (older build) | The call page split in two | Left: shared-tab preview with Fullscreen and Change Tab; Transcript heading with Connect (mic), Clear and an AutoScroll switch. Right: logo, time left, Exit; empty state; manual message box with Send; AI Answer (Space) and Analyze Screen | Draggable divider. The right side collapses with a side arrow. **Older than `browser-connect.png`, whose blurred background shows the current layout** |
 | `browser-connect.png` | `connect Session.png` | The Connect dialog over the call page | Call summary sentence, edit pencil. How to connect: meeting-app logos, video tutorial. No call to share: mock video. Back and Connect. Blurred behind: screen and Change tab controls, Clear, ⋮, close, message box, Answer and Screenshot | Dark dialog. Until `browser-split-1.png` and `browser-split-2.png` are catalogued, this is the only frame of the current browser layout, and it is blurred |
-| `browser-split-1.png`, `browser-split-2.png` | **Pending:** the developer added these on 4 Nov 2026, but they were not in the images folder when looked for | Not viewed yet | Not viewed yet | To be catalogued before the browser phase |
+| `browser-split-1.png`, `browser-split-2.png` | **Not found:** named on 4 Nov 2026, but not anywhere under `D:\Paramount Intelligence` when looked for, twice | Not viewed | Not viewed | The developer chose to go ahead without them, so the v1.1.0 browser view was checked against `browser-split.png` and `browser-connect.png` |
 
 ## Review and setup (already matched in v1.0.x; compared, not rebuilt)
 

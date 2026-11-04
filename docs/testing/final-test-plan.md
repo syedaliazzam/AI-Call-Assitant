@@ -10,7 +10,7 @@
 - Use invented session details and documents only. No real customer calls.
 - **Cost:** a full pass sends about 30 answers and 3 notes requests (about $0.15 of the ~$20 monthly limit).
 
-**Kept up to date:** each later stage adds its human checks here. Last updated: responses and speech — honesty, answer shape, admin rollback and number key terms (ADR-0032, §6b).
+**Kept up to date:** each later stage adds its human checks here. Last updated: responses and speech — honesty, answer shape, admin rollback and number key terms (ADR-0032, §6b). v1.1.0 (ADR-0041 to ADR-0044): the home panel, the bars and panels, Private on every window, Auto for accurate transcription.
 
 ---
 
@@ -62,35 +62,56 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 1b.10 | On the Connect screen, read the summary sentence and open each app's how-to, on desktop and in Chrome. | The steps fit the platform and are correct. |
 | 1b.11 | On the dashboard: tabs and their counts, search, sort, grid and list, rename, duplicate, delete. | Each works; the layout and sort are remembered after a reload; a duplicate has no transcript or answers. |
 
+## 1c. The home panel (v1.1.0, ADR-0041)
+
+| # | Do | Expect |
+|---|---|---|
+| 1c.1 | Start the desktop app. | A small panel opens, about 400 wide: your sessions, newest first. The first time on this computer, the acceptable-use notice shows once. |
+| 1c.2 | Type in the search box, then press the sort button. | The list filters, then turns round. |
+| 1c.3 | Look at an ended session and a ready one. | Ended: status, length and **View transcript**. Ready: **Start**. |
+| 1c.4 | Drag the header, drag an edge, quit Kite and start it again. | It moves and resizes, and comes back where you left it. |
+| 1c.5 | **⋮**: Zoom + and −, each Theme, Private's info mark. | The panel follows at once. The tooltip says all of Kite's windows, and that it does nothing against monitoring tools. |
+| 1c.6 | **View in dashboard**, then **Create session**. | A larger window opens the dashboard, then the wizard. The panel stays. |
+| 1c.7 | Press **×** on the panel with the larger window open, then close the larger window. | The panel steps aside, then comes back. **×** with nothing else open quits Kite. |
+
 ## 2. Desktop hotkeys
 
 | # | Do | Expect |
 |---|---|---|
 | 2.1 | Open Notepad and click inside it. Make a "Them" line appear, press **Ctrl+Enter**. | Kite answers; Notepad keeps focus and nothing is typed into it. |
 | 2.2 | With Notepad focused: **Ctrl+Shift+Enter**. | A screenshot answer about what is on screen (§4). |
-| 2.3 | With Notepad focused: **Ctrl+Alt+H** twice. | The overlay hides, then comes back; Notepad keeps focus. |
-| 2.4 | With Notepad focused: **Ctrl+Alt+Arrows**, then with **Shift**. | The overlay moves in small steps, then bigger ones. If Windows rotates the screen instead, your graphics driver holds these keys: Settings → Hotkeys should say so. Press Ctrl+Alt+Up to rotate back. |
-| 2.5 | With Notepad focused: **Ctrl+Backspace**, **Ctrl+Left**, **Ctrl+Right**. | Notepad deletes and moves by word as usual: Kite does not take these keys. |
-| 2.6 | Click the overlay, then **Ctrl+Shift+Backspace**, **Ctrl+Left**, **Ctrl+Right**, **Ctrl+Backspace**. | The Chat box opens and closes; earlier and later answers show; the answer clears. |
-| 2.7 | Settings → Hotkeys. | Every shortcut is listed with where it works; any conflict is named. |
+| 2.3 | With Notepad focused: **Ctrl+Shift+Space**. | Chat opens in bar 1 with the keyboard, ready to type. |
+| 2.4 | With Notepad focused: **Ctrl+Alt+H** twice. | The bars hide, then come back; Notepad keeps focus. |
+| 2.5 | With Notepad focused: **Ctrl+Alt+Arrows**, then with **Shift**. | The bars move in small steps, then bigger ones. If Windows rotates the screen instead, your graphics driver holds these keys: Settings → Hotkeys should say so. Press Ctrl+Alt+Up to rotate back. |
+| 2.6 | With Notepad focused: **Ctrl+Backspace**, **Ctrl+Left**, **Ctrl+Right**, **Ctrl+Shift+Backspace**. | Notepad deletes and moves by word as usual: Kite does not take these keys. |
+| 2.7 | Click the bars, then **Ctrl+Left**, **Ctrl+Right**, **Ctrl+Backspace**, **Ctrl+Shift+Backspace**. | Earlier and later answers show; the card goes back to the newest answer; the words on screen clear. |
+| 2.8 | Settings → Hotkeys. | Every shortcut is listed with where it works; any conflict is named. |
 
-## 3. Overlay and screen-share protection
+## 3. The bars and panels, and Private (v1.1.0, ADR-0041, ADR-0042)
 
 | # | Do | Expect |
 |---|---|---|
-| 3.1 | With **Start calls in the overlay** on (Settings; the default), press **Connect**, then **Go live**. | The overlay opens on top of other windows without taking focus; the main window minimises. |
-| 3.2 | Look at the three bars during a call. | Mic and audio status; the latest words as chips; the answer card with its question line, answer line, bullets and any tip. Any private note sits apart and looks muted. |
-| 3.3 | Press **Chat**, type "What are our next steps?", press Enter. | The answer streams into the card. |
-| 3.4 | Rate an answer, copy it, and report it with a short reason. | The thumb stays lit; pasting gives the answer without the private note; the flag shows it is reported. |
-| 3.5 | Use the ← and → buttons after two answers; **Clear** on the card and on the transcript bar. | History moves; the answer clears; only the words on screen clear, new ones still appear. |
-| 3.6 | Press both expand buttons, then collapse. | One takes the space for the transcript, the other hides the transcript bar; collapse leaves only the controls. Only the card scrolls, never the whole window. |
-| 3.7 | Menu: move the opacity slider to its minimum (40%) over a light, a dark and a busy meeting background, then move the pointer away and back. | Only the panel background gets more see-through; the text stays fully opaque with its shadow and readable (ADR-0033). With fading on, the panel is solid under the pointer. Default is 70%. |
-| 3.8 | Resize to the smallest size. | Nothing is cut off; button labels lose their shortcuts. |
-| 3.9 | Press **End** in the overlay. | The call ends, the overlay closes, the main window comes back with the notes. |
-| 3.10 | Menu: check **Hidden from screen share**. In Chrome start a Google Meet, join it from your phone, then on the laptop **Present now → Entire screen**. | — |
-| 3.11 | Look at the shared screen on the phone. | The overlay is **not** visible (black or empty there); the rest of the screen is. |
-| 3.12 | Turn it off in the menu; look at the phone. | The overlay **is** visible. Turn it back on. |
-| 3.13 | In Chrome (browser Kite), start a call and press **Overlay**. | A picture-in-picture window with the same three bars; its menu says opacity works in the desktop app. |
+| 3.1 | Press **Start** on a card, then **Connect** and **Go live**. | Slim bars open at the top centre, without taking focus. The larger window minimises and the panel steps aside. |
+| 3.2 | Look at bar 1. | Sound and microphone status with a red dot; **▾**; Answer, Screenshot and Chat with their keys; move, collapse, **⋮**, and a timer. |
+| 3.3 | Press **▾**, choose another microphone, and keep talking. | The "You" lines carry on from the new microphone. |
+| 3.4 | Hover the timer, press it, then **Cancel**; press it again and confirm. Do this at the very end. | "End call", then a confirmation. The call ends, the bars close, the panel comes back with the notes. |
+| 3.5 | Look at bar 2 while you both talk. | Level bars move; chips show the latest words with no "um" or "so" at the start. While they ask something, it shows highlighted. |
+| 3.6 | Press **⤢**. | The transcript panel replaces bar 2: Language, Clear, collapse; you on the right, them on the left with their name or "Client 1", and "Name · time" under each. |
+| 3.7 | Scroll up in it while they talk, then press **Jump to latest**. | It stops following while you read, and then catches up. |
+| 3.8 | Make a question appear. Press **Answer this** on it, and hover a greeting. | It answers that question. A greeting shows Answer this only under the pointer. |
+| 3.9 | Press **Answer** (**Ctrl+Enter**). | The answer panel opens by itself, with the question at once, **Thinking…** and **Stop**, then the answer line, bullets and any Tip. |
+| 3.10 | Rate an answer, copy it, and report it with a short reason. | The thumb stays lit; pasting gives the answer without the private note; the flag shows it is reported. |
+| 3.11 | Open both panels; drag the bottom edge; close and reopen the overlay in a new call. | Transcript above answer; the height sticks; the panels open as you left them. |
+| 3.12 | **⋮ → Opacity** down to its minimum over a light, a dark and a busy page; **Font size**. | Only the background gets more see-through; the text stays solid and readable. Text size changes in both panels. |
+| 3.13 | Drag the bars by the move handle. | Three places light up along the top; the one under the pointer stands out; dropping there snaps the bars to it. Move them on a second screen, and each screen remembers its own place. |
+| 3.14 | **⋮ → Dashboard** and **Edit session** during a call. | A window of its own opens; the call keeps going. |
+| 3.15 | **⋮ → Open call window**, then **Back to compact**. | The full view shows and the bars hide, then the reverse. Closing the full view's window during a call only minimises it. |
+| 3.16 | **⋮ → Private** on. In Chrome start a Google Meet, join it from your phone, then on the laptop **Present now → Entire screen**. Open each of Kite's windows in turn: bars and panels, the call window, the panel, Ask Kite, a side window. | — |
+| 3.17 | Look at the shared screen on the phone. | **None** of Kite's windows is visible; the rest of the screen is. Kite is still in the taskbar. |
+| 3.18 | Turn Private off in Settings; look at the phone; check both **⋮** menus. | Kite's windows **are** visible, and every menu agrees it is off. |
+| 3.19 | Connect, then leave the call silent for 10 minutes, then 30. | "Still in a call?" with **Yes**; then listening pauses with **Resume**, which starts it again without asking for the microphone. |
+| 3.20 | Use speakers and let the other side talk. | Echoed lines stay hidden, and a hint suggests headphones, once. |
+| 3.21 | In Chrome (browser Kite), start a call and press **Back to compact**. | A picture-in-picture window with the same bars and panels, on a solid background. |
 
 ## 3b. Browser split call view (live-ui-split)
 
@@ -98,7 +119,8 @@ In Chrome, on a laptop (1280 px or wider), start a call sharing a real tab (for 
 
 | # | Do | Expect |
 |---|---|---|
-| 3b.1 | Look at the call screen. | Left: the shared tab plays as a live preview with a translucent control strip on top (Stop with a mic dot, Clear, Language, Change tab, Minimize) and the transcript below it, newest line first. Right: the call timer, a ⋮ menu, Exit, the answers, the message box and the big Answer and Screenshot buttons. |
+| 3b.1 | Look at the call screen. | Left: the shared tab plays as a live preview with a translucent control strip on top (Stop with a mic dot, Clear, Language, Change tab, Minimize) and the transcript below it in bubbles, oldest at the top. Right: the answers as cards, the message box and the big Answer and Screenshot buttons. Across the top: the microphone, Answer, Screenshot, Chat, the timer, Back to compact, ⋮ and End. |
+| 3b.1a | ⋮: Theme, Larger text, Smaller text, Auto answer, Edit session. | Each works. Edit session opens in a new tab, and the call keeps going. |
 | 3b.2 | Drag the divider between the halves, then reload. | The halves resize; the position is remembered after the reload. |
 | 3b.3 | Narrow the window below 1280 px (or open on a phone). | The two halves stack, the preview above the answers; no divider. |
 | 3b.4 | Press **Change tab** and pick a different tab. | The preview and the transcript follow the new tab; the call, answers and transcript so far are kept (the call does not end). |
@@ -157,7 +179,7 @@ In Chrome, on a laptop (1280 px or wider), start a call sharing a real tab (for 
 |---|---|---|
 | 5d.1 | During a call, with lines arriving, look at the live view and at the overlay's expanded transcript. | The newest line is at the top. There is no "Jump to latest" button. |
 | 5d.2 | Scroll down in the transcript while lines keep arriving. | Your place stays put. Scrolling back to the top shows the newest. |
-| 5d.3 | Open the finished call's Transcript. Tick **Oldest first**, reload the page, then untick it. | Newest first by default; the tick survives the reload. |
+| 5d.3 | Open the finished call's Transcript. Look at **Conversation** and **Answers**; press a **Kite answered** chip; untick **Oldest first** and reload the page. | Oldest first by default, the speaker above each turn; the chip opens the answer in place; Answers lists the cards; a session with two calls has a divider; the choice survives the reload. |
 | 5d.4 | In a call, press **Chat** and type "what is 17% of 2,340?" on Auto. | A private answer with the working, marked "Just for you". It appears nowhere as a "You" line. |
 | 5d.5 | Type "what should I say to their last question?" on Auto. | A speakable first-person answer. |
 | 5d.6 | Set the switch to **Ask Kite**, close and reopen the session. | Still on Ask Kite. Set it back to Auto. |
@@ -174,17 +196,18 @@ In Chrome, on a laptop (1280 px or wider), start a call sharing a real tab (for 
 
 ## 6. Accurate transcription (beta) — v1.0.1, ADR-0034
 
-ADR-0027 adopted nothing as the default engine; v1.0.1 adds Parakeet as an **opt-in second pass** (desktop app only, off by default). Do these once on Windows:
+ADR-0027 adopted nothing as the default engine; v1.0.1 adds Parakeet as a **second pass** (desktop app only). v1.1.0 (ADR-0044) adds **Auto**, the default: on when plugged in, off on battery, once the model is downloaded. Kite never starts the download by itself. Do these once on Windows:
 
 | # | Step | Expected |
 |---|---|---|
-| 6.1 | Desktop app → Settings → Transcription. | "Accurate transcription (beta)" is **off**. |
-| 6.2 | Turn it on. | A download starts (about 661 MB) with a progress line. |
+| 6.1 | Desktop app → Settings → Transcription. | It is on **Auto**. With no model downloaded, nothing downloads by itself, and the home panel offers it once. |
+| 6.2 | Press **Download**. | A download starts (about 661 MB) with a progress line. |
 | 6.3 | Quit Kite halfway, start it again, open Settings → Transcription. | It shows the bytes already done; **Download** continues from there, not from zero. |
 | 6.4 | Let it finish. | "The accurate engine is downloaded and ready." |
 | 6.5 | Start a call; say a sentence with names from your key terms. | The line appears as before; about a second later its words change to the improved text (mixed case, punctuation). |
-| 6.6 | Same on battery. | The improved line still arrives; note how long it takes. |
-| 6.7 | Turn it off; start a call. | Lines are never replaced. |
+| 6.6 | On **Auto**, unplug during a call, then plug in again. | On battery the lines keep the live engine's words, with marks from the punctuation pass; plugged in they are improved again. |
+| 6.7 | Set it to **Off**; start a call. | The live engine's words stay, with marks and capitals. Set to **On**, they are improved on battery too. |
+| 6.7a | A key term the engine tends to mishear. | It is spelled as you wrote it. |
 | 6.8 | Settings → **Delete the download**. | The model is removed; the setting can download it again. |
 | 6.9 | Open Kite in Chrome → Settings → Transcription. | It says the setting needs the desktop app. |
 

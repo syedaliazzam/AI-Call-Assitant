@@ -141,7 +141,7 @@ test('Desktop app: 20 answers on /dev/latency', async () => {
   const app = await electron.launch({
     executablePath: installed ?? ELECTRON_PATH,
     args: installed ? [`--user-data-dir=${profile}`] : [`--user-data-dir=${profile}`, DESKTOP_DIR],
-    env: { ...parentEnv, KITE_URL: `${PRODUCTION_URL}/` },
+    env: { ...parentEnv, KITE_URL: `${PRODUCTION_URL}/`, KITE_NO_UPDATE_CHECK: '1' },
   });
   try {
     // v1.1.0: the app starts on the home panel, which keeps to its own pages, so the answers run in
