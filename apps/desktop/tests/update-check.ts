@@ -5,8 +5,11 @@
  *          nothing is installed and the person's installed Kite and real profile are not touched.
  *          Usage: node --experimental-strip-types apps/desktop/tests/update-check.ts <kept Kite.exe> [<folder>]
  *          With a folder, the release in it is served locally and only the kept copy's
- *          resources/app-update.yml is pointed at it; without one, the copy's feed is restored and used
- *          (the real releases repository).
+ *          resources/app-update.yml is pointed at it; without one, the copy's own feed is used (the real
+ *          releases repository). Either way the download goes to %LOCALAPPDATA%\kite-updater-check,
+ *          removed at the end, and the copy's setting is put back. To take the path an installed copy
+ *          really takes, first put the older release's installer there as installer.exe: the update
+ *          then fetches only the blocks that changed.
  * Used by: the developer at a release (v1.1.0 item 32); not part of the automated suites
  * Depends on: Node.js only
  * Architecture: docs/decisions/ADR-0028 (updates)
@@ -58,7 +61,15 @@ if (folder) {
   );
   console.info(`feed: this computer, serving ${path.basename(folder)}`);
 } else {
-  copyFileSync(feedBackup, feedFile);
+  // The real feed, with a cache folder of its own. The default folder is the installed Kite's: a
+  // newer installer found there would hide the download, and this check must leave nothing in it.
+  writeFileSync(
+    feedFile,
+    readFileSync(feedBackup, 'utf8').replace(
+      /^updaterCacheDirName:.*$/m,
+      'updaterCacheDirName: kite-updater-check',
+    ),
+  );
   console.info('feed: the real releases repository');
 }
 
@@ -85,6 +96,7 @@ function finish(outcome: string, failed: boolean): void {
   // A hard stop on purpose: a normal quit would install the update.
   spawn('taskkill', ['/PID', String(app.pid), '/T', '/F'], { stdio: 'ignore' }).on('exit', () => {
     server?.close();
+    copyFileSync(feedBackup, feedFile);
     // The download this check made, so it cannot be used by anything else.
     rmSync(path.join(homedir(), 'AppData', 'Local', 'kite-updater-check'), {
       recursive: true,
