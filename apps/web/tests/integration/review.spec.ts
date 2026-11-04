@@ -245,26 +245,36 @@ test('shows the call details, notes, answers and transcript', async () => {
   await expect(notes).not.toContainText('Written from answers only');
 
   await openSection('Transcript');
+  // Conversation (v1.1.0): the talk, with a chip for each answer that opens it in place.
   const answers = page.getByRole('listitem', { name: 'Saved answer' });
-  await expect(answers).toHaveCount(2);
-  // Newest first by default (ADR-0030).
-  await expect(answers.nth(1)).toContainText('What would forty seats on Professional cost?');
-  await expect(answers.nth(1).getByLabel('Rating')).toHaveText('👎 Not helpful');
-  await expect(answers.nth(1).getByLabel('Your note')).toContainText('monthly and yearly totals');
-  await expect(answers.first()).toContainText('Typed question');
-  await expect(answers.first().getByLabel('Rating')).toHaveText('👍 Helpful');
+  const chips = page.getByRole('button', { name: 'Kite answered' });
+  await expect(chips).toHaveCount(2);
+  await expect(answers).toHaveCount(0);
+  await chips.first().click();
+  await expect(chips.first()).toHaveAttribute('aria-expanded', 'true');
+  await expect(answers).toHaveCount(1);
+  await chips.first().click();
+  await expect(answers).toHaveCount(0);
 
   const transcript = page.getByRole('listitem', { name: /said$/ });
   await expect(transcript).toHaveCount(6);
-  // "Oldest first" turns it round, and is remembered.
-  const newestFirst = await transcript.allTextContents();
-  await page.getByRole('checkbox', { name: 'Oldest first' }).check();
-  await expect(transcript.first()).toContainText('You');
-  await expect(transcript.nth(1)).toContainText('Them');
-  expect(await transcript.allTextContents()).toEqual([...newestFirst].reverse());
-  await expect(answers.first()).toContainText('What would forty seats on Professional cost?');
+  // Oldest first by default, the speaker before the words; the toggle turns it round.
+  await expect(transcript.first()).toContainText(/^You/);
+  await expect(transcript.nth(1)).toContainText(/^Them/);
+  const oldestFirst = await transcript.allTextContents();
   await page.getByRole('checkbox', { name: 'Oldest first' }).uncheck();
-  await expect(answers.first()).toContainText('Typed question');
+  expect(await transcript.allTextContents()).toEqual([...oldestFirst].reverse());
+  await page.getByRole('checkbox', { name: 'Oldest first' }).check();
+  expect(await transcript.allTextContents()).toEqual(oldestFirst);
+
+  // Answers: every answer as a card.
+  await page.getByRole('button', { name: 'Answers', exact: true }).click();
+  await expect(answers).toHaveCount(2);
+  await expect(answers.first()).toContainText('What would forty seats on Professional cost?');
+  await expect(answers.first().getByLabel('Rating')).toHaveText('👎 Not helpful');
+  await expect(answers.first().getByLabel('Your note')).toContainText('monthly and yearly totals');
+  await expect(answers.nth(1)).toContainText('Typed question');
+  await expect(answers.nth(1).getByLabel('Rating')).toHaveText('👍 Helpful');
   await shot('review-transcript');
   await openSection('AI notes');
   await shot('review-full');
@@ -344,16 +354,17 @@ test('with "Save transcript" off: says so, and notes are written from answers on
   await expect(page.getByRole('heading', { name: 'Northwind Logistics (invented)' })).toBeVisible();
 });
 
-test('Transcript: a chat with answers inline; thumbs and reports are stored here', async () => {
+test('Transcript: a chat with answer chips, an Answers tab; thumbs and reports are stored here', async () => {
   await page.evaluate((id) => window.kiteReviewHarness.show(id), fullId);
   await openSection('Transcript');
   const conversation = page.getByRole('list', { name: 'Conversation' });
-  // Newest first (ADR-0030): the line after the answer given at 26 s comes above that answer.
+  // Each answer's chip sits where it was asked: lines before it, and after it.
   const order = await conversation
     .locator('> li')
-    .evaluateAll((items) => items.map((item) => item.getAttribute('aria-label')));
-  expect(order.indexOf('Saved answer')).toBeGreaterThan(0);
-  expect(order.filter((label) => label === 'Saved answer')).toHaveLength(2);
+    .evaluateAll((items) => items.map((item) => item.textContent?.includes('Kite answered')));
+  expect(order.indexOf(true)).toBeGreaterThan(0);
+  expect(order.filter(Boolean)).toHaveLength(2);
+  expect(order.at(-1)).toBe(false);
   // Them on the left, You on the right.
   const you = await page.getByRole('listitem', { name: 'You said' }).first().boundingBox();
   const them = await page.getByRole('listitem', { name: 'Them said' }).first().boundingBox();
@@ -362,7 +373,8 @@ test('Transcript: a chat with answers inline; thumbs and reports are stored here
   expect(Math.round(you!.x + you!.width)).toBe(Math.round(area.x + area.width));
 
   // The oldest answer, which has no rating of its own to begin with.
-  const card = page.getByRole('listitem', { name: 'Saved answer' }).last();
+  await page.getByRole('button', { name: 'Answers', exact: true }).click();
+  const card = page.getByRole('listitem', { name: 'Saved answer' }).first();
   await card.getByRole('button', { name: 'Bad answer' }).click();
   await card.getByRole('button', { name: 'Bad answer' }).click();
   await card.getByRole('button', { name: 'Good answer' }).click();
@@ -452,7 +464,7 @@ test('Clear transcript asks first, and keeps the answers and notes', async () =>
   await page.getByRole('button', { name: 'Clear transcript' }).click();
   await dialog.getByRole('button', { name: 'Clear transcript' }).click();
   await expect(page.getByRole('listitem', { name: /said$/ })).toHaveCount(0);
-  await expect(page.getByRole('listitem', { name: 'Saved answer' })).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Kite answered' })).toHaveCount(2);
   await openSection('AI notes');
   await expect(page.getByRole('list', { name: 'Summary' })).toBeVisible();
   await page.evaluate((target) => window.kiteReviewHarness.remove(target), id);

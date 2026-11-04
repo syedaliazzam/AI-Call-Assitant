@@ -23,6 +23,7 @@ import type { SttHealthStatus } from '@/core/stt/health';
 import type { DisplayTerm } from '@/core/transcript/display';
 import { groupLines, type TranscriptGroup } from '@/core/transcript/group';
 import type { Utterance } from '@/core/transcript/transcript';
+import { useAppearance } from '@/features/appearance/useAppearance';
 import { HealthNotice } from './HealthNotice';
 import { TranscriptBubbles } from './TranscriptBubbles';
 import { useStickToBottom } from './useStickToBottom';
@@ -66,6 +67,7 @@ export const TranscriptStrip = memo(function TranscriptStrip({
   themName,
 }: TranscriptStripProps) {
   const groups = useMemo(() => groupLines(lines, { terms }), [lines, terms]);
+  const { fontScale } = useAppearance(false);
   const answeredIds = useMemo(
     () => (answeredSpans ? answeredGroupIds(groups, answeredSpans) : undefined),
     [groups, answeredSpans],
@@ -85,13 +87,16 @@ export const TranscriptStrip = memo(function TranscriptStrip({
           aria-live="polite"
           aria-label="Live transcript"
         >
-          <TranscriptBubbles
-            groups={groups}
-            themName={themName}
-            emptyText="Listening… Lines appear here as you and the other person speak."
-            {...(onAnswerThis ? { onAnswerThis } : {})}
-            {...(answeredIds ? { answeredIds } : {})}
-          />
+          {/* v1.1.0: ⋮ Larger text covers the transcript too. */}
+          <div style={fontScale === 1 ? undefined : { zoom: fontScale }}>
+            <TranscriptBubbles
+              groups={groups}
+              themName={themName}
+              emptyText="Listening… Lines appear here as you and the other person speak."
+              {...(onAnswerThis ? { onAnswerThis } : {})}
+              {...(answeredIds ? { answeredIds } : {})}
+            />
+          </div>
         </div>
         {paused && (
           <Button

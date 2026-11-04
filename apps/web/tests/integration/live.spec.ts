@@ -259,6 +259,8 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
   const size: Width = { width: 1440, height: 900, touch: false };
   const watched = await open('live', size);
   const { page } = watched;
+  // The call window follows the one Theme setting (v1.1.0); System here means what this asks for.
+  await page.emulateMedia({ colorScheme: 'dark' });
   const transcriptBox = await box(page, '[aria-label="Live transcript"]');
   const panel = '[aria-label="Answers"]';
   expect(transcriptBox.x).toBeLessThan((await box(page, panel)).x);
@@ -267,15 +269,16 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
   const colours = await page.evaluate(() => {
     const items = [...document.querySelectorAll('[aria-label="Live transcript"] li')];
     const label = (name: string) =>
-      // A bubble starts with its name and time; the name carries the speaker's colour.
+      // Under a bubble are its name and time (v1.1.0); the name carries the speaker's colour.
       getComputedStyle(
-        items.find((li) => li.textContent?.startsWith(name))!.firstElementChild!.firstElementChild!,
+        items.find((li) => li.getAttribute('aria-label') === name)!.lastElementChild!
+          .firstElementChild!,
       ).color;
     const provisional = document.querySelector('[aria-label="Live transcript"] li span.italic');
     if (!provisional) return { lines: items.map((li) => li.textContent) };
     return {
-      you: label('You'),
-      them: label('Them'),
+      you: label('You said'),
+      them: label('Them said'),
       provisional: getComputedStyle(provisional).color,
       italic: getComputedStyle(provisional).fontStyle,
     };
@@ -428,25 +431,26 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
     expect(fits, 'the window itself does not scroll').toBe(true);
     await shot(watched, size, `overlay-${size.width}`);
 
-    // The current live question sits above the answer (v1.0.4); ⛶ is the call window's button.
+    // The current live question sits in the strip (v1.1.0: above the words, not the answer).
     await expect(page.getByLabel('Current question from the other person')).toContainText(
       'What would the Professional plan cost',
     );
-    await expect(page.getByRole('button', { name: 'Open call window' })).toBeVisible();
     // Collapse leaves only the controls.
     await page.getByRole('button', { name: 'Collapse the overlay' }).click();
     await expect(page.getByRole('region', { name: 'Latest answer' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Open the overlay' }).click();
     await expect(page.getByRole('region', { name: 'Latest answer' })).toBeVisible();
-    // Clear hides the words on screen.
+    // The strip's Clear hides the words on screen; the answer stays (v1.1.0).
     await page
-      .getByRole('region', { name: 'Latest answer' })
+      .getByRole('region', { name: 'Live transcript bar' })
       .getByRole('button', { name: 'Clear' })
       .click();
     await expect(page.getByLabel('Latest words')).not.toContainText('the Professional plan');
-    // The menu: a browser window has no opacity control and says so.
+    await expect(page.getByRole('heading', { name: 'Answer line' })).toBeVisible();
+    // The menu: Private and the full call window live here (v1.1.0).
     await page.getByRole('button', { name: 'Overlay menu' }).click();
-    await expect(page.getByLabel('Hide this window from screen share')).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Overlay settings' })).toContainText('Private');
+    await expect(page.getByRole('button', { name: 'Open call window' })).toBeVisible();
     await watched.context.close();
   }
   const size: Width = { width: 720, height: 520, touch: false };
@@ -483,7 +487,14 @@ test('overlay: a coding answer, a figure to check and a private answer fit (ADR-
     await shot(coding, size, `overlay-coding-${size.width}`);
     // The chat box's switch sits next to it, on the choice the live page holds.
     await page.getByRole('button', { name: 'Chat', exact: false }).first().click();
-    await expect(page.getByLabel('Who the answer is for')).toHaveValue('kite');
+    // Below 620 px the switch is hidden to leave room to type; the last choice still applies.
+    if (size.width >= 620) {
+      await expect(
+        page.getByRole('radiogroup', { name: 'Who the answer is for' }).getByRole('radio', {
+          name: 'Ask Kite',
+        }),
+      ).toHaveAttribute('aria-checked', 'true');
+    }
     await shot(coding, size, `overlay-chat-${size.width}`);
     await coding.context.close();
 
@@ -647,14 +658,15 @@ test('overlay look: panel background at 40% and 70% over light and dark busy bac
           document.documentElement.style.backgroundImage = image;
           document.documentElement.style.backgroundAttachment = 'fixed';
         }, backdrop);
-        const panel = page.locator('.k-overlay.k-glass');
+        // Bar 1: each bar and panel is its own piece of glass (v1.1.0).
+        const panel = page.locator('.k-overlay.k-glass').first();
         await expect(panel).toBeVisible();
         // Every control of the top bar stays inside the window, End above all.
-        const end = await page.getByRole('button', { name: 'End', exact: true }).boundingBox();
+        const end = await page.getByRole('button', { name: 'End call' }).boundingBox();
         expect(end!.x + end!.width).toBeLessThanOrEqual(size.width);
         const look = await panel.evaluate((element) => {
           const style = getComputedStyle(element);
-          const end = [...element.querySelectorAll('button')].find((b) => b.textContent === 'End')!;
+          const end = element.querySelector('button[aria-label="End call"]')!;
           return {
             background: style.backgroundColor,
             // The text itself is fully opaque with a shadow, whatever the background opacity.
@@ -693,7 +705,7 @@ test('overlay look: panel background at 40% and 70% over light and dark busy bac
 
 test('overlay look: picture-in-picture stays solid', async () => {
   const watched = await open('compact', OVERLAY_SIZES.default);
-  const panel = watched.page.locator('.k-overlay');
+  const panel = watched.page.locator('.k-overlay').first();
   await expect(panel).toBeVisible();
   await expect(panel).toHaveCSS('background-color', 'rgb(24, 24, 27)');
   await expect(watched.page.locator('.k-glass')).toHaveCount(0);

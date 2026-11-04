@@ -46,6 +46,7 @@ import { accurateWanted, getTranscriptionMode } from '@/core/storage/transcripti
 import { takeCallLock } from '@/core/live/callLock';
 import { hygieneState, type HygieneState } from '@/core/live/hygiene';
 import { getMicDevice, setMicDevice } from '@/core/storage/overlayPrefs';
+import { createPunctuator, punctuateLine } from '@/core/punctuation/punctuator';
 import { refineLine } from '@/core/transcript/refine';
 import { displayTerms } from '@/core/transcript/display';
 import { isSound, themSilent } from '@/core/audio/silence';
@@ -178,6 +179,11 @@ export function LivePage({
   // The session's own spellings for the transcript (sentence case, Day 6 Stage 4d), kept
   // stable so the memoised transcript strip does not re-render on every update.
   const terms = useMemo(() => displayTerms(session), [session]);
+  // v1.1.0: the terms as the user wrote them, for the accurate pass (keyTermFix.ts).
+  const plainTerms = useMemo(
+    () => terms.filter((term): term is string => typeof term === 'string'),
+    [terms],
+  );
   // Display only (instructions and messages); behaviour differences live in src/platform.
   // The server snapshot is 'browser'; the desktop app switches after hydration.
   const platform = useSyncExternalStore(
@@ -242,6 +248,9 @@ export function LivePage({
   // v1.1.0 (ADR-0044): whether the accurate engine should run now. A ref, because the speech engine's
   // callbacks read it for each line; on Auto it follows the power source during the call.
   const accurateOn = useRef(false);
+  // v1.1.0 (ADR-0044): marks and capitals for the live engine's lines, offline, in a worker of its own.
+  const [punctuator] = useState(() => createPunctuator());
+  useEffect(() => () => punctuator.dispose(), [punctuator]);
   const [micDeviceId, setMicDeviceId] = useState('');
   const [channelErrors, setChannelErrors] = useState<Partial<Record<Speaker, string>>>({});
   const [themSource, setThemSource] = useState<OtherSideSource | null>(null);
@@ -298,6 +307,7 @@ export function LivePage({
       // that has the engine, and not when it is set to Off. Otherwise no audio leaves the speech
       // worker. Each line then asks whether it should run now, because Auto follows the power source.
       const accurate = getTranscriptionMode() !== 'off' ? getPlatform().accurate : null;
+      punctuator.warm();
       return createSttEngine({
         hotwords,
         keepAudio: accurate !== null,
@@ -327,9 +337,15 @@ export function LivePage({
           const line = transcript.addFinal({ speaker: channel, text, tStart, tEnd });
           noteHeard(channel, text);
           watchdog.current.noteProgress(performance.now());
-          // The second pass replaces the words a moment later; the live line is the fallback.
+          // The second pass replaces the words a moment later; the live line is the fallback. The
+          // accurate engine writes its own marks; the live engine's lines get theirs from the
+          // punctuation pass, as do lines the accurate engine could not do.
           if (accurate && audio && accurateOn.current) {
-            void refineLine(accurate, transcript, line.id, text, audio);
+            void refineLine(accurate, transcript, line.id, text, audio, plainTerms).then((done) => {
+              if (!done) void punctuateLine(punctuator, transcript, line.id, text);
+            });
+          } else {
+            void punctuateLine(punctuator, transcript, line.id, text);
           }
         },
         onStats: (stats) => {
@@ -337,7 +353,7 @@ export function LivePage({
         },
       });
     },
-    [hotwords, transcript, noteHeard, dictationRoute],
+    [hotwords, transcript, noteHeard, dictationRoute, plainTerms, punctuator],
   );
 
   // v1.1.0 (ADR-0044): Accurate transcription follows the setting and the power source, and only uses

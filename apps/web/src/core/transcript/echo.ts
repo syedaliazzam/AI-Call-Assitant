@@ -13,13 +13,15 @@
  * - only a "You" line of at least ECHO_MIN_WORDS words is judged. Short replies ("yes",
  *   "exactly", "sounds good") are never hidden: they are real turn-taking, and too short to tell
  *   an echo from agreement;
- * - it is compared with what "Them" said from 10 s before the line started to 2 s after it ended
- *   (the echo arrives together with, or just after, the original);
+ * - it is compared with what "Them" said from 10 s before the line started to 3 s after it ended
+ *   (the echo arrives together with, or just after, the original; v1.1.0: 3 s, was 2 s);
  * - score = longest common word sequence (in order) ÷ number of words in the "You" line. Order
  *   matters: a real reply that reuses words of the question ("the professional plan costs…" after
  *   "what does the professional plan cost") shares a few words, not a long run in the same order;
  * - echo when score ≥ ECHO_MIN_SCORE (0.6). The developer's two examples score 0.83 and 0.91;
  *   speech-to-text changes some words of an echo ("IT" → "YOU'D"), so 1.0 is never required.
+ * - v1.1.0 (ADR-0044): a "You" line of exactly three words is an echo only when "Them" said the same
+ *   three words in the same order within 3 s of it. Four or more words still use the rule above.
  * Only "You" lines are ever judged; "Them" lines are never hidden.
  */
 import { normalizeWords } from '../stt/wer';
@@ -34,7 +36,13 @@ export const ECHO_MIN_SCORE = 0.6;
 export const ECHO_WINDOW_BEFORE_MS = 10_000;
 
 /** How far after a "You" line's end "Them" speech is compared, in ms. */
-export const ECHO_WINDOW_AFTER_MS = 2_000;
+export const ECHO_WINDOW_AFTER_MS = 3_000;
+
+/** A "You" line this short is judged only by an exact match, very close in time (v1.1.0). */
+export const ECHO_SHORT_WORDS = 3;
+
+/** How close in time, either way, an exact match of a short line must be, in ms (v1.1.0). */
+export const ECHO_SHORT_WINDOW_MS = 3_000;
 
 /**
  * Length of the longest common subsequence of two word lists (words in the same order, gaps
@@ -78,10 +86,13 @@ export function echoScore(youText: string, themText: string): number {
  *
  * @param youText  The "You" line.
  * @param themText What "Them" said around that time (joined in time order).
- * @returns True for an echo (long enough, and score ≥ ECHO_MIN_SCORE).
+ * @param nearText What "Them" said within ECHO_SHORT_WINDOW_MS of it (for a three-word line).
+ * @returns True for an echo: long enough with score ≥ ECHO_MIN_SCORE, or three words said exactly.
  * Called from: transcript.ts (addPartial, addFinal); tests
  */
-export function isEcho(youText: string, themText: string): boolean {
-  if (normalizeWords(youText).length < ECHO_MIN_WORDS) return false;
+export function isEcho(youText: string, themText: string, nearText = ''): boolean {
+  const words = normalizeWords(youText).length;
+  if (words === ECHO_SHORT_WORDS) return echoScore(youText, nearText) === 1;
+  if (words < ECHO_MIN_WORDS) return false;
   return echoScore(youText, themText) >= ECHO_MIN_SCORE;
 }

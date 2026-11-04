@@ -62,3 +62,25 @@ describe('lcsLength', () => {
     expect(lcsLength([], ['a'])).toBe(0);
   });
 });
+
+describe('three-word lines (v1.1.0, ADR-0044)', () => {
+  it('are an echo only when said exactly, very close in time', () => {
+    expect(isEcho('what about onboarding', 'said long before', 'what about onboarding')).toBe(true);
+    expect(isEcho('WHAT ABOUT ONBOARDING', '', 'so what about onboarding then')).toBe(true);
+    // The words in the wider window do not count for so short a line.
+    expect(isEcho('what about onboarding', 'what about onboarding', 'something else')).toBe(false);
+    expect(isEcho('what about pricing', '', 'what about onboarding')).toBe(false);
+    expect(isEcho('about what onboarding', '', 'what about onboarding')).toBe(false);
+  });
+
+  it('leave shorter lines alone, however close', () => {
+    expect(isEcho('sounds good', 'sounds good', 'sounds good')).toBe(false);
+  });
+
+  it('the wider rule still needs four words and 60%', () => {
+    expect(isEcho('what about the onboarding', 'what about the onboarding')).toBe(true);
+    expect(isEcho('we could look at onboarding next week', 'what about the onboarding')).toBe(
+      false,
+    );
+  });
+});

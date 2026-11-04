@@ -30,6 +30,7 @@ apps/web/next-env.d.ts
 # the model and test recordings (development only) and the runtime (also fetched by every build).
 apps/web/public/models/**
 apps/web/public/stt-runtime/**
+apps/web/public/punct/**
 
 # Evaluation results: per-scenario scores and grader reasons, kept on the developer's machine
 apps/web/eval-results/

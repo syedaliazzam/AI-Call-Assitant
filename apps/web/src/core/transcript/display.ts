@@ -79,6 +79,39 @@ export function splitForDisplay(line: Utterance): Utterance[] {
 }
 
 /**
+ * Splits written text at its questions (v1.1.0, item 19): each question stands alone, and the sentences
+ * between them stay together up to MAX_LINE_WORDS, so one bubble holds one thing to answer. Text with no
+ * marks (the live engine before the punctuation pass) stays whole.
+ *
+ * @param text A line of text.
+ * @returns Its parts, in order; one part when there is nothing to split.
+ * Called from: core/transcript/group.ts; tests
+ */
+export function splitAtQuestions(text: string): string[] {
+  // A sentence ends at a mark followed by a capital, so "2.5" and "e.g. this" stay in one piece.
+  const sentences = text.trim().split(/(?<=[.?!]["'’)\]]?)\s+(?=["'(]?[A-Z])/);
+  if (sentences.length < 2) return [text];
+  const parts: string[] = [];
+  let run: string[] = [];
+  const flush = () => {
+    if (run.length > 0) parts.push(run.join(' '));
+    run = [];
+  };
+  for (const sentence of sentences) {
+    if (/\?["'’)\]]*$/.test(sentence)) {
+      flush();
+      parts.push(sentence);
+      continue;
+    }
+    const words = [...run, sentence].join(' ').split(/\s+/).length;
+    if (words > MAX_LINE_WORDS) flush();
+    run.push(sentence);
+  }
+  flush();
+  return parts;
+}
+
+/**
  * The spellings to restore in displayed lines: the session's key terms (one per line, without a
  * typed " :score") and its company, as the user wrote them (Day 6 Stage 4d).
  *
@@ -246,22 +279,53 @@ export interface TranscriptChip {
 }
 
 /**
- * Hesitation sounds the live-words chips leave out (v1.0.3): they carry no meaning and crowd the
- * few chips there are. The transcript itself keeps every word.
+ * Hesitation sounds the live-words chips leave out (v1.0.3; more in v1.1.0): they carry no meaning and
+ * crowd the few chips there are. The transcript itself keeps every word.
  */
 export const CHIP_FILLERS: ReadonlySet<string> = new Set([
   'um',
   'umm',
+  'ummm',
   'uh',
   'uhh',
   'uhm',
   'er',
   'erm',
+  'ah',
+  'ahh',
+  'eh',
   'hmm',
+  'hmmm',
   'hm',
+  'huh',
   'mm',
+  'mmm',
   'mhm',
+  'mhmm',
+  'mmhmm',
+  'uhhuh',
 ]);
+
+/**
+ * Words that only lead into what comes next (v1.1.0): left out at the start of a line's chips ("So,
+ * like, what…" becomes "What…"), and kept anywhere else, where they may mean something.
+ */
+const CHIP_LEAD_INS: ReadonlySet<string> = new Set([
+  'so',
+  'well',
+  'like',
+  'okay',
+  'ok',
+  'right',
+  'yeah',
+  'alright',
+  'anyway',
+  'basically',
+  'actually',
+]);
+
+/** Filler phrases the chips leave out anywhere in a line (v1.1.0). */
+const CHIP_FILLER_PHRASES = /\b(?:you know|i mean|sort of|kind of)\b[,.]?\s*/gi;
 
 /**
  * A line's words for the chips: without hesitation sounds, and with a capital first word when the
@@ -272,11 +336,16 @@ export const CHIP_FILLERS: ReadonlySet<string> = new Set([
  * Called from: transcriptChips(); tests
  */
 export function chipWords(text: string): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  const kept = words.filter(
-    (word) => !CHIP_FILLERS.has(word.toLowerCase().replace(/[^\p{L}]+/gu, '')),
+  const first = text.split(/\s+/).find(Boolean);
+  const words = text.replace(CHIP_FILLER_PHRASES, '').split(/\s+/).filter(Boolean);
+  const plain = (word: string) => word.toLowerCase().replace(/[^\p{L}]+/gu, '');
+  // Only when something is left: a line of just "Okay" still shows.
+  const firstKept = words.findIndex(
+    (word) => !CHIP_LEAD_INS.has(plain(word)) && !CHIP_FILLERS.has(plain(word)),
   );
-  if (kept.length > 0 && kept[0] !== words[0]) {
+  if (firstKept > 0) words.splice(0, firstKept);
+  const kept = words.filter((word) => !CHIP_FILLERS.has(plain(word)));
+  if (kept.length > 0 && kept[0] !== first) {
     kept[0] = kept[0]!.charAt(0).toUpperCase() + kept[0]!.slice(1);
   }
   return kept;

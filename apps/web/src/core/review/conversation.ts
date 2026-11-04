@@ -1,8 +1,9 @@
 /**
  * File: apps/web/src/core/review/conversation.ts
- * Purpose: A session's call as one conversation: transcript lines and Kite's answers merged in time
- *          order, for the Transcript section's chat layout and for its TXT and PDF downloads. The
- *          downloads leave out each answer's private note: it was never meant to be said or shared.
+ * Purpose: A session's calls as one conversation: transcript lines and Kite's answers merged in time
+ *          order, for the Transcript section's tabs and for its TXT and PDF downloads, with a divider
+ *          between calls (v1.1.0). The downloads leave out each answer's private note: it was never
+ *          meant to be said or shared.
  * Used by: src/features/review/ConversationSection.tsx
  * Depends on: src/core/answer/format.ts (splitAnswer, cardQuestion), src/core/answer/history.ts
  *             (one entry per question, v1.0.4), src/core/transcript/display.ts (sentenceCase),
@@ -13,6 +14,7 @@
  */
 import { cardQuestion, splitAnswer } from '../answer/format';
 import { mergeAnswers } from '../answer/history';
+import { CALL_GAP_MS } from '../storage/migrate';
 import type { Session, StoredAnswer, StoredUtterance } from '../storage/types';
 import { sentenceCase, type DisplayTerm } from '../transcript/display';
 import { groupLines, type TranscriptGroup } from '../transcript/group';
@@ -61,7 +63,38 @@ export function conversationItems(
   return items.sort((a, b) => a.at - b.at || (a.kind === 'line' ? -1 : 1));
 }
 
-/** One thing on screen in the chat layout: a bubble of grouped lines, or one of Kite's answers. */
+/**
+ * When each call in a conversation starts (v1.1.0): a call starts at a long gap, or where an answer says
+ * one started. Lines do not record their call, so this is the same estimate the database upgrade makes,
+ * sharpened by the answers that know.
+ *
+ * @param items The conversation, in time order.
+ * @returns The first item's time in each call, oldest first.
+ * Called from: conversationEntries(), paragraphs(); tests
+ */
+export function callStarts(items: readonly ConversationItem[]): number[] {
+  const known = items.flatMap((item) =>
+    item.kind === 'answer' && item.answer.callStartedAt !== undefined
+      ? [item.answer.callStartedAt]
+      : [],
+  );
+  const starts: number[] = [];
+  let last: number | null = null;
+  for (const item of items) {
+    const before: number | null = last;
+    if (
+      before === null ||
+      item.at - before >= CALL_GAP_MS ||
+      known.some((start) => start > before && start <= item.at)
+    ) {
+      starts.push(item.at);
+    }
+    last = item.at;
+  }
+  return starts;
+}
+
+/** One thing on screen in the chat layout: a bubble, one of Kite's answers, or a call's divider. */
 export type ConversationEntry =
   | {
       /** A bubble: one speaker's lines with short pauses between them (v1.0.2). */
@@ -71,17 +104,23 @@ export type ConversationEntry =
       /** The bubble. */
       group: TranscriptGroup;
     }
-  | Extract<ConversationItem, { kind: 'answer' }>;
+  | Extract<ConversationItem, { kind: 'answer' }>
+  | {
+      /** The start of a call, when the session has more than one (v1.1.0). */
+      kind: 'call';
+      /** When it started (Unix ms). */
+      at: number;
+    };
 
 /**
  * The conversation for the chat layout (v1.0.2): each run of lines between two answers is
  * grouped into bubbles (groupLines(): same speaker, pauses up to 4 s), so a turn cut by pauses
- * reads as one bubble. Answers stay where they were in time order. The downloads keep one row per
- * line (transcriptText(), transcriptPdf()).
+ * reads as one bubble. Answers stay where they were in time order, and a session with several calls has
+ * a divider before each. The downloads keep one row per line (transcriptText(), transcriptPdf()).
  *
  * @param items The conversation (conversationItems()), in time order.
  * @param terms The session's spellings to restore.
- * @returns The bubbles and answers, in time order.
+ * @returns The bubbles, answers and dividers, in time order.
  * Called from: ConversationSection.tsx; tests
  */
 export function conversationEntries(
@@ -89,6 +128,8 @@ export function conversationEntries(
   terms: readonly DisplayTerm[] = [],
 ): ConversationEntry[] {
   const entries: ConversationEntry[] = [];
+  const starts = callStarts(items);
+  const dividers = new Set(starts.length > 1 ? starts : []);
   let run: StoredUtterance[] = [];
   const flush = () => {
     // Saved lines are all final (only finished lines are stored).
@@ -100,6 +141,12 @@ export function conversationEntries(
     run = [];
   };
   for (const item of items) {
+    if (dividers.has(item.at)) {
+      flush();
+      entries.push({ kind: 'call', at: item.at });
+      // Two items can share a call's first moment: one divider.
+      dividers.delete(item.at);
+    }
     if (item.kind === 'line') run.push(item.line);
     else {
       flush();
@@ -108,6 +155,31 @@ export function conversationEntries(
   }
   flush();
   return entries;
+}
+
+/**
+ * Puts the entries in the order asked for. Newest first keeps each divider above its own call, so it
+ * still says what follows.
+ *
+ * @param entries     The entries, in time order.
+ * @param oldestFirst True to leave them in time order.
+ * @returns The entries to show.
+ * Called from: ConversationSection.tsx; tests
+ */
+export function orderEntries(
+  entries: readonly ConversationEntry[],
+  oldestFirst: boolean,
+): ConversationEntry[] {
+  if (oldestFirst) return [...entries];
+  const calls: ConversationEntry[][] = [[]];
+  for (const entry of entries) {
+    if (entry.kind === 'call') calls.push([entry]);
+    else calls.at(-1)!.push(entry);
+  }
+  return calls.reverse().flatMap(([first, ...rest]) => {
+    if (!first) return [];
+    return first.kind === 'call' ? [first, ...rest.reverse()] : [...rest.reverse(), first];
+  });
 }
 
 /**
@@ -130,17 +202,6 @@ export function transcriptFileName(session: Pick<Session, 'company'>, extension:
 const CLOCK = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' });
 
 /**
- * The call an item belongs to, where it is known: answers record theirs; lines do not.
- *
- * @param item The item.
- * @returns When its call connected (Unix ms), or undefined.
- * Called from: paragraphs()
- */
-function callOfItem(item: ConversationItem): number | undefined {
-  return item.kind === 'answer' ? item.answer.callStartedAt : undefined;
-}
-
-/**
  * The paragraphs of a download, shared by TXT and PDF so they always say the same.
  *
  * @param session The session.
@@ -150,7 +211,7 @@ function callOfItem(item: ConversationItem): number | undefined {
  * Called from: transcriptText(), transcriptPdf()
  */
 function paragraphs(
-  session: Pick<Session, 'company' | 'role'>,
+  session: Pick<Session, 'company' | 'role' | 'contactName'>,
   items: readonly ConversationItem[],
   terms: readonly DisplayTerm[],
 ): PdfLine[] {
@@ -162,24 +223,23 @@ function paragraphs(
     { text: about ? `Kite transcript: ${about}` : 'Kite transcript', bold: true },
     { text: '' },
   ];
-  let lastCall: number | undefined;
+  const them = session.contactName?.trim() || 'Them';
+  const starts = callStarts(items);
   let lastKind: ConversationItem['kind'] | null = null;
   for (const item of items) {
     // v1.1.0: a divider between a session's calls, and a blank line around each answer.
-    const call = callOfItem(item);
-    if (call !== undefined && lastCall !== undefined && call !== lastCall) {
+    if (lastKind !== null && starts.includes(item.at)) {
       out.push(
         { text: '' },
-        { text: `--- Call of ${CLOCK.format(call)} ---`, bold: true },
+        { text: `--- Call of ${CLOCK.format(item.at)} ---`, bold: true },
         { text: '' },
       );
     } else if (lastKind === 'answer' || (lastKind !== null && item.kind === 'answer')) {
       out.push({ text: '' });
     }
-    if (call !== undefined) lastCall = call;
     lastKind = item.kind;
     if (item.kind === 'line') {
-      const who = item.line.speaker === 'you' ? 'You' : 'Them';
+      const who = item.line.speaker === 'you' ? 'You' : them;
       out.push({
         text: `[${CLOCK.format(item.at)}] ${who}: ${sentenceCase(item.line.text, terms)}`,
       });
@@ -215,7 +275,7 @@ function paragraphs(
  * Called from: ConversationSection.tsx; tests
  */
 export function transcriptText(
-  session: Pick<Session, 'company' | 'role'>,
+  session: Pick<Session, 'company' | 'role' | 'contactName'>,
   items: readonly ConversationItem[],
   terms: readonly DisplayTerm[] = [],
 ): string {
@@ -234,9 +294,12 @@ export function transcriptText(
  * Called from: ConversationSection.tsx; tests
  */
 export function transcriptPdf(
-  session: Pick<Session, 'company' | 'role'>,
+  session: Pick<Session, 'company' | 'role' | 'contactName'>,
   items: readonly ConversationItem[],
   terms: readonly DisplayTerm[] = [],
 ): PdfResult {
-  return writePdf(`Kite transcript: ${session.company}`, paragraphs(session, items, terms));
+  const title = session.company.trim()
+    ? `Kite transcript: ${session.company.trim()}`
+    : 'Kite transcript';
+  return writePdf(title, paragraphs(session, items, terms));
 }

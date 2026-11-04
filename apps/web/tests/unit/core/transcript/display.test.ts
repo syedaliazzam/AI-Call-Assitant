@@ -9,6 +9,7 @@ import {
   chipWords,
   displayTerms,
   sentenceCase,
+  splitAtQuestions,
   splitForDisplay,
   transcriptChips,
 } from '@/core/transcript/display';
@@ -102,5 +103,74 @@ describe('chips without hesitation sounds (v1.0.3, ADR-0039)', () => {
       },
     ]);
     expect(chips.map((chip) => chip.text).join(' ')).toBe('What do you build');
+  });
+});
+
+describe('chipWords: lead-ins and filler phrases (v1.1.0)', () => {
+  it('drops words that only lead in at the start, with a capital on what is left', () => {
+    expect(chipWords('So, like, what does it cost')).toEqual(['What', 'does', 'it', 'cost']);
+    expect(chipWords('Okay right tell me more')).toEqual(['Tell', 'me', 'more']);
+  });
+
+  it('keeps those words anywhere else', () => {
+    expect(chipWords('What is it like')).toEqual(['What', 'is', 'it', 'like']);
+  });
+
+  it('keeps a line that is only a lead-in', () => {
+    expect(chipWords('Okay')).toEqual(['Okay']);
+  });
+
+  it('drops filler phrases and more hesitation sounds', () => {
+    expect(chipWords('It is, you know, kind of slow')).toEqual(['It', 'is,', 'slow']);
+    expect(chipWords('Uh-huh ahh mhmm what now')).toEqual(['What', 'now']);
+  });
+});
+
+describe('splitAtQuestions (v1.1.0, item 19)', () => {
+  it('stands each question alone, and keeps statements together', () => {
+    expect(
+      splitAtQuestions(
+        'Thanks for joining. We liked it. What did you do? And how long did it take?',
+      ),
+    ).toEqual([
+      'Thanks for joining. We liked it.',
+      'What did you do?',
+      'And how long did it take?',
+    ]);
+  });
+
+  it('keeps the statement after a question in its own part', () => {
+    expect(splitAtQuestions('What did you do? We can come back to that.')).toEqual([
+      'What did you do?',
+      'We can come back to that.',
+    ]);
+  });
+
+  it('leaves text with no marks, or one sentence, whole', () => {
+    expect(splitAtQuestions('WHAT DOES THE PLAN COST FOR FORTY SEATS')).toEqual([
+      'WHAT DOES THE PLAN COST FOR FORTY SEATS',
+    ]);
+    expect(splitAtQuestions('What does it cost?')).toEqual(['What does it cost?']);
+  });
+
+  it('does not split inside a number or an abbreviation', () => {
+    expect(splitAtQuestions('It rose 2.5 percent, e.g. in May. Is that right?')).toEqual([
+      'It rose 2.5 percent, e.g. in May.',
+      'Is that right?',
+    ]);
+  });
+
+  it('splits long statements at a sentence once they run over the limit', () => {
+    const sentence = `${new Array(20).fill('word').join(' ')}.`;
+    const capital = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+    expect(splitAtQuestions(`${capital} ${capital}`)).toEqual([capital, capital]);
+  });
+});
+
+describe('sentenceCase on written text (v1.1.0)', () => {
+  it('keeps what the punctuation pass wrote, and restores the session spellings', () => {
+    expect(sentenceCase('We run kubernetes at northwind.', ['Kubernetes', 'Northwind'])).toBe(
+      'We run Kubernetes at Northwind.',
+    );
   });
 });

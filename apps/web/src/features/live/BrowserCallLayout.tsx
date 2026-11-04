@@ -23,6 +23,7 @@ import {
   type ReactNode,
 } from 'react';
 import { clampSplit, getSplit, setSplit, SPLIT_RANGE } from '@/core/live/splitPane';
+import { useAppearance } from '@/features/appearance/useAppearance';
 import { BrandLockup } from '@/ui/BrandLockup';
 import { Badge, type BadgeTone } from '@/ui/Badge';
 import { CollapseIcon, ExpandIcon } from '@/ui/icons';
@@ -99,6 +100,8 @@ function useMediaQuery(query: string): boolean {
  * Rendered by: LivePage.tsx (browser)
  */
 export function BrowserCallLayout({ topBarSlot, ...props }: BrowserCallLayoutProps) {
+  // v1.1.0: the one Theme setting. Read only here: LiveAnswers' ⋮ changes it.
+  const { resolved } = useAppearance(false);
   // 1280 px and wider: the two halves sit side by side with a draggable divider; narrower: stacked.
   const wide = useMediaQuery('(min-width: 1280px)');
   // The remembered divider position (server render uses the default, so the two renders match);
@@ -155,10 +158,12 @@ export function BrowserCallLayout({ topBarSlot, ...props }: BrowserCallLayoutPro
   );
 
   return (
-    <div className="k-dark @container flex min-h-screen flex-col bg-ui-bg text-ui-text">
+    <div
+      className={`${resolved === 'light' ? 'k-light' : 'k-dark'} @container flex min-h-screen flex-col bg-ui-bg text-ui-text`}
+    >
       <header className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-control border-b border-ui-border bg-ui-band px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
-          <BrandLockup tone="dark" size="sm" byline={false} />
+          <BrandLockup tone={resolved} size="sm" byline={false} />
           <span aria-hidden="true" className="h-8 w-px shrink-0 bg-ui-border" />
           <div className="min-w-0">
             <p className="text-[13px] text-ui-muted">{props.title}</p>

@@ -7,8 +7,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  callStarts,
   conversationEntries,
   conversationItems,
+  orderEntries,
   transcriptFileName,
   transcriptPdf,
   transcriptText,
@@ -245,4 +247,102 @@ describe('the PDF in a real reader', () => {
     await task.destroy();
     // Loading pdf.js for the first time can take several seconds on a cold run.
   }, 60_000);
+});
+
+describe('calls (v1.1.0, item 24)', () => {
+  /**
+   * An invented saved line.
+   *
+   * @param id     Its id.
+   * @param tStart Start (ms).
+   * @returns The line.
+   */
+  const savedLine = (id: string, tStart: number): StoredUtterance => ({
+    id,
+    sessionId: 's1',
+    speaker: 'them',
+    text: 'Invented words.',
+    tStart,
+    tEnd: tStart + 1_000,
+  });
+
+  /**
+   * An invented saved answer.
+   *
+   * @param id             Its id.
+   * @param createdAt      When it was asked (ms).
+   * @param callStartedAt  When its call connected (ms).
+   * @returns The answer.
+   */
+  const savedAnswer = (id: string, createdAt: number, callStartedAt?: number): StoredAnswer =>
+    ({
+      id,
+      sessionId: 's1',
+      mode: 'answer',
+      question: `Question ${id}?`,
+      text: `Answer ${id}.`,
+      createdAt,
+      ...(callStartedAt === undefined ? {} : { callStartedAt }),
+    }) as StoredAnswer;
+
+  const GAP = 45 * 60_000;
+
+  it('starts a call at a long gap, or where an answer says one started', () => {
+    expect(callStarts(conversationItems([savedLine('a', 0), savedLine('b', 1_000)], []))).toEqual([
+      0,
+    ]);
+    expect(callStarts(conversationItems([savedLine('a', 0), savedLine('b', GAP)], []))).toEqual([
+      0,
+      GAP,
+    ]);
+    // Close in time, but the answer knows it was a new call.
+    expect(
+      callStarts(conversationItems([savedLine('a', 0)], [savedAnswer('x', 60_000, 50_000)])),
+    ).toEqual([0, 60_000]);
+  });
+
+  it('puts a divider before each call only when there are several', () => {
+    const one = conversationEntries(conversationItems([savedLine('a', 0)], []));
+    expect(one.map((entry) => entry.kind)).toEqual(['group']);
+    const two = conversationEntries(
+      conversationItems([savedLine('a', 0), savedLine('b', GAP)], []),
+    );
+    expect(two.map((entry) => entry.kind)).toEqual(['call', 'group', 'call', 'group']);
+  });
+
+  it('newest first keeps each divider above its own call', () => {
+    const entries = conversationEntries(
+      conversationItems(
+        [savedLine('a', 0), savedLine('b', 10_000), savedLine('c', GAP)],
+        [savedAnswer('x', 5_000)],
+      ),
+    );
+    const order = orderEntries(entries, false).map((entry) =>
+      entry.kind === 'group'
+        ? entry.group.id
+        : entry.kind === 'answer'
+          ? entry.answer.id
+          : `call@${entry.at}`,
+    );
+    expect(order).toEqual([`call@${GAP}`, 'c', 'call@0', 'b', 'x', 'a']);
+    expect(orderEntries(entries, true)).toEqual(entries);
+  });
+
+  it('newest first with one call just reverses', () => {
+    const entries = conversationEntries(
+      conversationItems([savedLine('a', 0), savedLine('b', 10_000)], [savedAnswer('x', 5_000)]),
+    );
+    expect(orderEntries(entries, false)).toEqual([...entries].reverse());
+  });
+
+  it('the download has a divider between calls, and the contact name before each line', () => {
+    const text = transcriptText(
+      { company: 'Harbor Lane', role: '', contactName: 'Dana' },
+      conversationItems([savedLine('a', 0), savedLine('b', GAP)], []),
+    );
+    expect(text.match(/--- Call of /g)).toHaveLength(1);
+    expect(text).toContain('Dana: Invented words.');
+    expect(text).not.toContain('Them:');
+    expect(text).not.toContain('()');
+  });
 });

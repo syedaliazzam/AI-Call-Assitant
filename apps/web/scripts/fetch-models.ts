@@ -23,6 +23,7 @@
  *
  * Where files go:
  * - runtime → apps/web/public/stt-runtime/v1.13.7/ (served from our origin in every environment);
+ * - punctuation (v1.1.0, ADR-0044) → apps/web/public/punct/ (the same, always installed);
  * - model and test recordings → apps/web/public/models/stt/ (used when the source is `local`, as
  *   in `pnpm dev`; production loads model files from Hugging Face). Both folders are git-ignored.
  */
@@ -45,12 +46,28 @@ import {
   type PinnedFile,
 } from '../src/core/stt/models';
 import { sentencePieceVocab } from '../src/core/stt/sentencepiece';
+import {
+  PUNCT_ARCHIVE,
+  PUNCT_MODEL_FILES,
+  PUNCT_PUBLIC_PATH,
+  PUNCT_RUNTIME_FILES,
+  PUNCT_RUNTIME_PATH,
+} from '../src/core/punctuation/model';
 
 /** apps/web/public (Next.js serves it at the site root). */
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
 /** apps/web/public/stt-runtime/v1.13.7. */
 export const RUNTIME_DIR = path.join(PUBLIC_DIR, ...RUNTIME_PUBLIC_PATH.split('/').filter(Boolean));
+
+/** apps/web/public/punct. */
+export const PUNCT_DIR = path.join(PUBLIC_DIR, ...PUNCT_PUBLIC_PATH.split('/').filter(Boolean));
+
+/** apps/web/public/punct/runtime-<version>. */
+export const PUNCT_RUNTIME_DIR = path.join(
+  PUBLIC_DIR,
+  ...PUNCT_RUNTIME_PATH.split('/').filter(Boolean),
+);
 
 /** apps/web/public/models/stt. */
 const MODELS_DIR = path.join(PUBLIC_DIR, ...LOCAL_MODELS_PATH.split('/').filter(Boolean));
@@ -176,15 +193,17 @@ export function findArchiveMembers(
  * @param archive Path to the downloaded (already verified) .tar.bz2.
  * @param names   File names to unpack.
  * @param tar     tar program (default: tarCommand(); a check script passes GNU tar on Windows).
+ * @param folder  The archive's top-level folder (default: the speech runtime's).
  * @returns file name → path of the unpacked file.
  * @throws Error if tar cannot read the archive, a file is not in it (the message names the
  *         missing files and shows the first entries of the listing), or unpacking fails.
- * Called from: installRuntime()
+ * Called from: installRuntime(), installPunctuation()
  */
 export function extractRuntimeFiles(
   archive: string,
   names: readonly string[],
   tar: string = tarCommand(),
+  folder: string = RUNTIME_ARCHIVE.folder,
 ): Map<string, string> {
   const work = path.dirname(archive);
   // tar runs inside the archive's folder with a relative archive name: GNU tar (for example
@@ -200,11 +219,11 @@ export function extractRuntimeFiles(
     );
   }
   const listing = list.stdout.split(/\r?\n/).filter(Boolean);
-  const { found, missing } = findArchiveMembers(listing, RUNTIME_ARCHIVE.folder, names);
+  const { found, missing } = findArchiveMembers(listing, folder, names);
   if (missing.length > 0) {
     throw new Error(
       `The runtime archive does not contain ${missing.join(', ')} (expected under ` +
-        `${RUNTIME_ARCHIVE.folder}/). First entries of the archive:\n  ` +
+        `${folder}/). First entries of the archive:\n  ` +
         listing.slice(0, 10).join('\n  '),
     );
   }
@@ -331,9 +350,53 @@ export function pinList(): string {
       Object.values(model.files).map((file) => `${file.sha256}  ${model.id} ${file.name}`),
     ),
     `${BPE_VOCAB_SHA256}  bpe.vocab (derived from bpe.model)`,
+    `${PUNCT_ARCHIVE.sha256}  punctuation archive ${PUNCT_ARCHIVE.folder}`,
+    ...Object.values(PUNCT_RUNTIME_FILES).map((file) => `${file.sha256}  punctuation ${file.name}`),
+    ...Object.values(PUNCT_MODEL_FILES).map((file) => `${file.sha256}  punctuation ${file.name}`),
     ...TEST_RECORDINGS.map((file) => `${file.sha256}  test recording ${file.name}`),
   ];
   return lines.join('\n');
+}
+
+/**
+ * Installs the punctuation files (v1.1.0, ADR-0044): the runtime as it is, and the model's two files
+ * unpacked from their release archive.
+ *
+ * @throws Error on a failed download, a wrong checksum or an archive that cannot be read.
+ * Called from: main()
+ */
+async function installPunctuation(): Promise<void> {
+  await installFiles('punctuation runtime', PUNCT_RUNTIME_DIR, Object.values(PUNCT_RUNTIME_FILES));
+  mkdirSync(PUNCT_DIR, { recursive: true });
+  const files = Object.values(PUNCT_MODEL_FILES);
+  const missing: PinnedFile[] = [];
+  for (const file of files) {
+    if (!(await isInstalled(path.join(PUNCT_DIR, file.name), file))) missing.push(file);
+  }
+  console.log(`punctuation model: ${files.length - missing.length}/${files.length} files present`);
+  if (missing.length === 0) return;
+  const work = mkdtempSync(path.join(tmpdir(), 'kite-fetch-models-'));
+  try {
+    const archive = path.join(work, 'punct.tar.bz2');
+    await download(PUNCT_ARCHIVE.url, archive, PUNCT_ARCHIVE.sha256);
+    const unpacked = extractRuntimeFiles(
+      archive,
+      missing.map((file) => file.name),
+      undefined,
+      PUNCT_ARCHIVE.folder,
+    );
+    for (const file of missing) {
+      const target = path.join(PUNCT_DIR, file.name);
+      await copyFile(unpacked.get(file.name)!, target);
+      if (!(await isInstalled(target, file))) {
+        rmSync(target, { force: true });
+        throw new Error(`Checksum mismatch for ${file.name} after unpacking`);
+      }
+      console.log(`  installed ${file.name} (${(file.bytes / 1e6).toFixed(1)} MB)`);
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -348,6 +411,7 @@ async function main(): Promise<void> {
   const runtimeOnly = process.argv.includes('--runtime-only');
   console.log(`Installing speech-to-text files${runtimeOnly ? ' (runtime only)' : ''}`);
   await installRuntime();
+  await installPunctuation();
   if (!runtimeOnly) {
     for (const model of STT_MODELS) {
       const dir = path.join(MODELS_DIR, model.id);

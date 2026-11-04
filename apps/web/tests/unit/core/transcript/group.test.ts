@@ -95,11 +95,9 @@ describe('groupLines', () => {
   it("keeps an engine's own punctuation and capitals after a sentence end", () => {
     const [group] = groupLines([
       line('a', 'them', 'We moved to Kafka last year.', 0, 1_000),
-      line('b', 'them', 'How would you size the AWS cluster?', 2_000, 3_000),
+      line('b', 'them', 'The AWS cluster stayed the same.', 2_000, 3_000),
     ]);
-    expect(group!.finalText).toBe(
-      'We moved to Kafka last year. How would you size the AWS cluster?',
-    );
+    expect(group!.finalText).toBe('We moved to Kafka last year. The AWS cluster stayed the same.');
   });
 
   it('restores the session spellings and leaves out empty lines', () => {
@@ -119,5 +117,81 @@ describe('groupLines', () => {
       line('b', 'you', 'MORE', 21_000, 22_000),
     ]);
     expect(groups).toHaveLength(2);
+  });
+});
+
+describe('splitting at questions (v1.1.0, item 19)', () => {
+  /**
+   * Makes a finished line from the other person.
+   *
+   * @param id     Its id.
+   * @param text   Its words.
+   * @param tStart Start (ms).
+   * @returns The line.
+   */
+  const them = (id: string, text: string, tStart: number) => ({
+    id,
+    speaker: 'them' as const,
+    text,
+    final: true,
+    tStart,
+    tEnd: tStart + 1_000,
+  });
+
+  it('starts a new bubble after a question mark', () => {
+    const groups = groupLines([them('a', 'What did you do?', 0), them('b', 'We liked it.', 2_000)]);
+    expect(groups.map((group) => group.finalText)).toEqual(['What did you do?', 'We liked it.']);
+  });
+
+  it('starts a new bubble for a question after a finished sentence', () => {
+    const groups = groupLines([them('a', 'We liked it.', 0), them('b', 'What did you do?', 2_000)]);
+    expect(groups).toHaveLength(2);
+    expect(groups[1]?.question).toBe(true);
+  });
+
+  it('gives two questions in capitals a bubble each', () => {
+    const groups = groupLines([
+      them('a', 'WHAT DOES THE PLAN COST', 0),
+      them('b', 'HOW LONG DOES IT TAKE', 2_000),
+    ]);
+    expect(groups).toHaveLength(2);
+  });
+
+  it('keeps a question a pause cut in two in one bubble', () => {
+    const groups = groupLines([
+      them('a', 'WHAT DOES THE PLAN COST', 0),
+      them('b', 'FOR FORTY SEATS', 2_000),
+    ]);
+    expect(groups).toHaveLength(1);
+  });
+
+  it('keeps statements in one bubble', () => {
+    const groups = groupLines([them('a', 'We liked it.', 0), them('b', 'They did too.', 2_000)]);
+    expect(groups.map((group) => group.finalText)).toEqual(['We liked it. They did too.']);
+  });
+
+  it('splits one written line, with an id for each bubble and the real line id for both', () => {
+    const groups = groupLines([them('a', 'We liked it. What did you do?', 0)]);
+    expect(groups.map((group) => group.id)).toEqual(['a', 'a#1']);
+    expect(groups.map((group) => group.lineIds)).toEqual([['a'], ['a']]);
+    expect(groups[1]?.tEnd).toBe(1_000);
+  });
+
+  it('closes a written bubble with the right mark, and leaves capitals alone', () => {
+    expect(groupLines([them('a', 'What does the plan cost', 0)])[0]?.finalText).toBe(
+      'What does the plan cost?',
+    );
+    expect(groupLines([them('a', 'We liked the results', 0)])[0]?.finalText).toBe(
+      'We liked the results.',
+    );
+    expect(groupLines([them('a', 'WHAT DOES THE PLAN COST', 0)])[0]?.finalText).toBe(
+      'What does the plan cost',
+    );
+  });
+
+  it('never closes words still being heard', () => {
+    const [group] = groupLines([{ ...them('a', 'What does the plan', 0), final: false }]);
+    expect(group?.finalText).toBe('');
+    expect(group?.provisionalText).toBe('What does the plan');
   });
 });

@@ -37,6 +37,14 @@ import { AnswerPreferencesDialog } from '@/features/session-setup/AnswerPreferen
 import type { MenuItem } from '@/ui/Menu';
 import { updateSession } from '@/core/storage/sessions';
 import { getStartInOverlay } from '@/core/storage/overlayPrefs';
+import {
+  clampStep,
+  FONT_SCALE_RANGE,
+  setFontScale,
+  setTheme,
+  type ThemeChoice,
+} from '@/core/storage/appearancePrefs';
+import { useAppearance } from '@/features/appearance/useAppearance';
 import { displayTerms, sentenceCase, transcriptChips } from '@/core/transcript/display';
 import { liveQuestion } from '@/core/transcript/liveQuestion';
 import {
@@ -150,6 +158,25 @@ export interface AnswerThisBridge {
   answeredSpans: readonly SpeechSpan[];
 }
 
+/** The theme's name in the ⋮ menu. */
+const THEME_LABELS: Readonly<Record<ThemeChoice, string>> = {
+  system: 'System',
+  light: 'Light',
+  dark: 'Dark',
+};
+
+/**
+ * The theme ⋮ moves to next.
+ *
+ * @param theme The theme now.
+ * @returns The next one.
+ * Called from: LiveAnswers
+ */
+function nextTheme(theme: ThemeChoice): ThemeChoice {
+  if (theme === 'system') return 'light';
+  return theme === 'light' ? 'dark' : 'system';
+}
+
 /** The large buttons under the message box (reference layout): text with the key on the right. */
 const BIG_BUTTON =
   'inline-flex h-12 items-center justify-center gap-2 rounded-card px-4 text-[16px] font-semibold disabled:opacity-50 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]';
@@ -176,6 +203,8 @@ const isMac = () => getPlatform().hotkeyModifier() === '⌘';
  * Rendered by: LivePage.tsx; the answer harness page
  */
 export function LiveAnswers(props: LiveAnswersProps) {
+  // Read only: the layout around this panel paints the theme (v1.1.0).
+  const appearance = useAppearance(false);
   // The overlay's menu can change how answers are written during a call (ADR-0029).
   const [style, setStyle] = useState(props.session.preferences.style);
   const session = useMemo(
@@ -582,8 +611,32 @@ export function LiveAnswers(props: LiveAnswersProps) {
     getPlatform().placeOverlay(preset);
   };
 
-  // The ⋮ menu, in the reference order; desktop-only entries only where the shell can do them.
+  // The ⋮ menu, in the reference order; desktop-only entries only where the shell can do them. The
+  // browser's own strip has the language; everything here works in a browser too (v1.1.0, item 23).
   const menu: MenuItem[] = [
+    {
+      label: `Theme: ${THEME_LABELS[appearance.theme]}`,
+      onSelect: () => setTheme(nextTheme(appearance.theme)),
+    },
+    {
+      label: `Larger text (${Math.round(appearance.fontScale * 100)}%)`,
+      onSelect: () =>
+        setFontScale(clampStep(appearance.fontScale + FONT_SCALE_RANGE.step, FONT_SCALE_RANGE)),
+    },
+    {
+      label: 'Smaller text',
+      onSelect: () =>
+        setFontScale(clampStep(appearance.fontScale - FONT_SCALE_RANGE.step, FONT_SCALE_RANGE)),
+    },
+    {
+      label: `Auto answer: ${autoOn ? 'on' : 'off'}`,
+      onSelect: () => setAutoChoice(!autoOn),
+    },
+    {
+      label: 'Edit session',
+      // Never in this window: leaving this page would end the call.
+      onSelect: () => getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
+    },
     ...(placement
       ? [
           {
@@ -658,23 +711,28 @@ export function LiveAnswers(props: LiveAnswersProps) {
           </p>
         </div>
       )}
-      <AnswerPanel
-        entries={answers.entries}
-        shownId={entry?.id ?? null}
-        hiddenBefore={hiddenBefore}
-        onShowHidden={() => setHiddenBefore(0)}
-        terms={terms}
-        mac={mac}
-        notice={answers.notice}
-        onCancel={answers.clear}
-        onRate={answers.rate}
-        onReport={answers.report}
-        onSignInAgain={() => setSignInOpen(true)}
-        {...(props.copy ? { copy: props.copy } : {})}
-        sessionType={props.session.type}
-        onReanswer={answers.reanswer}
-        onShow={answers.show}
-      />
+      <div
+        className="flex min-h-0 flex-1 flex-col"
+        style={appearance.fontScale === 1 ? undefined : { zoom: appearance.fontScale }}
+      >
+        <AnswerPanel
+          entries={answers.entries}
+          shownId={entry?.id ?? null}
+          hiddenBefore={hiddenBefore}
+          onShowHidden={() => setHiddenBefore(0)}
+          terms={terms}
+          mac={mac}
+          notice={answers.notice}
+          onCancel={answers.clear}
+          onRate={answers.rate}
+          onReport={answers.report}
+          onSignInAgain={() => setSignInOpen(true)}
+          {...(props.copy ? { copy: props.copy } : {})}
+          sessionType={props.session.type}
+          onReanswer={answers.reanswer}
+          onShow={answers.show}
+        />
+      </div>
       <ChatBox
         onSend={answers.chat}
         onAskScreen={answers.screenshot}

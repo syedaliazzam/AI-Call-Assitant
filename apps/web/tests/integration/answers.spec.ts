@@ -267,7 +267,7 @@ test('Chat sends a typed question', async () => {
   await expect(box).toHaveValue('');
 });
 
-test('a rating and a report survive a reload', async () => {
+test('a rating and a report are saved, and survive a reload', async () => {
   await page.getByRole('button', { name: 'Bad answer' }).click();
   await expect(page.getByRole('button', { name: 'Bad answer' })).toHaveAttribute(
     'aria-pressed',
@@ -286,15 +286,16 @@ test('a rating and a report survive a reload', async () => {
       { mode: 'chat', rating: 'down', note: 'Give the monthly total too.' },
     ]);
 
+  // v1.1.0: the panel holds this call's answers only, and a reload starts a new call. What was saved
+  // stays saved, for the session's review.
   await page.reload();
-  const selected = page.locator('article[aria-current="true"]');
-  await expect(selected.getByText('Earlier')).toBeVisible();
-  await expect(selected.getByRole('button', { name: 'Bad answer' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
-  await expect(selected.getByLabel('Your note')).toContainText('Give the monthly total too.');
-  await expect(selected.getByRole('button', { name: 'Reported' })).toBeDisabled();
+  await expect(page.locator('article[aria-current="true"]')).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => window.kiteAnswerHarness.saved()))
+    .toEqual([
+      { mode: 'answer', rating: null, note: '' },
+      { mode: 'chat', rating: 'down', note: 'Give the monthly total too.' },
+    ]);
 });
 
 test('deleting the session removes its answers', async () => {
@@ -325,10 +326,12 @@ test('the compact view shows the live answer and its Answer button asks the live
   );
   // Answer preferences change from the overlay's menu; the next answer uses them.
   await compact.getByRole('button', { name: 'Overlay menu' }).click();
-  await expect(compact.getByLabel('Tone')).toHaveValue('simple');
-  await compact.getByLabel('Tone').selectOption('technical');
-  await compact.getByLabel('Format').selectOption('bullets');
-  await expect(compact.getByLabel('Tone')).toHaveValue('technical');
+  await expect(compact.getByRole('button', { name: 'Tone: Simple' })).toBeVisible();
+  await compact.getByRole('button', { name: /^Tone:/ }).click();
+  await compact.getByRole('option', { name: 'Technical' }).click();
+  await compact.getByRole('button', { name: /^Format:/ }).click();
+  await compact.getByRole('option', { name: 'Bullets only' }).click();
+  await expect(compact.getByRole('button', { name: 'Tone: Technical' })).toBeVisible();
   await compact.getByRole('button', { name: 'Overlay menu' }).click();
   await compact.getByRole('button', { name: 'Chat' }).click();
   await compact.getByLabel('Type a question').fill('What is the seat price?');
