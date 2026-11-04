@@ -632,11 +632,16 @@ export function LiveAnswers(props: LiveAnswersProps) {
       label: `Auto answer: ${autoOn ? 'on' : 'off'}`,
       onSelect: () => setAutoChoice(!autoOn),
     },
-    {
-      label: 'Edit session',
-      // Never in this window: leaving this page would end the call.
-      onSelect: () => getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
-    },
+    // Never in this window: leaving this page would end the call. So not at all in a desktop shell
+    // before 1.1.0, which has no other window to open it in.
+    ...(getPlatform().kind === 'desktop' && !getPlatform().hasHomePanel()
+      ? []
+      : [
+          {
+            label: 'Edit session',
+            onSelect: () => getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
+          },
+        ]),
     ...(placement
       ? [
           {

@@ -190,3 +190,23 @@ describe('browser captureScreenshot', () => {
     expect(noShare.message).toBe(NO_SHARE_MESSAGE);
   });
 });
+
+describe('browserPlatform: what only the desktop app has (v1.1.0)', () => {
+  it('has no home panel and no panels to fit, and those calls do nothing', () => {
+    expect(browserPlatform.hasHomePanel()).toBe(false);
+    expect(browserPlatform.overlayFitsPanels()).toBe(false);
+    expect(() => browserPlatform.windowControl('close')).not.toThrow();
+    expect(() =>
+      browserPlatform.setOverlayLayout({ transcript: false, answer: false, popupHeight: 0 }),
+    ).not.toThrow();
+    expect(() => browserPlatform.onSnapZone(() => undefined)()).not.toThrow();
+  });
+
+  it('opens a page in a new tab, so the call page stays where it is', () => {
+    const open = vi.fn();
+    vi.stubGlobal('window', { open });
+    browserPlatform.openPagesWindow('/sessions/s1/edit');
+    expect(open).toHaveBeenCalledWith('/sessions/s1/edit', '_blank', expect.anything());
+    vi.unstubAllGlobals();
+  });
+});

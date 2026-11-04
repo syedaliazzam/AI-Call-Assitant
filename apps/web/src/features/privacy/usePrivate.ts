@@ -34,8 +34,8 @@ export function privateHint(state: ShareProtectionState | null): string {
       : 'A browser cannot hide its windows from screen sharing. In the meeting, share a single tab or window instead of the whole screen, or keep Kite on another monitor. The Kite desktop app can hide its windows.';
   }
   // A shell before 1.1.0 reports no scope, and covers only the overlay.
-  const what = state && state.scope !== 'all' ? "Kite's overlay" : "All of Kite's windows";
-  return `${what} are left out of screen shares (Windows 10 version 2004 or later; on macOS, some capture apps may still show them). Kite stays in your taskbar. It does nothing against monitoring or proctoring tools.`;
+  const what = state && state.scope !== 'all' ? "Kite's overlay is" : "All of Kite's windows are";
+  return `${what} left out of screen shares (Windows 10 version 2004 or later; on macOS, some capture apps may still show them). Kite stays in your taskbar. It does nothing against monitoring or proctoring tools.`;
 }
 
 /** What usePrivate() returns. */

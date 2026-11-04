@@ -1,9 +1,11 @@
 /**
  * Smoke test for the Electron shell (apps/desktop/src/main.ts, preload.ts, security.ts).
  * Launches the built app (dist/), or the installed app when KITE_INSTALLED_EXE names its
- * Kite.exe (Day 6 Stage 3), with KITE_URL pointing at a local test page and checks:
- * the window opens at 1280×820; window.kiteDesktop is exactly { version, os,
- * setHotkeysEnabled, onHotkey, captureScreenshot } and frozen; captureScreenshot() returns a
+ * Kite.exe (Day 6 Stage 3), always on a temporary profile, with KITE_URL pointing at a local test
+ * page and checks: the home panel opens at 400×560 on /home and keeps to its own pages (v1.1.0);
+ * it opens the main window at 1280×820; a web app with no /home opens the main window instead;
+ * Private covers every window type, by a real screen capture on Windows (ADR-0042); the overlay is
+ * see-through; window.kiteDesktop is exactly its methods and frozen; captureScreenshot() returns a
  * PNG scaled to ≤ 1,568 px for the Kite page, and a frame from another origin has no bridge;
  * the compact window opens at /compact/[id] always on top and unfocused, unprotected by default
  * and protected once the user turns it on, refuses a
@@ -49,6 +51,8 @@ interface TestServer {
   origin: string;
   /** How many requests it has received so far. */
   requests: number;
+  /** True to answer /home with 404, as a web app before 1.1.0 does. */
+  noHome: boolean;
 }
 
 /**
@@ -57,9 +61,14 @@ interface TestServer {
  * @returns The running server.
  */
 async function startServer(): Promise<TestServer> {
-  const result = { requests: 0 } as TestServer;
-  result.server = createServer((_request, response) => {
+  const result = { requests: 0, noHome: false } as TestServer;
+  result.server = createServer((request, response) => {
     result.requests += 1;
+    if (result.noHome && request.url?.startsWith('/home')) {
+      response.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end('<!doctype html><title>Not found</title>');
+      return;
+    }
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     response.end(FIXTURE_HTML);
   });
@@ -72,12 +81,18 @@ async function startServer(): Promise<TestServer> {
 let kite: TestServer;
 let other: TestServer;
 let app: ElectronApplication;
+/** The window the tests talk through: the panel first, then the main window. */
 let page: Page;
 
-test.beforeAll(async () => {
-  kite = await startServer();
-  // A second server on another port = another origin, which the shell must refuse.
-  other = await startServer();
+/**
+ * Starts the app on its own temporary profile. On the default profile this test overwrites the
+ * person's real overlay settings (it did, on 4 Nov 2026), and a running Kite would hold the
+ * single-instance lock.
+ *
+ * @param origin The Kite URL's origin.
+ * @returns The running app.
+ */
+function launch(origin: string): Promise<ElectronApplication> {
   // ELECTRON_RUN_AS_NODE makes Electron behave as plain Node.js. Tools that are themselves
   // Electron apps (VS Code extensions, for example) set it for their child processes, so it
   // must not be passed on to the app under test.
@@ -85,19 +100,31 @@ test.beforeAll(async () => {
   // KITE_INSTALLED_EXE (Day 6 Stage 3): test the installed app (Kite.exe from the installer)
   // instead of the development build, with the same checks.
   const installed = process.env.KITE_INSTALLED_EXE;
-  // Its own profile, always: on the default one this test overwrites the person's real overlay
-  // settings (it did, on 4 Nov 2026), and a running Kite would hold the single-instance lock.
   const profile = `--user-data-dir=${mkdtempSync(path.join(tmpdir(), 'kite-smoke-'))}`;
-  app = await electron.launch({
+  return electron.launch({
     ...(installed ? { executablePath: installed, args: [profile] } : { args: [APP_DIR, profile] }),
     env: {
       ...parentEnv,
-      KITE_URL: `${kite.origin}/`,
+      KITE_URL: `${origin}/`,
       KITE_TEST_NO_EXTERNAL_OPEN: '1',
       // The installed app would otherwise check the releases repository for updates.
       KITE_NO_UPDATE_CHECK: '1',
     },
   });
+}
+
+/**
+ * How many windows the app has.
+ *
+ * @returns The count.
+ */
+const windowCount = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+
+test.beforeAll(async () => {
+  kite = await startServer();
+  // A second server on another port = another origin, which the shell must refuse.
+  other = await startServer();
+  app = await launch(kite.origin);
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
 });
@@ -108,18 +135,49 @@ test.afterAll(async () => {
   other?.server.close();
 });
 
-test('opens one 1280×820 window on KITE_URL', async () => {
-  expect(page.url()).toBe(`${kite.origin}/`);
+test('opens the home panel at 400×560 on /home, the only window (v1.1.0, ADR-0041)', async () => {
+  expect(page.url()).toBe(`${kite.origin}/home`);
   await expect(page.locator('#heading')).toHaveText('Kite smoke test page');
+  const { sizes, workArea, taskbar } = await app.evaluate(({ BrowserWindow, screen }) => ({
+    sizes: BrowserWindow.getAllWindows().map((window) => window.getSize()),
+    workArea: screen.getPrimaryDisplay().workAreaSize,
+    taskbar: BrowserWindow.getAllWindows()[0]!.isVisible(),
+  }));
+  expect(sizes).toHaveLength(1);
+  const [width = 0, height = 0] = sizes[0]!;
+  // Display scaling can round a frameless window up by a few pixels (403 at 125%).
+  expect(Math.abs(width - Math.min(400, workArea.width))).toBeLessThanOrEqual(4);
+  expect(Math.abs(height - Math.min(560, workArea.height))).toBeLessThanOrEqual(4);
+  expect(taskbar).toBe(true);
+});
+
+test('the panel keeps to its own pages: anywhere else goes back to /home', async () => {
+  await page.evaluate((url) => {
+    window.location.href = url;
+  }, `${kite.origin}/login`);
+  await page.waitForURL(`${kite.origin}/login`);
+  await page.evaluate((url) => {
+    window.location.href = url;
+  }, `${kite.origin}/settings`);
+  await page.waitForURL(`${kite.origin}/home`);
+});
+
+test('the panel opens a page in the main window at 1280×820, and stays open', async () => {
+  const opened = app.waitForEvent('window');
+  await page.evaluate(() => window.kiteDesktop!.openPagesWindow!('/'));
+  // From here on the tests talk through the main window, as the web app's pages do.
+  page = await opened;
+  await page.waitForLoadState('domcontentloaded');
+  expect(page.url()).toBe(`${kite.origin}/`);
+  await expect.poll(windowCount).toBe(2);
   const { sizes, workArea } = await app.evaluate(({ BrowserWindow, screen }) => ({
     sizes: BrowserWindow.getAllWindows().map((window) => window.getSize()),
     workArea: screen.getPrimaryDisplay().workAreaSize,
   }));
+  const main = sizes.find(([width = 0]) => width > 500)!;
   // Electron shrinks a window to fit the screen's work area (for example 1280×720 on a
   // 1920×1080 laptop at 150% scaling), so compare against the size that fits. A shrunk side may
   // come out a few pixels smaller (macOS on a 1024×768 runner: 674 for a 677 px work area).
-  expect(sizes).toHaveLength(1);
-  const [width = 0, height = 0] = sizes[0]!;
   /**
    * Checks one side: exactly the wanted size when it fits, else within 8 px of the space.
    *
@@ -135,8 +193,17 @@ test('opens one 1280×820 window on KITE_URL', async () => {
       expect(actual).toBeLessThanOrEqual(available);
     }
   };
-  fit(1280, workArea.width, width);
-  fit(820, workArea.height, height);
+  fit(1280, workArea.width, main[0]!);
+  fit(820, workArea.height, main[1]!);
+  // A path that is not a plain Kite page is refused.
+  expect(
+    await page.evaluate(() =>
+      window.kiteDesktop!.openPagesWindow!('https://evil.example/').then(
+        () => 'opened',
+        () => 'refused',
+      ),
+    ),
+  ).toBe('refused');
 });
 
 test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async () => {
@@ -162,6 +229,11 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.setOverlayMode,
       // v1.0.4 (ADR-0040): the full call window.
       typeof window.kiteDesktop?.showCallWindow,
+      // v1.1.0 (ADR-0041): the home panel, the stacked overlay and its snap zones.
+      typeof window.kiteDesktop?.openPagesWindow,
+      typeof window.kiteDesktop?.windowControl,
+      typeof window.kiteDesktop?.setOverlayLayout,
+      typeof window.kiteDesktop?.onSnapZone,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -183,20 +255,24 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'getShareProtection',
     'minimizeMainWindow',
     'onHotkey',
+    'onSnapZone',
     'openCompactView',
+    'openPagesWindow',
     'os',
     'placeOverlay',
     'resizeOverlay',
     'setCallActive',
     'setHotkeysEnabled',
     'setOverlayCollapsed',
+    'setOverlayLayout',
     'setOverlayMode',
     'setOverlayOpacity',
     'setShareProtection',
     'showCallWindow',
     'version',
+    'windowControl',
   ]);
-  expect(bridge.methods).toEqual(Array(17).fill('function'));
+  expect(bridge.methods).toEqual(Array(21).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
@@ -227,7 +303,7 @@ test('hotkeys: the page turns them on and off, and a hotkey from the main proces
 
   // What the shell does when a global shortcut is pressed (simulated from the main process).
   await app.evaluate(({ BrowserWindow }) => {
-    const contents = BrowserWindow.getAllWindows()[0]!.webContents;
+    const contents = BrowserWindow.getAllWindows().find((w) => w.getSize()[0]! > 500)!.webContents;
     contents.send('kite:hotkey', 'answer');
     contents.send('kite:hotkey', 'not-an-action');
     contents.send('kite:hotkey', 'next');
@@ -327,9 +403,162 @@ test('compact window: opens on top without focus at /compact/[id], and closes on
   ).toBe('refused');
 
   await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
+  await expect.poll(windowCount).toBe(2);
+});
+
+test('Private covers every window: panel, main, overlay and side window, each by a capture (ADR-0042)', async () => {
+  const state = await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));
+  expect(state.scope).toBe('all');
+  // Each one painted in its own colour, in its own place on the primary screen.
+  await page.evaluate(() => window.kiteDesktop!.openCompactView!('smoke-all'));
+  await expect.poll(windowCount).toBe(3);
+  // A call is on: the panel steps aside, and a page opens in the side window, not the main one.
+  await page.evaluate(() => window.kiteDesktop!.setCallActive!(true));
   await expect
-    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length))
-    .toBe(1);
+    .poll(() =>
+      app.evaluate(
+        ({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()
+            .find((w) => w.getSize()[0]! < 500)
+            ?.isVisible() ?? null,
+      ),
+    )
+    .toBe(false);
+  const sideOpened = app.waitForEvent('window');
+  await page.evaluate(() => window.kiteDesktop!.openPagesWindow!('/settings'));
+  const side = await sideOpened;
+  await side.waitForLoadState();
+  await expect.poll(windowCount).toBe(4);
+  expect(page.url()).toBe(`${kite.origin}/`);
+
+  /**
+   * Whether each window is protected, by what the shell says.
+   *
+   * @returns The windows' states.
+   */
+  const shielded = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().map((window) => window.isContentProtected()),
+    );
+  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(true));
+  await expect.poll(shielded).toEqual([true, true, true, true]);
+
+  if (process.platform === 'win32') {
+    /**
+     * Captures the primary screen and counts, in each window's area, the pixels of a colour painted
+     * into it. The panel and the main window sit side by side, the overlay above. Numbers only: the
+     * image is never kept or printed.
+     *
+     * @returns The share of each window's area in its colour.
+     */
+    const painted = () =>
+      app.evaluate(async ({ BrowserWindow, desktopCapturer, screen }) => {
+        const display = screen.getPrimaryDisplay();
+        const scale = display.scaleFactor;
+        const sources = await desktopCapturer.getSources({
+          types: ['screen'],
+          thumbnailSize: {
+            width: Math.round(display.size.width * scale),
+            height: Math.round(display.size.height * scale),
+          },
+        });
+        const source = sources.find((x) => x.display_id === String(display.id)) ?? sources[0]!;
+        const image = source.thumbnail;
+        const actual = image.getSize();
+        const bitmap = image.toBitmap(); // BGRA
+        const fx = actual.width / display.size.width;
+        const fy = actual.height / display.size.height;
+        const shares: Record<string, number> = {};
+        for (const window of BrowserWindow.getAllWindows()) {
+          const b = window.getBounds();
+          let magenta = 0;
+          let total = 0;
+          for (
+            let y = Math.round((b.y + b.height * 0.3) * fy);
+            y < (b.y + b.height * 0.7) * fy;
+            y += 2
+          ) {
+            for (
+              let x = Math.round((b.x + b.width * 0.3) * fx);
+              x < (b.x + b.width * 0.7) * fx;
+              x += 2
+            ) {
+              const i = (y * actual.width + x) * 4;
+              total += 1;
+              if (bitmap[i + 2]! > 230 && bitmap[i + 1]! < 40 && bitmap[i]! > 230) magenta += 1;
+            }
+          }
+          shares[String(b.width)] = total === 0 ? 0 : magenta / total;
+        }
+        return shares;
+      });
+    const restore = await app.evaluate(async ({ BrowserWindow }) => {
+      const windows = BrowserWindow.getAllWindows();
+      const before = windows.map((window) => ({ id: window.id, bounds: window.getBounds() }));
+      const place = [
+        { x: 20, y: 20, width: 300, height: 200 },
+        { x: 340, y: 20, width: 320, height: 200 },
+        { x: 680, y: 20, width: 340, height: 200 },
+        { x: 20, y: 240, width: 360, height: 200 },
+      ];
+      await Promise.all(
+        windows.map(async (window, index) => {
+          window.setMinimumSize(100, 100);
+          if (window.isMinimized()) window.restore();
+          window.showInactive();
+          window.setBounds(place[index]!);
+          await window.webContents.executeJavaScript(
+            "document.documentElement.style.background = '#ff00ff'; document.body.style.background = '#ff00ff'; document.body.innerHTML = '';",
+          );
+        }),
+      );
+      return before;
+    });
+    await page.waitForTimeout(800);
+    const hidden = await painted();
+    await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));
+    await page.waitForTimeout(800);
+    const shown = await painted();
+    console.log('[smoke] protection on every window', JSON.stringify({ hidden, shown }));
+    for (const share of Object.values(hidden)) expect(share).toBe(0);
+    for (const share of Object.values(shown)) expect(share).toBeGreaterThan(0.9);
+    await app.evaluate(({ BrowserWindow }, list) => {
+      for (const { id, bounds } of list) BrowserWindow.fromId(id)?.setBounds(bounds);
+    }, restore);
+  }
+  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));
+  await page.evaluate(() => window.kiteDesktop!.setCallActive!(false));
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()
+      .find((w) => w.webContents.getURL().endsWith('/settings'))
+      ?.close();
+  });
+  await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
+  await expect.poll(windowCount).toBe(2);
+  // Back to the tests' starting point: the painted pages are loaded again.
+  await page.goto(`${kite.origin}/`);
+  await app.evaluate(({ BrowserWindow }) => {
+    for (const window of BrowserWindow.getAllWindows()) window.webContents.reload();
+  });
+  await page.waitForLoadState('domcontentloaded');
+});
+
+test('a web app with no /home (rolled back) opens the main window instead (ADR-0041)', async () => {
+  const old = await startServer();
+  old.noHome = true;
+  const rolledBack = await launch(old.origin);
+  try {
+    await expect
+      .poll(() =>
+        rolledBack.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows().map((window) => window.webContents.getURL()),
+        ),
+      )
+      .toEqual([`${old.origin}/`]);
+  } finally {
+    await rolledBack.close();
+    old.server.close();
+  }
 });
 
 test('protection (Windows): the compact window is left out of a screen capture, and shows when off', async () => {
@@ -408,9 +637,16 @@ test('protection (Windows): the compact window is left out of a screen capture, 
 
 test('overlay: opacity, collapse, minimises the main window and brings it back (ADR-0029)', async () => {
   await page.evaluate(() => window.kiteDesktop!.openCompactView!('smoke-overlay'));
-  await expect
-    .poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length))
-    .toBe(2);
+  await expect.poll(windowCount).toBe(3);
+  // See-through (ADR-0033): the window's own background is clear (Electron reports its colour without
+  // the alpha, as black; a solid window is white or the theme's).
+  expect(
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((w) => w.isAlwaysOnTop())!
+        .getBackgroundColor(),
+    ),
+  ).toMatch(/^#0{6}(?:0{2})?$/);
   /**
    * Reads the real overlay and main windows.
    *
@@ -420,7 +656,8 @@ test('overlay: opacity, collapse, minimises the main window and brings it back (
     app.evaluate(({ BrowserWindow }) => {
       const windows = BrowserWindow.getAllWindows();
       const overlay = windows.find((w) => w.getTitle().includes('overlay') || w.isAlwaysOnTop());
-      const main = windows.find((w) => w !== overlay);
+      // The panel is the other one; it is 400 wide.
+      const main = windows.find((w) => w !== overlay && w.getSize()[0]! > 500);
       return {
         opacity: overlay?.getOpacity(),
         height: overlay?.getBounds().height,
@@ -450,7 +687,7 @@ test('overlay: opacity, collapse, minimises the main window and brings it back (
   await expect.poll(async () => (await read()).minimized).toBe(true);
   await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
   await expect.poll(async () => (await read()).minimized).toBe(false);
-  expect((await read()).count).toBe(1);
+  expect((await read()).count).toBe(2);
 });
 
 test('window icon (Windows): the taskbar icon is the company logo mark (UI U4)', async () => {
@@ -476,7 +713,7 @@ test('window icon (Windows): the taskbar icon is the company logo mark (UI U4)',
       // The file the windows are given (src/icon.ts: apps/desktop/build/icon.png).
       const file = nativeImage.createFromPath(iconFile);
       const fileBlue = file.isEmpty() ? 0 : bluePixels(file);
-      const main = BrowserWindow.getAllWindows().find((w) => w.getSize()[0] === 1280);
+      const main = BrowserWindow.getAllWindows().find((w) => w.getSize()[0]! > 500);
       const sources = await desktopCapturer.getSources({
         types: ['window'],
         fetchWindowIcons: true,
@@ -558,10 +795,7 @@ test('window.open never opens a window; only http(s) would go to the system brow
   });
   await page.waitForTimeout(500);
 
-  const windowCount = await app.evaluate(
-    ({ BrowserWindow }) => BrowserWindow.getAllWindows().length,
-  );
-  expect(windowCount).toBe(1);
+  expect(await windowCount()).toBe(2);
 
   // Test mode records instead of calling shell.openExternal, so no real browser opens.
   const recorded = await app.evaluate(

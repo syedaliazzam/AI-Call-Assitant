@@ -109,8 +109,11 @@ const scope = globalThis as unknown as {
   importScripts: (...urls: string[]) => void;
   /** ONNX Runtime, once its loader has run. */
   ort: Ort;
-  /** This origin. */
-  location: { origin: string };
+  /** Where this worker runs. */
+  location: {
+    /** This origin. */
+    origin: string;
+  };
   /** Sends a reply. */
   postMessage: (message: FromPunctWorker) => void;
   /**

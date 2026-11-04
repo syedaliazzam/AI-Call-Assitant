@@ -90,8 +90,9 @@ function setup(options: { themError?: Error; micError?: Error } = {}) {
   };
   const onLevels = vi.fn();
   const onEvent = vi.fn();
-  const start = () =>
+  const start = (extra: { micDeviceId?: string } = {}) =>
     startCallCapture({
+      ...extra,
       engine,
       platform,
       onLevels,
@@ -232,5 +233,58 @@ describe('CallCapture.changeOtherSide (browser split view, Change tab)', () => {
     expect(s.engine.attach).toHaveBeenCalledWith('them', second.stream);
     // The old share's track was stopped.
     expect(s.them.track.stop).toHaveBeenCalled();
+  });
+});
+
+describe('CallCapture: changing the microphone and pausing (v1.1.0)', () => {
+  it('opens the chosen microphone at the start', async () => {
+    const fakes = setup();
+    await fakes.start({ micDeviceId: 'headset' });
+    expect(fakes.platform.getMicStream).toHaveBeenCalledWith('headset');
+  });
+
+  it('changeMic gives the engine the new stream, then stops the old one', async () => {
+    const fakes = setup();
+    const capture = await fakes.start();
+    const next = fakeStream(0.5);
+    fakes.platform.getMicStream.mockResolvedValueOnce(next.stream);
+    fakes.engine.attach.mockClear();
+    await capture.changeMic('headset');
+    expect(fakes.platform.getMicStream).toHaveBeenLastCalledWith('headset');
+    expect(fakes.engine.attach).toHaveBeenCalledWith('you', next.stream);
+    expect(fakes.mic.track.stop).toHaveBeenCalled();
+    expect(next.track.stop).not.toHaveBeenCalled();
+  });
+
+  it('changeMic with no id goes back to the default microphone', async () => {
+    const fakes = setup();
+    const capture = await fakes.start();
+    fakes.platform.getMicStream.mockClear();
+    await capture.changeMic('');
+    expect(fakes.platform.getMicStream).toHaveBeenCalledWith();
+  });
+
+  it('a microphone that cannot open keeps the old one going', async () => {
+    const fakes = setup();
+    const capture = await fakes.start();
+    fakes.platform.getMicStream.mockRejectedValueOnce(new Error('NotFoundError'));
+    await expect(capture.changeMic('gone')).rejects.toThrow();
+    expect(fakes.mic.track.stop).not.toHaveBeenCalled();
+  });
+
+  it('pause stops the audio to the engine; resume sends it again without asking again', async () => {
+    const fakes = setup();
+    const capture = await fakes.start();
+    fakes.engine.attach.mockClear();
+    capture.pause();
+    expect(fakes.engine.detach.mock.calls).toEqual([['them'], ['you']]);
+    expect(fakes.mic.track.stop).not.toHaveBeenCalled();
+    const asked = fakes.platform.getMicStream.mock.calls.length;
+    await capture.resume();
+    expect(fakes.engine.attach.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      'them',
+      'you',
+    ]);
+    expect(fakes.platform.getMicStream.mock.calls).toHaveLength(asked);
   });
 });

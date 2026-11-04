@@ -324,3 +324,50 @@ describe('createDesktopPlatform: overlay placement, resizing and modes (v1.0.2, 
     expect(bridge.setOverlayCollapsed).not.toHaveBeenCalled();
   });
 });
+
+describe('createDesktopPlatform: home panel and stacked overlay (v1.1.0, ADR-0041)', () => {
+  it('a shell before 1.1.0: no home panel, no panels, and every call does nothing', () => {
+    const platform = createDesktopPlatform({ version: '1.0.4', os: 'windows' });
+    expect(platform.hasHomePanel()).toBe(false);
+    expect(platform.overlayFitsPanels()).toBe(false);
+    // In this window, as an older shell expects: it has no other window to use.
+    const assign = vi.fn();
+    vi.stubGlobal('window', { location: { assign } });
+    platform.openPagesWindow('/settings');
+    expect(assign).toHaveBeenCalledWith('/settings');
+    vi.unstubAllGlobals();
+    expect(() => platform.windowControl('close')).not.toThrow();
+    expect(() =>
+      platform.setOverlayLayout({ transcript: true, answer: false, popupHeight: 0 }),
+    ).not.toThrow();
+    expect(() => platform.onSnapZone(() => undefined)()).not.toThrow();
+  });
+
+  it('a 1.1.0 shell: passes each call through, and a failed one stays quiet', async () => {
+    const bridge = {
+      version: '1.1.0',
+      os: 'windows' as const,
+      openPagesWindow: vi.fn(async () => undefined),
+      windowControl: vi.fn(async () => {
+        throw new Error('ipc closed');
+      }),
+      setOverlayLayout: vi.fn(async () => undefined),
+      onSnapZone: vi.fn(() => () => undefined),
+    };
+    const platform = createDesktopPlatform(bridge);
+    expect(platform.hasHomePanel()).toBe(true);
+    expect(platform.overlayFitsPanels()).toBe(true);
+    platform.openPagesWindow('/settings');
+    expect(bridge.openPagesWindow).toHaveBeenCalledWith('/settings');
+    platform.windowControl('minimize');
+    expect(bridge.windowControl).toHaveBeenCalledWith('minimize');
+    const layout = { transcript: true, answer: true, popupHeight: 200, scale: 1.1 };
+    platform.setOverlayLayout(layout);
+    expect(bridge.setOverlayLayout).toHaveBeenCalledWith(layout);
+    const handler = () => undefined;
+    platform.onSnapZone(handler);
+    expect(bridge.onSnapZone).toHaveBeenCalledWith(handler);
+    // The rejected call above must not surface as an unhandled rejection.
+    await new Promise((resolve) => setTimeout(resolve));
+  });
+});

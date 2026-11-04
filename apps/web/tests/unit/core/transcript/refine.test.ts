@@ -79,3 +79,20 @@ describe('refineLine', () => {
     expect(transcript.refineFinal).not.toHaveBeenCalled();
   });
 });
+
+describe('key terms in the accurate pass (v1.1.0, item 22)', () => {
+  it('puts the session key terms back in what the engine wrote', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const refineFinal = vi.fn(() => true);
+    await refineLine(
+      { transcribe: async () => ({ ok: true, text: "The Cabernet's rollout.", ms: 5 }) },
+      { refineFinal },
+      'u1',
+      'THE ROLLOUT',
+      new Float32Array(1),
+      ['Kubernetes'],
+    );
+    expect(refineFinal).toHaveBeenCalledWith('u1', 'THE ROLLOUT', 'The Kubernetes rollout.');
+    vi.restoreAllMocks();
+  });
+});
