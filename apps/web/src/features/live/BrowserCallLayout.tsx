@@ -1,11 +1,13 @@
 /**
  * File: apps/web/src/features/live/BrowserCallLayout.tsx
- * Purpose: The browser live call view as a split screen (live-ui-split): on the left the shared-tab
- *          preview (TabPreview) with the live transcript under it; on the right the answers panel
- *          (passed in as `answers`: the same panel as the desktop main window since v1.0.2, with
- *          its own call timer, ⋮ menu and Exit). A divider between the halves is draggable and
- *          remembered per device; at 1280 px and wider the halves sit side by side, below that they
- *          stack (preview above answers). The right panel can be collapsed to a side arrow.
+ * Purpose: The browser live call view as a split screen (live-ui-split) that fills the whole window,
+ *          over the app's sidebar, so the shared screen gets the room. On the left, edge to edge,
+ *          the shared-tab preview and its control strip (TabPreview) with the live transcript under
+ *          them; on the right the brand and the call's top bar (call timer, ⋮ menu, End) above the
+ *          answers panel (passed in as `answers`: the same panel as the desktop main window since
+ *          v1.0.2). A divider between the halves is draggable and remembered per device; at 1280 px
+ *          and wider the halves sit side by side, below that they stack (preview above answers). An
+ *          arrow on the window's right edge hides or shows the answers.
  * Used by: src/features/live/LivePage.tsx (browser only; the desktop keeps LiveCallLayout)
  * Depends on: src/features/live/TabPreview.tsx, src/core/live/splitPane.ts, src/ui (BrandLockup,
  *             Badge, icons), React
@@ -26,7 +28,7 @@ import { clampSplit, getSplit, setSplit, SPLIT_RANGE } from '@/core/live/splitPa
 import { useAppearance } from '@/features/appearance/useAppearance';
 import { BrandLockup } from '@/ui/BrandLockup';
 import { Badge, type BadgeTone } from '@/ui/Badge';
-import { CollapseIcon, ExpandIcon } from '@/ui/icons';
+import { ChevronDownIcon } from '@/ui/icons';
 import { TabPreview, type TabPreviewProps } from './TabPreview';
 
 /** The call's status badge in the top bar. */
@@ -45,7 +47,7 @@ export interface BrowserCallLayoutProps {
   name: string;
   /** The status badge. */
   status: BrowserCallStatus;
-  /** The audio meters (top bar). */
+  /** The audio meters (in the control strip). */
   meters: ReactNode;
   /** The shared-tab preview and its control strip. */
   preview: TabPreviewProps;
@@ -56,7 +58,7 @@ export interface BrowserCallLayoutProps {
    * the message box and the Answer and Screenshot buttons (v1.0.2: the same panel as the desktop).
    */
   answers: ReactNode;
-  /** Notices across the full width (channel errors, restarts), or nothing. */
+  /** Notices above the transcript (channel errors, restarts), or nothing. */
   notices?: ReactNode;
   /** Receives the element the call's top bar goes in (LiveAnswers renders into it). */
   topBarSlot?: (element: HTMLDivElement | null) => void;
@@ -138,12 +140,15 @@ export function BrowserCallLayout({ topBarSlot, ...props }: BrowserCallLayoutPro
 
   const sideBySide = wide && !collapsed;
   const left = (
+    // Stacked (narrow) the window scrolls, so this column takes its own height instead of sharing.
     <section
       aria-label="Shared tab and transcript"
-      className="flex min-h-0 min-w-0 flex-1 flex-col gap-3"
+      className={`flex min-w-0 flex-col ${wide ? 'min-h-0 flex-1' : 'shrink-0'}`}
+      style={sideBySide ? { gridColumn: 1, gridRow: '1 / 3' } : undefined}
     >
-      <TabPreview {...props.preview} />
-      <div className="flex min-h-[10rem] flex-1 flex-col">{props.transcript}</div>
+      <TabPreview {...props.preview} meters={props.meters} />
+      {props.notices && <div className="flex flex-col gap-2 px-4 pt-3">{props.notices}</div>}
+      <div className={`flex min-h-0 flex-col ${wide ? 'flex-1' : 'h-80'}`}>{props.transcript}</div>
     </section>
   );
   const right = (
@@ -151,78 +156,81 @@ export function BrowserCallLayout({ topBarSlot, ...props }: BrowserCallLayoutPro
     // removed (v1.0.4): this panel owns the call's answers and the overlay's link.
     <section
       aria-label="Answers panel"
-      className={`min-h-0 min-w-0 flex-col ${collapsed ? 'hidden' : 'flex'} ${sideBySide ? '' : 'h-[40rem]'}`}
+      className={`min-h-0 min-w-0 flex-col p-4 ${collapsed ? 'hidden' : 'flex'} ${sideBySide ? '' : 'h-[40rem] shrink-0'}`}
+      style={sideBySide ? { gridColumn: 3, gridRow: 2 } : undefined}
     >
       {props.answers}
     </section>
   );
 
   return (
+    // fixed inset-0: the call takes the whole window, over the sidebar, whose width it needs. The
+    // app's dialogs and notices still show above it: they open in the browser's top layer.
     <div
-      className={`${resolved === 'light' ? 'k-light' : 'k-dark'} @container flex min-h-screen flex-col bg-ui-bg text-ui-text`}
+      ref={bodyRef}
+      className={`${resolved === 'light' ? 'k-light' : 'k-dark'} @container fixed inset-0 z-30 bg-ui-bg text-ui-text ${sideBySide ? 'grid' : 'flex flex-col'} ${wide ? '' : 'overflow-y-auto'}`}
+      style={
+        sideBySide
+          ? {
+              gridTemplateColumns: `${fraction}fr 0.5rem ${1 - fraction}fr`,
+              gridTemplateRows: 'auto minmax(0, 1fr)',
+            }
+          : undefined
+      }
     >
-      <header className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-control border-b border-ui-border bg-ui-band px-4 py-3 sm:px-6">
-        <div className="flex min-w-0 items-center gap-3">
+      <header
+        className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-ui-border bg-ui-band px-4 py-2.5"
+        style={sideBySide ? { gridColumn: 3, gridRow: 1 } : undefined}
+      >
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <BrandLockup tone={resolved} size="sm" byline={false} />
           <span aria-hidden="true" className="h-8 w-px shrink-0 bg-ui-border" />
           <div className="min-w-0">
-            <p className="text-[13px] text-ui-muted">{props.title}</p>
-            <h1 className="truncate text-[15px] font-medium text-ui-heading">{props.name}</h1>
+            <h1 className="truncate text-[14px] font-medium text-ui-heading">{props.name}</h1>
+            <div className="flex items-center gap-2">
+              <p className="truncate text-[12px] text-ui-muted">{props.title}</p>
+              <Badge tone={props.status.tone}>{props.status.label}</Badge>
+            </div>
           </div>
         </div>
-        <Badge tone={props.status.tone}>{props.status.label}</Badge>
-        <div className="ml-auto flex items-center gap-3">
-          <div className="flex flex-col gap-1">{props.meters}</div>
-          {/* The side arrow collapses the answers panel, leaving the preview the whole width. */}
-          {wide && (
-            <button
-              type="button"
-              aria-label={collapsed ? 'Show answers' : 'Hide answers'}
-              aria-pressed={collapsed}
-              onClick={() => setCollapsed((value) => !value)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-control text-ui-muted hover:bg-ui-surface hover:text-ui-text focus-visible:[box-shadow:var(--k-focus)] focus:outline-none pointer-coarse:min-h-11 pointer-coarse:min-w-11"
-            >
-              {collapsed ? <ExpandIcon /> : <CollapseIcon />}
-            </button>
-          )}
-        </div>
+        {/* empty:hidden: in a harness with no top bar in the slot, no empty space shows. */}
+        <div ref={topBarSlot} className="shrink-0 empty:hidden" />
       </header>
 
-      {/* empty:hidden: in a harness with no top bar in the slot, no empty band shows. */}
-      <div
-        ref={topBarSlot}
-        className="border-b border-ui-border bg-ui-band px-4 py-2 empty:hidden sm:px-6"
-      />
-
-      {props.notices && (
-        <div className="flex flex-col gap-2 px-4 pt-4 sm:px-6">{props.notices}</div>
+      {left}
+      {sideBySide && (
+        // The draggable divider; a wide hit area, a thin visible line.
+        <div
+          role="separator"
+          aria-label="Resize"
+          aria-orientation="vertical"
+          className="group relative flex cursor-col-resize items-center justify-center"
+          style={{ gridColumn: 2, gridRow: '1 / 3' }}
+          onPointerDown={(event) => {
+            dragging.current = true;
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+        >
+          <span className="absolute inset-y-0 w-px bg-ui-border" />
+          <span className="relative h-16 w-1 rounded-full bg-ui-muted group-hover:bg-ui-text" />
+        </div>
       )}
+      {right}
 
-      <div
-        ref={bodyRef}
-        className={`gap-4 p-4 sm:p-6 ${sideBySide ? 'grid h-[calc(100vh-7.5rem)] items-stretch' : 'flex flex-1 flex-col'}`}
-        style={
-          sideBySide ? { gridTemplateColumns: `${fraction}fr 0.5rem ${1 - fraction}fr` } : undefined
-        }
-      >
-        {left}
-        {sideBySide && (
-          // The draggable divider; a wide hit area, a thin visible line.
-          <div
-            role="separator"
-            aria-label="Resize"
-            aria-orientation="vertical"
-            className="group flex cursor-col-resize items-center justify-center"
-            onPointerDown={(event) => {
-              dragging.current = true;
-              event.currentTarget.setPointerCapture(event.pointerId);
-            }}
-          >
-            <span className="h-16 w-1 rounded-full bg-ui-border group-hover:bg-ui-muted" />
-          </div>
-        )}
-        {right}
-      </div>
+      {/* The arrow on the window's edge hides the answers, leaving the preview the whole width. */}
+      {wide && (
+        <button
+          type="button"
+          aria-label={collapsed ? 'Show answers' : 'Hide answers'}
+          aria-pressed={collapsed}
+          onClick={() => setCollapsed((value) => !value)}
+          className="absolute right-1 top-1/2 inline-flex h-11 w-6 -translate-y-1/2 items-center justify-center rounded-control border border-ui-border bg-ui-surface text-ui-muted hover:bg-ui-hover hover:text-ui-text focus-visible:[box-shadow:var(--k-focus)] focus:outline-none pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+        >
+          <span className={`inline-flex ${collapsed ? 'rotate-90' : '-rotate-90'}`}>
+            <ChevronDownIcon />
+          </span>
+        </button>
+      )}
     </div>
   );
 }

@@ -80,11 +80,12 @@ From a screenshot or a typed question: the **approach** in one line, **Key steps
 
 ### The browser view
 
-The browser shows the call side by side from 1280 px wide, and stacked on smaller screens:
+During a call the browser view fills the whole window; the sidebar comes back when the call ends. It shows the call side by side from 1280 px wide, and stacked on smaller screens:
 
-- **Left:** a live preview of the shared tab with a control strip (**Stop**, **Clear**, the answer **Language**, **Change tab** to share another tab without ending the call, and **Minimize** to the overlay), and the transcript below it, in bubbles.
-- **Right:** your answers as cards, newest at the top, the message box, and the big **Answer** and **Screenshot** buttons. The arrow at the top hides or shows this side.
-- **Across the top:** the microphone, **Answer**, **Screenshot**, **Chat**, the call timer, **Back to compact**, the **⋮** menu (**Theme**, **Larger text**, **Smaller text**, **Auto answer**, **Edit session** in a new tab, answer preferences, **Clear answers**) and **End**.
+- **Left, top:** a large live preview of the shared tab, with **Change tab** (share another tab without ending the call) and **Minimize** (open the overlay) in its corner.
+- **Left, under the preview:** **Stop**, **Clear**, the audio levels and the answer **Language**, then the transcript in bubbles.
+- **Right, top:** the session and its status, the call timer, the **⋮** menu (**Theme**, **Larger text**, **Smaller text**, **Auto answer**, **Edit session** in a new tab, answer preferences, **Clear answers**) and **End**.
+- **Right:** your answers as cards, newest at the top, the message box with its microphone, and the big **Answer** and **Screenshot** buttons. The arrow on the window's right edge hides or shows this side.
 - Drag the divider to resize the two sides. Kite remembers where you left it.
 - The shortcuts work while Kite's tab has focus; only the desktop app has them everywhere.
 

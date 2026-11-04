@@ -734,9 +734,9 @@ test('browser split view: preview and transcript left, answers right; side by si
     const right = await box(watched.page, '[aria-label="Answers panel"]');
     if (split) {
       await expect(divider).toBeVisible();
-      // Side by side: the answers start to the right of the preview, at about the same height.
+      // Side by side: the answers start to the right of the preview, under the top bar there.
       expect(left.x).toBeLessThan(right.x);
-      expect(Math.abs(left.y - right.y)).toBeLessThan(40);
+      expect(right.y - left.y).toBeLessThan(90);
     } else {
       await expect(divider).toHaveCount(0);
       // Stacked: the answers sit below the preview column.
@@ -753,4 +753,47 @@ test('browser split view: preview and transcript left, answers right; side by si
     }
     await watched.context.close();
   }
+});
+
+test('browser split view: the shared screen is big, with nothing laid over most of it', async () => {
+  const size = { width: 1903, height: 875, touch: false };
+  const watched = await open('split', size);
+  const video = watched.page.getByLabel('Shared tab preview');
+  await expect(video).toBeVisible();
+  // The harness's stream is 1920 × 950: the preview takes that shape as soon as it plays.
+  await expect
+    .poll(async () => {
+      const shown = await box(watched.page, '[aria-label="Shared tab preview"]');
+      return Math.round((shown.width / shown.height) * 100);
+    })
+    .toBe(Math.round((1920 / 950) * 100));
+
+  // Edge to edge from the window's corner, over the sidebar, half the window wide.
+  const shown = await box(watched.page, '[aria-label="Shared tab preview"]');
+  expect(shown.x).toBe(0);
+  expect(shown.y).toBe(0);
+  expect(shown.width).toBeGreaterThan(size.width * 0.49);
+
+  // The control strip is under the picture, not over it, and the transcript keeps room.
+  const stop = await watched.page.getByRole('button', { name: 'Stop' }).boundingBox();
+  expect(stop!.y).toBeGreaterThanOrEqual(shown.height);
+  const transcript = await box(watched.page, '[aria-label="Live transcript"]');
+  expect(transcript.height).toBeGreaterThan(200);
+  // Nothing in the window scrolls.
+  expect(transcript.y + transcript.height).toBeLessThanOrEqual(size.height);
+
+  // The top bar is only the timer, ⋮ and End; the big buttons are still there.
+  const bar = watched.page.getByRole('toolbar', { name: 'Call controls' });
+  await expect(bar.getByRole('button')).toHaveCount(2);
+  await expect(watched.page.getByRole('button', { name: /^Answer/ })).toHaveCount(1);
+  await expect(watched.page.getByRole('button', { name: /^Screenshot/ })).toHaveCount(1);
+
+  // Hiding the answers: the column takes the window's width, and End stays.
+  await watched.page.getByRole('button', { name: 'Hide answers' }).click();
+  const left = await box(watched.page, '[aria-label="Shared tab and transcript"]');
+  expect(left.width).toBe(size.width);
+  await expect(watched.page.getByRole('button', { name: 'End', exact: true })).toBeVisible();
+  await watched.page.getByRole('button', { name: 'Show answers' }).click();
+  await expect(watched.page.getByRole('button', { name: /^Answer/ })).toBeVisible();
+  await watched.context.close();
 });

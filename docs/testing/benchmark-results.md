@@ -194,6 +194,6 @@ The developer chose to skip these on 4 Nov 2026. The numbers above do not cover 
 - **CPU early in a call:** 191% in one 2-minute run, against a mean of 86% over 10 minutes. `call-load.ts` now prints each minute, so the next run can show whether the start of a call costs more.
 - **`cv-embellishment` is below its gate:** 6.75 at 2 runs and 6.58 at 6 runs, against 7.10 and the absolute target. No regression against the 6.72 average of 3 Nov; released by the developer's decision (`docs/testing/answer-eval.md`).
 - **Raw answer lines:** 36% are within 12 words as the model writes them. The card's cut brings it to 98% as shown, which is the gate (ADR-0043).
-- **Visual:** `browser-split-1.png` and `browser-split-2.png` were never compared, and the browser view's language picker sits off-centre in its pill (`docs/testing/v1.1.0-visual-check.md`).
+- **Visual:** `browser-split-1.png` and `browser-split-2.png` were never compared (`docs/testing/v1.1.0-visual-check.md`). The browser view's off-centre language picker was fixed by the later browser call layout change.
 - **macOS was not run** (`docs/testing/macos-checklist.md`).
 - **Two manual tools still target v1.0.4's UI:** `apps/desktop/tests/visual/call-window-shots.ts` and `apps/web/tests/visual/browser-shots.ts`.

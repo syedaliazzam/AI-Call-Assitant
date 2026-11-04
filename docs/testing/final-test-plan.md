@@ -113,7 +113,7 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 3.18 | Turn Private off in Settings; look at the phone; check both **⋮** menus. | Kite's windows **are** visible, and every menu agrees it is off. |
 | 3.19 | Connect, then leave the call silent for 10 minutes, then 30. | "Still in a call?" with **Yes**; then listening pauses with **Resume**, which starts it again without asking for the microphone. |
 | 3.20 | Use speakers and let the other side talk. | Echoed lines stay hidden, and a hint suggests headphones, once. |
-| 3.21 | In Chrome (browser Kite), start a call and press **Back to compact**. | A picture-in-picture window with the same bars and panels, on a solid background. |
+| 3.21 | In Chrome (browser Kite), start a call and press **Minimize**. | A picture-in-picture window with the same bars and panels, on a solid background. |
 
 ## 3b. Browser split call view (live-ui-split)
 
@@ -121,7 +121,7 @@ In Chrome, on a laptop (1280 px or wider), start a call sharing a real tab (for 
 
 | # | Do | Expect |
 |---|---|---|
-| 3b.1 | Look at the call screen. | Left: the shared tab plays as a live preview with a translucent control strip on top (Stop with a mic dot, Clear, Language, Change tab, Minimize) and the transcript below it in bubbles, oldest at the top. Right: the answers as cards, the message box and the big Answer and Screenshot buttons. Across the top: the microphone, Answer, Screenshot, Chat, the timer, Back to compact, ⋮ and End. |
+| 3b.1 | Look at the call screen. | The call fills the window, with no sidebar. Left: the shared tab plays edge to edge from the top-left corner, with Change tab and Minimize in its corner; under it Stop with a mic dot, Clear, the audio levels and Language, then the transcript in bubbles, oldest at the top. Right, at the top: the session, its status, the timer, ⋮ and End; below them the answers as cards, the message box and the big Answer and Screenshot buttons. |
 | 3b.1a | ⋮: Theme, Larger text, Smaller text, Auto answer, Edit session. | Each works. Edit session opens in a new tab, and the call keeps going. |
 | 3b.2 | Drag the divider between the halves, then reload. | The halves resize; the position is remembered after the reload. |
 | 3b.3 | Narrow the window below 1280 px (or open on a phone). | The two halves stack, the preview above the answers; no divider. |
