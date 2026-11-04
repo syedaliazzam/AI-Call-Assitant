@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _electron as electron, chromium, expect, test, type Page } from '@playwright/test';
+import { closeUseNotice } from '../lib/sign-in';
 import { PRODUCTION_URL, WEB_DIR, report, signIn, testAccount } from './helpers';
 
 /** apps/desktop (built by the test:e2e-prod script). */
@@ -152,6 +153,8 @@ test('Desktop app: 20 answers on /dev/latency', async () => {
     let page = first;
     if (hasPanel) {
       await signIn(first, testAccount('admin'), true, true);
+      // The one-time notice, here on the panel, so the main window does not show it too.
+      await closeUseNotice(first);
       const opened = app.waitForEvent('window');
       await first.evaluate(openMainWindow);
       page = await opened;
