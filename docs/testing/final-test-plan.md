@@ -12,6 +12,8 @@
 
 **Kept up to date:** each later stage adds its human checks here. Last updated: responses and speech — honesty, answer shape, admin rollback and number key terms (ADR-0032, §6b). v1.1.0 (ADR-0041 to ADR-0044): the home panel, the bars and panels, Private on every window, Auto for accurate transcription.
 
+**After the v1.1.0 release, do these first:** 3.13 (a real mouse drag across the snap zones), 3.12 over a real meeting (the overlay's see-through background on this laptop's display) and 3.16 to 3.18 (Private in a real meeting, seen from a phone). Automation cannot judge any of them. Final-line latency on battery and a 10-minute call with the accurate engine on were not measured for v1.1.0, and macOS (§13) was not run: see `docs/testing/benchmark-results.md`.
+
 ---
 
 ## First: install on a teammate's laptop (Smart App Control)
@@ -204,7 +206,7 @@ ADR-0027 adopted nothing as the default engine; v1.0.1 adds Parakeet as a **seco
 | 6.2 | Press **Download**. | A download starts (about 661 MB) with a progress line. |
 | 6.3 | Quit Kite halfway, start it again, open Settings → Transcription. | It shows the bytes already done; **Download** continues from there, not from zero. |
 | 6.4 | Let it finish. | "The accurate engine is downloaded and ready." |
-| 6.5 | Start a call; say a sentence with names from your key terms. | The line appears as before; about a second later its words change to the improved text (mixed case, punctuation). |
+| 6.5 | Start a call; say a sentence with names from your key terms. | The line appears as before; a moment later its words change to the improved text (mixed case, punctuation). |
 | 6.6 | On **Auto**, unplug during a call, then plug in again. | On battery the lines keep the live engine's words, with marks from the punctuation pass; plugged in they are improved again. |
 | 6.7 | Set it to **Off**; start a call. | The live engine's words stay, with marks and capitals. Set to **On**, they are improved on battery too. |
 | 6.7a | A key term the engine tends to mishear. | It is spelled as you wrote it. |

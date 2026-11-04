@@ -141,3 +141,58 @@ Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200), Chrome (Playwright
 | 2026-11-04 | v1.0.3 visual and microphone checks, dev desktop shell against the overlay rig, this laptop (Windows 11, Conexant microphone and speakers) | Real overlay window over a real Wikipedia page; real microphone with Windows speech through the speakers | See-through at 70% and 40%, solid at 100%; ⛶ 640×480 → 960×672 → back (button and Esc); 560 px fits every key hint and End; Ask Kite voice: heard and sent the spoken question; in-call message box microphone: the spoken question became the answer card's question, kept out of the transcript; no page errors | Captures in `docs/testing/v1.0.3-screenshots/` (ADR-0039). |
 | 2026-11-04 | v1.0.4 on-screen checks of a simulated call (ADR-0040), dev desktop shell 1.0.4 against the rig, this laptop (Windows 11, 1920×1080 at 150%); browser view in Microsoft Edge | Real overlay and call windows over a real Wikipedia page; scripted Them and You lines; mocked `/api/answer` | **41 of 41** desktop checks; **8 of 8** browser checks, including the picture-in-picture round trip. Call window at 1280×713: page 657 px high in a 657 px viewport, message box and big buttons in view. Captures: `docs/testing/v1.0.4-screenshots/` | Every capture was looked at. Found only on screen, and fixed: the question cut to "Have you built?" in the middle of a line, the message box below the fold, "Answer this" doing nothing on a grey question. |
 | 2026-11-04 | v1.0.4 production check (`tests/e2e-prod/call-window.spec.ts`), real desktop shell 1.0.4 against the deployed app, this laptop (Windows 11), test account | 2 real answers on `claude-haiku-5-5`, plus warm-ups | **7 of 7 steps**: the call starts in the overlay; a real answer on the card with its cleaned question; asking again adds no entry; ⛶ brings the call window forward and takes focus, with one card on a solid window; Back to compact; End closes the overlay | Answer line 16 words by a plain count including the "Answer:" label (one sample; the rules did not change in this release). Packaged build: smoke suite 15 of 15. |
+
+## v1.1.0 release (4 Nov 2026)
+
+Same laptop (Intel Core i5-8350U, 8 logical cores, Windows 11 Pro 10.0.26200), on mains power. Chrome through Playwright; desktop app on Electron 44.9.3. Production is `dpl_2Ec9KChPafWVNnrsqpM4MWrkrL1t`, built from merge `d269ad6`. Only counts and times were printed, never words or audio.
+
+### Latency
+
+| Date | Run | Target | Result | Notes |
+|---|---|---|---|---|
+| 2026-11-04 | First word, before (`tests/e2e-prod/latency.spec.ts`, 20 answers each) | Production v1.0.4; the kept 1.0.4 app | Chrome p50 **1271 ms**, p95 1455 ms. Desktop p50 **1254 ms**, p95 1617 ms | The baseline for the gate. |
+| 2026-11-04 | First word, after (same test) | Production v1.1.0; the installed 1.1.0 app | Chrome p50 **1098 ms**, p95 1380 ms. Desktop p50 **1174 ms**, p95 1530 ms | The gate is the baseline plus 100 ms (1371 and 1354 ms): **passed**. All 40 answers used the prompt cache. |
+| 2026-11-04 | Final line, accurate engine off (`stt:trial --engine=control`) | The app's real speech worker in Chromium at real-time speed, on the names set and the two read recordings | p50 **1 ms**, p95 **65 ms**. WER 43.3%, name accuracy 15.3%, peak 790 MB | Mains only. Same accuracy as Day 6. |
+| 2026-11-04 | Final line, accurate engine on (`stt:trial --engine=parakeet`) | Parakeet through sherpa-onnx-node, same set | p50 **779 ms**, p95 **1126 ms**. WER 17.3%, name accuracy 52.9%, peak 1057 MB | Mains only. The engine alone in its own process, with no call running. |
+| 2026-11-04 | Offline punctuation (`tests/integration/punctuation.spec.ts`) | The real worker, runtime and model in Chromium, one thread | Load 594 ms; one line p50 **23 ms**, p95 **47 ms**; 21.7 MB to fetch once (ADR-0044) | The gate is 100 ms: passed. |
+
+### CPU and memory during a simulated call
+
+`apps/desktop/tests/visual/call-load.ts`: dev shell 1.1.0, temporary profile, the rig's real call page, a test recording on a loop as the microphone. CPU is CPU seconds per second, so 100% is one whole core and 800% is this whole computer. Private memory leaves out pages that processes share; working sets count them more than once.
+
+| Date | Run | CPU mean / peak | Private memory, start → end (peak) | Working sets, start → end (peak) | Notes |
+|---|---|---|---|---|---|
+| 2026-11-04 | 10 minutes, accurate engine not running (run A) | **86%** / 115% (about 11% of this computer) | 1285 → **1433 MB** (1496) | 1426 → 1691 MB (1752) | Private memory grew 148 MB. See the known gaps. |
+| 2026-11-04 | 10 minutes, accurate engine not running (run B) | 86% / 107% | 1360 → 1335 MB (1523) | 1512 → 1585 MB (1779) | This run asked for the accurate engine, but the scratch model folder had no checked markers, so the app reported it as not downloaded and the engine never ran. Kept as a second reading with the engine not running. |
+| 2026-11-04 | 2 minutes, accurate engine not running | 191% / 196% | 1457 → 1567 MB (1569) | 1694 → 1809 MB (1809) | Far above the 10-minute mean, and not explained. See the known gaps. |
+| 2026-11-04 | 2-minute check, accurate engine running | 282% / 340% | 2148 → 2589 MB (2589) | 2365 → 2708 MB (2708) | **A check, not a load measurement.** Model ready; engine process seen, peak 1217 MB; 15 lines sent, **15 changed**, 0 skipped; median **3738 ms** a line. Non-stop speech. |
+
+### Installer, compatibility and production
+
+| Date | Run | Target | Result | Notes |
+|---|---|---|---|---|
+| 2026-11-04 | Install over 1.0.4 (`Kite-Setup-1.1.0.exe /S`) | This laptop | Exit 0, version 1.1.0.0 | 126,296,433 bytes. The three JS files in the installed app are byte-identical to a build of the release source, and `latest.yml`'s hash and size match the installer. |
+| 2026-11-04 | Installed smoke test (`apps/desktop/tests/smoke.spec.ts`, `KITE_INSTALLED_EXE`) | Installed 1.1.0, temporary profile | **19 of 19** | Private on the panel, main, overlay and side windows: none of the window's test colour in a real screen capture with it on, all of it with it off. The image is never kept. |
+| 2026-11-04 | Auto-update, local feed (`apps/desktop/tests/update-check.ts`) | A kept 1.0.4 and a temporary profile | Found 1.1.0, downloaded it and verified it | Stops before installing. |
+| 2026-11-04 | Database upgrade (`tests/integration/db-upgrade.spec.ts`) | The real v1.0.4 code from git, then v1.1.0 | Schema 7 → 8; sessions, lessons, libraries and Ask Kite chats all survive | |
+| 2026-11-04 | Older shell (`apps/desktop/tests/manual/old-shell.spec.ts`) | The kept 1.0.4 app against the new web app | Passed | |
+| 2026-11-04 | Local production build (`KITE_E2E_URL`) | `next build` + `next start` | Chrome 8 of 8, desktop 4 of 4, UI and keyboard 5 of 5 | |
+| 2026-11-04 | Production suites (`test:e2e-prod`) | `dpl_2Ec9KChPafWVNnrsqpM4MWrkrL1t` | Chrome and desktop **12 of 12**, offline punctuation included | Admin test account disabled afterwards. |
+
+### Not measured in this release
+
+The developer chose to skip these on 4 Nov 2026. The numbers above do not cover them.
+
+- **Final-line latency on battery, with either engine.** The only battery readings are Day 6's, on older code (3 Nov): 4 / 173 ms off and 1195 / 1730 ms on.
+- **A 10-minute call with the accurate engine on.** CPU and memory with the engine running through a whole call are unknown. The 2-minute check shows only that it starts and refines lines.
+
+### Known gaps, for v1.1.1
+
+- **Memory growth with the accurate engine off:** about 150 MB in 10 minutes (run A). Run B ended flat, so two readings do not show whether this is a steady leak. Measure a longer call, process by process.
+- **How long an accurate pass takes in a call:** a median of 3.7 s in the 2-minute check, against 779 ms for the engine alone. The audio differs and the speech was non-stop, so these are not directly comparable, but it needs measuring on a real call.
+- **CPU early in a call:** 191% in one 2-minute run, against a mean of 86% over 10 minutes. `call-load.ts` now prints each minute, so the next run can show whether the start of a call costs more.
+- **`cv-embellishment` is below its gate:** 6.75 at 2 runs and 6.58 at 6 runs, against 7.10 and the absolute target. No regression against the 6.72 average of 3 Nov; released by the developer's decision (`docs/testing/answer-eval.md`).
+- **Raw answer lines:** 36% are within 12 words as the model writes them. The card's cut brings it to 98% as shown, which is the gate (ADR-0043).
+- **Visual:** `browser-split-1.png` and `browser-split-2.png` were never compared, and the browser view's language picker sits off-centre in its pill (`docs/testing/v1.1.0-visual-check.md`).
+- **macOS was not run** (`docs/testing/macos-checklist.md`).
+- **Two manual tools still target v1.0.4's UI:** `apps/desktop/tests/visual/call-window-shots.ts` and `apps/web/tests/visual/browser-shots.ts`.
