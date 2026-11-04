@@ -266,13 +266,13 @@ export function HomePanel({ name, email }: HomePanelProps) {
       </div>
 
       <footer className="flex shrink-0 gap-2 border-t border-ui-border p-3">
-        <Button variant="secondary" className="min-w-0 flex-1" onClick={() => open('/')}>
-          <span className="inline-flex items-center gap-1.5">
+        <Button variant="secondary" className="min-w-0 flex-1 px-2" onClick={() => open('/')}>
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
             View in dashboard <OutIcon />
           </span>
         </Button>
-        <Button className="min-w-0 flex-1" onClick={() => open('/sessions/new')}>
-          <span className="inline-flex items-center gap-1.5">
+        <Button className="min-w-0 flex-1 px-2" onClick={() => open('/sessions/new')}>
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
             <PlusIcon /> Create session
           </span>
         </Button>

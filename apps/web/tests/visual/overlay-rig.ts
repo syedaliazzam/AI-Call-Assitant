@@ -3,7 +3,8 @@
  * Purpose: Builds and serves the overlay rig (visual checks) on http://localhost:3123: a simulated
  *          call in the real full call window at / (rig-live.tsx), the real overlay at
  *          /compact/harness-session (rig-compact.tsx), the real Ask Kite and history screens at /ask
- *          and /history (rig-pages.tsx), and a mocked /api/answer, with the app's real stylesheet
+ *          and /history (rig-pages.tsx), the home panel and snap zones at /home and /overlay-zones
+ *          (rig-extra.tsx), and a mocked /api/answer, with the app's real stylesheet
  *          (Tailwind). Start the desktop shell against it (`electron . --kite-url=http://localhost:3123`,
  *          or call-window-shots.ts) to see the real windows over whatever is on screen.
  *          Usage: pnpm --filter web exec tsx tests/visual/overlay-rig.ts
@@ -48,6 +49,7 @@ async function bundle(): Promise<string> {
       path.join(WEB_DIR, 'tests', 'visual', 'rig-mic.tsx'),
       path.join(WEB_DIR, 'tests', 'visual', 'rig-call.tsx'),
       path.join(WEB_DIR, 'tests', 'visual', 'rig-pages.tsx'),
+      path.join(WEB_DIR, 'tests', 'visual', 'rig-extra.tsx'),
     ],
     bundle: true,
     platform: 'browser',
@@ -113,7 +115,22 @@ function page(script: string): string {
 }
 
 /** The mocked answers: words in the question, the clean question Claude would write, the answer. */
-const MOCK_ANSWERS: readonly { words: RegExp; clean: string; text: string }[] = [
+const MOCK_ANSWERS: readonly {
+  /** The words that pick this answer. */
+  words: RegExp;
+  /** The clean question. */
+  clean: string;
+  /** The answer. */
+  text: string;
+  /** Its type, when not "concept". */
+  type?: string;
+}[] = [
+  {
+    words: /vowels/i,
+    clean: 'Can you write a function that counts vowels in a string?',
+    type: 'coding',
+    text: 'Count the vowels with one pass over the lower-cased text.\nKey steps:\n- Lower-case the text.\n- Count the characters in a set of vowels.\n```python\ndef count_vowels(text):\n    return sum(c in "aeiou" for c in text.lower())\n\nprint(count_vowels("Harbor"))\n```\nComplexity: O(n) time, O(1) space.\nSay: I walk the string once and count what is in the vowel set.',
+  },
   {
     words: /voice/i,
     clean: 'How would you design a voice agent for a hospital?',
@@ -142,11 +159,14 @@ async function streamMockAnswer(
   question: string,
   send: (name: string, data: unknown) => void,
 ): Promise<void> {
-  const mock = MOCK_ANSWERS.find((candidate) => candidate.words.test(question)) ?? {
+  const mock: (typeof MOCK_ANSWERS)[number] = MOCK_ANSWERS.find((candidate) =>
+    candidate.words.test(question),
+  ) ?? {
+    words: /./,
     clean: 'What would you like to know?',
     text: 'Happy to go into more detail on any part of that.\n- Ask about the design, the cost or the rollout',
   };
-  send('meta', { meta: { type: 'technical', target: 'call', source: 'docs' } });
+  send('meta', { meta: { type: mock.type ?? 'concept', target: 'call', source: 'docs' } });
   // A few words at a time, slowly enough that a capture can catch it streaming.
   const words = mock.text.split(' ');
   for (let i = 0; i < words.length; i += 3) {
@@ -226,9 +246,11 @@ async function main(): Promise<void> {
             ? 'rig-mic.js'
             : url.startsWith('/call')
               ? 'rig-call.js'
-              : url.startsWith('/ask') || url.startsWith('/history')
-                ? 'rig-pages.js'
-                : 'rig-live.js',
+              : url.startsWith('/home') || url.startsWith('/overlay-zones')
+                ? 'rig-extra.js'
+                : url.startsWith('/ask') || url.startsWith('/history')
+                  ? 'rig-pages.js'
+                  : 'rig-live.js',
       ),
     );
   }).listen(PORT, '127.0.0.1', () => console.info(`overlay rig: http://localhost:${PORT}`));

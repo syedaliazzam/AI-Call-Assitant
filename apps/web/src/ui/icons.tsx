@@ -106,7 +106,7 @@ export function MoveIcon(props: IconProps) {
 export function CollapseIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <path d="M6.5 2v4.5H2M9.5 2v4.5H14M6.5 14V9.5H2M9.5 14V9.5H14" />
+      <path d="M14 2 9.5 6.5M9.5 2.5v4h4M2 14l4.5-4.5M6.5 13.5v-4h-4" />
     </Icon>
   );
 }
@@ -121,7 +121,7 @@ export function CollapseIcon(props: IconProps) {
 export function ExpandIcon(props: IconProps) {
   return (
     <Icon {...props}>
-      <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" />
+      <path d="M9.5 6.5 14 2M10 2h4v4M6.5 9.5 2 14M6 14H2v-4" />
     </Icon>
   );
 }

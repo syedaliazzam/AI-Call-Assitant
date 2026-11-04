@@ -174,6 +174,17 @@ describe('pickQuestion', () => {
     }
   });
 
+  it('leaves noise right after a question out of the question', () => {
+    const picked = pickQuestion([
+      line('a', 'them', 'WHAT DOES THE PLAN COST', 0),
+      line('b', 'them', 'GRONK BLIMP SPROCKET WIBBLE FLANGE', 2_000),
+    ]);
+    expect(picked).toMatchObject({ kind: 'question', lookedBack: true });
+    if (picked.kind === 'question') {
+      expect(picked.selected).toEqual({ text: 'WHAT DOES THE PLAN COST', lineIds: ['a'] });
+    }
+  });
+
   it('reports garbled latest words, without looking back', () => {
     expect(
       pickQuestion([

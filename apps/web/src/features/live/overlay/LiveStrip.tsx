@@ -36,6 +36,9 @@ export interface LiveStripProps {
   levels?: LevelStore | undefined;
 }
 
+/** How many chips bar 2 shows. */
+const MAX_CHIPS = 4;
+
 /**
  * The strip's middle: a hygiene prompt, a notice, the live question, or the words.
  *
@@ -119,7 +122,8 @@ function StripContent({ state, chips, question, onCommand, onExpand }: LiveStrip
           {question}
         </span>
       ) : chips.length > 0 ? (
-        chips.map((chip) => (
+        // As many as fit bar 2 at the overlay's narrowest: a cut-off chip reads as a mistake.
+        chips.slice(-MAX_CHIPS).map((chip) => (
           <span
             key={chip.id}
             className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[13px] leading-5 ${chip.speaker === 'you' ? 'border-ui-you text-ui-you' : 'border-ui-border text-ui-text'}`}

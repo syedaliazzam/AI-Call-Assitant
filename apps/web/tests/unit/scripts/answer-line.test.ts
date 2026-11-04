@@ -23,9 +23,20 @@ describe('callAnswerLine', () => {
   it('reports the first line of a headline answer for the call', () => {
     expect(callAnswerLine(`\n${words13}\n- A bullet.`, 'headline+bullets', null)).toEqual({
       answerLineWords: 13,
+      shownLineWords: 13,
     });
     expect(callAnswerLine('Short line.', 'headline+bullets', { target: 'call' })).toEqual({
       answerLineWords: 2,
+      shownLineWords: 2,
+    });
+  });
+
+  it('also reports the line as the card shows it, after its cut at a clause', () => {
+    const long =
+      'We cut late deliveries by a third across the northern routes, mostly by rerouting at night';
+    expect(callAnswerLine(`${long}\n- A bullet.`, 'headline+bullets', null)).toEqual({
+      answerLineWords: 16,
+      shownLineWords: 11,
     });
   });
 

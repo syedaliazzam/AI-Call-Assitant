@@ -55,6 +55,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_SCREENSHOT_QUESTION,
+  createQuestionLineFilter,
   splitMetaLine,
   type AnswerMeta,
   type AnswerRequest,
@@ -342,10 +343,24 @@ async function answerScenario(
   meter.add(model, next.value.usage);
   const split = splitMetaLine(raw);
   return {
-    text: split.state === 'found' ? split.rest : raw.trim(),
+    text: withoutQuestionLine(split.state === 'found' ? split.rest : raw.trim()),
     meta: split.state === 'found' ? split.meta : null,
     usage: next.value.usage,
   };
+}
+
+/**
+ * An answer without its hidden last line, as the route's pipeline takes it out (answer-meta.ts): the
+ * person never sees that line, so it must not be graded. v1.0.2 added the line; this evaluation had not
+ * run since, so its baselines were measured without it.
+ *
+ * @param text The answer.
+ * @returns What the card shows.
+ * Called from: answerScenario()
+ */
+function withoutQuestionLine(text: string): string {
+  const filter = createQuestionLineFilter();
+  return `${filter.push(text).text}${filter.end().text}`.trim();
 }
 
 /** A comment about what Kite was given: never allowed in an answer's spoken part. */
@@ -540,6 +555,9 @@ function summariseChecks(results: readonly ScenarioResult[]): string[] {
     ...line('Question type as expected', (checks) => checks.typeOk),
     ...line('Answer line 12 words or fewer', (checks) =>
       checks.answerLineWords === undefined ? undefined : checks.answerLineWords <= 12,
+    ),
+    ...line('Answer line as shown, 12 words or fewer', (checks) =>
+      checks.shownLineWords === undefined ? undefined : checks.shownLineWords <= 12,
     ),
     ...line('For the call / Ask Kite as expected', (checks) => checks.targetOk),
     ...line('No comment on what Kite was given', (checks) => !checks.metaComment),

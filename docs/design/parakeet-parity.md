@@ -79,7 +79,8 @@ On macOS, Ctrl means ⌘. The current app registers Clear, previous and next as 
 | Show or hide overlay | Ctrl+Alt+H | Global |
 | Move overlay | Ctrl+Alt+Arrows (add Shift for bigger steps) | Global |
 | Open Ask Kite (Kite's own, ADR-0030) | Ctrl+Alt+K | Global, whenever the desktop app runs; during a call it opens the chat box |
-| Chat | Ctrl+Shift+Backspace | Kite focused only |
+| Chat (v1.1.0: moved from Ctrl+Shift+Backspace) | Ctrl+Shift+Space | Global |
+| Clear transcript (v1.1.0) | Ctrl+Shift+Backspace | Kite focused only |
 | Clear answer | Ctrl+Backspace | Kite focused only |
 | Previous or next answer | Ctrl+Left or Ctrl+Right | Kite focused only |
 

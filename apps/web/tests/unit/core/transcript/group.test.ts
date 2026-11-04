@@ -165,6 +165,15 @@ describe('splitting at questions (v1.1.0, item 19)', () => {
     expect(groups).toHaveLength(1);
   });
 
+  it('keeps noise in a bubble of its own', () => {
+    const groups = groupLines([
+      them('a', 'WHAT DOES THE PLAN COST', 0),
+      them('b', 'GRONK BLIMP SPROCKET WIBBLE FLANGE', 2_000),
+      them('c', 'FOR FORTY SEATS', 4_000),
+    ]);
+    expect(groups.map((group) => group.id)).toEqual(['a', 'b', 'c']);
+  });
+
   it('keeps statements in one bubble', () => {
     const groups = groupLines([them('a', 'We liked it.', 0), them('b', 'They did too.', 2_000)]);
     expect(groups.map((group) => group.finalText)).toEqual(['We liked it. They did too.']);

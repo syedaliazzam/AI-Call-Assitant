@@ -25,6 +25,9 @@ const POLL_MS = 50;
 /** macOS fires 'moved' all through a drag: a drag has ended after this long without one, in ms. */
 const MAC_QUIET_MS = 250;
 
+/** The space around each ghost layout, in DIPs (the same as the overlay's distance from the edge). */
+const GHOST_GAP = 24;
+
 /** The tallest a ghost layout is drawn, in DIPs: the zones stay along the top of the screen. */
 const GHOST_MAX_HEIGHT = 320;
 
@@ -37,7 +40,9 @@ export interface SnapZone {
 }
 
 /**
- * The snap zones on a display, for an overlay of a given size.
+ * The snap zones on a display, for an overlay of a given size. A ghost is never wider than a third of
+ * the display, so the three stay apart however wide the overlay is; dropping on one still puts the whole
+ * overlay at that place.
  *
  * @param area   The display's work area.
  * @param width  The overlay's width.
@@ -47,9 +52,14 @@ export interface SnapZone {
  */
 export function snapZones(area: Rectangle, width: number, height: number): SnapZone[] {
   const ghost = Math.min(height, GHOST_MAX_HEIGHT);
+  const ghostWidth = Math.min(width, Math.floor((area.width - 4 * GHOST_GAP) / 3));
   return SNAP_PRESETS.map((preset) => ({
     preset,
-    rect: { ...presetPosition(preset, area, width, ghost), width, height: ghost },
+    rect: {
+      ...presetPosition(preset, area, ghostWidth, ghost),
+      width: ghostWidth,
+      height: ghost,
+    },
   }));
 }
 

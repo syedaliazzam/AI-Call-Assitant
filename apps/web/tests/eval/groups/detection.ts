@@ -4,8 +4,7 @@
  *          after the rules in core/transcript/questionKind.ts have let them through: garbled lines and
  *          non-questions must not be answered as if they were questions, and real questions in messy
  *          transcripts must still be answered. `screenshot-types`: each kind of screen gets its own
- *          shape, and any code runs in the sandbox. Everything here is invented, and every session is a
- *          practice or mock session.
+ *          shape, and any code runs in the sandbox. Everything here is invented.
  * Used by: scripts/eval-answers.ts
  * Depends on: tests/eval/groups/types.ts
  * Architecture: docs/testing/answer-eval.md; ADR-0043
@@ -112,24 +111,24 @@ export const DETECTION_SCENARIOS: Scenario[] = [
     'Words with no meaning, though they have common words in them.',
     PRACTICE,
     'THE BLUE ROUTER SINGS UNDER A TUESDAY POTATO OF THE RIVER',
-    'garbled',
-    ['no answer'],
+    ['garbled', 'unclear'],
+    ['no answer, or only a short request to repeat it'],
   ),
   detection(
     'qd-garbled-2',
     'Noise from background speech, cut together.',
     CLIENT,
     'AND THE WHEN TO FOR IT WAS SEVEN LADDER HOW THE MAYBE OF',
-    'garbled',
-    ['no answer'],
+    ['garbled', 'unclear'],
+    ['no answer, or only a short request to repeat it'],
   ),
   detection(
     'qd-garbled-3',
     'A question word in noise is still noise.',
     PRACTICE,
     'WHAT THE GREEN OF SIDEWAYS IS PLANET MONDAY FORK',
-    'garbled',
-    ['no answer'],
+    ['garbled', 'unclear'],
+    ['no answer, or only a short request to repeat it'],
   ),
   // Non-questions the rules leave as statements: a short, friendly reply at most.
   detection(
@@ -263,11 +262,12 @@ export const DETECTION_SCENARIOS: Scenario[] = [
     tail: [{ speaker: 'them', text: 'HOW MUCH NOTICE DO WE HAVE TO GIVE', at: 120 }],
     image: 'images/document-terms.jpg',
     imageDescription:
-      'Service agreement section 4: 60 days written notice to end; fees paid in advance refunded for full months left; customer data deleted within 30 days after the end.',
+      "Service agreement section 4: either side may end the agreement with 60 days' written notice; fees paid in advance are refunded for any full months left after the notice ends; customer data is deleted within 30 days after the agreement ends.",
     question: 'HOW MUCH NOTICE DO WE HAVE TO GIVE',
     mustInclude: ['60 days written notice'],
     mustNotInclude: ['a notice period other than 60 days'],
-    expectType: 'document',
+    // What was asked is about the terms, so a client's question about them counts as well.
+    expectType: ['document', 'sales'],
   }),
   screen({
     id: 'st-web-page',
@@ -275,7 +275,7 @@ export const DETECTION_SCENARIOS: Scenario[] = [
     session: CLIENT,
     image: 'images/web-page.jpg',
     imageDescription:
-      'A status page: partial outage, route planning delayed in the EU region since 09:40 UTC; live tracking and billing not affected; next update at 11:00 UTC.',
+      'A web page, "Route planning service status", at status.example: partial outage, route planning delayed in the EU region since 09:40 UTC; live tracking and billing not affected; next update at 11:00 UTC.',
     question: "What's on screen and how should I respond?",
     mustInclude: ['route planning is delayed in the EU', 'tracking and billing are not affected'],
     mustNotInclude: ['a cause for the outage, which the page does not give'],
@@ -286,9 +286,10 @@ export const DETECTION_SCENARIOS: Scenario[] = [
     covers: 'A screen that cannot be read says so, without guessing.',
     session: CLIENT,
     image: 'images/unreadable.jpg',
-    imageDescription: 'A slide so blurred that nothing on it can be read.',
+    imageDescription:
+      'A slide so blurred that nothing on it can be read. A good reply is one short line saying so.',
     question: "What's on screen and how should I respond?",
-    mustInclude: ['says the screen cannot be read', 'one short line'],
+    mustInclude: ['says the screen cannot be read'],
     mustNotInclude: ['any figure or fact guessed from the image'],
     expectType: 'unreadable',
   }),

@@ -17,7 +17,7 @@
  */
 import { continuationCase, sentenceCase, splitAtQuestions, type DisplayTerm } from './display';
 import { questionSpan } from './question';
-import { lineKind } from './questionKind';
+import { lineKind, looksGarbled } from './questionKind';
 import type { Speaker } from './transcript';
 
 /**
@@ -209,7 +209,9 @@ export function groupLines(
       // Words still settling are always the end of a bubble: nothing is joined after them.
       last.provisionalText === '' &&
       wordCount(last.finalText) < GROUP_MAX_WORDS &&
-      !(lastRaw !== undefined && questionEndsBubble(lastRaw, line.text));
+      !(lastRaw !== undefined && questionEndsBubble(lastRaw, line.text)) &&
+      // Noise stays apart from speech, so it can collapse (v1.1.0) and a question stays clean.
+      !(lastRaw !== undefined && line.final && looksGarbled(line.text) !== looksGarbled(lastRaw));
     if (!joins) {
       let id = line.id;
       for (let n = 1; usedIds.has(id); n += 1) id = `${line.id}#${n}`;

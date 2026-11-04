@@ -36,7 +36,7 @@ import { parseAnswerRequest } from '@/server/validate';
  * label), list questions name the items then one bullet each; checked on 3 real answers only.
  * v1.1.0 (ADR-0043): the screen types and garbled in the hidden line; the coding shape from item 7.
  */
-const RULES_SHA256 = '64a46522b4ca72341d5ab8d25e072c4319b525c45097bf5068d07713076c25bb';
+const RULES_SHA256 = '9c8b874563c0e54de3f74e8a54049e4f361f26e8aa0c81e777705a4dff1ce6ab';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte

@@ -105,7 +105,7 @@ export function TabPreview(props: TabPreviewProps) {
             aria-label="Answer language"
             value={props.language}
             onChange={(event) => props.onLanguage(event.target.value)}
-            className="h-8 rounded-full bg-ui-overlay-button px-2 text-[13px] text-ui-text focus-visible:[box-shadow:var(--k-focus)] focus:outline-none pointer-coarse:min-h-11"
+            className="h-8 rounded-full bg-ui-overlay-button px-2 py-0 text-[13px] leading-none text-ui-text focus-visible:[box-shadow:var(--k-focus)] focus:outline-none pointer-coarse:min-h-11"
           >
             {ANSWER_LANGUAGES.map((option) => (
               <option key={option.value} value={option.value}>

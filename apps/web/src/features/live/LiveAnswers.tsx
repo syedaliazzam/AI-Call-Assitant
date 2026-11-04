@@ -302,7 +302,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
         visibleLines.filter((line) => !line.final || !looksGarbled(line.text)),
         terms,
       ),
-      liveQuestion: liveQuestion(visibleLines, terms, questionClearedAt),
+      liveQuestion: liveQuestion(
+        visibleLines.filter((line) => !line.final || !looksGarbled(line.text)),
+        terms,
+        questionClearedAt,
+      ),
       groups: groups.slice(-OVERLAY_GROUPS).map((group) => ({
         id: group.id,
         speaker: group.speaker,

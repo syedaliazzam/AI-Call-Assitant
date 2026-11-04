@@ -178,10 +178,13 @@ export function pickQuestion(lines: readonly Utterance[]): PickedQuestion {
   if (!isSkippedLine(selected.text)) {
     // selectQuestion() keeps the lines after a question, which may finish it. A greeting or an
     // instruction among them does not: "…cost for forty seats / say yes when ready" asks about the cost.
-    const chosen = selected.lineIds.flatMap((id) => lines.find((line) => line.id === id) ?? []);
+    // Nor does noise among them.
+    const chosen = selected.lineIds
+      .flatMap((id) => lines.find((line) => line.id === id) ?? [])
+      .filter((line) => !line.final || !looksGarbled(line.text));
     let end = chosen.length;
     while (end > 1 && isSkippedLine(chosen[end - 1]!.text)) end -= 1;
-    return end === chosen.length
+    return end === selected.lineIds.length
       ? { kind: 'question', selected, lookedBack: false }
       : { kind: 'question', selected: asQuestion(chosen.slice(0, end)), lookedBack: true };
   }

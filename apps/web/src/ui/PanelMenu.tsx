@@ -32,8 +32,11 @@ const FOCUS = 'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focu
 /** A row's layout. */
 const ROW = 'flex min-h-9 items-center gap-2 rounded-control px-2 py-1 text-[14px] text-ui-text';
 
+/** A small round button's shape, without its colours. */
+const ROUND_SHAPE = `inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-ui-border disabled:opacity-40 ${FOCUS}`;
+
 /** A small round button in a row. */
-const ROUND = `inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-ui-border text-ui-text hover:bg-ui-hover disabled:opacity-40 ${FOCUS}`;
+const ROUND = `${ROUND_SHAPE} text-ui-text hover:bg-ui-hover`;
 
 /**
  * A block of rows.
@@ -287,7 +290,7 @@ export function MenuTheme({
           aria-checked={value === theme.value}
           aria-label={theme.label}
           onClick={() => onChange(theme.value)}
-          className={`${ROUND} ${value === theme.value ? 'bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover' : ''}`}
+          className={`${ROUND_SHAPE} ${value === theme.value ? 'bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover' : 'text-ui-text hover:bg-ui-hover'}`}
         >
           {theme.icon}
         </button>

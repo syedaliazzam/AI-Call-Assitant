@@ -67,15 +67,15 @@ export function cartTotal(items: { price: number }[]): number {
   // v1.1.0 (ADR-0043): the screenshot-types group.
   {
     name: 'coding-problem.jpg',
-    html: `${STYLE}<div class="slide"><h1>Practice problem: Count Vowels (invented)</h1>
+    html: `${STYLE}<div class="slide"><h1>Practice problem: Count Vowels</h1>
 <p>Write a function <b>count_vowels(text)</b> that returns how many vowels (a, e, i, o, u, in either
 case) a string has.</p><pre>count_vowels("Harbor")  # 2
 count_vowels("sky")     # 0
-count_vowels("AEIOU")   # 5</pre><p class="note">Easy · strings · invented for testing</p></div>`,
+count_vowels("AEIOU")   # 5</pre><p class="note">Easy · strings</p></div>`,
   },
   {
     name: 'code-error.jpg',
-    html: `${STYLE}<div class="slide"><h1>report.py (invented)</h1><pre>
+    html: `${STYLE}<div class="slide"><h1>report.py</h1><pre>
 def average(values):
     return sum(values) / len(values)
 
@@ -85,7 +85,7 @@ ZeroDivisionError: division by zero</pre></div>`,
   },
   {
     name: 'chart-bars.jpg',
-    html: `${STYLE}<div class="slide"><h1>Support tickets per week (invented)</h1>
+    html: `${STYLE}<div class="slide"><h1>Support tickets per week</h1>
 <div style="display:flex;gap:48px;align-items:flex-end;height:330px;font-size:24px">
 <div style="text-align:center">420<div style="background:#2563eb;width:110px;height:252px"></div>Week 1</div>
 <div style="text-align:center">310<div style="background:#2563eb;width:110px;height:186px"></div>Week 2</div>
@@ -95,15 +95,15 @@ ZeroDivisionError: division by zero</pre></div>`,
   },
   {
     name: 'document-terms.jpg',
-    html: `${STYLE}<div class="slide"><h1>Service agreement, section 4 (invented)</h1>
+    html: `${STYLE}<div class="slide"><h1>Service agreement, section 4</h1>
 <p><b>4.1 Notice.</b> Either side may end this agreement with 60 days' written notice.</p>
 <p><b>4.2 Refunds.</b> Fees paid in advance are refunded for any full months left after the notice ends.</p>
 <p><b>4.3 Data.</b> Customer data is deleted within 30 days after the agreement ends.</p></div>`,
   },
   {
     name: 'web-page.jpg',
-    html: `${STYLE}<div style="background:#e2e8f0;padding:10px 24px;font-size:20px">https://northwind-routes.example/status</div>
-<div class="slide"><h1>Northwind Routes status (invented)</h1>
+    html: `${STYLE}<div style="background:#e2e8f0;padding:10px 24px;font-size:20px">https://status.example/route-planning</div>
+<div class="slide"><h1>Route planning service status</h1>
 <p style="color:#b91c1c"><b>Partial outage:</b> route planning is delayed in the EU region.</p>
 <p>Started 09:40 UTC. Live tracking and billing are not affected. Next update at 11:00 UTC.</p></div>`,
   },

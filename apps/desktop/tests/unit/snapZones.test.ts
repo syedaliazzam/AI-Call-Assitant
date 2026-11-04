@@ -69,9 +69,9 @@ afterEach(() => vi.useRealTimers());
 describe('snapZones', () => {
   it('gives left, centre and right along the top, at most 320 tall', () => {
     expect(snapZones(AREA, 680, 660)).toEqual([
-      { preset: 'top-left', rect: { x: 24, y: 24, width: 680, height: 320 } },
-      { preset: 'top-center', rect: { x: 620, y: 24, width: 680, height: 320 } },
-      { preset: 'top-right', rect: { x: 1216, y: 24, width: 680, height: 320 } },
+      { preset: 'top-left', rect: { x: 24, y: 24, width: 608, height: 320 } },
+      { preset: 'top-center', rect: { x: 656, y: 24, width: 608, height: 320 } },
+      { preset: 'top-right', rect: { x: 1288, y: 24, width: 608, height: 320 } },
     ]);
   });
 
@@ -90,9 +90,20 @@ describe('zoneAt', () => {
     expect(zoneAt(zones, { x: 960, y: 500 })).toBeNull();
   });
 
-  it('gives the nearest centre where a wide overlay makes the zones overlap', () => {
-    expect(zoneAt(zones, { x: 650, y: 30 })).toBe('top-left');
-    expect(zoneAt(zones, { x: 700, y: 30 })).toBe('top-center');
+  it('keeps the ghosts apart however wide the overlay is', () => {
+    const [left, centre, right] = snapZones({ x: 0, y: 0, width: 1280, height: 720 }, 680, 108);
+    expect(left!.rect.x + left!.rect.width).toBeLessThan(centre!.rect.x);
+    expect(centre!.rect.x + centre!.rect.width).toBeLessThan(right!.rect.x);
+    expect(zoneAt(zones, { x: 644, y: 30 })).toBeNull();
+  });
+
+  it('gives the nearest centre if zones ever overlap', () => {
+    const overlapping = [
+      { preset: 'top-left' as const, rect: { x: 0, y: 0, width: 700, height: 100 } },
+      { preset: 'top-center' as const, rect: { x: 600, y: 0, width: 700, height: 100 } },
+    ];
+    expect(zoneAt(overlapping, { x: 620, y: 30 })).toBe('top-left');
+    expect(zoneAt(overlapping, { x: 680, y: 30 })).toBe('top-center');
   });
 
   it('finds none between the zones of a narrow overlay', () => {
@@ -126,7 +137,7 @@ describe('a drag', () => {
     const url = new URL(window.loadURL.mock.calls[0]![0]);
     expect(url.pathname).toBe('/overlay-zones');
     expect(url.searchParams.get('zones')).toBe(
-      'top-left,24,24,680,320;top-center,620,24,680,320;top-right,1216,24,680,320',
+      'top-left,24,24,608,320;top-center,656,24,608,320;top-right,1288,24,608,320',
     );
     expect(overlay.moveTop).toHaveBeenCalled();
   });

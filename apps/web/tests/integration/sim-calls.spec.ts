@@ -99,6 +99,11 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
           if (request.mode === 'screenshot') {
             event('meta', { meta: { type: nextScreen, target: 'call', source: 'general' } });
             event('delta', { text: SCREEN_REPLIES[nextScreen] ?? '' });
+          } else if (/SLOWLY/.test(request.question ?? '')) {
+            // Time to see the card before the first word.
+            await new Promise((resolve) => setTimeout(resolve, 1_500));
+            event('meta', { meta: { type: 'behavioural', target: 'call', source: 'docs' } });
+            event('delta', { text: 'A slow answer arrives.\n- A short point.' });
           } else if (/GRONK|TUESDAY POTATO/.test(request.question ?? '')) {
             // Words the rules let through, or a second press on noise: Claude says it is noise.
             event('meta', { meta: { type: 'garbled', target: 'call', source: 'general' } });
@@ -510,6 +515,28 @@ test('the overlay: panels open with an answer, the arrows move, Clear keeps the 
   await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 1');
   await answerPanel.getByRole('button', { name: 'Next question' }).click();
   await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 2');
+  // Bar 1 keeps every control on screen while End asks to confirm, at the narrowest width too.
+  for (const width of [680, 560]) {
+    await overlay.setViewportSize({ width, height: 452 });
+    await overlay.getByRole('button', { name: 'End call' }).click();
+    const cancel = await overlay.getByRole('button', { name: 'Cancel' }).boundingBox();
+    expect(cancel!.x + cancel!.width).toBeLessThanOrEqual(width);
+    await overlay.getByRole('button', { name: 'Cancel' }).click();
+  }
+  await overlay.setViewportSize({ width: 680, height: 660 });
+
+  // The question shows at once, with Thinking… and Stop, before the first word.
+  await say('them', 'WHAT WOULD YOU DO SLOWLY AT THE START');
+  await overlay.getByRole('button', { name: 'Answer', exact: false }).first().click();
+  await expect(answerPanel.getByText('Thinking…')).toBeVisible();
+  await expect(answerPanel.getByLabel('Question', { exact: true })).toContainText(
+    'What would you do slowly at the start',
+  );
+  await expect(answerPanel.getByRole('button', { name: 'Stop' })).toBeVisible();
+  await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toContainText(
+    'A slow answer arrives',
+  );
+  await expect(answerPanel.getByRole('button', { name: 'Stop' })).toHaveCount(0);
 
   // Clear never empties the card.
   await answerPanel.getByRole('button', { name: 'Clear' }).click();
@@ -648,7 +675,7 @@ test('keyboard pass: every control of the overlay and the panel can be reached a
   await overlay.keyboard.press('Enter');
   await expect(overlay.getByRole('button', { name: 'End call?' })).toBeFocused();
   await overlay.keyboard.press('Tab');
-  await expect(overlay.getByRole('button', { name: 'Keep going' })).toBeFocused();
+  await expect(overlay.getByRole('button', { name: 'Cancel' })).toBeFocused();
   await overlay.keyboard.press('Enter');
   await expect(overlay.getByRole('button', { name: 'End call' })).toBeVisible();
 });

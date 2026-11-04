@@ -493,9 +493,11 @@ describe('screenshot tail text (Day 5)', () => {
       'webpage',
       'unreadable',
     ]) {
-      expect(SCREENSHOT_RULES).toContain(`type ${type}`);
+      expect(SCREENSHOT_RULES).toContain(`(${type})`);
     }
-    expect(SCREENSHOT_RULES).toContain('answer what the other person just asked about it');
+    expect(SCREENSHOT_RULES).toContain('answer what the other person just asked about the screen');
+    // Nothing that could be repeated as words in front of the first line (found in the evaluation).
+    expect(SCREENSHOT_RULES).not.toContain('hidden');
     expect(SCREENSHOT_RULES).toContain("the session's documents");
   });
 

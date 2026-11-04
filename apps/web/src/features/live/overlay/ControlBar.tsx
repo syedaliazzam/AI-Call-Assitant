@@ -100,7 +100,7 @@ function EndPill({
           End call?
         </button>
         <button type="button" className={BUTTON} onClick={() => setAsking(false)}>
-          Keep going
+          Cancel
         </button>
       </span>
     );
@@ -144,7 +144,7 @@ export function ControlBar(props: ControlBarProps) {
       <StatusIcon on={state?.audio.you ?? false} label="Microphone" icon={<MicIcon />} />
       <button
         type="button"
-        className={`${BUTTON_BASE} w-6 px-0 text-ui-muted hover:bg-ui-overlay-button`}
+        className={`${BUTTON_BASE} w-6 px-0 text-ui-text hover:bg-ui-overlay-button`}
         aria-label="Choose microphone and audio source"
         aria-expanded={props.devicesOpen}
         onClick={() => props.onDevices(!props.devicesOpen)}
