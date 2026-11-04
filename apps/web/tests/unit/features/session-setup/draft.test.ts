@@ -126,7 +126,7 @@ describe('sessionSummary', () => {
 describe('styleSummary', () => {
   it('uses the words on screen, not the stored names', () => {
     expect(styleSummary({ format: 'headline+bullets', length: 'medium', tone: 'technical' })).toBe(
-      'Script + bullets · Balanced · Technical',
+      'Opening line + bullets · Balanced · Technical',
     );
   });
 });

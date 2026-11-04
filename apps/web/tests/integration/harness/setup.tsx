@@ -46,6 +46,8 @@ export interface SetupHarness {
   library: (kind: LibraryKind) => Promise<string[]>;
   /** The saved default answer tone. */
   defaultTone: () => Promise<string>;
+  /** The newest session's key terms, as stored. */
+  keyTerms: () => Promise<string>;
   /** The last address the app wanted that this page does not show. */
   pushed: () => string;
 }
@@ -72,6 +74,8 @@ export interface StoredSummary {
   instructions: string;
   /** Its auto-answer switch. */
   autoAnswer: boolean;
+  /** Its STAR setting. */
+  star: boolean;
 }
 
 declare global {
@@ -152,6 +156,7 @@ window.kiteSetupHarness = {
       tone: session.preferences.style.tone,
       instructions: session.instructions,
       autoAnswer: session.autoAnswer,
+      star: Boolean(session.preferences.style.star),
     })),
   newestDocuments: async () => {
     const [newest] = await listSessions();
@@ -164,5 +169,6 @@ window.kiteSetupHarness = {
   },
   library: async (kind) => (await listLibrary(kind)).map((item) => item.name),
   defaultTone: async () => (await getSessionDefaults()).style.tone,
+  keyTerms: async () => (await listSessions())[0]?.preferences.keyTerms ?? '',
   pushed: () => lastPushed,
 };

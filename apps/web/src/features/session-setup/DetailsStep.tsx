@@ -1,27 +1,31 @@
 /**
  * File: apps/web/src/features/session-setup/DetailsStep.tsx
- * Purpose: Step 1 of the Create/Edit session wizard: session type, "Paste a job link", company,
- *          role or topic, contact name (v1.1.0), job description, and the Resume and Documents pickers
- *          (from the libraries, with upload), with the room left against the session's character cap.
+ * Purpose: Step 1 of the Create/Edit session wizard (spec S4): session type, "Paste a job link", company,
+ *          role or topic, contact name, job description, then Context: CV / Resume, Documents and Key
+ *          terms, with the room left against the session's character cap. Switching type keeps the
+ *          fields they share.
  * Used by: src/features/session-setup/SessionWizard.tsx
- * Depends on: src/ui (Input, Select, Textarea), src/core/documents/limits.ts, ./draft.ts,
- *             ./labels.ts, ./JobLinkField.tsx, ./LibraryPicker.tsx
- * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F2), §5 (Create session); ADR-0029
+ * Depends on: lucide-react, src/ui (Input, SegmentedControl, Textarea), src/core/documents/limits.ts,
+ *             ./ContextFields.tsx, ./draft.ts, ./JobLinkField.tsx, ./KeyTermsInput.tsx, ./labels.ts
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S4); docs/architecture/kite-architecture-v3.1.md
+ *               §2 (F2), §5; ADR-0029
  *
  * Document text is never logged.
  */
 'use client';
 
 import type { JobImportFields } from '@kite/shared';
+import { Bot, Briefcase, Phone } from 'lucide-react';
 import { MAX_SESSION_CHARS, roomLeft } from '@/core/documents/limits';
-import type { LibraryItem } from '@/core/storage/types';
+import type { LibraryItem, SessionType } from '@/core/storage/types';
 import { Input } from '@/ui/Input';
-import { Select } from '@/ui/Select';
+import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Textarea } from '@/ui/Textarea';
+import { LibraryField } from './ContextFields';
 import { draftChars, type DetailsErrors, type SessionDraft } from './draft';
 import { JobLinkField } from './JobLinkField';
-import { SESSION_TYPE_OPTIONS } from './labels';
-import { LibraryPicker } from './LibraryPicker';
+import { KeyTermsInput } from './KeyTermsInput';
+import { SESSION_TYPE_LABELS } from './labels';
 
 /** Props for DetailsStep. */
 export interface DetailsStepProps {
@@ -39,6 +43,16 @@ export interface DetailsStepProps {
   onBusy: (delta: number) => void;
 }
 
+/** The segment icons' size and stroke. */
+const ICON = { size: 18, strokeWidth: 1.75, 'aria-hidden': true } as const;
+
+/** The session types as segments. */
+const TYPE_OPTIONS: readonly { value: SessionType; label: string; icon: React.ReactNode }[] = [
+  { value: 'interview', label: SESSION_TYPE_LABELS.interview, icon: <Briefcase {...ICON} /> },
+  { value: 'regular', label: SESSION_TYPE_LABELS.regular, icon: <Phone {...ICON} /> },
+  { value: 'mock', label: SESSION_TYPE_LABELS.mock, icon: <Bot {...ICON} /> },
+];
+
 /**
  * Formats a character count, for example "12,345".
  *
@@ -50,7 +64,7 @@ function count(n: number): string {
 }
 
 /**
- * Step 1: session details, resume and documents.
+ * Step 1: session details and context.
  *
  * @param props See DetailsStepProps.
  * @returns The step's fields.
@@ -82,21 +96,24 @@ export function DetailsStep({
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <Select
-        label="Session type"
-        options={SESSION_TYPE_OPTIONS}
-        value={draft.type}
-        onChange={(type) => onChange({ type })}
-      />
+    <div className="flex flex-col gap-4">
+      {/* Leaves room for the window's ✕ at the top right. */}
+      <div className="pr-8">
+        <SegmentedControl
+          label="Session type"
+          options={TYPE_OPTIONS}
+          value={draft.type}
+          onChange={(type) => onChange({ type })}
+        />
+      </div>
       {aboutJob && <JobLinkField onImported={applyImport} />}
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Input
           label="Company"
           value={draft.company}
           onChange={(event) => onChange({ company: event.target.value })}
           error={errors.company}
-          placeholder="Who the call is with"
+          placeholder="Company name"
           maxLength={200}
         />
         <Input
@@ -108,46 +125,50 @@ export function DetailsStep({
           maxLength={200}
         />
       </div>
-      <Input
-        label="Contact name (optional)"
-        value={draft.contactName}
-        onChange={(event) => onChange({ contactName: event.target.value })}
-        hint="Shown on their lines in the live transcript. Empty: they show as Client 1."
-        maxLength={100}
-      />
       <Textarea
-        label={aboutJob ? 'Job description (optional)' : 'Description (optional)'}
+        label={aboutJob ? 'Job description' : 'Description'}
         value={draft.description}
         onChange={(event) => onChange({ description: event.target.value })}
-        hint={
-          aboutJob
-            ? 'The job posting, or anything Paramount AI should know about this interview.'
-            : 'Anything Paramount AI should know about this call: goals, people, background.'
-        }
-        rows={4}
+        placeholder={aboutJob ? 'Paste the job description' : 'Goals, people, background'}
+        rows={5}
         maxLength={5_000}
       />
-      {aboutJob && (
-        <LibraryPicker
-          kind="resume"
-          title="Resume (optional)"
-          documents={draft.documents}
-          onPick={onPick}
-          onRemove={onRemoveDocument}
-          onBusy={onBusy}
-        />
-      )}
-      <LibraryPicker
-        kind="document"
-        title="Documents (optional)"
-        documents={draft.documents}
-        onPick={onPick}
-        onRemove={onRemoveDocument}
-        onBusy={onBusy}
+      <Input
+        label="Contact name"
+        value={draft.contactName}
+        onChange={(event) => onChange({ contactName: event.target.value })}
+        hint="Optional. Shown on their lines in the live transcript."
+        maxLength={100}
       />
-      <p className="text-[13px] text-ui-muted">
-        {count(roomLeft(used))} of {count(MAX_SESSION_CHARS)} characters left in this session
-      </p>
+
+      <section aria-label="Context" className="flex flex-col gap-3">
+        <h2 className="text-section text-ui-muted">Context</h2>
+        <div className={aboutJob ? 'grid gap-4 sm:grid-cols-2' : 'flex flex-col gap-4'}>
+          {aboutJob && (
+            <LibraryField
+              kind="resume"
+              documents={draft.documents}
+              onPick={onPick}
+              onRemove={onRemoveDocument}
+              onBusy={onBusy}
+            />
+          )}
+          <LibraryField
+            kind="document"
+            documents={draft.documents}
+            onPick={onPick}
+            onRemove={onRemoveDocument}
+            onBusy={onBusy}
+          />
+        </div>
+        <KeyTermsInput
+          value={draft.preferences.keyTerms}
+          onChange={(keyTerms) => onChange({ preferences: { ...draft.preferences, keyTerms } })}
+        />
+        <p className="text-[13px] text-ui-muted">
+          {count(roomLeft(used))} of {count(MAX_SESSION_CHARS)} characters left in this session
+        </p>
+      </section>
     </div>
   );
 }

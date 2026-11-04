@@ -14,16 +14,17 @@ export interface PageTitle {
   subtitle: string;
 }
 
+/** The sessions page's words. */
+const CALL_SESSIONS: PageTitle = {
+  title: 'Call Sessions',
+  subtitle: 'Your upcoming calls and everything you’ve done before.',
+};
+
 /** Pages with their own address. */
 const EXACT: Readonly<Record<string, PageTitle>> = {
-  '/': {
-    title: 'Call Sessions',
-    subtitle: 'Your upcoming calls and everything you’ve done before.',
-  },
-  '/sessions/new': {
-    title: 'Create session',
-    subtitle: 'Add the call details and choose what the AI can use.',
-  },
+  '/': CALL_SESSIONS,
+  // The wizard is a modal over the sessions page.
+  '/sessions/new': CALL_SESSIONS,
   '/resumes': { title: 'Resumes', subtitle: 'Your resumes, ready to attach to a session.' },
   '/documents': { title: 'Documents', subtitle: 'Reference files the AI can use in your calls.' },
   '/ask-kite': { title: 'Ask AI', subtitle: 'Ask anything, outside a call.' },
@@ -38,7 +39,7 @@ const EXACT: Readonly<Record<string, PageTitle>> = {
 
 /** Pages whose address has a part that changes, tested in order. */
 const PATTERNS: readonly (readonly [RegExp, PageTitle])[] = [
-  [/^\/sessions\/[^/]+\/edit$/, { title: 'Edit session', subtitle: 'Change the call details.' }],
+  [/^\/sessions\/[^/]+\/edit$/, CALL_SESSIONS],
   [
     /^\/sessions\/[^/]+\/desktop$/,
     { title: 'Open in desktop app', subtitle: 'Move this session to the desktop app.' },

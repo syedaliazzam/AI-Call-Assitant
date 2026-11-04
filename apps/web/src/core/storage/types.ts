@@ -39,8 +39,13 @@ export interface AnswerStyle {
   format: 'headline+bullets' | 'bullets' | 'paragraph';
   /** Rough answer length: 'short' (the live default), 'medium' (shown as "Balanced") or 'detailed'. */
   length: 'short' | 'medium' | 'detailed';
-  /** Wording: 'simple' (plain language), 'professional' or 'technical'. */
+  /** Wording: 'simple' (shown as "Plain"), 'professional' or 'technical'. */
   tone: 'simple' | 'professional' | 'technical';
+  /**
+   * v1.2.0: behavioural answers use Situation, Task, Action and Result bullets. Absent means off (older
+   * sessions have no such field), and then the prompt is exactly what it was.
+   */
+  star?: boolean;
 }
 
 /** The languages answers can be written in (live transcription stays English-only for now). */

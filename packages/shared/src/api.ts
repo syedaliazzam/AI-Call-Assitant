@@ -1,7 +1,7 @@
 /**
  * File: packages/shared/src/api.ts
  * Purpose: Request and response types for POST /api/answer, /api/notes, /api/job-import and
- *          /api/preview, shared by the
+ *          GET /api/models, shared by the
  *          server route and the browser answer client so both sides agree on the wire format.
  * Used by: apps/web/src/server/validate.ts, apps/web/src/server/prompt.ts,
  *          apps/web/app/api/answer/route.ts, apps/web/src/core/answer/answerClient.ts,
@@ -43,7 +43,21 @@ export interface AnswerStyle {
   length: string;
   /** Wording style, for example 'simple'. */
   tone: string;
+  /**
+   * v1.2.0: behavioural answers use Situation, Task, Action and Result bullets. Absent means off, and
+   * then the prompt is exactly what it was.
+   */
+  star?: boolean;
 }
+
+/** Response of GET /api/models. */
+export interface ModelAccessResponse {
+  /** True when sessions may choose the deeper model (an admin can turn it off). */
+  deepModel: boolean;
+}
+
+/** What the user is told when a job link cannot be read, whatever the reason (spec §6). */
+export const JOB_LINK_FAILED = 'Couldn’t read that page. Paste the description instead.';
 
 /** A document the user attached to a session, already converted to plain text in the browser. */
 export interface SessionDocument {
@@ -469,23 +483,4 @@ export interface JobImportResponse {
   fields: JobImportFields;
   /** The site the page came from, after any redirects. */
   host: string;
-}
-
-/** Which invented question a preview answers. */
-export type PreviewQuestionType = 'behavioural' | 'technical' | 'general';
-
-/** Body of POST /api/preview. */
-export interface AnswerPreviewRequest {
-  /** The format, length and tone to show. */
-  style: AnswerStyle;
-  /** The language by name, or absent for English. */
-  language?: string;
-  /** Which invented question to answer. */
-  question: PreviewQuestionType;
-}
-
-/** Response of POST /api/preview. */
-export interface AnswerPreviewResponse {
-  /** The preview answer, in the same lines as a live answer. */
-  text: string;
 }

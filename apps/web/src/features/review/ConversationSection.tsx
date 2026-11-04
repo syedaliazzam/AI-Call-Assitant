@@ -371,7 +371,7 @@ export function ConversationSection({
         <p className="mt-2 text-[13px] text-ui-muted">
           {session.saveTranscript
             ? 'No transcript lines are saved for this session.'
-            : 'The transcript was not saved for this session ("Save transcript" was off). Only the answers and the notes were kept.'}
+            : 'Transcript not saved. "Save transcript" was off for this session, so only the answers and the notes were kept.'}
         </p>
       )}
       {items.length > 0 && (

@@ -35,7 +35,7 @@ import {
 import { warmSession } from '@/core/answer/warm';
 import { markSessionActive, updateSession } from '@/core/storage/sessions';
 import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
-import { listUtterances } from '@/core/storage/utterances';
+import { clearTranscript, listUtterances } from '@/core/storage/utterances';
 import { listAnswers } from '@/core/storage/answers';
 import { notesFailureText, type UnavailableReason } from '@/core/answer/unavailable';
 import { generateNotes, type NotesLine } from '@/core/notes/generate';
@@ -625,9 +625,13 @@ export function LivePage({
     setEnding(false);
     updateSession(session.id, {
       status: 'ended',
-      // v1.1.0: for the home panel's card.
+      // v1.1.0: for the session cards.
       ...(startedAt !== null ? { lastCallMs: Date.now() - startedAt } : {}),
-    }).catch(() => undefined);
+    })
+      // Spec §6: with Save transcript off, no line stays. Read from storage, not this page's copy:
+      // the setting can be changed during the call. Notes and answers are kept.
+      .then((saved) => (saved.saveTranscript ? undefined : clearTranscript(session.id)))
+      .catch(() => undefined);
     // The call's notes (Day 5): written after the call by the server, saved here. Not awaited:
     // End never waits for them.
     if (startedAt !== null && finalLines.length > 0) {

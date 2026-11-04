@@ -20,7 +20,6 @@ import { fileURLToPath } from 'node:url';
 import { expect, type Page, type Response } from '@playwright/test';
 import type { AnswerUsage } from '@kite/shared';
 import { closeUseNotice, signInOnce } from '../lib/sign-in';
-import { pickOption } from '../lib/pick-option';
 
 /**
  * The site the suites run against: production, or KITE_E2E_URL to check a preview deployment (or a
@@ -165,16 +164,20 @@ export interface NewSession {
  */
 export async function createSession(page: Page, session: NewSession): Promise<void> {
   await page.goto(`${PRODUCTION_URL}/sessions/new`);
-  await pickOption(page, page.getByLabel('Session type'), 'Regular');
+  await page.getByRole('radio', { name: 'Regular' }).click();
   await page.getByLabel('Company').fill(session.company);
   await page.getByLabel('Topic').fill('Pilot review');
   if (session.document) {
     await page.locator('input[type="file"]').setInputFiles(session.document);
-    await expect(page.getByText(session.document.name)).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('combobox', { name: 'Documents' })).toHaveText(
+      session.document.name,
+      { timeout: 30_000 },
+    );
   }
+  await page.getByLabel('Key terms').fill(session.keyTerms.join(','));
+  await page.getByLabel('Key terms').press('Enter');
   await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByLabel('Key terms (optional)').fill(session.keyTerms.join('\n'));
-  await page.getByRole('button', { name: 'Create session' }).click();
+  await page.getByRole('button', { name: 'Create regular session' }).click();
   await expect(sessionCard(page, session.company)).toBeVisible({ timeout: 30_000 });
 }
 

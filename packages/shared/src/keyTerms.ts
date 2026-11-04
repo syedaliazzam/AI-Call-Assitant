@@ -8,7 +8,7 @@
  *          (v1.0.1: a pasted comma list was one 200+ character term and every answer failed).
  * Used by: apps/web/src/core/answer/warm.ts, apps/web/src/core/stt/sessionHotwords.ts,
  *          apps/web/src/core/transcript/display.ts, apps/web/src/core/storage/migrate.ts,
- *          apps/web/src/features/session-setup/PreferencesStep.tsx, apps/web/src/server/validate.ts
+ *          apps/web/src/features/session-setup/KeyTermsInput.tsx, apps/web/src/server/validate.ts
  * Depends on: nothing (pure helpers)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (session setup)
  */
@@ -30,7 +30,7 @@ const SEPARATORS = /[,;\r\n]+/;
  * @returns The terms, trimmed, each at most MAX_KEY_TERM_CHARS characters, without duplicates
  *          (the first spelling is kept), at most MAX_KEY_TERMS, in their original order.
  * Called from: warm.ts (sessionContext), sessionHotwords.ts, display.ts (displayTerms),
- *              PreferencesStep.tsx (KeyTermChips), validate.ts (the session schema); tests
+ *              KeyTermsInput.tsx, validate.ts (the session schema); tests
  */
 export function parseKeyTerms(input: string | readonly string[]): string[] {
   const pieces = (typeof input === 'string' ? [input] : input).flatMap((text) =>

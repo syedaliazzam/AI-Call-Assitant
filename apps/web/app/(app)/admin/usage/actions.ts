@@ -1,6 +1,7 @@
 /**
  * File: apps/web/app/(app)/admin/usage/actions.ts
- * Purpose: Server action behind Admin → Usage: sets the daily limit (v1.0.2, ADR-0036). Checks the
+ * Purpose: Server actions behind Admin → Usage: set the daily limit (v1.0.2, ADR-0036) and the deeper
+ *          model's switch (v1.2.0, spec §6). Check the
  *          caller is an admin (layouts do not protect actions), validates with zod, saves through
  *          src/server/usage.ts and returns a result; errors are returned, never thrown to the UI.
  * Used by: app/(app)/admin/usage/page.tsx (passed to DailyLimitForm)
@@ -13,6 +14,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import type { DailyLimitState } from '@/features/admin/usageTypes';
 import { requireAdmin } from '@/server/guard';
+import { setDeepModelEnabled } from '@/server/modelAccess';
 import { DAILY_LIMIT_RANGE, setDailyLimit } from '@/server/usage';
 
 /** The page this action changes; refreshed after a successful change. */
@@ -56,4 +58,31 @@ export async function setDailyLimitAction(
   console.info('admin: daily limit set', { userId: session.user.id, limit: parsed.data });
   revalidatePath(USAGE_PATH);
   return { status: 'saved', limit: parsed.data };
+}
+
+/**
+ * Turns the deeper model on or off for sessions.
+ *
+ * @param enabled The new state.
+ * @returns True when saved.
+ * Called from: DeepModelSwitch (src/features/admin/DeepModelSwitch.tsx)
+ */
+export async function setDeepModelAction(enabled: boolean): Promise<boolean> {
+  const session = await requireAdmin();
+  // A server action's argument comes from the browser: take only a real boolean.
+  if (typeof enabled !== 'boolean') return false;
+  try {
+    await setDeepModelEnabled(enabled);
+  } catch (error) {
+    // Ids and the error's name only.
+    console.error('admin action failed', {
+      action: 'setDeepModel',
+      userId: session.user.id,
+      reason: error instanceof Error ? error.message : 'unknown',
+    });
+    return false;
+  }
+  console.info('admin: deep model set', { userId: session.user.id, enabled });
+  revalidatePath(USAGE_PATH);
+  return true;
 }

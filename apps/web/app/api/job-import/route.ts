@@ -12,14 +12,14 @@
  * Logs ids, sizes, timings and token counts only: never the page text, what was extracted, or the
  * full address (it can carry personal tokens); the host name at most.
  */
-import { dailyLimitMessage } from '@kite/shared';
+import { dailyLimitMessage, JOB_LINK_FAILED } from '@kite/shared';
 import type { AnswerErrorCode, JobImportResponse } from '@kite/shared';
 import { getCachedSession } from '@/server/auth';
 import { countRequest } from '@/server/usage';
 import { describeClaudeError, errorLogDetails } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { extractJobDetails } from '@/server/job-import';
-import { fetchJobPage, JobPageError, pageText, type JobPageFailure } from '@/server/job-page';
+import { fetchJobPage, JobPageError, pageText } from '@/server/job-page';
 import { parseJobImportRequest } from '@/server/validate';
 
 /** Next.js route setting: raw sockets and the Anthropic SDK need Node.js (not Edge). */
@@ -32,13 +32,8 @@ export const maxDuration = 60;
 /** A page with less text than this holds no job posting (often a page built only by scripts). */
 const MIN_PAGE_CHARS = 80;
 
-/** What the user is told for each reason a page could not be read. */
-const PAGE_MESSAGES: Record<JobPageFailure, string> = {
-  bad_url: 'That does not look like a web link. Copy the full address of the job page.',
-  blocked: 'Paramount AI can only read public web pages.',
-  unreadable:
-    'Paramount AI could not read that page: some job sites block automatic reading. Paste the details below instead.',
-};
+/** What the user is told for any reason a page could not be read (spec §6). */
+const PAGE_MESSAGE = JOB_LINK_FAILED;
 
 /**
  * Builds a JSON error response.
@@ -111,11 +106,11 @@ async function respond(
   } catch (error) {
     const reason = error instanceof JobPageError ? error.reason : 'unreadable';
     console.info('job-import: page refused', { userId: user.id, reason });
-    return jsonError(422, 'bad_request', PAGE_MESSAGES[reason]);
+    return jsonError(422, 'bad_request', PAGE_MESSAGE);
   }
   if (text.length < MIN_PAGE_CHARS) {
     console.info('job-import: page empty', { userId: user.id, chars: text.length });
-    return jsonError(422, 'bad_request', PAGE_MESSAGES.unreadable);
+    return jsonError(422, 'bad_request', PAGE_MESSAGE);
   }
 
   // The per-user daily limit (ADR-0036): counted before Claude is called; over it, nothing is sent.

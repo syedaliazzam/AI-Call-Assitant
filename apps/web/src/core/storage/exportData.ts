@@ -109,6 +109,7 @@ const SessionSchema = z.object({
       format: z.enum(['headline+bullets', 'bullets', 'paragraph']),
       length: z.enum(['short', 'medium', 'detailed']),
       tone: z.enum(['simple', 'professional', 'technical', 'friendly']).transform(currentTone),
+      star: z.boolean().optional(),
     }),
     // An older export may hold a pasted comma list as one term: one clean term per line (v1.0.1).
     keyTerms: z.string().transform(normaliseKeyTerms),

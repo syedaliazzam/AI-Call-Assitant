@@ -1,10 +1,10 @@
 /**
  * File: apps/web/src/features/library/UploadBox.tsx
- * Purpose: The upload control shared by the library pages and the wizard's pickers: a button that
+ * Purpose: The library pages' upload control: a button that
  *          opens a drag-and-drop window (drop files or browse), then what is being read and any
  *          file that could not be read, on the page behind it. Files can also be dropped straight
  *          on the row, without opening the window.
- * Used by: src/features/library/LibraryPage.tsx, src/features/session-setup/LibraryPicker.tsx
+ * Used by: src/features/library/LibraryPage.tsx
  * Depends on: src/ui (Button, Dialog, icons), ./useLibraryUpload.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4; ADR-0029;
  *               docs/design/kite-ui-theme.md §6
@@ -38,7 +38,7 @@ export interface UploadBoxProps {
  *
  * @param props See UploadBoxProps.
  * @returns The row with its button, the upload window, status and problems.
- * Rendered by: LibraryPage.tsx, LibraryPicker.tsx
+ * Rendered by: LibraryPage.tsx
  */
 export function UploadBox({
   label,

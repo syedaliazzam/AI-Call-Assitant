@@ -62,6 +62,8 @@ export function toSessionContext(
       format: session.preferences.style.format,
       length: session.preferences.style.length,
       tone: session.preferences.style.tone,
+      // Absent when off, so the prompt and its cache stay exactly as they were.
+      ...(session.preferences.style.star ? { star: true } : {}),
     },
     ...(language ? { language } : {}),
     ...(codingLanguage !== DEFAULT_CODING_LANGUAGE ? { codingLanguage } : {}),

@@ -1,6 +1,6 @@
 /**
  * Tests: apps/web/src/core/session/jobImport.ts. It never throws, shows the page's own messages,
- * and hides any other failure behind a generic one.
+ * and hides any other failure behind the spec's one message (§6).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { importJobLink } from '@/core/session/jobImport';
@@ -30,9 +30,12 @@ describe('importJobLink', () => {
   it('shows the message for a page it could not read', async () => {
     const outcome = await importJobLink(
       'https://x.example',
-      reply(422, { message: 'Paramount AI can only read public web pages.' }),
+      reply(422, { message: 'Couldn’t read that page. Paste the description instead.' }),
     );
-    expect(outcome).toEqual({ ok: false, message: 'Paramount AI can only read public web pages.' });
+    expect(outcome).toEqual({
+      ok: false,
+      message: 'Couldn’t read that page. Paste the description instead.',
+    });
   });
 
   it('shows a generic message for any other failure', async () => {

@@ -343,7 +343,7 @@ test('with "Save transcript" off: says so, and notes are written from answers on
   await expect(page.getByRole('heading', { name: 'Pinecrest Clinics (invented)' })).toBeVisible();
   await openSection('Transcript');
   await expect(page.getByRole('region', { name: 'Transcript' })).toContainText(
-    'The transcript was not saved for this session ("Save transcript" was off). Only the answers and the notes were kept.',
+    'Transcript not saved. "Save transcript" was off for this session, so only the answers and the notes were kept.',
   );
   await openSection('AI notes');
   received.length = 0;

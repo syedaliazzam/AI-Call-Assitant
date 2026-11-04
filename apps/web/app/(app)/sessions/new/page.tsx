@@ -1,11 +1,13 @@
 /**
  * File: apps/web/app/(app)/sessions/new/page.tsx
- * Purpose: The /sessions/new route: the Create session wizard. Kept thin: it only renders the
- *          wizard feature, passing on the type chosen in the dashboard's dropdown (?type=mock).
+ * Purpose: The /sessions/new route: the Create session wizard, as a modal over the sessions page. Kept
+ *          thin: it only renders the two features, passing on the type chosen in the split button's
+ *          menu (?type=mock).
  * Used by: Next.js App Router (the dashboard's "Create session" menu)
- * Depends on: src/features/session-setup/SessionWizard.tsx
+ * Depends on: src/features/dashboard/Dashboard.tsx, src/features/session-setup/SessionWizard.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Create session), §9.2 (thin route
  */
+import { Dashboard } from '@/features/dashboard/Dashboard';
 import { SessionWizard } from '@/features/session-setup/SessionWizard';
 
 /**
@@ -22,6 +24,9 @@ export default async function NewSessionPage({
 }) {
   const { type } = await searchParams;
   return (
-    <SessionWizard mode="create" {...(typeof type === 'string' ? { initialType: type } : {})} />
+    <>
+      <Dashboard />
+      <SessionWizard mode="create" {...(typeof type === 'string' ? { initialType: type } : {})} />
+    </>
   );
 }

@@ -17,6 +17,7 @@ import {
   fetchJobPage,
   isPublicAddress,
   JobPageError,
+  JOB_PAGE_TIMEOUT_MS,
   MAX_JOB_PAGE_BYTES,
   MAX_JOB_TEXT_CHARS,
   pageText,
@@ -89,11 +90,14 @@ describe('isPublicAddress', () => {
 describe('checkUrl', () => {
   it('allows ordinary job pages', () => {
     expect(checkUrl('https://jobs.example.com/roles/42?a=1').hostname).toBe('jobs.example.com');
-    expect(checkUrl('http://jobs.example.com:443/x').port).toBe('443');
+    // The usual port written out is the same address.
+    expect(checkUrl('https://jobs.example.com:443/x').hostname).toBe('jobs.example.com');
   });
 
   it.each([
     'not a url',
+    // https only (spec §6), even for a public site.
+    'http://jobs.example.com/roles/42',
     'file:///etc/passwd',
     'ftp://example.com/x',
     'gopher://example.com/',
@@ -104,15 +108,22 @@ describe('checkUrl', () => {
   });
 
   it.each([
-    'http://127.0.0.1/',
+    'https://127.0.0.1/',
     // Other spellings of 127.0.0.1, which the URL parser normalises.
-    'http://2130706433/',
-    'http://0x7f.0.0.1/',
-    'http://[::1]/',
-    'http://[::ffff:169.254.169.254]/',
-    'http://169.254.169.254/latest/meta-data/',
-    'http://localhost/',
-    'http://intranet.local/',
+    'https://2130706433/',
+    'https://0x7f.0.0.1/',
+    'https://[::1]/',
+    'https://[::ffff:169.254.169.254]/',
+    // Link-local, including the cloud metadata address.
+    'https://169.254.169.254/latest/meta-data/',
+    'https://[fe80::1]/',
+    // Private ranges.
+    'https://10.0.0.5/',
+    'https://172.16.0.1/',
+    'https://192.168.1.1/',
+    'https://[fc00::1]/',
+    'https://localhost/',
+    'https://intranet.local/',
   ])('refuses %s as private', async (url) => {
     expect(await reasonOf(() => checkUrl(url))).toBe('blocked');
   });
@@ -172,9 +183,51 @@ describe('fetchJobPage', () => {
   it('refuses a redirect to a private address, without requesting it', async () => {
     const send = vi
       .fn()
-      .mockResolvedValueOnce(response(302, { location: 'http://169.254.169.254/latest/' }));
+      .mockResolvedValueOnce(response(302, { location: 'https://169.254.169.254/latest/' }));
     expect(await reasonOf(() => fetchJobPage('https://jobs.example.com/1', send))).toBe('blocked');
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks every redirect: a private address after a public hop is refused too', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce(response(302, { location: 'https://cdn.example.com/2' }))
+      .mockResolvedValueOnce(response(301, { location: 'https://10.0.0.5/admin' }));
+    expect(await reasonOf(() => fetchJobPage('https://jobs.example.com/1', send))).toBe('blocked');
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses a redirect down to http, without requesting it', async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce(response(302, { location: 'http://jobs.example.com/1' }));
+    expect(await reasonOf(() => fetchJobPage('https://jobs.example.com/1', send))).toBe('bad_url');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a redirect to a loopback name, without requesting it', async () => {
+    const send = vi.fn().mockResolvedValueOnce(response(307, { location: 'https://localhost/' }));
+    expect(await reasonOf(() => fetchJobPage('https://jobs.example.com/1', send))).toBe('blocked');
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('reads HTML and plain text, and nothing else', async () => {
+    const url = 'https://jobs.example.com/1';
+    const page = (headers: Record<string, string>) =>
+      vi.fn(async () => response(200, headers, 'words'));
+    expect(
+      (await fetchJobPage(url, page({ 'content-type': 'text/html; charset=utf-8' }))).body,
+    ).toBe('words');
+    expect((await fetchJobPage(url, page({ 'content-type': 'text/plain' }))).body).toBe('words');
+    expect(await reasonOf(() => fetchJobPage(url, page({ 'content-type': 'image/png' })))).toBe(
+      'unreadable',
+    );
+    expect(await reasonOf(() => fetchJobPage(url, page({})))).toBe('unreadable');
+  });
+
+  it('keeps the agreed limits: 10 seconds and 3 MB', () => {
+    expect(JOB_PAGE_TIMEOUT_MS).toBe(10_000);
+    expect(MAX_JOB_PAGE_BYTES).toBe(3 * 1024 * 1024);
   });
 
   it('stops after a few redirects', async () => {

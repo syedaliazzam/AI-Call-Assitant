@@ -801,7 +801,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
         open={prefsOpen}
         onClose={() => setPrefsOpen(false)}
         style={style}
-        language={props.session.preferences.language}
         onApply={(next) => {
           setPrefsOpen(false);
           setStyle(next);

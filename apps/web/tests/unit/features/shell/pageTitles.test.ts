@@ -21,9 +21,9 @@ describe('pageTitleFor', () => {
     expect(pageTitleFor('/profile').title).toBe('Profile');
   });
 
-  it('tells a new session, an edit, a hand-off and a review apart', () => {
-    expect(pageTitleFor('/sessions/new').title).toBe('Create session');
-    expect(pageTitleFor('/sessions/abc/edit').title).toBe('Edit session');
+  it('keeps the sessions page’s name under the wizard, and tells a hand-off and a review apart', () => {
+    expect(pageTitleFor('/sessions/new').title).toBe('Call Sessions');
+    expect(pageTitleFor('/sessions/abc/edit').title).toBe('Call Sessions');
     expect(pageTitleFor('/sessions/abc/desktop').title).toBe('Open in desktop app');
     expect(pageTitleFor('/sessions/abc').title).toBe('Session review');
   });
