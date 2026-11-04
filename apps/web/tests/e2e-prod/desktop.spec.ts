@@ -57,9 +57,10 @@ test.beforeAll(async () => {
     executablePath: ELECTRON_PATH,
     args: [
       `--user-data-dir=${PROFILE_DIR}`,
-      // Fake microphone: the recording once, then silence (no real microphone is used).
+      // Fake microphone: the recording on a loop, so a line is sure to come however long the panel takes
+      // to open (no real microphone is used).
       '--use-fake-device-for-media-stream',
-      `--use-file-for-fake-audio-capture=${RECORDINGS.you}%noloop`,
+      `--use-file-for-fake-audio-capture=${RECORDINGS.you}`,
       DESKTOP_DIR,
     ],
     env: { ...parentEnv, KITE_URL: `${PRODUCTION_URL}/` },
@@ -169,6 +170,8 @@ test('3. a call: the overlay, Private on every window, a real answer, the side w
   const ask = async () => {
     const response = main.waitForResponse((r) => isMode(r, 'chat'), { timeout: 60_000 });
     await overlay.getByRole('button', { name: /^Chat/ }).click();
+    // For the call: on Auto, a question with no documents behind it may rightly go to Ask Kite.
+    await overlay.getByRole('radio', { name: 'For the call' }).click();
     const box = overlay.getByLabel('Type a question');
     await box.fill(question);
     await box.press('Enter');
@@ -176,14 +179,18 @@ test('3. a call: the overlay, Private on every window, a real answer, the side w
   };
   await ask();
   const answer = overlay.getByRole('region', { name: 'Latest answer' });
-  await expect(answer.getByLabel('Answer line')).not.toBeEmpty({ timeout: 30_000 });
+  await expect(answer.getByRole('heading', { name: 'Answer line' })).not.toBeEmpty({
+    timeout: 30_000,
+  });
   await expect(answer.getByLabel('Question', { exact: true })).toContainText('?');
   await answer.getByRole('button', { name: 'Good answer' }).click();
   await expect(answer.getByRole('button', { name: 'Good answer' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
-  const words = ((await answer.getByLabel('Answer line').textContent()) ?? '').split(/\s+/).length;
+  const words = (
+    (await answer.getByRole('heading', { name: 'Answer line' }).textContent()) ?? ''
+  ).split(/\s+/).length;
   report('desktop real answer on the card, rated', words > 0, { lineWords: words });
   // The same question again, and still one entry.
   await ask();
@@ -206,6 +213,8 @@ test('3. a call: the overlay, Private on every window, a real answer, the side w
   expect((await windows()).some((w) => w.path.startsWith('/live/'))).toBe(true);
   report('desktop side window during the call', true);
   await side.close();
+  // Dashboard closed the menu.
+  await overlay.getByRole('button', { name: 'Overlay menu' }).click();
   await menu.getByRole('switch', { name: 'Private' }).click();
   await expect.poll(async () => (await windows()).some((w) => w.shielded)).toBe(false);
 

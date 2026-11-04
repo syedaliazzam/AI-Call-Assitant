@@ -72,6 +72,24 @@ export async function clearPasswordOnFailure(
 }
 
 /**
+ * Closes the one-time acceptable-use notice (v1.1.0), which covers the page on a new device. A site from
+ * before 1.1.0 has none, and this returns after a moment.
+ *
+ * @param page The signed-in page.
+ * @returns True when the notice was showing.
+ * Called from: tests/e2e-prod/helpers.ts signIn(), tests/ui/shots.ts signIn()
+ */
+export async function closeUseNotice(page: Page): Promise<boolean> {
+  const button = page.getByRole('dialog', { name: 'Using Kite' }).getByRole('button', {
+    name: 'Got it',
+  });
+  return button.click({ timeout: 4_000 }).then(
+    () => true,
+    () => false,
+  );
+}
+
+/**
  * Signs in and waits for the dashboard, reusing this run's session for the account when
  * there is one (unless `fresh`).
  *

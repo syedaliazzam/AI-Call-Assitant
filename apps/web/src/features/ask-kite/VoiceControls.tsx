@@ -95,7 +95,7 @@ export function VoiceOptions(props: VoiceOptionsProps) {
       className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-ui-text"
     >
       {props.canSpeak && (
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 pointer-coarse:min-h-11">
           <input
             type="checkbox"
             checked={props.readAloud}
@@ -104,7 +104,10 @@ export function VoiceOptions(props: VoiceOptionsProps) {
           Read replies aloud
         </label>
       )}
-      <label className="flex items-center gap-2" title="After each reply, Kite listens again">
+      <label
+        className="flex items-center gap-2 pointer-coarse:min-h-11"
+        title="After each reply, Kite listens again"
+      >
         <input
           type="checkbox"
           checked={props.handsFree}

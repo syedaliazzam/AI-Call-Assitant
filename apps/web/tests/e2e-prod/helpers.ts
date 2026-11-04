@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Page, type Response } from '@playwright/test';
 import type { AnswerUsage } from '@kite/shared';
-import { signInOnce } from '../lib/sign-in';
+import { closeUseNotice, signInOnce } from '../lib/sign-in';
 
 /**
  * The site the suites run against: production, or KITE_E2E_URL to check a preview deployment (or a
@@ -141,6 +141,8 @@ export async function signIn(
   panel = false,
 ): Promise<void> {
   await signInOnce(page, { baseUrl: PRODUCTION_URL, ...account, fresh, panel });
+  // On the panel the suite looks at the notice itself.
+  if (!panel) await closeUseNotice(page);
 }
 
 /** Details of a session created through the wizard. */

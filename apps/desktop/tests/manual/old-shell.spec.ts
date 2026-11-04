@@ -8,7 +8,7 @@
  *
  * Manual run, not part of the automated suites: it needs the old app. Usage: start the rig, then
  * KITE_OLD_SHELL_EXE=<path to the kept Kite.exe> pnpm --filter @kite/desktop exec playwright test
- * tests/old-shell.spec.ts
+ * -c playwright.manual.config.ts old-shell.spec.ts
  */
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
