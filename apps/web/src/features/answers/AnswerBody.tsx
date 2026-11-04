@@ -38,6 +38,8 @@ const CLAIM_TITLE = 'Not found in your documents or the call. Check before sayin
 export interface AnswerBodyProps {
   /** The answer's text so far. */
   text: string;
+  /** True when no more text will come (v1.1.0): a short one-line answer can then be cut too. */
+  finished?: boolean;
   /** Who it is for; 'kite' shows it as a private answer. Absent: for the call. */
   target?: AnswerTarget;
   /** Words the claim check could not find; each is underlined. */
@@ -249,7 +251,10 @@ export function AnswerBody(props: AnswerBodyProps) {
       <p className={`text-ui-muted ${sizes.body}`}>…</p>
     );
   }
-  const { headline, bullets, keySteps, code, complexity, say, tip, note } = splitAnswer(text);
+  const { headline, bullets, keySteps, code, complexity, say, tip, note } = splitAnswer(
+    text,
+    props.finished ?? false,
+  );
   return (
     <>
       {!(props.hideEmptyHeadline && !headline) && (

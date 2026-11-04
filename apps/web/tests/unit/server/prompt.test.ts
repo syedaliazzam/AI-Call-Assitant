@@ -532,8 +532,10 @@ describe('the v1.1.0 answer rules (ADR-0043)', () => {
     expect(SYSTEM_RULES).toContain('write only the two hidden lines');
   });
 
-  it('asks for an answer line of 12 words or fewer in the reminder, not the cached rules', () => {
-    expect(CALL_REMINDER).toContain('12 words or fewer');
+  it('asks for an answer line of at most 12 words in the reminder', () => {
+    // v1.0.4's words, on purpose: tighter ones made lines no shorter and answers less careful
+    // (measured in the v1.1.0 evaluation). The card's cut at a clause enforces the limit.
+    expect(CALL_REMINDER).toContain('a first line of at most 12 words');
   });
 });
 

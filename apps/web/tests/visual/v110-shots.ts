@@ -117,8 +117,9 @@ const say = async (call: Page, speaker: 'them' | 'you', text: string) => {
     ([who, words]) => (window as unknown as { rig: RigControls }).rig.say(who!, words!),
     [speaker, text] as const,
   );
-  // Lines closer than 1.5 s are one line (merge.ts): a real pause keeps them apart.
-  await call.waitForTimeout(1_700);
+  // The rig dates each line 1.5 s long, ending now, and lines closer than 1.5 s are one line
+  // (merge.ts): a real pause keeps them apart.
+  await call.waitForTimeout(3_200);
 };
 
 /**
@@ -231,11 +232,9 @@ async function main(): Promise<void> {
     .getByRole('button', { name: /^Answer/ })
     .first()
     .click();
-  await overlay
-    .getByText('Thinking…')
-    .waitFor({ timeout: 3_000 })
-    .catch(() => undefined);
-  await shot(overlay, 'answer-thinking');
+  // At once: the mocked answer takes about a second.
+  await overlay.getByRole('button', { name: 'Stop' }).waitFor({ timeout: 3_000 });
+  await overlay.screenshot({ path: path.join(OUT, 'answer-thinking.png') });
   await overlay.getByRole('heading', { name: 'Answer line' }).waitFor();
   await overlay.waitForTimeout(2_500);
   await shot(overlay, 'answer-panel');

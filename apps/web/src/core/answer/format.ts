@@ -70,8 +70,17 @@ const COMPLEXITY_LABEL = /^(?:time\s+)?complexity\s*:\s*/i;
 /** The longest answer line, in words, not counting a label (v1.1.0, item 16). */
 export const MAX_ANSWER_LINE_WORDS = 12;
 
-/** Where an answer line may be cut: after these marks, or before these joining words. */
+/**
+ * The longest whole answer the card treats as a line that can be cut, in words. More than this with no
+ * bullets is a paragraph, which is meant to read as one.
+ */
+const ONE_LINE_MAX_WORDS = 30;
+
+/** Where an answer line is best cut: after these marks, or before these joining words. */
 const CLAUSE_BREAK = /[,;:—–]\s+|\s+(?=(?:and|but|so|because|which|while|with|using)\s)/gi;
+
+/** Where it can be cut when there is no clause to cut at: before a word that starts a phrase. */
+const PHRASE_BREAK = /\s+(?=(?:to|for|when|after|before|that|if|then|or|by|from)\s)/gi;
 
 /** Bullet marks at the start of a line: "-", "*", "•", or "1." / "1)". */
 const BULLET_MARK = /^\s*(?:[-*•]|\d+[.)])\s+/;
@@ -120,10 +129,29 @@ export function answerLineWords(line: string): number {
 }
 
 /**
- * Cuts an answer line longer than the limit at its last clause break within the limit (v1.1.0, item
- * 16). The prompt asks for 12 words, and the model sometimes runs over; this is what makes the card
- * keep to it, with no extra request. A line with no such break stays whole: a cut mid-clause would
- * read worse than one long line.
+ * The last place in a line a pattern allows a cut, within the word limit.
+ *
+ * @param line    The line.
+ * @param pattern Where it may be cut.
+ * @returns Where the first part ends and the rest starts, or null.
+ * Called from: splitLongLine()
+ */
+function lastBreak(line: string, pattern: RegExp): { end: number; next: number } | null {
+  let cut: { end: number; next: number } | null = null;
+  for (const match of line.matchAll(pattern)) {
+    const words = answerLineWords(line.slice(0, match.index));
+    if (words > MAX_ANSWER_LINE_WORDS) break;
+    // Fewer than three words is not a line anyone can say on its own.
+    if (words >= 3) cut = { end: match.index, next: match.index + match[0].length };
+  }
+  return cut;
+}
+
+/**
+ * Cuts an answer line longer than the limit at its last clause break within the limit, or failing that
+ * before a word that starts a phrase (v1.1.0, item 16). The prompt asks for 12 words, and the model
+ * often runs over; this is what makes the card keep to it, with no extra request. A line with no such
+ * break stays whole: a cut anywhere else would read worse than one long line.
  *
  * @param line The answer line.
  * @returns The line to show and the rest ('' when it fits or cannot be cut).
@@ -131,14 +159,7 @@ export function answerLineWords(line: string): number {
  */
 export function splitLongLine(line: string): { line: string; rest: string } {
   if (answerLineWords(line) <= MAX_ANSWER_LINE_WORDS) return { line, rest: '' };
-  let cut: { end: number; next: number } | null = null;
-  for (const match of line.matchAll(CLAUSE_BREAK)) {
-    const before = line.slice(0, match.index);
-    const words = answerLineWords(before);
-    if (words > MAX_ANSWER_LINE_WORDS) break;
-    // Fewer than three words is not a line anyone can say on its own.
-    if (words >= 3) cut = { end: match.index, next: match.index + match[0].length };
-  }
+  const cut = lastBreak(line, CLAUSE_BREAK) ?? lastBreak(line, PHRASE_BREAK);
   if (!cut) return { line, rest: '' };
   const head = line.slice(0, cut.end).trim();
   const tail = line.slice(cut.next).trim();
@@ -153,12 +174,14 @@ export function splitLongLine(line: string): { line: string; rest: string } {
  * that part; a fenced block is code (one still streaming runs to the end); every other line is a
  * bullet. While the text streams, a line becomes the tip or note as soon as its label has arrived.
  *
- * @param text The answer text so far.
+ * @param text     The answer text so far.
+ * @param finished True when no more text will come: a short one-line answer can then be cut too. While
+ *                 it streams it could still become a paragraph, and would jump back.
  * @returns The answer line (first non-empty line), bullets, code, complexity, what to say, tip and
  *          note.
  * Called from: AnswerBody.tsx; LiveAnswers.tsx; answerText(); conversation.ts; tests
  */
-export function splitAnswer(text: string): AnswerParts {
+export function splitAnswer(text: string, finished = false): AnswerParts {
   const lines = text.split('\n');
   const bullets: string[] = [];
   const code: AnswerCode[] = [];
@@ -195,9 +218,11 @@ export function splitAnswer(text: string): AnswerParts {
     else if (DEPTH_OFFER.test(clean)) tip ||= clean;
     else bullets.push(clean);
   }
-  // Only with something after it: an answer that is one paragraph, or one line of small talk, is
-  // complete as it stands, and a line still arriving has nothing yet to sit above.
-  if (bullets.length > 0 || code.length > 0) {
+  // With something after it, or as a finished one-line answer. A paragraph is complete as it stands,
+  // and a line still arriving has nothing yet to sit above.
+  const oneLine =
+    finished && bullets.length === 0 && answerLineWords(headline) <= ONE_LINE_MAX_WORDS;
+  if (bullets.length > 0 || code.length > 0 || oneLine) {
     const { line, rest } = splitLongLine(headline);
     headline = line;
     if (rest) bullets.unshift(rest);
@@ -214,7 +239,7 @@ export function splitAnswer(text: string): AnswerParts {
  * Called from: AnswerPanel.tsx and CompactView.tsx (Copy); tests
  */
 export function answerText(text: string): string {
-  const { headline, bullets, code, complexity, say, tip } = splitAnswer(text);
+  const { headline, bullets, code, complexity, say, tip } = splitAnswer(text, true);
   return [
     headline,
     ...bullets.map((bullet) => `- ${bullet}`),

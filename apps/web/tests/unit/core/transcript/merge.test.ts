@@ -61,3 +61,21 @@ describe('mergeLines', () => {
     expect(PREVIOUS.text).toBe('What would the rollout');
   });
 });
+
+describe('noise and speech (v1.1.0, ADR-0044)', () => {
+  it('never merges them, however close', () => {
+    const line = (text: string) => ({
+      id: 'u1',
+      speaker: 'them' as const,
+      text,
+      final: true,
+      tStart: 0,
+      tEnd: 1_000,
+    });
+    const next = { speaker: 'them' as const, tStart: 1_100, tEnd: 2_000 };
+    const noise = 'GRONK BLIMP SPROCKET WIBBLE FLANGE';
+    expect(shouldMerge(line('WHAT DOES IT COST'), { ...next, text: noise })).toBe(false);
+    expect(shouldMerge(line(noise), { ...next, text: 'WHAT DOES IT COST' })).toBe(false);
+    expect(shouldMerge(line('WHAT DOES IT COST'), { ...next, text: 'FOR FORTY SEATS' })).toBe(true);
+  });
+});

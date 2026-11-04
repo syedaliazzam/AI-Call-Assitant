@@ -130,11 +130,17 @@ export function inventedDocument(): TextFile {
  * @param page    The page.
  * @param account The test account.
  * @param fresh   True to always sign in with the form (the sign-in cache test; the desktop app).
+ * @param panel   True on the desktop app's home panel.
  * @returns Nothing.
  * Called from: the suites
  */
-export async function signIn(page: Page, account: TestAccount, fresh = false): Promise<void> {
-  await signInOnce(page, { baseUrl: PRODUCTION_URL, ...account, fresh });
+export async function signIn(
+  page: Page,
+  account: TestAccount,
+  fresh = false,
+  panel = false,
+): Promise<void> {
+  await signInOnce(page, { baseUrl: PRODUCTION_URL, ...account, fresh, panel });
 }
 
 /** Details of a session created through the wizard. */

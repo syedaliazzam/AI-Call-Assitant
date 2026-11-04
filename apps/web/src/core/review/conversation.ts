@@ -245,7 +245,7 @@ function paragraphs(
       });
       continue;
     }
-    const { headline, bullets, code, complexity, say, tip } = splitAnswer(item.answer.text);
+    const { headline, bullets, code, complexity, say, tip } = splitAnswer(item.answer.text, true);
     const question =
       item.answer.question || item.answer.cleanQuestion
         ? ` (question: ${cardQuestion(item.answer.question, item.answer.cleanQuestion, terms)})`

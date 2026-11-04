@@ -30,6 +30,6 @@ export function callAnswerLine(
   if (first === undefined) return null;
   return {
     answerLineWords: answerLineWords(first),
-    shownLineWords: answerLineWords(splitAnswer(text).headline),
+    shownLineWords: answerLineWords(splitAnswer(text, true).headline),
   };
 }

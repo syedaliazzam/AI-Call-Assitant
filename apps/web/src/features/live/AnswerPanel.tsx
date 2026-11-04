@@ -195,6 +195,7 @@ function AnswerCard(props: AnswerCardProps) {
             or it was stopped before any words arrived: the message says it all. */}
         <AnswerBody
           text={entry.text}
+          finished={entry.status !== 'streaming'}
           size="panel"
           answerLabel
           headlineLabel="Answer line"

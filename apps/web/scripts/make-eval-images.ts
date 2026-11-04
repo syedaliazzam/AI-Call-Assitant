@@ -109,7 +109,7 @@ ZeroDivisionError: division by zero</pre></div>`,
   },
   {
     name: 'unreadable.jpg',
-    html: `${STYLE}<div class="slide" style="filter:blur(14px)"><h1>Quarterly numbers</h1>
+    html: `${STYLE}<div class="slide" style="filter:blur(26px)"><h1>Quarterly numbers</h1>
 <ul><li>First figure 1,284</li><li>Second figure 937</li><li>Third figure 2,410</li></ul></div>`,
   },
 ];

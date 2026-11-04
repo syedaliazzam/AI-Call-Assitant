@@ -22,7 +22,9 @@ Pressing Answer used to answer the latest words, whatever they were: "say yes wh
 
 **One entry per question:** overlap of 80% or more, within 60 seconds, in the same call only. Different calls never merge, and the same question asked later in a call gets its own entry.
 
-**The answer line is 12 words or fewer, not counting a label.** The prompt asks for it, and the card cuts a longer line at a clause into the first bullet, with no extra request. A line with no such break stays whole. The evaluation measures what the model wrote, before the card's cut.
+**The answer line is 12 words or fewer, not counting a label, as the card shows it.** The prompt asks for it, and the card cuts a longer line at a clause or before a word that starts a phrase, into the first bullet, with no extra request; a finished one-line answer of 30 words or fewer is cut too. A line with no such break stays whole. The gate (the developer's decision, 4 Nov 2026, after the raw gate failed its one fix) is that at least 95% of lines **as shown** are within 12 words. What the model wrote is measured and reported beside it.
+
+**The general reminder keeps v1.0.4's words.** Tighter wording was tried and measured: raw lines got no shorter (43% to 56% within 12 words across the groups) while answers got less careful, with scores below their gates (answers 8.67, cv-embellishment 6.50). Haiku does not count words reliably, so the card enforces the limit rather than the prompt. The coding, screenshot and small-talk rules still state it, because those lines have no other limit.
 
 **The coding shape** is the approach as the answer line, then Key steps, one block of code that runs, Complexity, and one line on how to explain it.
 
@@ -34,7 +36,7 @@ v-previous keeps its own screenshot text word for word, so the Answer style vers
 
 - Positive: fewer wasted requests, and no confident answers to noise.
 - Negative: a rule can misjudge a question worded like a greeting. "Answer this" is always there for that.
-- Negative: Haiku still runs over 12 words in places, which is why the card's cut exists.
+- Negative: Haiku runs over 12 words about 44% of the time, so the card's cut is doing real work, and a cut line can read slightly less naturally than one written short.
 
 ## Alternatives considered
 

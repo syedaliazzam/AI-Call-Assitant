@@ -27,6 +27,8 @@ export interface SignInOptions {
   fresh?: boolean;
   /** How long to wait for the dashboard, ms (default 30 s). */
   timeout?: number;
+  /** True on the desktop app's home panel, which comes back to itself instead of the dashboard. */
+  panel?: boolean;
 }
 
 /** Session cookies by "address|email", for this test run only (in memory). */
@@ -80,9 +82,11 @@ export async function clearPasswordOnFailure(
  * Called from: tests/e2e-prod/helpers.ts signIn(), tests/ui/shots.ts signIn()
  */
 export async function signInOnce(page: Page, options: SignInOptions): Promise<void> {
-  const { baseUrl, email, password, fresh = false, timeout = 30_000 } = options;
+  const { baseUrl, email, password, fresh = false, timeout = 30_000, panel = false } = options;
   const key = `${baseUrl}|${email}`;
-  const dashboard = page.getByRole('heading', { name: 'Call Sessions' });
+  const dashboard = panel
+    ? page.getByLabel('Search sessions')
+    : page.getByRole('heading', { name: 'Call Sessions' });
 
   const saved = sessions.get(key);
   if (!fresh && saved) {
@@ -96,7 +100,8 @@ export async function signInOnce(page: Page, options: SignInOptions): Promise<vo
     // The session ended (for example the account was disabled): sign in again below.
   }
 
-  await page.goto(`${baseUrl}/login`);
+  // The panel has already gone to the sign-in page by itself.
+  if (!panel) await page.goto(`${baseUrl}/login`);
   await clearPasswordOnFailure(page, email, async () => {
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password').fill(password);

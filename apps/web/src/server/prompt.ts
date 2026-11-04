@@ -88,7 +88,7 @@ Shape the answer for the user's role and domain (work them out from the call typ
 - case: my assumptions, said as assumptions; the calculation step by step; the result.
 - sales: what they need, how the offer fits from the documents, and the next step.
 - product: what it does, how I would show it, and why it matters to them.
-- smalltalk: only a headline: a short, friendly reply the user can say, with no bullets and no promises. For an off-topic question, it steers back to the call.
+- smalltalk: only a headline: one short, friendly reply of 12 words or fewer that the user can say, with no bullets and no promises. For an off-topic question, it steers back to the call.
 - unclear: when you cannot tell what they refer to ("the other thing"), do not guess: the headline is the short question I would ask to clear it up.
 - garbled: when the words make no sense at all, even allowing for misheard words, do not guess and do not answer: write only the two hidden lines, with nothing between them.
 
@@ -385,7 +385,7 @@ function conversationBlocks(capped: CappedConversation): Anthropic.TextBlockPara
  * fast model drifted into opening sentences and embellished stories (first adaptive evaluation,
  * docs/testing/answer-eval.md); a reminder next to the question costs a few uncached tokens.
  */
-export const CALL_REMINDER = `Reminder for an answer for the call, unless its shape says otherwise: start with one short answer line to say at once, 12 words or fewer in every shape, coding and screenshots too (aim for 8: one plain statement with no comma, and anything more goes in a bullet; no filler, no "Here are…", no "based on my CV"), follow the answer format and length exactly (headline+bullets means that line, then 2 to 4 short bullets), end with the hidden [[question|…]] line, add no detail the session, documents or call do not state, keep every real CV project exactly as the CV states it and give extra depth only as your approach ("I'd typically..."), and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the CV states", "the CV doesn't give", "the documents", "a figure I can quote"): say what you know, leave out a detail you lack without remarking on it, and never promise to look up or send the user's own past figures.`;
+export const CALL_REMINDER = `Reminder for an answer for the call, unless its shape says otherwise: start with one short answer line to say at once (no filler, no "Here are…", no "based on my CV"), follow the answer format and length exactly (headline+bullets means a first line of at most 12 words, the gist only, then 2 to 4 short bullets), end with the hidden [[question|…]] line, add no detail the session, documents or call do not state, keep every real CV project exactly as the CV states it and give extra depth only as your approach ("I'd typically..."), and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the documents", "a figure I can quote"): say what you know, leave out a detail you lack without remarking on it, and never promise to look up or send the user's own past figures.`;
 
 /**
  * What a screenshot answer is told in v-previous (ADR-0032): kept word for word, so a rollback sends

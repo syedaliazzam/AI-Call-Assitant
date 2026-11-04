@@ -168,6 +168,7 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
               <div className="mt-1.5">
                 <AnswerBody
                   text={answer.text}
+                  finished={answer.status !== 'streaming'}
                   size="overlay"
                   answerLabel
                   headlineLabel="Answer line"

@@ -257,6 +257,14 @@ describe('the 12-word answer line (v1.1.0, item 16)', () => {
     expect(rest).toBe('And it now finishes within ten minutes');
   });
 
+  it('cuts before a word that starts a phrase, when there is no clause', () => {
+    const { line, rest } = splitLongLine(
+      'I run the nightly route planning jobs on Kubernetes for the whole freight team',
+    );
+    expect(line).toBe('I run the nightly route planning jobs on Kubernetes.');
+    expect(rest).toBe('For the whole freight team');
+  });
+
   it('keeps the line whole when no break leaves at least three words within the limit', () => {
     const line =
       'One two, three four five six seven eight nine ten eleven twelve thirteen fourteen';
@@ -269,9 +277,20 @@ describe('the 12-word answer line (v1.1.0, item 16)', () => {
     expect(parts.bullets).toEqual(['Mostly by rerouting at night', 'A bullet.']);
   });
 
-  it('never cuts a paragraph, or a line with nothing under it yet', () => {
+  it('never cuts a line with nothing under it while it may still grow', () => {
     expect(splitAnswer(LONG).headline).toBe(LONG);
     expect(splitAnswer(LONG).bullets).toEqual([]);
+  });
+
+  it('cuts a finished one-line answer, but never a paragraph', () => {
+    const cut = splitAnswer(LONG, true);
+    expect(cut.headline).toBe('We cut late deliveries by a third across the northern routes.');
+    expect(cut.bullets).toEqual(['Mostly by rerouting at night']);
+    const paragraph = new Array(8)
+      .fill('We cut late deliveries by a third, on most of the routes.')
+      .join(' ');
+    expect(splitAnswer(paragraph, true).headline).toBe(paragraph);
+    expect(splitAnswer(paragraph, true).bullets).toEqual([]);
   });
 
   it('copies the same words that were shown', () => {

@@ -9,6 +9,7 @@
  * Depends on: src/core/transcript/transcript.ts (Utterance type only)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 step 2, §7.1 (core/transcript)
  */
+import { looksGarbled } from './questionKind';
 import type { Speaker, Utterance } from './transcript';
 
 /** Largest gap (ms) between two final lines of the same speaker that still merges them. */
@@ -42,6 +43,8 @@ export function shouldMerge(
 ): boolean {
   if (!previous || !previous.final) return false;
   if (previous.speaker !== next.speaker) return false;
+  // Noise stays apart from speech, so it can collapse and a question stays clean (v1.1.0).
+  if (looksGarbled(previous.text) !== looksGarbled(next.text)) return false;
   const gap = next.tStart - previous.tEnd;
   return gap <= gapMs;
 }

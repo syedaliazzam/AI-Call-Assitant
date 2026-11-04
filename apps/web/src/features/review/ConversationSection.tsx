@@ -159,6 +159,7 @@ function AnswerCard({
       <div className="mt-1">
         <AnswerBody
           text={answer.text}
+          finished
           size="review"
           claims={answer.claims ?? []}
           {...(answer.meta?.target ? { target: answer.meta.target } : {})}
