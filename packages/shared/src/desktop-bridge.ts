@@ -234,7 +234,7 @@ export type WindowControlAction = 'minimize' | 'close';
 
 /** The paths openPagesWindow() accepts: Kite's own pages, nothing else (v1.1.0). */
 export const PAGES_WINDOW_PATH =
-  /^\/(?:|sessions(?:\/[\w-]+(?:\/edit)?|\/new)?|live\/[\w-]+|settings|ask-kite|resumes|documents|question-bank|mock)$/;
+  /^\/(?:|sessions(?:\/[\w-]+(?:\/edit)?|\/new)?|live\/[\w-]+|settings|ask-kite|resumes|documents|question-bank|mock|help|profile)$/;
 
 /** Which of the stacked overlay's panels are open (v1.1.0, ADR-0041). */
 export interface OverlayLayout {

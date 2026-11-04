@@ -11,7 +11,7 @@
  */
 'use client';
 
-import { ArrowLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight } from 'lucide-react';
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Button, type ButtonSize, type ButtonVariant } from './Button';
 import { SOON_TOOLTIP, SoonBadge } from './Chip';
@@ -35,6 +35,8 @@ export interface MenuItem {
   soon?: boolean;
   /** A muted word at the end of the row, for example the current theme. */
   detail?: string;
+  /** True for the current choice in a list of choices: it shows a tick. */
+  selected?: boolean;
   /** Rows that replace this list when it is pressed (with a way back). */
   items?: readonly MenuEntry[];
 }
@@ -85,7 +87,8 @@ export function MenuRows({ items, onClose, onOpenSub }: MenuRowsProps) {
     const row = (
       <button
         type="button"
-        role="menuitem"
+        role={entry.selected === undefined ? 'menuitem' : 'menuitemradio'}
+        aria-checked={entry.selected}
         disabled={unavailable}
         aria-haspopup={entry.items ? 'menu' : undefined}
         onClick={() => {
@@ -114,6 +117,9 @@ export function MenuRows({ items, onClose, onOpenSub }: MenuRowsProps) {
         <span className="min-w-0 flex-1 truncate">{entry.label}</span>
         {entry.detail && <span className="shrink-0 text-ui-muted">{entry.detail}</span>}
         {entry.soon && <SoonBadge />}
+        {entry.selected && (
+          <Check aria-hidden="true" size={16} className="shrink-0 text-ui-muted" />
+        )}
         {entry.items && (
           <ChevronRight aria-hidden="true" size={16} className="shrink-0 text-ui-muted" />
         )}
@@ -153,7 +159,7 @@ export function MenuPopup({ items, popupRef, onClose, onEscape }: MenuPopupProps
 
   // Keyboard users land on the first row, when it opens and when a sub-list replaces the rows.
   useEffect(() => {
-    popupRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    popupRef.current?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus();
   }, [sub, popupRef]);
 
   /**
@@ -163,7 +169,7 @@ export function MenuPopup({ items, popupRef, onClose, onEscape }: MenuPopupProps
    */
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const rows = [
-      ...(popupRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ??
+      ...(popupRef.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not(:disabled)') ??
         []),
     ];
     const at = rows.indexOf(document.activeElement as HTMLElement);

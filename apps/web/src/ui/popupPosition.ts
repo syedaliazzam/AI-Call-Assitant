@@ -16,6 +16,8 @@ export type PopupPlacement =
   | 'bottom-end'
   /** Over the anchor, left edges together. */
   | 'top-start'
+  /** Over the anchor, right edges together (the user menu, inside the sidebar). */
+  | 'top-end'
   /** Over the anchor, centred (tooltips). */
   | 'top-center'
   /** Right of the anchor, top edges together (a sub-menu). */
@@ -67,10 +69,11 @@ export function placePopup(
   const anchorRight = anchor.left + anchor.width;
   const roomBelow = viewport.height - anchorBottom - gap - POPUP_MARGIN;
   const roomAbove = anchor.top - gap - POPUP_MARGIN;
-  const wantsTop = placement === 'top-start' || placement === 'top-center';
+  const wantsTop =
+    placement === 'top-start' || placement === 'top-end' || placement === 'top-center';
 
   let left: number;
-  if (placement === 'bottom-end') left = anchorRight - popup.width;
+  if (placement === 'bottom-end' || placement === 'top-end') left = anchorRight - popup.width;
   else if (placement === 'top-center') left = anchor.left + (anchor.width - popup.width) / 2;
   else if (placement === 'right-start') left = anchorRight + gap;
   else left = anchor.left;

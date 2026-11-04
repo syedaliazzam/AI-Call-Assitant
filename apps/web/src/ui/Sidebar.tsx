@@ -1,112 +1,87 @@
 /**
  * File: apps/web/src/ui/Sidebar.tsx
- * Purpose: The left navigation shown on every signed-in page: the Kite logo, the "Call assistant"
- *          and "Prepare" groups, Settings and the admin links, a collapse toggle, and the profile
- *          block (initial, name, email, sign out, and whether this is the desktop app or a browser).
- * Used by: app/(app)/layout.tsx
- * Depends on: next/link, next/navigation (to highlight the current page), src/platform
- *             (getDesktopInfo, for the footer label only), src/core/storage/sidebarPrefs.ts,
- *             ./BrandLockup.tsx, ./icons.tsx
- * Architecture: docs/architecture/kite-architecture-v3.1.md §4 (desktop vs browser), §5
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/tokens/theme.css)
+ * Purpose: The left navigation on every signed-in page (spec S2): the main links, the "Prepare" group
+ *          with its "Soon" items, a card slot, Help and a footer slot. From 768 px it sits beside the page,
+ *          about 252 px wide or icons only; below that it is a slide-over drawer. Knows no sign-in or
+ *          platform logic: the shell passes the card and the footer in.
+ * Used by: src/features/shell/AppShell.tsx
+ * Depends on: next/link, next/navigation (to highlight the current page), lucide-react, src/platform
+ *             (getDesktopInfo, for runtimeLabel only), ./BrandLockup.tsx, ./Chip.tsx, ./Tooltip.tsx
+ * Architecture: docs/design/paramount-ai-ui-spec.md §1, §3 (S2), §5
+ * Theme: tokens from src/ui/tokens/theme.css
  */
 'use client';
 
+import {
+  AudioLines,
+  BookOpen,
+  Bot,
+  FilePen,
+  FileText,
+  IdCard,
+  ImageUp,
+  LifeBuoy,
+  MessageSquare,
+  Plus,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useId, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { getSidebarCollapsed, setSidebarCollapsedPref } from '@/core/storage/sidebarPrefs';
+import type { ReactNode } from 'react';
 import { getDesktopInfo } from '@/platform';
 import { BrandLockup } from './BrandLockup';
-import {
-  BookIcon,
-  ChatIcon,
-  DocumentIcon,
-  GearIcon,
-  ListIcon,
-  PanelIcon,
-  PlusIcon,
-  ResumeIcon,
-  ShieldIcon,
-  ToolIcon,
-  WebcamIcon,
-} from './icons';
+import { SOON_TOOLTIP, SoonBadge } from './Chip';
+import { Tooltip } from './Tooltip';
 
-/** The signed-in user, as far as the sidebar needs to know. */
-export interface SidebarUser {
-  /** Display name shown in the profile block. */
-  name: string;
-  /** Email shown under the name. */
-  email: string;
-  /** 'admin' users also see the Admin and Dev Tools links. */
-  role: 'admin' | 'user';
+/** Every sidebar icon's size and stroke (spec §1: 20 px). */
+const ICON = { size: 20, strokeWidth: 1.75, 'aria-hidden': true } as const;
+
+/** One entry in the navigation. */
+interface NavItem {
+  /** The words. */
+  label: string;
+  /** The route it opens; none for a "Soon" item. */
+  href?: string;
+  /** The icon beside the words. */
+  icon: ReactNode;
 }
+
+/** The main links, in display order. */
+const MAIN_ITEMS: readonly NavItem[] = [
+  { label: 'Call Sessions', href: '/', icon: <AudioLines {...ICON} /> },
+  { label: 'Resumes', href: '/resumes', icon: <IdCard {...ICON} /> },
+  { label: 'Documents', href: '/documents', icon: <FileText {...ICON} /> },
+  { label: 'Ask AI', href: '/ask-kite', icon: <MessageSquare {...ICON} /> },
+];
+
+/** The "Prepare" group, in display order. */
+const PREPARE_ITEMS: readonly NavItem[] = [
+  { label: 'Mock Interview', href: '/mock', icon: <Bot {...ICON} /> },
+  { label: 'Question bank', href: '/question-bank', icon: <BookOpen {...ICON} /> },
+  { label: 'Resume Maker', icon: <FilePen {...ICON} /> },
+  { label: 'Headshots', icon: <ImageUp {...ICON} /> },
+];
 
 /** Props for Sidebar. */
 export interface SidebarProps {
-  /** The signed-in user; undefined shows "Not signed in". */
-  user?: SidebarUser;
-  /**
-   * Buttons under the user's name, for example the sign-out button. Passed in by the layout
-   * so this shared UI piece contains no sign-in logic itself.
-   */
-  userActions?: ReactNode;
+  /** True for icons only (from 768 px). */
+  collapsed: boolean;
+  /** True while the drawer is open (below 768 px). */
+  drawerOpen: boolean;
+  /** Closes the drawer. */
+  onCloseDrawer: () => void;
+  /** The card above Help (the desktop app card), if any. */
+  card?: ReactNode;
+  /** The footer: who is signed in, and their menu. */
+  footer: ReactNode;
 }
-
-/** One entry in the navigation list. */
-interface NavItem {
-  /** Text shown in the sidebar (and the link's name when collapsed). */
-  label: string;
-  /** Route the link opens. */
-  href: string;
-  /** The icon beside the label. */
-  icon: ReactNode;
-  /** True if only admins should see the link. */
-  adminOnly?: boolean;
-}
-
-/** A named group of links. */
-interface NavGroup {
-  /** The heading above the links; none for the last group. */
-  title?: string;
-  /** The links, in display order. */
-  items: readonly NavItem[];
-}
-
-/** All navigation links, in display order. */
-const NAV_GROUPS: readonly NavGroup[] = [
-  {
-    title: 'Call assistant',
-    items: [
-      { label: 'Create session', href: '/sessions/new', icon: <PlusIcon /> },
-      { label: 'Call sessions', href: '/', icon: <ListIcon /> },
-      { label: 'Resumes', href: '/resumes', icon: <ResumeIcon /> },
-      { label: 'Documents', href: '/documents', icon: <DocumentIcon /> },
-      { label: 'Ask AI', href: '/ask-kite', icon: <ChatIcon /> },
-    ],
-  },
-  {
-    title: 'Prepare',
-    items: [
-      { label: 'Question bank', href: '/question-bank', icon: <BookIcon /> },
-      { label: 'Mock interview', href: '/mock', icon: <WebcamIcon /> },
-    ],
-  },
-  {
-    items: [
-      { label: 'Settings', href: '/settings', icon: <GearIcon /> },
-      { label: 'Admin', href: '/admin/users', icon: <ShieldIcon />, adminOnly: true },
-      { label: 'Dev Tools', href: '/dev', icon: <ToolIcon />, adminOnly: true },
-    ],
-  },
-];
 
 /**
- * Builds the footer label: "Desktop app v0.1" (major.minor of the shell version) inside the
- * desktop app, otherwise "Browser". Display only; behaviour differences live in src/platform.
+ * Builds the label for what this app is running in: "Desktop app v1.2" (major.minor of the shell
+ * version) inside the desktop app, otherwise "Browser". Display only.
  *
  * @returns The label text.
- * Called from: Sidebar (as the useSyncExternalStore snapshot)
+ * Called from: src/features/profile/ProfileDetails.tsx; tests
  */
 export function runtimeLabel(): string {
   const desktop = getDesktopInfo();
@@ -115,167 +90,209 @@ export function runtimeLabel(): string {
   return `Desktop app v${major}.${minor}`;
 }
 
-/**
- * No-op subscription for useSyncExternalStore: these values never change by themselves while a
- * page is open.
- *
- * @returns An unsubscribe function that does nothing.
- */
-const subscribeNever = () => () => {};
+/** A row's shape: 40 px tall, 12 px between icon and words, radius 10 (spec §1). */
+const ROW =
+  'flex h-10 w-full items-center gap-3 rounded-control px-2.5 text-nav transition-colors duration-150 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11';
 
 /**
- * The first letter of a name, for the profile block's circle.
+ * One link, with its name in a tooltip when only the icon shows.
  *
- * @param name The display name.
- * @returns One capital letter, or "?" for an empty name.
- * Called from: Sidebar
+ * @param props.href      The route.
+ * @param props.label     The words.
+ * @param props.icon      The icon.
+ * @param props.active    True on its own page.
+ * @param props.collapsed True for icons only.
+ * @param props.onClick   Called when it is pressed.
+ * @returns The link.
+ * Rendered by: Sidebar
  */
-function initial(name: string): string {
-  return name.trim().charAt(0).toUpperCase() || '?';
+function NavLink({
+  href,
+  label,
+  icon,
+  active,
+  collapsed,
+  onClick,
+}: {
+  /** The route. */
+  href: string;
+  /** The words. */
+  label: string;
+  /** The icon. */
+  icon: ReactNode;
+  /** True on its own page. */
+  active: boolean;
+  /** True for icons only. */
+  collapsed: boolean;
+  /** Called when it is pressed. */
+  onClick: () => void;
+}) {
+  const link = (
+    <Link
+      href={href}
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      {...(collapsed ? { 'aria-label': label } : {})}
+      className={[
+        ROW,
+        collapsed ? 'md:justify-center md:px-0' : '',
+        active ? 'bg-ui-subtle text-ui-heading' : 'text-ui-text hover:bg-ui-hover',
+      ].join(' ')}
+    >
+      {icon}
+      <span className={collapsed ? 'truncate md:hidden' : 'truncate'}>{label}</span>
+    </Link>
+  );
+  return collapsed ? (
+    <Tooltip content={label} className="w-full">
+      {link}
+    </Tooltip>
+  ) : (
+    link
+  );
 }
 
 /**
- * The signed-in app's left sidebar.
- * Admin-only links are hidden unless `user.role` is 'admin'. This only tidies the menu;
- * the real access check happens on the server (requireAdmin() in src/server/guard.ts).
+ * A feature that is visible but not available yet: pressing it does nothing (spec §5).
  *
- * @param props.user        The signed-in user, or undefined when nobody is signed in.
- * @param props.userActions Buttons shown under the user's name (sign out).
- * @returns The <aside> navigation element.
- * Rendered by: app/(app)/layout.tsx
+ * @param props.label     The words.
+ * @param props.icon      The icon.
+ * @param props.collapsed True for icons only.
+ * @returns The disabled row.
+ * Rendered by: Sidebar
  */
-export function Sidebar({ user, userActions }: SidebarProps) {
+function SoonRow({
+  label,
+  icon,
+  collapsed,
+}: {
+  /** The words. */
+  label: string;
+  /** The icon. */
+  icon: ReactNode;
+  /** True for icons only. */
+  collapsed: boolean;
+}) {
+  return (
+    <Tooltip content={SOON_TOOLTIP} className="w-full">
+      <button
+        type="button"
+        disabled
+        aria-label={`${label} (coming soon)`}
+        className={`${ROW} cursor-not-allowed text-ui-muted ${collapsed ? 'md:justify-center md:px-0' : ''}`}
+      >
+        {icon}
+        <span
+          className={
+            collapsed ? 'flex-1 truncate text-left md:hidden' : 'flex-1 truncate text-left'
+          }
+        >
+          {label}
+        </span>
+        <span className={collapsed ? 'md:hidden' : ''}>
+          <SoonBadge />
+        </span>
+      </button>
+    </Tooltip>
+  );
+}
+
+/**
+ * The signed-in app's sidebar.
+ *
+ * @param props See SidebarProps.
+ * @returns The <aside> navigation element.
+ * Rendered by: src/features/shell/AppShell.tsx
+ */
+export function Sidebar({ collapsed, drawerOpen, onCloseDrawer, card, footer }: SidebarProps) {
   const pathname = usePathname();
-  // The server cannot know whether the page will run in the desktop app, so it renders no
-  // label (null); the browser fills it in after hydration. This avoids a hydration mismatch.
-  const runtime = useSyncExternalStore(subscribeNever, runtimeLabel, () => null);
-  // Narrow screens (below 768 px): a top bar with a Menu button that shows the navigation.
-  const [menuOpen, setMenuOpen] = useState(false);
-  const menuId = useId();
-  // From 768 px: the saved choice until the user presses the toggle on this page.
-  const savedCollapsed = useSyncExternalStore(subscribeNever, getSidebarCollapsed, () => false);
-  const [chosenCollapsed, setChosenCollapsed] = useState<boolean | null>(null);
-  const collapsed = chosenCollapsed ?? savedCollapsed;
-  // Collapsing applies only from 768 px: the narrow layout always shows the words.
-  const hideWhenCollapsed = collapsed ? 'md:hidden' : '';
+
+  /**
+   * One group of links.
+   *
+   * @param items The links.
+   * @returns The list.
+   */
+  const list = (items: readonly NavItem[]) => (
+    <ul className="flex flex-col gap-0.5">
+      {items.map((item) => (
+        <li key={item.label}>
+          {item.href ? (
+            <NavLink
+              href={item.href}
+              label={item.label}
+              icon={item.icon}
+              active={pathname === item.href}
+              collapsed={collapsed}
+              onClick={onCloseDrawer}
+            />
+          ) : (
+            <SoonRow label={item.label} icon={item.icon} collapsed={collapsed} />
+          )}
+        </li>
+      ))}
+    </ul>
+  );
 
   return (
     <aside
       data-collapsed={collapsed}
       className={[
-        // Stays in view while the page scrolls, so the profile block is always reachable.
-        'flex w-full shrink-0 flex-col border-b border-ui-border bg-ui-surface text-ui-text md:sticky md:top-0 md:h-screen md:border-r md:border-b-0',
-        collapsed ? 'md:w-16' : 'md:w-60',
+        'flex shrink-0 flex-col border-r border-ui-border bg-ui-sidebar text-ui-text',
+        // Below 768 px: a drawer over the page; invisible when shut, so it is out of the tab order.
+        'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-[280px] max-md:max-w-[85vw] max-md:shadow-modal max-md:transition-transform max-md:duration-200',
+        drawerOpen ? '' : 'max-md:invisible max-md:-translate-x-full',
+        collapsed ? 'md:w-16' : 'md:w-[252px]',
       ].join(' ')}
     >
-      <div
-        className={`flex h-16 shrink-0 items-center gap-2 px-4 ${collapsed ? 'md:justify-center md:px-0' : ''}`}
-      >
-        <span className={hideWhenCollapsed}>
-          <BrandLockup tone="light" size="sm" />
-        </span>
-        {collapsed && (
-          <span className="hidden md:block">
-            <BrandLockup tone="light" size="sm" byline={false} name="" />
-          </span>
-        )}
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-ui-border px-4 md:hidden">
+        <BrandLockup tone="auto" size="sm" />
         <button
           type="button"
-          aria-expanded={menuOpen}
-          aria-controls={menuId}
-          onClick={() => setMenuOpen((open) => !open)}
-          className="ml-auto border border-ui-secondary-border px-3 py-1.5 pointer-coarse:min-h-11 text-[13px] font-medium text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] md:hidden"
+          aria-label="Close the menu"
+          onClick={onCloseDrawer}
+          className="flex size-8 items-center justify-center rounded-control hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:size-11"
         >
-          {menuOpen ? 'Close' : 'Menu'}
+          <X aria-hidden="true" size={18} />
         </button>
       </div>
 
-      {/* Always shown from 768 px; below that only while the menu is open. */}
-      <div
-        id={menuId}
-        className={`${menuOpen ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col md:flex`}
-      >
-        <nav aria-label="Main" className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-          {NAV_GROUPS.map((group, index) => {
-            const items = group.items.filter((item) => !item.adminOnly || user?.role === 'admin');
-            return (
-              <div key={group.title ?? index} className="mb-4">
-                {group.title && (
-                  <p className={`px-3 pb-1 text-[13px] text-ui-muted ${hideWhenCollapsed}`}>
-                    {group.title}
-                  </p>
-                )}
-                <ul className="flex flex-col gap-0.5">
-                  {items.map((item) => (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        aria-current={pathname === item.href ? 'page' : undefined}
-                        // Collapsed, the words are hidden: the name stays for screen readers
-                        // (aria-label), and the title for the pointer.
-                        {...(collapsed ? { 'aria-label': item.label, title: item.label } : {})}
-                        className={[
-                          'flex items-center gap-3 rounded-control px-3 py-2 pointer-coarse:min-h-11 text-[15px] transition-colors duration-150',
-                          'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
-                          collapsed ? 'md:justify-center md:px-0' : '',
-                          pathname === item.href
-                            ? 'bg-ui-subtle font-medium text-ui-heading'
-                            : 'text-ui-text hover:bg-ui-hover',
-                        ].join(' ')}
-                      >
-                        {item.icon}
-                        <span className={hideWhenCollapsed}>{item.label}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-        </nav>
-
-        <div className="hidden px-3 pb-2 md:block">
-          <button
-            type="button"
-            aria-pressed={collapsed}
-            aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
-            title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
-            onClick={() => {
-              setChosenCollapsed(!collapsed);
-              setSidebarCollapsedPref(!collapsed);
-            }}
-            className={`flex w-full items-center gap-3 px-3 py-2 text-[13px] text-ui-muted hover:bg-ui-hover hover:text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] ${collapsed ? 'justify-center px-0' : ''}`}
-          >
-            <PanelIcon />
-            {!collapsed && 'Collapse'}
-          </button>
-        </div>
-
-        {/* Profile block: who is signed in, plus the sign-out button. */}
-        <div
-          className={`border-t border-ui-border py-4 text-[13px] ${collapsed ? 'px-5 md:flex md:justify-center md:px-0' : 'px-5'}`}
-        >
-          {user ? (
-            <div className="flex min-w-0 items-start gap-3">
-              <span
-                aria-hidden="true"
-                title={collapsed ? user.name : undefined}
-                className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ui-subtle text-[13px] font-semibold text-ui-heading"
-              >
-                {initial(user.name)}
+      <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-3">
+        <div className="flex flex-col gap-0.5">
+          <NavLink
+            href="/sessions/new"
+            label="Create session"
+            // The 28 px accent-tinted tile (spec S2). It hangs a little left, so the words line up.
+            icon={
+              <span className="-mx-1 flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-ui-accent-tint text-ui-accent-fill">
+                <Plus aria-hidden="true" size={18} strokeWidth={2} />
               </span>
-              <div className={`min-w-0 flex-1 ${hideWhenCollapsed}`}>
-                <p className="truncate font-medium text-ui-heading">{user.name}</p>
-                <p className="truncate text-ui-muted">{user.email}</p>
-                {userActions && <div className="mt-2 -ml-3">{userActions}</div>}
-                {runtime && <p className="mt-2 text-ui-muted">{runtime}</p>}
-              </div>
-            </div>
-          ) : (
-            <p className="text-ui-muted">Not signed in</p>
-          )}
+            }
+            active={pathname === '/sessions/new'}
+            collapsed={collapsed}
+            onClick={onCloseDrawer}
+          />
+          {list(MAIN_ITEMS)}
         </div>
-      </div>
+        <div className="flex flex-col gap-1">
+          {!collapsed && <p className="px-2.5 text-section text-ui-muted">Prepare</p>}
+          {collapsed && <p className="px-2.5 text-section text-ui-muted md:hidden">Prepare</p>}
+          {list(PREPARE_ITEMS)}
+        </div>
+        <div className="mt-auto flex flex-col gap-2">
+          {!collapsed && card}
+          <NavLink
+            href="/help"
+            label="Help"
+            icon={<LifeBuoy {...ICON} />}
+            active={pathname === '/help'}
+            collapsed={collapsed}
+            onClick={onCloseDrawer}
+          />
+        </div>
+      </nav>
+
+      <div className="shrink-0 border-t border-ui-border p-3">{footer}</div>
     </aside>
   );
 }

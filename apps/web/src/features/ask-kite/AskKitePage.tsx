@@ -461,7 +461,6 @@ export function AskKitePage() {
 
   return (
     <PageShell
-      eyebrow="Paramount AI"
       title="Ask AI"
       description="A private chat about anything. Chats stay on this computer; each message is sent to Claude to answer it."
       width="lg"

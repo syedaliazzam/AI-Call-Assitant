@@ -10,10 +10,10 @@
 import type { ButtonHTMLAttributes } from 'react';
 
 /** Visual style of a button. */
-export type ButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger';
+export type ButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'plain' | 'danger';
 
 /** Height and padding of a button. */
-export type ButtonSize = 'sm' | 'md' | 'lg';
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon';
 
 /** Props for Button. Every normal <button> attribute (onClick, disabled, type, …) also works. */
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -23,10 +23,14 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    * - accent: the brand action (Create session).
    * - secondary: other actions (white with a thin border; outlined on dark surfaces).
    * - ghost: low-emphasis actions such as "Cancel" (a grey fill).
+   * - plain: no fill until pointed at (⋮ buttons).
    * - danger: destructive actions such as "Delete" and "Exit" (solid red with white text).
    */
   variant?: ButtonVariant;
-  /** Size. Default 'md' (40 px); 'sm' (32 px) is for table rows and toolbars, 'lg' (44 px) for modal footers. */
+  /**
+   * Size. Default 'md' (40 px); 'sm' (32 px) is for table rows and toolbars, 'lg' (44 px) for modal
+   * footers, 'icon' (a 32 px square) for a button with only an icon.
+   */
   size?: ButtonSize;
 }
 
@@ -41,6 +45,8 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
     'border border-ui-secondary-border bg-ui-secondary-bg text-ui-secondary hover:border-ui-secondary-hover-border hover:bg-ui-secondary-hover-bg',
   // A grey fill, for low-emphasis actions such as Cancel.
   ghost: 'bg-ui-subtle text-ui-text hover:bg-ui-control-strong',
+  // No fill until pointed at.
+  plain: 'text-ui-text hover:bg-ui-hover',
   // Solid red with white text; destructive actions only.
   danger: 'bg-ui-end text-ui-on-end hover:opacity-90',
 };
@@ -50,6 +56,7 @@ const SIZE_CLASSES: Record<ButtonSize, string> = {
   sm: 'h-8 px-3 text-[13px] font-semibold',
   md: 'h-10 px-4 text-btn',
   lg: 'h-11 px-5 text-btn',
+  icon: 'size-8 p-0 pointer-coarse:min-w-11',
 };
 
 /**

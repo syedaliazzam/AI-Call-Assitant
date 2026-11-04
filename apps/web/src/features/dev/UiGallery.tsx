@@ -364,9 +364,14 @@ export function UiGallery() {
         <GallerySet name="Dark" />
       </section>
       <section aria-label="Sidebar" className="k-light bg-ui-band px-4 py-8 sm:px-8">
-        <Eyebrow>Sidebar (always dark)</Eyebrow>
+        <Eyebrow>Sidebar</Eyebrow>
         <div className="mt-3 flex h-96 max-w-full overflow-hidden border border-ui-border">
-          <Sidebar user={{ name: 'Sample User', email: 'sample@example.com', role: 'admin' }} />
+          <Sidebar
+            collapsed={false}
+            drawerOpen={false}
+            onCloseDrawer={() => undefined}
+            footer={<p className="text-[13px] text-ui-muted">Sample User</p>}
+          />
           <div className="flex-1 bg-ui-band" />
         </div>
       </section>

@@ -301,7 +301,6 @@ export function MockInterview({
 
   return (
     <PageShell
-      eyebrow="Prepare"
       title="Mock Interview"
       description="Paramount AI asks the questions out loud and listens to your answers. Your voice stays on this computer."
       width="md"

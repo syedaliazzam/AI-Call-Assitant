@@ -118,7 +118,6 @@ export function QuestionBank() {
 
   return (
     <PageShell
-      eyebrow="Prepare"
       title="Question Bank"
       description="The questions most likely to come up, with suggested answers from your job description and resume. Saved on this computer."
       width="lg"

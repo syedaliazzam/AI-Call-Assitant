@@ -152,7 +152,7 @@ export function Settings({ isAdmin }: SettingsProps) {
   }
 
   return (
-    <PageShell eyebrow="Paramount AI" title="Settings" description="Saved on this computer only.">
+    <PageShell title="Settings">
       {error && (
         <p role="alert" className="text-[13px] text-ui-danger">
           {error}

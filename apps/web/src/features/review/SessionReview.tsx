@@ -186,7 +186,7 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
 
   return (
     <PageShell
-      eyebrow="Session review"
+      showTitle
       title={title}
       description={session.role}
       width="lg"

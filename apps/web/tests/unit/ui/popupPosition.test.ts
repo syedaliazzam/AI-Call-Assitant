@@ -23,6 +23,11 @@ describe('placePopup', () => {
     expect(where.left).toBe(300);
   });
 
+  it('lines up right edges over the anchor for top-end', () => {
+    const where = placePopup(ANCHOR, { width: 300, height: 100 }, VIEWPORT, 'top-end', 6);
+    expect(where).toMatchObject({ left: 300, top: 194 });
+  });
+
   it('centres a tooltip over the anchor', () => {
     const where = placePopup(ANCHOR, { width: 100, height: 30 }, VIEWPORT, 'top-center', 6);
     expect(where.left).toBe(450);

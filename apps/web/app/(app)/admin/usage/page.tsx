@@ -30,7 +30,6 @@ export default async function AdminUsagePage() {
   const [limit, rows] = await Promise.all([getDailyLimit(), usageReport(7)]);
   return (
     <PageShell
-      eyebrow="Admin"
       title="Usage"
       width="lg"
       description="Claude requests per person: today and the last 7 days (UTC). Counts only."

@@ -14,19 +14,22 @@ import { BRAND_LOGO_SRC, BRAND_NAME } from './brand';
 /** The lockup's sizes: the mark's height and the name's size. */
 const SIZES = {
   /** Compact window header. */
-  xs: { mark: 'h-4', tile: 'p-0.5', name: 'text-[13px]', gap: 'gap-1.5' },
+  xs: { mark: 'h-4', tile: 'p-0.5', auto: 'theme-dark:p-0.5', name: 'text-[13px]', gap: 'gap-1.5' },
   /** Live view top bar, and the sidebar. */
-  sm: { mark: 'h-6', tile: 'p-1', name: 'text-[15px]', gap: 'gap-2' },
+  sm: { mark: 'h-6', tile: 'p-1', auto: 'theme-dark:p-1', name: 'text-[15px]', gap: 'gap-2' },
   /** The UI gallery (and any larger header). */
-  md: { mark: 'h-7', tile: 'p-1', name: 'text-[18px]', gap: 'gap-2.5' },
+  md: { mark: 'h-7', tile: 'p-1', auto: 'theme-dark:p-1', name: 'text-[18px]', gap: 'gap-2.5' },
   /** Sign-in hero. */
-  lg: { mark: 'h-9', tile: 'p-1.5', name: 'text-[18px]', gap: 'gap-3' },
+  lg: { mark: 'h-9', tile: 'p-1.5', auto: 'theme-dark:p-1.5', name: 'text-[18px]', gap: 'gap-3' },
 } as const;
 
 /** Props for BrandLockup. */
 export interface BrandLockupProps {
-  /** 'light' (the mark as is) or 'dark' (the mark on a white tile). */
-  tone: 'light' | 'dark';
+  /**
+   * 'light' (the mark as is), 'dark' (the mark on a white tile), or 'auto' (follows the document's
+   * theme, in CSS, so there is no flash while the page loads).
+   */
+  tone: 'light' | 'dark' | 'auto';
   /** Size (default 'md'). */
   size?: keyof typeof SIZES;
   /** Show "by Paramount Intelligence" under the name (default false). */
@@ -54,15 +57,24 @@ export function BrandLockup({
   const mark = <img src={BRAND_LOGO_SRC} alt="" className={`${s.mark} w-auto`} />;
   return (
     <span className={`flex min-w-0 items-center ${s.gap}`}>
-      {tone === 'dark' ? (
+      {tone === 'dark' && (
         <span
           aria-hidden="true"
           className={`flex shrink-0 rounded-control bg-ui-logo-tile ${s.tile}`}
         >
           {mark}
         </span>
-      ) : (
+      )}
+      {tone === 'light' && (
         <span aria-hidden="true" className="flex shrink-0">
+          {mark}
+        </span>
+      )}
+      {tone === 'auto' && (
+        <span
+          aria-hidden="true"
+          className={`flex shrink-0 rounded-control theme-dark:bg-ui-logo-tile ${s.auto}`}
+        >
           {mark}
         </span>
       )}

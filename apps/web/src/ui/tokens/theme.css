@@ -136,6 +136,9 @@
   --k-dur: 150ms;
 }
 
+/* The theme-dark: class prefix, for the few things that differ by theme without a token. */
+@custom-variant theme-dark (html[data-theme='dark'] &);
+
 /* ---- Surface tokens: light by default (and inside .k-light) ---- */
 :root,
 .k-light {
