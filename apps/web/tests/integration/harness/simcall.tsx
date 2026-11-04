@@ -44,8 +44,6 @@ declare global {
   interface Window {
     /** Set by this harness when the page loads. */
     kiteSim: KiteSimHarness;
-    /** The desktop bridge, on the views that use it. */
-    kiteDesktop?: Window['kiteDesktop'];
   }
 }
 
@@ -71,13 +69,23 @@ const SESSION: Session = {
   lastActiveAt: null,
 };
 
+/**
+ * Puts a fake desktop bridge on the page, as the shell's preload would (platform/index.ts then picks
+ * the desktop platform). Only the methods a view uses.
+ *
+ * @param bridge The bridge.
+ */
+function installBridge(bridge: object): void {
+  (window as unknown as { kiteDesktop: object }).kiteDesktop = bridge;
+}
+
 /** The view asked for in the address: 'call' (the default), 'desktop' or 'home'. */
 const VIEW = new URLSearchParams(window.location.search).get('view') ?? 'call';
 
 // Screenshots go through the desktop bridge's method, which a browser cannot be scripted to answer.
 // The same small image each time: the mocked server replies by what the test told it to expect.
 if (VIEW === 'desktop') {
-  window.kiteDesktop = {
+  installBridge({
     version: '1.1.0',
     os: 'windows',
     captureScreenshot: async () => {
@@ -88,7 +96,7 @@ if (VIEW === 'desktop') {
       const png = new Uint8Array(await blob.arrayBuffer());
       return { ok: true as const, png, width: 640, height: 360, ms: 1 };
     },
-  } as unknown as Window['kiteDesktop'];
+  });
 }
 
 const transcript = createTranscript();
@@ -120,7 +128,7 @@ function SimCall() {
   const [clearedAt, setClearedAt] = useState(0);
   const [bridge, setBridge] = useState<AnswerThisBridge | null>(null);
   const [hygiene, setHygiene] = useState<HygieneState>('ok');
-  const lastActivity = useRef(Date.now());
+  const lastActivity = useRef(callStartedAt);
   // As LivePage.tsx: the prompt follows the time since the other person spoke or an answer was asked.
   useEffect(() => {
     const timer = setInterval(() => {
@@ -217,7 +225,7 @@ function SimHome() {
 
 if (VIEW === 'home') {
   // The panel shows only in a desktop app from 1.1.0.
-  window.kiteDesktop = {
+  installBridge({
     version: '1.1.0',
     os: 'windows',
     openPagesWindow: async (path: string) => {
@@ -227,7 +235,7 @@ if (VIEW === 'home') {
     setOverlayLayout: async () => undefined,
     getShareProtection: async () => ({ on: false, supported: true, scope: 'all' }),
     setShareProtection: async (on: boolean) => ({ on, supported: true, scope: 'all' }),
-  } as unknown as Window['kiteDesktop'];
+  });
   (window as unknown as { opened: string[] }).opened = [];
 }
 
