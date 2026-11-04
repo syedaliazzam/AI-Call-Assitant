@@ -39,6 +39,7 @@ const SUITES: readonly Suite[] = [
   { name: 'harness: prepare', args: ['--filter', '@kite/web', 'test:prepare'] },
   { name: 'harness: ask kite', args: ['--filter', '@kite/web', 'test:ask-kite'] },
   { name: 'harness: simulated calls', args: ['--filter', '@kite/web', 'test:sim-calls'] },
+  { name: 'harness: offline punctuation', args: ['--filter', '@kite/web', 'test:punctuation'] },
   { name: 'desktop smoke', args: ['--filter', '@kite/desktop', 'test'] },
 ];
 

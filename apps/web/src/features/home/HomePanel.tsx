@@ -92,6 +92,25 @@ export function HomePanel({ name, email }: HomePanelProps) {
   // Fixed per list, so every card judges "live for over 12 hours" the same way.
   const [now, setNow] = useState(0);
 
+  // A press anywhere else, or Escape, closes the menu.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointer = (event: PointerEvent) => {
+      const target = event.target as Element;
+      if (target.closest?.('[data-menu="home"]') || target.closest?.('[aria-label="Menu"]')) return;
+      setMenuOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
   // Anywhere but a desktop app from 1.1.0 this page has no window of its own.
   useEffect(() => {
     if (!available) router.replace('/');

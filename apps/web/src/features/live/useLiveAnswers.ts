@@ -302,6 +302,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const [answeredSpans, setAnsweredSpans] = useState<{ span: SpeechSpan; answerId: string }[]>([]);
   // The garbled words last reported: pressing Answer again on the same words sends them (ADR-0043).
   const garbledRef = useRef<string | null>(null);
+  // Lines Claude said were noise (v1.1.0): left out of what later questions are picked from.
+  const noiseLinesRef = useRef(new Set<string>());
+  // Lines Answer has already answered in this call (v1.1.0).
+  const answeredLinesRef = useRef(new Set<string>());
   // What the conversation has sent so far, and the finished answers (refs: read when asked).
   const logRef = useRef(emptyLog());
   const finishedRef = useRef<CallAnswer[]>([]);
@@ -411,7 +415,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         setNotice(OFFLINE_TEXT);
         return;
       }
-      const lines = transcript.lines();
+      // Lines Claude found to be noise are not part of any later question (ADR-0043).
+      const lines = transcript.lines().filter((line) => !noiseLinesRef.current.has(line.id));
       if (
         mode === 'answer' &&
         !options.question &&
@@ -424,8 +429,19 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       // real question; noise is reported once, and a second press on the same words sends them.
       // None of this spends a request. A bubble's "Answer this" and a typed question are always sent.
       let picked: PickedQuestion | null = null;
+      // Whether the question comes from only part of the lines, so it must be passed on as it is.
+      let partOfLines = false;
       if (mode === 'answer' && !options.question) {
-        picked = pickQuestion(lines);
+        // A question already answered is not part of the next one, even with no reply in between:
+        // "how did you test it" answered, then "why Go" is asked, is "why Go". With nothing new, Answer
+        // goes back to what is there.
+        const fresh = lines.filter((line) => !answeredLinesRef.current.has(line.id));
+        picked = pickQuestion(fresh);
+        partOfLines = fresh.length !== lines.length;
+        if (picked.kind === 'none' && partOfLines) {
+          picked = pickQuestion(lines);
+          partOfLines = false;
+        }
         if (picked.kind === 'none') {
           setNotice(NO_QUESTION_NOTICE);
           return;
@@ -459,7 +475,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(answerType ? { answerType } : {}),
         ...(options.question ? { question: options.question } : {}),
         // Found by looking back past a greeting or an instruction: asked as it is.
-        ...(picked?.kind === 'question' && picked.lookedBack
+        ...(picked?.kind === 'question' && (picked.lookedBack || partOfLines)
           ? { question: picked.selected.text }
           : {}),
       });
@@ -516,6 +532,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         repeatGuard.remember(span, entry.id, Date.now());
         setAnsweredSpans((current) => [...current, { span, answerId: entry.id }]);
       }
+      for (const id of pickedLines ?? []) answeredLinesRef.current.add(id);
       // Kept here as well as in state: the answer's end needs them in the same tick.
       let meta: AnswerMeta | undefined;
       let cleanQuestion: string | undefined;
@@ -528,20 +545,25 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           // A steady label (v1.0.1): the same question keeps its first type, and a clearly
           // technical question is not shown as behavioural or small talk. A type the user chose
           // on the card (answerType) is shown as chosen.
-          const type = answerType
-            ? received.type
-            : settleAnswerType(entry.question, received.type, labelsRef.current);
+          // Not a screenshot's: the same words go with a different screen each time.
+          const type =
+            answerType || received.type === 'garbled' || mode === 'screenshot'
+              ? received.type
+              : settleAnswerType(entry.question, received.type, labelsRef.current);
           meta = { ...received, type };
           // Claude could not make sense of the words either (ADR-0043): no answer to show. The
           // entry goes, and the user gets the same notice as when the rules catch it first.
           if (type === 'garbled') {
             setEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
+            setAnsweredSpans((current) => current.filter((item) => item.answerId !== entry.id));
             setShownId(null);
             setNotice(GARBLED_NOTICE);
-            garbledRef.current = entry.question;
+            for (const id of pickedLines ?? built.selected?.lineIds ?? []) {
+              noiseLinesRef.current.add(id);
+            }
             return;
           }
-          if (entry.question.trim() !== '') {
+          if (entry.question.trim() !== '' && mode !== 'screenshot') {
             labelsRef.current = [...labelsRef.current, { question: entry.question, type }];
           }
           update(entry.id, { meta });

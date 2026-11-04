@@ -203,8 +203,19 @@ export function CompactView(props: CompactViewProps) {
       setMenuOpen(false);
       setDevicesOpen(false);
     };
+    // Escape closes it too, and focus goes back to where it was opened from.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setMenuOpen(false);
+      setDevicesOpen(false);
+      menuButton.current?.focus();
+    };
     document.addEventListener('pointerdown', onPointer);
-    return () => document.removeEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
   }, [anyPopup]);
 
   /** Opens the full call window (from ⋮ only since v1.1.0): the live page brings it forward. */

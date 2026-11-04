@@ -32,6 +32,7 @@ import { getChatTarget, setChatTarget } from '@/core/storage/answerPrefs';
 import { getAutoAnswer } from '@/core/storage/autoAnswer';
 import { hintSeen, markHintSeen } from '@/core/storage/hintPrefs';
 import { groupLines, groupWords } from '@/core/transcript/group';
+import { looksGarbled } from '@/core/transcript/questionKind';
 import { isUnclearGroup } from '@/core/transcript/unclear';
 import { AnswerPreferencesDialog } from '@/features/session-setup/AnswerPreferencesDialog';
 import type { MenuItem } from '@/ui/Menu';
@@ -296,7 +297,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
     );
     return {
       audio: { you: audioYou, them: audioThem },
-      chips: transcriptChips(visibleLines, terms),
+      // Noise stays out of the chips, as it collapses in the transcript (ADR-0044).
+      chips: transcriptChips(
+        visibleLines.filter((line) => !line.final || !looksGarbled(line.text)),
+        terms,
+      ),
       liveQuestion: liveQuestion(visibleLines, terms, questionClearedAt),
       groups: groups.slice(-OVERLAY_GROUPS).map((group) => ({
         id: group.id,
