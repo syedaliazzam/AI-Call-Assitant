@@ -138,17 +138,21 @@ test.afterAll(async () => {
 test('opens the home panel at 400×560 on /home, the only window (v1.1.0, ADR-0041)', async () => {
   expect(page.url()).toBe(`${kite.origin}/home`);
   await expect(page.locator('#heading')).toHaveText('Kite smoke test page');
-  const { sizes, workArea, taskbar } = await app.evaluate(({ BrowserWindow, screen }) => ({
+  // Shown once painted, which an installed app takes a moment longer to do.
+  await expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible() ?? false),
+    )
+    .toBe(true);
+  const { sizes, workArea } = await app.evaluate(({ BrowserWindow, screen }) => ({
     sizes: BrowserWindow.getAllWindows().map((window) => window.getSize()),
     workArea: screen.getPrimaryDisplay().workAreaSize,
-    taskbar: BrowserWindow.getAllWindows()[0]!.isVisible(),
   }));
   expect(sizes).toHaveLength(1);
   const [width = 0, height = 0] = sizes[0]!;
   // Display scaling can round a frameless window up by a few pixels (403 at 125%).
   expect(Math.abs(width - Math.min(400, workArea.width))).toBeLessThanOrEqual(4);
   expect(Math.abs(height - Math.min(560, workArea.height))).toBeLessThanOrEqual(4);
-  expect(taskbar).toBe(true);
 });
 
 test('the panel keeps to its own pages: anywhere else goes back to /home', async () => {
