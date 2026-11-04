@@ -68,6 +68,12 @@ export const OVERLAY_LAYOUT_CHANNEL = 'kite:overlay-layout';
 /** v1.1.0: the snap zone under the pointer during a drag (send; an OverlayPreset, or null). */
 export const SNAP_ZONE_CHANNEL = 'kite:snap-zone';
 
+/** v1.2.0: pick a session file in the system's dialog (invoke; answers a HandoffPick or null). */
+export const HANDOFF_PICK_CHANNEL = 'kite:handoff-pick';
+
+/** v1.2.0: delete the file picked last (invoke; no arguments, answers a boolean). */
+export const HANDOFF_DELETE_CHANNEL = 'kite:handoff-delete';
+
 /** The page says whether a live call is going on (send; a boolean). Updates wait for it. */
 export const CALL_ACTIVE_CHANNEL = 'kite:call-active';
 

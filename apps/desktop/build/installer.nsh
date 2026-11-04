@@ -1,14 +1,23 @@
 ; File: apps/desktop/build/installer.nsh
-; Purpose: Kite's uninstall step (Day 6 Stage 3): asks whether to keep the user's local Kite data
-;          (sessions, transcripts, answers and settings in %APPDATA%\kite). "No", and a silent
-;          uninstall (/S), remove it. The updater's cache (%LOCALAPPDATA%\kite-updater) is always
-;          removed, so nothing of Kite is left behind.
+; Purpose: Registers the paramountai:// link at install (v1.2.0, spec S9), so it works before the app's
+;          first start. Kite's uninstall step (Day 6 Stage 3): removes that link and asks whether to keep
+;          the user's local data (sessions, transcripts, answers and settings in %APPDATA%\Kite, the
+;          folder src/main.ts pins). "No", and a silent uninstall (/S), remove it. The updater's cache
+;          (%LOCALAPPDATA%\kite-updater) is always removed, so nothing of the app is left behind.
 ; Used by: electron-builder.yml (nsis.include)
 ; Architecture: docs/architecture/kite-architecture-v3.1.md §10 (installation); ADR-0028
+
+!macro customInstall
+  WriteRegStr SHCTX "Software\Classes\paramountai" "" "URL:Paramount AI"
+  WriteRegStr SHCTX "Software\Classes\paramountai" "URL Protocol" ""
+  WriteRegStr SHCTX "Software\Classes\paramountai\DefaultIcon" "" "$appExe,0"
+  WriteRegStr SHCTX "Software\Classes\paramountai\shell\open\command" "" '"$appExe" "%1"'
+!macroend
 
 !macro customUnInstall
   ; During an update the old version is uninstalled first: never touch the data then.
   ${ifNot} ${isUpdated}
+    DeleteRegKey SHCTX "Software\Classes\paramountai"
     ; The updater's download cache (a copy of the installer) is not user data: always remove it.
     ; The one cached file, then the folder if it is empty (a recursive delete here makes Windows
     ; Smart App Control block the build's installer stub; Day 6 Stage 3).

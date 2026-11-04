@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { saveHandoffFile } from '@/core/session/handoff';
 import { countAnswersBySession } from '@/core/storage/answers';
 import {
   getDashboardLayout,
@@ -373,6 +374,12 @@ export function Dashboard() {
         onClose={() => setChoosing(null)}
         onOpenInBrowser={() => {
           if (choosing) router.push(`/live/${choosing.id}`);
+        }}
+        onOpenInDesktop={() => {
+          if (!choosing) return;
+          // Saved here, on the press: a browser allows a download from a person's action.
+          void saveHandoffFile(choosing.id);
+          router.push(`/sessions/${choosing.id}/desktop`);
         }}
       />
     </div>

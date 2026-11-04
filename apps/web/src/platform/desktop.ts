@@ -294,6 +294,24 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * Lets the person pick a session file, where this shell can (1.2.0 and later).
+     *
+     * @returns The file, or null.
+     */
+    async pickHandoffFile() {
+      return (await bridge.pickHandoffFile?.()) ?? null;
+    },
+
+    /**
+     * Deletes the session file picked last, where this shell can (1.2.0 and later).
+     *
+     * @returns True when it was deleted.
+     */
+    async deleteHandoffFile() {
+      return (await bridge.deleteHandoffFile?.().catch(() => false)) ?? false;
+    },
+
+    /**
      * Whether this shell has the home panel's calls (1.1.0 and later, ADR-0041).
      *
      * @returns True when it has them.
@@ -311,8 +329,12 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
      * @param path The page's path.
      */
     openPagesWindow(path: string) {
-      if (bridge.openPagesWindow) void bridge.openPagesWindow(path).catch(() => undefined);
-      else window.location.assign(path);
+      // An older shell refuses a page it does not know (for example /help): the system browser opens it.
+      if (bridge.openPagesWindow) {
+        void bridge.openPagesWindow(path).catch(() => window.open(path, '_blank', 'noopener'));
+      } else {
+        window.location.assign(path);
+      }
     },
 
     /**

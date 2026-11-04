@@ -594,10 +594,10 @@ test('home panel: cards, search, sort, the menu and its buttons', async () => {
   await page.getByRole('button', { name: 'Create session' }).click();
   expect(await opened()).toEqual(['/', '/sessions/new']);
 
-  // The menu: account, Dashboard, Private, Zoom, Theme, Sign out. Escape closes it.
+  // The menu: the email, Dashboard, Private, Zoom, Theme, Log out. Escape closes it.
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
   const menu = page.getByRole('group', { name: 'Home panel menu' });
-  for (const words of ['Sam Lee', 'sam@example.com', 'Dashboard', 'Private', 'Zoom', 'Sign out']) {
+  for (const words of ['sam@example.com', 'Dashboard', 'Private', 'Zoom', 'Log out']) {
     await expect(menu).toContainText(words);
   }
   // The theme reaches the page at once, and stays.

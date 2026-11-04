@@ -35,7 +35,7 @@ export function AudioMeter({ speaker, level, inactive = false, compact = false }
     <div className={`flex items-center gap-2 ${compact ? 'w-40' : 'w-full'}`}>
       <span className={`w-12 shrink-0 text-[13px] font-semibold ${style.label}`}>{style.name}</span>
       <div
-        className="h-2 flex-1 overflow-hidden rounded-full bg-ui-band"
+        className="h-2 flex-1 overflow-hidden rounded-full bg-ui-segment"
         role="meter"
         aria-label={`${style.name} audio level`}
         aria-valuemin={0}

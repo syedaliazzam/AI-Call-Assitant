@@ -1,11 +1,11 @@
 /**
  * File: apps/web/src/features/home/HomeMenu.tsx
- * Purpose: The home panel's ⋮ menu (v1.1.0, ADR-0041): the account, Dashboard ↗, Private (screen-share
- *          protection), Zoom, Theme and Sign out.
+ * Purpose: The home panel's ⋮ menu (spec S12): the email, Dashboard ↗, Voice profile ("Soon"), Get help ↗,
+ *          Private (screen-share protection), Meeting detect ("Soon"), Zoom, Theme and Log out.
  * Used by: src/features/home/HomePanel.tsx
  * Depends on: src/core/auth/authClient.ts, src/core/storage/appearancePrefs.ts,
  *             src/features/privacy/usePrivate.ts, src/platform, src/ui (PanelMenu, icons)
- * Architecture: docs/design/kite-ui-theme.md §5; ADR-0041, ADR-0042
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S12); ADR-0041, ADR-0042
  */
 'use client';
 
@@ -21,14 +21,15 @@ import {
 } from '@/core/storage/appearancePrefs';
 import { PRIVATE_LABEL, privateHint, usePrivate } from '@/features/privacy/usePrivate';
 import { getPlatform } from '@/platform';
-import { GridIcon, PersonIcon, SignOutIcon } from '@/ui/icons';
+import { LayoutDashboard, LifeBuoy, LogOut, User, Waves } from 'lucide-react';
 import { MenuAction, MenuBlock, MenuStepper, MenuSwitch, MenuTheme } from '@/ui/PanelMenu';
+
+/** The rows' icons. */
+const ICON = { size: 18, strokeWidth: 1.75, 'aria-hidden': true } as const;
 
 /** Props for HomeMenu. */
 export interface HomeMenuProps {
-  /** The signed-in person's name. */
-  name: string;
-  /** Their email. */
+  /** The signed-in person's email. */
   email: string;
   /** The theme chosen. */
   theme: ThemeChoice;
@@ -45,7 +46,7 @@ export interface HomeMenuProps {
  * @returns The menu.
  * Rendered by: HomePanel.tsx
  */
-export function HomeMenu({ name, email, theme, zoom, onClose }: HomeMenuProps) {
+export function HomeMenu({ email, theme, zoom, onClose }: HomeMenuProps) {
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
   const { state: protection, change: changeProtection } = usePrivate();
@@ -63,22 +64,30 @@ export function HomeMenu({ name, email, theme, zoom, onClose }: HomeMenuProps) {
       role="group"
       aria-label="Home panel menu"
       data-menu="home"
-      className="absolute right-2 top-12 z-30 flex max-h-[calc(100vh-3.5rem)] w-72 flex-col gap-1.5 overflow-y-auto rounded-card border border-ui-border bg-ui-surface p-1.5 shadow-modal [-webkit-app-region:no-drag]"
+      className="absolute right-2 top-12 z-30 flex max-h-[calc(100vh-3.5rem)] w-72 flex-col overflow-y-auto rounded-menu bg-ui-surface shadow-modal [-webkit-app-region:no-drag]"
     >
-      <p className="flex items-center gap-2 px-2 py-1 text-[13px] text-ui-text">
-        <PersonIcon />
-        <span className="min-w-0 truncate">
-          <span className="font-medium">{name}</span> <span className="text-ui-muted">{email}</span>
-        </span>
-      </p>
       <MenuBlock>
+        <p className="flex min-h-10 items-center gap-2.5 px-3 text-input text-ui-text">
+          <User {...ICON} className="shrink-0" />
+          <span className="min-w-0 truncate">{email}</span>
+        </p>
         <MenuAction
           label="Dashboard"
-          icon={<GridIcon />}
+          icon={<LayoutDashboard {...ICON} />}
           out
           onSelect={() => {
             onClose();
             getPlatform().openPagesWindow('/');
+          }}
+        />
+        <MenuAction label="Voice profile" icon={<Waves {...ICON} />} soon />
+        <MenuAction
+          label="Get help"
+          icon={<LifeBuoy {...ICON} />}
+          out
+          onSelect={() => {
+            onClose();
+            getPlatform().openPagesWindow('/help');
           }}
         />
         <MenuSwitch
@@ -87,6 +96,13 @@ export function HomeMenu({ name, email, theme, zoom, onClose }: HomeMenuProps) {
           checked={protection?.on ?? false}
           disabled={!protection?.supported}
           onChange={changeProtection}
+        />
+        <MenuSwitch
+          label="Meeting detect"
+          info="Noticing a meeting by itself is on its way."
+          soon
+          checked={false}
+          onChange={() => undefined}
         />
         <MenuStepper
           label="Zoom"
@@ -99,8 +115,9 @@ export function HomeMenu({ name, email, theme, zoom, onClose }: HomeMenuProps) {
         />
         <MenuTheme value={theme} onChange={setTheme} />
         <MenuAction
-          label={leaving ? 'Signing out…' : 'Sign out'}
-          icon={<SignOutIcon />}
+          label={leaving ? 'Logging out…' : 'Log out'}
+          icon={<LogOut {...ICON} />}
+          danger
           disabled={leaving}
           onSelect={() => void leave()}
         />

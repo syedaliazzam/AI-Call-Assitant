@@ -756,8 +756,8 @@ export function LivePage({
 
   if (view === 'connect') {
     return (
-      // The Connect view is a call screen too: dark tokens (theme §2).
-      <div className="k-dark min-h-screen bg-ui-bg pb-10 text-ui-text">
+      // The Connect card follows the app's theme (spec S11).
+      <div className="min-h-full bg-ui-bg pb-10 text-ui-text">
         {lockedOut && (
           <p
             role="alert"
@@ -776,6 +776,8 @@ export function LivePage({
           channelErrors={channelErrors}
           soundCheck={soundCheck}
           health={health}
+          micDeviceId={micDeviceId}
+          onMic={changeMic}
           onConnect={() => void connect()}
           onRetryModel={retryModel}
           onContinue={() => setView('live')}

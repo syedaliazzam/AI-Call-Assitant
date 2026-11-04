@@ -10,6 +10,7 @@
 import type {
   AccurateResult,
   AccurateStatus,
+  HandoffPick,
   HotkeyAction,
   HotkeyStatus,
   OverlayEdge,
@@ -216,6 +217,20 @@ export interface Platform {
    * @returns True where openPagesWindow and windowControl do something.
    */
   hasHomePanel(): boolean;
+
+  /**
+   * Lets the person pick a session file for the hand-off from a browser (v1.2.0, ADR-0045).
+   *
+   * @returns The file, or null when cancelled or where this app has no such thing.
+   */
+  pickHandoffFile(): Promise<HandoffPick | null>;
+
+  /**
+   * Deletes the session file picked last (v1.2.0, ADR-0045).
+   *
+   * @returns True when it was deleted.
+   */
+  deleteHandoffFile(): Promise<boolean>;
 
   /**
    * v1.1.0: opens a Kite page. In a desktop app from 1.1.0: in a normal window (a separate one during

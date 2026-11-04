@@ -238,6 +238,9 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.windowControl,
       typeof window.kiteDesktop?.setOverlayLayout,
       typeof window.kiteDesktop?.onSnapZone,
+      // v1.2.0 (spec S9): the session file.
+      typeof window.kiteDesktop?.pickHandoffFile,
+      typeof window.kiteDesktop?.deleteHandoffFile,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -255,6 +258,8 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'captureScreenshot',
     'checkHotkeys',
     'closeCompactView',
+    // v1.2.0 (spec S9): the session file; the page never names a path.
+    'deleteHandoffFile',
     'getOverlayPreset',
     'getShareProtection',
     'minimizeMainWindow',
@@ -263,6 +268,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'openCompactView',
     'openPagesWindow',
     'os',
+    'pickHandoffFile',
     'placeOverlay',
     'resizeOverlay',
     'setCallActive',
@@ -276,7 +282,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'version',
     'windowControl',
   ]);
-  expect(bridge.methods).toEqual(Array(21).fill('function'));
+  expect(bridge.methods).toEqual(Array(23).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
@@ -498,7 +504,11 @@ test('Private covers every window: panel, main, overlay and side window, each by
       });
     const restore = await app.evaluate(async ({ BrowserWindow }) => {
       const windows = BrowserWindow.getAllWindows();
-      const before = windows.map((window) => ({ id: window.id, bounds: window.getBounds() }));
+      const before = windows.map((window) => ({
+        id: window.id,
+        bounds: window.getBounds(),
+        onTop: window.isAlwaysOnTop(),
+      }));
       const place = [
         { x: 20, y: 20, width: 300, height: 200 },
         { x: 340, y: 20, width: 320, height: 200 },
@@ -511,6 +521,9 @@ test('Private covers every window: panel, main, overlay and side window, each by
           if (window.isMinimized()) window.restore();
           window.showInactive();
           window.setBounds(place[index]!);
+          // In front of whatever else is open on the machine: otherwise a covered window reads as
+          // hidden, and "shown" fails because of the developer's editor, not the app.
+          window.setAlwaysOnTop(true, 'screen-saver');
           await window.webContents.executeJavaScript(
             "document.documentElement.style.background = '#ff00ff'; document.body.style.background = '#ff00ff'; document.body.innerHTML = '';",
           );
@@ -527,7 +540,11 @@ test('Private covers every window: panel, main, overlay and side window, each by
     for (const share of Object.values(hidden)) expect(share).toBe(0);
     for (const share of Object.values(shown)) expect(share).toBeGreaterThan(0.9);
     await app.evaluate(({ BrowserWindow }, list) => {
-      for (const { id, bounds } of list) BrowserWindow.fromId(id)?.setBounds(bounds);
+      for (const { id, bounds, onTop } of list) {
+        const window = BrowserWindow.fromId(id);
+        window?.setAlwaysOnTop(onTop, 'floating');
+        window?.setBounds(bounds);
+      }
     }, restore);
   }
   await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));

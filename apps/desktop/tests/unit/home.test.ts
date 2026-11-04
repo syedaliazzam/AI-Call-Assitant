@@ -188,6 +188,48 @@ describe('which pages it shows', () => {
   });
 });
 
+describe('a session link (spec S9)', () => {
+  /** A session's id. */
+  const ID = '86495cda-fbd1-4cea-8387-cd29f5c1381b';
+  /** Its start card's address. */
+  const CARD = `https://kite.example/home?session=${ID}`;
+
+  it('opens the window on the session’s start card', () => {
+    const { home, windows } = setup();
+    home.openSession(ID);
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.loadURL).toHaveBeenCalledExactlyOnceWith(CARD);
+  });
+
+  it('brings an open window to the start card, restoring it if minimised', () => {
+    const { home, windows } = setup();
+    home.open();
+    windows[0]!.minimized = true;
+    home.openSession(ID);
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.loadURL).toHaveBeenLastCalledWith(CARD);
+    expect(windows[0]!.restore).toHaveBeenCalled();
+    expect(windows[0]!.focus).toHaveBeenCalled();
+  });
+
+  it('survives signing in first, and then is forgotten', () => {
+    const { home, windows } = setup();
+    home.openSession(ID);
+    const window = windows[0]!;
+    window.navigate('did-navigate', 'https://kite.example/sign-in', 200);
+    window.loadURL.mockClear();
+    // Signing in lands on the plain home page: the card is still owed.
+    window.navigate('did-navigate', 'https://kite.example/home', 200);
+    expect(window.loadURL).toHaveBeenCalledExactlyOnceWith(CARD);
+    window.loadURL.mockClear();
+    window.navigate('did-navigate', CARD, 200);
+    expect(window.loadURL).not.toHaveBeenCalled();
+    // Going back to the list later stays there.
+    window.navigate('did-navigate', 'https://kite.example/home', 200);
+    expect(window.loadURL).not.toHaveBeenCalled();
+  });
+});
+
 describe('the controller', () => {
   it('opens one window and shows it when painted', () => {
     const { home, windows } = setup();

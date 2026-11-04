@@ -123,6 +123,7 @@ const SessionSchema = z.object({
   // v1.1.0: absent in older files.
   contactName: z.string().optional(),
   lastCallMs: z.number().optional(),
+  handoffAt: z.number().optional(),
 });
 const DocumentSchema = z.object({
   id: z.string().min(1),

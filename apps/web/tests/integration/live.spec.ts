@@ -359,7 +359,7 @@ test('the "Claude unavailable" message in the answer panel', async () => {
   await watched.context.close();
 });
 
-test('the Connect view is on the dark tokens', async () => {
+test('the Connect card: audio source, microphone, tips, and how to connect', async () => {
   for (const size of [
     { width: 1440, height: 900, touch: false },
     { width: 900, height: 900, touch: false },
@@ -367,9 +367,30 @@ test('the Connect view is on the dark tokens', async () => {
     const watched = await open('connect', size);
     const { page } = watched;
     await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Connect call session' })).toBeVisible();
+    await expect(
+      page.getByText('Ready when you are. Connect to start the transcript.'),
+    ).toBeVisible();
     await expect(page.getByText('This is a Regular session about')).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Audio source' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Microphone' })).toHaveText('System default');
+    const tips = page.getByRole('list', { name: 'Tips' });
+    await expect(tips).toContainText('Use headphones so your mic doesn’t pick up the other side.');
+    await expect(tips).toContainText('Test Private with your phone before a real call.');
+    await expect(tips).toContainText('No call to practise on? Play a mock interview on YouTube.');
+    await tips.getByRole('button', { name: 'Why' }).click();
+    await expect(tips).toContainText('show up as You');
+    await expect(tips.getByRole('link', { name: 'How' })).toHaveAttribute('href', '/help');
+    await expect(tips.getByRole('link', { name: 'Open' })).toHaveAttribute('href', /youtube\.com/);
+    await expect(page.getByRole('link', { name: 'Back to dashboard' })).toHaveAttribute(
+      'href',
+      '/',
+    );
+    await page.getByText('Need it for macOS?').hover();
+    await expect(page.getByRole('tooltip')).toHaveText('Coming soon');
     await shot(watched, size, 'connect');
     // Each way of calling opens a short how-to for this platform.
+    await page.getByRole('button', { name: 'Ways of calling' }).click();
     await expect(
       page.getByRole('list', { name: 'Ways of calling' }).getByRole('button'),
     ).toHaveText([/Zoom/, /Teams/, /Google Meet/, /Webex/, /Phone/]);
@@ -384,7 +405,8 @@ test('the Connect view is on the dark tokens', async () => {
     await expect(
       page.getByRole('link', { name: 'No call to share? Open a mock interview video' }),
     ).toHaveAttribute('rel', 'noreferrer');
-    await expect(page.getByRole('link', { name: 'Back' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('link', { name: 'Back', exact: true })).toBeVisible();
     await watched.context.close();
   }
 });

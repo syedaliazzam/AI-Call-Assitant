@@ -72,6 +72,8 @@ describe('the exposed bridge', () => {
       'captureScreenshot',
       'checkHotkeys',
       'closeCompactView',
+      // v1.2.0 (spec S9): the session file; the page never names a path.
+      'deleteHandoffFile',
       'getOverlayPreset',
       'getShareProtection',
       'minimizeMainWindow',
@@ -80,6 +82,7 @@ describe('the exposed bridge', () => {
       'openCompactView',
       'openPagesWindow',
       'os',
+      'pickHandoffFile',
       'placeOverlay',
       'resizeOverlay',
       'setCallActive',

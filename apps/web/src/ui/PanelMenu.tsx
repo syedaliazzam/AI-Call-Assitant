@@ -35,7 +35,10 @@ import { Tooltip } from './Tooltip';
 const FOCUS = 'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]';
 
 /** A row's layout. */
-const ROW = 'flex min-h-10 items-center gap-2.5 px-3 py-1 text-input text-ui-text';
+const ROW_SHAPE = 'flex min-h-10 items-center gap-2.5 px-3 py-1 text-input';
+
+/** A row in the usual colour. */
+const ROW = `${ROW_SHAPE} text-ui-text`;
 
 /** A small square button's shape in a row, without its colours. */
 const SQUARE_SHAPE = `inline-flex size-8 shrink-0 items-center justify-center rounded-[8px] disabled:opacity-40 ${FOCUS}`;
@@ -105,7 +108,7 @@ export function MenuAction({
       type="button"
       disabled={disabled || soon}
       onClick={onSelect}
-      className={`${ROW} w-full text-left hover:bg-ui-hover disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${FOCUS} ${danger ? 'text-ui-danger' : ''}`}
+      className={`${ROW_SHAPE} w-full text-left hover:bg-ui-hover disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${FOCUS} ${danger ? 'text-ui-danger' : 'text-ui-text'}`}
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>

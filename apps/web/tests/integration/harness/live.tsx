@@ -259,7 +259,7 @@ function SplitView() {
  */
 function ConnectView() {
   return (
-    <div className="k-dark min-h-screen bg-ui-bg pb-10 text-ui-text">
+    <div className="min-h-full bg-ui-bg pb-10 text-ui-text">
       <ConnectPanel
         call={{
           title: 'Regular call',

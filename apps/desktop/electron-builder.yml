@@ -54,6 +54,11 @@ nsis:
 # Where installed apps look for updates (ADR-0028): the public releases-only repository. Only
 # installers, latest.yml and blockmaps are published there (with gh, by the developer); the app
 # needs no token. Move to a company organisation is a decision for the lead.
+# macOS's list of links this app opens; Windows registers it in build/installer.nsh and src/main.ts.
+protocols:
+  - name: Paramount AI
+    schemes:
+      - paramountai
 publish:
   provider: github
   owner: Zainpak123

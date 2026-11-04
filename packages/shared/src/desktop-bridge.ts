@@ -227,6 +227,30 @@ export interface KiteDesktopApi {
    * @returns A function that removes the listener.
    */
   onSnapZone?: (handler: (zone: OverlayPreset | null) => void) => () => void;
+  /**
+   * v1.2.0 (ADR-0045): lets the person pick a session file in the system's dialog, for the hand-off
+   * from a browser. Optional: a shell before 1.2.0 has no such call (and no paramountai:// link either).
+   *
+   * @returns The file, or null when the dialog was cancelled.
+   */
+  pickHandoffFile?: () => Promise<HandoffPick | null>;
+  /**
+   * v1.2.0 (ADR-0045): deletes the file picked last. The page names no path: this can delete only that
+   * file, once. Optional, as above.
+   *
+   * @returns True when it was deleted.
+   */
+  deleteHandoffFile?: () => Promise<boolean>;
+}
+
+/** A session file picked in the system's dialog (v1.2.0, ADR-0045). */
+export interface HandoffPick {
+  /** The file's name, without its folder. */
+  name: string;
+  /** The file's text ('' when it was too large to read). Never logged. */
+  text: string;
+  /** True when the file was too large to read. */
+  tooLarge?: boolean;
 }
 
 /** What windowControl() can do (v1.1.0). */

@@ -325,6 +325,29 @@ describe('createDesktopPlatform: overlay placement, resizing and modes (v1.0.2, 
   });
 });
 
+describe('createDesktopPlatform: the session file (spec S9)', () => {
+  it('an older shell has neither call: nothing is picked or deleted', async () => {
+    const platform = createDesktopPlatform({ version: '1.1.0', os: 'windows' });
+    expect(await platform.pickHandoffFile()).toBeNull();
+    expect(await platform.deleteHandoffFile()).toBe(false);
+  });
+
+  it('passes both calls through, and a failed delete stays quiet', async () => {
+    const picked = { name: 'a.json', text: '{}' };
+    const bridge = {
+      version: '1.2.0',
+      os: 'windows' as const,
+      pickHandoffFile: vi.fn(async () => picked),
+      deleteHandoffFile: vi.fn(async () => true),
+    };
+    const platform = createDesktopPlatform(bridge);
+    expect(await platform.pickHandoffFile()).toBe(picked);
+    expect(await platform.deleteHandoffFile()).toBe(true);
+    bridge.deleteHandoffFile.mockRejectedValueOnce(new Error('ipc closed'));
+    expect(await platform.deleteHandoffFile()).toBe(false);
+  });
+});
+
 describe('createDesktopPlatform: home panel and stacked overlay (v1.1.0, ADR-0041)', () => {
   it('a shell before 1.1.0: no home panel, no panels, and every call does nothing', () => {
     const platform = createDesktopPlatform({ version: '1.0.4', os: 'windows' });

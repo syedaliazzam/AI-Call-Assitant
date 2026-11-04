@@ -212,7 +212,7 @@ for (const size of WIDTHS) {
     await expect(card).toBeVisible();
     await check(watched, size, 'dashboard');
     await card.getByRole('button', { name: 'Start session' }).click();
-    await expect(page.getByRole('dialog', { name: 'How do you want to join?' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Choose platform' })).toBeVisible();
     await page.getByRole('button', { name: 'What’s the difference?' }).click();
     await check(watched, size, 'choose-platform');
     await page.keyboard.press('Escape');

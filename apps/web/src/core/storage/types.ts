@@ -136,6 +136,11 @@ export interface Session {
    * older sessions by the version 8 upgrade (core/storage/migrate.ts).
    */
   lastCallMs?: number;
+  /**
+   * v1.2.0 (ADR-0045): when the hand-off file this copy came from was written (Unix ms). Only a newer
+   * file replaces it. Absent on a session made on this device.
+   */
+  handoffAt?: number;
 }
 
 /** A document attached to a session, as extracted text (architecture §7.4 `documents`). */

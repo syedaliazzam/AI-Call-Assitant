@@ -5,7 +5,8 @@
  *          openCompactView, closeCompactView, setShareProtection, getShareProtection,
  *          setCallActive, the overlay methods (v1.0.2: placeOverlay, getOverlayPreset,
  *          resizeOverlay, setOverlayMode; ADR-0035), the window calls (v1.1.0: openPagesWindow,
- *          windowControl, setOverlayLayout; ADR-0041), and accurateStatus / accurateDownload /
+ *          windowControl, setOverlayLayout; ADR-0041), the hand-off file (v1.2.0: pickHandoffFile,
+ *          deleteHandoffFile; ADR-0045), and accurateStatus / accurateDownload /
  *          accurateRemove / accurateTranscribe (v1.0.1, ADR-0034) } (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
@@ -39,6 +40,8 @@ import {
   CHECK_HOTKEYS_CHANNEL,
   CLOSE_COMPACT_CHANNEL,
   GET_PROTECTION_CHANNEL,
+  HANDOFF_DELETE_CHANNEL,
+  HANDOFF_PICK_CHANNEL,
   HOTKEY_CHANNEL,
   MINIMIZE_MAIN_CHANNEL,
   OPEN_COMPACT_CHANNEL,
@@ -183,6 +186,10 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
       scale: Number(layout?.scale ?? 1),
     }),
   onSnapZone,
+  // v1.2.0 (ADR-0045): the hand-off file. No path crosses in either direction's arguments: the shell
+  // picks with its own dialog and deletes only what it picked.
+  pickHandoffFile: () => ipcRenderer.invoke(HANDOFF_PICK_CHANNEL),
+  deleteHandoffFile: () => ipcRenderer.invoke(HANDOFF_DELETE_CHANNEL),
   // v1.0.1 (ADR-0034): accurate transcription. Nothing but a Float32Array of audio crosses (the
   // shell checks its type and length again); the text comes back in memory only.
   accurateStatus: () => ipcRenderer.invoke(ACCURATE_STATUS_CHANNEL),
