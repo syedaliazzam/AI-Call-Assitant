@@ -36,7 +36,7 @@ import {
 import { installAccurate, type WorkerProcess } from './accurate/host';
 import { MODEL_FOLDER } from './accurate/model';
 import { CALL_ACTIVE_CHANNEL, OPEN_PAGES_CHANNEL, WINDOW_CONTROL_CHANNEL } from './channels';
-import { APP_NAME, loadConfig, type DesktopConfig } from './config';
+import { APP_NAME, loadConfig, pinnedDataFolder, type DesktopConfig } from './config';
 import { createHomeWindow, type HomeWindow } from './home';
 import { startUpdater } from './updater';
 import { installHotkeys, isKiteSender, type HotkeyController } from './hotkeys';
@@ -249,6 +249,15 @@ function openPages(config: DesktopConfig, page: string): void {
  * Called from: the bottom of this file
  */
 function start(): void {
+  // Before anything that uses the folder: the single-instance lock lives in it, and an upgrade from
+  // 1.1.0 must find its sessions, settings and sign-in where they are (spec §2).
+  const dataFolder = pinnedDataFolder({
+    isPackaged: app.isPackaged,
+    hasUserDataDirSwitch: app.commandLine.hasSwitch('user-data-dir'),
+    appData: app.getPath('appData'),
+  });
+  if (dataFolder) app.setPath('userData', dataFolder);
+
   let config: DesktopConfig;
   try {
     config = loadConfig();
@@ -394,7 +403,7 @@ function start(): void {
       fork: (modulePath, env) =>
         utilityProcess.fork(modulePath, [], {
           env,
-          serviceName: 'Kite accurate transcription',
+          serviceName: `${APP_NAME} accurate transcription`,
           stdio: 'ignore',
         }) as unknown as WorkerProcess,
     });

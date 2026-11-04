@@ -45,12 +45,12 @@ const DIFFERENCES: readonly {
     desktop: 'Any: Zoom, Teams, Meet, Webex, phone apps',
     browser: 'Calls in a Chrome or Edge tab (Meet, Teams web, Zoom web)',
   },
-  { topic: 'Hotkeys', desktop: 'Work from any app', browser: 'Only while Kite has focus' },
+  { topic: 'Hotkeys', desktop: 'Work from any app', browser: 'Only while Paramount AI has focus' },
   { topic: 'Overlay', desktop: 'Always-on-top live window', browser: 'Picture-in-picture view' },
   {
     topic: 'Screen sharing',
-    desktop: 'Kite can be hidden from a shared screen (Windows)',
-    browser: 'Share one tab or window, or keep Kite on a second screen',
+    desktop: 'Paramount AI can be hidden from a shared screen (Windows)',
+    browser: 'Share one tab or window, or keep Paramount AI on a second screen',
   },
 ];
 

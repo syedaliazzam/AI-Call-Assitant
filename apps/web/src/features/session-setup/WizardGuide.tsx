@@ -53,10 +53,10 @@ const PRESETS: readonly {
 
 /** The tutorial's steps. */
 const STEPS: readonly string[] = [
-  'Create a session: who the call is with, and the resume and documents Kite should use.',
+  'Create a session: who the call is with, and the resume and documents Paramount AI should use.',
   'Start the session and connect both sides: your microphone and the other person’s audio.',
-  'During the call, press Answer when they ask something. Kite writes a short answer from your session.',
-  'After the call, read the notes and rate answers, so Kite learns what you prefer.',
+  'During the call, press Answer when they ask something. Paramount AI writes a short answer from your session.',
+  'After the call, read the notes and rate answers, so Paramount AI learns what you prefer.',
 ];
 
 /**
@@ -74,7 +74,7 @@ export function WizardGuide({ onPreset }: WizardGuideProps) {
       className="flex flex-col gap-5 rounded-card border border-ui-border bg-ui-surface p-5 shadow-card"
     >
       <div className="flex flex-col gap-2">
-        <h2 className="text-[15px] font-semibold text-ui-heading">New to Kite?</h2>
+        <h2 className="text-[15px] font-semibold text-ui-heading">New to Paramount AI?</h2>
         <p className="text-[13px] text-ui-muted">See how a session works, in four short steps.</p>
         <Button variant="secondary" size="sm" onClick={() => setTutorial(true)}>
           <PlayIcon />

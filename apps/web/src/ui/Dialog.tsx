@@ -1,17 +1,21 @@
 /**
  * File: apps/web/src/ui/Dialog.tsx
- * Purpose: A modal dialog built on the browser's own <dialog> element (showModal): it traps
- *          keyboard focus, closes on Escape and dims the page, with no extra library.
- * Used by: src/features/session-setup/ChoosePlatformDialog.tsx, src/features/dashboard/SessionCard.tsx
- *          (delete confirmation), src/features/settings/Settings.tsx (delete-all confirmation),
- *          and more; DialogPanel also by src/features/dev/UiGallery.tsx
- * Depends on: React
- * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
+ * Purpose: A plain modal dialog: a title, content and buttons, in the three widths the app's simple
+ *          dialogs use. Built on Modal. DialogPanel is its inside without the modal, for the UI gallery.
+ * Used by: src/features/dashboard/SessionMenu.tsx (delete confirmation), src/features/settings/*
+ *          (delete-all confirmation), and more; DialogPanel also by src/features/dev/UiGallery.tsx
+ * Depends on: React, lucide-react, ./Modal.tsx
+ * Architecture: docs/design/paramount-ai-ui-spec.md §1; docs/architecture/kite-architecture-v3.1.md §9.1
+ * Theme: tokens from src/ui/tokens/theme.css
  */
 'use client';
 
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { X } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Modal } from './Modal';
+
+/** The widths of a dialog, in px. */
+const WIDTHS = { md: 448, lg: 672, xl: 896 } as const;
 
 /** Props for Dialog. */
 export interface DialogProps {
@@ -25,55 +29,22 @@ export interface DialogProps {
   children: ReactNode;
   /** Buttons at the bottom, right-aligned (for example Cancel and Delete). */
   footer?: ReactNode;
-  /** Width: 'md' (default, about 28 rem), 'lg' (about 42 rem, tables) or 'xl' (about 56 rem, two panes). */
+  /** Width: 'md' (default, 448 px), 'lg' (672 px, tables) or 'xl' (896 px, two panes). */
   size?: 'md' | 'lg' | 'xl';
 }
 
 /**
- * A modal dialog. While `open` is true it is shown with showModal(), so the rest of the page
- * cannot be clicked or tabbed into.
+ * A modal dialog. While `open` is true the rest of the page cannot be clicked or tabbed into.
  *
  * @param props See DialogProps.
- * @returns The <dialog> element (hidden while closed).
- * Rendered by: ChoosePlatformDialog.tsx, SessionCard.tsx, Settings.tsx
+ * @returns The dialog (hidden while closed).
+ * Rendered by: SessionMenu.tsx, Settings.tsx and other simple dialogs
  */
 export function Dialog({ open, onClose, title, children, footer, size = 'md' }: DialogProps) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-
-  // The element is opened and closed imperatively: React's `open` attribute would show it
-  // without the modal behaviour (focus trap, Escape, backdrop).
-  useEffect(() => {
-    const dialog = ref.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
-
   return (
-    <dialog
-      ref={ref}
-      aria-labelledby={titleId}
-      // Escape fires 'cancel'; let the parent decide by turning it into onClose.
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
-      }}
-      // A click on the backdrop lands on the <dialog> element itself, not on its content.
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-      className={[
-        // Theme §5 Modal: the modal radius and shadow, over a dim backdrop. The width leaves a
-        // margin on a phone, so the rounded corners stay visible.
-        'm-auto w-[calc(100%-2rem)] rounded-modal border border-ui-border bg-ui-surface p-0 text-ui-text shadow-modal backdrop:bg-ui-overlay',
-        { md: 'max-w-md', lg: 'max-w-2xl', xl: 'max-w-4xl' }[size],
-      ].join(' ')}
-    >
-      <DialogPanel titleId={titleId} title={title} onClose={onClose} footer={footer}>
-        {children}
-      </DialogPanel>
-    </dialog>
+    <Modal open={open} onClose={onClose} title={title} footer={footer} width={WIDTHS[size]}>
+      {children}
+    </Modal>
   );
 }
 
@@ -92,31 +63,30 @@ export interface DialogPanelProps {
 }
 
 /**
- * The inside of a dialog: title with a close button, content, footer. Separate from Dialog so
- * the UI gallery (/dev/ui) can show the modal's styling without opening a modal.
+ * The look of a dialog without opening one, so the UI gallery (/dev/ui) can show it in place.
  *
  * @param props See DialogPanelProps.
  * @returns The panel.
- * Rendered by: Dialog; src/features/dev/UiGallery.tsx
+ * Rendered by: src/features/dev/UiGallery.tsx
  */
 export function DialogPanel({ titleId, title, onClose, children, footer }: DialogPanelProps) {
   return (
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-start justify-between gap-4">
-        <h2 id={titleId} className="text-[18px] font-semibold text-ui-heading">
+        <h2 id={titleId} className="text-modal-title text-ui-heading">
           {title}
         </h2>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="px-2 pointer-coarse:min-h-11 pointer-coarse:min-w-11 rounded-control text-xl leading-none text-ui-muted hover:bg-ui-hover hover:text-ui-heading focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+          className="flex size-8 shrink-0 items-center justify-center rounded-control text-ui-text hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:size-11"
         >
-          ×
+          <X aria-hidden="true" size={18} />
         </button>
       </div>
-      <div className="text-[15px] leading-relaxed text-ui-text">{children}</div>
-      {footer && <div className="flex justify-end gap-2">{footer}</div>}
+      <div className="text-input leading-relaxed text-ui-text">{children}</div>
+      {footer && <div className="flex justify-end gap-3">{footer}</div>}
     </div>
   );
 }

@@ -191,7 +191,7 @@ export function Dashboard() {
       <header className="border-b border-ui-border bg-ui-surface px-4 py-8 sm:px-8">
         <div className="mx-auto flex max-w-5xl flex-wrap items-end justify-between gap-4">
           <div>
-            <Eyebrow>Kite · call assistant</Eyebrow>
+            <Eyebrow>Paramount AI · call assistant</Eyebrow>
             <h1 className="text-[24px] font-semibold text-ui-heading">Call Sessions</h1>
             <p className="mt-1 max-w-prose text-[15px] text-ui-muted">
               Prepare a session before each call, then get live answers while you talk.
@@ -300,7 +300,7 @@ export function Dashboard() {
 
           {failed && (
             <p role="alert" className="mt-8 text-[13px] text-ui-danger">
-              Kite could not open its local storage. Reload the page to try again.
+              Paramount AI could not open its local storage. Reload the page to try again.
             </p>
           )}
 
@@ -336,7 +336,7 @@ export function Dashboard() {
               <p className="mt-1 max-w-sm text-[15px] text-ui-muted">
                 {filtering
                   ? 'Try another search or type.'
-                  : 'Create a session before your next call: its details and documents help Kite answer. Sessions are saved on this computer.'}
+                  : 'Create a session before your next call: its details and documents help Paramount AI answer. Sessions are saved on this computer.'}
               </p>
               {!filtering && (
                 <LinkButton href="/sessions/new" variant="primary" className="mt-6">

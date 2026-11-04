@@ -146,7 +146,7 @@ export async function prepareScreenshot(
   try {
     decoded = await codec.decode(image);
   } catch {
-    throw new CaptureError('failed', 'Kite could not read the screenshot. Try again.');
+    throw new CaptureError('failed', 'Paramount AI could not read the screenshot. Try again.');
   }
   try {
     for (const attempt of encodingPlan(decoded)) {
@@ -166,5 +166,5 @@ export async function prepareScreenshot(
   } finally {
     decoded.close?.();
   }
-  throw new CaptureError('failed', 'Kite could not prepare the screenshot. Try again.');
+  throw new CaptureError('failed', 'Paramount AI could not prepare the screenshot. Try again.');
 }

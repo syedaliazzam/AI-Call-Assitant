@@ -10,7 +10,7 @@ import { createRoot } from 'react-dom/client';
 import { addLibraryItem } from '@/core/storage/library';
 import { createSession, listSessions } from '@/core/storage/sessions';
 import { AskKitePage } from '@/features/ask-kite/AskKitePage';
-import '@/ui/theme.css';
+import '@/ui/tokens/theme.css';
 
 /**
  * Adds the invented items once, then shows the page.

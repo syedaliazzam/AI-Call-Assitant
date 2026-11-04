@@ -35,6 +35,7 @@ const SUITES: readonly Suite[] = [
   { name: 'harness: screenshot', args: ['--filter', '@kite/web', 'test:screenshot'] },
   { name: 'harness: review', args: ['--filter', '@kite/web', 'test:review'] },
   { name: 'harness: live screens', args: ['--filter', '@kite/web', 'test:live-ui'] },
+  { name: 'harness: UI kit', args: ['--filter', '@kite/web', 'test:ui-kit'] },
   { name: 'harness: setup', args: ['--filter', '@kite/web', 'test:setup'] },
   { name: 'harness: prepare', args: ['--filter', '@kite/web', 'test:prepare'] },
   { name: 'harness: ask kite', args: ['--filter', '@kite/web', 'test:ask-kite'] },

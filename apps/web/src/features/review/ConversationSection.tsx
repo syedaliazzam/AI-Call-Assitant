@@ -150,7 +150,7 @@ function AnswerCard({
       className="my-1 border border-ui-border rounded-card bg-ui-surface shadow-card p-3 text-[13px]"
     >
       <p className="text-[13px] text-ui-muted">
-        Kite · {MODE_LABELS[answer.mode]} · Question:{' '}
+        Paramount AI · {MODE_LABELS[answer.mode]} · Question:{' '}
         <span className="text-ui-text" title={answer.question || undefined}>
           {cardQuestion(answer.question, answer.cleanQuestion, terms, 'the latest from Them')}
         </span>
@@ -239,7 +239,7 @@ function AnswerChip({
         onClick={() => setOpen((value) => !value)}
         className="inline-flex w-fit items-center gap-1 self-center rounded-full border border-ui-border bg-ui-band px-3 py-1 text-[13px] font-medium text-ui-text hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
       >
-        Kite answered
+        Paramount AI answered
         <span aria-hidden="true" className={open ? '' : '-rotate-90'}>
           <ChevronDownIcon />
         </span>
@@ -434,7 +434,9 @@ export function ConversationSection({
             return entry.kind === 'answer' ? [card(entry.answer)] : [];
           })}
           {!shown.some((entry) => entry.kind === 'answer') && (
-            <li className="text-[13px] text-ui-muted">Kite gave no answers in this session.</li>
+            <li className="text-[13px] text-ui-muted">
+              Paramount AI gave no answers in this session.
+            </li>
           )}
         </ol>
       )}
@@ -455,8 +457,8 @@ export function ConversationSection({
         }
       >
         <p>
-          The saved transcript of this session is deleted from this computer. Kite&rsquo;s answers
-          and the notes stay. This cannot be undone.
+          The saved transcript of this session is deleted from this computer. Paramount AI&rsquo;s
+          answers and the notes stay. This cannot be undone.
         </p>
       </Dialog>
     </section>

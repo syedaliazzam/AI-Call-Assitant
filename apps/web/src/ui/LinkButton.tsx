@@ -5,7 +5,7 @@
  * Used by: src/features/dashboard (Dashboard, SessionCard), src/features/review/SessionReview.tsx
  * Depends on: next/link, src/ui/Button.tsx (buttonClasses)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (buttons; tokens from src/ui/theme.css)
+ * Theme: docs/design/kite-ui-theme.md §5 (buttons; tokens from src/ui/tokens/theme.css)
  */
 import Link from 'next/link';
 import type { ReactNode } from 'react';

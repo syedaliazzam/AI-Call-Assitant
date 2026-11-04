@@ -48,8 +48,8 @@ export const DESKTOP_DISPLAY_OPTIONS: DisplayCaptureOptions = { audio: true, vid
  */
 function noSystemAudioMessage(os: DesktopOs): string {
   return os === 'mac'
-    ? 'This version of macOS can’t share your computer’s sound with Kite (macOS 13 or later is needed). Use Kite in Chrome and share the meeting tab with its audio instead.'
-    : 'Kite couldn’t capture your computer’s sound. Use Kite in Chrome and share the meeting tab with its audio instead.';
+    ? 'This version of macOS can’t share your computer’s sound with Paramount AI (macOS 13 or later is needed). Use Paramount AI in Chrome and share the meeting tab with its audio instead.'
+    : 'Paramount AI couldn’t capture your computer’s sound. Use Paramount AI in Chrome and share the meeting tab with its audio instead.';
 }
 
 /**
@@ -62,8 +62,8 @@ function noSystemAudioMessage(os: DesktopOs): string {
  */
 function endedAudioMessage(os: DesktopOs): string {
   return os === 'mac'
-    ? 'Kite is not allowed to record system audio. Allow Kite under System Settings → Privacy & Security → Screen & System Audio Recording, then try again.'
-    : 'Kite couldn’t capture your computer’s sound. Try again; if it keeps failing, use Kite in Chrome and share the meeting tab with its audio.';
+    ? 'Paramount AI is not allowed to record system audio. Allow Paramount AI under System Settings → Privacy & Security → Screen & System Audio Recording, then try again.'
+    : 'Paramount AI couldn’t capture your computer’s sound. Try again; if it keeps failing, use Paramount AI in Chrome and share the meeting tab with its audio.';
 }
 
 /** The desktop Platform, plus details about the shell that only exist on desktop. */
@@ -171,7 +171,7 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       if (!bridge.captureScreenshot) {
         throw new CaptureError(
           'not-supported',
-          'This version of the Kite desktop app cannot take screenshots. Install the latest version.',
+          'This version of the Paramount AI desktop app cannot take screenshots. Install the latest version.',
         );
       }
       const result = await bridge.captureScreenshot();
@@ -179,10 +179,10 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       if (result.code === 'permission-denied') {
         throw new CaptureError(
           'permission-denied',
-          'Kite needs the Screen Recording permission: System Settings → Privacy & Security → Screen Recording → turn on Kite, then reopen Kite.',
+          'Paramount AI needs the Screen Recording permission: System Settings → Privacy & Security → Screen Recording → turn on Paramount AI, then reopen Paramount AI.',
         );
       }
-      throw new CaptureError('failed', 'Kite could not take a screenshot. Try again.');
+      throw new CaptureError('failed', 'Paramount AI could not take a screenshot. Try again.');
     },
 
     /**
@@ -195,7 +195,7 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       if (!bridge.openCompactView) {
         throw new CaptureError(
           'not-supported',
-          'This version of the Kite desktop app has no compact view. Install the latest version.',
+          'This version of the Paramount AI desktop app has no compact view. Install the latest version.',
         );
       }
       await bridge.openCompactView(sessionId);

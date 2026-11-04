@@ -110,7 +110,7 @@ export async function openPictureInPicture(
     return;
   }
   const pip = await api.requestWindow(PIP_SIZE);
-  pip.document.title = 'Kite (overlay)';
+  pip.document.title = 'Paramount AI (overlay)';
   copyStyles(document, pip.document);
   const container = pip.document.createElement('div');
   pip.document.body.style.margin = '0';

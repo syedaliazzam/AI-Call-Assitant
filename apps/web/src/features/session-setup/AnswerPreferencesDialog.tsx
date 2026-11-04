@@ -209,7 +209,7 @@ function PreferencesForm({ style, language, onApply, onClose }: AnswerPreference
               </Button>
               <span className="text-[13px] text-ui-muted">
                 {failed
-                  ? 'Kite could not write a preview just now. Try again.'
+                  ? 'Paramount AI could not write a preview just now. Try again.'
                   : 'An invented example, written with these settings.'}
               </span>
             </div>

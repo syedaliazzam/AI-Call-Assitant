@@ -24,7 +24,7 @@ import { CloseIcon, MicIcon, MonitorIcon } from '@/ui/icons';
 export const TARGET_OPTIONS: readonly { value: TargetChoice; label: string }[] = [
   { value: 'auto', label: 'Auto' },
   { value: 'call', label: 'For the call' },
-  { value: 'kite', label: 'Ask Kite' },
+  { value: 'kite', label: 'Ask AI' },
 ];
 
 /** The dictation controls the box shows when speech can be dictated in this call. */
@@ -135,7 +135,7 @@ export function ChatBox({
       </button>
       <select
         aria-label="Who the answer is for"
-        title="Auto decides for each question. For the call: words to say. Ask Kite: a private answer on any topic."
+        title="Auto decides for each question. For the call: words to say. Ask AI: a private answer on any topic."
         value={target}
         onChange={(event) => onTarget(event.target.value as TargetChoice)}
         className="h-9 shrink-0 border-0 bg-transparent px-1 text-base text-ui-muted hover:text-ui-text focus:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-[13px]"

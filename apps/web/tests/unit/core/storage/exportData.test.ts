@@ -117,7 +117,7 @@ describe('exportData', () => {
       file.notes.length,
       file.lessons.length,
     ]).toEqual([1, 1, 1, 1]);
-    expect(exportFileName(1_762_041_600_000)).toBe('kite-export-2025-11-02.json');
+    expect(exportFileName(1_762_041_600_000)).toBe('paramount-ai-export-2025-11-02.json');
   });
 });
 
@@ -189,7 +189,7 @@ describe('parseExport', () => {
     });
     expect(parseExport('{"hello":1}')).toEqual({
       ok: false,
-      error: 'This file is not a Kite export.',
+      error: 'This file is not a Paramount AI export.',
     });
     const newer = { ...JSON.parse(text), version: EXPORT_VERSION + 1 };
     expect(parseExport(JSON.stringify(newer))).toEqual({

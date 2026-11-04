@@ -30,9 +30,9 @@ describe('importJobLink', () => {
   it('shows the message for a page it could not read', async () => {
     const outcome = await importJobLink(
       'https://x.example',
-      reply(422, { message: 'Kite can only read public web pages.' }),
+      reply(422, { message: 'Paramount AI can only read public web pages.' }),
     );
-    expect(outcome).toEqual({ ok: false, message: 'Kite can only read public web pages.' });
+    expect(outcome).toEqual({ ok: false, message: 'Paramount AI can only read public web pages.' });
   });
 
   it('shows a generic message for any other failure', async () => {

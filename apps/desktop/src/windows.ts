@@ -57,6 +57,7 @@ import {
   OVERLAY_RESIZE_CHANNEL,
   SHOW_CALL_WINDOW_CHANNEL,
 } from './channels';
+import { APP_NAME } from './config';
 import { isKiteSender } from './hotkeys';
 import type { Protection } from './protection';
 import { secureWebPreferences } from './security';
@@ -453,7 +454,7 @@ export function compactWindowOptions(
     ...bounds,
     minWidth: COMPACT_MIN_SIZE.width,
     minHeight: COMPACT_MIN_SIZE.height,
-    title: 'Kite (overlay)',
+    title: `${APP_NAME} (overlay)`,
     frame: false,
     alwaysOnTop: true,
     resizable: true,

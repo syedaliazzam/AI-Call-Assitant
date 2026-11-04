@@ -84,7 +84,7 @@ test('1. sign in on the home panel, which is empty (separate desktop data)', asy
   // its own pages, so a sign-in comes back to it rather than going on to the dashboard.
   await signIn(page, testAccount(), true, true);
   await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByRole('dialog', { name: 'Using Kite' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Using Paramount AI' })).toBeVisible();
   await page.getByRole('button', { name: 'Got it' }).click();
   await expect(page.getByText('No sessions yet')).toBeVisible();
   report('desktop sign in, home panel empty', true);

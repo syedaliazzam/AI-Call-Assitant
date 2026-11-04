@@ -12,7 +12,7 @@
  * Used by: src/features/live/LivePage.tsx; tests/integration/harness/live.tsx
  * Depends on: src/ui (Badge, BrandLockup, icons), React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session); ADR-0035
- * Theme: docs/design/kite-ui-theme.md §6 (live view: dark); tokens from src/ui/theme.css
+ * Theme: docs/design/kite-ui-theme.md §6 (live view: dark); tokens from src/ui/tokens/theme.css
  *
  * The breakpoint is the live view's own width (a container query), not the window's: beside
  * the app sidebar a 900 px window leaves about 660 px, too narrow for two useful columns.

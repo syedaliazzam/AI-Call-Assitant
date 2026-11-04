@@ -1,19 +1,23 @@
 /**
  * File: apps/web/app/layout.tsx
- * Purpose: Root HTML frame for every page (signed-in or not): <html>, <body>, font, global CSS
- *          and the page title "Kite".
+ * Purpose: Root HTML frame for every page (signed-in or not): <html>, <body>, font, global CSS, the
+ *          theme (set before the first paint) and the page title "Paramount AI".
  * Used by: Next.js App Router (wraps every route)
- * Depends on: next/font/google (Inter), app/globals.css
- * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1; docs/design/kite-ui-theme.md §4
+ * Depends on: next/font/google (Inter), app/globals.css, src/core/storage/appearancePrefs.ts,
+ *             src/features/appearance/ThemeSync.tsx, src/ui/brand.ts
+ * Architecture: docs/design/paramount-ai-ui-spec.md §1, §2; docs/architecture/kite-architecture-v3.1.md §9.1
  */
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
+import { THEME_BOOT_SCRIPT } from '@/core/storage/appearancePrefs';
+import { ThemeSync } from '@/features/appearance/ThemeSync';
+import { BRAND_NAME } from '@/ui/brand';
 import './globals.css';
 
 /**
- * Inter, Kite's only font (UI theme §4), in three weights. Self-hosted by Next.js at build time, so
- * users' browsers never request Google. Exposed as --font-inter (src/ui/theme.css).
+ * Inter, the only font (spec §1), in three weights. Self-hosted by Next.js at build time, so users'
+ * browsers never request Google. Exposed as --font-inter (src/ui/tokens/theme.css).
  */
 const inter = Inter({
   subsets: ['latin'],
@@ -23,8 +27,8 @@ const inter = Inter({
 
 /** Page title and description shown in the browser tab and the desktop window title. */
 export const metadata: Metadata = {
-  title: 'Kite',
-  description: 'Kite call assistant: live transcript and fast answers during calls.',
+  title: BRAND_NAME,
+  description: `${BRAND_NAME} call assistant: live transcript and fast answers during calls.`,
   // Brand icons (UI U4, scripts/make-brand.ts): the .ico for every browser, the SVG where
   // supported, and the Apple touch icon (on white).
   icons: {
@@ -44,8 +48,16 @@ export const metadata: Metadata = {
  */
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="bg-ui-bg font-sans text-[15px] text-ui-text antialiased">{children}</body>
+    // suppressHydrationWarning: the boot script sets data-theme on this element before React loads.
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <head>
+        {/* Blocking on purpose: it must run before the first paint. It is our own constant text. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
+      <body className="bg-ui-bg font-sans text-[15px] text-ui-text antialiased">
+        <ThemeSync />
+        {children}
+      </body>
     </html>
   );
 }

@@ -8,6 +8,7 @@
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { PRODUCTION_URL, RECORDINGS, report, signIn, testAccount } from './helpers';
+import { pickOption } from '../lib/pick-option';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -47,7 +48,7 @@ test('a mock interview with the real speech model, saved as a Mock session', asy
   await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeVisible();
 
   await page.goto(`${PRODUCTION_URL}/mock`);
-  await page.getByLabel('Length').selectOption('3');
+  await pickOption(page, page.getByLabel('Length'), '3 questions');
   await page.getByRole('button', { name: 'Start interview' }).click();
   const question = page.getByLabel('Question', { exact: true });
   await expect(question).toHaveText(/\S/, { timeout: 60_000 });
@@ -57,7 +58,7 @@ test('a mock interview with the real speech model, saved as a Mock session', asy
   const done = page.getByRole('button', { name: 'Done' });
   await expect(done).toBeVisible({ timeout: 90_000 });
   // The first run on a new profile downloads the speech model (204 MB).
-  const heard = page.getByLabel('What Kite heard');
+  const heard = page.getByLabel('What Paramount AI heard');
   await expect(heard).toHaveText(/\S/, { timeout: 480_000 });
   report('mock listening: words heard', true, {
     words: (await heard.textContent())!.trim().split(/\s+/).length,

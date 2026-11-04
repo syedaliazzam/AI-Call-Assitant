@@ -8,7 +8,7 @@
  *             (getDesktopInfo, for the footer label only), src/core/storage/sidebarPrefs.ts,
  *             ./BrandLockup.tsx, ./icons.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §4 (desktop vs browser), §5
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/tokens/theme.css)
  */
 'use client';
 
@@ -82,7 +82,7 @@ const NAV_GROUPS: readonly NavGroup[] = [
       { label: 'Call sessions', href: '/', icon: <ListIcon /> },
       { label: 'Resumes', href: '/resumes', icon: <ResumeIcon /> },
       { label: 'Documents', href: '/documents', icon: <DocumentIcon /> },
-      { label: 'Ask Kite', href: '/ask-kite', icon: <ChatIcon /> },
+      { label: 'Ask AI', href: '/ask-kite', icon: <ChatIcon /> },
     ],
   },
   {

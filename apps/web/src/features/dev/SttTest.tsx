@@ -611,7 +611,8 @@ export function SttTest() {
       )}
       {loads.at(-1)?.cacheAvailable === false && (
         <p className="rounded-control bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-warning">
-          This browser does not allow Kite to store the model, so it downloads again on every start.
+          This browser does not allow Paramount AI to store the model, so it downloads again on
+          every start.
         </p>
       )}
       {error && (

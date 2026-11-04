@@ -34,7 +34,7 @@ export function AutoAnswerSetting() {
   return (
     <Toggle
       label="Auto-answer (beta)"
-      hint="On: when the other person finishes a question and pauses for a moment, Kite answers by itself. At most one automatic answer every 15 seconds, never while another answer is showing up; these answers are marked Auto. Takes effect from the next call."
+      hint="On: when the other person finishes a question and pauses for a moment, Paramount AI answers by itself. At most one automatic answer every 15 seconds, never while another answer is showing up; these answers are marked Auto. Takes effect from the next call."
       checked={on}
       onChange={(next) => {
         setAutoAnswer(next);

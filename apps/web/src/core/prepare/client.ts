@@ -92,11 +92,14 @@ async function send(
       if (failure?.code && unavailableReason(failure.code, failure.message ?? '')) {
         return { ok: false, message: failure.message ?? 'Claude is unavailable right now.' };
       }
-      return { ok: false, message: 'Kite could not do that just now. Try again.' };
+      return { ok: false, message: 'Paramount AI could not do that just now. Try again.' };
     }
     return { ok: true, data: (await response.json()) as unknown };
   } catch {
-    return { ok: false, message: 'Kite could not do that: check your connection and try again.' };
+    return {
+      ok: false,
+      message: 'Paramount AI could not do that: check your connection and try again.',
+    };
   }
 }
 

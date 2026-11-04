@@ -13,6 +13,7 @@
  * It stays in the taskbar and Alt+Tab like any window (never hidden: CLAUDE.md).
  */
 import type { BrowserWindow, BrowserWindowConstructorOptions, Rectangle, Screen } from 'electron';
+import { APP_NAME } from './config';
 import { secureWebPreferences } from './security';
 import type { Bounds, ShellStore } from './store';
 
@@ -111,7 +112,7 @@ export function homeWindowOptions(
     ...bounds,
     minWidth: HOME_MIN_SIZE.width,
     minHeight: HOME_MIN_SIZE.height,
-    title: 'Kite',
+    title: APP_NAME,
     frame: false,
     resizable: true,
     maximizable: false,

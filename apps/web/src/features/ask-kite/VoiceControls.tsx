@@ -52,7 +52,7 @@ export function MicButton({ state, disabled, onStart, onStop }: MicButtonProps) 
       variant="secondary"
       onClick={onStart}
       disabled={disabled || state === 'loading'}
-      title="Talk instead of typing: Kite sends your message when you pause"
+      title="Talk instead of typing: Paramount AI sends your message when you pause"
     >
       <span aria-hidden="true" className="mr-1.5 inline-flex">
         <MicIcon />
@@ -106,7 +106,7 @@ export function VoiceOptions(props: VoiceOptionsProps) {
       )}
       <label
         className="flex items-center gap-2 pointer-coarse:min-h-11"
-        title="After each reply, Kite listens again"
+        title="After each reply, Paramount AI listens again"
       >
         <input
           type="checkbox"

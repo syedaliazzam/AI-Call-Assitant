@@ -87,7 +87,7 @@ export function LibraryPage({
     <div className="flex flex-col">
       <header className="border-b border-ui-border bg-ui-surface px-4 py-8 sm:px-8">
         <div className="mx-auto max-w-3xl">
-          <Eyebrow>Kite · library</Eyebrow>
+          <Eyebrow>Paramount AI · library</Eyebrow>
           <h1 className="text-[24px] font-semibold text-ui-heading">{words.title}</h1>
           <p className="mt-1 max-w-prose text-[15px] text-ui-muted">
             Saved on this computer. A session keeps its own copy of what it uses, so deleting here
@@ -110,7 +110,7 @@ export function LibraryPage({
           />
           {failed && (
             <p role="alert" className="text-[13px] text-ui-danger">
-              Kite could not open its local storage. Reload the page to try again.
+              Paramount AI could not open its local storage. Reload the page to try again.
             </p>
           )}
           {items && items.length === 0 && (

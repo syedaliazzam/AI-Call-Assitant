@@ -1,37 +1,47 @@
 /**
- * File: apps/web/src/ui/theme.css
- * Purpose: Kite's design tokens: a neutral, minimal theme (light pages, dark live view, overlay),
- *          with shape, shadow and type. The ONLY file allowed to contain hex or rgb() colours
- *          (tests/unit/ui/theme.test.ts checks it).
+ * File: apps/web/src/ui/tokens/theme.css
+ * Purpose: The design tokens (docs/design/paramount-ai-ui-spec.md §1): neutral zinc in light and dark,
+ *          one blue accent, the call overlay, shape, shadow and type. The ONLY file allowed to contain
+ *          hex or rgb() colours (tests/unit/ui/theme.test.ts checks it).
  * Used by: app/globals.css (imported after Tailwind), every component in src/ui
  * Depends on: tailwindcss v4 (@theme), the font set in app/layout.tsx (next/font)
- * Architecture: docs/design/kite-ui-theme.md §3 (tokens), §5 (components), §8 (rules); ADR-0031
+ * Architecture: docs/design/paramount-ai-ui-spec.md §1 (values; it wins over the older theme
+ *               document); docs/design/kite-ui-theme.md §8 (rules); ADR-0031
  *
  * Three layers:
  * 1. Semantic tokens (--k-*), copied from the theme document.
  * 2. Surface tokens (--ui-*): what a component uses. They point at the light tokens by default,
- *    at the dark ones inside an element with class "k-dark", and at the see-through ones inside
- *    "k-glass" (the desktop overlay), so one component works everywhere without a second style.
+ *    at the dark ones on <html data-theme="dark"> (the whole app, v1.2.0) or inside an element with
+ *    class "k-dark", and at the see-through ones inside "k-glass" (the desktop overlay), so one
+ *    component works everywhere without a second style.
  * 3. Tailwind names for the surface tokens (@theme inline): bg-ui-surface, text-ui-muted, …
  *
  * Contrast (computed, WCAG 2.x; tested in tests/unit/ui/theme.test.ts): every text token is at
  * least 4.5:1 on the surfaces it is used on. Two limits to remember:
- * - muted text is 4.3:1 on --k-subtle: on a subtle background use --ui-text;
+ * - muted text is 4.4:1 on --k-subtle: on a subtle background prefer --ui-text (the session card's
+ *   date and role are muted there because the spec says so);
  * - --k-success (#16A34A) is 3.3:1 on white, so it is for dots only; text uses --k-success-text.
  */
 
 :root {
   /* ---- LIGHT pages ---- */
-  --k-page: #f7f7f8;
+  --k-page: #ffffff;
+  --k-sidebar: #fafafa; /* the sidebar and a modal's left rail */
   --k-surface: #ffffff;
-  --k-subtle: #f2f2f4;
+  --k-subtle: #f4f4f5; /* the inner panel, ghost buttons, the active sidebar item */
   --k-border: #e4e4e7;
   --k-text: #18181b; /* 17.7:1 on white */
-  --k-muted: #71717a; /* 4.8:1 on white, 4.5:1 on the page */
+  --k-muted: #71717a; /* 4.8:1 on white, which is also the page */
   --k-primary: #18181b;
   --k-on-primary: #ffffff;
   --k-primary-hover: #27272a;
-  --k-accent: #2563eb; /* links and focus; 5.2:1 on white */
+  --k-accent: #2563eb; /* links, focus and every accent fill; 5.2:1 on white */
+  --k-on-accent: #ffffff; /* 5.2:1 on the accent */
+  --k-accent-hover: #1d4ed8;
+  --k-accent-tint: rgba(37, 99, 235, 0.12); /* the plus tile in the sidebar */
+  --k-control-strong: #e4e4e7; /* a ghost button's hover, a toggle that is off */
+  --k-dot-ended: #a1a1aa; /* the Ended status dot */
+  --k-dot-recording: #ef4444; /* the Live status dot and the red recording dots */
   --k-success: #16a34a; /* dots and icons only */
   --k-success-text: #15803d; /* 5.0:1 on white */
   --k-warning: #b45309; /* 5.0:1 on white */
@@ -41,16 +51,17 @@
   --k-warning-bg: #fffbeb;
   --k-danger-bg: #fef6f6;
 
-  /* ---- DARK surfaces (live view, sign-in panel, browser picture-in-picture) ---- */
-  --k-dark-bg: #18181b;
-  --k-dark-bar: #111113;
-  --k-dark-surface: #27272a;
-  --k-dark-raised: #3f3f46; /* hover and selected rows */
-  --k-dark-border: rgba(255, 255, 255, 0.08);
-  --k-dark-outline: rgba(255, 255, 255, 0.24); /* secondary button border */
-  --k-dark-text: #fafafa;
-  --k-dark-muted: #a1a1aa; /* 6.9:1 on --k-dark-bg, 5.6:1 on --k-dark-surface */
-  --k-dark-primary: #ffffff;
+  /* ---- DARK theme (the whole app when chosen; also the sign-in panel) ---- */
+  --k-dark-bg: #0f0f11;
+  --k-dark-bar: #141417; /* the sidebar and a modal's left rail */
+  --k-dark-surface: #1c1c20; /* the inner panel, cards and menus */
+  --k-dark-raised: #2a2a30; /* hover and selected rows, ghost buttons */
+  --k-dark-control-strong: #3f3f46; /* a ghost button's hover, a toggle that is off */
+  --k-dark-border: #2a2a30;
+  --k-dark-outline: #3f3f46; /* secondary button border */
+  --k-dark-text: #f4f4f5;
+  --k-dark-muted: #a1a1aa; /* 7.7:1 on --k-dark-bg, 6.9:1 on --k-dark-surface */
+  --k-dark-primary: #f4f4f5;
   --k-dark-on-primary: #18181b;
   --k-dark-primary-hover: #e4e4e7;
   --k-dark-accent: #60a5fa; /* links, focus and the "You" label on dark */
@@ -66,6 +77,10 @@
   /* The see-through panel of the desktop overlay; --k-dark-bg is its solid form (picture-in-
      picture, where nothing behind a window can show through). */
   --k-overlay-glass: rgba(24, 24, 27, 0.82);
+  --k-overlay-solid: #18181b;
+  --k-overlay-pill: rgba(39, 39, 42, 0.95); /* pill buttons on the call bars */
+  --k-overlay-pill-hover: rgba(63, 63, 70, 0.95);
+  --k-overlay-keycap: rgba(255, 255, 255, 0.12); /* the key-cap chip on a pill */
   --k-overlay-border: rgba(255, 255, 255, 0.08);
   --k-overlay-button: rgba(255, 255, 255, 0.08);
   --k-overlay-button-hover: rgba(255, 255, 255, 0.14);
@@ -94,6 +109,9 @@
   --k-light-overlay-border: rgba(24, 24, 27, 0.14);
   --k-light-overlay-button: rgba(24, 24, 27, 0.07);
   --k-light-overlay-button-hover: rgba(24, 24, 27, 0.14);
+  --k-light-overlay-pill: rgba(255, 255, 255, 0.92);
+  --k-light-overlay-pill-hover: rgba(244, 244, 245, 0.95);
+  --k-light-overlay-keycap: rgba(24, 24, 27, 0.08);
 
   /* ---- Details ---- */
   --k-backdrop: rgba(24, 24, 27, 0.45); /* behind a modal */
@@ -106,8 +124,12 @@
   --k-radius-control: 10px;
   --k-radius-card: 16px;
   --k-radius-modal: 20px;
-  --k-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --k-shadow-modal: 0 20px 40px rgba(0, 0, 0, 0.12);
+  --k-radius-session: 20px; /* the session card's outer edge; its inner panel uses the card radius */
+  --k-radius-menu: 14px;
+  --k-radius-bar: 12px; /* the call bars */
+  --k-segment-shadow: rgba(0, 0, 0, 0.12); /* under the raised segment of a segmented control */
+  --k-shadow-card: none; /* cards have no shadow (spec §1) */
+  --k-shadow-modal: 0 8px 30px rgba(0, 0, 0, 0.08); /* menus and modals */
   --k-border-w: 1px;
   --k-font:
     var(--font-inter), 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -117,7 +139,18 @@
 /* ---- Surface tokens: light by default (and inside .k-light) ---- */
 :root,
 .k-light {
+  color-scheme: light;
   --ui-bg: var(--k-page);
+  --ui-sidebar: var(--k-sidebar);
+  --ui-panel: var(--k-subtle);
+  --ui-accent-fill: var(--k-accent);
+  --ui-on-accent: var(--k-on-accent);
+  --ui-accent-fill-hover: var(--k-accent-hover);
+  --ui-accent-tint: var(--k-accent-tint);
+  --ui-control-strong: var(--k-control-strong);
+  --ui-selected: var(--k-text);
+  --ui-segment: var(--k-surface);
+  --ui-keycap: var(--k-subtle);
   --ui-band: var(--k-page);
   --ui-surface: var(--k-surface);
   --ui-subtle: var(--k-subtle);
@@ -158,10 +191,22 @@
   --k-focus: 0 0 0 2px var(--ui-focus);
 }
 
-/* ---- Surface tokens: dark (live view, sign-in panel, overlay) ---- */
-.k-dark {
+/* ---- Surface tokens: dark (the chosen theme on <html>; also the sign-in panel and the overlay).
+   An attribute, not the class: rules like ".k-light .k-overlay" must only see a panel's own theme. ---- */
+.k-dark,
+html[data-theme='dark'] {
   color-scheme: dark;
   --ui-bg: var(--k-dark-bg);
+  --ui-sidebar: var(--k-dark-bar);
+  --ui-panel: var(--k-dark-surface);
+  --ui-accent-fill: var(--k-accent);
+  --ui-on-accent: var(--k-on-accent);
+  --ui-accent-fill-hover: var(--k-accent-hover);
+  --ui-accent-tint: var(--k-accent-tint);
+  --ui-control-strong: var(--k-dark-control-strong);
+  --ui-selected: var(--k-dark-text);
+  --ui-segment: var(--k-dark-control-strong);
+  --ui-keycap: var(--k-overlay-keycap);
   --ui-band: var(--k-dark-bar);
   --ui-surface: var(--k-dark-surface);
   --ui-subtle: var(--k-dark-raised);
@@ -201,9 +246,12 @@
 .k-overlay {
   --ui-overlay-button: var(--k-overlay-button);
   --ui-overlay-button-hover: var(--k-overlay-button-hover);
+  --ui-pill: var(--k-overlay-pill);
+  --ui-pill-hover: var(--k-overlay-pill-hover);
+  --ui-keycap: var(--k-overlay-keycap);
   --ui-border: var(--k-overlay-border);
   --ui-surface: transparent;
-  background: var(--k-dark-bg);
+  background: var(--k-overlay-solid);
 }
 
 .k-overlay.k-glass {
@@ -249,6 +297,9 @@
 .k-light .k-overlay {
   --ui-overlay-button: var(--k-light-overlay-button);
   --ui-overlay-button-hover: var(--k-light-overlay-button-hover);
+  --ui-pill: var(--k-light-overlay-pill);
+  --ui-pill-hover: var(--k-light-overlay-pill-hover);
+  --ui-keycap: var(--k-light-overlay-keycap);
   --ui-border: var(--k-light-overlay-border);
   background: var(--k-page);
 }
@@ -310,7 +361,7 @@
    the meeting; clear once the panel is see-through, or the window's material would not show. */
 html:has(.k-overlay),
 html:has(.k-overlay) body {
-  background: var(--k-dark-bg);
+  background: var(--k-overlay-solid);
 }
 
 /* v1.1.0: the stacked overlay's pieces sit apart; the gaps between them show what is behind. */
@@ -342,16 +393,33 @@ html:has(.k-glass) body {
 
 /* Focus: every interactive element shows the accent ring when focused from the keyboard.
    Components draw it themselves (box-shadow var(--k-focus)); this outline is the fallback for
-   anything that does not, for example plain links in text. */
-:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
+   anything that does not, for example plain links in text. In the base layer, so a component's
+   focus:outline-none wins (an unlayered rule here would beat every utility and draw two rings). */
+@layer base {
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+  }
 }
 
 /* Tailwind class names for the tokens (inline: the classes read the variables at run time, so
    .k-dark switches them). */
 @theme inline {
   --color-ui-bg: var(--ui-bg);
+  --color-ui-sidebar: var(--ui-sidebar);
+  --color-ui-panel: var(--ui-panel);
+  --color-ui-accent-fill: var(--ui-accent-fill);
+  --color-ui-on-accent: var(--ui-on-accent);
+  --color-ui-accent-fill-hover: var(--ui-accent-fill-hover);
+  --color-ui-accent-tint: var(--ui-accent-tint);
+  --color-ui-control-strong: var(--ui-control-strong);
+  --color-ui-selected: var(--ui-selected);
+  --color-ui-segment: var(--ui-segment);
+  --color-ui-keycap: var(--ui-keycap);
+  --color-ui-pill: var(--ui-pill);
+  --color-ui-pill-hover: var(--ui-pill-hover);
+  --color-ui-dot-ended: var(--k-dot-ended);
+  --color-ui-dot-recording: var(--k-dot-recording);
   --color-ui-band: var(--ui-band);
   --color-ui-surface: var(--ui-surface);
   --color-ui-subtle: var(--ui-subtle);
@@ -395,7 +463,49 @@ html:has(.k-glass) body {
   --radius-control: var(--k-radius-control);
   --radius-card: var(--k-radius-card);
   --radius-modal: var(--k-radius-modal);
+  --radius-session: var(--k-radius-session);
+  --radius-menu: var(--k-radius-menu);
+  --radius-bar: var(--k-radius-bar);
   --shadow-card: var(--k-shadow-card);
   --shadow-modal: var(--k-shadow-modal);
   --font-sans: var(--k-font);
+  /* The type scale (spec §1), as text-* classes: size, weight and line height together. */
+  --text-page-title: 16px;
+  --text-page-title--font-weight: 600;
+  --text-page-title--line-height: 22px;
+  --text-page-subtitle: 14px;
+  --text-page-subtitle--font-weight: 400;
+  --text-page-subtitle--line-height: 20px;
+  --text-nav: 15px;
+  --text-nav--font-weight: 500;
+  --text-nav--line-height: 20px;
+  --text-section: 13px;
+  --text-section--font-weight: 500;
+  --text-section--line-height: 18px;
+  --text-card-date: 12px;
+  --text-card-date--font-weight: 500;
+  --text-card-date--line-height: 16px;
+  --text-card-title: 18px;
+  --text-card-title--font-weight: 500;
+  --text-card-title--line-height: 24px;
+  --text-card-role: 14px;
+  --text-card-role--line-height: 20px;
+  --text-modal-title: 24px;
+  --text-modal-title--font-weight: 500;
+  --text-modal-title--line-height: 30px;
+  --text-modal-subtitle: 15px;
+  --text-modal-subtitle--line-height: 22px;
+  --text-label: 15px;
+  --text-label--font-weight: 500;
+  --text-label--line-height: 20px;
+  --text-input: 15px;
+  --text-input--line-height: 20px;
+  --text-helper: 14px;
+  --text-helper--line-height: 20px;
+  --text-btn: 15px;
+  --text-btn--font-weight: 600;
+  --text-btn--line-height: 20px;
+  --text-chip: 12px;
+  --text-chip--font-weight: 500;
+  --text-chip--line-height: 16px;
 }

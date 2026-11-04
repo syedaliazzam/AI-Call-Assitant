@@ -201,7 +201,7 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
           {load === 'not-found' &&
             'This session does not exist on this computer. Sessions are saved per browser and per desktop app, so a session created elsewhere does not appear here.'}
           {load === 'failed' &&
-            'Kite could not open its local storage. Reload the page to try again.'}
+            'Paramount AI could not open its local storage. Reload the page to try again.'}
         </p>
         {load !== 'loading' && (
           <LinkButton href="/" className="mt-4">

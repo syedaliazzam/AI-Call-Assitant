@@ -30,7 +30,7 @@ export type JobImportResult =
 
 /** The fallback message when nothing better is known. */
 const FAILED =
-  'Kite could not read that link just now. Paste the details below instead, or try again.';
+  'Paramount AI could not read that link just now. Paste the details below instead, or try again.';
 
 /**
  * Reads a job link.

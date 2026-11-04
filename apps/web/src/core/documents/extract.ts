@@ -208,7 +208,7 @@ export async function extractText(
     return failure(
       name,
       'unsupported-type',
-      `${name}: Kite can read PDF, Word (.docx) and text (.txt) files. For an older .doc file, save it as .docx first.`,
+      `${name}: Paramount AI can read PDF, Word (.docx) and text (.txt) files. For an older .doc file, save it as .docx first.`,
     );
   }
   if (file.size > MAX_FILE_BYTES) {
@@ -256,7 +256,7 @@ export async function extractText(
       name,
       'no-text',
       kind === 'pdf'
-        ? `${name} has no text Kite can read; it looks like a scanned document. Reading text from images (OCR) is not supported in v1.`
+        ? `${name} has no text Paramount AI can read; it looks like a scanned document. Reading text from images (OCR) is not supported in v1.`
         : `${name} has no text.`,
     );
   }

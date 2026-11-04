@@ -100,7 +100,7 @@ export function AnswerPrefsSetting({ isAdmin }: AnswerPrefsSettingProps) {
       />
       <Select
         label="When your CV has no example"
-        hint="Kite uses your closest real project first. Approach answer: specific methods and steps, with no invented numbers, employers or results. Full example story: a made-up story, privately tagged Example, to adapt or not use."
+        hint="Paramount AI uses your closest real project first. Approach answer: specific methods and steps, with no invented numbers, employers or results. Full example story: a made-up story, privately tagged Example, to adapt or not use."
         options={MISSING_OPTIONS}
         value={missing ?? savedMissing}
         onChange={(value) => {

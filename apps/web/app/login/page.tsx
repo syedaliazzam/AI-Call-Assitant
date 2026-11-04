@@ -22,7 +22,10 @@ export default async function LoginPage() {
   if (target) redirect(target);
 
   return (
-    <AuthCard title="Sign in to Kite" subtitle="Use the email and password your admin gave you.">
+    <AuthCard
+      title="Sign in to Paramount AI"
+      subtitle="Use the email and password your admin gave you."
+    >
       <LoginForm />
     </AuthCard>
   );

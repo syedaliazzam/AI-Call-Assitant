@@ -80,9 +80,9 @@ export function LearnedLessons() {
   return (
     <div className="space-y-3 text-[13px]">
       <p className="text-ui-muted">
-        Lessons you approved after a call. Kite sends them, exactly as shown, with every answer in
-        the calls they apply to, as your preferences: they adjust the style and content of answers
-        and never override Kite&apos;s rules. At most the 20 newest are sent.
+        Lessons you approved after a call. Paramount AI sends them, exactly as shown, with every
+        answer in the calls they apply to, as your preferences: they adjust the style and content of
+        answers and never override Paramount AI&apos;s rules. At most the 20 newest are sent.
       </p>
       {approved.length === 0 ? (
         <p className="text-ui-muted">
@@ -160,8 +160,8 @@ export function LearnedLessons() {
         }
       >
         <p>
-          Every approved lesson and every rejected proposal will be deleted. Kite stops sending
-          lessons with answers from the next session you open. This cannot be undone.
+          Every approved lesson and every rejected proposal will be deleted. Paramount AI stops
+          sending lessons with answers from the next session you open. This cannot be undone.
         </p>
       </Dialog>
     </div>

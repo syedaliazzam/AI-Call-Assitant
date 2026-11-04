@@ -10,6 +10,7 @@
  */
 import { chromium, expect, test, type Browser, type Page } from '@playwright/test';
 import { BASE_URL, WIDTHS, check, openAt, signIn } from './shots';
+import { pickOption } from '../lib/pick-option';
 
 let browser: Browser | null = null;
 
@@ -148,7 +149,7 @@ for (const size of WIDTHS) {
 
     // Sign-in (signed out).
     await page.goto(`${BASE_URL}/login`);
-    await expect(page.getByRole('heading', { name: 'Sign in to Kite' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sign in to Paramount AI' })).toBeVisible();
     await check(watched, size, 'sign-in');
 
     await signIn(page);
@@ -191,7 +192,7 @@ for (const size of WIDTHS) {
 
     // The wizard, with an invented document attached.
     await page.goto(`${BASE_URL}/sessions/new`);
-    await page.getByLabel('Session type').selectOption('regular');
+    await pickOption(page, page.getByLabel('Session type'), 'Regular');
     await page.getByLabel('Company').fill(COMPANY);
     await page.getByLabel('Topic').fill('Renewal call');
     await page.locator('input[type="file"]').setInputFiles({
@@ -251,7 +252,7 @@ for (const size of WIDTHS) {
     await check(watched, size, 'review');
     await page.getByRole('button', { name: 'Transcript', exact: true }).click();
     // Conversation has a chip for each answer; Answers lists them as cards (v1.1.0).
-    await expect(page.getByRole('button', { name: 'Kite answered' })).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Paramount AI answered' })).toHaveCount(2);
     await page.getByRole('button', { name: 'Answers', exact: true }).click();
     await expect(page.getByRole('listitem', { name: 'Saved answer' })).toHaveCount(2);
     await check(watched, size, 'review-transcript');
@@ -268,7 +269,7 @@ for (const size of WIDTHS) {
 
     // Ask Kite (ADR-0030): the empty chat; nothing is sent, so no Claude call is made.
     await page.goto(`${BASE_URL}/ask-kite`);
-    await expect(page.getByLabel('Ask Kite', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Ask AI', { exact: true })).toBeVisible();
     await check(watched, size, 'ask-kite');
     await page.getByRole('button', { name: 'Attach' }).click();
     await expect(page.getByRole('dialog', { name: 'Attach to this chat' })).toBeVisible();

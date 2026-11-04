@@ -133,7 +133,7 @@ function modelErrorMessage(error: unknown): string {
   const code = (error as { code?: string }).code;
   switch (code) {
     case 'download-network':
-      return 'Kite couldn’t download the speech model. Check your internet connection, then try again.';
+      return 'Paramount AI couldn’t download the speech model. Check your internet connection, then try again.';
     case 'download-checksum':
       return 'The speech model download was damaged or changed. Try again.';
     case 'download-quota':
@@ -156,8 +156,8 @@ function channelEndedMessage(speaker: Speaker, platform: 'desktop' | 'browser'):
   if (speaker === 'you')
     return 'The microphone stopped (unplugged or taken by another app). Reconnect to continue.';
   return platform === 'browser'
-    ? 'Sharing stopped, so Kite can’t hear the meeting. Reconnect and share the meeting tab again.'
-    : 'Kite stopped hearing your computer’s sound. Reconnect to continue.';
+    ? 'Sharing stopped, so Paramount AI can’t hear the meeting. Reconnect and share the meeting tab again.'
+    : 'Paramount AI stopped hearing your computer’s sound. Reconnect to continue.';
 }
 
 /**
@@ -572,7 +572,7 @@ export function LivePage({
       if (error instanceof CallCaptureError) {
         setChannelErrors({ [error.channel]: error.message });
       } else if (model.status !== 'error') {
-        setChannelErrors({ them: 'Kite could not connect. Try again.' });
+        setChannelErrors({ them: 'Paramount AI could not connect. Try again.' });
       }
     }
   };
@@ -759,7 +759,7 @@ export function LivePage({
             role="alert"
             className="mx-auto mt-4 max-w-3xl rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
           >
-            A call is already running in another Kite window. End it first.
+            A call is already running in another Paramount AI window. End it first.
           </p>
         )}
         <ConnectPanel
@@ -905,7 +905,7 @@ export function LivePage({
             className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
           >
             Some transcript lines could not be saved on this computer (is the disk full?). The call
-            continues; Kite keeps trying.
+            continues; Paramount AI keeps trying.
           </p>
         )}
         {/* Echo lines (the other side's voice from the speakers, picked up by the

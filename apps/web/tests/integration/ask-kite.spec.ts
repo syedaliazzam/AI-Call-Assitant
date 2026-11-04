@@ -69,7 +69,7 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
       }
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(
-        '<!doctype html><html><head><meta charset="utf-8"><title>Ask Kite harness</title>' +
+        '<!doctype html><html><head><meta charset="utf-8"><title>Ask AI harness</title>' +
           '<link rel="stylesheet" href="/harness/ask-kite.css"></head>' +
           '<body><div id="root"></div><script type="module" src="/harness/ask-kite.js"></script></body></html>',
       );
@@ -114,7 +114,7 @@ test.beforeAll(async () => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin });
   page = await context.newPage();
   await page.goto(origin);
-  await expect(page.getByLabel('Ask Kite', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Ask AI', { exact: true })).toBeVisible();
 });
 
 test.afterAll(async () => {
@@ -124,9 +124,9 @@ test.afterAll(async () => {
 });
 
 test('a question streams an answer with code, and the hidden line never shows', async () => {
-  await page.getByLabel('Ask Kite', { exact: true }).fill('How do I print in Python?');
-  await page.getByLabel('Ask Kite', { exact: true }).press('Enter');
-  const answer = page.getByRole('listitem', { name: 'Kite answered' });
+  await page.getByLabel('Ask AI', { exact: true }).fill('How do I print in Python?');
+  await page.getByLabel('Ask AI', { exact: true }).press('Enter');
+  const answer = page.getByRole('listitem', { name: 'Paramount AI answered' });
   await expect(answer).toContainText('Here is how.');
   await expect(answer.locator('pre')).toHaveText('print("hi")');
   await expect(answer).not.toContainText('[[');
@@ -139,10 +139,12 @@ test('the chat stays after a reload, and a follow-up sends the chat so far', asy
   await page.reload();
   const chats = page.getByRole('navigation', { name: 'Chats' });
   await chats.getByRole('button', { name: 'How do I print in Python?', exact: true }).click();
-  await expect(page.getByRole('listitem', { name: 'Kite answered' })).toContainText('Here is how.');
-  await page.getByLabel('Ask Kite', { exact: true }).fill('And in Go?');
+  await expect(page.getByRole('listitem', { name: 'Paramount AI answered' })).toContainText(
+    'Here is how.',
+  );
+  await page.getByLabel('Ask AI', { exact: true }).fill('And in Go?');
   await page.getByRole('button', { name: 'Send' }).click();
-  await expect(page.getByRole('listitem', { name: 'Kite answered' })).toHaveCount(2);
+  await expect(page.getByRole('listitem', { name: 'Paramount AI answered' })).toHaveCount(2);
   expect(received.at(-1)?.history).toEqual([
     { role: 'you', text: 'How do I print in Python?' },
     { role: 'kite', text: 'Here is how.\n```python\nprint("hi")\n```' },
@@ -157,9 +159,9 @@ test('a library item and a past session can be attached, and are sent', async ()
   await page.getByRole('button', { name: 'Attach' }).click();
   await page.getByRole('button', { name: /Quillon Labs/ }).click();
   await expect(attached).toContainText('Session: Quillon Labs');
-  await page.getByLabel('Ask Kite', { exact: true }).fill('From these, what stands out?');
-  await page.getByLabel('Ask Kite', { exact: true }).press('Enter');
-  await expect(page.getByRole('listitem', { name: 'Kite answered' })).toHaveCount(3);
+  await page.getByLabel('Ask AI', { exact: true }).fill('From these, what stands out?');
+  await page.getByLabel('Ask AI', { exact: true }).press('Enter');
+  await expect(page.getByRole('listitem', { name: 'Paramount AI answered' })).toHaveCount(3);
   const sent = received.at(-1)!;
   expect(sent.attachments?.map((item) => item.name)).toEqual([
     'invented-cv.txt',
@@ -189,7 +191,7 @@ test('a pasted screenshot is sent as a JPEG and is not kept', async () => {
     page.getByRole('list', { name: 'Screenshots to send' }).getByRole('img'),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Send' }).click();
-  await expect(page.getByRole('listitem', { name: 'Kite answered' })).toHaveCount(4);
+  await expect(page.getByRole('listitem', { name: 'Paramount AI answered' })).toHaveCount(4);
   const sent = received.at(-1)!;
   expect(sent.images).toHaveLength(1);
   expect(sent.images![0]).toMatch(/^data:image\/jpeg;base64,/);

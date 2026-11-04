@@ -157,7 +157,7 @@ function micError(error: unknown): CallCaptureError {
     return new CallCaptureError(
       'you',
       'permission-denied',
-      'Kite can’t use your microphone. Allow microphone access for Kite, then click Connect again.',
+      'Paramount AI can’t use your microphone. Allow microphone access for Paramount AI, then click Connect again.',
     );
   }
   if (name === 'NotFoundError' || name === 'OverconstrainedError') {

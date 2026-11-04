@@ -195,7 +195,7 @@ export function transcriptFileName(session: Pick<Session, 'company'>, extension:
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-+|-+$/g, '');
-  return `kite-transcript${name ? `-${name}` : ''}.${extension}`;
+  return `paramount-ai-transcript${name ? `-${name}` : ''}.${extension}`;
 }
 
 /** The time format in downloads. */
@@ -220,7 +220,7 @@ function paragraphs(
     .filter(Boolean)
     .join(' ');
   const out: PdfLine[] = [
-    { text: about ? `Kite transcript: ${about}` : 'Kite transcript', bold: true },
+    { text: about ? `Paramount AI transcript: ${about}` : 'Paramount AI transcript', bold: true },
     { text: '' },
   ];
   const them = session.contactName?.trim() || 'Them';
@@ -252,7 +252,7 @@ function paragraphs(
         : '';
     // A private answer was read by the user, not said on the call: the file says which it was.
     const kind = item.answer.meta?.target === 'kite' ? 'private answer' : 'answer';
-    out.push({ text: `[${CLOCK.format(item.at)}] Kite ${kind}${question}`, bold: true });
+    out.push({ text: `[${CLOCK.format(item.at)}] Paramount AI ${kind}${question}`, bold: true });
     out.push({ text: headline, indent: 14 });
     for (const bullet of bullets) out.push({ text: `- ${bullet}`, indent: 14 });
     for (const block of code) {
@@ -299,7 +299,7 @@ export function transcriptPdf(
   terms: readonly DisplayTerm[] = [],
 ): PdfResult {
   const title = session.company.trim()
-    ? `Kite transcript: ${session.company.trim()}`
-    : 'Kite transcript';
+    ? `Paramount AI transcript: ${session.company.trim()}`
+    : 'Paramount AI transcript';
   return writePdf(title, paragraphs(session, items, terms));
 }

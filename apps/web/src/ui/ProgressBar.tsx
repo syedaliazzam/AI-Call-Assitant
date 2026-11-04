@@ -4,7 +4,7 @@
  * Used by: src/features/live/ConnectPanel.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/tokens/theme.css)
  */
 
 /** Props for ProgressBar. */

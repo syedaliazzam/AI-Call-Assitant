@@ -241,7 +241,7 @@ export function HomePanel({ name, email }: HomePanelProps) {
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
         {failed ? (
           <p role="alert" className="p-4 text-[14px] text-ui-danger">
-            Kite could not read your sessions on this computer. Reopen it and try again.
+            Paramount AI could not read your sessions on this computer. Reopen it and try again.
           </p>
         ) : sessions === null ? (
           <p className="p-4 text-[14px] text-ui-muted">Loading…</p>

@@ -591,7 +591,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       },
       (error: unknown) =>
         setCompactNotice(
-          error instanceof Error ? error.message : 'Kite could not open the overlay.',
+          error instanceof Error ? error.message : 'Paramount AI could not open the overlay.',
         ),
     );
   }, [sessionId]);
@@ -712,8 +712,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
           className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
         >
           Another app already uses {taken.join(', ')}, so{' '}
-          {taken.length === 1 ? 'it works' : 'they work'} only while Kite is in front. Close that
-          app&rsquo;s shortcut, or use the buttons.
+          {taken.length === 1 ? 'it works' : 'they work'} only while Paramount AI is in front. Close
+          that app&rsquo;s shortcut, or use the buttons.
         </p>
       )}
       {!online && (

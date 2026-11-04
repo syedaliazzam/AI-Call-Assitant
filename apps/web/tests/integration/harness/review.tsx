@@ -221,7 +221,9 @@ window.kiteReviewHarness = {
     root.render(
       <div className="mx-auto max-w-3xl p-8">
         <section className="rounded-lg border border-slate-200 bg-white p-6">
-          <h2 className="mb-4 text-base font-semibold text-slate-900">What Kite has learned</h2>
+          <h2 className="mb-4 text-base font-semibold text-slate-900">
+            What Paramount AI has learned
+          </h2>
           <LearnedLessons />
         </section>
       </div>,

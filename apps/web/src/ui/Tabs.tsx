@@ -5,7 +5,7 @@
  * Used by: src/features/dashboard/Dashboard.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F1 filter by type), §9.1
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/tokens/theme.css)
  */
 
 /** One tab. */

@@ -39,8 +39,8 @@ export function DailyLimitForm({ limit, defaultLimit, action }: DailyLimitFormPr
     <section className="border border-ui-border rounded-card bg-ui-surface shadow-card p-6">
       <h2 className="text-[18px] font-semibold text-ui-heading">Daily limit</h2>
       <p className="mt-1 text-[13px] text-ui-muted">
-        Claude requests each person may make per day (answers, chat, screenshots, Ask Kite, notes).
-        It resets at midnight UTC. Changes apply within a minute.
+        Claude requests each person may make per day (answers, chat, screenshots, Ask AI, notes). It
+        resets at midnight UTC. Changes apply within a minute.
       </p>
       <form action={formAction} className="mt-4 flex flex-wrap items-end gap-3">
         <Input

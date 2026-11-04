@@ -740,7 +740,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           setNotice(
             error instanceof CaptureError
               ? error.message
-              : 'Kite could not take a screenshot. Try again.',
+              : 'Paramount AI could not take a screenshot. Try again.',
           );
         } finally {
           setCapturing(false);

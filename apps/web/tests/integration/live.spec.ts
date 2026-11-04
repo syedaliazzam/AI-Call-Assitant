@@ -156,7 +156,7 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(
         '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-          `<title>Kite live harness</title><link rel="stylesheet" href="/harness/live.css">${fonts}</head>` +
+          `<title>Paramount AI live harness</title><link rel="stylesheet" href="/harness/live.css">${fonts}</head>` +
           '<body class="font-sans"><div id="root"></div><script type="module" src="/harness/live.js"></script></body></html>',
       );
     })();
@@ -491,7 +491,7 @@ test('overlay: a coding answer, a figure to check and a private answer fit (ADR-
     if (size.width >= 620) {
       await expect(
         page.getByRole('radiogroup', { name: 'Who the answer is for' }).getByRole('radio', {
-          name: 'Ask Kite',
+          name: 'Ask AI',
         }),
       ).toHaveAttribute('aria-checked', 'true');
     }

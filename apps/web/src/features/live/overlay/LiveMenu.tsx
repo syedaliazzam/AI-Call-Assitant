@@ -158,7 +158,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           label="Auto answer"
           checked={state?.autoAnswer ?? false}
           disabled={!state}
-          info="Kite answers a finished question by itself, at most once every 15 seconds. This call only."
+          info="Paramount AI answers a finished question by itself, at most once every 15 seconds. This call only."
           onChange={(on) => onCommand({ type: 'auto-answer', on })}
         />
       </MenuBlock>

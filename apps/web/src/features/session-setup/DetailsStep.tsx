@@ -121,8 +121,8 @@ export function DetailsStep({
         onChange={(event) => onChange({ description: event.target.value })}
         hint={
           aboutJob
-            ? 'The job posting, or anything Kite should know about this interview.'
-            : 'Anything Kite should know about this call: goals, people, background.'
+            ? 'The job posting, or anything Paramount AI should know about this interview.'
+            : 'Anything Paramount AI should know about this call: goals, people, background.'
         }
         rows={4}
         maxLength={5_000}

@@ -1,30 +1,32 @@
 /**
  * File: apps/web/src/ui/Button.tsx
- * Purpose: The one button style used across Kite, with a few visual variants and sizes.
- * Used by: src/features/dashboard/Dashboard.tsx (and every later feature); src/ui/LinkButton.tsx
+ * Purpose: The one button style used across the app, with a few visual variants and sizes (spec §1:
+ *          15/600, 40 px tall, radius 10; 44 px in modal footers).
+ * Used by: every feature; src/ui/LinkButton.tsx, src/ui/SplitButton.tsx
  * Depends on: React
- * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
+ * Architecture: docs/design/paramount-ai-ui-spec.md §1; docs/architecture/kite-architecture-v3.1.md §9.1
+ * Theme: tokens from src/ui/tokens/theme.css
  */
 import type { ButtonHTMLAttributes } from 'react';
 
 /** Visual style of a button. */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type ButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger';
 
 /** Height and padding of a button. */
-export type ButtonSize = 'sm' | 'md';
+export type ButtonSize = 'sm' | 'md' | 'lg';
 
 /** Props for Button. Every normal <button> attribute (onClick, disabled, type, …) also works. */
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /**
    * Visual style. Default 'primary'.
-   * - primary: the main action on a screen (solid dark on light pages, white on dark); one per view.
+   * - primary: the main action on a screen (solid dark on light pages, light on dark); one per view.
+   * - accent: the brand action (Create session).
    * - secondary: other actions (white with a thin border; outlined on dark surfaces).
-   * - ghost: low-emphasis actions such as "Cancel" (text only).
-   * - danger: destructive actions such as "Delete" (outlined in the danger colour).
+   * - ghost: low-emphasis actions such as "Cancel" (a grey fill).
+   * - danger: destructive actions such as "Delete" and "Exit" (solid red with white text).
    */
   variant?: ButtonVariant;
-  /** Size. Default 'md'; 'sm' is for table rows and toolbars. */
+  /** Size. Default 'md' (40 px); 'sm' (32 px) is for table rows and toolbars, 'lg' (44 px) for modal footers. */
   size?: ButtonSize;
 }
 
@@ -32,19 +34,22 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   // The solid button; the tokens switch on dark surfaces. One per view.
   primary: 'bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover',
+  // The brand blue, the same in both themes.
+  accent: 'bg-ui-accent-fill text-ui-on-accent hover:bg-ui-accent-fill-hover',
   // White with a thin border; outlined on dark surfaces (the --ui-secondary tokens switch).
   secondary:
     'border border-ui-secondary-border bg-ui-secondary-bg text-ui-secondary hover:border-ui-secondary-hover-border hover:bg-ui-secondary-hover-bg',
-  // Text only, for low-emphasis actions such as Cancel.
-  ghost: 'text-ui-text hover:bg-ui-hover',
-  // Outlined in the danger colour; destructive actions only.
-  danger: 'border border-ui-danger text-ui-danger hover:bg-ui-hover',
+  // A grey fill, for low-emphasis actions such as Cancel.
+  ghost: 'bg-ui-subtle text-ui-text hover:bg-ui-control-strong',
+  // Solid red with white text; destructive actions only.
+  danger: 'bg-ui-end text-ui-on-end hover:opacity-90',
 };
 
 /** Tailwind classes for each size. */
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-[13px]',
-  md: 'h-10 px-4 text-[15px]',
+  sm: 'h-8 px-3 text-[13px] font-semibold',
+  md: 'h-10 px-4 text-btn',
+  lg: 'h-11 px-5 text-btn',
 };
 
 /**
@@ -64,7 +69,7 @@ export function buttonClasses(
 ): string {
   return [
     // k-btn marks every button-looking control (the UI screenshot test checks their size).
-    'k-btn inline-flex items-center justify-center gap-2 rounded-control font-medium transition-colors duration-150',
+    'k-btn inline-flex items-center justify-center gap-2 rounded-control transition-colors duration-150',
     // Touch screens: at least 44 px tall (theme review, UI U1).
     'pointer-coarse:min-h-11',
     'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',

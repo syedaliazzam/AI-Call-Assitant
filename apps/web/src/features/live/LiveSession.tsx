@@ -157,7 +157,7 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
           <p className="mt-2 text-[13px] text-ui-muted">
             {loaded.state === 'not-found'
               ? 'This session does not exist on this computer. Sessions are saved per browser and per desktop app, so a session created elsewhere does not appear here.'
-              : 'Kite could not open its local storage. Reload the page to try again.'}
+              : 'Paramount AI could not open its local storage. Reload the page to try again.'}
           </p>
           <LinkButton href="/" className="mt-4">
             Back to Call Sessions

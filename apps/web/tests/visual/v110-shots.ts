@@ -140,7 +140,7 @@ async function sideBySide(context: BrowserContext, name: string, frame: string):
     `<!doctype html><body style="margin:0;background:#334155;color:#fff;font:15px sans-serif">
       <div style="display:flex;gap:16px;padding:12px;align-items:flex-start">
         <div><p>Reference: ${frame}</p><img style="max-width:900px;max-height:900px" src="${data(reference)}"></div>
-        <div><p>Kite: ${name}</p><img style="max-width:900px;max-height:900px" src="${data(path.join(OUT, `${name}.png`))}"></div>
+        <div><p>Paramount AI: ${name}</p><img style="max-width:900px;max-height:900px" src="${data(path.join(OUT, `${name}.png`))}"></div>
       </div></body>`,
   );
   await page.waitForTimeout(150);
@@ -167,7 +167,7 @@ async function main(): Promise<void> {
   await homeContext.addInitScript(FAKE_SHELL);
   const home = await homeContext.newPage();
   await home.goto(`${RIG}/home`);
-  const notice = home.getByRole('dialog', { name: 'Using Kite' });
+  const notice = home.getByRole('dialog', { name: 'Using Paramount AI' });
   await notice.waitFor();
   await shot(home, 'acceptable-use-notice');
   await notice.getByRole('button', { name: 'Got it' }).click();

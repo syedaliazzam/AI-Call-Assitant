@@ -14,7 +14,7 @@
     ; Smart App Control block the build's installer stub; Day 6 Stage 3).
     Delete "$LOCALAPPDATA\kite-updater\installer.exe"
     RMDir "$LOCALAPPDATA\kite-updater"
-    MessageBox MB_YESNO|MB_ICONQUESTION "Keep your Kite data on this computer (sessions, transcripts and settings)?$\r$\n$\r$\nChoose No to remove everything." /SD IDNO IDYES kite_keep_data
+    MessageBox MB_YESNO|MB_ICONQUESTION "Keep your Paramount AI data on this computer (sessions, transcripts and settings)?$\r$\n$\r$\nChoose No to remove everything." /SD IDNO IDYES kite_keep_data
       RMDir /r "$APPDATA\Kite"
     kite_keep_data:
   ${endIf}

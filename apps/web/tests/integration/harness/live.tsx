@@ -63,7 +63,7 @@ const VIEW = new URLSearchParams(window.location.search).get('view') ?? 'live';
 /** Error texts for ?view=connect-errors (Day 6 Stage 4e), as the app words them. */
 const CONNECT_ERRORS = {
   /** core/audio/capture.ts micError(), permission denied. */
-  mic: 'Kite can\u2019t use your microphone. Allow microphone access for Kite, then click Connect again.',
+  mic: 'Paramount AI can\u2019t use your microphone. Allow microphone access for Paramount AI, then click Connect again.',
   /** core/stt/download.ts, quota exceeded. */
   model:
     'Not enough disk space to store the speech model (about 205 MB needed). Free some space, then try again.',

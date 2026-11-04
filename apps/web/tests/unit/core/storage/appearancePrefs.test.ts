@@ -20,6 +20,11 @@ import {
   ZOOM_KEY,
   ZOOM_RANGE,
 } from '@/core/storage/appearancePrefs';
+import {
+  applyResolvedTheme,
+  THEME_BOOT_SCRIPT,
+  THEME_KEY as BOOT_THEME_KEY,
+} from '@/core/storage/appearancePrefs';
 
 /**
  * An in-memory localStorage.
@@ -126,5 +131,21 @@ describe('storage and listeners', () => {
     setZoom(1);
     fromElsewhere(THEME_KEY);
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the theme on the whole document (v1.2.0)', () => {
+  it('paints dark through the data-theme attribute, and light by removing it', () => {
+    const root = { dataset: {} as DOMStringMap };
+    applyResolvedTheme('dark', root);
+    expect(root.dataset.theme).toBe('dark');
+    applyResolvedTheme('light', root);
+    expect(root.dataset.theme).toBeUndefined();
+  });
+
+  it('the script that runs before the first paint reads the same key and survives blocked storage', () => {
+    expect(THEME_BOOT_SCRIPT).toContain(JSON.stringify(BOOT_THEME_KEY));
+    expect(THEME_BOOT_SCRIPT.startsWith('try{')).toBe(true);
+    expect(THEME_BOOT_SCRIPT.endsWith('catch(e){}')).toBe(true);
   });
 });

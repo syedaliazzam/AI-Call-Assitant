@@ -35,9 +35,9 @@ const MIN_PAGE_CHARS = 80;
 /** What the user is told for each reason a page could not be read. */
 const PAGE_MESSAGES: Record<JobPageFailure, string> = {
   bad_url: 'That does not look like a web link. Copy the full address of the job page.',
-  blocked: 'Kite can only read public web pages.',
+  blocked: 'Paramount AI can only read public web pages.',
   unreadable:
-    'Kite could not read that page: some job sites block automatic reading. Paste the details below instead.',
+    'Paramount AI could not read that page: some job sites block automatic reading. Paste the details below instead.',
 };
 
 /**

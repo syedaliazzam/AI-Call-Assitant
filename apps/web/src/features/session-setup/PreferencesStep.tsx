@@ -120,7 +120,7 @@ function KeyTermChips({
   const terms = parseKeyTerms(text);
   if (terms.length === 0) return null;
   return (
-    <ul aria-label="Key terms Kite will use" className="mt-2 flex flex-wrap gap-1.5">
+    <ul aria-label="Key terms Paramount AI will use" className="mt-2 flex flex-wrap gap-1.5">
       {terms.map((term) => (
         <li
           key={term}
@@ -216,7 +216,7 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
         icon={<PenIcon />}
         title="AI instructions"
         description={
-          draft.instructions.trim() || 'None yet. Tell Kite who you are and how to answer.'
+          draft.instructions.trim() || 'None yet. Tell Paramount AI who you are and how to answer.'
         }
         control={
           <Button
@@ -253,7 +253,7 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
           <div className="flex min-w-0 flex-col gap-2">
             <Toggle
               label="Save transcript"
-              hint="Keeps the transcript on this computer after the call. Off: it is discarded when the call ends. Kite's answers, with your ratings and notes, are always kept on this computer (until you delete the session), so you can review them and Kite can learn from them."
+              hint="Keeps the transcript on this computer after the call. Off: it is discarded when the call ends. Paramount AI's answers, with your ratings and notes, are always kept on this computer (until you delete the session), so you can review them and Paramount AI can learn from them."
               checked={draft.saveTranscript}
               onChange={(saveTranscript) => onChange({ saveTranscript })}
             />
@@ -274,7 +274,7 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
               onChange={(event) =>
                 onChange({ preferences: { ...preferences, keyTerms: event.target.value } })
               }
-              hint="Names and terms Kite should listen for, separated by commas or new lines: people, products, companies. They help the transcript spell them right."
+              hint="Names and terms Paramount AI should listen for, separated by commas or new lines: people, products, companies. They help the transcript spell them right."
               rows={3}
               maxLength={5_000}
             />
@@ -312,7 +312,7 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
         }
       >
         <Textarea
-          label="Context for Kite"
+          label="Context for Paramount AI"
           value={instructions}
           onChange={(event) => setInstructions(event.target.value)}
           hint="Who you are, how you like to answer, and anything to always or never mention. For example: answer as a solutions engineer; mention the 30-day trial when relevant."

@@ -297,7 +297,7 @@ export async function exportData(now = Date.now()): Promise<ExportFile> {
  * Called from: DataTransfer.tsx
  */
 export function exportFileName(now = Date.now()): string {
-  return `kite-export-${new Date(now).toISOString().slice(0, 10)}.json`;
+  return `paramount-ai-export-${new Date(now).toISOString().slice(0, 10)}.json`;
 }
 
 /** The result of checking a file: the export, or why it cannot be imported. */
@@ -329,29 +329,33 @@ export interface ExportRejected {
  */
 export function parseExport(text: string): ParsedExport {
   if (text.length > MAX_IMPORT_BYTES) {
-    return { ok: false, error: 'This file is too large to be a Kite export.' };
+    return { ok: false, error: 'This file is too large to be a Paramount AI export.' };
   }
   let json: unknown;
   try {
     json = JSON.parse(text);
   } catch {
-    return { ok: false, error: 'This file is not a Kite export (it is not JSON).' };
+    return { ok: false, error: 'This file is not a Paramount AI export (it is not JSON).' };
   }
   const head = json as { format?: unknown; version?: unknown } | null;
   if (!head || typeof head !== 'object' || head.format !== EXPORT_FORMAT) {
-    return { ok: false, error: 'This file is not a Kite export.' };
+    return { ok: false, error: 'This file is not a Paramount AI export.' };
   }
   if (typeof head.version !== 'number' || head.version > EXPORT_VERSION) {
     return {
       ok: false,
-      error: 'This export was made by a newer version of Kite. Update Kite, then import it.',
+      error:
+        'This export was made by a newer version of Paramount AI. Update Paramount AI, then import it.',
     };
   }
   const result = ExportSchema.safeParse(json);
   if (!result.success) {
     // Name the place only (for example "answers.3.rating"), never the content.
     const where = result.error.issues[0]?.path.join('.') ?? 'unknown';
-    return { ok: false, error: `This Kite export is damaged (at ${where}). Nothing was imported.` };
+    return {
+      ok: false,
+      error: `This Paramount AI export is damaged (at ${where}). Nothing was imported.`,
+    };
   }
   // Every record field is checked above; the notes items are checked on the fields Kite reads
   // and kept whole (looseObject), so the type is narrowed through unknown.

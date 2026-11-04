@@ -189,7 +189,9 @@ export function MockInterview({
     });
     if (!alive.current) return;
     if (!outcome.ok || outcome.data.questions.length === 0) {
-      setFailure(outcome.ok ? 'Kite could not write any questions. Try again.' : outcome.message);
+      setFailure(
+        outcome.ok ? 'Paramount AI could not write any questions. Try again.' : outcome.message,
+      );
       setPhase('choose');
       return;
     }
@@ -301,7 +303,7 @@ export function MockInterview({
     <PageShell
       eyebrow="Prepare"
       title="Mock Interview"
-      description="Kite asks the questions out loud and listens to your answers. Your voice stays on this computer."
+      description="Paramount AI asks the questions out loud and listens to your answers. Your voice stays on this computer."
       width="md"
     >
       {failure && (
@@ -335,8 +337,8 @@ export function MockInterview({
           />
           <Select label="Length" options={COUNT_OPTIONS} value={count} onChange={setCount} />
           <p className="text-[13px] text-ui-muted">
-            Use headphones if you can. The first time, Kite downloads its speech model (204 MB, one
-            time only); you can type your answers until it is ready.
+            Use headphones if you can. The first time, Paramount AI downloads its speech model (204
+            MB, one time only); you can type your answers until it is ready.
           </p>
           <div>
             <Button onClick={() => void start()}>Start interview</Button>
@@ -363,7 +365,7 @@ export function MockInterview({
           </p>
           {phase === 'asking' && (
             <p role="status" className="text-[13px] text-ui-muted">
-              Kite is asking…
+              Paramount AI is asking…
             </p>
           )}
           {listening && (
@@ -375,7 +377,7 @@ export function MockInterview({
               </p>
               {(heard || partial) && (
                 <p
-                  aria-label="What Kite heard"
+                  aria-label="What Paramount AI heard"
                   className="rounded-control bg-ui-band px-3 py-2 text-[15px]"
                 >
                   {heard} <span className="text-ui-muted">{partial}</span>
@@ -395,7 +397,7 @@ export function MockInterview({
           )}
           {phase === 'judging' && (
             <p role="status" className="text-[13px] text-ui-muted">
-              Kite is thinking about your answer…
+              Paramount AI is thinking about your answer…
             </p>
           )}
           {phase === 'feedback' && (

@@ -139,7 +139,7 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
       res.writeHead(200, { 'Content-Type': 'text/html' });
       const script = req.url?.startsWith('/compact') ? 'compact' : 'simcall';
       res.end(
-        '<!doctype html><html><head><meta charset="utf-8"><title>Kite simulated call</title></head>' +
+        '<!doctype html><html><head><meta charset="utf-8"><title>Paramount AI simulated call</title></head>' +
           `<body><div id="root"></div><script type="module" src="/harness/${script}.js"></script></body></html>`,
       );
     })();
@@ -562,9 +562,9 @@ test('the overlay: panels open with an answer, the arrows move, Clear keeps the 
 test('home panel: cards, search, sort, the menu and its buttons', async () => {
   await page.goto(`${origin}/?view=home`);
   // The acceptable-use notice, word for word, once on this device.
-  const notice = page.getByRole('dialog', { name: 'Using Kite' });
+  const notice = page.getByRole('dialog', { name: 'Using Paramount AI' });
   await expect(notice).toContainText(
-    "Use Kite in calls where AI assistance is allowed — your own meetings, client calls, practice and mock interviews. Don't use it to get hidden help in interviews, exams or assessments where outside help isn't permitted. Screen-share protection only hides Kite's windows; it does nothing against monitoring or proctoring tools. Recording or transcribing others may require their consent.",
+    "Use Paramount AI in calls where AI assistance is allowed — your own meetings, client calls, practice and mock interviews. Don't use it to get hidden help in interviews, exams or assessments where outside help isn't permitted. Screen-share protection only hides Paramount AI's windows; it does nothing against monitoring or proctoring tools. Recording or transcribing others may require their consent.",
   );
   await notice.getByRole('button', { name: 'Got it' }).click();
   await expect(notice).toHaveCount(0);

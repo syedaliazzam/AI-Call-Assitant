@@ -33,7 +33,7 @@ export const SIGNED_OUT_TEXT =
 
 /** What the user sees when Kite cannot reach the internet. */
 export const OFFLINE_TEXT =
-  "Kite can't reach the internet. The transcript keeps going on this computer; answers come back when the connection does.";
+  "Paramount AI can't reach the internet. The transcript keeps going on this computer; answers come back when the connection does.";
 
 /** Server messages that mean the request never got a full reply (core/answer/answerClient.ts). */
 const CONNECTION_MESSAGES = new Set(['Network error', 'The connection closed before the end']);
@@ -108,7 +108,7 @@ export const DAILY_LIMIT_FALLBACK_TEXT =
 
 /** Shown when Kite could not send the question as it is (never the server's internal reason). */
 export const REQUEST_PROBLEM_TEXT =
-  'Kite could not send this question. Try again; if it keeps happening, check the session details and documents.';
+  'Paramount AI could not send this question. Try again; if it keeps happening, check the session details and documents.';
 
 /**
  * The notes status line after a failure. The call has ended, so it says what is kept instead of

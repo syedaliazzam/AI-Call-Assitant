@@ -5,7 +5,7 @@
  * Used by: src/features/dev/UiGallery.tsx (and the pages restyled in UI stage U2)
  * Depends on: React, src/ui/Eyebrow.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (Card; tokens from src/ui/theme.css)
+ * Theme: docs/design/kite-ui-theme.md §5 (Card; tokens from src/ui/tokens/theme.css)
  */
 import type { ReactNode } from 'react';
 import { Eyebrow } from './Eyebrow';

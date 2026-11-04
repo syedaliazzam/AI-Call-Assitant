@@ -61,7 +61,7 @@ export const BROWSER_DISPLAY_OPTIONS: DisplayCaptureOptions = {
 
 /** Message when the share has no sound. */
 export const NO_TAB_AUDIO_MESSAGE =
-  'Kite can’t hear the meeting: the share has no sound. Click Connect again, pick the meeting tab and tick “Also share tab audio” (Chrome or Edge).';
+  'Paramount AI can’t hear the meeting: the share has no sound. Click Connect again, pick the meeting tab and tick “Also share tab audio” (Chrome or Edge).';
 
 /**
  * Where the sound of a share comes from, from the video track's displaySurface setting.
@@ -123,11 +123,11 @@ function browserIsMac(): boolean {
 
 /** Shown when the browser has no Document Picture-in-Picture (Firefox, Safari, older browsers). */
 export const NO_PIP_MESSAGE =
-  'This browser cannot show a small window on top of the meeting. Use Chrome or Edge 116 or newer, or keep Kite in its own window next to the meeting.';
+  'This browser cannot show a small window on top of the meeting. Use Chrome or Edge 116 or newer, or keep Paramount AI in its own window next to the meeting.';
 
 /** Shown when a screenshot is asked for but nothing is being shared. */
 export const NO_SHARE_MESSAGE =
-  'Kite can only take a screenshot of the tab or screen you are sharing for the call. Connect first, then try again.';
+  'Paramount AI can only take a screenshot of the tab or screen you are sharing for the call. Connect first, then try again.';
 
 /**
  * The share from the latest getOtherSideStream() (its video track gives screenshots), or null
@@ -199,7 +199,7 @@ export const browserPlatform: Platform = {
     } catch {
       throw new CaptureError(
         'failed',
-        'Kite could not take a screenshot of the shared tab. Try again.',
+        'Paramount AI could not take a screenshot of the shared tab. Try again.',
       );
     }
   },

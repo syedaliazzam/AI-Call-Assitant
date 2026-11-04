@@ -27,8 +27,9 @@ export function LiveCallsUnsupported() {
           Live calls need a computer
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed">
-          Kite listens to both sides of a call and needs screen or tab sharing, so a call runs in
-          the Kite desktop app on Windows or Mac, or in Chrome or Edge on a computer.
+          Paramount AI listens to both sides of a call and needs screen or tab sharing, so a call
+          runs in the Paramount AI desktop app on Windows or Mac, or in Chrome or Edge on a
+          computer.
         </p>
         <p className="mt-3 text-[15px] leading-relaxed text-ui-muted">
           On this device you can still review past sessions: their notes, answers and transcript.

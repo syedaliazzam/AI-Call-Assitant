@@ -26,6 +26,7 @@ import {
 import type { AnswerPreviewRequest } from '@kite/shared';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
+import { pickOption } from '../lib/pick-option';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -91,7 +92,7 @@ test.beforeAll(async () => {
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(
-      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kite setup harness</title>' +
+      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Paramount AI setup harness</title>' +
         '<link rel="stylesheet" href="/harness/setup.css"></head>' +
         '<body class="font-sans"><div id="root"></div>' +
         '<script type="module" src="/harness/setup.js"></script></body></html>',
@@ -198,9 +199,9 @@ test('dashboard: tabs with counts, search, sort, and grid or list', async () => 
     'Lantern Freight (invented)',
     'Zephyr Labs (invented)',
   ]);
-  await page.getByLabel('Sort').selectOption('oldest');
+  await pickOption(page, page.getByLabel('Sort'), 'Oldest first');
   expect((await titles())[0]).toBe('Zephyr Labs (invented)');
-  await page.getByLabel('Sort').selectOption('company');
+  await pickOption(page, page.getByLabel('Sort'), 'Company A–Z');
   expect((await titles())[0]).toBe('Alder Foods (invented)');
 
   await page.getByLabel('Search sessions').fill('analyst');
@@ -280,7 +281,7 @@ test('Create session offers the types, and the wizard starts with the one chosen
   await page.getByRole('button', { name: 'Create session' }).click();
   await expect(page.getByRole('menuitem')).toHaveText(['Interview', 'Regular', 'Mock']);
   await page.getByRole('menuitem', { name: 'Mock' }).click();
-  await expect(page.getByLabel('Session type')).toHaveValue('mock');
+  await expect(page.getByLabel('Session type')).toHaveText('Mock');
 });
 
 test('job link: fills in the details, says what came in, and they can be edited', async () => {
@@ -325,7 +326,7 @@ test('job link: a page it cannot read leaves what was typed, and says so', async
   await page.route('**/api/job-import', (route) =>
     route.fulfill({
       status: 422,
-      json: { code: 'bad_request', message: 'Kite can only read public web pages.' },
+      json: { code: 'bad_request', message: 'Paramount AI can only read public web pages.' },
     }),
   );
   await go('/sessions/new');
@@ -483,14 +484,14 @@ test('Answer preferences: a preview is asked for once and kept; Apply and Set as
 
   await page.getByRole('button', { name: 'Add: AI instructions' }).click();
   const instructions = page.getByRole('dialog', { name: 'AI instructions' });
-  await instructions.getByLabel('Context for Kite').fill('Answer as a data analyst.');
+  await instructions.getByLabel('Context for Paramount AI').fill('Answer as a data analyst.');
   // Cancel keeps what was there; Save keeps the new words.
   await instructions.getByRole('button', { name: 'Cancel' }).click();
-  await expect(page.getByText('None yet. Tell Kite who you are')).toBeVisible();
+  await expect(page.getByText('None yet. Tell Paramount AI who you are')).toBeVisible();
   await page.getByRole('button', { name: 'Add: AI instructions' }).click();
-  await instructions.getByLabel('Context for Kite').fill('Answer as a data analyst.');
+  await instructions.getByLabel('Context for Paramount AI').fill('Answer as a data analyst.');
   await instructions.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('None yet. Tell Kite who you are')).toHaveCount(0);
+  await expect(page.getByText('None yet. Tell Paramount AI who you are')).toHaveCount(0);
 
   await page.getByRole('switch', { name: 'Auto-answer (beta)' }).click();
   await shots('wizard-preferences');

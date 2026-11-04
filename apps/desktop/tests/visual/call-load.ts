@@ -147,7 +147,7 @@ async function main(): Promise<void> {
           memoryKb: metric.memory.workingSetSize,
           privateKb: metric.memory.privateBytes ?? 0,
           // utilityProcess.fork's serviceName option is reported here as the process's name.
-          accurate: metric.name === 'Kite accurate transcription',
+          accurate: metric.name === 'Paramount AI accurate transcription',
         })),
       );
       const now = Date.now();

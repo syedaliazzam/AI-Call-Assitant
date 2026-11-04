@@ -1,6 +1,6 @@
 /**
- * Tests for apps/web/src/ui/theme.css and the theme rules (docs/design/kite-ui-theme.md §8):
- * - no file under apps/web/src or apps/web/app other than src/ui/theme.css contains a hex
+ * Tests for apps/web/src/ui/tokens/theme.css and the theme rules (docs/design/kite-ui-theme.md §8):
+ * - no file under apps/web/src or apps/web/app other than src/ui/tokens/theme.css contains a hex
  *   colour or rgb()/rgba(), and no class uses a Tailwind palette or the removed brand-* colours;
  * - the values given in the look-and-feel brief are the ones in the file;
  * - contrast (WCAG 2.x) of every text token on the surfaces it is used on, read from theme.css
@@ -19,7 +19,7 @@ import { OVERLAY_OPACITY } from '@/core/storage/overlayPrefs';
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 /** The theme file. */
-const THEME_FILE = path.join(WEB_DIR, 'src', 'ui', 'theme.css');
+const THEME_FILE = path.join(WEB_DIR, 'src', 'ui', 'tokens', 'theme.css');
 
 /** The theme file's text. */
 const THEME = readFileSync(THEME_FILE, 'utf8');
@@ -62,7 +62,7 @@ const ROOT = block(':root {');
 /** The light surface tokens. */
 const LIGHT = block(':root,\n.k-light {');
 /** The dark surface tokens. */
-const DARK = block('.k-dark {');
+const DARK = block(".k-dark,\nhtml[data-theme='dark'] {");
 /** The see-through overlay's tokens. */
 const GLASS = block('.k-overlay.k-glass {');
 
@@ -152,7 +152,7 @@ const TEXT_TOKENS = [
 ];
 
 describe('no colours outside theme.css', () => {
-  it('finds no hex colour or rgb() in apps/web/src or apps/web/app except src/ui/theme.css', () => {
+  it('finds no hex colour or rgb() in apps/web/src or apps/web/app except src/ui/tokens/theme.css', () => {
     const offenders: string[] = [];
     let scanned = 0;
     for (const dir of ['src', 'app']) {
@@ -211,9 +211,10 @@ describe('only theme colours in class names', () => {
 describe('the values in the brief', () => {
   it('has the light palette, radii and shadows that were asked for', () => {
     const expected: Record<string, string> = {
-      '--k-page': '#f7f7f8',
+      '--k-page': '#ffffff',
+      '--k-sidebar': '#fafafa',
       '--k-surface': '#ffffff',
-      '--k-subtle': '#f2f2f4',
+      '--k-subtle': '#f4f4f5',
       '--k-border': '#e4e4e7',
       '--k-text': '#18181b',
       '--k-muted': '#71717a',
@@ -227,8 +228,14 @@ describe('the values in the brief', () => {
       '--k-radius-control': '10px',
       '--k-radius-card': '16px',
       '--k-radius-modal': '20px',
-      '--k-shadow-card': '0 1px 2px rgba(0, 0, 0, 0.05)',
-      '--k-shadow-modal': '0 20px 40px rgba(0, 0, 0, 0.12)',
+      '--k-radius-session': '20px',
+      '--k-radius-menu': '14px',
+      '--k-radius-bar': '12px',
+      '--k-shadow-card': 'none',
+      '--k-shadow-modal': '0 8px 30px rgba(0, 0, 0, 0.08)',
+      '--k-on-accent': '#ffffff',
+      '--k-dot-ended': '#a1a1aa',
+      '--k-dot-recording': '#ef4444',
     };
     for (const [token, value] of Object.entries(expected)) {
       expect(ROOT.get(token), token).toBe(value);
@@ -238,13 +245,21 @@ describe('the values in the brief', () => {
   it('has the overlay values that were asked for', () => {
     const expected: Record<string, string> = {
       '--k-overlay-glass': 'rgba(24, 24, 27, 0.82)',
+      '--k-overlay-pill': 'rgba(39, 39, 42, 0.95)',
+      '--k-overlay-keycap': 'rgba(255, 255, 255, 0.12)',
       '--k-overlay-border': 'rgba(255, 255, 255, 0.08)',
       '--k-overlay-button': 'rgba(255, 255, 255, 0.08)',
       '--k-overlay-button-hover': 'rgba(255, 255, 255, 0.14)',
       '--k-overlay-end': '#dc2626',
       '--k-overlay-blur': '16px',
-      '--k-dark-text': '#fafafa',
+      '--k-dark-bg': '#0f0f11',
+      '--k-dark-bar': '#141417',
+      '--k-dark-surface': '#1c1c20',
+      '--k-dark-border': '#2a2a30',
+      '--k-dark-text': '#f4f4f5',
       '--k-dark-muted': '#a1a1aa',
+      '--k-dark-primary': '#f4f4f5',
+      '--k-dark-on-primary': '#18181b',
     };
     for (const [token, value] of Object.entries(expected)) {
       expect(ROOT.get(token), token).toBe(value);
@@ -289,7 +304,7 @@ describe('contrast of the theme tokens', () => {
   it('body text is at least 4.5:1 on the subtle background; muted text is not, as the theme says', () => {
     expect(contrast(resolve('--k-text'), resolve('--k-subtle'))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(resolve('--k-muted'), resolve('--k-subtle'))).toBeLessThan(4.5);
-    expect(THEME).toContain('muted text is 4.3:1 on --k-subtle');
+    expect(THEME).toContain('muted text is 4.4:1 on --k-subtle');
   });
 
   it('the success colour is for dots: its text token is the one that passes', () => {

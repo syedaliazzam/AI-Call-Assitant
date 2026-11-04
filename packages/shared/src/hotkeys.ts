@@ -188,7 +188,7 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     ],
   },
   {
-    label: 'Open Ask Kite',
+    label: 'Open Ask AI',
     accelerator: ASK_KITE_HOTKEY,
     scope: 'global',
     actions: ['ask-kite'],
@@ -208,6 +208,51 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     actions: [],
   },
 ];
+
+/** A shortcut a key-cap chip can show (v1.2.0, spec §4): any global or focused one. */
+export type KeycapHotkey = GlobalHotkey | keyof typeof FOCUSED_HOTKEYS;
+
+/**
+ * The keys of a shortcut, from the one map above, so no screen ever writes a key itself.
+ *
+ * @param hotkey The shortcut.
+ * @returns Its Electron accelerator.
+ * Called from: apps/web/src/ui/KeyCap.tsx; tests
+ */
+export function hotkeyAccelerator(hotkey: KeycapHotkey): string {
+  if (hotkey === 'ask-kite') return ASK_KITE_HOTKEY;
+  if (hotkey in FOCUSED_HOTKEYS) return FOCUSED_HOTKEYS[hotkey as keyof typeof FOCUSED_HOTKEYS];
+  return DEFAULT_GLOBAL_HOTKEYS[hotkey as CallHotkey];
+}
+
+/** What each part of an accelerator looks like on a key-cap chip. */
+const KEYCAP_SYMBOLS: Readonly<Record<string, string>> = {
+  Shift: '⇧',
+  Backspace: '⌫',
+  Enter: '↵',
+  Space: '␣',
+  Left: '←',
+  Right: '→',
+  Up: '↑',
+  Down: '↓',
+};
+
+/**
+ * An accelerator as a key-cap chip's parts: ["Ctrl", "⇧", "↵"] on Windows, ["⌘", "⇧", "↵"] on macOS
+ * (spec §4: on macOS, Ctrl shows as ⌘).
+ *
+ * @param accelerator An Electron accelerator.
+ * @param mac         True on macOS.
+ * @returns The parts, in order.
+ * Called from: apps/web/src/ui/KeyCap.tsx; tests
+ */
+export function keycapParts(accelerator: string, mac: boolean): string[] {
+  return accelerator.split('+').map((part) => {
+    if (part === 'CommandOrControl') return mac ? '⌘' : 'Ctrl';
+    if (part === 'Alt') return mac ? '⌥' : 'Alt';
+    return KEYCAP_SYMBOLS[part] ?? part;
+  });
+}
 
 /**
  * An accelerator in words for a button or a list: "Ctrl+Enter" on Windows, "⌘ Enter" on macOS.

@@ -62,8 +62,9 @@ export function HotkeyList() {
     <>
       <p className="mb-3 text-[13px] text-ui-muted">
         &ldquo;Any app&rdquo; shortcuts work from every app in the desktop app, during a call; Open
-        Ask Kite works whenever the desktop app is running. &ldquo;Kite in front&rdquo; ones never
-        take keys from other apps. In a browser, all of them work while Kite has focus.
+        Ask AI works whenever the desktop app is running. &ldquo;Paramount AI in front&rdquo; ones
+        never take keys from other apps. In a browser, all of them work while Paramount AI has
+        focus.
       </p>
       <table className="w-full text-left text-[13px]">
         <thead>
@@ -91,7 +92,7 @@ export function HotkeyList() {
                 </kbd>
               </td>
               <td className="py-2 text-ui-muted">
-                {row.scope === 'global' ? 'Any app' : 'Kite in front'}
+                {row.scope === 'global' ? 'Any app' : 'Paramount AI in front'}
                 {rowHasConflict(row, statuses) && (
                   <span className="ml-2 text-ui-danger">In use by another app</span>
                 )}
@@ -103,7 +104,7 @@ export function HotkeyList() {
       {conflicts.length > 0 && (
         <p role="status" className="mt-3 text-[13px] text-ui-danger">
           Another app uses {conflicts.map((row) => row.label).join(', ')}. Close that app or change
-          its shortcut. Answer and Screenshot still work while Kite is in front.
+          its shortcut. Answer and Screenshot still work while Paramount AI is in front.
         </p>
       )}
     </>
