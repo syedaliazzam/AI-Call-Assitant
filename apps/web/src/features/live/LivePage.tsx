@@ -14,6 +14,9 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §6.1,
  *               §7.4 (save-transcript toggle); day-03-sessions.md Stage 4
  *
+ * v1.1.0: one call at a time on a device (core/live/callLock.ts); Accurate transcription follows the
+ * power source on Auto (ADR-0044); listening pauses when a call was left running (core/live/hygiene.ts).
+ *
  * The session's hotwords are given to the engine when it is created, as the page opens: before
  * Connect, and without the ~2 s recognizer rebuild a later setHotwords() would cost. With "save
  * transcript" on, final lines are saved as they arrive (core/transcript/saver.ts; never echo
@@ -39,7 +42,10 @@ import { generateNotes, type NotesLine } from '@/core/notes/generate';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
 import { TranscriptWatchdog } from '@/core/stt/watchdog';
-import { getAccurateTranscription } from '@/core/storage/transcriptionPrefs';
+import { accurateWanted, getTranscriptionMode } from '@/core/storage/transcriptionPrefs';
+import { takeCallLock } from '@/core/live/callLock';
+import { hygieneState, type HygieneState } from '@/core/live/hygiene';
+import { getMicDevice, setMicDevice } from '@/core/storage/overlayPrefs';
 import { refineLine } from '@/core/transcript/refine';
 import { displayTerms } from '@/core/transcript/display';
 import { isSound, themSilent } from '@/core/audio/silence';
@@ -226,6 +232,17 @@ export function LivePage({
     );
     return () => clearInterval(timer);
   }, [connection]);
+  // v1.1.0 (ADR-0044): the last sign of a real call, and what follows from it. A ref so meter ticks
+  // can update it without rendering; the once-a-second timer below turns it into a state.
+  const lastActivityAt = useRef(0);
+  const [hygiene, setHygiene] = useState<HygieneState>('ok');
+  // v1.1.0: releases the one-call-at-a-time lock (core/live/callLock.ts).
+  const releaseLock = useRef<(() => void) | null>(null);
+  const [lockedOut, setLockedOut] = useState(false);
+  // v1.1.0 (ADR-0044): whether the accurate engine should run now. A ref, because the speech engine's
+  // callbacks read it for each line; on Auto it follows the power source during the call.
+  const accurateOn = useRef(false);
+  const [micDeviceId, setMicDeviceId] = useState('');
   const [channelErrors, setChannelErrors] = useState<Partial<Record<Speaker, string>>>({});
   const [themSource, setThemSource] = useState<OtherSideSource | null>(null);
   // The browser split view (live-ui-split): the shared-tab stream for the preview, the answer
@@ -277,9 +294,10 @@ export function LivePage({
   // a replaced or torn-down engine's late messages be ignored (dev double-mount; restart).
   const makeEngine = useCallback(
     (isActive: () => boolean): SttEngine => {
-      // Accurate transcription (v1.0.1, ADR-0034): only in a desktop app that has the engine, and
-      // only when the user turned it on in Settings. Otherwise no audio leaves the speech worker.
-      const accurate = getAccurateTranscription() ? getPlatform().accurate : null;
+      // Accurate transcription (v1.0.1, ADR-0034; Auto since v1.1.0, ADR-0044): only in a desktop app
+      // that has the engine, and not when it is set to Off. Otherwise no audio leaves the speech
+      // worker. Each line then asks whether it should run now, because Auto follows the power source.
+      const accurate = getTranscriptionMode() !== 'off' ? getPlatform().accurate : null;
       return createSttEngine({
         hotwords,
         keepAudio: accurate !== null,
@@ -310,7 +328,9 @@ export function LivePage({
           noteHeard(channel, text);
           watchdog.current.noteProgress(performance.now());
           // The second pass replaces the words a moment later; the live line is the fallback.
-          if (accurate && audio) void refineLine(accurate, transcript, line.id, text, audio);
+          if (accurate && audio && accurateOn.current) {
+            void refineLine(accurate, transcript, line.id, text, audio);
+          }
         },
         onStats: (stats) => {
           if (isActive()) monitor.current.push(stats, performance.now());
@@ -319,6 +339,35 @@ export function LivePage({
     },
     [hotwords, transcript, noteHeard, dictationRoute],
   );
+
+  // v1.1.0 (ADR-0044): Accurate transcription follows the setting and the power source, and only uses
+  // a model that is already on this computer: nothing here ever starts its download.
+  useEffect(() => {
+    const engine = getPlatform().accurate;
+    if (!engine) return;
+    let ready = false;
+    let onBattery: boolean | null = null;
+    const apply = () => {
+      accurateOn.current = ready && accurateWanted(getTranscriptionMode(), onBattery);
+    };
+    let active = true;
+    engine
+      .status()
+      .then((status) => {
+        if (!active) return;
+        ready = status.state === 'ready';
+        apply();
+      })
+      .catch(() => undefined);
+    const stop = getPlatform().watchBattery((next) => {
+      onBattery = next;
+      apply();
+    });
+    return () => {
+      active = false;
+      stop();
+    };
+  }, []);
 
   // The engine: created when the page opens (so the model downloads while the user reads the
   // instructions), re-created on "Try again", stopped when the page closes.
@@ -400,6 +449,10 @@ export function LivePage({
     const timer = setInterval(() => {
       setHealth(monitor.current.status(performance.now()));
       setNow(Date.now());
+      // v1.1.0 (ADR-0044): a call left running. Once paused it stays paused until Resume.
+      setHygiene((current) =>
+        current === 'paused' ? 'paused' : hygieneState(lastActivityAt.current, Date.now()),
+      );
       // Day 6 Stage 4: if speech has been arriving with no transcript for 8 s, restart the engine.
       if (watchdog.current.isStuck(performance.now())) void restartEngine();
       const check = checkRef.current;
@@ -427,16 +480,33 @@ export function LivePage({
   const connect = async () => {
     const engine = engineRef.current;
     if (!engine) return;
+    // v1.1.0 (ADR-0041): another window may already be running a call (the desktop app's side window
+    // can reach this page during one). Two would compete for the microphone and the shortcuts.
+    if (!releaseLock.current) {
+      const release = await takeCallLock();
+      if (!release) {
+        setLockedOut(true);
+        return;
+      }
+      releaseLock.current = release;
+      setLockedOut(false);
+    }
     captureRef.current?.stop();
     captureRef.current = null;
     setChannelErrors({});
     setConnection('connecting');
     try {
+      const chosenMic = getMicDevice();
+      setMicDeviceId(chosenMic);
       const capture = await startCallCapture({
         engine,
+        ...(chosenMic ? { micDeviceId: chosenMic } : {}),
         onLevels: (next) => {
           setLevels(next);
-          if (isSound(next.them)) themSoundAt.current = Date.now();
+          if (isSound(next.them)) {
+            themSoundAt.current = Date.now();
+            lastActivityAt.current = Date.now();
+          }
           // Speech on either channel is audio the engine should be turning into text; the
           // watchdog uses it to notice a stuck engine (no transcript progress).
           if (isSound(next.you) || isSound(next.them))
@@ -453,6 +523,8 @@ export function LivePage({
       // The shared-tab video for the browser split-view preview (no video on desktop system audio).
       setPreviewStream(capture.otherSideStream());
       themSoundAt.current = Date.now();
+      lastActivityAt.current = Date.now();
+      setHygiene('ok');
       // Start the stuck-engine watchdog for this connection (Day 6 Stage 4).
       watchdog.current.start(performance.now());
       setConnection('connected');
@@ -479,6 +551,8 @@ export function LivePage({
     } catch (error) {
       setConnection('idle');
       setLevels({ you: 0, them: 0 });
+      releaseLock.current?.();
+      releaseLock.current = null;
       if (error instanceof CallCaptureError) {
         setChannelErrors({ [error.channel]: error.message });
       } else if (model.status !== 'error') {
@@ -521,6 +595,9 @@ export function LivePage({
       },
     });
     const startedAt = callStartedAt;
+    releaseLock.current?.();
+    releaseLock.current = null;
+    setHygiene('ok');
     setConnection('idle');
     setLevels({ you: 0, them: 0 });
     setSoundCheck(null);
@@ -530,7 +607,11 @@ export function LivePage({
     setPreviewStream(null);
     setTranscriptClearedAt(0);
     setEnding(false);
-    updateSession(session.id, { status: 'ended' }).catch(() => undefined);
+    updateSession(session.id, {
+      status: 'ended',
+      // v1.1.0: for the home panel's card.
+      ...(startedAt !== null ? { lastCallMs: Date.now() - startedAt } : {}),
+    }).catch(() => undefined);
     // The call's notes (Day 5): written after the call by the server, saved here. Not awaited:
     // End never waits for them.
     if (startedAt !== null && finalLines.length > 0) {
@@ -588,8 +669,51 @@ export function LivePage({
     updateSession(session.id, { preferences }).catch(() => undefined);
   };
 
+  /**
+   * Switches the microphone without ending the call (the overlay's device list) and remembers it.
+   *
+   * @param deviceId The device's id ('' for the system's default).
+   */
+  const changeMic = useCallback((deviceId: string) => {
+    setMicDevice(deviceId);
+    setMicDeviceId(deviceId);
+    captureRef.current?.changeMic(deviceId).catch((error: unknown) => {
+      if (error instanceof CallCaptureError) {
+        setChannelErrors((current) => ({ ...current, you: error.message }));
+      }
+    });
+  }, []);
+
+  /** Yes, still in a call: the quiet time starts again (ADR-0044). */
+  const stillHere = useCallback(() => {
+    lastActivityAt.current = Date.now();
+    setHygiene('ok');
+  }, []);
+
+  /** Listens again after a pause (ADR-0044). */
+  const resumeListening = useCallback(() => {
+    lastActivityAt.current = Date.now();
+    watchdog.current.start(performance.now());
+    setHygiene('ok');
+    captureRef.current?.resume().catch(() => undefined);
+  }, []);
+
+  /** An answer was asked for: someone is on the call (ADR-0044). */
+  const noteActivity = useCallback(() => {
+    lastActivityAt.current = Date.now();
+  }, []);
+
+  // Pausing stops feeding the speech engine, and the watchdog with it, which would otherwise take
+  // the silence for a stuck engine. The streams stay open, so Resume asks for nothing again.
+  useEffect(() => {
+    if (hygiene !== 'paused') return;
+    watchdog.current.stop();
+    captureRef.current?.pause();
+  }, [hygiene]);
+
   const echoStats = transcript.echoStats();
   const echoNoteVisible = echoStats.lastAt !== null && now - echoStats.lastAt < ECHO_NOTE_MS;
+  const clearTranscriptNow = () => setTranscriptClearedAt(Date.now());
   // Shown for a few seconds after the watchdog restarted a stuck engine (Day 6 Stage 4).
   const restartNoteVisible = restartedAt !== null && now - restartedAt < RESTART_NOTE_MS;
 
@@ -614,6 +738,14 @@ export function LivePage({
     return (
       // The Connect view is a call screen too: dark tokens (theme §2).
       <div className="k-dark min-h-screen bg-ui-bg pb-10 text-ui-text">
+        {lockedOut && (
+          <p
+            role="alert"
+            className="mx-auto mt-4 max-w-3xl rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
+          >
+            A call is already running in another Kite window. End it first.
+          </p>
+        )}
         <ConnectPanel
           call={call}
           hotwordCount={hotwordCount}
@@ -670,6 +802,7 @@ export function LivePage({
       lines={shownLines}
       health={health}
       terms={terms}
+      themName={session.contactName}
       {...(answerBridge
         ? {
             onAnswerThis: (group: TranscriptGroup) =>
@@ -696,6 +829,18 @@ export function LivePage({
         dictation={dictation}
         onAnswerThis={setAnswerBridge}
         topBarSlot={topBarSlot}
+        levels={levels}
+        transcriptClearedAt={transcriptClearedAt}
+        onClearTranscript={clearTranscriptNow}
+        onLanguage={changeLanguage}
+        onMic={changeMic}
+        micDeviceId={micDeviceId}
+        themSourceLabel={themSource ? THEM_SOURCE_LABEL[themSource] : null}
+        hygiene={hygiene}
+        onStillHere={stillHere}
+        onResume={resumeListening}
+        onActivity={noteActivity}
+        echoCount={echoStats.count}
       />
     ) : (
       <div className="flex justify-end">
@@ -775,7 +920,7 @@ export function LivePage({
           language,
           onLanguage: changeLanguage,
           onStop: () => void end(),
-          onClear: () => setTranscriptClearedAt(Date.now()),
+          onClear: clearTranscriptNow,
           onMinimize: () => void openOverlay(session.id).catch(() => undefined),
           onChangeTab: () => void changeTab(),
         }}

@@ -122,7 +122,8 @@ describe('recorded real answer streams', () => {
         const parts = splitAnswer(text);
         expect(parts.headline.trim().length).toBeGreaterThan(0);
         expect(parts.bullets.length).toBeGreaterThanOrEqual(2);
-        expect(parts.bullets.length).toBeLessThanOrEqual(4);
+        // One more than the model's 4 when the card moved the end of a long line down (v1.1.0).
+        expect(parts.bullets.length).toBeLessThanOrEqual(5);
         expect(done).toEqual(expect.objectContaining({ usage: expect.any(Object) }));
       });
     }

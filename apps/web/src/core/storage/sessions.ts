@@ -11,6 +11,7 @@
  * Session text (company, role, description, instructions, key terms) is the user's content and
  * is never logged.
  */
+import { liveQuery } from 'dexie';
 import { getDb } from './db';
 import type { LibraryKind, Session, SessionStatus, SessionType, StoredDocument } from './types';
 
@@ -100,6 +101,26 @@ export async function getSession(id: string): Promise<Session | null> {
 export async function listSessions(filter: SessionFilter = {}): Promise<Session[]> {
   const rows = await getDb().sessions.toArray();
   return filterSessions(rows, filter).sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
+ * Keeps a list of this device's sessions up to date (v1.1.0, the home panel). Dexie reports a change
+ * made in any window of this browser profile, so a session created in the main window shows at once.
+ *
+ * @param onSessions Called with the sessions, newest first, now and after every change.
+ * @param onError    Called when they cannot be read.
+ * @returns A function that stops watching.
+ * Called from: HomePanel.tsx; tests
+ */
+export function watchSessions(
+  onSessions: (sessions: Session[]) => void,
+  onError: () => void,
+): () => void {
+  const subscription = liveQuery(() => listSessions()).subscribe({
+    next: onSessions,
+    error: onError,
+  });
+  return () => subscription.unsubscribe();
 }
 
 /**

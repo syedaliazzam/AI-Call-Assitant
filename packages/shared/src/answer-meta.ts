@@ -23,6 +23,9 @@
  * - `product`: product or demo questions.
  * - `smalltalk`: small talk or wrap-up.
  * - `unclear`: not clear what was asked.
+ * - v1.1.0 (ADR-0043), what a screenshot shows: `codefix` (code with an error), `slide`, `table`
+ *   (a table or chart), `document`, `webpage`, `unreadable` (nothing can be read, or nothing relevant).
+ * - v1.1.0: `garbled`: the words make no sense even in context, so there is nothing to answer.
  */
 export type AnswerType =
   | 'behavioural'
@@ -33,10 +36,17 @@ export type AnswerType =
   | 'sales'
   | 'product'
   | 'smalltalk'
-  | 'unclear';
+  | 'unclear'
+  | 'codefix'
+  | 'slide'
+  | 'table'
+  | 'document'
+  | 'webpage'
+  | 'unreadable'
+  | 'garbled';
 
-/** Every question type, in the order the answer card's menu lists them. */
-export const ANSWER_TYPES: readonly AnswerType[] = [
+/** The question types the answer card's menu offers, in its order. */
+export const PICKABLE_ANSWER_TYPES: readonly AnswerType[] = [
   'behavioural',
   'concept',
   'coding',
@@ -46,6 +56,18 @@ export const ANSWER_TYPES: readonly AnswerType[] = [
   'product',
   'smalltalk',
   'unclear',
+];
+
+/** Every question type Claude can name. */
+export const ANSWER_TYPES: readonly AnswerType[] = [
+  ...PICKABLE_ANSWER_TYPES,
+  'codefix',
+  'slide',
+  'table',
+  'document',
+  'webpage',
+  'unreadable',
+  'garbled',
 ];
 
 /** The words on the answer card for each question type. */
@@ -59,6 +81,13 @@ export const ANSWER_TYPE_LABELS: Readonly<Record<AnswerType, string>> = {
   product: 'Product or demo',
   smalltalk: 'Small talk',
   unclear: 'Unclear',
+  codefix: 'Code fix',
+  slide: 'Slide',
+  table: 'Table or chart',
+  document: 'Document',
+  webpage: 'Web page',
+  unreadable: 'Unreadable',
+  garbled: 'Not understood',
 };
 
 /**

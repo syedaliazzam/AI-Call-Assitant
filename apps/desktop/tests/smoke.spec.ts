@@ -85,15 +85,11 @@ test.beforeAll(async () => {
   // KITE_INSTALLED_EXE (Day 6 Stage 3): test the installed app (Kite.exe from the installer)
   // instead of the development build, with the same checks.
   const installed = process.env.KITE_INSTALLED_EXE;
+  // Its own profile, always: on the default one this test overwrites the person's real overlay
+  // settings (it did, on 4 Nov 2026), and a running Kite would hold the single-instance lock.
+  const profile = `--user-data-dir=${mkdtempSync(path.join(tmpdir(), 'kite-smoke-'))}`;
   app = await electron.launch({
-    // Its own profile: on the default one this test overwrites the person's real overlay settings
-    // (it did, on 4 Nov 2026), and a running Kite would hold the single-instance lock.
-    ...(installed
-      ? {
-          executablePath: installed,
-          args: [`--user-data-dir=${mkdtempSync(path.join(tmpdir(), 'kite-smoke-'))}`],
-        }
-      : { args: [APP_DIR] }),
+    ...(installed ? { executablePath: installed, args: [profile] } : { args: [APP_DIR, profile] }),
     env: {
       ...parentEnv,
       KITE_URL: `${kite.origin}/`,

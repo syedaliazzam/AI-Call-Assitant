@@ -130,6 +130,17 @@ export function transcriptFileName(session: Pick<Session, 'company'>, extension:
 const CLOCK = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' });
 
 /**
+ * The call an item belongs to, where it is known: answers record theirs; lines do not.
+ *
+ * @param item The item.
+ * @returns When its call connected (Unix ms), or undefined.
+ * Called from: paragraphs()
+ */
+function callOfItem(item: ConversationItem): number | undefined {
+  return item.kind === 'answer' ? item.answer.callStartedAt : undefined;
+}
+
+/**
  * The paragraphs of a download, shared by TXT and PDF so they always say the same.
  *
  * @param session The session.
@@ -143,11 +154,30 @@ function paragraphs(
   items: readonly ConversationItem[],
   terms: readonly DisplayTerm[],
 ): PdfLine[] {
+  // v1.1.0: no empty brackets when a session has no company or role.
+  const about = [session.company.trim(), session.role.trim() && `(${session.role.trim()})`]
+    .filter(Boolean)
+    .join(' ');
   const out: PdfLine[] = [
-    { text: `Kite transcript: ${session.company} (${session.role})`, bold: true },
+    { text: about ? `Kite transcript: ${about}` : 'Kite transcript', bold: true },
     { text: '' },
   ];
+  let lastCall: number | undefined;
+  let lastKind: ConversationItem['kind'] | null = null;
   for (const item of items) {
+    // v1.1.0: a divider between a session's calls, and a blank line around each answer.
+    const call = callOfItem(item);
+    if (call !== undefined && lastCall !== undefined && call !== lastCall) {
+      out.push(
+        { text: '' },
+        { text: `--- Call of ${CLOCK.format(call)} ---`, bold: true },
+        { text: '' },
+      );
+    } else if (lastKind === 'answer' || (lastKind !== null && item.kind === 'answer')) {
+      out.push({ text: '' });
+    }
+    if (call !== undefined) lastCall = call;
+    lastKind = item.kind;
     if (item.kind === 'line') {
       const who = item.line.speaker === 'you' ? 'You' : 'Them';
       out.push({
@@ -155,7 +185,7 @@ function paragraphs(
       });
       continue;
     }
-    const { headline, bullets, code, say, tip } = splitAnswer(item.answer.text);
+    const { headline, bullets, code, complexity, say, tip } = splitAnswer(item.answer.text);
     const question =
       item.answer.question || item.answer.cleanQuestion
         ? ` (question: ${cardQuestion(item.answer.question, item.answer.cleanQuestion, terms)})`
@@ -168,6 +198,7 @@ function paragraphs(
     for (const block of code) {
       for (const line of block.text.split('\n')) out.push({ text: line, indent: 14 });
     }
+    if (complexity) out.push({ text: `Complexity: ${complexity}`, indent: 14 });
     if (say) out.push({ text: say, indent: 14 });
     if (tip) out.push({ text: tip, indent: 14 });
   }

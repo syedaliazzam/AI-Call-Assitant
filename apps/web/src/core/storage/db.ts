@@ -17,7 +17,13 @@
  */
 import { normaliseKeyTerms } from '@kite/shared';
 import Dexie, { type EntityTable } from 'dexie';
-import { currentLessonScope, currentSessionType, currentTone } from './migrate';
+import {
+  callStartOf,
+  currentLessonScope,
+  currentSessionType,
+  currentTone,
+  findCalls,
+} from './migrate';
 import type {
   Session,
   LibraryItem,
@@ -144,6 +150,36 @@ export class KiteDb extends Dexie {
             const clean = normaliseKeyTerms(session.preferences.keyTerms ?? '');
             if (clean !== session.preferences.keyTerms) session.preferences.keyTerms = clean;
           });
+      });
+    // Version 8 (v1.1.0, ADR-0041): no new store and no new index. Answers record their call, so a
+    // session's calls stay apart in the history, and sessions record how long the latest call lasted,
+    // for the home panel. Older data never recorded calls, so they are estimated from long gaps
+    // (core/storage/migrate.ts). Nothing else about any row changes, and nothing is removed.
+    this.version(8)
+      .stores({})
+      .upgrade(async (tx) => {
+        const sessions = tx.table<Session, string>('sessions');
+        const answers = tx.table<StoredAnswer, string>('answers');
+        const utterances = tx.table<StoredUtterance, string>('utterances');
+        for (const session of await sessions.toArray()) {
+          const lines = await utterances.where('sessionId').equals(session.id).toArray();
+          const rows = await answers.where('sessionId').equals(session.id).toArray();
+          const calls = findCalls([
+            ...lines.flatMap((line) => [line.tStart, line.tEnd]),
+            ...rows.map((row) => row.createdAt),
+          ]);
+          const last = calls.at(-1);
+          if (!last) continue;
+          await answers
+            .where('sessionId')
+            .equals(session.id)
+            .modify((row) => {
+              row.callStartedAt = callStartOf(calls, row.createdAt);
+            });
+          if (last.end > last.start) {
+            await sessions.update(session.id, { lastCallMs: last.end - last.start });
+          }
+        }
       });
   }
 }

@@ -5,14 +5,14 @@
  *          answer. All of it is for the user only: none of it is copied or exported.
  * Used by: src/features/live/AnswerPanel.tsx, src/features/live/CompactView.tsx,
  *          src/features/review/ConversationSection.tsx, src/features/ask-kite/AskKitePage.tsx
- * Depends on: @kite/shared (ANSWER_TYPES, ANSWER_TYPE_LABELS, sourceLabel)
+ * Depends on: @kite/shared (PICKABLE_ANSWER_TYPES, ANSWER_TYPE_LABELS, sourceLabel)
  * Architecture: docs/decisions/ADR-0030-ask-kite-and-adaptive-answers.md
  */
 'use client';
 
 import {
-  ANSWER_TYPES,
   ANSWER_TYPE_LABELS,
+  PICKABLE_ANSWER_TYPES,
   sourceLabel,
   type AnswerMeta,
   type AnswerType,
@@ -51,12 +51,15 @@ export function AnswerTags({ meta, sessionType, onChangeType, compact }: AnswerT
       {onChangeType ? (
         <select
           aria-label="Question type: choose another to answer again"
-          title="Choose another type to answer again in that shape"
           value={meta.type}
           onChange={(event) => onChangeType(event.target.value as AnswerType)}
           className={`max-w-[10rem] border-0 bg-transparent [field-sizing:content] py-0 pr-1 ${size} text-ui-muted hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]`}
         >
-          {ANSWER_TYPES.map((type) => (
+          {/* A screenshot's type is shown too, though it cannot be chosen for a spoken question. */}
+          {(PICKABLE_ANSWER_TYPES.includes(meta.type)
+            ? PICKABLE_ANSWER_TYPES
+            : [meta.type, ...PICKABLE_ANSWER_TYPES]
+          ).map((type) => (
             <option key={type} value={type}>
               {ANSWER_TYPE_LABELS[type]}
             </option>

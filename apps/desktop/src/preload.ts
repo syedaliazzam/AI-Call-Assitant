@@ -4,7 +4,8 @@
  *          window.kiteDesktop = { version, os, setHotkeysEnabled, onHotkey, captureScreenshot,
  *          openCompactView, closeCompactView, setShareProtection, getShareProtection,
  *          setCallActive, the overlay methods (v1.0.2: placeOverlay, getOverlayPreset,
- *          resizeOverlay, setOverlayMode; ADR-0035), and accurateStatus / accurateDownload /
+ *          resizeOverlay, setOverlayMode; ADR-0035), the window calls (v1.1.0: openPagesWindow,
+ *          windowControl, setOverlayLayout; ADR-0041), and accurateStatus / accurateDownload /
  *          accurateRemove / accurateTranscribe (v1.0.1, ADR-0034) } (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
@@ -17,12 +18,15 @@
  */
 import {
   HOTKEY_ACTIONS,
+  OVERLAY_PRESETS,
   type DesktopOs,
   type HotkeyAction,
   type KiteDesktopApi,
+  type OverlayLayout,
   type OverlayMode,
   type OverlayPreset,
   type OverlayResizeStep,
+  type WindowControlAction,
 } from '@kite/shared';
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import {
@@ -38,7 +42,9 @@ import {
   HOTKEY_CHANNEL,
   MINIMIZE_MAIN_CHANNEL,
   OPEN_COMPACT_CHANNEL,
+  OPEN_PAGES_CHANNEL,
   OVERLAY_COLLAPSE_CHANNEL,
+  OVERLAY_LAYOUT_CHANNEL,
   OVERLAY_MODE_CHANNEL,
   OVERLAY_OPACITY_CHANNEL,
   OVERLAY_PLACE_CHANNEL,
@@ -47,6 +53,8 @@ import {
   SHOW_CALL_WINDOW_CHANNEL,
   SET_HOTKEYS_CHANNEL,
   SET_PROTECTION_CHANNEL,
+  SNAP_ZONE_CHANNEL,
+  WINDOW_CONTROL_CHANNEL,
 } from './channels';
 
 /** Prefix of the argument main.ts passes with the app version. */
@@ -104,6 +112,25 @@ export function onHotkey(handler: (action: HotkeyAction) => void): () => void {
   };
 }
 
+/**
+ * Listens for the snap zone under the pointer during a drag (v1.1.0, the zones window's page).
+ *
+ * @param handler The page's handler; it receives a preset or null, never the IPC event.
+ * @returns A function that removes the listener.
+ * Called from: the page, as window.kiteDesktop.onSnapZone(); tests
+ */
+export function onSnapZone(handler: (zone: OverlayPreset | null) => void): () => void {
+  const listener = (_event: IpcRendererEvent, zone: unknown) => {
+    handler(
+      (OVERLAY_PRESETS as readonly unknown[]).includes(zone) ? (zone as OverlayPreset) : null,
+    );
+  };
+  ipcRenderer.on(SNAP_ZONE_CHANNEL, listener);
+  return () => {
+    ipcRenderer.removeListener(SNAP_ZONE_CHANNEL, listener);
+  };
+}
+
 /** The bridge object. Frozen, so the page cannot change or extend it. */
 const kiteDesktop: KiteDesktopApi = Object.freeze({
   version: readVersion(process.argv),
@@ -144,6 +171,18 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
       dy: Number(step?.dy),
     }),
   setOverlayMode: (mode: OverlayMode) => ipcRenderer.invoke(OVERLAY_MODE_CHANNEL, String(mode)),
+  // v1.1.0 (ADR-0041): only a string or three plain fields cross; the shell checks them again.
+  openPagesWindow: (path: string) => ipcRenderer.invoke(OPEN_PAGES_CHANNEL, String(path)),
+  windowControl: (action: WindowControlAction) =>
+    ipcRenderer.invoke(WINDOW_CONTROL_CHANNEL, String(action)),
+  setOverlayLayout: (layout: OverlayLayout) =>
+    ipcRenderer.invoke(OVERLAY_LAYOUT_CHANNEL, {
+      transcript: layout?.transcript === true,
+      answer: layout?.answer === true,
+      popupHeight: Number(layout?.popupHeight),
+      scale: Number(layout?.scale ?? 1),
+    }),
+  onSnapZone,
   // v1.0.1 (ADR-0034): accurate transcription. Nothing but a Float32Array of audio crosses (the
   // shell checks its type and length again); the text comes back in memory only.
   accurateStatus: () => ipcRenderer.invoke(ACCURATE_STATUS_CHANNEL),

@@ -25,7 +25,9 @@ import {
 } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
 import {
+  CALL_REMINDER,
   OMITTED_NOTE,
+  SCREENSHOT_RULES,
   SYSTEM_RULES,
   WARM_MESSAGE,
   buildPrompt,
@@ -470,8 +472,66 @@ describe('screenshot tail text (Day 5)', () => {
     expect(tail.text).toContain(
       "follow the session's answer format, length, tone and instructions",
     );
-    expect(tail.text).toContain('start with the headline itself, with no label');
+    expect(tail.text).toContain('start with the answer line itself, with no label');
     expect(tail.text).toContain('if they have nothing to compare with, do not claim it matches');
+  });
+
+  it('names a shape for each kind of screen, and joins the call and the documents (ADR-0043)', () => {
+    const prompt = buildPrompt({
+      mode: 'screenshot',
+      session: SESSION,
+      image: 'data:image/jpeg;base64,/9j/4AAQ',
+    });
+    const tail = (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!;
+    expect(tail.text).toContain(SCREENSHOT_RULES);
+    for (const type of [
+      'coding',
+      'codefix',
+      'slide',
+      'document',
+      'table',
+      'webpage',
+      'unreadable',
+    ]) {
+      expect(SCREENSHOT_RULES).toContain(`type ${type}`);
+    }
+    expect(SCREENSHOT_RULES).toContain('answer what the other person just asked about it');
+    expect(SCREENSHOT_RULES).toContain("the session's documents");
+  });
+
+  it('sends the words v1.0.4 sent when the rollback switch is on (ADR-0032)', () => {
+    const prompt = buildPrompt({
+      mode: 'screenshot',
+      session: SESSION,
+      image: 'data:image/jpeg;base64,/9j/4AAQ',
+      styleVersion: 'previous',
+    });
+    const tail = (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!;
+    expect(tail.text).not.toContain(SCREENSHOT_RULES);
+    expect(tail.text).toContain('start with the headline itself, with no label');
+    expect(tail.text).not.toContain('codefix');
+  });
+});
+
+describe('the v1.1.0 answer rules (ADR-0043)', () => {
+  it('gives the coding shape of item 7, in its order', () => {
+    const shape = SYSTEM_RULES.slice(
+      SYSTEM_RULES.indexOf('- coding: the headline is the approach'),
+    );
+    const order = ['Key steps:', 'fenced code block', 'Complexity:', 'Say:'].map((label) =>
+      shape.indexOf(label),
+    );
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it('tells Claude to write nothing for garbled words', () => {
+    expect(SYSTEM_RULES).toContain('garbled (the words make no sense');
+    expect(SYSTEM_RULES).toContain('write only the two hidden lines');
+  });
+
+  it('asks for an answer line of 12 words or fewer in the reminder, not the cached rules', () => {
+    expect(CALL_REMINDER).toContain('12 words or fewer');
   });
 });
 

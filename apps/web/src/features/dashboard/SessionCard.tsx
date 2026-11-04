@@ -1,26 +1,21 @@
 /**
  * File: apps/web/src/features/dashboard/SessionCard.tsx
  * Purpose: One session on the dashboard: date, an initial avatar, company, role or topic, type and
- *          transcript chips, a status dot, Start session or Review, and a ⋮ menu with Edit, Rename, Duplicate and Delete
- *          (Delete asks for confirmation first).
+ *          transcript chips, a status dot, Start session or Review, and its ⋮ menu (SessionMenu.tsx).
  * Used by: src/features/dashboard/Dashboard.tsx
- * Depends on: src/core/storage (types, shownStatus), src/ui (Button, Dialog, Input, LinkButton,
- *             Menu, icons), src/features/session-setup/labels.ts
+ * Depends on: src/core/storage (types, shownStatus), src/ui (Button, LinkButton),
+ *             src/features/dashboard/SessionMenu.tsx, src/features/session-setup/labels.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F1), §5 (Dashboard); ADR-0029
  */
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
 import { shownStatus } from '@/core/storage/sessions';
 import type { Session, SessionStatus } from '@/core/storage/types';
 import { SESSION_TYPE_LABELS, STATUS_LABELS } from '@/features/session-setup/labels';
 import { Button } from '@/ui/Button';
-import { Dialog } from '@/ui/Dialog';
-import { MoreIcon } from '@/ui/icons';
-import { Input } from '@/ui/Input';
 import { LinkButton } from '@/ui/LinkButton';
-import { Menu } from '@/ui/Menu';
+import { SessionMenu } from './SessionMenu';
 
 /** Props for SessionCard. */
 export interface SessionCardProps {
@@ -68,7 +63,7 @@ function initial(title: string): string {
  * One session card.
  *
  * @param props See SessionCardProps.
- * @returns The card, with its rename and delete dialogs.
+ * @returns The card.
  * Rendered by: Dashboard.tsx (one per listed session)
  */
 export function SessionCard({
@@ -81,32 +76,9 @@ export function SessionCard({
   onDuplicate,
 }: SessionCardProps) {
   const router = useRouter();
-  const [confirming, setConfirming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [company, setCompany] = useState(session.company);
-  const [role, setRole] = useState(session.role);
   const status = shownStatus(session, now);
   const title = session.company || 'Untitled session';
   const ended = status === 'ended';
-
-  /** Deletes the session after confirmation, then closes the dialog. */
-  async function confirmDelete() {
-    setDeleting(true);
-    try {
-      await onDelete(session);
-    } finally {
-      setDeleting(false);
-      setConfirming(false);
-    }
-  }
-
-  /** Saves the new names, then closes the dialog. */
-  async function saveRename() {
-    if (company.trim() === '' || role.trim() === '') return;
-    await onRename(session, company.trim(), role.trim());
-    setRenaming(false);
-  }
 
   return (
     <li
@@ -147,81 +119,16 @@ export function SessionCard({
             Start session
           </Button>
         )}
-        <Menu
-          label={<MoreIcon />}
-          ariaLabel={`More for ${title}`}
-          variant="ghost"
-          items={[
-            ...(ended ? [{ label: 'Start again', onSelect: () => onOpen(session) }] : []),
-            { label: 'Edit', onSelect: () => router.push(`/sessions/${session.id}/edit`) },
-            {
-              label: 'Rename',
-              onSelect: () => {
-                setCompany(session.company);
-                setRole(session.role);
-                setRenaming(true);
-              },
-            },
-            { label: 'Duplicate', onSelect: () => void onDuplicate(session) },
-            { label: 'Delete', danger: true, onSelect: () => setConfirming(true) },
-          ]}
+        <SessionMenu
+          session={session}
+          title={title}
+          onOpen={onOpen}
+          onEdit={(target) => router.push(`/sessions/${target.id}/edit`)}
+          onRename={onRename}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
         />
       </div>
-
-      <Dialog
-        open={renaming}
-        onClose={() => setRenaming(false)}
-        title="Rename this session"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setRenaming(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => void saveRename()}
-              disabled={company.trim() === '' || role.trim() === ''}
-            >
-              Save
-            </Button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-4">
-          <Input
-            label="Company"
-            value={company}
-            onChange={(event) => setCompany(event.target.value)}
-            maxLength={200}
-          />
-          <Input
-            label={session.type === 'regular' ? 'Topic' : 'Role'}
-            value={role}
-            onChange={(event) => setRole(event.target.value)}
-            maxLength={200}
-          />
-        </div>
-      </Dialog>
-
-      <Dialog
-        open={confirming}
-        onClose={() => setConfirming(false)}
-        title="Delete this session?"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setConfirming(false)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={() => void confirmDelete()} disabled={deleting}>
-              {deleting ? 'Deleting…' : 'Delete'}
-            </Button>
-          </>
-        }
-      >
-        <p>
-          “{title}” and everything saved with it on this computer (documents, transcript, answers,
-          notes) will be deleted. This cannot be undone.
-        </p>
-      </Dialog>
     </li>
   );
 }

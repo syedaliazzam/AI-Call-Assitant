@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Harness test for the dark call screens (UI theme stage U3), no sign-in, runs in CI. With the
  * real components on invented data and a mocked /api/answer (no Claude call, no microphone, no
  * speech model) it covers:
@@ -263,7 +263,7 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
   const panel = '[aria-label="Answers"]';
   expect(transcriptBox.x).toBeLessThan((await box(page, panel)).x);
 
-  // Speaker colours and the provisional line (theme Â§6).
+  // Speaker colours and the provisional line (theme §6).
   const colours = await page.evaluate(() => {
     const items = [...document.querySelectorAll('[aria-label="Live transcript"] li')];
     const label = (name: string) =>
@@ -428,7 +428,7 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
     expect(fits, 'the window itself does not scroll').toBe(true);
     await shot(watched, size, `overlay-${size.width}`);
 
-    // The current live question sits above the answer (v1.0.4); â›¶ is the call window's button.
+    // The current live question sits above the answer (v1.0.4); ⛶ is the call window's button.
     await expect(page.getByLabel('Current question from the other person')).toContainText(
       'What would the Professional plan cost',
     );

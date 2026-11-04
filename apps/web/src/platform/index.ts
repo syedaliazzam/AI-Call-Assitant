@@ -13,6 +13,7 @@ import type { Platform } from './types';
 
 export type { DesktopPlatform } from './desktop';
 export { CaptureError, NotImplementedError, type CaptureErrorCode } from './errors';
+export type { MicDevice } from './media';
 export type { HotkeyAction, OtherSideSource, OtherSideStream, Platform } from './types';
 
 /**

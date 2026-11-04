@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Harness test for the live answer UI (day-04-answers.md Stage 6), no sign-in, runs in CI.
  * Covers, with the real LiveAnswers component on a fixture transcript and a mocked, slowly
  * streaming /api/answer: the Answer hotkey (Ctrl+Enter) sends an answer request built from the
@@ -99,7 +99,7 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
         }
         const headline = request.mode === 'chat' ? 'The seat price is 52 dollars.' : HEADLINE;
         // As the real server does for every answer: the hidden line's contents come first, as their
-        // own event (recorded streams in tests/fixtures/answers: meta â†’ deltaâ€¦ â†’ done).
+        // own event (recorded streams in tests/fixtures/answers: meta → delta… → done).
         event('meta', { meta: { type: 'sales', target: 'call', source: 'docs' } });
         event('delta', { text: headline });
         await new Promise((resolve) => setTimeout(resolve, BULLET_DELAY_MS));

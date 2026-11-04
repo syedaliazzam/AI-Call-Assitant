@@ -121,6 +121,16 @@ export interface Session {
    * runs. null = never connected.
    */
   lastActiveAt: number | null;
+  /**
+   * v1.1.0 (ADR-0041): the name of the person on the call, shown on their transcript lines. Missing or
+   * '': the line says "Client 1". Display only: it is not sent to Claude.
+   */
+  contactName?: string;
+  /**
+   * v1.1.0 (ADR-0041): how long the latest call lasted, in ms, for the home panel's card. Filled in for
+   * older sessions by the version 8 upgrade (core/storage/migrate.ts).
+   */
+  lastCallMs?: number;
 }
 
 /** A document attached to a session, as extracted text (architecture §7.4 `documents`). */
@@ -233,6 +243,12 @@ export interface StoredAnswer {
    * (core/answer/claimCheck.ts), to underline again in the review. Missing means none.
    */
   claims?: string[];
+  /**
+   * v1.1.0 (ADR-0041): when the call this answer belongs to connected (Unix ms), so a session's calls
+   * stay apart in the history. Filled in for older answers by the version 8 upgrade, which estimates
+   * it from long gaps (core/storage/migrate.ts).
+   */
+  callStartedAt?: number;
 }
 
 /**

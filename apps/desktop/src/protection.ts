@@ -1,11 +1,11 @@
 /**
  * File: apps/desktop/src/protection.ts
- * Purpose: Screen-share protection for the compact live window (architecture §4, §7.3):
- *          `setContentProtection` only, applied when the window is created and re-applied every
- *          time it is shown; the user's setting is remembered by the shell on this device (off
- *          by default: the user turns it on) and reported to the page with whether this OS
- *          supports it.
- * Used by: src/windows.ts (applies it to the compact window), src/main.ts (IPC)
+ * Purpose: Screen-share protection for every Kite window (architecture §4, §7.3; all windows from
+ *          v1.1.0, ADR-0042): `setContentProtection` only, applied when a window is created and
+ *          re-applied every time it is shown; the user's setting is remembered by the shell on this
+ *          device (off by default: the user turns it on) and reported to the page with whether this
+ *          OS supports it.
+ * Used by: src/windows.ts (the compact window), src/main.ts (every other window, IPC)
  * Depends on: electron (BrowserWindow, IpcMain types), src/store.ts, src/channels.ts,
  *             src/hotkeys.ts (isKiteSender)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §4 (screen-share protection), §7.3
@@ -50,20 +50,20 @@ export interface Protection {
   /** The current state (setting and OS support). */
   state(): ShareProtectionState;
   /**
-   * Changes the setting, remembers it, and applies it to the window given.
+   * Changes the setting, remembers it, and applies it to the windows given.
    *
-   * @param on     The new setting.
-   * @param window The compact window, if open.
+   * @param on      The new setting.
+   * @param windows Every open Kite window.
    * @returns The new state.
    */
   set(
     on: boolean,
-    window: Pick<BrowserWindow, 'setContentProtection'> | null,
+    windows: readonly Pick<BrowserWindow, 'setContentProtection'>[],
   ): ShareProtectionState;
   /**
    * Applies the setting to a window now and every time it is shown.
    *
-   * @param window The compact window.
+   * @param window A Kite window.
    */
   attach(window: Pick<BrowserWindow, 'setContentProtection' | 'on'>): void;
 }
@@ -81,12 +81,12 @@ export function createProtection(store: ShellStore, platform: string, release: s
   const supported = protectionSupported(platform, release);
   // Off by default (Day 5 file); the user turns it on in Settings or the compact view.
   const wanted = () => store.read().shareProtection ?? false;
-  const state = (): ShareProtectionState => ({ on: wanted(), supported });
+  const state = (): ShareProtectionState => ({ on: wanted(), supported, scope: 'all' });
   return {
     state,
-    set(on, window) {
+    set(on, windows) {
       store.write({ shareProtection: on });
-      window?.setContentProtection(on);
+      for (const window of windows) window.setContentProtection(on);
       return state();
     },
     attach(window) {
@@ -99,18 +99,18 @@ export function createProtection(store: ShellStore, platform: string, release: s
 
 /**
  * Answers the Kite page's protection requests (Kite origin main frames only): read the state,
- * or change it (only a boolean is accepted) and apply it to the compact window if it is open.
+ * or change it (only a boolean is accepted) and apply it to every open Kite window.
  *
  * @param ipcMain       Electron's ipcMain.
  * @param protection    The controller.
- * @param getWindow     The compact window, if open.
+ * @param getWindows    Every open Kite window.
  * @param allowedOrigin The Kite origin.
  * Called from: start() in main.ts; tests
  */
 export function installProtection(
   ipcMain: Pick<IpcMain, 'handle'>,
   protection: Protection,
-  getWindow: () => Pick<BrowserWindow, 'setContentProtection'> | null,
+  getWindows: () => readonly Pick<BrowserWindow, 'setContentProtection'>[],
   allowedOrigin: string,
 ): void {
   ipcMain.handle(GET_PROTECTION_CHANNEL, (event) => {
@@ -119,7 +119,7 @@ export function installProtection(
   });
   ipcMain.handle(SET_PROTECTION_CHANNEL, (event, on: unknown) => {
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
-    const state = protection.set(on === true, getWindow());
+    const state = protection.set(on === true, getWindows());
     console.info('desktop: share protection', state);
     return state;
   });

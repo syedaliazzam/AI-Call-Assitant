@@ -48,6 +48,8 @@ export interface SessionDraft {
   role: string;
   /** Free-text description (optional). */
   description: string;
+  /** The name of the person on the call (optional; v1.1.0): shown on their transcript lines. */
+  contactName: string;
   /** The documents to keep or add. */
   documents: DraftDocument[];
   /** Stored documents the user removed (edit only), deleted when the wizard saves. */
@@ -87,6 +89,7 @@ export function emptyDraft(
     company: '',
     role: '',
     description: '',
+    contactName: '',
     documents: [],
     removedIds: [],
     preferences: {
@@ -115,6 +118,7 @@ export function draftFromSession(session: Session, documents: StoredDocument[]):
     company: session.company,
     role: session.role,
     description: session.description,
+    contactName: session.contactName ?? '',
     documents: documents.map((document) => ({
       key: document.id,
       storedId: document.id,
@@ -165,6 +169,8 @@ export function draftToInput(draft: SessionDraft): NewSessionInput {
     company: draft.company.trim(),
     role: draft.role.trim(),
     description: draft.description.trim(),
+    // Absent when empty, so a session without one stores what it always has.
+    ...(draft.contactName.trim() ? { contactName: draft.contactName.trim() } : {}),
     // One clean term per line, however they were pasted (commas, semicolons, new lines; v1.0.1).
     preferences: { ...draft.preferences, keyTerms: normaliseKeyTerms(draft.preferences.keyTerms) },
     instructions: draft.instructions.trim(),

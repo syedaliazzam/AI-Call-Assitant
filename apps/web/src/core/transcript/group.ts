@@ -9,13 +9,15 @@
  *          src/features/review/ConversationSection.tsx, the overlay's expanded transcript
  *          (src/features/live/CompactView.tsx)
  * Depends on: src/core/transcript/display.ts (sentence case), src/core/transcript/question.ts
- *             (questionSpan), src/core/transcript/transcript.ts (Speaker)
+ *             (questionSpan), src/core/transcript/questionKind.ts (lineKind),
+ *             src/core/transcript/transcript.ts (Speaker)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session: transcript strip)
  *
  * Transcript text is only arranged for the screen here; it is never logged.
  */
 import { continuationCase, sentenceCase, type DisplayTerm } from './display';
 import { questionSpan } from './question';
+import { lineKind } from './questionKind';
 import type { Speaker } from './transcript';
 
 /**
@@ -172,11 +174,13 @@ export function groupLines(
   groups.forEach((group, index) => {
     // v1.0.4: questionSpan() also finds a question after a lead-in or in the middle of a line, which
     // the speech model joins without punctuation ("GREAT SO HOW WOULD YOU…"). Same as the overlay's
-    // live question, so the "?" mark and that line agree.
+    // live question, so the "?" mark and that line agree. v1.1.0: a greeting or an instruction worded
+    // as a question ("how are you", "are you ready") is not one (ADR-0043).
     group.question =
       group.speaker === 'them' &&
       (`${group.finalText} ${group.provisionalText}`.includes('?') ||
-        raws[index]!.some((raw) => questionSpan(raw) !== null));
+        raws[index]!.some((raw) => questionSpan(raw) !== null)) &&
+      raws[index]!.some((raw) => lineKind(raw) === 'question');
   });
   return groups;
 }

@@ -1,8 +1,8 @@
 /**
  * File: apps/desktop/src/hotkeys.ts
  * Purpose: The desktop app's global shortcuts (architecture §7.3; ADR-0029): Electron
- *          globalShortcut with the default accelerators. Answer, Screenshot and (v1.0.2,
- *          ADR-0035) the script bar are forwarded to the Kite page as `kite:hotkey` messages
+ *          globalShortcut with the default accelerators. Answer, Screenshot, Chat (v1.1.0) and
+ *          (v1.0.2, ADR-0035) the script bar are forwarded to the Kite page as `kite:hotkey` messages
  *          (preload.ts hands them to
  *          window.kiteDesktop.onHotkey); showing, hiding and moving the overlay is done by the
  *          shell itself. The page turns them on for a live call and off at End
@@ -175,6 +175,8 @@ export interface HotkeyDeps {
   overlayAction?: (action: GlobalHotkey) => void;
   /** Brings up the window where Ask Kite will open (ADR-0030). Optional in tests. */
   showForAskKite?: () => void;
+  /** Gives the overlay the keyboard for the Chat shortcut (v1.1.0). Optional in tests. */
+  showForChat?: () => void;
   /** The Kite origin. */
   allowedOrigin: string;
 }
@@ -193,6 +195,7 @@ export function installHotkeys(deps: HotkeyDeps): HotkeyController {
     else {
       // The page has to be in view for Ask Kite: main.ts brings up the right window first.
       if (action === 'ask-kite') deps.showForAskKite?.();
+      if (action === 'chat') deps.showForChat?.();
       deps.sendToPage(HOTKEY_CHANNEL, action);
     }
   });

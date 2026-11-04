@@ -3,10 +3,12 @@
  * Purpose: React state for the answers of a live call: Answer (question from the transcript)
  *          and Chat (typed question) build a request from the session, the transcript and the
  *          earlier answers (core/answer/context.ts) and stream it (one at a time); Clear
- *          cancels; Previous/Next move through the session's answers, one entry per question
+ *          cancels; Previous/Next move through this call's answers, one entry per question
  *          (core/answer/history.ts, v1.0.4); the newest is selected unless another is chosen. Each
  *          finished answer is saved on this device with its rating and note (Stage 7). While the
- *          call runs, the idle re-warm keeps Claude's cache warm (core/answer/keepWarm.ts).
+ *          call runs, the idle re-warm keeps Claude's cache warm (core/answer/keepWarm.ts). v1.1.0
+ *          (ADR-0043): Answer answers only real questions (core/transcript/questionKind.ts); this call's
+ *          answers only (a session's earlier calls are in Review).
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/core/answer (context.ts, answerClient.ts, history.ts, warm.ts, keepWarm.ts,
  *             unavailable.ts),
@@ -36,15 +38,10 @@ import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/con
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { warmSession } from '@/core/answer/warm';
 import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
+import { pickQuestion, type PickedQuestion } from '@/core/transcript/questionKind';
 import { isOnline } from '@/core/net/online';
 import { prepareScreenshot } from '@/core/screenshot/prepare';
-import {
-  listAnswers,
-  rateAnswer,
-  reportAnswer,
-  saveAnswer,
-  setAnswerNote,
-} from '@/core/storage/answers';
+import { rateAnswer, reportAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
 import type { AnswerRating, Session, StoredAnswer, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
@@ -54,8 +51,6 @@ import { CaptureError } from '@/platform/errors';
 export interface AnswerStore {
   /** Saves a finished answer. */
   save: (answer: StoredAnswer) => Promise<void>;
-  /** Lists the session's saved answers, oldest first. */
-  list: (sessionId: string) => Promise<StoredAnswer[]>;
   /** Sets an answer's rating. */
   rate: (id: string, rating: AnswerRating) => Promise<void>;
   /** Reports an answer, with what was wrong. */
@@ -67,13 +62,25 @@ export interface AnswerStore {
 /** The real store (IndexedDB through core/storage). */
 const DEFAULT_STORE: AnswerStore = {
   save: saveAnswer,
-  list: listAnswers,
   rate: rateAnswer,
   report: reportAnswer,
   note: setAnswerNote,
 };
 
-/** One answer of this call (or an earlier one of the session), as the panel shows it. */
+/** What to say when the latest words look like noise (v1.1.0, ADR-0043). */
+export const GARBLED_NOTICE = "Didn't catch the question clearly — press Answer again or type it.";
+
+/** What to say when nothing so far is a question to answer (v1.1.0, ADR-0043). */
+export const NO_QUESTION_NOTICE =
+  'No question to answer yet. Press Answer this on what they said, or type it.';
+
+/**
+ * How long after the other person asked something a screenshot still counts as being about it, in ms
+ * (v1.1.0, ADR-0043).
+ */
+const RECENT_QUESTION_MS = 120_000;
+
+/** One answer of this call, as the panel shows it. */
 export interface AnswerEntry {
   /** Answer id (crypto.randomUUID()). */
   id: string;
@@ -123,52 +130,22 @@ export interface AnswerEntry {
   meta?: AnswerMeta;
   /** Words the claim check could not find in the documents or the call (ADR-0030). */
   claims?: string[];
-  /**
-   * True for an answer saved earlier (a previous call, or before a reload): shown for review
-   * and rating, but not part of this call's conversation.
-   */
-  earlier: boolean;
-}
-
-/**
- * Turns a saved answer into a panel entry (for answers from before this page opened).
- *
- * @param saved The saved answer.
- * @returns The entry, marked as earlier.
- * Called from: useLiveAnswers() (on open)
- */
-function fromStored(saved: StoredAnswer): AnswerEntry {
-  return {
-    id: saved.id,
-    mode: saved.mode,
-    question: saved.question,
-    ...(saved.cleanQuestion ? { cleanQuestion: saved.cleanQuestion } : {}),
-    fromLines: 0,
-    text: saved.text,
-    status: 'done',
-    askedAt: saved.createdAt,
-    model: saved.model,
-    rating: saved.rating ?? null,
-    note: saved.note ?? '',
-    ...(saved.reported ? { reported: true } : {}),
-    ...(saved.meta ? { meta: saved.meta } : {}),
-    ...(saved.claims?.length ? { claims: saved.claims } : {}),
-    earlier: true,
-  };
 }
 
 /**
  * Turns a finished entry into the row saved on this device.
  *
- * @param entry     The finished entry.
- * @param sessionId Its session.
+ * @param entry         The finished entry.
+ * @param sessionId     Its session.
+ * @param callStartedAt When its call connected (Unix ms).
  * @returns The row.
  * Called from: useLiveAnswers() (when an answer finishes)
  */
-function toStored(entry: AnswerEntry, sessionId: string): StoredAnswer {
+function toStored(entry: AnswerEntry, sessionId: string, callStartedAt: number): StoredAnswer {
   return {
     id: entry.id,
     sessionId,
+    callStartedAt,
     mode: entry.mode,
     question: entry.question,
     ...(entry.cleanQuestion ? { cleanQuestion: entry.cleanQuestion } : {}),
@@ -237,6 +214,8 @@ export interface LiveAnswersInput {
   store?: AnswerStore;
   /** The chat box's switch: who typed and screenshot questions are for (ADR-0030). */
   chatTarget?: TargetChoice;
+  /** True while listening is paused (ADR-0044): nothing is being said, so no paid warm-ups. */
+  paused?: boolean;
 }
 
 /** What useLiveAnswers() returns. */
@@ -268,6 +247,8 @@ export interface LiveAnswers {
   answeredSpans: readonly { span: SpeechSpan; answerId: string }[];
   /** Cancels a streaming answer, and goes back to the newest answer. */
   clear: () => void;
+  /** Stops a streaming answer, keeping what arrived on the card (v1.1.0). */
+  stop: () => void;
   /** Shows the previous answer. */
   prev: () => void;
   /** Shows the next answer. */
@@ -319,6 +300,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   // speech already answered (v1.0.2).
   const [repeatGuard] = useState(() => createRepeatGuard());
   const [answeredSpans, setAnsweredSpans] = useState<{ span: SpeechSpan; answerId: string }[]>([]);
+  // The garbled words last reported: pressing Answer again on the same words sends them (ADR-0043).
+  const garbledRef = useRef<string | null>(null);
   // What the conversation has sent so far, and the finished answers (refs: read when asked).
   const logRef = useRef(emptyLog());
   const finishedRef = useRef<CallAnswer[]>([]);
@@ -338,31 +321,29 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     warmInputRef.current = { session, documents, lessons };
   });
 
-  // The session's saved answers (earlier calls, or before a reload), shown before this call's.
-  useEffect(() => {
-    let cancelled = false;
-    storeRef.current
-      .list(session.id)
-      .then((saved) => {
-        if (cancelled || saved.length === 0) return;
-        setEntries((current) => {
-          const known = new Set(current.map((entry) => entry.id));
-          const earlier = saved.filter((row) => !known.has(row.id)).map(fromStored);
-          return [...earlier, ...current];
-        });
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [session.id]);
-
-  // A new call: a new conversation and the idle re-warm; End (unmount) stops both.
+  // A new call: a new conversation; End (unmount) stops any answer still streaming.
   const sessionId = session.id;
   useEffect(() => {
     logRef.current = emptyLog();
     finishedRef.current = [];
     labelsRef.current = [];
+    return () => {
+      runner.cancel();
+      // Fail safe: an answer stopped here must not stay "streaming" (its card would show "…" for
+      // ever, as when a re-render cancelled every answer before the v1.0.0 fix in LivePage).
+      setEntries((current) =>
+        current.map((entry) =>
+          entry.status === 'streaming' ? { ...entry, status: 'cancelled' as const } : entry,
+        ),
+      );
+    };
+  }, [callStartedAt, sessionId, runner]);
+
+  // The idle re-warm, for as long as listening is not paused (ADR-0044: nobody is on the call, so
+  // keeping Claude's cache warm would only spend money).
+  const paused = input.paused ?? false;
+  useEffect(() => {
+    if (paused) return;
     const keepWarm = startKeepWarm({
       warm: () => {
         const latest = warmInputRef.current;
@@ -376,16 +357,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     return () => {
       keepWarm.stop();
       keepWarmRef.current = null;
-      runner.cancel();
-      // Fail safe: an answer stopped here must not stay "streaming" (its card would show "…" for
-      // ever, as when a re-render cancelled every answer before the v1.0.0 fix in LivePage).
-      setEntries((current) =>
-        current.map((entry) =>
-          entry.status === 'streaming' ? { ...entry, status: 'cancelled' as const } : entry,
-        ),
-      );
     };
-  }, [callStartedAt, sessionId, runner]);
+  }, [callStartedAt, sessionId, paused]);
 
   /**
    * Replaces one entry's fields.
@@ -447,6 +420,25 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         setNotice('Nothing from the other person yet. Type a question in Chat instead.');
         return;
       }
+      // v1.1.0 (ADR-0043): only real questions. A greeting or an instruction looks back to the last
+      // real question; noise is reported once, and a second press on the same words sends them.
+      // None of this spends a request. A bubble's "Answer this" and a typed question are always sent.
+      let picked: PickedQuestion | null = null;
+      if (mode === 'answer' && !options.question) {
+        picked = pickQuestion(lines);
+        if (picked.kind === 'none') {
+          setNotice(NO_QUESTION_NOTICE);
+          return;
+        }
+        if (picked.kind === 'garbled') {
+          if (garbledRef.current !== picked.selected.text) {
+            garbledRef.current = picked.selected.text;
+            setNotice(GARBLED_NOTICE);
+            return;
+          }
+        }
+      }
+      garbledRef.current = null;
       setNotice(null);
       // A question from Them is always for the call; the switch is for what the user types or
       // screenshots.
@@ -466,14 +458,23 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(choice !== 'auto' ? { target: choice } : {}),
         ...(answerType ? { answerType } : {}),
         ...(options.question ? { question: options.question } : {}),
+        // Found by looking back past a greeting or an instruction: asked as it is.
+        ...(picked?.kind === 'question' && picked.lookedBack
+          ? { question: picked.selected.text }
+          : {}),
       });
       // Answer is idempotent (v1.0.1): the shortcut, the overlay, auto-answer and a bubble's
       // "Answer this" can all fire for one question. Decided before anything changes (the log,
       // the cards). A re-answer with a chosen type (a question without a span) is a deliberate
       // new request and is not guarded.
+      const pickedLines = picked ? picked.selected.lineIds : null;
       const span =
-        options.span ?? (built.selected ? themSpan(lines, built.selected.lineIds) : null);
+        options.span ??
+        ((pickedLines ?? built.selected?.lineIds)
+          ? themSpan(lines, pickedLines ?? built.selected?.lineIds ?? [])
+          : null);
       const guarded = mode === 'answer' && (!options.question || options.span !== undefined);
+      const lookedBack = picked?.kind === 'question' && picked.lookedBack;
       if (guarded) {
         const decision = repeatGuard.decide({
           question: built.request.question ?? '',
@@ -481,6 +482,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           now: Date.now(),
           ...(span ? { span } : {}),
           ...(auto ? { auto: true } : {}),
+          ...(lookedBack ? { lookedBack: true } : {}),
         });
         if (decision.kind === 'show') setShownId(decision.answerId);
         if (decision.kind !== 'answer') return;
@@ -501,7 +503,6 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         model: session.preferences.model,
         rating: null,
         note: '',
-        earlier: false,
       };
       // A new answer cancels the one still streaming (the runner does; mark it here).
       setEntries((current) => [
@@ -531,13 +532,26 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             ? received.type
             : settleAnswerType(entry.question, received.type, labelsRef.current);
           meta = { ...received, type };
+          // Claude could not make sense of the words either (ADR-0043): no answer to show. The
+          // entry goes, and the user gets the same notice as when the rules catch it first.
+          if (type === 'garbled') {
+            setEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
+            setShownId(null);
+            setNotice(GARBLED_NOTICE);
+            garbledRef.current = entry.question;
+            return;
+          }
           if (entry.question.trim() !== '') {
             labelsRef.current = [...labelsRef.current, { question: entry.question, type }];
           }
           update(entry.id, { meta });
         },
-        onText: (text) => update(entry.id, { text }),
+        onText: (text) => {
+          if (meta?.type !== 'garbled') update(entry.id, { text });
+        },
         onDone: (text, done, timeline) => {
+          // Not an answer: nothing to keep, send later or save.
+          if (meta?.type === 'garbled') return;
           // No model call: plain text matching (ADR-0030).
           const claims = needsClaimCheck(meta, mode)
             ? checkClaims(
@@ -580,7 +594,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             output: done.usage.output_tokens,
           });
           // Saved even when "Save transcript" is off (StoredAnswer in core/storage/types.ts).
-          storeRef.current.save(toStored(finished, session.id)).catch(() => setSaveFailed(true));
+          storeRef.current
+            .save(toStored(finished, session.id, callStartedAt))
+            .catch(() => setSaveFailed(true));
         },
         onError: (failure) => {
           const shown = answerFailureText(failure);
@@ -616,6 +632,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     setNotice(null);
   }, [runner]);
 
+  const stop = useCallback(() => {
+    if (!runner.busy()) return;
+    runner.cancel();
+    setEntries((current) =>
+      current.map((entry) =>
+        entry.status === 'streaming' ? { ...entry, status: 'cancelled' as const } : entry,
+      ),
+    );
+  }, [runner]);
+
   const rate = useCallback(
     (id: string, rating: AnswerRating) => {
       update(id, { rating });
@@ -641,6 +667,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   );
 
   // One entry per question (v1.0.4, ADR-0040); the state keeps every answer, this is what shows.
+  // Every entry here is of this call, so none carries a call to tell apart.
   const history = useMemo(() => mergeAnswers(entries, (entry) => entry.askedAt), [entries]);
   const list = history.list;
   const selectedId = shownId === null ? null : (history.winnerOf.get(shownId) ?? shownId);
@@ -671,8 +698,19 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             bytes: prepared.bytes,
             ms: Math.round(performance.now() - pressedAt),
           });
+          // v1.1.0 (ADR-0043): without a typed question, the screen goes with what the other person
+          // just asked, so the answer is about that.
+          const lines = transcript.lines();
+          const picked = question ? null : pickQuestion(lines);
+          const span =
+            picked?.kind === 'question' ? themSpan(lines, picked.selected.lineIds) : null;
+          const recent =
+            picked?.kind === 'question' && span && Date.now() - span.end <= RECENT_QUESTION_MS
+              ? picked.selected.text
+              : undefined;
+          const about = question ?? recent;
           ask('screenshot', {
-            ...(question ? { typed: question } : {}),
+            ...(about ? { typed: about } : {}),
             image: prepared.dataUrl,
             pressedAt,
           });
@@ -687,7 +725,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         }
       })();
     },
-    [ask, capturing, session.id],
+    [ask, capturing, session.id, transcript],
   );
 
   const next = useCallback(() => {
@@ -725,6 +763,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     ),
     answeredSpans,
     clear,
+    stop,
     prev,
     next,
     show: setShownId,

@@ -102,7 +102,6 @@ const store: AnswerStore = {
   save: async (answer) => {
     saved.push(answer);
   },
-  list: async () => [...saved],
   rate: async () => undefined,
   report: async () => undefined,
   note: async () => undefined,

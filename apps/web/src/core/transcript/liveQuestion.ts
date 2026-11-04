@@ -14,6 +14,7 @@
 import { chipWords, sentenceCase, type DisplayTerm } from './display';
 import { GROUP_GAP_MS } from './group';
 import { questionSpan } from './question';
+import { lineKind } from './questionKind';
 import type { Utterance } from './transcript';
 
 /** At most this many words are shown: the overlay gives the line two rows. */
@@ -40,7 +41,8 @@ export function liveQuestion(
     const line = lines[i]!;
     if (line.speaker !== 'them' || line.tEnd <= since) continue;
     const span = questionSpan(line.text);
-    if (!span) continue;
+    // v1.1.0: "how are you" is worded as a question but is not one to highlight (ADR-0043).
+    if (!span || lineKind(line.text) !== 'question') continue;
     const parts = [line.text.slice(span.start, span.end)];
     let heard = line.final;
     // A pause can cut a question in two ("…the plan cost / for forty seats"): the same turn's next

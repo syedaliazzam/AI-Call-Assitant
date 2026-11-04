@@ -1,8 +1,9 @@
 /**
- * Tests for apps/web/src/core/answer/history.ts (v1.0.4, ADR-0040): one entry per question. The same
- * words merge at any time; near-identical words (at least 80% shared, the same topic) merge within
- * 60 s; the newest good answer is the one shown; a failure, a screenshot or an empty question is
- * never merged; the winner of each merged answer can be looked up. All text is invented.
+ * Tests for apps/web/src/core/answer/history.ts (v1.0.4, ADR-0040; v1.1.0): one entry per question.
+ * The same or near-identical words (at least 80% shared, the same topic) merge within 60 s of the same
+ * call, and never across calls; the newest good answer is the one shown; a failure, a screenshot or an
+ * empty question is never merged; the winner of each merged answer can be looked up. All text is
+ * invented.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -75,18 +76,42 @@ describe('sameQuestion and nearQuestion', () => {
 });
 
 describe('mergeAnswers', () => {
-  it('merges the same question at any time, and shows the newest answer', () => {
+  it('merges the same question within a minute, and shows the newest answer', () => {
     const merged = mergeAnswers(
       [
         row('a', 0, 'TELL ME ABOUT YOURSELF', { cleanQuestion: 'Tell me about yourself.' }),
         row('b', 5_000, 'What does it cost?'),
-        row('c', 10 * 60_000, 'Tell me about yourself?'),
+        row('c', 40_000, 'Tell me about yourself?'),
       ],
       (answer) => answer.at,
     );
     expect(merged.list.map((answer) => answer.id)).toEqual(['b', 'c']);
     expect(merged.winnerOf.get('a')).toBe('c');
     expect(merged.winnerOf.has('b')).toBe(false);
+  });
+
+  it('keeps the same question apart when it is asked again later in the call', () => {
+    expect(
+      shownIds([
+        row('a', 0, 'Tell me about yourself?'),
+        row('b', 10 * 60_000, 'Tell me about yourself?'),
+      ]),
+    ).toEqual(['a', 'b']);
+  });
+
+  it('never merges across calls, however close in time (v1.0.4 merged them)', () => {
+    expect(
+      shownIds([
+        row('a', 0, 'Tell me about yourself?', { callStartedAt: 1_000 }),
+        row('b', 30_000, 'Tell me about yourself?', { callStartedAt: 2_000 }),
+      ]),
+    ).toEqual(['a', 'b']);
+    expect(
+      shownIds([
+        row('a', 0, 'Tell me about yourself?', { callStartedAt: 1_000 }),
+        row('b', 30_000, 'Tell me about yourself?', { callStartedAt: 1_000 }),
+      ]),
+    ).toEqual(['b']);
   });
 
   it('merges near-identical questions only within 60 s', () => {

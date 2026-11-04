@@ -1,9 +1,10 @@
 /**
  * File: apps/web/src/core/answer/format.ts
  * Purpose: Splits an answer's text (complete or still streaming) into its parts: the answer line,
- *          the bullet points, any code blocks, an optional closing tip to say, what to say about
- *          the code, and an optional private note for the user only. Joins the speakable parts back
- *          as plain text for Copy.
+ *          the bullet points, any code blocks, a coding answer's complexity, an optional closing tip to
+ *          say, what to say about the code, and an optional private note for the user only. Joins the
+ *          speakable parts back as plain text for Copy. v1.1.0 (ADR-0043): an answer line longer than
+ *          12 words is cut at a clause, and the rest becomes the first bullet.
  * Used by: src/features/answers/AnswerBody.tsx, src/features/live/AnswerPanel.tsx,
  *          src/features/live/LiveAnswers.tsx (the overlay), src/core/review/conversation.ts
  * Depends on: src/core/transcript/display.ts (sentenceCase, chipWords: for the card's question)
@@ -31,8 +32,12 @@ export interface AnswerParts {
   headline: string;
   /** The bullet points after it, without their marks (lines that are not bullets included). */
   bullets: string[];
+  /** True when the bullets are a coding answer's "Key steps:" (v1.1.0). */
+  keySteps: boolean;
   /** Code blocks (the coding shape, ADR-0030), never treated as bullets. */
   code: AnswerCode[];
+  /** A coding answer's "Complexity: …", without its label, or '' (v1.1.0). */
+  complexity: string;
   /** How to say a coding answer ("Say: …", without its label), or ''. */
   say: string;
   /** The closing line to say ("Tip: …", without its label), or '' when there is none. */
@@ -55,6 +60,18 @@ const SAY_LABEL = /^(?:how to )?say(?: it)?\s*:\s*/i;
 
 /** The label of a private note line. */
 const NOTE_LABEL = /^(?:private\s+)?note\s*:\s*/i;
+
+/** The line that opens a coding answer's steps. */
+const KEY_STEPS_LABEL = /^key steps\s*:?$/i;
+
+/** The label of a coding answer's complexity line. */
+const COMPLEXITY_LABEL = /^(?:time\s+)?complexity\s*:\s*/i;
+
+/** The longest answer line, in words, not counting a label (v1.1.0, item 16). */
+export const MAX_ANSWER_LINE_WORDS = 12;
+
+/** Where an answer line may be cut: after these marks, or before these joining words. */
+const CLAUSE_BREAK = /[,;:—–]\s+|\s+(?=(?:and|but|so|because|which|while|with|using)\s)/gi;
 
 /** Bullet marks at the start of a line: "-", "*", "•", or "1." / "1)". */
 const BULLET_MARK = /^\s*(?:[-*•]|\d+[.)])\s+/;
@@ -91,18 +108,62 @@ function plain(line: string): string {
 }
 
 /**
+ * The words of an answer line, not counting a label or Markdown marks.
+ *
+ * @param line The line.
+ * @returns How many words it has.
+ * Called from: splitLongLine(); scripts/lib/answer-line.ts; tests
+ */
+export function answerLineWords(line: string): number {
+  const clean = plain(line.replace(BULLET_MARK, '')).replace(HEADLINE_LABEL, '');
+  return clean.split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * Cuts an answer line longer than the limit at its last clause break within the limit (v1.1.0, item
+ * 16). The prompt asks for 12 words, and the model sometimes runs over; this is what makes the card
+ * keep to it, with no extra request. A line with no such break stays whole: a cut mid-clause would
+ * read worse than one long line.
+ *
+ * @param line The answer line.
+ * @returns The line to show and the rest ('' when it fits or cannot be cut).
+ * Called from: splitAnswer(); tests
+ */
+export function splitLongLine(line: string): { line: string; rest: string } {
+  if (answerLineWords(line) <= MAX_ANSWER_LINE_WORDS) return { line, rest: '' };
+  let cut: { end: number; next: number } | null = null;
+  for (const match of line.matchAll(CLAUSE_BREAK)) {
+    const before = line.slice(0, match.index);
+    const words = answerLineWords(before);
+    if (words > MAX_ANSWER_LINE_WORDS) break;
+    // Fewer than three words is not a line anyone can say on its own.
+    if (words >= 3) cut = { end: match.index, next: match.index + match[0].length };
+  }
+  if (!cut) return { line, rest: '' };
+  const head = line.slice(0, cut.end).trim();
+  const tail = line.slice(cut.next).trim();
+  return {
+    line: /[.!?]$/.test(head) ? head : `${head}.`,
+    rest: tail.charAt(0).toUpperCase() + tail.slice(1),
+  };
+}
+
+/**
  * Splits an answer into its parts. A line after the first that starts "Tip:", "Say:" or "Note:" is
  * that part; a fenced block is code (one still streaming runs to the end); every other line is a
  * bullet. While the text streams, a line becomes the tip or note as soon as its label has arrived.
  *
  * @param text The answer text so far.
- * @returns The answer line (first non-empty line), bullets, code, what to say, tip and note.
+ * @returns The answer line (first non-empty line), bullets, code, complexity, what to say, tip and
+ *          note.
  * Called from: AnswerBody.tsx; LiveAnswers.tsx; answerText(); conversation.ts; tests
  */
 export function splitAnswer(text: string): AnswerParts {
   const lines = text.split('\n');
   const bullets: string[] = [];
   const code: AnswerCode[] = [];
+  let keySteps = false;
+  let complexity = '';
   let headline = '';
   let say = '';
   let tip = '';
@@ -125,14 +186,23 @@ export function splitAnswer(text: string): AnswerParts {
     }
     const clean = plain(line.replace(BULLET_MARK, ''));
     if (!clean) continue;
-    if (TIP_LABEL.test(clean)) tip = clean.replace(TIP_LABEL, '');
+    if (KEY_STEPS_LABEL.test(clean)) keySteps = true;
+    else if (COMPLEXITY_LABEL.test(clean)) complexity = clean.replace(COMPLEXITY_LABEL, '');
+    else if (TIP_LABEL.test(clean)) tip = clean.replace(TIP_LABEL, '');
     else if (SAY_LABEL.test(clean)) say = clean.replace(SAY_LABEL, '');
     else if (NOTE_LABEL.test(clean)) note = clean.replace(NOTE_LABEL, '');
     // A depth offer is the Tip when there is none; a second one adds nothing to say.
     else if (DEPTH_OFFER.test(clean)) tip ||= clean;
     else bullets.push(clean);
   }
-  return { headline, bullets, code, say, tip, note };
+  // Only with something after it: an answer that is one paragraph, or one line of small talk, is
+  // complete as it stands, and a line still arriving has nothing yet to sit above.
+  if (bullets.length > 0 || code.length > 0) {
+    const { line, rest } = splitLongLine(headline);
+    headline = line;
+    if (rest) bullets.unshift(rest);
+  }
+  return { headline, bullets, keySteps, code, complexity, say, tip, note };
 }
 
 /**
@@ -144,11 +214,12 @@ export function splitAnswer(text: string): AnswerParts {
  * Called from: AnswerPanel.tsx and CompactView.tsx (Copy); tests
  */
 export function answerText(text: string): string {
-  const { headline, bullets, code, say, tip } = splitAnswer(text);
+  const { headline, bullets, code, complexity, say, tip } = splitAnswer(text);
   return [
     headline,
     ...bullets.map((bullet) => `- ${bullet}`),
     ...code.map((block) => block.text),
+    ...(complexity ? [`Complexity: ${complexity}`] : []),
     ...(say ? [say] : []),
     ...(tip ? [tip] : []),
   ].join('\n');

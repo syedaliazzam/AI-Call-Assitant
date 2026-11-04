@@ -29,6 +29,8 @@ export interface ScenarioRunResult {
 export interface RunChecks {
   /** True when the reply opened with its hidden line. */
   hiddenLine: boolean;
+  /** v1.1.0: how many words the answer line has, for an answer that has one. */
+  answerLineWords?: number;
   /** Whether the question type was as expected (when the scenario expects one). */
   typeOk?: boolean;
   /** Whether "for the call" or "Ask Kite" was as expected (when the scenario expects one). */

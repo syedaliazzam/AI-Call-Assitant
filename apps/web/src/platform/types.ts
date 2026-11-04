@@ -4,7 +4,7 @@
  *          between the desktop app (Electron) and a normal browser (Chrome / Edge).
  * Used by: src/platform/browser.ts, src/platform/desktop.ts, src/platform/index.ts, and any code
  *          that calls getPlatform()
- * Depends on: @kite/shared (HotkeyAction, the overlay types)
+ * Depends on: @kite/shared (HotkeyAction, the overlay and window types)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (the platform adapter); ADR-0035
  */
 import type {
@@ -13,15 +13,26 @@ import type {
   HotkeyAction,
   HotkeyStatus,
   OverlayEdge,
+  OverlayLayout,
   OverlayMode,
   OverlayPreset,
   OverlayResizeStep,
   ShareProtectionState,
+  WindowControlAction,
 } from '@kite/shared';
+import type { MicDevice } from './media';
 import type { PipRenderer } from './pip';
 
 // Re-exported so code using the platform can import every platform type from one place.
-export type { HotkeyAction, OverlayEdge, OverlayMode, OverlayPreset, OverlayResizeStep };
+export type { MicDevice };
+export type {
+  HotkeyAction,
+  OverlayEdge,
+  OverlayLayout,
+  OverlayMode,
+  OverlayPreset,
+  OverlayResizeStep,
+};
 
 /**
  * Where the other side's sound comes from:
@@ -63,10 +74,34 @@ export interface Platform {
    *   Kite origin only (apps/desktop/src/security.ts, Stage 5).
    * - Browser: getUserMedia; the browser shows its own permission prompt.
    *
+   * @param deviceId The microphone to open (v1.1.0); the system's default when absent.
    * @returns A live audio-only stream. Stop its tracks to release the microphone.
    * @throws DOMException('NotAllowedError') if the user or the system denies the microphone.
    */
-  getMicStream(): Promise<MediaStream>;
+  getMicStream(deviceId?: string): Promise<MediaStream>;
+
+  /**
+   * The microphones on this computer, for the overlay's device list (v1.1.0).
+   *
+   * @returns The microphones.
+   */
+  listMicrophones(): Promise<MicDevice[]>;
+
+  /**
+   * Watches whether the computer is on battery (v1.1.0, ADR-0044).
+   *
+   * @param handler Called now and on every change: true on battery, false plugged in, null unknown.
+   * @returns A function that stops watching.
+   */
+  watchBattery(handler: (onBattery: boolean | null) => void): () => void;
+
+  /**
+   * The snap zone under the pointer while the overlay is dragged (v1.1.0, the zones window's page).
+   *
+   * @param handler Called with the zone, or null when the pointer is on none.
+   * @returns A function that stops listening.
+   */
+  onSnapZone(handler: (zone: OverlayPreset | null) => void): () => void;
 
   /**
    * Opens the other side of the call (the "Them" channel). Always a separate stream from the
@@ -175,6 +210,46 @@ export interface Platform {
   setOverlayMode(mode: OverlayMode): void;
 
   /**
+   * v1.1.0 (ADR-0041): whether this app has the home panel and its window calls (a desktop app from
+   * 1.1.0). Elsewhere /home goes to the dashboard.
+   *
+   * @returns True where openPagesWindow and windowControl do something.
+   */
+  hasHomePanel(): boolean;
+
+  /**
+   * v1.1.0: opens a Kite page. In a desktop app from 1.1.0: in a normal window (a separate one during
+   * a call, whose page must not be navigated away). Elsewhere: in this tab.
+   *
+   * @param path The page's path, for example '/sessions/new'.
+   */
+  openPagesWindow(path: string): void;
+
+  /**
+   * v1.1.0: minimises or closes this window (the frameless home panel draws its own buttons). Nothing
+   * happens where it is not supported.
+   *
+   * @param action What to do.
+   */
+  windowControl(action: WindowControlAction): void;
+
+  /**
+   * v1.1.0: whether the overlay's window fits its panels (a desktop app from 1.1.0). An older desktop
+   * app and a browser picture-in-picture window keep a fixed window: the panels share its height.
+   *
+   * @returns True where setOverlayLayout does something.
+   */
+  overlayFitsPanels(): boolean;
+
+  /**
+   * v1.1.0: tells the window which panels are open, so it fits them. Nothing happens where it is not
+   * supported.
+   *
+   * @param layout The open panels.
+   */
+  setOverlayLayout(layout: OverlayLayout): void;
+
+  /**
    * Minimises the main window when a call starts in the overlay. Nothing happens in a browser
    * (a web page cannot minimise its window).
    */
@@ -270,10 +345,11 @@ export interface Platform {
   supportsLiveCalls(): boolean;
 
   /**
-   * Turns screen-share protection of the compact live window on or off (remembered).
-   * - Desktop: setContentProtection(on) on the compact window, re-applied on every show; the
-   *   window stays in the taskbar and Alt+Tab. Windows 10 2004+: left out of screen shares;
-   *   macOS: apps built on ScreenCaptureKit may still capture it.
+   * Turns screen-share protection on or off (remembered).
+   * - Desktop: setContentProtection(on) on every Kite window (from shell 1.1.0; the compact window
+   *   alone before that), re-applied on every show; the windows stay in the taskbar and Alt+Tab.
+   *   Windows 10 2004+: left out of screen shares; macOS: apps built on ScreenCaptureKit may still
+   *   capture them.
    * - Browser: not possible (supported: false); the UI gives guidance instead.
    *
    * @param on True to protect, false to stop protecting.

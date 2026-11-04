@@ -119,6 +119,9 @@ const SessionSchema = z.object({
   createdAt: z.number(),
   status: z.enum(['not-started', 'live', 'ended']),
   lastActiveAt: z.number().nullable(),
+  // v1.1.0: absent in older files.
+  contactName: z.string().optional(),
+  lastCallMs: z.number().optional(),
 });
 const DocumentSchema = z.object({
   id: z.string().min(1),
@@ -161,6 +164,10 @@ const AnswerSchema = z.object({
   sessionId: z.string().min(1),
   mode: z.enum(['answer', 'chat', 'screenshot']),
   question: z.string(),
+  // v1.0.2: this field was missing here, so an export dropped the cleaned question; fixed in v1.1.0.
+  cleanQuestion: z.string().optional(),
+  // v1.1.0: absent in older files.
+  callStartedAt: z.number().optional(),
   text: z.string(),
   model: z.enum(['fast', 'smart']),
   msFirstToken: z.number().nullable(),

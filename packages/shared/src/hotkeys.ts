@@ -17,12 +17,21 @@
  * - `screenshot`: answer from a screenshot of the screen.
  * - `chat`: open the box for a typed question.
  * - `clear`: clear the current answer.
+ * - `clear-transcript`: clear the words on screen (v1.1.0: Ctrl+Shift+Backspace, formerly Chat).
  * - `prev` / `next`: move through earlier answers.
  * - `ask-kite`: open Ask Kite (ADR-0030).
  * - `script-bar`: show or hide the overlay's slim script bar (v1.0.2, ADR-0035).
  */
 export type HotkeyAction =
-  'answer' | 'screenshot' | 'chat' | 'clear' | 'prev' | 'next' | 'ask-kite' | 'script-bar';
+  | 'answer'
+  | 'screenshot'
+  | 'chat'
+  | 'clear'
+  | 'clear-transcript'
+  | 'prev'
+  | 'next'
+  | 'ask-kite'
+  | 'script-bar';
 
 /** Every action the Kite page carries out (messages from the shell are checked against it). */
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
@@ -30,6 +39,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
   'screenshot',
   'chat',
   'clear',
+  'clear-transcript',
   'prev',
   'next',
   'ask-kite',
@@ -44,10 +54,10 @@ export type OverlayAction =
   'overlay-toggle' | `overlay-${OverlayDirection}` | `overlay-${OverlayDirection}-big`;
 
 /**
- * A shortcut that works from any app while a call is on. `script-bar` goes to the page like Answer
- * (the live page decides what the overlay shows); the overlay actions are done by the shell.
+ * A shortcut that works from any app while a call is on. `chat` and `script-bar` go to the page like
+ * Answer (the live page decides what the overlay shows); the overlay actions are done by the shell.
  */
-export type CallHotkey = 'answer' | 'screenshot' | 'script-bar' | OverlayAction;
+export type CallHotkey = 'answer' | 'screenshot' | 'chat' | 'script-bar' | OverlayAction;
 
 /** A shortcut that works from any app, or the shortcut held for as long as the app runs. */
 export type GlobalHotkey = CallHotkey | 'ask-kite';
@@ -67,6 +77,9 @@ export const ASK_KITE_HOTKEY = 'CommandOrControl+Alt+K';
 export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
   answer: 'CommandOrControl+Enter',
   screenshot: 'CommandOrControl+Shift+Enter',
+  // v1.1.0 (ADR-0041): global during a call, because the meeting usually has the keyboard. It edits
+  // no text in other apps, but some apps and input methods use it, which Settings → Hotkeys reports.
+  chat: 'CommandOrControl+Shift+Space',
   'overlay-toggle': 'CommandOrControl+Alt+H',
   // v1.0.2 (ADR-0035): the script bar. Registered only during a call, like the others. On layouts
   // where Ctrl+Alt types a letter (AltGr; Polish: AltGr+S types "ś") it can clash, and on macOS
@@ -89,8 +102,11 @@ export const GLOBAL_HOTKEYS = Object.keys(DEFAULT_GLOBAL_HOTKEYS) as readonly Ca
  * The shortcuts that work only while Kite has focus (the page's own key handling), never
  * registered globally: in other apps these keys delete and move by word.
  */
-export const FOCUSED_HOTKEYS: Readonly<Record<'chat' | 'clear' | 'prev' | 'next', string>> = {
-  chat: 'CommandOrControl+Shift+Backspace',
+export const FOCUSED_HOTKEYS: Readonly<
+  Record<'clear' | 'clear-transcript' | 'prev' | 'next', string>
+> = {
+  // v1.1.0: this key was Chat until 1.0.4; Chat moved to Ctrl+Shift+Space.
+  'clear-transcript': 'CommandOrControl+Shift+Backspace',
   clear: 'CommandOrControl+Backspace',
   prev: 'CommandOrControl+Left',
   next: 'CommandOrControl+Right',
@@ -138,6 +154,12 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     actions: ['screenshot'],
   },
   {
+    label: 'Chat',
+    accelerator: DEFAULT_GLOBAL_HOTKEYS.chat,
+    scope: 'global',
+    actions: ['chat'],
+  },
+  {
     label: 'Show or hide overlay',
     accelerator: DEFAULT_GLOBAL_HOTKEYS['overlay-toggle'],
     scope: 'global',
@@ -171,7 +193,12 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     scope: 'global',
     actions: ['ask-kite'],
   },
-  { label: 'Chat', accelerator: FOCUSED_HOTKEYS.chat, scope: 'focused', actions: [] },
+  {
+    label: 'Clear transcript',
+    accelerator: FOCUSED_HOTKEYS['clear-transcript'],
+    scope: 'focused',
+    actions: [],
+  },
   { label: 'Clear answer', accelerator: FOCUSED_HOTKEYS.clear, scope: 'focused', actions: [] },
   {
     label: 'Previous or next answer',
@@ -197,6 +224,7 @@ export function hotkeyLabel(accelerator: string, mac: boolean): string {
     .replace('Shift', mac ? '⇧' : 'Shift')
     .replace('Backspace', '⌫')
     .replace('Enter', '↵')
+    .replace('Space', '␣')
     .replace(/\bLeft\b/, '←')
     .replace(/\bRight\b/, '→')
     .replace(/\bUp\b/, '↑')

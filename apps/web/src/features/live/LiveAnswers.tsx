@@ -6,8 +6,9 @@
  *          Answer and Screenshot buttons with their keys; plus the hotkeys (through the platform
  *          adapter: in-page shortcuts, and the desktop app's global shortcuts), the link to the
  *          overlay (core/live/liveChannel.ts: state out, commands in, including the script bar and
- *          dictation), going between the overlay and this window (⛶, Back to compact, Esc), and the
- *          duplicate-safe "Answer this" for transcript bubbles (registered with the live page).
+ *          dictation), going between the overlay and this window (⋮, Back to compact, Esc), and the
+ *          duplicate-safe "Answer this" for transcript bubbles (registered with the live page). v1.1.0
+ *          (ADR-0041): also what the stacked overlay's panels and menu need.
  * Used by: src/features/live/LivePage.tsx (live view);
  *          tests/integration/harness/answers.tsx (the answer harness test)
  * Depends on: src/features/live (useLiveAnswers, TopBar, ChatBox, AnswerPanel, useCallDictation),
@@ -26,8 +27,12 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { splitAnswer } from '@/core/answer/format';
-import type { SpeechSpan } from '@/core/answer/repeatGuard';
+import { answeredGroupIds, type SpeechSpan } from '@/core/answer/repeatGuard';
 import { getChatTarget, setChatTarget } from '@/core/storage/answerPrefs';
+import { getAutoAnswer } from '@/core/storage/autoAnswer';
+import { hintSeen, markHintSeen } from '@/core/storage/hintPrefs';
+import { groupLines, groupWords } from '@/core/transcript/group';
+import { isUnclearGroup } from '@/core/transcript/unclear';
 import { AnswerPreferencesDialog } from '@/features/session-setup/AnswerPreferencesDialog';
 import type { MenuItem } from '@/ui/Menu';
 import { updateSession } from '@/core/storage/sessions';
@@ -37,9 +42,11 @@ import { liveQuestion } from '@/core/transcript/liveQuestion';
 import {
   openLiveChannel,
   type CompactAudio,
+  type CompactLevels,
   type CompactState,
   type LiveChannel,
 } from '@/core/live/liveChannel';
+import type { HygieneState } from '@/core/live/hygiene';
 import type { Session, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
@@ -95,7 +102,40 @@ export interface LiveAnswersProps {
    * at the top of this panel.
    */
   topBarSlot?: HTMLElement | null;
+  /** v1.1.0: the audio levels, for the overlay's level bars. */
+  levels?: CompactLevels;
+  /** v1.1.0: lines that started before this time are off the overlay too (Unix ms; 0: none). */
+  transcriptClearedAt?: number;
+  /** v1.1.0: clears the words on screen (the overlay's Clear). */
+  onClearTranscript?: () => void;
+  /** v1.1.0: changes the answer language (the overlay's Language). */
+  onLanguage?: (code: string) => void;
+  /** v1.1.0: switches the microphone (the overlay's device list). */
+  onMic?: (deviceId: string) => void;
+  /** v1.1.0: the microphone in use ('' for the system's default). */
+  micDeviceId?: string;
+  /** v1.1.0: where "Them" comes from, in words. */
+  themSourceLabel?: string | null;
+  /** v1.1.0: "Still in a call?" or paused (ADR-0044). */
+  hygiene?: HygieneState;
+  /** v1.1.0: yes, still in a call. */
+  onStillHere?: () => void;
+  /** v1.1.0: listen again after a pause. */
+  onResume?: () => void;
+  /** v1.1.0: an answer was asked for (it counts as activity for the hygiene prompts). */
+  onActivity?: () => void;
+  /** v1.1.0: how many echo lines were hidden in this call (the one-time headphones hint). */
+  echoCount?: number;
 }
+
+/** How many of the latest bubbles the overlay gets: the call window and Review have them all. */
+const OVERLAY_GROUPS = 150;
+
+/** How many hidden echo lines in a call before the one-time "Use headphones" hint shows. */
+const HEADPHONES_HINT_AFTER = 3;
+
+/** How often the overlay's level bars get new levels, in ms: they change every 50 ms. */
+const LEVELS_EVERY_MS = 120;
 
 /** What the transcript's "Answer this" buttons need from the answers (v1.0.2). */
 export interface AnswerThisBridge {
@@ -146,6 +186,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const [chatTarget, setTarget] = useState<TargetChoice>(() => getChatTarget(props.session.id));
   // Grows with each press of the Ask Kite shortcut, so the overlay opens its chat box too.
   const [askKiteCount, setAskKiteCount] = useState(0);
+  // v1.1.0: likewise the Chat shortcut pressed in another app.
+  const [chatCount, setChatCount] = useState(0);
+  // v1.1.0: the overlay's ⋮ can turn auto-answer on or off for this call.
+  const [autoChoice, setAutoChoice] = useState<boolean | null>(null);
+  const [headphonesClosed, setHeadphonesClosed] = useState(false);
   const answers = useLiveAnswers({
     chatTarget,
     session,
@@ -154,6 +199,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     transcript: props.transcript,
     callStartedAt: props.callStartedAt,
     store: props.store,
+    paused: props.hygiene === 'paused',
   });
   // Grows with each Chat or Ask Kite shortcut: the message box (always shown) takes the typing.
   const [focusSignal, setFocusSignal] = useState(0);
@@ -177,16 +223,13 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const entry = answers.index >= 0 ? (answers.entries[answers.index] ?? null) : null;
   const answering = answers.entries.some((candidate) => candidate.status === 'streaming');
   // Auto-answer (beta, off by default): answers a finished question from Them by itself.
+  // The choice made in this call first; then this session's own switch; then the device's setting.
+  const autoOn = autoChoice ?? props.autoAnswer ?? (props.session.autoAnswer || getAutoAnswer());
   useAutoAnswer({
     transcript: props.transcript,
     streaming: answering,
     autoAnswer: answers.autoAnswer,
-    // This session's own switch turns it on; otherwise the device-wide setting decides.
-    ...(props.autoAnswer !== undefined
-      ? { enabled: props.autoAnswer }
-      : props.session.autoAnswer
-        ? { enabled: true }
-        : {}),
+    enabled: autoOn,
   });
   const [compactNotice, setCompactNotice] = useState<string | null>(null);
   // Day 6 Stage 4e: no connection pauses answers (banner); a signed-out answer offers to sign
@@ -204,12 +247,47 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const terms = useMemo(() => displayTerms(props.session), [props.session]);
   const audioYou = props.audio?.you ?? true;
   const audioThem = props.audio?.them ?? true;
+  const clearedAt = props.transcriptClearedAt ?? 0;
+  const visibleLines = useMemo(
+    () => (clearedAt > 0 ? lines.filter((line) => line.tStart >= clearedAt) : lines),
+    [lines, clearedAt],
+  );
+  const groups = useMemo(() => groupLines(visibleLines, { terms }), [visibleLines, terms]);
+  const groupsRef = useRef(groups);
+  const answeredSpanList = answers.answeredSpans;
+  const language = props.session.preferences.language;
+  const echoCount = props.echoCount ?? 0;
+  const headphonesHint =
+    !headphonesClosed && echoCount >= HEADPHONES_HINT_AFTER && !hintSeen('headphones');
   const compactState = useMemo<CompactState>(() => {
     const parts = entry ? splitAnswer(entry.text) : null;
+    const answeredIds = answeredGroupIds(
+      groups,
+      answeredSpanList.map((item) => item.span),
+    );
     return {
       audio: { you: audioYou, them: audioThem },
-      chips: transcriptChips(lines, terms),
-      liveQuestion: liveQuestion(lines, terms, questionClearedAt),
+      chips: transcriptChips(visibleLines, terms),
+      liveQuestion: liveQuestion(visibleLines, terms, questionClearedAt),
+      groups: groups.slice(-OVERLAY_GROUPS).map((group) => ({
+        id: group.id,
+        speaker: group.speaker,
+        finalText: group.finalText,
+        provisionalText: group.provisionalText,
+        tStart: group.tStart,
+        question: group.question,
+        answered: answeredIds.has(group.id),
+        unclear: isUnclearGroup(group),
+      })),
+      themName: props.session.contactName?.trim() || 'Client 1',
+      language,
+      autoAnswer: autoOn,
+      chatCount,
+      hygiene: props.hygiene ?? 'ok',
+      headphonesHint,
+      sessionId: props.session.id,
+      micDeviceId: props.micDeviceId ?? '',
+      ...(props.themSourceLabel ? { themSourceLabel: props.themSourceLabel } : {}),
       answer:
         entry && parts
           ? {
@@ -247,12 +325,23 @@ export function LiveAnswers(props: LiveAnswersProps) {
       startedAt: props.callStartedAt,
     };
   }, [
+    groups,
+    visibleLines,
+    answeredSpanList,
+    language,
+    autoOn,
+    chatCount,
+    props.hygiene,
+    headphonesHint,
+    props.session.id,
+    props.session.contactName,
+    props.micDeviceId,
+    props.themSourceLabel,
     scriptBar,
     props.callStartedAt,
     props.dictation?.supported,
     props.dictation?.listening,
     props.dictation?.notice,
-    lines,
     questionClearedAt,
     terms,
     entry,
@@ -280,9 +369,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const chatTargetRef = useRef(chatTarget);
   /** Clear: stops a streaming answer, goes back to the newest one, and clears the live question. */
   const clearView = useRef(() => {
-    setQuestionClearedAt(Date.now());
     actions.current.clear();
   });
+  // v1.1.0: the words on screen and the live question; the answer stays.
+  const onClearTranscript = useRef(props.onClearTranscript);
+  const clearTranscript = useRef(() => {
+    setQuestionClearedAt(Date.now());
+    onClearTranscript.current?.();
+  });
+  const overlayProps = useRef(props);
   // Whether the overlay has been open in this call: only then does Escape go back to it.
   const overlayOpened = useRef(false);
   useEffect(() => {
@@ -292,7 +387,16 @@ export function LiveAnswers(props: LiveAnswersProps) {
     actions.current = answers;
     onEnd.current = props.onEnd;
     latestPreferences.current = props.session.preferences;
+    onClearTranscript.current = props.onClearTranscript;
+    overlayProps.current = props;
+    groupsRef.current = groups;
   });
+  // A request for an answer counts as someone being on the call (ADR-0044).
+  const entryCount = answers.entries.length;
+  const onActivity = props.onActivity;
+  useEffect(() => {
+    if (entryCount > 0) onActivity?.();
+  }, [entryCount, onActivity]);
   // The link to the compact view (Day 5): it sends commands; End (unmount) tells it the call
   // ended and asks the platform to close it.
   useEffect(() => {
@@ -303,8 +407,23 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'answer') actions.current.answer();
       else if (command.type === 'screenshot') actions.current.screenshot();
       else if (command.type === 'clear') clearView.current();
-      else if (command.type === 'call-window') {
-        // ⛶ (v1.0.4): the full call window, at the newest answer. The shell hides the overlay.
+      else if (command.type === 'stop') actions.current.stop();
+      else if (command.type === 'clear-transcript') clearTranscript.current();
+      else if (command.type === 'answer-this') {
+        const group = groupsRef.current.find((candidate) => candidate.id === command.groupId);
+        if (group) {
+          actions.current.answerThis(groupWords(group), { start: group.tStart, end: group.tEnd });
+        }
+      } else if (command.type === 'language') overlayProps.current.onLanguage?.(command.code);
+      else if (command.type === 'auto-answer') setAutoChoice(command.on);
+      else if (command.type === 'mic') overlayProps.current.onMic?.(command.deviceId);
+      else if (command.type === 'still-here') overlayProps.current.onStillHere?.();
+      else if (command.type === 'resume') overlayProps.current.onResume?.();
+      else if (command.type === 'headphones-seen') {
+        markHintSeen('headphones');
+        setHeadphonesClosed(true);
+      } else if (command.type === 'call-window') {
+        // ⋮ (v1.0.4): the full call window, at the newest answer. The shell hides the overlay.
         actions.current.showLatest();
         void getPlatform()
           .showCallWindow()
@@ -344,13 +463,24 @@ export function LiveAnswers(props: LiveAnswersProps) {
     compactStateRef.current = compactState;
     channel.current?.publish(compactState);
   }, [compactState]);
+  // The level bars get their own small message, a few times a second.
+  const levelsSentAt = useRef(0);
+  const levels = props.levels;
+  useEffect(() => {
+    if (!levels) return;
+    const now = performance.now();
+    if (now - levelsSentAt.current < LEVELS_EVERY_MS) return;
+    levelsSentAt.current = now;
+    channel.current?.publishLevels(levels);
+  }, [levels]);
 
   // "Start calls in the overlay" (Settings, default on; ADR-0029): this view mounts when the call
   // connects, so that is when the overlay opens and the main window steps aside. A browser asks
   // for a fresh click before it opens a picture-in-picture window, so there the user is told.
   const startInOverlay = props.startInOverlay;
   useEffect(() => {
-    if (!(startInOverlay ?? getStartInOverlay())) return;
+    // v1.1.0 (ADR-0041): a desktop app from 1.1.0 always starts calls in the overlay.
+    if (!(startInOverlay ?? (getPlatform().hasHomePanel() || getStartInOverlay()))) return;
     openOverlay(props.session.id).then(
       () => {
         overlayOpened.current = true;
@@ -365,8 +495,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
     () =>
       getPlatform().onHotkey((action) => {
         if (action === 'answer') actions.current.answer();
-        else if (action === 'chat') setFocusSignal((count) => count + 1);
-        else if (action === 'clear') clearView.current();
+        else if (action === 'chat') {
+          setFocusSignal((count) => count + 1);
+          setChatCount((count) => count + 1);
+        } else if (action === 'clear') clearView.current();
+        else if (action === 'clear-transcript') clearTranscript.current();
         else if (action === 'prev') actions.current.prev();
         else if (action === 'next') actions.current.next();
         else if (action === 'screenshot') actions.current.screenshot();

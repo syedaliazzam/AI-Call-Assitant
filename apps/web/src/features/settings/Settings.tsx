@@ -14,7 +14,6 @@
  */
 'use client';
 
-import type { ShareProtectionState } from '@kite/shared';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   BUILT_IN_DEFAULTS,
@@ -29,7 +28,7 @@ import {
   MODEL_OPTIONS,
   TONE_OPTIONS,
 } from '@/features/session-setup/labels';
-import { getPlatform } from '@/platform';
+import { PRIVATE_LABEL, privateHint, usePrivate } from '@/features/privacy/usePrivate';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { Select } from '@/ui/Select';
@@ -64,42 +63,20 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /**
- * The screen-share protection switch (Day 5). In the desktop app it turns the compact window's
- * protection on or off (setContentProtection only; the window still shows in the taskbar and
- * Alt+Tab). In a browser it explains what to do instead.
+ * The Private switch (screen-share protection; one toggle and one state with both ⋮ menus,
+ * ADR-0042). setContentProtection only: Kite's windows still show in the taskbar and Alt+Tab. In a
+ * browser it explains what to do instead.
  *
  * @returns The switch, or the guidance.
  */
 function ShareProtectionSetting() {
-  const [state, setState] = useState<ShareProtectionState | null>(null);
-  useEffect(() => {
-    getPlatform()
-      .getShareProtection()
-      .then(setState)
-      .catch(() => undefined);
-  }, []);
+  const { state, change } = usePrivate();
   if (!state) return <p className="text-[13px] text-ui-muted">Checking…</p>;
   if (!state.supported) {
-    return (
-      <p className="text-[13px] text-ui-muted">
-        {getPlatform().kind === 'desktop'
-          ? 'This computer cannot hide a window from screen sharing. Share a single window instead of the whole screen, or keep Kite on another monitor.'
-          : 'A browser cannot hide its windows from screen sharing. In the meeting, share a single tab or window instead of the whole screen, or keep Kite on another monitor. The Kite desktop app can hide its compact window.'}
-      </p>
-    );
+    return <p className="text-[13px] text-ui-muted">{privateHint(state)}</p>;
   }
   return (
-    <Toggle
-      label="Hide the compact window from screen sharing"
-      hint="On: people you share your whole screen with do not see Kite's compact window (Windows 10 version 2004 or later). The window still appears in your taskbar and Alt+Tab. On macOS, some apps that use the newer capture system may still show it."
-      checked={state.on}
-      onChange={(on) => {
-        getPlatform()
-          .setShareProtection(on)
-          .then(setState)
-          .catch(() => undefined);
-      }}
-    />
+    <Toggle label={PRIVATE_LABEL} hint={privateHint(state)} checked={state.on} onChange={change} />
   );
 }
 

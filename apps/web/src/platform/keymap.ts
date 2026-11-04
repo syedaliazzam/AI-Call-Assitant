@@ -54,7 +54,8 @@ function isTyping(target: EventTarget | null): boolean {
  *
  * @param press The key press.
  * @param mac   True on macOS (⌘ is the modifier), false elsewhere (Ctrl).
- * @returns 'answer', 'screenshot', 'chat', 'clear', 'prev', 'next', 'ask-kite', or null.
+ * @returns 'answer', 'screenshot', 'chat', 'clear', 'clear-transcript', 'prev', 'next', 'ask-kite',
+ *          or null.
  * Called from: listenForHotkeys(); tests
  */
 export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
@@ -77,7 +78,10 @@ export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
     case 'Enter':
       return press.shiftKey ? 'screenshot' : 'answer';
     case 'Backspace':
-      return press.shiftKey ? 'chat' : 'clear';
+      // v1.1.0: Ctrl+Shift+Backspace clears the transcript; Chat moved to Ctrl+Shift+Space.
+      return press.shiftKey ? 'clear-transcript' : 'clear';
+    case ' ':
+      return press.shiftKey ? 'chat' : null;
     case 'ArrowLeft':
       return press.shiftKey ? null : 'prev';
     case 'ArrowRight':
