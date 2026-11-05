@@ -1,6 +1,6 @@
 # Custom domain: call.paramountintelligence.co
 
-The app's address for people is `https://call.paramountintelligence.co`. The old address, `https://kite-call-assistant.vercel.app`, must keep working with no redirect: installed desktop apps (1.1.0 and 1.2.0) load it and block every other origin. The reasons are in [ADR-0046](../decisions/ADR-0046-custom-domain-with-two-addresses.md).
+The app's address for people is `https://call.paramountintelligence.co`. The old address, `https://kite-call-assistant.vercel.app`, must keep working with no redirect, for good: every desktop app loads it and blocks every other origin. The reasons are in [ADR-0046](../decisions/ADR-0046-custom-domain-with-two-addresses.md) and [ADR-0047](../decisions/ADR-0047-desktop-keeps-the-vercel-app-origin.md).
 
 ## Setup
 
@@ -72,6 +72,8 @@ vercel env rm KITE_TRUSTED_ORIGINS production
 
 Leave the domain in place unless you are dropping it. Sessions made on the new address while it was live stay in those browsers; they can be moved with **Export my data** and **Import data**.
 
-## Before a desktop release changes its address
+## The desktop app stays on the old address
 
-Sessions, documents and settings are stored per address. A desktop release that opens a new address starts on an empty app and asks people to sign in again, although their data is still on disk under the old address. **Do not release such a version until this is solved.** See ADR-0046.
+The desktop app keeps `kite-call-assistant.vercel.app`, and **that address must never be removed or redirected** ([ADR-0047](../decisions/ADR-0047-desktop-keeps-the-vercel-app-origin.md)). That rules out removing it from `KITE_TRUSTED_ORIGINS`, adding a redirect, and renaming or replacing the Vercel project.
+
+Sessions, documents and settings are stored per address, so if the desktop app ever has to move, it needs automatic migration of that data first.

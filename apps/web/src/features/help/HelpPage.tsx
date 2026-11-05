@@ -6,12 +6,43 @@
  * Depends on: src/core/answer/markdown.ts (the Markdown splitter), ./guideText.ts, src/ui/PageShell.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S2 Help)
  */
-import { inlinePieces, markdownBlocks } from '@/core/answer/markdown';
+import { inlinePieces, linkPieces, markdownBlocks } from '@/core/answer/markdown';
 import { PageShell } from '@/ui/PageShell';
 import { USER_GUIDE_MD } from './guideText';
 
 /**
- * One line with its bold and code marks.
+ * Words with their links. A link opens in a new window: in the desktop app that is the system
+ * browser, because the app itself never leaves its own address.
+ *
+ * @param props.text The words.
+ * @returns The pieces.
+ * Rendered by: Line
+ */
+function Linked({
+  text,
+}: {
+  /** The words. */
+  text: string;
+}) {
+  return linkPieces(text).map((piece, index) =>
+    piece.href ? (
+      <a
+        key={index}
+        href={piece.href}
+        target="_blank"
+        rel="noreferrer"
+        className="text-ui-link underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+      >
+        {piece.text}
+      </a>
+    ) : (
+      <span key={index}>{piece.text}</span>
+    ),
+  );
+}
+
+/**
+ * One line with its bold and code marks, and its links.
  *
  * @param props.text The line.
  * @returns The pieces.
@@ -27,7 +58,7 @@ function Line({
     if (piece.style === 'bold') {
       return (
         <strong key={index} className="font-semibold text-ui-heading">
-          {piece.text}
+          <Linked text={piece.text} />
         </strong>
       );
     }
@@ -38,7 +69,7 @@ function Line({
         </code>
       );
     }
-    return <span key={index}>{piece.text}</span>;
+    return <Linked key={index} text={piece.text} />;
   });
 }
 

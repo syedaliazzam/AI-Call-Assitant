@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.18.0"
+version: "3.18.1"
 status: "Current: the single document the team builds from"
 date: "2026-11-05"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.18.0, **Current**: the only document to build from |
+| Version | 3.18.1, **Current**: the only document to build from |
+| Changes in 3.18.1 | §10.2, §14: the desktop app keeps the `*.vercel.app` address, which must never be removed or redirected (ADR-0047). |
 | Changes in 3.18.0 | §10.2, §14: production answers on `call.paramountintelligence.co` and on the `*.vercel.app` address that installed desktop apps load, with no redirect (ADR-0046). New setting `KITE_TRUSTED_ORIGINS`. Call data and sign-in stay separate per address. |
 | Changes in 3.17.1 | The full evaluation suite runs at release only when the live-answer prompts or answer pipeline changed; otherwise only the groups a change touches run. |
 | Changes in 3.17.0 | v1.2.0 (ADR-0045; the screens are in `docs/design/paramount-ai-ui-spec.md`). The product is shown as **Paramount AI**; identifiers, the data folder and the update feed keep their names. §3.3: `overlayIconMode`, `moveOverlay`, `setChatHotkey`, `pickHandoffFile`, `deleteHandoffFile`. §5: Choose platform, the `paramountai://` hand-off with a one-session file, the start card, the Connect card; the call bars with a 48 px icon, the chat bar, panels side by side when wide; own not-found and error pages. §7.2: `/api/preview` removed, `/api/models` added. §7.3: Ctrl+Alt+Enter, held only while the chat bar is open. Bar opacity defaults to 82 %. |
@@ -559,7 +560,7 @@ kite/
 
 ### 10.2 Company domain
 
-Production answers on `https://call.paramountintelligence.co` and on `https://kite-call-assistant.vercel.app`, with no redirect, because installed desktop apps are locked to the second (ADR-0046). `BETTER_AUTH_URL` is the first, and `KITE_TRUSTED_ORIGINS` lists both. Each address has its own sign-in and its own local data. Steps, checks and rollback: `docs/deploy/subdomain.md`.
+Production answers on `https://call.paramountintelligence.co` and on `https://kite-call-assistant.vercel.app`, with no redirect, because installed desktop apps are locked to the second (ADR-0046). `BETTER_AUTH_URL` is the first, and `KITE_TRUSTED_ORIGINS` lists both. Each address has its own sign-in and its own local data. **The desktop app stays on the `*.vercel.app` address, which must never be removed or redirected** (ADR-0047). Steps, checks and rollback: `docs/deploy/subdomain.md`.
 
 ### 10.3 Desktop app install (unsigned, free)
 
@@ -756,5 +757,5 @@ Release checks (all must pass):
 3. Export session to Markdown or DOCX.
 4. Team-shared session templates and instructions.
 5. Browser-tab reading (extension).
-6. **Subdomain:** done on `call.paramountintelligence.co` for the web app (ADR-0046, §10.2). Moving the desktop app to it (1.2.1) is prepared and waits on the local data decision in ADR-0046.
+6. **Subdomain:** done on `call.paramountintelligence.co` for the web app (ADR-0046, §10.2). The desktop app stays on the `*.vercel.app` address; moving it would need automatic migration of local data first (ADR-0047).
 7. **Microsoft Store (private audience), post-v1 (decided 2 Nov 2026):** the MSIX target and its manual CI job are kept (`docs/deploy/microsoft-store.md`); for v1, desktop users turn Smart App Control off if it blocks the unsigned app (user guide).

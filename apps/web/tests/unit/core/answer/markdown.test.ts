@@ -1,9 +1,9 @@
 /**
  * Tests apps/web/src/core/answer/markdown.ts: splitting a private answer into paragraphs, lists,
- * headings and code blocks while it streams, and inline bold and code marks.
+ * headings and code blocks while it streams, inline bold and code marks, and the user guide's links.
  */
 import { describe, expect, it } from 'vitest';
-import { inlinePieces, markdownBlocks } from '@/core/answer/markdown';
+import { inlinePieces, linkPieces, markdownBlocks } from '@/core/answer/markdown';
 
 describe('markdownBlocks', () => {
   it('joins lines of a paragraph, and splits at a blank line', () => {
@@ -51,5 +51,49 @@ describe('inlinePieces', () => {
 
   it('leaves unmatched marks as text', () => {
     expect(inlinePieces('2 ** 3')).toEqual([{ text: '2 ** 3', style: 'plain' }]);
+  });
+});
+
+describe('linkPieces', () => {
+  it('splits a line at its link', () => {
+    expect(linkPieces('Get it from [the page](https://example.com/a?b=1) today.')).toEqual([
+      { text: 'Get it from ', href: null },
+      { text: 'the page', href: 'https://example.com/a?b=1' },
+      { text: ' today.', href: null },
+    ]);
+  });
+
+  it('finds every link, including at the start and the end', () => {
+    expect(linkPieces('[a](https://a.example) and [b](http://b.example)')).toEqual([
+      { text: 'a', href: 'https://a.example' },
+      { text: ' and ', href: null },
+      { text: 'b', href: 'http://b.example' },
+    ]);
+  });
+
+  it.each(['javascript:alert(1)', 'install-windows.md', '/help', 'file:///c:/secret'])(
+    'keeps only the words of a link to %s',
+    (address) => {
+      expect(linkPieces(`[words](${address})`)).toEqual([{ text: 'words', href: null }]);
+    },
+  );
+
+  it('keeps brackets that belong to the address', () => {
+    expect(linkPieces('[a](https://example.com/a_(b)) next')).toEqual([
+      { text: 'a', href: 'https://example.com/a_(b)' },
+      { text: ' next', href: null },
+    ]);
+  });
+
+  it('leaves a line without a link alone', () => {
+    expect(linkPieces('Plain [words] and (more).')).toEqual([
+      { text: 'Plain [words] and (more).', href: null },
+    ]);
+  });
+
+  it('does not change how answers are split: a link in an answer stays plain text', () => {
+    expect(inlinePieces('See [this](https://example.com).')).toEqual([
+      { text: 'See [this](https://example.com).', style: 'plain' },
+    ]);
   });
 });

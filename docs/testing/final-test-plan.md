@@ -295,7 +295,7 @@ ADR-0027 adopted nothing as the default engine; v1.0.1 adds Parakeet as a **seco
 | # | Do | Expect |
 |---|---|---|
 | 12.1 | Open `https://call.paramountintelligence.co`, sign in. | Works like the vercel.app address, which also keeps working with no redirect. |
-| 12.2 | The desktop app (pointing at the subdomain) signs in and answers. | Works; no other address loads in the app. |
+| 12.2 | The desktop app, which stays on the vercel.app address (ADR-0047), signs in and answers. | Works; no other address loads in the app. |
 
 ## 13. macOS (only if a Mac is available)
 
