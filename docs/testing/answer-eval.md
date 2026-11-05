@@ -468,4 +468,4 @@ Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 run
 |---|---|---|
 | 24-star-structure | 8.0 | Facts 3/3 and the four parts in order. Grounded 1/2: each run added small inferred details the CV does not state (such as "by hand"); no employer, tool or number was invented. Headline 0/1: the raw first line was 16–17 words, the line as shown 11. |
 | 21-format-bullets-only | 7.5 | Both runs opened with a sentence before the bullets. This scenario is a known low scorer (see the Day 7 notes above). |
-| k-maths | 9.5 | One run of twelve wrote the hidden line with a type the app does not know, so the line was shown to the reader. Not caused by this release. |
+| k-maths | 9.5 | One run of twelve wrote the hidden line with a type the app does not know and an extra value, so the line was shown to the reader. Not caused by this release. Fixed in code before release: any such first line is now hidden and its type reads "Other" (unit tests; no paid re-run). |

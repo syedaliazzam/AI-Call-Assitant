@@ -1,9 +1,15 @@
 /**
  * Tests apps/web/src/server/answer-meta.ts and splitMetaLine() in @kite/shared: removing the hidden
- * first line from a streaming reply wherever the network pieces happen to break, passing a reply
- * without one through whole, and stopping the reply when the reader stops.
+ * first line from a streaming reply wherever the network pieces happen to break, hiding it whatever
+ * it says (an unknown type reads "Other"), passing a reply without one through whole, and stopping
+ * the reply when the reader stops.
  */
-import { splitMetaLine } from '@kite/shared';
+import {
+  ANSWER_TYPE_LABELS,
+  ANSWER_TYPES,
+  PICKABLE_ANSWER_TYPES,
+  splitMetaLine,
+} from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { withAnswerMeta, type ReplyItem } from '@/server/answer-meta';
 
@@ -78,6 +84,25 @@ describe('withAnswerMeta', () => {
     expect(items).toEqual([META]);
   });
 
+  it('hides a line with an unknown type and an extra value, and keeps what it says', async () => {
+    // The line a real reply wrote (k-maths, v1.2.0 evaluation), which used to reach the reader.
+    const { items } = await read(['[[calculation|for|kite|general]]\nAbout 40 a day.']);
+    expect(items).toEqual([
+      { meta: { type: 'other', target: 'kite', source: 'general' } },
+      'About 40 a day.',
+    ]);
+  });
+
+  it('hides such a line wherever the network pieces break', async () => {
+    const { items } = await read(['[', '[calcul', 'ation|for|ki', 'te|general]', ']', '\n', 'Hi']);
+    expect(items).toEqual([{ meta: { type: 'other', target: 'kite', source: 'general' } }, 'Hi']);
+  });
+
+  it('keeps the question when a reply opens with the hidden question line', async () => {
+    const { items } = await read(['[[question|What is the rate?]]\nAbout 40.']);
+    expect(items).toEqual(['About 40.', { question: 'What is the rate?' }]);
+  });
+
   it('stops the reply when the reader stops', async () => {
     const stopped = vi.fn();
     async function* endless(): AsyncGenerator<string, string, undefined> {
@@ -100,9 +125,31 @@ describe('splitMetaLine', () => {
   it('falls back on each odd value by itself', () => {
     expect(splitMetaLine('[[weird|odd|strange]] Hi')).toEqual({
       state: 'found',
-      meta: { type: 'unclear', target: 'call', source: 'general' },
+      meta: { type: 'other', target: 'call', source: 'general' },
       rest: 'Hi',
     });
+  });
+
+  it.each([
+    ['[[calculation]]', { type: 'other', target: 'call', source: 'general' }],
+    ['[[Coding|Call|Docs]]', { type: 'coding', target: 'call', source: 'docs' }],
+    ['[[code review|kite]]', { type: 'other', target: 'kite', source: 'general' }],
+    ['[[coding|call|docs|extra|more]]', { type: 'coding', target: 'call', source: 'docs' }],
+  ])('hides %s, whatever its shape', (line, meta) => {
+    expect(splitMetaLine(`${line}\nHi`)).toEqual({ state: 'found', meta, rest: 'Hi' });
+  });
+
+  it.each(['[[1, 2, 3]]', '[[1, 2], [3, 4]]', '[[a, b]]', '[["a"]]'])(
+    'leaves %s in the answer, because it is not a hidden line',
+    (text) => {
+      expect(splitMetaLine(`${text}\nis the list`).state).toBe('none');
+    },
+  );
+
+  it('has a label for "other", which the answer menu does not offer', () => {
+    expect(ANSWER_TYPES).toContain('other');
+    expect(PICKABLE_ANSWER_TYPES).not.toContain('other');
+    expect(ANSWER_TYPE_LABELS.other).toBe('Other');
   });
 
   it('waits while the line may still be arriving', () => {

@@ -3,7 +3,7 @@
  * in-memory IndexedDB (fake-indexeddb): getSessionDefaults() returns the built-in defaults until
  * defaults are saved and the saved ones after; deleteAllLocalData() resets them; and a device
  * that still has the version-1 database keeps its sessions when version 2 adds the settings
- * store. All data is invented.
+ * store; STAR is off in the built-in defaults. All data is invented.
  */
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
@@ -30,6 +30,10 @@ const CUSTOM: SessionDefaults = {
 };
 
 describe('session defaults', () => {
+  it('leaves STAR off in the built-in defaults, so a new session starts without it', () => {
+    expect(BUILT_IN_DEFAULTS.style.star).toBeUndefined();
+  });
+
   it('are the built-in defaults until saved', async () => {
     expect(await getSessionDefaults()).toEqual(BUILT_IN_DEFAULTS);
   });

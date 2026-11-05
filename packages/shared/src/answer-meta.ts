@@ -26,6 +26,7 @@
  * - v1.1.0 (ADR-0043), what a screenshot shows: `codefix` (code with an error), `slide`, `table`
  *   (a table or chart), `document`, `webpage`, `unreadable` (nothing can be read, or nothing relevant).
  * - v1.1.0: `garbled`: the words make no sense even in context, so there is nothing to answer.
+ * - v1.2.0: `other`: Claude named a type Kite does not know. The prompt never offers it.
  */
 export type AnswerType =
   | 'behavioural'
@@ -43,7 +44,8 @@ export type AnswerType =
   | 'document'
   | 'webpage'
   | 'unreadable'
-  | 'garbled';
+  | 'garbled'
+  | 'other';
 
 /** The question types the answer card's menu offers, in its order. */
 export const PICKABLE_ANSWER_TYPES: readonly AnswerType[] = [
@@ -58,7 +60,7 @@ export const PICKABLE_ANSWER_TYPES: readonly AnswerType[] = [
   'unclear',
 ];
 
-/** Every question type Claude can name. */
+/** Every question type an answer can carry: what Claude can name, and `other` for anything else. */
 export const ANSWER_TYPES: readonly AnswerType[] = [
   ...PICKABLE_ANSWER_TYPES,
   'codefix',
@@ -68,6 +70,7 @@ export const ANSWER_TYPES: readonly AnswerType[] = [
   'webpage',
   'unreadable',
   'garbled',
+  'other',
 ];
 
 /** The words on the answer card for each question type. */
@@ -88,6 +91,7 @@ export const ANSWER_TYPE_LABELS: Readonly<Record<AnswerType, string>> = {
   webpage: 'Web page',
   unreadable: 'Unreadable',
   garbled: 'Not understood',
+  other: 'Other',
 };
 
 /**
@@ -156,26 +160,36 @@ export const DEFAULT_CODING_LANGUAGE = 'Python';
 /** Longest meta line that can still be one: Claude's reply is passed through after this. */
 export const MAX_META_LINE_CHARS = 60;
 
-/** The hidden first line, with any white space Claude put around it. */
-const META_LINE = /^\s*\[\[\s*([a-z]+)\s*\|\s*([a-z]+)\s*\|\s*([a-z]+)\s*\]\]/;
+/**
+ * The hidden first line, however many values it has and in whatever case: a real reply wrote
+ * "[[calculation|for|kite|general]]", which the reader must not see. The first value must be
+ * words, so text that only looks similar, such as the list "[[1, 2, 3]]", stays in the answer.
+ */
+const META_LINE = /^\s*\[\[\s*(\p{L}[\p{L}\p{N}_ -]*?)\s*((?:\|[^[\]\n]*)?)\]\]/u;
+
+/** The source words Kite knows. */
+const ANSWER_SOURCES: readonly string[] = ['docs', 'call', 'general', 'example'];
 
 /**
- * Reads the hidden first line's three values. Each unknown value falls back on its own, so one
- * odd word costs one label and not the whole answer.
+ * Reads the hidden first line's values. Each unknown value falls back on its own, so one odd word
+ * costs one label and not the whole answer. The answer's reader is looked for among all the values
+ * after the type, and its source among those after that, so a line with an extra value still
+ * marks a private answer as private.
  *
- * @param type   The first value.
- * @param target The second value.
- * @param source The third value.
+ * @param values The line's values, cleaned up, the type first.
  * @returns The meta.
  * Called from: splitMetaLine()
  */
-function metaFrom(type: string, target: string, source: string): AnswerMeta {
+function metaFrom(values: readonly string[]): AnswerMeta {
+  const [type = '', ...rest] = values;
+  const source = rest
+    .slice(1)
+    .filter((value) => ANSWER_SOURCES.includes(value))
+    .at(-1);
   return {
-    type: (ANSWER_TYPES as readonly string[]).includes(type) ? (type as AnswerType) : 'unclear',
-    target: target === 'kite' ? 'kite' : 'call',
-    source: ['docs', 'call', 'general', 'example'].includes(source)
-      ? (source as AnswerSource)
-      : 'general',
+    type: (ANSWER_TYPES as readonly string[]).includes(type) ? (type as AnswerType) : 'other',
+    target: rest.includes('kite') ? 'kite' : 'call',
+    source: (source as AnswerSource | undefined) ?? 'general',
   };
 }
 
@@ -209,10 +223,15 @@ export function splitMetaLine(text: string): MetaSplit {
   const trimmed = text.trimStart();
   if (trimmed === '') return { state: 'waiting' };
   const match = META_LINE.exec(trimmed);
-  if (match) {
+  const values = match
+    ? `${match[1]!}${match[2]!}`.split('|').map((value) => value.trim().toLowerCase())
+    : [];
+  // A reply that opens with the hidden question line is left to the question filter, which keeps
+  // the question.
+  if (match && values[0] !== 'question') {
     return {
       state: 'found',
-      meta: metaFrom(match[1]!, match[2]!, match[3]!),
+      meta: metaFrom(values),
       rest: trimmed.slice(match[0].length).trimStart(),
     };
   }
