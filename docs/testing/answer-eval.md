@@ -17,7 +17,7 @@ The script prints the score table only. `--show` also prints each answer and the
 
 ### Groups, and what to re-run (from Day 5)
 
-Re-run only the groups a change touches; run the full suite once, at release (`pnpm --filter web eval:all`). The grader stays Sonnet, so scores stay comparable with the baselines. The developer is told the estimated cost before every paid run. Every run first prints its estimated number of Claude requests; `--dry-run` prints only that and sends nothing.
+Re-run only the groups a change touches. Run the full suite (`pnpm --filter web eval:all`) at release only when the live-answer prompts or answer pipeline changed; otherwise run only the groups the change touches. The grader stays Sonnet, so scores stay comparable with the baselines. The developer is told the estimated cost before every paid run. Every run first prints its estimated number of Claude requests; `--dry-run` prints only that and sends nothing.
 
 | Group | Scenarios | Command | Claude requests per command (default runs) | Gate |
 |---|---|---|---|---|

@@ -218,6 +218,10 @@ Deployment `dpl_FYmPL16gQcjTQ24pQGYoU6rVmBCr`, Vercel function `iad1`. Machine: 
 | Chrome | 1120 / 1327 | 1125 / 1372 | 1370 / 1619 | 586 / 785 | 20 of 20 |
 | Desktop app | 1096 / 1278 | 1126 / 1402 | 1311 / 1455 | 586 / 721 | 20 of 20 |
 
+### Evaluations, v1.2.0
+
+1.2.0 shipped with two evaluation groups only: preferences (8.88) and ask-kite (9.75), 40 requests, $0.0747. The developer chose to skip the full suite: this was a UI release, the live-call prompts were left alone, and those two groups cover the prompts it did touch. The hidden-line fix made afterwards changes how the reply's first line is read, not the prompt, and was checked by unit tests and the answers and Ask AI harnesses, not on a new real reply. `eval:answers` was also started by accident at release and stopped after a few minutes; it saved no results, so none are recorded here.
+
 ### Installer and update, v1.2.0
 
 | Check | Setup | Result | Notes |

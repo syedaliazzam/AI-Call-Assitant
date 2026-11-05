@@ -8,7 +8,7 @@
  *          Groups: 'answers' (the Day 4 scenarios 01–15, the baseline group), 'screenshots'
  *          (16–18, Day 5), 'lessons' (19–20, Day 5 Stage 7), 'preferences' (21–24, parity Phase 2 and v1.2.0), in eval-answers.ts; 'notes'
  *          (eval-notes.ts).
- * Used by: scripts/eval-answers.ts, scripts/eval-notes.ts
+ * Used by: scripts/eval-answers.ts, scripts/eval-notes.ts (scripts/eval-all.ts passes these on to both)
  * Depends on: nothing
  * Architecture: docs/testing/answer-eval.md (groups and gates)
  */

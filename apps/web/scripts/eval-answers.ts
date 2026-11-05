@@ -28,8 +28,8 @@
  *            --dry-run  print the estimated number of Claude requests and stop
  *          Every paid run also saves per-scenario scores and grader reasons to a git-ignored
  *          file (scripts/lib/eval-results.ts), so a drop can be diagnosed without another run.
- *          Re-run only the groups a change touches; the full suite once, at release
- *          (CLAUDE.md "Evaluation cost"). The estimate is printed before anything is sent.
+ *          Re-run only the groups a change touches; the full suite only as CLAUDE.md
+ *          "Evaluation cost" says. The estimate is printed before anything is sent.
  * Used by: the "eval:answers" script in apps/web/package.json (run by a developer by hand;
  *          never in CI: it calls the real API and needs the real key)
  * Depends on: src/server/prompt.ts (buildPrompt, sessionBlock, SYSTEM_RULES),

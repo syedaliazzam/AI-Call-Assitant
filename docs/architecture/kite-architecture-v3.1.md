@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.17.0"
+version: "3.17.1"
 status: "Current: the single document the team builds from"
 date: "2026-11-05"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.17.0, **Current**: the only document to build from |
+| Version | 3.17.1, **Current**: the only document to build from |
+| Changes in 3.17.1 | The full evaluation suite runs at release only when the live-answer prompts or answer pipeline changed; otherwise only the groups a change touches run. |
 | Changes in 3.17.0 | v1.2.0 (ADR-0045; the screens are in `docs/design/paramount-ai-ui-spec.md`). The product is shown as **Paramount AI**; identifiers, the data folder and the update feed keep their names. §3.3: `overlayIconMode`, `moveOverlay`, `setChatHotkey`, `pickHandoffFile`, `deleteHandoffFile`. §5: Choose platform, the `paramountai://` hand-off with a one-session file, the start card, the Connect card; the call bars with a 48 px icon, the chat bar, panels side by side when wide; own not-found and error pages. §7.2: `/api/preview` removed, `/api/models` added. §7.3: Ctrl+Alt+Enter, held only while the chat bar is open. Bar opacity defaults to 82 %. |
 | Changes in 3.16.1 | §5, layout only: the browser call view fills the window over the sidebar. The shared tab sits edge to edge at the top left in its own shape, with the control strip under it instead of over it; the brand, timer, ⋮ and End move to the top of the right column. The desktop's call window is unchanged. |
 | Changes in 3.16.0 | v1.1.0 (ADR-0041 to ADR-0044). §5: the **home panel** (`/home`) is the desktop app's first window; during a call, **stacked bars and panels** in one overlay window that the page sizes; **snap zones** (`/overlay-zones`); a separate side window for pages during a call; oldest first everywhere live; Review tabs. §6.1: only real questions are answered (`questionKind.ts`, Claude's `garbled` type); one entry per question within a call and 60 s; screen types; the 12-word answer line, cut at a clause by the card; **offline punctuation** in its own worker (`core/punctuation`, ONNX Runtime 1.30.0, 21.7 MB from our own origin); key terms corrected in the accurate pass; Accurate transcription **Auto**; hygiene prompts. §7.3: `home.ts`, `snapZones.ts`; new optional bridge methods `openPagesWindow`, `windowControl`, `setOverlayLayout`, `onSnapZone`. §7.4: schema version 8 (answers' `callStartedAt`, sessions' `lastCallMs`, `contactName`). §8: **Private covers every window**. §10: the build fetches and checks the punctuation files. |
@@ -575,7 +576,7 @@ kite/
 
 | Item | Cost |
 |---|---|
-| Claude API | Usage-based, with **one Console spend limit (about $20 a month)** for everything: production, development and evaluations share it (Day 5 decision, after the evaluations used up the limit on 30 October). Every paid run is agreed first with its estimated cost; evaluations re-run only the groups a change touches, and the full suite once at release. Prompt caching cuts repeated context to about 10% of the input price on Haiku. |
+| Claude API | Usage-based, with **one Console spend limit (about $20 a month)** for everything: production, development and evaluations share it (Day 5 decision, after the evaluations used up the limit on 30 October). Every paid run is agreed first with its estimated cost; evaluations re-run only the groups a change touches, and the full suite at release only when the live-answer prompts or answer pipeline changed. Prompt caching cuts repeated context to about 10% of the input price on Haiku. |
 | Vercel | **Pro plan required for company use.** The free Hobby plan is for non-commercial personal use only. Pro is $20 per month per developer seat; app users do not need Vercel seats. |
 | Accounts database | Neon Postgres free plan (via the Vercel Marketplace); a few users and sessions fit easily |
 | Domain, DNS, certificates | `*.vercel.app` address for now (free); existing company domain later; Vercel certificates are free |

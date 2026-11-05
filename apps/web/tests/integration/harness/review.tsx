@@ -202,7 +202,8 @@ window.kiteReviewHarness = {
       <SessionReview
         key={sessionId}
         sessionId={sessionId}
-        onDeleted={() => window.location.assign('/dashboard')}
+        // This harness has no Next.js router: the stand-in shows that deleting finished.
+        onDeleted={() => root?.render(<h1>Dashboard stand-in</h1>)}
       />,
     );
   },

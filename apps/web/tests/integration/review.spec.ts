@@ -108,11 +108,6 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
         res.end(readFileSync(path.join(bundleDir, css ? 'review.css' : 'review.js')));
         return;
       }
-      if (req.url === '/dashboard') {
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end('<!doctype html><html><body><h1>Dashboard stand-in</h1></body></html>');
-        return;
-      }
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(
         '<!doctype html><html><head><meta charset="utf-8"><title>Paramount AI review harness</title>' +
@@ -516,9 +511,8 @@ test('Delete asks in a dialog, removes everything and returns to the dashboard',
 
   await page.getByRole('button', { name: 'Delete session' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
-  await page.waitForURL(`${origin}/dashboard`);
   await expect(page.getByRole('heading', { name: 'Dashboard stand-in' })).toBeVisible();
-  // The dashboard stand-in is the same origin, so it can read the same IndexedDB.
+  // A fresh load, so the counts below come from what IndexedDB really kept.
   await page.goto(origin);
   await page.waitForFunction(() => 'kiteReviewHarness' in window);
   expect(await page.evaluate((id) => window.kiteReviewHarness.count(id), fullId)).toEqual({
