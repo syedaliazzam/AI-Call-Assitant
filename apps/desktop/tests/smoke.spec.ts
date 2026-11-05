@@ -1,7 +1,7 @@
 /**
  * Smoke test for the Electron shell (apps/desktop/src/main.ts, preload.ts, security.ts).
  * Launches the built app (dist/), or the installed app when KITE_INSTALLED_EXE names its
- * Kite.exe (Day 6 Stage 3), always on a temporary profile, with KITE_URL pointing at a local test
+ * Paramount AI.exe (Day 6 Stage 3), always on a temporary profile, with KITE_URL pointing at a local test
  * page and checks: the home panel opens at 400×560 on /home and keeps to its own pages (v1.1.0);
  * it opens the main window at 1280×820; a web app with no /home opens the main window instead;
  * Private covers every window type, by a real screen capture on Windows (ADR-0042); the overlay is
@@ -97,7 +97,7 @@ function launch(origin: string): Promise<ElectronApplication> {
   // Electron apps (VS Code extensions, for example) set it for their child processes, so it
   // must not be passed on to the app under test.
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
-  // KITE_INSTALLED_EXE (Day 6 Stage 3): test the installed app (Kite.exe from the installer)
+  // KITE_INSTALLED_EXE (Day 6 Stage 3): test the installed app (Paramount AI.exe from the installer)
   // instead of the development build, with the same checks.
   const installed = process.env.KITE_INSTALLED_EXE;
   const profile = `--user-data-dir=${mkdtempSync(path.join(tmpdir(), 'kite-smoke-'))}`;

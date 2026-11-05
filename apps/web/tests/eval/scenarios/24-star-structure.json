@@ -1,0 +1,50 @@
+{
+  "id": "24-star-structure",
+  "group": "preferences",
+  "covers": "STAR structure on: a behavioural answer has Situation, Task, Action and Result, from the CV only.",
+  "session": {
+    "type": "interview",
+    "company": "Lantern Freight (invented)",
+    "role": "Data Analyst",
+    "description": "Interview for a data analyst role on the operations team.",
+    "instructions": "",
+    "keyTerms": [],
+    "style": {
+      "format": "headline+bullets",
+      "length": "medium",
+      "tone": "simple",
+      "star": true
+    },
+    "documents": [
+      {
+        "name": "resume.txt",
+        "text": "Priya Rao. Data analyst, 4 years at Alder Foods. Built the weekly sales report in SQL and Power BI, used by the regional managers, which cut the time to produce it from 2 hours to 10 minutes. Found a duplicate-order error in the warehouse feed and worked with the warehouse team to fix it."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "THANKS FOR COMING IN TODAY",
+        "at": 12
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "TELL ME ABOUT A TIME YOU IMPROVED A PROCESS AT WORK",
+      "at": 20
+    }
+  ],
+  "mode": "answer",
+  "question": "TELL ME ABOUT A TIME YOU IMPROVED A PROCESS AT WORK",
+  "mustInclude": [
+    "has one bullet each starting with the words Situation, Task, Action and Result, in that order",
+    "tells the story of the weekly sales report or the duplicate-order error, in the first person",
+    "any result it gives is one the resume states, such as 2 hours to 10 minutes"
+  ],
+  "mustNotInclude": ["any employer, tool, team size or number not in the resume"]
+}

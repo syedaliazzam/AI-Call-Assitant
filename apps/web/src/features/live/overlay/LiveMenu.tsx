@@ -97,7 +97,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
       aria-label="Overlay settings"
       data-menu="overlay"
       // The window grows to fit it; it scrolls rather than being cut off on a short screen.
-      className="k-overlay-menu absolute right-1.5 top-[calc(100%+6px)] z-30 flex max-h-[calc(100vh-3.75rem)] w-80 flex-col gap-1.5 overflow-y-auto rounded-menu border border-ui-border p-1.5 shadow-modal [-webkit-app-region:no-drag]"
+      className="k-overlay-menu absolute right-1.5 top-[calc(100%+6px)] z-30 flex max-h-[calc(100vh-3.75rem)] w-[21.5rem] flex-col gap-1.5 overflow-y-auto rounded-menu border border-ui-border p-1.5 shadow-modal [-webkit-app-region:no-drag]"
     >
       <MenuBlock>
         {props.email && (

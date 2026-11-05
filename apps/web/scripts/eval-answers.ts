@@ -9,8 +9,8 @@
  *            --only=answers      the Day 4 group (scenarios 01–15; the baseline group)
  *            --only=screenshots  the Day 5 screenshot group (16–18)
  *            --only=lessons      the Day 5 lesson group (19–20: answers with approved lessons)
- *            --only=preferences  parity Phase 2 (21–23: bullets only, an answer language, the
- *                                technical tone)
+ *            --only=preferences  parity Phase 2 and v1.2.0 (21–24: bullets only, an answer language,
+ *                                the technical tone, STAR structure)
  *            --only=adaptive     ADR-0030: 6 roles × 4 question types (tests/eval/groups)
  *            --only=missing-info ADR-0030: 4 questions under both settings
  *            --only=hallucination-bait  ADR-0030: gate is zero invented prices or personal numbers

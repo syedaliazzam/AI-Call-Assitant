@@ -284,7 +284,7 @@ jobs:
         shell: pwsh
         run: ./apps/desktop/scripts/store-ci-check.ps1
 
-      # The desktop smoke test against the installed package's Kite.exe (KITE_INSTALLED_EXE).
+      # The desktop smoke test against the installed package's Paramount AI.exe (KITE_INSTALLED_EXE).
       - name: Smoke test the installed package
         run: pnpm --filter desktop exec playwright test
 

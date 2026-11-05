@@ -794,7 +794,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
           title="Answer the latest question"
         >
           Answer
-          <KeyChip hotkey="answer" />
+          <KeyChip hotkey="answer" visibleAt="@min-[520px]:inline-flex" onPrimary />
         </button>
         <button
           type="button"
@@ -804,7 +804,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
           title="Answer from a screenshot of your screen"
         >
           {answers.capturing ? 'Screenshot…' : 'Screenshot'}
-          <KeyChip hotkey="screenshot" />
+          <KeyChip hotkey="screenshot" visibleAt="@min-[520px]:inline-flex" />
         </button>
       </div>
       <AnswerPreferencesDialog

@@ -93,7 +93,9 @@ test.beforeAll(async () => {
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(
-      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Paramount AI setup harness</title>' +
+      '<!doctype html><html data-theme="' +
+        (process.env.KITE_VISUAL_THEME ?? 'light') +
+        '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Paramount AI setup harness</title>' +
         '<link rel="stylesheet" href="/harness/setup.css"></head>' +
         '<body class="font-sans"><div id="root"></div>' +
         '<script type="module" src="/harness/setup.js"></script></body></html>',
@@ -112,7 +114,10 @@ test.afterAll(async () => {
 
 test.beforeEach(async () => {
   // A fresh context per test: an empty database and no saved preferences.
-  context = await browser!.newContext({ viewport: { width: 1440, height: 900 } });
+  context = await browser!.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1.5,
+  });
   page = await context.newPage();
   apiRequests = [];
   page.on('request', (request) => {
@@ -497,6 +502,10 @@ test('pickers: choose from the library, upload, one resume, and the session keep
   await go('/sessions/new');
   await fillDetails();
 
+  await page.getByRole('combobox', { name: 'CV / Resume' }).click();
+  await shots('wizard-cv-menu');
+  await page.keyboard.press('Escape');
+
   // Several documents; one taken away again.
   const documents = page.getByRole('combobox', { name: 'Documents' });
   await documents.click();
@@ -658,11 +667,15 @@ test('Answer preferences: drill-in views, a static preview, STAR and Set as defa
   // Length and tone; Technical stays as a third card.
   await dialog.getByRole('button', { name: /^Length/ }).click();
   const length = page.getByRole('dialog', { name: 'Length' });
+  await expect(length).toBeVisible();
+  await shots('answer-preferences-length');
   await expect(length.getByRole('radio')).toHaveCount(3);
   await length.getByRole('radio', { name: /Balanced/ }).click();
   await length.getByRole('button', { name: 'Select' }).click();
   await dialog.getByRole('button', { name: /^Tone/ }).click();
   const tone = page.getByRole('dialog', { name: 'Tone' });
+  await expect(tone).toBeVisible();
+  await shots('answer-preferences-tone');
   await expect(tone.getByRole('radio')).toHaveCount(3);
   await tone.getByRole('radio', { name: /Technical/ }).click();
   await tone.getByRole('button', { name: 'Select' }).click();
@@ -689,8 +702,13 @@ test('Answer preferences: drill-in views, a static preview, STAR and Set as defa
   await expect(page.getByText('Answer as a data analyst who likes short…')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
 
+  await page.getByRole('combobox', { name: 'Model' }).click();
+  await shots('wizard-model-menu');
+  await page.keyboard.press('Escape');
+
   // Language: a list with a search box.
   await page.getByRole('combobox', { name: 'Language' }).click();
+  await shots('wizard-language-menu');
   await page.getByRole('textbox', { name: 'Search language' }).fill('span');
   await page.getByRole('option', { name: 'Spanish' }).click();
   await expect(page.getByText('Language of the answers')).toBeVisible();

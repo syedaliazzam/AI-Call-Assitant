@@ -87,7 +87,9 @@ test.beforeAll(async () => {
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(
-      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Hand-off harness</title>' +
+      '<!doctype html><html data-theme="' +
+        (process.env.KITE_VISUAL_THEME ?? 'light') +
+        '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Hand-off harness</title>' +
         '<link rel="stylesheet" href="/harness/handoff.css"></head>' +
         '<body class="bg-ui-bg font-sans text-[15px] text-ui-text"><div id="root"></div>' +
         '<script type="module" src="/harness/handoff.js"></script></body></html>',
@@ -122,6 +124,12 @@ async function open(bridge = false, width = 1440): Promise<void> {
     hasTouch: width < 500,
   });
   page = await context.newPage();
+  if (process.env.KITE_VISUAL_THEME) {
+    await page.addInitScript(
+      (theme) => localStorage.setItem('kite.theme', theme),
+      process.env.KITE_VISUAL_THEME,
+    );
+  }
   // Records every paramountai:// link followed, instead of leaving the page.
   await page.addInitScript(() => {
     const links: string[] = [];
@@ -337,6 +345,13 @@ test('the start card asks for the file, refuses a wrong one, imports, and offers
   await expect(summary).toContainText('Opening line + bullets');
   await expect(summary.getByLabel('Attached')).toBeVisible();
   await shot('start-card');
+  await page.setViewportSize({ width: 400, height: 560 });
+  await shot('start-card-400');
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    'the card fits the 400 px window',
+  ).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
   expect(await page.evaluate((session) => window.kiteHandoffHarness.stored(session), id)).toEqual({
     company: 'Lantern Freight (invented)',
     documents: expect.arrayContaining(['Invented CV.', 'Invented pricing.']),
@@ -425,6 +440,9 @@ test('the window header and its ⋮ menu', async () => {
   await expect(menu.getByRole('group', { name: 'Zoom' })).toBeVisible();
   await expect(menu.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio')).toHaveCount(3);
   await shot('window-menu');
+  await page.setViewportSize({ width: 400, height: 560 });
+  await shot('window-menu-400');
+  await page.setViewportSize({ width: 1440, height: 900 });
   await menu.getByRole('button', { name: 'Get help' }).click();
   const opened = await page.evaluate(() => window.desktop.opened);
   expect(opened).toEqual(['/help']);

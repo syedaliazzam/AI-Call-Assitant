@@ -155,7 +155,9 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
         : '';
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(
-        '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+        '<!doctype html><html data-theme="' +
+          (process.env.KITE_VISUAL_THEME ?? 'light') +
+          '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
           `<title>Paramount AI live harness</title><link rel="stylesheet" href="/harness/live.css">${fonts}</head>` +
           '<body class="font-sans"><div id="root"></div><script type="module" src="/harness/live.js"></script></body></html>',
       );
@@ -330,6 +332,23 @@ test('live view stacks answers above the transcript when narrower than 900 px', 
     const panel = await box(page, '[aria-label="Answers"]');
     const transcript = await box(page, '[aria-label="Live transcript"]');
     expect(panel.y).toBeLessThan(transcript.y);
+    // Nothing runs past the window's edge. Clipped content does not make the page scroll sideways,
+    // so the page check cannot see it.
+    const clipped = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>('button, [aria-label="Live transcript"], li')]
+        .filter((element) => element.offsetParent !== null)
+        .filter((element) => element.getBoundingClientRect().right > window.innerWidth + 1)
+        .map((element) => element.textContent?.trim().slice(0, 40)),
+    );
+    expect(clipped, 'nothing is cut off at the right').toEqual([]);
+    // A key-cap on the primary button can be read: its chip is not the button's text colour.
+    const answer = page.getByRole('button', { name: 'Answer', exact: true }).first();
+    const [text, chip] = await answer.evaluate((button) => [
+      getComputedStyle(button).color,
+      getComputedStyle(button.querySelector('kbd')!).backgroundColor,
+    ]);
+    expect(chip).not.toBe(text);
+    expect(chip).not.toBe('rgb(255, 255, 255)');
     await shot(watched, size, 'live');
     await watched.context.close();
   }
@@ -671,7 +690,9 @@ const OVERLAY_SIZES = {
  */
 async function openOverlayView(size: Width, extra = '') {
   const watched = await open('gate', size);
-  await watched.page.goto(`${origin}/?view=compact&glass=1&alpha=0.82${extra}`);
+  // KITE_VISUAL_THEME: the pictures of the light theme (spec §7).
+  const theme = process.env.KITE_VISUAL_THEME === 'light' ? '&theme=light' : '';
+  await watched.page.goto(`${origin}/?view=compact&glass=1&alpha=0.82${extra}${theme}`);
   await watched.page.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
   return {
     ...watched,
@@ -980,6 +1001,11 @@ test('S16: the ⋮ menu in order; Answer preferences as a sheet that fits the ov
     'Open call window',
     'Reset position',
   ]);
+  const textSize = menu.getByRole('group', { name: 'Answer text size' }).locator('span').first();
+  expect(
+    await textSize.evaluate((label) => label.scrollWidth <= label.clientWidth),
+    'the longest label is not cut off',
+  ).toBe(true);
   await expect(menu.getByRole('button', { name: 'About Answer preferences' })).toBeVisible();
   await expect(menu.getByRole('button', { name: 'About Edit session' })).toBeVisible();
   await shot(watched, BARS_SIZE, 'call-menu');

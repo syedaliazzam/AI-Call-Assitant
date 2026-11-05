@@ -24,7 +24,7 @@ Re-run only the groups a change touches; run the full suite once, at release (`p
 | `answers` | 01–15 (Day 4) | `pnpm --filter web eval:answers --only=answers` | 15 × 2 runs × (answer + grade) = 60; the gate needs the command 3 times = 180 | mean of 3 commands ≥ baseline − 0.15 (9.28) |
 | `screenshots` | 16–18 (Day 5) | `pnpm --filter web eval:answers --only=screenshots` | 3 × 2 × 2 = 12 | ≥ 8 |
 | `lessons` | 19–20 (Day 5 Stage 7: answers with an approved lesson) | `pnpm --filter web eval:answers --only=lessons`, then the same with `--without-lessons` | 2 × 2 × 2 = 8 per command, 16 for the pair | with lessons ≥ 8 and higher than without |
-| `preferences` | 21–23 (parity Phase 2: bullets only, an answer language, the technical tone) | `pnpm --filter web eval:answers --only=preferences` | 3 × 2 × 2 = 12 | ≥ 8 |
+| `preferences` | 21–24 (parity Phase 2: bullets only, an answer language, the technical tone; v1.2.0: STAR structure) | `pnpm --filter web eval:answers --only=preferences` | 4 × 2 × 2 = 16 | ≥ 8 |
 | `notes` | n1–n3 (Day 5) | `pnpm --filter web eval:notes --only=notes` | 3 × 3 runs × (notes + grade) = 18 | ≥ 8 |
 | `adaptive` | 24, in `tests/eval/groups/adaptive.ts` (ADR-0030: 6 roles × 4 question types; code is run) | `pnpm --filter web eval:answers --only=adaptive` | 24 × 2 × 2 = 96 | ≥ 8 |
 | `missing-info` | 8, in `tests/eval/groups/quality.ts` (4 questions under both settings) | `--only=missing-info` | 8 × 2 × 2 = 32 | ≥ 8 |

@@ -62,21 +62,25 @@ export function pieceClass(glass: boolean): string {
  *
  * @param props.hotkey    Which shortcut.
  * @param props.visibleAt The container width from which it shows, as a Tailwind class; absent: always.
+ * @param props.onPrimary True on a primary button, whose colours are reversed.
  * @returns The chip.
  * Rendered by: ControlBar.tsx, ChatBar.tsx, LiveStrip.tsx, TranscriptPanel.tsx, OverlayAnswer.tsx
  */
 export function KeyChip({
   hotkey,
   visibleAt,
+  onPrimary = false,
 }: {
   /** Which shortcut. */
   hotkey: KeycapHotkey;
   /** The container width from which it shows, as a Tailwind class. */
   visibleAt?: string;
+  /** True on a primary button, whose colours are reversed. */
+  onPrimary?: boolean;
 }) {
   return (
     <span aria-hidden="true" className={visibleAt ? `hidden ${visibleAt}` : 'inline-flex'}>
-      <KeyCap hotkey={hotkey} />
+      <KeyCap hotkey={hotkey} onPrimary={onPrimary} />
     </span>
   );
 }

@@ -1,8 +1,8 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.16.1"
+version: "3.17.0"
 status: "Current: the single document the team builds from"
-date: "2026-11-04"
+date: "2026-11-05"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.16.1, **Current**: the only document to build from |
+| Version | 3.17.0, **Current**: the only document to build from |
+| Changes in 3.17.0 | v1.2.0 (ADR-0045; the screens are in `docs/design/paramount-ai-ui-spec.md`). The product is shown as **Paramount AI**; identifiers, the data folder and the update feed keep their names. §3.3: `overlayIconMode`, `moveOverlay`, `setChatHotkey`, `pickHandoffFile`, `deleteHandoffFile`. §5: Choose platform, the `paramountai://` hand-off with a one-session file, the start card, the Connect card; the call bars with a 48 px icon, the chat bar, panels side by side when wide; own not-found and error pages. §7.2: `/api/preview` removed, `/api/models` added. §7.3: Ctrl+Alt+Enter, held only while the chat bar is open. Bar opacity defaults to 82 %. |
 | Changes in 3.16.1 | §5, layout only: the browser call view fills the window over the sidebar. The shared tab sits edge to edge at the top left in its own shape, with the control strip under it instead of over it; the brand, timer, ⋮ and End move to the top of the right column. The desktop's call window is unchanged. |
 | Changes in 3.16.0 | v1.1.0 (ADR-0041 to ADR-0044). §5: the **home panel** (`/home`) is the desktop app's first window; during a call, **stacked bars and panels** in one overlay window that the page sizes; **snap zones** (`/overlay-zones`); a separate side window for pages during a call; oldest first everywhere live; Review tabs. §6.1: only real questions are answered (`questionKind.ts`, Claude's `garbled` type); one entry per question within a call and 60 s; screen types; the 12-word answer line, cut at a clause by the card; **offline punctuation** in its own worker (`core/punctuation`, ONNX Runtime 1.30.0, 21.7 MB from our own origin); key terms corrected in the accurate pass; Accurate transcription **Auto**; hygiene prompts. §7.3: `home.ts`, `snapZones.ts`; new optional bridge methods `openPagesWindow`, `windowControl`, `setOverlayLayout`, `onSnapZone`. §7.4: schema version 8 (answers' `callStartedAt`, sessions' `lastCallMs`, `contactName`). §8: **Private covers every window**. §10: the build fetches and checks the punctuation files. |
 | Changes in 3.15.0 | v1.0.4 (ADR-0040). §5: ⛶, the words chips, ⋮ "Open call window" and the taskbar open the **full call window** (the main window), not a bigger overlay; "Back to compact" and Esc return; one call view at a time; the shell mode `expanded` is gone, and the bridge gains `showCallWindow` (older shells close the overlay instead). The full window: the overlay's top bar across its width, transcript left, a card per question right (selected expanded, others collapsed), one screen high. The overlay shows the current live question above the card. One entry per question in the call window, the overlay's history and Review. The clean question everywhere, the raw words on hover. The latest answer is the default selection. Transparency only in the compact overlay. §11: the rig is a simulated call in the real windows (`call-window-shots.ts`, `browser-shots.ts`). |
@@ -256,7 +257,7 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 | `/api/prepare` | POST, JSON response | **Built parity Phase 4.** The Prepare tools: mock interview questions and summary, and the question bank, with Sonnet; feedback on an answer, with Haiku. Logs the kind and token counts only. |
 | `/api/ask` | POST, JSON response | **Built parity Phase 3.** Answers a question about a finished call with Sonnet, from its transcript, answers, notes and documents. Rules, session and call are cached blocks. Logs token counts only; the cost in development only. |
 | `/api/job-import` | POST, JSON response | **Built parity Phase 2.** Fetches a public job page (public addresses only: `server/job-page.ts`) and extracts the company, role and description with Haiku for the user to check. Logs sizes and token counts only. |
-| `/api/preview` | POST, JSON response | **Built parity Phase 2.** One Answer preview on an invented interview, with Haiku and the real rules. Only known settings are accepted. The browser keeps each result. |
+| `/api/models` | GET, JSON response | **Built v1.2.0 (ADR-0045).** Which models this account may choose: the admin's `deep_model_enabled` setting, cached for 60 s. With it off, a session set to Sonnet uses Haiku. |
 | `/api/notes` | POST, JSON response | **Built Day 5.** Post-call notes with Sonnet in one structured-output request (110 s limit): summary (≤ 6 bullets), questions (their ratings taken from the request, never from the model), next steps with owners, parts too unclear to summarise (with a time range), up to 3 proposed lessons. Not streamed: nobody waits word by word after a call |
 
 **`POST /api/answer` request:**
@@ -355,6 +356,7 @@ Default hotkeys (ADR-0029). The page's keys are in `platform/keymap.ts` and do n
 |---|---|---|---|
 | Answer | ⌘ Enter | Ctrl+Enter | Any app, during a call |
 | Screenshot | ⌘ Shift Enter | Ctrl+Shift+Enter | Any app, during a call |
+| Send chat with a screenshot (v1.2.0) | ⌘ Alt Enter | Ctrl+Alt+Enter | Any app, only while the chat bar is open (a shell before 1.2.0: while focused) |
 | Show or hide overlay | ⌘ Alt H | Ctrl+Alt+H | Any app, during a call |
 | Move overlay (Shift: bigger steps) | ⌘ Alt Arrows | Ctrl+Alt+Arrows | Any app, during a call |
 | Chat | ⌘ Shift Backspace | Ctrl+Shift+Backspace | Kite focused only |

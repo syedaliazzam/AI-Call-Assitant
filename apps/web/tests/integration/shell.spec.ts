@@ -87,7 +87,9 @@ test.beforeAll(async () => {
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(
-      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shell harness</title>' +
+      '<!doctype html><html data-theme="' +
+        (process.env.KITE_VISUAL_THEME ?? 'light') +
+        '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shell harness</title>' +
         '<link rel="stylesheet" href="/harness/shell.css"></head>' +
         '<body class="bg-ui-bg font-sans text-[15px] text-ui-text"><div id="root"></div>' +
         '<script type="module" src="/harness/shell.js"></script></body></html>',
@@ -116,6 +118,7 @@ async function open(query = '', width = 1440, height = 900): Promise<void> {
     viewport: { width, height },
     deviceScaleFactor: 1.5,
     hasTouch: width < 500,
+    ...(process.env.KITE_VISUAL_THEME === 'dark' ? { colorScheme: 'dark' as const } : {}),
   });
   page = await context.newPage();
   await page.goto(`${origin}/${query}`);
@@ -193,7 +196,10 @@ test('sidebar: order, sizes, the active item and "Soon" items that do nothing', 
   await expect(nav.getByText('Prepare')).toBeVisible();
   const active = nav.getByRole('link', { name: 'Call Sessions' });
   await expect(active).toHaveAttribute('aria-current', 'page');
-  await expect(active).toHaveCSS('background-color', 'rgb(244, 244, 245)');
+  // The light theme's colour; KITE_VISUAL_THEME=dark only takes pictures of this page.
+  if (process.env.KITE_VISUAL_THEME !== 'dark') {
+    await expect(active).toHaveCSS('background-color', 'rgb(244, 244, 245)');
+  }
   expect((await active.boundingBox())!.height).toBe(40);
   await expect(active).toHaveCSS('font-size', '15px');
   await expect(nav.getByRole('link', { name: 'Ask AI' })).toHaveAttribute('href', '/ask-kite');

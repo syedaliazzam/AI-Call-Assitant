@@ -42,6 +42,8 @@ export interface KeyCapProps {
   hotkey?: KeycapHotkey;
   /** Its keys instead, for a row of the map that names them itself ("…+Arrows"). */
   accelerator?: string;
+  /** True on a primary button, whose colours are reversed. */
+  onPrimary?: boolean;
   /** Extra classes, appended. */
   className?: string;
 }
@@ -69,12 +71,12 @@ const isMac = () => getPlatform().hotkeyModifier() === '⌘';
  * @returns The chip, as a <kbd>.
  * Rendered by: the call bars, the chat bar, the panels
  */
-export function KeyCap({ hotkey, accelerator, className = '' }: KeyCapProps) {
+export function KeyCap({ hotkey, accelerator, onPrimary = false, className = '' }: KeyCapProps) {
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
   const keys = accelerator ?? (hotkey ? hotkeyAccelerator(hotkey) : '');
   return (
     <kbd
-      className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-[6px] bg-ui-keycap px-1.5 text-chip whitespace-nowrap ${className}`}
+      className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-[6px] ${onPrimary ? 'bg-ui-on-primary/15' : 'bg-ui-keycap'} px-1.5 text-chip whitespace-nowrap ${className}`}
     >
       {keycapParts(keys, mac).map((part) => {
         const Icon = KEY_ICONS[part];

@@ -114,7 +114,7 @@ export function MenuAction({
       type="button"
       disabled={disabled || soon}
       onClick={onSelect}
-      className={`${ROW_SHAPE} w-full text-left hover:bg-ui-hover disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${FOCUS} ${danger ? 'text-ui-danger' : 'text-ui-text'}`}
+      className={`${ROW_SHAPE} w-full rounded-none text-left hover:bg-ui-hover disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent ${FOCUS} ${danger ? 'text-ui-danger' : 'text-ui-text'}`}
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -412,7 +412,7 @@ export function MenuList<T extends string>({
         aria-label={`${label}: ${current}`}
         aria-expanded={open}
         onClick={() => setOpen((was) => !was)}
-        className={`${ROW} w-full text-left hover:bg-ui-hover ${FOCUS}`}
+        className={`${ROW} w-full rounded-none text-left hover:bg-ui-hover ${FOCUS}`}
       >
         {icon}
         <span className="min-w-0 flex-1 truncate">{current}</span>

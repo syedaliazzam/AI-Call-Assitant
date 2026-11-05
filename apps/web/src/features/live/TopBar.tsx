@@ -128,7 +128,7 @@ export function TopBar(props: TopBarProps) {
         disabled={props.answering || props.ending}
         title={`Answer the latest question (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)})`}
       >
-        Answer <KeyChip hotkey="answer" />
+        Answer <KeyChip hotkey="answer" onPrimary />
       </button>
       <button
         type="button"
