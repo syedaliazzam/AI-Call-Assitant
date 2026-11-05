@@ -217,3 +217,13 @@ Deployment `dpl_FYmPL16gQcjTQ24pQGYoU6rVmBCr`, Vercel function `iad1`. Machine: 
 |---|---|---|---|---|---|
 | Chrome | 1120 / 1327 | 1125 / 1372 | 1370 / 1619 | 586 / 785 | 20 of 20 |
 | Desktop app | 1096 / 1278 | 1126 / 1402 | 1311 / 1455 | 586 / 721 | 20 of 20 |
+
+### Installer and update, v1.2.0
+
+| Check | Setup | Result | Notes |
+|---|---|---|---|
+| Installer (`dist:win`) | Built from `56df9a0` | `Paramount-AI-Setup-1.2.0.exe`, 126,299,008 bytes | Packaged shell holds four files of its own. |
+| Smoke test on the built program (`KITE_INSTALLED_EXE`) | `win-unpacked`, temporary profile | **19 of 19** | Not installed on this machine. |
+| Auto-update, real feed (`apps/desktop/tests/update-check.ts`, no folder) | The real 1.1.0 program, a temporary profile and a cache folder of its own holding 1.1.0's installer | Found 1.2.0, downloaded it and verified it | Stops before installing. |
+
+The Windows install step and the data folder staying in place were left to the developer's manual install on their laptop, done before publishing.
