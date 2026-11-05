@@ -3,7 +3,7 @@
  * Purpose: Splits a private answer (Ask Kite) into blocks to show: paragraphs, lists, headings and
  *          code blocks, while the text is still streaming. Kept small and with no dependency: React
  *          renders the text as text, so nothing in an answer can become HTML.
- * Used by: src/features/answers/AnswerBody.tsx
+ * Used by: src/features/answers/AnswerBody.tsx, src/features/help/HelpPage.tsx
  * Depends on: nothing
  * Architecture: docs/decisions/ADR-0030-ask-kite-and-adaptive-answers.md
  */
@@ -124,4 +124,37 @@ export function inlinePieces(line: string): InlinePiece[] {
       }
       return { text: piece, style: 'plain' as const };
     });
+}
+
+/** A Markdown link: "[words](address)". The address may hold one level of brackets. */
+const MARKDOWN_LINK = /\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)/g;
+
+/** Part of a line of the user guide. */
+export interface LinkPiece {
+  /** The words to show. */
+  text: string;
+  /** Where they link to, or null for plain words. */
+  href: string | null;
+}
+
+/**
+ * Splits a line of the user guide at its Markdown links. Only web addresses become links: anything
+ * else, such as a file in the repository or a script address, keeps its words and loses the rest.
+ * Answers do not use this: a link in a model's answer must stay plain text.
+ *
+ * @param line The line.
+ * @returns The pieces, in order.
+ * Called from: HelpPage.tsx; tests
+ */
+export function linkPieces(line: string): LinkPiece[] {
+  const pieces: LinkPiece[] = [];
+  let from = 0;
+  for (const match of line.matchAll(MARKDOWN_LINK)) {
+    if (match.index > from) pieces.push({ text: line.slice(from, match.index), href: null });
+    const address = match[2]!;
+    pieces.push({ text: match[1]!, href: /^https?:\/\//i.test(address) ? address : null });
+    from = match.index + match[0].length;
+  }
+  if (from < line.length) pieces.push({ text: line.slice(from), href: null });
+  return pieces;
 }

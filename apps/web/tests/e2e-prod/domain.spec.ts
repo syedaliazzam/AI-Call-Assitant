@@ -72,6 +72,15 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
       await page.goto(`${address}/help`);
       await expect(page.getByText('call.paramountintelligence.co').first()).toBeVisible();
       report(`${host} guide names the new address`, true);
+      // Its links are real links, and no Markdown is left showing.
+      const releases = page.getByRole('link', { name: 'Paramount AI releases' });
+      await expect(releases).toHaveAttribute(
+        'href',
+        'https://github.com/Zainpak123/kite-releases/releases/latest',
+      );
+      await expect(releases).toHaveAttribute('target', '_blank');
+      await expect(page.getByText('](')).toHaveCount(0);
+      report(`${host} guide shows its link as a link`, true);
       await logOut(page, address);
       report(`${host} log out`, true);
     } finally {
