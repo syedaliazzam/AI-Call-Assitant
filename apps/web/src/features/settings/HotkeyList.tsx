@@ -3,30 +3,15 @@
  * Purpose: Settings → Hotkeys: every shortcut with its keys and where it works, and, in the desktop
  *          app, any global shortcut another app already uses (ADR-0029).
  * Used by: src/features/settings/Settings.tsx
- * Depends on: @kite/shared (HOTKEY_ROWS, hotkeyLabel), src/platform
+ * Depends on: @kite/shared (HOTKEY_ROWS), src/platform, src/ui/KeyCap.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3; docs/design/parakeet-parity.md
  */
 'use client';
 
-import { HOTKEY_ROWS, hotkeyLabel, type HotkeyRow, type HotkeyStatus } from '@kite/shared';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { HOTKEY_ROWS, type HotkeyRow, type HotkeyStatus } from '@kite/shared';
+import { useEffect, useState } from 'react';
 import { getPlatform } from '@/platform';
-
-/**
- * Nothing to subscribe to: the OS does not change during a page's life.
- *
- * @returns An unsubscribe function that does nothing.
- * Called from: HotkeyList (useSyncExternalStore)
- */
-const subscribeNever = () => () => undefined;
-
-/**
- * Whether the shortcuts use ⌘ (macOS). Server render: not a Mac.
- *
- * @returns True on macOS.
- * Called from: HotkeyList (useSyncExternalStore)
- */
-const isMac = () => getPlatform().hotkeyModifier() === '⌘';
+import { KeyCap } from '@/ui/KeyCap';
 
 /**
  * Whether another app holds any of a row's global shortcuts.
@@ -49,7 +34,6 @@ export function rowHasConflict(row: HotkeyRow, statuses: readonly HotkeyStatus[]
  * Rendered by: Settings.tsx
  */
 export function HotkeyList() {
-  const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
   const [statuses, setStatuses] = useState<HotkeyStatus[] | null>(null);
   useEffect(() => {
     getPlatform()
@@ -87,9 +71,7 @@ export function HotkeyList() {
                 {row.label}
               </th>
               <td className="py-2 pr-4 text-ui-muted">
-                <kbd className="text-[13px]">
-                  {hotkeyLabel(row.keysOverride ?? row.accelerator, mac)}
-                </kbd>
+                <KeyCap accelerator={row.keysOverride ?? row.accelerator} />
               </td>
               <td className="py-2 text-ui-muted">
                 {row.scope === 'global' ? 'Any app' : 'Paramount AI in front'}

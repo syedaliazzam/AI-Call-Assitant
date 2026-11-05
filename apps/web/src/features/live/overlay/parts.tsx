@@ -81,30 +81,6 @@ export function KeyChip({
   );
 }
 
-/**
- * A shortcut in the short form used on buttons: "Ctrl↵", "Ctrl⇧↵", "Ctrl⇧␣" (⌘↵, ⌘⇧↵, ⌘⇧␣ on macOS).
- *
- * @param accelerator An Electron accelerator, for example 'CommandOrControl+Shift+Enter'.
- * @param mac         True on macOS.
- * @returns The short label.
- * Called from: TopBar.tsx; tests
- */
-export function shortKeys(accelerator: string, mac: boolean): string {
-  const glyphs: Record<string, string> = {
-    CommandOrControl: mac ? '⌘' : 'Ctrl',
-    Shift: '⇧',
-    Alt: mac ? '⌥' : 'Alt',
-    Enter: '↵',
-    Backspace: '⌫',
-    Space: '␣',
-    Left: '←',
-    Right: '→',
-  };
-  const parts = accelerator.split('+').map((part) => glyphs[part] ?? part);
-  // No spaces: they must fit the 560 px bar.
-  return parts.join('');
-}
-
 /** The audio levels, kept outside React state so only the level bars redraw (v1.1.0). */
 export interface LevelStore {
   /** The latest levels. */

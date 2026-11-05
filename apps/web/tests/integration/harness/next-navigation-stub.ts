@@ -46,5 +46,5 @@ export function useRouter() {
  * Called from: components under test that use next/navigation
  */
 export function usePathname() {
-  return '/';
+  return window.location.pathname;
 }

@@ -292,7 +292,7 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
   await shot(watched, size, 'live-empty');
 
   // Stream an answer: measure when only the headline is there, then when the bullets are.
-  await page.getByRole('button', { name: 'Answer', exact: true }).click();
+  await page.getByRole('button', { name: 'Answer', exact: true }).first().click();
   await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
   await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
   // The card grows as words arrive (its footer follows them); everything around it stays still.

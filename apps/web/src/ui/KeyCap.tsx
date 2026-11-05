@@ -39,7 +39,9 @@ const KEY_ICONS: Readonly<Record<string, LucideIcon>> = {
 /** Props for KeyCap. */
 export interface KeyCapProps {
   /** Which shortcut to show. */
-  hotkey: KeycapHotkey;
+  hotkey?: KeycapHotkey;
+  /** Its keys instead, for a row of the map that names them itself ("…+Arrows"). */
+  accelerator?: string;
   /** Extra classes, appended. */
   className?: string;
 }
@@ -67,13 +69,14 @@ const isMac = () => getPlatform().hotkeyModifier() === '⌘';
  * @returns The chip, as a <kbd>.
  * Rendered by: the call bars, the chat bar, the panels
  */
-export function KeyCap({ hotkey, className = '' }: KeyCapProps) {
+export function KeyCap({ hotkey, accelerator, className = '' }: KeyCapProps) {
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
+  const keys = accelerator ?? (hotkey ? hotkeyAccelerator(hotkey) : '');
   return (
     <kbd
       className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-[6px] bg-ui-keycap px-1.5 text-chip whitespace-nowrap ${className}`}
     >
-      {keycapParts(hotkeyAccelerator(hotkey), mac).map((part) => {
+      {keycapParts(keys, mac).map((part) => {
         const Icon = KEY_ICONS[part];
         return Icon ? (
           <span key={part} className="inline-flex">

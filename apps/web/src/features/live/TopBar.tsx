@@ -6,18 +6,18 @@
  *          Reset overlay size and position, End call) and End.
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/ui (Menu, icons), @kite/shared (hotkeys), src/features/live/overlay/parts.tsx
- *             (shortKeys), src/features/live/callClock.ts, src/features/live/useCallDictation.ts
+ *             (KeyChip), src/features/live/callClock.ts, src/features/live/useCallDictation.ts
  *             (CallDictation)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session); ADR-0040
  */
 'use client';
 
 import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel, type TargetChoice } from '@kite/shared';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { MenuIcon, MicIcon } from '@/ui/icons';
 import { Menu, type MenuItem } from '@/ui/Menu';
 import { callClock } from './callClock';
-import { shortKeys } from './overlay/parts';
+import { KeyChip } from './overlay/parts';
 import type { CallDictation } from './useCallDictation';
 
 /** Props for TopBar. */
@@ -61,28 +61,6 @@ const BUTTON_BASE =
 
 /** A quiet button in the bar. */
 const BUTTON = `${BUTTON_BASE} border border-ui-border bg-ui-surface text-ui-text hover:bg-ui-hover`;
-
-/**
- * A shortcut on a button, hidden from screen readers (the title still says it).
- *
- * @param props.children The keys.
- * @returns The label.
- */
-function Keys({
-  children,
-}: {
-  /** The keys. */
-  children: ReactNode;
-}) {
-  return (
-    <kbd
-      aria-hidden="true"
-      className="whitespace-nowrap rounded-full bg-black/10 px-1.5 text-[12px] font-normal"
-    >
-      {children}
-    </kbd>
-  );
-}
 
 /**
  * The top bar.
@@ -150,7 +128,7 @@ export function TopBar(props: TopBarProps) {
         disabled={props.answering || props.ending}
         title={`Answer the latest question (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)})`}
       >
-        Answer <Keys>{shortKeys(DEFAULT_GLOBAL_HOTKEYS.answer, mac)}</Keys>
+        Answer <KeyChip hotkey="answer" />
       </button>
       <button
         type="button"
@@ -159,8 +137,7 @@ export function TopBar(props: TopBarProps) {
         disabled={props.capturing || props.ending}
         title={`Answer from a screenshot (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)})`}
       >
-        {props.capturing ? 'Screenshot…' : 'Screenshot'}{' '}
-        <Keys>{shortKeys(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)}</Keys>
+        {props.capturing ? 'Screenshot…' : 'Screenshot'} <KeyChip hotkey="screenshot" />
       </button>
       <button
         type="button"
@@ -169,7 +146,7 @@ export function TopBar(props: TopBarProps) {
         disabled={props.ending}
         title={`Type a question (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.chat, mac)})`}
       >
-        Chat <Keys>{shortKeys(DEFAULT_GLOBAL_HOTKEYS.chat, mac)}</Keys>
+        Chat <KeyChip hotkey="chat" />
       </button>
       <span
         className="px-1.5 font-mono text-[14px] tabular-nums text-ui-text"

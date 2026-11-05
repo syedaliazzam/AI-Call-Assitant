@@ -48,6 +48,7 @@
     "test:ui-kit": "playwright test -c tests/integration/playwright.config.ts ui-kit.spec.ts",
     "test:shell": "playwright test -c tests/integration/playwright.config.ts shell.spec.ts",
     "test:handoff": "playwright test -c tests/integration/playwright.config.ts handoff.spec.ts",
+    "test:screens": "playwright test -c tests/integration/playwright.config.ts screens.spec.ts",
     "test:ui-shots": "playwright test -c tests/ui/playwright.config.ts",
     "test:e2e-prod": "pnpm --filter @kite/desktop build && playwright test -c tests/e2e-prod/playwright.config.ts"
   },

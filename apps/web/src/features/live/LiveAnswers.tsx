@@ -18,12 +18,7 @@
  */
 'use client';
 
-import {
-  DEFAULT_GLOBAL_HOTKEYS,
-  hotkeyLabel,
-  type OverlayPreset,
-  type TargetChoice,
-} from '@kite/shared';
+import { type OverlayPreset, type TargetChoice } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { splitAnswer } from '@/core/answer/format';
@@ -63,6 +58,7 @@ import { AnswerPanel } from './AnswerPanel';
 import { openOverlay } from './openOverlay';
 import { isDoublePress } from '@/core/live/doublePress';
 import { ChatBox, type ChatBoxHandle } from './ChatBox';
+import { KeyChip } from './overlay/parts';
 import { TopBar } from './TopBar';
 import { isOnline, subscribeOnline } from '@/core/net/online';
 import { SignInAgainDialog } from './SignInAgainDialog';
@@ -798,9 +794,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
           title="Answer the latest question"
         >
           Answer
-          <kbd className="rounded-full bg-black/10 px-2 text-[12px] font-normal">
-            {hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)}
-          </kbd>
+          <KeyChip hotkey="answer" />
         </button>
         <button
           type="button"
@@ -810,9 +804,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
           title="Answer from a screenshot of your screen"
         >
           {answers.capturing ? 'Screenshot…' : 'Screenshot'}
-          <kbd className="rounded-full bg-ui-subtle px-2 text-[12px] font-normal">
-            {hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)}
-          </kbd>
+          <KeyChip hotkey="screenshot" />
         </button>
       </div>
       <AnswerPreferencesDialog
