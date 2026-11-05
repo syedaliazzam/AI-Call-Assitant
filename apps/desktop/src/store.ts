@@ -45,6 +45,10 @@ export interface ShellSettings {
   overlayPlaces?: Record<string, OverlayPlace>;
   /** v1.1.0 (ADR-0041): how tall the user made the overlay with each set of panels open. */
   overlayHeights?: Partial<Record<OverlayLayoutKey, number>>;
+  /** v1.2.0 (spec S15): how wide the user made the overlay with both panels open. */
+  overlayBothWidth?: number;
+  /** v1.2.0: true once a place saved by 1.1.0 has been widened for the new bar 1. */
+  overlayBarsWidened?: boolean;
 }
 
 /** The stacked overlay's place on one display (v1.1.0). */
@@ -142,6 +146,10 @@ export function createStore(file: string): ShellStore {
         );
         settings.overlayPlaces = Object.fromEntries(places) as Record<string, OverlayPlace>;
       }
+      if (typeof raw.overlayBothWidth === 'number' && Number.isFinite(raw.overlayBothWidth)) {
+        settings.overlayBothWidth = raw.overlayBothWidth;
+      }
+      if (raw.overlayBarsWidened === true) settings.overlayBarsWidened = true;
       if (raw.overlayHeights && typeof raw.overlayHeights === 'object') {
         const heights = raw.overlayHeights as Record<string, unknown>;
         settings.overlayHeights = Object.fromEntries(

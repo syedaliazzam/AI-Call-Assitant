@@ -1,19 +1,18 @@
 /**
  * File: apps/web/src/features/live/overlay/ControlBar.tsx
- * Purpose: Bar 1 of the stacked overlay (v1.1.0, ADR-0041): screen-audio and microphone status with a
- *          device list; Answer, Screenshot and Chat with their keys; move, collapse and ⋮; and the
- *          call timer, which is also End (it says "End call" under the pointer and asks first). While
- *          Chat is open, its input takes the place of the three buttons. The bar is the window's drag
- *          handle; its buttons opt out.
+ * Purpose: Bar 1 of the call bars (spec S13): the screen-audio and microphone icons, each with its ▾;
+ *          Answer, Screenshot and Chat with their key-caps; move and compact; the call timer; ⋮; and Exit
+ *          (red, asks first). The bar is the window's drag handle; its buttons opt out.
  * Used by: src/features/live/CompactView.tsx
- * Depends on: @kite/shared (hotkeys), src/core/live/liveChannel.ts, ./parts.tsx, ./ChatInput.tsx,
- *             src/ui/icons.tsx
- * Architecture: docs/architecture/kite-architecture-v3.1.md §5; ADR-0041
+ * Depends on: @kite/shared (hotkeys), lucide-react, src/core/live/liveChannel.ts, ./parts.tsx,
+ *             src/features/live/callClock.ts, src/ui/icons.tsx
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S13); ADR-0041, ADR-0045
  */
 'use client';
 
 import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
-import { useEffect, useState, type RefObject } from 'react';
+import { Clock } from 'lucide-react';
+import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { callClock } from '@/features/live/callClock';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import {
@@ -25,8 +24,18 @@ import {
   MonitorIcon,
   MoveIcon,
 } from '@/ui/icons';
-import { ChatInput } from './ChatInput';
-import { BUTTON, BUTTON_BASE, ICON_BUTTON, Keys, shortKeys, StatusIcon } from './parts';
+import {
+  BUTTON,
+  BUTTON_BASE,
+  CHEVRON_BUTTON,
+  ICON_BUTTON,
+  KeyChip,
+  PILL,
+  StatusIcon,
+} from './parts';
+
+/** Which device list is open. */
+export type DeviceList = 'audio' | 'mic';
 
 /** Props for ControlBar. */
 export interface ControlBarProps {
@@ -34,60 +43,87 @@ export interface ControlBarProps {
   state: CompactState | null;
   /** Sends a command to the live page. */
   onCommand: (command: CompactCommand) => void;
-  /** True on macOS (for the key hints). */
+  /** True on macOS (for the shortcuts' spoken names). */
   mac: boolean;
   /** True when the overlay is collapsed to this bar. */
   collapsed: boolean;
   /** Collapses the overlay, or opens it. */
   onCollapse: (collapsed: boolean) => void;
+  /** Shrinks to the icon, where this shell can (1.2.0); otherwise compact collapses to this bar. */
+  onIcon?: (() => void) | undefined;
   /** Whether the menu is open. */
   menuOpen: boolean;
   /** Opens or closes the menu. */
   onMenu: (open: boolean) => void;
-  /** Whether the device list is open. */
-  devicesOpen: boolean;
-  /** Opens or closes the device list. */
-  onDevices: (open: boolean) => void;
-  /** Whether Chat's input is open. */
+  /** Which device list is open, if any. */
+  deviceList: DeviceList | null;
+  /** Opens or closes a device list. */
+  onDeviceList: (list: DeviceList | null) => void;
+  /** Whether the chat bar is open. */
   chatOpen: boolean;
-  /** Opens or closes Chat's input. */
+  /** Opens or closes the chat bar. */
   onChatOpen: (open: boolean) => void;
-  /** The buttons a click outside the menu must not treat as outside. */
+  /** The ⋮ button: a click on it is not a click outside the menu. */
   menuButton: RefObject<HTMLButtonElement | null>;
 }
 
 /**
- * The timer pill, which is also End: under the pointer or the keyboard it says "End call"; pressing it
- * asks first, in place, because ending a call by accident loses the call.
+ * The call's time so far.
  *
  * @param props.startedAt When the call connected (Unix ms).
- * @param props.disabled  True before the live page answers, or once the call ended.
- * @param props.onEnd     Ends the call.
- * @returns The pill, or the question.
+ * @returns The pill. It gives way first in a very narrow picture-in-picture window, then its icon.
  * Rendered by: ControlBar
  */
-function EndPill({
+function CallTimer({
   startedAt,
-  disabled,
-  onEnd,
 }: {
   /** When the call connected (Unix ms). */
   startedAt: number | undefined;
-  /** True before the live page answers, or once the call ended. */
-  disabled: boolean;
-  /** Ends the call. */
-  onEnd: () => void;
 }) {
   // The clock is a state the interval advances (no setState in the effect body).
   const [now, setNow] = useState(() => Date.now());
-  const [hover, setHover] = useState(false);
-  const [asking, setAsking] = useState(false);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
   }, []);
   const seconds = startedAt === undefined ? 0 : Math.max(0, Math.floor((now - startedAt) / 1_000));
+  return (
+    <span
+      role="timer"
+      aria-label="Call time"
+      className="hidden h-8 shrink-0 items-center gap-1.5 rounded-control bg-ui-overlay-button px-2 text-[13px] font-medium tabular-nums @min-[500px]:inline-flex"
+    >
+      <Clock aria-hidden="true" size={14} className="hidden @min-[620px]:inline" />
+      {callClock(seconds)}
+    </span>
+  );
+}
 
+/**
+ * Exit: pressing it asks first, in place, because ending a call by accident loses the call.
+ *
+ * @param props.disabled True before the live page answers, or once the call ended.
+ * @param props.asking   True while it is asking.
+ * @param props.onAsking Starts or stops asking.
+ * @param props.onEnd    Ends the call.
+ * @returns The button, or the question.
+ * Rendered by: ControlBar
+ */
+function ExitButton({
+  disabled,
+  asking,
+  onAsking,
+  onEnd,
+}: {
+  /** True before the live page answers, or once the call ended. */
+  disabled: boolean;
+  /** True while it is asking. */
+  asking: boolean;
+  /** Starts or stops asking. */
+  onAsking: (asking: boolean) => void;
+  /** Ends the call. */
+  onEnd: () => void;
+}) {
   if (asking) {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 [-webkit-app-region:no-drag]">
@@ -99,7 +135,7 @@ function EndPill({
         >
           End call?
         </button>
-        <button type="button" className={BUTTON} onClick={() => setAsking(false)}>
+        <button type="button" className={BUTTON} onClick={() => onAsking(false)}>
           Cancel
         </button>
       </span>
@@ -108,19 +144,63 @@ function EndPill({
   return (
     <button
       type="button"
-      aria-label="End call"
-      className={`${BUTTON_BASE} min-w-[4.25rem] bg-ui-end font-mono tabular-nums text-ui-on-end hover:opacity-90`}
+      aria-label="Exit: end call"
+      className={`${BUTTON_BASE} bg-ui-end text-ui-on-end hover:opacity-90`}
       disabled={disabled}
-      onPointerEnter={() => setHover(true)}
-      onPointerLeave={() => setHover(false)}
-      onFocus={() => setHover(true)}
-      onBlur={() => setHover(false)}
-      onClick={() => setAsking(true)}
+      onClick={() => onAsking(true)}
     >
-      <span role="timer" aria-label="Call time" className={hover ? 'font-sans' : ''}>
-        {hover ? 'End call' : callClock(seconds)}
-      </span>
+      Exit
     </button>
+  );
+}
+
+/**
+ * One side's icon with a red dot while capturing, and the ▾ that opens its list.
+ *
+ * @param props.on       True while it is capturing.
+ * @param props.label    Which side, for screen readers.
+ * @param props.icon     Its icon.
+ * @param props.chooser  The ▾ button's name.
+ * @param props.open     True while its list is open.
+ * @param props.onToggle Opens or closes its list.
+ * @returns The icon and the ▾.
+ * Rendered by: ControlBar
+ */
+function DeviceButton({
+  on,
+  label,
+  icon,
+  chooser,
+  open,
+  onToggle,
+}: {
+  /** True while it is capturing. */
+  on: boolean;
+  /** Which side, for screen readers. */
+  label: string;
+  /** Its icon. */
+  icon: ReactNode;
+  /** The ▾ button's name. */
+  chooser: string;
+  /** True while its list is open. */
+  open: boolean;
+  /** Opens or closes its list. */
+  onToggle: () => void;
+}) {
+  return (
+    <span className="inline-flex shrink-0 items-center">
+      <StatusIcon on={on} label={label} icon={icon} />
+      <button
+        type="button"
+        data-popup-button
+        className={CHEVRON_BUTTON}
+        aria-label={chooser}
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <ChevronDownIcon size={14} />
+      </button>
+    </span>
   );
 }
 
@@ -132,86 +212,118 @@ function EndPill({
  * Rendered by: CompactView.tsx
  */
 export function ControlBar(props: ControlBarProps) {
-  const { state, onCommand, mac, collapsed, menuButton, menuOpen, onMenu } = props;
+  const { state, onCommand, mac, collapsed, menuButton, menuOpen, onMenu, onIcon } = props;
+  const { deviceList, onDeviceList } = props;
   const ended = !state || state.ended;
+  // The question is wider than Exit: while it shows, the timer makes room, and in a narrow window the
+  // audio icons too, so "Cancel" is never cut off.
+  const [asking, setAsking] = useState(false);
   return (
     <div
       role="toolbar"
       aria-label="Overlay controls"
-      className="relative flex h-12 shrink-0 items-center gap-1 px-2 [-webkit-app-region:drag]"
+      className="relative flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]"
     >
-      <StatusIcon on={state?.audio.them ?? false} label="Screen audio" icon={<MonitorIcon />} />
-      <StatusIcon on={state?.audio.you ?? false} label="Microphone" icon={<MicIcon />} />
+      <span className={`inline-flex shrink-0 items-center ${asking ? '@max-[620px]:hidden' : ''}`}>
+        <DeviceButton
+          on={state?.audio.them ?? false}
+          label="Screen audio"
+          icon={<MonitorIcon />}
+          chooser="Choose audio source"
+          open={deviceList === 'audio'}
+          onToggle={() => onDeviceList(deviceList === 'audio' ? null : 'audio')}
+        />
+        <DeviceButton
+          on={state?.audio.you ?? false}
+          label="Microphone"
+          icon={<MicIcon />}
+          chooser="Choose microphone"
+          open={deviceList === 'mic'}
+          onToggle={() => onDeviceList(deviceList === 'mic' ? null : 'mic')}
+        />
+      </span>
+      <span className="w-1 shrink-0" />
+
       <button
         type="button"
-        className={`${BUTTON_BASE} w-6 px-0 text-ui-text hover:bg-ui-overlay-button`}
-        aria-label="Choose microphone and audio source"
-        aria-expanded={props.devicesOpen}
-        onClick={() => props.onDevices(!props.devicesOpen)}
+        className={PILL}
+        onClick={() => onCommand({ type: 'answer' })}
+        disabled={ended}
+        aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)}
       >
-        <ChevronDownIcon size={14} />
+        Answer <KeyChip hotkey="answer" visibleAt="@min-[640px]:inline-flex" />
       </button>
-
-      {props.chatOpen ? (
-        <ChatInput state={state} onCommand={onCommand} onClose={() => props.onChatOpen(false)} />
-      ) : (
-        <>
-          <button
-            type="button"
-            className={`${BUTTON_BASE} bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover`}
-            onClick={() => onCommand({ type: 'answer' })}
-            disabled={ended}
-            aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)}
-          >
-            Answer <Keys>{shortKeys(DEFAULT_GLOBAL_HOTKEYS.answer, mac)}</Keys>
-          </button>
-          <button
-            type="button"
-            className={BUTTON}
-            onClick={() => onCommand({ type: 'screenshot' })}
-            disabled={ended || state.capturing}
-            aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)}
-          >
-            {state?.capturing ? 'Screenshot…' : 'Screenshot'}{' '}
-            <Keys>{shortKeys(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)}</Keys>
-          </button>
-          <button
-            type="button"
-            className={BUTTON}
-            aria-pressed={props.chatOpen}
-            onClick={() => {
-              if (collapsed) props.onCollapse(false);
-              props.onChatOpen(true);
-            }}
-            disabled={ended}
-            aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.chat, mac)}
-          >
-            Chat <Keys>{shortKeys(DEFAULT_GLOBAL_HOTKEYS.chat, mac)}</Keys>
-          </button>
-          <span className="min-w-1 flex-1" />
-        </>
-      )}
+      <button
+        type="button"
+        className={PILL}
+        onClick={() => onCommand({ type: 'screenshot' })}
+        disabled={ended || state.capturing}
+        aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)}
+      >
+        {state?.capturing ? 'Screenshot…' : 'Screenshot'}{' '}
+        <KeyChip hotkey="screenshot" visibleAt="@min-[760px]:inline-flex" />
+      </button>
+      <button
+        type="button"
+        className={PILL}
+        aria-pressed={props.chatOpen}
+        onClick={() => {
+          if (collapsed) props.onCollapse(false);
+          props.onChatOpen(!props.chatOpen);
+        }}
+        disabled={ended}
+        aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.chat, mac)}
+      >
+        Chat <KeyChip hotkey="chat" visibleAt="@min-[700px]:inline-flex" />
+      </button>
+      <span className="min-w-1 flex-1" />
 
       {/* The whole bar drags the window; this is where people look for it. */}
       <span
         role="img"
         aria-label="Drag here to move"
-        className="hidden h-8 w-7 shrink-0 cursor-move items-center justify-center text-ui-muted @min-[620px]:inline-flex"
+        className="hidden h-8 w-8 shrink-0 cursor-move items-center justify-center rounded-control bg-ui-overlay-button @min-[620px]:inline-flex"
       >
         <MoveIcon />
       </span>
-      <button
-        type="button"
-        className={ICON_BUTTON}
-        aria-label={collapsed ? 'Open the overlay' : 'Collapse the overlay'}
-        aria-pressed={collapsed}
-        onClick={() => props.onCollapse(!collapsed)}
-      >
-        {collapsed ? <ExpandIcon /> : <CollapseIcon />}
-      </button>
+      {onIcon ? (
+        <>
+          {collapsed && (
+            <button
+              type="button"
+              className={ICON_BUTTON}
+              aria-label="Open the overlay"
+              onClick={() => props.onCollapse(false)}
+            >
+              <ExpandIcon />
+            </button>
+          )}
+          <button
+            type="button"
+            className={ICON_BUTTON}
+            aria-label="Shrink to an icon"
+            onClick={onIcon}
+          >
+            <CollapseIcon />
+          </button>
+        </>
+      ) : (
+        // A shell before 1.2.0 cannot make the window that small: compact collapses to this bar.
+        <button
+          type="button"
+          className={ICON_BUTTON}
+          aria-label={collapsed ? 'Open the overlay' : 'Collapse the overlay'}
+          aria-pressed={collapsed}
+          onClick={() => props.onCollapse(!collapsed)}
+        >
+          {collapsed ? <ExpandIcon /> : <CollapseIcon />}
+        </button>
+      )}
+      {!asking && <CallTimer startedAt={state?.startedAt} />}
       <button
         ref={menuButton}
         type="button"
+        data-popup-button
         className={ICON_BUTTON}
         aria-label="Overlay menu"
         aria-expanded={menuOpen}
@@ -219,9 +331,10 @@ export function ControlBar(props: ControlBarProps) {
       >
         <MenuIcon />
       </button>
-      <EndPill
-        startedAt={state?.startedAt}
+      <ExitButton
         disabled={ended}
+        asking={asking}
+        onAsking={setAsking}
         onEnd={() => onCommand({ type: 'end' })}
       />
     </div>

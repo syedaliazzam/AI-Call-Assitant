@@ -9,7 +9,8 @@
  *
  * The modifier is ⌘ on macOS and Ctrl elsewhere. While the user types in a text box, no
  * shortcut is taken: Ctrl+← / Ctrl+→ and Ctrl+Backspace already move and delete by word there,
- * and Enter sends the chat question.
+ * and Enter sends the chat question. Two exceptions (v1.2.0, spec S14), keys that edit nothing and are
+ * meant for use from the chat box itself: Chat (pressed twice for the microphone) and Ctrl+Alt+Enter.
  */
 import type { HotkeyAction } from '@kite/shared';
 
@@ -54,12 +55,13 @@ function isTyping(target: EventTarget | null): boolean {
  *
  * @param press The key press.
  * @param mac   True on macOS (⌘ is the modifier), false elsewhere (Ctrl).
- * @returns 'answer', 'screenshot', 'chat', 'clear', 'clear-transcript', 'prev', 'next', 'ask-kite',
- *          or null.
+ * @returns 'answer', 'screenshot', 'screenshot-send', 'chat', 'clear', 'clear-transcript', 'prev',
+ *          'next', 'ask-kite', 'script-bar', or null.
  * Called from: listenForHotkeys(); tests
  */
 export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
-  if (press.repeat || isTyping(press.target)) return null;
+  if (press.repeat) return null;
+  const typing = isTyping(press.target);
   // The shortcuts with Alt: Ask Kite (ADR-0030) and the script bar (v1.0.2, ADR-0035). Every other
   // Alt combination stays the browser's.
   if (press.altKey) {
@@ -67,6 +69,8 @@ export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
     if (!held || press.shiftKey) return null;
     // Where Ctrl+Alt is AltGr, e.key is the letter it types ("ś" on a Polish layout), so typing that
     // letter in the page is never taken as a shortcut.
+    if (press.key === 'Enter') return 'screenshot-send';
+    if (typing) return null;
     const key = press.key.toLowerCase();
     if (key === 'k') return 'ask-kite';
     return key === 's' ? 'script-bar' : null;
@@ -74,6 +78,7 @@ export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
   // Exactly the platform's modifier: Ctrl+⌘ together is not a shortcut.
   const modifier = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;
   if (!modifier) return null;
+  if (typing) return press.key === ' ' && press.shiftKey ? 'chat' : null;
   switch (press.key) {
     case 'Enter':
       return press.shiftKey ? 'screenshot' : 'answer';

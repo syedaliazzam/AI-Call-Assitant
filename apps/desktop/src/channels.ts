@@ -88,3 +88,9 @@ export const ACCURATE_REMOVE_CHANNEL = 'kite:accurate-remove';
 
 /** v1.0.1: transcribe one utterance (invoke; carries a Float32Array, returns AccurateResult). */
 export const ACCURATE_TRANSCRIBE_CHANNEL = 'kite:accurate-transcribe';
+
+/** v1.2.0 (spec S13): moves the overlay by a distance (dragging the icon). */
+export const OVERLAY_MOVE_CHANNEL = 'kite:overlay-move';
+
+/** v1.2.0 (spec S14): holds or releases the chat bar's screenshot shortcut. */
+export const CHAT_HOTKEY_CHANNEL = 'kite:chat-hotkey';

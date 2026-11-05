@@ -60,7 +60,7 @@ export function MenuBlock({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col divide-y divide-ui-border overflow-hidden rounded-menu border border-ui-border">
+    <div className="flex shrink-0 flex-col divide-y divide-ui-border overflow-hidden rounded-menu border border-ui-border">
       {children}
     </div>
   );
@@ -75,6 +75,7 @@ export function MenuBlock({
  * @param props.danger   True for a destructive action's colour.
  * @param props.disabled True to grey it out.
  * @param props.soon     True for a feature that is visible but not available yet (spec §5).
+ * @param props.info     An explanation, opened by an info button at the end of the row (spec S16).
  * @param props.onSelect What it does.
  * @returns The row.
  * Rendered by: HomeMenu.tsx, LiveMenu.tsx
@@ -86,6 +87,7 @@ export function MenuAction({
   danger = false,
   disabled = false,
   soon = false,
+  info,
   onSelect,
 }: {
   /** The words. */
@@ -100,9 +102,13 @@ export function MenuAction({
   disabled?: boolean;
   /** True for a feature that is visible but not available yet. */
   soon?: boolean;
+  /** An explanation, opened by an info button at the end of the row. */
+  info?: string;
   /** What it does. */
   onSelect?: () => void;
 }) {
+  const [showInfo, setShowInfo] = useState(false);
+  const hintId = useId();
   const row = (
     <button
       type="button"
@@ -116,12 +122,38 @@ export function MenuAction({
       {out && <OutIcon />}
     </button>
   );
-  return soon ? (
-    <Tooltip content={SOON_TOOLTIP} className="w-full">
-      {row}
-    </Tooltip>
-  ) : (
-    row
+  if (soon) {
+    return (
+      <Tooltip content={SOON_TOOLTIP} className="w-full">
+        {row}
+      </Tooltip>
+    );
+  }
+  if (!info) return row;
+  return (
+    <div>
+      <div className="relative">
+        {row}
+        <button
+          type="button"
+          aria-label={`About ${label}`}
+          aria-expanded={showInfo}
+          aria-controls={hintId}
+          className={`absolute right-3 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-ui-muted hover:text-ui-text ${FOCUS}`}
+          onPointerEnter={() => setShowInfo(true)}
+          onPointerLeave={() => setShowInfo(false)}
+          onFocus={() => setShowInfo(true)}
+          onBlur={() => setShowInfo(false)}
+        >
+          <InfoIcon size={14} />
+        </button>
+      </div>
+      {showInfo && (
+        <p id={hintId} role="note" className="px-3 pb-2 text-[12px] leading-snug text-ui-muted">
+          {info}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -238,31 +270,33 @@ export function MenuStepper({
   return (
     <div role="group" aria-label={label} className={ROW}>
       <span className="truncate">{label}</span>
-      <span aria-live="polite" className="text-[12px] tabular-nums text-ui-muted">
+      <span aria-live="polite" className="shrink-0 text-[12px] tabular-nums text-ui-muted">
         {value}
       </span>
       <span className="flex-1" />
-      <button
-        type="button"
-        className={SQUARE}
-        aria-label={`${label}: more`}
-        disabled={!canMore}
-        onClick={onMore}
-      >
-        <PlusIcon size={14} />
-      </button>
-      <button
-        type="button"
-        className={SQUARE}
-        aria-label={`${label}: less`}
-        disabled={!canLess}
-        onClick={onLess}
-      >
-        <MinusIcon size={14} />
-      </button>
-      <button type="button" className={SQUARE} aria-label={`${label}: reset`} onClick={onReset}>
-        <ResetIcon size={14} />
-      </button>
+      <span className="flex shrink-0 items-center gap-0.5">
+        <button
+          type="button"
+          className={SQUARE}
+          aria-label={`${label}: more`}
+          disabled={!canMore}
+          onClick={onMore}
+        >
+          <PlusIcon size={14} />
+        </button>
+        <button
+          type="button"
+          className={SQUARE}
+          aria-label={`${label}: less`}
+          disabled={!canLess}
+          onClick={onLess}
+        >
+          <MinusIcon size={14} />
+        </button>
+        <button type="button" className={SQUARE} aria-label={`${label}: reset`} onClick={onReset}>
+          <ResetIcon size={14} />
+        </button>
+      </span>
     </div>
   );
 }

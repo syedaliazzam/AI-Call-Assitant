@@ -77,6 +77,8 @@ describe('the exposed bridge', () => {
       'getOverlayPreset',
       'getShareProtection',
       'minimizeMainWindow',
+      // v1.2.0 (spec S13): dragging the icon.
+      'moveOverlay',
       'onHotkey',
       'onSnapZone',
       'openCompactView',
@@ -86,6 +88,8 @@ describe('the exposed bridge', () => {
       'placeOverlay',
       'resizeOverlay',
       'setCallActive',
+      // v1.2.0 (spec S14): the chat bar's shortcut.
+      'setChatHotkey',
       'setHotkeysEnabled',
       'setOverlayCollapsed',
       'setOverlayLayout',

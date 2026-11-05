@@ -380,14 +380,14 @@ describe('overlay panel background opacity (ADR-0033)', () => {
   const text = resolve('--ui-text', glassScope);
   const them = resolve('--ui-them', glassScope);
 
-  it('defaults to 70% background opacity, with 40% the minimum and 100% the maximum', () => {
-    expect(OVERLAY_OPACITY.default).toBe(0.7);
+  it('defaults to 82% background opacity (spec §1), with 40% the minimum and 100% the maximum', () => {
+    expect(OVERLAY_OPACITY.default).toBe(0.82);
     expect(OVERLAY_OPACITY.min).toBe(0.4);
     expect(OVERLAY_OPACITY.max).toBe(1);
   });
 
   it('dims the panel background (a variable alpha), never the text, and adds a text shadow', () => {
-    expect(THEME).toContain('background: rgba(24, 24, 27, var(--k-overlay-alpha, 0.7))');
+    expect(THEME).toContain('background: rgba(24, 24, 27, var(--k-overlay-alpha, 0.82))');
     expect(THEME).toContain('text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6)');
   });
 

@@ -17,11 +17,10 @@
 import type { TargetChoice } from '@kite/shared';
 
 /**
- * How long the speaker must stay quiet after a final line before the message is sent, in ms. The
- * same pause auto-answer waits for (core/answer/autoAnswer.ts AUTO_PAUSE_MS): long enough for a
- * breath between sentences, short enough to feel like "it sends when I stop".
+ * How long the speaker must stay quiet after a final line before the message is sent, in ms (spec S14):
+ * long enough for a breath between sentences, short enough to feel like "it sends when I stop".
  */
-export const SEND_PAUSE_MS = 1_200;
+export const SEND_PAUSE_MS = 1_500;
 
 /**
  * How long listening may go on with nothing heard, in ms, before it stops without sending. During a

@@ -109,7 +109,7 @@ const TIP_ICON = { size: 20, strokeWidth: 1.75, 'aria-hidden': true } as const;
 
 /** The look of the link at the end of a tip. */
 const TIP_LINK =
-  'shrink-0 rounded-[4px] text-[14px] font-medium text-ui-heading underline underline-offset-4 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]';
+  'inline-flex shrink-0 items-center rounded-[4px] text-[14px] font-medium text-ui-heading underline underline-offset-4 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11';
 
 /**
  * Formats bytes as whole megabytes.
@@ -413,16 +413,18 @@ export function ConnectPanel({
         <button
           type="button"
           onClick={() => setHowTo(true)}
-          className="rounded-[4px] underline underline-offset-4 hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+          className="rounded-[4px] underline underline-offset-4 hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
         >
           Ways of calling
         </button>
         <Tooltip content={SOON_TOOLTIP}>
-          <span tabIndex={0}>Need it for macOS?</span>
+          <span tabIndex={0} className="inline-flex items-center pointer-coarse:min-h-11">
+            Need it for macOS?
+          </span>
         </Tooltip>
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 rounded-control hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+          className="inline-flex items-center gap-1.5 rounded-control hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
         >
           <ArrowLeft aria-hidden="true" size={16} />
           Back to dashboard

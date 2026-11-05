@@ -26,9 +26,9 @@ import { inlinePieces, markdownBlocks } from '@/core/answer/markdown';
  */
 const SIZES = {
   panel: { headline: 'text-[19px] font-bold', body: 'text-[15px]', small: 'text-[13px]' },
-  overlay: { headline: 'text-[19px] font-bold', body: 'text-[16px]', small: 'text-[13px]' },
-  review: { headline: 'text-[13px]', body: 'text-[13px]', small: 'text-[13px]' },
-  chat: { headline: 'text-[15px]', body: 'text-[15px]', small: 'text-[13px]' },
+  overlay: { headline: 'text-[17px] font-bold', body: 'text-[16px]', small: 'text-[13px]' },
+  review: { headline: 'text-[13px] font-semibold', body: 'text-[13px]', small: 'text-[13px]' },
+  chat: { headline: 'text-[15px] font-semibold', body: 'text-[15px]', small: 'text-[13px]' },
 } as const;
 
 /** Why a claim is underlined. */
@@ -260,7 +260,7 @@ export function AnswerBody(props: AnswerBodyProps) {
       {!(props.hideEmptyHeadline && !headline) && (
         <h2
           aria-label={props.headlineLabel ?? 'Answer headline'}
-          className={`font-semibold leading-snug text-ui-heading [text-wrap:pretty] ${sizes.headline}`}
+          className={`leading-snug text-ui-heading [text-wrap:pretty] ${sizes.headline}`}
         >
           {props.answerLabel && <span className="mr-1.5 font-extrabold">Answer:</span>}
           {headline ? <ClaimText text={headline} claims={claims} /> : '…'}

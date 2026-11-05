@@ -70,7 +70,7 @@ describe('hotkeyFor', () => {
   it('ignores other keys, Alt, repeats, both modifiers and typing in a text box', () => {
     expect(hotkeyFor(press('a', { ctrlKey: true }), false)).toBeNull();
     expect(hotkeyFor(press('Enter'), false)).toBeNull();
-    expect(hotkeyFor(press('Enter', { ctrlKey: true, altKey: true }), false)).toBeNull();
+    expect(hotkeyFor(press('a', { ctrlKey: true, altKey: true }), false)).toBeNull();
     expect(hotkeyFor(press('Enter', { ctrlKey: true, repeat: true }), false)).toBeNull();
     expect(hotkeyFor(press('Enter', { ctrlKey: true, metaKey: true }), false)).toBeNull();
     const input = { tagName: 'INPUT' } as unknown as EventTarget;
@@ -79,6 +79,32 @@ describe('hotkeyFor', () => {
     expect(hotkeyFor(press('Enter', { ctrlKey: true, target: editable }), false)).toBeNull();
     const button = { tagName: 'BUTTON' } as unknown as EventTarget;
     expect(hotkeyFor(press('Enter', { ctrlKey: true, target: button }), false)).toBe('answer');
+  });
+});
+
+describe('hotkeyFor in the chat bar (spec S14)', () => {
+  /** A press in a text box. */
+  const input = { tagName: 'INPUT' } as unknown as EventTarget;
+
+  it('Ctrl+Alt+Enter sends with a screenshot, in the box or anywhere else', () => {
+    const keys = { ctrlKey: true, altKey: true };
+    expect(hotkeyFor(press('Enter', keys), false)).toBe('screenshot-send');
+    expect(hotkeyFor(press('Enter', { ...keys, target: input }), false)).toBe('screenshot-send');
+    expect(hotkeyFor(press('Enter', { metaKey: true, altKey: true }), true)).toBe(
+      'screenshot-send',
+    );
+    // Not with Shift, and not on the other platform's modifier.
+    expect(hotkeyFor(press('Enter', { ...keys, shiftKey: true }), false)).toBeNull();
+    expect(hotkeyFor(press('Enter', keys), true)).toBeNull();
+  });
+
+  it('Chat works from the box, so it can be pressed twice; no other key does', () => {
+    const chat = { ctrlKey: true, shiftKey: true, target: input };
+    expect(hotkeyFor(press(' ', chat), false)).toBe('chat');
+    expect(hotkeyFor(press(' ', { ctrlKey: true, target: input }), false)).toBeNull();
+    expect(hotkeyFor(press('k', { ctrlKey: true, altKey: true, target: input }), false)).toBeNull();
+    expect(hotkeyFor(press('s', { ctrlKey: true, altKey: true, target: input }), false)).toBeNull();
+    expect(hotkeyFor(press('ArrowLeft', { ctrlKey: true, target: input }), false)).toBeNull();
   });
 });
 

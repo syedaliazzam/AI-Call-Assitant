@@ -61,7 +61,8 @@ import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
 import { AnswerPanel } from './AnswerPanel';
 import { openOverlay } from './openOverlay';
-import { ChatBox } from './ChatBox';
+import { isDoublePress } from '@/core/live/doublePress';
+import { ChatBox, type ChatBoxHandle } from './ChatBox';
 import { TopBar } from './TopBar';
 import { isOnline, subscribeOnline } from '@/core/net/online';
 import { SignInAgainDialog } from './SignInAgainDialog';
@@ -220,6 +221,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const [askKiteCount, setAskKiteCount] = useState(0);
   // v1.1.0: likewise the Chat shortcut pressed in another app.
   const [chatCount, setChatCount] = useState(0);
+  // The chat bar's screenshot shortcut, pressed in another app (the overlay holds the typed words).
+  const [screenshotSendCount, setScreenshotSendCount] = useState(0);
+  const lastChatPress = useRef<number | null>(null);
+  const chatBox = useRef<ChatBoxHandle>(null);
   // v1.1.0: the overlay's ⋮ can turn auto-answer on or off for this call.
   const [autoChoice, setAutoChoice] = useState<boolean | null>(null);
   const [headphonesClosed, setHeadphonesClosed] = useState(false);
@@ -323,6 +328,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       language,
       autoAnswer: autoOn,
       chatCount,
+      screenshotSendCount,
       hygiene: props.hygiene ?? 'ok',
       headphonesHint,
       sessionId: props.session.id,
@@ -371,6 +377,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     language,
     autoOn,
     chatCount,
+    screenshotSendCount,
     props.hygiene,
     headphonesHint,
     props.session.id,
@@ -483,6 +490,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         setChatTarget(props.session.id, command.target);
       } else if (command.type === 'end') onEnd.current();
       else if (command.type === 'chat') actions.current.chat(command.question);
+      else if (command.type === 'chat-screenshot') actions.current.screenshot(command.question);
       else if (command.type === 'style') {
         setStyle(command.style);
         // Kept with the session, so a reconnect and the review show what was used last.
@@ -538,6 +546,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
         else if (action === 'chat') {
           setFocusSignal((count) => count + 1);
           setChatCount((count) => count + 1);
+          // Pressed twice (spec S14): the microphone comes on too.
+          const now = Date.now();
+          if (isDoublePress(lastChatPress.current, now)) {
+            dictationRef.current?.start(chatTargetRef.current);
+          }
+          lastChatPress.current = now;
+        } else if (action === 'screenshot-send') {
+          setScreenshotSendCount((count) => count + 1);
+          chatBox.current?.sendWithScreenshot();
         } else if (action === 'clear') clearView.current();
         else if (action === 'clear-transcript') clearTranscript.current();
         else if (action === 'prev') actions.current.prev();
@@ -751,6 +768,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         />
       </div>
       <ChatBox
+        ref={chatBox}
         onSend={answers.chat}
         onAskScreen={answers.screenshot}
         target={chatTarget}

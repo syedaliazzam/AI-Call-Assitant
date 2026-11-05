@@ -356,6 +356,34 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * Whether this shell can make the icon (1.2.0 and later).
+     *
+     * @returns True when it can.
+     */
+    overlayIconMode() {
+      return typeof bridge.moveOverlay === 'function';
+    },
+
+    /**
+     * Moves the overlay, where this shell can.
+     *
+     * @param dx Pixels to the right.
+     * @param dy Pixels down.
+     */
+    moveOverlay(dx: number, dy: number) {
+      void bridge.moveOverlay?.(dx, dy).catch(() => undefined);
+    },
+
+    /**
+     * Holds the chat bar's screenshot shortcut, where this shell can.
+     *
+     * @param on True while the chat bar is open.
+     */
+    setChatHotkey(on: boolean) {
+      void bridge.setChatHotkey?.(on).catch(() => undefined);
+    },
+
+    /**
      * Tells the window which panels are open (older shells ignore it).
      *
      * @param layout The open panels.

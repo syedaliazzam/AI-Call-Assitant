@@ -399,6 +399,30 @@ export const browserPlatform: Platform = {
    */
   setOverlayLayout(_layout: OverlayLayout) {},
 
+  /**
+   * A picture-in-picture window cannot be made that small.
+   *
+   * @returns False.
+   */
+  overlayIconMode() {
+    return false;
+  },
+
+  /**
+   * Nothing to do (see overlayIconMode).
+   *
+   * @param _dx Ignored.
+   * @param _dy Ignored.
+   */
+  moveOverlay(_dx: number, _dy: number) {},
+
+  /**
+   * Nothing to do: a web page holds no global shortcuts.
+   *
+   * @param _on Ignored.
+   */
+  setChatHotkey(_on: boolean) {},
+
   /** Nothing to do: a web page cannot minimise its window. */
   minimizeMainWindow() {},
 

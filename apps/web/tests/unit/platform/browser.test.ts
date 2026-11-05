@@ -192,6 +192,12 @@ describe('browser captureScreenshot', () => {
 });
 
 describe('browserPlatform: what only the desktop app has (v1.1.0)', () => {
+  it('has no icon and no global chat shortcut (spec S13, S14)', () => {
+    expect(browserPlatform.overlayIconMode()).toBe(false);
+    expect(() => browserPlatform.moveOverlay(1, 2)).not.toThrow();
+    expect(() => browserPlatform.setChatHotkey(true)).not.toThrow();
+  });
+
   it('has no session file to pick or delete (spec S9)', async () => {
     expect(await browserPlatform.pickHandoffFile()).toBeNull();
     expect(await browserPlatform.deleteHandoffFile()).toBe(false);

@@ -228,6 +228,23 @@ export interface KiteDesktopApi {
    */
   onSnapZone?: (handler: (zone: OverlayPreset | null) => void) => () => void;
   /**
+   * v1.2.0 (spec S13): moves the overlay by a distance, for dragging the icon (a drag region would
+   * swallow its click). Optional: a shell before 1.2.0 has no icon mode.
+   *
+   * @param dx Pixels to the right.
+   * @param dy Pixels down.
+   * @returns Resolves when done.
+   */
+  moveOverlay?: (dx: number, dy: number) => Promise<void>;
+  /**
+   * v1.2.0 (spec S14): holds Ctrl+Alt+Enter for as long as the chat bar is open. Optional: in an older
+   * shell the key works only while Paramount AI has focus.
+   *
+   * @param on True while the chat bar is open.
+   * @returns Resolves when done.
+   */
+  setChatHotkey?: (on: boolean) => Promise<void>;
+  /**
    * v1.2.0 (ADR-0045): lets the person pick a session file in the system's dialog, for the hand-off
    * from a browser. Optional: a shell before 1.2.0 has no such call (and no paramountai:// link either).
    *
@@ -300,7 +317,7 @@ export type OverlayEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
  * only), `script` (a slim bar with the answer line) and `script-input` (the slim bar with its
  * one-line input open). v1.0.4: ⛶ opens the full call window, so there is no expanded overlay.
  */
-export type OverlayMode = 'full' | 'collapsed' | 'script' | 'script-input';
+export type OverlayMode = 'full' | 'collapsed' | 'script' | 'script-input' | 'icon';
 
 /** One step of a page-driven overlay resize (ADR-0035). */
 export interface OverlayResizeStep {

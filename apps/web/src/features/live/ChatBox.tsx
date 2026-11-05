@@ -16,7 +16,14 @@
 'use client';
 
 import type { TargetChoice } from '@kite/shared';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import { Button } from '@/ui/Button';
 import { CloseIcon, MicIcon, MonitorIcon } from '@/ui/icons';
 
@@ -53,6 +60,12 @@ export interface ChatBoxProps {
   dictation?: ChatBoxDictation;
 }
 
+/** What the live page can ask of the box. */
+export interface ChatBoxHandle {
+  /** Sends what is typed with a screenshot of the screen; with nothing typed, does nothing. */
+  sendWithScreenshot: () => void;
+}
+
 /** The look of the box's small icon buttons. */
 const ICON_BUTTON =
   'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-control text-ui-muted hover:bg-ui-hover hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 pointer-coarse:min-w-11';
@@ -68,17 +81,14 @@ const MIC_LISTENING =
  * The message box.
  *
  * @param props See ChatBoxProps.
+ * @param ref   Its handle, for the Ctrl+Alt+Enter shortcut.
  * @returns The box.
  * Rendered by: LiveAnswers.tsx
  */
-export function ChatBox({
-  onSend,
-  onAskScreen,
-  target,
-  onTarget,
-  focusSignal = 0,
-  dictation,
-}: ChatBoxProps) {
+export const ChatBox = forwardRef<ChatBoxHandle, ChatBoxProps>(function ChatBox(
+  { onSend, onAskScreen, target, onTarget, focusSignal = 0, dictation },
+  ref,
+) {
   const [text, setText] = useState('');
   // The next message goes with a screenshot of the screen.
   const [attach, setAttach] = useState(false);
@@ -88,6 +98,16 @@ export function ChatBox({
   useEffect(() => {
     if (focusSignal > 0) input.current?.focus();
   }, [focusSignal]);
+
+  useImperativeHandle(ref, () => ({
+    sendWithScreenshot: () => {
+      const question = text.trim();
+      if (!question) return;
+      onAskScreen(question);
+      setText('');
+      setAttach(false);
+    },
+  }));
 
   /** Sends the message, unless it is empty, and clears the box. */
   const send = () => {
@@ -105,7 +125,8 @@ export function ChatBox({
    * @param event The key press in the box.
    */
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    // With Alt it is the screenshot shortcut, which the page's own listener handles.
+    if (event.key === 'Enter' && !event.shiftKey && !event.altKey) {
       event.preventDefault();
       send();
     } else if (event.key === 'Escape' && text) {
@@ -188,4 +209,4 @@ export function ChatBox({
       </Button>
     </form>
   );
-}
+});

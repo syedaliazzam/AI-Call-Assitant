@@ -1,8 +1,8 @@
 /**
  * Tests for apps/web/src/core/storage/overlayPrefs.ts (ADR-0029, ADR-0039), with a fake
  * localStorage: calls start in the overlay unless turned off; the panel opacity falls back to the
- * 70% default when unset or out of range; an old stored value (the window-opacity key, default 1)
- * is migrated once to the panel key, 1 becoming 70%; fading away from the pointer is off by default
+ * 82% default when unset or out of range; an old stored value (the window-opacity key, default 1)
+ * is migrated once to the panel key, 1 becoming the default; fading away from the pointer is off by default
  * and never makes the panel more solid than the chosen value (the v1.0.2 bug: solid under the
  * pointer); blocked storage leaves the defaults.
  */
@@ -44,8 +44,8 @@ describe('overlayPrefs', () => {
     expect(getStartInOverlay()).toBe(true);
   });
 
-  it('keeps the panel opacity in range, 70% by default', () => {
-    expect(getOverlayOpacity()).toBe(0.7);
+  it('keeps the panel opacity in range, 82% by default', () => {
+    expect(getOverlayOpacity()).toBe(0.82);
     setOverlayOpacityPref(0.6);
     expect(getOverlayOpacity()).toBe(0.6);
     setOverlayOpacityPref(0.1);
@@ -54,9 +54,9 @@ describe('overlayPrefs', () => {
     expect(getOverlayOpacity()).toBe(OVERLAY_OPACITY.default);
   });
 
-  it('migrates the old stored value once: 1 (the old default) becomes 70%, a choice is kept', () => {
+  it('migrates the old stored value once: 1 (the old default) becomes the default, a choice is kept', () => {
     stored.set(OVERLAY_OPACITY_KEY, '1');
-    expect(getOverlayOpacity()).toBe(0.7);
+    expect(getOverlayOpacity()).toBe(0.82);
     expect(stored.has(OVERLAY_OPACITY_KEY)).toBe(false);
     stored.clear();
     stored.set(OVERLAY_OPACITY_KEY, '0.5');
@@ -66,7 +66,7 @@ describe('overlayPrefs', () => {
     expect(getOverlayOpacity()).toBe(OVERLAY_OPACITY.min);
     stored.clear();
     stored.set(OVERLAY_OPACITY_KEY, 'garbage');
-    expect(getOverlayOpacity()).toBe(0.7);
+    expect(getOverlayOpacity()).toBe(0.82);
     // A value already under the new key wins over an old one.
     stored.clear();
     stored.set(OVERLAY_PANEL_ALPHA_KEY, '0.45');

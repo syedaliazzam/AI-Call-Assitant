@@ -22,6 +22,7 @@ import { displayTerms } from '@/core/transcript/display';
 import { groupWords } from '@/core/transcript/group';
 import { HomePanel } from '@/features/home/HomePanel';
 import { LiveAnswers, type AnswerThisBridge } from '@/features/live/LiveAnswers';
+import { useCallDictation, type DictationRoute } from '@/features/live/useCallDictation';
 import { TranscriptStrip } from '@/features/live/TranscriptStrip';
 
 /** What the Playwright test does through the page. */
@@ -38,6 +39,8 @@ export interface KiteSimHarness {
   pauses: () => number;
   /** How many times listening was resumed. */
   resumes: () => number;
+  /** Speech on the microphone, as a finished line, through the call's dictation. */
+  dictate: (text: string) => void;
 }
 
 declare global {
@@ -107,6 +110,9 @@ let resumes = 0;
 /** Bumped by a line from the test, so hygiene hears that someone spoke. */
 let lastThemAt = Date.now();
 
+/** Where the microphone's words go, as LivePage.tsx routes them (spec S14). */
+let dictationRoute: DictationRoute | null = null;
+
 window.kiteSim = {
   say: (speaker, text, secondsAgo) => {
     const end = Date.now() - secondsAgo * 1000;
@@ -115,6 +121,7 @@ window.kiteSim = {
   },
   pauses: () => pauses,
   resumes: () => resumes,
+  dictate: (text) => dictationRoute?.final(text),
 };
 
 /**
@@ -129,6 +136,11 @@ function SimCall() {
   const [bridge, setBridge] = useState<AnswerThisBridge | null>(null);
   const [hygiene, setHygiene] = useState<HygieneState>('ok');
   const lastActivity = useRef(callStartedAt);
+  // The real dictation, as LivePage.tsx has it; the test speaks through window.kiteSim.dictate.
+  const { dictation, route } = useCallDictation({ available: true });
+  useEffect(() => {
+    dictationRoute = route;
+  }, [route]);
   // As LivePage.tsx: the prompt follows the time since the other person spoke or an answer was asked.
   useEffect(() => {
     const timer = setInterval(() => {
@@ -167,6 +179,7 @@ function SimCall() {
         ending={false}
         onEnd={() => undefined}
         startInOverlay={false}
+        dictation={dictation}
         onAnswerThis={setBridge}
         hygiene={hygiene}
         echoCount={transcript.echoStats().count}

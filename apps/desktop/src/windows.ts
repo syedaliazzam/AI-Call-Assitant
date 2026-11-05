@@ -17,6 +17,8 @@
  *          (setLayout) and the window fits them, growing downward and remembering a height for each
  *          set of panels; its place is remembered per display; snap zones show during a drag.
  *          A web app before 1.1.0 never calls setLayout, and gets the fixed window it expects.
+ *          v1.2.0 (spec S13, S15): an icon mode, 48 px square, moved by the page; with both panels open
+ *          the window also grows sideways, about its centre, so they fit side by side.
  * Used by: src/main.ts
  * Depends on: electron (BrowserWindow, Screen, IpcMain types), src/security.ts
  *             (secureWebPreferences), src/protection.ts, src/store.ts, src/channels.ts,
@@ -51,6 +53,7 @@ import {
   OVERLAY_COLLAPSE_CHANNEL,
   OVERLAY_LAYOUT_CHANNEL,
   OVERLAY_MODE_CHANNEL,
+  OVERLAY_MOVE_CHANNEL,
   OVERLAY_OPACITY_CHANNEL,
   OVERLAY_PLACE_CHANNEL,
   OVERLAY_PRESET_CHANNEL,
@@ -66,20 +69,27 @@ import type { Bounds, OverlayLayoutKey, ShellStore } from './store';
 /**
  * The overlay's default size, in DIPs (v1.0.3, ADR-0039; 560 × 420 in v1.0.2): three bars with a
  * typical answer (answer line, three bullets, footer) visible without scrolling, still small
- * enough to sit above a meeting's video at the top centre. v1.1.0: 680 wide, which fits every key hint
- * on bar 1 with room to spare; the height is what a web app before 1.1.0 gets.
+ * enough to sit above a meeting's video at the top centre. v1.2.0: 780 wide, which fits every key-cap on
+ * bar 1 (spec S13); the height is what a web app before 1.1.0 gets.
  */
-export const COMPACT_DEFAULT_SIZE = { width: 680, height: 480 };
+export const COMPACT_DEFAULT_SIZE = { width: 780, height: 480 };
+
+/** v1.2.0 (spec S15): the window's width with both panels open, side by side, in DIPs. */
+export const OVERLAY_BOTH_WIDTH = 1080;
+
+/** v1.2.0 (spec S13): the icon's size, in DIPs. */
+export const OVERLAY_ICON_SIZE = 48;
 
 /**
- * v1.1.0 (ADR-0041): the window's default height with each set of panels open, in DIPs. Bar 1 and
- * bar 2 are about 52 and 48 tall with a 6 px gap; the transcript panel takes bar 2's place.
+ * v1.1.0 (ADR-0041): the window's default height with each set of panels open, in DIPs. v1.2.0: bar 1 is
+ * 44 tall and bar 2 with its strip about 84, with a 6 px gap; the transcript panel takes bar 2's place,
+ * and both panels sit side by side, so together they need no more than the taller one.
  */
 export const OVERLAY_LAYOUT_HEIGHTS: Readonly<Record<OverlayLayoutKey, number>> = {
-  bars: 108,
+  bars: 136,
   transcript: 390,
-  answer: 452,
-  both: 660,
+  answer: 500,
+  both: 540,
 };
 
 /** v1.1.0: the smallest height with each set of panels open, in DIPs. */
@@ -360,11 +370,102 @@ export function isOverlayPreset(value: unknown): value is OverlayPreset {
  * Whether a value from the page is an overlay mode.
  *
  * @param value What arrived over IPC.
- * @returns True for 'full', 'collapsed', 'script' or 'script-input'.
+ * @returns True for 'full', 'collapsed', 'script', 'script-input' or 'icon'.
  * Called from: installCompactWindows(); tests
  */
 export function isOverlayMode(value: unknown): value is OverlayMode {
-  return ['full', 'collapsed', 'script', 'script-input'].includes(value as string);
+  return ['full', 'collapsed', 'script', 'script-input', 'icon'].includes(value as string);
+}
+
+/** What widening for both panels changed, so narrowing can undo it (v1.2.0). */
+export interface NarrowPlace {
+  /** The width to go back to. */
+  width: number;
+  /** How far left widening moved the window, in DIPs. */
+  shift: number;
+}
+
+/**
+ * Whether a value from the page is a move: finite distances no larger than any screen.
+ *
+ * @param value What arrived over IPC.
+ * @returns True for a usable move.
+ * Called from: installCompactWindows(); tests
+ */
+export function isOverlayMove(value: unknown): value is {
+  /** Pixels to the right. */
+  dx: number;
+  /** Pixels down. */
+  dy: number;
+} {
+  const move = value as { dx?: unknown; dy?: unknown } | null;
+  return (
+    !!move &&
+    [move.dx, move.dy].every(
+      (n) => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 20_000,
+    )
+  );
+}
+
+/**
+ * The window's place and width for a set of panels (v1.2.0): wider with both open, narrow again after,
+ * growing about its centre so the bars stay where they were, and always inside the display.
+ *
+ * @param bounds  The window's bounds now.
+ * @param wanted  The width it should have.
+ * @param area    The display's work area.
+ * @returns Its x and width.
+ * Called from: createCompactWindows(); tests
+ */
+export function widthAboutCentre(
+  bounds: Pick<Bounds, 'x' | 'width'>,
+  wanted: number,
+  area: Pick<Rectangle, 'x' | 'width'>,
+): { x: number; width: number } {
+  const width = Math.round(Math.min(wanted, area.width));
+  const x = bounds.x + Math.round((bounds.width - width) / 2);
+  return { x: Math.max(area.x, Math.min(x, area.x + area.width - width)), width };
+}
+
+/**
+ * The window's place and width after both panels close (v1.2.0): it undoes what widening did, which is
+ * not simply "about the centre" when the display's edge limited it, and it keeps any move made since.
+ *
+ * @param bounds The window's bounds now.
+ * @param narrow The width it had, and how far left widening moved it.
+ * @param area   The display's work area.
+ * @returns Its x and width.
+ * Called from: createCompactWindows(); tests
+ */
+export function narrowedBounds(
+  bounds: Pick<Bounds, 'x'>,
+  narrow: NarrowPlace,
+  area: Pick<Rectangle, 'x' | 'width'>,
+): { x: number; width: number } {
+  const x = bounds.x + narrow.shift;
+  return {
+    x: Math.max(area.x, Math.min(x, area.x + area.width - narrow.width)),
+    width: narrow.width,
+  };
+}
+
+/**
+ * Where the overlay opens from the icon: the icon stays the top centre of the overlay, inside the
+ * display, so the bars come back where the icon was dragged to.
+ *
+ * @param icon The icon's bounds.
+ * @param full The overlay's bounds before it shrank.
+ * @param area The display's work area.
+ * @returns The overlay's bounds.
+ * Called from: createCompactWindows(); tests
+ */
+export function fromIconBounds(icon: Bounds, full: Bounds, area: Rectangle): Bounds {
+  const x = icon.x - Math.round((full.width - icon.width) / 2);
+  return {
+    ...full,
+    x: Math.max(area.x, Math.min(x, area.x + area.width - full.width)),
+    y: Math.max(area.y, Math.min(icon.y, area.y + area.height - full.height)),
+  };
 }
 
 /**
@@ -632,6 +733,8 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
   let movedSinceSave = false;
   /** v1.1.0: the panels the page says are open; null for a web app before 1.1.0. */
   let layout: OverlayLayout | null = null;
+  /** v1.2.0: what to go back to while both panels have made the window wider; else null. */
+  let narrow: NarrowPlace | null = null;
 
   /**
    * The work area of the display a rectangle is mostly on (the primary one if none matches).
@@ -657,6 +760,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     if (which === 'collapsed') {
       return { width: COMPACT_MIN_SIZE.width, height: COMPACT_COLLAPSED_HEIGHT };
     }
+    if (which === 'icon') return { width: OVERLAY_ICON_SIZE, height: OVERLAY_ICON_SIZE };
     return {
       width: SCRIPT_BAR_SIZE.minWidth,
       height: SCRIPT_BAR_SIZE.height + (which === 'script-input' ? SCRIPT_BAR_SIZE.inputHeight : 0),
@@ -679,8 +783,8 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
   };
 
   /**
-   * Sizes the window to the open panels (full mode only; the slim modes have their own height). Its
-   * place and width stay: it only ever grows downward.
+   * Sizes the window to the open panels (full mode only; the slim modes have their own height). Its top
+   * stays: it only ever grows downward, and with both panels open sideways about its centre.
    */
   const applyLayout = () => {
     if (!current || current.isDestroyed() || !layout || mode !== 'full') return;
@@ -694,10 +798,19 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       area.y + area.height - bounds.y,
       layout.scale,
     );
-    if (height === bounds.height) return;
+    let sideways = { x: bounds.x, width: bounds.width };
+    if (key === 'both') {
+      const wanted = deps.store.read().overlayBothWidth ?? OVERLAY_BOTH_WIDTH * (layout.scale ?? 1);
+      sideways = widthAboutCentre(bounds, Math.max(wanted, narrow?.width ?? bounds.width), area);
+      narrow ??= { width: bounds.width, shift: bounds.x - sideways.x };
+    } else if (narrow !== null) {
+      sideways = narrowedBounds(bounds, narrow, area);
+      narrow = null;
+    }
+    if (height === bounds.height && sideways.width === bounds.width) return;
     // The minimum drops to the bars first: a tall layout may not fit a short screen.
     current.setMinimumSize(COMPACT_MIN_SIZE.width, OVERLAY_LAYOUT_MIN_HEIGHTS.bars);
-    current.setBounds({ ...bounds, height });
+    current.setBounds({ ...bounds, ...sideways, height });
   };
 
   /**
@@ -726,9 +839,23 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
    */
   const fullModeBounds = (): Bounds => {
     const bounds = current!.getBounds();
+    if (mode === 'icon' && fullBounds !== null) {
+      return fromIconBounds(bounds, fullBounds, areaFor(bounds));
+    }
     if (mode === 'full' || fullBounds === null) return bounds;
     if (mode === 'collapsed') return { ...bounds, height: fullBounds.height };
     return fullBounds;
+  };
+
+  /**
+   * The bounds to remember, at the width to open at: widening for both panels is not remembered as
+   * the overlay's own width, or it would open wide with no panels.
+   *
+   * @returns The bounds.
+   */
+  const rememberedBounds = (): Bounds => {
+    const full = fullModeBounds();
+    return narrow === null ? full : { ...full, ...narrowedBounds(full, narrow, areaFor(full)) };
   };
 
   /**
@@ -745,7 +872,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       if (snapped.x !== bounds.x || snapped.y !== bounds.y) current.setBounds(snapped);
     }
     movedSinceSave = false;
-    const remembered = fullModeBounds();
+    const remembered = rememberedBounds();
     if (layout) {
       // Its height follows the panels. A rolled-back web app still reads compactBounds, and must get
       // a window it can use, not a 108 px strip.
@@ -774,9 +901,11 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       const target =
         full === null
           ? bounds
-          : previous === 'collapsed'
-            ? { ...bounds, height: full.height }
-            : full;
+          : previous === 'icon'
+            ? fromIconBounds(bounds, full, areaFor(bounds))
+            : previous === 'collapsed'
+              ? { ...bounds, height: full.height }
+              : full;
       apply(target, COMPACT_MIN_SIZE);
       applyLayout();
       return;
@@ -784,6 +913,14 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     if (previous === 'full') fullBounds = bounds;
     mode = next;
     const min = minFor(next);
+    if (next === 'icon') {
+      // The top centre of what was there, so it shrinks towards where the eye already is.
+      const left = bounds.x + Math.round((bounds.width - OVERLAY_ICON_SIZE) / 2);
+      // The minimum must drop first: this is always a shrink, in both directions.
+      current.setMinimumSize(min.width, min.height);
+      current.setBounds({ x: left, y: bounds.y, width: min.width, height: min.height });
+      return;
+    }
     if (next === 'collapsed') {
       // From full: same place and width. From the script bar: the full overlay's place and width.
       const base = previous === 'full' || fullBounds === null ? bounds : fullBounds;
@@ -832,10 +969,27 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       // v1.1.0: the place last used on this display, if any (its height follows the panels).
       const place = settings.overlayPlaces?.[String(deps.screen.getDisplayMatching(bounds)?.id)];
       if (place) Object.assign(bounds, place);
+      // v1.2.0: a place saved by 1.1.0 is too narrow for bar 1's key-caps. Widened once, about its
+      // centre; a width chosen after this stays.
+      if (!settings.overlayBarsWidened) {
+        if (bounds.width < COMPACT_DEFAULT_SIZE.width) {
+          Object.assign(
+            bounds,
+            widthAboutCentre(
+              bounds,
+              COMPACT_DEFAULT_SIZE.width,
+              deps.screen.getDisplayMatching(bounds)?.workArea ??
+                deps.screen.getPrimaryDisplay().workArea,
+            ),
+          );
+        }
+        deps.store.write({ overlayBarsWidened: true });
+      }
       mode = 'full';
       fullBounds = null;
       resizeStart = null;
       layout = null;
+      narrow = null;
       const window = deps.createWindow(
         compactWindowOptions(bounds, deps.preloadPath, deps.appVersion),
       );
@@ -872,6 +1026,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
         fullBounds = null;
         resizeStart = null;
         layout = null;
+        narrow = null;
         deps.onClosed?.();
       });
       void window.loadURL(url);
@@ -889,6 +1044,16 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     move(dx, dy) {
       if (!current || current.isDestroyed()) return;
       const [x = 0, y = 0] = current.getPosition();
+      if (mode === 'icon') {
+        // With its size stated: at some display scales a plain move lets a small window creep.
+        current.setBounds({
+          x: x + dx,
+          y: y + dy,
+          width: OVERLAY_ICON_SIZE,
+          height: OVERLAY_ICON_SIZE,
+        });
+        return;
+      }
       current.setPosition(x + dx, y + dy);
     },
     setOpacity(value) {
@@ -909,6 +1074,8 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       deps.store.write({ overlayPreset: preset });
       if (!current || current.isDestroyed()) return;
       const target = presetBounds(preset, areaFor(fullBounds ?? current.getBounds()));
+      // The default width is the narrow one again; both panels widen it from there.
+      narrow = null;
       if (mode === 'full') {
         current.setBounds(target);
         // Stacked: the default width at the place; the height follows the panels.
@@ -974,6 +1141,10 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
               ...deps.store.read().overlayHeights,
               [layoutKey(layout)]: current.getBounds().height,
             },
+            // With both panels open, the width the user gave them too.
+            ...(layoutKey(layout) === 'both'
+              ? { overlayBothWidth: current.getBounds().width }
+              : {}),
           });
         }
         save();
@@ -1030,6 +1201,12 @@ export function installCompactWindows(
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
     if (!isResizeStep(step)) throw new Error('Not a resize step');
     compact.resize(step);
+  });
+  // v1.2.0 (spec S13): dragging the icon. The distances are checked, like a resize step's.
+  ipcMain.handle(OVERLAY_MOVE_CHANNEL, (event, move: unknown) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isOverlayMove(move)) throw new Error('Not a move');
+    compact.move(move.dx, move.dy);
   });
   ipcMain.handle(OVERLAY_MODE_CHANNEL, (event, mode: unknown) => {
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');

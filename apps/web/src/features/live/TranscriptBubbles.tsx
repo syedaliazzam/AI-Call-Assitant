@@ -34,10 +34,11 @@ export type BubbleGroup = Pick<
 export interface TranscriptBubblesProps<T extends BubbleGroup = BubbleGroup> {
   /** The bubbles, oldest first (groupLines()). */
   groups: readonly T[];
-  /** 'overlay': 16 px text for the overlay; 'panel' (default): 15 px for the main window. */
+  /**
+   * 'overlay': the call panels' look (spec S15): plain medium-weight words, with no bubble behind them.
+   * 'panel' (default): bubbles at 15 px for the main window.
+   */
   size?: 'panel' | 'overlay';
-  /** True on a see-through panel: the bubbles let the background show through. */
-  glassBubbles?: boolean;
   /** The name on the other person's bubbles ("Client 1" when the session has none). */
   themName?: string | undefined;
   /** Answers one of the other person's bubbles; when given, they offer it. */
@@ -52,7 +53,10 @@ export interface TranscriptBubblesProps<T extends BubbleGroup = BubbleGroup> {
 const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 
 /** Text size of each layout. */
-const TEXT_SIZE = { panel: 'text-[15px] leading-6', overlay: 'text-[16px] leading-relaxed' };
+const TEXT_SIZE = {
+  panel: 'text-[15px] leading-6',
+  overlay: 'text-[15px] font-medium leading-snug',
+};
 
 /**
  * The transcript bubbles.
@@ -64,7 +68,6 @@ const TEXT_SIZE = { panel: 'text-[15px] leading-6', overlay: 'text-[16px] leadin
 export function TranscriptBubbles<T extends BubbleGroup>({
   groups,
   size = 'panel',
-  glassBubbles = false,
   themName,
   onAnswerThis,
   answeredIds,
@@ -91,7 +94,7 @@ export function TranscriptBubbles<T extends BubbleGroup>({
         className={`group/bubble flex max-w-[85%] flex-col gap-0.5 ${you ? 'items-end self-end' : 'items-start self-start'}`}
       >
         <span
-          className={`flex items-start gap-2 rounded-card px-3 py-1.5 text-ui-text ${TEXT_SIZE[size]} ${glassBubbles ? 'bg-ui-overlay-button' : you ? 'bg-ui-pale' : 'bg-ui-band'}`}
+          className={`flex items-start gap-2 text-ui-text ${TEXT_SIZE[size]} ${size === 'overlay' ? '' : `rounded-card px-3 py-1.5 ${you ? 'bg-ui-pale' : 'bg-ui-band'}`}`}
         >
           {group.question && (
             <span
@@ -114,7 +117,7 @@ export function TranscriptBubbles<T extends BubbleGroup>({
           </span>
         </span>
         <span className="flex items-center gap-1.5 text-[12px] leading-4 text-ui-muted">
-          <span className={`font-medium ${style.label}`}>{name}</span>
+          <span className={size === 'overlay' ? '' : `font-medium ${style.label}`}>{name}</span>
           <span aria-hidden="true">·</span>
           <span>{TIME_FORMAT.format(group.tStart)}</span>
           {!you &&

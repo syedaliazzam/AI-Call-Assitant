@@ -1,19 +1,20 @@
 /**
  * File: apps/web/src/features/live/overlay/LiveMenu.tsx
- * Purpose: The overlay's ⋮ menu during a call (v1.1.0, ADR-0041): Dashboard ↗, Private, Zoom, Theme,
- *          Opacity, Font size, Language, Auto answer, Edit session, Open call window and Reset position,
- *          then the answer preferences. An entry shows only where it can work: a browser's
+ * Purpose: The ⋮ menu during a call (spec S16): the email, Dashboard ↗, Get help ↗, Private, Zoom, Theme,
+ *          Opacity, Answer text size, Language, Auto answer, Answer preferences and Edit session, then
+ *          Open call window and Reset position. An entry shows only where it can work: a browser's
  *          picture-in-picture window has no opacity, a shell before 1.1.0 no separate pages window.
  * Used by: src/features/live/CompactView.tsx
- * Depends on: @kite/shared (ShareProtectionState), src/core/storage (appearancePrefs, overlayPrefs,
- *             types), src/core/live/liveChannel.ts, src/features/privacy/usePrivate.ts,
- *             src/features/session-setup/labels.ts, src/ui (PanelMenu, icons)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §5; ADR-0041, ADR-0042
+ * Depends on: @kite/shared (ShareProtectionState), lucide-react, src/core/storage (appearancePrefs,
+ *             overlayPrefs, types), src/core/live/liveChannel.ts, src/features/privacy/usePrivate.ts,
+ *             src/ui (PanelMenu, icons)
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S16); ADR-0041, ADR-0042
  */
 'use client';
 
-import { forwardRef } from 'react';
 import type { ShareProtectionState } from '@kite/shared';
+import { LifeBuoy, SlidersHorizontal, User } from 'lucide-react';
+import { forwardRef } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import {
   clampStep,
@@ -27,7 +28,6 @@ import {
 import { OVERLAY_OPACITY } from '@/core/storage/overlayPrefs';
 import { ANSWER_LANGUAGES } from '@/core/storage/types';
 import { PRIVATE_LABEL, privateHint } from '@/features/privacy/usePrivate';
-import { FORMAT_OPTIONS, LENGTH_OPTIONS, TONE_OPTIONS } from '@/features/session-setup/labels';
 import { GlobeIcon, GridIcon, MonitorIcon, PenIcon } from '@/ui/icons';
 import {
   MenuAction,
@@ -41,6 +41,9 @@ import {
 /** How much + and − change the opacity. */
 const OPACITY_STEP = 0.05;
 
+/** The icons in the rows this file adds. */
+const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true, className: 'shrink-0' } as const;
+
 /** Props for LiveMenu. */
 export interface LiveMenuProps {
   /** What the live page shows. */
@@ -51,11 +54,13 @@ export interface LiveMenuProps {
   protection: ShareProtectionState | null;
   /** Turns protection on or off. */
   onProtection?: ((on: boolean) => void) | undefined;
+  /** The signed-in person's email, once known. */
+  email?: string | null | undefined;
   /** The theme chosen. */
   theme: ThemeChoice;
   /** The UI scale. */
   zoom: number;
-  /** The overlay's text size. */
+  /** The answer text size. */
   fontScale: number;
   /** The chosen panel opacity, where the window can do it. */
   opacity?: number | undefined;
@@ -63,12 +68,16 @@ export interface LiveMenuProps {
   onOpacity?: ((value: number) => void) | undefined;
   /** Opens the dashboard, where this app has a separate window for it. */
   onDashboard?: (() => void) | undefined;
-  /** Opens Edit session, where this app has a separate window for it. */
+  /** Opens the user guide, likewise. */
+  onHelp?: (() => void) | undefined;
+  /** Opens Edit session, likewise. */
   onEditSession?: (() => void) | undefined;
   /** Puts the overlay back at the top centre, where the window can do it. */
   onResetPosition?: (() => void) | undefined;
   /** Opens the full call window. */
   onCallWindow: () => void;
+  /** Opens the answer preferences. */
+  onPreferences: () => void;
 }
 
 /**
@@ -81,7 +90,6 @@ export interface LiveMenuProps {
  */
 export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveMenu(props, ref) {
   const { state, onCommand, protection, zoom, fontScale, opacity, onOpacity } = props;
-  const style = state?.style;
   return (
     <div
       ref={ref}
@@ -89,11 +97,20 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
       aria-label="Overlay settings"
       data-menu="overlay"
       // The window grows to fit it; it scrolls rather than being cut off on a short screen.
-      className="k-overlay-menu absolute right-2 top-[3.25rem] z-30 flex max-h-[calc(100vh-3.75rem)] w-72 flex-col gap-1.5 overflow-y-auto rounded-card border border-ui-border p-1.5 shadow-modal [-webkit-app-region:no-drag]"
+      className="k-overlay-menu absolute right-1.5 top-[calc(100%+6px)] z-30 flex max-h-[calc(100vh-3.75rem)] w-80 flex-col gap-1.5 overflow-y-auto rounded-menu border border-ui-border p-1.5 shadow-modal [-webkit-app-region:no-drag]"
     >
       <MenuBlock>
+        {props.email && (
+          <p className="flex min-h-10 items-center gap-2.5 px-3 text-input text-ui-text">
+            <User {...ICON} />
+            <span className="min-w-0 truncate">{props.email}</span>
+          </p>
+        )}
         {props.onDashboard && (
           <MenuAction label="Dashboard" icon={<GridIcon />} out onSelect={props.onDashboard} />
+        )}
+        {props.onHelp && (
+          <MenuAction label="Get help" icon={<LifeBuoy {...ICON} />} out onSelect={props.onHelp} />
         )}
         <MenuSwitch
           label={PRIVATE_LABEL}
@@ -135,7 +152,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           />
         )}
         <MenuStepper
-          label="Font size"
+          label="Answer text size"
           value={`${Math.round(fontScale * 100)}%`}
           canMore={fontScale < FONT_SCALE_RANGE.max}
           canLess={fontScale > FONT_SCALE_RANGE.min}
@@ -161,41 +178,30 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           info="Paramount AI answers a finished question by itself, at most once every 15 seconds. This call only."
           onChange={(on) => onCommand({ type: 'auto-answer', on })}
         />
+        {state?.style && (
+          <MenuAction
+            label="Answer preferences"
+            icon={<SlidersHorizontal {...ICON} />}
+            info="How answers are shaped: format, length and tone."
+            onSelect={props.onPreferences}
+          />
+        )}
+        {props.onEditSession && (
+          <MenuAction
+            label="Edit session"
+            icon={<PenIcon />}
+            info="Opens this session's details in another window. The call keeps running."
+            onSelect={props.onEditSession}
+          />
+        )}
       </MenuBlock>
 
       <MenuBlock>
-        {props.onEditSession && (
-          <MenuAction label="Edit session" icon={<PenIcon />} onSelect={props.onEditSession} />
-        )}
         <MenuAction label="Open call window" icon={<MonitorIcon />} onSelect={props.onCallWindow} />
         {props.onResetPosition && (
           <MenuAction label="Reset position" onSelect={props.onResetPosition} />
         )}
       </MenuBlock>
-
-      {style && (
-        <MenuBlock>
-          <p className="px-2 py-1 text-[12px] font-medium text-ui-muted">Answer preferences</p>
-          <MenuList
-            label="Format"
-            value={style.format}
-            options={FORMAT_OPTIONS}
-            onChange={(format) => onCommand({ type: 'style', style: { ...style, format } })}
-          />
-          <MenuList
-            label="Length"
-            value={style.length}
-            options={LENGTH_OPTIONS}
-            onChange={(length) => onCommand({ type: 'style', style: { ...style, length } })}
-          />
-          <MenuList
-            label="Tone"
-            value={style.tone}
-            options={TONE_OPTIONS}
-            onChange={(tone) => onCommand({ type: 'style', style: { ...style, tone } })}
-          />
-        </MenuBlock>
-      )}
     </div>
   );
 });

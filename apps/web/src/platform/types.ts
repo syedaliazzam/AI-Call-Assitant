@@ -265,6 +265,29 @@ export interface Platform {
   setOverlayLayout(layout: OverlayLayout): void;
 
   /**
+   * v1.2.0 (spec S13): whether the overlay can shrink to the icon (a desktop app from 1.2.0).
+   *
+   * @returns True where moveOverlay and the 'icon' mode work.
+   */
+  overlayIconMode(): boolean;
+
+  /**
+   * v1.2.0 (spec S13): moves the overlay by a distance, for dragging the icon.
+   *
+   * @param dx Pixels to the right.
+   * @param dy Pixels down.
+   */
+  moveOverlay(dx: number, dy: number): void;
+
+  /**
+   * v1.2.0 (spec S14): holds the chat bar's screenshot shortcut from any app, where the shell can. It
+   * always works while the page has focus.
+   *
+   * @param on True while the chat bar is open.
+   */
+  setChatHotkey(on: boolean): void;
+
+  /**
    * Minimises the main window when a call starts in the overlay. Nothing happens in a browser
    * (a web page cannot minimise its window).
    */

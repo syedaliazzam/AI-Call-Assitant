@@ -241,6 +241,9 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       // v1.2.0 (spec S9): the session file.
       typeof window.kiteDesktop?.pickHandoffFile,
       typeof window.kiteDesktop?.deleteHandoffFile,
+      // v1.2.0 (spec S13, S14): the icon and the chat bar's shortcut.
+      typeof window.kiteDesktop?.moveOverlay,
+      typeof window.kiteDesktop?.setChatHotkey,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -263,6 +266,8 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'getOverlayPreset',
     'getShareProtection',
     'minimizeMainWindow',
+    // v1.2.0 (spec S13): dragging the icon.
+    'moveOverlay',
     'onHotkey',
     'onSnapZone',
     'openCompactView',
@@ -272,6 +277,8 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'placeOverlay',
     'resizeOverlay',
     'setCallActive',
+    // v1.2.0 (spec S14): the chat bar's shortcut.
+    'setChatHotkey',
     'setHotkeysEnabled',
     'setOverlayCollapsed',
     'setOverlayLayout',
@@ -282,7 +289,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'version',
     'windowControl',
   ]);
-  expect(bridge.methods).toEqual(Array(23).fill('function'));
+  expect(bridge.methods).toEqual(Array(25).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
@@ -699,9 +706,54 @@ test('overlay: opacity, collapse, minimises the main window and brings it back (
   await page.evaluate(() => window.kiteDesktop!.setOverlayCollapsed!(false));
   await expect.poll(async () => (await read()).height).toBe(open);
 
-  // Conflicts can be checked with no call on, and nothing stays registered.
+  // v1.2.0 (spec S13): the icon really is 48 px on this system, moves, and comes back.
+  /**
+   * The overlay's bounds.
+   *
+   * @returns Its bounds.
+   */
+  const overlayBounds = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((w) => w.isAlwaysOnTop())!
+        .getBounds(),
+    );
+  const before = await overlayBounds();
+  await page.evaluate(() => window.kiteDesktop!.setOverlayMode!('icon'));
+  await expect.poll(async () => (await overlayBounds()).width).toBe(48);
+  expect((await overlayBounds()).height).toBe(48);
+  const icon = await overlayBounds();
+  await page.evaluate(() => window.kiteDesktop!.moveOverlay!(30, 40));
+  await expect
+    .poll(overlayBounds)
+    .toEqual({ x: icon.x + 30, y: icon.y + 40, width: 48, height: 48 });
+  await page.evaluate(() => window.kiteDesktop!.setOverlayMode!('full'));
+  await expect.poll(async () => (await overlayBounds()).width).toBe(before.width);
+  expect((await overlayBounds()).height).toBe(before.height);
+  // A bad move is refused by the shell.
+  await expect(
+    page.evaluate(() => window.kiteDesktop!.moveOverlay!(Number.NaN, 0)),
+  ).rejects.toThrow();
+
+  // v1.2.0 (spec S15): both panels widen it about its centre, and it goes back.
+  const place = await overlayBounds();
+  await page.evaluate(() =>
+    window.kiteDesktop!.setOverlayLayout!({ transcript: true, answer: true, popupHeight: 0 }),
+  );
+  await expect.poll(async () => (await overlayBounds()).width).toBeGreaterThan(place.width);
+  await page.evaluate(() =>
+    window.kiteDesktop!.setOverlayLayout!({ transcript: false, answer: false, popupHeight: 0 }),
+  );
+  await expect.poll(async () => (await overlayBounds()).width).toBe(place.width);
+  expect((await overlayBounds()).x).toBe(place.x);
+
+  // Conflicts can be checked with no call on, and nothing stays registered. The chat bar's shortcut
+  // (spec S14) is among them, so Settings can report a clash.
   const statuses = await page.evaluate(() => window.kiteDesktop!.checkHotkeys!());
   expect(statuses.length).toBeGreaterThan(5);
+  expect(statuses.map((status) => status.action)).toContain('screenshot-send');
+  // Only during a call: asking outside one takes nothing from other apps.
+  await page.evaluate(() => window.kiteDesktop!.setChatHotkey!(true));
 
   // A call starting in the overlay minimises the main window; closing the overlay restores it.
   await page.evaluate(() => window.kiteDesktop!.minimizeMainWindow!());

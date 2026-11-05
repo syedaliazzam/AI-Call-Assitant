@@ -7,7 +7,12 @@
  * any other sender, and logs only the taken accelerators; overlay shortcuts go to the shell,
  * text-editing keys are never global, and check() finds conflicts without keeping anything.
  */
-import { ASK_KITE_HOTKEY, DEFAULT_GLOBAL_HOTKEYS, FOCUSED_HOTKEYS } from '@kite/shared';
+import {
+  ASK_KITE_HOTKEY,
+  DEFAULT_GLOBAL_HOTKEYS,
+  FOCUSED_HOTKEYS,
+  SCREENSHOT_SEND_HOTKEY,
+} from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { HOTKEY_CHANNEL, SET_HOTKEYS_CHANNEL } from '../../src/channels';
 import { createHotkeys, installHotkeys, isKiteSender } from '../../src/hotkeys';
@@ -200,9 +205,57 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     const { globalShortcut } = fakeGlobalShortcut();
     const hotkeys = createHotkeys(globalShortcut, vi.fn());
     const statuses = hotkeys.enable();
-    expect(hotkeys.check()).toEqual(statuses);
+    expect(hotkeys.check().slice(0, statuses.length)).toEqual(statuses);
     expect(hotkeys.enabled()).toBe(true);
-    expect(globalShortcut.unregister).not.toHaveBeenCalled();
+    // Only the moment's try of the chat bar's shortcut was released; the call's shortcuts stay.
+    expect(globalShortcut.unregister).toHaveBeenCalledExactlyOnceWith(SCREENSHOT_SEND_HOTKEY);
+  });
+});
+
+describe('the chat bar’s screenshot shortcut (spec S14)', () => {
+  it('is held only during a call, only while asked, and reaches the page', () => {
+    const { globalShortcut, press } = fakeGlobalShortcut();
+    const send = vi.fn();
+    const hotkeys = createHotkeys(globalShortcut, send);
+    // Not during a call: a late message must not take the keys from other apps.
+    expect(hotkeys.setChatSend(true)).toBeNull();
+    expect(globalShortcut.register).not.toHaveBeenCalledWith(
+      SCREENSHOT_SEND_HOTKEY,
+      expect.anything(),
+    );
+
+    hotkeys.enable();
+    expect(hotkeys.setChatSend(true)).toMatchObject({
+      action: 'screenshot-send',
+      registered: true,
+    });
+    press(SCREENSHOT_SEND_HOTKEY);
+    expect(send).toHaveBeenCalledWith('screenshot-send');
+    expect(hotkeys.setChatSend(false)).toBeNull();
+    expect(globalShortcut.unregister).toHaveBeenCalledWith(SCREENSHOT_SEND_HOTKEY);
+  });
+
+  it('asking twice registers it once, and the end of a call releases it', () => {
+    const { globalShortcut } = fakeGlobalShortcut();
+    const hotkeys = createHotkeys(globalShortcut, vi.fn());
+    hotkeys.enable();
+    hotkeys.setChatSend(true);
+    hotkeys.setChatSend(true);
+    const calls = vi
+      .mocked(globalShortcut.register)
+      .mock.calls.filter(([keys]) => keys === SCREENSHOT_SEND_HOTKEY);
+    expect(calls).toHaveLength(1);
+    hotkeys.disable();
+    expect(globalShortcut.unregister).toHaveBeenCalledWith(SCREENSHOT_SEND_HOTKEY);
+  });
+
+  it('Settings can see a clash before a call; the keys are not kept', () => {
+    const { globalShortcut } = fakeGlobalShortcut();
+    const hotkeys = createHotkeys(globalShortcut, vi.fn());
+    const found = hotkeys.check().find((status) => status.action === 'screenshot-send');
+    expect(found?.accelerator).toBe(SCREENSHOT_SEND_HOTKEY);
+    expect(found?.registered).toBe(true);
+    expect(globalShortcut.unregister).toHaveBeenCalledWith(SCREENSHOT_SEND_HOTKEY);
   });
 });
 

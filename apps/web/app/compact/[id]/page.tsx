@@ -29,7 +29,7 @@ interface CompactRouteProps {
  */
 export default async function CompactRoute({ params }: CompactRouteProps) {
   // Same sign-in rules as every app page (temporary passwords go to /change-password).
-  await requireUser();
+  const { user } = await requireUser();
   const { id } = await params;
-  return <CompactLive sessionId={id} />;
+  return <CompactLive sessionId={id} email={user.email} />;
 }

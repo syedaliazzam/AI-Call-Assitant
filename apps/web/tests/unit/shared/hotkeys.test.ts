@@ -13,6 +13,7 @@ import {
   hotkeyAccelerator,
   keycapParts,
   HOTKEY_ROWS,
+  SCREENSHOT_SEND_HOTKEY,
 } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -59,6 +60,16 @@ describe('Kite shortcuts', () => {
 
   it('list every global shortcut in exactly one Settings row', () => {
     const listed = HOTKEY_ROWS.flatMap((row) => row.actions);
-    expect([...listed].sort()).toEqual([...GLOBAL_HOTKEYS, 'ask-kite'].sort());
+    expect([...listed].sort()).toEqual([...GLOBAL_HOTKEYS, 'ask-kite', 'screenshot-send'].sort());
+  });
+
+  it('the chat bar has its key-caps from the map, and Settings lists the new shortcut', () => {
+    expect(hotkeyAccelerator('screenshot-send')).toBe('CommandOrControl+Alt+Enter');
+    expect(hotkeyAccelerator('chat-send')).toBe('Enter');
+    expect(keycapParts(hotkeyAccelerator('screenshot-send'), false)).toEqual(['Ctrl', 'Alt', '↵']);
+    expect(keycapParts(hotkeyAccelerator('chat-send'), false)).toEqual(['↵']);
+    const row = HOTKEY_ROWS.find((one) => one.actions.includes('screenshot-send'));
+    expect(row?.accelerator).toBe(SCREENSHOT_SEND_HOTKEY);
+    expect(HOTKEY_ACTIONS).toContain('screenshot-send');
   });
 });
