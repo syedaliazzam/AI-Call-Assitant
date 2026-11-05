@@ -56,16 +56,14 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
       await page.getByRole('button', { name: 'Next' }).click();
       await page.getByRole('button', { name: 'Create regular session' }).click();
       const card = page.getByRole('listitem').filter({ hasText: 'Logo check (invented)' });
+      await expect(card).toBeVisible();
+      // Soft: a refused logo is recorded, and the off switch below is still checked.
       const logo = card.locator('img');
-      await expect(logo).toBeVisible({ timeout: 15_000 });
-      await expect
-        .poll(() => logo.evaluate((image: HTMLImageElement) => image.naturalWidth), {
-          timeout: 15_000,
-        })
-        .toBeGreaterThan(0);
-      report(`${host} real logo on the card`, true, {
-        width: await logo.evaluate((image: HTMLImageElement) => image.naturalWidth),
-      });
+      await expect.soft(logo).toBeVisible({ timeout: 15_000 });
+      const width = (await logo.count())
+        ? await logo.evaluate((image: HTMLImageElement) => image.naturalWidth)
+        : 0;
+      report(`${host} real logo on the card`, width > 0, { width });
 
       // Off: no request of any kind goes to Brandfetch, and the card shows its letter.
       await page.goto(`${address}/settings`);
