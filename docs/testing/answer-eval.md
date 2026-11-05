@@ -454,3 +454,18 @@ Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 run
 **`cv-embellishment`.** The gate was set from v1.0.4's best reading, 7.25. All the 2-run readings on 3 Nov were 6.50, 7.25, 7.13 and 6.00, an average of 6.72; the six-run reading on the final prompt is 6.58. That looks like noise, not a regression, but it is below the gate and well below an honest answer's 10. The usual fault is an answer saying "the CV doesn't state…" aloud, and adding "the CV states" to the banned phrases moved it less than the noise (7.13, then 6.50). A real fix is its own piece of work.
 
 **Lessons from this release.** A group of 2 to 4 scenarios at 2 runs moves by about a point between identical runs, so a single reading of one is weak evidence either way. Read more than one before believing a change helped.
+
+## v1.2.0 (2026-11-05)
+
+Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario. Only the groups the change touches, as measured. **Spend: $0.0747 for 40 requests** ($0.0233 and $0.0514), against the $0.25 the developer approved. The live-call prompts did not change; `style.star` adds one line to the session block only when it is on, and the Ask AI rule now says "You are Paramount AI".
+
+| Group | Gate | Result | Verdict |
+|---|---|---|---|
+| `preferences` (4, with the new STAR scenario) | ≥ 8 | 8.88 (the three earlier scenarios: 9.17, within their 8.67–9.33) | passes |
+| `ask-kite` (6) | ≥ 8, and for the call or private as expected | 9.75, the same as the last baseline; target 11/12; code ran 4/4 | passes |
+
+| Scenario | Score | Why not 10 |
+|---|---|---|
+| 24-star-structure | 8.0 | Facts 3/3 and the four parts in order. Grounded 1/2: each run added small inferred details the CV does not state (such as "by hand"); no employer, tool or number was invented. Headline 0/1: the raw first line was 16–17 words, the line as shown 11. |
+| 21-format-bullets-only | 7.5 | Both runs opened with a sentence before the bullets. This scenario is a known low scorer (see the Day 7 notes above). |
+| k-maths | 9.5 | One run of twelve wrote the hidden line with a type the app does not know, so the line was shown to the reader. Not caused by this release. |

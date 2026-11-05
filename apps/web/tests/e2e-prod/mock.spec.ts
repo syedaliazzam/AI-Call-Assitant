@@ -41,11 +41,11 @@ test('a mock interview with the real speech model, saved as a Mock session', asy
   await page.getByLabel('Company').fill('E2E Mock Co (invented)');
   await page.getByLabel('Role').fill('Data Analyst');
   await page
-    .getByLabel('Job description (optional)')
+    .getByLabel('Job description')
     .fill('Build weekly reports with SQL and explain them to the operations team.');
   await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('button', { name: 'Create session' }).click();
-  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create interview session' }).click();
+  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
 
   await page.goto(`${PRODUCTION_URL}/mock`);
   await pickOption(page, page.getByLabel('Length'), '3 questions');

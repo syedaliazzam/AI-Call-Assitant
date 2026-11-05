@@ -111,6 +111,9 @@ test('3. a call: the overlay, Private on every window, a real answer, the side w
     .getByRole('button', { name: 'Start' })
     .first()
     .click();
+  // v1.2.0 (spec S10): what the call will use, first.
+  await expect(page.getByRole('heading', { name: 'Start your session' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(main).toHaveURL(/\/live\//);
   const startedAt = Date.now();
   await expect(main.getByText('Speech model ready')).toBeVisible({ timeout: 480_000 });

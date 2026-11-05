@@ -188,6 +188,13 @@ async function open(view: string, size: Width, ua = WINDOWS_UA): Promise<Watched
     ...(size.touch ? { isMobile: true, hasTouch: true } : {}),
   });
   const page = await context.newPage();
+  // KITE_VISUAL_THEME: the pictures of either theme (spec §7). The call views read the stored choice.
+  if (process.env.KITE_VISUAL_THEME) {
+    await page.addInitScript(
+      (theme) => localStorage.setItem('kite.theme', theme),
+      process.env.KITE_VISUAL_THEME,
+    );
+  }
   const problems: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning') {

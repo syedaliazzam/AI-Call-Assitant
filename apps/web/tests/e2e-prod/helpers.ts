@@ -168,7 +168,10 @@ export async function createSession(page: Page, session: NewSession): Promise<vo
   await page.getByLabel('Company').fill(session.company);
   await page.getByLabel('Topic').fill('Pilot review');
   if (session.document) {
-    await page.locator('input[type="file"]').setInputFiles(session.document);
+    // The wizard has two file inputs: the CV's and this one.
+    await page
+      .locator('input[type="file"][aria-label="Add a document"]')
+      .setInputFiles(session.document);
     await expect(page.getByRole('combobox', { name: 'Documents' })).toHaveText(
       session.document.name,
       { timeout: 30_000 },

@@ -215,7 +215,7 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
               className={[
                 'border px-3 py-2 text-left text-[15px] font-medium focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11',
                 section === item.value
-                  ? 'border-transparent bg-ui-selected text-ui-heading'
+                  ? 'border-transparent bg-ui-subtle text-ui-heading'
                   : 'border-transparent text-ui-muted hover:bg-ui-surface',
               ].join(' ')}
             >

@@ -125,6 +125,30 @@ test.afterAll(async () => {
 });
 
 for (const theme of ['light', 'dark'] as const) {
+  test(`review's Conversation and Answers tabs, ${theme}`, async () => {
+    for (const size of WIDTHS) {
+      const context = await browser!.newContext({
+        viewport: { width: size.width, height: size.height },
+        deviceScaleFactor: 1.5,
+        ...(size.touch ? { isMobile: true, hasTouch: true } : {}),
+      });
+      const page = await context.newPage();
+      await page.goto(`${origin}/sessions/one?screen=review&theme=${theme}`);
+      await page.getByRole('button', { name: 'Transcript', exact: true }).click();
+      const tabs = page.getByRole('group', { name: 'Transcript view' });
+      await expect(tabs.getByRole('button', { name: 'Conversation' })).toBeVisible();
+      // The selected section can be read: its words are not the colour of its fill.
+      const [words, fill] = await page
+        .locator('button[aria-current="page"]', { hasText: 'Transcript' })
+        .evaluate((row) => [getComputedStyle(row).color, getComputedStyle(row).backgroundColor]);
+      expect(fill).not.toBe(words);
+      await check({ page, context, problems: [] }, size, `review-conversation-${theme}`);
+      await tabs.getByRole('button', { name: 'Answers' }).click();
+      await check({ page, context, problems: [] }, size, `review-answers-${theme}`);
+      await context.close();
+    }
+  });
+
   for (const { screen, at = '/', shows } of SCREENS) {
     test(`${screen}, ${theme}`, async () => {
       for (const size of WIDTHS) {
