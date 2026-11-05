@@ -87,6 +87,20 @@ describe('withoutDocument', () => {
   });
 });
 
+describe('a picked company (ADR-0048)', () => {
+  const draft = emptyDraft({ ...DEFAULTS, style: { ...DEFAULTS.style } }, 'regular');
+
+  it('starts with no domain, and a typed name saves none', () => {
+    expect(draft.companyDomain).toBe('');
+    expect(draftToInput({ ...draft, company: 'Alder' })).not.toHaveProperty('companyDomain');
+  });
+
+  it('saves the domain of a picked company', () => {
+    const input = draftToInput({ ...draft, company: 'Alder', companyDomain: 'alder.example' });
+    expect(input.companyDomain).toBe('alder.example');
+  });
+});
+
 describe('saving a draft', () => {
   it('passes on auto-answer and where documents came from', () => {
     const draft = {

@@ -37,6 +37,7 @@ import { PageShell } from '@/ui/PageShell';
 import { Toggle } from '@/ui/Toggle';
 import { AnswerPrefsSetting } from './AnswerPrefsSetting';
 import { AutoAnswerSetting } from './AutoAnswerSetting';
+import { CompanySuggestionsSetting } from './CompanySuggestionsSetting';
 import { DataTransfer } from './DataTransfer';
 import { HotkeyList } from './HotkeyList';
 import { LearnedLessons } from './LearnedLessons';
@@ -224,6 +225,10 @@ export function Settings({ isAdmin }: SettingsProps) {
 
       <Section title="Overlay">
         <OverlaySetting />
+      </Section>
+
+      <Section title="Privacy">
+        <CompanySuggestionsSetting />
       </Section>
 
       <Section title="Screen-share protection">

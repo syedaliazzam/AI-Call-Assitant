@@ -8,7 +8,9 @@
  * the Resume and Documents pickers with upload; a session keeping its copy when a library item is
  * deleted; key terms as chips; the Answer preferences window with its drill-in views, static preview
  * (no API call), STAR and Set as default; AI instructions; language, model and the admin's switch;
- * each session type's button.
+ * each session type's button; the company field's suggestions and the logos on cards, with Brandfetch
+ * mocked (ADR-0048), covering the pause, the order, the keyboard, what is sent, what is kept, failures
+ * and the off switch.
  * Set KITE_SCREENSHOT_DIR to also save screenshots at 1440 and 390 px.
  */
 import { createServer, type Server } from 'node:http';
@@ -24,6 +26,7 @@ import {
   type Browser,
   type BrowserContext,
   type Page,
+  type Request,
 } from '@playwright/test';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
@@ -72,7 +75,11 @@ test.beforeAll(async () => {
       ),
     },
     jsx: 'automatic',
-    define: { 'process.env.NODE_ENV': '"production"' },
+    define: {
+      'process.env.NODE_ENV': '"production"',
+      // Made up: Brandfetch is always mocked here.
+      'process.env.NEXT_PUBLIC_BRANDFETCH_CLIENT_ID': '"invented-client-id"',
+    },
     logLevel: 'error',
   });
   const fromTailwind = createRequire(
@@ -118,6 +125,12 @@ test.beforeEach(async () => {
     viewport: { width: 1440, height: 900 },
     deviceScaleFactor: 1.5,
   });
+  // These tests never reach Brandfetch: anything a test does not answer itself is refused and counted.
+  brandfetchRequests = [];
+  await context.route(/brandfetch\.io/, (route) => {
+    brandfetchRequests.push(route.request().url());
+    return route.abort();
+  });
   page = await context.newPage();
   apiRequests = [];
   page.on('request', (request) => {
@@ -131,6 +144,66 @@ test.beforeEach(async () => {
 test.afterEach(async () => {
   await context.close();
 });
+
+/** Every request to Brandfetch that no test answered, in this test. */
+let brandfetchRequests: string[] = [];
+
+/** One red pixel, as a logo: a colour, so that it shows in a screenshot. */
+const PIXEL = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+/** The brands a mocked search finds, with the extra fields the real API may send. */
+const BRANDS = [
+  {
+    name: 'Alderway Foods',
+    domain: 'alderway.example',
+    icon: 'https://cdn.brandfetch.io/icon-alderway-expires?c=x',
+    brandId: 'b1',
+    claimed: true,
+    verified: true,
+  },
+  {
+    name: 'Alder Works',
+    domain: 'alderworks.example',
+    icon: 'https://cdn.brandfetch.io/icon-works?c=x',
+  },
+];
+
+/**
+ * Answers Brandfetch: searches with the brands above, and every image with a pixel.
+ *
+ * @returns The searches and the images asked for.
+ */
+async function mockBrandfetch(): Promise<{
+  /** The search requests. */
+  searches: Request[];
+  /** The image requests. */
+  images: Request[];
+}> {
+  const searches: Request[] = [];
+  const images: Request[] = [];
+  await page.route('https://api.brandfetch.io/**', (route) => {
+    searches.push(route.request());
+    return route.fulfill({ json: BRANDS, headers: { 'access-control-allow-origin': '*' } });
+  });
+  await page.route('https://cdn.brandfetch.io/**', (route) => {
+    images.push(route.request());
+    return route.fulfill({ body: PIXEL, contentType: 'image/png' });
+  });
+  return { searches, images };
+}
+
+/**
+ * Finishes a Regular session in the wizard with the company already chosen.
+ */
+async function createRegular(): Promise<void> {
+  await page.getByLabel('Topic').fill('Pilot review');
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Create regular session' }).click();
+  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
+}
 
 /**
  * Goes to an address in the harness.
@@ -770,4 +843,228 @@ test('the last button follows the type, and Save transcript is on by default', a
     await page.getByRole('button', { name: 'Cancel' }).click();
     await page.getByRole('button', { name: 'Discard' }).click();
   }
+});
+
+test('company field: past sessions, then Brandfetch, one search after the pause, by keyboard', async () => {
+  const printed: string[] = [];
+  page.on('console', (message) => printed.push(message.text()));
+  const { searches } = await mockBrandfetch();
+  await page.evaluate(() =>
+    window.kiteSetupHarness.seedSession('regular', 'Alder Partners (invented)', 'Old call', 1_000),
+  );
+  await go('/sessions/new');
+  await page.getByRole('radio', { name: 'Regular' }).click();
+  const field = page.getByRole('combobox', { name: 'Company' });
+
+  // One character: nothing happens.
+  await field.fill('A');
+  await page.waitForTimeout(400);
+  await expect(page.getByRole('listbox', { name: 'Suggestions' })).toHaveCount(0);
+  expect(searches).toHaveLength(0);
+
+  // Typing quickly sends one search, for the finished text.
+  await field.pressSequentially('lder', { delay: 40 });
+  const list = page.getByRole('listbox', { name: 'Suggestions' });
+  await expect(list.getByRole('option')).toHaveText([
+    // The past company's row starts with its letter tile.
+    /Alder Partners \(invented\)$/,
+    /Alderway Foods.*alderway\.example/,
+    /Alder Works.*alderworks\.example/,
+  ]);
+  expect(searches).toHaveLength(1);
+
+  // Only the typed text and the client ID are sent, with no cookie.
+  expect(searches[0]!.url()).toBe('https://api.brandfetch.io/v2/search/Alder?c=invented-client-id');
+  expect(searches[0]!.method()).toBe('GET');
+  expect((await searches[0]!.allHeaders()).cookie).toBeUndefined();
+  // Rows show the icon as it came, and no badge.
+  await expect(list.getByRole('option').nth(1).locator('img')).toHaveAttribute(
+    'src',
+    BRANDS[0]!.icon,
+  );
+  await expect(list).not.toContainText(/verified|claimed/i);
+  await expect(field).toHaveAttribute('aria-expanded', 'true');
+  await shots('company-suggestions');
+
+  // Up from nothing goes to the last row, Down wraps to the first, then on to the second.
+  await field.press('ArrowUp');
+  await expect(list.getByRole('option').nth(2)).toHaveAttribute('aria-selected', 'true');
+  await field.press('ArrowDown');
+  await expect(list.getByRole('option').nth(0)).toHaveAttribute('aria-selected', 'true');
+  await field.press('ArrowDown');
+  await expect(list.getByRole('option').nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(field).toHaveAttribute(
+    'aria-activedescendant',
+    (await list.getByRole('option').nth(1).getAttribute('id'))!,
+  );
+  await field.press('Enter');
+  await expect(field).toHaveValue('Alderway Foods');
+  await expect(list).toHaveCount(0);
+  // Enter picked the row and stayed on this step.
+  await expect(page.getByLabel('Topic')).toBeVisible();
+
+  await createRegular();
+  const [session] = await page.evaluate(() => window.kiteSetupHarness.stored());
+  expect(session).toMatchObject({ company: 'Alderway Foods', companyDomain: 'alderway.example' });
+  // The name and domain are kept; the icon's address, which expires, is not.
+  const everything = await page.evaluate(() => window.kiteSetupHarness.everything());
+  expect(everything).not.toContain('icon-alderway');
+  expect(everything).not.toContain('Alder Works');
+  // Nothing typed reached the console.
+  expect(printed.filter((line) => /alder/i.test(line))).toEqual([]);
+});
+
+test('company field: Esc closes only the list, and a typed name still works', async () => {
+  const { searches } = await mockBrandfetch();
+  await go('/sessions/new');
+  await page.getByRole('radio', { name: 'Regular' }).click();
+  const field = page.getByRole('combobox', { name: 'Company' });
+  await field.fill('Alder');
+  const list = page.getByRole('listbox', { name: 'Suggestions' });
+  await expect(list.getByRole('option')).toHaveCount(2);
+  await field.press('Escape');
+  await expect(list).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Create session' })).toBeVisible();
+  await expect(field).toHaveValue('Alder');
+
+  // Enter with no row chosen picks nothing, and the name stays as typed.
+  await field.fill('Alder Mills (invented)');
+  await expect(list.getByRole('option')).toHaveCount(2);
+  await field.press('Enter');
+  await expect(field).toHaveValue('Alder Mills (invented)');
+  expect(searches.length).toBeGreaterThan(0);
+
+  // Leaving the field closes the list, and a reply that comes later does not open it.
+  await page.getByLabel('Topic').click();
+  await expect(list).toHaveCount(0);
+  await createRegular();
+  const [session] = await page.evaluate(() => window.kiteSetupHarness.stored());
+  expect(session).toMatchObject({ company: 'Alder Mills (invented)', companyDomain: null });
+});
+
+test('company field: a pick by mouse, then typing again, forgets the domain', async () => {
+  await mockBrandfetch();
+  await go('/sessions/new');
+  await page.getByRole('radio', { name: 'Regular' }).click();
+  const field = page.getByRole('combobox', { name: 'Company' });
+  await field.fill('Alder');
+  await page.getByRole('option', { name: /Alder Works/ }).click();
+  await expect(field).toHaveValue('Alder Works');
+  await field.fill('Alder Works Two (invented)');
+  await page.getByLabel('Topic').click();
+  await createRegular();
+  const [session] = await page.evaluate(() => window.kiteSetupHarness.stored());
+  expect(session!.companyDomain).toBeNull();
+});
+
+test('company field: a failed search says so, keeps past sessions, and blocks nothing', async () => {
+  await page.route('https://api.brandfetch.io/**', (route) =>
+    route.fulfill({
+      status: 503,
+      json: { error: 'temporarily_unavailable' },
+      headers: { 'access-control-allow-origin': '*' },
+    }),
+  );
+  await page.evaluate(() =>
+    window.kiteSetupHarness.seedSession('regular', 'Alder Partners (invented)', 'Old call', 1_000),
+  );
+  await go('/sessions/new');
+  await page.getByRole('radio', { name: 'Regular' }).click();
+  const field = page.getByRole('combobox', { name: 'Company' });
+  await field.fill('Alder');
+  await expect(page.getByRole('status').filter({ hasText: 'keep typing' })).toBeVisible();
+  await expect(page.getByRole('option')).toHaveText([/Alder Partners \(invented\)$/]);
+  await page.getByLabel('Topic').click();
+  await createRegular();
+  const [session] = await page.evaluate(() => window.kiteSetupHarness.stored());
+  expect(session!.company).toBe('Alder');
+});
+
+test('session card: the logo for its domain, with a real Referer, and a letter on any failure', async () => {
+  const { images } = await mockBrandfetch();
+  await page.evaluate(async () => {
+    const h = window.kiteSetupHarness;
+    const id = await h.seedSession('regular', 'Alderway Foods', 'Pilot review', 2_000);
+    await h.setDomain(id, 'alderway.example');
+    await h.seedSession('regular', 'Typed Name (invented)', 'No domain', 1_000);
+  });
+  await go('/');
+  const card = page.getByRole('listitem').filter({ hasText: 'Alderway Foods' });
+  const logo = card.locator('img');
+  await expect(logo).toHaveAttribute(
+    'src',
+    'https://cdn.brandfetch.io/domain/alderway.example/w/48/h/48/fallback/404/type/icon?c=invented-client-id',
+  );
+  await expect
+    .poll(() => logo.evaluate((image: HTMLImageElement) => image.naturalWidth))
+    .toBeGreaterThan(0);
+  // Brandfetch requires the page's address in the Referer.
+  expect(new URL((await images[0]!.allHeaders()).referer ?? '').origin).toBe(
+    new URL(page.url()).origin,
+  );
+  await shots('company-card-logo');
+  // A typed name asks Brandfetch for nothing.
+  expect(images).toHaveLength(1);
+  await expect(
+    page.getByRole('listitem').filter({ hasText: 'Typed Name' }).locator('img'),
+  ).toHaveCount(0);
+
+  // No logo, or any failure: the letter tile.
+  await page.unroute('https://cdn.brandfetch.io/**');
+  await page.route('https://cdn.brandfetch.io/**', (route) => route.fulfill({ status: 404 }));
+  await go('/settings-away');
+  await page.reload();
+  await page.waitForFunction(() => 'kiteSetupHarness' in window);
+  await go('/');
+  const reloaded = page.getByRole('listitem').filter({ hasText: 'Alderway Foods' });
+  await expect(reloaded.getByText('P', { exact: true })).toBeVisible();
+  await expect(reloaded.locator('img')).toHaveCount(0);
+});
+
+test('company suggestions off: nothing goes to Brandfetch, and cards show letters', async () => {
+  await page.evaluate(async () => {
+    localStorage.setItem('kite.companySuggestions', 'off');
+    const h = window.kiteSetupHarness;
+    const id = await h.seedSession('regular', 'Alderway Foods', 'Pilot review', 1_000);
+    await h.setDomain(id, 'alderway.example');
+  });
+  await go('/');
+  const card = page.getByRole('listitem').filter({ hasText: 'Alderway Foods' });
+  await expect(card).toBeVisible();
+  await expect(card.locator('img')).toHaveCount(0);
+
+  await go('/sessions/new');
+  await page.getByRole('radio', { name: 'Regular' }).click();
+  const field = page.getByRole('combobox', { name: 'Company' });
+  await field.fill('Alder');
+  // The past session is still suggested, with its domain but with no logo.
+  const option = page.getByRole('option');
+  await expect(option).toHaveText([/Alderway Foods.*alderway\.example/]);
+  await expect(option.locator('img')).toHaveCount(0);
+  await page.waitForTimeout(500);
+  expect(brandfetchRequests).toEqual([]);
+  await expect(page.getByRole('status').filter({ hasText: 'keep typing' })).toHaveCount(0);
+});
+
+test("the job link's company replaces a picked one, with no old domain", async () => {
+  await mockBrandfetch();
+  await page.route('**/api/job-import', (route) =>
+    route.fulfill({
+      json: { fields: { company: 'Lantern Freight (invented)' }, host: 'jobs.example.com' },
+    }),
+  );
+  await go('/sessions/new');
+  const field = page.getByRole('combobox', { name: 'Company' });
+  await field.fill('Alder');
+  await page.getByRole('option', { name: /Alder Works/ }).click();
+  await page.getByRole('button', { name: 'Paste a job link' }).click();
+  await page.getByLabel('Job post link').fill('https://jobs.example.com/42');
+  await page.getByRole('button', { name: 'Import' }).click();
+  await expect(field).toHaveValue('Lantern Freight (invented)');
+  await page.getByLabel('Role').fill('Data Analyst');
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Create interview session' }).click();
+  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
+  const [session] = await page.evaluate(() => window.kiteSetupHarness.stored());
+  expect(session!.companyDomain).toBeNull();
 });

@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.18.1"
+version: "3.19.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-05"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.18.1, **Current**: the only document to build from |
+| Version | 3.19.0, **Current**: the only document to build from |
+| Changes in 3.19.0 | §2 (F2), §7.4: the company field suggests from past sessions and Brandfetch, and session cards show logos, with an off switch in Settings → Privacy (ADR-0048). The browser talks to Brandfetch directly; a picked company's name and domain are kept on the device. No desktop release. |
 | Changes in 3.18.1 | §10.2, §14: the desktop app keeps the `*.vercel.app` address, which must never be removed or redirected (ADR-0047). |
 | Changes in 3.18.0 | §10.2, §14: production answers on `call.paramountintelligence.co` and on the `*.vercel.app` address that installed desktop apps load, with no redirect (ADR-0046). New setting `KITE_TRUSTED_ORIGINS`. Call data and sign-in stay separate per address. |
 | Changes in 3.17.1 | The full evaluation suite runs at release only when the live-answer prompts or answer pipeline changed; otherwise only the groups a change touches run. |
@@ -77,7 +78,7 @@ The feature set mirrors the ParakeetAI screens we reviewed: dashboard, create-se
 | # | Feature | Desktop | Browser |
 |---|---|---|---|
 | F1 | **Dashboard**: list of call sessions, search, filter by type (Interview / Sales / Support / Internal), "Start session" | ✓ | ✓ |
-| F2 | **Create session, step 1 (Details)**: type, company, role or topic, description, documents (PDF / DOCX / TXT) | ✓ | ✓ |
+| F2 | **Create session, step 1 (Details)**: type, company (with suggestions, ADR-0048), role or topic, description, documents (PDF / DOCX / TXT) | ✓ | ✓ |
 | F3 | **Create session, step 2 (Preferences)**: language (English in v3.0), model (Fast = Haiku, Smart = Sonnet), answer format / length / tone, AI instructions, save-transcript toggle, auto-answer toggle (beta) | ✓ | ✓ |
 | F4 | **Choose platform and connect**: "Desktop app" or "Open in browser", then a connect dialog with how-to and a test | ✓ | ✓ |
 | F5 | **Live transcript**: "You" (mic) and "Them" (other side), live partial text | ✓ any meeting app | ✓ calls in a browser tab |
@@ -416,7 +417,7 @@ How Kite gets better for each user, from their own ratings (ADR-0025):
 | Data | Location |
 |---|---|
 | Audio | Only in memory on the laptop; never stored, never sent |
-| Sessions, documents, transcripts, answers, notes, lesson decisions, default preferences | IndexedDB on the laptop (ADR-0024). Documents are stored as extracted text only; the original file is read in the browser and never kept or uploaded. **The browser and the desktop app have separate local data**, and so does each browser profile: a session created in Chrome does not appear in the desktop app, and the other way round. There is no sync in v1 (§14). |
+| Sessions (including a picked company's domain, ADR-0048), documents, transcripts, answers, notes, lesson decisions, default preferences | IndexedDB on the laptop (ADR-0024). Documents are stored as extracted text only; the original file is read in the browser and never kept or uploaded. **The browser and the desktop app have separate local data**, and so does each browser profile: a session created in Chrome does not appear in the desktop app, and the other way round. There is no sync in v1 (§14). |
 | Downloaded speech model | Cache Storage on the laptop. Public, checksum-pinned files only; "Delete all local data" keeps it. |
 | Text for an answer (session block, approved lessons, the call so far and the earlier answers in it, question) and screenshots on request | Sent over HTTPS to Vercel, then to Claude. Not stored by Kite's server. Screenshots exist only in memory until the request is sent; never saved to disk or logged |
 | Claude API key | Vercel environment variable only |

@@ -17,6 +17,7 @@ import {
   createSession,
   createSessionWithDocuments,
   deleteSession,
+  duplicateSession,
   getSession,
   listSessions,
   markSessionActive,
@@ -303,5 +304,44 @@ describe('deleteSession', () => {
     await getDb().lessons.bulkAdd([decision('kept', 'approved'), decision('gone', 'rejected')]);
     expect((await deleteSession(session.id)).rejectedLessons).toBe(1);
     expect((await getDb().lessons.toArray()).map((lesson) => lesson.id)).toEqual(['kept']);
+  });
+});
+
+describe("a company's domain (ADR-0048)", () => {
+  beforeEach(resetDb);
+
+  it('stays when the name stays', async () => {
+    const session = await createSession(
+      sessionInput({ company: 'Alder', companyDomain: 'alder.example' }),
+    );
+    const next = await updateSession(session.id, { company: 'Alder', role: 'New role' });
+    expect(next.companyDomain).toBe('alder.example');
+  });
+
+  it('goes when the name changes, so the old logo cannot stay on a new company', async () => {
+    const session = await createSession(
+      sessionInput({ company: 'Alder', companyDomain: 'alder.example' }),
+    );
+    const next = await updateSession(session.id, { company: 'Lantern' });
+    expect(next).not.toHaveProperty('companyDomain');
+    expect(await getSession(session.id)).not.toHaveProperty('companyDomain');
+  });
+
+  it('changes with the name when a new company is picked', async () => {
+    const session = await createSession(
+      sessionInput({ company: 'Alder', companyDomain: 'alder.example' }),
+    );
+    const next = await updateSession(session.id, {
+      company: 'Lantern',
+      companyDomain: 'lantern.example',
+    });
+    expect(next.companyDomain).toBe('lantern.example');
+  });
+
+  it('is copied with the session', async () => {
+    const session = await createSession(
+      sessionInput({ company: 'Alder', companyDomain: 'alder.example' }),
+    );
+    expect((await duplicateSession(session.id)).companyDomain).toBe('alder.example');
   });
 });

@@ -21,7 +21,7 @@ import {
 } from '@/core/storage/exportData';
 import { saveLesson } from '@/core/storage/lessons';
 import { saveNotes } from '@/core/storage/notes';
-import { createSessionWithDocuments } from '@/core/storage/sessions';
+import { createSession, createSessionWithDocuments } from '@/core/storage/sessions';
 import type { StoredLesson } from '@/core/storage/types';
 import { saveUtterance } from '@/core/storage/utterances';
 import { resetDb, sessionInput } from './helpers';
@@ -205,6 +205,15 @@ describe('parseExport', () => {
     const result = parseExport(JSON.stringify(file));
     expect(result).toEqual({ ok: false, error: expect.stringContaining('answers.0.rating') });
     expect(JSON.stringify(result)).not.toContain('52 dollars');
+  });
+});
+
+describe('a company domain in a file (ADR-0048)', () => {
+  it('stays with the session through export', async () => {
+    await resetDb();
+    await createSession(sessionInput({ company: 'Alder', companyDomain: 'alder.example' }));
+    const parsed = parseExport(JSON.stringify(await exportData()));
+    expect(parsed.ok && parsed.file.sessions[0]?.companyDomain).toBe('alder.example');
   });
 });
 

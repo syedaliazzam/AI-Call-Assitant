@@ -105,6 +105,11 @@ export interface Session {
   type: SessionType;
   /** Company the call is with ('' when not given). */
   company: string;
+  /**
+   * The company's domain, for its logo, when the user picked a suggestion (ADR-0048). Stays on this
+   * device and is not sent with answers. Absent for a typed name.
+   */
+  companyDomain?: string;
   /** Role (interview) or topic (other types) ('' when not given). */
   role: string;
   /** Free-text description of the call ('' when not given). */

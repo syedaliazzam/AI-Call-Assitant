@@ -6,7 +6,8 @@
  *          fields they share.
  * Used by: src/features/session-setup/SessionWizard.tsx
  * Depends on: lucide-react, src/ui (Input, SegmentedControl, Textarea), src/core/documents/limits.ts,
- *             ./ContextFields.tsx, ./draft.ts, ./JobLinkField.tsx, ./KeyTermsInput.tsx, ./labels.ts
+ *             ./CompanyField.tsx, ./ContextFields.tsx, ./draft.ts, ./JobLinkField.tsx,
+ *             ./KeyTermsInput.tsx, ./labels.ts
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S4); docs/architecture/kite-architecture-v3.1.md
  *               §2 (F2), §5; ADR-0029
  *
@@ -21,6 +22,7 @@ import type { LibraryItem, SessionType } from '@/core/storage/types';
 import { Input } from '@/ui/Input';
 import { SegmentedControl } from '@/ui/SegmentedControl';
 import { Textarea } from '@/ui/Textarea';
+import { CompanyField } from './CompanyField';
 import { LibraryField } from './ContextFields';
 import { draftChars, type DetailsErrors, type SessionDraft } from './draft';
 import { JobLinkField } from './JobLinkField';
@@ -89,7 +91,8 @@ export function DetailsStep({
    */
   function applyImport(fields: JobImportFields) {
     onChange({
-      ...(fields.company ? { company: fields.company } : {}),
+      // A name from a job page has no known domain, whatever was picked before.
+      ...(fields.company ? { company: fields.company, companyDomain: '' } : {}),
       ...(fields.role ? { role: fields.role } : {}),
       ...(fields.description ? { description: fields.description } : {}),
     });
@@ -108,13 +111,10 @@ export function DetailsStep({
       </div>
       {aboutJob && <JobLinkField onImported={applyImport} />}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Input
-          label="Company"
+        <CompanyField
           value={draft.company}
-          onChange={(event) => onChange({ company: event.target.value })}
           error={errors.company}
-          placeholder="Company name"
-          maxLength={200}
+          onChange={(company, companyDomain) => onChange({ company, companyDomain })}
         />
         <Input
           label={aboutJob ? 'Role' : 'Topic'}

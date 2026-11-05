@@ -46,6 +46,10 @@ export interface SetupHarness {
   library: (kind: LibraryKind) => Promise<string[]>;
   /** The saved default answer tone. */
   defaultTone: () => Promise<string>;
+  /** Gives a session a company domain, as picking a suggestion does. */
+  setDomain: (id: string, domain: string) => Promise<void>;
+  /** Everything stored for every session and in local storage, as text. */
+  everything: () => Promise<string>;
   /** The newest session's key terms, as stored. */
   keyTerms: () => Promise<string>;
   /** The last address the app wanted that this page does not show. */
@@ -60,6 +64,8 @@ export interface StoredSummary {
   type: string;
   /** Its company. */
   company: string;
+  /** Its company's domain, when one was picked. */
+  companyDomain: string | null;
   /** Its role or topic. */
   role: string;
   /** Its description. */
@@ -149,6 +155,7 @@ window.kiteSetupHarness = {
       id: session.id,
       type: session.type,
       company: session.company,
+      companyDomain: session.companyDomain ?? null,
       role: session.role,
       description: session.description,
       language: session.preferences.language,
@@ -158,6 +165,11 @@ window.kiteSetupHarness = {
       autoAnswer: session.autoAnswer,
       star: Boolean(session.preferences.style.star),
     })),
+  setDomain: async (id, domain) => {
+    const { updateSession } = await import('@/core/storage/sessions');
+    await updateSession(id, { companyDomain: domain });
+  },
+  everything: async () => JSON.stringify([await listSessions(), { ...localStorage }]),
   newestDocuments: async () => {
     const [newest] = await listSessions();
     if (!newest) return [];
