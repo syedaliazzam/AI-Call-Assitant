@@ -16,6 +16,17 @@ test.describe.configure({ mode: 'serial' });
 /** An address no account uses, so the refused-form checks cannot count against a real account. */
 const NOBODY = { email: 'nobody@example.invalid', password: 'not-a-real-password' };
 
+/** Production limits sign-in attempts per computer, per address, in a short window. */
+const RATE_LIMIT_WAIT_MS = 11_000;
+
+/**
+ * Waits long enough for the sign-in rate limit to have passed.
+ *
+ * @returns Nothing.
+ */
+const waitOutRateLimit = (): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_WAIT_MS));
+
 /**
  * Logs out from the account menu and checks the session really ended.
  *
@@ -46,6 +57,7 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
   });
 
   test(`${host}: sign in, cookie on this address only, log out`, async () => {
+    await waitOutRateLimit();
     const browser = await chromium.launch({ channel: 'chromium', headless: true });
     try {
       const page = await browser.newPage();
@@ -56,6 +68,10 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
       expect(domains.length).toBeGreaterThan(0);
       expect(domains.every((domain) => domain === host)).toBe(true);
       report(`${host} sign in`, true);
+      // The in-app guide names the new address, wherever it is read.
+      await page.goto(`${address}/help`);
+      await expect(page.getByText('call.paramountintelligence.co').first()).toBeVisible();
+      report(`${host} guide names the new address`, true);
       await logOut(page, address);
       report(`${host} log out`, true);
     } finally {
@@ -67,18 +83,20 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
     const other = address === CUSTOM_DOMAIN_URL ? OLD_ADDRESS_URL : CUSTOM_DOMAIN_URL;
     const http = await apiRequest.newContext();
     /**
-     * Sends a sign-in form that cannot succeed, as if from the given site.
+     * Sends a sign-in form that cannot succeed, as if from the given site, after waiting out the
+     * rate limit so that the answer is about the site.
      *
      * @param origin The site it claims to come from.
      * @returns The status.
      */
-    const statusFrom = async (origin: string): Promise<number> =>
-      (
-        await http.post(`${address}/api/auth/sign-in/email`, {
-          headers: { origin },
-          data: NOBODY,
-        })
-      ).status();
+    const statusFrom = async (origin: string): Promise<number> => {
+      await waitOutRateLimit();
+      const response = await http.post(`${address}/api/auth/sign-in/email`, {
+        headers: { origin },
+        data: NOBODY,
+      });
+      return response.status();
+    };
     expect(await statusFrom('https://example.invalid')).toBe(403);
     // Wrong details (401), not a refused site (403): the origin itself was accepted.
     expect(await statusFrom(other)).toBe(401);
@@ -89,6 +107,7 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
 
 test('admin page on the new address (only with the admin test account enabled)', async () => {
   test.skip(process.env.KITE_E2E_ADMIN_ON !== '1', 'needs the admin test account enabled');
+  await waitOutRateLimit();
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   try {
     const page = await browser.newPage();

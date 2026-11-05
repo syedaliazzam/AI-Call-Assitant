@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.17.1"
+version: "3.18.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-05"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.17.1, **Current**: the only document to build from |
+| Version | 3.18.0, **Current**: the only document to build from |
+| Changes in 3.18.0 | §10.2, §14: production answers on `call.paramountintelligence.co` and on the `*.vercel.app` address that installed desktop apps load, with no redirect (ADR-0046). New setting `KITE_TRUSTED_ORIGINS`. Call data and sign-in stay separate per address. |
 | Changes in 3.17.1 | The full evaluation suite runs at release only when the live-answer prompts or answer pipeline changed; otherwise only the groups a change touches run. |
 | Changes in 3.17.0 | v1.2.0 (ADR-0045; the screens are in `docs/design/paramount-ai-ui-spec.md`). The product is shown as **Paramount AI**; identifiers, the data folder and the update feed keep their names. §3.3: `overlayIconMode`, `moveOverlay`, `setChatHotkey`, `pickHandoffFile`, `deleteHandoffFile`. §5: Choose platform, the `paramountai://` hand-off with a one-session file, the start card, the Connect card; the call bars with a 48 px icon, the chat bar, panels side by side when wide; own not-found and error pages. §7.2: `/api/preview` removed, `/api/models` added. §7.3: Ctrl+Alt+Enter, held only while the chat bar is open. Bar opacity defaults to 82 %. |
 | Changes in 3.16.1 | §5, layout only: the browser call view fills the window over the sidebar. The shared tab sits edge to edge at the top left in its own shape, with the control strip under it instead of over it; the brand, timer, ⋮ and End move to the top of the right column. The desktop's call window is unchanged. |
@@ -52,12 +53,12 @@ Like ParakeetAI, Kite can be used in two ways from the same dashboard:
 - **Desktop app** (macOS and Windows): best experience. It hears any meeting app, has global hotkeys and an always-on-top live window, and can hide that window from screen sharing on Windows.
 - **Open in browser** (Chrome or Edge): no install. It works with calls running in a browser tab, using an in-page live view and a small picture-in-picture overlay.
 
-**The key design choice:** there is **one web application** (Next.js, hosted on Vercel at `kite.company.com`). The desktop app is a **thin Electron shell that loads that same web app** and adds a few native features. All screens, logic, speech-to-text and storage are written once.
+**The key design choice:** there is **one web application** (Next.js, hosted on Vercel at `call.paramountintelligence.co`). The desktop app is a **thin Electron shell that loads that same web app** and adds a few native features. All screens, logic, speech-to-text and storage are written once.
 
 | Decision | Choice |
 |---|---|
 | Main application | Next.js (React + TypeScript), one codebase for desktop and browser |
-| Hosting and domain | Vercel; the `*.vercel.app` address now, custom domain `kite.company.com` later (no code change) |
+| Hosting and domain | Vercel; `call.paramountintelligence.co`, and the `*.vercel.app` address that installed desktop apps load (ADR-0046) |
 | Desktop app | Electron shell that loads `kite.company.com` and adds native audio, hotkeys, live window, screenshots and screen-share protection |
 | Answers | Claude API through one server route (`/api/answer`). Live answers use `claude-haiku-5-5`; notes and the "smart" option use `claude-sonnet-5-5`. Prompt caching is on. |
 | Speech-to-text | Runs **on the laptop** inside the page (sherpa-onnx compiled to WebAssembly) with Silero VAD. Audio never leaves the device. |
@@ -142,7 +143,7 @@ export interface Platform {
 
 | | Desktop app | Browser |
 |---|---|---|
-| Install | `.dmg` / `.exe` (one-time warning, section 10.3) | None. Open `kite.company.com`. |
+| Install | `.dmg` / `.exe` (one-time warning, section 10.3) | None. Open `call.paramountintelligence.co`. |
 | Meeting apps | Any: Zoom, Teams, Meet, Webex, phone apps | Calls running in a Chrome/Edge tab (Meet, Teams web, Zoom web) |
 | Hotkeys | Work from any app | Only when Kite is focused |
 | Overlay | Always-on-top live window | Picture-in-picture mini view |
@@ -558,9 +559,7 @@ kite/
 
 ### 10.2 Company domain
 
-1. In Vercel: Project → Settings → Domains → add `kite.company.com`.
-2. In the company DNS: add the CNAME record Vercel shows (for example `kite → cname.vercel-dns.com`).
-3. HTTPS certificates are issued automatically.
+Production answers on `https://call.paramountintelligence.co` and on `https://kite-call-assistant.vercel.app`, with no redirect, because installed desktop apps are locked to the second (ADR-0046). `BETTER_AUTH_URL` is the first, and `KITE_TRUSTED_ORIGINS` lists both. Each address has its own sign-in and its own local data. Steps, checks and rollback: `docs/deploy/subdomain.md`.
 
 ### 10.3 Desktop app install (unsigned, free)
 
@@ -579,7 +578,7 @@ kite/
 | Claude API | Usage-based, with **one Console spend limit (about $20 a month)** for everything: production, development and evaluations share it (Day 5 decision, after the evaluations used up the limit on 30 October). Every paid run is agreed first with its estimated cost; evaluations re-run only the groups a change touches, and the full suite at release only when the live-answer prompts or answer pipeline changed. Prompt caching cuts repeated context to about 10% of the input price on Haiku. |
 | Vercel | **Pro plan required for company use.** The free Hobby plan is for non-commercial personal use only. Pro is $20 per month per developer seat; app users do not need Vercel seats. |
 | Accounts database | Neon Postgres free plan (via the Vercel Marketplace); a few users and sessions fit easily |
-| Domain, DNS, certificates | `*.vercel.app` address for now (free); existing company domain later; Vercel certificates are free |
+| Domain, DNS, certificates | `call.paramountintelligence.co` on the company domain, plus the `*.vercel.app` address; Vercel certificates are free |
 | Everything else | Free and open source |
 
 ## 11. Testing
@@ -757,5 +756,5 @@ Release checks (all must pass):
 3. Export session to Markdown or DOCX.
 4. Team-shared session templates and instructions.
 5. Browser-tab reading (extension).
-6. **Subdomain `kite.paramountintelligence.co` (post-v1, decided 1 Nov 2026):** config-driven URLs, trusted and desktop origins, CSP and cookie domain, plus `docs/deploy/subdomain.md` (was Day 6 Stage 5). Until then Kite stays on the `*.vercel.app` address (§10.2).
+6. **Subdomain:** done on `call.paramountintelligence.co` for the web app (ADR-0046, §10.2). Moving the desktop app to it (1.2.1) is prepared and waits on the local data decision in ADR-0046.
 7. **Microsoft Store (private audience), post-v1 (decided 2 Nov 2026):** the MSIX target and its manual CI job are kept (`docs/deploy/microsoft-store.md`); for v1, desktop users turn Smart App Control off if it blocks the unsigned app (user guide).
