@@ -5,7 +5,8 @@
  * Settings → Privacy → Company suggestions off, nothing at all goes to Brandfetch, and the card shows
  * its letter again. Sessions live only in that fresh browser, which is thrown away. Prints PASS or
  * FAIL with counts only. No Claude requests, so this costs nothing; it does use Brandfetch's free
- * allowance (a few requests per address).
+ * allowance (a few requests per address). It opens a windowed Chromium off-screen: Brandfetch refuses
+ * logos to headless browsers.
  * Manual run only (never in CI): pnpm --filter web test:e2e-prod brandfetch.spec.ts
  */
 import { chromium, expect, test } from '@playwright/test';
@@ -28,7 +29,14 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
 
   test(`${host}: suggestions, a real logo on the card, and the off switch`, async () => {
     await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_WAIT_MS));
-    const browser = await chromium.launch({ channel: 'chromium', headless: true });
+    // Brandfetch's logo service refuses headless browsers as automated traffic (it answers
+    // x-bf-error automated_traffic), so this is a normal windowed Chromium, as a person's would be. The
+    // window is placed off-screen, so nothing appears on the desktop of the computer running this.
+    const browser = await chromium.launch({
+      channel: 'chromium',
+      headless: false,
+      args: ['--window-position=-2400,-2400'],
+    });
     try {
       const page = await browser.newPage();
       let toBrandfetch = 0;
