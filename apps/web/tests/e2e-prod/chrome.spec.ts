@@ -1,6 +1,6 @@
 /**
  * Production end-to-end suite, Chrome (Playwright's Chromium), for the web app at
- * https://kite-call-assistant.vercel.app signed in as the test account. Covers, in order:
+ * https://call.paramountintelligence.co signed in as the test account. Covers, in order:
  * sign in; create a session with an invented one-page .txt and the key terms "Bluefin Route"
  * and "Northwind"; Open in browser shows "Listening for N key terms" (N ≥ 3); the live page's
  * warm-up writes Claude's prompt cache and a second warm-up (reload) reads it; Connect with

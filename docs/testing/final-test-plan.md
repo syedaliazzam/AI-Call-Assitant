@@ -290,11 +290,11 @@ ADR-0027 adopted nothing as the default engine; v1.0.1 adds Parakeet as a **seco
 | 11.1 | As admin, create an invented user, then sign in as them in a private window. | Asked to change the temporary password first. |
 | 11.2 | Disable that user while they are signed in. | Within about a minute their next action sends them to sign-in. Delete the invented user afterwards. |
 
-## 12. Subdomain (Day 7, only if the DNS change is made)
+## 12. Custom domain (ADR-0046)
 
 | # | Do | Expect |
 |---|---|---|
-| 12.1 | Open `https://kite.paramountintelligence.co`, sign in. | Works like the vercel.app address. |
+| 12.1 | Open `https://call.paramountintelligence.co`, sign in. | Works like the vercel.app address, which also keeps working with no redirect. |
 | 12.2 | The desktop app (pointing at the subdomain) signs in and answers. | Works; no other address loads in the app. |
 
 ## 13. macOS (only if a Mac is available)

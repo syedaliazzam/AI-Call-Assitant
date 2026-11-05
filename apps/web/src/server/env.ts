@@ -24,6 +24,11 @@ const authEnvSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32, 'must be at least 32 characters'),
   /** Public app address; optional because preview deployments fall back to VERCEL_URL. */
   BETTER_AUTH_URL: z.url().optional(),
+  /**
+   * Other addresses this deployment is also opened from, comma-separated (ADR-0046): production
+   * has the custom domain and the vercel.app address that installed desktop apps are locked to.
+   */
+  KITE_TRUSTED_ORIGINS: z.string().optional(),
   /** Set by Vercel on every deployment: the deployment's own host name (no https://). */
   VERCEL_URL: z.string().min(1).optional(),
   /** Set by Vercel on preview deployments: the branch's stable host name (no https://). */
@@ -96,6 +101,31 @@ function parseEnv<T extends z.ZodType>(schema: T, source: EnvSource): z.infer<T>
 }
 
 /**
+ * Reads the list of extra trusted addresses. A wrong entry stops the app rather than being dropped,
+ * because a dropped address would silently break sign-in for everyone who uses it.
+ *
+ * @param list The KITE_TRUSTED_ORIGINS value, if set.
+ * @returns Each address's origin.
+ * @throws Error naming the variable (never its value) when an entry is not an https address.
+ * Called from: getAuthEnv()
+ */
+function extraTrustedOrigins(list: string | undefined): string[] {
+  const entries = (list ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
+  return entries.map((entry) => {
+    const url = URL.canParse(entry) ? new URL(entry) : null;
+    if (url?.protocol !== 'https:') {
+      throw new Error(
+        'Missing or invalid environment variables: KITE_TRUSTED_ORIGINS (each entry must be an https address)',
+      );
+    }
+    return url.origin;
+  });
+}
+
+/**
  * Reads the sign-in settings.
  * The public address is BETTER_AUTH_URL when set (local development and production). On Vercel
  * preview deployments it is not set, so the deployment's own address (https://VERCEL_URL) is used.
@@ -117,7 +147,15 @@ export function getAuthEnv(source: EnvSource = process.env): AuthEnv {
   }
   // A preview can be opened from its deployment URL or its branch URL; both must be trusted,
   // or Better Auth rejects the sign-in form as a cross-site request.
-  const trustedOrigins = [...new Set([baseUrl, vercelUrl, branchUrl].filter((url) => !!url))];
+  // Production also lists the addresses in KITE_TRUSTED_ORIGINS: without them, changing
+  // BETTER_AUTH_URL would refuse sign-in on the address installed desktop apps load.
+  const trustedOrigins = [
+    ...new Set(
+      [baseUrl, ...extraTrustedOrigins(env.KITE_TRUSTED_ORIGINS), vercelUrl, branchUrl].filter(
+        (url) => !!url,
+      ),
+    ),
+  ];
   return {
     databaseUrl: env.DATABASE_URL,
     secret: env.BETTER_AUTH_SECRET,

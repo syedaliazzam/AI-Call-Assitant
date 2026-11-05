@@ -180,7 +180,7 @@ pnpm --filter web e2e-admin --disable                   # turn it off again stra
 
 `e2e-admin` disables the account the same way **Disable** at `/admin/users` does (the admin plugin's ban fields, and every sign-in session ended), so it can also be checked or re-enabled there.
 
-**Production end-to-end suites** (`apps/web/tests/e2e-prod/`, manual only, never in CI). They run against https://kite-call-assistant.vercel.app as the test account above, and print only PASS/FAIL with numbers:
+**Production end-to-end suites** (`apps/web/tests/e2e-prod/`, manual only, never in CI). They run against https://call.paramountintelligence.co (or `KITE_E2E_URL`) as the test account above, and print only PASS/FAIL with numbers:
 
 ```sh
 pnpm --filter web test:e2e-prod chrome.spec.ts desktop.spec.ts   # builds the desktop shell, then runs both suites (about 3 minutes)
@@ -238,7 +238,8 @@ Kite is deployed to Vercel **with the Vercel CLI only**: there is no Git integra
 ```sh
 vercel link                                    # root directory: apps/web
 vercel env add ENABLE_EXPERIMENTAL_COREPACK    # value 1, all environments (see below)
-vercel env add BETTER_AUTH_URL production      # https://<production domain>
+vercel env add BETTER_AUTH_URL production --no-sensitive --force   # https://<production domain>
+vercel env add KITE_TRUSTED_ORIGINS production --no-sensitive      # every address production answers on
 ```
 
 The other variables (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `ANTHROPIC_API_KEY`, `KITE_MODEL_FAST`, `KITE_MODEL_SMART`) are listed in [apps/web/.env.example](apps/web/.env.example). Pull them for local development with `vercel env pull apps/web/.env.local`.
@@ -263,4 +264,5 @@ Database migrations are not run by the deploy. When `apps/web/drizzle/` gains a 
   - `"installCommand": "pnpm install --frozen-lockfile"`: installs the whole pnpm workspace exactly as locked; the build fails instead of silently installing different versions.
 - `ENABLE_EXPERIMENTAL_COREPACK=1`: makes Vercel use the pnpm version pinned in the root `package.json` (`packageManager`). Without it, Vercel picks pnpm 9 or 10 from the lockfile format, which does not understand the `allowBuilds` setting in `pnpm-workspace.yaml`.
 - [.vercelignore](.vercelignore): keeps every `.env*` file except `.env.example` and the `docs/` folder out of CLI uploads.
+- Production answers on two addresses: https://call.paramountintelligence.co and https://kite-call-assistant.vercel.app, which installed desktop apps load and which must never redirect. Steps, checks and rollback: [docs/deploy/subdomain.md](docs/deploy/subdomain.md).
 - Preview deployments leave `BETTER_AUTH_URL` unset and use their own `https://$VERCEL_URL` (see `apps/web/src/server/env.ts`). Previews may require a Vercel login (Deployment Protection); production does not.

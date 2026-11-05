@@ -1,6 +1,6 @@
 /**
  * Production latency measurement (day-04-answers.md Stage 11), as the admin test account
- * (KITE_E2E_ADMIN_*): opens /dev/latency on https://kite-call-assistant.vercel.app in Chrome
+ * (KITE_E2E_ADMIN_*): opens /dev/latency on https://call.paramountintelligence.co in Chrome
  * (Playwright's Chromium) and in the desktop app (the real Electron shell, fresh profile, with
  * the page in the main window: the home panel keeps to its own pages since v1.1.0), runs
  * the 20 answers there (the real client path), and prints p50/p95 for key press → request sent

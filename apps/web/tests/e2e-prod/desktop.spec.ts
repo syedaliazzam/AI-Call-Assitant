@@ -1,6 +1,6 @@
 /**
  * Production end-to-end suite, desktop app: the real Electron shell (apps/desktop, built to
- * dist/) opening https://kite-call-assistant.vercel.app with a fresh, empty profile, signed in
+ * dist/) opening https://call.paramountintelligence.co with a fresh, empty profile, signed in
  * as the test account. Covers the v1.1.0 flow, in order: sign in on the home panel, with the
  * acceptable-use notice; the panel opens the main window, where a session is created, and shows it;
  * a call starts from the panel's card, in the overlay, with the main window minimised and the panel
@@ -39,6 +39,12 @@ const DESKTOP_DIR = path.join(WEB_DIR, '..', 'desktop');
 /** The Electron binary installed for apps/desktop (the `electron` package exports its path). */
 const ELECTRON_PATH = createRequire(path.join(DESKTOP_DIR, 'package.json'))('electron') as string;
 
+/**
+ * A built desktop program to test instead of this checkout's shell. It opens the address built into
+ * it, so it runs as an installed app does (set KITE_E2E_URL to that address too).
+ */
+const BUILT_PROGRAM = process.env.KITE_INSTALLED_EXE;
+
 /** A unique company per run. */
 const COMPANY = `E2E Desktop Co ${Date.now().toString(36)}`;
 
@@ -54,16 +60,19 @@ test.beforeAll(async () => {
   // ELECTRON_RUN_AS_NODE would start Electron as plain Node.js (set by some editors' tools).
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
   app = await electron.launch({
-    executablePath: ELECTRON_PATH,
+    executablePath: BUILT_PROGRAM ?? ELECTRON_PATH,
     args: [
       `--user-data-dir=${PROFILE_DIR}`,
       // Fake microphone: the recording on a loop, so a line is sure to come however long the panel takes
       // to open (no real microphone is used).
       '--use-fake-device-for-media-stream',
       `--use-file-for-fake-audio-capture=${RECORDINGS.you}`,
-      DESKTOP_DIR,
+      ...(BUILT_PROGRAM ? [] : [DESKTOP_DIR]),
     ],
-    env: { ...parentEnv, KITE_URL: `${PRODUCTION_URL}/` },
+    // A built program must not look for updates here: it could install one when it closes.
+    env: BUILT_PROGRAM
+      ? { ...parentEnv, KITE_NO_UPDATE_CHECK: '1' }
+      : { ...parentEnv, KITE_URL: `${PRODUCTION_URL}/` },
   });
   page = await app.firstWindow();
   // The profile really is the fresh one (otherwise "empty dashboard" would prove nothing).

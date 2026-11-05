@@ -30,6 +30,44 @@ describe('getAuthEnv', () => {
     expect(env.trustedOrigins).toEqual(['http://localhost:3000']);
   });
 
+  it('also trusts the addresses in KITE_TRUSTED_ORIGINS, each once', () => {
+    const env = getAuthEnv({
+      ...AUTH_VARS,
+      BETTER_AUTH_URL: 'https://call.example.com',
+      KITE_TRUSTED_ORIGINS: ' https://call.example.com , https://old.example.app/ ',
+      VERCEL_URL: 'kite-abc123.vercel.app',
+    });
+    expect(env.baseUrl).toBe('https://call.example.com');
+    expect(env.trustedOrigins).toEqual([
+      'https://call.example.com',
+      'https://old.example.app',
+      'https://kite-abc123.vercel.app',
+    ]);
+  });
+
+  it('adds nothing when KITE_TRUSTED_ORIGINS is empty', () => {
+    const env = getAuthEnv({
+      ...AUTH_VARS,
+      BETTER_AUTH_URL: 'https://call.example.com',
+      KITE_TRUSTED_ORIGINS: ' , ',
+    });
+    expect(env.trustedOrigins).toEqual(['https://call.example.com']);
+  });
+
+  it.each(['old.example.app', 'http://old.example.app', 'not a url'])(
+    'refuses %s in KITE_TRUSTED_ORIGINS, naming the variable and not the value',
+    (entry) => {
+      const read = () =>
+        getAuthEnv({
+          ...AUTH_VARS,
+          BETTER_AUTH_URL: 'https://call.example.com',
+          KITE_TRUSTED_ORIGINS: entry,
+        });
+      expect(read).toThrow('KITE_TRUSTED_ORIGINS');
+      expect(read).not.toThrow(entry);
+    },
+  );
+
   it('removes a trailing slash from BETTER_AUTH_URL', () => {
     expect(getAuthEnv({ ...AUTH_VARS, BETTER_AUTH_URL: 'https://kite.vercel.app/' }).baseUrl).toBe(
       'https://kite.vercel.app',

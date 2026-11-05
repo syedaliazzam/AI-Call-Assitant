@@ -35,7 +35,7 @@ const env = getAuthEnv();
  * server API (auth.api.*) is used by server code with the caller's request headers.
  */
 export const auth = betterAuth({
-  // Public address: http://localhost:3000 in development, the *.vercel.app URL in production,
+  // Public address: http://localhost:3000 in development, the custom domain in production,
   // https://$VERCEL_URL on preview deployments (worked out in getAuthEnv()).
   baseURL: env.baseUrl,
   secret: env.secret,

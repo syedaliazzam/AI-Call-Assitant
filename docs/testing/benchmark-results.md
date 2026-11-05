@@ -231,3 +231,20 @@ Deployment `dpl_FYmPL16gQcjTQ24pQGYoU6rVmBCr`, Vercel function `iad1`. Machine: 
 | Auto-update, real feed (`apps/desktop/tests/update-check.ts`, no folder) | The real 1.1.0 program, a temporary profile and a cache folder of its own holding 1.1.0's installer | Found 1.2.0, downloaded it and verified it | Stops before installing. |
 
 The Windows install step and the data folder staying in place were left to the developer's manual install on their laptop, done before publishing.
+
+## Custom domain (5 Nov 2026)
+
+`call.paramountintelligence.co` went live beside `kite-call-assistant.vercel.app` (ADR-0046). Machine: the same laptop as v1.1.0. Browser: Playwright's Chromium, headless.
+
+| Check | Deployment | Result | Notes |
+|---|---|---|---|
+| Vercel's view of the domain | Project | Verified, `misconfigured: false` (CNAME); no redirect on either address | Let's Encrypt certificate on the new domain. |
+| Sign-in form, local run with production's settings | `next dev` | Unknown site 403; both addresses accepted | Previews sit behind Vercel's login, so this ran locally. |
+| Sign-in form on live production before the change | `dpl_FYmPL16gQcjTQ24pQGYoU6rVmBCr` | New domain 403 | Shows the setting was needed. |
+| A call in Chrome on the new address (`chrome.spec.ts`) | `dpl_4HQpJGp6Lfvk9YgH4z7FFzrziEEs` | 8 of 8 | |
+| Ask AI on the new address (`routes.spec.ts`) | `dpl_4HQpJGp6Lfvk9YgH4z7FFzrziEEs` | 1 of 1 | |
+| Built 1.2.0 program on the old address, with its own built-in address (`desktop.spec.ts`) | `dpl_4HQpJGp6Lfvk9YgH4z7FFzrziEEs` | 4 of 4 | Temporary profile, update check off. |
+| Admin page on the new address (`domain.spec.ts`) | `dpl_4HQpJGp6Lfvk9YgH4z7FFzrziEEs` | 1 of 1 | Admin test account on for this run only. Afterwards a sign-in attempt on both addresses got 403 `BANNED_USER` and no session. |
+| Both addresses: no redirect, sign-in, cookie on that address only, guide, log out, other sites refused (`domain.spec.ts`) | `dpl_8ViAdqLzrGD9jYHoSCTbQ7evizxb` | 6 of 6 | This deployment adds only the guide's text to the one above. |
+
+Not run: the latency suite, and a 1.1.0 program on the old address. The real 1.1.0 program would look for updates against the live feed and could install one when it closes, so it was left out. It loads the same address as 1.2.0.
