@@ -81,6 +81,13 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
       await expect(releases).toHaveAttribute('target', '_blank');
       await expect(page.getByText('](')).toHaveCount(0);
       report(`${host} guide shows its link as a link`, true);
+      await expect(page.getByText('Windows protected your PC')).toBeVisible();
+      await expect(page.getByText('If Smart App Control blocks it')).toBeVisible();
+      await expect(page.getByRole('link', { name: CUSTOM_DOMAIN_URL })).toHaveAttribute(
+        'href',
+        CUSTOM_DOMAIN_URL,
+      );
+      report(`${host} guide has the Windows warning steps`, true);
       await logOut(page, address);
       report(`${host} log out`, true);
     } finally {
