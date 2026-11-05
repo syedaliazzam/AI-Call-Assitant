@@ -56,6 +56,19 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
       report(`${host} suggestions appear`, true, {
         rows: await page.getByRole('option').count(),
       });
+      // Each Brandfetch row shows its logo, drawn from the address the search gave.
+      const rowLogo = option.locator('img');
+      await expect(rowLogo).toBeVisible();
+      await expect
+        .poll(() => rowLogo.evaluate((image: HTMLImageElement) => image.naturalWidth))
+        .toBeGreaterThan(0);
+      const drawn = await page
+        .getByRole('option')
+        .locator('img')
+        .evaluateAll(
+          (images) => images.filter((image) => (image as HTMLImageElement).naturalWidth > 0).length,
+        );
+      report(`${host} logos in the dropdown`, drawn > 0, { drawn });
 
       // Pick it and create the session: the card shows the real logo.
       await option.click();
