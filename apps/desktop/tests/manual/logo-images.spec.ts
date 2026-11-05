@@ -3,7 +3,8 @@
  * the shell on a temporary profile against a blank local page, without changing the shell, and the
  * same page in plain Chromium. It covers: another site's image draws in the shell; a logo and a search
  * end the same way in the shell as in plain Chromium, so the shell adds no block of its own; the page
- * can read the search reply. With a made-up ID Brandfetch refuses the logo, and Chromium then blocks
+ * can read the search reply. Chromium runs windowed, off-screen: Brandfetch refuses logos to headless
+ * browsers. With a made-up ID Brandfetch refuses the logo, and Chromium then blocks
  * the reply as not an image, in both. With a real ID in KITE_BRANDFETCH_CLIENT_ID the logo must draw.
  * Prints statuses only, never the ID. This calls real servers, so it runs by hand and never in CI. It
  * makes no Claude call.
@@ -137,7 +138,14 @@ test('the shell reaches Brandfetch and draws images from other sites', async () 
     await page.waitForLoadState();
 
     const shell = await measure(page);
-    const browser = await chromium.launch({ channel: 'chromium', headless: true });
+    // Brandfetch's logo service refuses headless browsers as automated traffic (it answers
+    // x-bf-error automated_traffic), so this is a normal windowed Chromium, as a person's would be. The
+    // window is placed off-screen, so nothing appears on the desktop of the computer running this.
+    const browser = await chromium.launch({
+      channel: 'chromium',
+      headless: false,
+      args: ['--window-position=-2400,-2400'],
+    });
     let plain: Outcome;
     try {
       const other = await browser.newPage();
