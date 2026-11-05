@@ -2,6 +2,8 @@
 
 Paramount AI listens to your call, shows a live transcript, and writes a short answer you can say when you press a key. It runs in the **desktop app** (Windows) or in **Chrome or Edge** at **call.paramountintelligence.co**. To install the desktop app, download it from [Paramount AI releases](https://github.com/Zainpak123/kite-releases/releases/latest).
 
+**If you see "Windows protected your PC":** click **More info** → **Run anyway**. If Smart App Control blocks it, use the browser version at [https://call.paramountintelligence.co](https://call.paramountintelligence.co), or ask IT.
+
 **Used the old address in your browser?** It still works, but your sessions are stored under the address you used them on, so they won't appear at the new one by themselves, and you'll need to sign in there. To bring them over, go to **Settings** on the old address and choose **Export my data**, then **Import data** on the new one. Nothing is duplicated. The desktop app isn't affected.
 
 ## Use it where AI assistance is allowed

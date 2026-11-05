@@ -24,7 +24,7 @@ Local data is stored per origin. Sessions, documents, transcripts, answers and s
 - Production keeps answering on both addresses for as long as any desktop app exists. `KITE_TRUSTED_ORIGINS` must always list the old address, or sign-in in every desktop app stops. `apps/web/tests/e2e-prod/domain.spec.ts` checks this on production.
 - A person's browser and desktop app were already separate stores, so nothing changes between them. A session still reaches the desktop app as a file (ADR-0045), which does not depend on the address.
 - The app's desktop origin remains a `vercel.app` address, which depends on staying with Vercel. Leaving Vercel would need the migration in decision 4.
-- The prepared work is not used. Draft PR #10 is closed, its local installer is deleted, and the `desktop-1.2.1` branch stays for reference only. It does not contain a migration.
+- The prepared work is not used. Draft PR #10 is closed and keeps its commits; its branch and local installer are deleted. That work does not contain a migration.
 
 ## Alternatives considered
 
