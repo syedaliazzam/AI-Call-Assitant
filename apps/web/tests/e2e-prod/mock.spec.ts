@@ -86,13 +86,24 @@ test('a mock interview with the real speech model, saved as a Mock session', asy
 
   await summary.getByRole('link', { name: 'Review this interview' }).click();
   await page.getByRole('button', { name: 'Transcript', exact: true }).click();
-  await expect(page.getByRole('listitem', { name: 'Them said' })).toHaveCount(2);
+  // At least two: a written question with a sentence after it shows as two bubbles (groupLines()),
+  // and Claude's wording differs from run to run. The saved answers below are the exact count.
+  await expect(page.getByRole('listitem', { name: 'Them said' }).nth(1)).toBeVisible();
   await expect(page.getByRole('listitem', { name: 'You said' })).toHaveCount(2);
+  // v1.2.0: saved answers have their own tab beside the conversation.
+  await page
+    .getByRole('group', { name: 'Transcript view' })
+    .getByRole('button', { name: 'Answers' })
+    .click();
   await expect(page.getByRole('listitem', { name: 'Saved answer' })).toHaveCount(2);
   report('mock saved as a session', true);
 
   await page.goto(PRODUCTION_URL);
-  await page.getByText(/^Mock \(1\)$/).click();
+  await page
+    .getByRole('group', { name: 'Session type' })
+    .getByRole('button', { name: 'Mock' })
+    .click();
+  await expect(page.getByText('1 Session', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'E2E Mock Co (invented)' })).toHaveCount(1);
   report('mock on the dashboard', true);
 });

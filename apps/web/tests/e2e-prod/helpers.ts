@@ -185,7 +185,8 @@ export async function createSession(page: Page, session: NewSession): Promise<vo
 }
 
 /**
- * The dashboard card of a session.
+ * The dashboard card of a session. The company can be the card's heading or the line under it: a
+ * Regular session's heading is its topic (v1.2.0).
  *
  * @param page    The page.
  * @param company The session's company.
@@ -193,7 +194,10 @@ export async function createSession(page: Page, session: NewSession): Promise<vo
  * Called from: createSession(), the suites
  */
 export function sessionCard(page: Page, company: string) {
-  return page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: company }) });
+  return page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('heading') })
+    .filter({ hasText: company });
 }
 
 /**

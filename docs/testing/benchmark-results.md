@@ -197,3 +197,23 @@ The developer chose to skip these on 4 Nov 2026. The numbers above do not cover 
 - **Visual:** `browser-split-1.png` and `browser-split-2.png` were never compared (`docs/testing/v1.1.0-visual-check.md`). The browser view's off-centre language picker was fixed by the later browser call layout change.
 - **macOS was not run** (`docs/testing/macos-checklist.md`).
 - **Two manual tools still target v1.0.4's UI:** `apps/desktop/tests/visual/call-window-shots.ts` and `apps/web/tests/visual/browser-shots.ts`.
+
+## v1.2.0 release (5 Nov 2026)
+
+Deployment `dpl_FYmPL16gQcjTQ24pQGYoU6rVmBCr`, Vercel function `iad1`. Machine: the same laptop as v1.1.0 (Intel Core i5-8350U, Windows 11 Pro 10.0.26200). Browser: Playwright's Chromium, headless. Desktop: the shell built from this branch, on a temporary profile.
+
+### Production suites
+
+| Suite | Result | Notes |
+|---|---|---|
+| Sign-in cache, routes | 5 of 5 | First run. |
+| Chrome and desktop | 12 of 12 | Second run. The first stopped at step 2: the suite looked for the company in the card's heading, and a Regular session's heading is now its topic. |
+| Mock interview | 1 of 1 | Third attempt. The suite was updated for Review's Answers tab and the session type tabs. It also counted question bubbles exactly, but a written question with a sentence after it shows as two bubbles, so the exact count is now on saved answers. |
+| Latency | 2 of 2 | Admin test account enabled for this run only and disabled straight after. A sign-in attempt on production then got 403 `BANNED_USER` and no session. |
+
+### Latency (20 answers each, ms)
+
+| Client | First word p50 / p95 | Headline p50 / p95 | Done p50 / p95 | Server first text p50 / p95 | Cache hits |
+|---|---|---|---|---|---|
+| Chrome | 1120 / 1327 | 1125 / 1372 | 1370 / 1619 | 586 / 785 | 20 of 20 |
+| Desktop app | 1096 / 1278 | 1126 / 1402 | 1311 / 1455 | 586 / 721 | 20 of 20 |
