@@ -100,6 +100,7 @@ const SessionSchema = z.object({
   id: z.string().min(1),
   type: sessionType,
   company: z.string(),
+  companyDomain: z.string().optional(),
   role: z.string(),
   description: z.string(),
   preferences: z.object({

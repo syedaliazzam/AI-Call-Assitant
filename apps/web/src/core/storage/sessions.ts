@@ -155,7 +155,18 @@ export async function updateSession(id: string, changes: SessionChanges): Promis
   return db.transaction('rw', db.sessions, async () => {
     const current = await db.sessions.get(id);
     if (!current) throw new Error('SESSION_NOT_FOUND');
-    const next: Session = { ...current, ...changes, id: current.id, createdAt: current.createdAt };
+    // A domain belongs to the name it was picked with: a new name must not keep the old logo.
+    const renamed =
+      changes.company !== undefined &&
+      changes.company !== current.company &&
+      changes.companyDomain === undefined;
+    const { companyDomain: _kept, ...withoutDomain } = current;
+    const next: Session = {
+      ...(renamed ? withoutDomain : current),
+      ...changes,
+      id: current.id,
+      createdAt: current.createdAt,
+    };
     await db.sessions.put(next);
     return next;
   });

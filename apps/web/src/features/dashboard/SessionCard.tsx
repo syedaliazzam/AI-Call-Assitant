@@ -1,12 +1,13 @@
 /**
  * File: apps/web/src/features/dashboard/SessionCard.tsx
  * Purpose: One session on the sessions page (spec S3). As a card: an outer edge (radius 20, padding 8)
- *          around a grey inner panel (radius 16) with the date, ⋮, letter tile, title, role and chips;
+ *          around a grey inner panel (radius 16) with the date, ⋮, logo or letter tile, title, role and chips;
  *          under it the status dot and word, what happened in the call, and Start session or View
  *          transcript. As a row in the list view: the same data on one line.
  * Used by: src/features/dashboard/Dashboard.tsx
  * Depends on: lucide-react, src/core/storage (types, shownStatus), src/ui (Button, Chip, LinkButton),
- *             ./SessionMenu.tsx, ./sessionCardParts.ts, src/features/session-setup/labels.ts
+ *             ./CompanyTile.tsx, ./SessionMenu.tsx, ./sessionCardParts.ts,
+ *             src/features/session-setup/labels.ts
  * Architecture: docs/design/paramount-ai-ui-spec.md §1, §3 (S3)
  *
  * Session text is shown on screen only; it is never logged.
@@ -21,12 +22,8 @@ import { SESSION_TYPE_LABELS, STATUS_LABELS } from '@/features/session-setup/lab
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
 import { LinkButton } from '@/ui/LinkButton';
-import {
-  letterTile,
-  sessionCardLine,
-  sessionCardTitle,
-  sessionUsageLine,
-} from './sessionCardParts';
+import { CompanyTile } from './CompanyTile';
+import { sessionCardLine, sessionCardTitle, sessionUsageLine } from './sessionCardParts';
 import { SessionMenu } from './SessionMenu';
 
 /** Props for SessionCard. */
@@ -65,32 +62,6 @@ const TYPE_ICONS: Record<SessionType, typeof Briefcase> = {
 
 /** The date on a card, in the user's locale (shown uppercase, for example "NOV 4, 2026"). */
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-
-/**
- * The letter tile (24 px): the first letter on a colour worked out from the name.
- *
- * @param props.name The name on the card.
- * @returns The tile.
- * Rendered by: SessionCard
- */
-function LetterTile({
-  name,
-}: {
-  /** The name on the card. */
-  name: string;
-}) {
-  const { letter, colour } = letterTile(name);
-  return (
-    <span
-      aria-hidden="true"
-      // The colour is a token chosen by number, so the theme holds every value.
-      style={{ backgroundColor: `var(--k-tile-${colour})` }}
-      className="flex size-6 shrink-0 items-center justify-center rounded-[6px] text-[13px] font-semibold text-ui-on-accent"
-    >
-      {letter}
-    </span>
-  );
-}
 
 /**
  * One session.
@@ -133,7 +104,7 @@ export function SessionCard({
   );
   const name = (
     <div className="flex min-w-0 items-center gap-2">
-      <LetterTile name={title} />
+      <CompanyTile name={title} domain={session.companyDomain} />
       <h2 className="truncate text-card-title text-ui-heading">{title}</h2>
     </div>
   );

@@ -91,6 +91,11 @@ describe('toSessionContext', () => {
     });
   });
 
+  it('never sends the company domain with an answer (ADR-0048)', () => {
+    const context = toSessionContext({ ...SESSION, companyDomain: 'alder.example' }, []);
+    expect(JSON.stringify(context)).not.toContain('alder.example');
+  });
+
   it('sends STAR only when it is on, so a session without it sends what it always has', () => {
     const on = {
       ...SESSION,

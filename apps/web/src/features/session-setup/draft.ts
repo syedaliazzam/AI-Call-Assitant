@@ -44,6 +44,8 @@ export interface SessionDraft {
   type: SessionType;
   /** Company ('' until typed; required). */
   company: string;
+  /** The company's domain, when a suggestion was picked ('' for a typed name; ADR-0048). */
+  companyDomain: string;
   /** Role (interview) or topic ('' until typed; required). */
   role: string;
   /** Free-text description (optional). */
@@ -87,6 +89,7 @@ export function emptyDraft(
   return {
     type,
     company: '',
+    companyDomain: '',
     role: '',
     description: '',
     contactName: '',
@@ -116,6 +119,7 @@ export function draftFromSession(session: Session, documents: StoredDocument[]):
   return {
     type: session.type,
     company: session.company,
+    companyDomain: session.companyDomain ?? '',
     role: session.role,
     description: session.description,
     contactName: session.contactName ?? '',
@@ -167,6 +171,8 @@ export function draftToInput(draft: SessionDraft): NewSessionInput {
   return {
     type: draft.type,
     company: draft.company.trim(),
+    // Absent for a typed name, so a session without one stores what it always has.
+    ...(draft.companyDomain ? { companyDomain: draft.companyDomain } : {}),
     role: draft.role.trim(),
     description: draft.description.trim(),
     // Absent when empty, so a session without one stores what it always has.
