@@ -38,18 +38,18 @@ describe('canCaptureSystemAudio', () => {
 
 describe('decideDisplayMedia', () => {
   it('grants the Kite origin a screen with system audio on Windows and macOS 13+', () => {
-    expect(decideDisplayMedia(KITE_REQUEST, ORIGIN, 'win32', '10.0.26200')).toEqual({
+    expect(decideDisplayMedia(KITE_REQUEST, [ORIGIN], 'win32', '10.0.26200')).toEqual({
       kind: 'grant',
       audio: 'loopback',
     });
-    expect(decideDisplayMedia(KITE_REQUEST, ORIGIN, 'darwin', '15.1')).toEqual({
+    expect(decideDisplayMedia(KITE_REQUEST, [ORIGIN], 'darwin', '15.1')).toEqual({
       kind: 'grant',
       audio: 'loopback',
     });
   });
 
   it('leaves audio out where the OS cannot capture it (macOS 12)', () => {
-    expect(decideDisplayMedia(KITE_REQUEST, ORIGIN, 'darwin', '12.7.6')).toEqual({
+    expect(decideDisplayMedia(KITE_REQUEST, [ORIGIN], 'darwin', '12.7.6')).toEqual({
       kind: 'grant',
       audio: null,
     });
@@ -57,7 +57,7 @@ describe('decideDisplayMedia', () => {
 
   it('leaves audio out when the page did not ask for it', () => {
     expect(
-      decideDisplayMedia({ ...KITE_REQUEST, audioRequested: false }, ORIGIN, 'win32', '10.0'),
+      decideDisplayMedia({ ...KITE_REQUEST, audioRequested: false }, [ORIGIN], 'win32', '10.0'),
     ).toEqual({ kind: 'grant', audio: null });
   });
 
@@ -69,11 +69,11 @@ describe('decideDisplayMedia', () => {
       'not a url',
     ]) {
       expect(
-        decideDisplayMedia({ ...KITE_REQUEST, securityOrigin }, ORIGIN, 'win32', '10'),
+        decideDisplayMedia({ ...KITE_REQUEST, securityOrigin }, [ORIGIN], 'win32', '10'),
       ).toEqual({ kind: 'deny', reason: 'other-origin' });
     }
     expect(
-      decideDisplayMedia({ ...KITE_REQUEST, videoRequested: false }, ORIGIN, 'win32', '10'),
+      decideDisplayMedia({ ...KITE_REQUEST, videoRequested: false }, [ORIGIN], 'win32', '10'),
     ).toEqual({ kind: 'deny', reason: 'no-video' });
   });
 });
@@ -94,7 +94,7 @@ describe('allowSystemAudioLoopback', () => {
       return opts;
     });
     const session = { setDisplayMediaRequestHandler } as never;
-    allowSystemAudioLoopback(session, ORIGIN, {
+    allowSystemAudioLoopback(session, [ORIGIN], {
       getSources: getSources as never,
       platform,
       osVersion: platform === 'darwin' ? '14.2' : '10.0.26200',

@@ -49,7 +49,7 @@ export interface AccurateDeps {
   /** Electron's ipcMain. */
   ipcMain: Pick<IpcMain, 'handle'>;
   /** The Kite origin (only its main frame may call). */
-  allowedOrigin: string;
+  allowedOrigins: readonly string[];
   /** Where the model is kept (the app's data folder, models/<MODEL_FOLDER>). */
   modelDir: string;
   /** The staged native runtime folder, or null when this build has none for this computer. */
@@ -106,7 +106,7 @@ function platformArch(): string {
  * Called from: installAccurate(); tests
  */
 export function createAccurateHost(
-  deps: Omit<AccurateDeps, 'ipcMain' | 'allowedOrigin'>,
+  deps: Omit<AccurateDeps, 'ipcMain' | 'allowedOrigins'>,
 ): AccurateHost {
   let downloading: AbortController | null = null;
   let receivedBytes = 0;
@@ -274,7 +274,7 @@ export function installAccurate(deps: AccurateDeps): AccurateHost {
   const guard =
     <T>(handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<T>) =>
     (event: IpcMainInvokeEvent, ...args: unknown[]) => {
-      if (!isKiteSender(event, deps.allowedOrigin)) {
+      if (!isKiteSender(event, deps.allowedOrigins)) {
         throw new Error('Accurate transcription is only for the Kite page');
       }
       return handler(event, ...args);

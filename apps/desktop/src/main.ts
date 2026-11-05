@@ -316,16 +316,16 @@ function start(): void {
 
   // Lock every web contents the app ever creates, not only the main window's.
   app.on('web-contents-created', (_event, contents) => {
-    lockNavigation(contents, config.allowedOrigin);
+    lockNavigation(contents, config.allowedOrigins);
   });
   app.on('before-quit', () => {
     quitting = true;
   });
 
   void app.whenReady().then(() => {
-    allowOnlyOurPermissions(session.defaultSession, config.allowedOrigin);
+    allowOnlyOurPermissions(session.defaultSession, config.allowedOrigins);
     // "Them": the page's getDisplayMedia gets system audio with no picker (Kite origin only).
-    allowSystemAudioLoopback(session.defaultSession, config.allowedOrigin);
+    allowSystemAudioLoopback(session.defaultSession, config.allowedOrigins);
     hotkeys = installHotkeys({
       globalShortcut,
       ipcMain,
@@ -358,7 +358,7 @@ function start(): void {
           overlay.focus();
         }
       },
-      allowedOrigin: config.allowedOrigin,
+      allowedOrigins: config.allowedOrigins,
     });
     // The compact live window and screen-share protection (Day 5); the shell remembers the
     // window's position and size and the protection setting in its own small file.
@@ -374,7 +374,7 @@ function start(): void {
       platform: process.platform,
       ipcMain,
       getWindow: () => compact?.window() ?? mainWindow ?? home?.window() ?? null,
-      allowedOrigin: config.allowedOrigin,
+      allowedOrigins: config.allowedOrigins,
       // v1.1.0 (ADR-0043): the answer should be about what is behind Kite, not about Kite. With
       // protection on, its windows are already left out, so nothing changes.
       hideOwnWindows: async () => {
@@ -421,7 +421,7 @@ function start(): void {
     installCompactWindows(
       ipcMain,
       compact,
-      config.allowedOrigin,
+      config.allowedOrigins,
       () => mainWindow?.minimize(),
       () => {
         if (!mainWindow) return;
@@ -434,7 +434,7 @@ function start(): void {
     // runs in a utility process. KITE_ACCURATE_MODEL_DIR points tests at an existing copy.
     installAccurate({
       ipcMain,
-      allowedOrigin: config.allowedOrigin,
+      allowedOrigins: config.allowedOrigins,
       modelDir:
         process.env.KITE_ACCURATE_MODEL_DIR ??
         path.join(app.getPath('userData'), 'models', MODEL_FOLDER),
@@ -451,11 +451,11 @@ function start(): void {
         }) as unknown as WorkerProcess,
     });
     // ADR-0042: one toggle, one state, every window.
-    installProtection(ipcMain, shield, () => BrowserWindow.getAllWindows(), config.allowedOrigin);
+    installProtection(ipcMain, shield, () => BrowserWindow.getAllWindows(), config.allowedOrigins);
 
     // v1.1.0 (ADR-0041): the panel's own buttons, and the pages it opens. Each value is checked.
     ipcMain.handle(OPEN_PAGES_CHANNEL, (event, page: unknown) => {
-      if (!isKiteSender(event, config.allowedOrigin)) {
+      if (!isKiteSender(event, config.allowedOrigins)) {
         throw new Error('Only the Kite page can do this');
       }
       if (typeof page !== 'string' || !PAGES_WINDOW_PATH.test(page)) {
@@ -464,7 +464,7 @@ function start(): void {
       openPages(config, page);
     });
     ipcMain.handle(WINDOW_CONTROL_CHANNEL, (event, action: unknown) => {
-      if (!isKiteSender(event, config.allowedOrigin)) {
+      if (!isKiteSender(event, config.allowedOrigins)) {
         throw new Error('Only the Kite page can do this');
       }
       if (!isWindowControl(action)) throw new Error('Not a window action');
@@ -481,7 +481,7 @@ function start(): void {
     });
     // v1.1.0: a call hides the panel, and the end of a call brings it back behind the call's review.
     ipcMain.on(CALL_ACTIVE_CHANNEL, (event, active: unknown) => {
-      if (!isKiteSender(event, config.allowedOrigin)) return;
+      if (!isKiteSender(event, config.allowedOrigins)) return;
       const next = active === true;
       if (next === callActive) return;
       callActive = next;
@@ -522,7 +522,7 @@ function start(): void {
         read: (file) => readFile(file, 'utf8'),
         remove: (file) => rm(file),
       },
-      allowedOrigin: config.allowedOrigin,
+      allowedOrigins: config.allowedOrigins,
     });
 
     // Updates (Day 6, ADR-0028): installed builds only; tests turn them off. Store builds
@@ -530,7 +530,7 @@ function start(): void {
     if (app.isPackaged && !process.windowsStore && process.env.KITE_NO_UPDATE_CHECK !== '1') {
       startUpdater({
         ipcMain,
-        allowedOrigin: config.allowedOrigin,
+        allowedOrigins: config.allowedOrigins,
         getWindow: () => mainWindow ?? home?.window() ?? null,
       });
     }

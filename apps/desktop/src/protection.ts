@@ -104,21 +104,21 @@ export function createProtection(store: ShellStore, platform: string, release: s
  * @param ipcMain       Electron's ipcMain.
  * @param protection    The controller.
  * @param getWindows    Every open Kite window.
- * @param allowedOrigin The Kite origin.
+ * @param allowedOrigins The Kite origins.
  * Called from: start() in main.ts; tests
  */
 export function installProtection(
   ipcMain: Pick<IpcMain, 'handle'>,
   protection: Protection,
   getWindows: () => readonly Pick<BrowserWindow, 'setContentProtection'>[],
-  allowedOrigin: string,
+  allowedOrigins: readonly string[],
 ): void {
   ipcMain.handle(GET_PROTECTION_CHANNEL, (event) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can read it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can read it');
     return protection.state();
   });
   ipcMain.handle(SET_PROTECTION_CHANNEL, (event, on: unknown) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can change it');
     const state = protection.set(on === true, getWindows());
     console.info('desktop: share protection', state);
     return state;

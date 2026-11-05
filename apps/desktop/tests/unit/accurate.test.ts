@@ -138,7 +138,7 @@ describe('installAccurate', () => {
         handle: (channel: string, handler: (event: unknown) => unknown) =>
           handlers.set(channel, handler),
       } as never,
-      allowedOrigin: 'https://kite.example',
+      allowedOrigins: ['https://kite.example'],
       modelDir: dir,
       nativeDir: null,
       workerPath: 'w.js',

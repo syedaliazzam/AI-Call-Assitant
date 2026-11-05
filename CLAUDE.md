@@ -100,7 +100,7 @@ export async function createUserAccount(input: NewUserInput): Promise<CreatedUse
 - Never log transcript, document, answer or screenshot text, or passwords. Log ids, timings and token counts only.
 - All Claude calls go through `apps/web/src/server/claude.ts`.
 - All desktop/browser differences live in `apps/web/src/platform/`. No `if (desktop)` anywhere else.
-- Desktop security: load only the Kite URL; `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`; the preload exposes only `window.kiteDesktop`.
+- Desktop security: load only the Kite addresses (ADR-0046); `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`; the preload exposes only `window.kiteDesktop`.
 - Keep the mic ("You") and other-side ("Them") audio as separate channels.
 - Screen-share protection uses `setContentProtection` only. Never hide from the taskbar, Dock or process lists, and never try to evade monitoring or proctoring tools.
 - Add a dependency only with a reason (state it in the stage summary). Prefer the latest stable versions.

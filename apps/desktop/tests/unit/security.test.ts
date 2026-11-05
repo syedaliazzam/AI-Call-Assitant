@@ -39,21 +39,30 @@ beforeEach(() => {
 
 describe('isAllowedUrl', () => {
   it('allows any page on the Kite origin', () => {
-    expect(isAllowedUrl(`${ORIGIN}/`, ORIGIN)).toBe(true);
-    expect(isAllowedUrl(`${ORIGIN}/admin/users?x=1`, ORIGIN)).toBe(true);
+    expect(isAllowedUrl(`${ORIGIN}/`, [ORIGIN])).toBe(true);
+    expect(isAllowedUrl(`${ORIGIN}/admin/users?x=1`, [ORIGIN])).toBe(true);
   });
 
   it('blocks other origins, including look-alikes, other ports and plain http', () => {
-    expect(isAllowedUrl('https://example.com/', ORIGIN)).toBe(false);
-    expect(isAllowedUrl('https://kite-call-assistant.vercel.app.evil.com/', ORIGIN)).toBe(false);
-    expect(isAllowedUrl('https://kite-call-assistant.vercel.app:8443/', ORIGIN)).toBe(false);
-    expect(isAllowedUrl('http://kite-call-assistant.vercel.app/', ORIGIN)).toBe(false);
+    expect(isAllowedUrl('https://example.com/', [ORIGIN])).toBe(false);
+    expect(isAllowedUrl('https://kite-call-assistant.vercel.app.evil.com/', [ORIGIN])).toBe(false);
+    expect(isAllowedUrl('https://kite-call-assistant.vercel.app:8443/', [ORIGIN])).toBe(false);
+    expect(isAllowedUrl('http://kite-call-assistant.vercel.app/', [ORIGIN])).toBe(false);
+  });
+
+  it('allows each address on a list of two and still blocks every other', () => {
+    const both = [ORIGIN, 'https://call.paramountintelligence.co'];
+    expect(isAllowedUrl('https://kite-call-assistant.vercel.app/login', both)).toBe(true);
+    expect(isAllowedUrl('https://call.paramountintelligence.co/login', both)).toBe(true);
+    expect(isAllowedUrl('https://call.paramountintelligence.co.evil.com/', both)).toBe(false);
+    expect(isAllowedUrl('https://evil.paramountintelligence.co/', both)).toBe(false);
+    expect(isAllowedUrl('http://call.paramountintelligence.co/', both)).toBe(false);
   });
 
   it('blocks invalid URLs and non-web schemes', () => {
-    expect(isAllowedUrl('not a url', ORIGIN)).toBe(false);
-    expect(isAllowedUrl('file:///C:/Windows/', ORIGIN)).toBe(false);
-    expect(isAllowedUrl('javascript:alert(1)', ORIGIN)).toBe(false);
+    expect(isAllowedUrl('not a url', [ORIGIN])).toBe(false);
+    expect(isAllowedUrl('file:///C:/Windows/', [ORIGIN])).toBe(false);
+    expect(isAllowedUrl('javascript:alert(1)', [ORIGIN])).toBe(false);
   });
 });
 
@@ -139,14 +148,14 @@ function fakeContents() {
 describe('lockNavigation', () => {
   it('lets navigation and redirects stay on the Kite origin', () => {
     const contents = fakeContents();
-    lockNavigation(contents as never, ORIGIN);
+    lockNavigation(contents as never, [ORIGIN]);
     expect(contents.fire('will-navigate', `${ORIGIN}/login`)).toBe(false);
     expect(contents.fire('will-redirect', `${ORIGIN}/`)).toBe(false);
   });
 
   it('cancels navigation and redirects to other origins without opening them', () => {
     const contents = fakeContents();
-    lockNavigation(contents as never, ORIGIN);
+    lockNavigation(contents as never, [ORIGIN]);
     expect(contents.fire('will-navigate', 'https://evil.example.com/')).toBe(true);
     expect(contents.fire('will-redirect', 'https://evil.example.com/')).toBe(true);
     expect(openExternal).not.toHaveBeenCalled();
@@ -154,13 +163,13 @@ describe('lockNavigation', () => {
 
   it('refuses <webview> tags', () => {
     const contents = fakeContents();
-    lockNavigation(contents as never, ORIGIN);
+    lockNavigation(contents as never, [ORIGIN]);
     expect(contents.fire('will-attach-webview')).toBe(true);
   });
 
   it('denies every new window; http(s) targets go to the system browser only', () => {
     const contents = fakeContents();
-    lockNavigation(contents as never, ORIGIN);
+    lockNavigation(contents as never, [ORIGIN]);
 
     expect(contents.openWindow('https://example.com/')).toEqual({ action: 'deny' });
     expect(openExternal).toHaveBeenCalledWith('https://example.com/');
@@ -176,61 +185,61 @@ describe('isPermissionAllowed', () => {
     expect(
       isPermissionAllowed(
         { permission: 'media', requestingUrl: `${ORIGIN}/live/1`, mediaTypes: ['audio'] },
-        ORIGIN,
+        [ORIGIN],
       ),
     ).toBe(true);
   });
 
   it('denies the camera, or camera plus microphone', () => {
     const base = { permission: 'media', requestingUrl: `${ORIGIN}/` };
-    expect(isPermissionAllowed({ ...base, mediaTypes: ['video'] }, ORIGIN)).toBe(false);
-    expect(isPermissionAllowed({ ...base, mediaTypes: ['audio', 'video'] }, ORIGIN)).toBe(false);
-    expect(isPermissionAllowed({ ...base, mediaTypes: [] }, ORIGIN)).toBe(false);
-    expect(isPermissionAllowed(base, ORIGIN)).toBe(false);
+    expect(isPermissionAllowed({ ...base, mediaTypes: ['video'] }, [ORIGIN])).toBe(false);
+    expect(isPermissionAllowed({ ...base, mediaTypes: ['audio', 'video'] }, [ORIGIN])).toBe(false);
+    expect(isPermissionAllowed({ ...base, mediaTypes: [] }, [ORIGIN])).toBe(false);
+    expect(isPermissionAllowed(base, [ORIGIN])).toBe(false);
   });
 
   it('denies the microphone to any other origin', () => {
     expect(
       isPermissionAllowed(
         { permission: 'media', requestingUrl: 'https://evil.example.com/', mediaTypes: ['audio'] },
-        ORIGIN,
+        [ORIGIN],
       ),
     ).toBe(false);
   });
 
   it('grants display-capture to the Kite origin only (media.ts decides what is captured)', () => {
     expect(
-      isPermissionAllowed(
-        { permission: 'display-capture', requestingUrl: `${ORIGIN}/live/1` },
+      isPermissionAllowed({ permission: 'display-capture', requestingUrl: `${ORIGIN}/live/1` }, [
         ORIGIN,
-      ),
+      ]),
     ).toBe(true);
     expect(
       isPermissionAllowed(
         { permission: 'display-capture', requestingUrl: 'https://evil.example.com/' },
-        ORIGIN,
+        [ORIGIN],
       ),
     ).toBe(false);
   });
 
   it('grants persistent-storage (navigator.storage.persist) to the Kite origin only', () => {
     expect(
-      isPermissionAllowed(
-        { permission: 'persistent-storage', requestingUrl: `${ORIGIN}/` },
+      isPermissionAllowed({ permission: 'persistent-storage', requestingUrl: `${ORIGIN}/` }, [
         ORIGIN,
-      ),
+      ]),
     ).toBe(true);
     expect(
       isPermissionAllowed(
         { permission: 'persistent-storage', requestingUrl: 'https://evil.example.com/' },
-        ORIGIN,
+        [ORIGIN],
       ),
     ).toBe(false);
   });
 
   it('denies every other permission, even for the Kite origin', () => {
     for (const permission of ['notifications', 'geolocation', 'clipboard-read', 'usb']) {
-      expect(isPermissionAllowed({ permission, requestingUrl: `${ORIGIN}/` }, ORIGIN)).toBe(false);
+      expect(isPermissionAllowed({ permission, requestingUrl: `${ORIGIN}/` }, [ORIGIN])).toBe(
+        false,
+      );
     }
   });
 });

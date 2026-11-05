@@ -1158,7 +1158,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
  *
  * @param ipcMain       Electron's ipcMain.
  * @param compact       The controller.
- * @param allowedOrigin The Kite origin.
+ * @param allowedOrigins The Kite origins.
  * @param minimizeMain  Minimises the main window (a call starting in the overlay).
  * @param showCall      Brings the full call window forward and hides the overlay (v1.0.4).
  * Called from: start() in main.ts; tests
@@ -1166,66 +1166,66 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
 export function installCompactWindows(
   ipcMain: Pick<IpcMain, 'handle'>,
   compact: CompactWindows,
-  allowedOrigin: string,
+  allowedOrigins: readonly string[],
   minimizeMain: () => void = () => undefined,
   showCall: () => void = () => undefined,
 ): void {
   ipcMain.handle(OPEN_COMPACT_CHANNEL, (event, sessionId: unknown) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can open it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can open it');
     if (!compact.open(sessionId)) throw new Error('Not a session id');
   });
   ipcMain.handle(CLOSE_COMPACT_CHANNEL, (event) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can close it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can close it');
     compact.close();
   });
   ipcMain.handle(OVERLAY_OPACITY_CHANNEL, (event, opacity: unknown) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can change it');
     compact.setOpacity(opacity);
   });
   ipcMain.handle(OVERLAY_COLLAPSE_CHANNEL, (event, collapsed: unknown) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can change it');
     compact.setCollapsed(collapsed === true);
   });
   // v1.0.2 (ADR-0035): presets, page-driven resizing and modes. Each value is checked: only a
   // known preset, mode or a well-formed resize step reaches the window.
   ipcMain.handle(OVERLAY_PLACE_CHANNEL, (event, preset: unknown) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can change it');
     if (!isOverlayPreset(preset)) throw new Error('Not an overlay preset');
     compact.place(preset);
   });
   ipcMain.handle(OVERLAY_PRESET_CHANNEL, (event) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can read it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can read it');
     return compact.preset();
   });
   ipcMain.handle(OVERLAY_RESIZE_CHANNEL, (event, step: unknown) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can change it');
     if (!isResizeStep(step)) throw new Error('Not a resize step');
     compact.resize(step);
   });
   // v1.2.0 (spec S13): dragging the icon. The distances are checked, like a resize step's.
   ipcMain.handle(OVERLAY_MOVE_CHANNEL, (event, move: unknown) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can change it');
     if (!isOverlayMove(move)) throw new Error('Not a move');
     compact.move(move.dx, move.dy);
   });
   ipcMain.handle(OVERLAY_MODE_CHANNEL, (event, mode: unknown) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can change it');
     if (!isOverlayMode(mode)) throw new Error('Not an overlay mode');
     compact.setMode(mode);
   });
   // v1.1.0 (ADR-0041): which panels are open; the shell checks every value.
   ipcMain.handle(OVERLAY_LAYOUT_CHANNEL, (event, layout: unknown) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can change it');
     if (!isOverlayLayout(layout)) throw new Error('Not an overlay layout');
     compact.setLayout(layout);
   });
   ipcMain.handle(MINIMIZE_MAIN_CHANNEL, (event) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can do this');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can do this');
     // Only with the overlay open: never leave the user with no Kite window in view.
     if (compact.window()) minimizeMain();
   });
   ipcMain.handle(SHOW_CALL_WINDOW_CHANNEL, (event) => {
-    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can do this');
+    if (!isKiteSender(event, allowedOrigins)) throw new Error('Only the Kite page can do this');
     showCall();
   });
 }

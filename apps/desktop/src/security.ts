@@ -1,17 +1,17 @@
 /**
  * File: apps/desktop/src/security.ts
  * Purpose: Everything that keeps the desktop window safe:
- *          - only the Kite origin can be shown (navigation, redirects and new windows locked);
+ *          - only the Kite origins can be shown (navigation, redirects and new windows locked);
  *          - only http/https links ever reach the system browser;
  *          - only the microphone and screen/system-audio capture are granted, and only to the
- *            Kite origin (what is captured is decided in media.ts);
+ *            Kite origins (what is captured is decided in media.ts);
  *          - the renderer runs sandboxed with context isolation and no Node.js.
  * Used by: src/main.ts; tests/unit/security.test.ts
  * Depends on: electron (shell, Session, WebContents types)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3, §8.3 ("Malicious page inside
  *               the desktop shell"); CLAUDE.md "Desktop security"
  *
- * Every origin other than ALLOWED_ORIGIN is blocked. A future payment page or SSO provider on
+ * Every other origin is blocked. A future payment page or SSO provider on
  * another origin will NOT work until it is added to the allowlist on purpose (with a review).
  */
 import { shell, type Session, type WebContents, type WebPreferences } from 'electron';
@@ -30,16 +30,16 @@ export const NO_EXTERNAL_OPEN_ENV = 'KITE_TEST_NO_EXTERNAL_OPEN';
 export const recordedExternalOpens: string[] = [];
 
 /**
- * Tells whether a URL belongs to the allowed origin (same scheme, host and port).
+ * Tells whether a URL belongs to an allowed origin (same scheme, host and port).
  *
  * @param url           The URL to check (any string; invalid URLs are not allowed).
- * @param allowedOrigin The Kite origin, for example 'https://kite-call-assistant.vercel.app'.
- * @returns True only for URLs on exactly that origin.
+ * @param allowedOrigins The Kite origins, for example ['https://call.paramountintelligence.co'].
+ * @returns True only for URLs on exactly one of those origins.
  * Called from: lockNavigation(), isPermissionAllowed()
  */
-export function isAllowedUrl(url: string, allowedOrigin: string): boolean {
+export function isAllowedUrl(url: string, allowedOrigins: readonly string[]): boolean {
   try {
-    return new URL(url).origin === allowedOrigin;
+    return allowedOrigins.includes(new URL(url).origin);
   } catch {
     return false;
   }
@@ -101,26 +101,26 @@ export function openInSystemBrowser(url: string): boolean {
 }
 
 /**
- * Locks a web contents (window or frame host) to the allowed origin:
+ * Locks a web contents (window or frame host) to the allowed origins:
  * - navigation and server redirects to another origin are cancelled (not opened anywhere);
  * - window.open / target="_blank" never creates an Electron window: http(s) targets open in
  *   the system browser, everything else is dropped;
  * - <webview> tags are refused.
  *
  * @param contents      The web contents to lock.
- * @param allowedOrigin The Kite origin.
+ * @param allowedOrigins The Kite origins.
  * Called from: the app's 'web-contents-created' handler in src/main.ts (so every web contents,
  *              including ones created later, is covered)
  */
-export function lockNavigation(contents: WebContents, allowedOrigin: string): void {
+export function lockNavigation(contents: WebContents, allowedOrigins: readonly string[]): void {
   contents.on('will-navigate', (event) => {
-    if (!isAllowedUrl(event.url, allowedOrigin)) {
+    if (!isAllowedUrl(event.url, allowedOrigins)) {
       event.preventDefault();
       console.warn('desktop: blocked navigation to', originForLog(event.url));
     }
   });
   contents.on('will-redirect', (event) => {
-    if (!isAllowedUrl(event.url, allowedOrigin)) {
+    if (!isAllowedUrl(event.url, allowedOrigins)) {
       event.preventDefault();
       console.warn('desktop: blocked redirect to', originForLog(event.url));
     }
@@ -159,12 +159,15 @@ export interface PermissionQuery {
  * Camera, notifications, location and everything else is denied.
  *
  * @param query         The permission, requesting URL and media types.
- * @param allowedOrigin The Kite origin.
+ * @param allowedOrigins The Kite origins.
  * @returns True to grant, false to deny.
  * Called from: allowOnlyOurPermissions()
  */
-export function isPermissionAllowed(query: PermissionQuery, allowedOrigin: string): boolean {
-  if (!isAllowedUrl(query.requestingUrl, allowedOrigin)) return false;
+export function isPermissionAllowed(
+  query: PermissionQuery,
+  allowedOrigins: readonly string[],
+): boolean {
+  if (!isAllowedUrl(query.requestingUrl, allowedOrigins)) return false;
   if (query.permission === 'display-capture' || query.permission === 'persistent-storage') {
     return true;
   }
@@ -197,10 +200,10 @@ export function permissionForRequest(permission: string, mediaTypes?: readonly s
  * USB, serial and HID device access is denied outright.
  *
  * @param session       The session the Kite window uses (the default session).
- * @param allowedOrigin The Kite origin.
+ * @param allowedOrigins The Kite origins.
  * Called from: start() in src/main.ts, once the app is ready
  */
-export function allowOnlyOurPermissions(session: Session, allowedOrigin: string): void {
+export function allowOnlyOurPermissions(session: Session, allowedOrigins: readonly string[]): void {
   session.setPermissionRequestHandler((_contents, permission, callback, details) => {
     const mediaTypes = 'mediaTypes' in details ? details.mediaTypes : undefined;
     callback(
@@ -210,7 +213,7 @@ export function allowOnlyOurPermissions(session: Session, allowedOrigin: string)
           requestingUrl: details.requestingUrl,
           mediaTypes,
         },
-        allowedOrigin,
+        allowedOrigins,
       ),
     );
   });
@@ -222,7 +225,7 @@ export function allowOnlyOurPermissions(session: Session, allowedOrigin: string)
         requestingUrl: requestingOrigin,
         mediaTypes: mediaType ? [mediaType] : [],
       },
-      allowedOrigin,
+      allowedOrigins,
     );
   });
   session.setDevicePermissionHandler(() => false);

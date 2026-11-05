@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.18.0"
+version: "3.19.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-05"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.18.0, **Current**: the only document to build from |
+| Version | 3.19.0, **Current**: the only document to build from |
+| Changes in 3.19.0 | §7.3, §8.3: from desktop 1.2.1 the shell opens `call.paramountintelligence.co` and also allows the `*.vercel.app` address; an address given for testing allows only itself (ADR-0046). 1.2.1 is prepared, not released. |
 | Changes in 3.18.0 | §10.2, §14: production answers on `call.paramountintelligence.co` and on the `*.vercel.app` address that installed desktop apps load, with no redirect (ADR-0046). New setting `KITE_TRUSTED_ORIGINS`. Call data and sign-in stay separate per address. |
 | Changes in 3.17.1 | The full evaluation suite runs at release only when the live-answer prompts or answer pipeline changed; otherwise only the groups a change touches run. |
 | Changes in 3.17.0 | v1.2.0 (ADR-0045; the screens are in `docs/design/paramount-ai-ui-spec.md`). The product is shown as **Paramount AI**; identifiers, the data folder and the update feed keep their names. §3.3: `overlayIconMode`, `moveOverlay`, `setChatHotkey`, `pickHandoffFile`, `deleteHandoffFile`. §5: Choose platform, the `paramountai://` hand-off with a one-session file, the start card, the Connect card; the call bars with a 48 px icon, the chat bar, panels side by side when wide; own not-found and error pages. §7.2: `/api/preview` removed, `/api/models` added. §7.3: Ctrl+Alt+Enter, held only while the chat bar is open. Bar opacity defaults to 82 %. |
@@ -59,7 +60,7 @@ Like ParakeetAI, Kite can be used in two ways from the same dashboard:
 |---|---|
 | Main application | Next.js (React + TypeScript), one codebase for desktop and browser |
 | Hosting and domain | Vercel; `call.paramountintelligence.co`, and the `*.vercel.app` address that installed desktop apps load (ADR-0046) |
-| Desktop app | Electron shell that loads `kite.company.com` and adds native audio, hotkeys, live window, screenshots and screen-share protection |
+| Desktop app | Electron shell that loads `call.paramountintelligence.co` (1.2.0 and older: the `*.vercel.app` address) and adds native audio, hotkeys, live window, screenshots and screen-share protection |
 | Answers | Claude API through one server route (`/api/answer`). Live answers use `claude-haiku-5-5`; notes and the "smart" option use `claude-sonnet-5-5`. Prompt caching is on. |
 | Speech-to-text | Runs **on the laptop** inside the page (sherpa-onnx compiled to WebAssembly) with Silero VAD. Audio never leaves the device. |
 | Storage | On the device, in the browser database (IndexedDB). Desktop and browser each keep their own sessions. |
@@ -100,7 +101,7 @@ There are three parts:
 
 1. **Kite web app** (runs in the user's desktop app or browser). It renders all screens, captures audio, runs speech-to-text locally, stores sessions locally, and shows streamed answers.
 2. **Kite server** (Vercel functions in the same Next.js project). It handles sign-in (accounts in a small Neon Postgres database) and `/api/answer` + `/api/notes`, which add the system prompt and the Claude key, call Claude and stream the reply back. It **stores no call data**; it only counts each user's Claude requests per day for the daily limit (ADR-0036).
-3. **Kite desktop shell** (Electron). It opens `kite.company.com` in its own window and adds native features through a small, typed bridge (`window.kiteDesktop`).
+3. **Kite desktop shell** (Electron). It opens `call.paramountintelligence.co` in its own window and adds native features through a small, typed bridge (`window.kiteDesktop`).
 
 ### 3.2 Why this shape
 
@@ -342,8 +343,8 @@ The answer style is in the session block, not in the system block (a difference 
 
 | File | Responsibility |
 |---|---|
-| `main.ts` | App start, single instance, workspace window loading the Kite URL (`*.vercel.app` now, `kite.company.com` later), tray (built Day 1; tray later) |
-| `config.ts` | The Kite URL (default production; `--kite-url` or `KITE_URL` for development) and its single allowed origin (Day 1) |
+| `main.ts` | App start, single instance, workspace window loading the Kite URL (`call.paramountintelligence.co`; 1.2.0 and older: `*.vercel.app`), tray (built Day 1; tray later) |
+| `config.ts` | The Kite URL (default production; `--kite-url` or `KITE_URL` for development) and its allowed origins: the two production addresses, or only an address given for testing (Day 1) |
 | `windows.ts` | Workspace window; the compact window (Day 5): `/compact/[id]`, frameless, always on top (`floating`), resizable, opened with `showInactive` (does not take focus, accepts typing), bounds remembered in `kite-shell.json` |
 | `media.ts` | `session.setDisplayMediaRequestHandler`: for the Kite origin only, approves `getDisplayMedia` with **system-audio loopback and no picker**; every other origin is denied. Permission handler: microphone for the Kite origin only; camera, notifications and everything else denied (Day 2). Windows verified; macOS loopback not yet verified (§13). |
 | `hotkeys.ts` | **Built Day 4.** Electron `globalShortcut` with the defaults below, forwarded to the page as `kite:hotkey` messages. The page turns them on for a live call and off at End over `kite:set-hotkeys` (accepted only from the Kite origin's main frame); they are also released on reload, when the window closes and on quit. Global shortcuts take their keys from every other app while registered (Ctrl+Backspace, Ctrl+← / → edit text everywhere), which is why they are on only during a call. A shortcut another app already holds is reported back and the live view says which one (it then works only while Kite has focus). Channel names are in `channels.ts` |

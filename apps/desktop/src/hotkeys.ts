@@ -202,18 +202,18 @@ export function createHotkeys(
  * origin), so no other page or frame can take the user's shortcuts.
  *
  * @param event         The IPC event.
- * @param allowedOrigin The Kite origin.
+ * @param allowedOrigins The Kite origins.
  * @returns True for the Kite page's main frame.
  * Called from: installHotkeys(); tests
  */
 export function isKiteSender(
   event: Pick<IpcMainInvokeEvent, 'senderFrame'>,
-  allowedOrigin: string,
+  allowedOrigins: readonly string[],
 ): boolean {
   const frame = event.senderFrame;
   if (!frame || frame.parent) return false;
   try {
-    return new URL(frame.url).origin === allowedOrigin;
+    return allowedOrigins.includes(new URL(frame.url).origin);
   } catch {
     return false;
   }
@@ -234,7 +234,7 @@ export interface HotkeyDeps {
   /** Gives the overlay the keyboard for the Chat shortcut (v1.1.0). Optional in tests. */
   showForChat?: () => void;
   /** The Kite origin. */
-  allowedOrigin: string;
+  allowedOrigins: readonly string[];
 }
 
 /**
@@ -258,19 +258,19 @@ export function installHotkeys(deps: HotkeyDeps): HotkeyController {
   const askKite = controller.enableAskKite();
   if (!askKite.registered) console.info('desktop: Ask Kite shortcut taken by another app');
   deps.ipcMain.handle(CHECK_HOTKEYS_CHANNEL, (event) => {
-    if (!isKiteSender(event, deps.allowedOrigin)) {
+    if (!isKiteSender(event, deps.allowedOrigins)) {
       throw new Error('Hotkeys can only be checked by the Kite page');
     }
     return controller.check();
   });
   deps.ipcMain.handle(CHAT_HOTKEY_CHANNEL, (event, on: unknown) => {
-    if (!isKiteSender(event, deps.allowedOrigin)) {
+    if (!isKiteSender(event, deps.allowedOrigins)) {
       throw new Error('Hotkeys can only be changed by the Kite page');
     }
     controller.setChatSend(on === true);
   });
   deps.ipcMain.handle(SET_HOTKEYS_CHANNEL, (event, on: unknown) => {
-    if (!isKiteSender(event, deps.allowedOrigin)) {
+    if (!isKiteSender(event, deps.allowedOrigins)) {
       throw new Error('Hotkeys can only be changed by the Kite page');
     }
     if (on === true) {

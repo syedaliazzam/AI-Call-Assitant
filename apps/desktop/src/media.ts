@@ -77,7 +77,7 @@ export function canCaptureSystemAudio(platform: NodeJS.Platform, osVersion: stri
  * for video (Chromium requires video for getDisplayMedia; audio alone is never granted).
  *
  * @param query         The request.
- * @param allowedOrigin The Kite origin.
+ * @param allowedOrigins The Kite origins.
  * @param platform      process.platform.
  * @param osVersion     process.getSystemVersion().
  * @returns Deny, or grant with or without system audio.
@@ -85,11 +85,11 @@ export function canCaptureSystemAudio(platform: NodeJS.Platform, osVersion: stri
  */
 export function decideDisplayMedia(
   query: DisplayMediaQuery,
-  allowedOrigin: string,
+  allowedOrigins: readonly string[],
   platform: NodeJS.Platform,
   osVersion: string,
 ): DisplayMediaDecision {
-  if (!isAllowedUrl(query.securityOrigin, allowedOrigin)) {
+  if (!isAllowedUrl(query.securityOrigin, allowedOrigins)) {
     return { kind: 'deny', reason: 'other-origin' };
   }
   if (!query.videoRequested) return { kind: 'deny', reason: 'no-video' };
@@ -112,13 +112,13 @@ export interface LoopbackDeps {
  * the video source plus system-audio loopback, with no picker; anything else is denied.
  *
  * @param session       The session the Kite window uses (the default session).
- * @param allowedOrigin The Kite origin.
+ * @param allowedOrigins The Kite origins.
  * @param deps          Electron/Node functions (tests only).
  * Called from: start() in src/main.ts, once the app is ready
  */
 export function allowSystemAudioLoopback(
   session: Session,
-  allowedOrigin: string,
+  allowedOrigins: readonly string[],
   deps: LoopbackDeps = {
     getSources: (options) => desktopCapturer.getSources(options),
     platform: process.platform,
@@ -126,7 +126,7 @@ export function allowSystemAudioLoopback(
   },
 ): void {
   session.setDisplayMediaRequestHandler((request, callback) => {
-    const decision = decideDisplayMedia(request, allowedOrigin, deps.platform, deps.osVersion);
+    const decision = decideDisplayMedia(request, allowedOrigins, deps.platform, deps.osVersion);
     if (decision.kind === 'deny') {
       console.warn('desktop: denied a screen/system-audio request', { reason: decision.reason });
       callback(null);

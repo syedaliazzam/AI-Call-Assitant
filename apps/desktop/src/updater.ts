@@ -51,7 +51,7 @@ export interface UpdaterOptions {
   /** Electron's ipcMain. */
   ipcMain: IpcMain;
   /** The Kite origin (only the Kite page may say a call is live). */
-  allowedOrigin: string;
+  allowedOrigins: readonly string[];
   /** The main window, for the restart question (null when closed). */
   getWindow: () => BrowserWindow | null;
 }
@@ -101,7 +101,7 @@ export function startUpdater(options: UpdaterOptions): void {
   };
 
   options.ipcMain.on(CALL_ACTIVE_CHANNEL, (event, active: unknown) => {
-    if (!isKiteSender(event, options.allowedOrigin)) return;
+    if (!isKiteSender(event, options.allowedOrigins)) return;
     state.callActive = active === true;
     // A call just ended: ask now if an update was waiting for it.
     maybeAsk();

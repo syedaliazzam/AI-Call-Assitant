@@ -95,7 +95,7 @@ export interface ScreenshotInstallDeps extends Omit<ScreenshotDeps, 'window'> {
   /** The Kite window at the time of the request (null when closed). */
   getWindow: () => Pick<BrowserWindow, 'getBounds'> | null;
   /** The Kite origin. */
-  allowedOrigin: string;
+  allowedOrigins: readonly string[];
   /**
    * Leaves Kite's windows out of captures until the function it returns is called (v1.1.0). Optional
    * in tests.
@@ -112,7 +112,7 @@ export interface ScreenshotInstallDeps extends Omit<ScreenshotDeps, 'window'> {
  */
 export function installScreenshot(deps: ScreenshotInstallDeps): void {
   deps.ipcMain.handle(CAPTURE_SCREENSHOT_CHANNEL, async (event) => {
-    if (!isKiteSender(event, deps.allowedOrigin)) {
+    if (!isKiteSender(event, deps.allowedOrigins)) {
       throw new Error('Screenshots can only be taken for the Kite page');
     }
     const restore = await deps.hideOwnWindows?.();

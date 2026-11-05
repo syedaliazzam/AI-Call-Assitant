@@ -1,7 +1,7 @@
 /**
  * File: apps/desktop/src/config.ts
- * Purpose: Which address the desktop shell opens (KITE_URL), the one origin it trusts
- *          (ALLOWED_ORIGIN, derived from KITE_URL only), and the app name.
+ * Purpose: Which address the desktop shell opens (KITE_URL), the origins it trusts (only the
+ *          web app's own addresses, or only the address given for testing), and the app name.
  * Used by: src/main.ts (loadConfig), tests/unit/config.test.ts
  * Depends on: nothing (pure functions; no Electron import, so it is unit-testable)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (desktop shell), §8.3
@@ -23,8 +23,17 @@ export const APP_NAME = 'Paramount AI';
  */
 export const DATA_FOLDER_NAME = 'Kite';
 
-/** The deployed Kite web app; opened when nothing overrides it. */
-export const PRODUCTION_URL = 'https://kite-call-assistant.vercel.app';
+/** The deployed web app; opened when nothing overrides it (ADR-0046). */
+export const PRODUCTION_URL = 'https://call.paramountintelligence.co';
+
+/**
+ * Every address of the deployed web app (ADR-0046). The first is the default. The second is the one
+ * 1.2.0 and older load; it stays allowed as a fallback, and nothing switches to it by itself.
+ */
+export const PRODUCTION_ORIGINS: readonly string[] = [
+  PRODUCTION_URL,
+  'https://kite-call-assistant.vercel.app',
+];
 
 /** Command-line flag that sets the URL, used by the `dev` script. */
 const URL_FLAG = '--kite-url=';
@@ -34,15 +43,15 @@ const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** The settings main.ts needs. */
 export interface DesktopConfig {
-  /** Full address to load, for example 'https://kite-call-assistant.vercel.app/'. */
+  /** Full address to load, for example 'https://call.paramountintelligence.co/'. */
   kiteUrl: string;
   /**
-   * The only origin the window may show and the only one that may get permissions,
-   * for example 'https://kite-call-assistant.vercel.app'. Sign-in happens on this same
-   * origin, so nothing else is needed. Any future payment or SSO origin must be added
-   * on purpose; until then every other origin is blocked.
+   * The only origins the window may show and the only ones that may get permissions: the web
+   * app's own addresses (PRODUCTION_ORIGINS), or only the address given for testing. Sign-in
+   * happens on the same origin as the page, so nothing else is needed. Any future payment or SSO
+   * origin must be added on purpose; until then every other origin is blocked.
    */
-  allowedOrigin: string;
+  allowedOrigins: readonly string[];
 }
 
 /** What pinnedDataFolder() needs to know. */
@@ -101,7 +110,7 @@ export function parseKiteUrl(raw: string): URL {
  *
  * @param env  Environment variables (process.env in the app; tests pass their own).
  * @param argv Command-line arguments (process.argv in the app).
- * @returns The URL to open and the allowed origin.
+ * @returns The URL to open and the allowed origins.
  * @throws Error('Invalid KITE_URL: …') when the chosen URL is not acceptable.
  * Called from: loadConfig(); tests
  */
@@ -112,13 +121,17 @@ export function resolveConfig(
   const fromFlag = argv.find((arg) => arg.startsWith(URL_FLAG))?.slice(URL_FLAG.length);
   const raw = env.KITE_URL || fromFlag || PRODUCTION_URL;
   const url = parseKiteUrl(raw);
-  return { kiteUrl: url.href, allowedOrigin: url.origin };
+  // An address given for testing allows only itself, so a test run never widens what is trusted.
+  const allowedOrigins = PRODUCTION_ORIGINS.includes(url.origin)
+    ? PRODUCTION_ORIGINS
+    : [url.origin];
+  return { kiteUrl: url.href, allowedOrigins };
 }
 
 /**
  * Reads the configuration for this run of the app.
  *
- * @returns The URL to open and the allowed origin.
+ * @returns The URL to open and the allowed origins.
  * @throws Error('Invalid KITE_URL: …') (main.ts shows it in a dialog and quits).
  * Called from: start() in src/main.ts
  */

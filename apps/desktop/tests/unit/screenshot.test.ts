@@ -168,7 +168,7 @@ describe('installScreenshot', () => {
       ...(d as object),
       ipcMain: { handle: (channel: string, fn: never) => handlers.set(channel, fn) },
       getWindow: () => ({ getBounds: () => ({ x: 0, y: 0, width: 10, height: 10 }) }),
-      allowedOrigin: ORIGIN,
+      allowedOrigins: [ORIGIN],
     } as never);
     const handle = handlers.get(CAPTURE_SCREENSHOT_CHANNEL)!;
     const ok = (await handle({ senderFrame: { url: `${ORIGIN}/live/s1`, parent: null } })) as {

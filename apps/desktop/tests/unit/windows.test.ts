@@ -285,7 +285,9 @@ describe('createCompactWindows', () => {
   it('IPC: opens and closes for the Kite page only, and refuses a bad id', async () => {
     const { compact } = setup();
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
-    installCompactWindows({ handle: (c: string, f: never) => handlers.set(c, f) }, compact, ORIGIN);
+    installCompactWindows({ handle: (c: string, f: never) => handlers.set(c, f) }, compact, [
+      ORIGIN,
+    ]);
     await handlers.get(OPEN_COMPACT_CHANNEL)!(from(`${ORIGIN}/live/s1`), 's1');
     expect(compact.window()).not.toBeNull();
     expect(() =>
@@ -321,7 +323,7 @@ describe('protection', () => {
       { handle: (c: string, f: never) => handlers.set(c, f) },
       protection,
       () => [window],
-      ORIGIN,
+      [ORIGIN],
     );
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
     expect(await handlers.get(SET_PROTECTION_CHANNEL)!(from(`${ORIGIN}/settings`), false)).toEqual({
@@ -602,7 +604,9 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
     const { compact, store } = setup();
     compact.open('s1');
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
-    installCompactWindows({ handle: (c: string, f: never) => handlers.set(c, f) }, compact, ORIGIN);
+    installCompactWindows({ handle: (c: string, f: never) => handlers.set(c, f) }, compact, [
+      ORIGIN,
+    ]);
     const page = from(`${ORIGIN}/compact/s1`);
     const evil = from('https://evil.example/');
     expect(() => handlers.get(OVERLAY_PLACE_CHANNEL)!(page, 'middle')).toThrow(/preset/);

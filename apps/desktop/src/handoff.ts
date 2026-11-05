@@ -73,7 +73,7 @@ export interface HandoffDeps {
     remove: (path: string) => Promise<void>;
   };
   /** The only origin allowed to ask. */
-  allowedOrigin: string;
+  allowedOrigins: readonly string[];
 }
 
 /**
@@ -87,7 +87,7 @@ export function installHandoff(deps: HandoffDeps): void {
   let picked: string | null = null;
 
   deps.ipcMain.handle(HANDOFF_PICK_CHANNEL, async (event): Promise<HandoffPick | null> => {
-    if (!isKiteSender(event, deps.allowedOrigin)) throw new Error('Not for this page');
+    if (!isKiteSender(event, deps.allowedOrigins)) throw new Error('Not for this page');
     const window = deps.windowFor(event);
     const options = {
       title: 'Choose the session file',
@@ -109,7 +109,7 @@ export function installHandoff(deps: HandoffDeps): void {
   });
 
   deps.ipcMain.handle(HANDOFF_DELETE_CHANNEL, async (event): Promise<boolean> => {
-    if (!isKiteSender(event, deps.allowedOrigin)) throw new Error('Not for this page');
+    if (!isKiteSender(event, deps.allowedOrigins)) throw new Error('Not for this page');
     const path = picked;
     picked = null;
     if (!path) return false;

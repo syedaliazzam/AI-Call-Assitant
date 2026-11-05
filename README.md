@@ -135,7 +135,7 @@ The desktop app is a thin Electron shell around the web app (`apps/desktop`). No
 
 ```sh
 pnpm --filter desktop dev     # opens http://localhost:3000 (start `pnpm dev` first)
-pnpm --filter desktop start   # opens production: https://kite-call-assistant.vercel.app
+pnpm --filter desktop start   # opens production: https://call.paramountintelligence.co
 ```
 
 - Set `KITE_URL` to open another address (it overrides both). Only `https://` is accepted, or `http://` on localhost.

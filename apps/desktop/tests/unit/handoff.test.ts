@@ -49,7 +49,7 @@ function setup(chosen: { canceled: boolean; filePaths: string[] }, size = 100) {
     dialog: dialog as never,
     windowFor: () => null,
     files,
-    allowedOrigin: ORIGIN,
+    allowedOrigins: [ORIGIN],
   });
   return {
     pick: (event: unknown = KITE) => handlers.get(HANDOFF_PICK_CHANNEL)!(event),

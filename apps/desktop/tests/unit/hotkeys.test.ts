@@ -108,11 +108,11 @@ describe('createHotkeys', () => {
 
 describe('isKiteSender', () => {
   it('accepts only the Kite page’s main frame', () => {
-    expect(isKiteSender(eventFrom(`${ORIGIN}/live/s1`), ORIGIN)).toBe(true);
-    expect(isKiteSender(eventFrom(`${ORIGIN}/live/s1`, true), ORIGIN)).toBe(false);
-    expect(isKiteSender(eventFrom('https://example.com/'), ORIGIN)).toBe(false);
-    expect(isKiteSender(eventFrom('not a url'), ORIGIN)).toBe(false);
-    expect(isKiteSender({ senderFrame: null } as never, ORIGIN)).toBe(false);
+    expect(isKiteSender(eventFrom(`${ORIGIN}/live/s1`), [ORIGIN])).toBe(true);
+    expect(isKiteSender(eventFrom(`${ORIGIN}/live/s1`, true), [ORIGIN])).toBe(false);
+    expect(isKiteSender(eventFrom('https://example.com/'), [ORIGIN])).toBe(false);
+    expect(isKiteSender(eventFrom('not a url'), [ORIGIN])).toBe(false);
+    expect(isKiteSender({ senderFrame: null } as never, [ORIGIN])).toBe(false);
   });
 });
 
@@ -123,7 +123,7 @@ describe('installHotkeys', () => {
     const handlers = new Map<string, (event: unknown, on: unknown) => unknown>();
     const ipcMain = { handle: vi.fn((channel: string, fn) => handlers.set(channel, fn)) };
     const sendToPage = vi.fn();
-    installHotkeys({ globalShortcut, ipcMain, sendToPage, allowedOrigin: ORIGIN });
+    installHotkeys({ globalShortcut, ipcMain, sendToPage, allowedOrigins: [ORIGIN] });
     const setHotkeys = handlers.get(SET_HOTKEYS_CHANNEL)!;
 
     const statuses = (await setHotkeys(eventFrom(`${ORIGIN}/live/s1`), true)) as {
@@ -157,7 +157,7 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
       ipcMain: { handle: vi.fn() } as never,
       sendToPage,
       overlayAction,
-      allowedOrigin: ORIGIN,
+      allowedOrigins: [ORIGIN],
     });
     controller.enable();
     press('CommandOrControl+Enter');
@@ -270,7 +270,7 @@ describe('the Ask Kite shortcut (ADR-0030)', () => {
       ipcMain: { handle: vi.fn() },
       sendToPage,
       showForAskKite,
-      allowedOrigin: ORIGIN,
+      allowedOrigins: [ORIGIN],
     });
     expect(hotkeys.enabled()).toBe(false);
     press(ASK_KITE_HOTKEY);

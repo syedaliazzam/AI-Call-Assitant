@@ -1,8 +1,8 @@
 /**
  * Tests for apps/desktop/src/config.ts:
  * KITE_URL defaults to production, the --kite-url flag and the KITE_URL variable override it
- * (variable first), ALLOWED_ORIGIN is derived from KITE_URL only, and only https (or http to
- * localhost) is accepted. Also the rename's pinned data folder (spec §2).
+ * (variable first), production allows exactly its two addresses, any other address allows only
+ * itself, and only https (or http to localhost) is accepted. Also the rename's pinned data folder (spec §2).
  */
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
@@ -11,6 +11,7 @@ import {
   DATA_FOLDER_NAME,
   parseKiteUrl,
   pinnedDataFolder,
+  PRODUCTION_ORIGINS,
   PRODUCTION_URL,
   resolveConfig,
 } from '../../src/config';
@@ -43,16 +44,19 @@ describe('the rename keeps the data folder (spec §2)', () => {
 describe('resolveConfig', () => {
   it('opens production by default', () => {
     expect(resolveConfig({}, [])).toEqual({
-      kiteUrl: 'https://kite-call-assistant.vercel.app/',
-      allowedOrigin: 'https://kite-call-assistant.vercel.app',
+      kiteUrl: 'https://call.paramountintelligence.co/',
+      allowedOrigins: [
+        'https://call.paramountintelligence.co',
+        'https://kite-call-assistant.vercel.app',
+      ],
     });
-    expect(PRODUCTION_URL).toBe('https://kite-call-assistant.vercel.app');
+    expect(PRODUCTION_URL).toBe('https://call.paramountintelligence.co');
   });
 
   it('uses the --kite-url flag (the dev script passes localhost:3000)', () => {
     expect(resolveConfig({}, ['electron', '.', '--kite-url=http://localhost:3000'])).toEqual({
       kiteUrl: 'http://localhost:3000/',
-      allowedOrigin: 'http://localhost:3000',
+      allowedOrigins: ['http://localhost:3000'],
     });
   });
 
@@ -61,13 +65,32 @@ describe('resolveConfig', () => {
       '--kite-url=http://localhost:3000',
     ]);
     expect(config.kiteUrl).toBe('https://staging.example.com/app');
-    expect(config.allowedOrigin).toBe('https://staging.example.com');
+    expect(config.allowedOrigins).toEqual(['https://staging.example.com']);
   });
 
   it('ignores an empty KITE_URL', () => {
-    expect(resolveConfig({ KITE_URL: '' }, []).allowedOrigin).toBe(
+    expect(resolveConfig({ KITE_URL: '' }, []).allowedOrigins).toEqual(PRODUCTION_ORIGINS);
+  });
+
+  it('allows exactly the two production addresses, the new one first (ADR-0046)', () => {
+    expect(PRODUCTION_ORIGINS).toEqual([
+      'https://call.paramountintelligence.co',
       'https://kite-call-assistant.vercel.app',
+    ]);
+  });
+
+  it('allows both production addresses when opened on the old one', () => {
+    const config = resolveConfig({ KITE_URL: 'https://kite-call-assistant.vercel.app/' }, []);
+    expect(config.kiteUrl).toBe('https://kite-call-assistant.vercel.app/');
+    expect(config.allowedOrigins).toEqual(PRODUCTION_ORIGINS);
+  });
+
+  it('never widens the list for a look-alike of a production address', () => {
+    const config = resolveConfig(
+      { KITE_URL: 'https://call.paramountintelligence.co.evil.com/' },
+      [],
     );
+    expect(config.allowedOrigins).toEqual(['https://call.paramountintelligence.co.evil.com']);
   });
 });
 
