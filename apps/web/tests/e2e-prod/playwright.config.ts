@@ -1,7 +1,7 @@
 /**
  * File: apps/web/tests/e2e-prod/playwright.config.ts
  * Purpose: Playwright settings for the manual production end-to-end suites (chrome.spec.ts,
- *          desktop.spec.ts). They run against https://kite-call-assistant.vercel.app as the
+ *          desktop.spec.ts). They run against https://call.paramountintelligence.co as the
  *          dedicated test account, so they are run by a developer by hand and never in CI.
  *          Usage: pnpm --filter web test:e2e-prod   (the desktop suite builds the shell first)
  * Used by: the "test:e2e-prod" script in apps/web/package.json
