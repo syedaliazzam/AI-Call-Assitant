@@ -12,7 +12,7 @@
  * Used by: src/features/live/LivePage.tsx; tests/integration/harness/live.tsx
  * Depends on: src/ui (Badge, BrandLockup, icons), React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session); ADR-0035
- * Theme: docs/design/kite-ui-theme.md §6 (live view: dark); tokens from src/ui/theme.css
+ * Theme: docs/design/kite-ui-theme.md §6 (live view: dark); tokens from src/ui/tokens/theme.css
  *
  * The breakpoint is the live view's own width (a container query), not the window's: beside
  * the app sidebar a 900 px window leaves about 660 px, too narrow for two useful columns.
@@ -110,7 +110,7 @@ export function LiveCallLayout({ topBarSlot, ...props }: LiveCallLayoutProps) {
       {/* Stacked (answers first) below a 900 px wide view; side by side from 900 px, with the
           page then exactly one screen high so each column scrolls on its own. */}
       <div
-        className={`grid flex-1 gap-4 p-4 sm:p-6 @min-[900px]:h-[calc(100vh-7.5rem)] @min-[900px]:flex-none @min-[900px]:grid-rows-1 ${collapsed ? '' : '@min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]'}`}
+        className={`grid flex-1 grid-cols-[minmax(0,1fr)] gap-4 p-4 sm:p-6 @min-[900px]:h-[calc(100vh-7.5rem)] @min-[900px]:flex-none @min-[900px]:grid-rows-1 ${collapsed ? '' : '@min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]'}`}
       >
         {/* Plain columns: the transcript and answers panel name their own regions. */}
         <div className="order-2 flex min-h-[22rem] flex-col @min-[900px]:order-1 @min-[900px]:min-h-0">

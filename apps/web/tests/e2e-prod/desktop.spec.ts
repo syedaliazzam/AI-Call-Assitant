@@ -84,7 +84,7 @@ test('1. sign in on the home panel, which is empty (separate desktop data)', asy
   // its own pages, so a sign-in comes back to it rather than going on to the dashboard.
   await signIn(page, testAccount(), true, true);
   await expect(page).toHaveURL(/\/home$/);
-  await expect(page.getByRole('dialog', { name: 'Using Kite' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Using Paramount AI' })).toBeVisible();
   await page.getByRole('button', { name: 'Got it' }).click();
   await expect(page.getByText('No sessions yet')).toBeVisible();
   report('desktop sign in, home panel empty', true);
@@ -111,6 +111,9 @@ test('3. a call: the overlay, Private on every window, a real answer, the side w
     .getByRole('button', { name: 'Start' })
     .first()
     .click();
+  // v1.2.0 (spec S10): what the call will use, first.
+  await expect(page.getByRole('heading', { name: 'Start your session' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).click();
   await expect(main).toHaveURL(/\/live\//);
   const startedAt = Date.now();
   await expect(main.getByText('Speech model ready')).toBeVisible({ timeout: 480_000 });

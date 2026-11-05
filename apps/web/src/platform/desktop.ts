@@ -48,8 +48,8 @@ export const DESKTOP_DISPLAY_OPTIONS: DisplayCaptureOptions = { audio: true, vid
  */
 function noSystemAudioMessage(os: DesktopOs): string {
   return os === 'mac'
-    ? 'This version of macOS can’t share your computer’s sound with Kite (macOS 13 or later is needed). Use Kite in Chrome and share the meeting tab with its audio instead.'
-    : 'Kite couldn’t capture your computer’s sound. Use Kite in Chrome and share the meeting tab with its audio instead.';
+    ? 'This version of macOS can’t share your computer’s sound with Paramount AI (macOS 13 or later is needed). Use Paramount AI in Chrome and share the meeting tab with its audio instead.'
+    : 'Paramount AI couldn’t capture your computer’s sound. Use Paramount AI in Chrome and share the meeting tab with its audio instead.';
 }
 
 /**
@@ -62,8 +62,8 @@ function noSystemAudioMessage(os: DesktopOs): string {
  */
 function endedAudioMessage(os: DesktopOs): string {
   return os === 'mac'
-    ? 'Kite is not allowed to record system audio. Allow Kite under System Settings → Privacy & Security → Screen & System Audio Recording, then try again.'
-    : 'Kite couldn’t capture your computer’s sound. Try again; if it keeps failing, use Kite in Chrome and share the meeting tab with its audio.';
+    ? 'Paramount AI is not allowed to record system audio. Allow Paramount AI under System Settings → Privacy & Security → Screen & System Audio Recording, then try again.'
+    : 'Paramount AI couldn’t capture your computer’s sound. Try again; if it keeps failing, use Paramount AI in Chrome and share the meeting tab with its audio.';
 }
 
 /** The desktop Platform, plus details about the shell that only exist on desktop. */
@@ -171,7 +171,7 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       if (!bridge.captureScreenshot) {
         throw new CaptureError(
           'not-supported',
-          'This version of the Kite desktop app cannot take screenshots. Install the latest version.',
+          'This version of the Paramount AI desktop app cannot take screenshots. Install the latest version.',
         );
       }
       const result = await bridge.captureScreenshot();
@@ -179,10 +179,10 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       if (result.code === 'permission-denied') {
         throw new CaptureError(
           'permission-denied',
-          'Kite needs the Screen Recording permission: System Settings → Privacy & Security → Screen Recording → turn on Kite, then reopen Kite.',
+          'Paramount AI needs the Screen Recording permission: System Settings → Privacy & Security → Screen Recording → turn on Paramount AI, then reopen Paramount AI.',
         );
       }
-      throw new CaptureError('failed', 'Kite could not take a screenshot. Try again.');
+      throw new CaptureError('failed', 'Paramount AI could not take a screenshot. Try again.');
     },
 
     /**
@@ -195,7 +195,7 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       if (!bridge.openCompactView) {
         throw new CaptureError(
           'not-supported',
-          'This version of the Kite desktop app has no compact view. Install the latest version.',
+          'This version of the Paramount AI desktop app has no compact view. Install the latest version.',
         );
       }
       await bridge.openCompactView(sessionId);
@@ -294,6 +294,24 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * Lets the person pick a session file, where this shell can (1.2.0 and later).
+     *
+     * @returns The file, or null.
+     */
+    async pickHandoffFile() {
+      return (await bridge.pickHandoffFile?.()) ?? null;
+    },
+
+    /**
+     * Deletes the session file picked last, where this shell can (1.2.0 and later).
+     *
+     * @returns True when it was deleted.
+     */
+    async deleteHandoffFile() {
+      return (await bridge.deleteHandoffFile?.().catch(() => false)) ?? false;
+    },
+
+    /**
      * Whether this shell has the home panel's calls (1.1.0 and later, ADR-0041).
      *
      * @returns True when it has them.
@@ -311,8 +329,12 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
      * @param path The page's path.
      */
     openPagesWindow(path: string) {
-      if (bridge.openPagesWindow) void bridge.openPagesWindow(path).catch(() => undefined);
-      else window.location.assign(path);
+      // An older shell refuses a page it does not know (for example /help): the system browser opens it.
+      if (bridge.openPagesWindow) {
+        void bridge.openPagesWindow(path).catch(() => window.open(path, '_blank', 'noopener'));
+      } else {
+        window.location.assign(path);
+      }
     },
 
     /**
@@ -331,6 +353,34 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
      */
     overlayFitsPanels() {
       return typeof bridge.setOverlayLayout === 'function';
+    },
+
+    /**
+     * Whether this shell can make the icon (1.2.0 and later).
+     *
+     * @returns True when it can.
+     */
+    overlayIconMode() {
+      return typeof bridge.moveOverlay === 'function';
+    },
+
+    /**
+     * Moves the overlay, where this shell can.
+     *
+     * @param dx Pixels to the right.
+     * @param dy Pixels down.
+     */
+    moveOverlay(dx: number, dy: number) {
+      void bridge.moveOverlay?.(dx, dy).catch(() => undefined);
+    },
+
+    /**
+     * Holds the chat bar's screenshot shortcut, where this shell can.
+     *
+     * @param on True while the chat bar is open.
+     */
+    setChatHotkey(on: boolean) {
+      void bridge.setChatHotkey?.(on).catch(() => undefined);
     },
 
     /**

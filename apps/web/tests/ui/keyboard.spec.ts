@@ -98,10 +98,10 @@ test('sign-in → dashboard → new session with the keyboard only, every stop w
   });
 
   // A fresh browser sees the acceptable-use notice once (v1.1.0), which a key can close.
-  await expect(page.getByRole('dialog', { name: 'Using Kite' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Using Paramount AI' })).toBeVisible();
   await tabTo(page, 'Got it', missing);
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('dialog', { name: 'Using Kite' })).toHaveCount(0);
+  await expect(page.getByRole('dialog', { name: 'Using Paramount AI' })).toHaveCount(0);
 
   // A fresh browser has no sessions: the empty state's button is the way in.
   await tabTo(page, 'Start your first session', missing);

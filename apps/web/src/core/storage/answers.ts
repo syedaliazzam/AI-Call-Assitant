@@ -83,3 +83,16 @@ export async function setAnswerNote(id: string, note: string): Promise<void> {
   const changed = await getDb().answers.update(id, { note: clean });
   if (changed === 0 && !(await getDb().answers.get(id))) throw new Error('ANSWER_NOT_FOUND');
 }
+
+/**
+ * How many answers each session has. Reads only the sessionId index, so answer text is never loaded.
+ *
+ * @returns Session id → number of answers (a session with none is absent).
+ * Called from: the sessions page (Dashboard.tsx); tests
+ */
+export async function countAnswersBySession(): Promise<Map<string, number>> {
+  const keys = await getDb().answers.orderBy('sessionId').keys();
+  const counts = new Map<string, number>();
+  for (const key of keys) counts.set(String(key), (counts.get(String(key)) ?? 0) + 1);
+  return counts;
+}

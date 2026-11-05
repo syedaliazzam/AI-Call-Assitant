@@ -1,21 +1,23 @@
 /**
  * File: apps/web/src/features/session-setup/SessionWizard.tsx
- * Purpose: The Create / Edit session wizard: step 1 Details (with resume and documents from the
- *          libraries), step 2 Preferences, with Back / Next / Create (or Save). It keeps what was
- *          typed when moving between steps, checks the required fields, and saves the session with
- *          its own copy of its documents in one go.
+ * Purpose: The Create / Edit session wizard (spec S4, S5): a modal, about 760 × 600 and full screen on a
+ *          phone, with a left rail (title, stepper, View tutorial and Mock presets) and the two steps:
+ *          Details, then Preferences. It keeps what was typed when moving between steps, checks the
+ *          required fields, asks before throwing typed work away, and saves the session with its own
+ *          copy of its documents in one go.
  * Used by: app/(app)/sessions/new/page.tsx, app/(app)/sessions/[id]/edit/page.tsx
- * Depends on: src/core/storage (sessions, documents, settings, persist),
- *             src/core/documents/limits.ts, ./DetailsStep.tsx, ./PreferencesStep.tsx,
- *             ./draft.ts, ./WizardGuide.tsx, src/ui/Button.tsx
- * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F2, F3), §5 (Create session),
- *               §7.4; day-03-sessions.md Stage 3
+ * Depends on: lucide-react, src/core/storage (sessions, documents, settings, persist),
+ *             src/core/documents/limits.ts, ./DetailsStep.tsx, ./PreferencesStep.tsx, ./draft.ts,
+ *             ./MockPresetsDialog.tsx, src/ui (Button, Dialog, Modal, Stepper, Tooltip)
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S4, S5), §5;
+ *               docs/architecture/kite-architecture-v3.1.md §2 (F2, F3), §5, §7.4
  *
  * Session details and document text are the user's content: kept on this device and never
  * logged.
  */
 'use client';
 
+import { Bot, Video } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { fitsInSession } from '@/core/documents/limits';
@@ -29,8 +31,11 @@ import {
 import { getSessionDefaults } from '@/core/storage/settings';
 import { SESSION_TYPES, type LibraryItem, type SessionType } from '@/core/storage/types';
 import { Button } from '@/ui/Button';
-import { Eyebrow } from '@/ui/Eyebrow';
-import { LinkButton } from '@/ui/LinkButton';
+import { SOON_TOOLTIP } from '@/ui/Chip';
+import { Dialog } from '@/ui/Dialog';
+import { Modal } from '@/ui/Modal';
+import { Stepper } from '@/ui/Stepper';
+import { Tooltip } from '@/ui/Tooltip';
 import { DetailsStep } from './DetailsStep';
 import {
   draftChars,
@@ -43,8 +48,9 @@ import {
   withoutDocument,
   type SessionDraft,
 } from './draft';
+import { createSessionLabel } from './labels';
+import { MockPresetsDialog } from './MockPresetsDialog';
 import { PreferencesStep } from './PreferencesStep';
-import { WizardGuide } from './WizardGuide';
 
 /** Props for SessionWizard. */
 export interface SessionWizardProps {
@@ -52,18 +58,21 @@ export interface SessionWizardProps {
   mode: 'create' | 'edit';
   /** The session to edit (edit mode only). */
   sessionId?: string;
-  /** The type to start with, from the dashboard's menu (create mode; anything unknown is ignored). */
+  /** The type to start with, from the split button's menu (create mode; anything unknown is ignored). */
   initialType?: string;
 }
 
 /** Where loading the wizard's starting point stands. */
 type LoadState = 'loading' | 'ready' | 'not-found' | 'failed';
 
+/** The two steps' names, in order. */
+const STEPS = ['Details', 'Preferences'] as const;
+
 /**
  * The Create / Edit session wizard.
  *
  * @param props See SessionWizardProps.
- * @returns The wizard, or a loading / not-found message.
+ * @returns The modal.
  * Rendered by: app/(app)/sessions/new/page.tsx, app/(app)/sessions/[id]/edit/page.tsx
  */
 export function SessionWizard({ mode, sessionId, initialType }: SessionWizardProps) {
@@ -72,11 +81,15 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
   const [draft, setDraft] = useState<SessionDraft | null>(null);
   // The latest draft, for code that runs after an await (state updates are not visible there).
   const draftRef = useRef<SessionDraft | null>(null);
+  // What the draft started as, to tell whether anything was typed.
+  const startRef = useRef('');
   const [step, setStep] = useState<1 | 2>(1);
   const [showErrors, setShowErrors] = useState(false);
   const [readingCount, setReadingCount] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const [presets, setPresets] = useState(false);
 
   // Load the starting point: the defaults from Settings (create) or the stored session (edit).
   useEffect(() => {
@@ -92,6 +105,7 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
       .then((initial) => {
         if (cancelled) return;
         draftRef.current = initial;
+        startRef.current = JSON.stringify(initial);
         setDraft(initial);
         setLoad(initial ? 'ready' : 'not-found');
       })
@@ -156,7 +170,21 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
     setStep(2);
   }
 
-  /** Saves the session (and its documents), then returns to the dashboard. */
+  /** Leaves the wizard for the sessions page. */
+  function leave() {
+    router.push('/');
+  }
+
+  /** Closes the wizard, asking first when something was typed. */
+  function close() {
+    if (draftRef.current && JSON.stringify(draftRef.current) !== startRef.current) {
+      setConfirmingClose(true);
+      return;
+    }
+    leave();
+  }
+
+  /** Saves the session (and its documents), then returns to the sessions page. */
   async function save() {
     const current = draftRef.current;
     if (!current) return;
@@ -170,7 +198,7 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
     try {
       if (mode === 'create') {
         await createSessionWithDocuments(draftToInput(current), newDocuments(current));
-        // Ask the browser to keep Kite's data; the answer only affects eviction under disk
+        // Ask the browser to keep the app's data; the answer only affects eviction under disk
         // pressure, so it is not waited for or shown.
         void requestPersistentStorage();
       } else {
@@ -181,7 +209,7 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
           current.removedIds,
         );
       }
-      router.push('/');
+      leave();
     } catch {
       setSaveError(
         'The session could not be saved on this computer. Check that the disk is not full, then try again.',
@@ -194,96 +222,127 @@ export function SessionWizard({ mode, sessionId, initialType }: SessionWizardPro
 
   if (load !== 'ready' || !draft) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-10 sm:px-8">
-        <h1 className="text-[24px] font-semibold text-ui-heading">{title}</h1>
-        <p className="mt-4 text-[15px] text-ui-muted">
-          {load === 'loading' && 'Loading…'}
-          {load === 'not-found' &&
-            'This session does not exist on this computer. Sessions are saved per browser and per desktop app, so a session created elsewhere does not appear here.'}
-          {load === 'failed' &&
-            'Kite could not open its local storage. Reload the page to try again.'}
-        </p>
-        {load !== 'loading' && (
-          <LinkButton href="/" className="mt-4">
-            Back to Call Sessions
-          </LinkButton>
-        )}
-      </div>
+      <Modal
+        open
+        onClose={leave}
+        title={title}
+        footer={
+          load !== 'loading' && (
+            <Button size="lg" onClick={leave}>
+              Back to Call Sessions
+            </Button>
+          )
+        }
+      >
+        {load === 'loading' && 'Loading…'}
+        {load === 'not-found' &&
+          'This session does not exist on this computer. Sessions are saved per browser and per desktop app, so a session created elsewhere does not appear here.'}
+        {load === 'failed' &&
+          'Paramount AI could not open its local storage. Reload the page to try again.'}
+      </Modal>
     );
   }
 
   const errors = showErrors ? validateDetails(draft) : {};
   return (
-    <div className="flex min-h-full flex-col">
-      {/* White header band with the step, then the form on the grey band. */}
-      <header className="border-b border-ui-border bg-ui-surface px-4 py-8 sm:px-8">
-        <div className="mx-auto max-w-3xl">
-          <Eyebrow>
-            Step {step} of 2 · {step === 1 ? 'Details' : 'Preferences'}
-          </Eyebrow>
-          <h1 className="text-[24px] font-semibold text-ui-heading">{title}</h1>
-          {/* Two segments: the current and done steps are filled in. */}
-          <div aria-hidden="true" className="mt-4 grid max-w-xs grid-cols-2 gap-1">
-            <span className="h-1 rounded-full bg-ui-primary" />
-            <span className={`h-1 rounded-full ${step === 2 ? 'bg-ui-primary' : 'bg-ui-border'}`} />
-          </div>
-        </div>
-      </header>
-
-      <div className="flex-1 bg-ui-band px-4 py-8 sm:px-8">
-        <div
-          className={
-            step === 1 && mode === 'create'
-              ? 'mx-auto grid max-w-5xl items-start gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]'
-              : 'mx-auto max-w-3xl'
-          }
-        >
-          {step === 1 && mode === 'create' && <WizardGuide onPreset={change} />}
-          <div className="min-w-0">
-            <div className="rounded-card border border-ui-border bg-ui-surface p-6 shadow-card">
-              {step === 1 ? (
-                <DetailsStep
-                  draft={draft}
-                  errors={errors}
-                  onChange={change}
-                  onPick={pick}
-                  onRemoveDocument={removeDocument}
-                  onBusy={(delta) => setReadingCount((n) => n + delta)}
-                />
-              ) : (
-                <PreferencesStep draft={draft} onChange={change} />
-              )}
+    <>
+      <Modal
+        open
+        onClose={close}
+        title={title}
+        subtitle="Add the call details and choose what the AI can use."
+        width={760}
+        height={600}
+        fullScreenOnPhone
+        closeOnBackdrop={false}
+        rail={
+          <>
+            <Stepper steps={STEPS} current={step - 1} />
+            <div className="mt-auto flex flex-col gap-2 max-sm:hidden">
+              <Tooltip content={SOON_TOOLTIP} className="w-full">
+                <Button variant="secondary" disabled className="w-full">
+                  <Video aria-hidden="true" size={16} />
+                  View tutorial
+                </Button>
+              </Tooltip>
+              <Button variant="secondary" className="w-full" onClick={() => setPresets(true)}>
+                <Bot aria-hidden="true" size={16} />
+                Mock presets
+              </Button>
             </div>
-
+          </>
+        }
+        footer={
+          <>
             {saveError && (
-              <p role="alert" className="mt-4 text-[13px] text-ui-danger">
+              <p role="alert" className="mr-auto self-center text-helper text-ui-danger">
                 {saveError}
               </p>
             )}
-
-            <footer className="mt-6 flex items-center justify-between">
-              {step === 1 ? (
-                <LinkButton href="/" variant="ghost">
+            {step === 1 ? (
+              <>
+                <Button variant="ghost" size="lg" onClick={close}>
                   Cancel
-                </LinkButton>
-              ) : (
-                <Button variant="ghost" onClick={() => setStep(1)} disabled={saving}>
-                  Back
                 </Button>
-              )}
-              {step === 1 ? (
-                <Button onClick={next} disabled={readingCount > 0}>
+                <Button size="lg" onClick={next} disabled={readingCount > 0}>
                   Next
                 </Button>
-              ) : (
-                <Button onClick={() => void save()} disabled={saving}>
-                  {saving ? 'Saving…' : mode === 'create' ? 'Create session' : 'Save changes'}
+              </>
+            ) : (
+              <>
+                <Button variant="ghost" size="lg" onClick={() => setStep(1)} disabled={saving}>
+                  Back
                 </Button>
-              )}
-            </footer>
-          </div>
-        </div>
-      </div>
-    </div>
+                <Button size="lg" onClick={() => void save()} disabled={saving}>
+                  {saving
+                    ? 'Saving…'
+                    : mode === 'create'
+                      ? createSessionLabel(draft.type)
+                      : 'Save changes'}
+                </Button>
+              </>
+            )}
+          </>
+        }
+      >
+        {step === 1 ? (
+          <DetailsStep
+            draft={draft}
+            errors={errors}
+            onChange={change}
+            onPick={pick}
+            onRemoveDocument={removeDocument}
+            onBusy={(delta) => setReadingCount((n) => n + delta)}
+          />
+        ) : (
+          <PreferencesStep draft={draft} onChange={change} />
+        )}
+        <MockPresetsDialog
+          open={presets}
+          onClose={() => setPresets(false)}
+          onPreset={(changes) => {
+            change(changes);
+            setStep(1);
+          }}
+        />
+        <Dialog
+          open={confirmingClose}
+          onClose={() => setConfirmingClose(false)}
+          title="Discard this session?"
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setConfirmingClose(false)}>
+                Keep editing
+              </Button>
+              <Button variant="danger" onClick={leave}>
+                Discard
+              </Button>
+            </>
+          }
+        >
+          What you typed here will be lost.
+        </Dialog>
+      </Modal>
+    </>
   );
 }

@@ -1,11 +1,12 @@
 /**
  * File: apps/web/app/(app)/sessions/[id]/edit/page.tsx
- * Purpose: The /sessions/[id]/edit route: the Edit session wizard. Kept thin: the session is
+ * Purpose: The /sessions/[id]/edit route: the Edit session wizard, over the sessions page. Kept thin: the session is
  *          loaded in the browser (it lives in IndexedDB on this computer, not on the server).
  * Used by: Next.js App Router (a session card's "Edit" link)
- * Depends on: src/features/session-setup/SessionWizard.tsx
+ * Depends on: src/features/dashboard/Dashboard.tsx, src/features/session-setup/SessionWizard.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §8.1, §9.2 (thin routes)
  */
+import { Dashboard } from '@/features/dashboard/Dashboard';
 import { SessionWizard } from '@/features/session-setup/SessionWizard';
 
 /** Props Next.js passes to this page (route parameters arrive as a promise in Next.js 16). */
@@ -25,5 +26,10 @@ interface EditSessionRouteProps {
  */
 export default async function EditSessionPage({ params }: EditSessionRouteProps) {
   const { id } = await params;
-  return <SessionWizard mode="edit" sessionId={id} />;
+  return (
+    <>
+      <Dashboard />
+      <SessionWizard mode="edit" sessionId={id} />
+    </>
+  );
 }

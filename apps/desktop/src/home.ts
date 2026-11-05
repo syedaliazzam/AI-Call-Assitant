@@ -13,6 +13,7 @@
  * It stays in the taskbar and Alt+Tab like any window (never hidden: CLAUDE.md).
  */
 import type { BrowserWindow, BrowserWindowConstructorOptions, Rectangle, Screen } from 'electron';
+import { APP_NAME } from './config';
 import { secureWebPreferences } from './security';
 import type { Bounds, ShellStore } from './store';
 
@@ -111,7 +112,7 @@ export function homeWindowOptions(
     ...bounds,
     minWidth: HOME_MIN_SIZE.width,
     minHeight: HOME_MIN_SIZE.height,
-    title: 'Kite',
+    title: APP_NAME,
     frame: false,
     resizable: true,
     maximizable: false,
@@ -147,6 +148,11 @@ export interface HomeDeps {
 export interface HomeWindow {
   /** Opens the panel if needed and brings it forward with focus. */
   open(): void;
+  /**
+   * Opens the panel on a session's start card (a paramountai:// link, v1.2.0). It only shows a card:
+   * nothing starts until the person presses on. If they must sign in first, the card follows.
+   */
+  openSession(sessionId: string): void;
   /** Shows the panel again without taking focus (a call ended, behind the call's review). */
   showInactive(): void;
   /** Hides the panel (a call started: it stays out of the way until the call ends). */
@@ -166,6 +172,20 @@ export function createHomeWindow(deps: HomeDeps): HomeWindow {
   let current: BrowserWindow | null = null;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   const homeUrl = new URL('/home', deps.kiteUrl).toString();
+  // A session a link asked for, until the panel has arrived at it (signing in can come first).
+  let pendingSession: string | null = null;
+
+  /**
+   * The address of a session's start card.
+   *
+   * @param sessionId The session's id, already checked to be a UUID.
+   * @returns The address.
+   */
+  const sessionUrl = (sessionId: string) => {
+    const url = new URL(homeUrl);
+    url.searchParams.set('session', sessionId);
+    return url.toString();
+  };
 
   /**
    * Keeps the panel on its own pages, and reports a web app that has no /home.
@@ -175,21 +195,32 @@ export function createHomeWindow(deps: HomeDeps): HomeWindow {
    * @param status The HTTP status (absent for a navigation inside the page).
    */
   const onArrived = (window: BrowserWindow, url: string, status?: number) => {
-    const { pathname } = new URL(url);
+    const { pathname, searchParams } = new URL(url);
     if (pathname === '/home' && status === 404) {
       deps.onUnavailable();
       window.destroy();
       return;
     }
-    if (!homeAllowsPath(pathname)) void window.loadURL(homeUrl);
+    if (!homeAllowsPath(pathname)) {
+      void window.loadURL(pendingSession ? sessionUrl(pendingSession) : homeUrl);
+      return;
+    }
+    if (pathname === '/home') {
+      if (pendingSession && searchParams.get('session') !== pendingSession) {
+        void window.loadURL(sessionUrl(pendingSession));
+      } else {
+        pendingSession = null;
+      }
+    }
   };
 
   /**
    * Creates the window.
    *
+   * @param start The page to open.
    * @returns The window.
    */
-  const create = (): BrowserWindow => {
+  const create = (start: string = homeUrl): BrowserWindow => {
     const settings = deps.store.read();
     const window = deps.createWindow(
       homeWindowOptions(
@@ -221,7 +252,7 @@ export function createHomeWindow(deps: HomeDeps): HomeWindow {
     window.webContents.on('did-navigate-in-page', (_event, url, isMainFrame) => {
       if (isMainFrame) onArrived(window, url);
     });
-    void window.loadURL(homeUrl);
+    void window.loadURL(start);
     return window;
   };
 
@@ -231,6 +262,17 @@ export function createHomeWindow(deps: HomeDeps): HomeWindow {
         create();
         return;
       }
+      if (current.isMinimized()) current.restore();
+      current.show();
+      current.focus();
+    },
+    openSession(sessionId) {
+      pendingSession = sessionId;
+      if (!current || current.isDestroyed()) {
+        create(sessionUrl(sessionId));
+        return;
+      }
+      void current.loadURL(sessionUrl(sessionId));
       if (current.isMinimized()) current.restore();
       current.show();
       current.focus();

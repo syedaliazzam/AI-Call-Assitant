@@ -1,7 +1,7 @@
 /**
  * Smoke test for the Electron shell (apps/desktop/src/main.ts, preload.ts, security.ts).
  * Launches the built app (dist/), or the installed app when KITE_INSTALLED_EXE names its
- * Kite.exe (Day 6 Stage 3), always on a temporary profile, with KITE_URL pointing at a local test
+ * Paramount AI.exe (Day 6 Stage 3), always on a temporary profile, with KITE_URL pointing at a local test
  * page and checks: the home panel opens at 400×560 on /home and keeps to its own pages (v1.1.0);
  * it opens the main window at 1280×820; a web app with no /home opens the main window instead;
  * Private covers every window type, by a real screen capture on Windows (ADR-0042); the overlay is
@@ -97,7 +97,7 @@ function launch(origin: string): Promise<ElectronApplication> {
   // Electron apps (VS Code extensions, for example) set it for their child processes, so it
   // must not be passed on to the app under test.
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
-  // KITE_INSTALLED_EXE (Day 6 Stage 3): test the installed app (Kite.exe from the installer)
+  // KITE_INSTALLED_EXE (Day 6 Stage 3): test the installed app (Paramount AI.exe from the installer)
   // instead of the development build, with the same checks.
   const installed = process.env.KITE_INSTALLED_EXE;
   const profile = `--user-data-dir=${mkdtempSync(path.join(tmpdir(), 'kite-smoke-'))}`;
@@ -238,6 +238,12 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.windowControl,
       typeof window.kiteDesktop?.setOverlayLayout,
       typeof window.kiteDesktop?.onSnapZone,
+      // v1.2.0 (spec S9): the session file.
+      typeof window.kiteDesktop?.pickHandoffFile,
+      typeof window.kiteDesktop?.deleteHandoffFile,
+      // v1.2.0 (spec S13, S14): the icon and the chat bar's shortcut.
+      typeof window.kiteDesktop?.moveOverlay,
+      typeof window.kiteDesktop?.setChatHotkey,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -255,17 +261,24 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'captureScreenshot',
     'checkHotkeys',
     'closeCompactView',
+    // v1.2.0 (spec S9): the session file; the page never names a path.
+    'deleteHandoffFile',
     'getOverlayPreset',
     'getShareProtection',
     'minimizeMainWindow',
+    // v1.2.0 (spec S13): dragging the icon.
+    'moveOverlay',
     'onHotkey',
     'onSnapZone',
     'openCompactView',
     'openPagesWindow',
     'os',
+    'pickHandoffFile',
     'placeOverlay',
     'resizeOverlay',
     'setCallActive',
+    // v1.2.0 (spec S14): the chat bar's shortcut.
+    'setChatHotkey',
     'setHotkeysEnabled',
     'setOverlayCollapsed',
     'setOverlayLayout',
@@ -276,7 +289,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'version',
     'windowControl',
   ]);
-  expect(bridge.methods).toEqual(Array(21).fill('function'));
+  expect(bridge.methods).toEqual(Array(25).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
@@ -498,7 +511,11 @@ test('Private covers every window: panel, main, overlay and side window, each by
       });
     const restore = await app.evaluate(async ({ BrowserWindow }) => {
       const windows = BrowserWindow.getAllWindows();
-      const before = windows.map((window) => ({ id: window.id, bounds: window.getBounds() }));
+      const before = windows.map((window) => ({
+        id: window.id,
+        bounds: window.getBounds(),
+        onTop: window.isAlwaysOnTop(),
+      }));
       const place = [
         { x: 20, y: 20, width: 300, height: 200 },
         { x: 340, y: 20, width: 320, height: 200 },
@@ -511,6 +528,9 @@ test('Private covers every window: panel, main, overlay and side window, each by
           if (window.isMinimized()) window.restore();
           window.showInactive();
           window.setBounds(place[index]!);
+          // In front of whatever else is open on the machine: otherwise a covered window reads as
+          // hidden, and "shown" fails because of the developer's editor, not the app.
+          window.setAlwaysOnTop(true, 'screen-saver');
           await window.webContents.executeJavaScript(
             "document.documentElement.style.background = '#ff00ff'; document.body.style.background = '#ff00ff'; document.body.innerHTML = '';",
           );
@@ -527,7 +547,11 @@ test('Private covers every window: panel, main, overlay and side window, each by
     for (const share of Object.values(hidden)) expect(share).toBe(0);
     for (const share of Object.values(shown)) expect(share).toBeGreaterThan(0.9);
     await app.evaluate(({ BrowserWindow }, list) => {
-      for (const { id, bounds } of list) BrowserWindow.fromId(id)?.setBounds(bounds);
+      for (const { id, bounds, onTop } of list) {
+        const window = BrowserWindow.fromId(id);
+        window?.setAlwaysOnTop(onTop, 'floating');
+        window?.setBounds(bounds);
+      }
     }, restore);
   }
   await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));
@@ -682,9 +706,54 @@ test('overlay: opacity, collapse, minimises the main window and brings it back (
   await page.evaluate(() => window.kiteDesktop!.setOverlayCollapsed!(false));
   await expect.poll(async () => (await read()).height).toBe(open);
 
-  // Conflicts can be checked with no call on, and nothing stays registered.
+  // v1.2.0 (spec S13): the icon really is 48 px on this system, moves, and comes back.
+  /**
+   * The overlay's bounds.
+   *
+   * @returns Its bounds.
+   */
+  const overlayBounds = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((w) => w.isAlwaysOnTop())!
+        .getBounds(),
+    );
+  const before = await overlayBounds();
+  await page.evaluate(() => window.kiteDesktop!.setOverlayMode!('icon'));
+  await expect.poll(async () => (await overlayBounds()).width).toBe(48);
+  expect((await overlayBounds()).height).toBe(48);
+  const icon = await overlayBounds();
+  await page.evaluate(() => window.kiteDesktop!.moveOverlay!(30, 40));
+  await expect
+    .poll(overlayBounds)
+    .toEqual({ x: icon.x + 30, y: icon.y + 40, width: 48, height: 48 });
+  await page.evaluate(() => window.kiteDesktop!.setOverlayMode!('full'));
+  await expect.poll(async () => (await overlayBounds()).width).toBe(before.width);
+  expect((await overlayBounds()).height).toBe(before.height);
+  // A bad move is refused by the shell.
+  await expect(
+    page.evaluate(() => window.kiteDesktop!.moveOverlay!(Number.NaN, 0)),
+  ).rejects.toThrow();
+
+  // v1.2.0 (spec S15): both panels widen it about its centre, and it goes back.
+  const place = await overlayBounds();
+  await page.evaluate(() =>
+    window.kiteDesktop!.setOverlayLayout!({ transcript: true, answer: true, popupHeight: 0 }),
+  );
+  await expect.poll(async () => (await overlayBounds()).width).toBeGreaterThan(place.width);
+  await page.evaluate(() =>
+    window.kiteDesktop!.setOverlayLayout!({ transcript: false, answer: false, popupHeight: 0 }),
+  );
+  await expect.poll(async () => (await overlayBounds()).width).toBe(place.width);
+  expect((await overlayBounds()).x).toBe(place.x);
+
+  // Conflicts can be checked with no call on, and nothing stays registered. The chat bar's shortcut
+  // (spec S14) is among them, so Settings can report a clash.
   const statuses = await page.evaluate(() => window.kiteDesktop!.checkHotkeys!());
   expect(statuses.length).toBeGreaterThan(5);
+  expect(statuses.map((status) => status.action)).toContain('screenshot-send');
+  // Only during a call: asking outside one takes nothing from other apps.
+  await page.evaluate(() => window.kiteDesktop!.setChatHotkey!(true));
 
   // A call starting in the overlay minimises the main window; closing the overlay restores it.
   await page.evaluate(() => window.kiteDesktop!.minimizeMainWindow!());

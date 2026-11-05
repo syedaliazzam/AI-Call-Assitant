@@ -5,7 +5,7 @@
  * Used by: app/login/page.tsx, app/change-password/page.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Sign in, Change password)
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
+ * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/tokens/theme.css)
  */
 import type { ReactNode } from 'react';
 import { BrandLockup } from './BrandLockup';
@@ -35,7 +35,7 @@ export function AuthCard({ title, subtitle, children, footer }: AuthCardProps) {
     // stacked on narrow screens, the hero first and shorter.
     <main className="grid min-h-screen bg-ui-band md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
       <section
-        aria-label="About Kite"
+        aria-label="About Paramount AI"
         className="k-dark flex flex-col justify-between gap-10 bg-ui-bg px-6 py-8 text-ui-text sm:px-10 md:py-12"
       >
         <BrandLockup tone="dark" size="lg" />
@@ -45,8 +45,8 @@ export function AuthCard({ title, subtitle, children, footer }: AuthCardProps) {
             Answers while you talk.
           </p>
           <p className="mt-4 text-[15px] leading-relaxed text-ui-text">
-            Kite listens to both sides of your call and writes a short answer you can say right
-            away, from your own session details and documents.
+            Paramount AI listens to both sides of your call and writes a short answer you can say
+            right away, from your own session details and documents.
           </p>
         </div>
         <p className="hidden text-[13px] text-ui-muted md:block">

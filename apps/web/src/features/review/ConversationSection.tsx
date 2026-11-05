@@ -29,6 +29,7 @@ import {
   transcriptPdf,
   transcriptText,
 } from '@/core/review/conversation';
+import { downloadFile } from '@/core/review/downloadTranscript';
 import { rateAnswer, reportAnswer } from '@/core/storage/answers';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
 import { clearTranscript } from '@/core/storage/utterances';
@@ -83,25 +84,6 @@ export interface ConversationSectionProps {
 }
 
 /**
- * Hands a file to the browser as a download.
- *
- * @param name The file's name.
- * @param type Its media type.
- * @param data Its contents.
- * @returns Nothing.
- * Called from: ConversationSection
- */
-function download(name: string, type: string, data: BlobPart) {
-  const url = URL.createObjectURL(new Blob([data], { type }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  link.click();
-  // The download has started; the address is no longer needed.
-  URL.revokeObjectURL(url);
-}
-
-/**
  * One of Kite's answers in the conversation.
  *
  * @param props.answer      The answer.
@@ -150,7 +132,7 @@ function AnswerCard({
       className="my-1 border border-ui-border rounded-card bg-ui-surface shadow-card p-3 text-[13px]"
     >
       <p className="text-[13px] text-ui-muted">
-        Kite · {MODE_LABELS[answer.mode]} · Question:{' '}
+        Paramount AI · {MODE_LABELS[answer.mode]} · Question:{' '}
         <span className="text-ui-text" title={answer.question || undefined}>
           {cardQuestion(answer.question, answer.cleanQuestion, terms, 'the latest from Them')}
         </span>
@@ -239,7 +221,7 @@ function AnswerChip({
         onClick={() => setOpen((value) => !value)}
         className="inline-flex w-fit items-center gap-1 self-center rounded-full border border-ui-border bg-ui-band px-3 py-1 text-[13px] font-medium text-ui-text hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
       >
-        Kite answered
+        Paramount AI answered
         <span aria-hidden="true" className={open ? '' : '-rotate-90'}>
           <ChevronDownIcon />
         </span>
@@ -321,7 +303,7 @@ export function ConversationSection({
   /** Downloads the conversation as text. */
   function downloadText() {
     setNotice(null);
-    download(
+    downloadFile(
       transcriptFileName(session, 'txt'),
       'text/plain;charset=utf-8',
       transcriptText(session, items, terms),
@@ -331,7 +313,7 @@ export function ConversationSection({
   /** Downloads the conversation as a PDF, saying so if some letters cannot be shown in it. */
   function downloadPdf() {
     const { bytes, lossy } = transcriptPdf(session, items, terms);
-    download(transcriptFileName(session, 'pdf'), 'application/pdf', bytes.slice());
+    downloadFile(transcriptFileName(session, 'pdf'), 'application/pdf', bytes.slice());
     setNotice(
       lossy
         ? 'Some letters cannot be shown in the PDF and appear as "?". TXT keeps them all.'
@@ -389,7 +371,7 @@ export function ConversationSection({
         <p className="mt-2 text-[13px] text-ui-muted">
           {session.saveTranscript
             ? 'No transcript lines are saved for this session.'
-            : 'The transcript was not saved for this session ("Save transcript" was off). Only the answers and the notes were kept.'}
+            : 'Transcript not saved. "Save transcript" was off for this session, so only the answers and the notes were kept.'}
         </p>
       )}
       {items.length > 0 && (
@@ -434,7 +416,9 @@ export function ConversationSection({
             return entry.kind === 'answer' ? [card(entry.answer)] : [];
           })}
           {!shown.some((entry) => entry.kind === 'answer') && (
-            <li className="text-[13px] text-ui-muted">Kite gave no answers in this session.</li>
+            <li className="text-[13px] text-ui-muted">
+              Paramount AI gave no answers in this session.
+            </li>
           )}
         </ol>
       )}
@@ -455,8 +439,8 @@ export function ConversationSection({
         }
       >
         <p>
-          The saved transcript of this session is deleted from this computer. Kite&rsquo;s answers
-          and the notes stay. This cannot be undone.
+          The saved transcript of this session is deleted from this computer. Paramount AI&rsquo;s
+          answers and the notes stay. This cannot be undone.
         </p>
       </Dialog>
     </section>

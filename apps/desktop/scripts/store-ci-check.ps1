@@ -6,9 +6,9 @@
 #          2. builds the package unsigned (as for the Store), signs it with the Windows SDK's
 #             signtool for this test, trusts the certificate on the runner, installs it;
 #          3. starts Kite through its Store app id (package identity, as the Store starts it) and
-#             checks that Kite.exe runs from the package and stays up;
+#             checks that Paramount AI.exe runs from the package and stays up;
 #          4. writes KITE_INSTALLED_EXE for the next step, which runs the desktop smoke test
-#             against the installed package's Kite.exe.
+#             against the installed package's Paramount AI.exe.
 # Used by: .github/workflows/ci.yml (job desktop-store, manual runs only)
 # Architecture: docs/architecture/kite-architecture-v3.1.md §10 (installation); ADR-0028
 #
@@ -56,8 +56,8 @@ Write-Host "Started by app id: $($running.Count) Kite processes from the package
 $running | Stop-Process -Force
 Start-Sleep -Seconds 3
 
-# 4. The smoke test runs next, against the packaged Kite.exe.
-$exe = Join-Path $package.InstallLocation 'app\Kite.exe'
-if (-not (Test-Path $exe)) { $exe = Join-Path $package.InstallLocation 'Kite.exe' }
+# 4. The smoke test runs next, against the packaged Paramount AI.exe.
+$exe = Join-Path $package.InstallLocation 'app\Paramount AI.exe'
+if (-not (Test-Path $exe)) { $exe = Join-Path $package.InstallLocation 'Paramount AI.exe' }
 "KITE_INSTALLED_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 Write-Host "Smoke test target: $exe"

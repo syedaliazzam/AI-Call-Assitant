@@ -89,8 +89,8 @@ export function TranscriptionSetting() {
   if (!engine) {
     return (
       <p className="text-[13px] text-ui-muted">
-        Accurate transcription needs the Kite desktop app, version 1.0.1 or later. The browser keeps
-        the standard transcription.
+        Accurate transcription needs the Paramount AI desktop app, version 1.0.1 or later. The
+        browser keeps the standard transcription.
       </p>
     );
   }

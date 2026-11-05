@@ -314,6 +314,17 @@ describe('sessionBlock, options used by few sessions', () => {
     expect(block).not.toContain('only short bullet points');
   });
 
+  it('adds the STAR line only when it is on, so other sessions keep the same prompt and cache', () => {
+    const style = { format: 'headline+bullets', length: 'short', tone: 'simple' };
+    const off = sessionBlock({ ...base, style });
+    expect(off).not.toContain('Situation');
+    expect(sessionBlock({ ...base, style: { ...style, star: false } })).toBe(off);
+    const on = sessionBlock({ ...base, style: { ...style, star: true } });
+    expect(on).toContain('Situation, Task, Action and Result');
+    // It must not push the model to invent a result the CV does not state (ADR-0032).
+    expect(on).toContain('leave that bullet out rather than invent it');
+  });
+
   it('adds the format and language lines only when they are used', () => {
     const block = sessionBlock({
       ...base,

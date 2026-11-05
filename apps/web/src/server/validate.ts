@@ -46,7 +46,6 @@ import {
   MIN_MOCK_QUESTIONS,
   type PrepareRequest,
   type AskRequest,
-  type AnswerPreviewRequest,
   type JobImportRequest,
 } from '@kite/shared';
 import { z } from 'zod';
@@ -68,6 +67,7 @@ const styleSchema = z.object({
   format: z.string().max(50),
   length: z.string().max(50),
   tone: z.string().max(50),
+  star: z.boolean().optional(),
 });
 
 /** One attached document (SessionDocument). */
@@ -378,7 +378,7 @@ export type SmallParseResult<T> =
  * @param schema The schema.
  * @param body   The JSON value from the request.
  * @returns The validated request, or a message.
- * Called from: parseJobImportRequest(), parsePreviewRequest()
+ * Called from: parseJobImportRequest()
  */
 function parseSmall<T>(schema: z.ZodType<T>, body: unknown): SmallParseResult<T> {
   const result = schema.safeParse(body);
@@ -399,28 +399,6 @@ const jobImportSchema = z.object({ url: z.string().min(1).max(MAX_JOB_URL_CHARS)
  */
 export function parseJobImportRequest(body: unknown): SmallParseResult<JobImportRequest> {
   return parseSmall<JobImportRequest>(jobImportSchema, body);
-}
-
-/** Body of POST /api/preview: only known settings, so it cannot carry anything else to Claude. */
-const previewSchema = z.object({
-  style: z.object({
-    format: z.enum(['headline+bullets', 'bullets', 'paragraph']),
-    length: z.enum(['short', 'medium', 'detailed']),
-    tone: z.enum(['simple', 'professional', 'technical']),
-  }),
-  language: z.string().max(50).optional(),
-  question: z.enum(['behavioural', 'technical', 'general']),
-});
-
-/**
- * Validates a preview request.
- *
- * @param body The JSON value from the request.
- * @returns The validated request, or a message.
- * Called from: POST handler in app/api/preview/route.ts
- */
-export function parsePreviewRequest(body: unknown): SmallParseResult<AnswerPreviewRequest> {
-  return parseSmall<AnswerPreviewRequest>(previewSchema as z.ZodType<AnswerPreviewRequest>, body);
 }
 
 /** The body of POST /api/ask: a notes request, plus its notes, the question and the chat so far. */

@@ -63,7 +63,7 @@ const VIEW = new URLSearchParams(window.location.search).get('view') ?? 'live';
 /** Error texts for ?view=connect-errors (Day 6 Stage 4e), as the app words them. */
 const CONNECT_ERRORS = {
   /** core/audio/capture.ts micError(), permission denied. */
-  mic: 'Kite can\u2019t use your microphone. Allow microphone access for Kite, then click Connect again.',
+  mic: 'Paramount AI can\u2019t use your microphone. Allow microphone access for Paramount AI, then click Connect again.',
   /** core/stt/download.ts, quota exceeded. */
   model:
     'Not enough disk space to store the speech model (about 205 MB needed). Free some space, then try again.',
@@ -259,7 +259,7 @@ function SplitView() {
  */
 function ConnectView() {
   return (
-    <div className="k-dark min-h-screen bg-ui-bg pb-10 text-ui-text">
+    <div className="min-h-full bg-ui-bg pb-10 text-ui-text">
       <ConnectPanel
         call={{
           title: 'Regular call',
@@ -358,6 +358,7 @@ const COMPACT_STATE: CompactState = {
   capturing: false,
   notice: null,
   ended: false,
+  style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
 };
 
 /**
@@ -385,12 +386,27 @@ function CompactHarness({
   // settings (ADR-0033). The desktop window's settings are only present with the glass panel.
   const alphaParam = params.get('alpha');
   const alpha = alphaParam === null ? null : Number(alphaParam);
+  // What the view asks for, so a test can read it. ?shell=1: a shell from 1.2.0, with the icon.
+  const log = (window as unknown as { overlayLog: unknown[] }).overlayLog;
   return (
     <CompactView
       state={state}
       protection={{ supported: true, on: true }}
-      onCommand={() => undefined}
+      onCommand={(command) => log.push(command)}
       onProtection={() => undefined}
+      email="sam.lee@example.com"
+      onDashboard={() => log.push('dashboard')}
+      onHelp={() => log.push('help')}
+      onEditSession={() => log.push('edit')}
+      onMode={(mode) => log.push({ mode })}
+      onLayout={(layout) => log.push({ layout })}
+      {...(params.has('shell')
+        ? {
+            onMove: (dx: number, dy: number) => log.push({ move: [dx, dy] }),
+            onResize: () => undefined,
+            onPlace: () => log.push('reset-position'),
+          }
+        : {})}
       chatOpen={chatOpen}
       onChatOpen={setChatOpen}
       panels={panels}
@@ -411,6 +427,8 @@ function CompactHarness({
     />
   );
 }
+
+(window as unknown as { overlayLog: unknown[] }).overlayLog = [];
 
 /** The compact view with a coding answer, a figure to check and other answers (ADR-0030). */
 const CODING_STATE: CompactState = {

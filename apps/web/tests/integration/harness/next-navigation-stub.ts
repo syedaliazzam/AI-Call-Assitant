@@ -17,6 +17,16 @@ const router = {
   push(href: string) {
     window.dispatchEvent(new CustomEvent('kite-harness-push', { detail: href }));
   },
+  /**
+   * Tells the harness where the app wanted to go, as push() does.
+   *
+   * @param href The address.
+   */
+  replace(href: string) {
+    window.dispatchEvent(new CustomEvent('kite-harness-push', { detail: href }));
+  },
+  /** Nothing to refresh here. */
+  refresh() {},
 };
 
 /**
@@ -36,5 +46,5 @@ export function useRouter() {
  * Called from: components under test that use next/navigation
  */
 export function usePathname() {
-  return '/';
+  return window.location.pathname;
 }

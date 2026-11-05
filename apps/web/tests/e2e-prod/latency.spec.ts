@@ -137,7 +137,7 @@ test('Chrome: 20 answers on /dev/latency', async () => {
 test('Desktop app: 20 answers on /dev/latency', async () => {
   const profile = mkdtempSync(path.join(tmpdir(), 'kite-e2e-latency-'));
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
-  // KITE_INSTALLED_EXE: an installed Kite.exe, to measure a release as its users have it.
+  // KITE_INSTALLED_EXE: an installed Paramount AI.exe, to measure a release as its users have it.
   const installed = process.env.KITE_INSTALLED_EXE;
   const app = await electron.launch({
     executablePath: installed ?? ELECTRON_PATH,

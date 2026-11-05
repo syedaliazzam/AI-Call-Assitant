@@ -157,11 +157,14 @@ export async function check(watched: WatchedPage, size: Width, name: string): Pr
   // 'initial': Playwright's default hides the text cursor by adding a style to every input,
   // which React reports as a hydration mismatch if hydration is still running.
   await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
-  await page.screenshot({
-    path: path.join(SHOT_DIR, `${name}-${size.width}.png`),
-    fullPage: true,
-    caret: 'initial',
-  });
+  // The checks run either way; a picture needs somewhere to go.
+  if (SHOT_DIR) {
+    await page.screenshot({
+      path: path.join(SHOT_DIR, `${name}-${size.width}.png`),
+      fullPage: true,
+      caret: 'initial',
+    });
+  }
   expect(watched.problems, `${name}: console problems`).toEqual([]);
   watched.problems.length = 0;
 }

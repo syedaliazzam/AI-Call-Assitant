@@ -59,17 +59,21 @@ function Steps({ app, platform }: { app: CallApp; platform: Platform }) {
           or a calling app.
         </li>
         <li>
-          Press <strong>Connect</strong>, then start the call. Kite hears your microphone and what
-          this computer plays.
+          Press <strong>Connect</strong>, then start the call. Paramount AI hears your microphone
+          and what this computer plays.
         </li>
-        <li>A call held only on the phone itself cannot reach Kite as &ldquo;Them&rdquo;.</li>
+        <li>
+          A call held only on the phone itself cannot reach Paramount AI as &ldquo;Them&rdquo;.
+        </li>
       </ol>
     ) : (
       <ol className="list-decimal space-y-2 pl-5">
         <li>
           A browser can only hear a tab, so phone calls need a web calling app in another tab.
         </li>
-        <li>Otherwise use the Kite desktop app, which hears anything this computer plays.</li>
+        <li>
+          Otherwise use the Paramount AI desktop app, which hears anything this computer plays.
+        </li>
       </ol>
     );
   }
@@ -78,8 +82,8 @@ function Steps({ app, platform }: { app: CallApp; platform: Platform }) {
       <ol className="list-decimal space-y-2 pl-5">
         <li>Join your {app.name} call the usual way, in its app or in a browser.</li>
         <li>
-          Press <strong>Connect</strong>. Kite hears your microphone and what this computer plays,
-          with nothing to pick.
+          Press <strong>Connect</strong>. Paramount AI hears your microphone and what this computer
+          plays, with nothing to pick.
         </li>
         <li>
           After the short sound check, press <strong>Go live</strong>.

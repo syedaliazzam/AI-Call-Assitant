@@ -14,6 +14,7 @@ docs
 
 # Local test and build output.
 coverage
+**/test-results
 **/*.tsbuildinfo
 
 # Speech-to-text model files and test recordings (development copies, ~205 MB; over the 100 MB

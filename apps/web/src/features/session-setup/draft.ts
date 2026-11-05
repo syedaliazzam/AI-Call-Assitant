@@ -213,7 +213,7 @@ export function draftChars(draft: SessionDraft): number {
  *
  * @param document The document.
  * @returns 'resume', or 'document' (also for older rows, which have no kind).
- * Called from: LibraryPicker.tsx, withLibraryItem(); tests
+ * Called from: ContextFields.tsx, withLibraryItem(); tests
  */
 export function documentKind(document: Pick<DraftDocument, 'kind'>): LibraryKind {
   return document.kind ?? 'document';

@@ -15,4 +15,5 @@ export * from './screenshot';
 export * from './notes';
 export * from './lessons';
 export * from './prepare';
+export * from './protocol';
 export * from './keyTerms';

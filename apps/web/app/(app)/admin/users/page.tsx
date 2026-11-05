@@ -33,7 +33,6 @@ export default async function AdminUsersPage() {
 
   return (
     <PageShell
-      eyebrow="Admin"
       title="Users"
       width="lg"
       description="Create accounts and share the temporary password with each person directly."

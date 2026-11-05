@@ -1,38 +1,40 @@
 /**
  * File: apps/web/src/ui/BrandLockup.tsx
- * Purpose: Kite's product lockup (UI theme stage U4): the company logo mark, "Kite" in
- *          Inter 600 and, optionally, a small "by Paramount Intelligence". The mark is
- *          shown as the company draws it (apps/web/public/brand/logo-mark.png). It has no light
- *          version, so on dark surfaces it sits on a small white tile (the decision is flagged
- *          for the developer; the company site only shows it on white).
- * Used by: src/ui/Sidebar.tsx, src/ui/AuthCard.tsx, src/features/live/LiveCallLayout.tsx,
- *          src/features/dev/UiGallery.tsx
- * Depends on: React
- * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §7 (brand assets); tokens from src/ui/theme.css
+ * Purpose: The product's lockup: the logo mark (src/ui/brand.ts), the name in Inter 600 and, optionally,
+ *          a small "by Paramount Intelligence". The mark has no light version, so on dark surfaces it
+ *          sits on a small white tile.
+ * Used by: src/ui/Sidebar.tsx, src/ui/AuthCard.tsx, src/features/home/HomePanel.tsx,
+ *          src/features/live/LiveCallLayout.tsx, src/features/dev/UiGallery.tsx
+ * Depends on: React, ./brand.ts
+ * Architecture: docs/design/paramount-ai-ui-spec.md §0 (logo), §2; docs/architecture/kite-architecture-v3.1.md §9.1
+ * Theme: tokens from src/ui/tokens/theme.css
  */
+import { BRAND_LOGO_SRC, BRAND_NAME } from './brand';
 
 /** The lockup's sizes: the mark's height and the name's size. */
 const SIZES = {
   /** Compact window header. */
-  xs: { mark: 'h-4', tile: 'p-0.5', name: 'text-[13px]', gap: 'gap-1.5' },
-  /** Live view top bar, and the sidebar (where the full byline must fit 240 px). */
-  sm: { mark: 'h-6', tile: 'p-1', name: 'text-[15px]', gap: 'gap-2' },
+  xs: { mark: 'h-4', tile: 'p-0.5', auto: 'theme-dark:p-0.5', name: 'text-[13px]', gap: 'gap-1.5' },
+  /** Live view top bar, and the sidebar. */
+  sm: { mark: 'h-6', tile: 'p-1', auto: 'theme-dark:p-1', name: 'text-[15px]', gap: 'gap-2' },
   /** The UI gallery (and any larger header). */
-  md: { mark: 'h-7', tile: 'p-1', name: 'text-[18px]', gap: 'gap-2.5' },
+  md: { mark: 'h-7', tile: 'p-1', auto: 'theme-dark:p-1', name: 'text-[18px]', gap: 'gap-2.5' },
   /** Sign-in hero. */
-  lg: { mark: 'h-9', tile: 'p-1.5', name: 'text-[18px]', gap: 'gap-3' },
+  lg: { mark: 'h-9', tile: 'p-1.5', auto: 'theme-dark:p-1.5', name: 'text-[18px]', gap: 'gap-3' },
 } as const;
 
 /** Props for BrandLockup. */
 export interface BrandLockupProps {
-  /** 'light' (the mark as is) or 'dark' (the mark on a white tile). */
-  tone: 'light' | 'dark';
+  /**
+   * 'light' (the mark as is), 'dark' (the mark on a white tile), or 'auto' (follows the document's
+   * theme, in CSS, so there is no flash while the page loads).
+   */
+  tone: 'light' | 'dark' | 'auto';
   /** Size (default 'md'). */
   size?: keyof typeof SIZES;
-  /** Show "by Paramount Intelligence" under the name (default true). */
+  /** Show "by Paramount Intelligence" under the name (default false). */
   byline?: boolean;
-  /** The product name (default "Kite"; the compact window says "Kite · live"). */
+  /** The product name (default BRAND_NAME; the compact window adds "· live"). */
   name?: string;
 }
 
@@ -43,27 +45,43 @@ export interface BrandLockupProps {
  * @returns The mark and the name.
  * Rendered by: the sidebar, sign-in, the live view, the UI gallery
  */
-export function BrandLockup({ tone, size = 'md', byline = true, name = 'Kite' }: BrandLockupProps) {
+export function BrandLockup({
+  tone,
+  size = 'md',
+  byline = false,
+  name = BRAND_NAME,
+}: BrandLockupProps) {
   const s = SIZES[size];
-  // The mark keeps its proportions (216 × 304): only its height is set.
+  // The mark keeps its proportions: only its height is set.
   // eslint-disable-next-line @next/next/no-img-element
-  const mark = <img src="/brand/logo-mark.png" alt="" className={`${s.mark} w-auto`} />;
+  const mark = <img src={BRAND_LOGO_SRC} alt="" className={`${s.mark} w-auto`} />;
   return (
     <span className={`flex min-w-0 items-center ${s.gap}`}>
-      {tone === 'dark' ? (
+      {tone === 'dark' && (
         <span
           aria-hidden="true"
           className={`flex shrink-0 rounded-control bg-ui-logo-tile ${s.tile}`}
         >
           {mark}
         </span>
-      ) : (
+      )}
+      {tone === 'light' && (
         <span aria-hidden="true" className="flex shrink-0">
           {mark}
         </span>
       )}
+      {tone === 'auto' && (
+        <span
+          aria-hidden="true"
+          className={`flex shrink-0 rounded-control theme-dark:bg-ui-logo-tile ${s.auto}`}
+        >
+          {mark}
+        </span>
+      )}
       <span className="flex min-w-0 flex-col">
-        <span className={`font-semibold leading-none text-ui-heading ${s.name}`}>{name}</span>
+        <span className={`truncate font-semibold leading-none text-ui-heading ${s.name}`}>
+          {name}
+        </span>
         {byline && (
           <span className="mt-1 truncate text-[13px] leading-none text-ui-muted">
             by Paramount Intelligence

@@ -1,6 +1,6 @@
 /**
  * Screenshots of the light pages (UI theme stage U2) at 1440 and 390 px (the 390 px run as a touch
- * phone), with the desktop-app banner, the sidebar's collapse toggle and the mock presets: sign-in, change password, the empty dashboard, the wizard (Details with a
+ * phone), with the sidebar's collapse toggle and the mock presets: sign-in, change password, the empty dashboard, the wizard (Details with a
  * document attached, then Preferences), the dashboard with a session, the Choose platform
  * dialog, the session review (an invented ended session seeded into this browser's IndexedDB),
  * Settings and Users. Each page is checked (shots.ts): no sideways scroll, touch targets
@@ -148,21 +148,13 @@ for (const size of WIDTHS) {
 
     // Sign-in (signed out).
     await page.goto(`${BASE_URL}/login`);
-    await expect(page.getByRole('heading', { name: 'Sign in to Kite' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sign in to Paramount AI' })).toBeVisible();
     await check(watched, size, 'sign-in');
 
     await signIn(page);
     // Empty dashboard (this browser context has no sessions yet).
     await expect(page.getByText('No sessions yet')).toBeVisible();
     await check(watched, size, 'dashboard-empty');
-
-    // The desktop-app banner: dismissed once, it stays dismissed after a reload.
-    const banner = page.getByRole('complementary', { name: 'Desktop app' });
-    await expect(banner).toBeVisible();
-    await expect(banner.getByRole('link', { name: 'Get the desktop app' })).toHaveAttribute(
-      'href',
-      /kite-releases/,
-    );
 
     // The sidebar's collapse toggle exists from 768 px, and is remembered.
     if (!size.touch) {
@@ -178,8 +170,9 @@ for (const size of WIDTHS) {
 
     // The mock presets fill in the details.
     await page.goto(`${BASE_URL}/sessions/new`);
+    await page.getByRole('button', { name: 'Mock presets' }).click();
     await page.getByRole('button', { name: 'Customer success' }).click();
-    await expect(page.getByLabel('Session type')).toHaveValue('mock');
+    await expect(page.getByRole('radio', { name: 'Mock' })).toBeChecked();
     await expect(page.getByLabel('Role')).toHaveValue('Customer success manager');
     await page.goto(`${BASE_URL}/`);
     await expect(page.getByText('No sessions yet')).toBeVisible();
@@ -191,7 +184,7 @@ for (const size of WIDTHS) {
 
     // The wizard, with an invented document attached.
     await page.goto(`${BASE_URL}/sessions/new`);
-    await page.getByLabel('Session type').selectOption('regular');
+    await page.getByRole('radio', { name: 'Regular' }).click();
     await page.getByLabel('Company').fill(COMPANY);
     await page.getByLabel('Topic').fill('Renewal call');
     await page.locator('input[type="file"]').setInputFiles({
@@ -201,16 +194,8 @@ for (const size of WIDTHS) {
         'Professional plan: 52 dollars per seat per month, billed yearly (invented).',
       ),
     });
-    await expect(page.getByText('price-list.txt')).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Documents' })).toHaveText('price-list.txt');
     await check(watched, size, 'wizard-details');
-    await page.getByRole('button', { name: 'Upload a document' }).click();
-    await expect(page.getByRole('dialog', { name: 'Choose files' })).toBeVisible();
-    await check(watched, size, 'upload-modal');
-    await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'View tutorial' }).click();
-    await expect(page.getByRole('dialog', { name: 'How a session works' })).toBeVisible();
-    await check(watched, size, 'wizard-tutorial');
-    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByLabel('Key terms (optional)')).toBeVisible();
     await check(watched, size, 'wizard-preferences');
@@ -226,14 +211,8 @@ for (const size of WIDTHS) {
       .filter({ has: page.getByRole('heading', { name: COMPANY }) });
     await expect(card).toBeVisible();
     await check(watched, size, 'dashboard');
-    await banner.getByRole('button', { name: 'Dismiss' }).click();
-    await expect(banner).toHaveCount(0);
-    await check(watched, size, 'dashboard-banner-dismissed');
-    await page.reload();
-    await expect(card).toBeVisible();
-    await expect(banner).toHaveCount(0);
     await card.getByRole('button', { name: 'Start session' }).click();
-    await expect(page.getByRole('dialog', { name: 'How do you want to join?' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Choose platform' })).toBeVisible();
     await page.getByRole('button', { name: 'What’s the difference?' }).click();
     await check(watched, size, 'choose-platform');
     await page.keyboard.press('Escape');
@@ -251,7 +230,7 @@ for (const size of WIDTHS) {
     await check(watched, size, 'review');
     await page.getByRole('button', { name: 'Transcript', exact: true }).click();
     // Conversation has a chip for each answer; Answers lists them as cards (v1.1.0).
-    await expect(page.getByRole('button', { name: 'Kite answered' })).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Paramount AI answered' })).toHaveCount(2);
     await page.getByRole('button', { name: 'Answers', exact: true }).click();
     await expect(page.getByRole('listitem', { name: 'Saved answer' })).toHaveCount(2);
     await check(watched, size, 'review-transcript');
@@ -268,7 +247,7 @@ for (const size of WIDTHS) {
 
     // Ask Kite (ADR-0030): the empty chat; nothing is sent, so no Claude call is made.
     await page.goto(`${BASE_URL}/ask-kite`);
-    await expect(page.getByLabel('Ask Kite', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Ask AI', { exact: true })).toBeVisible();
     await check(watched, size, 'ask-kite');
     await page.getByRole('button', { name: 'Attach' }).click();
     await expect(page.getByRole('dialog', { name: 'Attach to this chat' })).toBeVisible();

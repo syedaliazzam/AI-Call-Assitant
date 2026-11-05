@@ -59,3 +59,4 @@ apps/desktop/native/
 # v1.1.0: copies of another company's screens, for side-by-side checks only. Never committed;
 # docs/design/reference-catalog.md describes them in words.
 docs/design/references/
+docs/testing/v1.2-visual/

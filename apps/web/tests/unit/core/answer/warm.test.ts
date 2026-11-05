@@ -91,6 +91,23 @@ describe('toSessionContext', () => {
     });
   });
 
+  it('sends STAR only when it is on, so a session without it sends what it always has', () => {
+    const on = {
+      ...SESSION,
+      preferences: {
+        ...SESSION.preferences,
+        style: { ...SESSION.preferences.style, star: true },
+      },
+    };
+    expect(toSessionContext(on, []).style).toEqual({
+      format: 'headline+bullets',
+      length: 'short',
+      tone: 'simple',
+      star: true,
+    });
+    expect(toSessionContext(SESSION, []).style).not.toHaveProperty('star');
+  });
+
   it('gives the same JSON whatever order the documents were read in (ties by id)', () => {
     const one = toSessionContext(SESSION, [doc('a', 1), doc('c', 5), doc('b', 5)]);
     const two = toSessionContext(SESSION, [doc('b', 5), doc('a', 1), doc('c', 5)]);

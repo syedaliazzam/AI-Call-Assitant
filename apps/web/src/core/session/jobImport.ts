@@ -9,7 +9,7 @@
  *
  * The address and what comes back are the user's content and are never logged.
  */
-import type { JobImportFields, JobImportResponse } from '@kite/shared';
+import { JOB_LINK_FAILED, type JobImportFields, type JobImportResponse } from '@kite/shared';
 
 /** What importing a job link gave. */
 export type JobImportResult =
@@ -27,10 +27,6 @@ export type JobImportResult =
       /** What to tell the user. */
       message: string;
     };
-
-/** The fallback message when nothing better is known. */
-const FAILED =
-  'Kite could not read that link just now. Paste the details below instead, or try again.';
 
 /**
  * Reads a job link.
@@ -54,11 +50,11 @@ export async function importJobLink(
       const failure = (await response.json().catch(() => null)) as { message?: string } | null;
       // Only the page's own messages (422) are worded for the user; others are generic.
       const message = response.status === 422 ? failure?.message : undefined;
-      return { ok: false, message: message ?? FAILED };
+      return { ok: false, message: message ?? JOB_LINK_FAILED };
     }
     const { fields, host } = (await response.json()) as JobImportResponse;
     return { ok: true, fields, host };
   } catch {
-    return { ok: false, message: FAILED };
+    return { ok: false, message: JOB_LINK_FAILED };
   }
 }

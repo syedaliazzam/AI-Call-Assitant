@@ -8,7 +8,8 @@
  *          shell itself. The page turns them on for a live call and off at End
  *          (`kite:set-hotkeys`, from the Kite origin only); they are also released when the app
  *          quits. A shortcut another app already uses is reported back, so the page can say which
- *          one, and Settings can check them all before a call (`kite:check-hotkeys`).
+ *          one, and Settings can check them all before a call (`kite:check-hotkeys`). The chat bar's
+ *          screenshot shortcut (v1.2.0, spec S14) is held only while the bar is open.
  * Used by: src/main.ts (installHotkeys)
  * Depends on: electron (globalShortcut, ipcMain types), @kite/shared (DEFAULT_GLOBAL_HOTKEYS,
  *             HOTKEY_ACTIONS, HotkeyStatus), src/channels.ts
@@ -24,12 +25,18 @@ import {
   ASK_KITE_HOTKEY,
   DEFAULT_GLOBAL_HOTKEYS,
   GLOBAL_HOTKEYS,
+  SCREENSHOT_SEND_HOTKEY,
   type CallHotkey,
   type GlobalHotkey,
   type HotkeyStatus,
 } from '@kite/shared';
 import type { GlobalShortcut, IpcMain, IpcMainInvokeEvent } from 'electron';
-import { CHECK_HOTKEYS_CHANNEL, HOTKEY_CHANNEL, SET_HOTKEYS_CHANNEL } from './channels';
+import {
+  CHAT_HOTKEY_CHANNEL,
+  CHECK_HOTKEYS_CHANNEL,
+  HOTKEY_CHANNEL,
+  SET_HOTKEYS_CHANNEL,
+} from './channels';
 
 /** The global shortcuts and what they do. */
 export interface HotkeyController {
@@ -39,6 +46,13 @@ export interface HotkeyController {
    * @returns Whether each one could be registered.
    */
   enable(): HotkeyStatus[];
+  /**
+   * Holds or releases the chat bar's screenshot shortcut (only during a call).
+   *
+   * @param on True while the chat bar is open.
+   * @returns Whether it could be registered, when turning it on; otherwise null.
+   */
+  setChatSend(on: boolean): HotkeyStatus | null;
   /** Releases every shortcut this controller registered. */
   disable(): void;
   /** True while the shortcuts are on. */
@@ -81,11 +95,36 @@ export function createHotkeys(
   let registered: string[] = [];
   let on = false;
   let statuses: HotkeyStatus[] = [];
+  /** The chat bar's screenshot shortcut, while it is held. */
+  let chatSend: HotkeyStatus | null = null;
+
+  /** Releases the chat bar's screenshot shortcut, if held. */
+  const releaseChatSend = () => {
+    if (chatSend?.registered) globalShortcut.unregister(SCREENSHOT_SEND_HOTKEY);
+    chatSend = null;
+  };
 
   const disable = () => {
     for (const accelerator of registered) globalShortcut.unregister(accelerator);
     registered = [];
     on = false;
+    releaseChatSend();
+  };
+
+  /**
+   * Registers the chat bar's screenshot shortcut.
+   *
+   * @returns Whether it could be registered.
+   */
+  const holdChatSend = (): HotkeyStatus => {
+    let ok = false;
+    try {
+      ok = globalShortcut.register(SCREENSHOT_SEND_HOTKEY, () => send('screenshot-send'));
+    } catch {
+      // An accelerator the OS cannot register at all counts as unavailable.
+      ok = false;
+    }
+    return { action: 'screenshot-send', accelerator: SCREENSHOT_SEND_HOTKEY, registered: ok };
   };
 
   /**
@@ -115,6 +154,16 @@ export function createHotkeys(
     enable,
     disable,
     enabled: () => on,
+    setChatSend(wanted) {
+      if (!wanted) {
+        releaseChatSend();
+        return null;
+      }
+      // Only during a call: a late message after End must not take the keys from other apps.
+      if (!on) return null;
+      if (!chatSend) chatSend = holdChatSend();
+      return chatSend;
+    },
     enableAskKite() {
       let ok = false;
       try {
@@ -133,10 +182,17 @@ export function createHotkeys(
     },
     check() {
       const always = askKite ? [askKite] : [];
-      if (on) return [...statuses, ...always];
+      // Tried for a moment unless it is already held, so Settings can report a clash before a call.
+      const tryChatSend = () => {
+        if (chatSend) return chatSend;
+        const tried = holdChatSend();
+        if (tried.registered) globalShortcut.unregister(SCREENSHOT_SEND_HOTKEY);
+        return tried;
+      };
+      if (on) return [...statuses, tryChatSend(), ...always];
       const found = enable();
       disable();
-      return [...found, ...always];
+      return [...found, tryChatSend(), ...always];
     },
   };
 }
@@ -206,6 +262,12 @@ export function installHotkeys(deps: HotkeyDeps): HotkeyController {
       throw new Error('Hotkeys can only be checked by the Kite page');
     }
     return controller.check();
+  });
+  deps.ipcMain.handle(CHAT_HOTKEY_CHANNEL, (event, on: unknown) => {
+    if (!isKiteSender(event, deps.allowedOrigin)) {
+      throw new Error('Hotkeys can only be changed by the Kite page');
+    }
+    controller.setChatSend(on === true);
   });
   deps.ipcMain.handle(SET_HOTKEYS_CHANNEL, (event, on: unknown) => {
     if (!isKiteSender(event, deps.allowedOrigin)) {

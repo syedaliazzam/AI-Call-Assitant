@@ -5,7 +5,7 @@
  *          user and UTC day); over the limit (default 300 a day, set by an admin) the request is
  *          refused before anything is sent to Claude. Counts only: no text is stored or logged.
  * Used by: app/api/answer/route.ts, app/api/notes/route.ts, app/api/ask/route.ts,
- *          app/api/prepare/route.ts, app/api/job-import/route.ts, app/api/preview/route.ts,
+ *          app/api/prepare/route.ts, app/api/job-import/route.ts,
  *          app/(app)/admin/usage/page.tsx, app/(app)/admin/usage/actions.ts
  * Depends on: drizzle-orm, src/server/db.ts, src/server/schema.ts (usageDay, appSetting, user)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §8.1; ADR-0036
@@ -121,7 +121,7 @@ export interface RequestCount {
  * @param userId The signed-in user's id.
  * @param now    The time (tests pass one).
  * @returns See RequestCount.
- * Called from: the Claude routes (app/api/answer, notes, ask, prepare, job-import, preview)
+ * Called from: the Claude routes (app/api/answer, notes, ask, prepare, job-import)
  */
 export async function countRequest(userId: string, now: Date = new Date()): Promise<RequestCount> {
   const startedAt = performance.now();

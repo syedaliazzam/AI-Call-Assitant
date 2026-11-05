@@ -21,6 +21,7 @@
  * - `prev` / `next`: move through earlier answers.
  * - `ask-kite`: open Ask Kite (ADR-0030).
  * - `script-bar`: show or hide the overlay's slim script bar (v1.0.2, ADR-0035).
+ * - `screenshot-send`: send the chat bar's message with a screenshot (v1.2.0, spec S14).
  */
 export type HotkeyAction =
   | 'answer'
@@ -31,7 +32,8 @@ export type HotkeyAction =
   | 'prev'
   | 'next'
   | 'ask-kite'
-  | 'script-bar';
+  | 'script-bar'
+  | 'screenshot-send';
 
 /** Every action the Kite page carries out (messages from the shell are checked against it). */
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
@@ -44,6 +46,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
   'next',
   'ask-kite',
   'script-bar',
+  'screenshot-send',
 ];
 
 /** A direction the overlay can move in. */
@@ -60,7 +63,7 @@ export type OverlayAction =
 export type CallHotkey = 'answer' | 'screenshot' | 'chat' | 'script-bar' | OverlayAction;
 
 /** A shortcut that works from any app, or the shortcut held for as long as the app runs. */
-export type GlobalHotkey = CallHotkey | 'ask-kite';
+export type GlobalHotkey = CallHotkey | 'ask-kite' | 'screenshot-send';
 
 /**
  * Opens Ask Kite from any app, for as long as the desktop app runs (ADR-0030). It is the one global
@@ -68,6 +71,17 @@ export type GlobalHotkey = CallHotkey | 'ask-kite';
  * where Ctrl+Alt types a letter (AltGr), it can clash, which Settings → Hotkeys reports.
  */
 export const ASK_KITE_HOTKEY = 'CommandOrControl+Alt+K';
+
+/**
+ * Sends the chat bar's message with a screenshot (v1.2.0, spec S14). From a shell at 1.2.0 it is held
+ * only while the chat bar is open, so it takes nothing from other apps the rest of the time; an older
+ * shell cannot hold it, and it works while Paramount AI has focus. On layouts where Ctrl+Alt is AltGr it
+ * can clash, which Settings → Hotkeys reports.
+ */
+export const SCREENSHOT_SEND_HOTKEY = 'CommandOrControl+Alt+Enter';
+
+/** The chat bar's own Send key: only ever in the chat box, never a shortcut. */
+export const CHAT_SEND_KEY = 'Enter';
 
 /**
  * The global shortcuts, as Electron accelerators. "CommandOrControl" is ⌘ on macOS and Ctrl on
@@ -160,6 +174,12 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     actions: ['chat'],
   },
   {
+    label: 'Send chat with a screenshot',
+    accelerator: SCREENSHOT_SEND_HOTKEY,
+    scope: 'global',
+    actions: ['screenshot-send'],
+  },
+  {
     label: 'Show or hide overlay',
     accelerator: DEFAULT_GLOBAL_HOTKEYS['overlay-toggle'],
     scope: 'global',
@@ -188,7 +208,7 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     ],
   },
   {
-    label: 'Open Ask Kite',
+    label: 'Open Ask AI',
     accelerator: ASK_KITE_HOTKEY,
     scope: 'global',
     actions: ['ask-kite'],
@@ -208,6 +228,53 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     actions: [],
   },
 ];
+
+/** A shortcut a key-cap chip can show (v1.2.0, spec §4): any global or focused one. */
+export type KeycapHotkey = GlobalHotkey | keyof typeof FOCUSED_HOTKEYS | 'chat-send';
+
+/**
+ * The keys of a shortcut, from the one map above, so no screen ever writes a key itself.
+ *
+ * @param hotkey The shortcut.
+ * @returns Its Electron accelerator.
+ * Called from: apps/web/src/ui/KeyCap.tsx; tests
+ */
+export function hotkeyAccelerator(hotkey: KeycapHotkey): string {
+  if (hotkey === 'ask-kite') return ASK_KITE_HOTKEY;
+  if (hotkey === 'screenshot-send') return SCREENSHOT_SEND_HOTKEY;
+  if (hotkey === 'chat-send') return CHAT_SEND_KEY;
+  if (hotkey in FOCUSED_HOTKEYS) return FOCUSED_HOTKEYS[hotkey as keyof typeof FOCUSED_HOTKEYS];
+  return DEFAULT_GLOBAL_HOTKEYS[hotkey as CallHotkey];
+}
+
+/** What each part of an accelerator looks like on a key-cap chip. */
+const KEYCAP_SYMBOLS: Readonly<Record<string, string>> = {
+  Shift: '⇧',
+  Backspace: '⌫',
+  Enter: '↵',
+  Space: '␣',
+  Left: '←',
+  Right: '→',
+  Up: '↑',
+  Down: '↓',
+};
+
+/**
+ * An accelerator as a key-cap chip's parts: ["Ctrl", "⇧", "↵"] on Windows, ["⌘", "⇧", "↵"] on macOS
+ * (spec §4: on macOS, Ctrl shows as ⌘).
+ *
+ * @param accelerator An Electron accelerator.
+ * @param mac         True on macOS.
+ * @returns The parts, in order.
+ * Called from: apps/web/src/ui/KeyCap.tsx; tests
+ */
+export function keycapParts(accelerator: string, mac: boolean): string[] {
+  return accelerator.split('+').map((part) => {
+    if (part === 'CommandOrControl') return mac ? '⌘' : 'Ctrl';
+    if (part === 'Alt') return mac ? '⌥' : 'Alt';
+    return KEYCAP_SYMBOLS[part] ?? part;
+  });
+}
 
 /**
  * An accelerator in words for a button or a list: "Ctrl+Enter" on Windows, "⌘ Enter" on macOS.

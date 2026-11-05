@@ -1,7 +1,7 @@
 /**
  * Tests for apps/desktop/src/windows.ts, protection.ts and store.ts, with Electron faked:
  * - compactUrl() builds /compact/[id] on the Kite URL for plain ids only;
- * - restoreBounds() keeps saved bounds that are still on a screen, else 680 × 480 at the
+ * - restoreBounds() keeps saved bounds that are still on a screen, else 780 × 480 at the
  *   remembered preset (top centre by default; v1.0.2, ADR-0035);
  * - compactWindowOptions(): frameless, always on top, resizable, see-through (transparent), in the
  *   taskbar, hidden until shown, the same secure web preferences as the main window;
@@ -37,6 +37,11 @@ import {
   installCompactWindows,
   COMPACT_COLLAPSED_HEIGHT,
   COMPACT_DEFAULT_SIZE,
+  fromIconBounds,
+  isOverlayMove,
+  narrowedBounds,
+  OVERLAY_BOTH_WIDTH,
+  widthAboutCentre,
   COMPACT_MIN_SIZE,
   isOverlayMode,
   isOverlayPreset,
@@ -175,20 +180,20 @@ describe('compactUrl and restoreBounds', () => {
     }
   });
 
-  it('keeps saved bounds still on a screen, else 680 × 480 at the top centre (ADR-0035)', () => {
+  it('keeps saved bounds still on a screen, else 780 × 480 at the top centre (ADR-0035)', () => {
     const saved = { x: 100, y: 100, width: 400, height: 300 };
     expect(restoreBounds(saved, [PRIMARY], PRIMARY)).toEqual(saved);
-    const topCentre = { x: 620, y: 24, width: 680, height: 480 };
-    expect(COMPACT_DEFAULT_SIZE).toEqual({ width: 680, height: 480 });
+    const topCentre = { x: 570, y: 24, width: 780, height: 480 };
+    expect(COMPACT_DEFAULT_SIZE).toEqual({ width: 780, height: 480 });
     // On a monitor that was unplugged.
     const gone = { x: 3000, y: 100, width: 400, height: 300 };
     expect(restoreBounds(gone, [PRIMARY], PRIMARY)).toEqual(topCentre);
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY)).toEqual(topCentre);
     // The remembered preset decides the default place.
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY, 'top-right')).toEqual({
-      x: 1920 - 680 - 24,
+      x: 1920 - 780 - 24,
       y: 24,
-      width: 680,
+      width: 780,
       height: 480,
     });
   });
@@ -260,7 +265,10 @@ describe('createCompactWindows', () => {
   });
 
   it('reuses the window for another session, without focus, and closes it', () => {
-    const { compact } = setup({ compactBounds: { x: 5, y: 6, width: 300, height: 200 } });
+    const { compact } = setup({
+      compactBounds: { x: 5, y: 6, width: 300, height: 200 },
+      overlayBarsWidened: true,
+    });
     compact.open('s1');
     compact.open('s2');
     expect(FakeWindow.created).toHaveLength(1);
@@ -422,20 +430,20 @@ describe('the overlay window (ADR-0029)', () => {
 
 describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
   it('puts the overlay at each preset, shrunk to fit a small screen', () => {
-    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 620, y: 24, width: 680, height: 480 });
-    expect(presetBounds('top-left', PRIMARY)).toEqual({ x: 24, y: 24, width: 680, height: 480 });
-    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1216, y: 24, width: 680, height: 480 });
+    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 570, y: 24, width: 780, height: 480 });
+    expect(presetBounds('top-left', PRIMARY)).toEqual({ x: 24, y: 24, width: 780, height: 480 });
+    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1116, y: 24, width: 780, height: 480 });
     expect(presetBounds('bottom-center', PRIMARY)).toEqual({
-      x: 620,
+      x: 570,
       y: 1040 - 480 - 24,
-      width: 680,
+      width: 780,
       height: 480,
     });
     // A second display to the right, and a screen smaller than the overlay.
     expect(presetBounds('top-center', { x: 1920, y: 0, width: 1280, height: 720 })).toEqual({
-      x: 1920 + 300,
+      x: 1920 + 250,
       y: 24,
-      width: 680,
+      width: 780,
       height: 480,
     });
     expect(presetBounds('top-center', { x: 0, y: 0, width: 500, height: 400 })).toEqual({
@@ -527,10 +535,10 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
     compact.open('s1');
     const window = FakeWindow.created.at(-1)!;
     // Opens at the remembered preset (nothing saved yet).
-    expect(window.options).toMatchObject({ x: 1216, y: 24, width: 680, height: 480 });
+    expect(window.options).toMatchObject({ x: 1116, y: 24, width: 780, height: 480 });
     compact.place('bottom-center');
-    expect(window.bounds).toEqual({ x: 620, y: 536, width: 680, height: 480 });
-    expect(store.read().compactBounds).toEqual({ x: 620, y: 536, width: 680, height: 480 });
+    expect(window.bounds).toEqual({ x: 570, y: 536, width: 780, height: 480 });
+    expect(store.read().compactBounds).toEqual({ x: 570, y: 536, width: 780, height: 480 });
   });
 
   it('script bar: slim at the top centre, input row, and back to where the overlay was', () => {
@@ -611,5 +619,174 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
     expect(() => handlers.get(OVERLAY_MODE_CHANNEL)!(evil, 'script')).toThrow();
     await handlers.get(OVERLAY_MODE_CHANNEL)!(page, 'script');
     expect(compact.mode()).toBe('script');
+  });
+});
+
+describe('the icon (v1.2.0, spec S13)', () => {
+  /** The overlay as it opens in these tests. */
+  const BOUNDS = { x: 200, y: 100, width: 780, height: 136 };
+
+  /**
+   * An open overlay at BOUNDS.
+   *
+   * @returns The controller, the window and the store.
+   */
+  function openIcon() {
+    const made = setup({ compactBounds: BOUNDS, overlayBarsWidened: true });
+    made.compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { ...BOUNDS };
+    return { ...made, window };
+  }
+
+  it('shrinks to 48 px at the top centre of the overlay, lowering the minimum first', () => {
+    const { compact, window } = openIcon();
+    compact.setMode('icon');
+    expect(window.bounds).toEqual({ x: 200 + 366, y: 100, width: 48, height: 48 });
+    expect(window.setMinimumSize).toHaveBeenLastCalledWith(48, 48);
+    expect(compact.mode()).toBe('icon');
+  });
+
+  it('moves with its size stated, and the overlay opens where the icon was dragged to', () => {
+    const { compact, window } = openIcon();
+    compact.setMode('icon');
+    compact.move(50, 200);
+    expect(window.bounds).toEqual({ x: 616, y: 300, width: 48, height: 48 });
+    compact.setMode('full');
+    expect(window.bounds).toEqual({ x: 250, y: 300, width: 780, height: 136 });
+  });
+
+  it('keeps the overlay on the display when the icon was dragged to its edge', () => {
+    expect(fromIconBounds({ x: 1900, y: 1000, width: 48, height: 48 }, BOUNDS, PRIMARY)).toEqual({
+      x: 1920 - 780,
+      y: 1040 - 136,
+      width: 780,
+      height: 136,
+    });
+    expect(fromIconBounds({ x: 0, y: 0, width: 48, height: 48 }, BOUNDS, PRIMARY)).toEqual({
+      x: 0,
+      y: 0,
+      width: 780,
+      height: 136,
+    });
+  });
+
+  it('remembers the overlay, not the icon', () => {
+    const { compact, store } = openIcon();
+    compact.setMode('icon');
+    compact.move(50, 0);
+    compact.close();
+    expect(store.read().compactBounds).toEqual({ x: 250, y: 100, width: 780, height: 136 });
+  });
+
+  it('is a mode the page may ask for, and only well-formed moves are taken', () => {
+    expect(isOverlayMode('icon')).toBe(true);
+    expect(isOverlayMove({ dx: 3, dy: -4 })).toBe(true);
+    expect(isOverlayMove({ dx: Number.NaN, dy: 0 })).toBe(false);
+    expect(isOverlayMove({ dx: 1e6, dy: 0 })).toBe(false);
+    expect(isOverlayMove({ dx: '1', dy: 0 })).toBe(false);
+    expect(isOverlayMove(null)).toBe(false);
+  });
+});
+
+describe('both panels side by side (v1.2.0, spec S15)', () => {
+  /** The overlay as it opens in these tests. */
+  const BOUNDS = { x: 570, y: 24, width: 780, height: 136 };
+
+  /** No panels open. */
+  const BARS = { transcript: false, answer: false, popupHeight: 0 };
+
+  /** Both open. */
+  const BOTH = { transcript: true, answer: true, popupHeight: 0 };
+
+  /**
+   * An open overlay at BOUNDS.
+   *
+   * @param settings More stored settings.
+   * @returns The controller, the window and the store.
+   */
+  function openPanels(settings: ShellSettings = {}) {
+    const made = setup({ compactBounds: BOUNDS, overlayBarsWidened: true, ...settings });
+    made.compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { ...BOUNDS };
+    return { ...made, window };
+  }
+
+  it('widens about its centre, and goes back to the width it had', () => {
+    const { compact, window } = openPanels();
+    compact.setLayout(BOTH);
+    expect(window.bounds).toMatchObject({ x: 570 - 150, width: OVERLAY_BOTH_WIDTH, y: 24 });
+    compact.setLayout(BARS);
+    expect(window.bounds).toMatchObject({ x: 570, width: 780, y: 24 });
+  });
+
+  it('stays on a display narrower than it wants', () => {
+    expect(widthAboutCentre({ x: 100, width: 780 }, 1080, { x: 0, width: 900 })).toEqual({
+      x: 0,
+      width: 900,
+    });
+    expect(widthAboutCentre({ x: 1100, width: 780 }, 1080, { x: 0, width: 1920 })).toEqual({
+      x: 840,
+      width: 1080,
+    });
+  });
+
+  it('goes back exactly when the display limited the widening, and keeps a move made since', () => {
+    const { compact, window } = openPanels();
+    // Near the left edge: it could not widen about its centre.
+    window.bounds = { ...BOUNDS, x: 40 };
+    compact.setLayout(BOTH);
+    expect(window.bounds.x).toBe(0);
+    compact.setLayout(BARS);
+    expect(window.bounds).toMatchObject({ x: 40, width: 780 });
+    // Moved while wide: it stays moved.
+    compact.setLayout(BOTH);
+    window.bounds = { ...window.bounds, x: 500 };
+    compact.setLayout(BARS);
+    expect(window.bounds).toMatchObject({ x: 540, width: 780 });
+    // And it never comes back off the display.
+    expect(narrowedBounds({ x: 1900 }, { width: 780, shift: 150 }, PRIMARY)).toEqual({
+      x: 1920 - 780,
+      width: 780,
+    });
+  });
+
+  it('remembers its narrow place, so it does not open wide with no panels', () => {
+    const { compact, store } = openPanels();
+    compact.setLayout(BOTH);
+    compact.close();
+    expect(store.read().compactBounds).toMatchObject({ x: 570, width: 780 });
+  });
+
+  it('remembers a width the user dragged, and does not change a wider window', () => {
+    const { compact, store, window } = openPanels();
+    compact.setLayout(BOTH);
+    compact.resize({ phase: 'start', edge: 'e', dx: 0, dy: 0 });
+    compact.resize({ phase: 'end', edge: 'e', dx: 100, dy: 0 });
+    expect(store.read().overlayBothWidth).toBe(OVERLAY_BOTH_WIDTH + 100);
+    compact.setLayout(BARS);
+    compact.setLayout(BOTH);
+    expect(window.bounds.width).toBe(OVERLAY_BOTH_WIDTH + 100);
+  });
+});
+
+describe('a place saved by 1.1.0 (v1.2.0)', () => {
+  it('is widened once for the new bar 1, about its centre', () => {
+    const { compact, store } = setup({
+      compactBounds: { x: 620, y: 24, width: 680, height: 480 },
+    });
+    compact.open('s1');
+    expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 570, y: 24, width: 780 });
+    expect(store.read().overlayBarsWidened).toBe(true);
+  });
+
+  it('a width chosen after that stays', () => {
+    const { compact } = setup({
+      compactBounds: { x: 620, y: 24, width: 600, height: 480 },
+      overlayBarsWidened: true,
+    });
+    compact.open('s1');
+    expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 620, width: 600 });
   });
 });

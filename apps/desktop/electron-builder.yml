@@ -1,12 +1,15 @@
 # File: apps/desktop/electron-builder.yml
 # Purpose: How the Windows installer is built (Day 6 Stage 3): electron-builder, NSIS, per-user
-#          (no admin rights), "Kite" by "Paramount Intelligence", the company icons, and a clean
-#          uninstall that asks whether to keep the user's local Kite data.
+#          (no admin rights), "Paramount AI" by "Paramount Intelligence", the company icons, and a
+#          clean uninstall that asks whether to keep the user's local data.
 # Used by: the "dist:win" script in apps/desktop/package.json
-# Architecture: docs/architecture/kite-architecture-v3.1.md §10 (installation); ADR-0028
+# Architecture: docs/architecture/kite-architecture-v3.1.md §10 (installation); ADR-0028;
+#               docs/design/paramount-ai-ui-spec.md §2 (the rename is display strings only)
+# Never changes: Windows and the updater know the installed app by it.
 appId: co.paramountintelligence.kite
-# The installed app's name: also its data folder, %APPDATA%\Kite (development runs keep theirs).
-productName: Kite
+# The name people see. The data folder stays %APPDATA%\Kite: src/main.ts pins it, because Electron
+# would otherwise move it to this name and the app would lose every session and setting.
+productName: Paramount AI
 copyright: Copyright © 2026 Paramount Intelligence
 directories:
   # Icons and the NSIS include live in build/; installers are written to release/ (git-ignored).
@@ -42,14 +45,20 @@ nsis:
   perMachine: false
   createStartMenuShortcut: true
   createDesktopShortcut: false
-  shortcutName: Kite
-  uninstallDisplayName: Kite
-  artifactName: Kite-Setup-${version}.exe
-  # The "keep my local data?" question at uninstall (build/installer.nsh).
+  shortcutName: Paramount AI
+  uninstallDisplayName: Paramount AI
+  # No spaces: GitHub renames them in release assets, and latest.yml must match the asset's name.
+  artifactName: Paramount-AI-Setup-${version}.exe
+  # The "keep my local data?" question at uninstall (build/installer.nsh, which deletes %APPDATA%\Kite).
   include: build/installer.nsh
 # Where installed apps look for updates (ADR-0028): the public releases-only repository. Only
 # installers, latest.yml and blockmaps are published there (with gh, by the developer); the app
 # needs no token. Move to a company organisation is a decision for the lead.
+# macOS's list of links this app opens; Windows registers it in build/installer.nsh and src/main.ts.
+protocols:
+  - name: Paramount AI
+    schemes:
+      - paramountai
 publish:
   provider: github
   owner: Zainpak123
@@ -76,11 +85,11 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     # The text macOS shows when Kite asks for the microphone.
-    NSMicrophoneUsageDescription: Kite listens to your side of the call to write the live transcript. The audio stays on this Mac.
+    NSMicrophoneUsageDescription: Paramount AI listens to your side of the call to write the live transcript. The audio stays on this Mac.
     # The text macOS shows when Kite asks to record the other side of the call (system audio).
-    NSAudioCaptureUsageDescription: Kite records the other side of the call (system audio) to write the live transcript. The audio stays on this Mac.
+    NSAudioCaptureUsageDescription: Paramount AI records the other side of the call (system audio) to write the live transcript. The audio stays on this Mac.
 dmg:
-  artifactName: Kite-${version}-${arch}.dmg
+  artifactName: Paramount-AI-${version}-${arch}.dmg
 
 # Microsoft Store package (MSIX/AppX), POST-V1 (developer decision, 2 Nov): kept, not used for v1.
 # Investigated 2 Nov as the no-purchase alternative to code
@@ -94,7 +103,7 @@ appx:
   publisher: CN=00000000-0000-0000-0000-000000000000
   publisherDisplayName: Paramount Intelligence
   applicationId: Kite
-  displayName: Kite
+  displayName: Paramount AI
   backgroundColor: '#0B1630'
   languages:
     - en-US
@@ -106,4 +115,4 @@ appx:
     - microphone
   # The Store updates the app; the app's own updater is off in Store builds (src/main.ts).
   electronUpdaterAware: false
-  artifactName: Kite-${version}.${ext}
+  artifactName: Paramount-AI-${version}.${ext}

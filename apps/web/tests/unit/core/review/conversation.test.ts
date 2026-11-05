@@ -143,15 +143,15 @@ describe('transcriptText', () => {
 
   it('has the speakers, the answer and the tip, in order', () => {
     const out = transcriptText(SESSION, items);
-    expect(out).toContain('Kite transcript: Lantern Freight (invented) (Data Analyst)');
+    expect(out).toContain('Paramount AI transcript: Lantern Freight (invented) (Data Analyst)');
     expect(out).toContain('Them: What is the price');
     expect(out).toContain('You: Let me check');
-    expect(out).toContain('Kite answer (question: What is the price?)');
+    expect(out).toContain('Paramount AI answer (question: What is the price?)');
     expect(out).toContain('    Fifty two dollars a seat.');
     expect(out).toContain('    - Billed yearly');
     expect(out).toContain('    Offer the sheet.');
-    expect(out.indexOf('Them:')).toBeLessThan(out.indexOf('Kite answer'));
-    expect(out.indexOf('Kite answer')).toBeLessThan(out.indexOf('You:'));
+    expect(out.indexOf('Them:')).toBeLessThan(out.indexOf('Paramount AI answer'));
+    expect(out.indexOf('Paramount AI answer')).toBeLessThan(out.indexOf('You:'));
   });
 
   it('leaves out the private note', () => {
@@ -168,9 +168,9 @@ describe('transcriptText', () => {
 describe('transcriptFileName', () => {
   it('makes a safe name from the company', () => {
     expect(transcriptFileName({ company: 'Lantern Freight (invented)' }, 'txt')).toBe(
-      'kite-transcript-lantern-freight-invented.txt',
+      'paramount-ai-transcript-lantern-freight-invented.txt',
     );
-    expect(transcriptFileName({ company: '../..' }, 'pdf')).toBe('kite-transcript.pdf');
+    expect(transcriptFileName({ company: '../..' }, 'pdf')).toBe('paramount-ai-transcript.pdf');
   });
 });
 
@@ -231,7 +231,7 @@ describe('the PDF in a real reader', () => {
   it('opens in pdf.js, with its pages and text intact', async () => {
     const pdfjs = await import('pdfjs-dist/webpack.mjs');
     const lines = Array.from({ length: 100 }, (_, i) => ({ text: `Line number ${i} (café)` }));
-    const { bytes } = writePdf('Kite transcript', lines);
+    const { bytes } = writePdf('Paramount AI transcript', lines);
     const task = pdfjs.getDocument({ data: bytes.slice() });
     const document = await task.promise;
     expect(document.numPages).toBeGreaterThan(1);

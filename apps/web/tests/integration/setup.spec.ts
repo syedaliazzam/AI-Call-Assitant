@@ -1,12 +1,14 @@
 /**
  * Harness test for session setup (parity Phase 2, ADR-0029), no sign-in, runs in CI. With the real
  * Dashboard, SessionWizard and LibraryPage on the browser's real IndexedDB, and /api/job-import and
- * /api/preview mocked (no Claude call), it covers: the dashboard's tabs with counts, search, sort,
- * grid or list, the session card's chips and menu (rename, duplicate, delete), and Create session's
- * menu of types; the job link filling in details, saying what was imported, and failing kindly;
+ * /api/preview mocked (no Claude call), it covers: the sessions page's tabs, count, Active and Past
+ * sections, search, sort, grid or list and empty state, the session card's shape, chips and menu (rename,
+ * duplicate, delete), and the split button's types; the wizard's modal, stepper, validation and
+ * discard question; the job link filling in details, saying what was imported, and failing kindly;
  * the Resume and Documents pickers with upload; a session keeping its copy when a library item is
- * deleted; the Answer preferences window with a preview asked for once and kept, and Set as
- * default; language and AI instructions.
+ * deleted; key terms as chips; the Answer preferences window with its drill-in views, static preview
+ * (no API call), STAR and Set as default; AI instructions; language, model and the admin's switch;
+ * each session type's button.
  * Set KITE_SCREENSHOT_DIR to also save screenshots at 1440 and 390 px.
  */
 import { createServer, type Server } from 'node:http';
@@ -23,9 +25,9 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test';
-import type { AnswerPreviewRequest } from '@kite/shared';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
+import { pickOption } from '../lib/pick-option';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -45,8 +47,8 @@ let browser: Browser | null = null;
 let origin = '';
 let context: BrowserContext;
 let page: Page;
-/** How many previews were asked of the mocked server. */
-let previewRequests = 0;
+/** Requests the page made to the server's API. */
+let apiRequests: string[] = [];
 
 test.describe.configure({ mode: 'serial' });
 
@@ -91,7 +93,9 @@ test.beforeAll(async () => {
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(
-      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kite setup harness</title>' +
+      '<!doctype html><html data-theme="' +
+        (process.env.KITE_VISUAL_THEME ?? 'light') +
+        '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Paramount AI setup harness</title>' +
         '<link rel="stylesheet" href="/harness/setup.css"></head>' +
         '<body class="font-sans"><div id="root"></div>' +
         '<script type="module" src="/harness/setup.js"></script></body></html>',
@@ -110,17 +114,15 @@ test.afterAll(async () => {
 
 test.beforeEach(async () => {
   // A fresh context per test: an empty database and no saved preferences.
-  context = await browser!.newContext({ viewport: { width: 1440, height: 900 } });
+  context = await browser!.newContext({
+    viewport: { width: 1440, height: 900 },
+    deviceScaleFactor: 1.5,
+  });
   page = await context.newPage();
-  previewRequests = 0;
-  await page.route('**/api/preview', async (route) => {
-    previewRequests += 1;
-    const body = route.request().postDataJSON() as AnswerPreviewRequest;
-    await route.fulfill({
-      json: {
-        text: `I would look at the query plan first (${body.style.tone}).\n- Check the indexes\nTip: Mention the 40 second report.`,
-      },
-    });
+  apiRequests = [];
+  page.on('request', (request) => {
+    const { pathname } = new URL(request.url());
+    if (pathname.startsWith('/api/')) apiRequests.push(pathname);
   });
   await page.goto(origin);
   await page.waitForFunction(() => 'kiteSetupHarness' in window);
@@ -172,7 +174,7 @@ async function seedDashboard(): Promise<void> {
     await h.seedSession('mock', 'Zephyr Labs (invented)', 'Data Analyst', 1_000, 'ended');
   });
   await go('/');
-  await expect(page.getByRole('heading', { name: 'Alder Foods (invented)' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Renewal review' })).toBeVisible();
 }
 
 /**
@@ -184,24 +186,46 @@ function titles() {
   return page.getByRole('heading', { level: 2 }).allTextContents();
 }
 
-test('dashboard: tabs with counts, search, sort, and grid or list', async () => {
-  await seedDashboard();
-  const tabs = page.getByRole('group', { name: 'Session type' }).or(page.getByRole('tablist'));
-  await expect(tabs.first()).toContainText('All (3)');
-  await expect(tabs.first()).toContainText('Interview (1)');
-  await expect(tabs.first()).toContainText('Regular (1)');
-  await expect(tabs.first()).toContainText('Mock (1)');
-  await shots('dashboard-list');
+/**
+ * Chooses a sort order.
+ *
+ * @param name The order's words.
+ */
+async function sortBy(name: string): Promise<void> {
+  await page.getByRole('button', { name: 'Sort' }).click();
+  await page.getByRole('menuitemradio', { name }).click();
+}
 
+test('sessions page: tabs, the count, sections, search, sort, and grid or list', async () => {
+  await seedDashboard();
+  const tabs = page.getByRole('group', { name: 'Session type' });
+  await expect(tabs.getByRole('button')).toHaveText(['All', 'Interview', 'Regular', 'Mock']);
+  await expect(page.getByText('3 Sessions')).toBeVisible();
+  await shots('dashboard-grid');
+
+  // Active sessions first, each section newest first, with its count.
+  const activeSection = page.getByRole('region', { name: 'Active sessions' });
+  const pastSection = page.getByRole('region', { name: 'Past sessions' });
+  await expect(activeSection.getByRole('button', { name: 'Active sessions' })).toContainText('2');
+  await expect(pastSection.getByRole('button', { name: 'Past sessions' })).toContainText('1');
   expect(await titles()).toEqual([
-    'Alder Foods (invented)',
+    'Renewal review',
     'Lantern Freight (invented)',
     'Zephyr Labs (invented)',
   ]);
-  await page.getByLabel('Sort').selectOption('oldest');
-  expect((await titles())[0]).toBe('Zephyr Labs (invented)');
-  await page.getByLabel('Sort').selectOption('company');
-  expect((await titles())[0]).toBe('Alder Foods (invented)');
+  await sortBy('Oldest first');
+  expect((await titles())[0]).toBe('Lantern Freight (invented)');
+  await sortBy('A–Z');
+  expect(await titles()).toEqual([
+    'Renewal review',
+    'Lantern Freight (invented)',
+    'Zephyr Labs (invented)',
+  ]);
+
+  // A section collapses.
+  await pastSection.getByRole('button', { name: 'Past sessions' }).click();
+  await expect(page.getByRole('heading', { name: 'Zephyr Labs (invented)' })).toHaveCount(0);
+  await pastSection.getByRole('button', { name: 'Past sessions' }).click();
 
   await page.getByLabel('Search sessions').fill('analyst');
   await expect(page.getByRole('heading', { level: 2 })).toHaveCount(2);
@@ -209,18 +233,28 @@ test('dashboard: tabs with counts, search, sort, and grid or list', async () => 
   await expect(page.getByText('No sessions match')).toBeVisible();
   await page.getByLabel('Search sessions').fill('');
 
-  await page.getByText('Mock (1)').click();
+  await tabs.getByRole('button', { name: 'Mock' }).click();
   await expect(page.getByRole('heading', { level: 2 })).toHaveCount(1);
-  await page.getByText('All (3)').click();
+  await expect(page.getByText('1 Session', { exact: true })).toBeVisible();
+  await tabs.getByRole('button', { name: 'All' }).click();
 
-  await page.getByRole('radio', { name: 'Grid' }).click();
+  // The grid by default; the choice of list is remembered.
   await expect(page.getByRole('radio', { name: 'Grid' })).toBeChecked();
-  await shots('dashboard-grid');
-  // The choice is remembered.
+  await page.getByRole('radio', { name: 'List' }).click();
+  await expect(page.getByRole('radio', { name: 'List' })).toBeChecked();
+  await shots('dashboard-list');
   await page.reload();
   await page.waitForFunction(() => 'kiteSetupHarness' in window);
   await go('/');
-  await expect(page.getByRole('radio', { name: 'Grid' })).toBeChecked();
+  await expect(page.getByRole('radio', { name: 'List' })).toBeChecked();
+});
+
+test('the empty state offers the split button', async () => {
+  await go('/');
+  await expect(page.getByText('No sessions yet. Create one to get started.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create session' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choose a session type' })).toBeVisible();
+  await shots('dashboard-empty');
 });
 
 test('session card: chips, status, Start or Review, and its menu', async () => {
@@ -231,11 +265,39 @@ test('session card: chips, status, Start or Review, and its menu', async () => {
   await expect(ready).toContainText('Interview');
   await expect(ready).toContainText('Transcript');
   await expect(ready).toContainText('Ready to start');
+  await expect(ready).toContainText('Not started yet');
+  await expect(ready).toContainText('Data Analyst');
   await expect(ready.getByRole('button', { name: 'Start session' })).toBeVisible();
+  // The card's shape (spec §1).
+  await expect(ready).toHaveCSS('border-top-left-radius', '20px');
+  await expect(ready).toHaveCSS('padding-top', '8px');
+  await expect(ready.getByRole('heading', { level: 2 })).toHaveCSS('font-size', '18px');
   const ended = card('Zephyr Labs (invented)');
   await expect(ended).toContainText('Ended');
+  await expect(ended).toContainText('6m 53s');
   await expect(ended).not.toContainText('Transcript');
-  await expect(ended.getByRole('link', { name: 'Review' })).toBeVisible();
+  await expect(ended.getByRole('link', { name: 'View transcript' })).toHaveAttribute(
+    'href',
+    /^\/sessions\/[\w-]+$/,
+  );
+  // A regular call's title is its topic.
+  const regular = card('Renewal review');
+  await expect(regular).toContainText('Alder Foods (invented)');
+
+  // The menu's rows; there is nothing to download yet.
+  await ready.getByRole('button', { name: /^More for / }).click();
+  await expect(page.getByRole('menuitem')).toHaveText([
+    'Edit',
+    'Rename',
+    'Duplicate',
+    'Download transcript',
+    'Delete',
+  ]);
+  await expect(page.getByRole('menuitem', { name: 'Download transcript' })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await ended.getByRole('button', { name: /^More for / }).click();
+  await expect(page.getByRole('menuitem').first()).toHaveText('Start again');
+  await page.keyboard.press('Escape');
 
   // Rename.
   await ready.getByRole('button', { name: /^More for / }).click();
@@ -255,7 +317,7 @@ test('session card: chips, status, Start or Review, and its menu', async () => {
     .click();
   await page.getByRole('menuitem', { name: 'Duplicate' }).click();
   await expect(page.getByRole('heading', { name: 'Zephyr Labs (invented)' })).toHaveCount(2);
-  await expect(page.getByText('All (4)')).toBeVisible();
+  await expect(page.getByText('4 Sessions')).toBeVisible();
   await expect(
     page
       .getByRole('listitem')
@@ -264,7 +326,7 @@ test('session card: chips, status, Start or Review, and its menu', async () => {
   ).toHaveCount(1);
 
   // Delete asks first.
-  await card('Alder Foods (invented)')
+  await card('Renewal review')
     .getByRole('button', { name: /^More for / })
     .click();
   await page.getByRole('menuitem', { name: 'Delete' }).click();
@@ -272,15 +334,78 @@ test('session card: chips, status, Start or Review, and its menu', async () => {
     .getByRole('dialog', { name: 'Delete this session?' })
     .getByRole('button', { name: 'Delete' })
     .click();
-  await expect(page.getByRole('heading', { name: 'Alder Foods (invented)' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Renewal review' })).toHaveCount(0);
 });
 
-test('Create session offers the types, and the wizard starts with the one chosen', async () => {
-  await seedDashboard();
-  await page.getByRole('button', { name: 'Create session' }).click();
-  await expect(page.getByRole('menuitem')).toHaveText(['Interview', 'Regular', 'Mock']);
-  await page.getByRole('menuitem', { name: 'Mock' }).click();
-  await expect(page.getByLabel('Session type')).toHaveValue('mock');
+test('the wizard starts with the type chosen in the split button', async () => {
+  await go('/');
+  await page.getByRole('button', { name: 'Choose a session type' }).click();
+  await expect(page.getByRole('menuitem')).toHaveText([
+    'Interview call',
+    'Regular call',
+    'Mock interview',
+  ]);
+  await page.getByRole('menuitem', { name: 'Mock interview' }).click();
+  await expect(page.getByRole('radio', { name: 'Mock' })).toBeChecked();
+});
+
+/**
+ * Fills in step 1's required fields.
+ */
+async function fillDetails(): Promise<void> {
+  await page.getByLabel('Company').fill('Lantern Freight (invented)');
+  await page.getByLabel('Role').fill('Data Analyst');
+}
+
+test('the wizard: modal, stepper, validation, type switch and the discard question', async () => {
+  await go('/sessions/new');
+  const dialog = page.getByRole('dialog', { name: 'Create session' });
+  await expect(dialog).toBeVisible();
+  const box = (await dialog.boundingBox())!;
+  expect(box.width).toBeCloseTo(760, 0);
+  expect(box.height).toBeCloseTo(600, 0);
+  await expect(dialog.getByRole('list', { name: 'Steps' })).toContainText('Details');
+  await expect(dialog.getByRole('button', { name: 'View tutorial' })).toBeDisabled();
+
+  // Next checks the required fields.
+  await dialog.getByRole('button', { name: 'Next' }).click();
+  await expect(dialog.getByText('Enter the company the call is with.')).toBeVisible();
+  await shots('wizard-errors');
+
+  // Switching type keeps what the types share.
+  await page.getByLabel('Company').fill('Lantern Freight (invented)');
+  await dialog.getByRole('radio', { name: 'Regular' }).click();
+  await expect(page.getByLabel('Topic')).toBeVisible();
+  await expect(page.getByLabel('Company')).toHaveValue('Lantern Freight (invented)');
+  await dialog.getByRole('radio', { name: 'Interview' }).click();
+
+  // ✕ asks first once something was typed; Keep editing keeps it.
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  const discard = page.getByRole('dialog', { name: 'Discard this session?' });
+  await discard.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(page.getByLabel('Company')).toHaveValue('Lantern Freight (invented)');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await discard.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
+  await expect(page.getByRole('dialog', { name: 'Create session' })).toHaveCount(0);
+
+  // With nothing typed it just closes.
+  await go('/sessions/new');
+  await page
+    .getByRole('dialog', { name: 'Create session' })
+    .getByRole('button', { name: 'Close', exact: true })
+    .click();
+  await expect(page.getByRole('dialog', { name: 'Discard this session?' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
+});
+
+test('Mock presets fill in a practice role', async () => {
+  await go('/sessions/new');
+  await page.getByRole('button', { name: 'Mock presets' }).click();
+  await page.getByRole('button', { name: 'Product manager' }).click();
+  await expect(page.getByRole('radio', { name: 'Mock' })).toBeChecked();
+  await expect(page.getByLabel('Role')).toHaveValue('Product manager');
+  await expect(page.getByLabel('Job description')).not.toHaveValue('');
 });
 
 test('job link: fills in the details, says what came in, and they can be edited', async () => {
@@ -298,21 +423,23 @@ test('job link: fills in the details, says what came in, and they can be edited'
   );
   await go('/sessions/new');
   await page.getByLabel('Company').fill('Typed first');
-  await page.getByLabel('Paste a job link (optional)').fill('https://jobs.example.com/42');
+  await expect(
+    page.getByText('Got a job post link? We’ll fill in the details for you.'),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Paste a job link' }).click();
+  await page.getByLabel('Job post link').fill('https://jobs.example.com/42');
   await page.getByRole('button', { name: 'Import' }).click();
   await expect(page.getByRole('status')).toContainText(
     'Imported the company, role and job description from jobs.example.com',
   );
   await expect(page.getByLabel('Company')).toHaveValue('Lantern Freight (invented)');
   await expect(page.getByLabel('Role')).toHaveValue('Data Analyst');
-  await expect(page.getByLabel('Job description (optional)')).toHaveValue(
-    'Build reports with SQL.',
-  );
+  await expect(page.getByLabel('Job description')).toHaveValue('Build reports with SQL.');
   await shots('wizard-details');
   await page.getByLabel('Role').fill('Senior Data Analyst');
   await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('button', { name: 'Create session' }).click();
-  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create interview session' }).click();
+  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
   const [session] = await page.evaluate(() => window.kiteSetupHarness.stored());
   expect(session).toMatchObject({
     company: 'Lantern Freight (invented)',
@@ -325,14 +452,20 @@ test('job link: a page it cannot read leaves what was typed, and says so', async
   await page.route('**/api/job-import', (route) =>
     route.fulfill({
       status: 422,
-      json: { code: 'bad_request', message: 'Kite can only read public web pages.' },
+      json: {
+        code: 'bad_request',
+        message: 'Couldn’t read that page. Paste the description instead.',
+      },
     }),
   );
   await go('/sessions/new');
   await page.getByLabel('Company').fill('Typed first');
-  await page.getByLabel('Paste a job link (optional)').fill('http://10.0.0.1/');
-  await page.getByLabel('Paste a job link (optional)').press('Enter');
-  await expect(page.getByRole('alert')).toContainText('public web pages');
+  await page.getByRole('button', { name: 'Paste a job link' }).click();
+  await page.getByLabel('Job post link').fill('https://10.0.0.1/');
+  await page.getByLabel('Job post link').press('Enter');
+  await expect(page.getByRole('alert')).toHaveText(
+    'Couldn’t read that page. Paste the description instead.',
+  );
   await expect(page.getByLabel('Company')).toHaveValue('Typed first');
 });
 
@@ -343,17 +476,20 @@ test('job link: a page with no job in it adds nothing', async () => {
     }),
   );
   await go('/sessions/new');
-  await page.getByLabel('Paste a job link (optional)').fill('https://blog.example.com/');
+  await page.getByRole('button', { name: 'Paste a job link' }).click();
+  await page.getByLabel('Job post link').fill('https://blog.example.com/');
   await page.getByRole('button', { name: 'Import' }).click();
-  await expect(page.getByRole('alert')).toContainText('No job details found');
+  await expect(page.getByRole('alert')).toHaveText(
+    'Couldn’t read that page. Paste the description instead.',
+  );
 });
 
 test('regular sessions have a topic and no job link or resume', async () => {
   await go('/sessions/new?type=regular');
   await expect(page.getByLabel('Topic')).toBeVisible();
-  await expect(page.getByLabel('Paste a job link (optional)')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Upload a resume' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Upload a document' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Paste a job link' })).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'CV / Resume' })).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Documents' })).toBeVisible();
 });
 
 test('pickers: choose from the library, upload, one resume, and the session keeps a copy', async () => {
@@ -364,30 +500,46 @@ test('pickers: choose from the library, upload, one resume, and the session keep
     await h.seedLibrary('document', 'notes.txt', 'Notes (invented).');
   });
   await go('/sessions/new');
-  await page.getByLabel('Company').fill('Lantern Freight (invented)');
-  await page.getByLabel('Role').fill('Data Analyst');
+  await fillDetails();
+
+  await page.getByRole('combobox', { name: 'CV / Resume' }).click();
+  await shots('wizard-cv-menu');
+  await page.keyboard.press('Escape');
 
   // Several documents; one taken away again.
-  await page.getByRole('checkbox', { name: 'prices.txt' }).click();
-  await page.getByRole('checkbox', { name: 'notes.txt' }).click();
-  await expect(page.getByRole('checkbox', { name: 'prices.txt' })).toBeChecked();
-  await page.getByRole('checkbox', { name: 'notes.txt' }).click();
-  await expect(page.getByRole('checkbox', { name: 'notes.txt' })).not.toBeChecked();
+  const documents = page.getByRole('combobox', { name: 'Documents' });
+  await documents.click();
+  await page.getByRole('option', { name: 'prices.txt' }).click();
+  await page.getByRole('option', { name: 'notes.txt' }).click();
+  await expect(documents).toHaveText('2 selected');
+  await page.getByRole('option', { name: 'notes.txt' }).click();
+  await expect(documents).toHaveText('prices.txt');
+  await shots('wizard-documents-menu');
+  await page.keyboard.press('Escape');
 
   // One resume: choosing, then uploading another, leaves only the new one.
-  await page.getByRole('radio', { name: 'old-resume.txt' }).click();
-  await expect(page.getByRole('radio', { name: 'old-resume.txt' })).toBeChecked();
+  const resume = page.getByRole('combobox', { name: 'CV / Resume' });
+  await expect(resume).toHaveText('None');
+  await pickOption(page, resume, 'old-resume.txt');
+  await expect(resume).toHaveText('old-resume.txt');
   await page.getByLabel('Upload a resume').setInputFiles({
     name: 'new-resume.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('New experience (invented).'),
   });
-  await expect(page.getByRole('radio', { name: 'new-resume.txt' })).toBeChecked();
-  await expect(page.getByRole('radio', { name: 'old-resume.txt' })).not.toBeChecked();
+  await expect(resume).toHaveText('new-resume.txt');
   await shots('wizard-pickers');
+  await resume.click();
+  await expect(page.getByRole('option')).toHaveText(['None', 'new-resume.txt', 'old-resume.txt']);
+  await page.keyboard.press('Escape');
+
+  // None takes it away; choosing again brings it back.
+  await pickOption(page, resume, 'None');
+  await expect(resume).toHaveText('None');
+  await pickOption(page, resume, 'new-resume.txt');
 
   // A file that cannot be read says so, and the wizard carries on.
-  await page.getByLabel('Upload a document').setInputFiles({
+  await page.getByLabel('Add a document').setInputFiles({
     name: 'picture.png',
     mimeType: 'image/png',
     buffer: Buffer.from('not text'),
@@ -395,17 +547,17 @@ test('pickers: choose from the library, upload, one resume, and the session keep
   await expect(page.getByRole('alert')).toContainText('picture.png');
 
   await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('button', { name: 'Create session' }).click();
-  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create interview session' }).click();
+  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
 
-  const documents = await page.evaluate(() => window.kiteSetupHarness.newestDocuments());
-  expect(documents).toEqual(
+  const stored = await page.evaluate(() => window.kiteSetupHarness.newestDocuments());
+  expect(stored).toEqual(
     expect.arrayContaining([
       { name: 'prices.txt', text: 'Prices (invented).', kind: 'document' },
       { name: 'new-resume.txt', text: 'New experience (invented).', kind: 'resume' },
     ]),
   );
-  expect(documents).toHaveLength(2);
+  expect(stored).toHaveLength(2);
   // An upload in the wizard joins the library.
   expect(await page.evaluate(() => window.kiteSetupHarness.library('resume'))).toContain(
     'new-resume.txt',
@@ -423,7 +575,26 @@ test('pickers: choose from the library, upload, one resume, and the session keep
   expect(after.map((document) => document.name)).toContain('new-resume.txt');
   const [session] = await page.evaluate(() => window.kiteSetupHarness.stored());
   await go(`/sessions/${session!.id}/edit`);
-  await expect(page.getByRole('button', { name: 'Remove new-resume.txt' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'CV / Resume' })).toHaveText('new-resume.txt');
+  await expect(page.getByRole('dialog', { name: 'Edit session' })).toBeVisible();
+});
+
+test('key terms are chips: typed, pasted as a list, removed, and saved one per line', async () => {
+  await go('/sessions/new');
+  await fillDetails();
+  const terms = page.getByLabel('Key terms');
+  await terms.fill('Northwind');
+  await terms.press('Enter');
+  await terms.fill('Harbor, RAG; BM25');
+  await terms.press('Enter');
+  await expect(page.getByRole('button', { name: /^Remove / })).toHaveCount(4);
+  await page.getByRole('button', { name: 'Remove RAG' }).click();
+  await terms.press('Backspace');
+  await expect(page.getByRole('button', { name: /^Remove / })).toHaveCount(2);
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Create interview session' }).click();
+  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
+  expect(await page.evaluate(() => window.kiteSetupHarness.keyTerms())).toBe('Northwind\nHarbor');
 });
 
 test('library pages: upload, list and delete, each library separately', async () => {
@@ -442,80 +613,161 @@ test('library pages: upload, list and delete, each library separately', async ()
   await expect(page.getByRole('button', { name: 'Delete a.txt' })).toHaveCount(0);
 });
 
-test('Answer preferences: a preview is asked for once and kept; Apply and Set as default', async () => {
+test('Answer preferences: drill-in views, a static preview, STAR and Set as default', async () => {
   await go('/sessions/new');
-  await page.getByLabel('Company').fill('Lantern Freight (invented)');
-  await page.getByLabel('Role').fill('Data Analyst');
+  await fillDetails();
   await page.getByRole('button', { name: 'Next' }).click();
-  await expect(page.getByText('Script + bullets · Short · Simple')).toBeVisible();
-  await page.getByRole('button', { name: 'Configure: Answer preferences' }).click();
+  await page.getByRole('button', { name: 'Configure' }).click();
   const dialog = page.getByRole('dialog', { name: 'Answer preferences' });
-
-  // Nothing is asked for until the user wants it.
-  expect(previewRequests).toBe(0);
-  await dialog.getByRole('button', { name: 'Show preview' }).click();
-  await expect(dialog.getByText('I would look at the query plan first (simple).')).toBeVisible();
-  await expect(dialog.getByText('Check the indexes')).toBeVisible();
-  await expect(dialog.getByText('Mention the 40 second report.')).toBeVisible();
-  expect(previewRequests).toBe(1);
+  await expect(dialog.getByRole('button', { name: /^Format/ })).toContainText(
+    'Opening line + bullets',
+  );
+  await expect(dialog.getByRole('button', { name: /^Length/ })).toContainText('Short');
+  await expect(dialog.getByRole('button', { name: /^Tone/ })).toContainText('Plain');
+  // Save waits for a change.
+  await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled();
+  // The window's name follows its view, so the sample is found on the page.
+  const sample = page.getByRole('region', { name: 'Sample answer' });
+  await expect(sample).toContainText('Tell me about a time you disagreed');
   await shots('answer-preferences');
 
-  // Another combination needs its own; going back shows the kept one, at no cost.
-  await dialog.getByRole('radio', { name: 'Technical', exact: true }).first().click();
-  await expect(dialog.getByRole('button', { name: 'Show preview' })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Show preview' }).click();
-  await expect(dialog.getByText('query plan first (technical)')).toBeVisible();
-  expect(previewRequests).toBe(2);
-  await dialog.getByRole('radio', { name: 'Simple' }).click();
-  await expect(dialog.getByText('query plan first (simple)')).toBeVisible();
-  expect(previewRequests).toBe(2);
+  // The preview follows the question type; nothing is asked of the server, then or later.
+  await pickOption(page, dialog.getByRole('combobox', { name: 'Question type' }), 'Coding');
+  await expect(sample).toContainText('Find the first repeated number');
 
-  await dialog.getByRole('radio', { name: 'Professional' }).click();
+  // A drill-in view: the preview changes at once; Back drops the change.
+  await dialog.getByRole('button', { name: /^Format/ }).click();
+  const format = page.getByRole('dialog', { name: 'Format' });
+  await format.getByRole('radio', { name: /Bullets only/ }).click();
+  await expect(sample).not.toContainText('Walk through the list once');
+  await shots('answer-preferences-format');
+  await format.getByRole('button', { name: 'Back' }).click();
+  await expect(sample).toContainText('Walk through the list once');
+  await expect(dialog.getByRole('button', { name: /^Format/ })).toContainText(
+    'Opening line + bullets',
+  );
+
+  // Select keeps it; Save can be pressed now.
+  await dialog.getByRole('button', { name: /^Format/ }).click();
+  await format.getByRole('radio', { name: /Bullets only/ }).click();
+  await format.getByRole('button', { name: 'Select' }).click();
+  await expect(dialog.getByRole('button', { name: /^Format/ })).toContainText('Bullets only');
+  await expect(dialog.getByRole('button', { name: 'Save' })).toBeEnabled();
+
+  // STAR, shown on a behavioural answer; Filler words is not available yet.
+  await pickOption(page, dialog.getByRole('combobox', { name: 'Question type' }), 'Behavioural');
+  await dialog.getByRole('button', { name: /^Format/ }).click();
+  await format.getByRole('switch', { name: 'STAR structure' }).click();
+  await expect(sample).toContainText('Situation:');
+  await expect(sample).toContainText('Result:');
+  await expect(format.getByText('Filler words')).toBeVisible();
+  await expect(format.getByRole('switch', { name: 'Filler words' })).toHaveCount(0);
+  await format.getByRole('button', { name: 'Select' }).click();
+
+  // Length and tone; Technical stays as a third card.
+  await dialog.getByRole('button', { name: /^Length/ }).click();
+  const length = page.getByRole('dialog', { name: 'Length' });
+  await expect(length).toBeVisible();
+  await shots('answer-preferences-length');
+  await expect(length.getByRole('radio')).toHaveCount(3);
+  await length.getByRole('radio', { name: /Balanced/ }).click();
+  await length.getByRole('button', { name: 'Select' }).click();
+  await dialog.getByRole('button', { name: /^Tone/ }).click();
+  const tone = page.getByRole('dialog', { name: 'Tone' });
+  await expect(tone).toBeVisible();
+  await shots('answer-preferences-tone');
+  await expect(tone.getByRole('radio')).toHaveCount(3);
+  await tone.getByRole('radio', { name: /Technical/ }).click();
+  await tone.getByRole('button', { name: 'Select' }).click();
+
   await dialog.getByRole('button', { name: 'Set as default' }).click();
   await expect(dialog.getByText('New sessions will start with these.')).toBeVisible();
-  expect(await page.evaluate(() => window.kiteSetupHarness.defaultTone())).toBe('professional');
-  await dialog.getByRole('radio', { name: 'Bullets only' }).click();
-  await dialog.getByRole('button', { name: 'Apply' }).click();
-  await expect(page.getByText('Bullets only · Short · Professional')).toBeVisible();
+  expect(await page.evaluate(() => window.kiteSetupHarness.defaultTone())).toBe('technical');
+  await dialog.getByRole('button', { name: 'Save' }).click();
 
-  await page.getByLabel('Answer language').selectOption('es');
-  await expect(page.getByText('Live transcription is English-only for now.')).toBeVisible();
-
-  await page.getByRole('button', { name: 'Add: AI instructions' }).click();
+  // AI instructions: Save waits for a change, Clear empties, and the row shows the start of it.
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
   const instructions = page.getByRole('dialog', { name: 'AI instructions' });
-  await instructions.getByLabel('Context for Kite').fill('Answer as a data analyst.');
-  // Cancel keeps what was there; Save keeps the new words.
-  await instructions.getByRole('button', { name: 'Cancel' }).click();
-  await expect(page.getByText('None yet. Tell Kite who you are')).toBeVisible();
-  await page.getByRole('button', { name: 'Add: AI instructions' }).click();
-  await instructions.getByLabel('Context for Kite').fill('Answer as a data analyst.');
+  await expect(instructions.getByRole('button', { name: 'Save' })).toBeDisabled();
+  await instructions
+    .getByLabel('Context')
+    .fill('Answer as a data analyst who likes short, clear points.');
+  await instructions.getByRole('button', { name: 'Clear' }).click();
+  await expect(instructions.getByLabel('Context')).toHaveValue('');
+  await instructions
+    .getByLabel('Context')
+    .fill('Answer as a data analyst who likes short, clear points.');
+  await shots('ai-instructions');
   await instructions.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('None yet. Tell Kite who you are')).toHaveCount(0);
+  await expect(page.getByText('Answer as a data analyst who likes short…')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
 
-  await page.getByRole('switch', { name: 'Auto-answer (beta)' }).click();
+  await page.getByRole('combobox', { name: 'Model' }).click();
+  await shots('wizard-model-menu');
+  await page.keyboard.press('Escape');
+
+  // Language: a list with a search box.
+  await page.getByRole('combobox', { name: 'Language' }).click();
+  await shots('wizard-language-menu');
+  await page.getByRole('textbox', { name: 'Search language' }).fill('span');
+  await page.getByRole('option', { name: 'Spanish' }).click();
+  await expect(page.getByText('Language of the answers')).toBeVisible();
+
+  await page.getByRole('switch', { name: 'Auto answer' }).click();
   await shots('wizard-preferences');
-  await page.getByRole('button', { name: 'Create session' }).click();
-  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create interview session' }).click();
+  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
   const [session] = await page.evaluate(() => window.kiteSetupHarness.stored());
   expect(session).toMatchObject({
     language: 'es',
     format: 'bullets',
-    tone: 'professional',
-    instructions: 'Answer as a data analyst.',
+    tone: 'technical',
+    star: true,
+    instructions: 'Answer as a data analyst who likes short, clear points.',
     autoAnswer: true,
   });
+  expect(apiRequests.filter((request) => request !== '/api/models')).toEqual([]);
 });
 
-test('a failed preview says so and can be tried again, and nothing is kept', async () => {
-  await page.unroute('**/api/preview');
-  await page.route('**/api/preview', (route) => route.fulfill({ status: 503, json: {} }));
+test('the model: Haiku recommended, and Sonnet unavailable when an admin turned it off', async () => {
   await go('/sessions/new');
-  await page.getByLabel('Company').fill('Lantern Freight (invented)');
-  await page.getByLabel('Role').fill('Data Analyst');
+  await fillDetails();
   await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('button', { name: 'Configure: Answer preferences' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Answer preferences' });
-  await dialog.getByRole('button', { name: 'Show preview' }).click();
-  await expect(dialog.getByText('could not write a preview')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Show preview' })).toBeEnabled();
+  const model = page.getByRole('combobox', { name: 'Model' });
+  await expect(model).toHaveText('Claude Haiku 5.5');
+  await model.click();
+  await expect(page.getByRole('option', { name: /Haiku/ })).toContainText('Recommended');
+  await expect(page.getByRole('option', { name: /Sonnet/ })).toContainText('Deeper, slower');
+  await page.getByRole('option', { name: /Sonnet/ }).click();
+  await expect(model).toHaveText('Claude Sonnet 5.5');
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('button', { name: 'Discard' }).click();
+
+  await page.route('**/api/models', (route) => route.fulfill({ json: { deepModel: false } }));
+  await go('/sessions/new');
+  await fillDetails();
+  await page.getByRole('button', { name: 'Next' }).click();
+  await model.click();
+  const sonnet = page.getByRole('option', { name: /Sonnet/ });
+  await expect(sonnet).toContainText('Turned off');
+  await expect(sonnet).toHaveAttribute('aria-disabled', 'true');
+});
+
+test('the last button follows the type, and Save transcript is on by default', async () => {
+  for (const [type, label] of [
+    ['interview', 'Create interview session'],
+    ['regular', 'Create regular session'],
+    ['mock', 'Create mock interview'],
+  ] as const) {
+    await go(`/sessions/new?type=${type}`);
+    await page.getByLabel('Company').fill('Lantern Freight (invented)');
+    await page.getByLabel(type === 'regular' ? 'Topic' : 'Role').fill('Data Analyst');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByRole('button', { name: label })).toBeVisible();
+    await expect(page.getByRole('switch', { name: 'Save transcript' })).toBeChecked();
+    await page.getByRole('button', { name: 'Back' }).click();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole('button', { name: 'Discard' }).click();
+  }
 });

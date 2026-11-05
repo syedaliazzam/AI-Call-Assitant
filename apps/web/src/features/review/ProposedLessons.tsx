@@ -48,8 +48,8 @@ export function ProposedLessons(props: ProposedLessonsProps) {
     <div>
       <h3 className="font-semibold text-ui-heading">Proposed lessons</h3>
       <p className="text-[13px] text-ui-muted">
-        Suggestions only: Kite learns nothing until you approve a lesson. Approved lessons are sent
-        with later answers, exactly as shown, as your preferences.
+        Suggestions only: Paramount AI learns nothing until you approve a lesson. Approved lessons
+        are sent with later answers, exactly as shown, as your preferences.
       </p>
       <ul aria-label="Proposed lessons" className="mt-1 space-y-2">
         {props.proposals.map((proposal, i) => (

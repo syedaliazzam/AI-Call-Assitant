@@ -108,7 +108,7 @@ export function Settings({ isAdmin }: SettingsProps) {
         if (!cancelled) setDefaults(loaded);
       })
       .catch(() => {
-        if (!cancelled) setError('Kite could not open its local storage. Reload the page.');
+        if (!cancelled) setError('Paramount AI could not open its local storage. Reload the page.');
       });
     return () => {
       cancelled = true;
@@ -144,7 +144,7 @@ export function Settings({ isAdmin }: SettingsProps) {
       setDefaults(BUILT_IN_DEFAULTS);
       setSaved(false);
     } catch {
-      setError('The local data could not be deleted. Close other Kite tabs and try again.');
+      setError('The local data could not be deleted. Close other Paramount AI tabs and try again.');
     } finally {
       setDeleting(false);
       setConfirming(false);
@@ -152,7 +152,7 @@ export function Settings({ isAdmin }: SettingsProps) {
   }
 
   return (
-    <PageShell eyebrow="Kite" title="Settings" description="Saved on this computer only.">
+    <PageShell title="Settings">
       {error && (
         <p role="alert" className="text-[13px] text-ui-danger">
           {error}
@@ -242,7 +242,7 @@ export function Settings({ isAdmin }: SettingsProps) {
         </div>
       </Section>
 
-      <Section title="What Kite has learned">
+      <Section title="What Paramount AI has learned">
         {/* Remounted after "Delete all local data", so the list shows the empty store. */}
         <LearnedLessons key={deleted ? 'wiped' : 'kept'} />
       </Section>
@@ -250,8 +250,8 @@ export function Settings({ isAdmin }: SettingsProps) {
       <Section title="Local data">
         <DataTransfer />
         <p className="mb-4 text-[13px] text-ui-muted">
-          Deletes every session, document, transcript, answer, Ask Kite chat and learned lesson
-          saved by Kite on this computer, and these settings. The speech model stays (it holds no
+          Deletes every session, document, transcript, answer, Ask AI chat and learned lesson saved
+          by Paramount AI on this computer, and these settings. The speech model stays (it holds no
           personal data and is 204 MB to download again). Sessions in another browser or in the
           desktop app are separate and are not affected.
         </p>
@@ -262,7 +262,7 @@ export function Settings({ isAdmin }: SettingsProps) {
           <p role="status" className="mt-3 text-[13px] text-ui-success">
             Deleted {deleted.sessions} sessions, {deleted.documents} documents, {deleted.utterances}{' '}
             transcript lines, {deleted.answers} answers, {deleted.notes} notes, {deleted.lessons}{' '}
-            lessons and {deleted.chats} Ask Kite chats.
+            lessons and {deleted.chats} Ask AI chats.
           </p>
         )}
       </Section>
@@ -283,8 +283,8 @@ export function Settings({ isAdmin }: SettingsProps) {
         }
       >
         <p>
-          Every session, document, transcript, answer and learned lesson Kite saved on this computer
-          will be deleted. This cannot be undone.
+          Every session, document, transcript, answer and learned lesson Paramount AI saved on this
+          computer will be deleted. This cannot be undone.
         </p>
       </Dialog>
     </PageShell>

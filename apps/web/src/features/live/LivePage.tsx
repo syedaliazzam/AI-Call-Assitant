@@ -35,7 +35,7 @@ import {
 import { warmSession } from '@/core/answer/warm';
 import { markSessionActive, updateSession } from '@/core/storage/sessions';
 import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
-import { listUtterances } from '@/core/storage/utterances';
+import { clearTranscript, listUtterances } from '@/core/storage/utterances';
 import { listAnswers } from '@/core/storage/answers';
 import { notesFailureText, type UnavailableReason } from '@/core/answer/unavailable';
 import { generateNotes, type NotesLine } from '@/core/notes/generate';
@@ -133,7 +133,7 @@ function modelErrorMessage(error: unknown): string {
   const code = (error as { code?: string }).code;
   switch (code) {
     case 'download-network':
-      return 'Kite couldn’t download the speech model. Check your internet connection, then try again.';
+      return 'Paramount AI couldn’t download the speech model. Check your internet connection, then try again.';
     case 'download-checksum':
       return 'The speech model download was damaged or changed. Try again.';
     case 'download-quota':
@@ -156,8 +156,8 @@ function channelEndedMessage(speaker: Speaker, platform: 'desktop' | 'browser'):
   if (speaker === 'you')
     return 'The microphone stopped (unplugged or taken by another app). Reconnect to continue.';
   return platform === 'browser'
-    ? 'Sharing stopped, so Kite can’t hear the meeting. Reconnect and share the meeting tab again.'
-    : 'Kite stopped hearing your computer’s sound. Reconnect to continue.';
+    ? 'Sharing stopped, so Paramount AI can’t hear the meeting. Reconnect and share the meeting tab again.'
+    : 'Paramount AI stopped hearing your computer’s sound. Reconnect to continue.';
 }
 
 /**
@@ -572,7 +572,7 @@ export function LivePage({
       if (error instanceof CallCaptureError) {
         setChannelErrors({ [error.channel]: error.message });
       } else if (model.status !== 'error') {
-        setChannelErrors({ them: 'Kite could not connect. Try again.' });
+        setChannelErrors({ them: 'Paramount AI could not connect. Try again.' });
       }
     }
   };
@@ -625,9 +625,13 @@ export function LivePage({
     setEnding(false);
     updateSession(session.id, {
       status: 'ended',
-      // v1.1.0: for the home panel's card.
+      // v1.1.0: for the session cards.
       ...(startedAt !== null ? { lastCallMs: Date.now() - startedAt } : {}),
-    }).catch(() => undefined);
+    })
+      // Spec §6: with Save transcript off, no line stays. Read from storage, not this page's copy:
+      // the setting can be changed during the call. Notes and answers are kept.
+      .then((saved) => (saved.saveTranscript ? undefined : clearTranscript(session.id)))
+      .catch(() => undefined);
     // The call's notes (Day 5): written after the call by the server, saved here. Not awaited:
     // End never waits for them.
     if (startedAt !== null && finalLines.length > 0) {
@@ -752,14 +756,14 @@ export function LivePage({
 
   if (view === 'connect') {
     return (
-      // The Connect view is a call screen too: dark tokens (theme §2).
-      <div className="k-dark min-h-screen bg-ui-bg pb-10 text-ui-text">
+      // The Connect card follows the app's theme (spec S11).
+      <div className="min-h-full bg-ui-bg pb-10 text-ui-text">
         {lockedOut && (
           <p
             role="alert"
             className="mx-auto mt-4 max-w-3xl rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
           >
-            A call is already running in another Kite window. End it first.
+            A call is already running in another Paramount AI window. End it first.
           </p>
         )}
         <ConnectPanel
@@ -772,6 +776,8 @@ export function LivePage({
           channelErrors={channelErrors}
           soundCheck={soundCheck}
           health={health}
+          micDeviceId={micDeviceId}
+          onMic={changeMic}
           onConnect={() => void connect()}
           onRetryModel={retryModel}
           onContinue={() => setView('live')}
@@ -905,7 +911,7 @@ export function LivePage({
             className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
           >
             Some transcript lines could not be saved on this computer (is the disk full?). The call
-            continues; Kite keeps trying.
+            continues; Paramount AI keeps trying.
           </p>
         )}
         {/* Echo lines (the other side's voice from the speakers, picked up by the

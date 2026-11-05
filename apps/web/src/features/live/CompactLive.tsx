@@ -15,6 +15,8 @@
 
 import type { OverlayLayout, OverlayPreset, OverlayResizeStep } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { authClient } from '@/core/auth/authClient';
+import { isDoublePress } from '@/core/live/doublePress';
 import {
   openLiveChannel,
   type CompactLevels,
@@ -34,6 +36,7 @@ import { useAppearance } from '@/features/appearance/useAppearance';
 import { usePrivate } from '@/features/privacy/usePrivate';
 import { getPlatform } from '@/platform';
 import { CompactView } from './CompactView';
+import type { ChatBarHandle } from './overlay/ChatBar';
 import type { LevelStore } from './overlay/parts';
 
 /** Props for CompactLive. */
@@ -45,6 +48,8 @@ export interface CompactLiveProps {
    * browser picture-in-picture window, 'window' is the main page, so the platform closes it.
    */
   closeOnEnd?: boolean;
+  /** The signed-in person's email, when the route knows it; otherwise it is asked for once. */
+  email?: string;
 }
 
 /**
@@ -93,8 +98,11 @@ function createLevelStore(): LevelStore & {
  * @returns The view.
  * Rendered by: app/compact/[id]/page.tsx
  */
-export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) {
+export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLiveProps) {
   const [state, setState] = useState<CompactState | null>(null);
+  const [askedEmail, setAskedEmail] = useState<string | null>(null);
+  const chatBar = useRef<ChatBarHandle>(null);
+  const lastChatPress = useRef<number | null>(null);
   const { state: protection, change: changeProtection } = usePrivate();
   const [chatOpen, setChatOpen] = useState(false);
   const [opacity, setOpacity] = useState(getOverlayOpacity);
@@ -131,6 +139,11 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
     () => getPlatform().kind === 'browser' || getPlatform().hasHomePanel(),
     () => false,
   );
+  const iconMode = useSyncExternalStore(
+    subscribeNever,
+    () => getPlatform().overlayIconMode(),
+    () => false,
+  );
   const { theme, resolved, zoom, fontScale } = useAppearance(closeOnEnd);
 
   useEffect(() => {
@@ -145,6 +158,21 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
       channel.current = null;
     };
   }, [sessionId, levels]);
+
+  // The picture-in-picture window has no route of its own to give the email. It is only for the menu.
+  useEffect(() => {
+    if (email !== undefined) return;
+    let active = true;
+    authClient
+      .getSession()
+      .then((result) => {
+        if (active) setAskedEmail(result.data?.user.email ?? null);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [email]);
 
   // ADR-0033: the opacity dims only the panels' background, not the window; the text stays opaque.
   // The window itself is kept fully opaque (older shells could dim it; set it back once). The
@@ -162,7 +190,17 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
     const target = root.current?.ownerDocument.defaultView;
     if (!target) return;
     return getPlatform().listenForFocusedHotkeys(target, (action) => {
-      if (action === 'chat') setChatOpen((open) => !open);
+      if (action === 'chat') {
+        // Pressed twice (spec S14): open, with the microphone on. Once: open or close.
+        const now = Date.now();
+        if (isDoublePress(lastChatPress.current, now)) {
+          setChatOpen(true);
+          if (stateRef.current?.dictationSupported) {
+            channel.current?.send({ type: 'dictate', on: true });
+          }
+        } else setChatOpen((open) => !open);
+        lastChatPress.current = now;
+      } else if (action === 'screenshot-send') chatBar.current?.screenshotSend();
       else if (action === 'script-bar') {
         // Ctrl+Alt+S with the overlay focused: the live page holds the switch (v1.0.2).
         channel.current?.send({ type: 'script-bar', on: !(stateRef.current?.scriptBar ?? false) });
@@ -189,6 +227,20 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
     if (chatCount > seenChat) setChatOpen(true);
   }
 
+  // v1.2.0: likewise the chat bar's screenshot shortcut. Nothing happens with the bar closed.
+  const screenshotSendCount = state?.screenshotSendCount ?? 0;
+  const seenScreenshotSend = useRef(0);
+  useEffect(() => {
+    if (screenshotSendCount > seenScreenshotSend.current) chatBar.current?.screenshotSend();
+    seenScreenshotSend.current = screenshotSendCount;
+  }, [screenshotSendCount]);
+
+  // v1.2.0: that shortcut is held from other apps only while the bar is open.
+  useEffect(() => {
+    getPlatform().setChatHotkey(chatOpen);
+    return () => getPlatform().setChatHotkey(false);
+  }, [chatOpen]);
+
   // The call ended: close this window shortly (the live page also asks the shell to close it).
   useEffect(() => {
     if (!state?.ended || !closeOnEnd) return;
@@ -207,8 +259,13 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
         state={state}
         protection={protection}
         mac={mac}
+        email={email ?? askedEmail}
         chatOpen={chatOpen}
         onChatOpen={setChatOpen}
+        chatBar={chatBar}
+        {...(iconMode
+          ? { onMove: (dx: number, dy: number) => getPlatform().moveOverlay(dx, dy) }
+          : {})}
         glass={windowControls}
         panels={panels}
         onPanels={changePanels}
@@ -229,6 +286,7 @@ export function CompactLive({ sessionId, closeOnEnd = true }: CompactLiveProps) 
         {...(canOpenPages
           ? {
               onDashboard: () => getPlatform().openPagesWindow('/'),
+              onHelp: () => getPlatform().openPagesWindow('/help'),
               onEditSession: () => getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
             }
           : {})}

@@ -40,32 +40,76 @@ export const STATUS_LABELS: Record<SessionStatus, string> = {
   ended: 'Ended',
 };
 
-/** The model choices: Fast = Haiku (live answers), Accurate = Sonnet (stored as 'smart'; architecture F3). */
-export const MODEL_OPTIONS: readonly { value: AnswerModel; label: string }[] = [
-  { value: 'fast', label: 'Fast (best for live answers)' },
-  { value: 'smart', label: 'Accurate (slower, more careful)' },
+/**
+ * The model choices (spec S5). Stored as 'fast' and 'smart'; the server maps those to the real model
+ * names from its environment and rejects anything else. These are the words a person reads.
+ */
+export const MODEL_OPTIONS: readonly { value: AnswerModel; label: string; tag: string }[] = [
+  { value: 'fast', label: 'Claude Haiku 5.5', tag: 'Recommended' },
+  { value: 'smart', label: 'Claude Sonnet 5.5', tag: 'Deeper, slower' },
 ];
 
-/** Answer format choices. */
-export const FORMAT_OPTIONS: readonly { value: AnswerStyle['format']; label: string }[] = [
-  { value: 'headline+bullets', label: 'Script + bullets' },
-  { value: 'bullets', label: 'Bullets only' },
-  { value: 'paragraph', label: 'Script only' },
+/** One choice of how answers look, as a radio card shows it. */
+export interface StyleOption<T extends string> {
+  /** The stored value. */
+  value: T;
+  /** Its name. */
+  label: string;
+  /** One line about it. */
+  description: string;
+}
+
+/** Answer format choices (spec S6). */
+export const FORMAT_OPTIONS: readonly StyleOption<AnswerStyle['format']>[] = [
+  { value: 'paragraph', label: 'Read it out', description: 'An answer you can say word for word.' },
+  {
+    value: 'headline+bullets',
+    label: 'Opening line + bullets',
+    description: 'One line to say, then points.',
+  },
+  { value: 'bullets', label: 'Bullets only', description: 'Short points in your own words.' },
 ];
 
-/** Answer length choices. */
-export const LENGTH_OPTIONS: readonly { value: AnswerStyle['length']; label: string }[] = [
-  { value: 'short', label: 'Short' },
-  { value: 'medium', label: 'Balanced' },
-  { value: 'detailed', label: 'Detailed' },
+/** Answer length choices (spec S6). */
+export const LENGTH_OPTIONS: readonly StyleOption<AnswerStyle['length']>[] = [
+  { value: 'short', label: 'Short', description: 'Just the essentials.' },
+  { value: 'medium', label: 'Balanced', description: 'The answer plus useful context.' },
+  { value: 'detailed', label: 'Detailed', description: 'More depth and examples.' },
 ];
 
-/** Answer tone choices. */
-export const TONE_OPTIONS: readonly { value: AnswerStyle['tone']; label: string }[] = [
-  { value: 'simple', label: 'Simple' },
-  { value: 'professional', label: 'Professional' },
-  { value: 'technical', label: 'Technical' },
+/** Answer tone choices (spec S6; Technical is kept as a third card: the developer's decision). */
+export const TONE_OPTIONS: readonly StyleOption<AnswerStyle['tone']>[] = [
+  { value: 'simple', label: 'Plain', description: 'Everyday words.' },
+  { value: 'professional', label: 'Professional', description: 'Precise, formal wording.' },
+  { value: 'technical', label: 'Technical', description: 'Exact terms for a technical audience.' },
 ];
+
+/**
+ * The wizard's last button (spec S5).
+ *
+ * @param type The session type.
+ * @returns "Create interview session", "Create regular session" or "Create mock interview".
+ * Called from: SessionWizard.tsx; tests
+ */
+export function createSessionLabel(type: SessionType): string {
+  return {
+    interview: 'Create interview session',
+    regular: 'Create regular session',
+    mock: 'Create mock interview',
+  }[type];
+}
+
+/**
+ * A stored value's name.
+ *
+ * @param options The choices.
+ * @param value   The stored value.
+ * @returns Its name, or the value itself when it is not one of the choices.
+ * Called from: styleSummary(), AnswerPreferencesDialog.tsx
+ */
+export function optionLabel<T>(options: readonly { value: T; label: string }[], value: T): string {
+  return options.find((option) => option.value === value)?.label ?? String(value);
+}
 
 /**
  * The sentence on the Connect screen saying what this session is.
@@ -85,16 +129,14 @@ export function sessionSummary(session: Pick<Session, 'type' | 'company' | 'role
  * One line summing up an answer style.
  *
  * @param style The style.
- * @returns For example "Script + bullets · Short · Simple".
- * Called from: PreferencesStep.tsx
+ * @returns For example "Opening line + bullets · Short · Plain".
+ * Called from: the live screen's answer settings; tests
  */
 export function styleSummary(style: AnswerStyle): string {
-  const label = <T>(options: readonly { value: T; label: string }[], value: T) =>
-    options.find((option) => option.value === value)?.label ?? String(value);
   return [
-    label(FORMAT_OPTIONS, style.format),
-    label(LENGTH_OPTIONS, style.length),
-    label(TONE_OPTIONS, style.tone),
+    optionLabel(FORMAT_OPTIONS, style.format),
+    optionLabel(LENGTH_OPTIONS, style.length),
+    optionLabel(TONE_OPTIONS, style.tone),
   ].join(' · ');
 }
 

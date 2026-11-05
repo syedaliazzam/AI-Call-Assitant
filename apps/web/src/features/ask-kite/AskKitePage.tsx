@@ -122,7 +122,7 @@ function Message({
   }
   return (
     <li
-      aria-label="Kite answered"
+      aria-label="Paramount AI answered"
       className="border border-ui-border rounded-card bg-ui-surface shadow-card p-3"
     >
       <AnswerBody text={message.text} target="kite" size="chat" />
@@ -222,7 +222,7 @@ export function AskKitePage() {
   const reload = useCallback(() => {
     listChats()
       .then(setChats)
-      .catch(() => setNotice('Kite could not open its local storage. Reload the page.'));
+      .catch(() => setNotice('Paramount AI could not open its local storage. Reload the page.'));
   }, []);
   useEffect(reload, [reload]);
 
@@ -352,7 +352,9 @@ export function AskKitePage() {
           ]),
         )
         .catch((error: unknown) =>
-          setNotice(error instanceof Error ? error.message : 'Kite could not read that image.'),
+          setNotice(
+            error instanceof Error ? error.message : 'Paramount AI could not read that image.',
+          ),
         );
     }
   }
@@ -362,7 +364,7 @@ export function AskKitePage() {
     setAttachOpen(true);
     Promise.all([listLibrary('resume'), listLibrary('document'), listSessions()])
       .then(([resumes, documents, sessions]) => setChoices({ resumes, documents, sessions }))
-      .catch(() => setNotice('Kite could not open its local storage. Reload the page.'));
+      .catch(() => setNotice('Paramount AI could not open its local storage. Reload the page.'));
   }
 
   /**
@@ -399,7 +401,7 @@ export function AskKitePage() {
       .then((review) => {
         if (review) attach({ ...sessionAttachment(review), kind: 'session' });
       })
-      .catch(() => setNotice('Kite could not read that session.'));
+      .catch(() => setNotice('Paramount AI could not read that session.'));
   }
 
   /**
@@ -459,8 +461,7 @@ export function AskKitePage() {
 
   return (
     <PageShell
-      eyebrow="Kite"
-      title="Ask Kite"
+      title="Ask AI"
       description="A private chat about anything. Chats stay on this computer; each message is sent to Claude to answer it."
       width="lg"
     >
@@ -578,7 +579,7 @@ export function AskKitePage() {
             }}
           >
             <textarea
-              aria-label="Ask Kite"
+              aria-label="Ask AI"
               rows={3}
               maxLength={MAX_KITE_QUESTION_CHARS}
               className="border border-ui-border bg-ui-input px-3 py-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] md:text-[13px]"

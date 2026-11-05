@@ -1,10 +1,10 @@
 /**
  * File: apps/web/app/globals.css
- * Purpose: Global styles: loads Tailwind CSS and Kite's design tokens (src/ui/theme.css, the
+ * Purpose: Global styles: loads Tailwind CSS and Kite's design tokens (src/ui/tokens/theme.css, the
  *          only file with colour values).
  * Used by: app/layout.tsx
- * Depends on: tailwindcss (v4, via postcss.config.mjs), src/ui/theme.css
+ * Depends on: tailwindcss (v4, via postcss.config.mjs), src/ui/tokens/theme.css
  * Architecture: docs/design/kite-ui-theme.md §3, §8
  */
 @import 'tailwindcss';
-@import '../src/ui/theme.css';
+@import '../src/ui/tokens/theme.css';

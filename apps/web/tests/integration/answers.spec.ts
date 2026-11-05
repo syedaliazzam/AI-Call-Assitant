@@ -326,7 +326,8 @@ test('the compact view shows the live answer and its Answer button asks the live
   );
   // Answer preferences change from the overlay's menu; the next answer uses them.
   await compact.getByRole('button', { name: 'Overlay menu' }).click();
-  await expect(compact.getByRole('button', { name: 'Tone: Simple' })).toBeVisible();
+  await compact.getByRole('button', { name: 'Answer preferences', exact: true }).click();
+  await expect(compact.getByRole('button', { name: 'Tone: Plain' })).toBeVisible();
   await compact.getByRole('button', { name: /^Tone:/ }).click();
   await compact.getByRole('option', { name: 'Technical' }).click();
   await compact.getByRole('button', { name: /^Format:/ }).click();
@@ -377,7 +378,7 @@ test('the browser overlay: picture-in-picture, or a clear message where unsuppor
           )?.textContent ?? '',
       ),
     )
-    .toBe(headline);
+    .toBe(headline?.replace(/^Answer:\s*/, ''));
   console.log('[harness] compact view: picture-in-picture window opened and shows the live answer');
 });
 

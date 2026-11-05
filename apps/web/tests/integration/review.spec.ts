@@ -24,6 +24,7 @@ import { chromium, expect, test, type Browser, type Page } from '@playwright/tes
 import { CLAUDE_UNAVAILABLE_MESSAGES, type AskRequest, type NotesRequest } from '@kite/shared';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
+import { pickOption } from '../lib/pick-option';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -114,7 +115,7 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
       }
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(
-        '<!doctype html><html><head><meta charset="utf-8"><title>Kite review harness</title>' +
+        '<!doctype html><html><head><meta charset="utf-8"><title>Paramount AI review harness</title>' +
           '<link rel="stylesheet" href="/harness/review.css"></head>' +
           '<body class="bg-slate-50"><div id="root"></div>' +
           '<script type="module" src="/harness/review.js"></script></body></html>',
@@ -247,7 +248,7 @@ test('shows the call details, notes, answers and transcript', async () => {
   await openSection('Transcript');
   // Conversation (v1.1.0): the talk, with a chip for each answer that opens it in place.
   const answers = page.getByRole('listitem', { name: 'Saved answer' });
-  const chips = page.getByRole('button', { name: 'Kite answered' });
+  const chips = page.getByRole('button', { name: 'Paramount AI answered' });
   await expect(chips).toHaveCount(2);
   await expect(answers).toHaveCount(0);
   await chips.first().click();
@@ -290,8 +291,10 @@ test('lessons: Edit and Approve for all calls, Reject; only decisions are stored
     .first()
     .getByLabel('Lesson', { exact: true })
     .fill('Give the monthly   and yearly totals.');
-  await expect(proposals.first()).toContainText('/200 characters. Kite sends exactly this text');
-  await proposals.first().getByLabel('Applies to').selectOption('all');
+  await expect(proposals.first()).toContainText(
+    '/200 characters. Paramount AI sends exactly this text',
+  );
+  await pickOption(page, proposals.first().getByLabel('Applies to'), 'All calls');
   await shot('review-lesson-edit');
   await proposals.first().getByRole('button', { name: 'Approve' }).click();
   await expect(proposals.first().getByLabel('Decision')).toHaveText('Approved · All calls');
@@ -340,7 +343,7 @@ test('with "Save transcript" off: says so, and notes are written from answers on
   await expect(page.getByRole('heading', { name: 'Pinecrest Clinics (invented)' })).toBeVisible();
   await openSection('Transcript');
   await expect(page.getByRole('region', { name: 'Transcript' })).toContainText(
-    'The transcript was not saved for this session ("Save transcript" was off). Only the answers and the notes were kept.',
+    'Transcript not saved. "Save transcript" was off for this session, so only the answers and the notes were kept.',
   );
   await openSection('AI notes');
   received.length = 0;
@@ -361,7 +364,9 @@ test('Transcript: a chat with answer chips, an Answers tab; thumbs and reports a
   // Each answer's chip sits where it was asked: lines before it, and after it.
   const order = await conversation
     .locator('> li')
-    .evaluateAll((items) => items.map((item) => item.textContent?.includes('Kite answered')));
+    .evaluateAll((items) =>
+      items.map((item) => item.textContent?.includes('Paramount AI answered')),
+    );
   expect(order.indexOf(true)).toBeGreaterThan(0);
   expect(order.filter(Boolean)).toHaveLength(2);
   expect(order.at(-1)).toBe(false);
@@ -399,19 +404,19 @@ test('Download gives TXT and PDF with the conversation, not the private notes', 
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Download TXT' }).click(),
   ]);
-  expect(txt.suggestedFilename()).toMatch(/^kite-transcript-.*\.txt$/);
+  expect(txt.suggestedFilename()).toMatch(/^paramount-ai-transcript-.*\.txt$/);
   const text = readFileSync(await txt.path(), 'utf8');
-  expect(text).toContain('Kite transcript: Northwind Logistics (invented)');
+  expect(text).toContain('Paramount AI transcript: Northwind Logistics (invented)');
   expect(text).toContain('Them: ');
-  expect(text).toContain('Kite answer');
+  expect(text).toContain('Paramount AI answer');
   const [pdf] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Download PDF' }).click(),
   ]);
-  expect(pdf.suggestedFilename()).toMatch(/^kite-transcript-.*\.pdf$/);
+  expect(pdf.suggestedFilename()).toMatch(/^paramount-ai-transcript-.*\.pdf$/);
   const bytes = readFileSync(await pdf.path());
   expect(bytes.subarray(0, 8).toString('latin1')).toBe('%PDF-1.4');
-  expect(bytes.toString('latin1')).toContain('Kite transcript');
+  expect(bytes.toString('latin1')).toContain('Paramount AI transcript');
 });
 
 test('Ask AI: sends the call and the chat, shows replies, and keeps a failed question', async () => {
@@ -464,7 +469,7 @@ test('Clear transcript asks first, and keeps the answers and notes', async () =>
   await page.getByRole('button', { name: 'Clear transcript' }).click();
   await dialog.getByRole('button', { name: 'Clear transcript' }).click();
   await expect(page.getByRole('listitem', { name: /said$/ })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Kite answered' })).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Paramount AI answered' })).toHaveCount(2);
   await openSection('AI notes');
   await expect(page.getByRole('list', { name: 'Summary' })).toBeVisible();
   await page.evaluate((target) => window.kiteReviewHarness.remove(target), id);
@@ -481,7 +486,7 @@ test('Settings lists the approved lesson as sent; edit, then clear all in a dial
   await shot('settings-learned');
   await learned.getByRole('button', { name: 'Edit' }).click();
   await learned.getByLabel('Lesson', { exact: true }).fill('Give monthly and yearly totals.');
-  await learned.getByLabel('Applies to').selectOption('regular');
+  await pickOption(page, learned.getByLabel('Applies to'), 'Regular calls only');
   await learned.getByRole('button', { name: 'Save' }).click();
   await expect(learned).toContainText('Regular calls only');
   await page.getByRole('button', { name: 'Clear all lessons' }).click();
@@ -540,7 +545,7 @@ test('Export my data, wipe, Import data restores it; importing again adds nothin
     page.waitForEvent('download'),
     dialog.getByRole('button', { name: 'Save file' }).click(),
   ]);
-  expect(download.suggestedFilename()).toMatch(/^kite-export-\d{4}-\d{2}-\d{2}\.json$/);
+  expect(download.suggestedFilename()).toMatch(/^paramount-ai-export-\d{4}-\d{2}-\d{2}\.json$/);
   const file = (await download.path())!;
   const exported = JSON.parse(readFileSync(file, 'utf8')) as {
     format: string;
@@ -556,22 +561,22 @@ test('Export my data, wipe, Import data restores it; importing again adds nothin
 
   await page.evaluate(() => window.kiteReviewHarness.wipe());
   await page.evaluate(() => window.kiteReviewHarness.showData());
-  await page.getByLabel('Kite export file to import').setInputFiles(file);
+  await page.getByLabel('Paramount AI export file to import').setInputFiles(file);
   await expect(page.getByRole('status')).toContainText('Added');
   await expect(page.getByRole('status')).not.toContainText('attach the files again');
   const after = await page.evaluate((sessionId) => window.kiteReviewHarness.count(sessionId), id);
   // Everything, documents included, is back.
   expect(after).toEqual(before);
 
-  await page.getByLabel('Kite export file to import').setInputFiles(file);
+  await page.getByLabel('Paramount AI export file to import').setInputFiles(file);
   await expect(page.getByRole('status')).toContainText('Added 0 sessions');
   await expect(page.getByRole('status')).toContainText('already on this computer');
 
   // Not a Kite export: a clear message, nothing changed.
-  await page.getByLabel('Kite export file to import').setInputFiles({
+  await page.getByLabel('Paramount AI export file to import').setInputFiles({
     name: 'other.json',
     mimeType: 'application/json',
     buffer: Buffer.from('{"hello":1}'),
   });
-  await expect(page.getByRole('alert')).toHaveText('This file is not a Kite export.');
+  await expect(page.getByRole('alert')).toHaveText('This file is not a Paramount AI export.');
 });

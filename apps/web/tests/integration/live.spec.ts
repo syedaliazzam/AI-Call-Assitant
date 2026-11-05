@@ -155,8 +155,10 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
         : '';
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(
-        '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-          `<title>Kite live harness</title><link rel="stylesheet" href="/harness/live.css">${fonts}</head>` +
+        '<!doctype html><html data-theme="' +
+          (process.env.KITE_VISUAL_THEME ?? 'light') +
+          '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
+          `<title>Paramount AI live harness</title><link rel="stylesheet" href="/harness/live.css">${fonts}</head>` +
           '<body class="font-sans"><div id="root"></div><script type="module" src="/harness/live.js"></script></body></html>',
       );
     })();
@@ -186,6 +188,13 @@ async function open(view: string, size: Width, ua = WINDOWS_UA): Promise<Watched
     ...(size.touch ? { isMobile: true, hasTouch: true } : {}),
   });
   const page = await context.newPage();
+  // KITE_VISUAL_THEME: the pictures of either theme (spec §7). The call views read the stored choice.
+  if (process.env.KITE_VISUAL_THEME) {
+    await page.addInitScript(
+      (theme) => localStorage.setItem('kite.theme', theme),
+      process.env.KITE_VISUAL_THEME,
+    );
+  }
   const problems: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error' || message.type() === 'warning') {
@@ -292,7 +301,7 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
   await shot(watched, size, 'live-empty');
 
   // Stream an answer: measure when only the headline is there, then when the bullets are.
-  await page.getByRole('button', { name: 'Answer', exact: true }).click();
+  await page.getByRole('button', { name: 'Answer', exact: true }).first().click();
   await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
   await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
   // The card grows as words arrive (its footer follows them); everything around it stays still.
@@ -330,6 +339,23 @@ test('live view stacks answers above the transcript when narrower than 900 px', 
     const panel = await box(page, '[aria-label="Answers"]');
     const transcript = await box(page, '[aria-label="Live transcript"]');
     expect(panel.y).toBeLessThan(transcript.y);
+    // Nothing runs past the window's edge. Clipped content does not make the page scroll sideways,
+    // so the page check cannot see it.
+    const clipped = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>('button, [aria-label="Live transcript"], li')]
+        .filter((element) => element.offsetParent !== null)
+        .filter((element) => element.getBoundingClientRect().right > window.innerWidth + 1)
+        .map((element) => element.textContent?.trim().slice(0, 40)),
+    );
+    expect(clipped, 'nothing is cut off at the right').toEqual([]);
+    // A key-cap on the primary button can be read: its chip is not the button's text colour.
+    const answer = page.getByRole('button', { name: 'Answer', exact: true }).first();
+    const [text, chip] = await answer.evaluate((button) => [
+      getComputedStyle(button).color,
+      getComputedStyle(button.querySelector('kbd')!).backgroundColor,
+    ]);
+    expect(chip).not.toBe(text);
+    expect(chip).not.toBe('rgb(255, 255, 255)');
     await shot(watched, size, 'live');
     await watched.context.close();
   }
@@ -359,7 +385,7 @@ test('the "Claude unavailable" message in the answer panel', async () => {
   await watched.context.close();
 });
 
-test('the Connect view is on the dark tokens', async () => {
+test('the Connect card: audio source, microphone, tips, and how to connect', async () => {
   for (const size of [
     { width: 1440, height: 900, touch: false },
     { width: 900, height: 900, touch: false },
@@ -367,9 +393,30 @@ test('the Connect view is on the dark tokens', async () => {
     const watched = await open('connect', size);
     const { page } = watched;
     await expect(page.getByRole('button', { name: 'Connect' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Connect call session' })).toBeVisible();
+    await expect(
+      page.getByText('Ready when you are. Connect to start the transcript.'),
+    ).toBeVisible();
     await expect(page.getByText('This is a Regular session about')).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Audio source' })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Microphone' })).toHaveText('System default');
+    const tips = page.getByRole('list', { name: 'Tips' });
+    await expect(tips).toContainText('Use headphones so your mic doesn’t pick up the other side.');
+    await expect(tips).toContainText('Test Private with your phone before a real call.');
+    await expect(tips).toContainText('No call to practise on? Play a mock interview on YouTube.');
+    await tips.getByRole('button', { name: 'Why' }).click();
+    await expect(tips).toContainText('show up as You');
+    await expect(tips.getByRole('link', { name: 'How' })).toHaveAttribute('href', '/help');
+    await expect(tips.getByRole('link', { name: 'Open' })).toHaveAttribute('href', /youtube\.com/);
+    await expect(page.getByRole('link', { name: 'Back to dashboard' })).toHaveAttribute(
+      'href',
+      '/',
+    );
+    await page.getByText('Need it for macOS?').hover();
+    await expect(page.getByRole('tooltip')).toHaveText('Coming soon');
     await shot(watched, size, 'connect');
     // Each way of calling opens a short how-to for this platform.
+    await page.getByRole('button', { name: 'Ways of calling' }).click();
     await expect(
       page.getByRole('list', { name: 'Ways of calling' }).getByRole('button'),
     ).toHaveText([/Zoom/, /Teams/, /Google Meet/, /Webex/, /Phone/]);
@@ -384,7 +431,8 @@ test('the Connect view is on the dark tokens', async () => {
     await expect(
       page.getByRole('link', { name: 'No call to share? Open a mock interview video' }),
     ).toHaveAttribute('rel', 'noreferrer');
-    await expect(page.getByRole('link', { name: 'Back' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('link', { name: 'Back', exact: true })).toBeVisible();
     await watched.context.close();
   }
 });
@@ -491,7 +539,7 @@ test('overlay: a coding answer, a figure to check and a private answer fit (ADR-
     if (size.width >= 620) {
       await expect(
         page.getByRole('radiogroup', { name: 'Who the answer is for' }).getByRole('radio', {
-          name: 'Ask Kite',
+          name: 'Ask AI',
         }),
       ).toHaveAttribute('aria-checked', 'true');
     }
@@ -640,10 +688,364 @@ const OVERLAY_SIZES = {
   min: { width: 460, height: 260, touch: false },
 } as const;
 
-test('overlay look: panel background at 40% and 70% over light and dark busy backgrounds (ADR-0033)', async () => {
+/**
+ * Opens the overlay as a desktop app would have it.
+ *
+ * @param size  The window.
+ * @param extra More of the address: the panels, the shell.
+ * @returns The page, with a way to read what it asked for.
+ */
+async function openOverlayView(size: Width, extra = '') {
+  const watched = await open('gate', size);
+  // KITE_VISUAL_THEME: the pictures of the light theme (spec §7).
+  const theme = process.env.KITE_VISUAL_THEME === 'light' ? '&theme=light' : '';
+  await watched.page.goto(`${origin}/?view=compact&glass=1&alpha=0.82${extra}${theme}`);
+  await watched.page.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
+  return {
+    ...watched,
+    log: () =>
+      watched.page.evaluate(() => (window as unknown as { overlayLog: unknown[] }).overlayLog),
+  };
+}
+
+/** A layout the view gave the shell, as the harness logs it. */
+interface LoggedLayout {
+  /** The layout. */
+  layout: {
+    /** How tall the view asked the window to be. */
+    popupHeight: number;
+  };
+}
+
+/**
+ * Whether a log entry is a layout.
+ *
+ * @param entry The entry.
+ * @returns True for a layout.
+ */
+function isLoggedLayout(entry: unknown): entry is LoggedLayout {
+  return typeof entry === 'object' && !!entry && 'layout' in entry;
+}
+
+/** The window the bars are drawn for. */
+const BARS_SIZE: Width = { width: 780, height: 520, touch: false };
+
+/** A window wide enough for both panels side by side. */
+const WIDE_SIZE: Width = { width: 1080, height: 560, touch: false };
+
+test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothing cut off', async () => {
+  const watched = await openOverlayView(BARS_SIZE, '&panels=none&shell=1');
+  const { page } = watched;
+  const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+  expect((await bar.boundingBox())!.height).toBeCloseTo(44, 0);
+  const words = await bar.evaluate((element) =>
+    [...element.querySelectorAll('button,[role="img"],[role="timer"]')].map(
+      (item) => item.getAttribute('aria-label') ?? item.textContent?.trim(),
+    ),
+  );
+  expect(
+    words.filter((word) => !word?.includes('capturing') && !word?.includes('not connected')),
+  ).toEqual([
+    'Choose audio source',
+    'Choose microphone',
+    expect.stringMatching(/^Answer/),
+    expect.stringMatching(/^Screenshot/),
+    expect.stringMatching(/^Chat/),
+    'Drag here to move',
+    'Shrink to an icon',
+    'Call time',
+    'Overlay menu',
+    'Exit: end call',
+  ]);
+  await expect(bar.getByRole('button', { name: 'Answer' }).locator('kbd')).toContainText('Ctrl');
+  // [Ctrl ⇧ ↵] and [Ctrl ⇧ ␣]: their shift, enter and space are icons with the symbol for readers.
+  await expect(bar.getByRole('button', { name: 'Screenshot' }).locator('kbd')).toContainText('⇧');
+  await expect(bar.getByRole('button', { name: 'Screenshot' }).locator('kbd')).toContainText('↵');
+  await expect(bar.getByRole('button', { name: 'Chat' }).locator('kbd')).toContainText('␣');
+  await shot(watched, BARS_SIZE, 'call-bars');
+  // At the width a 1.1.0 window keeps, at its smallest, and in a narrow picture-in-picture window,
+  // everything still fits, Exit's question too.
+  const exit = bar.getByRole('button', { name: 'Exit: end call' });
+  for (const width of [780, 680, 560, 460]) {
+    await page.setViewportSize({ width, height: 400 });
+    /**
+     * Whether nothing on the bar is cut off.
+     *
+     * @returns True when it fits.
+     */
+    const fits = () => bar.evaluate((element) => element.scrollWidth <= element.clientWidth);
+    expect(await fits(), `bar 1 fits ${width}`).toBe(true);
+    await exit.click();
+    await expect(bar.getByRole('button', { name: 'Cancel' })).toBeVisible();
+    expect(await fits(), `the question fits ${width}`).toBe(true);
+    await bar.getByRole('button', { name: 'Cancel' }).click();
+  }
+  // Exit is red, and asks first.
+  await page.setViewportSize({ width: 780, height: 400 });
+  await expect(exit).toHaveCSS('background-color', 'rgb(220, 38, 38)');
+  await exit.click();
+  await bar.getByRole('button', { name: 'End call?' }).click();
+  expect(await watched.log()).toContainEqual({ type: 'end' });
+  await watched.context.close();
+});
+
+test('S13: bar 2 is narrower and left-aligned, the level button opens the transcript, Auto answer sits apart', async () => {
+  const watched = await openOverlayView(BARS_SIZE, '&panels=none');
+  const { page } = watched;
+  const bar1 = (await page.getByRole('toolbar', { name: 'Overlay controls' }).boundingBox())!;
+  const region = page.getByRole('region', { name: 'Live transcript bar' });
+  const bar2 = (await region.boundingBox())!;
+  expect(Math.abs(bar2.x - bar1.x)).toBeLessThanOrEqual(2);
+  expect(bar2.width).toBeLessThan(bar1.width - 100);
+  await expect(region.getByRole('button', { name: /^Answer language: / })).toBeVisible();
+  await expect(region.getByRole('button', { name: 'Clear' }).locator('kbd')).toContainText('⌫');
+  // The pill is to its right, and toggles.
+  const pill = page.getByRole('button', { name: /^Auto answer / });
+  expect((await pill.boundingBox())!.x).toBeGreaterThan(bar2.x + bar2.width);
+  await pill.click();
+  expect(await watched.log()).toContainEqual({ type: 'auto-answer', on: true });
+  // The page says how tall the bars are, so any shell from 1.1.0 fits them.
+  const heights = (await watched.log())
+    .filter(isLoggedLayout)
+    .map((entry) => entry.layout.popupHeight);
+  expect(heights.at(-1)).toBeGreaterThanOrEqual(bar2.y + bar2.height);
+  // The language list stays in the page, and the window is asked to fit it.
+  await region.getByRole('button', { name: /^Answer language: / }).click();
+  await expect(page.getByRole('listbox', { name: 'Answer language' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Open the transcript', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Transcript panel' })).toBeVisible();
+  await expect(region).toHaveCount(0);
+  await watched.context.close();
+});
+
+test('S13: the icon: 48 px, drags without restoring, restores on a click or the keyboard', async () => {
+  const watched = await openOverlayView(BARS_SIZE, '&panels=none&shell=1');
+  const { page } = watched;
+  await page.getByRole('button', { name: 'Shrink to an icon' }).click();
+  const icon = page.getByRole('button', { name: 'Restore the overlay' });
+  const box = (await icon.boundingBox())!;
+  expect(box.width).toBe(48);
+  expect(box.height).toBe(48);
+  expect(await watched.log()).toContainEqual({ mode: 'icon' });
+  await expect(page.getByRole('toolbar', { name: 'Overlay controls' })).toHaveCount(0);
+  await shot(watched, BARS_SIZE, 'call-icon');
+  // A drag moves the window and does not restore the overlay.
+  await page.mouse.move(box.x + 24, box.y + 24);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 60, box.y + 40, { steps: 4 });
+  await page.mouse.up();
+  await expect(icon).toBeVisible();
+  const moves = (await watched.log()).filter(
+    (entry) => typeof entry === 'object' && !!entry && 'move' in entry,
+  );
+  expect(moves.length).toBeGreaterThan(0);
+  // A click restores it.
+  await icon.click();
+  await expect(page.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
+  expect((await watched.log()).at(-1)).toMatchObject({ layout: expect.anything() });
+  // And so does the keyboard.
+  await page.getByRole('button', { name: 'Shrink to an icon' }).click();
+  await icon.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
+  await watched.context.close();
+});
+
+test('S13: a shell before 1.2.0 has no icon: compact collapses to bar 1 and opens again', async () => {
+  const watched = await openOverlayView(BARS_SIZE, '&panels=none');
+  const { page } = watched;
+  await expect(page.getByRole('button', { name: 'Shrink to an icon' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Collapse the overlay' }).click();
+  expect(await watched.log()).toContainEqual({ mode: 'collapsed' });
+  await expect(page.getByRole('region', { name: 'Live transcript bar' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open the overlay' }).click();
+  await expect(page.getByRole('region', { name: 'Live transcript bar' })).toBeVisible();
+  // Bar 2's collapse does the same, and bar 1 opens it again.
+  await page.getByRole('button', { name: 'Hide the transcript bar' }).click();
+  await expect(page.getByRole('region', { name: 'Live transcript bar' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Open the overlay' }).click();
+  await expect(page.getByRole('region', { name: 'Live transcript bar' })).toBeVisible();
+  await watched.context.close();
+});
+
+test('S14: the chat bar opens under bar 1 at its width; Send waits for words; a screenshot can go alone', async () => {
+  const watched = await openOverlayView(BARS_SIZE, '&panels=none');
+  const { page } = watched;
+  await page.getByRole('button', { name: 'Chat' }).first().click();
+  const chat = page.getByRole('group', { name: 'Chat' });
+  const bar1 = (await page.getByRole('toolbar', { name: 'Overlay controls' }).boundingBox())!;
+  const box = (await chat.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(bar1.y + bar1.height);
+  expect(Math.abs(box.width - bar1.width)).toBeLessThanOrEqual(2);
+  const input = chat.getByLabel('Type a question');
+  await expect(input).toBeFocused();
+  await expect(input).toHaveAttribute('placeholder', 'Type a message…');
+  // [Ctrl Alt ↵] and [↵], from the map; Send is muted until there are words.
+  await expect(
+    chat.getByRole('button', { name: 'Send with a screenshot' }).locator('kbd'),
+  ).toContainText('Alt');
+  const send = chat.getByRole('button', { name: 'Send', exact: true });
+  await expect(send).toBeDisabled();
+  await shot(watched, BARS_SIZE, 'call-chat');
+  await input.fill('What did they ask?');
+  await expect(send).toBeEnabled();
+  await send.click();
+  expect(await watched.log()).toContainEqual({ type: 'chat', question: 'What did they ask?' });
+  await expect(chat).toHaveCount(0);
+  // With no words, the screenshot button simply takes a screenshot.
+  await page.getByRole('button', { name: 'Chat' }).first().click();
+  await chat.getByRole('button', { name: 'Send with a screenshot' }).click();
+  expect(await watched.log()).toContainEqual({ type: 'screenshot' });
+  // With words, they go with it.
+  await page.getByRole('button', { name: 'Chat' }).first().click();
+  await chat.getByLabel('Type a question').fill('And this diagram?');
+  await chat.getByRole('button', { name: 'Send with a screenshot' }).click();
+  expect(await watched.log()).toContainEqual({
+    type: 'chat-screenshot',
+    question: 'And this diagram?',
+  });
+  // The ✕ closes it, and who the answer is for stays available.
+  await page.getByRole('button', { name: 'Chat' }).first().click();
+  await expect(chat.getByRole('radiogroup', { name: 'Who the answer is for' })).toBeVisible();
+  await chat.getByRole('button', { name: 'Close chat' }).click();
+  await expect(chat).toHaveCount(0);
+  await watched.context.close();
+});
+
+test('S15: the panels sit side by side when wide, stack when narrow; bubbles and the answer card', async () => {
+  const watched = await openOverlayView(WIDE_SIZE, '&panels=transcript,answer&shell=1');
+  const { page } = watched;
+  const transcript = page.getByRole('region', { name: 'Transcript panel' });
+  const answer = page.getByRole('region', { name: 'Latest answer' });
+  const left = (await transcript.boundingBox())!;
+  const right = (await answer.boundingBox())!;
+  expect(left.x + left.width).toBeLessThanOrEqual(right.x);
+  expect(Math.abs(left.y - right.y)).toBeLessThanOrEqual(2);
+  // The bars keep their width, centred over the panels.
+  const bar1 = (await page.getByRole('toolbar', { name: 'Overlay controls' }).boundingBox())!;
+  expect(bar1.width).toBeLessThanOrEqual(782);
+  expect(Math.abs(bar1.x + bar1.width / 2 - 540)).toBeLessThanOrEqual(2);
+
+  // You on the right, Them on the left, plain words with who and when under them.
+  const you = page.getByRole('listitem', { name: 'You said' }).first();
+  const them = page.getByRole('listitem', { name: 'Them said' }).first();
+  await expect(you).toBeVisible();
+  await expect(them).toBeVisible();
+  const youBox = (await you.boundingBox())!;
+  const themBox = (await them.boundingBox())!;
+  expect(youBox.x + youBox.width).toBeGreaterThan(themBox.x + themBox.width);
+  await expect(you).toContainText(/You\s*·\s*\d/);
+  await expect(you.locator('span').first()).toHaveCSS('font-size', '15px');
+
+  // The header: nav chips, Auto answer, Clear and collapse, in one line.
+  await expect(
+    answer.getByRole('button', { name: 'Previous question' }).locator('kbd'),
+  ).toContainText('←');
+  await expect(answer.getByRole('button', { name: 'Next question' }).locator('kbd')).toContainText(
+    '→',
+  );
+  await expect(answer.getByRole('button', { name: /^Auto answer / })).toBeVisible();
+  await expect(answer.getByRole('button', { name: 'Clear' }).locator('kbd')).toContainText('⌫');
+  // The card: the question with a 2 px accent bar, then the bold line.
+  const question = answer.getByLabel('Question', { exact: true });
+  await expect(question).toHaveCSS('border-left-width', '2px');
+  await expect(question).not.toContainText('Question:');
+  await expect(answer.getByRole('heading', { name: 'Answer line' })).toHaveCSS(
+    'font-weight',
+    '700',
+  );
+  await expect(answer.getByText('Answer:')).toHaveCount(0);
+  // The footer: the actions first, how and when last.
+  const copy = (await answer.getByRole('button', { name: 'Copy the answer' }).boundingBox())!;
+  const up = (await answer.getByRole('button', { name: 'Good answer' }).boundingBox())!;
+  const down = (await answer.getByRole('button', { name: 'Bad answer' }).boundingBox())!;
+  const when = (await answer.getByText(/^Answer · /).boundingBox())!;
+  expect(copy.x).toBeLessThan(up.x);
+  expect(up.x).toBeLessThan(down.x);
+  expect(down.x).toBeLessThan(when.x);
+  // The grip at the bottom right.
+  const grip = page.locator('[data-grip="corner"]');
+  await expect(grip).toBeVisible();
+  const gripBox = (await grip.boundingBox())!;
+  expect(gripBox.x + gripBox.width).toBeGreaterThan(right.x + right.width - 16);
+  await shot(watched, WIDE_SIZE, 'call-panels');
+
+  // Too narrow for two: they stack, and nothing is cut off sideways.
+  await page.setViewportSize({ width: 780, height: 700 });
+  const top = (await transcript.boundingBox())!;
+  const bottom = (await answer.boundingBox())!;
+  expect(top.y + top.height).toBeLessThanOrEqual(bottom.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await watched.context.close();
+});
+
+test('S16: the ⋮ menu in order; Answer preferences as a sheet that fits the overlay', async () => {
+  const watched = await openOverlayView(BARS_SIZE, '&panels=answer&shell=1');
+  const { page } = watched;
+  await page.getByRole('button', { name: 'Overlay menu' }).click();
+  const menu = page.getByRole('group', { name: 'Overlay settings' });
+  const rows = await menu.evaluate((element) =>
+    [...element.querySelectorAll('[role="group"],[role="radiogroup"],p,button,[role="switch"]')]
+      .map((row) => row.getAttribute('aria-label') ?? row.textContent?.trim() ?? '')
+      .filter((row) => !/: (more|less|reset)$|^About | theme$|the system$/.test(row)),
+  );
+  expect(rows).toEqual([
+    'sam.lee@example.com',
+    'Dashboard',
+    'Get help',
+    'Private',
+    'Zoom',
+    'Theme',
+    'Opacity',
+    'Answer text size',
+    expect.stringMatching(/^Answer language: /),
+    'Auto answer',
+    'Answer preferences',
+    'Edit session',
+    'Open call window',
+    'Reset position',
+  ]);
+  const textSize = menu.getByRole('group', { name: 'Answer text size' }).locator('span').first();
+  expect(
+    await textSize.evaluate((label) => label.scrollWidth <= label.clientWidth),
+    'the longest label is not cut off',
+  ).toBe(true);
+  await expect(menu.getByRole('button', { name: 'About Answer preferences' })).toBeVisible();
+  await expect(menu.getByRole('button', { name: 'About Edit session' })).toBeVisible();
+  await shot(watched, BARS_SIZE, 'call-menu');
+  await menu.getByRole('button', { name: 'Get help' }).click();
+  expect(await watched.log()).toContain('help');
+
+  // Answer preferences: Format with STAR, Length, Tone, and a sample; each change goes to the call.
+  await page.getByRole('button', { name: 'Overlay menu' }).click();
+  await menu.getByRole('button', { name: 'Answer preferences', exact: true }).click();
+  const sheet = page.getByRole('group', { name: 'Answer preferences' });
+  await expect(sheet.getByRole('region', { name: 'Sample answer' })).toBeVisible();
+  await sheet.getByRole('button', { name: /^Tone:/ }).click();
+  await sheet.getByRole('option', { name: 'Technical' }).click();
+  await sheet.getByRole('switch', { name: 'STAR structure' }).click();
+  const styles = (await watched.log()).filter(
+    (entry) =>
+      typeof entry === 'object' && !!entry && (entry as { type?: string }).type === 'style',
+  );
+  expect(styles[0]).toMatchObject({ style: { tone: 'technical' } });
+  expect(styles[1]).toMatchObject({ style: { star: true } });
+  await shot(watched, BARS_SIZE, 'call-preferences');
+  await sheet.getByRole('button', { name: 'Back' }).click();
+  await expect(menu).toBeVisible();
+  // The window is asked to grow for whichever is open.
+  const last = (await watched.log()).findLast(isLoggedLayout);
+  expect(last?.layout.popupHeight).toBeGreaterThan(0);
+  await watched.context.close();
+});
+
+test('overlay look: panel background at 40% and 82% over light and dark busy backgrounds (ADR-0033)', async () => {
   // The opacity slider dims the panel background only; the text stays opaque with a shadow. Render
-  // the minimum (0.4) and the default (0.7) over each backdrop and size.
-  for (const alpha of [0.4, 0.7]) {
+  // the minimum (0.4) and the default (0.82, spec §1) over each backdrop and size.
+  for (const alpha of [0.4, 0.82]) {
     for (const [sizeName, size] of Object.entries(OVERLAY_SIZES)) {
       for (const [backdropName, backdrop] of Object.entries(BACKDROPS)) {
         const context = await browser!.newContext({
@@ -666,7 +1068,7 @@ test('overlay look: panel background at 40% and 70% over light and dark busy bac
         expect(end!.x + end!.width).toBeLessThanOrEqual(size.width);
         const look = await panel.evaluate((element) => {
           const style = getComputedStyle(element);
-          const end = element.querySelector('button[aria-label="End call"]')!;
+          const end = element.querySelector('button[aria-label="Exit: end call"]')!;
           return {
             background: style.backgroundColor,
             // The text itself is fully opaque with a shadow, whatever the background opacity.
@@ -681,7 +1083,7 @@ test('overlay look: panel background at 40% and 70% over light and dark busy bac
         expect(look).toEqual({
           background: `rgba(24, 24, 27, ${alpha})`,
           textShadow: 'rgba(0, 0, 0, 0.6) 0px 1px 2px',
-          radius: '16px',
+          radius: '12px',
           blur: 'blur(16px)',
           end: 'rgb(220, 38, 38)',
           // Clear: otherwise the window's material could not show through.

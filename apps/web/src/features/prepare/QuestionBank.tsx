@@ -7,7 +7,7 @@
  * Used by: app/(app)/question-bank/page.tsx
  * Depends on: src/core/prepare/client.ts, src/core/answer/warm.ts (toSessionContext),
  *             src/core/answer/format.ts (splitAnswer), src/core/storage (sessions, documents,
- *             questionBanks), src/ui (Button, Eyebrow, LinkButton, PageShell, Select)
+ *             questionBanks), src/ui (Button, LinkButton, PageShell, Select)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5; ADR-0029
  */
 'use client';
@@ -118,7 +118,6 @@ export function QuestionBank() {
 
   return (
     <PageShell
-      eyebrow="Prepare"
       title="Question Bank"
       description="The questions most likely to come up, with suggested answers from your job description and resume. Saved on this computer."
       width="lg"

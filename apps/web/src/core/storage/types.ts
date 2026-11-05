@@ -39,8 +39,13 @@ export interface AnswerStyle {
   format: 'headline+bullets' | 'bullets' | 'paragraph';
   /** Rough answer length: 'short' (the live default), 'medium' (shown as "Balanced") or 'detailed'. */
   length: 'short' | 'medium' | 'detailed';
-  /** Wording: 'simple' (plain language), 'professional' or 'technical'. */
+  /** Wording: 'simple' (shown as "Plain"), 'professional' or 'technical'. */
   tone: 'simple' | 'professional' | 'technical';
+  /**
+   * v1.2.0: behavioural answers use Situation, Task, Action and Result bullets. Absent means off (older
+   * sessions have no such field), and then the prompt is exactly what it was.
+   */
+  star?: boolean;
 }
 
 /** The languages answers can be written in (live transcription stays English-only for now). */
@@ -131,6 +136,11 @@ export interface Session {
    * older sessions by the version 8 upgrade (core/storage/migrate.ts).
    */
   lastCallMs?: number;
+  /**
+   * v1.2.0 (ADR-0045): when the hand-off file this copy came from was written (Unix ms). Only a newer
+   * file replaces it. Absent on a session made on this device.
+   */
+  handoffAt?: number;
 }
 
 /** A document attached to a session, as extracted text (architecture §7.4 `documents`). */

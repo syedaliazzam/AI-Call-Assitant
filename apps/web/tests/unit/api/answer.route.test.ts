@@ -24,6 +24,15 @@ const countRequestMock = vi.hoisted(() =>
   vi.fn(async (_userId: string) => ({ allowed: true, count: 1, limit: 300, ms: 0 })),
 );
 vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
+
+/** Spy standing in for the deeper model's switch (spec §6): on by default. */
+const deepModelMock = vi.hoisted(() => vi.fn(async () => true));
+// The real module is kept for allowedTier(); it needs no database here, since the switch is mocked.
+vi.mock('@/server/db', () => ({ db: {} }));
+vi.mock('@/server/modelAccess', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/server/modelAccess')>()),
+  getDeepModelEnabled: deepModelMock,
+}));
 import { fakeMessageStream } from '../../helpers/fakeClaude';
 
 /** Spy standing in for client.messages.stream(). */
@@ -279,6 +288,39 @@ describe('POST /api/answer, mode warm', () => {
     const [params] = createMock.mock.calls[0]!;
     expect(params.model).toBe('claude-sonnet-5-5');
     expect(params.thinking).toEqual({ type: 'between_tools' });
+  });
+
+  it('falls back to the fast model when an admin has turned the smart one off', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    createMock.mockResolvedValue({
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 5, output_tokens: 0 },
+    });
+    deepModelMock.mockResolvedValueOnce(false);
+    await (
+      await POST(post(JSON.stringify({ mode: 'warm', model: 'smart', session: SESSION })))
+    ).text();
+    expect(createMock.mock.calls[0]![0].model).toBe('claude-haiku-5-5');
+  });
+
+  it('reads the switch only for a request that wants the smart model', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    createMock.mockResolvedValue({
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 5, output_tokens: 0 },
+    });
+    deepModelMock.mockClear();
+    await (await POST(post(JSON.stringify({ mode: 'warm', session: SESSION })))).text();
+    expect(deepModelMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a model that is not on the allow-list', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    const response = await POST(
+      post(JSON.stringify({ mode: 'warm', model: 'claude-opus-5-5', session: SESSION })),
+    );
+    expect(response.status).toBe(400);
+    expect(createMock).not.toHaveBeenCalled();
   });
 
   it('sends an error event when the warm-up fails', async () => {

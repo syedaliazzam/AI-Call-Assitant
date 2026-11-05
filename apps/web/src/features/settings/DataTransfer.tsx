@@ -102,7 +102,7 @@ export function DataTransfer() {
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
       setOutcome({ kind: 'exported', sessions: file.sessions.length });
     } catch {
-      setOutcome({ kind: 'error', message: 'Kite could not export your data. Try again.' });
+      setOutcome({ kind: 'error', message: 'Paramount AI could not export your data. Try again.' });
     } finally {
       setBusy(false);
     }
@@ -125,7 +125,7 @@ export function DataTransfer() {
     } catch {
       setOutcome({
         kind: 'error',
-        message: 'Kite could not import this file. Nothing was changed.',
+        message: 'Paramount AI could not import this file. Nothing was changed.',
       });
     } finally {
       setBusy(false);
@@ -152,7 +152,7 @@ export function DataTransfer() {
           ref={fileInput}
           type="file"
           accept=".json,application/json"
-          aria-label="Kite export file to import"
+          aria-label="Paramount AI export file to import"
           className="sr-only"
           onChange={(event) => {
             const file = event.target.files?.[0];

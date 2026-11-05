@@ -18,9 +18,16 @@
  * Kite never hides from the taskbar, Dock or process lists, and does not try to evade
  * monitoring or proctoring software (CLAUDE.md).
  */
+import { rm, readFile, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { PAGES_WINDOW_PATH, type WindowControlAction } from '@kite/shared';
+import {
+  DESKTOP_PROTOCOL,
+  PAGES_WINDOW_PATH,
+  parseDesktopLink,
+  type DesktopLink,
+  type WindowControlAction,
+} from '@kite/shared';
 import {
   app,
   BrowserWindow,
@@ -36,7 +43,8 @@ import {
 import { installAccurate, type WorkerProcess } from './accurate/host';
 import { MODEL_FOLDER } from './accurate/model';
 import { CALL_ACTIVE_CHANNEL, OPEN_PAGES_CHANNEL, WINDOW_CONTROL_CHANNEL } from './channels';
-import { APP_NAME, loadConfig, type DesktopConfig } from './config';
+import { APP_NAME, loadConfig, pinnedDataFolder, type DesktopConfig } from './config';
+import { installHandoff, linkFromArgv, shouldRegisterProtocol } from './handoff';
 import { createHomeWindow, type HomeWindow } from './home';
 import { startUpdater } from './updater';
 import { installHotkeys, isKiteSender, type HotkeyController } from './hotkeys';
@@ -75,6 +83,9 @@ let protection: Protection | null = null;
 /** True while a live call is connected (the Kite page says so; v1.1.0). */
 let callActive = false;
 
+/** A paramountai:// link that arrived before the windows existed (macOS sends it early). */
+let earlyLink: DesktopLink | null = null;
+
 /** True once the app is quitting: closing the main window then really closes it. */
 let quitting = false;
 
@@ -110,8 +121,25 @@ function showFront(): void {
 }
 
 /**
+ * Acts on a paramountai:// link. It only brings a window forward: a link can come from any web page, so
+ * it never starts a call or changes anything. During a call it brings up the overlay, as a launch does.
+ *
+ * @param link What the link asks for, or null for an invalid one.
+ * Called from: a second launch, macOS's open-url, the first start
+ */
+function followLink(link: DesktopLink | null): void {
+  if (!home) {
+    earlyLink = link;
+    return;
+  }
+  if (link?.kind === 'session' && !callActive) home.openSession(link.sessionId);
+  else showFront();
+}
+
+/**
  * Makes sure only one copy of Kite runs. A second launch brings up the running copy instead of
- * opening another one (two copies would compete for the microphone and hotkeys).
+ * opening another one (two copies would compete for the microphone and hotkeys). A
+ * paramountai:// link on Windows arrives this way too, as an argument of the second launch.
  *
  * @returns True if this is the first instance; false if it is quitting in favour of another.
  * Called from: start()
@@ -121,7 +149,7 @@ function ensureSingleInstance(): boolean {
     app.quit();
     return false;
   }
-  app.on('second-instance', showFront);
+  app.on('second-instance', (_event, argv) => followLink(linkFromArgv(argv)));
   return true;
 }
 
@@ -249,6 +277,15 @@ function openPages(config: DesktopConfig, page: string): void {
  * Called from: the bottom of this file
  */
 function start(): void {
+  // Before anything that uses the folder: the single-instance lock lives in it, and an upgrade from
+  // 1.1.0 must find its sessions, settings and sign-in where they are (spec §2).
+  const dataFolder = pinnedDataFolder({
+    isPackaged: app.isPackaged,
+    hasUserDataDirSwitch: app.commandLine.hasSwitch('user-data-dir'),
+    appData: app.getPath('appData'),
+  });
+  if (dataFolder) app.setPath('userData', dataFolder);
+
   let config: DesktopConfig;
   try {
     config = loadConfig();
@@ -261,6 +298,21 @@ function start(): void {
   // Sandbox every renderer process, even if a window were ever created without the setting.
   app.enableSandbox();
   if (!ensureSingleInstance()) return;
+
+  // spec S9: the system opens this app for paramountai:// links. A test run must not change that.
+  if (
+    shouldRegisterProtocol({
+      isPackaged: app.isPackaged,
+      hasUserDataDirSwitch: app.commandLine.hasSwitch('user-data-dir'),
+    })
+  ) {
+    app.setAsDefaultProtocolClient(DESKTOP_PROTOCOL);
+  }
+  // macOS sends a link as an event, possibly before the app is ready.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    followLink(parseDesktopLink(url));
+  });
 
   // Lock every web contents the app ever creates, not only the main window's.
   app.on('web-contents-created', (_event, contents) => {
@@ -394,7 +446,7 @@ function start(): void {
       fork: (modulePath, env) =>
         utilityProcess.fork(modulePath, [], {
           env,
-          serviceName: 'Kite accurate transcription',
+          serviceName: `${APP_NAME} accurate transcription`,
           stdio: 'ignore',
         }) as unknown as WorkerProcess,
     });
@@ -453,7 +505,25 @@ function start(): void {
         mainWindow ??= createMainWindow(config);
       },
     });
-    home.open();
+    // A first start may come from a paramountai:// link (on Windows, an argument).
+    const firstLink = earlyLink ?? linkFromArgv(process.argv);
+    earlyLink = null;
+    if (firstLink?.kind === 'session') home.openSession(firstLink.sessionId);
+    else home.open();
+
+    // The session file a browser saved (spec S9, ADR-0045). The shell picks and deletes; the page
+    // names no path.
+    installHandoff({
+      ipcMain,
+      dialog,
+      windowFor: (event) => BrowserWindow.fromWebContents(event.sender),
+      files: {
+        size: async (file) => (await stat(file)).size,
+        read: (file) => readFile(file, 'utf8'),
+        remove: (file) => rm(file),
+      },
+      allowedOrigin: config.allowedOrigin,
+    });
 
     // Updates (Day 6, ADR-0028): installed builds only; tests turn them off. Store builds
     // (process.windowsStore) are updated by the Microsoft Store, which forbids self-updating.

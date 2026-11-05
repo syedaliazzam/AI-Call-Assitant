@@ -121,9 +121,11 @@ describe('POST /api/job-import', () => {
 
   it('explains a blocked address and calls no Claude', async () => {
     mocks.fetchJobPage.mockRejectedValue(new JobPageError('blocked'));
-    const reply = await POST(post({ url: 'http://10.0.0.1/' }));
+    const reply = await POST(post({ url: 'https://10.0.0.1/' }));
     expect(reply.status).toBe(422);
-    expect(((await reply.json()) as { message: string }).message).toContain('public');
+    expect(((await reply.json()) as { message: string }).message).toBe(
+      'Couldn’t read that page. Paste the description instead.',
+    );
     expect(mocks.jsonReply).not.toHaveBeenCalled();
   });
 

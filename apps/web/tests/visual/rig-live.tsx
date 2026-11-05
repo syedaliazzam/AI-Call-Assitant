@@ -265,7 +265,12 @@ function CallRig() {
   }
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      <Sidebar user={{ name: 'Rig user', email: 'rig@invented.example', role: 'user' }} />
+      <Sidebar
+        collapsed={false}
+        drawerOpen={false}
+        onCloseDrawer={() => undefined}
+        footer={<p className="text-[13px] text-ui-muted">Rig user</p>}
+      />
       <main className="relative min-w-0 flex-1 overflow-y-auto">
         <LiveCallLayout
           title="Interview call"

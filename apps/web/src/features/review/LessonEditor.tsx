@@ -51,7 +51,7 @@ export function LessonEditor(props: LessonEditorProps) {
         maxLength={MAX_LESSON_CHARS}
         // Typing keeps inner spaces; the saved text is cleaned (one line, trimmed).
         onChange={(event) => setText(event.target.value.replace(/\s+/g, ' '))}
-        hint={`${cleaned.length}/${MAX_LESSON_CHARS} characters. Kite sends exactly this text to Claude.`}
+        hint={`${cleaned.length}/${MAX_LESSON_CHARS} characters. Paramount AI sends exactly this text to Claude.`}
       />
       <Select label="Applies to" options={LESSON_SCOPE_OPTIONS} value={scope} onChange={setScope} />
       <div className="flex gap-2">

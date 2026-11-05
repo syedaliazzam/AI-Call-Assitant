@@ -225,12 +225,12 @@ describe('dashboard preferences', () => {
     });
   });
 
-  it('starts as a list, newest first, and remembers a change', () => {
-    expect(getDashboardLayout()).toBe('list');
-    expect(getDashboardSort()).toBe('newest');
-    setDashboardLayout('grid');
-    setDashboardSort('company');
+  it('starts as a grid, newest first, and remembers a change', () => {
     expect(getDashboardLayout()).toBe('grid');
+    expect(getDashboardSort()).toBe('newest');
+    setDashboardLayout('list');
+    setDashboardSort('company');
+    expect(getDashboardLayout()).toBe('list');
     expect(getDashboardSort()).toBe('company');
   });
 
@@ -243,7 +243,7 @@ describe('dashboard preferences', () => {
         throw new Error('blocked');
       },
     });
-    expect(getDashboardLayout()).toBe('list');
-    expect(() => setDashboardLayout('grid')).not.toThrow();
+    expect(getDashboardLayout()).toBe('grid');
+    expect(() => setDashboardLayout('list')).not.toThrow();
   });
 });

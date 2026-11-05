@@ -3,11 +3,13 @@
  * Purpose: The home panel, the desktop app's window between calls (v1.1.0, ADR-0041): a header with the
  *          logo, minimise, move, ⋮ and close; session search and sort; the session cards; and at the
  *          bottom "View in dashboard ↗" and "Create session". Everything else opens in the main
- *          window through the shell. Opened anywhere but a desktop app from 1.1.0, it goes to the
- *          dashboard. Also offers the accurate-transcription download once (never starts it itself).
+ *          window through the shell. Starting a session shows its "Start your session" card first (spec
+ *          S10). Opened anywhere but a desktop app from 1.1.0, it goes to the dashboard. Also offers the
+ *          accurate-transcription download once (never starts it itself).
  * Used by: app/home/page.tsx
  * Depends on: src/core/storage (sessions.ts, hintPrefs.ts, types), src/features/appearance/useAppearance,
- *             src/features/home (HomeCard, HomeMenu), src/features/notices/AcceptableUseNotice.tsx,
+ *             src/features/home (HomeCard, HomeMenu, StartSessionCard),
+ *             src/features/notices/AcceptableUseNotice.tsx,
  *             src/platform, src/ui (BrandLockup, Button, Input styles, icons)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §7.3; ADR-0041
  *
@@ -34,7 +36,7 @@ import { BrandLockup } from '@/ui/BrandLockup';
 import { Button } from '@/ui/Button';
 import {
   CloseIcon,
-  MinusIcon,
+  CollapseIcon,
   MoreIcon,
   MoveIcon,
   OutIcon,
@@ -45,13 +47,14 @@ import {
 import { AccurateOffer } from './AccurateOffer';
 import { homeCardDescription, homeCardTitle, HomeCard } from './HomeCard';
 import { HomeMenu } from './HomeMenu';
+import { StartSessionCard } from './StartSessionCard';
 
 /** Props for HomePanel. */
 export interface HomePanelProps {
-  /** The signed-in person's name. */
-  name: string;
-  /** Their email. */
+  /** The signed-in person's email. */
   email: string;
+  /** The session a paramountai:// link named: its start card shows first. */
+  startSessionId?: string;
 }
 
 /** A button in the header: not part of the drag handle, always a clear focus ring. */
@@ -79,7 +82,7 @@ const hasPanel = () => getPlatform().hasHomePanel();
  * @returns The panel.
  * Rendered by: app/home/page.tsx
  */
-export function HomePanel({ name, email }: HomePanelProps) {
+export function HomePanel({ email, startSessionId }: HomePanelProps) {
   const router = useRouter();
   const available = useSyncExternalStore(subscribeNever, hasPanel, () => true);
   const { theme, resolved, zoom } = useAppearance();
@@ -89,6 +92,8 @@ export function HomePanel({ name, email }: HomePanelProps) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SessionSort>('newest');
   const [menuOpen, setMenuOpen] = useState(false);
+  // The session whose start card shows (spec S10), or null for the list.
+  const [starting, setStarting] = useState<string | null>(startSessionId ?? null);
   // Fixed per list, so every card judges "live for over 12 hours" the same way.
   const [now, setNow] = useState(0);
 
@@ -148,7 +153,7 @@ export function HomePanel({ name, email }: HomePanelProps) {
 
   /** What a card can do. */
   const actions = {
-    onStart: (session: Session) => open(`/live/${session.id}`),
+    onStart: (session: Session) => setStarting(session.id),
     onView: (session: Session) => open(`/sessions/${session.id}`),
     onEdit: (session: Session) => open(`/sessions/${session.id}/edit`),
     onRename: async (session: Session, company: string, role: string) => {
@@ -174,10 +179,10 @@ export function HomePanel({ name, email }: HomePanelProps) {
         <button
           type="button"
           className={HEADER_BUTTON}
-          aria-label="Minimise"
+          aria-label="Compact"
           onClick={() => getPlatform().windowControl('minimize')}
         >
-          <MinusIcon />
+          <CollapseIcon />
         </button>
         {/* The whole header drags the window; this is where people look for it. */}
         <span
@@ -205,78 +210,92 @@ export function HomePanel({ name, email }: HomePanelProps) {
           <CloseIcon />
         </button>
         {menuOpen && (
-          <HomeMenu
-            name={name}
-            email={email}
-            theme={theme}
-            zoom={zoom}
-            onClose={() => setMenuOpen(false)}
-          />
+          <HomeMenu email={email} theme={theme} zoom={zoom} onClose={() => setMenuOpen(false)} />
         )}
       </header>
 
-      <div className="flex shrink-0 items-center gap-1.5 px-3 pb-2">
-        <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-ui-border bg-ui-input px-2.5 text-ui-muted focus-within:border-ui-link">
-          <SearchIcon />
-          <input
-            aria-label="Search sessions"
-            className="min-w-0 flex-1 bg-transparent text-[14px] text-ui-text placeholder:text-ui-muted focus:outline-none"
-            placeholder="Search by title or description"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
+      {starting ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <StartSessionCard
+            key={starting}
+            sessionId={starting}
+            onContinue={(id) => {
+              setStarting(null);
+              open(`/live/${id}`);
+            }}
+            onBack={() => setStarting(null)}
+            onCreateHere={() => {
+              setStarting(null);
+              open('/sessions/new');
+            }}
           />
-        </label>
-        <button
-          type="button"
-          className={HEADER_BUTTON.replace('size-8', 'size-9')}
-          aria-label={sort === 'newest' ? 'Sorted newest first' : 'Sorted oldest first'}
-          onClick={() => setSort((was) => (was === 'newest' ? 'oldest' : 'newest'))}
-        >
-          <SortIcon />
-        </button>
-      </div>
-
-      <AccurateOffer />
-
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
-        {failed ? (
-          <p role="alert" className="p-4 text-[14px] text-ui-danger">
-            Kite could not read your sessions on this computer. Reopen it and try again.
-          </p>
-        ) : sessions === null ? (
-          <p className="p-4 text-[14px] text-ui-muted">Loading…</p>
-        ) : shown.length === 0 ? (
-          <div className="flex flex-col items-center gap-1 p-8 text-center">
-            <p className="text-[15px] font-semibold text-ui-heading">
-              {sessions.length === 0 ? 'No sessions yet' : 'Nothing matches that'}
-            </p>
-            <p className="text-[13px] text-ui-muted">
-              {sessions.length === 0
-                ? 'Create a session to get ready for a call.'
-                : 'Try other words, or clear the search.'}
-            </p>
+        </div>
+      ) : (
+        <>
+          <div className="flex shrink-0 items-center gap-1.5 px-3 pb-2">
+            <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-ui-border bg-ui-input px-2.5 text-ui-muted focus-within:border-ui-link">
+              <SearchIcon />
+              <input
+                aria-label="Search sessions"
+                className="min-w-0 flex-1 bg-transparent text-[14px] text-ui-text placeholder:text-ui-muted focus:outline-none"
+                placeholder="Search by title or description"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className={HEADER_BUTTON.replace('size-8', 'size-9')}
+              aria-label={sort === 'newest' ? 'Sorted newest first' : 'Sorted oldest first'}
+              onClick={() => setSort((was) => (was === 'newest' ? 'oldest' : 'newest'))}
+            >
+              <SortIcon />
+            </button>
           </div>
-        ) : (
-          <ul aria-label="Sessions" className="flex flex-col gap-2">
-            {shown.map((session) => (
-              <HomeCard key={session.id} session={session} now={now} {...actions} />
-            ))}
-          </ul>
-        )}
-      </div>
 
-      <footer className="flex shrink-0 gap-2 border-t border-ui-border p-3">
-        <Button variant="secondary" className="min-w-0 flex-1 px-2" onClick={() => open('/')}>
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            View in dashboard <OutIcon />
-          </span>
-        </Button>
-        <Button className="min-w-0 flex-1 px-2" onClick={() => open('/sessions/new')}>
-          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-            <PlusIcon /> Create session
-          </span>
-        </Button>
-      </footer>
+          <AccurateOffer />
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
+            {failed ? (
+              <p role="alert" className="p-4 text-[14px] text-ui-danger">
+                Paramount AI could not read your sessions on this computer. Reopen it and try again.
+              </p>
+            ) : sessions === null ? (
+              <p className="p-4 text-[14px] text-ui-muted">Loading…</p>
+            ) : shown.length === 0 ? (
+              <div className="flex flex-col items-center gap-1 p-8 text-center">
+                <p className="text-[15px] font-semibold text-ui-heading">
+                  {sessions.length === 0 ? 'No sessions yet' : 'Nothing matches that'}
+                </p>
+                <p className="text-[13px] text-ui-muted">
+                  {sessions.length === 0
+                    ? 'Create a session to get ready for a call.'
+                    : 'Try other words, or clear the search.'}
+                </p>
+              </div>
+            ) : (
+              <ul aria-label="Sessions" className="flex flex-col gap-2">
+                {shown.map((session) => (
+                  <HomeCard key={session.id} session={session} now={now} {...actions} />
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <footer className="flex shrink-0 gap-2 border-t border-ui-border p-3">
+            <Button variant="secondary" className="min-w-0 flex-1 px-2" onClick={() => open('/')}>
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                View in dashboard <OutIcon />
+              </span>
+            </Button>
+            <Button className="min-w-0 flex-1 px-2" onClick={() => open('/sessions/new')}>
+              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                <PlusIcon /> Create session
+              </span>
+            </Button>
+          </footer>
+        </>
+      )}
     </div>
   );
 }

@@ -1,15 +1,14 @@
 /**
  * File: apps/web/scripts/verify-setup.ts
- * Purpose: Developer-only check of parity Phase 2's paid features against the real API: reads one
- *          real public job page (server/job-page.ts, server/job-import.ts) and writes one Answer
- *          preview (server/preview.ts). Also confirms private addresses are refused without any
- *          request being sent. Prints which fields were found, sizes and token counts only: never
- *          the page or what was extracted.
+ * Purpose: Developer-only check of the job link against the real API: reads one real public job page
+ *          (server/job-page.ts, server/job-import.ts). Also confirms private addresses are refused
+ *          without any request being sent. Prints which fields were found, sizes and token counts
+ *          only: never the page or what was extracted.
  *          Usage: pnpm --filter web verify:setup <url of a public job page>
- *          Sends 2 Claude requests with the fast model (about $0.01).
+ *          Sends 1 Claude request with the fast model (about $0.001).
  * Used by: the "verify:setup" script in apps/web/package.json (by hand; never in CI)
- * Depends on: src/server/job-page.ts, src/server/job-import.ts, src/server/preview.ts,
- *             src/server/env.ts, scripts/lib/require-key.ts
+ * Depends on: src/server/job-page.ts, src/server/job-import.ts, src/server/env.ts,
+ *             scripts/lib/require-key.ts
  * Key: refuses to run without ANTHROPIC_API_KEY. A paid run: agree it, with its estimated cost,
  *      with the developer first (CLAUDE.md "Claude key and spend").
  * Architecture: ADR-0029
@@ -19,16 +18,15 @@
 import { getClaudeEnv } from '../src/server/env';
 import { extractJobDetails } from '../src/server/job-import';
 import { fetchJobPage, JobPageError, pageText } from '../src/server/job-page';
-import { generatePreview } from '../src/server/preview';
 import { requireKey } from './lib/require-key';
 
 /** Addresses that must be refused. */
 const PRIVATE_URLS = [
-  'http://169.254.169.254/latest/meta-data/',
-  'http://127.0.0.1/',
-  'http://localhost/',
-  'http://[::1]/',
-  'http://10.0.0.1/',
+  'https://169.254.169.254/latest/meta-data/',
+  'https://127.0.0.1/',
+  'https://localhost/',
+  'https://[::1]/',
+  'https://10.0.0.1/',
 ];
 
 /**
@@ -69,18 +67,6 @@ async function main(): Promise<void> {
   const ok = found.company > 0 && found.role > 0 && found.description > 200;
   failed ||= !ok;
   console.log(`${ok ? 'PASS' : 'FAIL'} job import, field lengths:`, found, usage);
-
-  const preview = await generatePreview(
-    {
-      style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
-      question: 'behavioural',
-    },
-    env.modelFast,
-  );
-  const lines = preview.text.split('\n').filter((line) => line.trim() !== '').length;
-  const previewOk = lines >= 2;
-  failed ||= !previewOk;
-  console.log(`${previewOk ? 'PASS' : 'FAIL'} preview: ${lines} lines`, preview.usage);
   if (failed) process.exitCode = 1;
 }
 

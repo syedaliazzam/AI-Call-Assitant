@@ -13,10 +13,22 @@ import { requireUser } from '@/server/guard';
 /**
  * Home panel page.
  *
+ * @param props.searchParams The address's query: `session` is the session a paramountai:// link named.
  * @returns The panel for the signed-in person.
  */
-export default async function HomeRoute() {
+export default async function HomeRoute({
+  searchParams,
+}: {
+  /** The address's query, as Next.js passes it. */
+  searchParams: Promise<{ session?: string | string[] }>;
+}) {
   // Same sign-in rules as every app page (temporary passwords go to /change-password).
   const { user } = await requireUser();
-  return <HomePanel name={user.name} email={user.email} />;
+  const { session } = await searchParams;
+  return (
+    <HomePanel
+      email={user.email}
+      {...(typeof session === 'string' ? { startSessionId: session } : {})}
+    />
+  );
 }

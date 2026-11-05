@@ -25,6 +25,7 @@ import {
 import type { MockFeedbackRequest, MockSummaryRequest, PrepareRequest } from '@kite/shared';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
+import { pickOption } from '../lib/pick-option';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -83,7 +84,7 @@ test.beforeAll(async () => {
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(
-      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Kite prepare harness</title>' +
+      '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Paramount AI prepare harness</title>' +
         '<link rel="stylesheet" href="/harness/prepare.css"></head>' +
         '<body class="font-sans"><div id="root"></div>' +
         '<script type="module" src="/harness/prepare.js"></script></body></html>',
@@ -174,7 +175,7 @@ async function startInterview(micFails = false): Promise<void> {
     await h.seed('interview', 'Lantern Freight (invented)', 'Data Analyst');
     h.showMock({ micFails: fails });
   }, micFails);
-  await page.getByLabel('Length').selectOption('3');
+  await pickOption(page, page.getByLabel('Length'), '3 questions');
   await page.getByRole('button', { name: 'Start interview' }).click();
   await expect(page.getByLabel('Question', { exact: true })).toHaveText('Question 1?');
 }
@@ -187,11 +188,11 @@ test('a whole interview: asked aloud, listened to, feedback, summary, saved', as
     h.showMock();
   });
   // Regular calls are not offered: an interview needs a job.
-  await expect(page.getByLabel('Session').getByRole('option')).toHaveText([
-    'Data Analyst at Lantern Freight (invented)',
-  ]);
+  await page.getByLabel('Session').click();
+  await expect(page.getByRole('option')).toHaveText(['Data Analyst at Lantern Freight (invented)']);
+  await page.keyboard.press('Escape');
   await shots('mock-choose');
-  await page.getByLabel('Length').selectOption('3');
+  await pickOption(page, page.getByLabel('Length'), '3 questions');
   await page.getByRole('button', { name: 'Start interview' }).click();
   await expect(page.getByLabel('Question', { exact: true })).toHaveText('Question 1?');
   await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
@@ -204,7 +205,9 @@ test('a whole interview: asked aloud, listened to, feedback, summary, saved', as
 
   await page.evaluate(() => window.kitePrepareHarness.hear('I have used SQL'));
   await page.evaluate(() => window.kitePrepareHarness.hearPartial('for four'));
-  await expect(page.getByLabel('What Kite heard')).toContainText('I have used SQL for four');
+  await expect(page.getByLabel('What Paramount AI heard')).toContainText(
+    'I have used SQL for four',
+  );
   await shots('mock-listening');
   // Words still being heard when Done is pressed arrive as a final line; they are not lost.
   await page.evaluate(() => window.kitePrepareHarness.hearOnDetach('for four years'));
@@ -221,7 +224,7 @@ test('a whole interview: asked aloud, listened to, feedback, summary, saved', as
   await page.getByRole('button', { name: 'Next question' }).click();
   await expect(page.getByLabel('Question', { exact: true })).toHaveText('Question 2?');
   // Nothing from the last answer is carried over.
-  await expect(page.getByLabel('What Kite heard')).toHaveCount(0);
+  await expect(page.getByLabel('What Paramount AI heard')).toHaveCount(0);
   await page.evaluate(() => window.kitePrepareHarness.hear('Second answer'));
   await page.getByRole('button', { name: 'Done' }).click();
   await expect(page.getByLabel('Feedback')).toHaveText('Feedback on: Question 2?');

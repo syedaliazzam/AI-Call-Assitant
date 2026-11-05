@@ -88,7 +88,7 @@ export function AskSection({
       )}
       {asking && (
         <p role="status" className="mt-3 text-[13px] text-ui-muted">
-          Kite is reading the call…
+          Paramount AI is reading the call…
         </p>
       )}
       {failure && (

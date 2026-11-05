@@ -51,7 +51,7 @@ export const FADE_AWAY_FACTOR = 0.6;
 // tests/unit/ui/theme.test.ts). The minimum stays 0.4 — at that setting over a bright background the
 // nominal text contrast is low (~2.4:1) and the text shadow carries legibility; the developer chose
 // not to raise it.
-export const OVERLAY_OPACITY = { min: 0.4, max: 1, default: 0.7 };
+export const OVERLAY_OPACITY = { min: 0.4, max: 1, default: 0.82 };
 
 /**
  * Reads a stored value.

@@ -80,7 +80,7 @@ function RigHome() {
       setReady(true);
     })();
   }, []);
-  return ready ? <HomePanel name="Sam Lee" email="sam@example.com" /> : null;
+  return ready ? <HomePanel email="sam@example.com" /> : null;
 }
 
 const zones = new URLSearchParams(window.location.search).get('zones');

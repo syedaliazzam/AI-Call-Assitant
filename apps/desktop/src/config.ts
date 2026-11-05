@@ -12,8 +12,16 @@
  * 3. PRODUCTION_URL.
  */
 
+import path from 'node:path';
+
 /** Name shown in the window title and error dialogs. */
-export const APP_NAME = 'Kite';
+export const APP_NAME = 'Paramount AI';
+
+/**
+ * The app's data folder name, under the system's application-data folder. It is the name the app had
+ * until 1.1.0, and it stays: every session, setting and sign-in of an installed app lives there.
+ */
+export const DATA_FOLDER_NAME = 'Kite';
 
 /** The deployed Kite web app; opened when nothing overrides it. */
 export const PRODUCTION_URL = 'https://kite-call-assistant.vercel.app';
@@ -35,6 +43,31 @@ export interface DesktopConfig {
    * on purpose; until then every other origin is blocked.
    */
   allowedOrigin: string;
+}
+
+/** What pinnedDataFolder() needs to know. */
+export interface DataFolderContext {
+  /** True in an installed app (app.isPackaged). */
+  isPackaged: boolean;
+  /** True when --user-data-dir was passed: every test run does, with a temporary folder. */
+  hasUserDataDirSwitch: boolean;
+  /** The system's application-data folder (app.getPath('appData')). */
+  appData: string;
+}
+
+/**
+ * Where an installed app must keep its data. Electron names the folder after productName, so the
+ * rename (spec §2) would otherwise move an upgraded user to an empty folder. A development run keeps
+ * its own folder, and --user-data-dir always wins: pinning over it would send a test run to the
+ * person's real profile.
+ *
+ * @param context See DataFolderContext.
+ * @returns The folder to set, or null to leave Electron's choice alone.
+ * Called from: start() in src/main.ts; tests
+ */
+export function pinnedDataFolder(context: DataFolderContext): string | null {
+  if (!context.isPackaged || context.hasUserDataDirSwitch) return null;
+  return path.join(context.appData, DATA_FOLDER_NAME);
 }
 
 /**

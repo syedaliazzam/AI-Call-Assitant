@@ -1,17 +1,15 @@
 /**
- * Tests for apps/web/src/core/storage/sidebarPrefs.ts and the desktop-banner part of
- * dashboardPrefs.ts: the sidebar starts open and remembers being collapsed; the banner shows until
- * it is dismissed; blocked storage leaves the defaults and never throws.
+ * Tests for apps/web/src/core/storage/sidebarPrefs.ts: the sidebar starts open and remembers being
+ * collapsed; the desktop app card shows until it is hidden; blocked storage leaves the defaults and
+ * never throws.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  DESKTOP_BANNER_KEY,
-  dismissDesktopBanner,
-  getDesktopBannerDismissed,
-} from '@/core/storage/dashboardPrefs';
-import {
+  DESKTOP_CARD_HIDDEN_KEY,
   SIDEBAR_COLLAPSED_KEY,
+  getDesktopCardHidden,
   getSidebarCollapsed,
+  setDesktopCardHidden,
   setSidebarCollapsedPref,
 } from '@/core/storage/sidebarPrefs';
 
@@ -59,18 +57,18 @@ describe('sidebar collapsed', () => {
   });
 });
 
-describe('desktop banner', () => {
-  it('shows until dismissed, then stays dismissed', () => {
+describe('the desktop app card', () => {
+  it('shows until hidden, then stays hidden', () => {
     const values = fakeStorage();
-    expect(getDesktopBannerDismissed()).toBe(false);
-    dismissDesktopBanner();
-    expect(values.get(DESKTOP_BANNER_KEY)).toBe('true');
-    expect(getDesktopBannerDismissed()).toBe(true);
+    expect(getDesktopCardHidden()).toBe(false);
+    setDesktopCardHidden();
+    expect(values.get(DESKTOP_CARD_HIDDEN_KEY)).toBe('true');
+    expect(getDesktopCardHidden()).toBe(true);
   });
 
   it('keeps showing and does not throw when storage is blocked', () => {
     blockedStorage();
-    expect(() => dismissDesktopBanner()).not.toThrow();
-    expect(getDesktopBannerDismissed()).toBe(false);
+    expect(() => setDesktopCardHidden()).not.toThrow();
+    expect(getDesktopCardHidden()).toBe(false);
   });
 });

@@ -126,6 +126,28 @@ export function resolveTheme(choice: ThemeChoice, prefersDark: boolean): Resolve
 }
 
 /**
+ * Runs before the first paint, in the page's <head>, so a dark theme never flashes white while the app
+ * loads (v1.2.0). It reads the same key as getTheme() and repeats resolveTheme(), because no module has
+ * loaded yet at that point.
+ */
+export const THEME_BOOT_SCRIPT = `try{var t=localStorage.getItem(${JSON.stringify(THEME_KEY)});if(t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.dataset.theme='dark'}catch(e){}`;
+
+/**
+ * Paints the whole document in a theme, through <html data-theme> (src/ui/tokens/theme.css).
+ *
+ * @param theme The theme to paint.
+ * @param root  The document's root element.
+ * Called from: src/features/appearance/ThemeSync.tsx; tests
+ */
+export function applyResolvedTheme(
+  theme: ResolvedTheme,
+  root: Pick<HTMLElement, 'dataset'> = document.documentElement,
+): void {
+  if (theme === 'dark') root.dataset.theme = 'dark';
+  else delete root.dataset.theme;
+}
+
+/**
  * The UI scale.
  *
  * @returns The scale (default 1).

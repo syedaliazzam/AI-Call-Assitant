@@ -2,19 +2,20 @@
  * File: apps/web/src/server/job-page.ts
  * Purpose: Fetches a public job page for "Paste a job link" and turns it into plain text. The
  *          server fetches a URL a user typed, so it must never reach anything private (SSRF):
- *          only http and https on the usual ports; every address a host name resolves to is
- *          checked, and the connection uses only those checked addresses, so a host cannot
- *          change its answer between the check and the connection; every redirect is checked
- *          the same way; and time and size are limited.
+ *          only https on the usual port; every address a host name resolves to is checked, and the
+ *          connection uses only those checked addresses, so a host cannot change its answer between
+ *          the check and the connection; every redirect is checked the same way; only HTML or plain
+ *          text is read; and time and size are limited.
  * Used by: app/api/job-import/route.ts
- * Depends on: node:dns, node:http, node:https, node:net, node:zlib
- * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2, §8; ADR-0029
+ * Depends on: node:dns, node:https, node:net, node:zlib
+ * Architecture: docs/design/paramount-ai-ui-spec.md §6; docs/architecture/kite-architecture-v3.1.md
+ *               §7.2, §8; ADR-0029
  *
  * Page text is never logged.
  */
 import 'server-only';
 import { lookup as dnsLookup, type LookupAddress } from 'node:dns';
-import http, { type IncomingMessage } from 'node:http';
+import type { IncomingMessage } from 'node:http';
 import https from 'node:https';
 import { BlockList, isIP } from 'node:net';
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib';
@@ -34,7 +35,7 @@ export const MAX_JOB_TEXT_CHARS = 30_000;
 
 /** Why a page could not be read. */
 export type JobPageFailure =
-  /** Not an http(s) URL on a usual port. */
+  /** Not an https URL on the usual port. */
   | 'bad_url'
   /** The address is private or otherwise not public. */
   | 'blocked'
@@ -113,7 +114,7 @@ function embeddedIpv4(address: string): string | null {
 }
 
 /**
- * Checks a URL before connecting: scheme, port, no credentials, and, when the host is written as
+ * Checks a URL before connecting: https only, its usual port, no credentials, and, when the host is written as
  * an IP address, that it is public. (A host name is checked when it resolves: checkedLookup().)
  *
  * @param text The URL.
@@ -128,9 +129,10 @@ export function checkUrl(text: string): URL {
   } catch {
     throw new JobPageError('bad_url');
   }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new JobPageError('bad_url');
+  if (url.protocol !== 'https:') throw new JobPageError('bad_url');
   if (url.username || url.password) throw new JobPageError('bad_url');
-  if (url.port && url.port !== '80' && url.port !== '443') throw new JobPageError('bad_url');
+  // A URL parser drops :443, so any port left here is an unusual one.
+  if (url.port) throw new JobPageError('bad_url');
   const host = url.hostname.replace(/^\[|\]$/g, '');
   if (isIP(host) !== 0 && !isPublicAddress(host)) throw new JobPageError('blocked');
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) {
@@ -186,8 +188,7 @@ export function checkedLookup(
  */
 export function requestOnce(url: URL, signal: AbortSignal): Promise<IncomingMessage> {
   return new Promise((resolve, reject) => {
-    const client = url.protocol === 'https:' ? https : http;
-    const request = client.request(
+    const request = https.request(
       url,
       {
         method: 'GET',
@@ -275,7 +276,7 @@ export async function fetchJobPage(
       throw new JobPageError('unreadable');
     }
     const type = String(response.headers['content-type'] ?? '').toLowerCase();
-    if (type && !type.includes('html') && !type.includes('text/plain')) {
+    if (!type.includes('html') && !type.includes('text/plain')) {
       response.destroy();
       throw new JobPageError('unreadable');
     }

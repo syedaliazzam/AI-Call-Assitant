@@ -166,7 +166,7 @@ export function toCaptureError(
   const name = error instanceof Error ? error.name : '';
   const message = error instanceof Error ? error.message : '';
   const macPrivacy =
-    'Allow Kite under System Settings → Privacy & Security → Screen & System Audio Recording, then try again.';
+    'Allow Paramount AI under System Settings → Privacy & Security → Screen & System Audio Recording, then try again.';
   if (platform === 'browser' && name === 'NotAllowedError' && !/system/i.test(message)) {
     return new CaptureError(
       'user-cancelled',
@@ -177,13 +177,13 @@ export function toCaptureError(
     return new CaptureError(
       'permission-denied',
       os === 'mac'
-        ? `Kite was not allowed to capture the call's sound. ${macPrivacy}`
-        : "Kite was not allowed to capture the call's sound. Check your system's privacy settings, then try again.",
+        ? `Paramount AI was not allowed to capture the call's sound. ${macPrivacy}`
+        : "Paramount AI was not allowed to capture the call's sound. Check your system's privacy settings, then try again.",
     );
   }
   return new CaptureError(
     'not-supported',
-    "This browser can't share a call's sound with Kite. Use the latest Chrome or Edge, or the Kite desktop app.",
+    "This browser can't share a call's sound with Paramount AI. Use the latest Chrome or Edge, or the Paramount AI desktop app.",
   );
 }
 

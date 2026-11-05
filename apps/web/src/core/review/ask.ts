@@ -116,11 +116,14 @@ export async function askAboutCall(
       if (failure?.code && unavailableReason(failure.code, failure.message ?? '')) {
         return { ok: false, message: failure.message ?? 'Claude is unavailable right now.' };
       }
-      return { ok: false, message: 'Kite could not answer just now. Try again.' };
+      return { ok: false, message: 'Paramount AI could not answer just now. Try again.' };
     }
     const { text } = (await response.json()) as AskResponse;
     return { ok: true, text };
   } catch {
-    return { ok: false, message: 'Kite could not answer: check your connection and try again.' };
+    return {
+      ok: false,
+      message: 'Paramount AI could not answer: check your connection and try again.',
+    };
   }
 }

@@ -2,10 +2,43 @@
  * Tests for apps/desktop/src/config.ts:
  * KITE_URL defaults to production, the --kite-url flag and the KITE_URL variable override it
  * (variable first), ALLOWED_ORIGIN is derived from KITE_URL only, and only https (or http to
- * localhost) is accepted.
+ * localhost) is accepted. Also the rename's pinned data folder (spec §2).
  */
 import { describe, expect, it } from 'vitest';
-import { parseKiteUrl, PRODUCTION_URL, resolveConfig } from '../../src/config';
+import path from 'node:path';
+import {
+  APP_NAME,
+  DATA_FOLDER_NAME,
+  parseKiteUrl,
+  pinnedDataFolder,
+  PRODUCTION_URL,
+  resolveConfig,
+} from '../../src/config';
+
+describe('the rename keeps the data folder (spec §2)', () => {
+  const appData = path.join('C:', 'Users', 'someone', 'AppData', 'Roaming');
+
+  it('shows the new name and keeps the old folder', () => {
+    expect(APP_NAME).toBe('Paramount AI');
+    expect(DATA_FOLDER_NAME).toBe('Kite');
+  });
+
+  it('pins an installed app to the folder it has always used', () => {
+    expect(pinnedDataFolder({ isPackaged: true, hasUserDataDirSwitch: false, appData })).toBe(
+      path.join(appData, 'Kite'),
+    );
+  });
+
+  it('never overrides --user-data-dir: test runs must not reach a real profile', () => {
+    expect(pinnedDataFolder({ isPackaged: true, hasUserDataDirSwitch: true, appData })).toBeNull();
+  });
+
+  it('leaves a development run alone', () => {
+    expect(
+      pinnedDataFolder({ isPackaged: false, hasUserDataDirSwitch: false, appData }),
+    ).toBeNull();
+  });
+});
 
 describe('resolveConfig', () => {
   it('opens production by default', () => {

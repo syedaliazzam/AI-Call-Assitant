@@ -8,11 +8,12 @@
  */
 'use client';
 
-import { useActionState, useEffect, useRef } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { Button } from '@/ui/Button';
 import { Input } from '@/ui/Input';
+import { Select } from '@/ui/Select';
 import { TemporaryPasswordBox } from './TemporaryPasswordBox';
-import type { AdminUserActions, CreateUserState } from './types';
+import type { AdminUserActions, CreateUserState, Role } from './types';
 
 /** Props for CreateUserForm. */
 export interface CreateUserFormProps {
@@ -22,6 +23,12 @@ export interface CreateUserFormProps {
 
 /** Form state before the first submit. */
 const INITIAL_STATE: CreateUserState = { status: 'idle' };
+
+/** The roles an account can have. */
+const ROLE_OPTIONS: readonly { value: Role; label: string }[] = [
+  { value: 'user', label: 'User' },
+  { value: 'admin', label: 'Admin' },
+];
 
 /**
  * The create-user form (name, email, role). After a successful submit it shows the
@@ -34,12 +41,19 @@ const INITIAL_STATE: CreateUserState = { status: 'idle' };
 export function CreateUserForm({ action }: CreateUserFormProps) {
   const [state, formAction, pending] = useActionState(action, INITIAL_STATE);
   const formRef = useRef<HTMLFormElement>(null);
+  const [role, setRole] = useState<Role>('user');
   const errors = state.status === 'error' ? state.fieldErrors : undefined;
 
   // Clear the fields after a successful create, so the next account starts empty.
   useEffect(() => {
     if (state.status === 'created') formRef.current?.reset();
   }, [state]);
+  // A created account starts the list again too (while rendering: it follows a changed value).
+  const [seenState, setSeenState] = useState(state);
+  if (state !== seenState) {
+    setSeenState(state);
+    if (state.status === 'created') setRole('user');
+  }
 
   return (
     <section className="border border-ui-border rounded-card bg-ui-surface shadow-card p-6">
@@ -61,22 +75,11 @@ export function CreateUserForm({ action }: CreateUserFormProps) {
           autoComplete="off"
           error={errors?.email}
         />
-        <div className="flex flex-col gap-1">
-          <label htmlFor="create-user-role" className="text-[13px] font-medium text-ui-muted">
-            Role
-          </label>
-          <select
-            id="create-user-role"
-            name="role"
-            defaultValue="user"
-            className="h-10 border border-ui-border bg-ui-input px-3 text-base text-ui-text focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 md:text-[15px]"
-          >
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        {/* lg:mt-5 moves the button down by one label height, in line with the inputs. */}
-        <Button type="submit" disabled={pending} className="self-end lg:mt-5 lg:self-start">
+        {/* The form sends what the list shows: the list itself holds no form field. */}
+        <input type="hidden" name="role" value={role} />
+        <Select label="Role" options={ROLE_OPTIONS} value={role} onChange={setRole} />
+        {/* Level with the fields, under their labels. */}
+        <Button type="submit" disabled={pending} className="self-end">
           {pending ? 'Creating…' : 'Create user'}
         </Button>
       </form>

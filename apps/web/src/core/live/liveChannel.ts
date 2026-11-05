@@ -153,6 +153,8 @@ export interface CompactState {
   autoAnswer?: boolean;
   /** v1.1.0: grows each time the Chat shortcut is pressed, so the overlay opens its input. */
   chatCount?: number;
+  /** v1.2.0: grows each time the chat bar's screenshot shortcut is pressed in another app. */
+  screenshotSendCount?: number;
   /** v1.1.0: "Still in a call?" (ask) or listening paused (paused); ADR-0044. */
   hygiene?: 'ok' | 'ask' | 'paused';
   /** v1.1.0: true to show the one-time "Use headphones" hint (ADR-0044). */
@@ -276,6 +278,14 @@ export interface ChatCommand {
   question: string;
 }
 
+/** Asks about a screenshot of the screen with a typed question (v1.2.0, spec S14). */
+export interface ChatScreenshotCommand {
+  /** Command type. */
+  type: 'chat-screenshot';
+  /** The question (1–2,000 characters). Never logged. */
+  question: string;
+}
+
 /** The chat box's switch, from the overlay. */
 export interface ChatTargetCommand {
   /** Command type. */
@@ -298,6 +308,7 @@ export interface ReanswerCommand {
 export type CompactCommand =
   | SimpleCommand
   | ChatCommand
+  | ChatScreenshotCommand
   | RateCommand
   | ReportCommand
   | StyleCommand
@@ -444,7 +455,7 @@ export function isCommand(value: unknown): value is CompactCommand {
       )
     );
   }
-  if (command.type === 'chat') {
+  if (command.type === 'chat' || command.type === 'chat-screenshot') {
     return (
       typeof command.question === 'string' &&
       command.question.trim().length > 0 &&

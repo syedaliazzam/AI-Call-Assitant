@@ -68,6 +68,12 @@ export const OVERLAY_LAYOUT_CHANNEL = 'kite:overlay-layout';
 /** v1.1.0: the snap zone under the pointer during a drag (send; an OverlayPreset, or null). */
 export const SNAP_ZONE_CHANNEL = 'kite:snap-zone';
 
+/** v1.2.0: pick a session file in the system's dialog (invoke; answers a HandoffPick or null). */
+export const HANDOFF_PICK_CHANNEL = 'kite:handoff-pick';
+
+/** v1.2.0: delete the file picked last (invoke; no arguments, answers a boolean). */
+export const HANDOFF_DELETE_CHANNEL = 'kite:handoff-delete';
+
 /** The page says whether a live call is going on (send; a boolean). Updates wait for it. */
 export const CALL_ACTIVE_CHANNEL = 'kite:call-active';
 
@@ -82,3 +88,9 @@ export const ACCURATE_REMOVE_CHANNEL = 'kite:accurate-remove';
 
 /** v1.0.1: transcribe one utterance (invoke; carries a Float32Array, returns AccurateResult). */
 export const ACCURATE_TRANSCRIBE_CHANNEL = 'kite:accurate-transcribe';
+
+/** v1.2.0 (spec S13): moves the overlay by a distance (dragging the icon). */
+export const OVERLAY_MOVE_CHANNEL = 'kite:overlay-move';
+
+/** v1.2.0 (spec S14): holds or releases the chat bar's screenshot shortcut. */
+export const CHAT_HOTKEY_CHANNEL = 'kite:chat-hotkey';

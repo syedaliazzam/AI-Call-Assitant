@@ -164,21 +164,29 @@ export interface NewSession {
  */
 export async function createSession(page: Page, session: NewSession): Promise<void> {
   await page.goto(`${PRODUCTION_URL}/sessions/new`);
-  await page.getByLabel('Session type').selectOption('regular');
+  await page.getByRole('radio', { name: 'Regular' }).click();
   await page.getByLabel('Company').fill(session.company);
   await page.getByLabel('Topic').fill('Pilot review');
   if (session.document) {
-    await page.locator('input[type="file"]').setInputFiles(session.document);
-    await expect(page.getByText(session.document.name)).toBeVisible({ timeout: 30_000 });
+    // The wizard has two file inputs: the CV's and this one.
+    await page
+      .locator('input[type="file"][aria-label="Add a document"]')
+      .setInputFiles(session.document);
+    await expect(page.getByRole('combobox', { name: 'Documents' })).toHaveText(
+      session.document.name,
+      { timeout: 30_000 },
+    );
   }
+  await page.getByLabel('Key terms').fill(session.keyTerms.join(','));
+  await page.getByLabel('Key terms').press('Enter');
   await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByLabel('Key terms (optional)').fill(session.keyTerms.join('\n'));
-  await page.getByRole('button', { name: 'Create session' }).click();
+  await page.getByRole('button', { name: 'Create regular session' }).click();
   await expect(sessionCard(page, session.company)).toBeVisible({ timeout: 30_000 });
 }
 
 /**
- * The dashboard card of a session.
+ * The dashboard card of a session. The company can be the card's heading or the line under it: a
+ * Regular session's heading is its topic (v1.2.0).
  *
  * @param page    The page.
  * @param company The session's company.
@@ -186,7 +194,10 @@ export async function createSession(page: Page, session: NewSession): Promise<vo
  * Called from: createSession(), the suites
  */
 export function sessionCard(page: Page, company: string) {
-  return page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: company }) });
+  return page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('heading') })
+    .filter({ hasText: company });
 }
 
 /**

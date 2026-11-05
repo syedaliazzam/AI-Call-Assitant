@@ -44,6 +44,7 @@ import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
 import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts/hello';
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
+import { allowedTier, getDeepModelEnabled } from '@/server/modelAccess';
 import { countRequest } from '@/server/usage';
 import { MAX_REQUEST_BYTES, parseAnswerRequest } from '@/server/validate';
 
@@ -195,7 +196,13 @@ async function respond(
   const { mode } = data;
 
   // Ask Kite has no call to keep up with, so it defaults to the smart model (ADR-0030).
-  const tier: ModelTier = data.model ?? (mode === 'kite' ? 'smart' : 'fast');
+  const wanted: ModelTier = data.model ?? (mode === 'kite' ? 'smart' : 'fast');
+  // A session's deeper model can be turned off by an admin (spec §6): its calls keep working on the
+  // fast one. Ask AI's page has no per-session model. Reads the setting only for such a request.
+  const tier: ModelTier =
+    wanted === 'smart' && mode !== 'kite'
+      ? allowedTier(wanted, await getDeepModelEnabled())
+      : wanted;
   let model: string;
   try {
     const env = getClaudeEnv();

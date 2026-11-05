@@ -63,7 +63,7 @@ export interface MicSession {
 export function micErrorMessage(error: unknown): string {
   const name = (error as { name?: string } | null)?.name;
   if (name === 'NotAllowedError' || name === 'SecurityError') {
-    return 'Kite can’t use the microphone. Allow it for this site (or for Kite in your system settings), then try again.';
+    return 'Paramount AI can’t use the microphone. Allow it for this site (or for Paramount AI in your system settings), then try again.';
   }
   // v1.0.3: Windows reports a microphone that its privacy settings block, or that another app holds,
   // as NotReadableError; say where to look instead of the generic sentence.
@@ -75,7 +75,7 @@ export function micErrorMessage(error: unknown): string {
   }
   const code = (error as { code?: string } | null)?.code;
   if (typeof code === 'string' && code.startsWith('download-')) {
-    return 'Kite couldn’t load the speech model. Check your connection, then try again.';
+    return 'Paramount AI couldn’t load the speech model. Check your connection, then try again.';
   }
   return 'Voice input could not start. Try again, or type your question.';
 }

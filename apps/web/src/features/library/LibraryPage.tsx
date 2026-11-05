@@ -5,7 +5,7 @@
  *          copy of what it used.
  * Used by: app/(app)/resumes/page.tsx, app/(app)/documents/page.tsx
  * Depends on: src/core/storage/library.ts, ./useLibraryUpload.ts, ./UploadBox.tsx, src/ui (Button,
- *             Dialog, Eyebrow)
+ *             Dialog, PageShell)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §7.4; ADR-0029
  *
  * Library text is the user's content, stored on this device and never logged.
@@ -17,7 +17,7 @@ import { listLibrary, removeLibraryItem } from '@/core/storage/library';
 import type { LibraryItem, LibraryKind } from '@/core/storage/types';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
-import { Eyebrow } from '@/ui/Eyebrow';
+import { PageShell } from '@/ui/PageShell';
 import { UploadBox } from './UploadBox';
 import { useLibraryUpload } from './useLibraryUpload';
 
@@ -84,20 +84,12 @@ export function LibraryPage({
   }
 
   return (
-    <div className="flex flex-col">
-      <header className="border-b border-ui-border bg-ui-surface px-4 py-8 sm:px-8">
-        <div className="mx-auto max-w-3xl">
-          <Eyebrow>Kite · library</Eyebrow>
-          <h1 className="text-[24px] font-semibold text-ui-heading">{words.title}</h1>
-          <p className="mt-1 max-w-prose text-[15px] text-ui-muted">
-            Saved on this computer. A session keeps its own copy of what it uses, so deleting here
-            never changes a past session.
-          </p>
-        </div>
-      </header>
-
-      <section aria-label={words.title} className="flex-1 bg-ui-band px-4 py-8 sm:px-8">
-        <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <PageShell
+      title={words.title}
+      description="Saved on this computer. A session keeps its own copy of what it uses, so deleting here never changes a past session."
+    >
+      <section aria-label={words.title}>
+        <div className="flex flex-col gap-6">
           <UploadBox
             label={words.upload}
             multiple
@@ -110,7 +102,7 @@ export function LibraryPage({
           />
           {failed && (
             <p role="alert" className="text-[13px] text-ui-danger">
-              Kite could not open its local storage. Reload the page to try again.
+              Paramount AI could not open its local storage. Reload the page to try again.
             </p>
           )}
           {items && items.length === 0 && (
@@ -168,6 +160,6 @@ export function LibraryPage({
           “{deleting?.name}” leaves this library. Sessions that already use it keep their own copy.
         </p>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }

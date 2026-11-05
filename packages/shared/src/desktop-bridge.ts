@@ -227,6 +227,47 @@ export interface KiteDesktopApi {
    * @returns A function that removes the listener.
    */
   onSnapZone?: (handler: (zone: OverlayPreset | null) => void) => () => void;
+  /**
+   * v1.2.0 (spec S13): moves the overlay by a distance, for dragging the icon (a drag region would
+   * swallow its click). Optional: a shell before 1.2.0 has no icon mode.
+   *
+   * @param dx Pixels to the right.
+   * @param dy Pixels down.
+   * @returns Resolves when done.
+   */
+  moveOverlay?: (dx: number, dy: number) => Promise<void>;
+  /**
+   * v1.2.0 (spec S14): holds Ctrl+Alt+Enter for as long as the chat bar is open. Optional: in an older
+   * shell the key works only while Paramount AI has focus.
+   *
+   * @param on True while the chat bar is open.
+   * @returns Resolves when done.
+   */
+  setChatHotkey?: (on: boolean) => Promise<void>;
+  /**
+   * v1.2.0 (ADR-0045): lets the person pick a session file in the system's dialog, for the hand-off
+   * from a browser. Optional: a shell before 1.2.0 has no such call (and no paramountai:// link either).
+   *
+   * @returns The file, or null when the dialog was cancelled.
+   */
+  pickHandoffFile?: () => Promise<HandoffPick | null>;
+  /**
+   * v1.2.0 (ADR-0045): deletes the file picked last. The page names no path: this can delete only that
+   * file, once. Optional, as above.
+   *
+   * @returns True when it was deleted.
+   */
+  deleteHandoffFile?: () => Promise<boolean>;
+}
+
+/** A session file picked in the system's dialog (v1.2.0, ADR-0045). */
+export interface HandoffPick {
+  /** The file's name, without its folder. */
+  name: string;
+  /** The file's text ('' when it was too large to read). Never logged. */
+  text: string;
+  /** True when the file was too large to read. */
+  tooLarge?: boolean;
 }
 
 /** What windowControl() can do (v1.1.0). */
@@ -234,7 +275,7 @@ export type WindowControlAction = 'minimize' | 'close';
 
 /** The paths openPagesWindow() accepts: Kite's own pages, nothing else (v1.1.0). */
 export const PAGES_WINDOW_PATH =
-  /^\/(?:|sessions(?:\/[\w-]+(?:\/edit)?|\/new)?|live\/[\w-]+|settings|ask-kite|resumes|documents|question-bank|mock)$/;
+  /^\/(?:|sessions(?:\/[\w-]+(?:\/edit)?|\/new)?|live\/[\w-]+|settings|ask-kite|resumes|documents|question-bank|mock|help|profile)$/;
 
 /** Which of the stacked overlay's panels are open (v1.1.0, ADR-0041). */
 export interface OverlayLayout {
@@ -276,7 +317,7 @@ export type OverlayEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
  * only), `script` (a slim bar with the answer line) and `script-input` (the slim bar with its
  * one-line input open). v1.0.4: ⛶ opens the full call window, so there is no expanded overlay.
  */
-export type OverlayMode = 'full' | 'collapsed' | 'script' | 'script-input';
+export type OverlayMode = 'full' | 'collapsed' | 'script' | 'script-input' | 'icon';
 
 /** One step of a page-driven overlay resize (ADR-0035). */
 export interface OverlayResizeStep {

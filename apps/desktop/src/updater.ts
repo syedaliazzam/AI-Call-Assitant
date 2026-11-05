@@ -85,9 +85,10 @@ export function startUpdater(options: UpdaterOptions): void {
     const window = options.getWindow();
     const question = {
       type: 'info' as const,
-      title: 'Kite update',
-      message: 'A new version of Kite is ready.',
-      detail: 'Restart Kite now to use it, or choose Later and it is installed when you quit Kite.',
+      title: 'Paramount AI update',
+      message: 'A new version of Paramount AI is ready.',
+      detail:
+        'Restart Paramount AI now to use it, or choose Later and it is installed when you quit Paramount AI.',
       buttons: ['Restart now', 'Later'],
       defaultId: 0,
       cancelId: 1,

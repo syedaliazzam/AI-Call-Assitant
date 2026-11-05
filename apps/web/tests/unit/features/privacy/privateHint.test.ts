@@ -9,12 +9,12 @@ import { privateHint } from '@/features/privacy/usePrivate';
 describe('privateHint', () => {
   it('says every window with a shell from 1.1.0', () => {
     const hint = privateHint({ on: true, supported: true, scope: 'all' });
-    expect(hint).toContain("All of Kite's windows are left out of screen shares");
+    expect(hint).toContain("All of Paramount AI's windows are left out of screen shares");
   });
 
   it('says only the overlay with an older shell', () => {
     const hint = privateHint({ on: true, supported: true });
-    expect(hint).toContain("Kite's overlay is left out of screen shares");
+    expect(hint).toContain("Paramount AI's overlay is left out of screen shares");
   });
 
   it('says it does nothing against monitoring or proctoring tools', () => {

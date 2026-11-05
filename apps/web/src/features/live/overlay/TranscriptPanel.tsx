@@ -1,27 +1,34 @@
 /**
  * File: apps/web/src/features/live/overlay/TranscriptPanel.tsx
- * Purpose: The stacked overlay's transcript panel (v1.1.0, ADR-0041): it takes bar 2's place, with the
- *          level bars, Language, Clear and collapse on top, and the bubbles below: oldest at the top,
- *          newest at the bottom, following the newest unless the reader has scrolled up, when "Jump to
- *          latest" shows. You on the right, the other person on the left under their name.
+ * Purpose: The transcript panel (spec S15): the level button, language, Clear and collapse on top, and
+ *          the bubbles below: oldest at the top, newest at the bottom, following the newest unless the
+ *          reader has scrolled up, when "Scroll to bottom" shows. You on the right, the other person on
+ *          the left, each with who and when under the words.
  * Used by: src/features/live/CompactView.tsx
- * Depends on: @kite/shared (hotkeys), src/core/live/liveChannel.ts, src/core/storage/types.ts
- *             (languages), src/features/live/TranscriptBubbles.tsx, src/features/live/useStickToBottom.ts,
+ * Depends on: @kite/shared (hotkeys), src/core/live/liveChannel.ts,
+ *             src/features/live/TranscriptBubbles.tsx, src/features/live/useStickToBottom.ts,
  *             src/ui/icons.tsx, ./parts.tsx
- * Architecture: docs/architecture/kite-architecture-v3.1.md §5; ADR-0041
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S15); ADR-0041
  *
  * Transcript text is only rendered on screen; it is never logged.
  */
 'use client';
 
 import { FOCUSED_HOTKEYS, hotkeyLabel } from '@kite/shared';
-import { useMemo, useState } from 'react';
+import { useMemo, type RefObject } from 'react';
 import type { CompactCommand, CompactGroup, CompactState } from '@/core/live/liveChannel';
-import { ANSWER_LANGUAGES } from '@/core/storage/types';
 import { TranscriptBubbles } from '@/features/live/TranscriptBubbles';
 import { useStickToBottom } from '@/features/live/useStickToBottom';
-import { ChevronDownIcon, CollapseIcon, GlobeIcon } from '@/ui/icons';
-import { BUTTON, ICON_BUTTON, Keys, LevelBars, shortKeys, type LevelStore } from './parts';
+import { ChevronDownIcon, CollapseIcon } from '@/ui/icons';
+import {
+  BUTTON,
+  ICON_BUTTON,
+  KeyChip,
+  LanguageControl,
+  LevelButton,
+  PILL,
+  type LevelStore,
+} from './parts';
 
 /** No bubbles yet: one shared empty list. */
 const NO_GROUPS: readonly CompactGroup[] = [];
@@ -36,12 +43,18 @@ export interface TranscriptPanelProps {
   onClear: () => void;
   /** Closes the panel: bar 2 comes back. */
   onCollapse: () => void;
-  /** True on macOS (for the key hints). */
+  /** True on macOS (for the shortcuts' spoken names). */
   mac: boolean;
   /** Where the live levels come from. */
   levels?: LevelStore | undefined;
   /** The text size chosen in the menu. */
   fontScale: number;
+  /** Whether the language list is open. */
+  languagesOpen: boolean;
+  /** Opens or closes the language list. */
+  onLanguagesOpen: (open: boolean) => void;
+  /** The language list's element, so the window can grow to fit it. */
+  languagesRef?: RefObject<HTMLUListElement | null>;
 }
 
 /**
@@ -63,59 +76,32 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
     () => new Set(groups.filter((group) => group.answered).map((group) => group.id)),
     [groups],
   );
-  const [languagesOpen, setLanguagesOpen] = useState(false);
-  const language = ANSWER_LANGUAGES.find((option) => option.value === state?.language);
 
   return (
     <section aria-label="Transcript panel" className="flex min-h-0 flex-1 flex-col">
-      <div className="relative flex h-11 shrink-0 items-center gap-1.5 border-b border-ui-border px-2 [-webkit-app-region:drag]">
-        <LevelBars on={state?.audio.them ?? false} levels={props.levels} />
-        <button
-          type="button"
-          className={BUTTON}
-          aria-label={`Answer language: ${language?.label ?? 'English'}`}
-          aria-expanded={languagesOpen}
-          onClick={() => setLanguagesOpen((was) => !was)}
-        >
-          <GlobeIcon />
-          {language?.label ?? 'English'}
-          <ChevronDownIcon size={14} />
-        </button>
-        {languagesOpen && (
-          // In the page, not a browser's own list (ADR-0042). Answers use it; the transcript stays
-          // English, because the speech model is English only.
-          <ul
-            role="listbox"
-            aria-label="Answer language"
-            className="k-overlay-menu absolute left-10 top-10 z-30 flex max-h-56 w-44 flex-col overflow-y-auto rounded-control border border-ui-border py-1 text-[13px] shadow-modal [-webkit-app-region:no-drag]"
-          >
-            {ANSWER_LANGUAGES.map((option) => (
-              <li key={option.value}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={option.value === state?.language}
-                  onClick={() => {
-                    setLanguagesOpen(false);
-                    onCommand({ type: 'language', code: option.value });
-                  }}
-                  className="w-full px-3 py-1 text-left hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
-                >
-                  {option.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+      <div className="relative flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]">
+        <LevelButton
+          on={state?.audio.them ?? false}
+          levels={props.levels}
+          label="Hide the transcript"
+          onClick={props.onCollapse}
+        />
+        <LanguageControl
+          state={state}
+          onCommand={onCommand}
+          open={props.languagesOpen}
+          onOpen={props.onLanguagesOpen}
+          {...(props.languagesRef ? { listRef: props.languagesRef } : {})}
+        />
         <span className="flex-1" />
         <button
           type="button"
-          className={BUTTON}
+          className={PILL}
           onClick={props.onClear}
           disabled={!state}
           aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS['clear-transcript'], mac)}
         >
-          Clear <Keys>{shortKeys(FOCUSED_HOTKEYS['clear-transcript'], mac)}</Keys>
+          Clear <KeyChip hotkey="clear-transcript" visibleAt="@min-[620px]:inline-flex" />
         </button>
         <button
           type="button"
@@ -126,19 +112,18 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
           <CollapseIcon />
         </button>
       </div>
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1 px-1.5 pb-1.5">
         <div
           ref={ref}
           onScroll={onScroll}
           aria-label="Live transcript"
           aria-live="polite"
-          className="h-full overflow-y-auto px-3 py-2"
+          className="h-full overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2"
           style={{ zoom: props.fontScale }}
         >
           <TranscriptBubbles
             groups={groups}
             size="overlay"
-            glassBubbles
             themName={state?.themName}
             answeredIds={answeredIds}
             onAnswerThis={(group) => onCommand({ type: 'answer-this', groupId: group.id })}
@@ -149,9 +134,10 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
           <button
             type="button"
             onClick={jump}
-            className={`${BUTTON} absolute bottom-2 left-1/2 -translate-x-1/2 shadow-modal`}
+            className={`${BUTTON} absolute bottom-3 left-1/2 -translate-x-1/2 bg-ui-pill shadow-modal`}
           >
-            Jump to latest
+            <ChevronDownIcon size={14} />
+            Scroll to bottom
           </button>
         )}
       </div>

@@ -8,6 +8,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  countAnswersBySession,
   MAX_NOTE_CHARS,
   listAnswers,
   rateAnswer,
@@ -46,6 +47,17 @@ function answer(id: string, sessionId: string, createdAt: number): StoredAnswer 
 }
 
 describe('answers', () => {
+  it('counts answers per session, and has no entry for a session with none', async () => {
+    expect((await countAnswersBySession()).size).toBe(0);
+    await saveAnswer(answer('a1', 's1', 1_000));
+    await saveAnswer(answer('a2', 's1', 2_000));
+    await saveAnswer(answer('x1', 's2', 500));
+    const counts = await countAnswersBySession();
+    expect(counts.get('s1')).toBe(2);
+    expect(counts.get('s2')).toBe(1);
+    expect(counts.has('s3')).toBe(false);
+  });
+
   it('saves and lists one session’s answers, oldest first', async () => {
     await saveAnswer(answer('a2', 's1', 2_000));
     await saveAnswer(answer('a1', 's1', 1_000));

@@ -75,7 +75,7 @@ export function fitsInSession(newChars: number, usedChars: number): FitResult {
     return {
       ok: false,
       reason: 'document-too-long',
-      message: `This document has ${format(newChars)} characters of text; one document can have at most ${format(MAX_DOCUMENT_CHARS)}. Remove pages Kite does not need, then add it again.`,
+      message: `This document has ${format(newChars)} characters of text; one document can have at most ${format(MAX_DOCUMENT_CHARS)}. Remove pages Paramount AI does not need, then add it again.`,
     };
   }
   if (newChars > roomLeft(usedChars)) {

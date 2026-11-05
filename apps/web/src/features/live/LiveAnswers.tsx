@@ -18,12 +18,7 @@
  */
 'use client';
 
-import {
-  DEFAULT_GLOBAL_HOTKEYS,
-  hotkeyLabel,
-  type OverlayPreset,
-  type TargetChoice,
-} from '@kite/shared';
+import { type OverlayPreset, type TargetChoice } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { splitAnswer } from '@/core/answer/format';
@@ -61,7 +56,9 @@ import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
 import { AnswerPanel } from './AnswerPanel';
 import { openOverlay } from './openOverlay';
-import { ChatBox } from './ChatBox';
+import { isDoublePress } from '@/core/live/doublePress';
+import { ChatBox, type ChatBoxHandle } from './ChatBox';
+import { KeyChip } from './overlay/parts';
 import { TopBar } from './TopBar';
 import { isOnline, subscribeOnline } from '@/core/net/online';
 import { SignInAgainDialog } from './SignInAgainDialog';
@@ -220,6 +217,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const [askKiteCount, setAskKiteCount] = useState(0);
   // v1.1.0: likewise the Chat shortcut pressed in another app.
   const [chatCount, setChatCount] = useState(0);
+  // The chat bar's screenshot shortcut, pressed in another app (the overlay holds the typed words).
+  const [screenshotSendCount, setScreenshotSendCount] = useState(0);
+  const lastChatPress = useRef<number | null>(null);
+  const chatBox = useRef<ChatBoxHandle>(null);
   // v1.1.0: the overlay's ⋮ can turn auto-answer on or off for this call.
   const [autoChoice, setAutoChoice] = useState<boolean | null>(null);
   const [headphonesClosed, setHeadphonesClosed] = useState(false);
@@ -323,6 +324,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       language,
       autoAnswer: autoOn,
       chatCount,
+      screenshotSendCount,
       hygiene: props.hygiene ?? 'ok',
       headphonesHint,
       sessionId: props.session.id,
@@ -371,6 +373,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     language,
     autoOn,
     chatCount,
+    screenshotSendCount,
     props.hygiene,
     headphonesHint,
     props.session.id,
@@ -483,6 +486,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         setChatTarget(props.session.id, command.target);
       } else if (command.type === 'end') onEnd.current();
       else if (command.type === 'chat') actions.current.chat(command.question);
+      else if (command.type === 'chat-screenshot') actions.current.screenshot(command.question);
       else if (command.type === 'style') {
         setStyle(command.style);
         // Kept with the session, so a reconnect and the review show what was used last.
@@ -538,6 +542,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
         else if (action === 'chat') {
           setFocusSignal((count) => count + 1);
           setChatCount((count) => count + 1);
+          // Pressed twice (spec S14): the microphone comes on too.
+          const now = Date.now();
+          if (isDoublePress(lastChatPress.current, now)) {
+            dictationRef.current?.start(chatTargetRef.current);
+          }
+          lastChatPress.current = now;
+        } else if (action === 'screenshot-send') {
+          setScreenshotSendCount((count) => count + 1);
+          chatBox.current?.sendWithScreenshot();
         } else if (action === 'clear') clearView.current();
         else if (action === 'clear-transcript') clearTranscript.current();
         else if (action === 'prev') actions.current.prev();
@@ -591,7 +604,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       },
       (error: unknown) =>
         setCompactNotice(
-          error instanceof Error ? error.message : 'Kite could not open the overlay.',
+          error instanceof Error ? error.message : 'Paramount AI could not open the overlay.',
         ),
     );
   }, [sessionId]);
@@ -712,8 +725,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
           className="rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
         >
           Another app already uses {taken.join(', ')}, so{' '}
-          {taken.length === 1 ? 'it works' : 'they work'} only while Kite is in front. Close that
-          app&rsquo;s shortcut, or use the buttons.
+          {taken.length === 1 ? 'it works' : 'they work'} only while Paramount AI is in front. Close
+          that app&rsquo;s shortcut, or use the buttons.
         </p>
       )}
       {!online && (
@@ -751,6 +764,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         />
       </div>
       <ChatBox
+        ref={chatBox}
         onSend={answers.chat}
         onAskScreen={answers.screenshot}
         target={chatTarget}
@@ -780,9 +794,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
           title="Answer the latest question"
         >
           Answer
-          <kbd className="rounded-full bg-black/10 px-2 text-[12px] font-normal">
-            {hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)}
-          </kbd>
+          <KeyChip hotkey="answer" visibleAt="@min-[520px]:inline-flex" onPrimary />
         </button>
         <button
           type="button"
@@ -792,16 +804,13 @@ export function LiveAnswers(props: LiveAnswersProps) {
           title="Answer from a screenshot of your screen"
         >
           {answers.capturing ? 'Screenshot…' : 'Screenshot'}
-          <kbd className="rounded-full bg-ui-subtle px-2 text-[12px] font-normal">
-            {hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)}
-          </kbd>
+          <KeyChip hotkey="screenshot" visibleAt="@min-[520px]:inline-flex" />
         </button>
       </div>
       <AnswerPreferencesDialog
         open={prefsOpen}
         onClose={() => setPrefsOpen(false)}
         style={style}
-        language={props.session.preferences.language}
         onApply={(next) => {
           setPrefsOpen(false);
           setStyle(next);

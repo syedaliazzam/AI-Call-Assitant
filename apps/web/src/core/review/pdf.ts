@@ -155,7 +155,7 @@ export function writePdf(title: string, lines: readonly PdfLine[]): PdfResult {
     `<< /Type /Pages /Count ${pages.length} /Kids [${pages.map((_, i) => `${pageId(i)} 0 R`).join(' ')}] >>`,
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
-    `<< /Title (${encode(title).value}) /Producer (Kite) >>`,
+    `<< /Title (${encode(title).value}) /Producer (Paramount AI) >>`,
   ];
   pages.forEach((page, index) => {
     const content = page.join('\n');

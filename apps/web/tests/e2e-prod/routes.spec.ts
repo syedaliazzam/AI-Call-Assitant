@@ -1,7 +1,7 @@
 /**
  * Production check of the routes added for ADR-0029, from a signed-in browser, because Vercel's
  * network and runtime differ from a laptop: /api/job-import reads a real public job page and refuses
- * private addresses; /api/preview writes a preview; /api/ask answers about a call; /api/prepare writes
+ * private addresses; /api/ask answers about a call; /api/prepare writes
  * a question bank. Prints numbers only. Manual run only (never in CI): 2 Claude requests with the
  * fast model and 2 with the smart model (about $0.05). Pass the page with KITE_E2E_JOB_URL, or it finds a current one on a public
  * job board.
@@ -64,11 +64,13 @@ test.afterAll(async () => {
 
 test('job link: private addresses are refused on the server, with no Claude request', async () => {
   for (const url of [
-    'http://169.254.169.254/latest/meta-data/',
-    'http://127.0.0.1/',
-    'http://localhost/',
-    'http://[::1]/',
-    'http://10.0.0.1/',
+    'https://169.254.169.254/latest/meta-data/',
+    'https://127.0.0.1/',
+    'https://localhost/',
+    'https://[::1]/',
+    'https://10.0.0.1/',
+    // https only, and no other scheme.
+    'http://jobs.example.com/',
     'file:///etc/passwd',
   ]) {
     const { status } = await post('/api/job-import', { url });
@@ -89,18 +91,6 @@ test('job link: reads a real public job page', async () => {
   expect(fields.company!.length).toBeGreaterThan(0);
   expect(fields.role!.length).toBeGreaterThan(0);
   expect(fields.description!.length).toBeGreaterThan(200);
-});
-
-test('preview: writes an answer with the chosen settings', async () => {
-  const { status, json } = await post('/api/preview', {
-    style: { format: 'bullets', length: 'short', tone: 'technical' },
-    question: 'technical',
-  });
-  expect(status).toBe(200);
-  const text = String(json.text);
-  const lines = text.split('\n').filter((line) => line.trim() !== '');
-  report('preview written', true, { lines: lines.length });
-  expect(lines.length).toBeGreaterThan(0);
 });
 
 test('Ask AI: answers from the call', async () => {

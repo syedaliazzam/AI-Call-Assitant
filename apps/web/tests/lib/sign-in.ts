@@ -80,7 +80,7 @@ export async function clearPasswordOnFailure(
  * Called from: tests/e2e-prod/helpers.ts signIn(), tests/ui/shots.ts signIn()
  */
 export async function closeUseNotice(page: Page): Promise<boolean> {
-  const button = page.getByRole('dialog', { name: 'Using Kite' }).getByRole('button', {
+  const button = page.getByRole('dialog', { name: 'Using Paramount AI' }).getByRole('button', {
     name: 'Got it',
   });
   return button.click({ timeout: 4_000 }).then(

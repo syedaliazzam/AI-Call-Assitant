@@ -231,6 +231,13 @@ export function sessionBlock(session: SessionContext): string {
           'For this format, write only short bullet points, at most 5, with no headline; the first bullet gives the direct answer.',
         ]
       : []),
+    // v1.2.0: only when the session asks for it, so other sessions' prompts and caches are unchanged.
+    // The honesty rule stays: a part the CV does not state is left out, never invented (ADR-0032).
+    ...(session.style.star
+      ? [
+          'For behavioural questions in this session, structure the answer as Situation, Task, Action and Result, one bullet each, starting with those words, built from the closest real project in the CV. If the CV does not state a part, leave that bullet out rather than invent it.',
+        ]
+      : []),
     ...(session.language
       ? [
           `Answer language: ${session.language}. Write the answer in this language, even though the transcript is in English. Keep names, prices and product terms as they are.`,

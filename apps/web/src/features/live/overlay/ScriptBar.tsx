@@ -134,7 +134,7 @@ export function ScriptBar({
             autoFocus
             aria-label="Type a question"
             className="h-9 min-w-0 flex-1 border border-ui-border bg-ui-input px-2 text-base text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)]"
-            placeholder={`Type to Kite (${TARGET_OPTIONS.find((option) => option.value === (state.chatTarget ?? 'auto'))?.label ?? 'Auto'}), then Enter`}
+            placeholder={`Type to Paramount AI (${TARGET_OPTIONS.find((option) => option.value === (state.chatTarget ?? 'auto'))?.label ?? 'Auto'}), then Enter`}
             value={text}
             maxLength={2_000}
             onChange={(event) => setText(event.target.value)}

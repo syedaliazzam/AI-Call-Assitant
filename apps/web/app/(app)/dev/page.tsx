@@ -13,7 +13,7 @@ const TOOLS = [
   {
     href: '/dev/ui',
     title: 'UI components',
-    description: 'Every shared UI component in the Kite theme, on light and dark surfaces.',
+    description: 'Every shared UI component in the Paramount AI theme, on light and dark surfaces.',
   },
   {
     href: '/dev/claude-test',

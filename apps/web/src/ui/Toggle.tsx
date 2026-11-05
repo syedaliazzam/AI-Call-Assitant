@@ -1,13 +1,81 @@
 /**
  * File: apps/web/src/ui/Toggle.tsx
- * Purpose: An on/off switch with a label and an optional hint, for settings such as "Save
- *          transcript".
- * Used by: src/features/session-setup/PreferencesStep.tsx, src/features/settings/Settings.tsx
+ * Purpose: An on/off switch (the accent colour when on, spec §1): on its own for rows that lay out their
+ *          own words (Switch), or with a label and an optional hint (Toggle), for settings such as
+ *          "Save transcript".
+ * Used by: src/features/session-setup/PreferencesStep.tsx, src/features/settings/Settings.tsx,
+ *          src/ui/PanelMenu.tsx
  * Depends on: React
- * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §5 (tokens from src/ui/theme.css)
+ * Architecture: docs/design/paramount-ai-ui-spec.md §1; docs/architecture/kite-architecture-v3.1.md §9.1
+ * Theme: tokens from src/ui/tokens/theme.css
  */
 import { useId } from 'react';
+
+/** Props for Switch. */
+export interface SwitchProps {
+  /** True when on. */
+  checked: boolean;
+  /** Called with the new state when the switch is clicked. */
+  onChange: (checked: boolean) => void;
+  /** True to show it greyed out and ignore clicks. */
+  disabled?: boolean | undefined;
+  /** Its accessible name, when no element labels it. */
+  ariaLabel?: string | undefined;
+  /** The ids of the elements that label it. */
+  labelledBy?: string | undefined;
+  /** The ids of the elements that describe it. */
+  describedBy?: string | undefined;
+}
+
+/**
+ * The bare switch (role="switch", aria-checked): a pill track and a white knob.
+ *
+ * @param props See SwitchProps.
+ * @returns The switch.
+ * Rendered by: Toggle, src/ui/PanelMenu.tsx, the preference rows
+ */
+export function Switch({
+  checked,
+  onChange,
+  disabled = false,
+  ariaLabel,
+  labelledBy,
+  describedBy,
+}: SwitchProps) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      // The button is the hit area: at least 44 px on touch screens (theme review, UI U1).
+      className={[
+        'inline-flex shrink-0 items-center justify-center rounded-full pointer-coarse:min-h-11 pointer-coarse:min-w-11',
+        'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
+        'disabled:cursor-not-allowed disabled:opacity-50',
+      ].join(' ')}
+    >
+      <span
+        aria-hidden="true"
+        className={[
+          'relative inline-flex h-5 w-9 rounded-full transition-colors duration-150',
+          checked ? 'bg-ui-accent-fill' : 'bg-ui-control-strong',
+        ].join(' ')}
+      >
+        <span
+          className={[
+            'absolute top-0.5 size-4 rounded-full bg-ui-on-accent transition-transform duration-150',
+            checked ? 'translate-x-[18px]' : 'translate-x-0.5',
+          ].join(' ')}
+        />
+      </span>
+    </button>
+  );
+}
 
 /** Props for Toggle. */
 export interface ToggleProps {
@@ -19,12 +87,12 @@ export interface ToggleProps {
   checked: boolean;
   /** Called with the new state when the switch is clicked. */
   onChange: (checked: boolean) => void;
-  /** True to show it greyed out and ignore clicks (for example "Beta on Day 6"). */
+  /** True to show it greyed out and ignore clicks. */
   disabled?: boolean;
 }
 
 /**
- * A switch (role="switch", aria-checked) with its label and hint linked for screen readers.
+ * A switch with its label and hint linked for screen readers.
  *
  * @param props See ToggleProps.
  * @returns The switch with its label.
@@ -35,43 +103,19 @@ export function Toggle({ label, hint, checked, onChange, disabled = false }: Tog
   const hintId = useId();
   return (
     <div className={`flex items-start gap-3 ${disabled ? 'opacity-60' : ''}`}>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-labelledby={labelId}
-        aria-describedby={hint ? hintId : undefined}
+      <Switch
+        checked={checked}
+        onChange={onChange}
         disabled={disabled}
-        onClick={() => onChange(!checked)}
-        // The button is the hit area: at least 44 px on touch screens (theme review, UI U1).
-        className={[
-          'inline-flex shrink-0 items-center justify-center rounded-full pointer-coarse:min-h-11 pointer-coarse:min-w-11',
-          'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
-          'disabled:cursor-not-allowed',
-        ].join(' ')}
-      >
-        {/* A pill track and a round knob. */}
-        <span
-          aria-hidden="true"
-          className={[
-            'relative mt-0.5 inline-flex h-5 w-9 rounded-full border transition-colors duration-150',
-            checked ? 'border-ui-primary bg-ui-primary' : 'border-ui-border bg-ui-subtle',
-          ].join(' ')}
-        >
-          <span
-            className={[
-              'absolute top-[1px] size-4 rounded-full transition-transform duration-150',
-              checked ? 'translate-x-4 bg-ui-on-primary' : 'translate-x-[1px] bg-ui-muted',
-            ].join(' ')}
-          />
-        </span>
-      </button>
+        labelledBy={labelId}
+        describedBy={hint ? hintId : undefined}
+      />
       <div className="flex flex-col">
-        <span id={labelId} className="text-[15px] font-medium text-ui-heading">
+        <span id={labelId} className="text-label text-ui-heading">
           {label}
         </span>
         {hint && (
-          <span id={hintId} className="text-[13px] text-ui-muted">
+          <span id={hintId} className="text-helper text-ui-muted">
             {hint}
           </span>
         )}

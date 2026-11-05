@@ -8,6 +8,7 @@
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { PRODUCTION_URL, RECORDINGS, report, signIn, testAccount } from './helpers';
+import { pickOption } from '../lib/pick-option';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -40,14 +41,14 @@ test('a mock interview with the real speech model, saved as a Mock session', asy
   await page.getByLabel('Company').fill('E2E Mock Co (invented)');
   await page.getByLabel('Role').fill('Data Analyst');
   await page
-    .getByLabel('Job description (optional)')
+    .getByLabel('Job description')
     .fill('Build weekly reports with SQL and explain them to the operations team.');
   await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('button', { name: 'Create session' }).click();
-  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeVisible();
+  await page.getByRole('button', { name: 'Create interview session' }).click();
+  await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
 
   await page.goto(`${PRODUCTION_URL}/mock`);
-  await page.getByLabel('Length').selectOption('3');
+  await pickOption(page, page.getByLabel('Length'), '3 questions');
   await page.getByRole('button', { name: 'Start interview' }).click();
   const question = page.getByLabel('Question', { exact: true });
   await expect(question).toHaveText(/\S/, { timeout: 60_000 });
@@ -57,7 +58,7 @@ test('a mock interview with the real speech model, saved as a Mock session', asy
   const done = page.getByRole('button', { name: 'Done' });
   await expect(done).toBeVisible({ timeout: 90_000 });
   // The first run on a new profile downloads the speech model (204 MB).
-  const heard = page.getByLabel('What Kite heard');
+  const heard = page.getByLabel('What Paramount AI heard');
   await expect(heard).toHaveText(/\S/, { timeout: 480_000 });
   report('mock listening: words heard', true, {
     words: (await heard.textContent())!.trim().split(/\s+/).length,
@@ -85,13 +86,24 @@ test('a mock interview with the real speech model, saved as a Mock session', asy
 
   await summary.getByRole('link', { name: 'Review this interview' }).click();
   await page.getByRole('button', { name: 'Transcript', exact: true }).click();
-  await expect(page.getByRole('listitem', { name: 'Them said' })).toHaveCount(2);
+  // At least two: a written question with a sentence after it shows as two bubbles (groupLines()),
+  // and Claude's wording differs from run to run. The saved answers below are the exact count.
+  await expect(page.getByRole('listitem', { name: 'Them said' }).nth(1)).toBeVisible();
   await expect(page.getByRole('listitem', { name: 'You said' })).toHaveCount(2);
+  // v1.2.0: saved answers have their own tab beside the conversation.
+  await page
+    .getByRole('group', { name: 'Transcript view' })
+    .getByRole('button', { name: 'Answers' })
+    .click();
   await expect(page.getByRole('listitem', { name: 'Saved answer' })).toHaveCount(2);
   report('mock saved as a session', true);
 
   await page.goto(PRODUCTION_URL);
-  await page.getByText(/^Mock \(1\)$/).click();
+  await page
+    .getByRole('group', { name: 'Session type' })
+    .getByRole('button', { name: 'Mock' })
+    .click();
+  await expect(page.getByText('1 Session', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'E2E Mock Co (invented)' })).toHaveCount(1);
   report('mock on the dashboard', true);
 });

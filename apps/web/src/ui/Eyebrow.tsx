@@ -5,7 +5,7 @@
  * Used by: src/ui/Card.tsx, src/ui/Badge.tsx, src/features/dev/UiGallery.tsx
  * Depends on: React
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (src/ui: shared UI pieces)
- * Theme: docs/design/kite-ui-theme.md §4 (Eyebrow / label; tokens from src/ui/theme.css)
+ * Theme: docs/design/kite-ui-theme.md §4 (Eyebrow / label; tokens from src/ui/tokens/theme.css)
  */
 import type { ReactNode } from 'react';
 
