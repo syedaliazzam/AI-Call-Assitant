@@ -261,3 +261,17 @@ Latency before and after the account-sync client (approved paid run: 20 answers 
 No change beyond run-to-run noise. The admin test account is not in `KITE_SYNC_USERS`, so this compares the answer path with the new sync hold in place (`answerClient.ts`) but no sync traffic; the answer route never touches the database, and pushes wait while an answer streams.
 
 Production sync checks after the Phase 3 deploy, test account only: `sync-api.spec.ts` 5 of 5 (switch on, encrypted round trip, pull, conflict and Save-transcript-off refusal, session delete cascade) and `sync-devices.spec.ts` 3 of 3 (two Chrome profiles and the desktop shell built from this checkout, the same shell code as 1.2.0, temporary profile: create → appears on the others; delete while offline → waits → reaches the others once back online).
+
+## Account sync Phases 4–6 and desktop 1.3.0 draft (8 Nov 2026, ADR-0049 to ADR-0052)
+
+Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200); production; Playwright 1.64.1 (Chromium, and Electron from this checkout with temporary profiles); test account only (the admin test account for the unflagged check, enabled for that run and disabled after). No Claude request.
+
+| Check | Result | Notes |
+|---|---|---|
+| `legacy-upload.spec.ts`, both web addresses | 2 of 2 | The first run found the dashboard showed uploaded sessions only after a reload (PR #21 fixed it); asked, added, shown without a reload, not asked again. |
+| `launcher.spec.ts` (this checkout's shell) | 3 of 3 | Ready list, last call, no search or create; links checked by address with `window.open` replaced in the panel; Start shows the start card. |
+| `desktop-link.spec.ts` (1.3.0 shell from this checkout) | 2 of 2 | A code signs a fresh browser in once; reuse, another session and a 61 s wait refused; a link with a code opens the start card signed in, and the code is not in the page address. |
+| `sync-devices.spec.ts`, `sync-api.spec.ts` with 1.3.0 | 4 of 4, 5 of 5 | As after Phase 3. |
+| `unflagged.spec.ts` (admin test account, not in `KITE_SYNC_USERS`) | 1 of 1 | Sync status off, sync routes and link codes 404, no upload question, no account-data help, "Delete all local data" unchanged. |
+| Upgrade 1.2.0 → 1.3.0 (`upgrade.spec.ts`, `KITE_OLD_VERSION=1.2.0 KITE_NEW_VERSION=1.3.0`) | 1 of 1 | The released 1.2.0 program extracted from its installer (never run as an installer here), then `release/win-unpacked` 1.3.0, one temporary profile: sessions, settings, sign-in and the protection setting kept. |
+| `Paramount-AI-Setup-1.3.0.exe` | 126,298,807 bytes | Uploaded as a draft to `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; not published. The Windows install step itself and a real link from Chrome to the installed app are on the developer's regression checklist. |

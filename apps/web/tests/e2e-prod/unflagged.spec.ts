@@ -1,0 +1,46 @@
+/**
+ * Production check that accounts WITHOUT the accountSync switch see today's app (ADR-0049 rollout):
+ * signed in as the ADMIN test account (not listed in KITE_SYNC_USERS; enabled for the run only), the
+ * sync routes say off and refuse, the dashboard has no one-time upload question, /help has no
+ * account-data section, Settings still offers "Delete all local data", and the desktop link code route
+ * refuses. No Claude request; nothing is written. Prints step names only.
+ * Run: pnpm --filter web e2e-admin --prod --enable, then
+ *      pnpm --filter web exec playwright test -c tests/e2e-prod/playwright.config.ts unflagged.spec.ts,
+ *      then pnpm --filter web e2e-admin --prod --disable
+ */
+import { expect, test } from '@playwright/test';
+import { PRODUCTION_URL, report, signIn, testAccount } from './helpers';
+
+test('an account without the switch sees no change', async ({ browser }) => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await signIn(page, testAccount('admin'), true);
+    const api = await page.evaluate(async () => ({
+      status: (await (await fetch('/api/sync/status')).json()) as { enabled: boolean },
+      pull: (await fetch('/api/sync/pull?since=0')).status,
+      code: (
+        await fetch('/api/desktop/link-code', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sessionId: '11111111-1111-4111-8111-111111111111' }),
+        })
+      ).status,
+    }));
+    expect(api).toEqual({ status: { enabled: false }, pull: 404, code: 404 });
+
+    await page.goto(PRODUCTION_URL);
+    await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
+    await page.waitForTimeout(3_000);
+    await expect(
+      page.getByRole('region', { name: "Add this computer's data to your account" }),
+    ).toHaveCount(0);
+    await page.goto(`${PRODUCTION_URL}/help`);
+    await expect(page.getByRole('region', { name: 'Your account and your data' })).toHaveCount(0);
+    await page.goto(`${PRODUCTION_URL}/settings`);
+    await expect(page.getByRole('button', { name: 'Delete all local data' })).toBeVisible();
+    report('unflagged account: unchanged app', true);
+  } finally {
+    await context.close();
+  }
+});
