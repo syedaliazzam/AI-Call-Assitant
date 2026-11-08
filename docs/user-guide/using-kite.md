@@ -41,8 +41,8 @@ Browsers and the desktop app keep separate data, so a session made in the browse
 1. Start the session, and **Connect call session** opens. Paramount AI listens on two channels: **You** (your microphone) and **Them** (the other person).
    - **Desktop app:** it hears the other person through system audio; there is no picker.
    - **Browser:** share the tab the call is in when Chrome or Edge asks. Turn on **Also share tab audio**.
-2. Choose **Connect**. A short sound check shows level bars for You and Them.
-3. Choose **Go live**. The transcript fills in, oldest at the top and newest at the bottom.
+2. Check the **You** level bar: it moves when you speak. In a browser, press **Test microphone** first.
+3. Choose **Connect**. The call starts at once: the overlay opens and the transcript fills in, oldest at the top and newest at the bottom.
 4. When they ask a question, press **Answer** (**Ctrl+Enter**). The answer streams in: one line you can say as it is, 2 to 4 short points, and sometimes a **Tip**.
 
 Paramount AI answers real questions. If the latest words are a greeting or "say yes when you're ready", it goes back to the last real question. If the words were noise, it says so: press **Answer** again, or type the question. To answer a greeting anyway, press **Answer this** on that line.

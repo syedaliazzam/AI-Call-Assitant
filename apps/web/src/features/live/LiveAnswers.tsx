@@ -32,7 +32,6 @@ import { isUnclearGroup } from '@/core/transcript/unclear';
 import { AnswerPreferencesDialog } from '@/features/session-setup/AnswerPreferencesDialog';
 import type { MenuItem } from '@/ui/Menu';
 import { updateSession } from '@/core/storage/sessions';
-import { getStartInOverlay } from '@/core/storage/overlayPrefs';
 import {
   clampStep,
   FONT_SCALE_RANGE,
@@ -55,7 +54,7 @@ import type { Session, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
 import { AnswerPanel } from './AnswerPanel';
-import { openOverlay } from './openOverlay';
+import { openOverlay, startsCallsInOverlay, type OverlayAtStart } from './openOverlay';
 import { isDoublePress } from '@/core/live/doublePress';
 import { ChatBox, type ChatBoxHandle } from './ChatBox';
 import { KeyChip } from './overlay/parts';
@@ -80,6 +79,12 @@ export interface LiveAnswersProps {
   audio?: CompactAudio;
   /** Opens the overlay when the call starts, overriding the saved setting (the harness). */
   startInOverlay?: boolean;
+  /**
+   * What Connect did with the overlay (ADR-0053): 'opened' (it is open; this window steps aside),
+   * 'failed' (it could not open; say how to open it), 'off' (calls do not start in it). Absent when
+   * this panel is mounted without LivePage (harnesses): it then opens the overlay itself, as before.
+   */
+  overlayAtStart?: OverlayAtStart;
   /** Turns auto-answer on or off for this call, overriding the saved setting (the harness). */
   autoAnswer?: boolean;
   /** When this call connected (Unix ms). */
@@ -518,21 +523,25 @@ export function LiveAnswers(props: LiveAnswersProps) {
     channel.current?.publishLevels(levels);
   }, [levels]);
 
-  // "Start calls in the overlay" (Settings, default on; ADR-0029): this view mounts when the call
-  // connects, so that is when the overlay opens and the main window steps aside. A browser asks
-  // for a fresh click before it opens a picture-in-picture window, so there the user is told.
+  // "Start calls in the overlay" (Settings, default on; ADR-0029). Since ADR-0053 Connect opens
+  // the overlay itself, inside its click (a browser's picture-in-picture window needs one), and
+  // this view mounts once the call is connected: the main window then steps aside, or the user is
+  // told how to open the overlay. Mounted without LivePage (harnesses), it opens the overlay here.
   const startInOverlay = props.startInOverlay;
+  const overlayAtStart = props.overlayAtStart;
   useEffect(() => {
-    // v1.1.0 (ADR-0041): a desktop app from 1.1.0 always starts calls in the overlay.
-    if (!(startInOverlay ?? (getPlatform().hasHomePanel() || getStartInOverlay()))) return;
-    openOverlay(props.session.id).then(
-      () => {
-        overlayOpened.current = true;
-        getPlatform().minimizeMainWindow();
-      },
-      () => setCompactNotice('To follow the call in the overlay, press Back to compact.'),
-    );
-  }, [props.session.id, startInOverlay]);
+    const opened = () => {
+      overlayOpened.current = true;
+      getPlatform().minimizeMainWindow();
+    };
+    const failed = () =>
+      setCompactNotice('To follow the call in the overlay, press Back to compact.');
+    if (overlayAtStart === 'opened') opened();
+    else if (overlayAtStart === 'failed') failed();
+    else if (overlayAtStart === undefined && (startInOverlay ?? startsCallsInOverlay())) {
+      openOverlay(props.session.id).then(opened, failed);
+    }
+  }, [props.session.id, startInOverlay, overlayAtStart]);
 
   // Mounted only during a call, so the desktop app's global shortcuts are on only then.
   useEffect(

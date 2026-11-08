@@ -4,7 +4,8 @@
  *          session, so in the real desktop shell a real call connects (microphone and the
  *          computer's sound) with the real speech engine, and the message box's microphone can be
  *          tried with a real voice. "Start calls in the overlay" is turned off here so the main
- *          window stays in view. Answers fail on purpose (the rig has no /api/answer): the check
+ *          window stays in view, unless the address has ?overlay=on (ADR-0053: Connect then opens
+ *          the overlay first, inside its click). Answers fail on purpose (the rig has no /api/answer): the check
  *          looks at the question a dictated message produced. Served at /call by overlay-rig.ts.
  * Used by: tests/visual/overlay-rig.ts (bundled); apps/desktop/tests/visual/call-mic-check.ts
  * Depends on: src/features/live/LivePage.tsx, react-dom
@@ -17,7 +18,9 @@ import type { Session } from '@/core/storage/types';
 import { LivePage } from '@/features/live/LivePage';
 
 try {
-  localStorage.setItem('kite.startInOverlay', 'off');
+  // Set either way, so a profile reused between runs never keeps the other choice.
+  const overlayOn = new URLSearchParams(window.location.search).get('overlay') === 'on';
+  localStorage.setItem('kite.startInOverlay', overlayOn ? 'on' : 'off');
 } catch {
   // Storage blocked: the overlay may open; the check still works in the main window.
 }

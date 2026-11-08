@@ -1,8 +1,8 @@
 /**
  * File: apps/web/src/features/live/LivePage.tsx
  * Purpose: The live session screen flow: the Connect view first (instructions, model download,
- *          meters, sound check), then the live view (meters, the answer bar and panel, the
- *          transcript strip). It owns
+ *          the microphone meter), then, as soon as Connect succeeds, the live view (meters, the
+ *          answer bar and panel, the transcript strip; ADR-0053: no second "Go live" step). It owns
  *          the speech-to-text engine, the call capture and the in-memory transcript, all through
  *          core/ (it never calls media APIs itself).
  * Used by: src/features/live/LiveSession.tsx (which loads the session first)
@@ -16,6 +16,11 @@
  *
  * v1.1.0: one call at a time on a device (core/live/callLock.ts); Accurate transcription follows the
  * power source on Auto (ADR-0044); listening pauses when a call was left running (core/live/hygiene.ts).
+ *
+ * ADR-0053: Connect opens the overlay first (when calls start in it), inside the click, because a
+ * browser's picture-in-picture window needs the click and the share picker does not (measured in
+ * Chrome 156: the picker still opens after picture-in-picture used the click). Then the capture,
+ * then the live view. A capture that fails closes that overlay again and keeps the Connect card.
  *
  * The session's hotwords are given to the engine when it is created, as the page opens: before
  * Connect, and without the ~2 s recognizer rebuild a later setHotwords() would cost. With "save
@@ -61,14 +66,9 @@ import { AudioMeter } from './AudioMeter';
 import { LiveAnswers, type AnswerThisBridge } from './LiveAnswers';
 import { LiveCallLayout, type LiveCallStatus } from './LiveCallLayout';
 import { BrowserCallLayout } from './BrowserCallLayout';
-import { openOverlay } from './openOverlay';
-import {
-  ConnectPanel,
-  type CallInfo,
-  type ConnectionState,
-  type ModelState,
-  type SoundCheck,
-} from './ConnectPanel';
+import { openOverlay, startsCallsInOverlay, type OverlayAtStart } from './openOverlay';
+import { ConnectPanel, type CallInfo, type ConnectionState, type ModelState } from './ConnectPanel';
+import { useMicPreview } from './useMicPreview';
 import { SavedTranscript } from './SavedTranscript';
 import { TranscriptStrip } from './TranscriptStrip';
 import { groupWords, type TranscriptGroup } from '@/core/transcript/group';
@@ -85,9 +85,6 @@ const ECHO_NOTE_MS = 60_000;
 
 /** How long the "Transcription restarted" note stays after a watchdog restart, in ms. */
 const RESTART_NOTE_MS = 8_000;
-
-/** Length of the sound check, in seconds. */
-const SOUND_CHECK_SECONDS = 5;
 
 /** How "Them" is described in the live view header. */
 const THEM_SOURCE_LABEL: Record<OtherSideSource, string> = {
@@ -251,7 +248,9 @@ export function LivePage({
   // v1.1.0 (ADR-0044): marks and capitals for the live engine's lines, offline, in a worker of its own.
   const [punctuator] = useState(() => createPunctuator());
   useEffect(() => () => punctuator.dispose(), [punctuator]);
-  const [micDeviceId, setMicDeviceId] = useState('');
+  // The saved microphone (v1.1.0). This page only renders in the browser (LiveSession loads the
+  // session from IndexedDB first), so reading local storage here cannot differ from a server render.
+  const [micDeviceId, setMicDeviceId] = useState(() => getMicDevice());
   const [channelErrors, setChannelErrors] = useState<Partial<Record<Speaker, string>>>({});
   const [themSource, setThemSource] = useState<OtherSideSource | null>(null);
   // The browser split view (live-ui-split): the shared-tab stream for the preview, the answer
@@ -260,7 +259,8 @@ export function LivePage({
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
   const [language, setLanguage] = useState(session.preferences.language);
   const [transcriptClearedAt, setTranscriptClearedAt] = useState(0);
-  const [soundCheck, setSoundCheck] = useState<SoundCheck | null>(null);
+  // ADR-0053: what Connect did with the overlay, for the answers panel (null before a call).
+  const [overlayAtStart, setOverlayAtStart] = useState<OverlayAtStart | null>(null);
   const [health, setHealth] = useState<SttHealthStatus>('ok');
   // Unix ms, refreshed once a second while connected (for the echo note; render must stay pure).
   const [now, setNow] = useState(0);
@@ -287,16 +287,12 @@ export function LivePage({
   const watchdog = useRef(new TranscriptWatchdog());
   const restartingRef = useRef(false);
   const [restartedAt, setRestartedAt] = useState<number | null>(null);
-  /** The running sound check: when it ends and what each channel said so far. */
-  const checkRef = useRef<{ endsAt: number; heard: Record<Speaker, string> } | null>(null);
-
-  /** Records text for the sound check while it runs. */
-  const noteHeard = useCallback((speaker: Speaker, text: string) => {
-    const check = checkRef.current;
-    if (!check || !text || performance.now() > check.endsAt) return;
-    check.heard = { ...check.heard, [speaker]: text };
-    setSoundCheck((current) => (current ? { ...current, heard: check.heard } : current));
-  }, []);
+  // The Connect card's microphone meter (ADR-0053): only while the card is idle, so it never holds
+  // the microphone during a call.
+  const micPreview = useMicPreview({
+    deviceId: micDeviceId,
+    enabled: view === 'connect' && connection === 'idle' && !ending,
+  });
 
   // Builds the speech engine with the standard callbacks. The initial effect and a watchdog
   // restart share this, so a restarted engine behaves exactly like the first one. isActive() lets
@@ -323,7 +319,6 @@ export function LivePage({
             return;
           }
           transcript.addPartial(channel, text, tStart);
-          noteHeard(channel, text);
           watchdog.current.noteProgress(performance.now());
         },
         onFinal: ({ channel, text, tStart, tEnd, audio }) => {
@@ -335,7 +330,6 @@ export function LivePage({
             return;
           }
           const line = transcript.addFinal({ speaker: channel, text, tStart, tEnd });
-          noteHeard(channel, text);
           watchdog.current.noteProgress(performance.now());
           // The second pass replaces the words a moment later; the live line is the fallback. The
           // accurate engine writes its own marks; the live engine's lines get theirs from the
@@ -353,7 +347,7 @@ export function LivePage({
         },
       });
     },
-    [hotwords, transcript, noteHeard, dictationRoute, plainTerms, punctuator],
+    [hotwords, transcript, dictationRoute, plainTerms, punctuator],
   );
 
   // v1.1.0 (ADR-0044): Accurate transcription follows the setting and the power source, and only uses
@@ -459,7 +453,7 @@ export function LivePage({
     return () => clearInterval(timer);
   }, [connection, session.id]);
 
-  // Health and the sound-check countdown, once a second while connected.
+  // Health, the echo note's clock and the call checks, once a second while connected.
   useEffect(() => {
     if (connection !== 'connected') return;
     const timer = setInterval(() => {
@@ -471,12 +465,6 @@ export function LivePage({
       );
       // Day 6 Stage 4: if speech has been arriving with no transcript for 8 s, restart the engine.
       if (watchdog.current.isStuck(performance.now())) void restartEngine();
-      const check = checkRef.current;
-      if (check) {
-        const left = Math.max(0, Math.ceil((check.endsAt - performance.now()) / 1000));
-        setSoundCheck({ secondsLeft: left, heard: check.heard });
-        if (left === 0) checkRef.current = null;
-      }
     }, 1_000);
     return () => clearInterval(timer);
   }, [connection, restartEngine]);
@@ -489,13 +477,19 @@ export function LivePage({
   };
 
   /**
-   * Opens both channels (stopping any earlier capture first). Runs straight from the click:
-   * startCallCapture asks for the other side before anything else, while the click still counts
-   * as a user gesture.
+   * Opens both channels (stopping any earlier capture first). Runs straight from the click.
+   * From the Connect card (ADR-0053) it first opens the overlay when calls start in it, while the
+   * click still counts (a browser's picture-in-picture window needs it), and once both channels
+   * run it shows the live view: Connect starts the call. From the live view (Reconnect) it only
+   * reopens the channels.
+   *
+   * @param fromCard True for the Connect card's Connect and Try again.
    */
-  const connect = async () => {
+  const connect = async (fromCard: boolean) => {
     const engine = engineRef.current;
     if (!engine) return;
+    // The meter's microphone is released first, so the call's capture is the only one using it.
+    micPreview.stop();
     // v1.1.0 (ADR-0041): another window may already be running a call (the desktop app's side window
     // can reach this page during one). Two would compete for the microphone and the shortcuts.
     if (!releaseLock.current) {
@@ -511,6 +505,17 @@ export function LivePage({
     captureRef.current = null;
     setChannelErrors({});
     setConnection('connecting');
+    // ADR-0053: the overlay first, inside the click. Picture-in-picture uses the click up, and the
+    // share picker still opens afterwards (Chrome 156, measured); the other order would leave the
+    // overlay without a click once the picker closes. The desktop app opens its overlay window over
+    // IPC, which needs no click, so one order serves both.
+    let overlay: OverlayAtStart = 'off';
+    if (fromCard && startsCallsInOverlay()) {
+      overlay = await openOverlay(session.id).then(
+        () => 'opened' as const,
+        () => 'failed' as const,
+      );
+    }
     try {
       const chosenMic = getMicDevice();
       setMicDeviceId(chosenMic);
@@ -558,17 +563,22 @@ export function LivePage({
           onError: () => setSaveFailed(true),
         });
       }
-      // Start the sound check.
-      checkRef.current = {
-        endsAt: performance.now() + SOUND_CHECK_SECONDS * 1000,
-        heard: { you: '', them: '' },
-      };
-      setSoundCheck({ secondsLeft: SOUND_CHECK_SECONDS, heard: { you: '', them: '' } });
+      // ADR-0053: Connect starts the call. The answers panel learns what happened to the overlay
+      // (the main window steps aside when it opened).
+      if (fromCard) {
+        setOverlayAtStart(overlay);
+        setView('live');
+      }
     } catch (error) {
       setConnection('idle');
       setLevels({ you: 0, them: 0 });
       releaseLock.current?.();
       releaseLock.current = null;
+      // The overlay opened for this call is closed again: there is no call to follow.
+      if (overlay === 'opened')
+        void getPlatform()
+          .closeCompactView()
+          .catch(() => undefined);
       if (error instanceof CallCaptureError) {
         setChannelErrors({ [error.channel]: error.message });
       } else if (model.status !== 'error') {
@@ -586,7 +596,6 @@ export function LivePage({
   const end = async () => {
     if (ending) return;
     setEnding(true);
-    checkRef.current = null;
     watchdog.current.stop();
     setRestartedAt(null);
     const saver = saverRef.current;
@@ -616,7 +625,7 @@ export function LivePage({
     setHygiene('ok');
     setConnection('idle');
     setLevels({ you: 0, them: 0 });
-    setSoundCheck(null);
+    setOverlayAtStart(null);
     setChannelErrors({});
     setView('connect');
     setCallStartedAt(null);
@@ -772,15 +781,14 @@ export function LivePage({
           platform={platform}
           model={model}
           connection={connection}
-          levels={levels}
+          mic={micPreview.state}
+          onTestMic={micPreview.start}
           channelErrors={channelErrors}
-          soundCheck={soundCheck}
           health={health}
           micDeviceId={micDeviceId}
           onMic={changeMic}
-          onConnect={() => void connect()}
+          onConnect={() => void connect(true)}
           onRetryModel={retryModel}
-          onContinue={() => setView('live')}
         />
         {notesStatus !== 'idle' && (
           <p role="status" className="mx-auto mt-4 max-w-3xl px-8 text-[13px] text-ui-muted">
@@ -843,6 +851,7 @@ export function LivePage({
         lessons={lessons}
         transcript={transcript}
         callStartedAt={callStartedAt}
+        {...(overlayAtStart !== null ? { overlayAtStart } : {})}
         audio={{
           you: connection === 'connected' && !channelErrors.you,
           them: connection === 'connected' && !channelErrors.them,
@@ -896,7 +905,7 @@ export function LivePage({
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => void connect()}
+                  onClick={() => void connect(false)}
                   disabled={ending}
                 >
                   Reconnect

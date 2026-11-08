@@ -83,10 +83,7 @@ function Steps({ app, platform }: { app: CallApp; platform: Platform }) {
         <li>Join your {app.name} call the usual way, in its app or in a browser.</li>
         <li>
           Press <strong>Connect</strong>. Paramount AI hears your microphone and what this computer
-          plays, with nothing to pick.
-        </li>
-        <li>
-          After the short sound check, press <strong>Go live</strong>.
+          plays, with nothing to pick, and the call starts.
         </li>
       </ol>
     );
@@ -98,7 +95,7 @@ function Steps({ app, platform }: { app: CallApp; platform: Platform }) {
         Press <strong>Connect</strong>, choose the tab with your call, and turn on{' '}
         <strong>Also share tab audio</strong>.
       </li>
-      <li>Allow the microphone when asked, then press Go live after the sound check.</li>
+      <li>Allow the microphone when asked. The call starts as soon as both are connected.</li>
     </ol>
   );
 }

@@ -291,7 +291,7 @@ These map to Kite's existing format, length and tone values. Add "Balanced" only
 - Title "Connect call session", and the subtitle *"Ready when you are. Connect to start the transcript."*
 - **Audio source:**
   - a select on the right, defaulting to **System audio**, plus the mic picker (existing).
-  - Kite's **sound check** runs here inline, with level bars for You and Them.
+  - the microphone's **level meter** runs here, before the call. **Connect starts the call**: there is no sound check or second step (ADR-0053). The other side's level shows in the call.
 - **A tips list** (a bordered group with dividers; the icon on the left, the link on the right, underlined):
   - `Headphones` *"Use headphones so your mic doesn't pick up the other side."* → **Why**
   - `ShieldCheck` *"Test Private with your phone before a real call."* → **How** (user guide)

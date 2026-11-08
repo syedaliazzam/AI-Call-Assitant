@@ -400,6 +400,11 @@ test('the Connect card: audio source, microphone, tips, and how to connect', asy
     await expect(page.getByText('This is a Regular session about')).toBeVisible();
     await expect(page.getByRole('combobox', { name: 'Audio source' })).toBeVisible();
     await expect(page.getByRole('combobox', { name: 'Microphone' })).toHaveText('System default');
+    // ADR-0053: the microphone can be tested here, and Connect is the only step (no Go live).
+    await expect(page.getByRole('button', { name: 'Test microphone' })).toBeVisible();
+    await expect(page.getByText('Check your microphone before the call.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Go live' })).toHaveCount(0);
+    await expect(page.getByText(/Sound check/)).toHaveCount(0);
     const tips = page.getByRole('list', { name: 'Tips' });
     await expect(tips).toContainText('Use headphones so your mic doesn’t pick up the other side.');
     await expect(tips).toContainText('Test Private with your phone before a real call.');
@@ -424,7 +429,8 @@ test('the Connect card: audio source, microphone, tips, and how to connect', asy
     const howTo = page.getByRole('dialog', { name: 'Connect Google Meet' });
     await expect(howTo).toContainText('Also share tab audio');
     await howTo.getByRole('button', { name: 'Got it' }).click();
-    await page.getByRole('button', { name: 'Phone' }).click();
+    // Exact: "Test microphone" also contains "phone".
+    await page.getByRole('button', { name: 'Phone', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Connect Phone' })).toContainText('desktop app');
     await page.getByRole('button', { name: 'Got it' }).click();
     await expect(page.getByText('Video tutorial: coming soon')).toBeVisible();
@@ -663,6 +669,19 @@ test('error states: Them silent for 20 s', async () => {
     await shot(watched, size, 'error-them-silent');
     await watched.context.close();
   }
+});
+
+test('the Connect card: with the microphone allowed, its meter runs instead of Test microphone', async () => {
+  // ADR-0053: the level shows before the call; the other side's level shows once connected.
+  const size = { width: 1440, height: 900, touch: false } as const;
+  const watched = await open('connect-mic', size);
+  const { page } = watched;
+  await expect(page.getByRole('meter', { name: 'You audio level' })).toBeVisible();
+  await expect(page.getByRole('meter', { name: 'Them audio level' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Test microphone' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Connect' })).toBeEnabled();
+  await shot(watched, size, 'connect-mic');
+  await watched.context.close();
 });
 
 test('error states: microphone denied and speech model download failed', async () => {

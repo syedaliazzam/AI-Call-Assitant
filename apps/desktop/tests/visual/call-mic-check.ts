@@ -99,13 +99,8 @@ async function main(): Promise<void> {
     { timeout: 120_000 },
   );
   await connect.click();
+  // ADR-0053: Connect starts the call; the live view, with its microphone, follows directly.
   const mic = page.getByRole('button', { name: 'Speak a question' });
-  // With nothing playing on the computer, the sound check waits for "Go live".
-  const goLive = page.getByRole('button', { name: 'Go live' });
-  await Promise.race([mic.waitFor({ timeout: 60_000 }), goLive.waitFor({ timeout: 60_000 })]).catch(
-    () => undefined,
-  );
-  if (await goLive.isVisible()) await goLive.click();
   try {
     await mic.waitFor({ timeout: 60_000 });
   } catch (error) {

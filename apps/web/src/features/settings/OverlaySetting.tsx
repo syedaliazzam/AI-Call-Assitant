@@ -101,7 +101,7 @@ export function OverlaySetting() {
       {!always && (
         <Toggle
           label="Start calls in the overlay"
-          hint="On: Go live opens the overlay on top of your meeting and minimises this window. In a browser, press Overlay once the call is connected: browsers ask for a click first."
+          hint="On: Connect opens the overlay on top of your meeting and minimises this window once the call starts. In a browser the overlay is a picture-in-picture window (Chrome or Edge)."
           checked={choice ?? saved}
           onChange={(next) => {
             setStartInOverlay(next);
