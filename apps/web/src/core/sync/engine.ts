@@ -9,7 +9,7 @@
  *          the server, so it is not sent back.
  * Used by: src/core/sync/client.ts (when to run them); tests
  * Depends on: dexie, @kite/shared (sync types and limits), src/core/storage/db.ts,
- *             src/core/sync/{capture,mapping,outbox,prefs}.ts
+ *             src/core/sync/{capture,events,mapping,outbox,prefs}.ts
  * Architecture: ADR-0049
  *
  * Logs carry counts only, never ids or record content.
@@ -27,6 +27,7 @@ import {
 import type { Table } from 'dexie';
 import type { KiteDb } from '../storage/db';
 import { markRemote, OUTBOX_STORE } from './capture';
+import { notifySyncApplied } from './events';
 import {
   parseRef,
   PREFS_REF,
@@ -267,6 +268,8 @@ export async function pushOnce(
       if (result.status === 'conflict' || result.status === 'deleted') pullNeeded = true;
     }
   });
+  // A conflict merge or a delete from another device changed records here: screens reload.
+  if (pullNeeded) notifySyncApplied();
   return { sent: outgoing.length, more: stoppedEarly || retry, pullNeeded };
 }
 
@@ -392,5 +395,7 @@ export async function pullAll(db: KiteDb, transport: SyncTransport): Promise<num
     if (!after) break;
   }
   if (serverTime !== null) await db.syncMeta.put({ id: 'pull', value: serverTime });
+  // Screens that loaded their data once reload it (events.ts).
+  if (applied > 0) notifySyncApplied();
   return applied;
 }
