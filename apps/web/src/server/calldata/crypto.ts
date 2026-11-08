@@ -65,9 +65,12 @@ export function loadDataKeys(env: Record<string, string | undefined> = process.e
     const value = env[`KITE_DATA_KEY_V${version}`]?.trim();
     if (!value) continue;
     const key = Buffer.from(value, 'base64');
-    // Never echo the value: only the variable's name.
+    // Never echo the value: only the variable's name and how many bytes it decodes to, which is
+    // enough to tell a wrong key format (for example hex, or a longer random value) apart.
     if (key.length !== KEY_BYTES) {
-      throw new DataKeyError(`KITE_DATA_KEY_V${version} must be 32 bytes, base64-encoded.`);
+      throw new DataKeyError(
+        `KITE_DATA_KEY_V${version} must be 32 bytes, base64-encoded (it decodes to ${key.length}).`,
+      );
     }
     keys.set(version, key);
   }

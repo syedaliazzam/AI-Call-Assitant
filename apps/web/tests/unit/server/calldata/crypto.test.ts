@@ -51,7 +51,7 @@ describe('loadDataKeys', () => {
     } catch (error) {
       message = (error as Error).message;
     }
-    expect(message).toBe('KITE_DATA_KEY_V1 must be 32 bytes, base64-encoded.');
+    expect(message).toBe('KITE_DATA_KEY_V1 must be 32 bytes, base64-encoded (it decodes to 18).');
     expect(message).not.toContain(short);
   });
 });

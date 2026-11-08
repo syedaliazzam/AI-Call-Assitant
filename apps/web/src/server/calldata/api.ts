@@ -88,7 +88,8 @@ async function withAccount(
     return response;
   } catch (error) {
     if (error instanceof DataKeyError) {
-      console.error('sync: data key unavailable', { route });
+      // DataKeyError messages name the variable and the reason only, never the key.
+      console.error('sync: data key unavailable', { route, reason: error.message });
       return failure(503, 'sync_unavailable', 'Sync is not available right now.');
     }
     // The error's name only: a database message can quote values.
