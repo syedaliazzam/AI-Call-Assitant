@@ -5,12 +5,14 @@
  *          answers, notes; settings from version 2; lessons from version 3) and the indexes the
  *          dashboard and per-session lookups need.
  * Used by: src/core/storage/sessions.ts, documents.ts, utterances.ts, lessons.ts, wipe.ts
- * Depends on: dexie; src/core/storage/types.ts
+ * Depends on: dexie; src/core/storage/types.ts; src/core/sync/capture.ts (account caches, ADR-0049)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (data model), §8.1;
  *               day-03-sessions.md Stage 1
  *
- * Nothing here is sent anywhere: the data stays on this device. The browser and the desktop app
- * each have their own database (separate browser profiles too).
+ * Without account sync (ADR-0024) nothing here is sent anywhere: the browser and the desktop app
+ * each have their own database 'kite'. With account sync (ADR-0049, the accountSync switch) the
+ * storage modules use the account's cache instead ('kite-u-<id>'), whose changes the sync engine
+ * sends to the account; 'kite' is left as it was, for the one-time upload (Phase 4).
  *
  * The database opens lazily (getDb()), so importing this module during server rendering never
  * touches IndexedDB, which only exists in the browser.
@@ -36,6 +38,7 @@ import type {
   StoredSettings,
   StoredUtterance,
 } from './types';
+import { captureMiddleware, type OutboxEntry } from '../sync/capture';
 
 /** Name of the IndexedDB database. Changing it would orphan every user's existing data. */
 export const DB_NAME = 'kite';
@@ -64,6 +67,12 @@ export class KiteDb extends Dexie {
   declare questionBanks: EntityTable<StoredQuestionBank, 'sessionId'>;
   /** Ask Kite chats (version 6, ADR-0030). */
   declare chats: EntityTable<StoredChat, 'id'>;
+  /** Changes waiting to be sent to the account (version 9, ADR-0049; account caches only). */
+  declare outbox: EntityTable<OutboxEntry, 'seq'>;
+  /** The server revision of each synced record this device has (version 9, ADR-0049). */
+  declare syncRevs: EntityTable<SyncRev, 'ref'>;
+  /** Sync bookkeeping: the last pull's server time, pending account preferences (version 9). */
+  declare syncMeta: EntityTable<SyncMetaRow, 'id'>;
 
   /**
    * Declares the schema. Only indexed fields are listed (Dexie stores every field of a row);
@@ -73,9 +82,15 @@ export class KiteDb extends Dexie {
    * `this.version(2).stores({ …only the stores that change… }).upgrade(tx => …)` below it,
    * where upgrade() rewrites existing rows if a field's meaning changes. Dexie runs it once on
    * each device that still has version 1, so users keep their sessions.
+   *
+   * @param name    The database: 'kite' (this device's own data), or an account's cache
+   *                (accountDbName(), ADR-0049).
+   * @param capture True to record every change to call data in the outbox (account caches).
    */
-  constructor() {
-    super(DB_NAME);
+  constructor(name: string = DB_NAME, capture = false) {
+    super(name);
+    // Installed before the first query, so no change is ever missed.
+    if (capture) this.use(captureMiddleware);
     this.version(1).stores({
       // createdAt: dashboard order (newest first); type: the filter tabs; status: future views.
       sessions: 'id, createdAt, type, status',
@@ -181,7 +196,74 @@ export class KiteDb extends Dexie {
           }
         }
       });
+    // Version 9 (ADR-0049): sync bookkeeping, used only in an account's cache. outbox: changes
+    // waiting to be sent, in order (ref: one record's entries, for merges); syncRevs: the server
+    // revision of each record held here; syncMeta: small named values. Nothing existing changes.
+    this.version(9).stores({
+      outbox: '++seq, ref',
+      syncRevs: 'ref',
+      syncMeta: 'id',
+    });
   }
+}
+
+/** The server revision of one synced record on this device (ADR-0049). */
+export interface SyncRev {
+  /** The record's reference (store|key, core/sync/mapping.ts). */
+  ref: string;
+  /** The newest server revision this device has applied or written. */
+  rev: number;
+}
+
+/** One named sync value (ADR-0049). */
+export interface SyncMetaRow {
+  /** 'pull' (the last pull's server time) or 'prefs' (account preferences changed here). */
+  id: string;
+  /** The value: Unix ms for 'pull'; the time of the change for 'prefs'. */
+  value: number;
+}
+
+/** The name of an account's cache database (ADR-0049). */
+export const ACCOUNT_DB_PREFIX = 'kite-u-';
+
+/**
+ * The cache database of an account.
+ *
+ * @param userId The account's id.
+ * @returns For example 'kite-u-<id>'.
+ * Called from: selectAccountDatabase(); the one-time upload (Phase 4); tests
+ */
+export function accountDbName(userId: string): string {
+  return `${ACCOUNT_DB_PREFIX}${userId}`;
+}
+
+/** The database getDb() opens: this device's own ('kite') until an account cache is selected. */
+let activeName = DB_NAME;
+
+/**
+ * Chooses which database the storage modules use from now on: an account's cache when the account
+ * syncs (ADR-0049), else this device's own 'kite' database. Must run before the first query of a
+ * page (SyncScope does it while rendering, before any child loads data). Does nothing on the server.
+ *
+ * @param userId The account's id when it syncs, or null.
+ * Called from: src/features/sync/SyncScope.tsx; tests
+ */
+export function selectAccountDatabase(userId: string | null): void {
+  if (typeof window === 'undefined' && typeof indexedDB === 'undefined') return;
+  const name = userId ? accountDbName(userId) : DB_NAME;
+  if (name === activeName) return;
+  forgetDb();
+  activeName = name;
+}
+
+/**
+ * Whether the storage modules use an account's cache.
+ *
+ * @returns True after selectAccountDatabase() with an account.
+ * Called from: src/core/storage/wipe.ts; src/core/sync/client.ts
+ */
+export function usingAccountDatabase(): boolean {
+  return activeName !== DB_NAME;
 }
 
 /** The open database, created on first use; null before that and after forgetDb(). */
@@ -194,7 +276,8 @@ let instance: KiteDb | null = null;
  * Called from: the repositories in src/core/storage (sessions, documents, utterances, wipe)
  */
 export function getDb(): KiteDb {
-  instance ??= new KiteDb();
+  // An account cache records every change to call data in its outbox (ADR-0049).
+  instance ??= new KiteDb(activeName, activeName !== DB_NAME);
   return instance;
 }
 

@@ -29,8 +29,8 @@ const V104_COMMIT = 'a088534';
 /** The schema version v1.0.4 wrote. */
 const V104_SCHEMA = 7;
 
-/** The schema version today's code upgrades it to. */
-const CURRENT_SCHEMA = 8;
+/** The schema version today's code upgrades it to (9 adds only the sync bookkeeping stores, ADR-0049). */
+const CURRENT_SCHEMA = 9;
 
 let work = '';
 let oldCode = '';

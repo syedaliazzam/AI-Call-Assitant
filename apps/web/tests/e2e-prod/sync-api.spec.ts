@@ -16,6 +16,9 @@ test.describe.configure({ mode: 'serial' });
 
 let page: Page;
 
+/** The session's revision after step 2 (the copy step 4 makes stale). */
+let sessionRev = 0;
+
 /** Invented ids, fresh for each run. */
 const SESSION = randomUUID();
 const QUIET_SESSION = randomUUID();
@@ -105,6 +108,7 @@ test('2. an encrypted write and read round trip (the data key works)', async () 
     },
   ]);
   expect(results.map((result) => result.status)).toEqual(['ok', 'ok', 'ok']);
+  sessionRev = results[0]!.rev!;
   const read = await call(`/api/sync/record?kind=session&id=${SESSION}`);
   expect(read.status).toBe(200);
   expect((read.json.record as Record<string, unknown>).company).toBe('E2E sync check (invented)');
@@ -131,8 +135,15 @@ test('3. a pull lists the change', async () => {
 });
 
 test('4. a stale write is a conflict, and Save transcript off refuses lines', async () => {
+  // A write from the current revision is accepted; the same write from that old revision again
+  // is stale (another device got there first), so it is a conflict.
+  const record = { id: SESSION, company: 'E2E sync check (invented)', saveTranscript: true };
+  const [fresh] = await push([
+    { op: 'put', kind: 'session', id: SESSION, baseRev: sessionRev, record },
+  ]);
+  expect(fresh?.status).toBe('ok');
   const [stale] = await push([
-    { op: 'put', kind: 'session', id: SESSION, baseRev: 1, record: { id: SESSION } },
+    { op: 'put', kind: 'session', id: SESSION, baseRev: sessionRev, record },
   ]);
   expect(stale?.status).toBe('conflict');
   const [quiet, line] = await push([

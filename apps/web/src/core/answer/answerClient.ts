@@ -7,7 +7,8 @@
  *          word → headline complete → done.
  * Used by: src/features/dev/ClaudeTest.tsx (Day 1); src/core/answer/warm.ts; the live answer
  *          panel (Day 4)
- * Depends on: @kite/shared (AnswerRequest, AnswerEvent types), browser fetch and streams
+ * Depends on: @kite/shared (AnswerRequest, AnswerEvent types), browser fetch and streams,
+ *             src/core/sync/foreground.ts (holds account sync while streaming, ADR-0049)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 (flow), §7.1 (core/answer)
  */
 import type {
@@ -17,6 +18,7 @@ import type {
   AnswerTimings,
   AnswerUsage,
 } from '@kite/shared';
+import { holdSyncForAnswer } from '../sync/foreground';
 
 /** Final details of a successful answer. */
 export interface AnswerDone {
@@ -195,6 +197,8 @@ export function streamAnswer(
     }
   });
 
+  // ADR-0049: account sync holds its pushes while this answer streams, so they never compete.
+  const releaseSync = holdSyncForAnswer();
   void (async () => {
     try {
       const response = await fetchImpl(options.endpoint ?? '/api/answer', {
@@ -229,6 +233,8 @@ export function streamAnswer(
           message: error instanceof Error ? 'Network error' : 'Unknown error',
         }),
       );
+    } finally {
+      releaseSync();
     }
   })();
 

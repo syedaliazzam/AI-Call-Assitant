@@ -4,10 +4,13 @@
  *          ADR-0041). Signed-in users only. Outside the (app) group on purpose, so it has no sidebar:
  *          the window is small. Opened in a browser, the panel sends it to the dashboard.
  * Used by: Next.js App Router; loaded by apps/desktop/src/home.ts
- * Depends on: src/server/guard.ts (requireUser), src/features/home/HomePanel.tsx
+ * Depends on: src/server/guard.ts (requireUser), src/features/home/HomePanel.tsx,
+ *             src/features/sync/SyncScope.tsx and src/server/calldata/flag.ts (ADR-0049)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §9.2 (thin routes); ADR-0041
  */
 import { HomePanel } from '@/features/home/HomePanel';
+import { SyncScope } from '@/features/sync/SyncScope';
+import { syncEnabledFor } from '@/server/calldata/flag';
 import { requireUser } from '@/server/guard';
 
 /**
@@ -26,9 +29,12 @@ export default async function HomeRoute({
   const { user } = await requireUser();
   const { session } = await searchParams;
   return (
-    <HomePanel
-      email={user.email}
-      {...(typeof session === 'string' ? { startSessionId: session } : {})}
-    />
+    // ADR-0049: the panel shows the account's sessions when the account syncs.
+    <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null}>
+      <HomePanel
+        email={user.email}
+        {...(typeof session === 'string' ? { startSessionId: session } : {})}
+      />
+    </SyncScope>
   );
 }

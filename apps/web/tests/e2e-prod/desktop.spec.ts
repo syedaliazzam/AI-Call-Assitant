@@ -6,9 +6,10 @@
  * a call starts from the panel's card, in the overlay, with the main window minimised and the panel
  * aside; lines in the transcript panel; a real answer in the answer panel, rated; asking again adds no
  * entry; Private covers every window; Dashboard opens a side window and the call carries on; the full
- * call window and back; End asks first, closes the overlay and brings the panel back; Settings →
- * Delete all local data empties the panel. Manual run only (never in CI). Prints numbers only, and
- * takes no screenshots: "Them" is this computer's real sound. Paid: 2 answers on the fast model.
+ * call window and back; End asks first, closes the overlay and brings the panel back; deleting the
+ * session removes it from the panel (only what this run made, ADR-0050). Manual run only (never in
+ * CI). Prints numbers only, and takes no screenshots: "Them" is this computer's real sound. Paid: 2
+ * answers on the fast model.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -88,15 +89,19 @@ test.afterAll(async () => {
 /** The main window, once the panel has opened it. */
 let main: Page;
 
-test('1. sign in on the home panel, which is empty (separate desktop data)', async () => {
+test('1. sign in on the home panel', async () => {
   // Fresh: the desktop app keeps its own cookies (separate from the browser suites). The panel keeps to
   // its own pages, so a sign-in comes back to it rather than going on to the dashboard.
   await signIn(page, testAccount(), true, true);
   await expect(page).toHaveURL(/\/home$/);
   await expect(page.getByRole('dialog', { name: 'Using Paramount AI' })).toBeVisible();
   await page.getByRole('button', { name: 'Got it' }).click();
-  await expect(page.getByText('No sessions yet')).toBeVisible();
-  report('desktop sign in, home panel empty', true);
+  // With account sync (ADR-0049) the panel shows the test account's sessions; without it, this fresh
+  // profile has none. Either way the panel is ready: its list or its empty message.
+  await expect(
+    page.getByRole('list', { name: 'Sessions' }).or(page.getByText('No sessions yet')),
+  ).toBeVisible();
+  report('desktop sign in, home panel ready', true);
 });
 
 test('2. create a session in the main window; it shows on the panel, and survives a reload', async () => {
@@ -257,14 +262,17 @@ test('3. a call: the overlay, Private on every window, a real answer, the side w
   report('desktop end: overlay closes, panel returns', true);
 });
 
-test('4. Settings → Delete all local data → an empty panel', async () => {
-  await main.goto(`${PRODUCTION_URL}/settings`);
-  await main.getByRole('button', { name: 'Delete all local data' }).click();
-  await main.getByRole('dialog').getByRole('button', { name: 'Delete everything' }).click();
-  const deleted = main.getByText(/Deleted (\d+) sessions/);
-  await expect(deleted).toBeVisible();
-  const sessions = Number(/Deleted (\d+)/.exec((await deleted.textContent()) ?? '')?.[1]);
-  await expect(page.getByText('No sessions yet')).toBeVisible();
-  report('desktop delete all local data', sessions >= 1, { sessionsDeleted: sessions });
-  expect(sessions).toBeGreaterThanOrEqual(1);
+test('4. delete the session; it leaves the panel', async () => {
+  // Only what this run made: with account sync, "Delete all my data" would remove every session of
+  // the test account on every device (ADR-0050: tests clean up only what they created).
+  await main.goto(PRODUCTION_URL);
+  const card = sessionCard(main, COMPANY);
+  await card.getByRole('button', { name: /^More for / }).click();
+  await card.getByRole('menuitem', { name: 'Delete' }).click();
+  await main.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+  await expect(card).toHaveCount(0);
+  await expect(
+    page.getByRole('list', { name: 'Sessions' }).filter({ hasText: COMPANY }),
+  ).toHaveCount(0);
+  report('desktop session deleted', true);
 });

@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.21.0"
+version: "3.22.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-08"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.21.0, **Current**: the only document to build from |
+| Version | 3.22.0, **Current**: the only document to build from |
+| Changes in 3.22.0 | §7.1, §7.4: **account sync on the device** (ADR-0049), behind the accountSync switch: a per-account IndexedDB cache (`kite-u-<id>`, schema version 9 adds `outbox`, `syncRevs`, `syncMeta`), changes recorded in the same transaction as the change (a Dexie middleware), pushes 2 s after a change and transcript lines every 15 s or 50 lines, held while an answer streams, pulls on open, focus and reconnect only, a keepalive push when the page closes, a flush at End; Settings offers "Delete all my data" for synced accounts. Accounts without the switch keep `kite` and see no change. No desktop release. |
 | Changes in 3.21.0 | §7.2, §8.1: **call data in the account, server side** (ADR-0049): table `call_record` (additive migration `0002_call_records.sql`), the `/api/sync/*` routes and AES-256-GCM encryption, all behind the accountSync switch (`KITE_SYNC_USERS`); nothing uses them yet. **One production database with write guards** (ADR-0050): database-writing scripts need `--prod`; migrations are additive only. No desktop release. |
 | Changes in 3.20.0 | §5 (Connect, overlay), §7.1 (`core/audio/micPreview.ts`): **Connect starts the call** (ADR-0053). The sound check and "Go live" are removed. Connect opens the overlay first, inside its click (measured in Chrome 156: the share picker still opens after picture-in-picture used the click), then the capture, then the live view. The microphone's level shows on the Connect card before the call. Web only; no desktop release. |
 | Changes in 3.19.0 | §2 (F2), §7.4: the company field suggests from past sessions and Brandfetch, and session cards show logos, with an off switch in Settings → Privacy (ADR-0048). The browser talks to Brandfetch directly; a picked company's name and domain are kept on the device. No desktop release. |
@@ -252,6 +253,7 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 | `core/answer` | Calls `/api/answer`, reads SSE, cancel; one answer at a time with timings (key press → sent → first word → headline → done); session warm-up and the idle re-warm; the request builder (append-only conversation log, tail, question); headline/bullet split; the `/dev/latency` measurement | `answerClient.ts`, `warm.ts`, `keepWarm.ts`, `context.ts`, `format.ts`, `latency.ts` |
 | `core/documents` | PDF (pdf.js 6.4.299; worker served from our origin), DOCX (mammoth 1.13.0), TXT → text with clear error codes (unsupported type, too large, encrypted, no text); size caps (20 MB file, 100,000 characters per document, 150,000 per session) | `extract.ts`, `limits.ts` |
 | `core/storage` | IndexedDB via Dexie 4.4.6 (ADR-0024); repositories; default preferences; persistence request; delete all | `db.ts`, `types.ts`, `sessions.ts`, `documents.ts`, `utterances.ts`, `settings.ts`, `persist.ts`, `wipe.ts`, `answers.ts` (Day 4: save, list, rate, note) |
+| `core/sync` | **v3.22.0 (ADR-0049), accounts with the accountSync switch only.** The account cache: recording changes in an outbox in the same transaction (`capture.ts`), push and pull with the field-level conflict merge (`engine.ts`, `outbox.ts`), when they run (`client.ts`: 2 s after a change, lines every 15 s or 50, held while an answer streams `foreground.ts`, pulls on open/focus/online, keepalive on page close, flush at End), the three account preferences (`prefs.ts`). `features/sync/SyncScope.tsx` selects the database before a page loads data | `mapping.ts`, `capture.ts`, `outbox.ts`, `engine.ts`, `client.ts`, `foreground.ts`, `prefs.ts`, `prefsSignal.ts` |
 | `platform` | Platform adapter (section 3.3); shared media helpers and capture errors; the §7.3 key map for in-page shortcuts (Day 4); the frame source for browser screenshots and Document Picture-in-Picture (Day 5) | `types.ts`, `desktop.ts`, `browser.ts`, `index.ts`, `media.ts`, `errors.ts`, `keymap.ts`, `pip.ts` |
 
 ### 7.2 Server (apps/web/src/server and apps/web/app/api)
@@ -385,6 +387,7 @@ Built on Day 3 (`core/storage`, ADR-0024). One IndexedDB database, `kite`, opene
 | `answers` (id, sessionId) | id, sessionId, mode, question, text, model, msFirstToken, msTotal, createdAt, **rating** (`up` / `down` / null) and **note** ("What was wrong / better answer"), Day 4. Written when an answer finishes (a cancelled or failed one is not saved), **even when "Save transcript" is off**, because the review page and the learning loop need them; the preferences step says so. No index changed, so no new Dexie version |
 | `notes` (sessionId) | sessionId, notes (summary, questions, nextSteps, unclear, lessons: the proposals), callStartedAt, createdAt, fromAnswersOnly (Day 5). One set per session (the latest call); Regenerate replaces it |
 | `lessons` (id, sourceSessionId, status), schema version 3 | id, text (one line, ≤ 200 characters, as sent), scope (`all` or a session type), status (`approved` / `rejected`), sourceSessionId, sourceKey (the proposal's normalised text, never changed by edits), evidence, decidedAt, approvedAt (Day 5). Only decisions are stored, apart from the notes, so regenerating notes never loses or duplicates them |
+| `outbox` (++seq, ref), `syncRevs` (ref), `syncMeta` (id), schema version 9 | **ADR-0049, account caches only:** changes waiting to be sent (record reference, put or delete, the fields changed), the server revision of each record held, the last pull time and pending account preferences. Unused in `kite` |
 | `settings` (id), schema version 2 | one row `defaults`: the default model, style, instructions and save-transcript setting for new sessions |
 
 Rules:

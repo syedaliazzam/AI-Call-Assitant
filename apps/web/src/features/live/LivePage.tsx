@@ -41,6 +41,7 @@ import { warmSession } from '@/core/answer/warm';
 import { markSessionActive, updateSession } from '@/core/storage/sessions';
 import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
 import { clearTranscript, listUtterances } from '@/core/storage/utterances';
+import { flushAccountSync } from '@/core/sync/client';
 import { listAnswers } from '@/core/storage/answers';
 import { notesFailureText, type UnavailableReason } from '@/core/answer/unavailable';
 import { generateNotes, type NotesLine } from '@/core/notes/generate';
@@ -640,6 +641,9 @@ export function LivePage({
       // Spec §6: with Save transcript off, no line stays. Read from storage, not this page's copy:
       // the setting can be changed during the call. Notes and answers are kept.
       .then((saved) => (saved.saveTranscript ? undefined : clearTranscript(session.id)))
+      // ADR-0049: with account sync, the call's last lines, answers and status reach the account
+      // now, before the window may close (does nothing without account sync).
+      .then(() => flushAccountSync())
       .catch(() => undefined);
     // The call's notes (Day 5): written after the call by the server, saved here. Not awaited:
     // End never waits for them.

@@ -114,7 +114,8 @@ describe('schema version 8', () => {
 
     const db = getDb();
     await db.open();
-    expect(db.verno).toBe(8);
+    // The latest version: 9 adds only the sync bookkeeping stores (ADR-0049), so nothing else changes.
+    expect(db.verno).toBe(9);
 
     // Everything is still there, word for word, apart from the fields the upgrade adds.
     for (const [store, items] of Object.entries(rows)) {
