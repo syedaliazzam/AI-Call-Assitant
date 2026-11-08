@@ -5,7 +5,8 @@
  *          requireUser() sends signed-out visitors to /login and users with a temporary
  *          password to /change-password before anything renders.
  * Used by: Next.js App Router (wraps app/(app)/**)
- * Depends on: src/server/guard.ts, src/features/shell/AppShell.tsx,
+ * Depends on: src/server/guard.ts, src/server/calldata/flag.ts, src/features/sync/SyncScope.tsx,
+ *             src/features/shell/AppShell.tsx,
  *             src/features/ask-kite/AskKiteHotkey.tsx, src/features/notices/AcceptableUseNotice.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S1, S2);
  *               docs/architecture/kite-architecture-v3.1.md §5, §8.2 (sign-in)
@@ -14,6 +15,8 @@ import type { ReactNode } from 'react';
 import { AskKiteHotkey } from '@/features/ask-kite/AskKiteHotkey';
 import { AcceptableUseNotice } from '@/features/notices/AcceptableUseNotice';
 import { AppShell } from '@/features/shell/AppShell';
+import { SyncScope } from '@/features/sync/SyncScope';
+import { syncEnabledFor } from '@/server/calldata/flag';
 import { requireUser } from '@/server/guard';
 
 /**
@@ -26,7 +29,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const { user } = await requireUser();
 
   return (
-    <>
+    // ADR-0049: accounts with the accountSync switch keep their call data in the account.
+    <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null}>
       <AskKiteHotkey />
       <AcceptableUseNotice />
       <AppShell
@@ -38,6 +42,6 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       >
         {children}
       </AppShell>
-    </>
+    </SyncScope>
   );
 }

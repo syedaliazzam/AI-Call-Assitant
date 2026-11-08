@@ -3,9 +3,10 @@
  * Purpose: Remembers whether auto-answer (beta, Day 6 Stage 4f) is on, on this device. Off by
  *          default. Kept in localStorage: it is a per-device preference, not session data.
  * Used by: src/features/settings/AutoAnswerSetting.tsx, src/features/live/useAutoAnswer.ts
- * Depends on: nothing (localStorage)
+ * Depends on: localStorage, src/core/sync/prefsSignal.ts (with account sync it follows the account, ADR-0049)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 (Trigger); day-06 Stage 4
  */
+import { accountPrefChanged } from '../sync/prefsSignal';
 
 /** The localStorage key. */
 export const AUTO_ANSWER_KEY = 'kite.autoAnswer';
@@ -39,4 +40,6 @@ export function setAutoAnswer(on: boolean): void {
   } catch {
     // Storage blocked: the setting simply does not stick.
   }
+  // ADR-0049: with account sync, the choice follows the account to every device.
+  accountPrefChanged();
 }

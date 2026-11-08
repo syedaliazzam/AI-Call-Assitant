@@ -6,7 +6,8 @@
  *          they are per-device preferences, not session data.
  * Used by: src/core/answer/warm.ts, src/features/settings/AnswerPrefsSetting.tsx,
  *          src/features/live/LiveAnswers.tsx, src/features/review/ConversationSection.tsx
- * Depends on: @kite/shared (types and defaults), localStorage
+ * Depends on: @kite/shared (types and defaults), localStorage, src/core/sync/prefsSignal.ts (the coding
+ *             language follows the account with account sync, ADR-0049)
  * Architecture: docs/decisions/ADR-0030-ask-kite-and-adaptive-answers.md
  *
  * Every read and write survives blocked storage (private window, policy): reads give the default,
@@ -19,6 +20,7 @@ import {
   type MissingInfoMode,
   type TargetChoice,
 } from '@kite/shared';
+import { accountPrefChanged } from '../sync/prefsSignal';
 
 /** The localStorage key of the preferred coding language. */
 export const CODING_LANGUAGE_KEY = 'kite.codingLanguage';
@@ -87,6 +89,8 @@ export function getCodingLanguage(): string {
  */
 export function setCodingLanguage(language: string): void {
   write(CODING_LANGUAGE_KEY, language === DEFAULT_CODING_LANGUAGE ? null : language);
+  // ADR-0049: with account sync, the choice follows the account to every device.
+  accountPrefChanged();
 }
 
 /**
