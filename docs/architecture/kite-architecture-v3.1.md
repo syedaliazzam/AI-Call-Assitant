@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.20.0"
+version: "3.21.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-08"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.20.0, **Current**: the only document to build from |
+| Version | 3.21.0, **Current**: the only document to build from |
+| Changes in 3.21.0 | §7.2, §8.1: **call data in the account, server side** (ADR-0049): table `call_record` (additive migration `0002_call_records.sql`), the `/api/sync/*` routes and AES-256-GCM encryption, all behind the accountSync switch (`KITE_SYNC_USERS`); nothing uses them yet. **One production database with write guards** (ADR-0050): database-writing scripts need `--prod`; migrations are additive only. No desktop release. |
 | Changes in 3.20.0 | §5 (Connect, overlay), §7.1 (`core/audio/micPreview.ts`): **Connect starts the call** (ADR-0053). The sound check and "Go live" are removed. Connect opens the overlay first, inside its click (measured in Chrome 156: the share picker still opens after picture-in-picture used the click), then the capture, then the live view. The microphone's level shows on the Connect card before the call. Web only; no desktop release. |
 | Changes in 3.19.0 | §2 (F2), §7.4: the company field suggests from past sessions and Brandfetch, and session cards show logos, with an off switch in Settings → Privacy (ADR-0048). The browser talks to Brandfetch directly; a picked company's name and domain are kept on the device. No desktop release. |
 | Changes in 3.18.1 | §10.2, §14: the desktop app keeps the `*.vercel.app` address, which must never be removed or redirected (ADR-0047). |
@@ -264,6 +265,7 @@ These are **targets**. On Day 4 and Day 7 we record 20 hotkey answers per platfo
 | `/api/job-import` | POST, JSON response | **Built parity Phase 2.** Fetches a public job page (public addresses only: `server/job-page.ts`) and extracts the company, role and description with Haiku for the user to check. Logs sizes and token counts only. |
 | `/api/models` | GET, JSON response | **Built v1.2.0 (ADR-0045).** Which models this account may choose: the admin's `deep_model_enabled` setting, cached for 60 s. With it off, a session set to Sonnet uses Haiku. |
 | `/api/notes` | POST, JSON response | **Built Day 5.** Post-call notes with Sonnet in one structured-output request (110 s limit): summary (≤ 6 bullets), questions (their ratings taken from the request, never from the model), next steps with owners, parts too unclear to summarise (with a time range), up to 3 proposed lessons. Not streamed: nobody waits word by word after a call |
+| `/api/sync/push`, `/api/sync/pull`, `/api/sync/record`, `/api/sync/status` | POST / GET, JSON | **v3.21.0 (ADR-0049), behind the accountSync switch (`KITE_SYNC_USERS`).** An account's call data in `call_record`, AES-256-GCM encrypted (`KITE_DATA_KEY_V<n>`): push operations with a base revision (conflicts return the server copy), insert-if-missing, deletes with tombstones (a session takes its children), clear lines, delete all; pull pages of changes since a time; one record by kind and id. The account always comes from the signed-in session (database read); another account's record is 404. Accounts without the switch get 404 (status answers false). Logs counts and timings only. `server/calldata/` |
 
 **`POST /api/answer` request:**
 
@@ -424,6 +426,7 @@ How Kite gets better for each user, from their own ratings (ADR-0025):
 | Claude API key | Vercel environment variable only |
 | User accounts (name, email, role, password hash, sign-in sessions) | Neon Postgres on Vercel. Passwords are hashed (scrypt) and never stored or logged in plain text. |
 | Daily request counts (user id, UTC day, number of Claude requests) and the daily-limit setting | Neon Postgres on Vercel (`usage_day`, `app_setting`; v1.0.2, ADR-0036). Counts only: no question, answer, transcript or document text. Deleted with the account. |
+| Synced call data (accounts with the accountSync switch, v3.21.0, ADR-0049) | Neon Postgres, table `call_record`: each record encrypted with AES-256-GCM (key in Vercel, `KITE_DATA_KEY_V<n>`), bound to its account, kind and id; readable columns hold ids, revision, tombstone flag, key version and the session's Save transcript setting only. Lines are refused for a session that does not save its transcript. Deleted with the account; deleted records keep a content-free tombstone. The device keeps a cache. Audio, screenshots and the speech model never leave the device. |
 
 Internal approval is needed that transcript text, documents and screenshots are sent to Anthropic's API to generate answers.
 
@@ -432,7 +435,7 @@ Internal approval is needed that transcript text, documents and screenshots are 
 - **How accounts are created:** an admin opens `/admin/users` and enters a name, email and role (`admin` or `user`). The server generates a temporary password (14 random characters, without look-alikes such as 0/O and 1/l) and shows it to the admin **once**; the admin shares it with the person directly. It is stored only as a hash. There is no public sign-up and no email sending.
 - **Password reset:** an admin can reset a user's password from the same page. The server generates a new temporary password (shown once), signs the user out on every device and flags the account `mustChangePassword`.
 - **First sign-in:** the account is flagged `mustChangePassword`, so the user is sent to `/change-password` before anything else. The same happens after an admin resets a password.
-- **First admin:** created once from the command line (`pnpm --filter web create-admin`), which generates and prints a temporary password the same way.
+- **First admin:** created once from the command line (`pnpm --filter web create-admin --prod`; ADR-0050), which generates and prints a temporary password the same way.
 - **Desktop app:** shows the same `/login` page inside its window. Email + password works inside an app window, so no browser hand-off is needed.
 - **Library:** Better Auth with email + password (`disableSignUp: true`) and the admin plugin (create user, list users, set role, set password, ban/unban). Sessions are stored in Postgres and use secure, HTTP-only cookies; they expire after 30 days.
 - **Session cookie cache** (Day 5, ADR-0022 update): the session is also kept in a signed cookie for 60 s.
@@ -553,7 +556,7 @@ kite/
 | Framework | Next.js (project root `apps/web`) |
 | Function region | `iad1` (US East), close to the Claude API. Day 4: server time to first text p50 560–643 ms; from South Asia the network adds about 500 ms (§6.2, §13) |
 | Function runtime | Node.js; streaming responses for `/api/answer` and `/api/notes` |
-| Environment variables | `ANTHROPIC_API_KEY` (**one key**, the same in Production, Preview and Development and in `apps/web/.env.local`: the deployed app, local development, the verify scripts and the evaluations all use it; Day 5 decision), `DATABASE_URL` (added automatically by the Neon integration), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `KITE_MODEL_FAST=claude-haiku-5-5`, `KITE_MODEL_SMART=claude-sonnet-5-5` |
+| Environment variables | `ANTHROPIC_API_KEY` (**one key**, the same in Production, Preview and Development and in `apps/web/.env.local`: the deployed app, local development, the verify scripts and the evaluations all use it; Day 5 decision), `DATABASE_URL` (added automatically by the Neon integration), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `KITE_MODEL_FAST=claude-haiku-5-5`, `KITE_MODEL_SMART=claude-sonnet-5-5`; from v3.21.0 (ADR-0049) `KITE_DATA_KEY_V1` (Production; a copy in the company password manager) and `KITE_SYNC_USERS` (the accountSync switch) |
 | Deployment | **Vercel CLI only**: `vercel link` (once), `vercel env add` / `vercel env pull`, `vercel deploy` (preview), `vercel deploy --prod` (production). There is no Git integration: pushes and pull requests do not deploy. |
 | Build | `pnpm run stt:runtime && next build`: the STT runtime (13.3 MB) is downloaded from the pinned sherpa-onnx release (175 MB archive), checked by SHA-256 and served from `/stt-runtime/v1.13.7/` (ADR-0023) |
 | Speech-to-text model files | Not deployed. The browser loads them from pinned Hugging Face commit URLs, checks each SHA-256 and caches them in Cache Storage (ADR-0023). |
@@ -593,7 +596,7 @@ Production answers on `https://call.paramountintelligence.co` and on `https://ki
 | Integration (STT) | Official LibriSpeech recordings played by Chromium's fake microphone through the real worklet → worker → recognizer → transcript; a final line and WER ≤ 10% per recording (`pnpm --filter web test:stt`) | Playwright (Chromium) | Every PR and push to `main` (`stt-integration` job; model files cached by their pinned SHA-256s) |
 | Harness (answers) | Built Day 4 (`pnpm --filter web test:answers`). The real `LiveAnswers` component on a fixture transcript, no sign-in, with a mocked, slowly streaming `/api/answer`: Ctrl+Enter → headline before bullets, cancel, previous/next, copy, chat, append-only requests, rating and note survive a reload, deleting the session removes its answers | Playwright (Chromium) | Every PR and push to `main` (in the `stt-integration` job) |
 | Answer quality | Built Day 4 (`pnpm --filter web eval:answers`). 15 invented scenarios through the real server prompt with Haiku, graded by Sonnet against a rubric plus two code checks; score table only (`docs/testing/answer-eval.md`) | Script (real API) | By hand after a prompt change; never in CI |
-| Latency | Built Day 4: `/dev/latency` (admin), 20 answers through the live client path, p50/p95 and cache hits; run in production by `tests/e2e-prod/latency.spec.ts` as an admin test account that stays disabled between runs (`pnpm --filter web e2e-admin --enable` / `--disable`) | Page + Playwright | Day 4 and Day 7, by hand |
+| Latency | Built Day 4: `/dev/latency` (admin), 20 answers through the live client path, p50/p95 and cache hits; run in production by `tests/e2e-prod/latency.spec.ts` as an admin test account that stays disabled between runs (`pnpm --filter web e2e-admin --prod --enable` / `--disable`) | Page + Playwright | Day 4 and Day 7, by hand |
 | End-to-end (production, manual) | Built Day 3 (`apps/web/tests/e2e-prod/`, `pnpm --filter web test:e2e-prod`). Runs against production as a dedicated test account (`create-e2e-user`; disable at `/admin/users`). **Chrome:** session with a document and key terms → key-term count → warm-up cache write then read (real Claude) → fake microphone and fake shared tab → final lines → **Answer (Ctrl+Enter) streams and is rated (Day 4)** → saved transcript after reload → delete. **Desktop app** (fresh profile): empty dashboard (separate data) → Open without dialog → Connect without picker → final lines → **a Chat answer streams and is rated (Day 4)** → Delete all local data. Fake media feeds the "Them" audio into "You" too, so the echo filter hides "You" lines there; the suites count final lines from either side | Playwright (Chromium, Electron) | By hand, before a pull request is marked ready; never in CI (real API, real account) |
 | Harness (screenshot) | Built Day 5 (`pnpm --filter web test:screenshot`). Chromium shares a fake tab; the browser adapter grabs a frame and `prepare.ts` encodes it (JPEG, ≤ 1,568 px, ≤ 1 MB) | Playwright | Every PR (CI) |
 | Harness (review and lessons) | Built Day 5 (`pnpm --filter web test:review`). The real review page and Settings "What Kite has learned" on invented sessions in IndexedDB, with a mocked `/api/notes`: notes, answers, transcript, Regenerate (reworded proposals keep their decisions), the usage-limit message, "Save transcript" off ("Written from answers only"), Approve / Edit / Reject, Clear all lessons, Delete (in-app dialog) | Playwright | Every PR (CI) |

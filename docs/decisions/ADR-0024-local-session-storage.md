@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-10-29 (Day 3)
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` (version 3.3.0) §7.1 (`core/storage`), §7.3 (`security.ts`), §7.4 (data model), §8.1 (where data lives), §8.3 (controls), §14 (sync in the backlog)
-- **Supersedes / superseded by:** none. It records the storage decision that ADR-0021 ("call data stays on the device") left open.
+- **Supersedes / superseded by:** **superseded by ADR-0049** (call data stored in the account; IndexedDB becomes a per-account cache). It records the storage decision that ADR-0021 ("call data stays on the device") left open, and stays in force for accounts without the accountSync switch until it is on for everyone.
 
 ## Context
 

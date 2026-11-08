@@ -1,9 +1,10 @@
 /**
  * File: apps/web/src/server/schema.ts
- * Purpose: Drizzle table definitions for the accounts database (Neon Postgres). It holds user
- *          accounts and sign-in sessions, and (v1.0.2, ADR-0036) per-user daily request COUNTS and
- *          app settings: never transcript, document, answer or question text. Call data stays on
- *          the user's device (IndexedDB).
+ * Purpose: Drizzle table definitions for the Neon Postgres database. It holds user accounts and
+ *          sign-in sessions, (v1.0.2, ADR-0036) per-user daily request COUNTS and app settings, and
+ *          (ADR-0049) each account's synced call data in call_record, ENCRYPTED: sessions,
+ *          documents, transcript lines, answers, notes and the rest are stored only as AES-256-GCM
+ *          ciphertext, never as readable text. Audio is never stored anywhere.
  *          Generated with the Better Auth CLI (`auth generate --adapter drizzle --dialect
  *          postgresql`, better-auth 1.7.13) for email + password, the admin plugin and our
  *          `mustChangePassword` field; comments added by hand. If the Better Auth config gains
@@ -12,10 +13,22 @@
  *          drizzle.config.ts (migrations)
  * Depends on: drizzle-orm
  * Architecture: docs/architecture/kite-architecture-v3.1.md §8.1, §8.2 (ADR-0022); ADR-0036
- *               (usage_day and app_setting are written by hand, not by the Better Auth CLI)
+ *               (usage_day and app_setting are written by hand, not by the Better Auth CLI);
+ *               ADR-0049 (call_record, written by hand; migrations are additive only, ADR-0050)
  */
-import { relations } from 'drizzle-orm';
-import { boolean, index, integer, pgTable, primaryKey, text, timestamp } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
+import {
+  bigint,
+  boolean,
+  index,
+  integer,
+  pgSequence,
+  pgTable,
+  primaryKey,
+  smallint,
+  text,
+  timestamp,
+} from 'drizzle-orm/pg-core';
 
 /** One row per Kite account. Created only by an admin (no public sign-up). */
 export const user = pgTable('user', {
@@ -208,3 +221,61 @@ export const appSetting = pgTable('app_setting', {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull(),
 });
+
+/**
+ * The order of every change to synced call data (ADR-0049). Each insert, change or delete in
+ * call_record takes the next number, so a record's `rev` says which copy is newer.
+ */
+export const callRecordRev = pgSequence('call_record_rev_seq');
+
+/**
+ * Each account's synced call data (ADR-0049): one row per record a device keeps (a session, a
+ * document's text, a transcript line, an answer, notes, a lesson decision, a library item, a question
+ * bank, an Ask AI chat, the default preferences, the account preferences). The record itself is
+ * stored only as AES-256-GCM ciphertext in `content`; the other columns hold ids, flags and times,
+ * never text from a call. A deleted record keeps its row as a tombstone (content removed), so the
+ * account's other devices learn about the delete. Rows go when the account is deleted.
+ */
+export const callRecord = pgTable(
+  'call_record',
+  {
+    /** The account the record belongs to. Every query is filtered by it (server/calldata). */
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** What the record is: 'session', 'document', 'utterance', … (SYNC_KINDS in @kite/shared). */
+    kind: text('kind').notNull(),
+    /** The record's id, made by the device (a UUID, or a transcript line's `session:call:line`). */
+    id: text('id').notNull(),
+    /** The session a document, line, answer, notes or question bank belongs to; else null. */
+    sessionId: text('session_id'),
+    /** This copy's revision, from call_record_rev_seq: higher is newer. */
+    rev: bigint('rev', { mode: 'number' })
+      .notNull()
+      .default(sql`nextval('call_record_rev_seq')`),
+    /** True for a tombstone: the record was deleted and its content removed. */
+    deleted: boolean('deleted').default(false).notNull(),
+    /** Which data key encrypted `content` (KITE_DATA_KEY_V<n>); null on a tombstone. */
+    keyVersion: smallint('key_version'),
+    /**
+     * The record as JSON, encrypted with AES-256-GCM (base64 of IV + tag + ciphertext), bound to
+     * this row's account, kind, id and key version. Null on a tombstone.
+     */
+    content: text('content'),
+    /**
+     * Sessions only: whether the session saves its transcript. Kept readable so the server can
+     * refuse transcript lines for a session that does not save them (nothing about them is stored).
+     */
+    saveTranscript: boolean('save_transcript'),
+    /** When this copy was written, to the millisecond; pulls read changes in this order. */
+    updatedAt: timestamp('updated_at', { withTimezone: true, precision: 3 }).defaultNow().notNull(),
+  },
+  (table) => [
+    // One copy per account, kind and id: another account's identical id is a different row.
+    primaryKey({ columns: [table.userId, table.kind, table.id] }),
+    // Pulls read one account's changes in time order, page by page.
+    index('call_record_user_updated_idx').on(table.userId, table.updatedAt, table.kind, table.id),
+    // Deleting a session finds its documents, lines, answers, notes and question bank.
+    index('call_record_user_session_idx').on(table.userId, table.sessionId),
+  ],
+);

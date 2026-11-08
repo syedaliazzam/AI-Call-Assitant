@@ -46,13 +46,13 @@ Secrets live only in Vercel. To add one, run `vercel env add NAME` and paste the
 **4. Prepare the accounts database** (only for a new database; the shared Neon database is already migrated):
 
 ```sh
-pnpm --filter web db:migrate
+pnpm --filter web db:migrate --prod
 ```
 
 **5. Create the first admin** (only once per database; after that, admins add users at `/admin/users`). It prints a temporary password once; you must change it at first sign-in.
 
 ```sh
-pnpm --filter web create-admin --email you@company.com --name "Your Name"
+pnpm --filter web create-admin --prod --email you@company.com --name "Your Name"
 ```
 
 **6. Download the speech-to-text files** (about 205 MB of files to keep; the first run also downloads a 175 MB release archive to take the runtime from). They are not in git:
@@ -162,7 +162,7 @@ Run a command in a single package with `--filter`, for example `pnpm --filter we
 **Production end-to-end test account.** The manual production suites (below) sign in as a dedicated account, `kite-e2e@example.com` (role user), created once with:
 
 ```sh
-pnpm --filter web create-e2e-user   # creates the account, completes its first password change,
+pnpm --filter web create-e2e-user --prod   # creates the account, completes its first password change,
                                     # appends KITE_E2E_EMAIL / KITE_E2E_PASSWORD to apps/web/.env.local
 ```
 
@@ -170,12 +170,12 @@ pnpm --filter web create-e2e-user   # creates the account, completes its first p
 - **To disable the account:** sign in as an admin → **Admin** in the sidebar (`/admin/users`) → find `kite-e2e@example.com` → **Disable**. Its sign-in sessions end immediately, and the suites then fail at sign-in. **Enable** turns it back on.
 - `vercel env pull` rewrites `.env.local` and removes the two lines. To restore them, add them back by hand, or reset the password at `/admin/users` and then sign in once as the account to choose a new one.
 
-**Admin test account (latency runs only).** `/dev/latency` is admin-only, so its production run uses a separate account, `kite-e2e-admin@example.com` (role admin). It was created with `pnpm --filter web create-e2e-user --admin`, which appends `KITE_E2E_ADMIN_EMAIL` / `KITE_E2E_ADMIN_PASSWORD` to `apps/web/.env.local` (password never printed). **It stays disabled between runs:**
+**Admin test account (latency runs only).** `/dev/latency` is admin-only, so its production run uses a separate account, `kite-e2e-admin@example.com` (role admin). It was created with `pnpm --filter web create-e2e-user --prod --admin`, which appends `KITE_E2E_ADMIN_EMAIL` / `KITE_E2E_ADMIN_PASSWORD` to `apps/web/.env.local` (password never printed). **It stays disabled between runs:**
 
 ```sh
-pnpm --filter web e2e-admin --enable                    # turn the admin test account on
+pnpm --filter web e2e-admin --prod --enable                    # turn the admin test account on
 pnpm --filter web test:e2e-prod latency.spec.ts         # 20 answers in Chrome and 20 in the desktop app
-pnpm --filter web e2e-admin --disable                   # turn it off again straight away
+pnpm --filter web e2e-admin --prod --disable                   # turn it off again straight away
 ```
 
 `e2e-admin` disables the account the same way **Disable** at `/admin/users` does (the admin plugin's ban fields, and every sign-in session ended), so it can also be checked or re-enabled there.
@@ -255,7 +255,7 @@ vercel deploy --prod   # production deployment: https://<production domain>
 
 Every build first runs `pnpm run stt:runtime`. It downloads the 175 MB sherpa-onnx release archive from GitHub, checks its SHA-256, and unpacks the three runtime files (13.3 MB, each checked) into `public/stt-runtime/`. A wrong checksum or a missing file fails the build with the file's name. The model files are not deployed (ADR-0023).
 
-Database migrations are not run by the deploy. When `apps/web/drizzle/` gains a new migration, run `pnpm --filter web db:migrate` (it uses `DATABASE_URL` from `apps/web/.env.local`, which points at the same Neon database) before deploying the code that needs it.
+Database migrations are not run by the deploy. When `apps/web/drizzle/` gains a new migration, run `pnpm --filter web db:migrate --prod` (it uses `DATABASE_URL` from `apps/web/.env.local`, which points at the same Neon database) before deploying the code that needs it.
 
 **Why the settings are what they are** (JSON files cannot hold comments, so the reasons live here):
 

@@ -15,6 +15,13 @@
       "when": 1793731083635,
       "tag": "0001_usage_counts",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794142543683,
+      "tag": "0002_call_records",
+      "breakpoints": true
     }
   ]
 }

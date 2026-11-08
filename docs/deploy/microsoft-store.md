@@ -44,7 +44,7 @@ Facts checked on 2 Nov 2026; Microsoft changes these, so re-check the linked pag
 Kite cannot be used without signing in, so certification fails unless the reviewers can sign in ([notes for certification](https://learn.microsoft.com/en-us/windows/uwp/publish/manage-submission-options)).
 
 1. **Create a dedicated reviewer account.**
-   - Run `pnpm --filter web create-e2e-user --email kite-store-review@<a mailbox you own>`, or create it at `/admin/users`.
+   - Run `pnpm --filter web create-e2e-user --prod --email kite-store-review@<a mailbox you own>`, or create it at `/admin/users`.
    - Role: **user**, never admin.
    - Use invented data only: no real sessions.
 2. Put the email and password in the submission's **Notes for certification**, never in this repository.

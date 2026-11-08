@@ -27,6 +27,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { auth } from '@/server/auth';
 import { createUserAccount, markPasswordChanged } from '@/server/users';
+import { requireProduction } from './lib/require-prod';
 
 /** The two kinds of test account. */
 const ACCOUNTS = {
@@ -79,8 +80,10 @@ function randomPassword(): string {
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
+  // ADR-0050: one database, the production one; writing to it needs --prod.
+  requireProduction('create-e2e-user');
   const { values } = parseArgs({
-    options: { email: { type: 'string' }, admin: { type: 'boolean' } },
+    options: { email: { type: 'string' }, admin: { type: 'boolean' }, prod: { type: 'boolean' } },
   });
   const role = values.admin ? 'admin' : 'user';
   const account = ACCOUNTS[role];
