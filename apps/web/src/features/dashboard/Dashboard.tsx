@@ -6,7 +6,7 @@
  *          platform in the browser and straight to the live screen in the desktop app.
  * Used by: app/(app)/page.tsx
  * Depends on: lucide-react, src/core/storage (sessions.ts, answers.ts, dashboardPrefs.ts),
- *             src/features/sync/LegacyUploadCard.tsx (ADR-0049), src/platform
+ *             src/features/sync/LegacyUploadCard.tsx and src/core/sync/events.ts (ADR-0049), src/platform
  *             (offersPlatformChoice), ./SessionCard.tsx, src/features/shell/CreateSessionButton.tsx,
  *             src/features/session-setup/ChoosePlatformDialog.tsx, src/ui (Menu, Tabs)
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S3); docs/architecture/kite-architecture-v3.1.md §5
@@ -53,6 +53,7 @@ import { Menu } from '@/ui/Menu';
 import { Tabs } from '@/ui/Tabs';
 import { SessionCard } from './SessionCard';
 import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
+import { onSyncApplied } from '@/core/sync/events';
 
 /** The type filter: one session type, or all of them. */
 type TypeFilter = SessionType | 'all';
@@ -177,6 +178,10 @@ export function Dashboard() {
       cancelled = true;
     };
   }, [version]);
+
+  // ADR-0049: with account sync, reload when sync brought changes from the account (another device,
+  // the one-time upload). Without account sync this never fires.
+  useEffect(() => onSyncApplied(() => setVersion((n) => n + 1)), []);
 
   /**
    * Starts a session: Choose platform first where it applies (browser), otherwise straight to
