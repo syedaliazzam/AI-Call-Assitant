@@ -9,6 +9,9 @@
  * app, its registry entries and what paramountai:// opens. The 1.1.0 program comes from its real
  * installer, extracted to a temporary folder. All text is invented.
  *
+ * For a later release, KITE_OLD_VERSION and KITE_NEW_VERSION name the two versions (1.3.0: the real
+ * 1.2.0 program, then 1.3.0).
+ *
  * Manual run: it needs both programs. Usage: KITE_OLD_SHELL_EXE=<the extracted Kite.exe>
  * KITE_INSTALLED_EXE=<release/win-unpacked/Paramount AI.exe> pnpm --filter @kite/desktop exec playwright
  * test -c playwright.manual.config.ts upgrade.spec.ts
@@ -24,6 +27,12 @@ const OLD_EXE = process.env.KITE_OLD_SHELL_EXE;
 
 /** The 1.2.0 program. */
 const NEW_EXE = process.env.KITE_INSTALLED_EXE;
+
+/** The old program's version (1.1.0 by default; 1.2.0 for the 1.3.0 release, ADR-0052). */
+const OLD_VERSION = process.env.KITE_OLD_VERSION ?? '1.1.0';
+
+/** The new program's version (1.2.0 by default; 1.3.0 for the 1.3.0 release). */
+const NEW_VERSION = process.env.KITE_NEW_VERSION ?? '1.2.0';
 
 /** One fixed address: browser storage belongs to an address, so both programs must use the same. */
 const PORT = 3177;
@@ -94,12 +103,12 @@ test.afterAll(async () => {
   if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
 });
 
-test('1.1.0 to 1.2.0 keeps sessions, settings, sign-in and the protection setting', async () => {
+test(`${OLD_VERSION} to ${NEW_VERSION} keeps sessions, settings, sign-in and the protection setting`, async () => {
   test.skip(!OLD_EXE || !NEW_EXE, 'KITE_OLD_SHELL_EXE and KITE_INSTALLED_EXE name the programs');
 
   // ---- 1.1.0 stores what a person would have ----
   const before = await launch(OLD_EXE!, profile);
-  expect(await before.evaluate(({ app }) => app.getVersion())).toBe('1.1.0');
+  expect(await before.evaluate(({ app }) => app.getVersion())).toBe(OLD_VERSION);
   const first = await before.firstWindow();
   await first.waitForLoadState('domcontentloaded');
   await first.evaluate(async () => {
@@ -131,7 +140,7 @@ test('1.1.0 to 1.2.0 keeps sessions, settings, sign-in and the protection settin
   // ---- 1.2.0 opens the same profile ----
   const after = await launch(NEW_EXE!, profile);
   try {
-    expect(await after.evaluate(({ app }) => app.getVersion())).toBe('1.2.0');
+    expect(await after.evaluate(({ app }) => app.getVersion())).toBe(NEW_VERSION);
     // The new name is on the program and its window. (app.getName() stays "kite": it comes from the
     // package name, which keeps the install folder, and nothing shows it.)
     expect(path.basename(NEW_EXE!)).toBe('Paramount AI.exe');
