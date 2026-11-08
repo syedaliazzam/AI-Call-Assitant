@@ -233,6 +233,13 @@ export interface Platform {
   deleteHandoffFile(): Promise<boolean>;
 
   /**
+   * The one-time sign-in code a paramountai:// link brought (desktop 1.3.0, ADR-0052), given once.
+   *
+   * @returns The code, or null (a browser, an older shell, no link, or already taken).
+   */
+  consumeLinkCode(): Promise<string | null>;
+
+  /**
    * v1.1.0: opens a Kite page. In a desktop app from 1.1.0: in a normal window (a separate one during
    * a call, whose page must not be navigated away). Elsewhere: in this tab.
    *

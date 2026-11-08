@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.24.0"
+version: "3.25.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-08"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.24.0, **Current**: the only document to build from |
+| Version | 3.25.0, **Current**: the only document to build from |
+| Changes in 3.25.0 | §3.3, §5, §7.2, §7.3: **desktop 1.3.0 and link codes** (ADR-0052). Desktop app in the browser asks `POST /api/desktop/link-code` for a one-time code (32 random bytes, 60 s, once; only its SHA-256 stored, in Better Auth's `verification` table; 10 a minute) and opens `paramountai://session/<id>/<code>`. The 1.3.0 shell keeps the code in memory, loads `/desktop/link` (open to signed-out visits), and gives the code once through `consumeLinkCode()` (IPC `kite:link-code`); the page peeks (`/api/auth/desktop-link/peek`), asks before switching accounts, and redeems (`/api/auth/desktop-link/redeem`: one atomic delete, a session of the app's own). The start card says "Signed in as …" and pulls a session it does not have yet. The session file hand-off is gone (web, with account sync; shell from 1.3.0: `pickHandoffFile`, `deleteHandoffFile` and their channels removed, `handoff.ts` → `links.ts`). A 1.2.0 shell ignores a link with a code; the browser page says how to update. |
 | Changes in 3.24.0 | §5 (Home panel): **one dashboard, and a launcher in the desktop app** (ADR-0051), behind the accountSync switch. `/home` lists the account's ready sessions with Start, "Call ended · View notes" for a call in the last 2 hours, and Open dashboard; no search, create, card menu or dashboard pages. Open dashboard, View notes, Dashboard ↗, Get help and Edit session open the web app in the system browser (the custom domain from the desktop's `vercel.app` address). Web only: 1.2.0 shells get it. |
 | Changes in 3.23.0 | §5 (Dashboard, Home panel), §7.1 (`core/sync/legacyUpload.ts`): **the one-time upload** (ADR-0049), behind the accountSync switch. When this device's own `kite` database holds data, the dashboard and the home panel ask "This computer has N sessions that aren't in your account yet. Add them to <email>?" (Add / Not now). Add inserts each session with its documents, lines, answers, notes and question bank, then lessons, library items, chats and the defaults, only where the account has none with that id ("N added, K were already there"); lessons with the same wording key and library items with the same kind, name and text are skipped; `kite` is only read. Once every session is in the account, it is not asked again on that address. Each web address and the desktop app ask for their own data. |
 | Changes in 3.22.0 | §7.1, §7.4: **account sync on the device** (ADR-0049), behind the accountSync switch: a per-account IndexedDB cache (`kite-u-<id>`, schema version 9 adds `outbox`, `syncRevs`, `syncMeta`), changes recorded in the same transaction as the change (a Dexie middleware), pushes 2 s after a change and transcript lines every 15 s or 50 lines, held while an answer streams, pulls on open, focus and reconnect only, a keepalive push when the page closes, a flush at End; Settings offers "Delete all my data" for synced accounts. Accounts without the switch keep `kite` and see no change. No desktop release. |

@@ -11,7 +11,7 @@
 import 'fake-indexeddb/auto';
 import type { SyncOp } from '@kite/shared';
 import Dexie from 'dexie';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DB_NAME, forgetDb, getDb, selectAccountDatabase } from '@/core/storage/db';
 import { addDocument, listDocuments } from '@/core/storage/documents';
 import { saveLesson } from '@/core/storage/lessons';
@@ -26,7 +26,7 @@ import {
   uploadLegacyData,
 } from '@/core/sync/legacyUpload';
 import { applyOps, pullChanges, type StoreContext } from '@/server/calldata/store';
-import { ALICE, createTestDb } from '../../server/calldata/pgliteDb';
+import { ALICE, createTestDb, resetTestDb, type TestDb } from '../../server/calldata/pgliteDb';
 import { sessionInput } from '../storage/helpers';
 
 let server: StoreContext;
@@ -88,8 +88,14 @@ async function seedSession(company: string): Promise<string> {
   return session.id;
 }
 
+let t: TestDb;
+
+beforeAll(async () => {
+  t = await createTestDb();
+}, 60_000);
+
 beforeEach(async () => {
-  const t = await createTestDb();
+  await resetTestDb(t);
   server = { db: t.db, keys: t.keys, userId: ALICE };
   await newDevice();
   const store = new Map<string, string>();

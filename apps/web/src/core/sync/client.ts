@@ -285,13 +285,17 @@ export function flushAccountSync(): Promise<void> {
 }
 
 /**
- * Pulls the account's changes now. Does nothing without account sync.
+ * Pulls the account's changes now, even before sync has started on this page. Does nothing without
+ * account sync.
  *
  * @returns When the pull has finished.
- * Called from: pages that need the newest data (the desktop start card, Phase 6)
+ * Called from: StartSessionCard.tsx (a link's session made a moment ago in the browser, ADR-0052)
  */
-export function pullAccountSync(): Promise<void> {
-  return running?.pullNow() ?? Promise.resolve();
+export async function pullAccountSync(): Promise<void> {
+  if (running) return running.pullNow();
+  // Sync may not have started yet on this page (a child's effect runs before its parent's).
+  if (!usingAccountDatabase()) return;
+  await pullAll(getDb(), httpTransport).catch(() => undefined);
 }
 
 /**

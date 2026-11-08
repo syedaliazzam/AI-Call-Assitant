@@ -10,7 +10,7 @@
  */
 import 'fake-indexeddb/auto';
 import type { SyncOp } from '@kite/shared';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addDocument, listDocuments } from '@/core/storage/documents';
 import { forgetDb, getDb, selectAccountDatabase } from '@/core/storage/db';
 import {
@@ -24,7 +24,7 @@ import { listUtterances, saveUtterance } from '@/core/storage/utterances';
 import { pullAll, pushOnce, type SyncTransport } from '@/core/sync/engine';
 import { accountPrefChanged } from '@/core/sync/prefsSignal';
 import { applyOps, pullChanges, type StoreContext } from '@/server/calldata/store';
-import { ALICE, createTestDb } from '../../server/calldata/pgliteDb';
+import { ALICE, createTestDb, resetTestDb, type TestDb } from '../../server/calldata/pgliteDb';
 import { sessionInput } from '../storage/helpers';
 
 /** The two devices' cache names (one account, two browsers). */
@@ -63,8 +63,14 @@ async function pushAll(): Promise<void> {
   }
 }
 
+let t: TestDb;
+
+beforeAll(async () => {
+  t = await createTestDb();
+}, 60_000);
+
 beforeEach(async () => {
-  const t = await createTestDb();
+  await resetTestDb(t);
   server = { db: t.db, keys: t.keys, userId: ALICE };
   offline = false;
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);

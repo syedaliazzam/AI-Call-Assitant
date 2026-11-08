@@ -31,9 +31,13 @@ const SAVE_DELAY_MS = 500;
 
 /**
  * The pages the panel can show. Anything else (the dashboard, after signing in) goes back to /home:
- * those pages are built for a large window, and open in the main window from here.
+ * those pages are built for a large window, and open in the main window from here. /desktop/link
+ * (v1.3.0, ADR-0052) signs the app in with a link's one-time code, then goes to /home.
  */
-const HOME_PATHS: readonly string[] = ['/home', '/login', '/change-password'];
+const HOME_PATHS: readonly string[] = ['/home', '/login', '/change-password', '/desktop/link'];
+
+/** How long a link's one-time code is kept for the page, in ms: the server accepts it for 60 s. */
+export const LINK_CODE_KEEP_MS = 60_000;
 
 /**
  * Whether the panel may stay on a page.
@@ -142,6 +146,8 @@ export interface HomeDeps {
   onUnavailable: () => void;
   /** The panel has closed for good (the app is quitting, or it was unavailable). */
   onClosed?: () => void;
+  /** The clock, in ms (tests pass one; default Date.now). */
+  now?: () => number;
 }
 
 /** The home panel. */
@@ -150,9 +156,17 @@ export interface HomeWindow {
   open(): void;
   /**
    * Opens the panel on a session's start card (a paramountai:// link, v1.2.0). It only shows a card:
-   * nothing starts until the person presses on. If they must sign in first, the card follows.
+   * nothing starts until the person presses on. If they must sign in first, the card follows. With a
+   * one-time code (v1.3.0, ADR-0052) it opens /desktop/link instead, which signs in with the code
+   * (kept here, never in the address) and then shows the card.
    */
-  openSession(sessionId: string): void;
+  openSession(sessionId: string, code?: string): void;
+  /**
+   * Gives the link's one-time code to the page, once, within LINK_CODE_KEEP_MS (ADR-0052).
+   *
+   * @returns The code, or null.
+   */
+  takeLinkCode(): string | null;
   /** Shows the panel again without taking focus (a call ended, behind the call's review). */
   showInactive(): void;
   /** Hides the panel (a call started: it stays out of the way until the call ends). */
@@ -174,6 +188,8 @@ export function createHomeWindow(deps: HomeDeps): HomeWindow {
   const homeUrl = new URL('/home', deps.kiteUrl).toString();
   // A session a link asked for, until the panel has arrived at it (signing in can come first).
   let pendingSession: string | null = null;
+  // A link's one-time code and when it arrived (v1.3.0, ADR-0052); in memory only, given out once.
+  let linkCode: { code: string; at: number } | null = null;
 
   /**
    * The address of a session's start card.
@@ -266,16 +282,33 @@ export function createHomeWindow(deps: HomeDeps): HomeWindow {
       current.show();
       current.focus();
     },
-    openSession(sessionId) {
-      pendingSession = sessionId;
+    openSession(sessionId, code) {
+      let start = sessionUrl(sessionId);
+      if (code) {
+        // The link page signs in with the code and goes to the card itself; it may also stay on the
+        // plain panel (a different account kept), so nothing here pulls it back to the card.
+        linkCode = { code, at: deps.now?.() ?? Date.now() };
+        pendingSession = null;
+        const url = new URL('/desktop/link', deps.kiteUrl);
+        url.searchParams.set('session', sessionId);
+        start = url.toString();
+      } else {
+        pendingSession = sessionId;
+      }
       if (!current || current.isDestroyed()) {
-        create(sessionUrl(sessionId));
+        create(start);
         return;
       }
-      void current.loadURL(sessionUrl(sessionId));
+      void current.loadURL(start);
       if (current.isMinimized()) current.restore();
       current.show();
       current.focus();
+    },
+    takeLinkCode() {
+      const held = linkCode;
+      linkCode = null;
+      if (!held || (deps.now?.() ?? Date.now()) - held.at > LINK_CODE_KEEP_MS) return null;
+      return held.code;
     },
     showInactive() {
       if (current && !current.isDestroyed()) current.showInactive();

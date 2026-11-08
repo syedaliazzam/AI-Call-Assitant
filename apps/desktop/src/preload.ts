@@ -5,8 +5,8 @@
  *          openCompactView, closeCompactView, setShareProtection, getShareProtection,
  *          setCallActive, the overlay methods (v1.0.2: placeOverlay, getOverlayPreset,
  *          resizeOverlay, setOverlayMode; ADR-0035), the window calls (v1.1.0: openPagesWindow,
- *          windowControl, setOverlayLayout; ADR-0041), the hand-off file (v1.2.0: pickHandoffFile,
- *          deleteHandoffFile; ADR-0045), the icon and chat bar (v1.2.0: moveOverlay, setChatHotkey),
+ *          windowControl, setOverlayLayout; ADR-0041), the link's one-time sign-in code (v1.3.0:
+ *          consumeLinkCode; ADR-0052; the 1.2.0 hand-off file calls are gone), the icon and chat bar (v1.2.0: moveOverlay, setChatHotkey),
  *          and accurateStatus / accurateDownload /
  *          accurateRemove / accurateTranscribe (v1.0.1, ADR-0034) } (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
@@ -41,11 +41,10 @@ import {
   CHECK_HOTKEYS_CHANNEL,
   CLOSE_COMPACT_CHANNEL,
   GET_PROTECTION_CHANNEL,
-  HANDOFF_DELETE_CHANNEL,
-  HANDOFF_PICK_CHANNEL,
   HOTKEY_CHANNEL,
   MINIMIZE_MAIN_CHANNEL,
   OPEN_COMPACT_CHANNEL,
+  LINK_CODE_CHANNEL,
   OPEN_PAGES_CHANNEL,
   OVERLAY_COLLAPSE_CHANNEL,
   CHAT_HOTKEY_CHANNEL,
@@ -194,8 +193,11 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
   onSnapZone,
   // v1.2.0 (ADR-0045): the hand-off file. No path crosses in either direction's arguments: the shell
   // picks with its own dialog and deletes only what it picked.
-  pickHandoffFile: () => ipcRenderer.invoke(HANDOFF_PICK_CHANNEL),
-  deleteHandoffFile: () => ipcRenderer.invoke(HANDOFF_DELETE_CHANNEL),
+  // v1.3.0 (ADR-0052): only a string goes to the page; the shell gives it once.
+  consumeLinkCode: async () => {
+    const code: unknown = await ipcRenderer.invoke(LINK_CODE_CHANNEL);
+    return typeof code === 'string' ? code : null;
+  },
   // v1.0.1 (ADR-0034): accurate transcription. Nothing but a Float32Array of audio crosses (the
   // shell checks its type and length again); the text comes back in memory only.
   accurateStatus: () => ipcRenderer.invoke(ACCURATE_STATUS_CHANNEL),

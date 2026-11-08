@@ -267,6 +267,8 @@ These map to Kite's existing format, length and tone values. Add "Balanced" only
 - On phone width, Desktop is disabled with *"Needs a computer"*.
 
 ### S9 · Open-in-desktop hand-off: `open desktop alert message.png`, the page under `compact view.jpeg`
+> **Changed by ADR-0052 (desktop 1.3.0, with account sync):** no session file. The link carries a one-time sign-in code (`paramountai://session/<id>/<code>`, 60 s, used once), and the app opens on the session's start card, signed in, asking first when another account is signed in.
+
 - **The dialog in the reference is drawn by Chrome itself** (a custom-protocol prompt), so we don't style it.
 - **We provide:**
   - **A protocol:** `paramountai://session/<id>`, registered by the desktop app (`setAsDefaultProtocolClient`, single-instance lock). The link carries **only a session id**: it is validated as a UUID, and nothing else is read.

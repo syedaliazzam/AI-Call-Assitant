@@ -238,9 +238,8 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.windowControl,
       typeof window.kiteDesktop?.setOverlayLayout,
       typeof window.kiteDesktop?.onSnapZone,
-      // v1.2.0 (spec S9): the session file.
-      typeof window.kiteDesktop?.pickHandoffFile,
-      typeof window.kiteDesktop?.deleteHandoffFile,
+      // v1.3.0 (ADR-0052): the link's one-time sign-in code.
+      typeof window.kiteDesktop?.consumeLinkCode,
       // v1.2.0 (spec S13, S14): the icon and the chat bar's shortcut.
       typeof window.kiteDesktop?.moveOverlay,
       typeof window.kiteDesktop?.setChatHotkey,
@@ -261,8 +260,8 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'captureScreenshot',
     'checkHotkeys',
     'closeCompactView',
-    // v1.2.0 (spec S9): the session file; the page never names a path.
-    'deleteHandoffFile',
+    // v1.3.0 (ADR-0052): the link's one-time sign-in code, given once.
+    'consumeLinkCode',
     'getOverlayPreset',
     'getShareProtection',
     'minimizeMainWindow',
@@ -273,7 +272,6 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'openCompactView',
     'openPagesWindow',
     'os',
-    'pickHandoffFile',
     'placeOverlay',
     'resizeOverlay',
     'setCallActive',
@@ -289,7 +287,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'version',
     'windowControl',
   ]);
-  expect(bridge.methods).toEqual(Array(25).fill('function'));
+  expect(bridge.methods).toEqual(Array(24).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);

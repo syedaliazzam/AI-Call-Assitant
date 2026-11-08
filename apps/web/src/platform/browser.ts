@@ -359,6 +359,15 @@ export const browserPlatform: Platform = {
   },
 
   /**
+   * A browser receives no paramountai:// links.
+   *
+   * @returns Null.
+   */
+  async consumeLinkCode() {
+    return null;
+  },
+
+  /**
    * A browser has no home panel: its tab shows the dashboard.
    *
    * @returns False.

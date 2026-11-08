@@ -83,3 +83,16 @@ export async function createTestDb(): Promise<TestDb> {
   const db = drizzle({ client: pg, schema }) as unknown as CallDataDb;
   return { pg, db, keys: loadDataKeys(testKeyEnv([1])) };
 }
+
+/**
+ * Empties the tables the tests write (call data, sign-in codes) and restarts the revision sequence, so
+ * each test starts clean without building a new database (that takes seconds). The two accounts stay.
+ *
+ * @param t The test database.
+ * Called from: beforeEach() in the PGlite tests
+ */
+export async function resetTestDb(t: TestDb): Promise<void> {
+  await t.pg.exec(
+    'DELETE FROM call_record; DELETE FROM verification; ALTER SEQUENCE call_record_rev_seq RESTART WITH 1;',
+  );
+}
