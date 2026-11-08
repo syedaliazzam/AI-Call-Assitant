@@ -5,7 +5,8 @@
  *          sections of session cards, and an empty state. Starting a session goes through Choose
  *          platform in the browser and straight to the live screen in the desktop app.
  * Used by: app/(app)/page.tsx
- * Depends on: lucide-react, src/core/storage (sessions.ts, answers.ts, dashboardPrefs.ts), src/platform
+ * Depends on: lucide-react, src/core/storage (sessions.ts, answers.ts, dashboardPrefs.ts),
+ *             src/features/sync/LegacyUploadCard.tsx (ADR-0049), src/platform
  *             (offersPlatformChoice), ./SessionCard.tsx, src/features/shell/CreateSessionButton.tsx,
  *             src/features/session-setup/ChoosePlatformDialog.tsx, src/ui (Menu, Tabs)
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S3); docs/architecture/kite-architecture-v3.1.md §5
@@ -51,6 +52,7 @@ import { getPlatform } from '@/platform';
 import { Menu } from '@/ui/Menu';
 import { Tabs } from '@/ui/Tabs';
 import { SessionCard } from './SessionCard';
+import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
 
 /** The type filter: one session type, or all of them. */
 type TypeFilter = SessionType | 'all';
@@ -277,6 +279,8 @@ export function Dashboard() {
       />
 
       <section aria-label="Sessions" className="flex flex-col gap-5 px-5 py-5">
+        {/* ADR-0049: with account sync, offers once to add this computer's own data. */}
+        <LegacyUploadCard />
         <div className="flex items-center justify-between gap-3">
           {/* The search box and the sort button read as one control. */}
           <div className="flex h-10 w-full max-w-xs items-center rounded-control border border-ui-border bg-ui-input focus-within:border-ui-link pointer-coarse:min-h-11">

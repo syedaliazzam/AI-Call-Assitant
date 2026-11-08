@@ -248,3 +248,16 @@ The Windows install step and the data folder staying in place were left to the d
 | Both addresses: no redirect, sign-in, cookie on that address only, guide, log out, other sites refused (`domain.spec.ts`) | `dpl_8ViAdqLzrGD9jYHoSCTbQ7evizxb` | 6 of 6 | This deployment adds only the guide's text to the one above. |
 
 Not run: the latency suite, and a 1.1.0 program on the old address. The real 1.1.0 program would look for updates against the live feed and could install one when it closes, so it was left out. It loads the same address as 1.2.0.
+
+## Account sync, Phase 3 (8 Nov 2026, ADR-0049)
+
+Latency before and after the account-sync client (approved paid run: 20 answers each on `claude-haiku-5-5`, about $0.005 per run). Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200, Pakistan), plugged in; production; Playwright 1.64.1 Chromium; `/dev/latency` as the admin test account (`latency.spec.ts -g Chrome`), enabled for the run and disabled straight after.
+
+| Run | Production | First word p50 / p95 | Headline p50 / p95 | Done p50 / p95 | Server first text p50 / p95 | Cache hits |
+|---|---|---|---|---|---|---|
+| Before (Phase 2 deployed, no client sync) | 8 Nov 2026 | 1,145 / 1,344 ms | 1,145 / 1,344 ms | 1,369 / 1,496 ms | 603 / 825 ms | 20 of 20 |
+| After (Phase 3 deployed) | 8 Nov 2026 | 1,150 / 1,332 ms | 1,150 / 1,332 ms | 1,371 / 1,565 ms | 607 / 844 ms | 20 of 20 |
+
+No change beyond run-to-run noise. The admin test account is not in `KITE_SYNC_USERS`, so this compares the answer path with the new sync hold in place (`answerClient.ts`) but no sync traffic; the answer route never touches the database, and pushes wait while an answer streams.
+
+Production sync checks after the Phase 3 deploy, test account only: `sync-api.spec.ts` 5 of 5 (switch on, encrypted round trip, pull, conflict and Save-transcript-off refusal, session delete cascade) and `sync-devices.spec.ts` 3 of 3 (two Chrome profiles and the desktop shell built from this checkout, the same shell code as 1.2.0, temporary profile: create → appears on the others; delete while offline → waits → reaches the others once back online).

@@ -7,7 +7,8 @@
  *          S10). Opened anywhere but a desktop app from 1.1.0, it goes to the dashboard. Also offers the
  *          accurate-transcription download once (never starts it itself).
  * Used by: app/home/page.tsx
- * Depends on: src/core/storage (sessions.ts, hintPrefs.ts, types), src/features/appearance/useAppearance,
+ * Depends on: src/core/storage (sessions.ts, hintPrefs.ts, types), src/features/sync/LegacyUploadCard.tsx
+ *             (ADR-0049), src/features/appearance/useAppearance,
  *             src/features/home (HomeCard, HomeMenu, StartSessionCard),
  *             src/features/notices/AcceptableUseNotice.tsx,
  *             src/platform, src/ui (BrandLockup, Button, Input styles, icons)
@@ -45,6 +46,7 @@ import {
   SortIcon,
 } from '@/ui/icons';
 import { AccurateOffer } from './AccurateOffer';
+import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
 import { homeCardDescription, homeCardTitle, HomeCard } from './HomeCard';
 import { HomeMenu } from './HomeMenu';
 import { StartSessionCard } from './StartSessionCard';
@@ -254,6 +256,8 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
           </div>
 
           <AccurateOffer />
+          {/* ADR-0049: with account sync, offers once to add this computer's own data. */}
+          <LegacyUploadCard compact />
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
             {failed ? (
