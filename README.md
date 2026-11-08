@@ -194,7 +194,7 @@ pnpm --filter web test:e2e-prod chrome.spec.ts desktop.spec.ts   # builds the de
   - Open in browser shows "Listening for N key terms";
   - the live page's warm-up writes the cache, and a second warm-up (reload) reads it;
   - Connect with Chromium's fake microphone and a fake shared tab, both playing official test recordings;
-  - Go live, final lines appear;
+  - Connect starts the call (no second step), final lines appear;
   - **Answer with Ctrl+Enter:** the headline streams in, the answer reads the cache, and it is rated 👍;
   - End, "Saved transcript" survives a reload (and holds at least the lines seen live);
   - the session is deleted.
@@ -203,7 +203,7 @@ pnpm --filter web test:e2e-prod chrome.spec.ts desktop.spec.ts   # builds the de
   - create a session;
   - Open goes straight to Connect;
   - Connect shows no picker;
-  - Go live, final lines appear;
+  - Connect starts the call (no second step), final lines appear;
   - **a typed Chat question** streams an answer, which is rated 👍 (the test machine plays no "Them" audio, so there is no question for the Answer key);
   - End;
   - Delete all local data leaves the dashboard empty.

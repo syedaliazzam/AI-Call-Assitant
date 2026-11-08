@@ -5,7 +5,8 @@
  * and "Northwind"; Open in browser shows "Listening for N key terms" (N ≥ 3); the live page's
  * warm-up writes Claude's prompt cache and a second warm-up (reload) reads it; Connect with
  * Chromium's fake microphone (official recording 0.wav) and a fake shared tab playing 1.wav;
- * Go live shows transcript lines; Answer (Ctrl+Enter, Day 4) streams a headline, which is rated
+ * Connect goes straight to the call and shows transcript lines (ADR-0053: no "Go live" step);
+ * Answer (Ctrl+Enter, Day 4) streams a headline, which is rated
  * 👍, and its cache read is reported; End shows "Saved transcript (N lines)", which survives a
  * reload; the session is deleted. Manual run only (never in CI). Prints numbers only.
  */
@@ -122,7 +123,7 @@ test('4. second warm-up on reload (cache read)', async () => {
   expect(pass).toBe(true);
 });
 
-test('5. Connect (fake mic + fake tab), Go live, lines appear', async () => {
+test('5. Connect (fake mic + fake tab) starts the call, lines appear', async () => {
   const startedAt = Date.now();
   await expect(page.getByText('Speech model ready')).toBeVisible({ timeout: 480_000 });
   report('speech model ready', true, { seconds: Math.round((Date.now() - startedAt) / 1000) });
@@ -136,9 +137,10 @@ test('5. Connect (fake mic + fake tab), Go live, lines appear', async () => {
   await page.bringToFront();
 
   await page.getByRole('button', { name: 'Connect' }).click();
-  await expect(page.getByRole('button', { name: 'Go live' })).toBeVisible({ timeout: 30_000 });
-  report('connect (no picker shown)', true);
-  await page.getByRole('button', { name: 'Go live' }).click();
+  // ADR-0053: Connect starts the call; the live view follows with no second step.
+  await expect(page.getByLabel('Live transcript')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: 'Go live' })).toHaveCount(0);
+  report('connect starts the call (no picker shown)', true);
 
   const lines = page.getByLabel('Live transcript').getByRole('listitem');
   // Final lines use the normal text colour (TranscriptStrip: text-ui-text, UI theme U3); grey lines are still

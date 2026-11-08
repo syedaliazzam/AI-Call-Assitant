@@ -1,22 +1,22 @@
 /**
  * File: apps/web/src/features/live/ConnectPanel.tsx
  * Purpose: The "Connect call session" card, the first view of /live/[id] (spec S11): the audio source
- *          and the microphone, the speech model's state, level bars for You and Them with any capture
- *          error and the inline sound check, a list of tips, and Back with Connect (then Go live).
- *          Display only: LivePage owns the engine and the capture and passes their state in.
+ *          and the microphone with its level meter (before the call, ADR-0053), the speech model's
+ *          state, any capture error, a list of tips, and Back with Connect. Connect starts the call:
+ *          there is no second step (the Day 2 sound check and "Go live" were removed in ADR-0053).
+ *          Display only: LivePage owns the engine, the capture and the meter and passes their state in.
  * Used by: src/features/live/LivePage.tsx
  * Depends on: lucide-react, src/platform (listMicrophones), src/ui (Button, Dialog, LinkButton,
  *             ProgressBar, Select, Tooltip), src/features/live (AudioMeter, ConnectGuide, HealthNotice,
- *             speakers)
+ *             useMicPreview)
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S11); docs/architecture/kite-architecture-v3.1.md
- *               §4, §5 (Connect)
+ *               §4, §5 (Connect); ADR-0053
  */
 'use client';
 
-import { ArrowLeft, Headphones, PlayCircle, Plug, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Headphones, Mic, PlayCircle, Plug, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
-import type { ChannelLevels } from '@/core/audio/capture';
 import type { DownloadProgress } from '@/core/stt/download';
 import type { SttHealthStatus } from '@/core/stt/health';
 import type { Speaker } from '@/core/transcript/transcript';
@@ -31,7 +31,7 @@ import { Tooltip } from '@/ui/Tooltip';
 import { AudioMeter } from './AudioMeter';
 import { ConnectGuide } from './ConnectGuide';
 import { HealthNotice } from './HealthNotice';
-import { SPEAKER_STYLE } from './speakers';
+import type { MicPreviewState } from './useMicPreview';
 
 /** The call's details shown at the top of the Connect view. */
 export interface CallInfo {
@@ -55,16 +55,11 @@ export interface ModelState {
   error: string | null;
 }
 
-/** Where the connection is. */
+/**
+ * Where the connection is. The card shows 'idle' and 'connecting'; once 'connected', LivePage
+ * shows the live view instead (ADR-0053).
+ */
 export type ConnectionState = 'idle' | 'connecting' | 'connected';
-
-/** The 5-second sound check. */
-export interface SoundCheck {
-  /** Seconds left (0 = finished). */
-  secondsLeft: number;
-  /** The latest text heard on each channel during the check ('' = nothing yet). */
-  heard: Record<Speaker, string>;
-}
 
 /** Props for ConnectPanel. */
 export interface ConnectPanelProps {
@@ -81,24 +76,25 @@ export interface ConnectPanelProps {
   model: ModelState;
   /** Connection progress. */
   connection: ConnectionState;
-  /** Meter levels. */
-  levels: ChannelLevels;
-  /** A message per channel that failed or stopped (shown under its meter). */
+  /** The microphone meter before the call (useMicPreview). */
+  mic: MicPreviewState;
+  /** "Test microphone": starts the meter; a browser may ask for the microphone first. */
+  onTestMic: () => void;
+  /** A message per channel that failed to connect (shown as an alert with Try again). */
   channelErrors: Partial<Record<Speaker, string>>;
-  /** The sound check, once connected. */
-  soundCheck: SoundCheck | null;
   /** Speech-to-text health. */
   health: SttHealthStatus;
   /** The chosen microphone's id ('' = the system's default). */
   micDeviceId?: string;
   /** Chooses a microphone. */
   onMic?: (deviceId: string) => void;
-  /** "Connect" / "Try again": opens both channels (must run from the click: browsers require it). */
+  /**
+   * "Connect" / "Try again": opens the overlay (when calls start in it), then both channels, then
+   * the live view. Must run from the click: a browser needs it for the picture-in-picture window.
+   */
   onConnect: () => void;
   /** Retries loading the speech model. */
   onRetryModel: () => void;
-  /** "Go live": switches to the transcript view. */
-  onContinue: () => void;
 }
 
 /** A public search for practice interviews, for trying the app without a real call. */
@@ -156,7 +152,7 @@ function Tip({
  *
  * @param props See ConnectPanelProps.
  * @returns The card.
- * Rendered by: LivePage.tsx (until the call is connected)
+ * Rendered by: LivePage.tsx (until the call is connected; then the live view replaces it)
  */
 export function ConnectPanel({
   call,
@@ -164,15 +160,14 @@ export function ConnectPanel({
   platform,
   model,
   connection,
-  levels,
+  mic,
+  onTestMic,
   channelErrors,
-  soundCheck,
   health,
   micDeviceId = '',
   onMic,
   onConnect,
   onRetryModel,
-  onContinue,
 }: ConnectPanelProps) {
   const [mics, setMics] = useState<MicDevice[]>([]);
   const [why, setWhy] = useState(false);
@@ -180,9 +175,10 @@ export function ConnectPanel({
   const progress = model.progress;
   const downloading = model.status === 'loading' && progress !== null && progress.fraction < 1;
   const anyError = channelErrors.you !== undefined || channelErrors.them !== undefined;
-  const connected = connection === 'connected';
+  const micAllowed = mic.permission === 'granted';
 
-  // Devices get their names once the microphone is allowed, so this asks again after connecting.
+  // Devices get their names once the microphone is allowed, so this asks again after that changes
+  // (the meter's first start, or a failed Connect that did get the microphone).
   useEffect(() => {
     let active = true;
     getPlatform()
@@ -194,7 +190,7 @@ export function ConnectPanel({
     return () => {
       active = false;
     };
-  }, [connection]);
+  }, [connection, micAllowed]);
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-5 px-4 py-8">
@@ -274,15 +270,42 @@ export function ConnectPanel({
           )}
         </div>
 
-        {(['you', 'them'] as const).map((speaker) => (
-          <div key={speaker} className="flex flex-col gap-1">
-            <AudioMeter
-              speaker={speaker}
-              level={levels[speaker]}
-              inactive={!connected || channelErrors[speaker] !== undefined}
-            />
-            {channelErrors[speaker] && (
+        {/* The microphone's level before the call (ADR-0053). The other side's level shows in the
+            call itself: in a browser it needs the shared tab, which Connect asks for. */}
+        <div className="flex flex-col gap-1.5">
+          {mic.level !== null ? (
+            <AudioMeter speaker="you" level={mic.level} />
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-helper text-ui-muted">
+                {mic.permission === 'denied'
+                  ? 'Microphone access is blocked. Allow it for Paramount AI in the site settings.'
+                  : 'Check your microphone before the call.'}
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="shrink-0 whitespace-nowrap"
+                onClick={onTestMic}
+                disabled={mic.permission === null || connection === 'connecting'}
+              >
+                <Mic aria-hidden="true" size={16} />
+                Test microphone
+              </Button>
+            </div>
+          )}
+          {mic.error && !channelErrors.you && (
+            <p role="alert" className="text-helper text-ui-danger">
+              {mic.error}
+            </p>
+          )}
+        </div>
+
+        {(['you', 'them'] as const).map(
+          (speaker) =>
+            channelErrors[speaker] && (
               <div
+                key={speaker}
                 role="alert"
                 className="flex items-start justify-between gap-3 rounded-control bg-ui-danger-bg px-3 py-2 text-helper text-ui-danger"
               >
@@ -296,44 +319,7 @@ export function ConnectPanel({
                   Try again
                 </Button>
               </div>
-            )}
-          </div>
-        ))}
-
-        {soundCheck && (
-          <div className="rounded-control bg-ui-panel p-3 text-helper">
-            <p className="font-medium text-ui-heading">
-              {soundCheck.secondsLeft > 0
-                ? `Sound check: ${soundCheck.secondsLeft} s. Say a few words, and let the other side (or any video) play.`
-                : 'Sound check done.'}
-            </p>
-            <ul className="mt-2 flex flex-col gap-1">
-              {(['you', 'them'] as const).map((speaker) => {
-                const heard = soundCheck.heard[speaker];
-                const style = SPEAKER_STYLE[speaker];
-                return (
-                  <li key={speaker} className="flex gap-3">
-                    <span className={`w-12 shrink-0 font-semibold ${style.label}`}>
-                      {style.name}
-                    </span>
-                    {heard ? (
-                      <span className="text-ui-text">“{heard}”</span>
-                    ) : (
-                      <span className="text-ui-muted">
-                        {soundCheck.secondsLeft > 0
-                          ? 'Nothing heard yet…'
-                          : speaker === 'you'
-                            ? 'Nothing heard. Check your microphone, then try again.'
-                            : platform === 'desktop'
-                              ? 'Nothing heard. Make sure the call or a video is playing.'
-                              : 'Nothing heard. Make sure the meeting tab is playing sound.'}
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+            ),
         )}
 
         <HealthNotice status={health} />
@@ -397,16 +383,10 @@ export function ConnectPanel({
         <LinkButton href="/" variant="secondary" size="lg">
           Back
         </LinkButton>
-        {connected ? (
-          <Button size="lg" onClick={onContinue}>
-            Go live
-          </Button>
-        ) : (
-          <Button size="lg" onClick={onConnect} disabled={connection === 'connecting'}>
-            <Plug aria-hidden="true" size={16} />
-            {connection === 'connecting' ? 'Connecting…' : anyError ? 'Try again' : 'Connect'}
-          </Button>
-        )}
+        <Button size="lg" onClick={onConnect} disabled={connection !== 'idle'}>
+          <Plug aria-hidden="true" size={16} />
+          {connection === 'idle' ? (anyError ? 'Try again' : 'Connect') : 'Connecting…'}
+        </Button>
       </div>
 
       <div className="flex flex-col items-center gap-2 text-helper text-ui-muted">

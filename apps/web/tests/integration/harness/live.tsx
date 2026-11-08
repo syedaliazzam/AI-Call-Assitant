@@ -6,7 +6,9 @@
  *            with the real TranscriptStrip (a provisional line included)
  *            and LiveAnswers (answers come from the test server's mocked /api/answer); ?view=auto turns
  *            auto-answer on and adds window.addThemLine() for the rate-limit test;
- *          - connect: the Connect view (ConnectPanel), model ready, not connected;
+ *          - connect: the Connect view (ConnectPanel), model ready, not connected, microphone not
+ *            asked yet (Test microphone); connect-mic: the same with the microphone meter running
+ *            (ADR-0053); connect-errors: a model and a microphone error;
  *          - gate: the live page's phone check (platform supportsLiveCalls()), showing
  *            LiveCallsUnsupported on a phone or tablet;
  *          - compact / compact-unavailable: CompactView with a live answer, or with the
@@ -275,13 +277,18 @@ function ConnectView() {
             : { status: 'ready', progress: null, error: null }
         }
         connection="idle"
-        levels={{ you: 0, them: 0 }}
+        mic={
+          // connect-mic: the microphone is allowed, so the meter runs (ADR-0053); otherwise the
+          // browser has not been asked yet and the card offers Test microphone.
+          VIEW === 'connect-mic'
+            ? { permission: 'granted', level: 0.55, error: null }
+            : { permission: 'prompt', level: null, error: null }
+        }
+        onTestMic={() => undefined}
         channelErrors={VIEW === 'connect-errors' ? { you: CONNECT_ERRORS.mic } : {}}
-        soundCheck={null}
         health="ok"
         onConnect={() => undefined}
         onRetryModel={() => undefined}
-        onContinue={() => undefined}
       />
     </div>
   );
@@ -496,7 +503,7 @@ const UNAVAILABLE_STATE: CompactState = {
 
 const view = new URLSearchParams(window.location.search).get('view') ?? 'live';
 const root = createRoot(document.getElementById('root')!);
-if (view === 'connect' || view === 'connect-errors') {
+if (view === 'connect' || view === 'connect-mic' || view === 'connect-errors') {
   root.render(<ConnectView />);
 } else if (view === 'gate') {
   // The live page's check (LiveSession.tsx), through the real platform adapter.

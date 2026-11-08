@@ -115,8 +115,9 @@ async function main(): Promise<void> {
       });
     });
     await call.goto(`${KITE_URL}call`);
+    // ADR-0053: Connect starts the call (no "Go live" step); wait for the live view's End.
     await call.getByRole('button', { name: 'Connect' }).click({ timeout: 300_000 });
-    await call.getByRole('button', { name: 'Go live' }).click({ timeout: 60_000 });
+    await call.getByRole('button', { name: /^End/ }).first().waitFor({ timeout: 60_000 });
     await wait(10_000);
     const accurateState = await call.evaluate(() =>
       (window as never as ShellWindow).kiteDesktop.accurateStatus().then((status) => status.state),

@@ -89,7 +89,8 @@ function write(key: string, value: string): void {
  * Whether Connect opens the overlay and minimises the main window.
  *
  * @returns True unless the user turned it off.
- * Called from: LiveAnswers.tsx, OverlaySetting.tsx
+ * Called from: startsCallsInOverlay() in features/live/openOverlay.tsx (LivePage's Connect,
+ *              ADR-0053), OverlaySetting.tsx
  */
 export function getStartInOverlay(): boolean {
   return read(START_IN_OVERLAY_KEY) !== 'off';

@@ -129,12 +129,12 @@ test('3. a call: the overlay, Private on every window, a real answer, the side w
   report('desktop speech model ready', true, {
     seconds: Math.round((Date.now() - startedAt) / 1000),
   });
-  await main.getByRole('button', { name: 'Connect' }).click();
   // No picker exists in the desktop app: the shell approves system audio itself (media.ts).
-  await expect(main.getByRole('button', { name: 'Go live' })).toBeVisible({ timeout: 30_000 });
+  // ADR-0053: Connect opens the overlay first and starts the call; there is no "Go live" step.
   const overlayOpened = app.waitForEvent('window');
-  await main.getByRole('button', { name: 'Go live' }).click();
+  await main.getByRole('button', { name: 'Connect' }).click();
   const overlay = await overlayOpened;
+  await expect(main.getByRole('button', { name: 'Go live' })).toHaveCount(0);
   await overlay.waitForLoadState();
   await expect(overlay.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
 

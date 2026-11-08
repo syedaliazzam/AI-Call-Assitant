@@ -93,7 +93,7 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 
 | # | Do | Expect |
 |---|---|---|
-| 3.1 | Press **Start** on a card, then **Connect** and **Go live**. | Slim bars open at the top centre, without taking focus. The larger window minimises and the panel steps aside. |
+| 3.1 | Press **Start** on a card, then **Connect** (ADR-0053: no second step). | Slim bars open at the top centre, without taking focus. The call starts; the larger window minimises and the panel steps aside. |
 | 3.2 | Look at bar 1. | Sound and microphone status with a red dot; **▾**; Answer, Screenshot and Chat with their keys; move, collapse, **⋮**, and a timer. |
 | 3.3 | Press **▾**, choose another microphone, and keep talking. | The "You" lines carry on from the new microphone. |
 | 3.4 | Hover the timer, press it, then **Cancel**; press it again and confirm. Do this at the very end. | "End call", then a confirmation. The call ends, the bars close, the panel comes back with the notes. |

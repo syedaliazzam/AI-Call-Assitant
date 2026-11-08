@@ -10,9 +10,10 @@
  *             attach/detach), src/core/audio/levels.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3, §6.1 step 1, §7.1 (core/audio)
  *
- * Order matters: the other side is requested FIRST, while the user's click still counts as a
- * user gesture (browsers only allow getDisplayMedia shortly after one); then the microphone.
- * Audio never leaves the device.
+ * Order matters: the other side is requested FIRST, straight from the user's click, then the
+ * microphone. Since ADR-0053 the live page may open the overlay (picture-in-picture) just before
+ * this in the same click; Chrome 156 still opens the share picker after that window used the
+ * click (measured 8 Nov 2026). Audio never leaves the device.
  */
 import {
   CaptureError,
@@ -150,8 +151,9 @@ interface Meter {
  *
  * @param error What getMicStream threw.
  * @returns A typed error with a message for the user.
+ * Called from: startCallCapture() and changeMic() here; startMicPreview() in micPreview.ts (ADR-0053)
  */
-function micError(error: unknown): CallCaptureError {
+export function micError(error: unknown): CallCaptureError {
   const name = error instanceof Error ? error.name : '';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
     return new CallCaptureError(

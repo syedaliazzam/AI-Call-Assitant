@@ -3,7 +3,7 @@
 - **Status:** Accepted (developer, 2 Nov 2026)
 - **Date:** 2026-11-02
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5 (live view, compact view), §6 (answers), §7 (desktop shell, storage)
-- **Supersedes / superseded by:** none. Changes parts of §5 and §7.3 of the architecture and the default hotkeys.
+- **Supersedes / superseded by:** none. Changes parts of §5 and §7.3 of the architecture and the default hotkeys. "Starting a call" is adjusted by ADR-0053 (Connect opens the overlay inside its own click; no second click in a browser).
 
 ## Context
 
