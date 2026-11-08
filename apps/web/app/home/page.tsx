@@ -30,7 +30,7 @@ export default async function HomeRoute({
   const { session } = await searchParams;
   return (
     // ADR-0049: the panel shows the account's sessions when the account syncs.
-    <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null}>
+    <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null} email={user.email}>
       <HomePanel
         email={user.email}
         {...(typeof session === 'string' ? { startSessionId: session } : {})}

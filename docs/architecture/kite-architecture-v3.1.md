@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.22.0"
+version: "3.23.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-08"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.22.0, **Current**: the only document to build from |
+| Version | 3.23.0, **Current**: the only document to build from |
+| Changes in 3.23.0 | §5 (Dashboard, Home panel), §7.1 (`core/sync/legacyUpload.ts`): **the one-time upload** (ADR-0049), behind the accountSync switch. When this device's own `kite` database holds data, the dashboard and the home panel ask "This computer has N sessions that aren't in your account yet. Add them to <email>?" (Add / Not now). Add inserts each session with its documents, lines, answers, notes and question bank, then lessons, library items, chats and the defaults, only where the account has none with that id ("N added, K were already there"); lessons with the same wording key and library items with the same kind, name and text are skipped; `kite` is only read. Once every session is in the account, it is not asked again on that address. Each web address and the desktop app ask for their own data. |
 | Changes in 3.22.0 | §7.1, §7.4: **account sync on the device** (ADR-0049), behind the accountSync switch: a per-account IndexedDB cache (`kite-u-<id>`, schema version 9 adds `outbox`, `syncRevs`, `syncMeta`), changes recorded in the same transaction as the change (a Dexie middleware), pushes 2 s after a change and transcript lines every 15 s or 50 lines, held while an answer streams, pulls on open, focus and reconnect only, a keepalive push when the page closes, a flush at End; Settings offers "Delete all my data" for synced accounts. Accounts without the switch keep `kite` and see no change. No desktop release. |
 | Changes in 3.21.0 | §7.2, §8.1: **call data in the account, server side** (ADR-0049): table `call_record` (additive migration `0002_call_records.sql`), the `/api/sync/*` routes and AES-256-GCM encryption, all behind the accountSync switch (`KITE_SYNC_USERS`); nothing uses them yet. **One production database with write guards** (ADR-0050): database-writing scripts need `--prod`; migrations are additive only. No desktop release. |
 | Changes in 3.20.0 | §5 (Connect, overlay), §7.1 (`core/audio/micPreview.ts`): **Connect starts the call** (ADR-0053). The sound check and "Go live" are removed. Connect opens the overlay first, inside its click (measured in Chrome 156: the share picker still opens after picture-in-picture used the click), then the capture, then the live view. The microphone's level shows on the Connect card before the call. Web only; no desktop release. |

@@ -1,0 +1,112 @@
+/**
+ * Production check of the one-time upload (ADR-0049, Phase 4) on BOTH web addresses, as the
+ * end-to-end TEST account (listed in KITE_SYNC_USERS). No Claude request. For each address, a fresh
+ * Chrome profile first gets an invented session in that address's own 'kite' database (the data a
+ * device had before account sync, seeded by harness/seed-legacy.ts), then signs in: the dashboard asks
+ * "This computer has 1 session that isn't in your account yet…", Add uploads it ("1 added, 0 were
+ * already there"), the session shows on the dashboard, and the question is not asked again after a
+ * reload. Everything this run created is deleted at the end through the sync API. Prints step names
+ * only.
+ * Run: pnpm --filter web exec playwright test -c tests/e2e-prod/playwright.config.ts legacy-upload.spec.ts
+ */
+import path from 'node:path';
+import { expect, test, type Browser } from '@playwright/test';
+import { build } from 'esbuild';
+import { closeUseNotice, signInOnce } from '../lib/sign-in';
+import {
+  CUSTOM_DOMAIN_URL,
+  OLD_ADDRESS_URL,
+  WEB_DIR,
+  report,
+  sessionCard,
+  testAccount,
+} from './helpers';
+
+test.describe.configure({ mode: 'serial' });
+
+/** The seeding script, bundled once. */
+let seedScript = '';
+
+test.beforeAll(async () => {
+  const result = await build({
+    entryPoints: [path.join(WEB_DIR, 'tests', 'e2e-prod', 'harness', 'seed-legacy.ts')],
+    bundle: true,
+    platform: 'browser',
+    format: 'iife',
+    write: false,
+    tsconfig: path.join(WEB_DIR, 'tsconfig.json'),
+    define: { 'process.env.NODE_ENV': '"production"' },
+    logLevel: 'error',
+  });
+  seedScript = result.outputFiles[0]!.text;
+});
+
+/**
+ * Seeds, signs in, uploads and checks one address; then deletes what it made.
+ *
+ * @param browser The browser.
+ * @param address The production address.
+ * @param label   Its name for the report.
+ */
+async function checkAddress(browser: Browser, address: string, label: string): Promise<void> {
+  const company = `E2E Upload ${label} ${Date.now().toString(36)}`;
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  let sessionId = '';
+  try {
+    await page.goto(`${address}/login`);
+    await page.addScriptTag({ content: seedScript });
+    sessionId = await page.evaluate(
+      (name) =>
+        (
+          window as unknown as {
+            /** The seeding function (harness/seed-legacy.ts). */
+            kiteSeedLegacy(company: string): Promise<string>;
+          }
+        ).kiteSeedLegacy(name),
+      company,
+    );
+    await signInOnce(page, { baseUrl: address, ...testAccount(), fresh: true });
+    await closeUseNotice(page);
+
+    const card = page.getByRole('region', { name: "Add this computer's data to your account" });
+    await expect(card).toContainText(
+      "This computer has 1 session that isn't in your account yet.",
+      {
+        timeout: 30_000,
+      },
+    );
+    await card.getByRole('button', { name: 'Add' }).click();
+    await expect(card).toContainText('1 added, 0 were already there.', { timeout: 60_000 });
+    await expect(sessionCard(page, company)).toBeVisible({ timeout: 30_000 });
+    report(`upload on ${label}: asked, added, shown`, true);
+
+    await page.reload();
+    await expect(sessionCard(page, company)).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(3_000);
+    await expect(card).toHaveCount(0);
+    report(`upload on ${label}: not asked again`, true);
+  } finally {
+    // Delete only this run's session (and its document) from the account.
+    if (sessionId) {
+      await page
+        .evaluate(async (id) => {
+          await fetch('/api/sync/push', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ ops: [{ op: 'delete', kind: 'session', id }] }),
+          });
+        }, sessionId)
+        .catch(() => undefined);
+    }
+    await context.close();
+  }
+}
+
+test('1. the custom domain', async ({ browser }) => {
+  await checkAddress(browser, CUSTOM_DOMAIN_URL, 'custom domain');
+});
+
+test('2. the vercel.app address (the one installed desktop apps load)', async ({ browser }) => {
+  await checkAddress(browser, OLD_ADDRESS_URL, 'vercel.app');
+});

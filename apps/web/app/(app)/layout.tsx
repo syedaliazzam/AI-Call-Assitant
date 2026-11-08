@@ -30,7 +30,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     // ADR-0049: accounts with the accountSync switch keep their call data in the account.
-    <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null}>
+    <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null} email={user.email}>
       <AskKiteHotkey />
       <AcceptableUseNotice />
       <AppShell

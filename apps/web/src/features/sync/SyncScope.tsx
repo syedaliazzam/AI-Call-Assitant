@@ -10,7 +10,7 @@
  */
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { selectAccountDatabase } from '@/core/storage/db';
 import { startAccountSync } from '@/core/sync/client';
 
@@ -23,8 +23,31 @@ export interface SyncScopeProps {
    * shared outbox and the main window pushes them (no extra pulls from a small window).
    */
   runEngine?: boolean;
+  /** The signed-in account's email, shown where the app names the account (the one-time upload). */
+  email?: string;
   /** The page. */
   children: ReactNode;
+}
+
+/** The synced account, for the components inside a SyncScope; null without account sync. */
+export interface SyncAccount {
+  /** The account's id. */
+  userId: string;
+  /** Its email ('' when the page did not pass it). */
+  email: string;
+}
+
+/** The synced account of this page, or null. */
+const SyncAccountContext = createContext<SyncAccount | null>(null);
+
+/**
+ * The synced account of this page.
+ *
+ * @returns The account, or null without account sync.
+ * Called from: LegacyUploadCard.tsx
+ */
+export function useSyncAccount(): SyncAccount | null {
+  return useContext(SyncAccountContext);
 }
 
 /**
@@ -34,7 +57,7 @@ export interface SyncScopeProps {
  * @returns The children.
  * Rendered by: the layouts and pages listed above, around everything that reads call data
  */
-export function SyncScope({ syncUserId, runEngine = true, children }: SyncScopeProps) {
+export function SyncScope({ syncUserId, runEngine = true, email = '', children }: SyncScopeProps) {
   // Before any child renders or loads: every storage call on this page then uses the right database.
   // Idempotent, so React rendering this more than once is harmless.
   selectAccountDatabase(syncUserId);
@@ -42,5 +65,9 @@ export function SyncScope({ syncUserId, runEngine = true, children }: SyncScopeP
     if (!syncUserId || !runEngine) return;
     return startAccountSync();
   }, [syncUserId, runEngine]);
-  return <>{children}</>;
+  const account = useMemo(
+    () => (syncUserId ? { userId: syncUserId, email } : null),
+    [syncUserId, email],
+  );
+  return <SyncAccountContext.Provider value={account}>{children}</SyncAccountContext.Provider>;
 }
