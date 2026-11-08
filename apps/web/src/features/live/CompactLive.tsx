@@ -37,6 +37,8 @@ import { usePrivate } from '@/features/privacy/usePrivate';
 import { getPlatform } from '@/platform';
 import { CompactView } from './CompactView';
 import type { ChatBarHandle } from './overlay/ChatBar';
+import { openDashboard } from '@/features/sync/dashboardLink';
+import { useSyncAccount } from '@/features/sync/SyncScope';
 import type { LevelStore } from './overlay/parts';
 
 /** Props for CompactLive. */
@@ -99,6 +101,8 @@ function createLevelStore(): LevelStore & {
  * Rendered by: app/compact/[id]/page.tsx
  */
 export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLiveProps) {
+  // ADR-0051: with account sync, Dashboard ↗ and the rest open the web app in the browser.
+  const synced = useSyncAccount() !== null;
   const [state, setState] = useState<CompactState | null>(null);
   const [askedEmail, setAskedEmail] = useState<string | null>(null);
   const chatBar = useRef<ChatBarHandle>(null);
@@ -283,13 +287,20 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
               onPlace: (preset: OverlayPreset) => getPlatform().placeOverlay(preset),
             }
           : {})}
-        {...(canOpenPages
+        {...(synced
           ? {
-              onDashboard: () => getPlatform().openPagesWindow('/'),
-              onHelp: () => getPlatform().openPagesWindow('/help'),
-              onEditSession: () => getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
+              // ADR-0051: with account sync, the dashboard is the web app, in the system browser.
+              onDashboard: () => openDashboard('/'),
+              onHelp: () => openDashboard('/help'),
+              onEditSession: () => openDashboard(`/sessions/${sessionId}/edit`),
             }
-          : {})}
+          : canOpenPages
+            ? {
+                onDashboard: () => getPlatform().openPagesWindow('/'),
+                onHelp: () => getPlatform().openPagesWindow('/help'),
+                onEditSession: () => getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
+              }
+            : {})}
         onProtection={changeProtection}
         {...(windowControls
           ? {

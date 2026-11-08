@@ -20,6 +20,7 @@ import {
   type ThemeChoice,
 } from '@/core/storage/appearancePrefs';
 import { PRIVATE_LABEL, privateHint, usePrivate } from '@/features/privacy/usePrivate';
+import { openDashboard } from '@/features/sync/dashboardLink';
 import { getPlatform } from '@/platform';
 import { LayoutDashboard, LifeBuoy, LogOut, User, Waves } from 'lucide-react';
 import { MenuAction, MenuBlock, MenuStepper, MenuSwitch, MenuTheme } from '@/ui/PanelMenu';
@@ -37,6 +38,8 @@ export interface HomeMenuProps {
   zoom: number;
   /** Closes the menu (after an action that leaves it). */
   onClose: () => void;
+  /** True in the launcher (ADR-0051): Dashboard and Get help open the web app in the browser. */
+  launcher?: boolean;
 }
 
 /**
@@ -46,7 +49,7 @@ export interface HomeMenuProps {
  * @returns The menu.
  * Rendered by: HomePanel.tsx
  */
-export function HomeMenu({ email, theme, zoom, onClose }: HomeMenuProps) {
+export function HomeMenu({ email, theme, zoom, onClose, launcher = false }: HomeMenuProps) {
   const router = useRouter();
   const [leaving, setLeaving] = useState(false);
   const { state: protection, change: changeProtection } = usePrivate();
@@ -77,7 +80,8 @@ export function HomeMenu({ email, theme, zoom, onClose }: HomeMenuProps) {
           out
           onSelect={() => {
             onClose();
-            getPlatform().openPagesWindow('/');
+            if (launcher) openDashboard('/');
+            else getPlatform().openPagesWindow('/');
           }}
         />
         <MenuAction label="Voice profile" icon={<Waves {...ICON} />} soon />
@@ -87,7 +91,8 @@ export function HomeMenu({ email, theme, zoom, onClose }: HomeMenuProps) {
           out
           onSelect={() => {
             onClose();
-            getPlatform().openPagesWindow('/help');
+            if (launcher) openDashboard('/help');
+            else getPlatform().openPagesWindow('/help');
           }}
         />
         <MenuSwitch

@@ -63,6 +63,8 @@ import { isOnline, subscribeOnline } from '@/core/net/online';
 import { SignInAgainDialog } from './SignInAgainDialog';
 import { useAutoAnswer } from './useAutoAnswer';
 import type { CallDictation } from './useCallDictation';
+import { openDashboard } from '@/features/sync/dashboardLink';
+import { useSyncAccount } from '@/features/sync/SyncScope';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
 
 /** Props for LiveAnswers. */
@@ -208,6 +210,8 @@ const isMac = () => getPlatform().hotkeyModifier() === '⌘';
  * Rendered by: LivePage.tsx; the answer harness page
  */
 export function LiveAnswers(props: LiveAnswersProps) {
+  // ADR-0051: with account sync, Edit session opens the dashboard in the browser.
+  const synced = useSyncAccount() !== null;
   // Read only: the layout around this panel paints the theme (v1.1.0).
   const appearance = useAppearance(false);
   // The overlay's menu can change how answers are written during a call (ADR-0029).
@@ -672,7 +676,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
       : [
           {
             label: 'Edit session',
-            onSelect: () => getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
+            // ADR-0051: with account sync, editing happens in the dashboard, in the system browser.
+            onSelect: () =>
+              synced
+                ? openDashboard(`/sessions/${sessionId}/edit`)
+                : getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
           },
         ]),
     ...(placement
