@@ -36,7 +36,10 @@ export function proxy(request: NextRequest) {
  * Which requests Next.js runs proxy() for. Signed-out pages and files must stay reachable.
  */
 export const config = {
-  // Run on everything except: the sign-in page, Better Auth's own endpoints (sign-in must work
+  // Run on everything except: the sign-in page, the desktop link page (ADR-0052: it signs the app in
+  // with a one-time code, so it must open signed out), Better Auth's own endpoints (sign-in must work
   // without a cookie), Next.js build files, and static files with an extension (icons, models).
-  matcher: ['/((?!login|api/auth|_next/static|_next/image|favicon.ico|.*\\.[\\w]+$).*)'],
+  matcher: [
+    '/((?!login|desktop/link|api/auth|_next/static|_next/image|favicon.ico|.*\\.[\\w]+$).*)',
+  ],
 };

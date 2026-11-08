@@ -3,12 +3,14 @@
  * Purpose: The /help page: the user guide, as readable text (spec S2). React renders the text as text,
  *          so nothing in the guide can become HTML.
  * Used by: app/(app)/help/page.tsx
- * Depends on: src/core/answer/markdown.ts (the Markdown splitter), ./guideText.ts, src/ui/PageShell.tsx
+ * Depends on: src/core/answer/markdown.ts (the Markdown splitter), ./guideText.ts, ./SyncHelp.tsx
+ *             (account sync, ADR-0049), src/ui/PageShell.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S2 Help)
  */
 import { inlinePieces, linkPieces, markdownBlocks } from '@/core/answer/markdown';
 import { PageShell } from '@/ui/PageShell';
 import { USER_GUIDE_MD } from './guideText';
+import { SyncHelp } from './SyncHelp';
 
 /**
  * Words with their links. A link opens in a new window: in the desktop app that is the system
@@ -82,6 +84,8 @@ function Line({
 export function HelpPage() {
   return (
     <PageShell title="Help">
+      {/* ADR-0049: accounts with account sync read how their data is kept first. */}
+      <SyncHelp />
       <article className="flex flex-col gap-3 text-[15px] leading-relaxed text-ui-text">
         {markdownBlocks(USER_GUIDE_MD).map((block, index) => {
           if (block.kind === 'heading') {

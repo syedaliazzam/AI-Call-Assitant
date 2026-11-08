@@ -8,7 +8,7 @@
  * page by page without losing or repeating a change.
  */
 import { SYNC_LIMITS, type SyncOp, type SyncOpResult } from '@kite/shared';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadDataKeys } from '@/server/calldata/crypto';
 import {
   applyOps,
@@ -17,7 +17,7 @@ import {
   readRecord,
   type StoreContext,
 } from '@/server/calldata/store';
-import { ALICE, BOB, createTestDb, testKeyEnv, type TestDb } from './pgliteDb';
+import { ALICE, BOB, createTestDb, testKeyEnv, type TestDb, resetTestDb } from './pgliteDb';
 
 /** Invented ids. */
 const S1 = '11111111-1111-4111-8111-111111111111';
@@ -31,8 +31,12 @@ let t: TestDb;
 let alice: StoreContext;
 let bob: StoreContext;
 
-beforeEach(async () => {
+beforeAll(async () => {
   t = await createTestDb();
+}, 60_000);
+
+beforeEach(async () => {
+  await resetTestDb(t);
   alice = { db: t.db, keys: t.keys, userId: ALICE };
   bob = { db: t.db, keys: t.keys, userId: BOB };
 });

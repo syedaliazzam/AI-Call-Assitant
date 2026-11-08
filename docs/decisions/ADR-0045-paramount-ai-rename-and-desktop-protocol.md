@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-05
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §3.3, §5, §7.2, §7.3; `docs/design/paramount-ai-ui-spec.md`
-- **Supersedes / superseded by:** adjusts ADR-0033 (the opacity default) and ADR-0041 (the stacked overlay's layout)
+- **Supersedes / superseded by:** adjusts ADR-0033 (the opacity default) and ADR-0041 (the stacked overlay's layout). "The desktop link and the session file" is replaced by ADR-0052 (a one-time sign-in code; the file hand-off is gone from desktop 1.3.0 and, with account sync, from the web app).
 
 ## Context
 

@@ -258,6 +258,14 @@ export interface KiteDesktopApi {
    * @returns True when it was deleted.
    */
   deleteHandoffFile?: () => Promise<boolean>;
+  /**
+   * v1.3.0 (ADR-0052): the one-time sign-in code a paramountai:// link brought, given once to the
+   * panel's link page and then forgotten (it never appears in an address). Optional: older shells have
+   * none.
+   *
+   * @returns The code, or null when there is none (or it was already taken).
+   */
+  consumeLinkCode?: () => Promise<string | null>;
 }
 
 /** A session file picked in the system's dialog (v1.2.0, ADR-0045). */

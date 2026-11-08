@@ -68,11 +68,12 @@ export const OVERLAY_LAYOUT_CHANNEL = 'kite:overlay-layout';
 /** v1.1.0: the snap zone under the pointer during a drag (send; an OverlayPreset, or null). */
 export const SNAP_ZONE_CHANNEL = 'kite:snap-zone';
 
-/** v1.2.0: pick a session file in the system's dialog (invoke; answers a HandoffPick or null). */
-export const HANDOFF_PICK_CHANNEL = 'kite:handoff-pick';
-
-/** v1.2.0: delete the file picked last (invoke; no arguments, answers a boolean). */
-export const HANDOFF_DELETE_CHANNEL = 'kite:handoff-delete';
+/**
+ * v1.3.0 (ADR-0052): the one-time sign-in code a paramountai:// link brought, given once to the home
+ * panel's link page (invoke; no arguments, answers the code or null). Replaces 1.2.0's session file
+ * channels (kite:handoff-pick, kite:handoff-delete), which are gone.
+ */
+export const LINK_CODE_CHANNEL = 'kite:link-code';
 
 /** The page says whether a live call is going on (send; a boolean). Updates wait for it. */
 export const CALL_ACTIVE_CHANNEL = 'kite:call-active';

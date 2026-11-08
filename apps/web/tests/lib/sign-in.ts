@@ -102,8 +102,10 @@ export async function closeUseNotice(page: Page): Promise<boolean> {
 export async function signInOnce(page: Page, options: SignInOptions): Promise<void> {
   const { baseUrl, email, password, fresh = false, timeout = 30_000, panel = false } = options;
   const key = `${baseUrl}|${email}`;
+  // The panel is ready when it shows its search box, or, as the launcher of an account with account
+  // sync (ADR-0051), its Open dashboard button.
   const dashboard = panel
-    ? page.getByLabel('Search sessions')
+    ? page.getByLabel('Search sessions').or(page.getByRole('button', { name: /Open dashboard/ }))
     : page.getByRole('heading', { name: 'Call Sessions' });
 
   const saved = sessions.get(key);

@@ -72,8 +72,8 @@ describe('the exposed bridge', () => {
       'captureScreenshot',
       'checkHotkeys',
       'closeCompactView',
-      // v1.2.0 (spec S9): the session file; the page never names a path.
-      'deleteHandoffFile',
+      // v1.3.0 (ADR-0052): the link's one-time sign-in code, given once.
+      'consumeLinkCode',
       'getOverlayPreset',
       'getShareProtection',
       'minimizeMainWindow',
@@ -84,7 +84,6 @@ describe('the exposed bridge', () => {
       'openCompactView',
       'openPagesWindow',
       'os',
-      'pickHandoffFile',
       'placeOverlay',
       'resizeOverlay',
       'setCallActive',

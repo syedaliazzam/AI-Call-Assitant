@@ -21,6 +21,7 @@ import type {
   ShareProtectionState,
   WindowControlAction,
 } from '@kite/shared';
+import { LINK_CODE_PATTERN } from '@kite/shared';
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
 import {
@@ -309,6 +310,17 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
      */
     async deleteHandoffFile() {
       return (await bridge.deleteHandoffFile?.().catch(() => false)) ?? false;
+    },
+
+    /**
+     * The link's one-time sign-in code, where this shell has one (1.3.0 and later, ADR-0052). Only a
+     * well-formed code is passed on.
+     *
+     * @returns The code, or null.
+     */
+    async consumeLinkCode() {
+      const code = await bridge.consumeLinkCode?.().catch(() => null);
+      return typeof code === 'string' && LINK_CODE_PATTERN.test(code) ? code : null;
     },
 
     /**

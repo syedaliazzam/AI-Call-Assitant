@@ -18,7 +18,6 @@
  * Kite never hides from the taskbar, Dock or process lists, and does not try to evade
  * monitoring or proctoring software (CLAUDE.md).
  */
-import { rm, readFile, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -42,9 +41,14 @@ import {
 } from 'electron';
 import { installAccurate, type WorkerProcess } from './accurate/host';
 import { MODEL_FOLDER } from './accurate/model';
-import { CALL_ACTIVE_CHANNEL, OPEN_PAGES_CHANNEL, WINDOW_CONTROL_CHANNEL } from './channels';
+import {
+  CALL_ACTIVE_CHANNEL,
+  LINK_CODE_CHANNEL,
+  OPEN_PAGES_CHANNEL,
+  WINDOW_CONTROL_CHANNEL,
+} from './channels';
 import { APP_NAME, loadConfig, pinnedDataFolder, type DesktopConfig } from './config';
-import { installHandoff, linkFromArgv, shouldRegisterProtocol } from './handoff';
+import { linkFromArgv, shouldRegisterProtocol } from './links';
 import { createHomeWindow, type HomeWindow } from './home';
 import { startUpdater } from './updater';
 import { installHotkeys, isKiteSender, type HotkeyController } from './hotkeys';
@@ -132,7 +136,7 @@ function followLink(link: DesktopLink | null): void {
     earlyLink = link;
     return;
   }
-  if (link?.kind === 'session' && !callActive) home.openSession(link.sessionId);
+  if (link?.kind === 'session' && !callActive) home.openSession(link.sessionId, link.code);
   else showFront();
 }
 
@@ -508,21 +512,14 @@ function start(): void {
     // A first start may come from a paramountai:// link (on Windows, an argument).
     const firstLink = earlyLink ?? linkFromArgv(process.argv);
     earlyLink = null;
-    if (firstLink?.kind === 'session') home.openSession(firstLink.sessionId);
+    if (firstLink?.kind === 'session') home.openSession(firstLink.sessionId, firstLink.code);
     else home.open();
 
-    // The session file a browser saved (spec S9, ADR-0045). The shell picks and deletes; the page
-    // names no path.
-    installHandoff({
-      ipcMain,
-      dialog,
-      windowFor: (event) => BrowserWindow.fromWebContents(event.sender),
-      files: {
-        size: async (file) => (await stat(file)).size,
-        read: (file) => readFile(file, 'utf8'),
-        remove: (file) => rm(file),
-      },
-      allowedOrigin: config.allowedOrigin,
+    // v1.3.0 (ADR-0052): a link's one-time sign-in code goes to the Kite page once, and only from the
+    // shell's memory: it is never put in an address. (1.2.0's session file hand-off is gone.)
+    ipcMain.handle(LINK_CODE_CHANNEL, (event) => {
+      if (!isKiteSender(event, config.allowedOrigin)) return null;
+      return home?.takeLinkCode() ?? null;
     });
 
     // Updates (Day 6, ADR-0028): installed builds only; tests turn them off. Store builds

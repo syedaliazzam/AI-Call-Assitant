@@ -8,6 +8,7 @@
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  LINK_CODE_KEEP_MS,
   createHomeWindow,
   HOME_DEFAULT_SIZE,
   HOME_MIN_SIZE,
@@ -227,6 +228,51 @@ describe('a session link (spec S9)', () => {
     // Going back to the list later stays there.
     window.navigate('did-navigate', 'https://kite.example/home', 200);
     expect(window.loadURL).not.toHaveBeenCalled();
+  });
+});
+
+describe('a link with a one-time code (ADR-0052)', () => {
+  /** A session's id. */
+  const ID = '86495cda-fbd1-4cea-8387-cd29f5c1381b';
+  /** An invented code (43 base64url characters). */
+  const CODE = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE';
+  /** The link page's address: the session only, never the code. */
+  const LINK_PAGE = `https://kite.example/desktop/link?session=${ID}`;
+
+  it('opens the link page without the code in the address, and gives the code once', () => {
+    const { home, windows } = setup();
+    home.openSession(ID, CODE);
+    expect(windows[0]!.loadURL).toHaveBeenCalledExactlyOnceWith(LINK_PAGE);
+    expect(home.takeLinkCode()).toBe(CODE);
+    expect(home.takeLinkCode()).toBeNull();
+  });
+
+  it('lets the link page stay, and does not pull the panel back to the card', () => {
+    const { home, windows } = setup();
+    home.openSession(ID, CODE);
+    const window = windows[0]!;
+    window.navigate('did-navigate', LINK_PAGE, 200);
+    window.navigate('did-navigate', 'https://kite.example/home', 200);
+    expect(window.loadURL).toHaveBeenCalledExactlyOnceWith(LINK_PAGE);
+  });
+
+  it('forgets a code after 60 seconds', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000_000);
+      const { home } = setup();
+      home.openSession(ID, CODE);
+      vi.setSystemTime(1_000_000 + LINK_CODE_KEEP_MS + 1);
+      expect(home.takeLinkCode()).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('has no code for a link without one', () => {
+    const { home } = setup();
+    home.openSession(ID);
+    expect(home.takeLinkCode()).toBeNull();
   });
 });
 

@@ -7,7 +7,7 @@
  *          routes (read from the cookie cache, with the refreshed cookie to send back).
  * Used by: app/api/auth/[...all]/route.ts, src/server/guard.ts, src/server/users.ts,
  *          app/change-password/actions.ts, app/api/answer/route.ts, scripts/create-admin.ts
- * Depends on: better-auth, src/server/auth-options.ts, src/server/session-cache.ts, src/server/db.ts, src/server/schema.ts,
+ * Depends on: better-auth, src/server/desktopLinkPlugin.ts (ADR-0052), src/server/auth-options.ts, src/server/session-cache.ts, src/server/db.ts, src/server/schema.ts,
  *             src/server/env.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §8.2 (ADR-0022, cookie cache
  *               trade-off); day-05-overlay-screenshots-notes.md Stage 0
@@ -24,6 +24,8 @@ import { getAuthEnv } from './env';
 import { SESSION_OPTIONS, USER_OPTIONS } from './auth-options';
 import * as schema from './schema';
 import { readAnswerSession } from './session-cache';
+import type { CallDataDb } from './calldata/store';
+import { desktopLinkPlugin } from './desktopLinkPlugin';
 
 export { COOKIE_CACHE_SECONDS } from './auth-options';
 
@@ -53,6 +55,9 @@ export const auth = betterAuth({
   plugins: [
     // Admin operations: create user, list users, set role, set password, ban/unban.
     admin(),
+    // ADR-0052: one-time desktop link codes (peek, redeem) for the desktop app's sign-in.
+    // The Neon client has the common Drizzle Postgres shape the code store needs.
+    desktopLinkPlugin(() => db as unknown as CallDataDb),
     // Lets server actions set sign-in cookies through Next.js. Must be the last plugin.
     nextCookies(),
   ],

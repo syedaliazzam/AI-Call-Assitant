@@ -374,6 +374,24 @@ describe('createDesktopPlatform: the session file (spec S9)', () => {
   });
 });
 
+describe("createDesktopPlatform: the link's one-time code (ADR-0052)", () => {
+  it('passes a well-formed code from a 1.3.0 shell, and nothing else', async () => {
+    const code = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE';
+    const consumeLinkCode = vi.fn(async (): Promise<string | null> => code);
+    const platform = createDesktopPlatform({ version: '1.3.0', os: 'windows', consumeLinkCode });
+    expect(await platform.consumeLinkCode()).toBe(code);
+    consumeLinkCode.mockResolvedValueOnce('not a code');
+    expect(await platform.consumeLinkCode()).toBeNull();
+    consumeLinkCode.mockRejectedValueOnce(new Error('ipc closed'));
+    expect(await platform.consumeLinkCode()).toBeNull();
+  });
+
+  it('an older shell has none', async () => {
+    const platform = createDesktopPlatform({ version: '1.2.0', os: 'windows' });
+    expect(await platform.consumeLinkCode()).toBeNull();
+  });
+});
+
 describe('createDesktopPlatform: home panel and stacked overlay (v1.1.0, ADR-0041)', () => {
   it('a shell before 1.1.0: no home panel, no panels, and every call does nothing', () => {
     const platform = createDesktopPlatform({ version: '1.0.4', os: 'windows' });

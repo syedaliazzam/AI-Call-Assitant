@@ -256,6 +256,7 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
           <StartSessionCard
             key={starting}
             sessionId={starting}
+            email={email}
             onContinue={(id) => {
               setStarting(null);
               open(`/live/${id}`);

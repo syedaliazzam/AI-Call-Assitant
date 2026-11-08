@@ -7,7 +7,7 @@
  * naming fields without echoing values.
  */
 import type { SyncPullResponse, SyncPushResponse } from '@kite/shared';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   handlePull,
   handlePush,
@@ -16,7 +16,7 @@ import {
   type SyncDeps,
 } from '@/server/calldata/api';
 import { DataKeyError } from '@/server/calldata/crypto';
-import { ALICE, BOB, createTestDb, type TestDb } from './pgliteDb';
+import { ALICE, BOB, createTestDb, type TestDb, resetTestDb } from './pgliteDb';
 
 // The real sign-in and database modules need production settings; these tests pass their own
 // dependencies (SyncDeps), so the modules are replaced by empty stand-ins.
@@ -28,8 +28,12 @@ const S1 = '11111111-1111-4111-8111-111111111111';
 
 let t: TestDb;
 
-beforeEach(async () => {
+beforeAll(async () => {
   t = await createTestDb();
+}, 60_000);
+
+beforeEach(async () => {
+  await resetTestDb(t);
   // The handlers log counts and timings; keep test output quiet.
   vi.spyOn(console, 'info').mockImplementation(() => undefined);
   vi.spyOn(console, 'error').mockImplementation(() => undefined);

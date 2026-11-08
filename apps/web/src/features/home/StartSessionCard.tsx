@@ -27,6 +27,8 @@ import {
   type StoredDocument,
 } from '@/core/storage/types';
 import { MODEL_OPTIONS, SESSION_TYPE_LABELS, styleSummary } from '@/features/session-setup/labels';
+import { pullAccountSync } from '@/core/sync/client';
+import { useSyncAccount } from '@/features/sync/SyncScope';
 import { getPlatform } from '@/platform';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
@@ -41,6 +43,8 @@ export interface StartSessionCardProps {
   onBack: () => void;
   /** Opens Create session, for someone without the file. */
   onCreateHere: () => void;
+  /** The signed-in account's email, shown as "Signed in as …" with account sync (ADR-0052). */
+  email?: string;
 }
 
 /** The icon of each session type's chip. */
@@ -101,7 +105,10 @@ export function StartSessionCard({
   onContinue,
   onBack,
   onCreateHere,
+  email,
 }: StartSessionCardProps) {
+  // ADR-0049/0052: with account sync the session comes from the account, never from a file.
+  const synced = useSyncAccount() !== null;
   const [data, setData] = useState<{ session: Session; documents: StoredDocument[] } | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'needs-file' | 'failed'>('loading');
   const [problem, setProblem] = useState<string | null>(null);
@@ -113,6 +120,10 @@ export function StartSessionCard({
   useEffect(() => {
     let cancelled = false;
     readSession(sessionId)
+      // A session just made in the browser may not be here yet: ask the account once, then look again.
+      .then(async (found) =>
+        found || !synced ? found : pullAccountSync().then(() => readSession(sessionId)),
+      )
       .then((found) => {
         if (cancelled) return;
         setData(found);
@@ -124,7 +135,7 @@ export function StartSessionCard({
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, synced]);
 
   /** Lets the person pick the file, and reads it in. */
   async function chooseFile() {
@@ -183,6 +194,19 @@ export function StartSessionCard({
     );
   }
 
+  if ((state === 'needs-file' || !data) && synced) {
+    return (
+      <div className="flex flex-col gap-4 p-4">
+        <h1 className="text-center text-card-title text-ui-heading">Session not found</h1>
+        <p role="alert" className="text-[14px] leading-relaxed text-ui-text">
+          This session is not in the account this app is signed in to{email ? ` (${email})` : ''}.
+          It may have been deleted, or made in another account.
+        </p>
+        {backButton}
+      </div>
+    );
+  }
+
   if (state === 'needs-file' || !data) {
     return (
       <div className="flex flex-col gap-4 p-4">
@@ -223,6 +247,9 @@ export function StartSessionCard({
   return (
     <div className="flex flex-col gap-4 p-4">
       <h1 className="text-center text-card-title text-ui-heading">Start your session</h1>
+      {synced && email && (
+        <p className="text-center text-[13px] text-ui-muted">Signed in as {email}</p>
+      )}
       <section
         aria-label="Session summary"
         className="flex flex-col gap-2 rounded-card bg-ui-panel p-4"

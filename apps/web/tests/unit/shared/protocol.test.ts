@@ -25,6 +25,23 @@ describe('parseDesktopLink', () => {
     expect(parseDesktopLink(desktopSessionLink(ID))).toEqual({ kind: 'session', sessionId: ID });
   });
 
+  it('reads a one-time sign-in code after the session, and only a well-formed one (ADR-0052)', () => {
+    const code = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE';
+    expect(parseDesktopLink(desktopSessionLink(ID, code))).toEqual({
+      kind: 'session',
+      sessionId: ID,
+      code,
+    });
+    for (const bad of [
+      `paramountai://session/${ID}/${code.slice(1)}`,
+      `paramountai://session/${ID}/${code}x`,
+      `paramountai://session/${ID}/${code.slice(1)}=`,
+      `paramountai://session/${ID}/${code}/more`,
+    ]) {
+      expect(parseDesktopLink(bad), bad).toBeNull();
+    }
+  });
+
   it('refuses anything that is not exactly a UUID', () => {
     for (const bad of [
       'paramountai://session/',
