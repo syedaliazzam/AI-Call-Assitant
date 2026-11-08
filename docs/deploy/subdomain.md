@@ -48,9 +48,9 @@ KITE_E2E_URL=https://kite-call-assistant.vercel.app KITE_INSTALLED_EXE="<path to
 To check the admin page, turn the admin test account on for that one run and off straight after:
 
 ```sh
-pnpm --filter web e2e-admin --enable
+pnpm --filter web e2e-admin --prod --enable
 KITE_E2E_ADMIN_ON=1 pnpm --filter web test:e2e-prod domain.spec.ts -g "admin page"
-pnpm --filter web e2e-admin --disable
+pnpm --filter web e2e-admin --prod --disable
 ```
 
 ## Roll back

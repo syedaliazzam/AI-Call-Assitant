@@ -16,6 +16,7 @@
  */
 import { parseArgs } from 'node:util';
 import { createUserAccount } from '@/server/users';
+import { requireProduction } from './lib/require-prod';
 
 /**
  * Reads --email and --name, creates the admin account and prints its temporary password.
@@ -25,10 +26,13 @@ import { createUserAccount } from '@/server/users';
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
+  // ADR-0050: one database, the production one; writing to it needs --prod.
+  requireProduction('create-admin');
   const { values } = parseArgs({
     options: {
       email: { type: 'string' },
       name: { type: 'string' },
+      prod: { type: 'boolean' },
     },
   });
   const email = values.email?.trim().toLowerCase();

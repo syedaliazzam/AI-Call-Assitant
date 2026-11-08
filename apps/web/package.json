@@ -12,7 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx scripts/db-migrate.ts",
     "create-admin": "tsx --env-file=.env.local --conditions=react-server scripts/create-admin.ts",
     "create-e2e-user": "tsx --env-file=.env.local --conditions=react-server scripts/create-e2e-user.ts",
     "verify:warm": "tsx --env-file=.env.local --conditions=react-server scripts/verify-warm.ts",
@@ -28,6 +28,7 @@
     "record:streams": "tsx --env-file=.env.local --conditions=react-server scripts/record-answer-streams.ts",
     "e2e-admin": "tsx --env-file=.env.local --conditions=react-server scripts/e2e-admin.ts",
     "rotate-e2e-password": "tsx --env-file=.env.local --conditions=react-server scripts/rotate-e2e-password.ts",
+    "sync-user-ids": "tsx --env-file=.env.local --conditions=react-server scripts/sync-user-ids.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",
     "make-brand": "tsx scripts/make-brand.ts",
     "make-guide": "tsx scripts/make-guide.ts",
@@ -69,6 +70,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.11",
     "@playwright/test": "1.64.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24.0.0",

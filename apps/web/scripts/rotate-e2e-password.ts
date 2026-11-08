@@ -20,6 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { setTestAccountDisabled, setTestAccountPassword } from '@/server/users';
+import { requireProduction } from './lib/require-prod';
 
 /** apps/web/.env.local. */
 const ENV_FILE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.env.local');
@@ -41,7 +42,11 @@ function randomPassword(): string {
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { admin: { type: 'boolean' } } });
+  // ADR-0050: one database, the production one; writing to it needs --prod.
+  requireProduction('rotate-e2e-password');
+  const { values } = parseArgs({
+    options: { admin: { type: 'boolean' }, prod: { type: 'boolean' } },
+  });
   const prefix = values.admin ? 'KITE_E2E_ADMIN' : 'KITE_E2E';
   const email = process.env[`${prefix}_EMAIL`];
   if (!email) {

@@ -16,6 +16,7 @@
  */
 import { parseArgs } from 'node:util';
 import { setTestAccountDisabled } from '@/server/users';
+import { requireProduction } from './lib/require-prod';
 
 /**
  * Enables or disables the admin test account.
@@ -24,8 +25,14 @@ import { setTestAccountDisabled } from '@/server/users';
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
+  // ADR-0050: one database, the production one; writing to it needs --prod.
+  requireProduction('e2e-admin');
   const { values } = parseArgs({
-    options: { enable: { type: 'boolean' }, disable: { type: 'boolean' } },
+    options: {
+      enable: { type: 'boolean' },
+      disable: { type: 'boolean' },
+      prod: { type: 'boolean' },
+    },
   });
   if (Boolean(values.enable) === Boolean(values.disable)) {
     console.error('Pass exactly one of --enable or --disable.');
