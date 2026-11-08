@@ -72,6 +72,11 @@ export interface HomeCardProps {
   onDuplicate: (session: Session) => Promise<void>;
   /** Deletes it. */
   onDelete: (session: Session) => Promise<void>;
+  /**
+   * True in the launcher (ADR-0051, account sync): Start only; changes are made in the dashboard,
+   * so the card has no menu.
+   */
+  launcher?: boolean;
 }
 
 /**
@@ -94,15 +99,17 @@ export function HomeCard(props: HomeCardProps) {
           <p className="pt-1 text-[12px] uppercase tracking-wide text-ui-muted">
             {DATE_FORMAT.format(session.createdAt)}
           </p>
-          <SessionMenu
-            session={session}
-            title={title}
-            onOpen={props.onStart}
-            onEdit={props.onEdit}
-            onRename={props.onRename}
-            onDuplicate={props.onDuplicate}
-            onDelete={props.onDelete}
-          />
+          {!props.launcher && (
+            <SessionMenu
+              session={session}
+              title={title}
+              onOpen={props.onStart}
+              onEdit={props.onEdit}
+              onRename={props.onRename}
+              onDuplicate={props.onDuplicate}
+              onDelete={props.onDelete}
+            />
+          )}
         </div>
         <h2 className="truncate text-[15px] font-semibold text-ui-heading">{title}</h2>
         {description && <p className="truncate text-[13px] text-ui-text">{description}</p>}

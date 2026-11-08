@@ -26,6 +26,7 @@ import {
   duplicateSession,
   sortSessions,
   updateSession,
+  shownStatus,
   watchSessions,
   type SessionSort,
 } from '@/core/storage/sessions';
@@ -47,6 +48,8 @@ import {
 } from '@/ui/icons';
 import { AccurateOffer } from './AccurateOffer';
 import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
+import { openDashboard } from '@/features/sync/dashboardLink';
+import { useSyncAccount } from '@/features/sync/SyncScope';
 import { homeCardDescription, homeCardTitle, HomeCard } from './HomeCard';
 import { HomeMenu } from './HomeMenu';
 import { StartSessionCard } from './StartSessionCard';
@@ -58,6 +61,9 @@ export interface HomePanelProps {
   /** The session a paramountai:// link named: its start card shows first. */
   startSessionId?: string;
 }
+
+/** How long after a call the launcher offers its notes (ADR-0051), in ms. */
+const LAST_CALL_MS = 2 * 60 * 60 * 1000;
 
 /** A button in the header: not part of the drag handle, always a clear focus ring. */
 const HEADER_BUTTON =
@@ -135,7 +141,30 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
     [],
   );
 
+  // ADR-0051: with account sync the panel is a launcher: the account's ready sessions, Start, the last
+  // call's notes and Open dashboard (the one dashboard is the web app, in the browser).
+  const launcher = useSyncAccount() !== null;
+  const lastCall = useMemo(() => {
+    if (!launcher || sessions === null) return null;
+    // A call that ended in the last 2 hours: its notes are one click away.
+    const recent = sessions
+      .filter(
+        (session) =>
+          shownStatus(session, now) === 'ended' &&
+          now - (session.lastActiveAt ?? session.createdAt) < LAST_CALL_MS,
+      )
+      .sort((a, b) => (b.lastActiveAt ?? b.createdAt) - (a.lastActiveAt ?? a.createdAt));
+    return recent[0] ?? null;
+  }, [launcher, sessions, now]);
+
   const shown = useMemo(() => {
+    if (launcher) {
+      // Ready sessions only, newest first; finished ones live in the dashboard.
+      return sortSessions(
+        (sessions ?? []).filter((session) => shownStatus(session, now) !== 'ended'),
+        'newest',
+      );
+    }
     const words = search.trim().toLowerCase();
     const matching = (sessions ?? []).filter(
       (session) =>
@@ -143,7 +172,7 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
         `${homeCardTitle(session)} ${homeCardDescription(session)}`.toLowerCase().includes(words),
     );
     return sortSessions(matching, sort);
-  }, [sessions, search, sort]);
+  }, [launcher, sessions, search, sort, now]);
 
   /**
    * Opens a page in the main window.
@@ -212,7 +241,13 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
           <CloseIcon />
         </button>
         {menuOpen && (
-          <HomeMenu email={email} theme={theme} zoom={zoom} onClose={() => setMenuOpen(false)} />
+          <HomeMenu
+            email={email}
+            theme={theme}
+            zoom={zoom}
+            onClose={() => setMenuOpen(false)}
+            launcher={launcher}
+          />
         )}
       </header>
 
@@ -228,34 +263,54 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
             onBack={() => setStarting(null)}
             onCreateHere={() => {
               setStarting(null);
-              open('/sessions/new');
+              if (launcher) openDashboard('/sessions/new');
+              else open('/sessions/new');
             }}
           />
         </div>
       ) : (
         <>
-          <div className="flex shrink-0 items-center gap-1.5 px-3 pb-2">
-            <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-ui-border bg-ui-input px-2.5 text-ui-muted focus-within:border-ui-link">
-              <SearchIcon />
-              <input
-                aria-label="Search sessions"
-                className="min-w-0 flex-1 bg-transparent text-[14px] text-ui-text placeholder:text-ui-muted focus:outline-none"
-                placeholder="Search by title or description"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              className={HEADER_BUTTON.replace('size-8', 'size-9')}
-              aria-label={sort === 'newest' ? 'Sorted newest first' : 'Sorted oldest first'}
-              onClick={() => setSort((was) => (was === 'newest' ? 'oldest' : 'newest'))}
-            >
-              <SortIcon />
-            </button>
-          </div>
+          {!launcher && (
+            <div className="flex shrink-0 items-center gap-1.5 px-3 pb-2">
+              <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-ui-border bg-ui-input px-2.5 text-ui-muted focus-within:border-ui-link">
+                <SearchIcon />
+                <input
+                  aria-label="Search sessions"
+                  className="min-w-0 flex-1 bg-transparent text-[14px] text-ui-text placeholder:text-ui-muted focus:outline-none"
+                  placeholder="Search by title or description"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className={HEADER_BUTTON.replace('size-8', 'size-9')}
+                aria-label={sort === 'newest' ? 'Sorted newest first' : 'Sorted oldest first'}
+                onClick={() => setSort((was) => (was === 'newest' ? 'oldest' : 'newest'))}
+              >
+                <SortIcon />
+              </button>
+            </div>
+          )}
 
           <AccurateOffer />
+          {lastCall && (
+            <div
+              role="status"
+              className="mx-3 mb-2 flex items-center justify-between gap-2 rounded-card border border-ui-border bg-ui-surface px-3 py-2"
+            >
+              <p className="min-w-0 truncate text-[13px] text-ui-text">
+                Call ended · {homeCardTitle(lastCall)}
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => openDashboard(`/sessions/${lastCall.id}`)}
+              >
+                View notes
+              </Button>
+            </div>
+          )}
           {/* ADR-0049: with account sync, offers once to add this computer's own data. */}
           <LegacyUploadCard compact />
 
@@ -269,35 +324,57 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
             ) : shown.length === 0 ? (
               <div className="flex flex-col items-center gap-1 p-8 text-center">
                 <p className="text-[15px] font-semibold text-ui-heading">
-                  {sessions.length === 0 ? 'No sessions yet' : 'Nothing matches that'}
+                  {launcher
+                    ? 'No sessions ready'
+                    : sessions.length === 0
+                      ? 'No sessions yet'
+                      : 'Nothing matches that'}
                 </p>
                 <p className="text-[13px] text-ui-muted">
-                  {sessions.length === 0
-                    ? 'Create a session to get ready for a call.'
-                    : 'Try other words, or clear the search.'}
+                  {launcher
+                    ? 'Create a session in the dashboard, and it shows here.'
+                    : sessions.length === 0
+                      ? 'Create a session to get ready for a call.'
+                      : 'Try other words, or clear the search.'}
                 </p>
               </div>
             ) : (
               <ul aria-label="Sessions" className="flex flex-col gap-2">
                 {shown.map((session) => (
-                  <HomeCard key={session.id} session={session} now={now} {...actions} />
+                  <HomeCard
+                    key={session.id}
+                    session={session}
+                    now={now}
+                    launcher={launcher}
+                    {...actions}
+                  />
                 ))}
               </ul>
             )}
           </div>
 
-          <footer className="flex shrink-0 gap-2 border-t border-ui-border p-3">
-            <Button variant="secondary" className="min-w-0 flex-1 px-2" onClick={() => open('/')}>
-              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                View in dashboard <OutIcon />
-              </span>
-            </Button>
-            <Button className="min-w-0 flex-1 px-2" onClick={() => open('/sessions/new')}>
-              <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                <PlusIcon /> Create session
-              </span>
-            </Button>
-          </footer>
+          {launcher ? (
+            <footer className="flex shrink-0 gap-2 border-t border-ui-border p-3">
+              <Button className="min-w-0 flex-1 px-2" onClick={() => openDashboard('/')}>
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                  Open dashboard <OutIcon />
+                </span>
+              </Button>
+            </footer>
+          ) : (
+            <footer className="flex shrink-0 gap-2 border-t border-ui-border p-3">
+              <Button variant="secondary" className="min-w-0 flex-1 px-2" onClick={() => open('/')}>
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                  View in dashboard <OutIcon />
+                </span>
+              </Button>
+              <Button className="min-w-0 flex-1 px-2" onClick={() => open('/sessions/new')}>
+                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                  <PlusIcon /> Create session
+                </span>
+              </Button>
+            </footer>
+          )}
         </>
       )}
     </div>
