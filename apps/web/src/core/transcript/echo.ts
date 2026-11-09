@@ -28,7 +28,8 @@
  *   those words within 1.5 s of it. Before v1.4 these were never hidden, and "okay so", "gone" through
  *   the speakers stayed on screen.
  * The reverse rule (v1.4): a "Them" line of three words or more is the user's own echo when at least
- * REVERSE_ECHO_MIN_SCORE of its words repeat, in order, a "You" line that ended at most 3 s before it
+ * REVERSE_ECHO_MIN_SCORE (0.6; 0.5 when it overlaps the user's speech) of its words repeat, in order, a
+ * "You" line that ended at most 3 s before it
  * started, and it started at least 200 ms after that "You" line did (a network echo is never earlier).
  */
 import { normalizeWords } from '../stt/wer';
@@ -58,8 +59,20 @@ export const ECHO_SHORT_WINDOW_MS = 3_000;
 /** v1.4: how close in time, either way, "Them" must have said a one- or two-word line's words, in ms. */
 export const ECHO_TINY_WINDOW_MS = 1_500;
 
-/** v1.4: share of a "Them" line's words that must repeat the user's earlier words, in order. */
-export const REVERSE_ECHO_MIN_SCORE = 0.7;
+/**
+ * v1.4: share of a "Them" line's words that must repeat the user's earlier words, in order (0.6 since the
+ * synthetic reverse-echo call, ADR-0063: the echo comes back through a phone line and is misheard).
+ */
+export const REVERSE_ECHO_MIN_SCORE = 0.6;
+
+/** v1.4: the same share when the "Them" line overlaps the user's own speech. */
+export const REVERSE_ECHO_INSIDE_SCORE = 0.5;
+
+/**
+ * v1.4: a "Them" line is never the original of a "You" echo if it started more than this long after the
+ * "You" line did, in ms (a speaker echo follows its original; this allows for the two engines' timing).
+ */
+export const ECHO_ORIGINAL_LEAD_MS = 500;
 
 /** v1.4: fewest words in a "Them" line before it can be judged the user's own echo. */
 export const REVERSE_ECHO_MIN_WORDS = 3;
@@ -168,11 +181,14 @@ export function isEcho(youText: string, them: ThemAround | string, nearText = ''
  * @param youText  The user's lines that could be its original (ended at most
  *                 REVERSE_ECHO_MAX_DELAY_MS before it, started at least REVERSE_ECHO_MIN_DELAY_MS
  *                 before it), joined in time order.
+ * @param inside   True when the "Them" line overlaps the user's own speech (a weaker match is enough).
  * @returns True when it repeats them.
  * Called from: transcript.ts (addPartial, addFinal); tests
  */
-export function isReverseEcho(themText: string, youText: string): boolean {
+export function isReverseEcho(themText: string, youText: string, inside = false): boolean {
   if (normalizeWords(themText).length < REVERSE_ECHO_MIN_WORDS || youText.trim() === '')
     return false;
-  return echoScore(themText, youText) >= REVERSE_ECHO_MIN_SCORE;
+  return (
+    echoScore(themText, youText) >= (inside ? REVERSE_ECHO_INSIDE_SCORE : REVERSE_ECHO_MIN_SCORE)
+  );
 }

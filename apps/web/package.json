@@ -35,6 +35,8 @@
     "stt:runtime": "tsx scripts/fetch-models.ts --runtime-only && tsx scripts/check-stt-runtime.ts",
     "stt:record-names": "tsx scripts/record-names.ts",
     "stt:trial": "tsx scripts/stt-trial.ts",
+    "calls:make": "tsx scripts/make-calls.ts",
+    "stt:calls": "tsx scripts/stt-calls.ts",
     "test:stt": "playwright test -c tests/integration/playwright.config.ts stt.spec.ts",
     "test:sim-calls": "playwright test -c tests/integration/playwright.config.ts sim-calls.spec.ts",
     "test:db-upgrade": "playwright test -c tests/integration/playwright.config.ts db-upgrade.spec.ts",

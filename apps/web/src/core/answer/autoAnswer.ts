@@ -163,7 +163,8 @@ export function questionWindow(
   answered: ReadonlySet<string>,
 ): Utterance[] {
   const spoken = speech(lines);
-  const lastTurn = spoken.findLastIndex(isUserTurn);
+  // The user's last finished turn (their grey words may still be a blip or not).
+  const lastTurn = spoken.findLastIndex((line) => line.final && isUserTurn(line));
   return spoken.slice(lastTurn + 1).filter((line) => {
     if (line.speaker !== 'them' || answered.has(line.id)) return false;
     // A line that is only a greeting, an instruction or talk about the call is never part of a
@@ -196,10 +197,14 @@ export function continuationOf(
   const after: Utterance[] = [];
   for (const line of spoken) {
     if (line.tEnd <= last.end + GROWN_SLACK_MS) continue;
-    // The user took the turn after the question: what follows is a new exchange.
+    // The user took the turn after the question (finished or still talking): what follows is a new
+    // exchange.
     if (isUserTurn(line)) return [];
     if (line.speaker !== 'them') continue;
     const grown = last.lineIds.includes(line.id);
+    // The other person's "mm-hm" while the user answers is listening, never more of the question
+    // (measured on the synthetic calls, ADR-0063: it caused a late rerun).
+    if (!grown && isBlip(line.text)) continue;
     if (!grown && line.tStart > from + withinMs) return after;
     const kind = lineKind(line.text);
     if (!grown && (kind === 'greeting' || kind === 'instruction' || kind === 'meta')) return after;
@@ -237,14 +242,13 @@ function pauseNeeded(window: readonly Utterance[], now: number): number {
 export function autoAnswerDue(state: AutoAnswerState, now: number): AutoDecision | null {
   if (!state.enabled) return null;
   const spoken = speech(state.lines);
-  // Anyone still speaking (a grey line that changed lately), other than a blip, means the moment has
-  // not come.
+  // The other person still speaking (a grey line that changed lately) means the question may go on.
+  // The user's own grey line does not wait (measured on the synthetic calls, ADR-0063): people start
+  // "So, um…" right after a question, which is exactly when they need the answer. A finished reply
+  // from the user still ends the moment (the window below).
   if (
     spoken.some(
-      (line) =>
-        !line.final &&
-        now - line.tEnd < STALE_PARTIAL_MS &&
-        (line.speaker === 'them' || !isBlip(line.text)),
+      (line) => !line.final && line.speaker === 'them' && now - line.tEnd < STALE_PARTIAL_MS,
     )
   ) {
     return null;
@@ -273,8 +277,11 @@ export function autoAnswerDue(state: AutoAnswerState, now: number): AutoDecision
   if (state.streaming) return null;
   const window = questionWindow(state.lines, state.answeredLineIds);
   if (window.length === 0) return null;
-  // The newest words must be the other person's: a real reply from the user ends the moment.
-  const newest = spoken.filter((line) => line.speaker === 'them' || !isBlip(line.text)).at(-1);
+  // The newest finished words must be the other person's: a finished reply from the user ends the
+  // moment (their grey words do not, see above).
+  const newest = spoken
+    .filter((line) => line.final && (line.speaker === 'them' || !isBlip(line.text)))
+    .at(-1);
   if (!newest || newest.speaker !== 'them') return null;
   const text = window.map((line) => line.text.trim()).join(' ');
   if (!isAutoQuestion(text)) return null;
