@@ -9,7 +9,8 @@
  * never run in CI. Prints numbers only. The meeting itself (a real call in Meet, Teams or Zoom
  * with someone on the other side) remains a human check.
  */
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
@@ -32,6 +33,15 @@ const FIXTURE_HTML = readFileSync(path.join(__dirname, '..', 'fixtures', 'index.
 /** Where the compact window is placed (DIPs on the primary screen). */
 const WINDOW = { x: 160, y: 160, width: 360, height: 260 };
 
+/**
+ * Where the window created later is placed (v1.3.0, ADR-0055): clear of the compact window, which is at
+ * least 560 wide (its minimum) and is left unprotected by the first test.
+ */
+const LATER = { x: 820, y: 160, width: 360, height: 260 };
+
+/** The shell's temporary profile (never the developer's own). */
+let profile = '';
+
 let server: Server;
 let origin = '';
 let app: ElectronApplication;
@@ -47,8 +57,9 @@ test.beforeAll(async () => {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...parentEnv } = process.env;
+  profile = mkdtempSync(path.join(tmpdir(), 'kite-protection-'));
   app = await electron.launch({
-    args: [APP_DIR],
+    args: [APP_DIR, `--user-data-dir=${profile}`],
     env: { ...parentEnv, KITE_URL: `${origin}/`, KITE_TEST_NO_EXTERNAL_OPEN: '1' },
   });
   const page = await app.firstWindow();
@@ -89,6 +100,7 @@ test.afterAll(async () => {
   await browser?.close();
   await app?.close();
   server?.close();
+  if (profile) rmSync(profile, { recursive: true, force: true });
 });
 
 /**
@@ -96,9 +108,10 @@ test.afterAll(async () => {
  * window's area (scaled from DIPs to the shared frame's pixels).
  *
  * @param scale  The primary display's DIP → frame scale (frame width ÷ display width).
+ * @param bounds The window's area (DIPs; default the compact window's).
  * @returns How many sampled pixels there were and how many were magenta.
  */
-async function magentaInShare(scale: number) {
+async function magentaInShare(scale: number, bounds = WINDOW) {
   return viewer.evaluate(
     ({ bounds, scale: s }) => {
       const video = (window as unknown as { __share: HTMLVideoElement }).__share;
@@ -118,7 +131,7 @@ async function magentaInShare(scale: number) {
       }
       return { total: pixels.length / 4, magenta, frame: [video.videoWidth, video.videoHeight] };
     },
-    { bounds: WINDOW, scale },
+    { bounds, scale },
   );
 }
 
@@ -143,6 +156,35 @@ test('Google Chrome screen share leaves the protected compact window out', async
   const shown = await magentaInShare(scale);
 
   console.log('[manual] chrome share', JSON.stringify({ chromeVersion, hidden, shown }));
+  expect(hidden.magenta).toBe(0);
+  expect(shown.magenta / shown.total).toBeGreaterThan(0.9);
+});
+
+test('a window created after Private was turned on is left out too (v1.3.0, ADR-0055)', async () => {
+  const display = await app.evaluate(({ screen }) => screen.getPrimaryDisplay().size.width);
+  const frameWidth = await viewer.evaluate(
+    () => (window as unknown as { __share: HTMLVideoElement }).__share.videoWidth,
+  );
+  const scale = frameWidth / display;
+  // A plain new window, made the way any future code would make one: nothing protects it by hand.
+  await app.evaluate(
+    async ({ BrowserWindow }, { bounds, url }) => {
+      const later = new BrowserWindow({ ...bounds, frame: false, show: true });
+      later.setAlwaysOnTop(true, 'floating');
+      await later.loadURL(url);
+      (globalThis as unknown as { later: Electron.BrowserWindow }).later = later;
+    },
+    { bounds: LATER, url: `${origin}/compact/later` },
+  );
+  await viewer.waitForTimeout(1_200);
+  const hidden = await magentaInShare(scale, LATER);
+  // The control: with its protection off, the same window shows.
+  await app.evaluate(() =>
+    (globalThis as unknown as { later: Electron.BrowserWindow }).later.setContentProtection(false),
+  );
+  await viewer.waitForTimeout(1_000);
+  const shown = await magentaInShare(scale, LATER);
+  console.log('[manual] window created later', JSON.stringify({ hidden, shown }));
   expect(hidden.magenta).toBe(0);
   expect(shown.magenta / shown.total).toBeGreaterThan(0.9);
 });

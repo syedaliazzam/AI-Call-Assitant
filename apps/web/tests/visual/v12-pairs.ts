@@ -44,8 +44,9 @@ const PAIRS: readonly [reference: string, capture: string][] = [
   ['answer preferences tone view.png', 'answer-preferences-tone'],
   ['choose platform card.png', 'choose-platform'],
   ['open desktop alert message.png', 'handoff'],
-  ['first desktop app card appear.jpeg', 'start-card-400'],
-  ['connect call session card.jpeg', 'connect'],
+  // ADR-0055: the desktop launcher's cards (tests/integration/launcher.spec.ts, 560 × 720).
+  ['first desktop app card appear.jpeg', 'launcher-start'],
+  ['connect call session card.jpeg', 'launcher-connect'],
   ['3 dot menu options.jpeg', 'window-menu-400'],
   ['compact view.jpeg', 'call-bars'],
   ['compact view icon.jpeg', 'call-icon'],
@@ -55,7 +56,7 @@ const PAIRS: readonly [reference: string, capture: string][] = [
 ];
 
 /** The widths a capture may have been saved at, as its file name says. */
-const WIDTHS = ['1440', '1440-1440', '1080', '780', '390', '390-390', '900'];
+const WIDTHS = ['1440', '1440-1440', '1080', '900', '780', '560', '390', '390-390'];
 
 /**
  * Reads a picture as an address a page can show.

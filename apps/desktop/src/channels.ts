@@ -75,6 +75,21 @@ export const SNAP_ZONE_CHANNEL = 'kite:snap-zone';
  */
 export const LINK_CODE_CHANNEL = 'kite:link-code';
 
+/**
+ * v1.3.0 (ADR-0055): opens the main window on a session's live page, minimised, for a call started from
+ * the home panel's Connect card (invoke; a session id, checked to be a UUID).
+ */
+export const OPEN_CALL_WINDOW_CHANNEL = 'kite:open-call-window';
+
+/**
+ * v1.3.0 (ADR-0055): the overlay's page lets clicks pass through its transparent gaps, or takes them again
+ * (invoke; a boolean). Only the overlay window's own page.
+ */
+export const OVERLAY_CLICK_THROUGH_CHANNEL = 'kite:overlay-click-through';
+
+/** v1.3.0 (ADR-0055): the home panel asks for its size (invoke; { width, height } in DIPs). */
+export const SIZE_PANEL_CHANNEL = 'kite:size-panel';
+
 /** The page says whether a live call is going on (send; a boolean). Updates wait for it. */
 export const CALL_ACTIVE_CHANNEL = 'kite:call-active';
 

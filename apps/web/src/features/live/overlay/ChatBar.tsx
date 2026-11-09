@@ -1,14 +1,20 @@
 /**
  * File: apps/web/src/features/live/overlay/ChatBar.tsx
- * Purpose: The chat bar under bar 1 (spec S14; Ctrl+Shift+Space): type or speak a message, choose Auto,
- *          For the call or Ask AI, send it with a screenshot of the screen (Ctrl+Alt+Enter) or on its own
- *          (Enter); the reply appears in the answer panel. Escape closes it, and stops any dictation
- *          without sending. Three plain buttons rather than a dropdown: a browser's own list is a
- *          separate window that screen-share protection may not reach (ADR-0042).
+ * Purpose: The chat bar under bar 1 (spec S14; Ctrl+Shift+Space). Two looks:
+ *          - 'reference' (ADR-0055, accounts with account sync): as in the reference app, a dark input
+ *            "Enter a message…", the screenshot button [Ctrl Alt ↵] (sends what is typed with a
+ *            screenshot), Send [↵] (muted until there is text) and ✕. Voice stays on Ctrl+Shift+Space
+ *            pressed twice (ADR-0038): while it listens a red microphone shows, which stops it. Who the
+ *            answer is for keeps the live page's choice (Auto, or Ask AI after Ctrl+Alt+K).
+ *          - 'classic' (everyone else, unchanged since v1.2.0): also Auto / For the call / Ask AI as three
+ *            plain buttons (a browser's own list is a separate window that screen-share protection may
+ *            not reach, ADR-0042) and the microphone button.
+ *          The reply appears in the answer panel. Escape closes the bar and stops any dictation without
+ *          sending.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: lucide-react, @kite/shared (hotkeys), src/core/live/liveChannel.ts,
  *             src/features/live/ChatBox.tsx (the choices), ./parts.tsx, src/ui/icons.tsx
- * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S14); ADR-0030, ADR-0038, ADR-0041
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S14); ADR-0030, ADR-0038, ADR-0041, ADR-0055
  *
  * The typed text only goes to the live page; it is never logged.
  */
@@ -32,6 +38,8 @@ export interface ChatBarProps {
   onClose: () => void;
   /** True on macOS (for the shortcut's spoken name). */
   mac: boolean;
+  /** 'reference' (ADR-0055, accounts with account sync) or 'classic' (default). */
+  look?: 'reference' | 'classic';
 }
 
 /** What the overlay can ask of the open bar. */
@@ -49,13 +57,14 @@ export interface ChatBarHandle {
  * Rendered by: CompactView.tsx
  */
 export const ChatBar = forwardRef<ChatBarHandle, ChatBarProps>(function ChatBar(
-  { state, onCommand, onClose, mac },
+  { state, onCommand, onClose, mac, look = 'classic' },
   ref,
 ) {
   const [question, setQuestion] = useState('');
   const target = state?.chatTarget ?? 'auto';
   const listening = state?.dictating ?? false;
   const typed = question.trim();
+  const reference = look === 'reference';
 
   /** Sends what is typed, and closes the bar. */
   const send = () => {
@@ -89,31 +98,44 @@ export const ChatBar = forwardRef<ChatBarHandle, ChatBarProps>(function ChatBar(
     <div
       role="group"
       aria-label="Chat"
-      className="flex h-11 min-w-0 items-center gap-1 px-1.5 [-webkit-app-region:no-drag]"
+      className={`flex h-11 min-w-0 items-center px-1.5 [-webkit-app-region:no-drag] ${reference ? 'gap-1.5' : 'gap-1'}`}
     >
-      <div
-        role="radiogroup"
-        aria-label="Who the answer is for"
-        className="hidden shrink-0 rounded-control bg-ui-overlay-button p-0.5 @min-[620px]:inline-flex"
-      >
-        {TARGET_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={target === option.value}
-            onClick={() => onCommand({ type: 'chat-target', target: option.value })}
-            className={`rounded-control px-1.5 py-1 text-[12px] font-medium focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] ${target === option.value ? 'bg-ui-primary text-ui-on-primary' : 'text-ui-text hover:bg-ui-overlay-button-hover'}`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
+      {!reference && (
+        <div
+          role="radiogroup"
+          aria-label="Who the answer is for"
+          className="hidden shrink-0 rounded-control bg-ui-overlay-button p-0.5 @min-[620px]:inline-flex"
+        >
+          {TARGET_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={target === option.value}
+              onClick={() => onCommand({ type: 'chat-target', target: option.value })}
+              className={`rounded-control px-1.5 py-1 text-[12px] font-medium focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] ${target === option.value ? 'bg-ui-primary text-ui-on-primary' : 'text-ui-text hover:bg-ui-overlay-button-hover'}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
       <input
         autoFocus
         aria-label="Type a question"
-        className="h-8 min-w-0 flex-1 rounded-control border border-ui-border bg-ui-input px-2 text-[14px] text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
-        placeholder={listening ? 'Listening… speak your question' : 'Type a message…'}
+        className={
+          reference
+            ? // The reference's dark field: as tall as the pills, rounded like them, no border until focused.
+              'h-8 min-w-0 flex-1 rounded-[10px] border border-transparent bg-ui-field px-3 text-[15px] text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11'
+            : 'h-8 min-w-0 flex-1 rounded-control border border-ui-border bg-ui-input px-2 text-[14px] text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11'
+        }
+        placeholder={
+          listening
+            ? 'Listening… speak your question'
+            : reference
+              ? 'Enter a message…'
+              : 'Type a message…'
+        }
         value={question}
         maxLength={2_000}
         onChange={(event) => setQuestion(event.target.value)}
@@ -131,18 +153,31 @@ export const ChatBar = forwardRef<ChatBarHandle, ChatBarProps>(function ChatBar(
           }
         }}
       />
-      {state?.dictationSupported && (
-        // Speak the question (ADR-0038): it becomes text only, sent on a pause.
-        <button
-          type="button"
-          className={`${ICON_BUTTON} ${listening ? 'animate-pulse text-ui-danger' : ''}`}
-          aria-label={listening ? 'Stop listening' : 'Speak a question'}
-          aria-pressed={listening}
-          onClick={() => onCommand({ type: 'dictate', on: !listening })}
-        >
-          <MicIcon />
-        </button>
-      )}
+      {reference
+        ? listening && (
+            // Voice (ADR-0038; Ctrl+Shift+Space twice): shown only while it listens, so it can be stopped.
+            <button
+              type="button"
+              className={`${ICON_BUTTON} animate-pulse text-ui-danger`}
+              aria-label="Stop listening"
+              aria-pressed
+              onClick={() => onCommand({ type: 'dictate', on: false })}
+            >
+              <MicIcon />
+            </button>
+          )
+        : state?.dictationSupported && (
+            // Speak the question (ADR-0038): it becomes text only, sent on a pause.
+            <button
+              type="button"
+              className={`${ICON_BUTTON} ${listening ? 'animate-pulse text-ui-danger' : ''}`}
+              aria-label={listening ? 'Stop listening' : 'Speak a question'}
+              aria-pressed={listening}
+              onClick={() => onCommand({ type: 'dictate', on: !listening })}
+            >
+              <MicIcon />
+            </button>
+          )}
       <button
         type="button"
         className={PILL}

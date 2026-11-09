@@ -23,6 +23,9 @@ export const HOME_DEFAULT_SIZE = { width: 400, height: 560 };
 /** The panel's smallest size, in DIPs: the session cards and the bottom buttons still fit. */
 export const HOME_MIN_SIZE = { width: 360, height: 420 };
 
+/** The largest size the page may ask for (ADR-0055: the cards are drawn for about 560 × 720). */
+export const HOME_MAX_SIZE = { width: 720, height: 900 };
+
 /** Distance from the screen's edge when the panel is placed by default, in DIPs. */
 const HOME_MARGIN = 24;
 
@@ -95,6 +98,58 @@ export function homeBounds(
     if (visible) return saved;
   }
   return homeDefaultBounds(primary);
+}
+
+/**
+ * The panel's bounds for a size the page asked for (ADR-0055): the size kept between the smallest and
+ * largest allowed and inside the screen's work area; the right edge and the vertical centre stay where
+ * they were (the panel sits at the right of the screen), then the whole window is kept on the screen.
+ *
+ * @param current The panel's bounds now.
+ * @param size    The size asked for.
+ * @param area    The work area of the screen the panel is on.
+ * @returns The new bounds, in whole DIPs.
+ * Called from: createHomeWindow() (resize); tests
+ */
+export function panelSizeBounds(
+  current: Bounds,
+  size: { width: number; height: number },
+  area: Rectangle,
+): Bounds {
+  const clamp = (value: number, min: number, max: number) =>
+    Math.round(Math.min(Math.max(value, min), Math.max(min, max)));
+  const width = Math.min(clamp(size.width, HOME_MIN_SIZE.width, HOME_MAX_SIZE.width), area.width);
+  const height = Math.min(
+    clamp(size.height, HOME_MIN_SIZE.height, HOME_MAX_SIZE.height),
+    area.height - 2 * HOME_MARGIN > HOME_MIN_SIZE.height
+      ? area.height - 2 * HOME_MARGIN
+      : area.height,
+  );
+  const right = current.x + current.width;
+  const middle = current.y + current.height / 2;
+  const x = clamp(right - width, area.x, area.x + area.width - width);
+  const y = clamp(middle - height / 2, area.y, area.y + area.height - height);
+  return { x, y, width, height };
+}
+
+/**
+ * Whether a value from the page is a size (two finite positive numbers).
+ *
+ * @param value What arrived over IPC.
+ * @returns True for { width, height }.
+ * Called from: main.ts; tests
+ */
+export function isPanelSize(value: unknown): value is { width: number; height: number } {
+  if (typeof value !== 'object' || value === null) return false;
+  const { width, height } = value as Record<string, unknown>;
+  return (
+    typeof width === 'number' &&
+    typeof height === 'number' &&
+    Number.isFinite(width) &&
+    Number.isFinite(height) &&
+    width > 0 &&
+    height > 0
+  );
 }
 
 /**
@@ -171,6 +226,12 @@ export interface HomeWindow {
   showInactive(): void;
   /** Hides the panel (a call started: it stays out of the way until the call ends). */
   hide(): void;
+  /**
+   * Resizes the panel to a size its page asked for (ADR-0055), inside its screen, and remembers it.
+   *
+   * @param size The size, in DIPs.
+   */
+  resize(size: { width: number; height: number }): void;
   /** The open window, or null. */
   window(): BrowserWindow | null;
 }
@@ -315,6 +376,34 @@ export function createHomeWindow(deps: HomeDeps): HomeWindow {
     },
     hide() {
       if (current && !current.isDestroyed()) current.hide();
+    },
+    resize(size) {
+      if (!current || current.isDestroyed()) return;
+      const bounds = current.getBounds();
+      const centre = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      // The screen the panel is on (its centre), or the primary one.
+      const area =
+        deps.screen
+          .getAllDisplays()
+          .map((display) => display.workArea)
+          .find(
+            (work) =>
+              centre.x >= work.x &&
+              centre.x < work.x + work.width &&
+              centre.y >= work.y &&
+              centre.y < work.y + work.height,
+          ) ?? deps.screen.getPrimaryDisplay().workArea;
+      const next = panelSizeBounds(bounds, size, area);
+      if (
+        next.x === bounds.x &&
+        next.y === bounds.y &&
+        next.width === bounds.width &&
+        next.height === bounds.height
+      ) {
+        return;
+      }
+      current.setBounds(next);
+      deps.store.write({ homeBounds: next });
     },
     window: () => (current && !current.isDestroyed() ? current : null),
   };

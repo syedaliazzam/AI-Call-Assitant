@@ -1,7 +1,7 @@
 /**
  * Tests for apps/desktop/src/windows.ts, protection.ts and store.ts, with Electron faked:
  * - compactUrl() builds /compact/[id] on the Kite URL for plain ids only;
- * - restoreBounds() keeps saved bounds that are still on a screen, else 780 × 480 at the
+ * - restoreBounds() keeps saved bounds that are still on a screen, else 900 × 480 at the
  *   remembered preset (top centre by default; v1.0.2, ADR-0035);
  * - compactWindowOptions(): frameless, always on top, resizable, see-through (transparent), in the
  *   taskbar, hidden until shown, the same secure web preferences as the main window;
@@ -88,6 +88,9 @@ class FakeWindow {
   bounds = { x: 10, y: 20, width: 380, height: 320 };
   showInactive = vi.fn();
   focus = vi.fn();
+  setIgnoreMouseEvents = vi.fn();
+  /** Stands for the window's page (the click-through handler checks the sender is it). */
+  webContents = { id: 1 };
   show = vi.fn();
   loadURL = vi.fn(async () => undefined);
   setAlwaysOnTop = vi.fn();
@@ -180,20 +183,20 @@ describe('compactUrl and restoreBounds', () => {
     }
   });
 
-  it('keeps saved bounds still on a screen, else 780 × 480 at the top centre (ADR-0035)', () => {
+  it('keeps saved bounds still on a screen, else 900 × 480 at the top centre (ADR-0035, ADR-0055)', () => {
     const saved = { x: 100, y: 100, width: 400, height: 300 };
     expect(restoreBounds(saved, [PRIMARY], PRIMARY)).toEqual(saved);
-    const topCentre = { x: 570, y: 24, width: 780, height: 480 };
-    expect(COMPACT_DEFAULT_SIZE).toEqual({ width: 780, height: 480 });
+    const topCentre = { x: 510, y: 24, width: 900, height: 480 };
+    expect(COMPACT_DEFAULT_SIZE).toEqual({ width: 900, height: 480 });
     // On a monitor that was unplugged.
     const gone = { x: 3000, y: 100, width: 400, height: 300 };
     expect(restoreBounds(gone, [PRIMARY], PRIMARY)).toEqual(topCentre);
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY)).toEqual(topCentre);
     // The remembered preset decides the default place.
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY, 'top-right')).toEqual({
-      x: 1920 - 780 - 24,
+      x: 1920 - 900 - 24,
       y: 24,
-      width: 780,
+      width: 900,
       height: 480,
     });
   });
@@ -268,6 +271,7 @@ describe('createCompactWindows', () => {
     const { compact } = setup({
       compactBounds: { x: 5, y: 6, width: 300, height: 200 },
       overlayBarsWidened: true,
+      overlayBarsWidth: 900,
     });
     compact.open('s1');
     compact.open('s2');
@@ -306,6 +310,24 @@ describe('protection', () => {
     expect(protectionSupported('win32', '10.0.18363')).toBe(false);
     expect(protectionSupported('darwin', '23.0.0')).toBe(true);
     expect(protectionSupported('linux', '6.8.0')).toBe(false);
+  });
+
+  it('attaches each window once, re-applying the setting on every show (v1.3.0, ADR-0055)', () => {
+    const store = memoryStore({ shareProtection: true });
+    const protection = createProtection(store, 'win32', '10.0.26200');
+    const shows: (() => void)[] = [];
+    const window = {
+      setContentProtection: vi.fn(),
+      on: vi.fn((_event: string, handler: () => void) => shows.push(handler)),
+    };
+    // Attached as it is created (browser-window-created) and again by its owner.
+    protection.attach(window as never);
+    protection.attach(window as never);
+    expect(window.setContentProtection).toHaveBeenCalledTimes(1);
+    expect(window.setContentProtection).toHaveBeenLastCalledWith(true);
+    expect(shows).toHaveLength(1);
+    shows[0]!();
+    expect(window.setContentProtection).toHaveBeenCalledTimes(2);
   });
 
   it('is off by default, remembers a change and applies it; IPC takes a boolean from Kite only', async () => {
@@ -430,20 +452,20 @@ describe('the overlay window (ADR-0029)', () => {
 
 describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
   it('puts the overlay at each preset, shrunk to fit a small screen', () => {
-    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 570, y: 24, width: 780, height: 480 });
-    expect(presetBounds('top-left', PRIMARY)).toEqual({ x: 24, y: 24, width: 780, height: 480 });
-    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1116, y: 24, width: 780, height: 480 });
+    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 510, y: 24, width: 900, height: 480 });
+    expect(presetBounds('top-left', PRIMARY)).toEqual({ x: 24, y: 24, width: 900, height: 480 });
+    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 996, y: 24, width: 900, height: 480 });
     expect(presetBounds('bottom-center', PRIMARY)).toEqual({
-      x: 570,
+      x: 510,
       y: 1040 - 480 - 24,
-      width: 780,
+      width: 900,
       height: 480,
     });
     // A second display to the right, and a screen smaller than the overlay.
     expect(presetBounds('top-center', { x: 1920, y: 0, width: 1280, height: 720 })).toEqual({
-      x: 1920 + 250,
+      x: 1920 + 190,
       y: 24,
-      width: 780,
+      width: 900,
       height: 480,
     });
     expect(presetBounds('top-center', { x: 0, y: 0, width: 500, height: 400 })).toEqual({
@@ -535,10 +557,10 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
     compact.open('s1');
     const window = FakeWindow.created.at(-1)!;
     // Opens at the remembered preset (nothing saved yet).
-    expect(window.options).toMatchObject({ x: 1116, y: 24, width: 780, height: 480 });
+    expect(window.options).toMatchObject({ x: 996, y: 24, width: 900, height: 480 });
     compact.place('bottom-center');
-    expect(window.bounds).toEqual({ x: 570, y: 536, width: 780, height: 480 });
-    expect(store.read().compactBounds).toEqual({ x: 570, y: 536, width: 780, height: 480 });
+    expect(window.bounds).toEqual({ x: 510, y: 536, width: 900, height: 480 });
+    expect(store.read().compactBounds).toEqual({ x: 510, y: 536, width: 900, height: 480 });
   });
 
   it('script bar: slim at the top centre, input row, and back to where the overlay was', () => {
@@ -632,7 +654,7 @@ describe('the icon (v1.2.0, spec S13)', () => {
    * @returns The controller, the window and the store.
    */
   function openIcon() {
-    const made = setup({ compactBounds: BOUNDS, overlayBarsWidened: true });
+    const made = setup({ compactBounds: BOUNDS, overlayBarsWidened: true, overlayBarsWidth: 900 });
     made.compact.open('s1');
     const window = FakeWindow.created.at(-1)!;
     window.bounds = { ...BOUNDS };
@@ -706,7 +728,12 @@ describe('both panels side by side (v1.2.0, spec S15)', () => {
    * @returns The controller, the window and the store.
    */
   function openPanels(settings: ShellSettings = {}) {
-    const made = setup({ compactBounds: BOUNDS, overlayBarsWidened: true, ...settings });
+    const made = setup({
+      compactBounds: BOUNDS,
+      overlayBarsWidened: true,
+      overlayBarsWidth: 900,
+      ...settings,
+    });
     made.compact.open('s1');
     const window = FakeWindow.created.at(-1)!;
     window.bounds = { ...BOUNDS };
@@ -771,22 +798,78 @@ describe('both panels side by side (v1.2.0, spec S15)', () => {
   });
 });
 
-describe('a place saved by 1.1.0 (v1.2.0)', () => {
+describe('a place saved by 1.1.0 or 1.2.0 (v1.2.0, ADR-0055)', () => {
   it('is widened once for the new bar 1, about its centre', () => {
     const { compact, store } = setup({
       compactBounds: { x: 620, y: 24, width: 680, height: 480 },
     });
     compact.open('s1');
-    expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 570, y: 24, width: 780 });
+    expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 510, y: 24, width: 900 });
     expect(store.read().overlayBarsWidened).toBe(true);
+    expect(store.read().overlayBarsWidth).toBe(900);
+  });
+
+  it('a place widened by 1.2.0 (780) is widened once more for the Transcript pill', () => {
+    const { compact, store } = setup({
+      compactBounds: { x: 570, y: 24, width: 780, height: 480 },
+      overlayBarsWidened: true,
+    });
+    compact.open('s1');
+    expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 510, y: 24, width: 900 });
+    expect(store.read().overlayBarsWidth).toBe(900);
   });
 
   it('a width chosen after that stays', () => {
     const { compact } = setup({
       compactBounds: { x: 620, y: 24, width: 600, height: 480 },
       overlayBarsWidened: true,
+      overlayBarsWidth: 900,
     });
     compact.open('s1');
     expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 620, width: 600 });
+  });
+});
+
+describe('click-through over the gaps (v1.3.0, ADR-0055)', () => {
+  it('passes clicks through with the moves forwarded, and takes them again', () => {
+    const { compact } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    compact.setClickThrough(true);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true });
+    compact.setClickThrough(false);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+  });
+
+  it('never passes clicks through the icon', () => {
+    const { compact } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    compact.setClickThrough(true);
+    compact.setMode('icon');
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+    compact.setClickThrough(true);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+  });
+
+  it('IPC: only the overlay window’s own Kite page', async () => {
+    const { compact } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+    installCompactWindows({ handle: (c: string, f: never) => handlers.set(c, f) }, compact, ORIGIN);
+    const handler = handlers.get('kite:overlay-click-through')!;
+    const page = {
+      senderFrame: { url: `${ORIGIN}/compact/s1`, parent: null },
+      sender: window.webContents,
+    };
+    const otherWindow = { senderFrame: { url: `${ORIGIN}/home`, parent: null }, sender: { id: 2 } };
+    expect(() => handler(from('https://evil.example/'), true)).toThrow();
+    await handler(otherWindow, true);
+    expect(window.setIgnoreMouseEvents).not.toHaveBeenCalled();
+    await handler(page, true);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true });
+    await handler(page, 'yes');
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
   });
 });

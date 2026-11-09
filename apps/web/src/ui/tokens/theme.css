@@ -89,6 +89,7 @@
   --k-overlay-solid: #18181b;
   --k-overlay-pill: rgba(39, 39, 42, 0.95); /* pill buttons on the call bars */
   --k-overlay-pill-hover: rgba(63, 63, 70, 0.95);
+  --k-overlay-field: rgba(9, 9, 11, 0.88); /* the chat bar's dark input (ADR-0055 reference) */
   --k-overlay-keycap: rgba(255, 255, 255, 0.12); /* the key-cap chip on a pill */
   --k-overlay-border: rgba(255, 255, 255, 0.08);
   --k-overlay-button: rgba(255, 255, 255, 0.08);
@@ -121,6 +122,7 @@
   --k-light-overlay-pill: rgba(255, 255, 255, 0.92);
   --k-light-overlay-pill-hover: rgba(244, 244, 245, 0.95);
   --k-light-overlay-keycap: rgba(24, 24, 27, 0.08);
+  --k-light-overlay-field: rgba(255, 255, 255, 0.96); /* the chat bar's input, light call theme */
 
   /* ---- Details ---- */
   --k-backdrop: rgba(24, 24, 27, 0.45); /* behind a modal */
@@ -168,6 +170,7 @@
   --ui-subtle: var(--k-subtle);
   --ui-border: var(--k-border);
   --ui-input: var(--k-surface);
+  --ui-field: var(--k-subtle);
   --ui-text: var(--k-text);
   --ui-heading: var(--k-text);
   --ui-subheading: var(--k-text);
@@ -224,6 +227,7 @@ html[data-theme='dark'] {
   --ui-subtle: var(--k-dark-raised);
   --ui-border: var(--k-dark-border);
   --ui-input: var(--k-dark-bg);
+  --ui-field: var(--k-dark-bg);
   --ui-text: var(--k-dark-text);
   --ui-heading: var(--k-dark-text);
   --ui-subheading: var(--k-dark-text);
@@ -261,6 +265,7 @@ html[data-theme='dark'] {
   --ui-pill: var(--k-overlay-pill);
   --ui-pill-hover: var(--k-overlay-pill-hover);
   --ui-keycap: var(--k-overlay-keycap);
+  --ui-field: var(--k-overlay-field);
   --ui-border: var(--k-overlay-border);
   --ui-surface: transparent;
   background: var(--k-overlay-solid);
@@ -312,6 +317,7 @@ html[data-theme='dark'] {
   --ui-pill: var(--k-light-overlay-pill);
   --ui-pill-hover: var(--k-light-overlay-pill-hover);
   --ui-keycap: var(--k-light-overlay-keycap);
+  --ui-field: var(--k-light-overlay-field);
   --ui-border: var(--k-light-overlay-border);
   background: var(--k-page);
 }
@@ -350,10 +356,20 @@ html[data-theme='dark'] {
 }
 
 /* v1.1.0 (ADR-0042): inside the overlay a <select> lists its choices in the page. A browser's own
-   list is a separate window, which screen-share protection may not reach. */
+   list is a separate window, which screen-share protection may not reach. ADR-0055: in the desktop app
+   (html.k-desktop, set by src/platform/desktopDocument.ts) every <select> does. */
 .k-overlay select,
-.k-overlay select::picker(select) {
+.k-overlay select::picker(select),
+.k-desktop select,
+.k-desktop select::picker(select) {
   appearance: base-select;
+}
+
+.k-desktop select::picker(select) {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--k-radius-control);
+  color: var(--ui-text);
 }
 
 .k-overlay select::picker(select) {
@@ -428,6 +444,7 @@ html:has(.k-glass) body {
   --color-ui-selected: var(--ui-selected);
   --color-ui-segment: var(--ui-segment);
   --color-ui-keycap: var(--ui-keycap);
+  --color-ui-field: var(--ui-field);
   --color-ui-pill: var(--ui-pill);
   --color-ui-pill-hover: var(--ui-pill-hover);
   --color-ui-dot-ended: var(--k-dot-ended);

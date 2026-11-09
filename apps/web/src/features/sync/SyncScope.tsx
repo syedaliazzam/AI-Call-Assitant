@@ -5,7 +5,8 @@
  *          for everyone else nothing changes ('kite', this device's own data). The choice is made
  *          while rendering, before any child loads data.
  * Used by: app/(app)/layout.tsx, app/home/page.tsx, app/compact/[id]/page.tsx
- * Depends on: src/core/storage/db.ts (selectAccountDatabase), src/core/sync/client.ts
+ * Depends on: src/core/storage/db.ts (selectAccountDatabase), src/core/sync/client.ts, src/platform
+ *             (keepPopupsInWindow, ADR-0055)
  * Architecture: ADR-0049 (rollout: KITE_SYNC_USERS)
  */
 'use client';
@@ -13,6 +14,7 @@
 import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { selectAccountDatabase } from '@/core/storage/db';
 import { startAccountSync } from '@/core/sync/client';
+import { getPlatform } from '@/platform';
 
 /** Props for SyncScope. */
 export interface SyncScopeProps {
@@ -65,6 +67,11 @@ export function SyncScope({ syncUserId, runEngine = true, email = '', children }
     if (!syncUserId || !runEngine) return;
     return startAccountSync();
   }, [syncUserId, runEngine]);
+  // ADR-0055 (accounts with account sync): in the desktop app every popup stays inside its window,
+  // where screen-share protection reaches. Nothing changes in a browser.
+  useEffect(() => {
+    if (syncUserId) getPlatform().keepPopupsInWindow();
+  }, [syncUserId]);
   const account = useMemo(
     () => (syncUserId ? { userId: syncUserId, email } : null),
     [syncUserId, email],

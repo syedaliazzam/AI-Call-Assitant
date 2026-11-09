@@ -13,6 +13,21 @@ import { USER_GUIDE_MD } from './guideText';
 import { SyncHelp } from './SyncHelp';
 
 /**
+ * A heading's address on the page: its words in lower case, joined by hyphens ("Private" → "private",
+ * "Zoom" → "zoom").
+ *
+ * @param text The heading's words.
+ * @returns The id.
+ * Called from: HelpPage; tests
+ */
+export function headingId(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
  * Words with their links. A link opens in a new window: in the desktop app that is the system
  * browser, because the app itself never leaves its own address.
  *
@@ -90,7 +105,12 @@ export function HelpPage() {
         {markdownBlocks(USER_GUIDE_MD).map((block, index) => {
           if (block.kind === 'heading') {
             return (
-              <h2 key={index} className="mt-4 text-card-title text-ui-heading first:mt-0">
+              // Each heading can be linked to: /help#private, /help#zoom (ADR-0055: the Connect card's tips).
+              <h2
+                key={index}
+                id={headingId(block.text)}
+                className="mt-4 scroll-mt-4 text-card-title text-ui-heading first:mt-0"
+              >
                 {block.text}
               </h2>
             );

@@ -22,6 +22,7 @@ import type {
   WindowControlAction,
 } from '@kite/shared';
 import { LINK_CODE_PATTERN } from '@kite/shared';
+import { installDesktopDocument } from './desktopDocument';
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
 import {
@@ -347,6 +348,50 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       } else {
         window.location.assign(path);
       }
+    },
+
+    /**
+     * Opens the window that runs a call on a session's live page: minimised in 1.3.0, otherwise as any
+     * page (the 1.1.0 and 1.2.0 main window, in front).
+     *
+     * @param sessionId The session.
+     */
+    openCallWindow(sessionId: string) {
+      if (bridge.openCallWindow) {
+        // An older 1.3.0 build that refuses: the page opens the way every shell knows.
+        void bridge
+          .openCallWindow(sessionId)
+          .catch(() => this.openPagesWindow(`/live/${encodeURIComponent(sessionId)}`));
+        return;
+      }
+      this.openPagesWindow(`/live/${encodeURIComponent(sessionId)}`);
+    },
+
+    /**
+     * Asks for the home panel's size (desktop 1.3.0; older shells keep theirs).
+     *
+     * @param width  Width, CSS px.
+     * @param height Height, CSS px.
+     */
+    sizePanel(width: number, height: number) {
+      void bridge.sizePanel?.({ width, height }).catch(() => undefined);
+    },
+
+    /**
+     * Lets clicks pass through the overlay's gaps (desktop 1.3.0; older shells keep the window
+     * clickable).
+     *
+     * @param through True to pass clicks through.
+     */
+    setOverlayClickThrough(through: boolean) {
+      void bridge.setOverlayClickThrough?.(through).catch(() => undefined);
+    },
+
+    /**
+     * Keeps the page's popups inside its window (platform/desktopDocument.ts).
+     */
+    keepPopupsInWindow() {
+      installDesktopDocument();
     },
 
     /**

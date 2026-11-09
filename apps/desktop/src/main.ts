@@ -22,6 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   DESKTOP_PROTOCOL,
+  isSessionId,
   PAGES_WINDOW_PATH,
   parseDesktopLink,
   type DesktopLink,
@@ -44,12 +45,14 @@ import { MODEL_FOLDER } from './accurate/model';
 import {
   CALL_ACTIVE_CHANNEL,
   LINK_CODE_CHANNEL,
+  OPEN_CALL_WINDOW_CHANNEL,
   OPEN_PAGES_CHANNEL,
+  SIZE_PANEL_CHANNEL,
   WINDOW_CONTROL_CHANNEL,
 } from './channels';
 import { APP_NAME, loadConfig, pinnedDataFolder, type DesktopConfig } from './config';
 import { linkFromArgv, shouldRegisterProtocol } from './links';
-import { createHomeWindow, type HomeWindow } from './home';
+import { createHomeWindow, isPanelSize, type HomeWindow } from './home';
 import { startUpdater } from './updater';
 import { installHotkeys, isKiteSender, type HotkeyController } from './hotkeys';
 import { appIconPath } from './icon';
@@ -89,6 +92,13 @@ let callActive = false;
 
 /** A paramountai:// link that arrived before the windows existed (macOS sends it early). */
 let earlyLink: DesktopLink | null = null;
+
+/**
+ * v1.3.0 (ADR-0055): the main window was opened for a call started from the home panel's Connect card.
+ * It then stays minimised when the call ends (the panel comes back instead) and closes itself once the
+ * call's notes are saved.
+ */
+let callWindowFromPanel = false;
 
 /** True once the app is quitting: closing the main window then really closes it. */
 let quitting = false;
@@ -165,10 +175,17 @@ function ensureSingleInstance(): boolean {
  * @param page   The path to open.
  * @param throttle False for the window that runs a call: its timers must keep their normal speed
  *                 while it is minimised.
+ * @param minimized True to open it minimised (v1.3.0: a call started from the home panel's Connect
+ *                  card; the window is in the taskbar, out of the way).
  * @returns The new window.
  * Called from: createMainWindow(), openPages()
  */
-function createPagesWindow(config: DesktopConfig, page: string, throttle: boolean): BrowserWindow {
+function createPagesWindow(
+  config: DesktopConfig,
+  page: string,
+  throttle: boolean,
+  minimized = false,
+): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -183,7 +200,8 @@ function createPagesWindow(config: DesktopConfig, page: string, throttle: boolea
     },
   });
   protection?.attach(window);
-  window.once('ready-to-show', () => window.show());
+  // Minimised, it still shows in the taskbar (never hidden: CLAUDE.md).
+  window.once('ready-to-show', () => (minimized ? window.minimize() : window.show()));
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     // Log the code only; the URL is known from the configuration.
     console.error('desktop: page failed to load', { errorCode, errorDescription });
@@ -197,12 +215,13 @@ function createPagesWindow(config: DesktopConfig, page: string, throttle: boolea
  *
  * @param config The URL to load.
  * @param page   The path to open (default the dashboard).
+ * @param minimized True to open it minimised (v1.3.0, openCallWindow()).
  * @returns The new window.
- * Called from: openPages(), start()
+ * Called from: openPages(), openCallWindow(), start()
  */
-function createMainWindow(config: DesktopConfig, page = '/'): BrowserWindow {
+function createMainWindow(config: DesktopConfig, page = '/', minimized = false): BrowserWindow {
   // This page runs the call while it is minimised (calls start in the overlay, ADR-0029).
-  const window = createPagesWindow(config, page, false);
+  const window = createPagesWindow(config, page, false, minimized);
   // v1.0.4 (ADR-0040): one call view at a time. Bringing this window back (the taskbar, the Dock, or
   // the overlay's ⋮) hides the overlay, which would otherwise float over it; minimising it brings
   // the overlay back, so the user is never left with neither during a call.
@@ -218,6 +237,7 @@ function createMainWindow(config: DesktopConfig, page = '/'): BrowserWindow {
   });
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null;
+    callWindowFromPanel = false;
     // The compact window belongs to the main window's call.
     compact?.close();
     // No page left to receive them: give the keys back to other apps.
@@ -266,12 +286,37 @@ function openPages(config: DesktopConfig, page: string): void {
     sideWindow = side;
     return;
   }
+  // Any page opened this way is shown in front: no longer the panel's background call window.
+  callWindowFromPanel = false;
   if (!mainWindow) {
     mainWindow = createMainWindow(config, page);
     return;
   }
   if (mainWindow.webContents.getURL() !== url) void mainWindow.loadURL(url);
   bringForward(mainWindow);
+}
+
+/**
+ * v1.3.0 (ADR-0055): opens the main window on a session's live page, minimised, for a call started from
+ * the home panel's Connect card. The panel stays in front while the call connects; the live page then
+ * opens the overlay, and the shell hides the panel. During a call nothing changes (the running call is
+ * never navigated away; its page reports that a call is already running).
+ *
+ * @param config    The Kite URL.
+ * @param sessionId The session, already checked to be a UUID.
+ * Called from: the OPEN_CALL_WINDOW_CHANNEL handler in start()
+ */
+function openCallWindow(config: DesktopConfig, sessionId: string): void {
+  if (callActive) return;
+  const page = `/live/${sessionId}`;
+  const url = new URL(page, config.kiteUrl).toString();
+  callWindowFromPanel = true;
+  if (!mainWindow) {
+    mainWindow = createMainWindow(config, page, true);
+    return;
+  }
+  if (mainWindow.webContents.getURL() !== url) void mainWindow.loadURL(url);
+  if (!mainWindow.isMinimized()) mainWindow.minimize();
 }
 
 /**
@@ -369,6 +414,10 @@ function start(): void {
     const store = createStore(path.join(app.getPath('userData'), 'kite-shell.json'));
     const shield = createProtection(store, process.platform, os.release());
     protection = shield;
+    // v1.3.0 (ADR-0055): every window, including any created later (by Electron itself or by future
+    // code), gets the protection setting as it is created. Owners still attach their own windows too;
+    // attaching twice changes nothing. Never hidden from the taskbar or process lists (CLAUDE.md).
+    app.on('browser-window-created', (_event, window) => shield.attach(window));
     // Screenshot answers (Day 5): in memory only. During a call: the display under the overlay
     // (v1.1.0: the main window is minimised then, maybe on another display).
     installScreenshot({
@@ -419,7 +468,9 @@ function start(): void {
       // The overlay is gone: never leave the user with the main window still minimised.
       onClosed: () => {
         snap.close();
-        if (mainWindow?.isMinimized()) mainWindow.restore();
+        // v1.3.0 (ADR-0055): a call from the panel's Connect card: the panel comes back instead, and
+        // the main window closes itself once the notes are saved.
+        if (mainWindow?.isMinimized() && !callWindowFromPanel) mainWindow.restore();
       },
     });
     installCompactWindows(
@@ -466,6 +517,23 @@ function start(): void {
         throw new Error('Not a Kite page');
       }
       openPages(config, page);
+    });
+    // v1.3.0 (ADR-0055): the Connect card starts a call in the main window; the panel asks for its size.
+    ipcMain.handle(OPEN_CALL_WINDOW_CHANNEL, (event, sessionId: unknown) => {
+      if (!isKiteSender(event, config.allowedOrigin)) {
+        throw new Error('Only the Kite page can do this');
+      }
+      if (!isSessionId(sessionId)) throw new Error('Not a session');
+      openCallWindow(config, sessionId);
+    });
+    ipcMain.handle(SIZE_PANEL_CHANNEL, (event, size: unknown) => {
+      if (!isKiteSender(event, config.allowedOrigin)) {
+        throw new Error('Only the Kite page can do this');
+      }
+      if (!isPanelSize(size)) throw new Error('Not a size');
+      // Only the panel may resize itself this way.
+      if (BrowserWindow.fromWebContents(event.sender) !== home?.window()) return;
+      home?.resize(size);
     });
     ipcMain.handle(WINDOW_CONTROL_CHANNEL, (event, action: unknown) => {
       if (!isKiteSender(event, config.allowedOrigin)) {

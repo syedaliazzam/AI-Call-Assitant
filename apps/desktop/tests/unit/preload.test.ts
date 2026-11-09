@@ -81,6 +81,8 @@ describe('the exposed bridge', () => {
       'moveOverlay',
       'onHotkey',
       'onSnapZone',
+      // v1.3.0 (ADR-0055): the Connect card's call window.
+      'openCallWindow',
       'openCompactView',
       'openPagesWindow',
       'os',
@@ -90,12 +92,16 @@ describe('the exposed bridge', () => {
       // v1.2.0 (spec S14): the chat bar's shortcut.
       'setChatHotkey',
       'setHotkeysEnabled',
+      // v1.3.0 (ADR-0055): click-through over the overlay's gaps.
+      'setOverlayClickThrough',
       'setOverlayCollapsed',
       'setOverlayLayout',
       'setOverlayMode',
       'setOverlayOpacity',
       'setShareProtection',
       'showCallWindow',
+      // v1.3.0 (ADR-0055): the launcher's window size.
+      'sizePanel',
       'version',
       'windowControl',
     ]);

@@ -243,6 +243,10 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       // v1.2.0 (spec S13, S14): the icon and the chat bar's shortcut.
       typeof window.kiteDesktop?.moveOverlay,
       typeof window.kiteDesktop?.setChatHotkey,
+      // v1.3.0 (ADR-0055): the Connect card's call window, the panel's size, click-through.
+      typeof window.kiteDesktop?.openCallWindow,
+      typeof window.kiteDesktop?.sizePanel,
+      typeof window.kiteDesktop?.setOverlayClickThrough,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -269,6 +273,8 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'moveOverlay',
     'onHotkey',
     'onSnapZone',
+    // v1.3.0 (ADR-0055): the Connect card's call window.
+    'openCallWindow',
     'openCompactView',
     'openPagesWindow',
     'os',
@@ -278,16 +284,20 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     // v1.2.0 (spec S14): the chat bar's shortcut.
     'setChatHotkey',
     'setHotkeysEnabled',
+    // v1.3.0 (ADR-0055): click-through over the overlay's gaps.
+    'setOverlayClickThrough',
     'setOverlayCollapsed',
     'setOverlayLayout',
     'setOverlayMode',
     'setOverlayOpacity',
     'setShareProtection',
     'showCallWindow',
+    // v1.3.0 (ADR-0055): the launcher's window size.
+    'sizePanel',
     'version',
     'windowControl',
   ]);
-  expect(bridge.methods).toEqual(Array(24).fill('function'));
+  expect(bridge.methods).toEqual(Array(27).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);

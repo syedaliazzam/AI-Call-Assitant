@@ -541,16 +541,9 @@ test('overlay: a coding answer, a figure to check and a private answer fit (ADR-
     );
     expect(fits, 'the window itself does not scroll').toBe(true);
     await shot(coding, size, `overlay-coding-${size.width}`);
-    // The chat box's switch sits next to it, on the choice the live page holds.
+    // ADR-0055: the chat bar as in the reference: no switch on it (the live page keeps the choice).
     await page.getByRole('button', { name: 'Chat', exact: false }).first().click();
-    // Below 620 px the switch is hidden to leave room to type; the last choice still applies.
-    if (size.width >= 620) {
-      await expect(
-        page.getByRole('radiogroup', { name: 'Who the answer is for' }).getByRole('radio', {
-          name: 'Ask AI',
-        }),
-      ).toHaveAttribute('aria-checked', 'true');
-    }
+    await expect(page.getByRole('radiogroup', { name: 'Who the answer is for' })).toHaveCount(0);
     await shot(coding, size, `overlay-chat-${size.width}`);
     await coding.context.close();
 
@@ -749,10 +742,29 @@ function isLoggedLayout(entry: unknown): entry is LoggedLayout {
 }
 
 /** The window the bars are drawn for. */
-const BARS_SIZE: Width = { width: 780, height: 520, touch: false };
+const BARS_SIZE: Width = { width: 900, height: 520, touch: false };
 
 /** A window wide enough for both panels side by side. */
 const WIDE_SIZE: Width = { width: 1080, height: 560, touch: false };
+
+test('ADR-0055: accounts without sync keep the classic bar 1 and chat bar', async () => {
+  const classic: Width = { width: 780, height: 520, touch: false };
+  const watched = await openOverlayView(classic, '&panels=none&shell=1&look=classic');
+  const { page } = watched;
+  const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+  await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveCount(0);
+  // Every key-cap still shows at 780, as before.
+  await expect(bar.getByRole('button', { name: 'Screenshot' }).locator('kbd')).toBeVisible();
+  expect(await bar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await bar.getByRole('button', { name: 'Chat' }).click();
+  const chat = page.getByRole('group', { name: 'Chat' });
+  await expect(chat.getByLabel('Type a question')).toHaveAttribute(
+    'placeholder',
+    'Type a message…',
+  );
+  await expect(chat.getByRole('radiogroup', { name: 'Who the answer is for' })).toBeVisible();
+  await watched.context.close();
+});
 
 test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothing cut off', async () => {
   const watched = await openOverlayView(BARS_SIZE, '&panels=none&shell=1');
@@ -772,6 +784,8 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
     expect.stringMatching(/^Answer/),
     expect.stringMatching(/^Screenshot/),
     expect.stringMatching(/^Chat/),
+    // ADR-0055: the Transcript pill with its switch.
+    'Transcript',
     'Drag here to move',
     'Shrink to an icon',
     'Call time',
@@ -787,7 +801,7 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
   // At the width a 1.1.0 window keeps, at its smallest, and in a narrow picture-in-picture window,
   // everything still fits, Exit's question too.
   const exit = bar.getByRole('button', { name: 'Exit: end call' });
-  for (const width of [780, 680, 560, 460]) {
+  for (const width of [900, 780, 680, 560, 460]) {
     await page.setViewportSize({ width, height: 400 });
     /**
      * Whether nothing on the bar is cut off.
@@ -901,7 +915,7 @@ test('S14: the chat bar opens under bar 1 at its width; Send waits for words; a 
   expect(Math.abs(box.width - bar1.width)).toBeLessThanOrEqual(2);
   const input = chat.getByLabel('Type a question');
   await expect(input).toBeFocused();
-  await expect(input).toHaveAttribute('placeholder', 'Type a message…');
+  await expect(input).toHaveAttribute('placeholder', 'Enter a message…');
   // [Ctrl Alt ↵] and [↵], from the map; Send is muted until there are words.
   await expect(
     chat.getByRole('button', { name: 'Send with a screenshot' }).locator('kbd'),
@@ -926,9 +940,10 @@ test('S14: the chat bar opens under bar 1 at its width; Send waits for words; a 
     type: 'chat-screenshot',
     question: 'And this diagram?',
   });
-  // The ✕ closes it, and who the answer is for stays available.
+  // The ✕ closes it. As in the reference: no switch and no microphone on the bar.
   await page.getByRole('button', { name: 'Chat' }).first().click();
-  await expect(chat.getByRole('radiogroup', { name: 'Who the answer is for' })).toBeVisible();
+  await expect(chat.getByRole('radiogroup', { name: 'Who the answer is for' })).toHaveCount(0);
+  await expect(chat.getByRole('button', { name: /listening|Speak/ })).toHaveCount(0);
   await chat.getByRole('button', { name: 'Close chat' }).click();
   await expect(chat).toHaveCount(0);
   await watched.context.close();
@@ -945,7 +960,8 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   expect(Math.abs(left.y - right.y)).toBeLessThanOrEqual(2);
   // The bars keep their width, centred over the panels.
   const bar1 = (await page.getByRole('toolbar', { name: 'Overlay controls' }).boundingBox())!;
-  expect(bar1.width).toBeLessThanOrEqual(782);
+  // ADR-0055: 900 wide since bar 1 holds the Transcript pill.
+  expect(bar1.width).toBeLessThanOrEqual(902);
   expect(Math.abs(bar1.x + bar1.width / 2 - 540)).toBeLessThanOrEqual(2);
 
   // You on the right, Them on the left, plain words with who and when under them.

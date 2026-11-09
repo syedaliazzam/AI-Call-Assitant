@@ -282,6 +282,14 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
         onCommand={(command) => channel.current?.send(command)}
         onMode={(mode) => getPlatform().setOverlayMode(mode)}
         onLayout={(layout: OverlayLayout) => getPlatform().setOverlayLayout(layout)}
+        // ADR-0055 (accounts with account sync): the reference app's bars and chat bar, and clicks
+        // passing through the gaps to the app behind (desktop 1.3.0).
+        referenceLook={synced}
+        {...(windowControls && synced
+          ? {
+              onClickThrough: (through: boolean) => getPlatform().setOverlayClickThrough(through),
+            }
+          : {})}
         {...(placement
           ? {
               onResize: (step: OverlayResizeStep) => getPlatform().resizeOverlay(step),
