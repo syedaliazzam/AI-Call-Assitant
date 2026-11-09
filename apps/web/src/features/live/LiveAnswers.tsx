@@ -27,6 +27,7 @@ import { getChatTarget, setChatTarget } from '@/core/storage/answerPrefs';
 import { getAutoAnswer } from '@/core/storage/autoAnswer';
 import { hintSeen, markHintSeen } from '@/core/storage/hintPrefs';
 import { groupLines, groupWords } from '@/core/transcript/group';
+import { speakerNames } from '@/core/transcript/turns';
 import { looksGarbled } from '@/core/transcript/questionKind';
 import { isUnclearGroup } from '@/core/transcript/unclear';
 import { AnswerPreferencesDialog } from '@/features/session-setup/AnswerPreferencesDialog';
@@ -251,6 +252,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const [questionClearedAt, setQuestionClearedAt] = useState(0);
   // The overlay as the slim script bar (v1.0.2; Ctrl+Alt+S or a ⋮ menu).
   const [scriptBar, setScriptBar] = useState(false);
+  // v1.3.2: Click-through (the ⋮ menu or Ctrl+Alt+X): the overlay passes clicks and keys outside its bars.
+  const [clickThrough, setClickThrough] = useState(false);
   // The Answer preferences dialog (⋮ menu).
   const [prefsOpen, setPrefsOpen] = useState(false);
   // The desktop shell can place the overlay (Reset size and position, presets; ADR-0035).
@@ -325,11 +328,12 @@ export function LiveAnswers(props: LiveAnswersProps) {
         finalText: group.finalText,
         provisionalText: group.provisionalText,
         tStart: group.tStart,
+        tEnd: group.tEnd,
         question: group.question,
         answered: answeredIds.has(group.id),
         unclear: isUnclearGroup(group),
       })),
-      themName: props.session.contactName?.trim() || 'Client 1',
+      themName: speakerNames({ contactName: props.session.contactName }).them,
       language,
       autoAnswer: autoOn,
       chatCount,
@@ -370,6 +374,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       ended: false,
       style,
       scriptBar,
+      clickThrough,
       dictationSupported: props.dictation?.supported ?? false,
       dictating: props.dictation?.listening ?? false,
       dictationNotice: props.dictation?.notice ?? null,
@@ -390,6 +395,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     props.micDeviceId,
     props.themSourceLabel,
     scriptBar,
+    clickThrough,
     props.callStartedAt,
     props.dictation?.supported,
     props.dictation?.listening,
@@ -481,6 +487,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
           .showCallWindow()
           .catch(() => undefined);
       } else if (command.type === 'script-bar') setScriptBar(command.on);
+      else if (command.type === 'click-through') setClickThrough(command.on);
       else if (command.type === 'dictate') {
         if (command.on) dictationRef.current?.start(chatTargetRef.current);
         else dictationRef.current?.stop();
@@ -574,6 +581,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
           // must be open for it to show.
           setScriptBar((on) => !on);
           openOverlay(sessionIdRef.current).catch(() => undefined);
+        } else if (action === 'click-through') {
+          // v1.3.2: Ctrl+Alt+X from any app turns Click-through on or off.
+          setClickThrough((on) => !on);
         } else if (action === 'ask-kite') {
           // Leaving this page would end the call, so during a call the shortcut opens the chat
           // box, here and in the overlay, set to a private answer (ADR-0030).

@@ -277,9 +277,9 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
   const colours = await page.evaluate(() => {
     const items = [...document.querySelectorAll('[aria-label="Live transcript"] li')];
     const label = (name: string) =>
-      // Under a bubble are its name and time (v1.1.0); the name carries the speaker's colour.
+      // v1.3.2: above each turn are its name and time; the name carries the speaker's colour.
       getComputedStyle(
-        items.find((li) => li.getAttribute('aria-label') === name)!.lastElementChild!
+        items.find((li) => li.getAttribute('aria-label') === name)!.firstElementChild!
           .firstElementChild!,
       ).color;
     const provisional = document.querySelector('[aria-label="Live transcript"] li span.italic');
@@ -961,19 +961,19 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   expect(bar1.width).toBeLessThanOrEqual(902);
   expect(Math.abs(bar1.x + bar1.width / 2 - 540)).toBeLessThanOrEqual(2);
 
-  // You on the right, Them on the left, plain words with who and when under them.
+  // v1.3.2 (like an Otter export): every turn from the same left edge, "<name>  <mm:ss>" above its words.
   const you = page.getByRole('listitem', { name: 'You said' }).first();
   const them = page.getByRole('listitem', { name: 'Them said' }).first();
   await expect(you).toBeVisible();
   await expect(them).toBeVisible();
   const youBox = (await you.boundingBox())!;
   const themBox = (await them.boundingBox())!;
-  expect(youBox.x + youBox.width).toBeGreaterThan(themBox.x + themBox.width);
-  await expect(you).toContainText(/You\s*·\s*\d/);
+  expect(Math.abs(youBox.x - themBox.x)).toBeLessThanOrEqual(1);
+  await expect(you.locator(':scope > span').first()).toHaveText(/^You\s*\d\d:\d\d/);
   // v1.3.0 (ADR-0057): the reference's lines, 17/600 with a 14 px name and time line.
-  await expect(you.locator('span').first()).toHaveCSS('font-size', '17px');
-  await expect(you.locator('span').first()).toHaveCSS('font-weight', '600');
-  await expect(you).toHaveCSS('text-align', 'right');
+  await expect(you.locator(':scope > span').last()).toHaveCSS('font-size', '17px');
+  await expect(you.locator(':scope > span').last()).toHaveCSS('font-weight', '600');
+  await expect(you.locator(':scope > span').first()).toHaveCSS('font-size', '14px');
 
   // The header: nav chips, Auto answer, Clear and collapse, in one line.
   await expect(

@@ -14,7 +14,13 @@
  */
 'use client';
 
-import { OVERLAY_GRID, type OverlayPreset, type ShareProtectionState } from '@kite/shared';
+import {
+  DEFAULT_GLOBAL_HOTKEYS,
+  hotkeyLabel,
+  OVERLAY_GRID,
+  type OverlayPreset,
+  type ShareProtectionState,
+} from '@kite/shared';
 import { LifeBuoy, SlidersHorizontal, User } from 'lucide-react';
 import { forwardRef } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
@@ -152,6 +158,13 @@ export interface LiveMenuProps {
   onPosition?: ((preset: OverlayPreset) => void) | undefined;
   /** Opens the full call window. */
   onCallWindow: () => void;
+  /**
+   * v1.3.2: turns Click-through on or off; absent where the window cannot pass clicks through (a
+   * browser, an older desktop app).
+   */
+  onClickThrough?: ((on: boolean) => void) | undefined;
+  /** v1.3.2: true on macOS, for the shortcut's words (⌘ for Ctrl). */
+  mac?: boolean;
   /** Opens the answer preferences. */
   onPreferences: () => void;
 }
@@ -254,6 +267,15 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           info="Paramount AI answers a finished question by itself, at most once every 15 seconds. This call only."
           onChange={(on) => onCommand({ type: 'auto-answer', on })}
         />
+        {props.onClickThrough && (
+          <MenuSwitch
+            label="Click-through"
+            checked={state?.clickThrough ?? false}
+            disabled={!state}
+            info={`Clicks and typing outside the bars go to the app behind, so you can work in it with the panels open. The bars still take clicks, to turn this off. ${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS['click-through'], props.mac ?? false)}`}
+            onChange={(on) => props.onClickThrough?.(on)}
+          />
+        )}
         {state?.style && (
           <MenuAction
             label="Answer preferences"

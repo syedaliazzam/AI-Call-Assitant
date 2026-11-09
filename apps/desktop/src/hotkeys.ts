@@ -9,7 +9,8 @@
  *          (`kite:set-hotkeys`, from the Kite origin only); they are also released when the app
  *          quits. A shortcut another app already uses is reported back, so the page can say which
  *          one, and Settings can check them all before a call (`kite:check-hotkeys`). The chat bar's
- *          screenshot shortcut (v1.2.0, spec S14) is held only while the bar is open.
+ *          screenshot shortcut (v1.2.0, spec S14) is held only while the bar is open. Click-through
+ *          (v1.3.2, ADR-0061: Ctrl+Alt+X) goes to the page like the script bar.
  * Used by: src/main.ts (installHotkeys)
  * Depends on: electron (globalShortcut, ipcMain types), @kite/shared (DEFAULT_GLOBAL_HOTKEYS,
  *             HOTKEY_ACTIONS, HotkeyStatus), src/channels.ts

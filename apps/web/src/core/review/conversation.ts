@@ -1,13 +1,15 @@
 /**
  * File: apps/web/src/core/review/conversation.ts
- * Purpose: A session's calls as one conversation: transcript lines and Kite's answers merged in time
- *          order, for the Transcript section's tabs and for its TXT and PDF downloads, with a divider
- *          between calls (v1.1.0). The downloads leave out each answer's private note: it was never
- *          meant to be said or shared.
- * Used by: src/features/review/ConversationSection.tsx
+ * Purpose: A session's calls as one conversation, for the Transcript section's tabs and for its TXT and
+ *          PDF downloads, with a divider between calls (v1.1.0). v1.3.2: laid out like an Otter export:
+ *          turns ("<Speaker name>  <mm:ss>", then the words; one speaker's consecutive lines merged),
+ *          each answer right after the turn it answered ("Paramount AI answered  <mm:ss>", "Question:",
+ *          "Answer:"). The downloads leave out each answer's private note: it was never meant to be said
+ *          or shared.
+ * Used by: src/features/review/ConversationSection.tsx, ./downloadTranscript.ts
  * Depends on: src/core/answer/format.ts (splitAnswer, cardQuestion), src/core/answer/history.ts
- *             (one entry per question, v1.0.4), src/core/transcript/display.ts (sentenceCase),
- *             src/core/transcript/group.ts (bubbles), src/core/storage/types.ts, ./pdf.ts
+ *             (one entry per question, v1.0.4), src/core/transcript/turns.ts (turns, mm:ss, names),
+ *             src/core/storage/types.ts, ./pdf.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review); ADR-0029
  *
  * Runs on this device only; nothing here is sent or logged.
@@ -16,8 +18,9 @@ import { cardQuestion, splitAnswer } from '../answer/format';
 import { mergeAnswers } from '../answer/history';
 import { CALL_GAP_MS } from '../storage/migrate';
 import type { Session, StoredAnswer, StoredUtterance } from '../storage/types';
-import { sentenceCase, type DisplayTerm } from '../transcript/display';
-import { groupLines, type TranscriptGroup } from '../transcript/group';
+import type { DisplayTerm } from '../transcript/display';
+import type { TranscriptGroup } from '../transcript/group';
+import { formatElapsed, lineTurns, speakerNames, type Turn } from '../transcript/turns';
 import { writePdf, type PdfLine, type PdfResult } from './pdf';
 
 /** One thing in the conversation. */
@@ -94,17 +97,31 @@ export function callStarts(items: readonly ConversationItem[]): number[] {
   return starts;
 }
 
-/** One thing on screen in the chat layout: a bubble, one of Kite's answers, or a call's divider. */
+/**
+ * One thing on screen and in the downloads (v1.3.2): a turn, one of Kite's answers placed right after
+ * the turn it answered, or a call's divider.
+ */
 export type ConversationEntry =
   | {
-      /** A bubble: one speaker's lines with short pauses between them (v1.0.2). */
-      kind: 'group';
+      /** One speaker's consecutive lines (core/transcript/turns.ts). */
+      kind: 'turn';
       /** When its first line started (Unix ms). */
       at: number;
-      /** The bubble. */
-      group: TranscriptGroup;
+      /** Milliseconds since its call started (the mm:ss on its header). */
+      elapsed: number;
+      /** The turn. */
+      turn: Turn<TranscriptGroup>;
     }
-  | Extract<ConversationItem, { kind: 'answer' }>
+  | {
+      /** One of Kite's answers. */
+      kind: 'answer';
+      /** When it was asked (Unix ms). */
+      at: number;
+      /** Milliseconds since its call started. */
+      elapsed: number;
+      /** The answer. */
+      answer: StoredAnswer;
+    }
   | {
       /** The start of a call, when the session has more than one (v1.1.0). */
       kind: 'call';
@@ -113,55 +130,123 @@ export type ConversationEntry =
     };
 
 /**
- * The conversation for the chat layout (v1.0.2): each run of lines between two answers is
- * grouped into bubbles (groupLines(): same speaker, pauses up to 4 s), so a turn cut by pauses
- * reads as one bubble. Answers stay where they were in time order, and a session with several calls has
- * a divider before each. The downloads keep one row per line (transcriptText(), transcriptPdf()).
+ * When a call started, for its mm:ss clock: the moment it connected when an answer recorded it (and it is
+ * no later than the call's first item), otherwise the call's first item.
+ *
+ * @param call The call's items, in time order (at least one).
+ * @returns The start (Unix ms).
+ * Called from: conversationEntries(); tests
+ */
+export function callReference(call: readonly ConversationItem[]): number {
+  const first = call[0]!.at;
+  const known = call.flatMap((item) =>
+    item.kind === 'answer' &&
+    item.answer.callStartedAt !== undefined &&
+    item.answer.callStartedAt <= first &&
+    first - item.answer.callStartedAt < CALL_GAP_MS
+      ? [item.answer.callStartedAt]
+      : [],
+  );
+  return known.length > 0 ? Math.max(...known) : first;
+}
+
+/**
+ * Which turn an answer follows (v1.3.2). An answer to something said goes after the turn holding the line
+ * its question ended on (StoredAnswer.sourceLineId; a saved line's id ends with the live id). Without
+ * one, or when that line is gone (merged into another, or cleared), and for chat and screenshot answers:
+ * after the last turn that started at or before the answer's time.
+ *
+ * @param answer The answer.
+ * @param turns  The call's turns, oldest first.
+ * @param lines  The call's saved lines.
+ * @returns The turn's index, or -1 to go before every turn.
+ * Called from: conversationEntries(); tests
+ */
+export function answerAnchor(
+  answer: Pick<StoredAnswer, 'mode' | 'sourceLineId' | 'createdAt'>,
+  turns: readonly Pick<Turn<TranscriptGroup>, 'tStart' | 'parts'>[],
+  lines: readonly Pick<StoredUtterance, 'id' | 'tStart'>[],
+): number {
+  const source = answer.mode === 'answer' ? answer.sourceLineId : undefined;
+  if (source) {
+    // Live line ids start again at u1 on every page load: the latest line with it, asked before.
+    const line = lines
+      .filter(
+        (candidate) =>
+          (candidate.id === source || candidate.id.endsWith(`:${source}`)) &&
+          candidate.tStart <= answer.createdAt,
+      )
+      .reduce<Pick<StoredUtterance, 'id' | 'tStart'> | undefined>(
+        (latest, candidate) =>
+          latest === undefined || candidate.tStart >= latest.tStart ? candidate : latest,
+        undefined,
+      );
+    const index = line
+      ? turns.findIndex((turn) => turn.parts.some((part) => part.lineIds.includes(line.id)))
+      : -1;
+    if (index !== -1) return index;
+  }
+  return turns.findLastIndex((turn) => turn.tStart <= answer.createdAt);
+}
+
+/**
+ * The conversation as turns with the answers placed in it (v1.3.2; v1.0.2 bubbles before): each call's
+ * lines merged into turns (same speaker, no pause over 8 s), each answer right after the turn it
+ * answered (answerAnchor()), and a divider before each call when a session has several. Every turn and
+ * answer carries its time since its call started.
  *
  * @param items The conversation (conversationItems()), in time order.
  * @param terms The session's spellings to restore.
- * @returns The bubbles, answers and dividers, in time order.
- * Called from: ConversationSection.tsx; tests
+ * @returns The turns, answers and dividers, oldest first.
+ * Called from: ConversationSection.tsx, paragraphs(); tests
  */
 export function conversationEntries(
   items: readonly ConversationItem[],
   terms: readonly DisplayTerm[] = [],
 ): ConversationEntry[] {
-  const entries: ConversationEntry[] = [];
   const starts = callStarts(items);
-  const dividers = new Set(starts.length > 1 ? starts : []);
-  let run: StoredUtterance[] = [];
-  const flush = () => {
-    // Saved lines are all final (only finished lines are stored).
-    const groups = groupLines(
-      run.map((line) => ({ ...line, final: true })),
-      { terms },
-    );
-    for (const group of groups) entries.push({ kind: 'group', at: group.tStart, group });
-    run = [];
-  };
+  const calls: ConversationItem[][] = [];
   for (const item of items) {
-    if (dividers.has(item.at)) {
-      flush();
-      entries.push({ kind: 'call', at: item.at });
-      // Two items can share a call's first moment: one divider.
-      dividers.delete(item.at);
-    }
-    if (item.kind === 'line') run.push(item.line);
-    else {
-      flush();
-      entries.push(item);
-    }
+    if (calls.length === 0 || starts.includes(item.at)) calls.push([]);
+    calls.at(-1)!.push(item);
   }
-  flush();
+  const entries: ConversationEntry[] = [];
+  for (const call of calls) {
+    if (starts.length > 1) entries.push({ kind: 'call', at: call[0]!.at });
+    const reference = callReference(call);
+    const lines = call.flatMap((item) => (item.kind === 'line' ? [item.line] : []));
+    const turns = lineTurns(lines, terms);
+    // The answers after each turn (index -1: before the first), in the order they were asked.
+    const after = new Map<number, StoredAnswer[]>();
+    for (const item of call) {
+      if (item.kind !== 'answer') continue;
+      const index = answerAnchor(item.answer, turns, lines);
+      after.set(index, [...(after.get(index) ?? []), item.answer]);
+    }
+    const answers = (index: number) => {
+      for (const answer of (after.get(index) ?? []).sort((a, b) => a.createdAt - b.createdAt)) {
+        entries.push({
+          kind: 'answer',
+          at: answer.createdAt,
+          elapsed: answer.createdAt - reference,
+          answer,
+        });
+      }
+    };
+    answers(-1);
+    turns.forEach((turn, index) => {
+      entries.push({ kind: 'turn', at: turn.tStart, elapsed: turn.tStart - reference, turn });
+      answers(index);
+    });
+  }
   return entries;
 }
 
 /**
- * Puts the entries in the order asked for. Newest first keeps each divider above its own call, so it
- * still says what follows.
+ * Puts the entries in the order asked for. Newest first keeps each divider above its own call, and each
+ * answer under the turn it answered.
  *
- * @param entries     The entries, in time order.
+ * @param entries     The entries, oldest first.
  * @param oldestFirst True to leave them in time order.
  * @returns The entries to show.
  * Called from: ConversationSection.tsx; tests
@@ -176,9 +261,15 @@ export function orderEntries(
     if (entry.kind === 'call') calls.push([entry]);
     else calls.at(-1)!.push(entry);
   }
-  return calls.reverse().flatMap(([first, ...rest]) => {
-    if (!first) return [];
-    return first.kind === 'call' ? [first, ...rest.reverse()] : [...rest.reverse(), first];
+  return calls.reverse().flatMap((call) => {
+    const divider = call[0]?.kind === 'call' ? [call[0]] : [];
+    // A block is a turn with the answers after it (answers before the first turn make their own).
+    const blocks: ConversationEntry[][] = [];
+    for (const entry of call.slice(divider.length)) {
+      if (entry.kind === 'turn' || blocks.length === 0) blocks.push([entry]);
+      else blocks.at(-1)!.push(entry);
+    }
+    return [...divider, ...blocks.reverse().flat()];
   });
 }
 
@@ -187,7 +278,7 @@ export function orderEntries(
  *
  * @param session   The session.
  * @param extension 'txt' or 'pdf'.
- * @returns For example "kite-transcript-lantern-freight.txt".
+ * @returns For example "paramount-ai-transcript-lantern-freight.txt".
  * Called from: ConversationSection.tsx; tests
  */
 export function transcriptFileName(session: Pick<Session, 'company'>, extension: string): string {
@@ -198,108 +289,135 @@ export function transcriptFileName(session: Pick<Session, 'company'>, extension:
   return `paramount-ai-transcript${name ? `-${name}` : ''}.${extension}`;
 }
 
-/** The time format in downloads. */
+/** The date and time on a call's divider in downloads. */
 const CLOCK = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' });
 
 /**
- * The paragraphs of a download, shared by TXT and PDF so they always say the same.
+ * How an answer is labelled (v1.3.2): "Paramount AI answered", with its type for a chat or screenshot
+ * answer, and "private" for one the user read rather than said.
  *
- * @param session The session.
- * @param items   The conversation.
- * @param terms   The session's own spellings (displayTerms()).
- * @returns The paragraphs.
+ * @param answer The answer.
+ * @returns For example "Paramount AI answered (chat)".
+ * Called from: paragraphs(), ConversationSection.tsx; tests
+ */
+export function answerLabel(answer: Pick<StoredAnswer, 'mode' | 'meta'>): string {
+  const kinds = [
+    ...(answer.mode === 'answer' ? [] : [answer.mode]),
+    ...(answer.meta?.target === 'kite' ? ['private'] : []),
+  ];
+  return `Paramount AI answered${kinds.length > 0 ? ` (${kinds.join(', ')})` : ''}`;
+}
+
+/** The session fields a download uses. */
+type DownloadSession = Pick<Session, 'company' | 'role' | 'contactName'>;
+
+/**
+ * The paragraphs of a download, shared by TXT and PDF so they always say the same (v1.3.2, the Otter
+ * export format): blocks separated by one blank line. A turn is "<Speaker name>  <mm:ss>" then its words;
+ * an answer is "Paramount AI answered  <mm:ss>" then "Question:" and "Answer:" lines, written out in full
+ * (bullets, code, tip), never its private note.
+ *
+ * @param session     The session.
+ * @param items       The conversation.
+ * @param terms       The session's own spellings (displayTerms()).
+ * @param accountName The account's display name, on the user's turns.
+ * @returns The lines.
  * Called from: transcriptText(), transcriptPdf()
  */
 function paragraphs(
-  session: Pick<Session, 'company' | 'role' | 'contactName'>,
+  session: DownloadSession,
   items: readonly ConversationItem[],
   terms: readonly DisplayTerm[],
+  accountName: string | null | undefined,
 ): PdfLine[] {
   // v1.1.0: no empty brackets when a session has no company or role.
   const about = [session.company.trim(), session.role.trim() && `(${session.role.trim()})`]
     .filter(Boolean)
     .join(' ');
-  const out: PdfLine[] = [
-    { text: about ? `Paramount AI transcript: ${about}` : 'Paramount AI transcript', bold: true },
-    { text: '' },
+  const names = speakerNames(session, accountName);
+  const blocks: PdfLine[][] = [
+    [{ text: about ? `Paramount AI transcript: ${about}` : 'Paramount AI transcript', bold: true }],
   ];
-  const them = session.contactName?.trim() || 'Them';
-  const starts = callStarts(items);
-  let lastKind: ConversationItem['kind'] | null = null;
-  for (const item of items) {
-    // v1.1.0: a divider between a session's calls, and a blank line around each answer.
-    if (lastKind !== null && starts.includes(item.at)) {
-      out.push(
-        { text: '' },
-        { text: `--- Call of ${CLOCK.format(item.at)} ---`, bold: true },
-        { text: '' },
-      );
-    } else if (lastKind === 'answer' || (lastKind !== null && item.kind === 'answer')) {
-      out.push({ text: '' });
-    }
-    lastKind = item.kind;
-    if (item.kind === 'line') {
-      const who = item.line.speaker === 'you' ? 'You' : them;
-      out.push({
-        text: `[${CLOCK.format(item.at)}] ${who}: ${sentenceCase(item.line.text, terms)}`,
-      });
+  for (const entry of conversationEntries(items, terms)) {
+    if (entry.kind === 'call') {
+      // Between calls only: the first call needs no divider under the title.
+      if (blocks.length === 1) continue;
+      blocks.push([{ text: `--- Call of ${CLOCK.format(entry.at)} ---`, bold: true }]);
       continue;
     }
-    const { headline, bullets, code, complexity, say, tip } = splitAnswer(item.answer.text, true);
-    const question =
-      item.answer.question || item.answer.cleanQuestion
-        ? ` (question: ${cardQuestion(item.answer.question, item.answer.cleanQuestion, terms)})`
-        : '';
-    // A private answer was read by the user, not said on the call: the file says which it was.
-    const kind = item.answer.meta?.target === 'kite' ? 'private answer' : 'answer';
-    out.push({ text: `[${CLOCK.format(item.at)}] Paramount AI ${kind}${question}`, bold: true });
-    out.push({ text: headline, indent: 14 });
-    for (const bullet of bullets) out.push({ text: `- ${bullet}`, indent: 14 });
-    for (const block of code) {
-      for (const line of block.text.split('\n')) out.push({ text: line, indent: 14 });
+    if (entry.kind === 'turn') {
+      const who = entry.turn.speaker === 'you' ? names.you : names.them;
+      blocks.push([
+        { text: `${who}  ${formatElapsed(entry.elapsed)}`, bold: true },
+        { text: entry.turn.finalText },
+      ]);
+      continue;
     }
-    if (complexity) out.push({ text: `Complexity: ${complexity}`, indent: 14 });
-    if (say) out.push({ text: say, indent: 14 });
-    if (tip) out.push({ text: tip, indent: 14 });
+    const { answer } = entry;
+    const { headline, bullets, code, complexity, say, tip } = splitAnswer(answer.text, true);
+    const question = cardQuestion(
+      answer.question,
+      answer.cleanQuestion,
+      terms,
+      `The latest from ${names.them}`,
+    );
+    const block: PdfLine[] = [
+      { text: `${answerLabel(answer)}  ${formatElapsed(entry.elapsed)}`, bold: true },
+      { text: `Question: ${question}` },
+      { text: `Answer: ${headline}`.trimEnd() },
+      ...bullets.map((bullet) => ({ text: `- ${bullet}` })),
+      ...code.flatMap((piece) =>
+        piece.text.split('\n').map((line) => ({ text: line, indent: 14 })),
+      ),
+    ];
+    if (complexity) block.push({ text: `Complexity: ${complexity}` });
+    // Labelled, so the file says which line is which.
+    if (say) block.push({ text: `Say: ${say}` });
+    if (tip) block.push({ text: `Tip: ${tip}` });
+    blocks.push(block);
   }
-  return out;
+  return blocks.flatMap((block, index) => (index === 0 ? block : [{ text: '' }, ...block]));
 }
 
 /**
- * The conversation as plain text.
+ * The conversation as plain text (v1.3.2: the Otter export format; code is indented four spaces).
  *
- * @param session The session.
- * @param items   The conversation.
- * @param terms   The session's own spellings.
- * @returns The file's text.
- * Called from: ConversationSection.tsx; tests
+ * @param session     The session.
+ * @param items       The conversation.
+ * @param terms       The session's own spellings.
+ * @param accountName The account's display name, on the user's turns ("You" when not given).
+ * @returns The file's text, ending with one newline.
+ * Called from: ConversationSection.tsx, downloadTranscript.ts; tests
  */
 export function transcriptText(
-  session: Pick<Session, 'company' | 'role' | 'contactName'>,
+  session: DownloadSession,
   items: readonly ConversationItem[],
   terms: readonly DisplayTerm[] = [],
+  accountName?: string | null,
 ): string {
-  return `${paragraphs(session, items, terms)
+  return `${paragraphs(session, items, terms, accountName)
     .map((line) => `${line.indent ? '    ' : ''}${line.text}`)
     .join('\n')}\n`;
 }
 
 /**
- * The conversation as a PDF.
+ * The conversation as a PDF, with the same lines as the text file.
  *
- * @param session The session.
- * @param items   The conversation.
- * @param terms   The session's own spellings.
+ * @param session     The session.
+ * @param items       The conversation.
+ * @param terms       The session's own spellings.
+ * @param accountName The account's display name, on the user's turns.
  * @returns The file, and whether some letters could not be drawn.
  * Called from: ConversationSection.tsx; tests
  */
 export function transcriptPdf(
-  session: Pick<Session, 'company' | 'role' | 'contactName'>,
+  session: DownloadSession,
   items: readonly ConversationItem[],
   terms: readonly DisplayTerm[] = [],
+  accountName?: string | null,
 ): PdfResult {
   const title = session.company.trim()
     ? `Paramount AI transcript: ${session.company.trim()}`
     : 'Paramount AI transcript';
-  return writePdf(title, paragraphs(session, items, terms));
+  return writePdf(title, paragraphs(session, items, terms, accountName));
 }

@@ -84,7 +84,7 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
 
   const streaming = answer?.status === 'streaming';
   return (
-    <section aria-label="Latest answer" className="relative flex min-h-0 flex-1 flex-col">
+    <section aria-label="Latest answer" className="relative flex min-h-0 flex-auto flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]">
         <button
           type="button"
@@ -137,10 +137,13 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 px-1.5 pb-1.5">
+      {/* v1.3.2: as tall as the answer, up to the panel's height; then it scrolls (data-scroll: the overlay
+          measures how tall it would be, to fit the window to it). */}
+      <div className="flex min-h-0 flex-auto flex-col px-1.5 pb-1.5">
         <div
           ref={scrollArea}
-          className="h-full overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2.5"
+          data-scroll=""
+          className="min-h-0 flex-auto overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2.5"
           style={{ zoom: props.fontScale }}
         >
           {answer ? (
@@ -188,8 +191,11 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                 </p>
               )}
 
-              {/* The footer: the actions on the left; type, how and when on the right. */}
-              <div className="mt-2.5 flex flex-wrap items-center gap-1 text-[12px] text-ui-muted">
+              {/* The footer: the actions on the left; type, how and when on the right. v1.3.2: with the
+                  panel as tall as the answer, the resize grip sits beside the footer: room is kept for it. */}
+              <div
+                className={`mt-2.5 flex flex-wrap items-center gap-1 text-[12px] text-ui-muted ${props.onResize ? 'pr-7' : ''}`}
+              >
                 {answer.text.trim() !== '' && (
                   <button
                     type="button"

@@ -295,6 +295,14 @@ export interface KiteDesktopApi {
    */
   setOverlayClickThrough?: (through: boolean) => Promise<void>;
   /**
+   * v1.3.2: gives the keyboard back to the app that had it, after a click on one of the overlay's panel
+   * controls (copy, ← →, a toggle) made the overlay the active window. Only the overlay's own page can
+   * ask, and only while the overlay has focus. Optional: an older shell keeps the focus.
+   *
+   * @returns Resolves when done.
+   */
+  releaseOverlayFocus?: () => Promise<void>;
+  /**
    * v1.3.0 (ADR-0056): the overlay's position (one of the six), or null when it has none yet (no
    * overlay open). Optional: an older shell has no positions grid.
    *
@@ -357,6 +365,13 @@ export interface OverlayLayout {
   popupHeight: number;
   /** The page's UI scale (Zoom in the ⋮ menu, default 1): the default heights grow with it. */
   scale?: number;
+  /**
+   * v1.3.2: how tall the visible bars and panels are, in DIPs, when that is less than the window would
+   * otherwise be: a 1.3.2 shell shrinks the window to it, so the window is exactly its visible box and
+   * covers nothing else. Absent (or ignored by an older shell): the window keeps its layout height, and
+   * the empty space passes clicks through.
+   */
+  contentHeight?: number;
 }
 
 /**

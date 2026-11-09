@@ -23,6 +23,9 @@
  *          area's edges: jump shortcuts, the ⋮ grid and a drop after a drag put it at one, remembered
  *          per display. On the bottom row the window is anchored at its bottom edge: it grows and
  *          shrinks upward, and the page puts its panels above the bars.
+ *          v1.3.2 (ADR-0061): the window is fitted to the bars and panels the page shows
+ *          (OverlayLayout.contentHeight, fittedHeight()), so it covers nothing else; releaseFocus() gives the
+ *          keyboard back to the app behind after a click on a panel (kite:overlay-release-focus).
  * Used by: src/main.ts
  * Depends on: electron (BrowserWindow, Screen, IpcMain types), src/security.ts
  *             (secureWebPreferences), src/protection.ts, src/store.ts, src/channels.ts,
@@ -66,6 +69,7 @@ import {
   OVERLAY_POSITION_CHANNEL,
   OVERLAY_POSITION_EVENT,
   OVERLAY_PRESET_CHANNEL,
+  OVERLAY_RELEASE_FOCUS_CHANNEL,
   OVERLAY_RESIZE_CHANNEL,
   SHOW_CALL_WINDOW_CHANNEL,
 } from './channels';
@@ -113,6 +117,9 @@ export const OVERLAY_LAYOUT_MIN_HEIGHTS: Readonly<Record<OverlayLayoutKey, numbe
 
 /** The tallest a menu may ask the window to grow, in DIPs (a bad value cannot fill the screen). */
 const MAX_POPUP_HEIGHT = 900;
+
+/** v1.3.2: the tallest content height the page may report, in DIPs (taller than any screen's work area). */
+const MAX_CONTENT_HEIGHT = 8_000;
 
 /**
  * The overlay's smallest size, in DIPs (v1.0.3: 560 wide, the narrowest that still shows the
@@ -239,6 +246,30 @@ export function layoutHeight(
 }
 
 /**
+ * v1.3.2: the window's height fitted to what the page shows: never taller than the layout's height (the
+ * most the user gave the panels), never shorter than the page's content, an open menu, or the bars' own
+ * minimum. The empty space below shorter panels is then not part of the window at all, so it covers
+ * nothing of the app behind.
+ *
+ * @param height        The layout's height (layoutHeight()).
+ * @param contentHeight What the page's bars and panels need, in DIPs; undefined from an older page.
+ * @param popupHeight   What an open menu needs (0 for none).
+ * @param scale         The page's UI scale (default 1).
+ * @returns The height, in whole DIPs.
+ * Called from: createCompactWindows() (applyLayout); tests
+ */
+export function fittedHeight(
+  height: number,
+  contentHeight: number | undefined,
+  popupHeight: number,
+  scale = 1,
+): number {
+  if (contentHeight === undefined || contentHeight <= 0) return height;
+  const floor = Math.max(contentHeight, popupHeight, OVERLAY_LAYOUT_MIN_HEIGHTS.bars * scale);
+  return Math.round(Math.min(height, floor));
+}
+
+/**
  * Whether a value from the page is a layout: two booleans and a height within reason.
  *
  * @param value What arrived over IPC.
@@ -256,7 +287,13 @@ export function isOverlayLayout(value: unknown): value is OverlayLayout {
     layout.popupHeight >= 0 &&
     layout.popupHeight <= MAX_POPUP_HEIGHT &&
     (layout.scale === undefined ||
-      (typeof layout.scale === 'number' && layout.scale >= 0.5 && layout.scale <= 2))
+      (typeof layout.scale === 'number' && layout.scale >= 0.5 && layout.scale <= 2)) &&
+    // v1.3.2: optional; when given, a finite height within reason.
+    (layout.contentHeight === undefined ||
+      (typeof layout.contentHeight === 'number' &&
+        Number.isFinite(layout.contentHeight) &&
+        layout.contentHeight >= 0 &&
+        layout.contentHeight <= MAX_CONTENT_HEIGHT))
   );
 }
 
@@ -672,6 +709,13 @@ export interface CompactWindows {
    * @param through True to pass clicks through.
    */
   setClickThrough(through: boolean): void;
+  /**
+   * v1.3.2: gives the keyboard back to the app that had it, when the overlay has it (a click on a panel
+   * control made the overlay the active window). Windows activates the next window below the overlay,
+   * which is the app that was active before the click. Does nothing when the overlay has no focus, so
+   * a late call never moves the keyboard away from what the user is doing.
+   */
+  releaseFocus(): void;
   /** Hides the overlay if it is showing; shows it again, without taking focus, if hidden. */
   toggle(): void;
   /**
@@ -912,6 +956,8 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       bottomRow ? bounds.y + bounds.height - area.y : area.y + area.height - bounds.y,
       layout.scale,
     );
+    // v1.3.2: no taller than the bars and panels the page shows.
+    const fitted = fittedHeight(height, layout.contentHeight, layout.popupHeight, layout.scale);
     let sideways = { x: bounds.x, width: bounds.width };
     if (key === 'both') {
       const wanted = deps.store.read().overlayBothWidth ?? OVERLAY_BOTH_WIDTH * (layout.scale ?? 1);
@@ -921,11 +967,11 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       sideways = narrowedBounds(bounds, narrow, area);
       narrow = null;
     }
-    if (height === bounds.height && sideways.width === bounds.width) return;
+    if (fitted === bounds.height && sideways.width === bounds.width) return;
     // The minimum drops to the bars first: a tall layout may not fit a short screen.
     current.setMinimumSize(COMPACT_MIN_SIZE.width, OVERLAY_LAYOUT_MIN_HEIGHTS.bars);
-    const y = bottomRow ? Math.max(area.y, bounds.y + bounds.height - height) : bounds.y;
-    current.setBounds({ ...bounds, ...sideways, y, height });
+    const y = bottomRow ? Math.max(area.y, bounds.y + bounds.height - fitted) : bounds.y;
+    current.setBounds({ ...bounds, ...sideways, y, height: fitted });
   };
 
   /**
@@ -1284,6 +1330,10 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       if (pass) current.setIgnoreMouseEvents(true, { forward: true });
       else current.setIgnoreMouseEvents(false);
     },
+    releaseFocus() {
+      if (!current || current.isDestroyed() || !current.isFocused()) return;
+      current.blur();
+    },
     toggle() {
       if (!current || current.isDestroyed()) return;
       if (current.isVisible()) current.hide();
@@ -1487,6 +1537,13 @@ export function installCompactWindows(
     const window = compact.window();
     if (!window || event.sender !== window.webContents) return;
     compact.setClickThrough(through === true);
+  });
+  // v1.3.2: the keyboard back to the app behind, from the overlay's own page only.
+  ipcMain.handle(OVERLAY_RELEASE_FOCUS_CHANNEL, (event) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');
+    const window = compact.window();
+    if (!window || event.sender !== window.webContents) return;
+    compact.releaseFocus();
   });
   ipcMain.handle(MINIMIZE_MAIN_CHANNEL, (event) => {
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can do this');

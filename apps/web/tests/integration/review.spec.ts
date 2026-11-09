@@ -365,12 +365,25 @@ test('Transcript: a chat with answer chips, an Answers tab; thumbs and reports a
   expect(order.indexOf(true)).toBeGreaterThan(0);
   expect(order.filter(Boolean)).toHaveLength(2);
   expect(order.at(-1)).toBe(false);
-  // Them on the left, You on the right.
+  // v1.3.2 (like an Otter export): every turn from the left edge, "<name>  <mm:ss>" above its words.
   const you = await page.getByRole('listitem', { name: 'You said' }).first().boundingBox();
   const them = await page.getByRole('listitem', { name: 'Them said' }).first().boundingBox();
   const area = (await conversation.boundingBox())!;
   expect(Math.round(them!.x)).toBe(Math.round(area.x));
-  expect(Math.round(you!.x + you!.width)).toBe(Math.round(area.x + area.width));
+  expect(Math.round(you!.x)).toBe(Math.round(area.x));
+  await expect(
+    page.getByRole('listitem', { name: 'You said' }).first().locator(':scope > span').first(),
+  ).toHaveText(/^You\s*\d\d:\d\d$/);
+
+  // v1.3.2: the other person's name is renamed in place, stored on the session, and used at once.
+  await page
+    .getByRole('button', { name: /: rename$/ })
+    .first()
+    .click();
+  const nameBox = page.getByRole('textbox', { name: "The other person's name" });
+  await nameBox.fill('Dana (invented)');
+  await nameBox.press('Enter');
+  await expect(page.getByRole('button', { name: 'Dana (invented): rename' }).first()).toBeVisible();
 
   // The oldest answer, which has no rating of its own to begin with.
   await page.getByRole('button', { name: 'Answers', exact: true }).click();
@@ -402,8 +415,13 @@ test('Download gives TXT and PDF with the conversation, not the private notes', 
   expect(txt.suggestedFilename()).toMatch(/^paramount-ai-transcript-.*\.txt$/);
   const text = readFileSync(await txt.path(), 'utf8');
   expect(text).toContain('Paramount AI transcript: Northwind Logistics (invented)');
-  expect(text).toContain('Them: ');
-  expect(text).toContain('Paramount AI answer');
+  // v1.3.2: turns headed "<name>  <mm:ss>" (the other person renamed above, when that test ran first),
+  // and each answer written out in full.
+  expect(text).toMatch(/^(Them|Dana \(invented\)) {2}\d\d:\d\d$/m);
+  expect(text).toMatch(/^You {2}\d\d:\d\d$/m);
+  expect(text).toMatch(
+    /^Paramount AI answered( \([\w, ]+\))? {2}\d\d:\d\d\nQuestion: .+\nAnswer: /m,
+  );
   const [pdf] = await Promise.all([
     page.waitForEvent('download'),
     page.getByRole('button', { name: 'Download PDF' }).click(),

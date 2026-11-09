@@ -225,6 +225,13 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
       else if (action === 'script-bar') {
         // Ctrl+Alt+S with the overlay focused: the live page holds the switch (v1.0.2).
         channel.current?.send({ type: 'script-bar', on: !(stateRef.current?.scriptBar ?? false) });
+      } else if (action === 'click-through') {
+        // v1.3.2: Ctrl+Alt+X with the overlay focused (another app holds it globally): the live page
+        // holds the switch.
+        channel.current?.send({
+          type: 'click-through',
+          on: !(stateRef.current?.clickThrough ?? false),
+        });
       } else if (action === 'ask-kite') {
         channel.current?.send({ type: 'chat-target', target: 'kite' });
         setChatOpen(true);
@@ -304,6 +311,8 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
         {...(windowControls && synced
           ? {
               onClickThrough: (through: boolean) => getPlatform().setOverlayClickThrough(through),
+              // v1.3.2: a click on a panel's button gives the keyboard back to the app behind.
+              onReleaseFocus: () => getPlatform().releaseOverlayFocus(),
             }
           : {})}
         {...(placement

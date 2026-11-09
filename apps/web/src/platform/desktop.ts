@@ -387,6 +387,11 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
       void bridge.setOverlayClickThrough?.(through).catch(() => undefined);
     },
 
+    /** Gives the keyboard back to the app behind the overlay (desktop 1.3.2; older shells keep it). */
+    releaseOverlayFocus() {
+      void bridge.releaseOverlayFocus?.().catch(() => undefined);
+    },
+
     /**
      * Whether the shell has the overlay's six positions (1.3.0 and later).
      *

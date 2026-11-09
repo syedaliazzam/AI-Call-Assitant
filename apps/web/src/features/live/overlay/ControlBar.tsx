@@ -76,6 +76,11 @@ export interface ControlBarProps {
   transcriptOpen?: boolean;
   /** Opens or closes the transcript panel (remembered with the panels). */
   onTranscript?: (open: boolean) => void;
+  /**
+   * v1.3.2: turns Click-through off from the "Click-through on" indicator, shown while it is on (the bars
+   * still take clicks, so the mouse can always turn it off).
+   */
+  onClickThroughOff?: () => void;
 }
 
 /**
@@ -399,6 +404,20 @@ export function ControlBar(props: ControlBarProps) {
           onClick={() => props.onCollapse(!collapsed)}
         >
           {collapsed ? <ExpandIcon /> : <CollapseIcon />}
+        </button>
+      )}
+      {state?.clickThrough && props.onClickThroughOff && !asking && (
+        // v1.3.2: says that clicks outside the bars go to the app behind; a click turns it off.
+        <button
+          type="button"
+          onClick={props.onClickThroughOff}
+          aria-label="Click-through on. Turn off"
+          aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS['click-through'], mac)}
+          title={`Turn off (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS['click-through'], mac)})`}
+          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-ui-border px-2 text-[12px] font-medium text-ui-text hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]"
+        >
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-ui-accent-fill" />
+          Click-through on
         </button>
       )}
       {!asking && <CallTimer startedAt={state?.startedAt} />}

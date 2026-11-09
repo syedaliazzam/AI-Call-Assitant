@@ -1,15 +1,18 @@
 /**
  * File: apps/web/src/features/review/ConversationSection.tsx
- * Purpose: The Transcript section of the session window, with two tabs (v1.1.0). Conversation: the
- *          calls as a chat (Them on the left, You on the right; each turn one bubble with its speaker
- *          above it), with a "Kite answered ▸" chip that opens each answer in place, and a divider
- *          between calls. Answers: every answer as a card, with its time, thumbs and "Report this
+ * Purpose: The Transcript section of the session window, with two tabs (v1.1.0). Conversation (v1.3.2,
+ *          like an Otter export): each turn as "<Speaker name>  <mm:ss>" with its words under it, each
+ *          answer right after the turn it answered as a collapsible "Paramount AI answered  <mm:ss>" with
+ *          its Question and Answer, and a divider between calls. "You" shows the account's display name;
+ *          the other person's name is renamable here (click it), stored on the session and synced. Answers: every answer as a card, with its time, thumbs and "Report this
  *          answer". Oldest first by default, with a toggle that is remembered. Also Download (TXT and
  *          PDF, always in time order) and Clear transcript (asks first).
  * Used by: src/features/review/SessionReview.tsx
  * Depends on: src/core/review/conversation.ts, src/core/answer/format.ts (splitAnswer),
  *             src/core/storage/answers.ts (rating, report), src/core/storage/utterances.ts (clear),
- *             src/core/transcript/display.ts (sentenceCase), src/ui (Button, Dialog, icons)
+ *             src/core/storage/sessions.ts (updateSession: the other person's name),
+ *             src/core/transcript/turns.ts (names, mm:ss), src/features/shell/AccountName.tsx,
+ *             src/ui (Button, Dialog, icons)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review); ADR-0029
  *
  * All of this stays on this device; reports are stored with the answer and sent nowhere.
@@ -22,6 +25,7 @@ import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { getReviewOldestFirst, setReviewOldestFirst } from '@/core/storage/answerPrefs';
 import {
+  answerLabel,
   conversationEntries,
   conversationItems,
   orderEntries,
@@ -32,8 +36,11 @@ import {
 import { downloadFile } from '@/core/review/downloadTranscript';
 import { rateAnswer, reportAnswer } from '@/core/storage/answers';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
+import { updateSession } from '@/core/storage/sessions';
 import { clearTranscript } from '@/core/storage/utterances';
 import type { DisplayTerm } from '@/core/transcript/display';
+import { formatElapsed, speakerNames } from '@/core/transcript/turns';
+import { useAccountName } from '@/features/shell/AccountName';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
 import { ChevronDownIcon, FlagIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
@@ -98,6 +105,7 @@ function AnswerCard({
   sessionType,
   terms,
   onChanged,
+  inline = false,
 }: {
   /** The answer. */
   answer: StoredAnswer;
@@ -107,6 +115,8 @@ function AnswerCard({
   terms: readonly DisplayTerm[];
   /** Reads the data again after a change. */
   onChanged: () => void;
+  /** v1.3.2: inside the Conversation tab, where the label above already names it: "Question:" and "Answer:". */
+  inline?: boolean;
 }) {
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState('');
@@ -132,12 +142,13 @@ function AnswerCard({
       className="my-1 border border-ui-border rounded-card bg-ui-surface shadow-card p-3 text-[13px]"
     >
       <p className="text-[13px] text-ui-muted">
-        Paramount AI · {MODE_LABELS[answer.mode]} · Question:{' '}
+        {inline ? '' : `Paramount AI · ${MODE_LABELS[answer.mode]} · `}Question:{' '}
         <span className="text-ui-text" title={answer.question || undefined}>
           {cardQuestion(answer.question, answer.cleanQuestion, terms, 'the latest from Them')}
         </span>
       </p>
       <AnswerTags meta={answer.meta} sessionType={sessionType} />
+      {inline && <p className="mt-1 text-[13px] text-ui-muted">Answer:</p>}
       <div className="mt-1">
         <AnswerBody
           text={answer.text}
@@ -200,15 +211,24 @@ function AnswerCard({
 }
 
 /**
- * One answer in the conversation: a chip that opens the card in place, so the talk stays readable.
+ * One answer in the conversation (v1.3.2): "Paramount AI answered  <mm:ss>" right after the turn it
+ * answered, which opens its Question and Answer in place, so the talk stays readable.
  *
+ * @param props.label    "Paramount AI answered", with its type for chat and screenshot answers.
+ * @param props.time     Its mm:ss since the call started.
  * @param props.children The card.
- * @returns The chip and, once opened, the card.
+ * @returns The label and, once opened, the card.
  * Rendered by: ConversationSection
  */
 function AnswerChip({
+  label,
+  time,
   children,
 }: {
+  /** The label. */
+  label: string;
+  /** Its mm:ss. */
+  time: string;
   /** The card. */
   children: ReactNode;
 }) {
@@ -219,15 +239,81 @@ function AnswerChip({
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex w-fit items-center gap-1 self-center rounded-full border border-ui-border bg-ui-band px-3 py-1 text-[13px] font-medium text-ui-text hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+        className="inline-flex w-fit items-center gap-2 rounded-control text-[13px] leading-5 hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
       >
-        Paramount AI answered
-        <span aria-hidden="true" className={open ? '' : '-rotate-90'}>
+        <span className="font-semibold text-ui-accent">{label}</span>
+        <span className="tabular-nums text-ui-muted">{time}</span>
+        <span aria-hidden="true" className={`text-ui-muted ${open ? '' : '-rotate-90'}`}>
           <ChevronDownIcon />
         </span>
       </button>
       {open && <ul className="mt-1 list-none">{children}</ul>}
     </li>
+  );
+}
+
+/**
+ * The other person's name on their turns (v1.3.2): a button; clicking it turns it into a box. Enter or
+ * leaving the box saves the name on the session (it syncs with the session), Escape keeps the old one.
+ * An empty name goes back to "Them".
+ *
+ * @param props.session   The session (its contactName).
+ * @param props.name      The name shown now.
+ * @param props.onChanged Reads the data again after a change.
+ * @returns The name, or the box while editing.
+ * Rendered by: ConversationSection
+ */
+function ThemName({
+  session,
+  name,
+  onChanged,
+}: {
+  /** The session. */
+  session: Session;
+  /** The name shown now. */
+  name: string;
+  /** Reads the data again after a change. */
+  onChanged: () => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  /** Saves the typed name, if it changed. */
+  function save() {
+    const next = (draft ?? '').trim().slice(0, 80);
+    setDraft(null);
+    if (next === (session.contactName?.trim() ?? '')) return;
+    void updateSession(session.id, { contactName: next }).then(onChanged, () => undefined);
+  }
+
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        title="Rename"
+        aria-label={`${name}: rename`}
+        onClick={() => setDraft(session.contactName?.trim() ?? '')}
+        className="rounded-control font-semibold text-ui-text underline-offset-2 hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+      >
+        {name}
+      </button>
+    );
+  }
+  return (
+    <input
+      aria-label="The other person's name"
+      // The user opened the box with a click: it takes the typing at once.
+      autoFocus
+      value={draft}
+      maxLength={80}
+      placeholder="Them"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={save}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') save();
+        else if (event.key === 'Escape') setDraft(null);
+      }}
+      className="h-7 w-44 rounded-control border border-ui-border bg-ui-input px-2 text-[13px] font-semibold text-ui-text pointer-coarse:min-h-11"
+    />
   );
 }
 
@@ -275,28 +361,32 @@ export function ConversationSection({
   const [notice, setNotice] = useState<string | null>(null);
   const [view, setView] = useState<(typeof VIEWS)[number]['value']>('conversation');
   const items = conversationItems(lines, answers);
-  // On screen, each turn is one bubble; the downloads below keep one row per line.
+  // v1.3.2: turns, with each answer after the turn it answered; the downloads say the same.
   const entries = conversationEntries(items, terms);
   // Oldest first unless the user chose otherwise (remembered on this device; v1.1.0, was newest).
   const savedOldestFirst = useSyncExternalStore(subscribeNever, getReviewOldestFirst, () => true);
   const [oldestChoice, setOldestChoice] = useState<boolean | null>(null);
   const oldestFirst = oldestChoice ?? savedOldestFirst;
   const shown = orderEntries(entries, oldestFirst);
-  const themName = session.contactName?.trim() || 'Them';
+  // v1.3.2: the account's display name on the user's turns, the session's name for the other person.
+  const accountName = useAccountName();
+  const names = speakerNames(session, accountName);
 
   /**
    * One answer's card.
    *
    * @param answer The answer.
+   * @param inline True inside the Conversation tab ("Question:" and "Answer:" lines).
    * @returns The card.
    */
-  const card = (answer: StoredAnswer) => (
+  const card = (answer: StoredAnswer, inline = false) => (
     <AnswerCard
       key={answer.id}
       answer={answer}
       sessionType={session.type}
       terms={terms}
       onChanged={onChanged}
+      inline={inline}
     />
   );
 
@@ -306,13 +396,13 @@ export function ConversationSection({
     downloadFile(
       transcriptFileName(session, 'txt'),
       'text/plain;charset=utf-8',
-      transcriptText(session, items, terms),
+      transcriptText(session, items, terms, accountName),
     );
   }
 
   /** Downloads the conversation as a PDF, saying so if some letters cannot be shown in it. */
   function downloadPdf() {
-    const { bytes, lossy } = transcriptPdf(session, items, terms);
+    const { bytes, lossy } = transcriptPdf(session, items, terms, accountName);
     downloadFile(transcriptFileName(session, 'pdf'), 'application/pdf', bytes.slice());
     setNotice(
       lossy
@@ -380,29 +470,39 @@ export function ConversationSection({
         </div>
       )}
       {items.length > 0 && view === 'conversation' && (
-        <ol aria-label="Conversation" className="mt-3 flex flex-col gap-1.5">
+        // v1.3.2: like an export, a blank line between turns.
+        <ol aria-label="Conversation" className="mt-3 flex flex-col gap-4">
           {shown.map((entry) => {
             if (entry.kind === 'call')
               return <CallDivider key={`call-${entry.at}`} at={entry.at} />;
             if (entry.kind === 'answer') {
-              return <AnswerChip key={entry.answer.id}>{card(entry.answer)}</AnswerChip>;
+              return (
+                <AnswerChip
+                  key={entry.answer.id}
+                  label={answerLabel(entry.answer)}
+                  time={formatElapsed(entry.elapsed)}
+                >
+                  {card(entry.answer, true)}
+                </AnswerChip>
+              );
             }
-            // One bubble per turn: a speaker's lines with short pauses between them (v1.0.2).
-            const who = entry.group.speaker === 'you' ? 'You' : themName;
+            // One turn: a speaker's consecutive lines, under "<name>  <mm:ss>".
+            const you = entry.turn.speaker === 'you';
             return (
               <li
-                key={entry.group.id}
-                aria-label={`${who} said`}
-                className={`flex max-w-[85%] flex-col ${entry.group.speaker === 'you' ? 'items-end self-end' : 'items-start self-start'}`}
+                key={entry.turn.id}
+                aria-label={you ? 'You said' : 'Them said'}
+                className="flex flex-col gap-0.5"
               >
-                <span className="mb-0.5 text-[13px] text-ui-muted">
-                  {who} · {CLOCK.format(entry.group.tStart)}
+                <span className="flex items-center gap-2 text-[13px] leading-5">
+                  {you ? (
+                    <span className="font-semibold text-ui-you">{names.you}</span>
+                  ) : (
+                    <ThemName session={session} name={names.them} onChanged={onChanged} />
+                  )}
+                  <span className="tabular-nums text-ui-muted">{formatElapsed(entry.elapsed)}</span>
                 </span>
-                <span
-                  className={`rounded-control px-3 py-1.5 text-[15px] text-ui-text ${entry.group.speaker === 'you' ? 'bg-ui-pale' : 'bg-ui-band'}`}
-                >
-                  {entry.group.finalText}
-                </span>
+                <span className="text-[15px] leading-6 text-ui-text">{entry.turn.finalText}</span>
               </li>
             );
           })}

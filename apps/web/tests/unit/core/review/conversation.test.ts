@@ -88,8 +88,8 @@ describe('one entry per question (v1.0.4, ADR-0040)', () => {
       question: 'HOW LONG DOES IT RUN? OKAY THANKS',
     };
     const text = transcriptText(SESSION, conversationItems([], [clean, old]), []);
-    expect(text).toContain('(question: What is the seat price?)');
-    expect(text).toContain('(question: How long does it run?)');
+    expect(text).toContain('Question: What is the seat price?');
+    expect(text).toContain('Question: How long does it run?');
     expect(text).not.toContain('UM WHAT');
     expect(text).not.toContain('OKAY THANKS');
   });
@@ -110,8 +110,8 @@ describe('conversationItems', () => {
   });
 });
 
-describe('conversationEntries (v1.0.2 bubbles)', () => {
-  it('groups each run of lines into bubbles and keeps answers in place', () => {
+describe('conversationEntries (v1.3.2 turns)', () => {
+  it('merges each speaker run into turns and puts an answer after the turn before it', () => {
     const items = conversationItems(
       [
         line('a', 'them', 'WHAT IS', 1_000),
@@ -122,10 +122,16 @@ describe('conversationEntries (v1.0.2 bubbles)', () => {
     );
     const entries = conversationEntries(items);
     expect(
-      entries.map((entry) => (entry.kind === 'group' ? entry.group.lineIds : entry.kind)),
+      entries.map((entry) =>
+        entry.kind === 'turn' ? entry.turn.parts.flatMap((part) => part.lineIds) : entry.kind,
+      ),
     ).toEqual([['a', 'b'], 'answer', ['c']]);
     const first = entries[0]!;
-    expect(first.kind === 'group' && first.group.finalText).toBe('What is the price');
+    expect(first.kind === 'turn' && first.turn.finalText).toBe('What is the price');
+    // Times since the call started: the first item, here.
+    expect(entries.map((entry) => (entry.kind === 'call' ? null : entry.elapsed))).toEqual([
+      0, 9_000, 19_000,
+    ]);
   });
 });
 
@@ -142,16 +148,19 @@ describe('transcriptText', () => {
   );
 
   it('has the speakers, the answer and the tip, in order', () => {
-    const out = transcriptText(SESSION, items);
+    const out = transcriptText(SESSION, items, [], 'Sam Rivera');
     expect(out).toContain('Paramount AI transcript: Lantern Freight (invented) (Data Analyst)');
-    expect(out).toContain('Them: What is the price');
-    expect(out).toContain('You: Let me check');
-    expect(out).toContain('Paramount AI answer (question: What is the price?)');
-    expect(out).toContain('    Fifty two dollars a seat.');
-    expect(out).toContain('    - Billed yearly');
-    expect(out).toContain('    Offer the sheet.');
-    expect(out.indexOf('Them:')).toBeLessThan(out.indexOf('Paramount AI answer'));
-    expect(out.indexOf('Paramount AI answer')).toBeLessThan(out.indexOf('You:'));
+    expect(out).toContain('Them  00:00\nWhat is the price');
+    expect(out).toContain('Sam Rivera  00:00\nLet me check');
+    expect(out).toContain('Paramount AI answered  00:00\nQuestion: What is the price?');
+    expect(out).toContain('Answer: Fifty two dollars a seat.\n- Billed yearly');
+    expect(out).toContain('Offer the sheet.');
+    expect(out.indexOf('Them  ')).toBeLessThan(out.indexOf('Paramount AI answered'));
+    expect(out.indexOf('Paramount AI answered')).toBeLessThan(out.indexOf('Sam Rivera  '));
+  });
+
+  it('says "You" when the account name is not known', () => {
+    expect(transcriptText(SESSION, items)).toContain('You  00:00\nLet me check');
   });
 
   it('leaves out the private note', () => {
@@ -303,46 +312,63 @@ describe('calls (v1.1.0, item 24)', () => {
 
   it('puts a divider before each call only when there are several', () => {
     const one = conversationEntries(conversationItems([savedLine('a', 0)], []));
-    expect(one.map((entry) => entry.kind)).toEqual(['group']);
+    expect(one.map((entry) => entry.kind)).toEqual(['turn']);
     const two = conversationEntries(
       conversationItems([savedLine('a', 0), savedLine('b', GAP)], []),
     );
-    expect(two.map((entry) => entry.kind)).toEqual(['call', 'group', 'call', 'group']);
+    expect(two.map((entry) => entry.kind)).toEqual(['call', 'turn', 'call', 'turn']);
+    // Each call's clock starts again.
+    expect(two.flatMap((entry) => (entry.kind === 'turn' ? [entry.elapsed] : []))).toEqual([0, 0]);
   });
 
-  it('newest first keeps each divider above its own call', () => {
+  /**
+   * An entry's short name, for comparing orders.
+   *
+   * @param entry The entry.
+   * @returns The turn's id, the answer's id, or "call@<time>".
+   */
+  const nameOf = (entry: ReturnType<typeof conversationEntries>[number]) =>
+    entry.kind === 'turn'
+      ? entry.turn.id
+      : entry.kind === 'answer'
+        ? entry.answer.id
+        : `call@${entry.at}`;
+
+  it('newest first keeps each divider above its own call, and each answer under its turn', () => {
+    // Over 8 s apart: two turns of the same speaker.
     const entries = conversationEntries(
       conversationItems(
         [savedLine('a', 0), savedLine('b', 10_000), savedLine('c', GAP)],
         [savedAnswer('x', 5_000)],
       ),
     );
-    const order = orderEntries(entries, false).map((entry) =>
-      entry.kind === 'group'
-        ? entry.group.id
-        : entry.kind === 'answer'
-          ? entry.answer.id
-          : `call@${entry.at}`,
-    );
-    expect(order).toEqual([`call@${GAP}`, 'c', 'call@0', 'b', 'x', 'a']);
+    expect(entries.map(nameOf)).toEqual(['call@0', 'a', 'x', 'b', `call@${GAP}`, 'c']);
+    expect(orderEntries(entries, false).map(nameOf)).toEqual([
+      `call@${GAP}`,
+      'c',
+      'call@0',
+      'b',
+      'a',
+      'x',
+    ]);
     expect(orderEntries(entries, true)).toEqual(entries);
   });
 
-  it('newest first with one call just reverses', () => {
+  it('newest first with one call reverses the turns, answers staying under theirs', () => {
     const entries = conversationEntries(
       conversationItems([savedLine('a', 0), savedLine('b', 10_000)], [savedAnswer('x', 5_000)]),
     );
-    expect(orderEntries(entries, false)).toEqual([...entries].reverse());
+    expect(orderEntries(entries, false).map(nameOf)).toEqual(['b', 'a', 'x']);
   });
 
-  it('the download has a divider between calls, and the contact name before each line', () => {
+  it('the download has a divider between calls, and the contact name on each turn', () => {
     const text = transcriptText(
       { company: 'Harbor Lane', role: '', contactName: 'Dana' },
       conversationItems([savedLine('a', 0), savedLine('b', GAP)], []),
     );
     expect(text.match(/--- Call of /g)).toHaveLength(1);
-    expect(text).toContain('Dana: Invented words.');
-    expect(text).not.toContain('Them:');
+    expect(text).toContain('Dana  00:00\nInvented words.');
+    expect(text).not.toContain('Them  ');
     expect(text).not.toContain('()');
   });
 });

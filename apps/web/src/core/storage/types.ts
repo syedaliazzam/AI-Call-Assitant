@@ -264,6 +264,13 @@ export interface StoredAnswer {
    * it from long gaps (core/storage/migrate.ts).
    */
   callStartedAt?: number;
+  /**
+   * v1.3.2: the id of the transcript line the question ended on (the live line id, for example "u12"; the
+   * saved line's id ends with it), so Review and the downloads put the answer right after that turn.
+   * Only answers to something said (mode 'answer'); missing on chat and screenshot answers and on
+   * answers saved earlier, which are placed by their time. No index uses it, so no new database version.
+   */
+  sourceLineId?: string;
 }
 
 /**

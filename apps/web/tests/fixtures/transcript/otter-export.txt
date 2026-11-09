@@ -1,0 +1,30 @@
+Paramount AI transcript: Lantern Freight (invented) (Platform Engineer)
+
+Dana  00:03
+Hi sam thanks for joining
+
+Sam Rivera  00:07
+Thanks for having me.
+
+Dana  00:12
+So how did you scale the routing service
+
+Paramount AI answered  00:30
+Question: How did you scale the routing service?
+Answer: We split routing into a queue and stateless workers.
+- Queue absorbs the peaks
+- Workers scale on queue depth
+Tip: Mention the 3x traffic month.
+
+Sam Rivera  00:17
+Good question.
+
+Sam Rivera  00:28
+We moved the queue to Lantern streams.
+
+Dana  00:40
+What did it cost per month
+
+Paramount AI answered (chat)  00:44
+Question: Monthly cost of Lantern streams
+Answer: About 400 dollars a month at that volume.

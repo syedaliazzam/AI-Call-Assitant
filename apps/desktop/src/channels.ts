@@ -88,6 +88,12 @@ export const OPEN_CALL_WINDOW_CHANNEL = 'kite:open-call-window';
 export const OVERLAY_CLICK_THROUGH_CHANNEL = 'kite:overlay-click-through';
 
 /**
+ * v1.3.2: the overlay's page gives the keyboard back to the app that had it, after a click on a panel
+ * control (invoke; no argument). Only the overlay window's own page, and only while it has focus.
+ */
+export const OVERLAY_RELEASE_FOCUS_CHANNEL = 'kite:overlay-release-focus';
+
+/**
  * v1.3.0 (ADR-0056): the open overlay's position (invoke; no argument reads it, an OverlayPreset puts the
  * overlay there at its current size; answers the position or null).
  */

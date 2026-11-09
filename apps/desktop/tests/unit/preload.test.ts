@@ -90,6 +90,8 @@ describe('the exposed bridge', () => {
       'openPagesWindow',
       'os',
       'placeOverlay',
+      // v1.3.2: the keyboard back to the app behind the overlay.
+      'releaseOverlayFocus',
       'resizeOverlay',
       'setCallActive',
       // v1.2.0 (spec S14): the chat bar's shortcut.

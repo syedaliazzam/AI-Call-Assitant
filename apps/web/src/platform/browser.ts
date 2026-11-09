@@ -414,6 +414,9 @@ export const browserPlatform: Platform = {
    */
   setOverlayClickThrough(_through) {},
 
+  /** A browser window keeps its focus: nothing to give back. */
+  releaseOverlayFocus() {},
+
   /**
    * A browser's picture-in-picture window has no positions.
    *
