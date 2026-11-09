@@ -19,6 +19,7 @@ import { isShortAnswer } from '../stt/noiseLine';
 import { NON_ENGLISH_TEXT } from '../stt/language';
 import { isBlip } from './blip';
 import {
+  ECHO_ORIGINAL_LEAD_MS,
   ECHO_SHORT_WINDOW_MS,
   ECHO_TINY_WINDOW_MS,
   ECHO_WINDOW_AFTER_MS,
@@ -276,12 +277,23 @@ export function createTranscript(
   ): string => {
     const from = tStart - before;
     const to = tEnd + after;
-    // v1.4: a hidden "Them" line (the user's own echo) is never the original of a "You" line.
+    // v1.4: a hidden "Them" line (the user's own echo) is never the original of a "You" line, nor is
+    // one that began after the "You" line did (ECHO_ORIGINAL_LEAD_MS for timing): a speaker echo comes
+    // after its original, and a "Them" line that starts later is rather the user's voice coming back
+    // (measured on the synthetic reverse-echo call, ADR-0063).
+    const latestStart = tStart + ECHO_ORIGINAL_LEAD_MS;
     const them = finals.filter(
-      (line) => line.speaker === 'them' && !line.echo && line.tEnd >= from && line.tStart <= to,
+      (line) =>
+        line.speaker === 'them' &&
+        !line.echo &&
+        line.tEnd >= from &&
+        line.tStart <= to &&
+        line.tStart <= latestStart,
     );
     const partial = partials.get('them');
-    if (partial && !partial.echo && partial.tEnd >= from) them.push(partial);
+    if (partial && !partial.echo && partial.tEnd >= from && partial.tStart <= latestStart) {
+      them.push(partial);
+    }
     return them
       .sort((a, b) => a.tStart - b.tStart)
       .map((line) => line.text)
@@ -334,9 +346,10 @@ export function createTranscript(
    *
    * @param text   The "Them" line's words.
    * @param tStart Its start.
+   * @param tEnd   Its end (now, for a line still being heard).
    * @returns True when it is the user's echo.
    */
-  const echoOfYou = (text: string, tStart: number): boolean => {
+  const echoOfYou = (text: string, tStart: number, tEnd: number): boolean => {
     const you = finals.filter(
       (line) =>
         line.speaker === 'you' &&
@@ -352,7 +365,31 @@ export function createTranscript(
       .sort((a, b) => a.tStart - b.tStart)
       .map((line) => line.text)
       .join(' ');
-    return isReverseEcho(text, youText);
+    // Overlapping the user's own speech, a weaker match is enough (echo.ts REVERSE_ECHO_INSIDE_SCORE).
+    const inside = you.some((line) => line.tEnd >= tStart);
+    // A network echo also ends after the user's words do; a line the speakers leaked onto the
+    // microphone ends with its original (measured on the synthetic speakers call, ADR-0063).
+    const youEnd = Math.max(...you.filter((line) => line.final).map((line) => line.tEnd));
+    if (Number.isFinite(youEnd) && tEnd < youEnd + REVERSE_ECHO_MIN_DELAY_MS) return false;
+    return isReverseEcho(text, youText, inside);
+  };
+
+  /**
+   * v1.4: whether a one-word "Them" line is noise heard while the user speaks (the tail of the user's
+   * own echo, a click on the line): not a real short answer, and inside "You" speech.
+   *
+   * @param text   The line's words.
+   * @param tStart Its start.
+   * @param tEnd   Its end.
+   * @returns True to hide it as noise.
+   */
+  const noiseDuringYou = (text: string, tStart: number, tEnd: number): boolean => {
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    if (words.length !== 1 || isShortAnswer(words[0]!)) return false;
+    const you = finals.filter((line) => line.speaker === 'you' && !line.echo);
+    const partial = partials.get('you');
+    if (partial && !partial.echo) you.push(partial);
+    return you.some((line) => line.tStart <= tStart + 200 && line.tEnd >= tEnd - 200);
   };
 
   /**
@@ -403,7 +440,8 @@ export function createTranscript(
       if (noiseDuringThem(line.text, line.tStart, line.tEnd)) return 'noise';
       return null;
     }
-    return echoOfYou(line.text, line.tStart) ? 'you-echo' : null;
+    if (echoOfYou(line.text, line.tStart, line.tEnd)) return 'you-echo';
+    return noiseDuringYou(line.text, line.tStart, line.tEnd) ? 'noise' : null;
   };
 
   /**
@@ -443,7 +481,7 @@ export function createTranscript(
         // A grey "You" line that is only the speakers' echo is hidden too (not counted: it is
         // counted once, when it becomes final); v1.4: so is a grey "Them" line that is the
         // user's own voice coming back.
-        echo: speaker === 'you' ? echoOfThem(text, start, now) : echoOfYou(text, start),
+        echo: speaker === 'you' ? echoOfThem(text, start, now) : echoOfYou(text, start, now),
         heldUntil: holdFor(speaker, existing?.heldUntil, existing !== undefined),
       });
       changed();
@@ -511,17 +549,22 @@ export function createTranscript(
             : candidate;
         });
       } else {
-        // v1.4: a "You" line may reveal that a "Them" line just after it was the user's own echo.
-        finals = finals.map((candidate) =>
-          candidate.speaker === 'them' &&
-          !candidate.echo &&
-          !candidate.nonEnglish &&
-          candidate.tStart >= line.tStart + REVERSE_ECHO_MIN_DELAY_MS &&
-          candidate.tStart <= line.tEnd + REVERSE_ECHO_MAX_DELAY_MS &&
-          echoOfYou(candidate.text, candidate.tStart)
-            ? markEcho(candidate, 'you-echo')
-            : candidate,
-        );
+        // v1.4: a "You" line may reveal that a "Them" line just after it was the user's own echo, or
+        // that a one-word "Them" line was noise heard while the user spoke.
+        finals = finals.map((candidate) => {
+          if (candidate.speaker !== 'them' || candidate.echo || candidate.nonEnglish)
+            return candidate;
+          if (
+            candidate.tStart >= line.tStart + REVERSE_ECHO_MIN_DELAY_MS &&
+            candidate.tStart <= line.tEnd + REVERSE_ECHO_MAX_DELAY_MS &&
+            echoOfYou(candidate.text, candidate.tStart, candidate.tEnd)
+          ) {
+            return markEcho(candidate, 'you-echo');
+          }
+          return noiseDuringYou(candidate.text, candidate.tStart, candidate.tEnd)
+            ? markEcho(candidate, 'noise')
+            : candidate;
+        });
       }
       changed();
       return stored;

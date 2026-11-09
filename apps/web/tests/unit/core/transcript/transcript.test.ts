@@ -322,6 +322,23 @@ describe('createTranscript', () => {
       expect(t.echoStats().count).toBe(0);
     });
 
+    it('keeps a "Them" line that ends with its leaked copy on "You" (speakers, not a network echo)', () => {
+      const t = setup();
+      t.addFinal({
+        speaker: 'you',
+        text: 'SORRY CAN YOU REPEAT THAT HOW DO YOU DECIDE WHAT GETS TESTED',
+        tStart: 1_000,
+        tEnd: 6_100,
+      });
+      t.addFinal({
+        speaker: 'them',
+        text: 'HOW DO YOU DECIDE WHAT GETS TESTED',
+        tStart: 3_500,
+        tEnd: 6_000,
+      });
+      expect(t.lines().some((line) => line.speaker === 'them')).toBe(true);
+    });
+
     it('hides a one-word noise on "You" inside "Them" speech, but keeps a short answer', () => {
       const t = setup();
       t.addFinal({

@@ -186,11 +186,12 @@ describe('autoAnswerDue: what', () => {
     ).toBeNull();
   });
 
-  it('does nothing while someone is still speaking, or for a remark', () => {
+  it('waits while the other person is still speaking, not while the user is; never for a remark', () => {
     const later = T + 4_000;
     expect(
       autoAnswerDue(state([line('a', 'them', QUESTION, T, { final: false })]), later),
     ).toBeNull();
+    // The user's grey words do not wait (ADR-0063: people start talking right after a question).
     expect(
       autoAnswerDue(
         state([
@@ -198,8 +199,8 @@ describe('autoAnswerDue: what', () => {
           line('b', 'you', 'SO WE STARTED WITH', T + 900, { final: false }),
         ]),
         later,
-      ),
-    ).toBeNull();
+      )?.kind,
+    ).toBe('answer');
     expect(autoAnswerDue(state([line('a', 'them', 'OKAY THAT SOUNDS GOOD', T)]), later)).toBeNull();
   });
 
@@ -312,6 +313,16 @@ describe('continuationOf', () => {
     ];
     expect(continuationOf(lines, last, 8_000, T).map((item) => item.id)).toEqual(['b']);
     expect(continuationOf(lines, last, 1_000, T)).toEqual([]);
+  });
+
+  it('ignores the other person listening ("mm-hm") and stops while the user is answering', () => {
+    const lines = [
+      line('a', 'them', 'WHAT DOES THE PLAN COST', T),
+      line('y', 'you', 'SO THE PLAN COSTS FORTY', T + 3_000, { final: false }),
+      line('b', 'them', 'MM HM', T + 2_500, { tStart: T + 2_000 }),
+    ];
+    expect(continuationOf(lines, last, 8_000, T)).toEqual([]);
+    expect(continuationOf([lines[0]!, lines[2]!], last, 8_000, T)).toEqual([]);
   });
 
   it('stops at a real reply and at talk about the call', () => {

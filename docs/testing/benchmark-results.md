@@ -323,3 +323,87 @@ Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200), plugged in. Only n
 | Loopback track settings, Electron 44.9.3 (`track.getSettings()`) | `getDisplayMedia({ audio: true })`: echoCancellation, noiseSuppression, autoGainControl all **true**. With the three set to false: all **false**; the microphone keeps all three true | The desktop app now asks for them off (`DESKTOP_DISPLAY_OPTIONS`). |
 | Confidence calibration (the real `stt.worker.ts` in Chromium; 30 synthetic English lines from two Windows voices, 41 lines of the names set, 30 lines of romanised Urdu read by the same two voices) | Mean token log probability: synthetic English p50 −0.32 (min −0.44); names set p50 −0.72, p5 −1.13 (min −1.17); Urdu stand-in p50 −0.93 (max −0.76). Share of unsure pieces (< −1): 0.00 / 0.26 / 0.45 at p50 | Confidence alone cannot tell accented English from the stand-in. With "five words or more, mean < −0.75, over 30% unsure pieces, under 25% everyday English words": **0 of 30** synthetic English, **1 of 41** names-set lines and **21 of 30** stand-in lines marked as another language. |
 | Checks | Unit 1,682 + desktop 200; integration 161 of 161 (including the simulated call (e) for each new rule) | |
+
+## Call quality, synthetic calls (9 Nov 2026, ADR-0063)
+
+Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200), plugged in. `pnpm --filter web stt:calls`: the synthetic call of ADR-0063 (195 s, two Windows voices) through the real speech worker in Chromium at real time, then the transcript and auto-answer code on a simulated clock. **baseline** = main at 32e5e74 (before ADR-0062), measured with its own worker and rules; **after-p1** = ADR-0062 as deployed; **after-p2** = with the fixes the harness found (ADR-0063 "Fixes found by the harness"). Numbers only; no Claude request. The voices are much easier to recognise than real speech: word error rates here are not a real call's.
+
+**headphones**
+
+| Metric | baseline | after-p1 | after-p2 |
+|---|---|---|---|
+| Words on the right channel (all) | 99.4% | 100.0% | 100.0% |
+|   You / Them | 100.0% / 98.8% | 100.0% / 100.0% | 100.0% / 100.0% |
+| Lines from the other side (You / Them) | 0 / 0 | 0 / 0 | 0 / 0 |
+| WER as shown (You / Them) | 18.5% / 19.2% | 7.3% / 5.1% | 7.3% / 5.1% |
+| One-word noise lines per 10 min | 0.0 | 0.0 | 0.0 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 1/3 | 0/3 | 0/3 |
+| Questions answered | 1/7 | 5/7 | 7/7 |
+| Questions answered whole | 1/7 | 5/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 0 | 0 |
+| Cards in all | 2 | 5 | 7 |
+| Question end → answer sent p50 / p95 | 1506 / 1506 ms | 1819 / 1984 ms | 1810 / 1975 ms |
+| Other-language lines marked | 0/2 | 2/2 | 2/2 |
+| English lines wrongly marked | 0 | 0 | 0 |
+
+**speakers**
+
+| Metric | baseline | after-p1 | after-p2 |
+|---|---|---|---|
+| Words on the right channel (all) | 90.8% | 91.4% | 91.1% |
+|   You / Them | 83.2% / 98.8% | 84.2% / 100.0% | 84.2% / 100.0% |
+| Lines from the other side (You / Them) | 4 / 0 | 3 / 0 | 3 / 0 |
+| WER as shown (You / Them) | 75.3% / 19.2% | 49.4% / 15.3% | 49.4% / 20.3% |
+| One-word noise lines per 10 min | 3.1 | 0.0 | 0.0 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 0/3 | 0/3 | 0/3 |
+| Questions answered | 2/7 | 6/7 | 5/7 |
+| Questions answered whole | 2/7 | 6/7 | 5/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 0 | 0 |
+| Cards in all | 3 | 6 | 5 |
+| Question end → answer sent p50 / p95 | 1564 / 1768 ms | 1577 / 1964 ms | 1587 / 1974 ms |
+| Other-language lines marked | 0/2 | 2/2 | 2/2 |
+| English lines wrongly marked | 0 | 0 | 0 |
+
+**reverse-echo**
+
+| Metric | baseline | after-p1 | after-p2 |
+|---|---|---|---|
+| Words on the right channel (all) | 90.3% | 97.4% | 97.9% |
+|   You / Them | 100.0% / 83.9% | 100.0% / 95.4% | 100.0% / 96.0% |
+| Lines from the other side (You / Them) | 0 / 4 | 0 / 1 | 0 / 0 |
+| WER as shown (You / Them) | 30.3% / 52.0% | 27.5% / 37.9% | 7.3% / 36.7% |
+| One-word noise lines per 10 min | 9.2 | 9.2 | 3.1 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 0/3 | 0/3 | 0/3 |
+| Questions answered | 1/7 | 5/7 | 7/7 |
+| Questions answered whole | 1/7 | 5/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 1 | 1 |
+| Cards in all | 2 | 6 | 8 |
+| Question end → answer sent p50 / p95 | 1514 / 1514 ms | 1678 / 16302 ms | 1698 / 1879 ms |
+| Other-language lines marked | 0/2 | 1/2 | 1/2 |
+| English lines wrongly marked | 0 | 0 | 0 |
+
+**noisy**
+
+| Metric | baseline | after-p1 | after-p2 |
+|---|---|---|---|
+| Words on the right channel (all) | 99.4% | 100.0% | 100.0% |
+|   You / Them | 100.0% / 98.8% | 100.0% / 100.0% | 100.0% / 100.0% |
+| Lines from the other side (You / Them) | 0 / 0 | 0 / 0 | 0 / 0 |
+| WER as shown (You / Them) | 19.1% / 19.2% | 7.3% / 5.1% | 7.3% / 5.1% |
+| One-word noise lines per 10 min | 3.1 | 3.1 | 3.1 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 1/3 | 0/3 | 0/3 |
+| Questions answered | 1/7 | 6/7 | 7/7 |
+| Questions answered whole | 1/7 | 6/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 0 | 0 |
+| Cards in all | 2 | 6 | 7 |
+| Question end → answer sent p50 / p95 | 1530 / 1530 ms | 1590 / 1966 ms | 1572 / 1948 ms |
+| Other-language lines marked | 0/2 | 2/2 | 2/2 |
+| English lines wrongly marked | 0 | 0 | 0 |
