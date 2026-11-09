@@ -257,30 +257,35 @@ export function Sidebar({ collapsed, drawerOpen, onCloseDrawer, card, footer }: 
         </button>
       </div>
 
-      <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-3">
-        <div className="flex flex-col gap-0.5">
-          <NavLink
-            href="/sessions/new"
-            label="Create session"
-            // The 28 px accent-tinted tile (spec S2). It hangs a little left, so the words line up.
-            icon={
-              <span className="-mx-1 flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-ui-accent-tint text-ui-accent-fill">
-                <Plus aria-hidden="true" size={18} strokeWidth={2} />
-              </span>
-            }
-            active={pathname === '/sessions/new'}
-            collapsed={collapsed}
-            onClick={onCloseDrawer}
-          />
-          {list(MAIN_ITEMS)}
+      {/* v1.3.2: only the links scroll. The desktop app card and Help stay pinned above the footer,
+          so on a short laptop window the card is never sliced off by the footer. */}
+      <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-3">
+          <div className="flex flex-col gap-0.5">
+            <NavLink
+              href="/sessions/new"
+              label="Create session"
+              // The 28 px accent-tinted tile (spec S2). It hangs a little left, so the words line up.
+              icon={
+                <span className="-mx-1 flex size-7 shrink-0 items-center justify-center rounded-[8px] bg-ui-accent-tint text-ui-accent-fill">
+                  <Plus aria-hidden="true" size={18} strokeWidth={2} />
+                </span>
+              }
+              active={pathname === '/sessions/new'}
+              collapsed={collapsed}
+              onClick={onCloseDrawer}
+            />
+            {list(MAIN_ITEMS)}
+          </div>
+          <div className="flex flex-col gap-1">
+            {!collapsed && <p className="px-2.5 text-section text-ui-muted">Prepare</p>}
+            {collapsed && <p className="px-2.5 text-section text-ui-muted md:hidden">Prepare</p>}
+            {list(PREPARE_ITEMS)}
+          </div>
         </div>
-        <div className="flex flex-col gap-1">
-          {!collapsed && <p className="px-2.5 text-section text-ui-muted">Prepare</p>}
-          {collapsed && <p className="px-2.5 text-section text-ui-muted md:hidden">Prepare</p>}
-          {list(PREPARE_ITEMS)}
-        </div>
-        <div className="mt-auto flex flex-col gap-2">
-          {!collapsed && card}
+        <div className="flex shrink-0 flex-col gap-2 px-3 pb-3">
+          {/* Below 560 px of height the card would leave no room for the links: it hides. */}
+          {!collapsed && card && <div className="[@media(max-height:559px)]:hidden">{card}</div>}
           <NavLink
             href="/help"
             label="Help"
