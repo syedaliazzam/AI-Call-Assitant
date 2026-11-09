@@ -73,5 +73,10 @@ export function isBlip(text: string): boolean {
   if (words.length <= BLIP_MAX_WORDS) return true;
   if (BACKCHANNEL_PHRASES.test(trimmed)) return true;
   if (words.every((word) => BACKCHANNELS.has(word))) return true;
+  // Two listening sounds joined into one line, with one stray word heard with them ("um … okay"),
+  // are still listening (measured on the synthetic speakers call, ADR-0064).
+  // A single letter counts too: "okay" is often heard as "O K".
+  const listening = words.filter((word) => BACKCHANNELS.has(word) || word.length === 1).length;
+  if (words.length <= 4 && listening >= words.length - 1) return true;
   return looksGarbled(trimmed);
 }

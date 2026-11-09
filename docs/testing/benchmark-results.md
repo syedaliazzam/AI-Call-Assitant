@@ -407,3 +407,87 @@ Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200), plugged in. `pnpm 
 | Question end → answer sent p50 / p95 | 1530 / 1530 ms | 1590 / 1966 ms | 1572 / 1948 ms |
 | Other-language lines marked | 0/2 | 2/2 | 2/2 |
 | English lines wrongly marked | 0 | 0 | 0 |
+
+## Call quality, Phase 3: the coupling gate (9 Nov 2026, ADR-0064)
+
+Same laptop and harness as the section above. **after-p3** = with the coupling gate in the speech worker and the two blip rules (ADR-0064), measured with its own worker; baseline and after-p2 as above.
+
+**headphones**
+
+| Metric | baseline | after-p2 | after-p3 |
+|---|---|---|---|
+| Words on the right channel (all) | 99.4% | 100.0% | 100.0% |
+|   You / Them | 100.0% / 98.8% | 100.0% / 100.0% | 100.0% / 100.0% |
+| Lines from the other side (You / Them) | 0 / 0 | 0 / 0 | 0 / 0 |
+| WER as shown (You / Them) | 18.5% / 19.2% | 7.3% / 5.1% | 7.3% / 5.1% |
+| One-word noise lines per 10 min | 0.0 | 0.0 | 0.0 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 1/3 | 0/3 | 0/3 |
+| Questions answered | 1/7 | 7/7 | 7/7 |
+| Questions answered whole | 1/7 | 7/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 0 | 0 |
+| Cards in all | 2 | 7 | 7 |
+| Question end → answer sent p50 / p95 | 1506 / 1506 ms | 1810 / 1975 ms | 1588 / 1964 ms |
+| Other-language lines marked | 0/2 | 2/2 | 2/2 |
+| English lines wrongly marked | 0 | 0 | 0 |
+
+**speakers**
+
+| Metric | baseline | after-p2 | after-p3 |
+|---|---|---|---|
+| Words on the right channel (all) | 90.8% | 91.1% | 100.0% |
+|   You / Them | 83.2% / 98.8% | 84.2% / 100.0% | 100.0% / 100.0% |
+| Lines from the other side (You / Them) | 4 / 0 | 3 / 0 | 0 / 0 |
+| WER as shown (You / Them) | 75.3% / 19.2% | 49.4% / 20.3% | 5.1% / 5.1% |
+| One-word noise lines per 10 min | 3.1 | 0.0 | 0.0 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 0/3 | 0/3 | 0/3 |
+| Questions answered | 2/7 | 5/7 | 7/7 |
+| Questions answered whole | 2/7 | 5/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 0 | 0 |
+| Cards in all | 3 | 5 | 7 |
+| Question end → answer sent p50 / p95 | 1564 / 1768 ms | 1587 / 1974 ms | 1627 / 2014 ms |
+| Other-language lines marked | 0/2 | 2/2 | 2/2 |
+| English lines wrongly marked | 0 | 0 | 0 |
+
+**reverse-echo**
+
+| Metric | baseline | after-p2 | after-p3 |
+|---|---|---|---|
+| Words on the right channel (all) | 90.3% | 97.9% | 98.0% |
+|   You / Them | 100.0% / 83.9% | 100.0% / 96.0% | 100.0% / 96.0% |
+| Lines from the other side (You / Them) | 0 / 4 | 0 / 0 | 0 / 0 |
+| WER as shown (You / Them) | 30.3% / 52.0% | 7.3% / 36.7% | 5.6% / 36.7% |
+| One-word noise lines per 10 min | 9.2 | 3.1 | 3.1 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 0/3 | 0/3 | 0/3 |
+| Questions answered | 1/7 | 7/7 | 7/7 |
+| Questions answered whole | 1/7 | 7/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 1 | 1 |
+| Cards in all | 2 | 8 | 8 |
+| Question end → answer sent p50 / p95 | 1514 / 1514 ms | 1698 / 1879 ms | 1710 / 1891 ms |
+| Other-language lines marked | 0/2 | 1/2 | 1/2 |
+| English lines wrongly marked | 0 | 0 | 0 |
+
+**noisy**
+
+| Metric | baseline | after-p2 | after-p3 |
+|---|---|---|---|
+| Words on the right channel (all) | 99.4% | 100.0% | 100.0% |
+|   You / Them | 100.0% / 98.8% | 100.0% / 100.0% | 100.0% / 100.0% |
+| Lines from the other side (You / Them) | 0 / 0 | 0 / 0 | 0 / 0 |
+| WER as shown (You / Them) | 19.1% / 19.2% | 7.3% / 5.1% | 7.3% / 5.1% |
+| One-word noise lines per 10 min | 3.1 | 3.1 | 3.1 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 1/3 | 0/3 | 0/3 |
+| Questions answered | 1/7 | 7/7 | 7/7 |
+| Questions answered whole | 1/7 | 7/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 0 | 0 |
+| Cards in all | 2 | 7 | 7 |
+| Question end → answer sent p50 / p95 | 1530 / 1530 ms | 1572 / 1948 ms | 1592 / 1968 ms |
+| Other-language lines marked | 0/2 | 2/2 | 2/2 |
+| English lines wrongly marked | 0 | 0 | 0 |

@@ -22,6 +22,7 @@
  * Blob URLs), not fetched a second time by importScripts.
  */
 import { ChannelDecoder, type RecognizerLike } from './channel';
+import { CouplingGate } from './coupling';
 import {
   clearSttCache,
   downloadModelFiles,
@@ -335,6 +336,55 @@ function channelDecoder(
  * @param endTime Capture time on the sender's audio clock (s).
  */
 function decodeChunk(channel: ChannelId, samples: Float32Array, endTime: number): void {
+  // v1.4 (ADR-0064): the coupling gate sees both channels. "Them" is its reference; a "You" chunk
+  // waits (at most one step) for the "Them" sound up to its end, then may be silenced as echo.
+  if (channel === 'them') {
+    coupling.pushThem(samples, endTime);
+    decodeNow('them', samples, endTime);
+    releaseHeldYou(false);
+    return;
+  }
+  heldYou.push({ samples, endTime });
+  releaseHeldYou(false);
+}
+
+/**
+ * The coupling gate of this worker (core/stt/coupling.ts, ADR-0064): keeps the other side's voice,
+ * heard again through the laptop's speakers, out of the "You" channel.
+ */
+let coupling = new CouplingGate();
+
+/** "You" chunks waiting for the "Them" sound they may echo (one or two at most). */
+const heldYou: { samples: Float32Array; endTime: number }[] = [];
+
+/**
+ * Decodes the "You" chunks that can be decided now: their reference has arrived, there is no "Them"
+ * channel, or they have waited long enough (more than two waiting, or forced at detach and stop).
+ *
+ * @param force True to decode every waiting chunk.
+ */
+function releaseHeldYou(force: boolean): void {
+  while (heldYou.length > 0) {
+    const next = heldYou[0]!;
+    const waiting =
+      !force &&
+      channels.has('them') &&
+      heldYou.length <= 2 &&
+      !coupling.hasReferenceFor(next.samples, next.endTime);
+    if (waiting) return;
+    heldYou.shift();
+    decodeNow('you', coupling.processYou(next.samples, next.endTime), next.endTime);
+  }
+}
+
+/**
+ * Feeds one chunk to a channel's decoder, reporting a failure.
+ *
+ * @param channel Which channel.
+ * @param samples 16 kHz samples.
+ * @param endTime Capture time of the last sample (audio clock, seconds).
+ */
+function decodeNow(channel: ChannelId, samples: Float32Array, endTime: number): void {
   try {
     channelDecoder(channel)?.accept(samples, endTime);
   } catch (error) {
@@ -371,6 +421,10 @@ function sendStats(): void {
  * @param channel Which channel.
  */
 function detachChannel(channel: ChannelId): void {
+  // Waiting "You" chunks are decoded first: no more reference is coming, or the channel is ending.
+  releaseHeldYou(true);
+  // A new "Them" stream (a new share) is a new path: the coupling is learnt again.
+  if (channel === 'them') coupling = new CouplingGate();
   const decoder = channels.get(channel);
   if (!decoder) return;
   decoder.flush();
