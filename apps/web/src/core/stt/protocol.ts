@@ -151,6 +151,8 @@ export type ToWorker =
       hotwords: string;
       /** Candidate texts kept by beam search (4 everywhere except /dev/stt-test). */
       beamWidth: BeamWidth;
+      /** v1.4 (ADR-0065): "them" final lines carry their recent audio (for the end-of-turn model). */
+      turnAudio?: boolean;
     }
   | {
       /** Start decoding a channel from a worklet's MessagePort (audio skips the main thread). */
@@ -272,6 +274,24 @@ export type FromWorker =
        * probabilities. Absent when the runtime gives none. Numbers only, never text.
        */
       confidence?: LineConfidence;
+      /**
+       * v1.4 (ADR-0065): with turnAudio, a "them" line's last 8 s of audio up to just after its end of
+       * speech, for the end-of-turn model. Never stored or logged.
+       */
+      recent?: Float32Array;
+    }
+  | {
+      /**
+       * v1.4 (ADR-0065): the speaker has been quiet for a moment while their words show (only with
+       * turnAudio, "them" only): their recent audio, for the end-of-turn model to judge early.
+       */
+      type: 'pause';
+      /** Which channel. */
+      channel: ChannelId;
+      /** End of speech of this pause (Unix ms, capture time). */
+      speechEnd: number;
+      /** The last 8 s of audio up to just after that end. Never stored or logged. */
+      recent: Float32Array;
     }
   | {
       /** Updated statistics (about once a second while loaded). */

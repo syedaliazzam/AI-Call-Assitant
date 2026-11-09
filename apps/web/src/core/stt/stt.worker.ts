@@ -115,8 +115,15 @@ const scope = globalThis as unknown as WorkerScope;
  */
 function send(message: FromWorker): void {
   // A final line's audio (v1.0.1, only with keepAudio) is moved, not copied.
-  if (message.type === 'final' && message.audio) {
-    scope.postMessage(message, [message.audio.buffer]);
+  if (message.type === 'pause') {
+    scope.postMessage(message, [message.recent.buffer]);
+    return;
+  }
+  if (message.type === 'final' && (message.audio || message.recent)) {
+    const moved = [message.audio?.buffer, message.recent?.buffer].filter(
+      (buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer,
+    );
+    scope.postMessage(message, moved);
     return;
   }
   scope.postMessage(message);
@@ -142,6 +149,8 @@ let recognizer: OnlineRecognizer | null = null;
 let modelPaths: ModelPaths | null = null;
 /** Beam width from 'load'; kept so 'set-hotwords' re-creates the recognizer with the same one. */
 let beamWidth: BeamWidth = DEFAULT_BEAM_WIDTH;
+/** v1.4 (ADR-0065): whether "them" final lines carry their recent audio (from 'load'). */
+let turnAudio = false;
 const channels = new Map<ChannelId, ChannelDecoder>();
 /** Cancels a download in progress (on 'stop'). */
 let loadAbort: AbortController | null = null;
@@ -287,6 +296,7 @@ async function loadModel(message: Extract<ToWorker, { type: 'load' }>): Promise<
     bpeVocab: path(BPE_VOCAB_NAME),
   };
   beamWidth = message.beamWidth;
+  turnAudio = message.turnAudio === true;
   recognizer = createRecognizer(message.hotwords);
   const readyAt = performance.now();
 
@@ -322,7 +332,13 @@ function channelDecoder(
   if (!recognizer) return null;
   let decoder = channels.get(channel);
   if (!decoder) {
-    decoder = new ChannelDecoder(channel, recognizer, send, { inputSampleRate, keepAudio });
+    // v1.4 (ADR-0065): the other side's lines carry their recent audio for the end-of-turn model.
+    const keepRecent = channel === 'them' && turnAudio;
+    decoder = new ChannelDecoder(channel, recognizer, send, {
+      inputSampleRate,
+      keepAudio,
+      keepRecent,
+    });
     channels.set(channel, decoder);
   }
   return decoder;

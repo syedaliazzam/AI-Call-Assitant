@@ -491,3 +491,95 @@ Same laptop and harness as the section above. **after-p3** = with the coupling g
 | Question end → answer sent p50 / p95 | 1530 / 1530 ms | 1572 / 1948 ms | 1592 / 1968 ms |
 | Other-language lines marked | 0/2 | 2/2 | 2/2 |
 | English lines wrongly marked | 0 | 0 | 0 |
+
+## Call quality, Phase 4: the end-of-turn model (10 Nov 2026, ADR-0065)
+
+Same laptop and harness. **after-p4** = Smart Turn v3.2 judging "Them" lines that look cut off, used only to shorten the 3 s wait. The four after-p4 runs were made in the evening, when the laptop was busier: lines reached the page about 0.2–0.5 s later than in the afternoon runs for every version (the Phase 3 code re-run at the same time on headphones: line lag p50 1,318 ms, answer sent p50 1,915 ms, against 1,297 and 1,845 ms for Phase 4), so the answer delays below are not comparable with the earlier columns; the same-time pair is.
+
+| Measurement | Result |
+|---|---|
+| The model with Kite's features (Chromium, 30 synthetic sentences) | complete sentences median 0.96 (83% ≥ 0.5); cut at 55% median 0.08 (67% < 0.5) |
+| One judgment (one WebAssembly thread, features + model) | about 0.3–0.5 s; asked at a 300 ms pause, ready when the line is final (p50 0 ms after it) |
+| Judged at every pause | the speech worker fell up to 3.9 s behind on the reverse-echo call: judgments limited to lines that look cut off (1 per call here) |
+| On the synthetic calls, following the model both ways | right on "…and" (0.01) and 6 of 7 question ends; 0.02 on one finished question and 0.01 on one complete clause; +0.35 s median delay, no gain in whole questions: used only to shorten |
+| Same time, headphones: Phase 3 code vs Phase 4 | whole 7/7 vs 7/7; answer sent p50 1,915 vs 1,845 ms |
+
+**headphones**
+
+| Metric | baseline | after-p3 | after-p4 |
+|---|---|---|---|
+| Words on the right channel (all) | 99.4% | 100.0% | 100.0% |
+|   You / Them | 100.0% / 98.8% | 100.0% / 100.0% | 100.0% / 100.0% |
+| Lines from the other side (You / Them) | 0 / 0 | 0 / 0 | 0 / 0 |
+| WER as shown (You / Them) | 18.5% / 19.2% | 7.3% / 5.1% | 7.3% / 5.1% |
+| One-word noise lines per 10 min | 0.0 | 0.0 | 0.0 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 1/3 | 0/3 | 0/3 |
+| Questions answered | 1/7 | 7/7 | 7/7 |
+| Questions answered whole | 1/7 | 7/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 0 | 0 |
+| Cards in all | 2 | 7 | 7 |
+| Question end → answer sent p50 / p95 | 1506 / 1506 ms | 1588 / 1964 ms | 1845 / 2276 ms |
+| Other-language lines marked | 0/2 | 2/2 | 2/2 |
+| English lines wrongly marked | 0 | 0 | 0 |
+
+**speakers**
+
+| Metric | baseline | after-p3 | after-p4 |
+|---|---|---|---|
+| Words on the right channel (all) | 90.8% | 100.0% | 100.0% |
+|   You / Them | 83.2% / 98.8% | 100.0% / 100.0% | 100.0% / 100.0% |
+| Lines from the other side (You / Them) | 4 / 0 | 0 / 0 | 0 / 0 |
+| WER as shown (You / Them) | 75.3% / 19.2% | 5.1% / 5.1% | 5.1% / 5.1% |
+| One-word noise lines per 10 min | 3.1 | 0.0 | 0.0 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 0/3 | 0/3 | 0/3 |
+| Questions answered | 2/7 | 7/7 | 7/7 |
+| Questions answered whole | 2/7 | 7/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 0 | 0 |
+| Cards in all | 3 | 7 | 7 |
+| Question end → answer sent p50 / p95 | 1564 / 1768 ms | 1627 / 2014 ms | 2074 / 2313 ms |
+| Other-language lines marked | 0/2 | 2/2 | 2/2 |
+| English lines wrongly marked | 0 | 0 | 0 |
+
+**reverse-echo**
+
+| Metric | baseline | after-p3 | after-p4 |
+|---|---|---|---|
+| Words on the right channel (all) | 90.3% | 98.0% | 98.0% |
+|   You / Them | 100.0% / 83.9% | 100.0% / 96.0% | 100.0% / 96.0% |
+| Lines from the other side (You / Them) | 0 / 4 | 0 / 0 | 0 / 0 |
+| WER as shown (You / Them) | 30.3% / 52.0% | 5.6% / 36.7% | 5.6% / 36.7% |
+| One-word noise lines per 10 min | 9.2 | 3.1 | 3.1 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 0/3 | 0/3 | 0/3 |
+| Questions answered | 1/7 | 7/7 | 7/7 |
+| Questions answered whole | 1/7 | 7/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 1 | 1 |
+| Cards in all | 2 | 8 | 8 |
+| Question end → answer sent p50 / p95 | 1514 / 1514 ms | 1710 / 1891 ms | 1984 / 4512 ms |
+| Other-language lines marked | 0/2 | 1/2 | 1/2 |
+| English lines wrongly marked | 0 | 0 | 0 |
+
+**noisy**
+
+| Metric | baseline | after-p3 | after-p4 |
+|---|---|---|---|
+| Words on the right channel (all) | 99.4% | 100.0% | 100.0% |
+|   You / Them | 100.0% / 98.8% | 100.0% / 100.0% | 100.0% / 100.0% |
+| Lines from the other side (You / Them) | 0 / 0 | 0 / 0 | 0 / 0 |
+| WER as shown (You / Them) | 19.1% / 19.2% | 7.3% / 5.1% | 7.3% / 5.1% |
+| One-word noise lines per 10 min | 3.1 | 3.1 | 3.1 |
+| Multi-line questions split (lines) | 3/3 | 2/3 | 2/3 |
+| Multi-line questions split (turns) | 1/3 | 0/3 | 0/3 |
+| Questions answered | 1/7 | 7/7 | 7/7 |
+| Questions answered whole | 1/7 | 7/7 | 7/7 |
+| Duplicate cards | 0 | 0 | 0 |
+| Cards for non-questions | 1 | 0 | 0 |
+| Cards in all | 2 | 7 | 7 |
+| Question end → answer sent p50 / p95 | 1530 / 1530 ms | 1592 / 1968 ms | 1902 / 2453 ms |
+| Other-language lines marked | 0/2 | 2/2 | 2/2 |
+| English lines wrongly marked | 0 | 0 | 0 |

@@ -399,3 +399,51 @@ describe('ChannelDecoder: confidence (v1.4, ADR-0062)', () => {
     }
   });
 });
+
+describe('ChannelDecoder: end-of-turn audio (v1.4, ADR-0065)', () => {
+  it('posts a pause with recent audio after 300 ms of quiet, and attaches recent audio to the final', () => {
+    const { recognizer } = fakeRecognizer(['TELL ME ABOUT THE'], [], 'TELL ME ABOUT THE');
+    const events: ChannelEvent[] = [];
+    const decoder = new ChannelDecoder('them', recognizer, (e) => events.push(e), {
+      clock: fakeClock(),
+      gate: null,
+      keepRecent: true,
+    });
+    for (let i = 0; i < 5; i += 1) decoder.accept(loud(), i * 0.1 + 0.1);
+    for (let i = 5; i < 5 + PAUSE_END_MS / 100 + 1; i += 1) decoder.accept(quiet(), i * 0.1 + 0.1);
+    const pauses = events.filter((e) => e.type === 'pause');
+    expect(pauses).toHaveLength(1);
+    expect(pauses[0]?.type === 'pause' && pauses[0].recent.length).toBeGreaterThan(0);
+    const final = events.find((e) => e.type === 'final');
+    expect(final?.type === 'final' && final.recent?.length).toBeGreaterThan(0);
+  });
+
+  it('posts nothing for words that look finished (the model may only shorten a cut-off wait)', () => {
+    const { recognizer } = fakeRecognizer(['HOW BIG IS THE TEAM'], [], 'HOW BIG IS THE TEAM');
+    const events: ChannelEvent[] = [];
+    const decoder = new ChannelDecoder('them', recognizer, (e) => events.push(e), {
+      clock: fakeClock(),
+      gate: null,
+      keepRecent: true,
+    });
+    for (let i = 0; i < 5; i += 1) decoder.accept(loud(), i * 0.1 + 0.1);
+    for (let i = 5; i < 5 + PAUSE_END_MS / 100 + 1; i += 1) decoder.accept(quiet(), i * 0.1 + 0.1);
+    expect(events.some((e) => e.type === 'pause')).toBe(false);
+    const final = events.find((e) => e.type === 'final');
+    expect(final?.type === 'final' && final.recent).toBeUndefined();
+  });
+
+  it('posts nothing of the kind without keepRecent', () => {
+    const { recognizer } = fakeRecognizer(['HELLO THERE'], [], 'HELLO THERE');
+    const events: ChannelEvent[] = [];
+    const decoder = new ChannelDecoder('them', recognizer, (e) => events.push(e), {
+      clock: fakeClock(),
+      gate: null,
+    });
+    for (let i = 0; i < 5; i += 1) decoder.accept(loud(), i * 0.1 + 0.1);
+    for (let i = 5; i < 5 + PAUSE_END_MS / 100 + 1; i += 1) decoder.accept(quiet(), i * 0.1 + 0.1);
+    expect(events.some((e) => e.type === 'pause')).toBe(false);
+    const final = events.find((e) => e.type === 'final');
+    expect(final?.type === 'final' && final.recent).toBeUndefined();
+  });
+});

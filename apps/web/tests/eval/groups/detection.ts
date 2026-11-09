@@ -3,7 +3,8 @@
  * Purpose: The evaluation groups of v1.1.0 (ADR-0043). `question-detection`: words that reach Claude
  *          after the rules in core/transcript/questionKind.ts have let them through: garbled lines and
  *          non-questions must not be answered as if they were questions, and real questions in messy
- *          transcripts must still be answered. `screenshot-types`: each kind of screen gets its own
+ *          transcripts must still be answered; v1.4 (ADR-0065): talk about the call itself gets the
+ *          hidden type none and no answer. `screenshot-types`: each kind of screen gets its own
  *          shape, and any code runs in the sandbox. Everything here is invented.
  * Used by: scripts/eval-answers.ts
  * Depends on: tests/eval/groups/types.ts
@@ -136,7 +137,7 @@ export const DETECTION_SCENARIOS: Scenario[] = [
     'A remark, with nothing asked.',
     CLIENT,
     'OKAY THAT SOUNDS GOOD THANKS FOR THAT',
-    ['smalltalk', 'unclear'],
+    ['smalltalk', 'unclear', 'none'],
     ['a short, friendly reply with no details and no promises'],
   ),
   detection(
@@ -144,7 +145,7 @@ export const DETECTION_SCENARIOS: Scenario[] = [
     'Thinking aloud, with nothing asked.',
     PRACTICE,
     'RIGHT LET ME JUST FIND MY NOTES HERE',
-    ['smalltalk', 'unclear'],
+    ['none', 'smalltalk', 'unclear'],
     ['a short, friendly reply with no details and no promises'],
   ),
   detection(
@@ -152,8 +153,25 @@ export const DETECTION_SCENARIOS: Scenario[] = [
     'Small talk about the weather.',
     CLIENT,
     'IT HAS BEEN RAINING HERE ALL WEEK',
-    ['smalltalk', 'unclear'],
+    ['smalltalk', 'unclear', 'none'],
     ['a short, friendly reply with no details and no promises'],
+  ),
+  // v1.4 (ADR-0065): talk about the call itself that the rules let through: nothing to answer.
+  detection(
+    'qd-none-1',
+    'Asking to hear it again, in words the rules do not list.',
+    PRACTICE,
+    'SORRY I THINK YOU BROKE UP THERE COULD YOU SAY THE LAST BIT AGAIN',
+    ['none', 'unclear'],
+    ['no answer, or only a short request to repeat it'],
+  ),
+  detection(
+    'qd-none-2',
+    'Screen sharing logistics.',
+    CLIENT,
+    'OKAY GIVE ME A MOMENT I AM GOING TO PUT THE DASHBOARD UP ON MY SCREEN',
+    ['none', 'smalltalk'],
+    ['no answer, or a short friendly reply with no details and no promises'],
   ),
   // Real questions in messy transcripts must still be answered.
   detection(

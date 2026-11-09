@@ -18,6 +18,7 @@ import {
   isAutoQuestion,
   questionWindow,
   RERUN_WINDOW_MS,
+  TURN_WAIT_MS,
   UNFINISHED_PAUSE_MS,
   type AnsweredQuestion,
   type AutoAnswerState,
@@ -147,6 +148,39 @@ describe('autoAnswerDue: when', () => {
     expect(autoAnswerDue(state([line('a', 'them', QUESTION, T)]), T + AUTO_PAUSE_MS)?.kind).toBe(
       'answer',
     );
+  });
+});
+
+describe('autoAnswerDue: the end-of-turn model (v1.4, ADR-0065)', () => {
+  const CUT = 'COULD YOU WALK ME THROUGH THE SYSTEM YOU BUILT AND';
+
+  it('shortens the 3 s wait when the voice clearly finished', () => {
+    expect(
+      autoAnswerDue(state([line('a', 'them', CUT, T, { turnEnd: 0.9 })]), T + AUTO_PAUSE_MS)?.kind,
+    ).toBe('answer');
+    // A weaker judgment keeps the word rule's wait.
+    expect(
+      autoAnswerDue(state([line('a', 'them', CUT, T, { turnEnd: 0.6 })]), T + AUTO_PAUSE_MS),
+    ).toBeNull();
+  });
+
+  it('waits for a pending judgment only when the words look cut off', () => {
+    const pending = [line('a', 'them', CUT, T, { turnEnd: 'pending' })];
+    expect(autoAnswerDue(state(pending), T + AUTO_PAUSE_MS + TURN_WAIT_MS - 1)).toBeNull();
+    // A finished-looking line does not wait for the judgment at all.
+    expect(
+      autoAnswerDue(
+        state([line('a', 'them', QUESTION, T, { turnEnd: 'pending' })]),
+        T + AUTO_PAUSE_MS,
+      )?.kind,
+    ).toBe('answer');
+  });
+
+  it('never lengthens a wait', () => {
+    expect(
+      autoAnswerDue(state([line('a', 'them', QUESTION, T, { turnEnd: 0.05 })]), T + AUTO_PAUSE_MS)
+        ?.kind,
+    ).toBe('answer');
   });
 });
 

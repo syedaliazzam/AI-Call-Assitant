@@ -76,6 +76,23 @@ const DEFAULT_STORE: AnswerStore = {
 /** What to say when the latest words look like noise (v1.1.0, ADR-0043). */
 export const GARBLED_NOTICE = "Didn't catch the question clearly — press Answer again or type it.";
 
+/**
+ * What to say when Claude found the words ask nothing (v1.4, ADR-0065), after a press of Answer.
+ */
+export const NOTHING_TO_ANSWER_NOTICE =
+  "That wasn't a question — press Answer when they ask one, or type it.";
+
+/**
+ * Whether a reply's type means there is no answer to show: noise (garbled) or nothing asked (none).
+ *
+ * @param type The type from the reply's hidden first line, if any.
+ * @returns True for garbled and none.
+ * Called from: useLiveAnswers() (ask)
+ */
+function isNoAnswer(type: AnswerType | undefined): boolean {
+  return type === 'garbled' || type === 'none';
+}
+
 /** What to say when nothing so far is a question to answer (v1.1.0, ADR-0043). */
 export const NO_QUESTION_NOTICE =
   'No question to answer yet. Press Answer this on what they said, or type it.';
@@ -668,19 +685,26 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           // on the card (answerType) is shown as chosen.
           // Not a screenshot's: the same words go with a different screen each time.
           const type =
-            answerType || received.type === 'garbled' || mode === 'screenshot'
+            answerType || isNoAnswer(received.type) || mode === 'screenshot'
               ? received.type
               : settleAnswerType(entry.question, received.type, labelsRef.current);
           meta = { ...received, type };
           // Claude could not make sense of the words either (ADR-0043): no answer to show. The
           // entry goes, and the user gets the same notice as when the rules catch it first.
-          if (type === 'garbled') {
+          // v1.4 (ADR-0065): or the words ask nothing ("can you repeat that?", a remark). The entry goes
+          // the same way; a press of Answer gets a short notice, auto-answer stays silent, and the lines
+          // stay answered (they are not noise, but there is nothing to answer in them).
+          if (isNoAnswer(type)) {
             setEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
             setAnsweredSpans((current) => current.filter((item) => item.answerId !== entry.id));
             setShownId(null);
-            setNotice(GARBLED_NOTICE);
-            for (const id of pickedLines ?? built.selected?.lineIds ?? []) {
-              noiseLinesRef.current.add(id);
+            if (type === 'garbled') {
+              setNotice(GARBLED_NOTICE);
+              for (const id of pickedLines ?? built.selected?.lineIds ?? []) {
+                noiseLinesRef.current.add(id);
+              }
+            } else if (!auto) {
+              setNotice(NOTHING_TO_ANSWER_NOTICE);
             }
             return;
           }
@@ -690,11 +714,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           update(entry.id, { meta });
         },
         onText: (text) => {
-          if (meta?.type !== 'garbled') update(entry.id, { text });
+          if (!isNoAnswer(meta?.type)) update(entry.id, { text });
         },
         onDone: (text, done, timeline) => {
           // Not an answer: nothing to keep, send later or save.
-          if (meta?.type === 'garbled') return;
+          if (isNoAnswer(meta?.type)) return;
           // No model call: plain text matching (ADR-0030).
           const claims = needsClaimCheck(meta, mode)
             ? checkClaims(

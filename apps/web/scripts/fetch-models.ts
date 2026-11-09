@@ -53,12 +53,16 @@ import {
   PUNCT_RUNTIME_FILES,
   PUNCT_RUNTIME_PATH,
 } from '../src/core/punctuation/model';
+import { TURN_MODEL_FILE, TURN_PUBLIC_PATH } from '../src/core/turn/model';
 
 /** apps/web/public (Next.js serves it at the site root). */
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
 /** apps/web/public/stt-runtime/v1.13.7. */
 export const RUNTIME_DIR = path.join(PUBLIC_DIR, ...RUNTIME_PUBLIC_PATH.split('/').filter(Boolean));
+
+/** apps/web/public/turn (v1.4, ADR-0065: the end-of-turn model). */
+export const TURN_DIR = path.join(PUBLIC_DIR, ...TURN_PUBLIC_PATH.split('/').filter(Boolean));
 
 /** apps/web/public/punct. */
 export const PUNCT_DIR = path.join(PUBLIC_DIR, ...PUNCT_PUBLIC_PATH.split('/').filter(Boolean));
@@ -353,6 +357,7 @@ export function pinList(): string {
     `${PUNCT_ARCHIVE.sha256}  punctuation archive ${PUNCT_ARCHIVE.folder}`,
     ...Object.values(PUNCT_RUNTIME_FILES).map((file) => `${file.sha256}  punctuation ${file.name}`),
     ...Object.values(PUNCT_MODEL_FILES).map((file) => `${file.sha256}  punctuation ${file.name}`),
+    `${TURN_MODEL_FILE.sha256}  end-of-turn ${TURN_MODEL_FILE.name}`,
     ...TEST_RECORDINGS.map((file) => `${file.sha256}  test recording ${file.name}`),
   ];
   return lines.join('\n');
@@ -412,6 +417,8 @@ async function main(): Promise<void> {
   console.log(`Installing speech-to-text files${runtimeOnly ? ' (runtime only)' : ''}`);
   await installRuntime();
   await installPunctuation();
+  // v1.4 (ADR-0065): the end-of-turn model, served from our own origin like the punctuation model.
+  await installFiles('end-of-turn model', TURN_DIR, [TURN_MODEL_FILE]);
   if (!runtimeOnly) {
     for (const model of STT_MODELS) {
       const dir = path.join(MODELS_DIR, model.id);

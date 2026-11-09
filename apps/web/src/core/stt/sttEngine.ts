@@ -71,6 +71,18 @@ export interface FinalEvent {
   audio?: Float32Array;
   /** v1.4 (ADR-0062): how sure the model was of the line's words, when the runtime says. */
   confidence?: LineConfidence;
+  /** v1.4 (ADR-0065): the other side's recent audio, for the end-of-turn model (only with turnAudio). */
+  recent?: Float32Array;
+}
+
+/** v1.4 (ADR-0065): a pause in the other side's speech, with their recent audio. */
+export interface PauseEvent {
+  /** Which channel. */
+  channel: ChannelId;
+  /** End of speech (Unix ms, capture time). */
+  speechEnd: number;
+  /** The last 8 s of audio up to just after it. Never stored or logged. */
+  recent: Float32Array;
 }
 
 /** An engine failure. */
@@ -105,6 +117,10 @@ export interface SttEngineOptions {
    * so no audio leaves the worker unless the user turned the setting on.
    */
   keepAudio?: boolean;
+  /** v1.4 (ADR-0065): "them" final lines carry their recent audio, for the end-of-turn model. */
+  turnAudio?: boolean;
+  /** v1.4 (ADR-0065): the other side paused while talking (with turnAudio): their recent audio. */
+  onPause?: (event: PauseEvent) => void;
   /** Statistics, about once a second. */
   onStats?: (stats: EngineStats) => void;
   /** Failures (loading, decoding). */
@@ -269,6 +285,14 @@ export function createSttEngine(
           latencyMs: Math.round(deps.now() - message.speechEnd),
           ...(message.audio ? { audio: message.audio } : {}),
           ...(message.confidence ? { confidence: message.confidence } : {}),
+          ...(message.recent ? { recent: message.recent } : {}),
+        });
+        break;
+      case 'pause':
+        options.onPause?.({
+          channel: message.channel,
+          speechEnd: message.speechEnd,
+          recent: message.recent,
         });
         break;
       case 'stats':
@@ -298,6 +322,7 @@ export function createSttEngine(
     files: downloads.model,
     hotwords: formatHotwords(options.hotwords ?? '').buffer,
     beamWidth: options.beamWidth ?? DEFAULT_BEAM_WIDTH,
+    ...(options.turnAudio ? { turnAudio: true } : {}),
   });
 
   /**

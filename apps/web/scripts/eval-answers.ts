@@ -236,7 +236,8 @@ export function shapeChecks(
  */
 function noAnswerGrade(scenario: Scenario): Grade {
   const expected = [scenario.expectType].flat();
-  const right = expected.includes('garbled');
+  // v1.4 (ADR-0065): none (nothing asked) is no answer too.
+  const right = expected.includes('garbled') || expected.includes('none');
   return {
     facts: right ? 3 : 0,
     grounded: 2,
@@ -620,7 +621,8 @@ async function main(): Promise<void> {
       const { text, meta } = answer;
       // A garbled line must get no answer at all (ADR-0043): nothing to grade, and no grader's request
       // to pay for. It scores in full when Claude said so, and nothing when it answered anyway.
-      const nothingToGrade = meta?.type === 'garbled' && text.trim() === '';
+      const nothingToGrade =
+        (meta?.type === 'garbled' || meta?.type === 'none') && text.trim() === '';
       const graded = nothingToGrade
         ? noAnswerGrade(scenario)
         : await grade(scenario, text, env.modelSmart, meter, first);

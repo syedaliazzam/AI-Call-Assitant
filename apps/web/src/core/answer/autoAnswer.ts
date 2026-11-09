@@ -34,6 +34,12 @@ export const AUTO_PAUSE_MS = 1_200;
 /** v1.4: silence after a line that sounds cut off before Kite answers, ms (1.8 s more). */
 export const UNFINISHED_PAUSE_MS = 3_000;
 
+/** v1.4 (ADR-0065): the longest extra wait for the end-of-turn model's judgment, ms. */
+export const TURN_WAIT_MS = 500;
+
+/** v1.4 (ADR-0065): the end-of-turn probability at which the voice counts as clearly finished. */
+export const TURN_FINISHED_AT = 0.8;
+
 /** v1.4: the longest extra wait for the accurate engine's words, ms. */
 export const ACCURATE_WAIT_MS = 1_500;
 
@@ -225,7 +231,19 @@ export function continuationOf(
  */
 function pauseNeeded(window: readonly Utterance[], now: number): number {
   const last = window.at(-1)!;
-  const pause = looksUnfinished(last.text) ? UNFINISHED_PAUSE_MS : AUTO_PAUSE_MS;
+  // v1.4 (ADR-0065): the end-of-turn model may only SHORTEN the wait. When the words look cut off
+  // (3 s), a clear "finished" from the voice (TURN_FINISHED_AT) brings it back to 1.2 s; while it is
+  // still judging, wait for it, at most TURN_WAIT_MS past the short pause (always inside the 3 s).
+  // It never lengthens a wait: on the synthetic calls (ADR-0063) its "not finished" also hit real
+  // question ends, and a premature answer is already asked again on its card (the rerun).
+  let unfinished = looksUnfinished(last.text);
+  if (unfinished) {
+    if (last.turnEnd === 'pending' && now - last.tEnd < AUTO_PAUSE_MS + TURN_WAIT_MS) {
+      return Number.POSITIVE_INFINITY;
+    }
+    if (typeof last.turnEnd === 'number' && last.turnEnd >= TURN_FINISHED_AT) unfinished = false;
+  }
+  const pause = unfinished ? UNFINISHED_PAUSE_MS : AUTO_PAUSE_MS;
   // Wait for the accurate engine's words, but never more than ACCURATE_WAIT_MS on top.
   if (window.some((line) => line.refining) && now - last.tEnd < pause + ACCURATE_WAIT_MS) {
     return Number.POSITIVE_INFINITY;

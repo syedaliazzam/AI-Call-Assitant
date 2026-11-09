@@ -18,13 +18,17 @@ import type { MeasuredAnswer, MeasuredLine } from './call-metrics';
 /** One message of the speech worker, with when it reached the page. */
 export interface CallEvent {
   /** 'partial' (grey text) or 'final' (a finished line). */
-  type: 'partial' | 'final';
+  type: 'partial' | 'final' | 'turn';
   /** Which channel. */
   channel: 'you' | 'them';
   /** Its text. */
   text: string;
   /** Start (Unix ms), or null when a partial was cleared. */
   tStart: number | null;
+  /** v1.4: end of speech (Unix ms; finals and turn judgments). */
+  speechEnd?: number;
+  /** v1.4 (ADR-0065): the end-of-turn model's judgment (turn events; null when it failed). */
+  probability?: number | null;
   /** End (Unix ms; finals only). */
   tEnd?: number;
   /** How sure the model was (finals of v1.4 only). */
@@ -59,6 +63,8 @@ interface LogicTranscript {
   addPartial(speaker: 'you' | 'them', text: string, tStart: number | null): void;
   /** Adds a finished line. */
   addFinal(line: Record<string, unknown>): LogicLine;
+  /** v1.4 (ADR-0065): records an end-of-turn judgment (absent before). */
+  setTurnEnd?(id: string, value: number | 'pending' | null): void;
   /** The shown lines. */
   lines(): readonly LogicLine[];
   /** Every final line, hidden ones too. */
@@ -189,6 +195,8 @@ export function replayCall(
   // v1.3 state (useAutoAnswer.ts before ADR-0062).
   let lastAuto: { at: number | null; lineEnd: number | null } = { at: null, lineEnd: null };
   let nextId = 1;
+  // v1.4: the line each end-of-turn judgment is for, by its end of speech.
+  const judging = new Map<number, string>();
 
   /**
    * Records a new card, or a rerun on an existing one.
@@ -301,19 +309,36 @@ export function replayCall(
         transcript.addPartial(event.channel, event.text, event.tStart);
         continue;
       }
+      if (event.type === 'turn') {
+        // As LivePage.tsx: the judgment reaches the line it was made for.
+        const lineId = event.speechEnd === undefined ? undefined : judging.get(event.speechEnd);
+        if (lineId) transcript.setTurnEnd?.(lineId, event.probability ?? null);
+        continue;
+      }
       // As LivePage.tsx onFinal: v1.4 marks another language before adding the line.
       const nonEnglish =
         logic.looksNonEnglish?.({
           text: event.text,
           ...(event.confidence ? { confidence: event.confidence } : {}),
         }) ?? false;
-      transcript.addFinal({
+      const added = transcript.addFinal({
         speaker: event.channel,
         text: event.text,
         tStart: event.tStart ?? event.arrivedAt,
         tEnd: event.tEnd ?? event.arrivedAt,
         ...(nonEnglish ? { nonEnglish: true } : {}),
       });
+      // v1.4 (ADR-0065): a judgment is coming for this line (the page asks for every "them" final).
+      if (
+        event.channel === 'them' &&
+        !nonEnglish &&
+        event.speechEnd !== undefined &&
+        transcript.setTurnEnd &&
+        events.some((other) => other.type === 'turn' && other.speechEnd === event.speechEnd)
+      ) {
+        transcript.setTurnEnd(added.id, 'pending');
+        judging.set(event.speechEnd, added.id);
+      }
     }
     if (now >= nextTick) {
       tick();
