@@ -11,6 +11,7 @@ import { CaptureError } from '@/platform/errors';
 import {
   listMicrophones,
   MIC_CONSTRAINTS,
+  outputKindOf,
   stopAllTracks,
   toCaptureError,
   watchBatteryState,
@@ -132,5 +133,18 @@ describe('watchBatteryState (v1.1.0, ADR-0044)', () => {
     await new Promise((resolve) => setTimeout(resolve));
     expect(seen).toEqual([]);
     vi.unstubAllGlobals();
+  });
+});
+
+describe('outputKindOf (v1.4, ADR-0062)', () => {
+  it('tells headphones from speakers by the device name', () => {
+    expect(outputKindOf('Default - Speakers (Realtek(R) Audio)')).toBe('speakers');
+    expect(outputKindOf('MacBook Pro Speakers')).toBe('speakers');
+    expect(outputKindOf('Headphones (WH-1000XM4 Stereo)')).toBe('headphones');
+    expect(outputKindOf('Headset Earphone (HyperX Cloud)')).toBe('headphones');
+    expect(outputKindOf('AirPods Pro')).toBe('headphones');
+    expect(outputKindOf('Galaxy Buds2')).toBe('headphones');
+    expect(outputKindOf('DELL U2720Q (NVIDIA High Definition Audio)')).toBe('unknown');
+    expect(outputKindOf('')).toBe('unknown');
   });
 });

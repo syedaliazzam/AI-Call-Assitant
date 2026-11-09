@@ -41,6 +41,15 @@ export interface KiteSimHarness {
   resumes: () => number;
   /** Speech on the microphone, as a finished line, through the call's dictation. */
   dictate: (text: string) => void;
+  /**
+   * v1.4: adds a finished line that ends now (for the timed auto-answer checks).
+   *
+   * @param speaker    Who spoke.
+   * @param text       What they said.
+   * @param durationMs How long it took to say.
+   * @param nonEnglish True to add it as another language (core/stt/language.ts decided so).
+   */
+  speak: (speaker: 'you' | 'them', text: string, durationMs: number, nonEnglish?: boolean) => void;
 }
 
 declare global {
@@ -85,6 +94,9 @@ function installBridge(bridge: object): void {
 /** The view asked for in the address: 'call' (the default), 'desktop' or 'home'. */
 const VIEW = new URLSearchParams(window.location.search).get('view') ?? 'call';
 
+/** v1.4: auto-answer on for this page (?auto=1), for the timed checks. */
+const AUTO = new URLSearchParams(window.location.search).get('auto') === '1';
+
 // Screenshots go through the desktop bridge's method, which a browser cannot be scripted to answer.
 // The same small image each time: the mocked server replies by what the test told it to expect.
 if (VIEW === 'desktop') {
@@ -122,6 +134,17 @@ window.kiteSim = {
   pauses: () => pauses,
   resumes: () => resumes,
   dictate: (text) => dictationRoute?.final(text),
+  speak: (speaker, text, durationMs, nonEnglish) => {
+    const end = Date.now();
+    if (speaker === 'them') lastThemAt = end;
+    transcript.addFinal({
+      speaker,
+      text,
+      tStart: end - durationMs,
+      tEnd: end,
+      ...(nonEnglish ? { nonEnglish: true } : {}),
+    });
+  },
 };
 
 /**
@@ -183,6 +206,7 @@ function SimCall() {
         onAnswerThis={setBridge}
         hygiene={hygiene}
         echoCount={transcript.echoStats().count}
+        {...(AUTO ? { autoAnswer: true } : {})}
         transcriptClearedAt={clearedAt}
         onClearTranscript={() => setClearedAt(Date.now())}
         onStillHere={stillHere}

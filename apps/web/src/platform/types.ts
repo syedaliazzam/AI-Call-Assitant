@@ -21,7 +21,7 @@ import type {
   ShareProtectionState,
   WindowControlAction,
 } from '@kite/shared';
-import type { MicDevice } from './media';
+import type { MicDevice, OutputKind } from './media';
 import type { PipRenderer } from './pip';
 
 // Re-exported so code using the platform can import every platform type from one place.
@@ -95,6 +95,14 @@ export interface Platform {
    * @returns A function that stops watching.
    */
   watchBattery(handler: (onBattery: boolean | null) => void): () => void;
+
+  /**
+   * v1.4 (ADR-0062): whether sound plays through speakers or headphones, from the default output's
+   * name, so the call can recommend headphones. Optional: test fakes may leave it out.
+   *
+   * @returns 'speakers', 'headphones' or 'unknown'.
+   */
+  outputKind?(): Promise<OutputKind>;
 
   /**
    * The snap zone under the pointer while the overlay is dragged (v1.1.0, the zones window's page).

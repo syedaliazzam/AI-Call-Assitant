@@ -26,7 +26,14 @@ import { chunkRms, lastLoudSampleEnd, SilenceGate, type GateChunk } from './gate
 import { isNoiseLine } from './noiseLine';
 import { ACCURATE_MAX_SECONDS } from '@kite/shared';
 import { OnsetDetector, realTimeFactor } from './metrics';
-import type { ChannelId, ChannelStats, EndpointReason, FromWorker } from './protocol';
+import {
+  LOW_TOKEN_LOG_PROB,
+  type ChannelId,
+  type ChannelStats,
+  type EndpointReason,
+  type FromWorker,
+  type LineConfidence,
+} from './protocol';
 
 /** Pause rule: audio (ms) with no new words, while text is showing, that ends an utterance. */
 export const PAUSE_END_MS = 1_200;
@@ -59,8 +66,11 @@ export interface RecognizerLike {
   isEndpoint(stream: StreamLike): boolean;
   /** Starts a new utterance on the same stream. */
   reset(stream: StreamLike): void;
-  /** The stream's current text. */
-  getResult(stream: StreamLike): { text: string };
+  /**
+   * The stream's current text, and (v1.4) the log probability of each word piece in it when the
+   * runtime gives them (sherpa-onnx's JSON result field ys_probs).
+   */
+  getResult(stream: StreamLike): { text: string; ys_probs?: number[] };
 }
 
 /** Messages a channel produces (a subset of the worker's FromWorker). */
@@ -84,6 +94,26 @@ export interface ChannelOptions {
   gate?: SilenceGate | null;
   /** v1.0.1 (ADR-0034): attach each final line's audio (for the accurate engine). */
   keepAudio?: boolean;
+}
+
+/**
+ * Sums up how sure the model was of a line (v1.4, ADR-0062).
+ *
+ * @param logProbs The log probability of each word piece (sherpa-onnx ys_probs), if given.
+ * @returns The line's confidence, or undefined when there are no numbers to go by.
+ * Called from: ChannelDecoder.endUtterance(); tests
+ */
+export function lineConfidence(
+  logProbs: readonly number[] | undefined,
+): LineConfidence | undefined {
+  const values = (logProbs ?? []).filter((value) => Number.isFinite(value));
+  if (values.length === 0) return undefined;
+  const sum = values.reduce((total, value) => total + value, 0);
+  return {
+    tokens: values.length,
+    meanLogProb: sum / values.length,
+    lowShare: values.filter((value) => value < LOW_TOKEN_LOG_PROB).length / values.length,
+  };
 }
 
 /** One channel's decoder. */
@@ -296,17 +326,19 @@ export class ChannelDecoder {
    * Called from: accept(); flush()
    */
   private endUtterance(reason: EndpointReason): void {
-    let text: string;
+    let result: { text: string; ys_probs?: number[] };
     if (reason === 'model') {
-      text = this.recognizer.getResult(this.stream).text.trim();
+      result = this.recognizer.getResult(this.stream);
       this.recognizer.reset(this.stream);
     } else {
       this.stream.inputFinished();
       while (this.recognizer.isReady(this.stream)) this.recognizer.decode(this.stream);
-      text = this.recognizer.getResult(this.stream).text.trim();
+      result = this.recognizer.getResult(this.stream);
       this.stream.free();
       this.stream = this.recognizer.createStream();
     }
+    const text = result.text.trim();
+    const confidence = lineConfidence(result.ys_probs);
     const start = this.utteranceStartAt ?? this.lastChangeAt;
     const end = Math.max(start, this.lastChangeAt);
     // A lone, quiet word is noise the model turned into a word (v1.0.1: "Tree", "Um" at the start
@@ -335,6 +367,7 @@ export class ChannelDecoder {
         tStart: this.toUnix(start),
         tEnd: this.toUnix(end),
         speechEnd: this.toUnix(speechEndAt),
+        ...(confidence ? { confidence } : {}),
       });
     }
     this.clearUtterance();

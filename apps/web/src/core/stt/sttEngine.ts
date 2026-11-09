@@ -33,6 +33,7 @@ import {
   type EngineErrorCode,
   type EngineStats,
   type FromWorker,
+  type LineConfidence,
   type LoadStats,
   type ToWorker,
 } from './protocol';
@@ -68,6 +69,8 @@ export interface FinalEvent {
    * option, for the desktop app's accurate engine. Never stored or logged.
    */
   audio?: Float32Array;
+  /** v1.4 (ADR-0062): how sure the model was of the line's words, when the runtime says. */
+  confidence?: LineConfidence;
 }
 
 /** An engine failure. */
@@ -265,6 +268,7 @@ export function createSttEngine(
           // Measured on the page, so it includes the worker → page hop.
           latencyMs: Math.round(deps.now() - message.speechEnd),
           ...(message.audio ? { audio: message.audio } : {}),
+          ...(message.confidence ? { confidence: message.confidence } : {}),
         });
         break;
       case 'stats':

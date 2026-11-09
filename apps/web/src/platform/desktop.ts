@@ -26,6 +26,7 @@ import { installDesktopDocument } from './desktopDocument';
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
 import {
+  defaultOutputKind,
   listMicrophones,
   openMicrophone,
   requestDisplayMedia,
@@ -39,8 +40,17 @@ import type { Platform } from './types';
  * What the desktop page asks for. The shell (apps/desktop/src/media.ts) answers for the Kite
  * origin only, with the primary screen plus system-audio loopback and no picker. Video is
  * required by getDisplayMedia.
+ *
+ * v1.4 (ADR-0062): the loopback track asks for no audio processing. With `audio: true`, Chromium
+ * reported echo cancellation, noise suppression and auto gain all on for it (measured 9 Nov 2026,
+ * Electron 44.9.3, track.getSettings()). The other side's sound is already clean digital audio; noise
+ * suppression and gain changes only take away from it, and published studies found noise suppression
+ * raises speech-to-text errors. A shell that cannot apply them ignores the request.
  */
-export const DESKTOP_DISPLAY_OPTIONS: DisplayCaptureOptions = { audio: true, video: true };
+export const DESKTOP_DISPLAY_OPTIONS: DisplayCaptureOptions = {
+  audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+  video: true,
+};
 
 /**
  * Message when the OS gave no audio track (macOS 12 and earlier cannot capture system audio).
@@ -125,6 +135,7 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     getMicStream: openMicrophone,
     listMicrophones,
     watchBattery: watchBatteryState,
+    outputKind: defaultOutputKind,
 
     /**
      * The snap zone under the pointer (a shell before 1.1.0 draws no zones).

@@ -146,7 +146,9 @@ Without it, the people in the call may see a black box where Paramount AI's wind
 
 ### If nobody seems to be there
 
-After 10 minutes with nothing from the other person and no answers, it asks **Still in a call?**. After 30, it pauses listening, with a **Resume** button. If your speakers keep repeating the other person into your microphone, it hides those lines and suggests headphones, once.
+After 10 minutes with nothing from the other person and no answers, it asks **Still in a call?**. After 30, it pauses listening, with a **Resume** button. If your speakers keep repeating the other person into your microphone, it hides those lines and suggests headphones, once; it also suggests them at the start of a call when your sound plays through speakers. Headphones give the cleanest transcript, but they are never required.
+
+**Auto answer** waits for the whole question: about a second after a question that sounds finished, three seconds after one that stops mid-sentence ("…and what would you change about"). If the other person carries on just after it started, the same answer card is answered again with the whole question. It never answers "can you repeat that?", "can you hear me?" or greetings. Speech in another language shows as **[non-English speech]** and is not answered.
 
 ### If the transcript stops
 

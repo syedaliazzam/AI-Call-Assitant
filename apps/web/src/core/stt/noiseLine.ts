@@ -53,6 +53,34 @@ const SHORT_ANSWERS = new Set([
   'who',
 ]);
 
+/**
+ * v1.4: words nobody says alone. A lone one is noise the model turned into a word, at any loudness
+ * ("A", "And.", "The", "Uh" in real calls).
+ */
+const FUNCTION_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'and',
+  'or',
+  'of',
+  'to',
+  'in',
+  'on',
+  'at',
+  'it',
+  'is',
+  'i',
+  'uh',
+  'um',
+  'er',
+  'ah',
+  'oh',
+  'eh',
+  'hm',
+  'mm',
+]);
+
 /** What is known about one final line. */
 export interface FinalLine {
   /** The line's text, as the engine wrote it. */
@@ -78,5 +106,19 @@ export function isNoiseLine(line: FinalLine): boolean {
   const word = words[0]!.toLowerCase().replace(/[^\p{L}']/gu, '');
   if (SHORT_ANSWERS.has(word)) return false;
   if (line.msSincePrevious < ISOLATION_MS) return false;
+  // v1.4 (ADR-0062): a lone "a", "the", "and", "uh" is what the model makes of a click, a breath or a
+  // codec glitch, and nobody says one alone: dropped however loud it was.
+  if (FUNCTION_WORDS.has(word)) return true;
   return line.peakRms < line.threshold * LONE_WORD_LOUDNESS_FACTOR;
+}
+
+/**
+ * Whether a word is a real one-word reply ("yes", "okay", "what") that is never dropped as noise.
+ *
+ * @param word The word (any case, punctuation allowed).
+ * @returns True for a short answer.
+ * Called from: src/core/transcript/transcript.ts (one-word noise while "Them" speaks); tests
+ */
+export function isShortAnswer(word: string): boolean {
+  return SHORT_ANSWERS.has(word.toLowerCase().replace(/[^\p{L}']/gu, ''));
 }

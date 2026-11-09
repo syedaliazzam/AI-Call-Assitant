@@ -5,7 +5,13 @@
  * the earlier id and start, joins the text and takes the later end.
  */
 import { describe, expect, it } from 'vitest';
-import { MERGE_GAP_MS, mergeLines, shouldMerge } from '@/core/transcript/merge';
+import {
+  MERGE_GAP_MS,
+  mergeGapFor,
+  mergeLines,
+  shouldMerge,
+  UNFINISHED_MERGE_GAP_MS,
+} from '@/core/transcript/merge';
 import type { Utterance } from '@/core/transcript/transcript';
 
 /** A stored final line from "them", 1 000–2 000 ms. */
@@ -77,5 +83,25 @@ describe('noise and speech (v1.1.0, ADR-0044)', () => {
     expect(shouldMerge(line('WHAT DOES IT COST'), { ...next, text: noise })).toBe(false);
     expect(shouldMerge(line(noise), { ...next, text: 'WHAT DOES IT COST' })).toBe(false);
     expect(shouldMerge(line('WHAT DOES IT COST'), { ...next, text: 'FOR FORTY SEATS' })).toBe(true);
+  });
+});
+
+describe('v1.4 (ADR-0062): cut-off lines and another language', () => {
+  it('waits 4 s after a line that sounds cut off, 1.5 s otherwise', () => {
+    expect(mergeGapFor({ text: 'Could you walk me through the system and' })).toBe(
+      UNFINISHED_MERGE_GAP_MS,
+    );
+    expect(mergeGapFor({ text: 'How big is the team?' })).toBe(MERGE_GAP_MS);
+    const cut = { ...PREVIOUS, text: 'Tell me about the' };
+    expect(shouldMerge(cut, next('them', 2_000 + UNFINISHED_MERGE_GAP_MS))).toBe(true);
+    expect(shouldMerge(cut, next('them', 2_001 + UNFINISHED_MERGE_GAP_MS))).toBe(false);
+  });
+
+  it('never joins another language with English, and joins two stretches into one mark', () => {
+    const other = { ...PREVIOUS, text: '[non-English speech]', nonEnglish: true };
+    expect(shouldMerge(other, next('them', 2_500))).toBe(false);
+    const more = { ...next('them', 2_500), text: '[non-English speech]', nonEnglish: true };
+    expect(shouldMerge(other, more)).toBe(true);
+    expect(mergeLines(other, more).text).toBe('[non-English speech]');
   });
 });

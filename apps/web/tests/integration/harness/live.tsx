@@ -5,7 +5,7 @@
  *          - live: inside a stand-in of the app shell (same width as in the app), LiveCallLayout
  *            with the real TranscriptStrip (a provisional line included)
  *            and LiveAnswers (answers come from the test server's mocked /api/answer); ?view=auto turns
- *            auto-answer on and adds window.addThemLine() for the rate-limit test;
+ *            auto-answer on and adds window.addThemLine() for the auto-answer test;
  *          - connect: the Connect view (ConnectPanel), model ready, not connected, microphone not
  *            asked yet (Test microphone); connect-mic: the same with the microphone meter running
  *            (ADR-0053); connect-errors: a model and a microphone error;

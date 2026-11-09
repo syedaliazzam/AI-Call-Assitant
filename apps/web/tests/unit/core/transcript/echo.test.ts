@@ -3,10 +3,17 @@
  * the developer's two speaker-leak examples (Day 2) are echoes; short genuine replies ("yes",
  * "exactly", "sounds good") are never echoes, even right after "Them" said the same words; a real
  * answer that reuses words of the question is not an echo; lcsLength() and echoScore() compute
- * the in-order overlap.
+ * the in-order overlap. v1.4: words that sound alike match; one or two words are hidden only inside "Them"
+ * speech; a lower score inside "Them" speech; the user's own echo on "Them" (isReverseEcho).
  */
 import { describe, expect, it } from 'vitest';
-import { ECHO_MIN_SCORE, echoScore, isEcho, lcsLength } from '@/core/transcript/echo';
+import {
+  ECHO_MIN_SCORE,
+  echoScore,
+  isEcho,
+  isReverseEcho,
+  lcsLength,
+} from '@/core/transcript/echo';
 
 /** The developer's examples: what "Them" said, and the "You" echo that followed. */
 const EXAMPLES = [
@@ -82,5 +89,40 @@ describe('three-word lines (v1.1.0, ADR-0044)', () => {
     expect(isEcho('we could look at onboarding next week', 'what about the onboarding')).toBe(
       false,
     );
+  });
+});
+
+describe('v1.4 (ADR-0062): wider echo rules', () => {
+  it('matches words that sound alike, so a misheard echo still counts', () => {
+    // "DEFINITELY" and "DEFINATELY" sound alike.
+    expect(lcsLength(['we', 'definately', 'shipped'], ['we', 'definitely', 'shipped'])).toBe(3);
+    expect(lcsLength(['a', 'b'], ['i', 'b'])).toBe(1);
+  });
+
+  it('hides one or two words only inside "Them" speech, when "Them" said them within 1.5 s', () => {
+    const around = {
+      wide: 'OKAY SO MOVING ON',
+      near: 'OKAY SO MOVING ON',
+      tiny: 'OKAY SO MOVING ON',
+      inside: true,
+    };
+    expect(isEcho('OKAY SO', around)).toBe(true);
+    expect(isEcho('OKAY SO', { ...around, inside: false })).toBe(false);
+    expect(isEcho('YES', around)).toBe(false);
+  });
+
+  it('accepts a lower score when the line lies wholly inside "Them" speech', () => {
+    const them = 'WE MOVED THE BILLING EXPORT TO A QUEUE LAST SPRING';
+    const you = 'WE MOVED TO BILLING EXPORT A Q LIT BRING'; // 5 of 9 words in order
+    const around = { wide: them, near: them, tiny: them, inside: false };
+    expect(isEcho(you, around)).toBe(false);
+    expect(isEcho(you, { ...around, inside: true })).toBe(true);
+  });
+
+  it('finds the user\'s own voice coming back on "Them"', () => {
+    const you = 'I LED THE MIGRATION TO KUBERNETES LAST YEAR';
+    expect(isReverseEcho('I LED THE MIGRATION TO KUBERNETES', you)).toBe(true);
+    expect(isReverseEcho('WHY DID YOU PICK KUBERNETES', you)).toBe(false);
+    expect(isReverseEcho('I LED', you)).toBe(false);
   });
 });

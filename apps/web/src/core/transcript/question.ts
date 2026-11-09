@@ -57,6 +57,8 @@ const ASKS_INSIDE: readonly RegExp[] = [
   /\b(?<start>(?:what|which|how|why|where|when|who)\s+(?:[\w'’-]+\s+){0,5}?(?:can|could|would|will|do|does|did|have|has|are|were|should)\s+(?:you|we|they|i)\b)/i,
   /\b(?<start>(?:what|how|why|when|where|who|which)\s+(?:is|are|was|were|do|does|did|would|will|can|could|should|have|has|had|kind|type|sort|many|much|long|often|happens|happened)\b)/i,
   /\b(?<start>(?:what|how|who|where|when|why)(?:['’]s|s)\s)/i,
+  // v1.4: "how" and a measure before its helping verb ("…FIRST HOW BIG IS THE TEAM", "HOW OFTEN DO YOU").
+  /\b(?<start>how\s+(?:big|large|small|long|many|much|often|far|old|soon|fast|quickly|well|good|hard|easy|important|likely|different|confident|comfortable|familiar)\s+(?:is|are|was|were|do|does|did|will|would|can|could|should|has|have)\b)/i,
   /\b(?:so|and|but|okay|ok|now|well|then|also)[\s,]+(?:(?:um+|uh+)[\s,]+)?(?<start>(?:what|how|why|when|where|who|which)\s)/i,
   /\b(?<start>(?:can|could|would|will|do|did|have|are|were)\s+you\b|(?:is|are)\s+there\b|tell me\b|walk me through\b)/i,
 ];

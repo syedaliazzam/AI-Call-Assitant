@@ -59,6 +59,7 @@ import { hygieneState, type HygieneState } from '@/core/live/hygiene';
 import { getMicDevice, setMicDevice } from '@/core/storage/overlayPrefs';
 import { createPunctuator, punctuateLine } from '@/core/punctuation/punctuator';
 import { refineLine } from '@/core/transcript/refine';
+import { looksNonEnglish } from '@/core/stt/language';
 import { displayTerms } from '@/core/transcript/display';
 import { isSound, themSilent } from '@/core/audio/silence';
 import { ThemSilentNotice } from './ThemSilentNotice';
@@ -364,7 +365,7 @@ export function LivePage({
           transcript.addPartial(channel, text, tStart);
           watchdog.current.noteProgress(performance.now());
         },
-        onFinal: ({ channel, text, tStart, tEnd, audio }) => {
+        onFinal: ({ channel, text, tStart, tEnd, audio, confidence }) => {
           if (!isActive()) return;
           if (channel === 'you' && dictationRoute.final(text)) {
             // A question dictated to Kite: never a transcript line, never saved or sent later.
@@ -372,13 +373,26 @@ export function LivePage({
             watchdog.current.noteProgress(performance.now());
             return;
           }
-          const line = transcript.addFinal({ speaker: channel, text, tStart, tEnd });
+          // v1.4 (ADR-0062): speech in another language reads "[non-English speech]" and is never a
+          // question; nothing else is done with its made-up English words.
+          const nonEnglish = looksNonEnglish({ text, ...(confidence ? { confidence } : {}) });
+          const line = transcript.addFinal({
+            speaker: channel,
+            text,
+            tStart,
+            tEnd,
+            ...(nonEnglish ? { nonEnglish: true } : {}),
+          });
           watchdog.current.noteProgress(performance.now());
+          if (nonEnglish) return;
           // The second pass replaces the words a moment later; the live line is the fallback. The
           // accurate engine writes its own marks; the live engine's lines get theirs from the
-          // punctuation pass, as do lines the accurate engine could not do.
+          // punctuation pass, as do lines the accurate engine could not do. v1.4: the line is marked
+          // as being rewritten meanwhile, so auto-answer can wait a moment for the better words.
           if (accurate && audio && accurateOn.current) {
+            transcript.setRefining(line.id, true);
             void refineLine(accurate, transcript, line.id, text, audio, plainTerms).then((done) => {
+              transcript.setRefining(line.id, false);
               if (!done) void punctuateLine(punctuator, transcript, line.id, text);
             });
           } else {
