@@ -4,7 +4,7 @@
  *          scale in from 98 %, menus slide 4 px) to finish before it measures sizes or takes a
  *          picture: a box measured mid-animation is up to 2 % small. Endless animations (the pulsing
  *          Live dot, a listening microphone) are not waited for.
- * Used by: tests/ui/shots.ts (check), tests/integration/setup.spec.ts
+ * Used by: tests/ui/shots.ts (check), tests/integration/setup.spec.ts, handoff.spec.ts, ui-kit.spec.ts
  * Depends on: @playwright/test (Page type)
  * Architecture: docs/decisions/ADR-0058-green-accent-and-motion.md
  */

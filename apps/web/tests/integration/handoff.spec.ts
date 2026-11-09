@@ -22,6 +22,7 @@ import {
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 import { brandFonts } from '../lib/fonts';
+import { settleAnimations } from '../lib/motion';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -217,6 +218,8 @@ test('Choose platform: the words, the difference, and the browser choice', async
   await page.getByRole('button', { name: 'Start session' }).click();
   const dialog = page.getByRole('dialog', { name: 'Choose platform' });
   await expect(dialog).toContainText('Where do you want to run this call?');
+  // v1.3.1: measured once the modal has finished scaling in from 98 % (ADR-0058).
+  await settleAnimations(page);
   expect((await dialog.boundingBox())!.width).toBeCloseTo(440, 0);
   await shot('choose-platform');
   await dialog.getByRole('button', { name: 'What’s the difference?' }).click();

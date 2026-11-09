@@ -25,6 +25,7 @@ import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 import { pickOption } from '../lib/pick-option';
 import { brandFonts } from '../lib/fonts';
+import { settleAnimations } from '../lib/motion';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -250,6 +251,8 @@ test('a list inside a modal sits above it, and Escape closes only the list', asy
   await page.getByRole('button', { name: 'Open modal' }).click();
   const dialog = page.getByRole('dialog', { name: 'Plain modal' });
   await expect(dialog).toBeVisible();
+  // v1.3.1: measured once the modal has finished scaling in from 98 % (ADR-0058).
+  await settleAnimations(page);
   // It follows its content; it must not stretch to the window's height.
   expect((await dialog.boundingBox())!.height).toBeLessThan(400);
   const field = dialog.getByRole('combobox', { name: 'Language in the modal' });
@@ -381,6 +384,8 @@ test('Modal: rail and aside panes, sizes, Escape, and full screen on a phone', a
   await page.getByRole('button', { name: 'Open rail modal' }).click();
   const rail = page.getByRole('dialog', { name: 'Create session' });
   await expect(rail).toBeVisible();
+  // v1.3.1: measured once the modal has finished scaling in from 98 % (ADR-0058).
+  await settleAnimations(page);
   const box = (await rail.boundingBox())!;
   expect(box.width).toBeCloseTo(760, 0);
   expect(box.height).toBeCloseTo(600, 0);
@@ -410,6 +415,8 @@ test('Modal: rail and aside panes, sizes, Escape, and full screen on a phone', a
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Open rail modal' }).click();
+  // v1.3.1: measured once the modal has finished scaling in from 98 % (ADR-0058).
+  await settleAnimations(page);
   const phone = (await rail.boundingBox())!;
   expect(phone.width).toBeCloseTo(390, 0);
   expect(phone.height).toBeCloseTo(844, 0);
