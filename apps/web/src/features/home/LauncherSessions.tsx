@@ -117,7 +117,7 @@ export function LauncherSessions({
       {notices}
       <section
         aria-labelledby="launcher-sessions-title"
-        className="flex min-h-0 flex-1 flex-col gap-3 rounded-[16px] border border-ui-border bg-ui-bg p-4"
+        className="k-anim-modal k-card-texture flex min-h-0 flex-1 flex-col gap-3 rounded-[16px] border border-ui-border p-4"
       >
         <h1
           id="launcher-sessions-title"

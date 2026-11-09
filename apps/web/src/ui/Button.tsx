@@ -77,7 +77,7 @@ export function buttonClasses(
 ): string {
   return [
     // k-btn marks every button-looking control (the UI screenshot test checks their size).
-    'k-btn inline-flex items-center justify-center gap-2 rounded-control transition-colors duration-150',
+    'k-btn inline-flex items-center justify-center gap-2 rounded-control transition-colors duration-(--k-dur)',
     // Touch screens: at least 44 px tall (theme review, UI U1).
     'pointer-coarse:min-h-11',
     'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',

@@ -1,8 +1,9 @@
 /**
  * File: apps/web/src/ui/tokens/theme.css
  * Purpose: The design tokens (docs/design/paramount-ai-ui-spec.md §1): neutral zinc in light and dark,
- *          one blue accent, the call overlay, shape, shadow and type. The ONLY file allowed to contain
- *          hex or rgb() colours (tests/unit/ui/theme.test.ts checks it).
+ *          one green accent (v1.3.1, ADR-0058; blue before), the call overlay, shape, shadow, type
+ *          and motion. The ONLY file allowed to contain hex or rgb() colours, and the one place motion
+ *          times live (tests/unit/ui/theme.test.ts checks it).
  * Used by: app/globals.css (imported after Tailwind), every component in src/ui
  * Depends on: tailwindcss v4 (@theme), the font set in app/layout.tsx (next/font)
  * Architecture: docs/design/paramount-ai-ui-spec.md §1 (values; it wins over the older theme
@@ -21,6 +22,12 @@
  * - muted text is 4.4:1 on --k-subtle: on a subtle background prefer --ui-text (the session card's
  *   date and role are muted there because the spec says so);
  * - --k-success (#16A34A) is 3.3:1 on white, so it is for dots only; text uses --k-success-text.
+ * v1.3.1 (ADR-0058): the accent is that same green, so the same rule applies: green fills, dots,
+ * icons and rings use --k-accent (3.3:1, enough for non-text, 3:1); green TEXT (links, "You") uses
+ * --k-accent-text (#15803D, 5.0:1). The developer kept three values that fail AA for text, listed in
+ * ADR-0058: the near-white label on the green button (3.16:1), muted text on the card's inner panel
+ * (4.47:1), and the compact view's #A1A1AA over a see-through panel above a white page (3.91:1 at the
+ * default opacity; the text shadow helps there).
  */
 
 :root {
@@ -28,17 +35,22 @@
   --k-page: #ffffff;
   --k-sidebar: #fafafa; /* the sidebar and a modal's left rail */
   --k-surface: #ffffff;
-  --k-subtle: #f4f4f5; /* the inner panel, ghost buttons, the active sidebar item */
+  --k-subtle: #f4f4f5; /* ghost buttons, light buttons, hover, the active sidebar item */
+  --k-card-inner: #f6f6f7; /* v1.3.1: a card's inner panel (the session card, the desktop tiles) */
   --k-border: #e4e4e7;
   --k-text: #18181b; /* 17.7:1 on white */
+  --k-strong: #09090b; /* v1.3.1: headings and other strong text; 19.9:1 on white */
   --k-muted: #71717a; /* 4.8:1 on white, which is also the page */
   --k-primary: #18181b;
   --k-on-primary: #ffffff;
   --k-primary-hover: #27272a;
-  --k-accent: #2563eb; /* links, focus and every accent fill; 5.2:1 on white */
-  --k-on-accent: #ffffff; /* 5.2:1 on the accent */
-  --k-accent-hover: #1d4ed8;
-  --k-accent-tint: rgba(37, 99, 235, 0.12); /* the plus tile in the sidebar */
+  /* v1.3.1 (ADR-0058): green replaces the blue accent. Fills, dots, icons and focus rings. */
+  --k-accent: #16a34a; /* 3.3:1 on white: non-text only (3:1); text uses --k-accent-text */
+  --k-on-accent: #fafafa; /* 3.1:1 on the accent: kept by the developer (ADR-0058 lists it) */
+  --k-accent-hover: #15803d;
+  --k-accent-text: #15803d; /* green text: links and the "You" label; 5.0:1 on white */
+  --k-accent-soft: #f0fdf4; /* a soft green background: the sidebar's plus tile, the Team badge */
+  --k-accent-tint: var(--k-accent-soft);
   --k-control-strong: #e4e4e7; /* a ghost button's hover, a toggle that is off */
   /* The session card's letter tiles, chosen by a hash of the name, with white letters. */
   --k-tile-0: #1d4ed8;
@@ -73,7 +85,8 @@
   --k-dark-primary: #f4f4f5;
   --k-dark-on-primary: #18181b;
   --k-dark-primary-hover: #e4e4e7;
-  --k-dark-accent: #60a5fa; /* links, focus and the "You" label on dark */
+  --k-dark-accent: #22c55e; /* v1.3.1: links, focus, indicators and the "You" label on dark */
+  --k-dark-accent-soft: rgba(34, 197, 94, 0.14); /* the soft green background on dark */
   --k-dark-them: #d4d4d8;
   --k-dark-success: #4ade80;
   --k-dark-warning: #fbbf24;
@@ -102,8 +115,13 @@
      worst case, pure white, the body text is 6.3:1 and "them" 5.1:1. Below the default, and for the
      secondary muted grey, nominal contrast falls (at 0.4 over white the body is ~2.4:1); the text
      shadow carries legibility there. Measured table in ADR-0033. The solid panel keeps #a1a1aa. */
-  --k-glass-muted: #b4b4bb;
-  --k-glass-accent: #a5cbfd;
+  /* v1.3.1 (ADR-0058): the compact view's muted grey is #A1A1AA (was #B4B4BB), with white text and
+     green #22C55E indicators (level bars, toggles, dots). Green text over the glass ("You") is the
+     paler #86EFAC so it stays readable when the panel is see-through. */
+  --k-glass-muted: #a1a1aa;
+  --k-glass-accent: #86efac;
+  --k-overlay-text: #ffffff;
+  --k-overlay-indicator: #22c55e;
   --k-glass-them: #e4e4e7;
   --k-glass-success: #86efac;
   --k-glass-warning: #fde68a;
@@ -112,7 +130,7 @@
      worst case: at the default 0.7 the panel is about #adadad there, the body text 7.6:1 and the
      muted text 5.1:1 (tests/unit/ui/theme.test.ts). */
   --k-glass-light-muted: #3f3f46;
-  --k-glass-light-accent: #1e3a8a;
+  --k-glass-light-accent: #14532d;
   --k-glass-light-success: #0f4a27;
   --k-glass-light-warning: #6b2410;
   --k-glass-light-danger: #7f1616;
@@ -150,7 +168,43 @@
   --k-font:
     var(--font-inter-tight), 'Inter Tight', 'Inter', ui-sans-serif, system-ui, -apple-system,
     'Segoe UI', sans-serif;
-  --k-dur: 150ms;
+
+  /* ---- The desktop cards' texture (v1.3.1, reference "first desktop app card appear.jpeg") ---- */
+  /* A white glow along a card's top edge, and a faint #71717A dot grid over its inner grey. */
+  --k-card-glow: rgba(255, 255, 255, 0.9);
+  --k-card-dot: rgba(113, 113, 122, 0.12);
+  --k-card-dot-gap: 8px;
+
+  /* ---- Motion (v1.3.1, ADR-0058). Every time and distance an animation uses. Under "reduce
+     motion" the times become 0 and the press scale 1 (the block after the surface tokens). ---- */
+  --k-dur: 150ms; /* hover colour, toggles, card hover shadow, menus, compact-view jumps */
+  --k-dur-slow: 200ms; /* modals, desktop cards, the tab indicator, the stepper line, toasts */
+  --k-ease: ease;
+  --k-ease-out: cubic-bezier(0.2, 0, 0, 1); /* things that arrive: menus, modals, toasts */
+  --k-press-scale: 0.98; /* a pressed button */
+  --k-enter-scale: 0.98; /* a modal or desktop card as it appears */
+  --k-slide: 4px; /* how far a menu, dropdown or the chat bar slides in */
+  --k-toast-slide: 8px; /* how far a toast rises in */
+  --k-toast-ms: 3000; /* how long a toast stays (read by DesktopFrame.tsx; a number, in ms) */
+}
+
+/* Reduce motion (the operating system's setting): nothing slides, scales or fades; colours change
+   at once. The animations below read these variables, so this one block turns them all off. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --k-dur: 0ms;
+    --k-dur-slow: 0ms;
+    --k-press-scale: 1;
+    --k-enter-scale: 1;
+    --k-slide: 0px;
+    --k-toast-slide: 0px;
+  }
+
+  /* Anything else that moves on its own (the pulsing Live dot, the listening microphone) stops. The
+     live level bars are not decoration: they follow the sound, so they keep moving. */
+  .animate-pulse {
+    animation: none;
+  }
 }
 
 /* The theme-dark: class prefix, for the few things that differ by theme without a token. */
@@ -162,7 +216,7 @@
   color-scheme: light;
   --ui-bg: var(--k-page);
   --ui-sidebar: var(--k-sidebar);
-  --ui-panel: var(--k-subtle);
+  --ui-panel: var(--k-card-inner);
   --ui-accent-fill: var(--k-accent);
   --ui-on-accent: var(--k-on-accent);
   --ui-accent-fill-hover: var(--k-accent-hover);
@@ -178,16 +232,16 @@
   --ui-input: var(--k-surface);
   --ui-field: var(--k-subtle);
   --ui-text: var(--k-text);
-  --ui-heading: var(--k-text);
+  --ui-heading: var(--k-strong);
   --ui-subheading: var(--k-text);
   --ui-muted: var(--k-muted);
-  --ui-link: var(--k-accent);
-  --ui-accent: var(--k-accent);
+  --ui-link: var(--k-accent-text);
+  --ui-accent: var(--k-accent-text); /* green text; fills use --ui-accent-fill */
   --ui-success: var(--k-success-text);
   --ui-warning: var(--k-warning);
   --ui-danger: var(--k-danger);
   /* "You" stands out in the accent; "Them" stays in the body colour. */
-  --ui-you: var(--k-accent);
+  --ui-you: var(--k-accent-text);
   --ui-them: var(--k-text);
   --ui-primary: var(--k-primary);
   --ui-on-primary: var(--k-on-primary);
@@ -207,6 +261,8 @@
   /* Transcript words that may still change (light pages: muted). */
   --ui-provisional: var(--k-muted);
   --ui-focus: var(--k-accent);
+  /* v1.3.1: live indicators (level bars, the Auto answer dot). */
+  --ui-indicator: var(--k-accent);
   /* Declared here, not once at :root: a var() inside a custom property is resolved where it is
      declared, so the ring takes the right colour only if each surface declares it. */
   --k-focus: 0 0 0 2px var(--ui-focus);
@@ -223,7 +279,7 @@ html[data-theme='dark'] {
   --ui-accent-fill: var(--k-accent);
   --ui-on-accent: var(--k-on-accent);
   --ui-accent-fill-hover: var(--k-accent-hover);
-  --ui-accent-tint: var(--k-accent-tint);
+  --ui-accent-tint: var(--k-dark-accent-soft);
   --ui-control-strong: var(--k-dark-control-strong);
   --ui-selected: var(--k-dark-text);
   --ui-segment: var(--k-dark-control-strong);
@@ -261,11 +317,18 @@ html[data-theme='dark'] {
   /* Transcript words that may still change: grey, shown in italics. */
   --ui-provisional: var(--k-dark-muted);
   --ui-focus: var(--k-dark-accent);
+  --ui-indicator: var(--k-dark-accent);
   --k-focus: 0 0 0 2px var(--ui-focus);
 }
 
 /* ---- The overlay's panel: solid by default; see-through in the desktop app (.k-glass) ---- */
+/* v1.3.1 (ADR-0058): the dark compact view: #18181B surfaces, white text, #A1A1AA muted and green
+   #22C55E indicators (switches, level bars, dots). */
 .k-overlay {
+  --ui-text: var(--k-overlay-text);
+  --ui-heading: var(--k-overlay-text);
+  --ui-accent-fill: var(--k-overlay-indicator);
+  --ui-indicator: var(--k-overlay-indicator);
   --ui-overlay-button: var(--k-overlay-button);
   --ui-overlay-button-hover: var(--k-overlay-button-hover);
   --ui-pill: var(--k-overlay-pill);
@@ -318,6 +381,10 @@ html[data-theme='dark'] {
 
 /* v1.1.0 (ADR-0041): the overlay in the light theme. */
 .k-light .k-overlay {
+  --ui-text: var(--k-text);
+  --ui-heading: var(--k-strong);
+  --ui-accent-fill: var(--k-accent);
+  --ui-indicator: var(--k-accent);
   --ui-overlay-button: var(--k-light-overlay-button);
   --ui-overlay-button-hover: var(--k-light-overlay-button-hover);
   --ui-pill: var(--k-light-overlay-pill);
@@ -355,7 +422,7 @@ html[data-theme='dark'] {
 
 .k-light .k-overlay-menu {
   --ui-muted: var(--k-muted);
-  --ui-link: var(--k-accent);
+  --ui-link: var(--k-accent-text);
   --ui-surface: var(--k-surface);
   --ui-border: var(--k-border);
   background: var(--k-surface);
@@ -416,6 +483,95 @@ html:has(.k-glass) body {
   background: transparent;
 }
 
+/* v1.3.1: the desktop cards' texture (reference "first desktop app card appear.jpeg"): the inner grey
+   with a faint dot grid, and a white glow along the top edge. Dark: the dots and glow are fainter. */
+.k-card-texture {
+  background-color: var(--ui-panel);
+  background-image:
+    linear-gradient(to bottom, var(--k-card-glow), transparent 56px),
+    radial-gradient(var(--k-card-dot) 0.75px, transparent 1px);
+  background-size:
+    100% 100%,
+    var(--k-card-dot-gap) var(--k-card-dot-gap);
+  box-shadow: inset 0 1px 0 var(--k-card-glow);
+}
+
+.k-dark .k-card-texture,
+html[data-theme='dark'] .k-card-texture {
+  --k-card-glow: rgba(255, 255, 255, 0.04);
+  --k-card-dot: rgba(161, 161, 170, 0.1);
+}
+
+/* ---- Motion (v1.3.1, ADR-0058). Every value comes from the motion tokens in :root, so the
+   reduce-motion block there switches all of it off. ---- */
+
+/* Menus, dropdowns and the chat bar: fade in and slide 4 px (down from above; up on the overlay's
+   bottom row, where they open upward). The keyframes animate transform, never the translate or scale
+   properties, which Tailwind's utilities use to place things (the toast is centred with translate). */
+@keyframes k-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--k-slide) * var(--k-slide-dir, -1)));
+  }
+}
+
+/* The overlay's own menus and lists (⋮, the device pickers, the language list) carry k-overlay-menu,
+   so they animate without a second class. */
+.k-anim-menu,
+.k-overlay-menu {
+  animation: k-menu-in var(--k-dur) var(--k-ease-out);
+}
+
+.k-overlay-up .k-anim-menu,
+.k-overlay-up .k-overlay-menu {
+  --k-slide-dir: 1;
+}
+
+/* Modals and the desktop cards: fade in from 98 % size. */
+@keyframes k-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--k-enter-scale));
+  }
+}
+
+.k-anim-modal {
+  animation: k-modal-in var(--k-dur-slow) var(--k-ease-out);
+}
+
+/* The dimmed backdrop behind a modal fades with it. */
+@keyframes k-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.k-anim-fade,
+.k-anim-modal::backdrop {
+  animation: k-fade-in var(--k-dur-slow) var(--k-ease-out);
+}
+
+/* Toasts rise 8 px and fade in (they hide after --k-toast-ms). */
+@keyframes k-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--k-toast-slide));
+  }
+}
+
+.k-anim-toast {
+  animation: k-toast-in var(--k-dur-slow) var(--k-ease-out);
+}
+
+/* A card that lifts on hover: the shadow eases in. */
+.k-hover-lift {
+  transition: box-shadow var(--k-dur) var(--k-ease);
+}
+
+.k-hover-lift:hover {
+  box-shadow: var(--k-shadow-modal);
+}
+
 /* Every control gets the control radius, so a one-off button in a feature cannot stay square.
    Tailwind utilities come later, so rounded-full or rounded-card still win. Range and box inputs
    keep the browser's own shape. */
@@ -430,6 +586,23 @@ html:has(.k-glass) body {
   textarea,
   input:not([type='range'], [type='checkbox'], [type='radio']) {
     border-radius: var(--k-radius-control);
+  }
+
+  /* v1.3.1 (ADR-0058): hover colours ease over 150 ms and a pressed button shrinks to 98 %. In the
+     base layer, so a component's own transition-* utility still wins. The scale property is separate
+     from transform, so a button that is also moved by transform keeps its place. */
+  button,
+  a,
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'] {
+    transition-property: color, background-color, border-color, box-shadow, opacity, scale;
+    transition-duration: var(--k-dur);
+    transition-timing-function: var(--k-ease);
+  }
+
+  button:not(:disabled):active {
+    scale: var(--k-press-scale);
   }
 }
 
@@ -493,6 +666,7 @@ html:has(.k-glass) body {
   --color-ui-primary-hover: var(--ui-primary-hover);
   --color-ui-on-primary: var(--ui-on-primary);
   --color-ui-accent: var(--ui-accent);
+  --color-ui-indicator: var(--ui-indicator);
   --color-ui-overlay-button: var(--ui-overlay-button);
   --color-ui-overlay-button-hover: var(--ui-overlay-button-hover);
   --color-ui-end: var(--k-overlay-end);

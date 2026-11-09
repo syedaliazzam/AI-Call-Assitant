@@ -32,8 +32,40 @@ import { HomeMenu } from './HomeMenu';
 /** What Buy credits says: there is nothing to buy. */
 export const NO_CREDITS_NEEDED = 'Not needed, your team account is unlimited.';
 
-/** How long the toast stays, in ms. */
-const TOAST_MS = 2_500;
+/**
+ * How long the toast stays, in ms: the --k-toast-ms motion token (v1.3.1, 3 s), read from the page's
+ * styles; 3000 when it cannot be read (unit tests have no stylesheet).
+ *
+ * @returns Milliseconds.
+ * Called from: useToast()
+ */
+function toastMs(): number {
+  const raw =
+    typeof document === 'undefined'
+      ? ''
+      : getComputedStyle(document.documentElement).getPropertyValue('--k-toast-ms');
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : 3_000;
+}
+
+/** A toast's look: neutral (dark) for a note, green for something that worked. */
+export type ToastTone = 'neutral' | 'success';
+
+/** The toast's colours per tone (v1.3.1: success toasts are green, ADR-0058). */
+const TOAST_TONES: Record<ToastTone, string> = {
+  neutral: 'bg-ui-primary text-ui-on-primary',
+  success: 'bg-ui-accent-fill text-ui-on-accent',
+};
+
+/** The message a toast shows. */
+interface ToastMessage {
+  /** Changes with every message, so the same text shown twice replays the slide-up. */
+  id: number;
+  /** The words. */
+  text: string;
+  /** Neutral or success. */
+  tone: ToastTone;
+}
 
 /** A square header button (reference: 40 px, a light outline, radius 10). */
 const FRAME_BUTTON =
@@ -148,12 +180,14 @@ export function DesktopFrame({
       <ToastContext.Provider value={toast.show}>
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
       </ToastContext.Provider>
-      {toast.text && (
+      {toast.current && (
+        // key: a new message replays the slide-up (200 ms, k-anim-toast).
         <p
+          key={toast.current.id}
           role="status"
-          className="pointer-events-none absolute bottom-6 left-1/2 z-40 max-w-[90%] -translate-x-1/2 rounded-control bg-ui-primary px-4 py-2.5 text-center text-[14px] font-medium text-ui-on-primary shadow-modal"
+          className={`k-anim-toast pointer-events-none absolute bottom-6 left-1/2 z-40 max-w-[90%] -translate-x-1/2 rounded-control px-4 py-2.5 text-center text-[14px] font-medium shadow-modal ${TOAST_TONES[toast.current.tone]}`}
         >
-          {toast.text}
+          {toast.current.text}
         </p>
       )}
     </div>
@@ -161,7 +195,7 @@ export function DesktopFrame({
 }
 
 /** The frame's toast, for the cards inside it. */
-const ToastContext = createContext<(text: string) => void>(() => undefined);
+const ToastContext = createContext<(text: string, tone?: ToastTone) => void>(() => undefined);
 
 /**
  * The frame's toast.
@@ -169,18 +203,21 @@ const ToastContext = createContext<(text: string) => void>(() => undefined);
  * @returns A function that shows a short message.
  * Called from: LauncherStart.tsx
  */
-export function useFrameToast(): (text: string) => void {
+export function useFrameToast(): (text: string, tone?: ToastTone) => void {
   return useContext(ToastContext);
 }
 
 /**
- * A toast's state: the text and a timer that clears it.
+ * A toast's state: the message and a timer that clears it after --k-toast-ms.
  *
- * @returns The text shown (or null) and show().
+ * @returns The message shown (or null) and show(text, tone).
  * Called from: DesktopFrame
  */
-function useToast(): { text: string | null; show: (text: string) => void } {
-  const [text, setText] = useState<string | null>(null);
+function useToast(): {
+  current: ToastMessage | null;
+  show: (text: string, tone?: ToastTone) => void;
+} {
+  const [current, setCurrent] = useState<ToastMessage | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
@@ -188,12 +225,12 @@ function useToast(): { text: string | null; show: (text: string) => void } {
     },
     [],
   );
-  const show = useCallback((next: string) => {
+  const show = useCallback((text: string, tone: ToastTone = 'neutral') => {
     if (timer.current) clearTimeout(timer.current);
-    setText(next);
-    timer.current = setTimeout(() => setText(null), TOAST_MS);
+    setCurrent({ id: Date.now(), text, tone });
+    timer.current = setTimeout(() => setCurrent(null), toastMs());
   }, []);
-  return { text, show };
+  return { current, show };
 }
 
 /**

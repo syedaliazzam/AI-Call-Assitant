@@ -92,7 +92,7 @@ export function runtimeLabel(): string {
 
 /** A row's shape: 40 px tall, 12 px between icon and words, radius 10 (spec §1). */
 const ROW =
-  'flex h-10 w-full items-center gap-3 rounded-control px-2.5 text-nav transition-colors duration-150 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11';
+  'flex h-10 w-full items-center gap-3 rounded-control px-2.5 text-nav transition-colors duration-(--k-dur) focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11';
 
 /**
  * One link, with its name in a tooltip when only the icon shows.
@@ -240,7 +240,7 @@ export function Sidebar({ collapsed, drawerOpen, onCloseDrawer, card, footer }: 
       className={[
         'flex shrink-0 flex-col border-r border-ui-border bg-ui-sidebar text-ui-text',
         // Below 768 px: a drawer over the page; invisible when shut, so it is out of the tab order.
-        'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-[280px] max-md:max-w-[85vw] max-md:shadow-modal max-md:transition-transform max-md:duration-200',
+        'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-[280px] max-md:max-w-[85vw] max-md:shadow-modal max-md:transition-transform max-md:duration-(--k-dur-slow)',
         drawerOpen ? '' : 'max-md:invisible max-md:-translate-x-full',
         collapsed ? 'md:w-16' : 'md:w-[252px]',
       ].join(' ')}

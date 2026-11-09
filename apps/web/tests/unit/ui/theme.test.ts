@@ -221,7 +221,7 @@ describe('the values in the brief', () => {
       '--k-primary': '#18181b',
       '--k-on-primary': '#ffffff',
       '--k-primary-hover': '#27272a',
-      '--k-accent': '#2563eb',
+      '--k-accent': '#16a34a',
       '--k-success': '#16a34a',
       '--k-warning': '#b45309',
       '--k-danger': '#dc2626',
@@ -235,7 +235,7 @@ describe('the values in the brief', () => {
       '--k-radius-bar': '12px',
       '--k-shadow-card': 'none',
       '--k-shadow-modal': '0 8px 30px rgba(0, 0, 0, 0.08)',
-      '--k-on-accent': '#ffffff',
+      '--k-on-accent': '#fafafa',
       '--k-dot-ended': '#a1a1aa',
       '--k-dot-recording': '#ef4444',
     };
@@ -266,6 +266,81 @@ describe('the values in the brief', () => {
     for (const [token, value] of Object.entries(expected)) {
       expect(ROOT.get(token), token).toBe(value);
     }
+  });
+});
+
+describe('v1.3.1 colours and motion (ADR-0058)', () => {
+  it('has the green accent and the neutral values that were asked for', () => {
+    const expected: Record<string, string> = {
+      '--k-accent': '#16a34a',
+      '--k-on-accent': '#fafafa',
+      '--k-accent-hover': '#15803d',
+      '--k-accent-soft': '#f0fdf4',
+      '--k-strong': '#09090b',
+      '--k-card-inner': '#f6f6f7',
+      '--k-dark-accent': '#22c55e',
+      '--k-overlay-indicator': '#22c55e',
+      '--k-overlay-text': '#ffffff',
+      '--k-overlay-solid': '#18181b',
+      '--k-glass-muted': '#a1a1aa',
+    };
+    for (const [token, value] of Object.entries(expected)) {
+      expect(ROOT.get(token), token).toBe(value);
+    }
+    // No blue accent left in the theme (the company letter tiles keep their blue, --k-tile-0).
+    expect(THEME).not.toMatch(/#2563eb|#60a5fa|#a5cbfd|#1e3a8a|rgba\(37, 99, 235/i);
+  });
+
+  it('keeps green text readable: links and "You" use the darker green, which passes AA', () => {
+    expect(LIGHT.get('--ui-link')).toBe('var(--k-accent-text)');
+    expect(LIGHT.get('--ui-you')).toBe('var(--k-accent-text)');
+    expect(contrast(resolve('--k-accent-text'), WHITE)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('pins the AA failures the developer kept, so a change to them is noticed (ADR-0058)', () => {
+    // Near-white label on the green button: 3.16:1 (AA for large text only).
+    const label = contrast(resolve('--k-on-accent'), resolve('--k-accent'));
+    expect(label).toBeGreaterThan(3);
+    expect(label).toBeLessThan(4.5);
+    // Muted text on the card's inner panel: 4.47:1.
+    const muted = contrast(resolve('--k-muted'), resolve('--k-card-inner'));
+    expect(muted).toBeGreaterThan(4.4);
+    expect(muted).toBeLessThan(4.5);
+    // The green itself is a fill, dot, icon and ring colour: at least 3:1 (non-text) on white.
+    expect(contrast(resolve('--k-accent'), WHITE)).toBeGreaterThanOrEqual(3);
+  });
+
+  it('has every motion value as a token, and turns them off under "reduce motion"', () => {
+    const motion: Record<string, string> = {
+      '--k-dur': '150ms',
+      '--k-dur-slow': '200ms',
+      '--k-press-scale': '0.98',
+      '--k-enter-scale': '0.98',
+      '--k-slide': '4px',
+      '--k-toast-ms': '3000',
+    };
+    for (const [token, value] of Object.entries(motion)) {
+      expect(ROOT.get(token), token).toBe(value);
+    }
+    const reduce = THEME.slice(THEME.indexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reduce).toContain('--k-dur: 0ms;');
+    expect(reduce).toContain('--k-dur-slow: 0ms;');
+    expect(reduce).toContain('--k-press-scale: 1;');
+    expect(reduce).toContain('--k-slide: 0px;');
+  });
+
+  it('finds no hard-coded animation time in a component (they use the motion tokens)', () => {
+    const offenders: string[] = [];
+    for (const file of filesUnder(path.join(WEB_DIR, 'src'))) {
+      if (!/\.tsx$/.test(file)) continue;
+      for (const [i, line] of readFileSync(file, 'utf8').split('\n').entries()) {
+        // The live level bars follow the sound every 100 ms: a meter, not an animation.
+        if (/\bduration-(?:150|200|300)\b/.test(line)) {
+          offenders.push(`${path.relative(WEB_DIR, file)}:${i + 1}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
 

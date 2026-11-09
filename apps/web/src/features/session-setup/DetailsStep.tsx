@@ -167,7 +167,7 @@ export function DetailsStep({
             size={16}
             strokeWidth={1.75}
             aria-hidden="true"
-            className="shrink-0 text-ui-muted transition-transform duration-150 group-open:rotate-90"
+            className="shrink-0 text-ui-muted transition-transform duration-(--k-dur) group-open:rotate-90"
           />
           Advanced
           {draft.preferences.keyTerms.trim() && (

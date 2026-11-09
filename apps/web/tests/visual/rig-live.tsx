@@ -154,7 +154,7 @@ function inventedTabStream(): MediaStream {
     context.fillText('Northwind Robotics: route planning', 120, 400);
     context.font = '40px sans-serif';
     context.fillText('Invented slide, in place of a shared tab', 120, 480);
-    context.fillStyle = '#2563eb';
+    context.fillStyle = '#16a34a';
     context.fillRect(120 + (frame % 40), 540, 16, 16);
   }, 100);
   return canvas.captureStream(10);

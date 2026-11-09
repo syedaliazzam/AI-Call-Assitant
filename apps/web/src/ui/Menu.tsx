@@ -194,7 +194,7 @@ export function MenuPopup({ items, popupRef, onClose, onEscape }: MenuPopupProps
       popover="manual"
       role="menu"
       onKeyDown={onKeyDown}
-      className="fixed inset-auto m-0 flex min-w-52 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto rounded-menu border border-ui-border bg-ui-surface p-1.5 text-ui-text shadow-modal"
+      className="k-anim-menu fixed inset-auto m-0 flex min-w-52 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto rounded-menu border border-ui-border bg-ui-surface p-1.5 text-ui-text shadow-modal"
     >
       {sub && (
         <>

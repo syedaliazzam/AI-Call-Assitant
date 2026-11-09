@@ -66,10 +66,10 @@ function Tile({
   return (
     <section
       aria-label={title}
-      className="relative flex flex-col items-center gap-1.5 rounded-[14px] border border-ui-border bg-ui-bg px-4 pb-4 pt-6 text-center"
+      className="relative flex flex-col items-center gap-1.5 k-card-texture rounded-[14px] border border-ui-border px-4 pb-4 pt-6 text-center"
     >
       {badge && (
-        <span className="absolute right-0 top-0 rounded-bl-[10px] rounded-tr-[14px] bg-ui-subtle px-3 py-1.5 text-[13px] font-medium text-ui-heading">
+        <span className="absolute right-0 top-0 rounded-bl-[10px] rounded-tr-[14px] bg-ui-accent-tint px-3 py-1.5 text-[13px] font-medium text-ui-accent">
           {badge}
         </span>
       )}
@@ -93,13 +93,15 @@ export function LauncherStart({ email, onStartFree, onBack }: LauncherStartProps
   const toast = useFrameToast();
   return (
     <div className="px-4 pb-4 pt-1">
-      <div className="flex flex-col gap-4 rounded-[16px] border border-ui-border bg-ui-bg p-4">
+      <div className="k-anim-modal k-card-texture flex flex-col gap-4 rounded-[16px] border border-ui-border p-4">
         <header className="flex flex-col items-center gap-1 pt-2 text-center">
           <h1 className="text-[18px] font-medium text-ui-heading">Start your session</h1>
           <p className="max-w-full truncate text-[13px] text-ui-muted">Signed in as {email}</p>
         </header>
         <Tile
-          icon={<Gift aria-hidden="true" size={20} strokeWidth={1.5} />}
+          icon={
+            <Gift aria-hidden="true" size={20} strokeWidth={1.5} className="text-ui-accent-fill" />
+          }
           title="Free session"
           line="Unlimited · Free"
           note="Paramount Intelligence team account."

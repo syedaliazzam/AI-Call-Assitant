@@ -121,7 +121,7 @@ export function Modal({
       }}
       className={[
         // The width leaves a margin on a phone, so the rounded corners stay visible.
-        'm-auto h-(--modal-h) max-h-[calc(100dvh-2rem)] w-(--modal-w) max-w-[calc(100vw-2rem)] overflow-hidden rounded-modal border border-ui-border bg-ui-bg p-0 text-ui-text shadow-modal backdrop:bg-ui-overlay',
+        'k-anim-modal m-auto h-(--modal-h) max-h-[calc(100dvh-2rem)] w-(--modal-w) max-w-[calc(100vw-2rem)] overflow-hidden rounded-modal border border-ui-border bg-ui-bg p-0 text-ui-text shadow-modal backdrop:bg-ui-overlay',
         fullScreenOnPhone
           ? 'max-sm:h-dvh max-sm:max-h-none max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:border-0'
           : '',

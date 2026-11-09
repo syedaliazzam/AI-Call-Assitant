@@ -183,7 +183,7 @@ export function CompanyField({ value, error, onChange }: CompanyFieldProps) {
         }}
       />
       {(showList || showNote) && (
-        <div className="absolute inset-x-0 z-20 mt-1 max-h-72 overflow-y-auto rounded-control border border-ui-border bg-ui-surface py-1 shadow-card">
+        <div className="k-anim-menu absolute inset-x-0 z-20 mt-1 max-h-72 overflow-y-auto rounded-control border border-ui-border bg-ui-surface py-1 shadow-card">
           {showList && (
             <ul id={listId} role="listbox" aria-label="Suggestions">
               {rows.map((row, index) => (

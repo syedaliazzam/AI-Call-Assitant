@@ -157,7 +157,7 @@ test('sizes and colours follow the spec, in light and in dark', async () => {
   });
   expect(await measure('button:has-text("Large accent")')).toMatchObject({
     height: 52,
-    background: 'rgb(37, 99, 235)',
+    background: 'rgb(22, 163, 74)',
   });
   expect(await measure('button:has-text("Ghost")')).toMatchObject({
     background: 'rgb(244, 244, 245)',
@@ -340,12 +340,12 @@ test('SegmentedControl, RadioCards, Stepper and Toggle', async () => {
   const two = page.getByText('2', { exact: true }).first();
   await expect(two).toHaveCSS('width', '28px');
   await page.getByRole('button', { name: 'Next step' }).click();
-  await expect(two).toHaveCSS('background-color', 'rgb(37, 99, 235)');
+  await expect(two).toHaveCSS('background-color', 'rgb(22, 163, 74)');
 
   const save = page.getByRole('switch', { name: 'Save transcript' });
   await save.click();
   await expect(save).toHaveAttribute('aria-checked', 'true');
-  await expect(save.locator('span').first()).toHaveCSS('background-color', 'rgb(37, 99, 235)');
+  await expect(save.locator('span').first()).toHaveCSS('background-color', 'rgb(22, 163, 74)');
 });
 
 test('the panel menu: rows 40 tall, steppers, "Soon" rows and the theme group', async () => {

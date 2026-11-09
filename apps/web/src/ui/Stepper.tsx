@@ -33,17 +33,19 @@ export function Stepper({ steps, current }: StepperProps) {
         return (
           <Fragment key={step}>
             {index > 0 && (
-              <li
-                aria-hidden="true"
-                className={`ml-[13px] h-8 w-0.5 transition-colors duration-200 ${reached ? 'bg-ui-accent-fill' : 'bg-ui-border'}`}
-              />
+              // v1.3.1 (ADR-0058): the green fills the grey line from the top down over 200 ms.
+              <li aria-hidden="true" className="relative ml-[13px] h-8 w-0.5 bg-ui-border">
+                <span
+                  className={`absolute inset-x-0 top-0 bg-ui-accent-fill transition-[height] duration-(--k-dur-slow) ease-(--k-ease-out) ${reached ? 'h-full' : 'h-0'}`}
+                />
+              </li>
             )}
             <li
               aria-current={index === current ? 'step' : undefined}
               className="flex items-center gap-3"
             >
               <span
-                className={`flex size-7 shrink-0 items-center justify-center rounded-full text-[14px] font-medium transition-colors duration-200 ${reached ? 'bg-ui-accent-fill text-ui-on-accent' : 'border border-ui-control-strong text-ui-muted'}`}
+                className={`flex size-7 shrink-0 items-center justify-center rounded-full text-[14px] font-medium transition-colors duration-(--k-dur-slow) ${reached ? 'bg-ui-accent-fill text-ui-on-accent' : 'border border-ui-control-strong text-ui-muted'}`}
               >
                 {index + 1}
               </span>

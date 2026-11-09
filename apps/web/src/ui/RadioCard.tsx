@@ -86,7 +86,7 @@ export function RadioCards<T extends string>({
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(option.value)}
             className={[
-              'flex items-center gap-3.5 rounded-card bg-ui-bg px-4 py-3 text-left transition-colors duration-150 hover:bg-ui-hover',
+              'flex items-center gap-3.5 rounded-card bg-ui-bg px-4 py-3 text-left transition-colors duration-(--k-dur) hover:bg-ui-hover',
               'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
               // The selected border is drawn as an inset ring, so the card's size never changes.
               selected

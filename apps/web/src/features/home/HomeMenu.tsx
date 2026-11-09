@@ -67,7 +67,7 @@ export function HomeMenu({ email, theme, zoom, onClose, launcher = false }: Home
       role="group"
       aria-label="Home panel menu"
       data-menu="home"
-      className="absolute right-2 top-12 z-30 flex max-h-[calc(100vh-3.5rem)] w-72 flex-col overflow-y-auto rounded-menu bg-ui-surface shadow-modal [-webkit-app-region:no-drag]"
+      className="k-anim-menu absolute right-2 top-12 z-30 flex max-h-[calc(100vh-3.5rem)] w-72 flex-col overflow-y-auto rounded-menu bg-ui-surface shadow-modal [-webkit-app-region:no-drag]"
     >
       <MenuBlock>
         <p className="flex min-h-10 items-center gap-2.5 px-3 text-input text-ui-text">

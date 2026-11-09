@@ -169,7 +169,7 @@ test('header: wordmark, the page’s words, and the split button’s addresses',
   });
   const main = header.getByRole('button', { name: 'Create session' });
   expect((await main.boundingBox())!.height).toBe(36);
-  await expect(main).toHaveCSS('background-color', 'rgb(37, 99, 235)');
+  await expect(main).toHaveCSS('background-color', 'rgb(22, 163, 74)');
   await main.click();
   await header.getByRole('button', { name: 'Choose a session type' }).click();
   await expect(page.getByRole('menuitem')).toHaveText([

@@ -194,7 +194,7 @@ export function LauncherConnect({ sessionId, onBack, onConnected }: LauncherConn
 
   return (
     <div className="flex flex-col gap-4 px-4 pb-4 pt-1">
-      <div className="flex flex-col gap-5 rounded-[16px] border border-ui-border bg-ui-bg p-5">
+      <div className="k-anim-modal k-card-texture flex flex-col gap-5 rounded-[16px] border border-ui-border p-5">
         <header className="flex flex-col items-center gap-2 pt-1 text-center">
           <h1 className="text-[24px] font-medium leading-tight text-ui-heading">
             Connect Call Session
