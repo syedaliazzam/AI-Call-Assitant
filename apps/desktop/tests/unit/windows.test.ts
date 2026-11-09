@@ -312,6 +312,24 @@ describe('protection', () => {
     expect(protectionSupported('linux', '6.8.0')).toBe(false);
   });
 
+  it('attaches each window once, re-applying the setting on every show (v1.3.0, ADR-0055)', () => {
+    const store = memoryStore({ shareProtection: true });
+    const protection = createProtection(store, 'win32', '10.0.26200');
+    const shows: (() => void)[] = [];
+    const window = {
+      setContentProtection: vi.fn(),
+      on: vi.fn((_event: string, handler: () => void) => shows.push(handler)),
+    };
+    // Attached as it is created (browser-window-created) and again by its owner.
+    protection.attach(window as never);
+    protection.attach(window as never);
+    expect(window.setContentProtection).toHaveBeenCalledTimes(1);
+    expect(window.setContentProtection).toHaveBeenLastCalledWith(true);
+    expect(shows).toHaveLength(1);
+    shows[0]!();
+    expect(window.setContentProtection).toHaveBeenCalledTimes(2);
+  });
+
   it('is off by default, remembers a change and applies it; IPC takes a boolean from Kite only', async () => {
     const store = memoryStore();
     const protection = createProtection(store, 'win32', '10.0.26200');

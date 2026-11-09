@@ -61,7 +61,8 @@ export interface Protection {
     windows: readonly Pick<BrowserWindow, 'setContentProtection'>[],
   ): ShareProtectionState;
   /**
-   * Applies the setting to a window now and every time it is shown.
+   * Applies the setting to a window now and every time it is shown. A window already attached is left
+   * as it is (v1.3.0: every window is attached as it is created, and some also by their owner).
    *
    * @param window A Kite window.
    */
@@ -82,6 +83,8 @@ export function createProtection(store: ShellStore, platform: string, release: s
   // Off by default (Day 5 file); the user turns it on in Settings or the compact view.
   const wanted = () => store.read().shareProtection ?? false;
   const state = (): ShareProtectionState => ({ on: wanted(), supported, scope: 'all' });
+  // Windows already attached: one show listener each.
+  const attached = new WeakSet<object>();
   return {
     state,
     set(on, windows) {
@@ -90,6 +93,8 @@ export function createProtection(store: ShellStore, platform: string, release: s
       return state();
     },
     attach(window) {
+      if (attached.has(window)) return;
+      attached.add(window);
       window.setContentProtection(wanted());
       // Re-applied on every show: a hidden and shown window must never come back unprotected.
       window.on('show', () => window.setContentProtection(wanted()));

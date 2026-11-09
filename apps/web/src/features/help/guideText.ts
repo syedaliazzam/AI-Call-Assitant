@@ -131,6 +131,24 @@ During a call the browser view fills the whole window; the sidebar comes back wh
 
 **Private** (in each **⋮** menu and in Settings) leaves **all of Paramount AI's windows** out of screen shares: the bars, panels, call window, home panel and Ask AI. It is one setting, off by default. Windows 10 version 2004 or later; on macOS, some capture apps may still show them. Paramount AI stays in your taskbar, and it does nothing against monitoring or proctoring tools.
 
+Test it with your phone before a real call:
+
+1. Turn **Private** on (**⋮** → **Private**).
+2. Start a meeting on the computer (Google Meet in Chrome, Teams or Zoom) and join the same meeting on your phone.
+3. On the computer, share your **entire screen**.
+4. Open Paramount AI's bars, the chat bar, both panels and a **⋮** menu, then look at the phone.
+
+None of Paramount AI's windows should show on the phone; the rest of your screen does. In Zoom's default capture mode a black box may show where they are: see **Zoom** below. Turn **Private** off and look again: now they show.
+
+### Zoom
+
+Zoom leaves Paramount AI's windows out of a share only when it captures with window filtering:
+
+1. Update Zoom to its latest version.
+2. In Zoom, open **Settings** → **Share Screen** → **Advanced** → **Screen capture mode**, and choose **Advanced capture with window filtering**.
+
+Without it, the people in the call may see a black box where Paramount AI's windows are. Test it with your phone, as above.
+
 ### If nobody seems to be there
 
 After 10 minutes with nothing from the other person and no answers, it asks **Still in a call?**. After 30, it pauses listening, with a **Resume** button. If your speakers keep repeating the other person into your microphone, it hides those lines and suggests headphones, once.

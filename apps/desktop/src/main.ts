@@ -414,6 +414,10 @@ function start(): void {
     const store = createStore(path.join(app.getPath('userData'), 'kite-shell.json'));
     const shield = createProtection(store, process.platform, os.release());
     protection = shield;
+    // v1.3.0 (ADR-0055): every window, including any created later (by Electron itself or by future
+    // code), gets the protection setting as it is created. Owners still attach their own windows too;
+    // attaching twice changes nothing. Never hidden from the taskbar or process lists (CLAUDE.md).
+    app.on('browser-window-created', (_event, window) => shield.attach(window));
     // Screenshot answers (Day 5): in memory only. During a call: the display under the overlay
     // (v1.1.0: the main window is minimised then, maybe on another display).
     installScreenshot({

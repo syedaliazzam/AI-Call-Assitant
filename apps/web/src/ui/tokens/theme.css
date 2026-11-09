@@ -356,10 +356,20 @@ html[data-theme='dark'] {
 }
 
 /* v1.1.0 (ADR-0042): inside the overlay a <select> lists its choices in the page. A browser's own
-   list is a separate window, which screen-share protection may not reach. */
+   list is a separate window, which screen-share protection may not reach. ADR-0055: in the desktop app
+   (html.k-desktop, set by src/platform/desktopDocument.ts) every <select> does. */
 .k-overlay select,
-.k-overlay select::picker(select) {
+.k-overlay select::picker(select),
+.k-desktop select,
+.k-desktop select::picker(select) {
   appearance: base-select;
+}
+
+.k-desktop select::picker(select) {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--k-radius-control);
+  color: var(--ui-text);
 }
 
 .k-overlay select::picker(select) {

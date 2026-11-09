@@ -4,11 +4,13 @@
  *          desktop app (`window.kiteDesktop` exists), otherwise browser. The rest of the app
  *          imports only from here and never checks for the desktop app itself.
  * Used by: src/core/* and src/features/* (from Day 2), tests/unit/platform/index.test.ts
- * Depends on: src/platform/browser.ts, src/platform/desktop.ts, src/platform/types.ts
+ * Depends on: src/platform/browser.ts, src/platform/desktop.ts, src/platform/desktopDocument.ts,
+ *             src/platform/types.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3
  */
 import { browserPlatform } from './browser';
 import { createDesktopPlatform, type DesktopPlatform } from './desktop';
+import { installDesktopDocument } from './desktopDocument';
 import type { Platform } from './types';
 
 export type { DesktopPlatform } from './desktop';
@@ -27,7 +29,10 @@ export type { HotkeyAction, OtherSideSource, OtherSideStream, Platform } from '.
  */
 export function getPlatform(): Platform {
   const bridge = typeof window === 'undefined' ? undefined : window.kiteDesktop;
-  return bridge ? createDesktopPlatform(bridge) : browserPlatform;
+  if (!bridge) return browserPlatform;
+  // ADR-0055: popups stay inside the window, where screen-share protection reaches (once per page).
+  installDesktopDocument();
+  return createDesktopPlatform(bridge);
 }
 
 /** Details of the desktop shell, for display (for example in the sidebar footer). */

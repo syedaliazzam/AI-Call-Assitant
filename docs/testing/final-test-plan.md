@@ -115,6 +115,20 @@ Do this before everything else: it decides whether Kite can ship unsigned. On th
 | 3.20 | Use speakers and let the other side talk. | Echoed lines stay hidden, and a hint suggests headphones, once. |
 | 3.21 | In Chrome (browser Kite), start a call and press **Minimize**. | A picture-in-picture window with the same bars and panels, on a solid background. |
 
+## 3c. Private and screen sharing: test matrix (v1.3.0, ADR-0055)
+
+**Setup:** desktop 1.3.0, **⋮ → Private** on. A phone joins each meeting as a second person, so you see what the others see. On the laptop, before sharing, open in turn: the sessions card, the Start card and the Connect card (with its "Speech model needed" dialog if it shows), then in a call bar 1 and bar 2, the chat bar, the transcript panel, the answer panel, the icon (compact), each **⋮** menu, the microphone and audio lists (**▾**), the language list, and hover a few buttons and an underlined figure in an answer.
+
+| # | Meeting app | Share | Expected on the phone |
+|---|---|---|---|
+| 3c.1 | Google Meet in Chrome | **Present now → Entire screen** | **No** Paramount AI window, menu, list or tooltip is visible; the rest of the screen is. |
+| 3c.2 | Microsoft Teams (desktop app) | **Share → Screen** (entire screen) | Same as 3c.1. |
+| 3c.3 | Zoom (desktop app), **Settings → Share Screen → Advanced → Screen capture mode → Advanced capture with window filtering** | **Share Screen → Screen** | Same as 3c.1. |
+| 3c.4 | Zoom (desktop app), screen capture mode left on its **default** | **Share Screen → Screen** | Either no Paramount AI window, or a **black box** where each one is (no content readable). Note which. |
+| 3c.5 | Any of the above, **Private off** | Entire screen | Paramount AI's windows **are** visible: proves the test sees them. Turn Private back on. |
+
+In every row: Paramount AI is still in the taskbar and in Task Manager (Private hides nothing from them, and does nothing against monitoring or proctoring tools). Known limit: Windows' own "Restart now / Later" update question is drawn by Windows, not by Paramount AI, and is not covered; it only appears between calls.
+
 ## 3b. Browser split call view (live-ui-split)
 
 In Chrome, on a laptop (1280 px or wider), start a call sharing a real tab (for example a YouTube video).
