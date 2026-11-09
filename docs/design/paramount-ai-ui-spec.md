@@ -1,4 +1,4 @@
-# Paramount AI: UI/UX spec (v1.2.0)
+# Paramount AI: UI/UX spec (v1.2.0; colours and motion v1.3.1)
 
 **Goal:** rebuild Kite's interface as **Paramount AI**. It matches the reference app's **layout, structure, flow, component types, sizes, density and behaviour**. It does not copy its look.
 **References:** `docs/design/references/v1.2/` (git-ignored). The file names below are the names in that folder.
@@ -16,7 +16,7 @@
 
 **Do NOT copy:**
 - Their logo, parrot or mascot.
-- Their green brand colour.
+- Their green brand colour. *(Changed in v1.3.1, ADR-0058: the developer chose a green accent, .)*
 - Their icon artwork. Use **Lucide** icons, the closest meaning for each.
 - Their sentences. Use the copy in this file.
 - Their model or vendor logos.
@@ -57,20 +57,21 @@ Short functional labels are fine to match: Create session, Answer, Screenshot, C
 |---|---|---|
 | Page | `#FFFFFF` | `#0F0F11` |
 | Sidebar | `#FAFAFA` | `#141417` |
-| Inner panel | `#F4F4F5` | `#1C1C20` |
+| Inner panel | `#F6F6F7` (v1.3.1; `#F4F4F5` before) | `#1C1C20` |
 | Border | `#E4E4E7` | `#2A2A30` |
-| Text | `#18181B` | `#F4F4F5` |
+| Text | `#18181B` (headings `#09090B`, v1.3.1) | `#F4F4F5` |
 | Muted | `#71717A` | `#A1A1AA` |
 | Primary button | `#18181B` with white text | `#F4F4F5` with `#18181B` text |
 | Secondary button | white, 1 px border | — |
 | Ghost button | `#F4F4F5` | — |
 
-**Accent:** **Paramount AI blue `#2563EB`**, with white text. It is used for:
+**Accent (v1.3.1, ADR-0058; blue `#2563EB` before):** **green `#16A34A`** with `#FAFAFA` text, hover `#15803D`, soft `#F0FDF4`. Green text (links, "You") is `#15803D`. It is used for:
 - the active step circle and its connector line;
 - radio dots and toggles when on;
-- the "Create session" split button and the plus tile in the sidebar;
-- live level bars;
-- the "Ready" status dot.
+- the "Create session" split button and the plus tile in the sidebar (soft green, green plus);
+- live level bars, the Ready dot, the Team badge, the gift icon, success toasts and focus rings.
+
+v1.3.1 also adds strong text `#09090B` (headings) and a card's inner panel `#F6F6F7`; the dark compact view uses `#18181B` surfaces, white text, `#A1A1AA` muted and `#22C55E` indicators; the desktop cards have a top glow and a faint dot grid. **Motion** (tokens, off under "reduce motion"): hover 150 ms, press 0.98, menus 150 ms fade + 4 px slide, modals and desktop cards 200 ms fade + 0.98, tab underline slide and stepper fill 200 ms, toasts rise 200 ms and hide after 3 s, the desktop's position jumps 150 ms.
 
 **Status colours:** Ready dot = accent; Ended dot = `#A1A1AA`; recording dot = `#EF4444`; the Exit and close buttons = `#DC2626` with white text.
 
@@ -296,7 +297,9 @@ These map to Kite's existing format, length and tone values. Add "Balanced" only
 
 ### S11 · Connect call session: `connect call session card.jpeg`
 
-> **Changed by ADR-0055 (desktop, accounts with account sync):** "Connect Call Session" in the desktop frame, with the reference's subtitle and tips (Zoom window filtering → How, test privacy → Watch, mock video → Open). No microphone picker, meter or status text (the microphone is on the call bar); a dialog offers the speech model when it is missing. The browser's Connect card is unchanged.
+> **Changed by ADR-0055 (desktop, accounts with account sync):** "Connect Call Session" in the desktop frame, with the reference's subtitle and tips (Zoom window filtering → How, test privacy → Watch, mock video → Open). No microphone picker, meter or status text (the microphone is on the call bar). The browser's Connect card is unchanged.
+>
+> **Changed by ADR-0059 (desktop 1.3.1):** no speech-model dialog. The model ships in the installer and gets ready in the background when the app opens; Connect shows a small progress bar only if it is still loading.
 - Title "Connect call session", and the subtitle *"Ready when you are. Connect to start the transcript."*
 - **Audio source:**
   - a select on the right, defaulting to **System audio**, plus the mic picker (existing).
