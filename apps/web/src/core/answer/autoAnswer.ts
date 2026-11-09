@@ -167,6 +167,8 @@ export function questionWindow(
   const lastTurn = spoken.findLastIndex((line) => line.final && isUserTurn(line));
   return spoken.slice(lastTurn + 1).filter((line) => {
     if (line.speaker !== 'them' || answered.has(line.id)) return false;
+    // Their "mm-hm" while the user answered is not part of their next question.
+    if (isBlip(line.text)) return false;
     // A line that is only a greeting, an instruction or talk about the call is never part of a
     // question ("can you repeat that?" then "why Go?" asks "why Go?").
     const kind = lineKind(line.text);

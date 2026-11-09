@@ -261,7 +261,8 @@ function score(variant: Variant, run: PageRun, logic: CallLogic): CallMetrics {
  */
 function rows(metrics: CallMetrics): [string, string][] {
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
-  const of = (item: CountOf) => `${item.count}/${item.of}`;
+  // Results saved before the field was named count used split.
+  const of = (item: CountOf & { split?: number }) => `${item.count ?? item.split}/${item.of}`;
   return [
     ['Words on the right channel (all)', pct(metrics.rightChannel.all)],
     ['  You / Them', `${pct(metrics.rightChannel.you)} / ${pct(metrics.rightChannel.them)}`],

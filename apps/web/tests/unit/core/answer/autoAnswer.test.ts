@@ -167,6 +167,15 @@ describe('autoAnswerDue: what', () => {
     expect(questionWindow(lines, new Set(['a'])).map((item) => item.id)).toEqual(['c']);
   });
 
+  it('leaves the other side\'s own "mm-hm" out of their next question', () => {
+    const lines = [
+      line('y', 'you', 'WE MOVED THE EXPORT TO A QUEUE', T - 8_000),
+      line('m', 'them', 'MM HM', T - 6_000),
+      line('a', 'them', QUESTION, T),
+    ];
+    expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS)).toMatchObject({ lineIds: ['a'] });
+  });
+
   it('is not stopped by a blip after the question, but is by a real reply', () => {
     const later = T + 5_000;
     expect(

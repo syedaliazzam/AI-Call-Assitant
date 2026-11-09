@@ -21,6 +21,12 @@ describe('isBlip', () => {
     }
   });
 
+  it('v1.4: two listening sounds joined with a stray word, and okay heard as letters, are still listening', () => {
+    expect(isBlip('UM O K')).toBe(true);
+    expect(isBlip('UM OKAY WELL')).toBe(true);
+    expect(isBlip('UM WE MOVED IT')).toBe(false);
+  });
+
   it('is false for a real reply', () => {
     for (const text of [
       'WE USED CONTRACT TESTS',
