@@ -1,6 +1,6 @@
 # ADR-0055: The desktop flow and call UI match the reference app
 
-- **Status:** Proposed (built and deployed behind the accountSync switch; accepted when the developer says "go live")
+- **Status:** Accepted (developer: "go live", 9 Nov 2026); shipped to everyone in release 1.3.0
 - **Date:** 2026-11-09
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §4 (protection), §5 (Home panel, Connect, overlay), §7.3; `docs/design/paramount-ai-ui-spec.md` §3 (S10, S11, S13, S14)
 - **Supersedes / superseded by:** refines ADR-0051 (the launcher), ADR-0053 (where the desktop's Connect card is), ADR-0042 (Private covers every window); overrides spec S10's "No Buy credits" and S11's microphone meter on the desktop. Desktop 1.3.0 (draft) and the web app, for accounts with account sync only.

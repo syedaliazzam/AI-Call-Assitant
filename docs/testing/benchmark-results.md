@@ -292,3 +292,23 @@ Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200, 150% scaling); Play
 | Upgrade 1.2.0 → 1.3.0 (`upgrade.spec.ts`) | 1 of 1 | The released 1.2.0 program, then this build's `release/win-unpacked`, on one temporary profile. |
 | Harness suites | launcher 4 of 4, live UI 24 of 24, sim-calls chat bar 1 of 1, shell 6 of 6 | Light and dark captures for the visual pairs (git-ignored `docs/testing/v1.2-visual/`). |
 | `Paramount-AI-Setup-1.3.0.exe` | 126,444,439 bytes | Replaced the draft's installer, blockmap, `latest.yml` and `SHA256SUMS.txt` on `Zainpak123/kite-releases`; still a draft, not published. The Windows install step itself is not run on this computer. |
+
+## Release 1.3.0 go live (9 Nov 2026, ADR-0049 to ADR-0057)
+
+Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200, 150% scaling); Playwright 1.64.1; Electron 44.9.3 from this checkout or the released 1.2.0 program extracted from its installer, always on temporary profiles; the end-to-end test account only (the admin test account only for `unflagged.spec.ts`, enabled for that run and disabled again).
+
+| Check | Result | Notes |
+|---|---|---|
+| Lint, typecheck, unit tests | web 1,597 of 1,597; desktop 185 of 185 | Six positions (taskbar on each side, two monitors at any offset, 125/150/175 % work areas), hotkeys, Settings rows, the login form as the server renders it. |
+| Harness suites (`tests/integration`, all) | 159 of 159 | Then shell, screens, launcher, handoff, setup, ui-kit and live again in light and dark with screenshots for the visual pairs (phone width 390 found the dashboard search 14 px too wide; fixed). |
+| Desktop smoke test | 20 of 20 | The six positions in the real shell: 16 DIPs from the real work area (±1), the bottom row growing upward, the overlay page told of each change. |
+| `click-through.spec.ts`, `protection-chrome.spec.ts` | 1 of 1, 2 of 2 | Real Windows input; Chrome's entire-screen share. |
+| Upgrade 1.2.0 → 1.3.0 | 1 of 1 | |
+| `launcher.spec.ts` with this 1.3.0 shell / the released 1.2.0 program, against the new web app | 3 of 3 / 3 of 3 | The 1.3.0 run failed once on its first sign-in just after a deploy (see below), then passed. |
+| `desktop-link.spec.ts`, `sync-api.spec.ts`, `sync-devices.spec.ts` | 2 of 2, 5 of 5, 3 of 3 | `sync-devices` first hung on Create session's Key terms, now under Advanced; the helper opens it. |
+| `unflagged.spec.ts` (before the switch went to everyone) | 1 of 1 | Admin test account enabled for the run, disabled again. |
+| Sign-in before hydration | fixed (PR #32) | The production desktop check's first sign-in after two deploys failed with an empty form: a press before React took over submitted the form natively as a GET with the email and password in the address. The form now posts and Sign in is disabled until hydrated. The user test account's password was rotated afterwards. |
+| `Paramount-AI-Setup-1.3.0.exe` | 126,301,027 bytes | Published as Latest on `Zainpak123/kite-releases`; the public `latest.yml` says 1.3.0. |
+| Real-feed update check (`update-check.ts`, kept 1.2.0 copy) | PASS | 1.2.0 found, downloaded and verified 1.3.0 from the real releases repository, into its own cache (removed after). |
+| `KITE_SYNC_USERS=*` (Production) | set, redeployed | The value is a sensitive variable and cannot be read back; it was set by piping exactly `*`. |
+| `desktop.spec.ts` (paid, rewritten for the 1.3.0 flow) | 4 of 4 tests, 12 of 12 steps | Speech model downloaded on the fresh profile; connected in 60 s; transcript lines; a real answer (answer line 11 words), rated; asking again added no entry; Private on 3 of 3 windows; Position grid to the bottom row and back; Exit closed the overlay, the panel showed Call ended and the call window closed itself. Two answers on the fast model, about $0.01 (estimated; the run prints no token counts). An earlier attempt stopped before any answer (the test did not wait for the speech-model dialog). |
