@@ -93,9 +93,9 @@ test.beforeAll(async () => {
       res.end(readFileSync(path.join(bundleDir, isCss ? 'launcher.css' : 'launcher.js')));
       return;
     }
-    if (req.url === '/brand/logo-lockup.png') {
+    if (req.url === '/images/logo-mark.png') {
       res.writeHead(200, { 'Content-Type': 'image/png' });
-      res.end(readFileSync(path.join(WEB_DIR, 'public', 'brand', 'logo-lockup.png')));
+      res.end(readFileSync(path.join(WEB_DIR, 'public', 'images', 'logo-mark.png')));
       return;
     }
     if (req.url?.startsWith('/api/')) {
@@ -233,7 +233,7 @@ test('the sessions card: every session, the browser’s first, and Open dashboar
   await expect(rows.nth(1)).toContainText('Ready to start');
   // The frame: logo, compact, move, menu, close; no Buy credits on this card; no dashboard parts.
   const header = page.getByRole('banner');
-  await expect(header.getByRole('img', { name: 'Paramount AI' })).toBeVisible();
+  await expect(header).toContainText('Paramount AI');
   await expect(header.getByRole('button', { name: 'Buy credits' })).toHaveCount(0);
   for (const name of ['Compact', 'Menu', 'Close']) {
     await expect(header.getByRole('button', { name })).toBeVisible();
