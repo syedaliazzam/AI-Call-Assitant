@@ -82,9 +82,9 @@ test.beforeAll(async () => {
       res.end(readFileSync(path.join(bundleDir, isCss ? 'shell.css' : 'shell.js')));
       return;
     }
-    if (req.url === '/images/logo-mark.png') {
+    if (req.url === '/images/green-logo-lockup.png') {
       res.writeHead(200, { 'Content-Type': 'image/png' });
-      res.end(readFileSync(path.join(WEB_DIR, 'public', 'images', 'logo-mark.png')));
+      res.end(readFileSync(path.join(WEB_DIR, 'public', 'images', 'green-logo-lockup.png')));
       return;
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -162,7 +162,7 @@ test('header: wordmark, the page’s words, and the split button’s addresses',
   await expect(header).toContainText('Your upcoming calls and everything you’ve done before.');
   expect((await header.boundingBox())!.height).toBe(76);
   await expect(header.getByRole('img')).toHaveCount(0);
-  await expect(page.locator('header img')).toHaveAttribute('src', '/images/logo-mark.png');
+  await expect(page.locator('header img')).toHaveAttribute('src', '/images/green-logo-lockup.png');
 
   await page.evaluate(() => {
     (window as unknown as { pushed: string[] }).pushed = [];
