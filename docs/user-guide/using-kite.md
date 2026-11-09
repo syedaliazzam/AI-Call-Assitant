@@ -75,7 +75,7 @@ If you are on a desktop app older than 1.2.0, compact collapses to bar 1 instead
 
 ### The transcript panel
 
-You on the right, the other person on the left, each with their name (or "Client 1") and the time underneath. It follows the newest line; scroll up to read and it stops, with **Scroll to bottom** to go back. Questions show **Answer this**. Lines that are only noise collapse into **Unclear speech**: press it to see them.
+It reads like an Otter export: each turn starts with the speaker's name and the time since the call started (for example **Dana  04:12**), with the words on the next line. Your turns show your account's name; the other person's show the name you gave them in Review, or "Them". One person's lines stay in one turn until the other person speaks or there is a pause of more than 8 seconds. It follows the newest line; scroll up to read and it stops, with **Scroll to bottom** to go back. Questions show **Answer this**. Lines that are only noise collapse into **Unclear speech**: press it to see them.
 
 ### The answer panel
 
@@ -87,11 +87,11 @@ It opens by itself when an answer starts, with the question at once and **Thinki
 - A question asked twice within a minute shows once, with the newest answer.
 - Drag the grip at the bottom right to resize.
 
-With both panels open they sit side by side, and the window widens for them when the screen has room. It remembers which were open. They are see-through; **⋮ → Opacity** sets how much (40–100 %, 82 % by default). The text always stays solid. Over a bright page, a lower value makes text harder to read.
+With both panels open they sit side by side, and the window widens for them when the screen has room. Each panel is only as tall as what it shows, and the window ends where the panels end: click beside or below a panel and the click goes to the app behind it, Word or your notes. New lines and answers never take the keyboard, and after you click a panel button (copy, ← →, a switch) the keyboard goes back to the app you were in. It remembers which were open. They are see-through; **⋮ → Opacity** sets how much (40–100 %, 82 % by default). The text always stays solid. Over a bright page, a lower value makes text harder to read.
 
 ### The ⋮ menu during a call
 
-Your email, **Dashboard** and **Get help** (in their own window, so the call keeps going), **Private**, **Zoom**, **Theme** (for the call windows only, Dark until you change it), **Opacity**, **Answer text size**, **Language**, **Auto answer**, **Answer preferences**, **Edit session**, **Open call window** (the full view, for when you want everything large) and **Position** (the six places, the current one highlighted; **Reset position** in desktop apps before 1.3.0).
+Your email, **Dashboard** and **Get help** (in their own window, so the call keeps going), **Private**, **Zoom**, **Theme** (for the call windows only, Dark until you change it), **Opacity**, **Answer text size**, **Language**, **Auto answer**, **Click-through** (see below), **Answer preferences**, **Edit session**, **Open call window** (the full view, for when you want everything large) and **Position** (the six places, the current one highlighted; **Reset position** in desktop apps before 1.3.0).
 
 ### Coding questions
 
@@ -117,6 +117,10 @@ During a call the browser view fills the whole window; the sidebar comes back wh
 - **Right:** your answers as cards, newest at the top, the message box with its microphone, and the big **Answer** and **Screenshot** buttons. The arrow on the window's right edge hides or shows this side.
 - Drag the divider to resize the two sides. It remembers where you left it.
 - The shortcuts work while the tab has focus; only the desktop app has them everywhere.
+
+### Click-through
+
+**Click-through** (**⋮** or **Ctrl+Alt+X**) lets you work in the app behind the overlay with the panels open: every click, scroll and key outside the bars goes to that app. The panels keep updating, and the shortcuts keep working. The bars still take clicks, so you can turn it off with the mouse: bar 1 shows **Click-through on**; click it, or press **Ctrl+Alt+X** again.
 
 ### Private
 
@@ -152,7 +156,7 @@ If sound arrives but no words appear for 8 seconds, speech recognition restarts 
 
 Choose **Exit** (**End** in the browser). The transcript is saved (if **Save transcript** is on for the session), and call notes can be written. Open the session to read them.
 
-The **Transcript** section has two tabs. **Conversation** is the call as a chat, with the speaker above each turn and an answered chip that opens each answer where it was asked. **Answers** lists every answer as a card. A session with several calls shows a divider between them. **Download** gives the conversation as TXT or PDF.
+The **Transcript** section has two tabs. **Conversation** reads like an Otter export: each turn has the speaker's name and the time since the call started, then the words. Each answer sits right after the turn it answered, as **Paramount AI answered** with its time; click it to see the question and the answer. Click the other person's name to rename them: the name is kept with the session and used in the panel and the downloads. **Answers** lists every answer as a card. A session with several calls shows a divider between them. **Download** gives the conversation as TXT or PDF in the same layout, with every answer written out in full. When **Save transcript** was off, the file has the answers only.
 
 ## Ask AI
 
@@ -167,6 +171,7 @@ The **Transcript** section has two tabs. **Conversation** is the call as a chat,
 | Chat (twice for the microphone) | Ctrl+Shift+Space | Any app, during a call |
 | Send chat with a screenshot | Ctrl+Alt+Enter | While the chat bar is open |
 | Script bar | Ctrl+Alt+S | Any app, during a call |
+| Click-through on or off | Ctrl+Alt+X | Any app, during a call |
 | Show or hide the bars | Ctrl+Alt+H | Any app, during a call |
 | Move the bars to the next place (← → along the row, ↑ ↓ top or bottom row) | Ctrl+Alt+Arrows | Any app, during a call |
 | Nudge the bars | Ctrl+Alt+Shift+Arrows | Any app, during a call |

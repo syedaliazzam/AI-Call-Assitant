@@ -1,4 +1,4 @@
-# Paramount AI: UI/UX spec (v1.2.0; colours and motion v1.3.1)
+# Paramount AI: UI/UX spec (v1.2.0; colours and motion v1.3.1; panels and transcript v1.3.2)
 
 **Goal:** rebuild Kite's interface as **Paramount AI**. It matches the reference app's **layout, structure, flow, component types, sizes, density and behaviour**. It does not copy its look.
 **References:** `docs/design/references/v1.2/` (git-ignored). The file names below are the names in that folder.
@@ -358,6 +358,8 @@ Under it, the **live strip**: *"Listening…"* or the latest words.
 - The **mic** for dictation stays. Pressing **Ctrl+Shift+Space twice** opens it with the mic on and auto-sends after 1.5 s of silence; Esc cancels.
 
 ### S15 · Transcript and answer panels: `transcript ans answer window.jpeg`
+
+> **Changed by ADR-0061 (1.3.2):** each panel is as tall as its content, and the window is fitted to the taller one, so clicks beside or under a panel reach the app behind. New lines and answers never take focus; after a click on a panel button the keyboard goes back to the app that had it. The transcript reads like an Otter export, not as bubbles: "<Speaker name>  <mm:ss since the call started>" above each turn (one speaker's lines merged until a speaker change or a pause over 8 s), the account's name for You, the session's name for Them ("Them" by default).
 **Left: transcript**
 - **Header:** the level button, 🌐 language ▾, **Clear** `[Ctrl ⇧ ⌫]`, collapse.
 - **Bubbles:**
@@ -390,6 +392,7 @@ Both panels are dark translucent and follow the opacity and text-size settings.
 8. **Answer text size** + − ⟲;
 9. 🌐 **Language** ▾;
 10. **Auto answer** (toggle);
+10a. **Click-through** (toggle, v1.3.2, ADR-0061; Ctrl+Alt+X): every click and key outside the bars goes to the app behind; bar 1 shows **Click-through on**, which turns it off;
 11. **Answer preferences** (i), opening S6 as a compact sheet;
 12. **Edit session** (i).
 
@@ -397,7 +400,7 @@ It is dark in the call theme.
 
 ### S17 · Not in these references: restyle only, using the tokens
 - the browser split view;
-- Review (Conversation and Answers tabs);
+- Review (Conversation and Answers tabs). *v1.3.2 (ADR-0061): Conversation and the TXT/PDF downloads read like an Otter export: turns under "<name>  <mm:ss>", each answer right after the turn it answered as "Paramount AI answered  <mm:ss>" with Question and Answer (collapsible on screen, in full in the files); click the other person's name to rename them.*
 - Settings;
 - the Resumes and Documents libraries;
 - Ask AI;
@@ -409,7 +412,7 @@ It is dark in the call theme.
 
 ---
 
-## 4. Hotkeys (unchanged, plus one new)
+## 4. Hotkeys (unchanged, plus two new)
 
 | Action | Shortcut | Scope |
 |---|---|---|
@@ -418,6 +421,7 @@ It is dark in the call theme.
 | Chat | Ctrl+Shift+Space (twice = voice) | During a call |
 | **Screenshot + send chat message (new)** | **Ctrl+Alt+Enter** | Chat bar open |
 | Ask AI | Ctrl+Alt+K | Global |
+| **Click-through (v1.3.2)** | **Ctrl+Alt+X** | During a call |
 | Show or hide | Ctrl+Alt+H | Global |
 | Move | Ctrl+Alt+Arrows (+Shift) | Global |
 | Previous / next answer | Ctrl+← / Ctrl+→ | Focused |
