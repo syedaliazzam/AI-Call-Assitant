@@ -26,6 +26,7 @@ import {
   DEFAULT_GLOBAL_HOTKEYS,
   GLOBAL_HOTKEYS,
   SCREENSHOT_SEND_HOTKEY,
+  TRANSCRIPT_HOTKEY,
   type CallHotkey,
   type GlobalHotkey,
   type HotkeyStatus,
@@ -67,7 +68,9 @@ export interface HotkeyController {
   releaseAll(): void;
   /**
    * Finds which shortcuts another app already uses (Settings). Outside a call it registers each
-   * one for a moment and releases it again; during a call it reports the current state.
+   * one for a moment and releases it again; during a call it reports the current state. v1.3.0
+   * (ADR-0056): it also tries Transcript's keys (Ctrl+Alt+T) for a moment; they are never held, but
+   * another app holding them globally would keep them from the bars.
    *
    * @returns Whether each one can be registered.
    */
@@ -189,10 +192,22 @@ export function createHotkeys(
         if (tried.registered) globalShortcut.unregister(SCREENSHOT_SEND_HOTKEY);
         return tried;
       };
-      if (on) return [...statuses, tryChatSend(), ...always];
+      // Never held: tried for a moment and released straight away.
+      const tryTranscript = (): HotkeyStatus => {
+        let ok = false;
+        try {
+          ok = globalShortcut.register(TRANSCRIPT_HOTKEY, () => undefined);
+        } catch {
+          // An accelerator the OS cannot register at all counts as unavailable.
+          ok = false;
+        }
+        if (ok) globalShortcut.unregister(TRANSCRIPT_HOTKEY);
+        return { action: 'transcript', accelerator: TRANSCRIPT_HOTKEY, registered: ok };
+      };
+      if (on) return [...statuses, tryChatSend(), tryTranscript(), ...always];
       const found = enable();
       disable();
-      return [...found, tryChatSend(), ...always];
+      return [...found, tryChatSend(), tryTranscript(), ...always];
     },
   };
 }

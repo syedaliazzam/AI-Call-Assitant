@@ -3,10 +3,11 @@
  * ⌘ on macOS and Ctrl elsewhere (Answer, Screenshot, Clear, Previous, Next); the other
  * platform's modifier, Alt, held-down repeats and keys typed in a text box are not shortcuts;
  * listenForHotkeys() calls the handler, prevents the browser's default and stops listening.
- * The two Alt shortcuts: Ask Kite (ADR-0030) and the script bar (v1.0.2, ADR-0035).
+ * The two Alt shortcuts: Ask Kite (ADR-0030) and the script bar (v1.0.2, ADR-0035); the overlay's
+ * Transcript key, Ctrl+Alt+T (v1.3.0, ADR-0056), only outside text boxes and never for AltGr letters.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { hotkeyFor, listenForHotkeys, type KeyPress } from '@/platform/keymap';
+import { hotkeyFor, isTranscriptKey, listenForHotkeys, type KeyPress } from '@/platform/keymap';
 
 /**
  * A key press with nothing held.
@@ -134,5 +135,32 @@ describe('listenForHotkeys', () => {
     stop();
     target.dispatchEvent(keydown('Enter', true));
     expect(handler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('isTranscriptKey (v1.3.0, ADR-0056)', () => {
+  it('is Ctrl+Alt+T on Windows and ⌘⌥T on macOS', () => {
+    expect(isTranscriptKey(press('t', { ctrlKey: true, altKey: true }), false)).toBe(true);
+    expect(isTranscriptKey(press('T', { ctrlKey: true, altKey: true }), false)).toBe(true);
+    // macOS: Option changes the letter, so the key's place counts.
+    const mac = { ...press('†', { metaKey: true, altKey: true }), code: 'KeyT' } as KeyPress;
+    expect(isTranscriptKey(mac, true)).toBe(true);
+  });
+
+  it('is not Shift, the other modifier, a repeat, a text box or an AltGr letter', () => {
+    expect(
+      isTranscriptKey(press('t', { ctrlKey: true, altKey: true, shiftKey: true }), false),
+    ).toBe(false);
+    expect(isTranscriptKey(press('t', { metaKey: true, altKey: true }), false)).toBe(false);
+    expect(isTranscriptKey(press('t', { ctrlKey: true }), false)).toBe(false);
+    expect(isTranscriptKey(press('t', { ctrlKey: true, altKey: true, repeat: true }), false)).toBe(
+      false,
+    );
+    const input = { tagName: 'INPUT' } as unknown as EventTarget;
+    expect(isTranscriptKey(press('t', { ctrlKey: true, altKey: true, target: input }), false)).toBe(
+      false,
+    );
+    // Where Ctrl+Alt is AltGr, the key is the letter it types.
+    expect(isTranscriptKey(press('ţ', { ctrlKey: true, altKey: true }), false)).toBe(false);
   });
 });

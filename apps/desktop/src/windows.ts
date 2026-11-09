@@ -19,10 +19,14 @@
  *          A web app before 1.1.0 never calls setLayout, and gets the fixed window it expects.
  *          v1.2.0 (spec S13, S15): an icon mode, 48 px square, moved by the page; with both panels open
  *          the window also grows sideways, about its centre, so they fit side by side.
+ *          v1.3.0 (ADR-0056): six positions in a 2 × 3 grid (src/positions.ts), 16 DIPs from the work
+ *          area's edges: jump shortcuts, the ⋮ grid and a drop after a drag put it at one, remembered
+ *          per display. On the bottom row the window is anchored at its bottom edge: it grows and
+ *          shrinks upward, and the page puts its panels above the bars.
  * Used by: src/main.ts
  * Depends on: electron (BrowserWindow, Screen, IpcMain types), src/security.ts
  *             (secureWebPreferences), src/protection.ts, src/store.ts, src/channels.ts,
- *             src/hotkeys.ts (isKiteSender), @kite/shared (overlay types)
+ *             src/hotkeys.ts (isKiteSender), src/positions.ts, @kite/shared (overlay types)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (compact view), §7.3 (windows.ts);
  *               day-05-overlay-screenshots-notes.md Stage 3; ADR-0029, ADR-0033, ADR-0035
  *
@@ -39,7 +43,9 @@ import type {
 } from 'electron';
 import {
   OVERLAY_PRESETS,
+  overlayRow,
   type GlobalHotkey,
+  type OverlayJump,
   type OverlayEdge,
   type OverlayLayout,
   type OverlayMode,
@@ -57,12 +63,15 @@ import {
   OVERLAY_MOVE_CHANNEL,
   OVERLAY_OPACITY_CHANNEL,
   OVERLAY_PLACE_CHANNEL,
+  OVERLAY_POSITION_CHANNEL,
+  OVERLAY_POSITION_EVENT,
   OVERLAY_PRESET_CHANNEL,
   OVERLAY_RESIZE_CHANNEL,
   SHOW_CALL_WINDOW_CHANNEL,
 } from './channels';
 import { APP_NAME } from './config';
 import { isKiteSender } from './hotkeys';
+import { isOverlayJump, jumpPosition, nearestPosition, positionPlace } from './positions';
 import type { Protection } from './protection';
 import { secureWebPreferences } from './security';
 import type { Bounds, OverlayLayoutKey, ShellStore } from './store';
@@ -123,17 +132,20 @@ export const SCRIPT_BAR_SIZE = { width: 640, height: 64, inputHeight: 48, minWid
 /** Distance from the top of the screen of the script bar, in DIPs: close to the camera. */
 const SCRIPT_BAR_TOP = 8;
 
-/** How close to a screen edge a moved overlay snaps flush to it, in DIPs (ADR-0035). */
-export const SNAP_DISTANCE = 16;
+/**
+ * How close to a screen edge a moved overlay snaps flush to it, in DIPs (ADR-0035). v1.3.0 (ADR-0056):
+ * 8, under the positions' 16 DIP margin, so a window at a position is never pulled onto the edge.
+ */
+export const SNAP_DISTANCE = 8;
 
 /** The overlay's opacity range: below this the text is no longer readable. */
 export const OVERLAY_OPACITY_RANGE = { min: 0.35, max: 1 };
 
-/** How far a move shortcut moves the overlay, in DIPs (with Shift: the big step). */
+/**
+ * How far a nudge shortcut moves the overlay, in DIPs. `big` is the step an older web app's
+ * `-big` actions asked for (until 1.2.0, Ctrl+Alt+Shift+Arrows); 1.3.0 nudges by the small step.
+ */
 export const OVERLAY_STEP = { small: 20, big: 100 };
-
-/** Distance from the screen edge when the window is placed by default, in DIPs. */
-const EDGE_MARGIN = 24;
 
 /** How long after the last move or resize the position is saved, in ms. */
 const SAVE_DELAY_MS = 500;
@@ -154,8 +166,8 @@ export function compactUrl(kiteUrl: string, sessionId: unknown): string | null {
 
 /**
  * The overlay at a preset place in a work area, at the default size (shrunk to fit a small
- * screen): top centre and top right sit EDGE_MARGIN below the top, bottom centre EDGE_MARGIN above
- * the bottom (the taskbar is already outside the work area).
+ * screen), 16 DIPs from the work area's edges (v1.3.0; 24 before). The taskbar is already outside the
+ * work area.
  *
  * @param preset Where.
  * @param area   The display's work area.
@@ -184,17 +196,8 @@ export function presetPosition(
   width: number,
   height: number,
 ): { x: number; y: number } {
-  const centreX = area.x + Math.round((area.width - width) / 2);
-  const top = area.y + Math.max(0, Math.min(EDGE_MARGIN, area.height - height));
-  if (preset === 'top-left')
-    return { x: area.x + Math.min(EDGE_MARGIN, area.width - width), y: top };
-  if (preset === 'top-right') {
-    return { x: area.x + Math.max(0, area.width - width - EDGE_MARGIN), y: top };
-  }
-  if (preset === 'bottom-center') {
-    return { x: centreX, y: area.y + Math.max(0, area.height - height - EDGE_MARGIN) };
-  }
-  return { x: centreX, y: top };
+  // v1.3.0 (ADR-0056): one rule for all six positions (src/positions.ts).
+  return positionPlace(preset, area, width, height);
 }
 
 /**
@@ -452,21 +455,29 @@ export function narrowedBounds(
 }
 
 /**
- * Where the overlay opens from the icon: the icon stays the top centre of the overlay, inside the
- * display, so the bars come back where the icon was dragged to.
+ * Where the overlay opens from the icon: the icon stays the top centre of the overlay (on the bottom
+ * row, v1.3.0: its bottom centre), inside the display, so the bars come back where the icon was dragged
+ * to.
  *
  * @param icon The icon's bounds.
  * @param full The overlay's bounds before it shrank.
  * @param area The display's work area.
+ * @param row  The overlay's row (default 'top').
  * @returns The overlay's bounds.
  * Called from: createCompactWindows(); tests
  */
-export function fromIconBounds(icon: Bounds, full: Bounds, area: Rectangle): Bounds {
+export function fromIconBounds(
+  icon: Bounds,
+  full: Bounds,
+  area: Rectangle,
+  row: 'top' | 'bottom' = 'top',
+): Bounds {
   const x = icon.x - Math.round((full.width - icon.width) / 2);
+  const y = row === 'bottom' ? icon.y + icon.height - full.height : icon.y;
   return {
     ...full,
     x: Math.max(area.x, Math.min(x, area.x + area.width - full.width)),
-    y: Math.max(area.y, Math.min(icon.y, area.y + area.height - full.height)),
+    y: Math.max(area.y, Math.min(y, area.y + area.height - full.height)),
   };
 }
 
@@ -668,6 +679,22 @@ export interface CompactWindows {
   /** The remembered preset ('top-center' until the user chooses another). */
   preset(): OverlayPreset;
   /**
+   * v1.3.0 (ADR-0056): puts the open overlay at one of the six positions at its current size (the ⋮
+   * grid), remembered for the display it is on. The script bar keeps its own place.
+   *
+   * @param preset Where.
+   */
+  goTo(preset: OverlayPreset): void;
+  /**
+   * v1.3.0: a jump shortcut: one spot left or right within the row (stopping at the edges), or to the
+   * top or bottom row.
+   *
+   * @param jump The shortcut.
+   */
+  jump(jump: OverlayJump): void;
+  /** v1.3.0: the open overlay's position, or null with no overlay open. */
+  position(): OverlayPreset | null;
+  /**
    * v1.1.0: which panels are open. The window fits them and growing never moves its top. A web app
    * before 1.1.0 never calls this.
    *
@@ -719,6 +746,10 @@ export function overlayShortcut(compact: CompactWindows, action: GlobalHotkey): 
     compact.toggle();
     return;
   }
+  if (isOverlayJump(action)) {
+    compact.jump(action);
+    return;
+  }
   const move = overlayMove(action);
   if (move) compact.move(move.dx, move.dy);
 }
@@ -746,6 +777,39 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
   let layout: OverlayLayout | null = null;
   /** v1.2.0: what to go back to while both panels have made the window wider; else null. */
   let narrow: NarrowPlace | null = null;
+  /**
+   * v1.3.0 (ADR-0056): the open overlay's position (the last one it was put at; a nudge keeps it), or
+   * null with no overlay open. Its row says which edge the window grows from.
+   */
+  let position: OverlayPreset | null = null;
+
+  /**
+   * The row the window is anchored to: on the bottom row it grows and shrinks upward.
+   *
+   * @returns 'top' or 'bottom'.
+   */
+  const row = () => overlayRow(position ?? 'top-center');
+
+  /** Tells the overlay's page its position (it puts the panels above the bars on the bottom row). */
+  const announce = () => {
+    if (!current || current.isDestroyed() || position === null) return;
+    current.webContents?.send?.(OVERLAY_POSITION_EVENT, position);
+  };
+
+  /**
+   * Remembers a position for the display a rectangle is on, and as the place new displays open at.
+   *
+   * @param preset The position.
+   * @param bounds Where the window is.
+   */
+  const rememberPosition = (preset: OverlayPreset, bounds: Bounds) => {
+    const display = deps.screen.getDisplayMatching(bounds);
+    const positions = deps.store.read().overlayPositions ?? {};
+    deps.store.write({
+      overlayPreset: preset,
+      ...(display ? { overlayPositions: { ...positions, [String(display.id)]: preset } } : {}),
+    });
+  };
 
   /**
    * The work area of the display a rectangle is mostly on (the primary one if none matches).
@@ -802,11 +866,13 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     const bounds = current.getBounds();
     const area = areaFor(bounds);
     const key = layoutKey(layout);
+    // v1.3.0: on the bottom row the bottom edge stays, so the room is above it.
+    const bottomRow = row() === 'bottom';
     const height = layoutHeight(
       key,
       layout.popupHeight,
       deps.store.read().overlayHeights?.[key],
-      area.y + area.height - bounds.y,
+      bottomRow ? bounds.y + bounds.height - area.y : area.y + area.height - bounds.y,
       layout.scale,
     );
     let sideways = { x: bounds.x, width: bounds.width };
@@ -821,7 +887,8 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     if (height === bounds.height && sideways.width === bounds.width) return;
     // The minimum drops to the bars first: a tall layout may not fit a short screen.
     current.setMinimumSize(COMPACT_MIN_SIZE.width, OVERLAY_LAYOUT_MIN_HEIGHTS.bars);
-    current.setBounds({ ...bounds, ...sideways, height });
+    const y = bottomRow ? Math.max(area.y, bounds.y + bounds.height - height) : bounds.y;
+    current.setBounds({ ...bounds, ...sideways, y, height });
   };
 
   /**
@@ -851,10 +918,14 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
   const fullModeBounds = (): Bounds => {
     const bounds = current!.getBounds();
     if (mode === 'icon' && fullBounds !== null) {
-      return fromIconBounds(bounds, fullBounds, areaFor(bounds));
+      return fromIconBounds(bounds, fullBounds, areaFor(bounds), row());
     }
     if (mode === 'full' || fullBounds === null) return bounds;
-    if (mode === 'collapsed') return { ...bounds, height: fullBounds.height };
+    if (mode === 'collapsed') {
+      return row() === 'bottom'
+        ? { ...bounds, y: bounds.y + bounds.height - fullBounds.height, height: fullBounds.height }
+        : { ...bounds, height: fullBounds.height };
+    }
     return fullBounds;
   };
 
@@ -909,14 +980,29 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       fullBounds = null;
       // From the controls bar: where the bar is now, at the open height. From the script bar:
       // back where the overlay was.
+      // v1.3.0: on the bottom row the bars' bottom edge stays where it is.
+      const bottomRow = row() === 'bottom';
+      const area = areaFor(bounds);
+      // An icon sitting exactly at its position (moved there by a jump or the grid) opens the bars at
+      // that position; one dragged elsewhere opens them around it.
+      const iconAtPosition =
+        position !== null &&
+        previous === 'icon' &&
+        (({ x, y }) => x === bounds.x && y === bounds.y)(
+          positionPlace(position, area, bounds.width, bounds.height),
+        );
       const target =
         full === null
           ? bounds
-          : previous === 'icon'
-            ? fromIconBounds(bounds, full, areaFor(bounds))
-            : previous === 'collapsed'
-              ? { ...bounds, height: full.height }
-              : full;
+          : iconAtPosition && position !== null
+            ? { ...full, ...positionPlace(position, area, full.width, full.height) }
+            : previous === 'icon'
+              ? fromIconBounds(bounds, full, area, row())
+              : previous === 'collapsed'
+                ? bottomRow
+                  ? { ...bounds, y: bounds.y + bounds.height - full.height, height: full.height }
+                  : { ...bounds, height: full.height }
+                : full;
       apply(target, COMPACT_MIN_SIZE);
       applyLayout();
       return;
@@ -927,17 +1013,21 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     if (next === 'icon') current.setIgnoreMouseEvents(false);
     const min = minFor(next);
     if (next === 'icon') {
-      // The top centre of what was there, so it shrinks towards where the eye already is.
+      // The top centre of what was there (on the bottom row its bottom centre), so it shrinks
+      // towards where the eye already is.
       const left = bounds.x + Math.round((bounds.width - OVERLAY_ICON_SIZE) / 2);
+      const top = row() === 'bottom' ? bounds.y + bounds.height - OVERLAY_ICON_SIZE : bounds.y;
       // The minimum must drop first: this is always a shrink, in both directions.
       current.setMinimumSize(min.width, min.height);
-      current.setBounds({ x: left, y: bounds.y, width: min.width, height: min.height });
+      current.setBounds({ x: left, y: top, width: min.width, height: min.height });
       return;
     }
     if (next === 'collapsed') {
       // From full: same place and width. From the script bar: the full overlay's place and width.
       const base = previous === 'full' || fullBounds === null ? bounds : fullBounds;
-      apply({ ...base, height: COMPACT_COLLAPSED_HEIGHT }, min);
+      // v1.3.0: on the bottom row bar 1 stays at the bottom edge.
+      const y = row() === 'bottom' ? base.y + base.height - COMPACT_COLLAPSED_HEIGHT : base.y;
+      apply({ ...base, y, height: COMPACT_COLLAPSED_HEIGHT }, min);
       return;
     }
     // The script bar: opening or closing its input keeps the bar where the user put it;
@@ -957,6 +1047,34 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       },
       min,
     );
+  };
+
+  /**
+   * Puts the open overlay at one of the six positions at its current size (see CompactWindows.goTo).
+   *
+   * @param preset Where.
+   */
+  const goTo = (preset: OverlayPreset) => {
+    if (!current || current.isDestroyed()) return;
+    // The script bar sits near the camera on purpose; it keeps its place.
+    if (mode === 'script' || mode === 'script-input') return;
+    const bounds = current.getBounds();
+    const area = areaFor(bounds);
+    position = preset;
+    current.setBounds({ ...bounds, ...positionPlace(preset, area, bounds.width, bounds.height) });
+    if (fullBounds !== null) {
+      // Collapsed or the icon: going back to full opens at the new position too.
+      fullBounds = {
+        ...fullBounds,
+        ...positionPlace(preset, area, fullBounds.width, fullBounds.height),
+      };
+    }
+    rememberPosition(preset, bounds);
+    // An exact place: saved as it is, not snapped to the edges.
+    movedSinceSave = false;
+    if (saveTimer) clearTimeout(saveTimer);
+    save();
+    announce();
   };
 
   return {
@@ -1002,6 +1120,20 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
           overlayBarsWidth: COMPACT_DEFAULT_SIZE.width,
         });
       }
+      // v1.3.0 (ADR-0056): the position last used on this display puts the window exactly there;
+      // otherwise the nearest one only says which way it grows (the window stays where it was).
+      const openArea =
+        deps.screen.getDisplayMatching(bounds)?.workArea ??
+        deps.screen.getPrimaryDisplay().workArea;
+      const rememberedPosition =
+        settings.overlayPositions?.[String(deps.screen.getDisplayMatching(bounds)?.id)];
+      if (rememberedPosition) {
+        Object.assign(
+          bounds,
+          positionPlace(rememberedPosition, openArea, bounds.width, bounds.height),
+        );
+      }
+      position = rememberedPosition ?? nearestPosition(bounds, openArea);
       mode = 'full';
       fullBounds = null;
       resizeStart = null;
@@ -1017,6 +1149,8 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       deps.protection.attach(window);
       // Shown without focus: the meeting keeps the keyboard.
       window.once('ready-to-show', () => window.showInactive());
+      // v1.3.0: each load of the page learns the overlay's position (which way its panels open).
+      window.webContents?.on?.('did-finish-load', announce);
       const later = () => {
         if (saveTimer) clearTimeout(saveTimer);
         saveTimer = setTimeout(save, SAVE_DELAY_MS);
@@ -1044,6 +1178,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
         resizeStart = null;
         layout = null;
         narrow = null;
+        position = null;
         deps.onClosed?.();
       });
       void window.loadURL(url);
@@ -1098,6 +1233,9 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       deps.store.write({ overlayPreset: preset });
       if (!current || current.isDestroyed()) return;
       const target = presetBounds(preset, areaFor(fullBounds ?? current.getBounds()));
+      position = preset;
+      rememberPosition(preset, target);
+      announce();
       // The default width is the narrow one again; both panels widen it from there.
       narrow = null;
       if (mode === 'full') {
@@ -1117,20 +1255,20 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       save();
     },
     preset: () => deps.store.read().overlayPreset ?? 'top-center',
+    goTo,
+    jump(which) {
+      if (!current || current.isDestroyed()) return;
+      const from = position ?? nearestPosition(current.getBounds(), areaFor(current.getBounds()));
+      goTo(jumpPosition(from, which));
+    },
+    position: () => (current && !current.isDestroyed() ? position : null),
     setLayout(next) {
       layout = next;
       applyLayout();
     },
     snapTo(preset) {
-      if (!current || current.isDestroyed()) return;
-      deps.store.write({ overlayPreset: preset });
-      const bounds = current.getBounds();
-      const place = presetPosition(preset, areaFor(bounds), bounds.width, bounds.height);
-      current.setBounds({ ...bounds, ...place });
-      // An exact place: saved as it is, not snapped to the edges.
-      movedSinceSave = false;
-      if (saveTimer) clearTimeout(saveTimer);
-      save();
+      // v1.3.0 (ADR-0056): a drop goes to the nearest of the six positions, like the ⋮ grid.
+      goTo(preset);
     },
     resize(step) {
       if (!current || current.isDestroyed()) return;
@@ -1220,6 +1358,14 @@ export function installCompactWindows(
   ipcMain.handle(OVERLAY_PRESET_CHANNEL, (event) => {
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can read it');
     return compact.preset();
+  });
+  // v1.3.0 (ADR-0056): the open overlay's position, for the ⋮ grid and which way its panels open.
+  ipcMain.handle(OVERLAY_POSITION_CHANNEL, (event, preset: unknown) => {
+    if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can read it');
+    if (preset === undefined) return compact.position();
+    if (!isOverlayPreset(preset)) throw new Error('Not an overlay position');
+    compact.goTo(preset);
+    return compact.position();
   });
   ipcMain.handle(OVERLAY_RESIZE_CHANNEL, (event, step: unknown) => {
     if (!isKiteSender(event, allowedOrigin)) throw new Error('Only the Kite page can change it');

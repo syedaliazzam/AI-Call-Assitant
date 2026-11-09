@@ -56,6 +56,8 @@ import {
   OVERLAY_MODE_CHANNEL,
   OVERLAY_OPACITY_CHANNEL,
   OVERLAY_PLACE_CHANNEL,
+  OVERLAY_POSITION_CHANNEL,
+  OVERLAY_POSITION_EVENT,
   OVERLAY_PRESET_CHANNEL,
   OVERLAY_RESIZE_CHANNEL,
   SHOW_CALL_WINDOW_CHANNEL,
@@ -139,6 +141,23 @@ export function onSnapZone(handler: (zone: OverlayPreset | null) => void): () =>
   };
 }
 
+/**
+ * Listens for the overlay's position (v1.3.0, ADR-0056: the overlay's own page).
+ *
+ * @param handler The page's handler; it receives a known position only, never the IPC event.
+ * @returns A function that removes the listener.
+ * Called from: the page, as window.kiteDesktop.onOverlayPosition(); tests
+ */
+export function onOverlayPosition(handler: (preset: OverlayPreset) => void): () => void {
+  const listener = (_event: IpcRendererEvent, preset: unknown) => {
+    if ((OVERLAY_PRESETS as readonly unknown[]).includes(preset)) handler(preset as OverlayPreset);
+  };
+  ipcRenderer.on(OVERLAY_POSITION_EVENT, listener);
+  return () => {
+    ipcRenderer.removeListener(OVERLAY_POSITION_EVENT, listener);
+  };
+}
+
 /** The bridge object. Frozen, so the page cannot change or extend it. */
 const kiteDesktop: KiteDesktopApi = Object.freeze({
   version: readVersion(process.argv),
@@ -206,6 +225,11 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
     ipcRenderer.invoke(OPEN_CALL_WINDOW_CHANNEL, String(sessionId)),
   setOverlayClickThrough: (through: boolean) =>
     ipcRenderer.invoke(OVERLAY_CLICK_THROUGH_CHANNEL, through === true),
+  // v1.3.0 (ADR-0056): only a position name crosses; the shell checks it again.
+  getOverlayPosition: () => ipcRenderer.invoke(OVERLAY_POSITION_CHANNEL),
+  setOverlayPosition: (preset: OverlayPreset) =>
+    ipcRenderer.invoke(OVERLAY_POSITION_CHANNEL, String(preset)),
+  onOverlayPosition,
   sizePanel: (size: { width: number; height: number }) =>
     ipcRenderer.invoke(SIZE_PANEL_CHANNEL, {
       width: Number(size?.width),

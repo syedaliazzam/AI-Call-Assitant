@@ -22,18 +22,24 @@
  * ADR-0055: the empty space around and between the pieces is marked data-gap; in desktop 1.3.0 clicks
  * there pass through to the app behind the overlay (overlay/useClickThrough.ts).
  *
+ * ADR-0056 (desktop 1.3.0): the overlay sits at one of six positions. On the bottom row everything is
+ * mirrored: bar 1 at the bottom edge, the chat bar and bar 2 above it, the panels above them, and the
+ * menus open upward (theme.css .k-overlay-up); the window grows upward to fit them. The ⋮ menu has the
+ * Position grid, and Ctrl+Alt+T turns the transcript on or off while the bars have focus.
+ *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
  * honours), and compact collapses to bar 1 where there is no icon.
  */
 'use client';
 
-import type {
-  OverlayLayout,
-  OverlayMode,
-  OverlayPreset,
-  OverlayResizeStep,
-  ShareProtectionState,
+import {
+  overlayRow,
+  type OverlayLayout,
+  type OverlayMode,
+  type OverlayPreset,
+  type OverlayResizeStep,
+  type ShareProtectionState,
 } from '@kite/shared';
 import {
   useEffect,
@@ -50,6 +56,7 @@ import {
   type ThemeChoice,
 } from '@/core/storage/appearancePrefs';
 import { OVERLAY_OPACITY, type OverlayPanels } from '@/core/storage/overlayPrefs';
+import { isTranscriptKey } from '@/platform/keymap';
 import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
 import { ChatBar, type ChatBarHandle } from './overlay/ChatBar';
 import { ControlBar, type DeviceList } from './overlay/ControlBar';
@@ -101,6 +108,13 @@ export interface CompactViewProps {
   onResize?: (step: OverlayResizeStep) => void;
   /** Moves the window to a preset place at its default size (desktop 1.0.2+). */
   onPlace?: (preset: OverlayPreset) => void;
+  /**
+   * The overlay's position (desktop 1.3.0, ADR-0056): on the bottom row the panels open above the bars.
+   * Null until the shell says; absent where there are no positions.
+   */
+  position?: OverlayPreset | null;
+  /** Puts the overlay at one of the six positions (the ⋮ grid; desktop 1.3.0). */
+  onPosition?: (preset: OverlayPreset) => void;
   /** Moves the window by a distance; given only where the shell can make the icon (1.2.0). */
   onMove?: ((dx: number, dy: number) => void) | undefined;
   /** Opens the dashboard, where this app has a separate window for it (desktop 1.1.0+, a browser). */
@@ -158,18 +172,32 @@ const BARS_WIDTHS = {
 } as const;
 
 /**
- * How far an element's bottom is below the top of the overlay, whatever it sits inside.
+ * How far an element's top is below the top of the page, whatever it sits inside.
  *
  * @param element The element.
  * @returns The distance, in the page's own pixels (before the UI scale).
- * Called from: CompactView
+ * Called from: extentOf()
  */
-function bottomOf(element: HTMLElement): number {
+function topOf(element: HTMLElement): number {
   let top = 0;
   for (let at: HTMLElement | null = element; at; at = at.offsetParent as HTMLElement | null) {
     top += at.offsetTop;
   }
-  return top + element.scrollHeight;
+  return top;
+}
+
+/**
+ * How much of the window an element needs, from the edge the overlay grows from: from the top down to
+ * its bottom, or (on the bottom row, ADR-0056) from the bottom up to its top.
+ *
+ * @param element The element.
+ * @param up      True on the bottom row.
+ * @param height  The page's height, in its own pixels.
+ * @returns The distance, in the page's own pixels (before the UI scale).
+ * Called from: CompactView
+ */
+function extentOf(element: HTMLElement, up: boolean, height: number): number {
+  return up ? height - topOf(element) : topOf(element) + element.scrollHeight;
 }
 
 /**
@@ -199,6 +227,9 @@ export function CompactView(props: CompactViewProps) {
   const languagesElement = useRef<HTMLUListElement>(null);
   const barsEnd = useRef<HTMLDivElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  // ADR-0056: the bottom row mirrors the overlay, so it grows upward from the bars.
+  const up = props.position ? overlayRow(props.position) === 'bottom' : false;
 
   /**
    * Collapses the overlay to bar 1, or opens it again.
@@ -245,11 +276,12 @@ export function CompactView(props: CompactViewProps) {
   const noPanels = !panels.transcript && !panels.answer;
   const chatOpen = props.chatOpen;
   useLayoutEffect(() => {
+    const height = root.current?.offsetHeight ?? 0;
     const floating = popupElement.current ?? languagesElement.current;
-    const forPopup = floating ? bottomOf(floating) + 8 : 0;
-    const forBars = noPanels && barsEnd.current ? bottomOf(barsEnd.current) + 2 : 0;
+    const forPopup = floating ? extentOf(floating, up, height) + 8 : 0;
+    const forBars = noPanels && barsEnd.current ? extentOf(barsEnd.current, up, height) + 2 : 0;
     setNeededHeight(Math.max(forPopup, forBars) * zoom);
-  }, [popup, noPanels, chatOpen, zoom, collapsed, icon, scriptBar]);
+  }, [popup, noPanels, chatOpen, zoom, collapsed, icon, scriptBar, up]);
 
   useEffect(() => {
     onLayout.current?.({
@@ -305,6 +337,22 @@ export function CompactView(props: CompactViewProps) {
       document.removeEventListener('keydown', onKey);
     };
   }, [popup]);
+
+  // ADR-0056: Ctrl+Alt+T turns the transcript on or off, only while the bars have focus (the shell
+  // never holds it, so other apps keep it).
+  const transcriptKey = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    transcriptKey.current = () => onPanels({ ...panels, transcript: !panels.transcript });
+  });
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!isTranscriptKey(event, mac)) return;
+      event.preventDefault();
+      transcriptKey.current();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [mac]);
 
   // ADR-0055: clicks pass through the gaps, except while a menu or list is open (a click beside it
   // closes it), in the icon and in the script bar.
@@ -383,8 +431,10 @@ export function CompactView(props: CompactViewProps) {
   return (
     // @container: buttons drop their key-caps when it is narrow, and the panels stack.
     <div
+      ref={root}
       {...{ [GAP_ATTRIBUTE]: '' }}
-      className={`${themeClass} k-overlay-root @container relative flex h-screen flex-col gap-1.5 overflow-hidden text-[16px] text-ui-text`}
+      data-row={up ? 'bottom' : 'top'}
+      className={`${themeClass} k-overlay-root @container relative flex h-screen ${up ? 'k-overlay-up flex-col-reverse' : 'flex-col'} gap-1.5 overflow-hidden text-[16px] text-ui-text`}
       style={rootStyle}
     >
       {onResize && !collapsed && <ResizeGrips onResize={onResize} />}
@@ -462,13 +512,15 @@ export function CompactView(props: CompactViewProps) {
                 : undefined
             }
             onResetPosition={
-              props.onPlace
+              props.onPlace && !props.onPosition
                 ? () => {
                     setPopup(null);
                     props.onPlace?.('top-center');
                   }
                 : undefined
             }
+            position={props.position ?? null}
+            onPosition={props.onPosition}
             onCallWindow={openCallWindow}
           />
         )}

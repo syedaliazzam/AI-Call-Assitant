@@ -74,12 +74,15 @@ describe('the exposed bridge', () => {
       'closeCompactView',
       // v1.3.0 (ADR-0052): the link's one-time sign-in code, given once.
       'consumeLinkCode',
+      // v1.3.0 (ADR-0056): the six positions.
+      'getOverlayPosition',
       'getOverlayPreset',
       'getShareProtection',
       'minimizeMainWindow',
       // v1.2.0 (spec S13): dragging the icon.
       'moveOverlay',
       'onHotkey',
+      'onOverlayPosition',
       'onSnapZone',
       // v1.3.0 (ADR-0055): the Connect card's call window.
       'openCallWindow',
@@ -98,6 +101,7 @@ describe('the exposed bridge', () => {
       'setOverlayLayout',
       'setOverlayMode',
       'setOverlayOpacity',
+      'setOverlayPosition',
       'setShareProtection',
       'showCallWindow',
       // v1.3.0 (ADR-0055): the launcher's window size.

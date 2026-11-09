@@ -65,7 +65,8 @@ During a call the desktop app is a set of slim bars over your screen, with panel
 
 - **Screen audio and microphone:** a red dot means it is capturing. Each **▾** shows that side's source; the microphone's chooses which one to use.
 - **Answer** (**Ctrl+Enter**), **Screenshot** (**Ctrl+Shift+Enter**) and **Chat** (**Ctrl+Shift+Space**).
-- **Move:** drag the bar. While you drag, three places light up along the top of the screen: drop on one to go there. **Ctrl+Alt+Arrow** nudges the bars, **Ctrl+Alt+H** shows or hides them, and each screen remembers its own place.
+- **Move:** the bars have six places: top left, top centre, top right, and the same along the bottom, 16 px from the screen's edges (never under the taskbar). **Ctrl+Alt+Left / Right** jumps one place along the row, **Ctrl+Alt+Up / Down** to the top or bottom row, and **Ctrl+Alt+Shift+Arrows** nudges them a little. Dragging the bar shows the six places; let go and the bars go to the nearest one. **⋮ → Position** has the same six as a small grid. On the bottom row everything is mirrored: the bars sit at the bottom and the panels and menus open above them. **Ctrl+Alt+H** shows or hides the bars, and each screen remembers its own place.
+- **Transcript:** the **Transcript** switch on bar 1, or **Ctrl+Alt+T** while the bars have focus, turns the live transcript on or off.
 - **Compact** shrinks everything to a small square with moving level bars. Drag it to move it; click it to bring the bars back. The shortcuts keep working, and an answer starting brings the bars back by itself.
 - The **timer**, **⋮**, and **Exit**, which asks first.
 
@@ -100,7 +101,7 @@ With both panels open they sit side by side, and the window widens for them when
 
 ### The ⋮ menu during a call
 
-Your email, **Dashboard** and **Get help** (in their own window, so the call keeps going), **Private**, **Zoom**, **Theme** (for the call windows only, Dark until you change it), **Opacity**, **Answer text size**, **Language**, **Auto answer**, **Answer preferences**, **Edit session**, **Open call window** (the full view, for when you want everything large) and **Reset position**.
+Your email, **Dashboard** and **Get help** (in their own window, so the call keeps going), **Private**, **Zoom**, **Theme** (for the call windows only, Dark until you change it), **Opacity**, **Answer text size**, **Language**, **Auto answer**, **Answer preferences**, **Edit session**, **Open call window** (the full view, for when you want everything large) and **Position** (the six places, the current one highlighted; **Reset position** in desktop apps before 1.3.0).
 
 ### Coding questions
 
@@ -177,7 +178,9 @@ The **Transcript** section has two tabs. **Conversation** is the call as a chat,
 | Send chat with a screenshot | Ctrl+Alt+Enter | While the chat bar is open |
 | Script bar | Ctrl+Alt+S | Any app, during a call |
 | Show or hide the bars | Ctrl+Alt+H | Any app, during a call |
-| Move the bars (add Shift for bigger steps) | Ctrl+Alt+Arrows | Any app, during a call |
+| Move the bars to the next place (← → along the row, ↑ ↓ top or bottom row) | Ctrl+Alt+Arrows | Any app, during a call |
+| Nudge the bars | Ctrl+Alt+Shift+Arrows | Any app, during a call |
+| Transcript on or off | Ctrl+Alt+T | While the bars have focus |
 | Open Ask AI | Ctrl+Alt+K | Any app, while the desktop app runs |
 | Previous or next answer | Ctrl+Left / Right | Paramount AI in front |
 | Clear answer | Ctrl+Backspace | Paramount AI in front |

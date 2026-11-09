@@ -355,6 +355,14 @@ html[data-theme='dark'] {
   background: var(--k-surface);
 }
 
+/* v1.3.0 (ADR-0056): on the bottom row the overlay's menus and lists open upward, over the panels,
+   because the window grows upward from the bars at the bottom edge. Unlayered, so it beats the
+   utilities' top-[…]. */
+.k-overlay-up .k-overlay-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
 /* v1.1.0 (ADR-0042): inside the overlay a <select> lists its choices in the page. A browser's own
    list is a separate window, which screen-share protection may not reach. ADR-0055: in the desktop app
    (html.k-desktop, set by src/platform/desktopDocument.ts) every <select> does. */

@@ -148,6 +148,22 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
     () => getPlatform().overlayIconMode(),
     () => false,
   );
+  // v1.3.0 (ADR-0056): the six positions (desktop 1.3.0); the position says which way panels open.
+  const positions = useSyncExternalStore(
+    subscribeNever,
+    () => getPlatform().overlayPositions(),
+    () => false,
+  );
+  const [position, setPosition] = useState<OverlayPreset | null>(null);
+  useEffect(() => {
+    if (!positions) return;
+    const platform = getPlatform();
+    const stop = platform.onOverlayPosition(setPosition);
+    void platform.getOverlayPosition().then((preset) => {
+      if (preset) setPosition(preset);
+    });
+    return stop;
+  }, [positions]);
   // The call's theme (v1.3.0: dark until chosen), not the dashboard's.
   const { theme, resolved, zoom, fontScale } = useAppearance('call', closeOnEnd);
 
@@ -294,6 +310,12 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
           ? {
               onResize: (step: OverlayResizeStep) => getPlatform().resizeOverlay(step),
               onPlace: (preset: OverlayPreset) => getPlatform().placeOverlay(preset),
+            }
+          : {})}
+        {...(positions
+          ? {
+              position,
+              onPosition: (preset: OverlayPreset) => getPlatform().setOverlayPosition(preset),
             }
           : {})}
         {...(synced

@@ -87,6 +87,15 @@ export const OPEN_CALL_WINDOW_CHANNEL = 'kite:open-call-window';
  */
 export const OVERLAY_CLICK_THROUGH_CHANNEL = 'kite:overlay-click-through';
 
+/**
+ * v1.3.0 (ADR-0056): the open overlay's position (invoke; no argument reads it, an OverlayPreset puts the
+ * overlay there at its current size; answers the position or null).
+ */
+export const OVERLAY_POSITION_CHANNEL = 'kite:overlay-position';
+
+/** v1.3.0 (ADR-0056): the overlay's position changed (send, to the overlay's page; an OverlayPreset). */
+export const OVERLAY_POSITION_EVENT = 'kite:overlay-position-changed';
+
 /** v1.3.0 (ADR-0055): the home panel asks for its size (invoke; { width, height } in DIPs). */
 export const SIZE_PANEL_CHANNEL = 'kite:size-panel';
 

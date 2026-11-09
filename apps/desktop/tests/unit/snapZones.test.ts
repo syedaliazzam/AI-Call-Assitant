@@ -1,8 +1,9 @@
 /**
- * Tests for apps/desktop/src/snapZones.ts (v1.1.0, ADR-0041, item 10), with Electron faked: three zones
- * along the top of the display, left to right; which one the pointer is on; a see-through window that
- * takes no clicks and never takes focus; a drag shows the zones and tells the page the zone under the
- * pointer; a drop on a zone snaps there and a drop elsewhere does not; macOS waits for a quiet moment.
+ * Tests for apps/desktop/src/snapZones.ts (v1.1.0, ADR-0041; v1.3.0, ADR-0056), with Electron faked: six
+ * zones in a 2 × 3 grid, 16 DIPs from the work area's edges; which one the pointer is on (zoneAt); a
+ * see-through window that takes no clicks and never takes focus; a drag shows the zones and highlights
+ * the position nearest to the dragged overlay; a drop anywhere snaps to it; the zones follow the overlay
+ * onto another display; macOS waits for a quiet moment.
  */
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +12,9 @@ import { createSnapZones, snapWindowOptions, snapZones, zoneAt } from '../../src
 
 /** A display's work area. */
 const AREA = { x: 0, y: 0, width: 1920, height: 1040 };
+
+/** A second display's work area, to the right of the first. */
+const SECOND = { x: 1920, y: 0, width: 1280, height: 984 };
 
 /** A fake window. */
 class FakeWindow {
@@ -29,7 +33,7 @@ class FakeWindow {
 }
 
 /**
- * The zones with faked parts.
+ * The zones with faked parts. The overlay's bounds can be changed to drag it.
  *
  * @param platform process.platform.
  * @returns The zones and what they were given.
@@ -38,7 +42,7 @@ function setup(platform: NodeJS.Platform = 'win32') {
   vi.useFakeTimers();
   const windows: FakeWindow[] = [];
   const options: BrowserWindowConstructorOptions[] = [];
-  const pointer = { x: 5, y: 900 };
+  const bounds = { x: 620, y: 16, width: 680, height: 660 };
   const snapTo = vi.fn();
   const zones = createSnapZones({
     createWindow: (next) => {
@@ -48,35 +52,48 @@ function setup(platform: NodeJS.Platform = 'win32') {
       return window as unknown as BrowserWindow;
     },
     screen: {
-      getDisplayMatching: () => ({ workArea: AREA }),
-      getCursorScreenPoint: () => pointer,
+      getDisplayMatching: (rect: { x: number }) => ({
+        workArea: rect.x >= SECOND.x ? SECOND : AREA,
+      }),
+      getCursorScreenPoint: () => ({ x: 0, y: 0 }),
     } as never,
     kiteUrl: 'https://kite.example/',
     preloadPath: '/preload.js',
-    appVersion: '1.1.0',
+    appVersion: '1.3.0',
     platform,
     snapTo,
   });
   const overlay = {
-    getBounds: () => ({ x: 300, y: 300, width: 680, height: 660 }),
+    getBounds: () => ({ ...bounds }),
     moveTop: vi.fn(),
+    isDestroyed: () => false,
   } as unknown as BrowserWindow;
-  return { zones, windows, options, pointer, snapTo, overlay };
+  return { zones, windows, options, bounds, snapTo, overlay };
 }
 
 afterEach(() => vi.useRealTimers());
 
 describe('snapZones', () => {
-  it('gives left, centre and right along the top, at most 320 tall', () => {
+  it('gives the top row then the bottom row, left to right, 16 from the edges, at most 320 tall', () => {
     expect(snapZones(AREA, 680, 660)).toEqual([
-      { preset: 'top-left', rect: { x: 24, y: 24, width: 608, height: 320 } },
-      { preset: 'top-center', rect: { x: 656, y: 24, width: 608, height: 320 } },
-      { preset: 'top-right', rect: { x: 1288, y: 24, width: 608, height: 320 } },
+      { preset: 'top-left', rect: { x: 16, y: 16, width: 618, height: 320 } },
+      { preset: 'top-center', rect: { x: 651, y: 16, width: 618, height: 320 } },
+      { preset: 'top-right', rect: { x: 1286, y: 16, width: 618, height: 320 } },
+      { preset: 'bottom-left', rect: { x: 16, y: 704, width: 618, height: 320 } },
+      { preset: 'bottom-center', rect: { x: 651, y: 704, width: 618, height: 320 } },
+      { preset: 'bottom-right', rect: { x: 1286, y: 704, width: 618, height: 320 } },
     ]);
   });
 
   it('keeps a shorter overlay at its own height', () => {
     expect(snapZones(AREA, 680, 108)[0]?.rect.height).toBe(108);
+  });
+
+  it('keeps the rows apart on a short screen', () => {
+    const zones = snapZones({ x: 0, y: 0, width: 1280, height: 600 }, 680, 600);
+    const top = zones[0]!.rect;
+    const bottom = zones[3]!.rect;
+    expect(top.y + top.height).toBeLessThan(bottom.y);
   });
 });
 
@@ -87,6 +104,7 @@ describe('zoneAt', () => {
     expect(zoneAt(zones, { x: 30, y: 30 })).toBe('top-left');
     expect(zoneAt(zones, { x: 960, y: 100 })).toBe('top-center');
     expect(zoneAt(zones, { x: 1800, y: 30 })).toBe('top-right');
+    expect(zoneAt(zones, { x: 1800, y: 1000 })).toBe('bottom-right');
     expect(zoneAt(zones, { x: 960, y: 500 })).toBeNull();
   });
 
@@ -94,7 +112,6 @@ describe('zoneAt', () => {
     const [left, centre, right] = snapZones({ x: 0, y: 0, width: 1280, height: 720 }, 680, 108);
     expect(left!.rect.x + left!.rect.width).toBeLessThan(centre!.rect.x);
     expect(centre!.rect.x + centre!.rect.width).toBeLessThan(right!.rect.x);
-    expect(zoneAt(zones, { x: 644, y: 30 })).toBeNull();
   });
 
   it('gives the nearest centre if zones ever overlap', () => {
@@ -104,10 +121,6 @@ describe('zoneAt', () => {
     ];
     expect(zoneAt(overlapping, { x: 620, y: 30 })).toBe('top-left');
     expect(zoneAt(overlapping, { x: 680, y: 30 })).toBe('top-center');
-  });
-
-  it('finds none between the zones of a narrow overlay', () => {
-    expect(zoneAt(snapZones(AREA, 300, 108), { x: 500, y: 30 })).toBeNull();
   });
 });
 
@@ -128,7 +141,7 @@ describe('snapWindowOptions', () => {
 });
 
 describe('a drag', () => {
-  it('shows the zones in a window that takes no clicks, with the overlay on top', () => {
+  it('shows the six zones in a window that takes no clicks, with the overlay on top', () => {
     const { zones, windows, overlay } = setup();
     zones.moving(overlay);
     const window = windows[0]!;
@@ -136,50 +149,59 @@ describe('a drag', () => {
     expect(window.showInactive).toHaveBeenCalled();
     const url = new URL(window.loadURL.mock.calls[0]![0]);
     expect(url.pathname).toBe('/overlay-zones');
-    expect(url.searchParams.get('zones')).toBe(
-      'top-left,24,24,608,320;top-center,656,24,608,320;top-right,1288,24,608,320',
-    );
+    expect(url.searchParams.get('zones')?.split(';')).toEqual([
+      'top-left,16,16,618,320',
+      'top-center,651,16,618,320',
+      'top-right,1286,16,618,320',
+      'bottom-left,16,704,618,320',
+      'bottom-center,651,704,618,320',
+      'bottom-right,1286,704,618,320',
+    ]);
     expect(overlay.moveTop).toHaveBeenCalled();
   });
 
-  it('tells the page which zone the pointer is on, once per change', () => {
-    const { zones, windows, pointer, overlay } = setup();
+  it('highlights the position nearest to the overlay, once per change', () => {
+    const { zones, windows, bounds, overlay } = setup();
     zones.moving(overlay);
     const send = windows[0]!.webContents.send;
-    vi.advanceTimersByTime(200);
-    expect(send).not.toHaveBeenCalled();
-    pointer.x = 960;
-    pointer.y = 100;
+    vi.advanceTimersByTime(60);
+    expect(send).toHaveBeenCalledExactlyOnceWith(SNAP_ZONE_CHANNEL, 'top-center');
     vi.advanceTimersByTime(200);
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith(SNAP_ZONE_CHANNEL, 'top-center');
-    pointer.y = 900;
-    vi.advanceTimersByTime(100);
-    expect(send).toHaveBeenLastCalledWith(SNAP_ZONE_CHANNEL, null);
+    bounds.x = 1100;
+    bounds.y = 300;
+    vi.advanceTimersByTime(60);
+    expect(send).toHaveBeenLastCalledWith(SNAP_ZONE_CHANNEL, 'bottom-right');
   });
 
-  it('snaps to the zone it is dropped on, and hides the zones', () => {
-    const { zones, windows, pointer, snapTo, overlay } = setup();
+  it('snaps to the nearest position wherever it is dropped, and hides the zones', () => {
+    const { zones, windows, bounds, snapTo, overlay } = setup();
     zones.moving(overlay);
-    pointer.x = 1800;
-    pointer.y = 30;
+    bounds.x = 40;
+    bounds.y = 330;
     zones.moved();
-    expect(snapTo).toHaveBeenCalledWith('top-right');
+    expect(snapTo).toHaveBeenCalledExactlyOnceWith('bottom-left');
     expect(windows[0]!.hide).toHaveBeenCalled();
   });
 
-  it('does not snap when dropped elsewhere', () => {
-    const { zones, windows, snapTo, overlay } = setup();
-    zones.moving(overlay);
-    zones.moved();
-    expect(snapTo).not.toHaveBeenCalled();
-    expect(windows[0]!.hide).toHaveBeenCalled();
-  });
-
-  it('ignores a "moved" with no drag going on, as from a nudge or a preset', () => {
+  it('ignores a "moved" with no drag going on, as from a nudge or a jump', () => {
     const { zones, snapTo } = setup();
     zones.moved();
     expect(snapTo).not.toHaveBeenCalled();
+  });
+
+  it('follows the overlay onto another display and snaps there', () => {
+    const { zones, windows, bounds, snapTo, overlay } = setup();
+    zones.moving(overlay);
+    bounds.x = 2230;
+    bounds.y = 20;
+    vi.advanceTimersByTime(60);
+    expect(windows[0]!.setBounds).toHaveBeenLastCalledWith(SECOND);
+    const url = new URL(windows[0]!.loadURL.mock.calls.at(-1)![0]);
+    // Each zone is drawn relative to the second display's work area.
+    expect(url.searchParams.get('zones')?.split(';')[0]).toBe('top-left,16,16,405,320');
+    zones.moved();
+    expect(snapTo).toHaveBeenCalledWith('top-center');
   });
 
   it('reuses its window for the next drag', () => {
@@ -193,10 +215,10 @@ describe('a drag', () => {
   });
 
   it('on macOS, waits for a quiet moment, as "moved" fires all through a drag', () => {
-    const { zones, pointer, snapTo, overlay } = setup('darwin');
+    const { zones, bounds, snapTo, overlay } = setup('darwin');
     zones.moving(overlay);
-    pointer.x = 30;
-    pointer.y = 30;
+    bounds.x = 10;
+    bounds.y = 10;
     zones.moved();
     vi.advanceTimersByTime(100);
     zones.moved();

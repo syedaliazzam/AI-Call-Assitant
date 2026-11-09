@@ -60,7 +60,10 @@ describe('Kite shortcuts', () => {
 
   it('list every global shortcut in exactly one Settings row', () => {
     const listed = HOTKEY_ROWS.flatMap((row) => row.actions);
-    expect([...listed].sort()).toEqual([...GLOBAL_HOTKEYS, 'ask-kite', 'screenshot-send'].sort());
+    // v1.3.0 (ADR-0056): plus Transcript, checked (never held) so Settings can report a clash.
+    expect([...listed].sort()).toEqual(
+      [...GLOBAL_HOTKEYS, 'ask-kite', 'screenshot-send', 'transcript'].sort(),
+    );
   });
 
   it('the chat bar has its key-caps from the map, and Settings lists the new shortcut', () => {

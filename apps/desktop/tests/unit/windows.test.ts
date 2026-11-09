@@ -186,7 +186,8 @@ describe('compactUrl and restoreBounds', () => {
   it('keeps saved bounds still on a screen, else 900 × 480 at the top centre (ADR-0035, ADR-0055)', () => {
     const saved = { x: 100, y: 100, width: 400, height: 300 };
     expect(restoreBounds(saved, [PRIMARY], PRIMARY)).toEqual(saved);
-    const topCentre = { x: 510, y: 24, width: 900, height: 480 };
+    // v1.3.0 (ADR-0056): 16 DIPs from the work area's edges (24 before).
+    const topCentre = { x: 510, y: 16, width: 900, height: 480 };
     expect(COMPACT_DEFAULT_SIZE).toEqual({ width: 900, height: 480 });
     // On a monitor that was unplugged.
     const gone = { x: 3000, y: 100, width: 400, height: 300 };
@@ -194,8 +195,8 @@ describe('compactUrl and restoreBounds', () => {
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY)).toEqual(topCentre);
     // The remembered preset decides the default place.
     expect(restoreBounds(undefined, [PRIMARY], PRIMARY, 'top-right')).toEqual({
-      x: 1920 - 900 - 24,
-      y: 24,
+      x: 1920 - 900 - 16,
+      y: 16,
       width: 900,
       height: 480,
     });
@@ -410,8 +411,8 @@ describe('the overlay window (ADR-0029)', () => {
     const start = { ...window.bounds };
     overlayShortcut(compact, 'overlay-right');
     expect(window.bounds.x).toBe(start.x + OVERLAY_STEP.small);
-    overlayShortcut(compact, 'overlay-up-big');
-    expect(window.bounds.y).toBe(start.y - OVERLAY_STEP.big);
+    overlayShortcut(compact, 'overlay-up');
+    expect(window.bounds.y).toBe(start.y - OVERLAY_STEP.small);
     expect(overlayMove('answer')).toBeNull();
   });
 
@@ -452,19 +453,19 @@ describe('the overlay window (ADR-0029)', () => {
 
 describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
   it('puts the overlay at each preset, shrunk to fit a small screen', () => {
-    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 510, y: 24, width: 900, height: 480 });
-    expect(presetBounds('top-left', PRIMARY)).toEqual({ x: 24, y: 24, width: 900, height: 480 });
-    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 996, y: 24, width: 900, height: 480 });
+    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 510, y: 16, width: 900, height: 480 });
+    expect(presetBounds('top-left', PRIMARY)).toEqual({ x: 16, y: 16, width: 900, height: 480 });
+    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1004, y: 16, width: 900, height: 480 });
     expect(presetBounds('bottom-center', PRIMARY)).toEqual({
       x: 510,
-      y: 1040 - 480 - 24,
+      y: 1040 - 480 - 16,
       width: 900,
       height: 480,
     });
     // A second display to the right, and a screen smaller than the overlay.
     expect(presetBounds('top-center', { x: 1920, y: 0, width: 1280, height: 720 })).toEqual({
       x: 1920 + 190,
-      y: 24,
+      y: 16,
       width: 900,
       height: 480,
     });
@@ -478,8 +479,10 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
 
   it('snaps each side near an edge flush to it, and leaves the size alone', () => {
     const size = { width: 560, height: 420 };
-    expect(snapBounds({ x: 9, y: 14, ...size }, PRIMARY)).toEqual({ x: 0, y: 0, ...size });
-    expect(snapBounds({ x: 1920 - 560 - 16, y: 1040 - 420 + 5, ...size }, PRIMARY)).toEqual({
+    expect(snapBounds({ x: 7, y: 6, ...size }, PRIMARY)).toEqual({ x: 0, y: 0, ...size });
+    // v1.3.0 (ADR-0056): within 8 DIPs only, so a window at a position (16 from the edge) stays there.
+    expect(snapBounds({ x: 16, y: 16, ...size }, PRIMARY)).toEqual({ x: 16, y: 16, ...size });
+    expect(snapBounds({ x: 1920 - 560 - 6, y: 1040 - 420 + 5, ...size }, PRIMARY)).toEqual({
       x: 1920 - 560,
       y: 1040 - 420,
       ...size,
@@ -557,10 +560,10 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
     compact.open('s1');
     const window = FakeWindow.created.at(-1)!;
     // Opens at the remembered preset (nothing saved yet).
-    expect(window.options).toMatchObject({ x: 996, y: 24, width: 900, height: 480 });
+    expect(window.options).toMatchObject({ x: 1004, y: 16, width: 900, height: 480 });
     compact.place('bottom-center');
-    expect(window.bounds).toEqual({ x: 510, y: 536, width: 900, height: 480 });
-    expect(store.read().compactBounds).toEqual({ x: 510, y: 536, width: 900, height: 480 });
+    expect(window.bounds).toEqual({ x: 510, y: 544, width: 900, height: 480 });
+    expect(store.read().compactBounds).toEqual({ x: 510, y: 544, width: 900, height: 480 });
   });
 
   it('script bar: slim at the top centre, input row, and back to where the overlay was', () => {
@@ -871,5 +874,163 @@ describe('click-through over the gaps (v1.3.0, ADR-0055)', () => {
     expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true });
     await handler(page, 'yes');
     expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+  });
+});
+
+describe('the six positions (v1.3.0, ADR-0056)', () => {
+  /** A second display, to the right of the primary. */
+  const SECOND = { x: 1920, y: 0, width: 2560, height: 1400 };
+
+  /**
+   * The controller with two displays (ids 1 and 2) and a page that can be sent the position.
+   *
+   * @param initial Store contents.
+   * @returns The controller, the store and the window's sent messages.
+   */
+  function twoDisplays(initial: ShellSettings = {}) {
+    const store = memoryStore(initial);
+    const displayFor = (rect: { x: number }) =>
+      rect.x >= SECOND.x ? { id: 2, workArea: SECOND } : { id: 1, workArea: PRIMARY };
+    const compact = createCompactWindows({
+      createWindow: (options) => {
+        const window = new FakeWindow(options as Record<string, unknown>);
+        (window as unknown as { webContents: unknown }).webContents = {
+          id: 1,
+          send: vi.fn(),
+          on: vi.fn(),
+        };
+        return window as never;
+      },
+      screen: {
+        getAllDisplays: () => [{ workArea: PRIMARY }, { workArea: SECOND }] as never,
+        getPrimaryDisplay: () => ({ id: 1, workArea: PRIMARY }) as never,
+        getDisplayMatching: displayFor as never,
+      },
+      kiteUrl: KITE,
+      preloadPath: '/app/preload.js',
+      appVersion: '1.3.0',
+      store,
+      protection: createProtection(store, 'win32', '10.0.26200'),
+    });
+    return { compact, store };
+  }
+
+  /**
+   * The open overlay's window and what it was sent.
+   *
+   * @returns The window and its send mock.
+   */
+  const opened = () => {
+    const window = FakeWindow.created.at(-1)!;
+    const send = (window.webContents as unknown as { send: ReturnType<typeof vi.fn> }).send;
+    return { window, send };
+  };
+
+  it('jumps within the row and between rows, 16 from the edges, and tells the page', () => {
+    const { compact } = twoDisplays();
+    compact.open('s1');
+    const { window, send } = opened();
+    expect(compact.position()).toBe('top-center');
+    compact.setLayout({ transcript: false, answer: false, popupHeight: 0 });
+    const height = window.bounds.height;
+    overlayShortcut(compact, 'overlay-spot-left');
+    expect(window.bounds).toMatchObject({ x: 16, y: 16 });
+    overlayShortcut(compact, 'overlay-spot-left');
+    expect(window.bounds).toMatchObject({ x: 16, y: 16 });
+    overlayShortcut(compact, 'overlay-row-bottom');
+    expect(window.bounds).toMatchObject({ x: 16, y: 1040 - height - 16 });
+    expect(compact.position()).toBe('bottom-left');
+    overlayShortcut(compact, 'overlay-spot-right');
+    overlayShortcut(compact, 'overlay-spot-right');
+    overlayShortcut(compact, 'overlay-spot-right');
+    expect(window.bounds).toMatchObject({ x: 1920 - window.bounds.width - 16 });
+    expect(send).toHaveBeenLastCalledWith('kite:overlay-position-changed', 'bottom-right');
+  });
+
+  it('on the bottom row, grows and shrinks upward: the bars keep their bottom edge', () => {
+    const { compact } = twoDisplays();
+    compact.open('s1');
+    const { window } = opened();
+    compact.setLayout({ transcript: false, answer: false, popupHeight: 0 });
+    overlayShortcut(compact, 'overlay-row-bottom');
+    const bottom = window.bounds.y + window.bounds.height;
+    expect(bottom).toBe(1040 - 16);
+    compact.setLayout({ transcript: false, answer: true, popupHeight: 0 });
+    expect(window.bounds.height).toBeGreaterThan(200);
+    expect(window.bounds.y + window.bounds.height).toBe(bottom);
+    // A menu needing room grows it upward too.
+    compact.setLayout({ transcript: false, answer: false, popupHeight: 600 });
+    expect(window.bounds.y + window.bounds.height).toBe(bottom);
+    // Collapsing keeps bar 1 at the bottom edge; opening again grows upward.
+    compact.setMode('collapsed');
+    expect(window.bounds).toMatchObject({ y: bottom - COMPACT_COLLAPSED_HEIGHT });
+    compact.setMode('full');
+    expect(window.bounds.y + window.bounds.height).toBe(bottom);
+    // The icon sits at the bottom edge, and the bars come back at the same position.
+    compact.setMode('icon');
+    expect(window.bounds.y + window.bounds.height).toBe(bottom);
+    compact.setMode('full');
+    expect(window.bounds.y + window.bounds.height).toBe(bottom);
+  });
+
+  it('the ⋮ grid puts it at a position at its current size; the script bar keeps its place', () => {
+    const { compact } = twoDisplays();
+    compact.open('s1');
+    const { window } = opened();
+    window.bounds = { x: 400, y: 300, width: 1000, height: 200 };
+    compact.goTo('top-right');
+    expect(window.bounds).toEqual({ x: 1920 - 1000 - 16, y: 16, width: 1000, height: 200 });
+    compact.setMode('script');
+    const script = { ...window.bounds };
+    compact.goTo('bottom-left');
+    expect(window.bounds).toEqual(script);
+  });
+
+  it('remembers the position per display, and opens there next time', () => {
+    const { compact, store } = twoDisplays();
+    compact.open('s1');
+    overlayShortcut(compact, 'overlay-row-bottom');
+    expect(store.read().overlayPositions).toEqual({ '1': 'bottom-center' });
+    compact.close();
+    // Moved to the second display and dropped near its top right.
+    compact.open('s1');
+    const { window } = opened();
+    expect(compact.position()).toBe('bottom-center');
+    window.bounds = { x: 4000, y: 40, width: 900, height: 480 };
+    compact.snapTo('top-right');
+    expect(window.bounds).toMatchObject({ x: 1920 + 2560 - 900 - 16, y: 16 });
+    expect(store.read().overlayPositions).toEqual({ '1': 'bottom-center', '2': 'top-right' });
+    compact.close();
+    compact.open('s1');
+    expect(compact.position()).toBe('top-right');
+    expect(opened().window.options).toMatchObject({ x: 1920 + 2560 - 900 - 16, y: 16 });
+  });
+
+  it('a nudge moves it a little and keeps its position (and row)', () => {
+    const { compact } = twoDisplays();
+    compact.open('s1');
+    const { window } = opened();
+    overlayShortcut(compact, 'overlay-row-bottom');
+    const start = { ...window.bounds };
+    overlayShortcut(compact, 'overlay-up');
+    expect(window.bounds.y).toBe(start.y - OVERLAY_STEP.small);
+    expect(compact.position()).toBe('bottom-center');
+  });
+
+  it('answers the page with the position, and puts the overlay at one it asks for', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const { compact } = twoDisplays();
+    installCompactWindows(
+      { handle: (channel: string, handler: never) => handlers.set(channel, handler) } as never,
+      compact,
+      ORIGIN,
+    );
+    const position = handlers.get('kite:overlay-position')!;
+    expect(position(from(KITE))).toBeNull();
+    compact.open('s1');
+    expect(position(from(KITE))).toBe('top-center');
+    expect(position(from(KITE), 'bottom-right')).toBe('bottom-right');
+    expect(() => position(from(KITE), 'middle')).toThrow('Not an overlay position');
+    expect(() => position(from('https://evil.example/'))).toThrow();
   });
 });

@@ -1,12 +1,14 @@
 /**
  * File: apps/desktop/src/snapZones.ts
- * Purpose: The snap zones shown while the overlay is dragged (v1.1.0, ADR-0041): three ghost layouts
- *          along the top of the display (left, centre, right), the one under the pointer highlighted;
- *          dropping the overlay on one puts it there. A see-through window over the display's work
- *          area, on /overlay-zones of the Kite origin, that takes no clicks and never takes focus.
+ * Purpose: The snap zones shown while the overlay is dragged (v1.1.0, ADR-0041): ghost layouts at the
+ *          overlay's places on the display. v1.3.0 (ADR-0056): all six positions (a 2 × 3 grid); the
+ *          one nearest to the dragged overlay is highlighted, and dropping it anywhere snaps it there
+ *          (src/positions.ts). Dragged onto another display, the zones follow. A see-through window over
+ *          the display's work area, on /overlay-zones of the Kite origin, that takes no clicks and never
+ *          takes focus.
  * Used by: src/main.ts, src/windows.ts (reports the drag)
  * Depends on: electron (BrowserWindow, Screen types), src/security.ts (secureWebPreferences),
- *             src/windows.ts (presetPosition), @kite/shared (SNAP_PRESETS)
+ *             src/positions.ts, src/windows.ts (types), @kite/shared (SNAP_PRESETS)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §7.3; ADR-0041
  *
  * It is a momentary drawing aid, so it stays out of the taskbar; Kite itself never does (CLAUDE.md).
@@ -16,8 +18,9 @@
 import { SNAP_PRESETS, type OverlayPreset } from '@kite/shared';
 import type { BrowserWindow, BrowserWindowConstructorOptions, Rectangle, Screen } from 'electron';
 import { SNAP_ZONE_CHANNEL } from './channels';
+import { nearestPosition, POSITION_MARGIN, positionPlace } from './positions';
 import { secureWebPreferences } from './security';
-import { presetPosition, type OverlayDragWatcher } from './windows';
+import type { OverlayDragWatcher } from './windows';
 
 /** How often the pointer is read during a drag, in ms. */
 const POLL_MS = 50;
@@ -26,9 +29,9 @@ const POLL_MS = 50;
 const MAC_QUIET_MS = 250;
 
 /** The space around each ghost layout, in DIPs (the same as the overlay's distance from the edge). */
-const GHOST_GAP = 24;
+const GHOST_GAP = POSITION_MARGIN;
 
-/** The tallest a ghost layout is drawn, in DIPs: the zones stay along the top of the screen. */
+/** The tallest a ghost layout is drawn, in DIPs: the two rows never meet. */
 const GHOST_MAX_HEIGHT = 320;
 
 /** One snap zone on a display. */
@@ -41,22 +44,25 @@ export interface SnapZone {
 
 /**
  * The snap zones on a display, for an overlay of a given size. A ghost is never wider than a third of
- * the display, so the three stay apart however wide the overlay is; dropping on one still puts the whole
- * overlay at that place.
+ * the display nor taller than half of it, so the six stay apart however big the overlay is; dropping
+ * still puts the whole overlay at the place.
  *
  * @param area   The display's work area.
  * @param width  The overlay's width.
  * @param height The overlay's height.
- * @returns One zone per place, left to right.
+ * @returns One zone per place: the top row left to right, then the bottom row.
  * Called from: createSnapZones(); tests
  */
 export function snapZones(area: Rectangle, width: number, height: number): SnapZone[] {
-  const ghost = Math.min(height, GHOST_MAX_HEIGHT);
-  const ghostWidth = Math.min(width, Math.floor((area.width - 4 * GHOST_GAP) / 3));
+  const ghost = Math.max(
+    1,
+    Math.min(height, GHOST_MAX_HEIGHT, Math.floor((area.height - 3 * GHOST_GAP) / 2)),
+  );
+  const ghostWidth = Math.max(1, Math.min(width, Math.floor((area.width - 4 * GHOST_GAP) / 3)));
   return SNAP_PRESETS.map((preset) => ({
     preset,
     rect: {
-      ...presetPosition(preset, area, ghostWidth, ghost),
+      ...positionPlace(preset, area, ghostWidth, ghost),
       width: ghostWidth,
       height: ghost,
     },
@@ -145,6 +151,17 @@ export interface SnapDeps {
 }
 
 /**
+ * Whether two rectangles are the same.
+ *
+ * @param a The first, or null.
+ * @param b The second.
+ * @returns True when they match.
+ * Called from: createSnapZones() (track)
+ */
+const sameRect = (a: Rectangle | null, b: Rectangle) =>
+  !!a && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+/**
  * Creates the snap zones.
  *
  * @param deps See SnapDeps.
@@ -156,14 +173,56 @@ export function createSnapZones(deps: SnapDeps): OverlayDragWatcher & {
   close(): void;
 } {
   let zonesWindow: BrowserWindow | null = null;
-  let zones: SnapZone[] = [];
   let hover: OverlayPreset | null = null;
   let poll: ReturnType<typeof setInterval> | null = null;
   let quiet: ReturnType<typeof setTimeout> | null = null;
+  /** The overlay being dragged. */
+  let dragged: BrowserWindow | null = null;
+  /** The work area the zones are drawn on (the display the overlay is on). */
+  let zonesArea: Rectangle | null = null;
 
-  /** Reads the pointer and tells the page which zone it is on. */
+  /**
+   * Draws the zones on a display's work area for the overlay's size.
+   *
+   * @param overlay The overlay.
+   * @param area    The work area.
+   */
+  const show = (overlay: BrowserWindow, area: Rectangle) => {
+    const bounds = overlay.getBounds();
+    zonesArea = area;
+    const zones = snapZones(area, bounds.width, bounds.height);
+    const url = new URL('/overlay-zones', deps.kiteUrl);
+    url.searchParams.set(
+      'zones',
+      zones
+        .map(({ preset, rect }) =>
+          [preset, rect.x - area.x, rect.y - area.y, rect.width, rect.height].join(','),
+        )
+        .join(';'),
+    );
+    if (!zonesWindow || zonesWindow.isDestroyed()) {
+      zonesWindow = deps.createWindow(snapWindowOptions(area, deps.preloadPath, deps.appVersion));
+      zonesWindow.setIgnoreMouseEvents(true);
+      zonesWindow.setAlwaysOnTop(true, 'floating');
+    } else {
+      zonesWindow.setBounds(area);
+    }
+    void zonesWindow.loadURL(url.toString());
+    zonesWindow.showInactive();
+    // The overlay stays above its own ghosts.
+    overlay.moveTop();
+    // The new page highlights again once it has loaded.
+    hover = null;
+  };
+
+  /** Finds the position nearest to the dragged overlay and tells the page to highlight it. */
   const track = () => {
-    const next = zoneAt(zones, deps.screen.getCursorScreenPoint());
+    if (!dragged || dragged.isDestroyed()) return;
+    const bounds = dragged.getBounds();
+    const area = deps.screen.getDisplayMatching(bounds).workArea;
+    // Dragged onto another display: the zones follow it.
+    if (!sameRect(zonesArea, area)) show(dragged, area);
+    const next = nearestPosition(bounds, area);
     if (next === hover) return;
     hover = next;
     if (zonesWindow && !zonesWindow.isDestroyed()) {
@@ -181,6 +240,8 @@ export function createSnapZones(deps: SnapDeps): OverlayDragWatcher & {
     track();
     const dropped = hover;
     hover = null;
+    dragged = null;
+    zonesArea = null;
     if (zonesWindow && !zonesWindow.isDestroyed()) zonesWindow.hide();
     if (dropped) deps.snapTo(dropped);
   };
@@ -188,30 +249,8 @@ export function createSnapZones(deps: SnapDeps): OverlayDragWatcher & {
   return {
     moving(overlay) {
       if (poll !== null) return;
-      const bounds = overlay.getBounds();
-      const area = deps.screen.getDisplayMatching(bounds).workArea;
-      zones = snapZones(area, bounds.width, bounds.height);
-      const url = new URL('/overlay-zones', deps.kiteUrl);
-      url.searchParams.set(
-        'zones',
-        zones
-          .map(({ preset, rect }) =>
-            [preset, rect.x - area.x, rect.y - area.y, rect.width, rect.height].join(','),
-          )
-          .join(';'),
-      );
-      if (!zonesWindow || zonesWindow.isDestroyed()) {
-        zonesWindow = deps.createWindow(snapWindowOptions(area, deps.preloadPath, deps.appVersion));
-        zonesWindow.setIgnoreMouseEvents(true);
-        zonesWindow.setAlwaysOnTop(true, 'floating');
-      } else {
-        zonesWindow.setBounds(area);
-      }
-      void zonesWindow.loadURL(url.toString());
-      zonesWindow.showInactive();
-      // The overlay stays above its own ghosts.
-      overlay.moveTop();
-      hover = null;
+      dragged = overlay;
+      show(overlay, deps.screen.getDisplayMatching(overlay.getBounds()).workArea);
       poll = setInterval(track, POLL_MS);
     },
     moved() {
@@ -229,6 +268,8 @@ export function createSnapZones(deps: SnapDeps): OverlayDragWatcher & {
       poll = null;
       if (quiet) clearTimeout(quiet);
       quiet = null;
+      dragged = null;
+      zonesArea = null;
       if (zonesWindow && !zonesWindow.isDestroyed()) zonesWindow.close();
       zonesWindow = null;
     },
