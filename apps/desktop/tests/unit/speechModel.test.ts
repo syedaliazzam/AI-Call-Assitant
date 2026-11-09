@@ -24,7 +24,12 @@ import {
 const ORIGIN = 'https://kite-call-assistant.vercel.app';
 const HF = 'https://huggingface.co/csukuangfj/model/resolve/abc/tokens.txt';
 
-/** Hex SHA-256 of some text. */
+/**
+ * Hex SHA-256 of some text.
+ *
+ * @param text The text.
+ * @returns Lower-case hex.
+ */
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 
 const dirs: string[] = [];
@@ -122,7 +127,11 @@ describe('createBundledModel', () => {
   });
 });
 
-/** A fake session that records the webRequest listener and the scheme handler. */
+/**
+ * A fake session that records the webRequest listener and the scheme handler.
+ *
+ * @returns The session, the recorded filter, and helpers that run a redirect or a served request.
+ */
 function fakeSession() {
   let listener:
     | ((
