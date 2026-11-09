@@ -24,6 +24,7 @@ import {
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 import { pickOption } from '../lib/pick-option';
+import { brandFonts } from '../lib/fonts';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -76,8 +77,10 @@ test.beforeAll(async () => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(
       '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>UI kit harness</title>' +
-        '<link rel="stylesheet" href="/harness/ui-kit.css"></head>' +
-        '<body class="bg-ui-bg font-sans text-[15px] text-ui-text"><div id="root"></div>' +
+        '<link rel="stylesheet" href="/harness/ui-kit.css">' +
+        brandFonts() +
+        '</head>' +
+        '<body class="bg-ui-bg font-sans text-[16px] leading-6 text-ui-text"><div id="root"></div>' +
         '<script type="module" src="/harness/ui-kit.js"></script></body></html>',
     );
   });
@@ -143,16 +146,17 @@ test('sizes and colours follow the spec, in light and in dark', async () => {
       });
 
   const primary = await measure('button:has-text("Primary")');
+  // v1.3.0 (ADR-0057): 36 tall, 14/500 (Inter Tight), with a subtle shadow.
   expect(primary).toMatchObject({
-    height: 40,
+    height: 36,
     radius: '10px',
-    size: '15px',
-    weight: '600',
+    size: '14px',
+    weight: '500',
     background: 'rgb(24, 24, 27)',
     color: 'rgb(255, 255, 255)',
   });
   expect(await measure('button:has-text("Large accent")')).toMatchObject({
-    height: 44,
+    height: 52,
     background: 'rgb(37, 99, 235)',
   });
   expect(await measure('button:has-text("Ghost")')).toMatchObject({
@@ -167,7 +171,7 @@ test('sizes and colours follow the spec, in light and in dark', async () => {
     radius: '10px',
   });
   expect(await measure('label:has-text("Company")')).toMatchObject({
-    size: '15px',
+    size: '14px',
     weight: '500',
   });
   expect(await measure('span.rounded-full:has-text("Soon")')).toMatchObject({
@@ -385,7 +389,7 @@ test('Modal: rail and aside panes, sizes, Escape, and full screen on a phone', a
     'font-size',
     '24px',
   );
-  await expect(rail.getByRole('button', { name: 'Next' })).toHaveCSS('height', '44px');
+  await expect(rail.getByRole('button', { name: 'Next' })).toHaveCSS('height', '52px');
   await shot('modal-rail');
   // The main pane scrolls by itself; the footer stays visible.
   await rail.getByText('A tall block').hover();

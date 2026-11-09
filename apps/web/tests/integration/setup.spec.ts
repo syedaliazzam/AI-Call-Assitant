@@ -31,6 +31,7 @@ import {
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 import { pickOption } from '../lib/pick-option';
+import { brandFonts } from '../lib/fonts';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -103,7 +104,9 @@ test.beforeAll(async () => {
       '<!doctype html><html data-theme="' +
         (process.env.KITE_VISUAL_THEME ?? 'light') +
         '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Paramount AI setup harness</title>' +
-        '<link rel="stylesheet" href="/harness/setup.css"></head>' +
+        '<link rel="stylesheet" href="/harness/setup.css">' +
+        brandFonts() +
+        '</head>' +
         '<body class="font-sans"><div id="root"></div>' +
         '<script type="module" src="/harness/setup.js"></script></body></html>',
     );
@@ -342,8 +345,12 @@ test('session card: chips, status, Start or Review, and its menu', async () => {
   await expect(ready).toContainText('Data Analyst');
   await expect(ready.getByRole('button', { name: 'Start session' })).toBeVisible();
   // The card's shape (spec §1).
-  await expect(ready).toHaveCSS('border-top-left-radius', '20px');
+  // v1.3.0 (ADR-0057): outer radius 48, padding 8/8/12; the inner panel radius 32, padding 12.
+  await expect(ready).toHaveCSS('border-top-left-radius', '48px');
   await expect(ready).toHaveCSS('padding-top', '8px');
+  await expect(ready).toHaveCSS('padding-bottom', '12px');
+  await expect(ready.locator('> div').first()).toHaveCSS('border-top-left-radius', '32px');
+  await expect(ready.locator('> div').first()).toHaveCSS('padding-top', '12px');
   await expect(ready.getByRole('heading', { level: 2 })).toHaveCSS('font-size', '18px');
   const ended = card('Zephyr Labs (invented)');
   await expect(ended).toContainText('Ended');
@@ -655,6 +662,10 @@ test('pickers: choose from the library, upload, one resume, and the session keep
 test('key terms are chips: typed, pasted as a list, removed, and saved one per line', async () => {
   await go('/sessions/new');
   await fillDetails();
+  // v1.3.0 (ADR-0057): Key terms sit in a collapsed Advanced section; Contact name is gone.
+  await expect(page.getByLabel('Contact name')).toHaveCount(0);
+  await expect(page.getByLabel('Key terms')).toBeHidden();
+  await page.getByText('Advanced', { exact: true }).click();
   const terms = page.getByLabel('Key terms');
   await terms.fill('Northwind');
   await terms.press('Enter');
@@ -775,7 +786,7 @@ test('Answer preferences: drill-in views, a static preview, STAR and Set as defa
   await expect(page.getByText('Answer as a data analyst who likes short…')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
 
-  await page.getByRole('combobox', { name: 'Model' }).click();
+  await page.getByRole('combobox', { name: 'Select model' }).click();
   await shots('wizard-model-menu');
   await page.keyboard.press('Escape');
 
@@ -806,7 +817,7 @@ test('the model: Haiku recommended, and Sonnet unavailable when an admin turned 
   await go('/sessions/new');
   await fillDetails();
   await page.getByRole('button', { name: 'Next' }).click();
-  const model = page.getByRole('combobox', { name: 'Model' });
+  const model = page.getByRole('combobox', { name: 'Select model' });
   await expect(model).toHaveText('Claude Haiku 5.5');
   await model.click();
   await expect(page.getByRole('option', { name: /Haiku/ })).toContainText('Recommended');

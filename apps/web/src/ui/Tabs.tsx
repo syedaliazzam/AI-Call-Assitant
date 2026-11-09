@@ -66,11 +66,12 @@ export function Tabs<T extends string>({
               aria-pressed={selected}
               onClick={() => onChange(option.value)}
               className={[
-                '-mb-px inline-flex h-11 items-center gap-2 rounded-none border-b-2 px-4 text-[15px] font-medium transition-colors duration-150 max-sm:px-2.5',
+                // v1.3.0 (ADR-0057): 44 tall, padding 12 × 16, radius 14; the selected one at 600.
+                '-mb-px inline-flex h-11 items-center gap-2 rounded-t-tab border-b-2 px-4 py-3 text-[16px] transition-colors duration-150 max-sm:px-2.5',
                 'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
                 selected
-                  ? 'border-ui-primary text-ui-heading'
-                  : 'border-transparent text-ui-muted hover:text-ui-heading',
+                  ? 'border-ui-primary font-semibold text-ui-heading'
+                  : 'border-transparent font-medium text-ui-muted hover:bg-ui-hover hover:text-ui-heading',
               ].join(' ')}
             >
               {option.icon}

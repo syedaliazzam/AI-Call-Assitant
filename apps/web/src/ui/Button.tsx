@@ -28,35 +28,36 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    */
   variant?: ButtonVariant;
   /**
-   * Size. Default 'md' (40 px); 'sm' (32 px) is for table rows and toolbars, 'lg' (44 px) for modal
-   * footers, 'icon' (a 32 px square) for a button with only an icon.
+   * Size (v1.3.0, ADR-0057: the reference's pills). Default 'md' (36 px, padding 8 × 16); 'sm' (32 px)
+   * is for table rows and toolbars, 'lg' (52 px, padding 0 × 20) for the large primary action, 'icon' (a
+   * 36 px circle) for a button with only an icon.
    */
   size?: ButtonSize;
 }
 
 /** Tailwind classes for each variant. */
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  // The solid button; the tokens switch on dark surfaces. One per view.
-  primary: 'bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover',
+  // The solid button; the tokens switch on dark surfaces. One per view. Raised: a subtle shadow.
+  primary: 'bg-ui-primary text-ui-on-primary shadow-raised hover:bg-ui-primary-hover',
   // The brand blue, the same in both themes.
-  accent: 'bg-ui-accent-fill text-ui-on-accent hover:bg-ui-accent-fill-hover',
+  accent: 'bg-ui-accent-fill text-ui-on-accent shadow-raised hover:bg-ui-accent-fill-hover',
   // White with a thin border; outlined on dark surfaces (the --ui-secondary tokens switch).
   secondary:
-    'border border-ui-secondary-border bg-ui-secondary-bg text-ui-secondary hover:border-ui-secondary-hover-border hover:bg-ui-secondary-hover-bg',
+    'border border-ui-secondary-border bg-ui-secondary-bg text-ui-secondary shadow-raised hover:border-ui-secondary-hover-border hover:bg-ui-secondary-hover-bg',
   // A grey fill, for low-emphasis actions such as Cancel.
   ghost: 'bg-ui-subtle text-ui-text hover:bg-ui-control-strong',
   // No fill until pointed at.
   plain: 'text-ui-text hover:bg-ui-hover',
   // Solid red with white text; destructive actions only.
-  danger: 'bg-ui-end text-ui-on-end hover:opacity-90',
+  danger: 'bg-ui-end text-ui-on-end shadow-raised hover:opacity-90',
 };
 
 /** Tailwind classes for each size. */
 const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3 text-[13px] font-semibold',
-  md: 'h-10 px-4 text-btn',
-  lg: 'h-11 px-5 text-btn',
-  icon: 'size-8 p-0 pointer-coarse:min-w-11',
+  sm: 'h-8 px-3 text-[13px] font-medium',
+  md: 'h-9 px-4 py-2 text-btn',
+  lg: 'h-[52px] px-5 py-0 text-btn',
+  icon: 'size-9 rounded-full p-0 pointer-coarse:min-w-11',
 };
 
 /**

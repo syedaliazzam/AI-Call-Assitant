@@ -3,12 +3,12 @@
  * Purpose: Root HTML frame for every page (signed-in or not): <html>, <body>, font, global CSS, the
  *          theme (set before the first paint) and the page title "Paramount AI".
  * Used by: Next.js App Router (wraps every route)
- * Depends on: next/font/google (Inter), app/globals.css, src/core/storage/appearancePrefs.ts,
+ * Depends on: next/font/google (Inter Tight), app/globals.css, src/core/storage/appearancePrefs.ts,
  *             src/features/appearance/ThemeSync.tsx, src/ui/brand.ts
  * Architecture: docs/design/paramount-ai-ui-spec.md §1, §2; docs/architecture/kite-architecture-v3.1.md §9.1
  */
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter_Tight } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { THEME_BOOT_SCRIPT } from '@/core/storage/appearancePrefs';
 import { ThemeSync } from '@/features/appearance/ThemeSync';
@@ -16,13 +16,14 @@ import { BRAND_NAME } from '@/ui/brand';
 import './globals.css';
 
 /**
- * Inter, the only font (spec §1), in three weights. Self-hosted by Next.js at build time, so users'
- * browsers never request Google. Exposed as --font-inter (src/ui/tokens/theme.css).
+ * Inter Tight, the only font (v1.3.0, ADR-0057; Inter before), in three weights. Self-hosted by Next.js
+ * at build time, so users' browsers never request Google. Exposed as --font-inter-tight
+ * (src/ui/tokens/theme.css).
  */
-const inter = Inter({
+const interTight = Inter_Tight({
   subsets: ['latin'],
   weight: ['400', '500', '600'],
-  variable: '--font-inter',
+  variable: '--font-inter-tight',
 });
 
 /** Page title and description shown in the browser tab and the desktop window title. */
@@ -49,12 +50,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     // suppressHydrationWarning: the boot script sets data-theme on this element before React loads.
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang="en" className={interTight.variable} suppressHydrationWarning>
       <head>
         {/* Blocking on purpose: it must run before the first paint. It is our own constant text. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
-      <body className="bg-ui-bg font-sans text-[15px] text-ui-text antialiased">
+      <body className="bg-ui-bg font-sans text-[16px] leading-6 text-ui-text antialiased">
         <ThemeSync />
         {children}
       </body>

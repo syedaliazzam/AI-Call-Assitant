@@ -21,7 +21,7 @@ The desktop app opens as a small panel: your sessions, newest first, with a sear
 ## Before a call: create a session
 
 1. Choose **Create session**, or the arrow beside it to pick the type first.
-2. **Details:** the call type, the company (after two letters it suggests companies from your past sessions, then others with their logos; pick one, or keep typing any name), the topic, your role, the other person's name if you like (it shows on their lines), a short description or a job link, and the documents Paramount AI should use (a CV, a price list, a runbook). Add **key terms** (names, product words) so the transcript spells them right; it also recognises spoken numbers, such as "BM twenty five" for BM25.
+2. **Details:** the call type, the company (after two letters it suggests companies from your past sessions, then others with their logos; pick one, or keep typing any name), the topic, your role, a short description or a job link, and the documents Paramount AI should use (a CV, a price list, a runbook). Under **Advanced** at the bottom, add **key terms** (names, product words) so the transcript spells them right; it also recognises spoken numbers, such as "BM twenty five" for BM25.
 3. **Preferences:** the answer language, the model, your own AI instructions, and **Answer preferences**: format, length (Short ≈ 10–20 s of speech, Balanced ≈ 20–40 s, Detailed ≈ 40–60 s) and tone, with a sample that changes as you choose. **STAR structure** shapes behavioural answers as Situation, Task, Action and Result, from what your CV says. You can change your defaults for new sessions in **Settings**.
 
 Your sessions, documents, transcripts and answers are stored **on this computer only**. Audio never leaves it.
