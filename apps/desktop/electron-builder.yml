@@ -25,10 +25,10 @@ files:
 extraResources:
   - from: native/sherpa-onnx
     to: sherpa-onnx
-# v1.3.1 (ADR-0059): the streaming speech model (about 204 MB) and its SHA-256 manifest, staged by
-# scripts/stage-stt-model.mjs. src/speechModel.ts answers the web app's model addresses from it, so a
-# fresh install connects without a download. The files never change between releases, so differential
-# updates reuse them (checked at each release from the installers' block maps).
+  # v1.3.1 (ADR-0059): the streaming speech model (about 204 MB) and its SHA-256 manifest, staged by
+  # scripts/stage-stt-model.mjs. src/speechModel.ts answers the web app's model addresses from it, so a
+  # fresh install connects without a download. The files never change between releases, so differential
+  # updates reuse them (checked at each release from the installers' block maps).
   - from: native/stt-model
     to: stt-model
 extraMetadata:

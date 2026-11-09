@@ -20,7 +20,7 @@ A fresh desktop install had to download the streaming speech model (about 204 MB
 
 - A fresh install connects with no model download (checked with Hugging Face unreachable: `apps/web/tests/e2e-prod/bundled-model.spec.ts`).
 - **Installer size:** 288.4 MB (1.3.0: 126.3 MB); the 204 MB model compresses to about 162 MB.
-- **Updates:** the 1.3.0 → 1.3.1 update downloads about 162.7 MB once (the model is new). Later differential updates reuse the model's blocks (measured below).
+- **Updates:** the 1.3.0 → 1.3.1 update downloads about 162.7 MB once (the model is new). Later differential updates reuse the model's blocks: measured from the block maps, a rebuilt "1.3.2" with only the version changed needs 0.5 MB (27 of 13,745 blocks; 99.8 % reused). A release with code changes adds only what changed.
 - The model is on disk twice after the first call: in the install folder and in the profile's Cache Storage, as before 1.3.1 (about 204 MB each).
 - A new model version needs a new desktop release (and the web's pinned list changes with it), otherwise the shell's manifest no longer matches the addresses and the app downloads as before: safe, but slower.
 
