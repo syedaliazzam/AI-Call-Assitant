@@ -22,6 +22,7 @@ import {
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 import { brandFonts } from '../lib/fonts';
+import { settleAnimations } from '../lib/motion';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -148,6 +149,8 @@ test.afterEach(async () => {
 async function shot(name: string): Promise<void> {
   if (!SHOT_DIR) return;
   mkdirSync(SHOT_DIR, { recursive: true });
+  // Menus fade in over 150 ms (ADR-0058): the picture is taken once they have.
+  await settleAnimations(page);
   await page.screenshot({ path: path.join(SHOT_DIR, `${name}.png`) });
 }
 
@@ -221,6 +224,44 @@ test('sidebar: order, sizes, the active item and "Soon" items that do nothing', 
   await resumeMaker.hover({ force: true });
   await expect(page.getByRole('tooltip')).toHaveText('Coming soon');
   await shot('sidebar');
+});
+
+test('the Desktop app card is never cut off, on a short laptop window too (v1.3.2)', async () => {
+  // 1366 × 650 is a 1366 × 768 laptop screen minus the browser's own bars: the card was sliced there.
+  for (const [width, height] of [
+    [1440, 900],
+    [1366, 768],
+    [1366, 650],
+    [1280, 600],
+  ] as const) {
+    await open('', width, height);
+    const nav = page.getByRole('navigation', { name: 'Main' });
+    await shot(`sidebar-${width}x${height}`);
+    // Measured as the page opens, without scrolling: the card and Help are pinned above the footer.
+    const measured = await page.evaluate(() => {
+      const region = document.querySelector('[aria-label="Desktop app"]')!;
+      const footer = document.querySelector('aside > div:last-child')!;
+      const box = region.getBoundingClientRect();
+      return {
+        aboveFooter: box.bottom <= footer.getBoundingClientRect().top + 0.5,
+        // Nothing inside the card is clipped or squeezed.
+        squeezed: region.scrollHeight > region.clientHeight + 1,
+        // Its last line, the download link, sits inside it.
+        linkInside:
+          region.querySelector('a:last-of-type')!.getBoundingClientRect().bottom <= box.bottom,
+      };
+    });
+    expect(measured, `${width} × ${height}`).toEqual({
+      aboveFooter: true,
+      squeezed: false,
+      linkInside: true,
+    });
+    await expect(nav.getByRole('link', { name: 'Help' })).toBeInViewport();
+    // The links above scroll instead, and every one can still be reached.
+    await nav.getByRole('link', { name: 'Question bank' }).scrollIntoViewIfNeeded();
+    await expect(nav.getByRole('link', { name: 'Question bank' })).toBeInViewport();
+    await context.close();
+  }
 });
 
 test('collapsing goes to icons, is remembered, and names each icon', async () => {
