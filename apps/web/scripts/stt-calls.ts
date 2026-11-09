@@ -60,11 +60,36 @@ const pongs = new Map();
 let onReady;
 const ready = new Promise((resolve, reject) => { onReady = { resolve, reject }; });
 const unix = () => performance.timeOrigin + performance.now();
+// v1.4 (ADR-0065): the end-of-turn model, as LivePage.tsx runs it (judged at a pause, used by the final).
+let turn = null;
+const turnWaiting = new Map();
+let turnId = 0;
+let early = null;
+const judge = (audio) => new Promise((resolve) => {
+  if (!turn) return resolve(null);
+  const id = ++turnId;
+  turnWaiting.set(id, resolve);
+  turn.postMessage({ type: 'judge', id, audio }, [audio.buffer]);
+});
+window.startTurn = () => {
+  turn = new Worker('/bundle/turn.worker.js');
+  turn.onmessage = ({ data }) => {
+    const resolve = turnWaiting.get(data.id);
+    if (resolve) { turnWaiting.delete(data.id); resolve(data.type === 'result' ? data.probability : null); }
+  };
+  turn.postMessage({ type: 'load' });
+};
 worker.onmessage = ({ data }) => {
+  if (data.type === 'pause' && data.channel === 'them') early = { speechEnd: data.speechEnd, probability: judge(data.recent) };
+  if (data.type === 'final' && data.channel === 'them' && data.recent && data.recent.length > 0) {
+    const judged = early && Math.abs(early.speechEnd - data.speechEnd) <= 300 ? early.probability : judge(data.recent);
+    const speechEnd = data.speechEnd;
+    judged.then((probability) => events.push({ type: 'turn', channel: 'them', speechEnd, probability, arrivedAt: unix() }));
+  }
   if (data.type === 'ready') onReady.resolve(data.load);
   if (data.type === 'error') onReady.reject(new Error(data.code + ': ' + data.message));
   if (data.type === 'partial') events.push({ type: 'partial', channel: data.channel, text: data.text, tStart: data.tStart, arrivedAt: unix() });
-  if (data.type === 'final') events.push({ type: 'final', channel: data.channel, text: data.text, tStart: data.tStart, tEnd: data.tEnd, ...(data.confidence ? { confidence: data.confidence } : {}), arrivedAt: unix() });
+  if (data.type === 'final') events.push({ type: 'final', channel: data.channel, text: data.text, tStart: data.tStart, tEnd: data.tEnd, speechEnd: data.speechEnd, ...(data.confidence ? { confidence: data.confidence } : {}), arrivedAt: unix() });
   if (data.type === 'pong') pongs.get(data.id)?.();
 };
 window.callRun = {
@@ -146,6 +171,16 @@ async function bundle(srcDir: string): Promise<{ dir: string; logic: CallLogic }
       ? `export { looksNonEnglish } from ${file('core/stt/language.ts')};`
       : '',
   ].join('\n');
+  // v1.4 (ADR-0065): the end-of-turn worker, when the version measured has one.
+  if (existsSync(path.join(srcDir, 'src', 'core', 'turn', 'turn.worker.ts'))) {
+    await build({
+      ...common,
+      platform: 'browser',
+      format: 'iife',
+      entryPoints: [path.join(srcDir, 'src', 'core', 'turn', 'turn.worker.ts')],
+      outfile: path.join(dir, 'turn.worker.js'),
+    });
+  }
   writeFileSync(path.join(dir, 'logic-entry.ts'), entry);
   await build({
     ...common,
@@ -189,9 +224,10 @@ async function record(variant: Variant, bundleDir: string): Promise<PageRun> {
       ? path.join(bundleDir, pathname.slice('/bundle/'.length))
       : path.join(WEB_DIR, 'public', pathname.slice(1));
     if (!existsSync(file)) return void res.writeHead(404).end();
+    // ONNX Runtime's loader imports an .mjs file, which a browser takes only as JavaScript.
     const type = file.endsWith('.wasm')
       ? 'application/wasm'
-      : file.endsWith('.js')
+      : file.endsWith('.js') || file.endsWith('.mjs')
         ? 'text/javascript'
         : 'application/octet-stream';
     res.writeHead(200, { 'Content-Type': type }).end(readFileSync(file));
@@ -203,6 +239,9 @@ async function record(variant: Variant, bundleDir: string): Promise<PageRun> {
     const page = await browser.newPage();
     await page.goto(origin);
     await page.addScriptTag({ url: '/page.js' });
+    if (existsSync(path.join(bundleDir, 'turn.worker.js'))) {
+      await page.evaluate(() => (window as unknown as { startTurn: () => void }).startTurn());
+    }
     const model = getSttModel(DEFAULT_STT_MODEL);
     const downloads = resolveDownloads(model, 'local', origin);
     await page.evaluate((message) => window.callRun.load(message), {
@@ -212,6 +251,8 @@ async function record(variant: Variant, bundleDir: string): Promise<PageRun> {
       files: downloads.model,
       hotwords: '',
       beamWidth: 4,
+      // v1.4 (ADR-0065): "them" lines carry their recent audio when there is a turn worker.
+      ...(existsSync(path.join(bundleDir, 'turn.worker.js')) ? { turnAudio: true } : {}),
     });
     return await page.evaluate(() => window.callRun.run());
   } finally {

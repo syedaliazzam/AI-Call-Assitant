@@ -77,6 +77,11 @@ export interface Utterance {
    */
   refining?: boolean;
   /**
+   * v1.4 (ADR-0065): how likely the speaker had finished when this line ended, from the end-of-turn
+   * model (0…1), or 'pending' while it is being judged. Absent when there is no judgment.
+   */
+  turnEnd?: number | 'pending';
+  /**
    * Display only: until when (Unix ms, the transcript's clock) displayLines() holds this "You"
    * line back, because "Them" was speaking when it arrived. lines() and window() ignore it.
    */
@@ -132,6 +137,14 @@ export interface Transcript {
    * @param on True while the rewrite runs.
    */
   setRefining(id: string, on: boolean): void;
+  /**
+   * v1.4 (ADR-0065): records the end-of-turn model's judgment of a final line ('pending' while it runs,
+   * null to clear it when it failed).
+   *
+   * @param id    The line's id.
+   * @param value The probability that the speaker finished, 'pending', or null.
+   */
+  setTurnEnd(id: string, value: number | 'pending' | null): void;
   /**
    * v1.0.1 (ADR-0034): replaces the words one utterance added to a final line with the accurate
    * engine's text. A line can hold several merged utterances, so only the last place where the
@@ -577,6 +590,17 @@ export function createTranscript(
       const next: Utterance = { ...line };
       if (on) next.refining = true;
       else delete next.refining;
+      finals = [...finals.slice(0, index), next, ...finals.slice(index + 1)];
+      changed();
+    },
+
+    setTurnEnd(id, value) {
+      const index = finals.findIndex((line) => line.id === id);
+      const line = finals[index];
+      if (!line) return;
+      const next: Utterance = { ...line };
+      if (value === null) delete next.turnEnd;
+      else next.turnEnd = value;
       finals = [...finals.slice(0, index), next, ...finals.slice(index + 1)];
       changed();
     },

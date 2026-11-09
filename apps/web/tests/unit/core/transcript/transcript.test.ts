@@ -355,6 +355,22 @@ describe('createTranscript', () => {
       ]);
     });
 
+    it('keeps the end-of-turn judgment of a line (ADR-0065)', () => {
+      const t = setup();
+      const line = t.addFinal({
+        speaker: 'them',
+        text: 'HOW BIG IS THE TEAM',
+        tStart: 1_000,
+        tEnd: 2_000,
+      });
+      t.setTurnEnd(line.id, 'pending');
+      expect(t.lines()[0]!.turnEnd).toBe('pending');
+      t.setTurnEnd(line.id, 0.7);
+      expect(t.lines()[0]!.turnEnd).toBe(0.7);
+      t.setTurnEnd(line.id, null);
+      expect(t.lines()[0]!.turnEnd).toBeUndefined();
+    });
+
     it('marks a line while the accurate engine rewrites it', () => {
       const t = setup();
       const line = t.addFinal({

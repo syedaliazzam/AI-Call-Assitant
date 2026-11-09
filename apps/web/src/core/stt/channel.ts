@@ -24,6 +24,7 @@
 import { TARGET_SAMPLE_RATE } from '../audio/resample';
 import { chunkRms, lastLoudSampleEnd, SilenceGate, type GateChunk } from './gate';
 import { isNoiseLine } from './noiseLine';
+import { looksUnfinished } from '../transcript/complete';
 import { ACCURATE_MAX_SECONDS } from '@kite/shared';
 import { OnsetDetector, realTimeFactor } from './metrics';
 import {
@@ -37,6 +38,15 @@ import {
 
 /** Pause rule: audio (ms) with no new words, while text is showing, that ends an utterance. */
 export const PAUSE_END_MS = 1_200;
+
+/** v1.4 (ADR-0065): seconds of recent audio a final line carries for the end-of-turn model. */
+export const RECENT_AUDIO_SECONDS = 8;
+
+/** v1.4 (ADR-0065): silence after speech before the end-of-turn model is asked, ms (Pipecat uses about 200). */
+export const PAUSE_JUDGE_MS = 300;
+
+/** v1.4: how far past the end of speech that audio goes, ms (the model is asked after a short pause). */
+export const RECENT_AFTER_SPEECH_MS = 200;
 
 /** How many recent lag values each channel keeps. */
 const MAX_LAGS = 50;
@@ -74,7 +84,10 @@ export interface RecognizerLike {
 }
 
 /** Messages a channel produces (a subset of the worker's FromWorker). */
-export type ChannelEvent = Extract<FromWorker, { type: 'partial' } | { type: 'final' }>;
+export type ChannelEvent = Extract<
+  FromWorker,
+  { type: 'partial' } | { type: 'final' } | { type: 'pause' }
+>;
 
 /** Clocks the channel uses (injectable for tests). */
 export interface ChannelClock {
@@ -94,6 +107,11 @@ export interface ChannelOptions {
   gate?: SilenceGate | null;
   /** v1.0.1 (ADR-0034): attach each final line's audio (for the accurate engine). */
   keepAudio?: boolean;
+  /**
+   * v1.4 (ADR-0065): attach the last RECENT_AUDIO_SECONDS of the channel (heard or not), up to just after
+   * the end of speech, to each final line, for the end-of-turn model. Only for "them".
+   */
+  keepRecent?: boolean;
 }
 
 /**
@@ -162,6 +180,10 @@ export class ChannelDecoder {
   private lastLoudAt: number | null = null;
   /** v1.0.1: whether final lines carry their audio. */
   private readonly keepAudio: boolean;
+  /** v1.4: whether final lines carry the recent audio. */
+  private readonly keepRecent: boolean;
+  /** v1.4: the channel's recent chunks, every one (decoded or held back), with their capture end. */
+  private recent: { samples: Float32Array; endAt: number }[] = [];
   /** The audio decoded since the last final line (only with keepAudio). */
   private utteranceAudio: Float32Array[] = [];
   /** Samples in utteranceAudio. */
@@ -170,6 +192,10 @@ export class ChannelDecoder {
   private utterancePeakRms = 0;
   /** Worker time where this channel's previous final line ended, or null before the first. */
   private lastFinalEndAt: number | null = null;
+  /** v1.4: audio (ms) since the last loud frame (audio time, like the pause rule). */
+  private quietMs = 0;
+  /** v1.4: whether this pause was already posted (one message per pause). */
+  private pausePosted = false;
 
   /**
    * @param id         Which channel.
@@ -193,6 +219,7 @@ export class ChannelDecoder {
     };
     this.gate = options.gate === undefined ? new SilenceGate() : options.gate;
     this.keepAudio = options.keepAudio === true;
+    this.keepRecent = options.keepRecent === true;
     const inputSampleRate = options.inputSampleRate ?? TARGET_SAMPLE_RATE;
     this.stats = {
       audioMs: 0,
@@ -233,6 +260,7 @@ export class ChannelDecoder {
       this.pendingOnsetChunkEndAt = this.capturedAt(endTime);
     }
 
+    if (this.keepRecent) this.rememberRecent(samples, this.capturedAt(endTime));
     const chunk: GateChunk = { samples, endTime };
     const wasOpen = this.gate?.isOpen ?? true;
     const toDecode = this.gate
@@ -272,6 +300,32 @@ export class ChannelDecoder {
     if (loudEnd >= 0) {
       this.lastLoudAt =
         capturedEndAt - ((chunk.samples.length - loudEnd) / TARGET_SAMPLE_RATE) * 1000;
+      // v1.4: audio time since the last loud frame (for the pause message), and a new pause may come.
+      this.quietMs = ((chunk.samples.length - loudEnd) / TARGET_SAMPLE_RATE) * 1000;
+      this.pausePosted = false;
+    } else {
+      this.quietMs += chunkAudioMs;
+    }
+    // v1.4 (ADR-0065): once the speaker has been quiet for PAUSE_JUDGE_MS while their words show, post
+    // the recent audio so the end-of-turn model can judge before the line is even final.
+    if (
+      this.keepRecent &&
+      this.lastText !== '' &&
+      // Only words that look cut off are judged (ADR-0065: the model may only shorten that wait), so
+      // the model runs a few times a call, not at every pause (measured: at every pause it slowed
+      // the speech worker on the test laptop).
+      looksUnfinished(this.lastText) &&
+      this.lastLoudAt !== null &&
+      !this.pausePosted &&
+      this.quietMs >= PAUSE_JUDGE_MS
+    ) {
+      this.pausePosted = true;
+      this.emit({
+        type: 'pause',
+        channel: this.id,
+        speechEnd: this.toUnix(this.lastLoudAt),
+        recent: this.recentAudio(this.lastLoudAt + RECENT_AFTER_SPEECH_MS),
+      });
     }
     while (this.recognizer.isReady(this.stream)) this.recognizer.decode(this.stream);
     const text = this.recognizer.getResult(this.stream).text.trim();
@@ -368,6 +422,9 @@ export class ChannelDecoder {
         tEnd: this.toUnix(end),
         speechEnd: this.toUnix(speechEndAt),
         ...(confidence ? { confidence } : {}),
+        ...(this.keepRecent && looksUnfinished(text)
+          ? { recent: this.recentAudio(speechEndAt + RECENT_AFTER_SPEECH_MS) }
+          : {}),
       });
     }
     this.clearUtterance();
@@ -453,6 +510,37 @@ export class ChannelDecoder {
       at += piece.length;
     }
     return { audio };
+  }
+
+  /**
+   * Keeps a chunk in the recent audio, dropping what is older than RECENT_AUDIO_SECONDS plus a second.
+   *
+   * @param samples The chunk.
+   * @param endAt   Its capture end (worker clock, ms).
+   */
+  private rememberRecent(samples: Float32Array, endAt: number): void {
+    this.recent.push({ samples, endAt });
+    const keepFrom = endAt - (RECENT_AUDIO_SECONDS + 1) * 1000;
+    while (this.recent.length > 0 && this.recent[0]!.endAt < keepFrom) this.recent.shift();
+  }
+
+  /**
+   * The recent audio up to a moment, at most RECENT_AUDIO_SECONDS long.
+   *
+   * @param untilAt The moment (worker clock, ms).
+   * @returns The samples (a new array).
+   */
+  private recentAudio(untilAt: number): Float32Array {
+    const chunks = this.recent.filter((chunk) => chunk.endAt <= untilAt + 100);
+    const total = chunks.reduce((sum, chunk) => sum + chunk.samples.length, 0);
+    const all = new Float32Array(total);
+    let at = 0;
+    for (const chunk of chunks) {
+      all.set(chunk.samples, at);
+      at += chunk.samples.length;
+    }
+    const max = RECENT_AUDIO_SECONDS * TARGET_SAMPLE_RATE;
+    return all.length > max ? all.slice(all.length - max) : all;
   }
 
   /** Forgets the current utterance's state (text, timers, onset). */

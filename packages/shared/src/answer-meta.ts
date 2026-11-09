@@ -26,6 +26,9 @@
  * - v1.1.0 (ADR-0043), what a screenshot shows: `codefix` (code with an error), `slide`, `table`
  *   (a table or chart), `document`, `webpage`, `unreadable` (nothing can be read, or nothing relevant).
  * - v1.1.0: `garbled`: the words make no sense even in context, so there is nothing to answer.
+ * - v1.4 (ADR-0065): `none`: clear words that ask the user nothing (talk about the call itself, such
+ *   as "can you repeat that?" or "can you hear me?", or a remark that needs no reply), so there is
+ *   nothing to answer either.
  * - v1.2.0: `other`: Claude named a type Kite does not know. The prompt never offers it.
  */
 export type AnswerType =
@@ -45,6 +48,7 @@ export type AnswerType =
   | 'webpage'
   | 'unreadable'
   | 'garbled'
+  | 'none'
   | 'other';
 
 /** The question types the answer card's menu offers, in its order. */
@@ -70,6 +74,7 @@ export const ANSWER_TYPES: readonly AnswerType[] = [
   'webpage',
   'unreadable',
   'garbled',
+  'none',
   'other',
 ];
 
@@ -91,6 +96,7 @@ export const ANSWER_TYPE_LABELS: Readonly<Record<AnswerType, string>> = {
   webpage: 'Web page',
   unreadable: 'Unreadable',
   garbled: 'Not understood',
+  none: 'Nothing to answer',
   other: 'Other',
 };
 

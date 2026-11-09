@@ -469,3 +469,30 @@ Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 run
 | 24-star-structure | 8.0 | Facts 3/3 and the four parts in order. Grounded 1/2: each run added small inferred details the CV does not state (such as "by hand"); no employer, tool or number was invented. Headline 0/1: the raw first line was 16–17 words, the line as shown 11. |
 | 21-format-bullets-only | 7.5 | Both runs opened with a sentence before the bullets. This scenario is a known low scorer (see the Day 7 notes above). |
 | k-maths | 9.5 | One run of twelve wrote the hidden line with a type the app does not know and an extra value, so the line was shown to the reader. Not caused by this release. Fixed in code before release: any such first line is now hidden and its type reads "Other" (unit tests; no paid re-run). |
+
+## v1.4 prompt: the "none" type (2026-11-10, ADR-0065)
+
+Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario (notes 3). The full suite, once, because the rules block changed (a new hidden type `none` and its rule line). **Spend: $0.55 for 402 requests** ($0.4833 for 384 answers and grades, $0.0659 for 18 notes and grades); estimated $0.56 beforehand, within the developer's $1 limit. Two new `question-detection` scenarios: `qd-none-1` and `qd-none-2` (talk about the call; a remark that needs no reply). The `qd-statement-*` scenarios also accept `none`.
+
+| Group | Gate | Result | Verdict |
+|---|---|---|---|
+| `answers` (15) | 3-run mean ≥ 8.86 | 9.03 (one run) | passes |
+| `screenshots` (3) | ≥ 8 | 8.17 (9.50 last release) | passes |
+| `lessons` (2) | ≥ 8 and above without | 9.25 | passes |
+| `preferences` (4) | ≥ 8 | 9.13 | passes |
+| `notes` (3) | ≥ 8 | 9.89 | passes |
+| `adaptive` (24) | ≥ 8 | 8.79 | passes |
+| `missing-info` (8) | ≥ 7.60 | 7.75 (8.13 last release) | passes |
+| `hallucination-bait` (6) | no invented price or personal number | 8.17; numbers outside the documents 0/12 | passes |
+| `consistency` (3) | ≥ 8, same numbers | 8.83; 5/6 repeats kept the numbers, as before | passes |
+| `ask-kite` (6) | ≥ 8 | 9.83 | passes |
+| `cv-embellishment` (4) | ≥ 7.10, at most 6 invented items | **6.75, the same score as the last release; 13 invented items in 6 of 8 runs** | **fails, as at the last release** (see below) |
+| `answer-length` (2) | ≥ 8 | 8.50 | passes |
+| `question-detection` (13) | ≥ 8 | 9.73: garbled, statement and none 10.00; real questions 9.30 | passes |
+| `screenshot-types` (7) | ≥ 8, code runs | 9.00 | passes |
+| Answer line, as shown | ≥ 95% within 12 words | 96.7% (147 of 152) | passes |
+| Code ran in the sandbox | all | 14/14 | passes |
+
+**Did `none` swallow real questions?** No. Every question-detection scenario with a real question scored 9–10, so each got an answer. The runs where the type differed from the expected one (12 of 100) were the same scenarios that differed in the 4 Nov runs (`a-pm-product`, `a-success-client`, `a-success-sla`, `a-frontend-design`, `qd-real-1`, `st-document`). The rule change did not cause them.
+
+**`cv-embellishment`.** The score is the same as at the last release, which was released by the developer's decision. The grader's list of invented items is longer (13 against 6), spread over all four scenarios (2/1, 2/0, 3/0, 2/3 per run). The change adds one type and one rule line, neither about the CV. Earlier releases showed that 2-run readings of this 4-scenario group move by about a point between identical runs. So this reads as noise, not a regression, but it was not re-run to confirm (no budget was asked for a second paid run). It remains the open item from v1.1.0.

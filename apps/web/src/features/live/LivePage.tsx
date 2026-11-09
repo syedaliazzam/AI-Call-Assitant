@@ -58,6 +58,7 @@ import { takeCallLock } from '@/core/live/callLock';
 import { hygieneState, type HygieneState } from '@/core/live/hygiene';
 import { getMicDevice, setMicDevice } from '@/core/storage/overlayPrefs';
 import { createPunctuator, punctuateLine } from '@/core/punctuation/punctuator';
+import { createTurnDetector } from '@/core/turn/turnDetector';
 import { refineLine } from '@/core/transcript/refine';
 import { looksNonEnglish } from '@/core/stt/language';
 import { displayTerms } from '@/core/transcript/display';
@@ -90,6 +91,12 @@ import { useCallDictation } from './useCallDictation';
  * limit after which the dashboard shows a "live" session as ended (core/storage/sessions.ts).
  */
 const ACTIVE_REFRESH_MS = 60_000;
+
+/**
+ * v1.4 (ADR-0065): an early end-of-turn judgment (at the pause) is used for a final line whose end of
+ * speech is within this many ms of the pause's.
+ */
+const EARLY_TURN_SLACK_MS = 300;
 
 /** How long the echo note stays after the latest hidden echo line, in ms. */
 const ECHO_NOTE_MS = 60_000;
@@ -273,6 +280,11 @@ export function LivePage({
   // v1.1.0 (ADR-0044): marks and capitals for the live engine's lines, offline, in a worker of its own.
   const [punctuator] = useState(() => createPunctuator());
   useEffect(() => () => punctuator.dispose(), [punctuator]);
+  // v1.4 (ADR-0065): the end-of-turn model, which tells auto-answer whether the other person finished.
+  const [turnDetector] = useState(() => createTurnDetector());
+  useEffect(() => () => turnDetector.stop(), [turnDetector]);
+  // The judgment started at the other side's latest pause, used when its line becomes final.
+  const earlyTurn = useRef<{ speechEnd: number; probability: Promise<number | null> } | null>(null);
   // The saved microphone (v1.1.0). This page only renders in the browser (LiveSession loads the
   // session from IndexedDB first), so reading local storage here cannot differ from a server render.
   const [micDeviceId, setMicDeviceId] = useState(() => getMicDevice());
@@ -348,9 +360,11 @@ export function LivePage({
       // worker. Each line then asks whether it should run now, because Auto follows the power source.
       const accurate = getTranscriptionMode() !== 'off' ? getPlatform().accurate : null;
       punctuator.warm();
+      turnDetector.warm();
       return createSttEngine({
         hotwords,
         keepAudio: accurate !== null,
+        turnAudio: true,
         onProgress: (progress) => {
           if (isActive()) setModel((current) => ({ ...current, progress }));
         },
@@ -365,7 +379,11 @@ export function LivePage({
           transcript.addPartial(channel, text, tStart);
           watchdog.current.noteProgress(performance.now());
         },
-        onFinal: ({ channel, text, tStart, tEnd, audio, confidence }) => {
+        onPause: ({ channel, speechEnd, recent }) => {
+          if (!isActive() || channel !== 'them') return;
+          earlyTurn.current = { speechEnd, probability: turnDetector.judge(recent) };
+        },
+        onFinal: ({ channel, text, tStart, tEnd, audio, confidence, recent, speechEnd }) => {
           if (!isActive()) return;
           if (channel === 'you' && dictationRoute.final(text)) {
             // A question dictated to Kite: never a transcript line, never saved or sent later.
@@ -385,6 +403,19 @@ export function LivePage({
           });
           watchdog.current.noteProgress(performance.now());
           if (nonEnglish) return;
+          // v1.4 (ADR-0065): did the other person finish, or only pause? Auto-answer waits for this.
+          if (channel === 'them' && recent && recent.length > 0) {
+            transcript.setTurnEnd(line.id, 'pending');
+            // The judgment of this pause is usually under way already (onPause): use it.
+            const early = earlyTurn.current;
+            const judged =
+              early && Math.abs(early.speechEnd - speechEnd) <= EARLY_TURN_SLACK_MS
+                ? early.probability
+                : turnDetector.judge(recent);
+            void judged.then((probability) => {
+              transcript.setTurnEnd(line.id, probability);
+            });
+          }
           // The second pass replaces the words a moment later; the live line is the fallback. The
           // accurate engine writes its own marks; the live engine's lines get theirs from the
           // punctuation pass, as do lines the accurate engine could not do. v1.4: the line is marked
@@ -404,7 +435,7 @@ export function LivePage({
         },
       });
     },
-    [hotwords, transcript, dictationRoute, plainTerms, punctuator],
+    [hotwords, transcript, dictationRoute, plainTerms, punctuator, turnDetector],
   );
 
   // v1.1.0 (ADR-0044): Accurate transcription follows the setting and the power source, and only uses
