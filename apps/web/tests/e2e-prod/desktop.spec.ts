@@ -303,11 +303,10 @@ test('3. a call: Start → Connect, the overlay, an answer, Private, positions, 
   report('desktop positions: bottom row and back', true);
   await overlay.keyboard.press('Escape');
 
-  // Exit asks first; the overlay closes; the panel comes back with "Call ended"; the call window
+  // Exit (one press, 9 Nov 2026); the overlay closes; the panel comes back with "Call ended"; the call window
   // closes itself once the notes are saved.
   const closed = overlay.waitForEvent('close', { timeout: 15_000 });
   await overlay.getByRole('button', { name: /end call/i }).click();
-  await overlay.getByRole('button', { name: 'End call?' }).click();
   await closed;
   await expect
     .poll(async () => (await windows()).find((w) => w.path === '/home')?.visible, {

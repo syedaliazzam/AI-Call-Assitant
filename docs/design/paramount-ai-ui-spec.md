@@ -333,7 +333,7 @@ Rows are 40 tall with dividers between them, radius 14.
 - **move** (`Move`) and **compact** (`Minimize2`);
 - the **timer** `⏱ 09:33`;
 - **⋮** (S16);
-- **Exit** (red; confirm; ends the call).
+- **Exit** (red; ends the call at once, no confirm step since 9 Nov 2026).
 
 **Bar 2** (narrower, left-aligned under bar 1):
 - a **level button** (live accent bars; it toggles the transcript panel);

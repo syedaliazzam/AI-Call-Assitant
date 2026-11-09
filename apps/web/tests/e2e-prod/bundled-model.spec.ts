@@ -190,7 +190,6 @@ test('2. first Connect on a fresh profile: no download dialog, the call starts, 
 
   const closed = overlay.waitForEvent('close', { timeout: 15_000 });
   await overlay.getByRole('button', { name: /end call/i }).click();
-  await overlay.getByRole('button', { name: 'End call?' }).click();
   await closed;
   report('exit: the call ended', true);
 });

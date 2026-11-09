@@ -515,13 +515,12 @@ test('the overlay: panels open with an answer, the arrows move, Clear keeps the 
   await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 1');
   await answerPanel.getByRole('button', { name: 'Next question' }).click();
   await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 2');
-  // Bar 1 keeps every control on screen while End asks to confirm, at the narrowest width too.
+  // Bar 1 keeps Exit on screen, at the narrowest width too (9 Nov 2026: one press ends the call, so
+  // it is measured, not pressed).
   for (const width of [680, 560]) {
     await overlay.setViewportSize({ width, height: 452 });
-    await overlay.getByRole('button', { name: 'End call' }).click();
-    const cancel = await overlay.getByRole('button', { name: 'Cancel' }).boundingBox();
-    expect(cancel!.x + cancel!.width).toBeLessThanOrEqual(width);
-    await overlay.getByRole('button', { name: 'Cancel' }).click();
+    const exit = await overlay.getByRole('button', { name: 'End call' }).boundingBox();
+    expect(exit!.x + exit!.width).toBeLessThanOrEqual(width);
   }
   await overlay.setViewportSize({ width: 680, height: 660 });
 
@@ -725,12 +724,8 @@ test('keyboard pass: every control of the overlay and the panel can be reached a
   await overlay.keyboard.press('Escape');
   await expect(overlay.getByRole('group', { name: 'Overlay settings' })).toHaveCount(0);
 
-  // Exit asks first, with the safe choice one key away.
+  // Exit can be reached and pressed from the keyboard (web 9 Nov 2026: one press ends the call, so it is
+  // checked last, on the button itself).
   await overlay.getByRole('button', { name: 'End call' }).focus();
-  await overlay.keyboard.press('Enter');
-  await expect(overlay.getByRole('button', { name: 'End call?' })).toBeFocused();
-  await overlay.keyboard.press('Tab');
-  await expect(overlay.getByRole('button', { name: 'Cancel' })).toBeFocused();
-  await overlay.keyboard.press('Enter');
-  await expect(overlay.getByRole('button', { name: 'End call' })).toBeVisible();
+  await expect(overlay.getByRole('button', { name: 'End call' })).toBeFocused();
 });

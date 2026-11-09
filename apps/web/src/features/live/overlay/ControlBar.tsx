@@ -3,7 +3,7 @@
  * Purpose: Bar 1 of the call bars (spec S13): the screen-audio and microphone icons, each with its ▾;
  *          Answer, Screenshot and Chat with their key-caps; the Transcript pill with its on/off switch
  *          (ADR-0055: it opens and closes the transcript panel, as the live words do); move and compact;
- *          the call timer; ⋮; and Exit (red, asks first). The bar is the window's drag handle; its
+ *          the call timer; ⋮; and Exit (red; web 9 Nov 2026: one press ends the call). The bar is the window's drag handle; its
  *          buttons opt out. In a narrow window the key-caps give way first, then the word "Transcript".
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys), lucide-react, src/core/live/liveChannel.ts, ./parts.tsx,
@@ -26,15 +26,7 @@ import {
   MonitorIcon,
   MoveIcon,
 } from '@/ui/icons';
-import {
-  BUTTON,
-  BUTTON_BASE,
-  CHEVRON_BUTTON,
-  ICON_BUTTON,
-  KeyChip,
-  PILL,
-  StatusIcon,
-} from './parts';
+import { BUTTON_BASE, CHEVRON_BUTTON, ICON_BUTTON, KeyChip, PILL, StatusIcon } from './parts';
 
 /** Which device list is open. */
 export type DeviceList = 'audio' | 'mic';
@@ -165,54 +157,30 @@ function CallTimer({
 }
 
 /**
- * Exit: pressing it asks first, in place, because ending a call by accident loses the call.
+ * Exit: one press ends the call and closes the overlay (web 9 Nov 2026, the developer's choice: it asked "End
+ * call?" first before).
  *
  * @param props.disabled True before the live page answers, or once the call ended.
- * @param props.asking   True while it is asking.
- * @param props.onAsking Starts or stops asking.
  * @param props.onEnd    Ends the call.
- * @returns The button, or the question.
+ * @returns The button.
  * Rendered by: ControlBar
  */
 function ExitButton({
   disabled,
-  asking,
-  onAsking,
   onEnd,
 }: {
   /** True before the live page answers, or once the call ended. */
   disabled: boolean;
-  /** True while it is asking. */
-  asking: boolean;
-  /** Starts or stops asking. */
-  onAsking: (asking: boolean) => void;
   /** Ends the call. */
   onEnd: () => void;
 }) {
-  if (asking) {
-    return (
-      <span className="inline-flex shrink-0 items-center gap-1 [-webkit-app-region:no-drag]">
-        <button
-          type="button"
-          autoFocus
-          className={`${BUTTON_BASE} bg-ui-end text-ui-on-end`}
-          onClick={onEnd}
-        >
-          End call?
-        </button>
-        <button type="button" className={BUTTON} onClick={() => onAsking(false)}>
-          Cancel
-        </button>
-      </span>
-    );
-  }
   return (
     <button
       type="button"
       aria-label="Exit: end call"
       className={`${BUTTON_BASE} bg-ui-end text-ui-on-end hover:opacity-90`}
       disabled={disabled}
-      onClick={() => onAsking(true)}
+      onClick={onEnd}
     >
       Exit
     </button>
@@ -292,16 +260,13 @@ export function ControlBar(props: ControlBarProps) {
         chat: '@min-[700px]:inline-flex',
         shot: '@min-[760px]:inline-flex',
       };
-  // The question is wider than Exit: while it shows, the timer makes room, and in a narrow window the
-  // audio icons too, so "Cancel" is never cut off.
-  const [asking, setAsking] = useState(false);
   return (
     <div
       role="toolbar"
       aria-label="Overlay controls"
       className="relative flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]"
     >
-      <span className={`inline-flex shrink-0 items-center ${asking ? '@max-[620px]:hidden' : ''}`}>
+      <span className="inline-flex shrink-0 items-center">
         <DeviceButton
           on={state?.audio.them ?? false}
           label="Screen audio"
@@ -406,7 +371,7 @@ export function ControlBar(props: ControlBarProps) {
           {collapsed ? <ExpandIcon /> : <CollapseIcon />}
         </button>
       )}
-      {state?.clickThrough && props.onClickThroughOff && !asking && (
+      {state?.clickThrough && props.onClickThroughOff && (
         // v1.3.2: says that clicks outside the bars go to the app behind; a click turns it off.
         <button
           type="button"
@@ -420,7 +385,7 @@ export function ControlBar(props: ControlBarProps) {
           Click-through on
         </button>
       )}
-      {!asking && <CallTimer startedAt={state?.startedAt} />}
+      <CallTimer startedAt={state?.startedAt} />
       <button
         ref={menuButton}
         type="button"
@@ -432,12 +397,7 @@ export function ControlBar(props: ControlBarProps) {
       >
         <MenuIcon />
       </button>
-      <ExitButton
-        disabled={ended}
-        asking={asking}
-        onAsking={setAsking}
-        onEnd={() => onCommand({ type: 'end' })}
-      />
+      <ExitButton disabled={ended} onEnd={() => onCommand({ type: 'end' })} />
     </div>
   );
 }
