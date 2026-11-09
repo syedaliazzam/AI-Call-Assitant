@@ -28,4 +28,7 @@ apps/web/tests/fixtures/stt/names-audio/
 
 # Desktop installers and unpacked builds (over 100 MB): never part of the web deployment.
 apps/desktop/release/
+# v1.3.1 (ADR-0059): the desktop's staged native files, including the speech model shipped in the
+# installer (the 188 MB encoder is over the 100 MB upload limit). The web app never uses them.
+apps/desktop/native/
 apps/web/eval-results/
