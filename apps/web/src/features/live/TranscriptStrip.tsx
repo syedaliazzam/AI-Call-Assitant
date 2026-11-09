@@ -70,7 +70,7 @@ export const TranscriptStrip = memo(function TranscriptStrip({
   flush = false,
 }: TranscriptStripProps) {
   const groups = useMemo(() => groupLines(lines, { terms }), [lines, terms]);
-  const { fontScale } = useAppearance(false);
+  const { fontScale } = useAppearance('call', false);
   const answeredIds = useMemo(
     () => (answeredSpans ? answeredGroupIds(groups, answeredSpans) : undefined),
     [groups, answeredSpans],

@@ -93,7 +93,7 @@ const hasPanel = () => getPlatform().hasHomePanel();
 export function HomePanel({ email, startSessionId }: HomePanelProps) {
   const router = useRouter();
   const available = useSyncExternalStore(subscribeNever, hasPanel, () => true);
-  const { theme, resolved, zoom } = useAppearance();
+  const { theme, resolved, zoom } = useAppearance('dashboard');
   // null while loading; the list as stored on this computer otherwise.
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [failed, setFailed] = useState(false);

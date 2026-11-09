@@ -25,7 +25,7 @@ Use Paramount AI in calls where AI assistance is allowed — your own meetings, 
 The desktop app opens as a small panel: your sessions, newest first, with a search box and a sort button. Each card shows the date, title, description, type, whether the transcript is saved, and its status. **Start** shows what the call will use (company, role, CV, documents, language, model and answer preferences), then **Continue** begins it; **View transcript** opens an ended one.
 
 - **View in dashboard** and **Create session** open the full pages in a larger window.
-- **⋮** has your email, **Dashboard**, **Get help**, **Private** (see below), **Zoom**, **Theme** (Light, Dark or System) and **Log out**.
+- **⋮** has your email, **Dashboard**, **Get help**, **Private** (see below), **Zoom**, **Theme** (Light, Dark or System; for this panel and the dashboard, Light until you change it) and **Log out**.
 - Drag the header's move button to move the panel, and any edge to resize it. Paramount AI remembers where you left it.
 
 ## Before a call: create a session
@@ -100,7 +100,7 @@ With both panels open they sit side by side, and the window widens for them when
 
 ### The ⋮ menu during a call
 
-Your email, **Dashboard** and **Get help** (in their own window, so the call keeps going), **Private**, **Zoom**, **Theme**, **Opacity**, **Answer text size**, **Language**, **Auto answer**, **Answer preferences**, **Edit session**, **Open call window** (the full view, for when you want everything large) and **Reset position**.
+Your email, **Dashboard** and **Get help** (in their own window, so the call keeps going), **Private**, **Zoom**, **Theme** (for the call windows only, Dark until you change it), **Opacity**, **Answer text size**, **Language**, **Auto answer**, **Answer preferences**, **Edit session**, **Open call window** (the full view, for when you want everything large) and **Reset position**.
 
 ### Coding questions
 

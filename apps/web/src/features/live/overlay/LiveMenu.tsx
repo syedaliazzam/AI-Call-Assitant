@@ -128,7 +128,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           onLess={() => setZoom(clampStep(zoom - ZOOM_RANGE.step, ZOOM_RANGE))}
           onReset={() => setZoom(ZOOM_RANGE.default)}
         />
-        <MenuTheme value={props.theme} onChange={setTheme} />
+        <MenuTheme value={props.theme} onChange={(choice) => setTheme(choice, 'call')} />
       </MenuBlock>
 
       <MenuBlock>

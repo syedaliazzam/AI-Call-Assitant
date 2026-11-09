@@ -148,7 +148,8 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
     () => getPlatform().overlayIconMode(),
     () => false,
   );
-  const { theme, resolved, zoom, fontScale } = useAppearance(closeOnEnd);
+  // The call's theme (v1.3.0: dark until chosen), not the dashboard's.
+  const { theme, resolved, zoom, fontScale } = useAppearance('call', closeOnEnd);
 
   useEffect(() => {
     const link = openLiveChannel(sessionId);

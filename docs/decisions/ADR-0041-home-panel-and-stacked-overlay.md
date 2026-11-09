@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-04
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5, §7.3
-- **Supersedes / superseded by:** refines ADR-0029 and ADR-0040; reverses ADR-0030's newest-first transcript
+- **Supersedes / superseded by:** refines ADR-0029 and ADR-0040; reverses ADR-0030's newest-first transcript; its one Theme setting (default System) is replaced by two by ADR-0054
 
 ## Context
 

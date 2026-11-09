@@ -118,7 +118,7 @@ export function HomeMenu({ email, theme, zoom, onClose, launcher = false }: Home
           onLess={() => setZoom(clampStep(zoom - ZOOM_RANGE.step, ZOOM_RANGE))}
           onReset={() => setZoom(ZOOM_RANGE.default)}
         />
-        <MenuTheme value={theme} onChange={setTheme} />
+        <MenuTheme value={theme} onChange={(choice) => setTheme(choice, 'dashboard')} />
         <MenuAction
           label={leaving ? 'Logging out…' : 'Log out'}
           icon={<LogOut {...ICON} />}
