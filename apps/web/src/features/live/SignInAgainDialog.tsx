@@ -71,7 +71,8 @@ export function SignInAgainDialog({ open, onClose, onSignedIn }: SignInAgainDial
         Your sign-in has expired. Sign in to keep getting answers. This call, its transcript and its
         answers stay as they are.
       </p>
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+      {/* method="post": a native submit can never put the password in the address (LoginForm). */}
+      <form method="post" onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
         <Input label="Email" name="email" type="email" autoComplete="email" required autoFocus />
         <Input
           label="Password"

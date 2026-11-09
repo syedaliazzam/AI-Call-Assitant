@@ -9,12 +9,20 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useState, useSyncExternalStore, type FormEvent } from 'react';
 import { signIn } from '@/core/auth/authClient';
 import { Button } from '@/ui/Button';
 import { Input } from '@/ui/Input';
 import { messageFor } from '@/core/auth/messages';
 import { getPlatform } from '@/platform';
+
+/**
+ * Never changes: whether the page is hydrated is read once (useSyncExternalStore's server value is false).
+ *
+ * @returns An unsubscribe function that does nothing.
+ * Called from: LoginForm
+ */
+const subscribeNever = () => () => undefined;
 
 /**
  * The sign-in form. On success it opens the dashboard; the server then sends users who still
@@ -27,6 +35,13 @@ export function LoginForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  // False in the server's HTML until React has taken over the page: until then the button stays
+  // disabled, so a press can never submit the form natively (see the form's method below).
+  const hydrated = useSyncExternalStore(
+    subscribeNever,
+    () => true,
+    () => false,
+  );
 
   /**
    * Sends the email and password to Better Auth and reacts to the result.
@@ -55,7 +70,10 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+    // method="post": should the form ever submit before the page's script runs (a slow load), the
+    // browser posts it to this page instead of putting the email and password in the address (a GET),
+    // where they would reach the browser's history and the server's request logs.
+    <form method="post" onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
       <Input label="Email" name="email" type="email" autoComplete="email" required autoFocus />
       <Input
         label="Password"
@@ -72,7 +90,7 @@ export function LoginForm() {
           {error}
         </p>
       )}
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" disabled={pending || !hydrated}>
         {pending ? 'Signing in…' : 'Sign in'}
       </Button>
     </form>
