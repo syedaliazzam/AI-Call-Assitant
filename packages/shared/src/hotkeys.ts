@@ -22,6 +22,8 @@
  * - `ask-kite`: open Ask Kite (ADR-0030).
  * - `script-bar`: show or hide the overlay's slim script bar (v1.0.2, ADR-0035).
  * - `screenshot-send`: send the chat bar's message with a screenshot (v1.2.0, spec S14).
+ * - `click-through`: turn the overlay's Click-through mode on or off (v1.3.2): every click and key outside
+ *   the bars goes to the app behind.
  */
 export type HotkeyAction =
   | 'answer'
@@ -33,7 +35,8 @@ export type HotkeyAction =
   | 'next'
   | 'ask-kite'
   | 'script-bar'
-  | 'screenshot-send';
+  | 'screenshot-send'
+  | 'click-through';
 
 /** Every action the Kite page carries out (messages from the shell are checked against it). */
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
@@ -47,6 +50,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
   'ask-kite',
   'script-bar',
   'screenshot-send',
+  'click-through',
 ];
 
 /** A direction the overlay can move in. */
@@ -70,7 +74,8 @@ export type OverlayAction = 'overlay-toggle' | `overlay-${OverlayDirection}` | O
  * A shortcut that works from any app while a call is on. `chat` and `script-bar` go to the page like
  * Answer (the live page decides what the overlay shows); the overlay actions are done by the shell.
  */
-export type CallHotkey = 'answer' | 'screenshot' | 'chat' | 'script-bar' | OverlayAction;
+export type CallHotkey =
+  'answer' | 'screenshot' | 'chat' | 'script-bar' | 'click-through' | OverlayAction;
 
 /** A shortcut that works from any app, or the shortcut held for as long as the app runs. */
 export type GlobalHotkey = CallHotkey | 'ask-kite' | 'screenshot-send';
@@ -109,6 +114,9 @@ export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
   // where Ctrl+Alt types a letter (AltGr; Polish: AltGr+S types "ś") it can clash, and on macOS
   // ⌘⌥S is "Save All" in some apps; Settings → Hotkeys reports a shortcut another app holds.
   'script-bar': 'CommandOrControl+Alt+S',
+  // v1.3.2: Click-through. X is free among the Ctrl+Alt shortcuts (H, S, K, T, Enter, Arrows). Goes to the
+  // live page like the script bar; on AltGr layouts it can clash, which Settings → Hotkeys reports.
+  'click-through': 'CommandOrControl+Alt+X',
   // v1.3.0 (ADR-0056): Ctrl+Alt+Arrows jump between the six positions; the small nudge moved to
   // Ctrl+Alt+Shift+Arrows. Never Ctrl+Shift+Arrows: in other apps that selects text by word.
   'overlay-spot-left': 'CommandOrControl+Alt+Left',
@@ -217,6 +225,12 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     accelerator: DEFAULT_GLOBAL_HOTKEYS['script-bar'],
     scope: 'global',
     actions: ['script-bar'],
+  },
+  {
+    label: 'Click-through on or off (clicks and typing go to the app behind the overlay)',
+    accelerator: DEFAULT_GLOBAL_HOTKEYS['click-through'],
+    scope: 'global',
+    actions: ['click-through'],
   },
   {
     label: 'Move overlay to the next position (← → in its row, ↑ ↓ top or bottom row)',

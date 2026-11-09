@@ -18,6 +18,7 @@ import { FOCUSED_HOTKEYS, hotkeyLabel } from '@kite/shared';
 import { useMemo, type RefObject } from 'react';
 import type { CompactCommand, CompactGroup, CompactState } from '@/core/live/liveChannel';
 import { TranscriptBubbles } from '@/features/live/TranscriptBubbles';
+import { useAccountName } from '@/features/shell/AccountName';
 import { useStickToBottom } from '@/features/live/useStickToBottom';
 import { ChevronDownIcon, CollapseIcon } from '@/ui/icons';
 import {
@@ -67,6 +68,8 @@ export interface TranscriptPanelProps {
 export function TranscriptPanel(props: TranscriptPanelProps) {
   const { state, mac, onCommand } = props;
   const groups = state?.groups ?? NO_GROUPS;
+  // v1.3.2: the user's own turns show the account's display name (the overlay page gives it).
+  const youName = useAccountName();
   const last = groups.at(-1);
   // Follows the newest words, including words still settling.
   const { ref, onScroll, paused, jump } = useStickToBottom(
@@ -78,7 +81,7 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
   );
 
   return (
-    <section aria-label="Transcript panel" className="flex min-h-0 flex-1 flex-col">
+    <section aria-label="Transcript panel" className="flex min-h-0 flex-auto flex-col">
       <div className="relative flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]">
         <LevelButton
           on={state?.audio.them ?? false}
@@ -112,19 +115,24 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
           <CollapseIcon />
         </button>
       </div>
-      <div className="relative min-h-0 flex-1 px-1.5 pb-1.5">
+      {/* v1.3.2: as tall as the turns, up to the panel's height; then it scrolls (data-scroll: the overlay
+          measures how tall it would be, to fit the window to it). */}
+      <div className="relative flex min-h-0 flex-auto flex-col px-1.5 pb-1.5">
         <div
           ref={ref}
           onScroll={onScroll}
           aria-label="Live transcript"
           aria-live="polite"
-          className="h-full overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2"
+          data-scroll=""
+          className="min-h-0 flex-auto overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2"
           style={{ zoom: props.fontScale }}
         >
           <TranscriptBubbles
             groups={groups}
             size="overlay"
             themName={state?.themName}
+            youName={youName}
+            startedAt={state?.startedAt}
             answeredIds={answeredIds}
             onAnswerThis={(group) => onCommand({ type: 'answer-this', groupId: group.id })}
             emptyText="Listening… Lines appear here as you and the other person speak."

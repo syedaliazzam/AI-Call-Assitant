@@ -22,6 +22,13 @@
  * ADR-0055: the empty space around and between the pieces is marked data-gap; in desktop 1.3.0 clicks
  * there pass through to the app behind the overlay (overlay/useClickThrough.ts).
  *
+ * v1.3.2: the panels are as tall as what they show (up to the height the window allows), and the page
+ * tells the shell that height (OverlayLayout.contentHeight), so the window is exactly its visible box;
+ * the space beside a narrower panel stays a gap. A click on a panel's button gives the keyboard back to
+ * the app that had it (onReleaseFocus). Click-through mode (⋮ or Ctrl+Alt+X, held by the live page):
+ * everything but the bars (data-bars) passes clicks to the app behind, a click on the bars gives the
+ * keyboard back too, and bar 1 says "Click-through on".
+ *
  * ADR-0056 (desktop 1.3.0): the overlay sits at one of six positions. On the bottom row everything is
  * mirrored: bar 1 at the bottom edge, the chat bar and bar 2 above it, the panels above them, and the
  * menus open upward (theme.css .k-overlay-up); the window grows upward to fit them. The ⋮ menu has the
@@ -69,7 +76,7 @@ import { AutoAnswerPill, pieceClass, type LevelStore } from './overlay/parts';
 import { ResizeGrips } from './overlay/ResizeGrips';
 import { ScriptBar } from './overlay/ScriptBar';
 import { TranscriptPanel } from './overlay/TranscriptPanel';
-import { GAP_ATTRIBUTE, useClickThrough } from './overlay/useClickThrough';
+import { BARS_ATTRIBUTE, GAP_ATTRIBUTE, useClickThrough } from './overlay/useClickThrough';
 
 /** The overlay's window-level settings (desktop app; a browser window cannot do these). */
 export interface OverlayWindowSettings {
@@ -153,6 +160,11 @@ export interface CompactViewProps {
    */
   onClickThrough?: (through: boolean) => void;
   /**
+   * v1.3.2: gives the keyboard back to the app behind after a click on a panel's button (desktop 1.3.2;
+   * absent where the window cannot).
+   */
+  onReleaseFocus?: () => void;
+  /**
    * The reference app's bars and chat bar (ADR-0055: accounts with account sync): the Transcript pill,
    * 900-wide bars and the reference chat bar. Otherwise the classic look, unchanged.
    */
@@ -201,6 +213,32 @@ function extentOf(element: HTMLElement, up: boolean, height: number): number {
 }
 
 /**
+ * How much of the window a panel would need to show everything it holds (v1.3.2): its extent now plus
+ * what its scroll areas (data-scroll) hide. Measured from what is there, so a window that is already
+ * smaller than the content still learns how tall it should be.
+ *
+ * @param panel  The panel.
+ * @param up     True on the bottom row.
+ * @param height The page's height, in its own pixels.
+ * @returns The distance, in the page's own pixels (before the UI scale).
+ * Called from: CompactView
+ */
+function naturalExtentOf(panel: HTMLElement, up: boolean, height: number): number {
+  const hidden = [...panel.querySelectorAll<HTMLElement>('[data-scroll]')].reduce(
+    (sum, scroller) => sum + Math.max(0, scroller.scrollHeight - scroller.clientHeight),
+    0,
+  );
+  const extent = up ? height - topOf(panel) : topOf(panel) + panel.offsetHeight;
+  return extent + hidden;
+}
+
+/** v1.3.2: the window's height follows the content in steps of this many pixels (fewer resizes). */
+const CONTENT_STEP = 8;
+
+/** v1.3.2: what a click lands on to give the keyboard back afterwards (buttons, switches, links). */
+const RELEASING = 'button, a, [role="switch"], [role="menuitem"]';
+
+/**
  * The overlay.
  *
  * @param props See CompactViewProps.
@@ -228,6 +266,9 @@ export function CompactView(props: CompactViewProps) {
   const barsEnd = useRef<HTMLDivElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const root = useRef<HTMLDivElement>(null);
+  // v1.3.2: the panels' area, measured for the window's height.
+  const panelsArea = useRef<HTMLDivElement>(null);
+  const [contentHeight, setContentHeight] = useState<number | undefined>(undefined);
   // ADR-0056: the bottom row mirrors the overlay, so it grows upward from the bars.
   const up = props.position ? overlayRow(props.position) === 'bottom' : false;
 
@@ -283,14 +324,38 @@ export function CompactView(props: CompactViewProps) {
     setNeededHeight(Math.max(forPopup, forBars) * zoom);
   }, [popup, noPanels, chatOpen, zoom, collapsed, icon, scriptBar, up]);
 
+  // v1.3.2: with a panel open, how tall the bars and panels are, so the shell can fit the window to them.
+  // Measured after every render (new lines, a streaming answer); a new value only when it changes by a
+  // step.
+  useLayoutEffect(() => {
+    const area = panelsArea.current;
+    const page = root.current;
+    if (!area || !page) {
+      setContentHeight((was) => (was === undefined ? was : undefined));
+      return;
+    }
+    const height = page.offsetHeight;
+    const panelExtents = [...area.querySelectorAll<HTMLElement>('[data-panel]')].map((panel) =>
+      naturalExtentOf(panel, up, height),
+    );
+    const pieces = [...page.querySelectorAll<HTMLElement>(`[${BARS_ATTRIBUTE}]`)].map((piece) =>
+      extentOf(piece, up, height),
+    );
+    const needed = Math.max(0, ...panelExtents, ...pieces) + 2;
+    const stepped = Math.ceil((needed * zoom) / CONTENT_STEP) * CONTENT_STEP;
+    setContentHeight((was) => (was === stepped ? was : stepped));
+    // Everything that changes what the panels hold or where they sit: each state update is new words.
+  }, [state, panels, zoom, up, fontScale, collapsed, chatOpen, popup, icon, scriptBar]);
+
   useEffect(() => {
     onLayout.current?.({
       transcript: panels.transcript,
       answer: panels.answer,
       popupHeight: neededHeight,
       scale: zoom,
+      ...(contentHeight === undefined || noPanels ? {} : { contentHeight }),
     });
-  }, [panels.transcript, panels.answer, neededHeight, zoom]);
+  }, [panels.transcript, panels.answer, neededHeight, zoom, contentHeight, noPanels]);
 
   // An answer starting opens its panel, without taking focus from the meeting.
   const answerId = state?.answer?.id;
@@ -357,10 +422,45 @@ export function CompactView(props: CompactViewProps) {
   // ADR-0055: clicks pass through the gaps, except while a menu or list is open (a click beside it
   // closes it), in the icon and in the script bar.
   const clickThrough = props.onClickThrough;
+  // v1.3.2: Click-through mode, held by the live page (⋮ or Ctrl+Alt+X); only where clicks can pass.
+  const passAll = clickThrough !== undefined && glass && (state?.clickThrough ?? false);
   useClickThrough(
     clickThrough !== undefined && glass && popup === null && !icon && !scriptBar,
     (through) => clickThrough?.(through),
+    passAll,
   );
+
+  // v1.3.2: a click on a panel's button (copy, ← →, a switch), or in Click-through mode on any of the
+  // bars' buttons, gives the keyboard back to the app that had it: the overlay keeps no focus it was not
+  // asked to keep. Not when the click opened a box to type in (the report box, the chat bar).
+  const releaseFocus = props.onReleaseFocus;
+  const releaseAfterBars = useRef(passAll);
+  useEffect(() => {
+    releaseAfterBars.current = passAll;
+  });
+  useEffect(() => {
+    if (!releaseFocus) return;
+    const onClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest(RELEASING)) return;
+      const inPanel = target.closest('[data-panel]') !== null;
+      const inBars = target.closest(`[${BARS_ATTRIBUTE}]`) !== null;
+      if (!inPanel && !(inBars && releaseAfterBars.current)) return;
+      if (target.closest('[data-keeps-focus]')) return;
+      // After React has applied the click: a box it opened has the focus by then.
+      setTimeout(() => {
+        const active = document.activeElement;
+        if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+        releaseFocus();
+      }, 0);
+    };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, [releaseFocus]);
+  // Turning the mode on gives the keyboard back at once (from the menu or Ctrl+Alt+X there).
+  useEffect(() => {
+    if (passAll) releaseFocus?.();
+  }, [passAll, releaseFocus]);
 
   /** Opens the full call window (from ⋮ only since v1.1.0): the live page brings it forward. */
   const openCallWindow = () => {
@@ -441,7 +541,8 @@ export function CompactView(props: CompactViewProps) {
 
       {/* Bar 1's lists float from its own edges, so they stay under their buttons in a wide window. */}
       <div {...{ [GAP_ATTRIBUTE]: '' }} className={`relative shrink-0 ${BARS_WIDTH}`}>
-        <div className={piece}>
+        {/* v1.3.2: bar 1 is one of the bars: it takes clicks even in Click-through mode. */}
+        <div className={piece} {...{ [BARS_ATTRIBUTE]: '' }}>
           <ControlBar
             state={state}
             onCommand={onCommand}
@@ -465,6 +566,9 @@ export function CompactView(props: CompactViewProps) {
             onChatOpen={props.onChatOpen}
             menuButton={menuButton}
             referenceLook={referenceLook}
+            {...(clickThrough && glass
+              ? { onClickThroughOff: () => onCommand({ type: 'click-through', on: false }) }
+              : {})}
             {...(referenceLook
               ? {
                   transcriptOpen: panels.transcript,
@@ -522,6 +626,15 @@ export function CompactView(props: CompactViewProps) {
             position={props.position ?? null}
             onPosition={props.onPosition}
             onCallWindow={openCallWindow}
+            mac={mac}
+            onClickThrough={
+              clickThrough && glass
+                ? (on: boolean) => {
+                    setPopup(null);
+                    onCommand({ type: 'click-through', on });
+                  }
+                : undefined
+            }
           />
         )}
         {popup === 'preferences' && state?.style && (
@@ -544,7 +657,11 @@ export function CompactView(props: CompactViewProps) {
       </div>
 
       {props.chatOpen && !collapsed && (
-        <div className={`${piece} shrink-0 ${BARS_WIDTH}`}>
+        // v1.3.2: a bar (takes clicks in Click-through mode) that keeps the keyboard: it is for typing.
+        <div
+          className={`${piece} shrink-0 ${BARS_WIDTH}`}
+          {...{ [BARS_ATTRIBUTE]: '', 'data-keeps-focus': '' }}
+        >
           <ChatBar
             ref={chatBar}
             state={state}
@@ -566,7 +683,10 @@ export function CompactView(props: CompactViewProps) {
               {...{ [GAP_ATTRIBUTE]: '' }}
               className={`flex shrink-0 items-start gap-1.5 ${BARS_WIDTH}`}
             >
-              <div className={`${piece} min-w-0 max-w-[540px] flex-1`}>
+              <div
+                className={`${piece} min-w-0 max-w-[540px] flex-1`}
+                {...{ [BARS_ATTRIBUTE]: '' }}
+              >
                 <LiveStrip
                   state={state}
                   chips={chips}
@@ -582,19 +702,23 @@ export function CompactView(props: CompactViewProps) {
                   languagesRef={languagesElement}
                 />
               </div>
-              <div className={`${piece} shrink-0 p-1`}>
+              <div className={`${piece} shrink-0 p-1`} {...{ [BARS_ATTRIBUTE]: '' }}>
                 <AutoAnswerPill state={state} onCommand={onCommand} />
               </div>
             </div>
           )}
           {(panels.transcript || panels.answer) && (
+            // v1.3.2: side by side the panels are as tall as their content (items-start), so the space
+            // under a shorter one is a gap; the window is fitted to the taller one (contentHeight).
             <div
+              ref={panelsArea}
               {...{ [GAP_ATTRIBUTE]: '' }}
-              className={`flex min-h-0 flex-1 gap-1.5 ${both ? 'flex-col @min-[900px]:flex-row' : ''}`}
+              className={`flex min-h-0 flex-1 gap-1.5 ${both ? 'flex-col @min-[900px]:flex-row @min-[900px]:items-start' : 'items-start'}`}
             >
               {panels.transcript && (
                 <div
-                  className={`${piece} flex min-h-0 flex-1 flex-col overflow-hidden ${both ? '@min-[900px]:max-w-[38%]' : 'max-w-[540px]'}`}
+                  data-panel=""
+                  className={`${piece} flex max-h-full min-h-0 flex-1 flex-col overflow-hidden ${both ? '@min-[900px]:max-w-[38%]' : 'max-w-[540px]'}`}
                 >
                   <TranscriptPanel
                     state={state}
@@ -616,7 +740,10 @@ export function CompactView(props: CompactViewProps) {
                 </div>
               )}
               {panels.answer && (
-                <div className={`${piece} flex min-h-0 flex-1 flex-col overflow-hidden`}>
+                <div
+                  data-panel=""
+                  className={`${piece} flex max-h-full min-h-0 flex-1 flex-col overflow-hidden`}
+                >
                   <OverlayAnswer
                     state={state}
                     onCommand={onCommand}

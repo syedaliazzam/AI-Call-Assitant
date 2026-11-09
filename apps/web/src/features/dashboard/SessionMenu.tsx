@@ -12,6 +12,7 @@
 
 import { useState } from 'react';
 import { downloadSessionTranscript } from '@/core/review/downloadTranscript';
+import { useAccountName } from '@/features/shell/AccountName';
 import { shownStatus } from '@/core/storage/sessions';
 import type { Session } from '@/core/storage/types';
 import { Button } from '@/ui/Button';
@@ -54,6 +55,8 @@ export function SessionMenu({
   onDuplicate,
   onDelete,
 }: SessionMenuProps) {
+  // v1.3.2: the user's turns in the download show the account's display name.
+  const accountName = useAccountName();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -100,9 +103,10 @@ export function SessionMenu({
           { label: 'Duplicate', onSelect: () => void onDuplicate(session) },
           {
             label: 'Download transcript',
-            // Nothing to download before a first call, or with Save transcript off.
-            disabled: session.lastActiveAt === null || !session.saveTranscript,
-            onSelect: () => void downloadSessionTranscript(session),
+            // Nothing to download before a first call. v1.3.2: with Save transcript off, the file has the
+            // answers only.
+            disabled: session.lastActiveAt === null,
+            onSelect: () => void downloadSessionTranscript(session, accountName),
           },
           { label: 'Delete', danger: true, onSelect: () => setConfirming(true) },
         ]}

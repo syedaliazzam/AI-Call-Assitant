@@ -7,6 +7,7 @@
  *          resizeOverlay, setOverlayMode; ADR-0035), the window calls (v1.1.0: openPagesWindow,
  *          windowControl, setOverlayLayout; ADR-0041), the link's one-time sign-in code (v1.3.0:
  *          consumeLinkCode; ADR-0052; the 1.2.0 hand-off file calls are gone), the icon and chat bar (v1.2.0: moveOverlay, setChatHotkey),
+ *          the keyboard back to the app behind (v1.3.2: releaseOverlayFocus; ADR-0061),
  *          and accurateStatus / accurateDownload /
  *          accurateRemove / accurateTranscribe (v1.0.1, ADR-0034) } (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
@@ -47,6 +48,7 @@ import {
   LINK_CODE_CHANNEL,
   OPEN_CALL_WINDOW_CHANNEL,
   OVERLAY_CLICK_THROUGH_CHANNEL,
+  OVERLAY_RELEASE_FOCUS_CHANNEL,
   SIZE_PANEL_CHANNEL,
   OPEN_PAGES_CHANNEL,
   OVERLAY_COLLAPSE_CHANNEL,
@@ -211,6 +213,10 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
       answer: layout?.answer === true,
       popupHeight: Number(layout?.popupHeight),
       scale: Number(layout?.scale ?? 1),
+      // v1.3.2: only a number crosses; absent stays absent (the shell then keeps the layout height).
+      ...(layout?.contentHeight === undefined
+        ? {}
+        : { contentHeight: Number(layout.contentHeight) }),
     }),
   onSnapZone,
   // v1.2.0 (ADR-0045): the hand-off file. No path crosses in either direction's arguments: the shell
@@ -225,6 +231,8 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
     ipcRenderer.invoke(OPEN_CALL_WINDOW_CHANNEL, String(sessionId)),
   setOverlayClickThrough: (through: boolean) =>
     ipcRenderer.invoke(OVERLAY_CLICK_THROUGH_CHANNEL, through === true),
+  // v1.3.2: no argument crosses; the shell checks the sender is the overlay and that it has focus.
+  releaseOverlayFocus: () => ipcRenderer.invoke(OVERLAY_RELEASE_FOCUS_CHANNEL),
   // v1.3.0 (ADR-0056): only a position name crosses; the shell checks it again.
   getOverlayPosition: () => ipcRenderer.invoke(OVERLAY_POSITION_CHANNEL),
   setOverlayPosition: (preset: OverlayPreset) =>

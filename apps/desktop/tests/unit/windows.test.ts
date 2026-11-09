@@ -37,7 +37,10 @@ import {
   installCompactWindows,
   COMPACT_COLLAPSED_HEIGHT,
   COMPACT_DEFAULT_SIZE,
+  fittedHeight,
   fromIconBounds,
+  isOverlayLayout,
+  OVERLAY_LAYOUT_HEIGHTS,
   isOverlayMove,
   narrowedBounds,
   OVERLAY_BOTH_WIDTH,
@@ -91,6 +94,14 @@ class FakeWindow {
   showInactive = vi.fn();
   focus = vi.fn();
   setIgnoreMouseEvents = vi.fn();
+  /** v1.3.2: whether the window has the keyboard (releaseFocus only blurs a focused window). */
+  focused = false;
+  isFocused() {
+    return this.focused;
+  }
+  blur = vi.fn(() => {
+    this.focused = false;
+  });
   /** Stands for the window's page (the click-through handler checks the sender is it). */
   webContents = { id: 1 };
   show = vi.fn();
@@ -1105,5 +1116,72 @@ describe('v1.3.1: a jump between positions slides (ADR-0058)', () => {
     compact.goTo('top-right');
     expect(window.bounds).toMatchObject({ x: PRIMARY.width - 900 - 16, y: 16 });
     compact.close();
+  });
+});
+
+describe('v1.3.2: the window is exactly its visible box', () => {
+  it('fits the layout height to the content, never below a menu or the bars', () => {
+    // No content height (an older page): the layout's height.
+    expect(fittedHeight(540, undefined, 0)).toBe(540);
+    // Shorter content: the window shrinks to it.
+    expect(fittedHeight(540, 312, 0)).toBe(312);
+    // Taller content: the layout's height (the most the user gave the panels) is the limit.
+    expect(fittedHeight(540, 900, 0)).toBe(540);
+    // An open menu needs more room than the content.
+    expect(fittedHeight(540, 200, 420)).toBe(420);
+    // Never shorter than the bars' own minimum, at the page's scale.
+    expect(fittedHeight(540, 40, 0, 1.5)).toBe(162);
+  });
+
+  it('accepts a content height only when it is a finite height within reason', () => {
+    const base = { transcript: true, answer: true, popupHeight: 0 };
+    expect(isOverlayLayout(base)).toBe(true);
+    expect(isOverlayLayout({ ...base, contentHeight: 320 })).toBe(true);
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, 9_000, '320']) {
+      expect(isOverlayLayout({ ...base, contentHeight: bad })).toBe(false);
+    }
+  });
+
+  it('shrinks the open window to the panels, and grows it again up to the layout height', () => {
+    const { compact } = setup({ overlayBarsWidened: true, overlayBarsWidth: 900 });
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { x: 500, y: 24, width: 900, height: 136 };
+    compact.setLayout({ transcript: false, answer: true, popupHeight: 0, contentHeight: 300 });
+    expect(window.bounds).toMatchObject({ y: 24, height: 300 });
+    compact.setLayout({ transcript: false, answer: true, popupHeight: 0, contentHeight: 2_000 });
+    expect(window.bounds.height).toBe(OVERLAY_LAYOUT_HEIGHTS.answer);
+  });
+});
+
+describe('v1.3.2: the keyboard goes back to the app behind', () => {
+  it('blurs the overlay only while it has the keyboard', () => {
+    const { compact } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    compact.releaseFocus();
+    expect(window.blur).not.toHaveBeenCalled();
+    window.focused = true;
+    compact.releaseFocus();
+    expect(window.blur).toHaveBeenCalledTimes(1);
+    expect(window.focus).not.toHaveBeenCalled();
+  });
+
+  it('IPC: only the overlay window’s own Kite page', async () => {
+    const { compact } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.focused = true;
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+    installCompactWindows({ handle: (c: string, f: never) => handlers.set(c, f) }, compact, ORIGIN);
+    const handler = handlers.get('kite:overlay-release-focus')!;
+    expect(() => handler(from('https://evil.example/'))).toThrow();
+    await handler({ senderFrame: { url: `${ORIGIN}/home`, parent: null }, sender: { id: 2 } });
+    expect(window.blur).not.toHaveBeenCalled();
+    await handler({
+      senderFrame: { url: `${ORIGIN}/compact/s1`, parent: null },
+      sender: window.webContents,
+    });
+    expect(window.blur).toHaveBeenCalledTimes(1);
   });
 });

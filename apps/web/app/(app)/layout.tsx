@@ -6,7 +6,7 @@
  *          password to /change-password before anything renders.
  * Used by: Next.js App Router (wraps app/(app)/**)
  * Depends on: src/server/guard.ts, src/server/calldata/flag.ts, src/features/sync/SyncScope.tsx,
- *             src/features/shell/AppShell.tsx,
+ *             src/features/shell/AppShell.tsx, src/features/shell/AccountName.tsx (v1.3.2),
  *             src/features/ask-kite/AskKiteHotkey.tsx, src/features/notices/AcceptableUseNotice.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S1, S2);
  *               docs/architecture/kite-architecture-v3.1.md §5, §8.2 (sign-in)
@@ -14,6 +14,7 @@
 import type { ReactNode } from 'react';
 import { AskKiteHotkey } from '@/features/ask-kite/AskKiteHotkey';
 import { AcceptableUseNotice } from '@/features/notices/AcceptableUseNotice';
+import { AccountNameProvider } from '@/features/shell/AccountName';
 import { AppShell } from '@/features/shell/AppShell';
 import { SyncScope } from '@/features/sync/SyncScope';
 import { syncEnabledFor } from '@/server/calldata/flag';
@@ -33,15 +34,18 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null} email={user.email}>
       <AskKiteHotkey />
       <AcceptableUseNotice />
-      <AppShell
-        user={{
-          name: user.name,
-          email: user.email,
-          role: user.role === 'admin' ? 'admin' : 'user',
-        }}
-      >
-        {children}
-      </AppShell>
+      {/* v1.3.2: the user's own transcript turns show this name. */}
+      <AccountNameProvider name={user.name}>
+        <AppShell
+          user={{
+            name: user.name,
+            email: user.email,
+            role: user.role === 'admin' ? 'admin' : 'user',
+          }}
+        >
+          {children}
+        </AppShell>
+      </AccountNameProvider>
     </SyncScope>
   );
 }

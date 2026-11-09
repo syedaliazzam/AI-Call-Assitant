@@ -44,8 +44,12 @@ export interface TranscriptStripProps {
    * "Answered" instead of the button (answeredGroupIds()).
    */
   answeredSpans?: readonly SpeechSpan[];
-  /** The name on the other person's bubbles ("Client 1" when the session has none). */
+  /** The name on the other person's turns ("Them" when the session has none; v1.3.2). */
   themName?: string | undefined;
+  /** v1.3.2: the name on the user's turns, the account's display name ("You" when unknown). */
+  youName?: string | null | undefined;
+  /** v1.3.2: when the call connected (Unix ms), for each turn's mm:ss. */
+  startedAt?: number | undefined;
   /** True for the browser call view: no card around the lines, they sit on the page. */
   flush?: boolean;
 }
@@ -67,6 +71,8 @@ export const TranscriptStrip = memo(function TranscriptStrip({
   onAnswerThis,
   answeredSpans,
   themName,
+  youName,
+  startedAt,
   flush = false,
 }: TranscriptStripProps) {
   const groups = useMemo(() => groupLines(lines, { terms }), [lines, terms]);
@@ -97,6 +103,8 @@ export const TranscriptStrip = memo(function TranscriptStrip({
             <TranscriptBubbles
               groups={groups}
               themName={themName}
+              youName={youName}
+              startedAt={startedAt}
               emptyText="Listening… Lines appear here as you and the other person speak."
               {...(onAnswerThis ? { onAnswerThis } : {})}
               {...(answeredIds ? { answeredIds } : {})}

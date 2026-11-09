@@ -42,6 +42,8 @@ export interface CompactGroup {
   provisionalText: string;
   /** When it started (Unix ms). */
   tStart: number;
+  /** v1.3.2: when it ended (Unix ms), so the panel can merge turns; absent from an older live page. */
+  tEnd?: number;
   /** True for a "Them" bubble that holds a question. */
   question: boolean;
   /** True when this speech has been answered. */
@@ -135,6 +137,11 @@ export interface CompactState {
   style?: AnswerStyle;
   /** True while the overlay is the slim script bar (v1.0.2; Ctrl+Alt+S or the ⋮ menu). */
   scriptBar?: boolean;
+  /**
+   * v1.3.2: Click-through is on (the ⋮ menu or Ctrl+Alt+X): outside the bars every click and key goes to
+   * the app behind the overlay. The live page holds it, like the script bar.
+   */
+  clickThrough?: boolean;
   /** True when spoken questions can be dictated in this call (the microphone is running). */
   dictationSupported?: boolean;
   /** True while a spoken question is being dictated. */
@@ -145,7 +152,10 @@ export interface CompactState {
   startedAt?: number;
   /** v1.1.0: the latest transcript bubbles, oldest first. */
   groups?: CompactGroup[];
-  /** v1.1.0: the name on the other person's bubbles ("Client 1" when the session has none). */
+  /**
+   * v1.1.0: the name on the other person's turns. v1.3.2: the session's name for them, renamable in Review
+   * ("Them" when it has none; "Client 1" before).
+   */
   themName?: string;
   /** v1.1.0: the answer language's code. */
   language?: string;
@@ -234,6 +244,14 @@ export interface ScriptBarCommand {
   on: boolean;
 }
 
+/** Turns Click-through on or off (v1.3.2). */
+export interface ClickThroughCommand {
+  /** Command type. */
+  type: 'click-through';
+  /** True to let clicks and keys outside the bars go to the app behind. */
+  on: boolean;
+}
+
 /** Starts or stops dictating a spoken question (v1.0.2, ADR-0038). */
 export interface DictateCommand {
   /** Command type. */
@@ -315,6 +333,7 @@ export type CompactCommand =
   | ChatTargetCommand
   | ReanswerCommand
   | ScriptBarCommand
+  | ClickThroughCommand
   | DictateCommand
   | AnswerThisCommand
   | LanguageCommand
@@ -464,6 +483,7 @@ export function isCommand(value: unknown): value is CompactCommand {
   }
   if (
     command.type === 'script-bar' ||
+    command.type === 'click-through' ||
     command.type === 'dictate' ||
     command.type === 'auto-answer'
   ) {

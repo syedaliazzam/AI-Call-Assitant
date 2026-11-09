@@ -65,6 +65,7 @@ import { ThemSilentNotice } from './ThemSilentNotice';
 import { endCall } from '@/core/transcript/endCall';
 import { reportCallStart, takeCallStart, watchCallStart } from '@/core/live/callStart';
 import { useSyncAccount } from '@/features/sync/SyncScope';
+import { useAccountName } from '@/features/shell/AccountName';
 import { BackgroundCallStatus, type BackgroundCallState } from './BackgroundCallStatus';
 import { startTranscriptSaver, type TranscriptSaver } from '@/core/transcript/saver';
 import { createTranscript, type Speaker } from '@/core/transcript/transcript';
@@ -208,6 +209,8 @@ export function LivePage({
     () => false,
   );
   const synced = useSyncAccount() !== null;
+  // v1.3.2: the user's own turns show the account's display name.
+  const accountName = useAccountName();
   const launcherCall = platform === 'desktop' && panelApp && synced;
   const [transcript] = useState(() => createTranscript());
   // What the strip shows: "You" lines that arrive while "Them" speaks are held back briefly, so
@@ -952,6 +955,8 @@ export function LivePage({
       health={health}
       terms={terms}
       themName={session.contactName}
+      youName={accountName}
+      startedAt={callStartedAt ?? undefined}
       flush={platform === 'browser'}
       {...(answerBridge
         ? {

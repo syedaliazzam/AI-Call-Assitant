@@ -168,9 +168,12 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     press('CommandOrControl+Alt+Down');
     // v1.0.2 (ADR-0035): the script bar goes to the page, which decides what the overlay shows.
     press('CommandOrControl+Alt+S');
+    // v1.3.2: Click-through goes to the page too: the live page holds the switch.
+    press('CommandOrControl+Alt+X');
     expect(sendToPage.mock.calls).toEqual([
       [HOTKEY_CHANNEL, 'answer'],
       [HOTKEY_CHANNEL, 'script-bar'],
+      [HOTKEY_CHANNEL, 'click-through'],
     ]);
     expect(overlayAction.mock.calls).toEqual([
       ['overlay-toggle'],
@@ -189,6 +192,19 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     expect(statuses.find((s) => s.action === 'script-bar')?.registered).toBe(true);
     controller.disable();
     expect(globalShortcut.unregister).toHaveBeenCalledWith('CommandOrControl+Alt+S');
+  });
+
+  it('v1.3.2: Click-through is Ctrl+Alt+X, clashing with no other Kite shortcut', () => {
+    const { globalShortcut } = fakeGlobalShortcut();
+    const controller = createHotkeys(globalShortcut, vi.fn());
+    const statuses = controller.enable();
+    expect(statuses.find((s) => s.action === 'click-through')).toMatchObject({
+      accelerator: 'CommandOrControl+Alt+X',
+      registered: true,
+    });
+    const all = statuses.map((s) => s.accelerator);
+    expect(new Set(all).size).toBe(all.length);
+    expect(controller.check().map((s) => s.accelerator)).not.toContain(undefined);
   });
 
   it('never registers the shortcuts that edit text in other apps', () => {

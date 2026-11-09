@@ -102,6 +102,8 @@ export interface AnswerEntry {
   cleanQuestion?: string;
   /** How many transcript lines the question came from (0 for chat). */
   fromLines: number;
+  /** v1.3.2: the live transcript line the question ended on (answers to speech only). */
+  sourceLineId?: string;
   /** The answer text so far. */
   text: string;
   /** Streaming, finished, failed, or cancelled by Clear (or a newer answer). */
@@ -159,7 +161,36 @@ function toStored(entry: AnswerEntry, sessionId: string, callStartedAt: number):
     ...(entry.reported ? { reported: true } : {}),
     ...(entry.meta ? { meta: entry.meta } : {}),
     ...(entry.claims?.length ? { claims: entry.claims } : {}),
+    ...(entry.sourceLineId ? { sourceLineId: entry.sourceLineId } : {}),
   };
+}
+
+/**
+ * The line a question to speech ended on (v1.3.2): the latest of the lines it was picked from, or for
+ * "Answer this" the latest line of the other person inside the bubble's span.
+ *
+ * @param lines The call's lines.
+ * @param ids   The ids of the lines the question was picked from, if known.
+ * @param span  The bubble's span ("Answer this"), if any.
+ * @returns The line's id, or undefined when none is known.
+ * Called from: useLiveAnswers() (ask); tests
+ */
+export function sourceLineOf(
+  lines: readonly { id: string; speaker: string; tStart: number; tEnd: number }[],
+  ids: readonly string[] | null | undefined,
+  span?: SpeechSpan,
+): string | undefined {
+  const used = ids?.length
+    ? lines.filter((line) => ids.includes(line.id))
+    : span
+      ? lines.filter(
+          (line) => line.speaker === 'them' && line.tStart >= span.start && line.tStart <= span.end,
+        )
+      : [];
+  return used.reduce<(typeof used)[number] | undefined>(
+    (latest, line) => (latest === undefined || line.tStart >= latest.tStart ? line : latest),
+    undefined,
+  )?.id;
 }
 
 /**
@@ -513,6 +544,17 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           built.request.question ?? (mode === 'screenshot' ? DEFAULT_SCREENSHOT_QUESTION : ''),
         ...(image ? { thumbnail: image } : {}),
         fromLines: built.selected?.lineIds.length ?? 0,
+        ...(mode === 'answer'
+          ? (() => {
+              // v1.3.2: Review and the downloads put the answer after the turn it answered.
+              const sourceLineId = sourceLineOf(
+                lines,
+                pickedLines ?? built.selected?.lineIds,
+                options.span,
+              );
+              return sourceLineId ? { sourceLineId } : {};
+            })()
+          : {}),
         text: '',
         status: 'streaming',
         askedAt: Date.now(),

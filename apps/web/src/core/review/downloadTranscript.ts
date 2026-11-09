@@ -34,16 +34,20 @@ export function downloadFile(name: string, type: string, data: BlobPart): void {
 /**
  * Downloads a session's transcript as a text file.
  *
- * @param session The session.
+ * @param session     The session.
+ * @param accountName The account's display name, on the user's turns (v1.3.2).
  * @returns Resolves once the download has started.
  * @throws Whatever reading this device's storage throws.
  * Called from: SessionMenu.tsx
  */
-export async function downloadSessionTranscript(session: Session): Promise<void> {
+export async function downloadSessionTranscript(
+  session: Session,
+  accountName?: string | null,
+): Promise<void> {
   const [lines, answers] = await Promise.all([listUtterances(session.id), listAnswers(session.id)]);
   downloadFile(
     transcriptFileName(session, 'txt'),
     'text/plain;charset=utf-8',
-    transcriptText(session, conversationItems(lines, answers), displayTerms(session)),
+    transcriptText(session, conversationItems(lines, answers), displayTerms(session), accountName),
   );
 }

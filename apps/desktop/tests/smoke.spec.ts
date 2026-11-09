@@ -286,6 +286,8 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'openPagesWindow',
     'os',
     'placeOverlay',
+    // v1.3.2 (ADR-0061): the keyboard back to the app behind the overlay.
+    'releaseOverlayFocus',
     'resizeOverlay',
     'setCallActive',
     // v1.2.0 (spec S14): the chat bar's shortcut.
@@ -881,29 +883,30 @@ test('the six positions: 16 from the work area, the bottom row grows upward, the
   await expect.poll(windowCount).toBe(2);
 });
 
-test('window icon (Windows): the taskbar icon is the company logo mark (UI U4)', async () => {
+test('window icon (Windows): the taskbar icon is the green parrot logo (UI U4, ADR-0060)', async () => {
   test.skip(process.platform !== 'win32', 'window icons are read through Windows');
   // The icon Windows itself shows for the Kite window (title bar and taskbar).
   const result = await app.evaluate(
     async ({ BrowserWindow, desktopCapturer, nativeImage }, iconFile) => {
       /**
-       * Counts the mark's blue ribbon pixels: clearly more blue than red and green, and opaque.
+       * Counts the parrot's green pixels (ADR-0060; the blue ribbon mark before): clearly more green than
+       * red and blue, and opaque.
        *
        * @param image An icon image.
-       * @returns The number of blue mark pixels.
+       * @returns The number of green logo pixels.
        */
-      const bluePixels = (image: Electron.NativeImage) => {
+      const greenPixels = (image: Electron.NativeImage) => {
         const bitmap = image.toBitmap(); // BGRA
-        let blue = 0;
+        let green = 0;
         for (let i = 0; i < bitmap.length; i += 4) {
           const [b, g, r, a] = [bitmap[i]!, bitmap[i + 1]!, bitmap[i + 2]!, bitmap[i + 3]!];
-          if (a > 200 && b > r + 60 && b > g + 30) blue += 1;
+          if (a > 200 && g > r + 40 && g > b + 30) green += 1;
         }
-        return blue;
+        return green;
       };
       // The file the windows are given (src/icon.ts: apps/desktop/build/icon.png).
       const file = nativeImage.createFromPath(iconFile);
-      const fileBlue = file.isEmpty() ? 0 : bluePixels(file);
+      const fileGreen = file.isEmpty() ? 0 : greenPixels(file);
       const main = BrowserWindow.getAllWindows().find((w) => w.getSize()[0]! > 500);
       const sources = await desktopCapturer.getSources({
         types: ['window'],
@@ -911,34 +914,34 @@ test('window icon (Windows): the taskbar icon is the company logo mark (UI U4)',
         thumbnailSize: { width: 0, height: 0 },
       });
       const source = sources.find((s) => s.id === main?.getMediaSourceId());
-      if (!source) return { fileBlue, listed: false as const, icon: null };
+      if (!source) return { fileGreen, listed: false as const, icon: null };
       if (!source.appIcon || source.appIcon.isEmpty())
-        return { fileBlue, listed: true as const, icon: null };
+        return { fileGreen, listed: true as const, icon: null };
       const { width, height } = source.appIcon.getSize();
       const icon = {
         width,
         height,
-        blue: bluePixels(source.appIcon),
+        green: greenPixels(source.appIcon),
         png: source.appIcon.toPNG().toString('base64'),
       };
-      return { fileBlue, listed: true as const, icon };
+      return { fileGreen, listed: true as const, icon };
     },
     path.join(APP_DIR, 'build', 'icon.png'),
   );
-  // Always: the icon file the windows use holds the company mark.
-  expect(result.fileBlue, 'build/icon.png has no blue mark pixels').toBeGreaterThan(0);
+  // Always: the icon file the windows use holds the logo.
+  expect(result.fileGreen, 'build/icon.png has no green logo pixels').toBeGreaterThan(0);
   // GitHub's Windows runners have no interactive desktop, so Windows lists no window sources
   // there; the taskbar icon can only be read where Windows lists the Kite window.
   test.skip(!result.listed, 'Windows listed no window source for Kite (no interactive desktop)');
   const icon = result.icon;
   expect(icon, 'Windows listed the Kite window but returned no icon for it').not.toBeNull();
-  expect(icon!.blue).toBeGreaterThan(0);
+  expect(icon!.green).toBeGreaterThan(0);
   const dir = process.env.KITE_SCREENSHOT_DIR;
   if (dir) {
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, 'desktop-window-icon.png'), Buffer.from(icon!.png, 'base64'));
   }
-  console.log(`[smoke] window icon ${icon!.width}×${icon!.height}, ${icon!.blue} blue pixels`);
+  console.log(`[smoke] window icon ${icon!.width}×${icon!.height}, ${icon!.green} green pixels`);
 });
 
 test('gives the page no Node.js access', async () => {

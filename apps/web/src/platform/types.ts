@@ -273,6 +273,12 @@ export interface Platform {
   setOverlayClickThrough(through: boolean): void;
 
   /**
+   * v1.3.2: gives the keyboard back to the app that had it, after a click on one of the desktop overlay's
+   * panel controls made the overlay the active window. Nothing happens elsewhere, or in an older shell.
+   */
+  releaseOverlayFocus(): void;
+
+  /**
    * v1.3.0 (ADR-0056): whether the overlay has the six positions (the ⋮ grid, the jump shortcuts, panels
    * above the bars on the bottom row): a desktop app from 1.3.0.
    *
