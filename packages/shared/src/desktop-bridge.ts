@@ -284,6 +284,16 @@ export interface KiteDesktopApi {
    * @returns Resolves when applied.
    */
   sizePanel?: (size: PanelSize) => Promise<void>;
+  /**
+   * v1.3.0 (ADR-0055): lets clicks pass through the overlay window to the app behind it (true) while
+   * the pointer is over a transparent gap between its bars and panels, or takes them again (false).
+   * Pointer moves still reach the page while passing through, so it can switch back. Optional: older
+   * shells keep the whole window clickable.
+   *
+   * @param through True to pass clicks through.
+   * @returns Resolves when applied.
+   */
+  setOverlayClickThrough?: (through: boolean) => Promise<void>;
 }
 
 /** A size the home panel can ask for (v1.3.0, ADR-0055). */

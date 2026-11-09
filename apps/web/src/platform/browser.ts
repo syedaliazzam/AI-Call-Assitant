@@ -408,6 +408,13 @@ export const browserPlatform: Platform = {
   sizePanel(_width, _height) {},
 
   /**
+   * Nothing to do: a picture-in-picture window is solid.
+   *
+   * @param _through Ignored.
+   */
+  setOverlayClickThrough(_through) {},
+
+  /**
    * A picture-in-picture window cannot be resized by the page.
    *
    * @returns False.

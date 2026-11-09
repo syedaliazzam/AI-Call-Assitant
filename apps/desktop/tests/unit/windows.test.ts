@@ -88,6 +88,9 @@ class FakeWindow {
   bounds = { x: 10, y: 20, width: 380, height: 320 };
   showInactive = vi.fn();
   focus = vi.fn();
+  setIgnoreMouseEvents = vi.fn();
+  /** Stands for the window's page (the click-through handler checks the sender is it). */
+  webContents = { id: 1 };
   show = vi.fn();
   loadURL = vi.fn(async () => undefined);
   setAlwaysOnTop = vi.fn();
@@ -806,5 +809,49 @@ describe('a place saved by 1.1.0 or 1.2.0 (v1.2.0, ADR-0055)', () => {
     });
     compact.open('s1');
     expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 620, width: 600 });
+  });
+});
+
+describe('click-through over the gaps (v1.3.0, ADR-0055)', () => {
+  it('passes clicks through with the moves forwarded, and takes them again', () => {
+    const { compact } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    compact.setClickThrough(true);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true });
+    compact.setClickThrough(false);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+  });
+
+  it('never passes clicks through the icon', () => {
+    const { compact } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    compact.setClickThrough(true);
+    compact.setMode('icon');
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+    compact.setClickThrough(true);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+  });
+
+  it('IPC: only the overlay window’s own Kite page', async () => {
+    const { compact } = setup();
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+    installCompactWindows({ handle: (c: string, f: never) => handlers.set(c, f) }, compact, ORIGIN);
+    const handler = handlers.get('kite:overlay-click-through')!;
+    const page = {
+      senderFrame: { url: `${ORIGIN}/compact/s1`, parent: null },
+      sender: window.webContents,
+    };
+    const otherWindow = { senderFrame: { url: `${ORIGIN}/home`, parent: null }, sender: { id: 2 } };
+    expect(() => handler(from('https://evil.example/'), true)).toThrow();
+    await handler(otherWindow, true);
+    expect(window.setIgnoreMouseEvents).not.toHaveBeenCalled();
+    await handler(page, true);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(true, { forward: true });
+    await handler(page, 'yes');
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
   });
 });

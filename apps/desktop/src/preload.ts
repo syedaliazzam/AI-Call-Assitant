@@ -46,6 +46,7 @@ import {
   OPEN_COMPACT_CHANNEL,
   LINK_CODE_CHANNEL,
   OPEN_CALL_WINDOW_CHANNEL,
+  OVERLAY_CLICK_THROUGH_CHANNEL,
   SIZE_PANEL_CHANNEL,
   OPEN_PAGES_CHANNEL,
   OVERLAY_COLLAPSE_CHANNEL,
@@ -203,6 +204,8 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
   // v1.3.0 (ADR-0055): a session id (the shell checks it is a UUID) and two numbers; nothing else.
   openCallWindow: (sessionId: string) =>
     ipcRenderer.invoke(OPEN_CALL_WINDOW_CHANNEL, String(sessionId)),
+  setOverlayClickThrough: (through: boolean) =>
+    ipcRenderer.invoke(OVERLAY_CLICK_THROUGH_CHANNEL, through === true),
   sizePanel: (size: { width: number; height: number }) =>
     ipcRenderer.invoke(SIZE_PANEL_CHANNEL, {
       width: Number(size?.width),

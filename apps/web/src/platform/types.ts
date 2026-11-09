@@ -265,6 +265,14 @@ export interface Platform {
   sizePanel(width: number, height: number): void;
 
   /**
+   * v1.3.0 (ADR-0055): lets clicks pass through the desktop overlay's transparent gaps (true), or takes
+   * them again (false). Nothing happens elsewhere.
+   *
+   * @param through True to pass clicks through.
+   */
+  setOverlayClickThrough(through: boolean): void;
+
+  /**
    * v1.1.0: minimises or closes this window (the frameless home panel draws its own buttons). Nothing
    * happens where it is not supported.
    *

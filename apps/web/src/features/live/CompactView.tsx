@@ -19,6 +19,9 @@
  * here calls focus() on its own: updates never take the keyboard from the meeting; opening Chat or
  * clicking into a box does.
  *
+ * ADR-0055: the empty space around and between the pieces is marked data-gap; in desktop 1.3.0 clicks
+ * there pass through to the app behind the overlay (overlay/useClickThrough.ts).
+ *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
  * honours), and compact collapses to bar 1 where there is no icon.
@@ -59,6 +62,7 @@ import { AutoAnswerPill, pieceClass, type LevelStore } from './overlay/parts';
 import { ResizeGrips } from './overlay/ResizeGrips';
 import { ScriptBar } from './overlay/ScriptBar';
 import { TranscriptPanel } from './overlay/TranscriptPanel';
+import { GAP_ATTRIBUTE, useClickThrough } from './overlay/useClickThrough';
 
 /** The overlay's window-level settings (desktop app; a browser window cannot do these). */
 export interface OverlayWindowSettings {
@@ -129,6 +133,11 @@ export interface CompactViewProps {
   levels?: LevelStore;
   /** Puts text on the clipboard (tests pass a fake). */
   copy?: (text: string) => Promise<void>;
+  /**
+   * Lets clicks pass through the transparent gaps (desktop 1.3.0, ADR-0055); absent where the window is
+   * solid or the shell cannot.
+   */
+  onClickThrough?: (through: boolean) => void;
 }
 
 /** Which floating list or menu is open. */
@@ -287,6 +296,14 @@ export function CompactView(props: CompactViewProps) {
     };
   }, [popup]);
 
+  // ADR-0055: clicks pass through the gaps, except while a menu or list is open (a click beside it
+  // closes it), in the icon and in the script bar.
+  const clickThrough = props.onClickThrough;
+  useClickThrough(
+    clickThrough !== undefined && glass && popup === null && !icon && !scriptBar,
+    (through) => clickThrough?.(through),
+  );
+
   /** Opens the full call window (from ⋮ only since v1.1.0): the live page brings it forward. */
   const openCallWindow = () => {
     setPopup(null);
@@ -356,13 +373,14 @@ export function CompactView(props: CompactViewProps) {
   return (
     // @container: buttons drop their key-caps when it is narrow, and the panels stack.
     <div
+      {...{ [GAP_ATTRIBUTE]: '' }}
       className={`${themeClass} k-overlay-root @container relative flex h-screen flex-col gap-1.5 overflow-hidden text-[16px] text-ui-text`}
       style={rootStyle}
     >
       {onResize && !collapsed && <ResizeGrips onResize={onResize} />}
 
       {/* Bar 1's lists float from its own edges, so they stay under their buttons in a wide window. */}
-      <div className={`relative shrink-0 ${BARS_WIDTH}`}>
+      <div {...{ [GAP_ATTRIBUTE]: '' }} className={`relative shrink-0 ${BARS_WIDTH}`}>
         <div className={piece}>
           <ControlBar
             state={state}
@@ -475,7 +493,11 @@ export function CompactView(props: CompactViewProps) {
       ) : (
         <>
           {!panels.transcript && (
-            <div ref={barsEnd} className={`flex shrink-0 items-start gap-1.5 ${BARS_WIDTH}`}>
+            <div
+              ref={barsEnd}
+              {...{ [GAP_ATTRIBUTE]: '' }}
+              className={`flex shrink-0 items-start gap-1.5 ${BARS_WIDTH}`}
+            >
               <div className={`${piece} min-w-0 max-w-[540px] flex-1`}>
                 <LiveStrip
                   state={state}
@@ -499,6 +521,7 @@ export function CompactView(props: CompactViewProps) {
           )}
           {(panels.transcript || panels.answer) && (
             <div
+              {...{ [GAP_ATTRIBUTE]: '' }}
               className={`flex min-h-0 flex-1 gap-1.5 ${both ? 'flex-col @min-[900px]:flex-row' : ''}`}
             >
               {panels.transcript && (

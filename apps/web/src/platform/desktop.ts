@@ -377,6 +377,16 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * Lets clicks pass through the overlay's gaps (desktop 1.3.0; older shells keep the window
+     * clickable).
+     *
+     * @param through True to pass clicks through.
+     */
+    setOverlayClickThrough(through: boolean) {
+      void bridge.setOverlayClickThrough?.(through).catch(() => undefined);
+    },
+
+    /**
      * Minimises or closes this window (older shells ignore it).
      *
      * @param action What to do.

@@ -81,6 +81,12 @@ export const LINK_CODE_CHANNEL = 'kite:link-code';
  */
 export const OPEN_CALL_WINDOW_CHANNEL = 'kite:open-call-window';
 
+/**
+ * v1.3.0 (ADR-0055): the overlay's page lets clicks pass through its transparent gaps, or takes them again
+ * (invoke; a boolean). Only the overlay window's own page.
+ */
+export const OVERLAY_CLICK_THROUGH_CHANNEL = 'kite:overlay-click-through';
+
 /** v1.3.0 (ADR-0055): the home panel asks for its size (invoke; { width, height } in DIPs). */
 export const SIZE_PANEL_CHANNEL = 'kite:size-panel';
 

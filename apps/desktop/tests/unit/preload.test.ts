@@ -92,6 +92,8 @@ describe('the exposed bridge', () => {
       // v1.2.0 (spec S14): the chat bar's shortcut.
       'setChatHotkey',
       'setHotkeysEnabled',
+      // v1.3.0 (ADR-0055): click-through over the overlay's gaps.
+      'setOverlayClickThrough',
       'setOverlayCollapsed',
       'setOverlayLayout',
       'setOverlayMode',
