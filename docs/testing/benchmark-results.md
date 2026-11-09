@@ -275,3 +275,20 @@ Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200); production; Playwr
 | `unflagged.spec.ts` (admin test account, not in `KITE_SYNC_USERS`) | 1 of 1 | Sync status off, sync routes and link codes 404, no upload question, no account-data help, "Delete all local data" unchanged. |
 | Upgrade 1.2.0 → 1.3.0 (`upgrade.spec.ts`, `KITE_OLD_VERSION=1.2.0 KITE_NEW_VERSION=1.3.0`) | 1 of 1 | The released 1.2.0 program extracted from its installer (never run as an installer here), then `release/win-unpacked` 1.3.0, one temporary profile: sessions, settings, sign-in and the protection setting kept. |
 | `Paramount-AI-Setup-1.3.0.exe` | 126,298,807 bytes | Uploaded as a draft to `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; not published. The Windows install step itself and a real link from Chrome to the installed app are on the developer's regression checklist. |
+
+## Desktop flow matches the reference, desktop 1.3.0 draft rebuilt (9 Nov 2026, ADR-0055)
+
+Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200, 150% scaling); Playwright 1.64.1; Electron 44.9.3 from this checkout or the released 1.2.0 program extracted from its installer, always on temporary profiles; production for the `e2e-prod` checks, test account only. No Claude requests.
+
+| Check | Result | Notes |
+|---|---|---|
+| `click-through.spec.ts` (real shell, overlay rig, real Windows input) | 1 of 1 (4 of 5 runs before the fix to the test's pointer moves; then 3 of 3) | A click in a transparent gap reached the test's own window behind, and typing went there; a click on bar 1's Transcript pill switched it and did not reach the window behind. The one failure was the first run after a cold rebuild: a single short burst of moves; the test now moves onto the gap twice. `SetCursorPos` alone is not forwarded to a click-through window; `mouse_event` moves are. |
+| `protection-chrome.spec.ts` (Chrome 156.0.8078.81, entire-screen share) | 2 of 2 | The protected compact window: 0 of 75,816 sampled pixels in the share; unprotected: 75,816. A plain window created after Private was turned on (nothing protecting it by hand): 0 of 75,816; with its protection off: 75,816. |
+| Desktop smoke test (`pnpm --filter @kite/desktop test`) | 19 of 19 (1 skipped, the icon, as before) | Knows the three new 1.3.0 bridge methods. |
+| `launcher.spec.ts`, this checkout's 1.3.0 shell | 3 of 3 | After the fix in PR #27: the panel's sign-in lands on /home. Your sessions (both sessions, Ended shown), Call ended, no search or create, links by address, Start card (Team, Buy credits only a toast), Connect card (3 tips), Back. |
+| `launcher.spec.ts`, the released **1.2.0** program (`KITE_SHELL_EXE`) | 3 of 3 | The same checks in the old shell, at its 400 px panel. |
+| `desktop-link.spec.ts` (1.3.0 shell) | 2 of 2 | The link's session first, "From your browser"; its Start card says Signed in as. |
+| `unflagged.spec.ts` | not run to the end | The admin test account is **disabled** ("This account is disabled"), so sign-in failed; not changed here. |
+| Upgrade 1.2.0 → 1.3.0 (`upgrade.spec.ts`) | 1 of 1 | The released 1.2.0 program, then this build's `release/win-unpacked`, on one temporary profile. |
+| Harness suites | launcher 4 of 4, live UI 24 of 24, sim-calls chat bar 1 of 1, shell 6 of 6 | Light and dark captures for the visual pairs (git-ignored `docs/testing/v1.2-visual/`). |
+| `Paramount-AI-Setup-1.3.0.exe` | 126,444,439 bytes | Replaced the draft's installer, blockmap, `latest.yml` and `SHA256SUMS.txt` on `Zainpak123/kite-releases`; still a draft, not published. The Windows install step itself is not run on this computer. |
