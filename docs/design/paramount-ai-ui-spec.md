@@ -27,25 +27,28 @@ Short functional labels are fine to match: Create session, Answer, Screenshot, C
 
 ## 1. Design tokens (one source: `src/ui/tokens`)
 
-**Font:** Inter (already used), weights 400, 500 and 600.
+**Font:** Inter Tight (v1.3.0, ADR-0057; Inter before), weights 400, 500 and 600, self-hosted with next/font. Body 16 / 400 / 24.
 
 **Sizes:** measured from the references at 150% Windows scaling, in CSS px. Calibrate by rendering at DPR 1.5 and comparing with the reference.
 
 | Token | Value |
 |---|---|
-| Page title | 16 / 600 |
+| Page title (H1) | 24 / 500 (v1.3.0; 16 / 600 before) |
 | Page subtitle | 14 / 400, muted |
 | Sidebar item | 15 / 500, with a 20 px icon and 12 px gap; row height 40; radius 10 |
-| Section label (e.g. "Prepare") | 13 / 500, muted |
+| Section label (e.g. "Prepare") | 16 / 500, muted (v1.3.0; 13 before) |
 | Card date | 12 / 500, uppercase, muted |
 | Card title | 18 / 500 |
 | Card role | 14, muted |
 | Modal title | 24 / 500 |
 | Modal subtitle | 15, muted |
-| Field label | 15 / 500 |
+| Field label | 14 / 500 / 20 (v1.3.0) |
 | Input text | 15 |
 | Helper text | 14, muted |
-| Buttons | 15 / 600; height 40 (44 in modal footers); radius 10 |
+| Buttons | 14 / 500 / 20 (v1.3.0). Standard 36 tall, padding 8 × 16; large primary (modal footers) 52 tall, padding 0 × 20; icon buttons 36 × 36, round; text buttons radius 10; a subtle shadow on raised buttons (primary, accent, secondary, danger) |
+| Tabs | 44 tall, padding 12 × 16, radius 14 at the top; 16 / 500, the selected one 600 (v1.3.0) |
+| Search | 39 tall, 14 px text, the words 32 px in after the icon (v1.3.0) |
+| Session card | outer radius 48, padding 8 / 8 / 12, 1 px border; inner grey panel radius 32, padding 12, a light shadow (v1.3.0) |
 | Chips | 12 / 500, pill, 1 px border, 24 px tall, 14 px icon |
 
 **Colours:** light and dark both use neutral zinc.
@@ -191,7 +194,7 @@ Short functional labels are fine to match: Create session, Answer, Screenshot, C
   - **Context** (section label), then two columns:
     - **CV / Resume:** a select. Menu: *None*, the library items (✓ on the selected one, long names wrap), a divider, then **+ Upload a resume**. Upload opens the existing upload and auto-selects the result.
     - **Documents:** a multi-select. When empty, the trigger says *"No documents yet"*. Menu: the items with checkboxes, **+ Add a document**, and a footer row with **Select all** and **Clear**.
-  - **Regular and Mock** show their existing fields in this same style. Key terms stay here as the chip input, under Context.
+  - **Regular and Mock** show their existing fields in this same style. Key terms stay here as the chip input, in a collapsed **Advanced** section at the bottom of step 1 (v1.3.0). Contact name is no longer asked for or shown (a session that has one keeps it).
 - **Footer:** **Cancel** (ghost) and **Next** (primary). Next validates the required fields.
 - **✕** at the top right closes, with a confirm if anything was typed.
 
@@ -203,7 +206,7 @@ Rows have a 20 px icon on the left, a title (15/500) and a subtitle (14, muted),
 | Row | Icon | Subtitle | Control |
 |---|---|---|---|
 | **Language** | `Languages` | "Language spoken in the call" | A select with a **search box** at the top, the list, and ✓ on the current one. Use Kite's existing languages; don't invent "medical" variants. |
-| **Model** | `Cpu` | "Speed or depth" | **Claude Haiku 5.5**, tagged *Recommended*; **Claude Sonnet 5.5**, tagged *Deeper, slower*. A neutral `Sparkles` icon, no vendor logos. See §6. |
+| **Select model** (v1.3.0; "Model" before) | `Cpu` | "Speed or depth" | **Claude Haiku 5.5**, tagged *Recommended*; **Claude Sonnet 5.5**, tagged *Deeper, slower*. A neutral `Sparkles` icon, no vendor logos. See §6. |
 | **Answer preferences** | `MessageSquareText` | "How answers look" | A **Configure** button (`Settings`) that opens S6. |
 | **AI instructions** | `Sparkles` | "Extra guidance for this call" | **+ Add** opens S7. Once set, it reads **Edit** and the subtitle shows the first 40 characters. |
 

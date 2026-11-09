@@ -165,8 +165,10 @@ export function SessionCard({
   }
 
   return (
-    <li className="flex min-w-0 flex-col rounded-session border border-ui-border bg-ui-bg p-2">
-      <div className="flex flex-1 flex-col gap-1.5 rounded-card bg-ui-panel px-4 py-3">
+    // v1.3.0 (ADR-0057): outer radius 48, padding 8/8/12, a 1 px border; the inner grey panel radius 32,
+    // padding 12, a light shadow.
+    <li className="flex min-w-0 flex-col rounded-session border border-ui-border bg-ui-bg px-2 pb-3 pt-2">
+      <div className="flex flex-1 flex-col gap-1.5 rounded-session-panel bg-ui-panel p-3 shadow-panel">
         <div className="flex items-center justify-between gap-2">
           {date}
           {menu}

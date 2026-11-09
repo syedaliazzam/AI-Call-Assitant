@@ -1,9 +1,10 @@
 /**
  * File: apps/web/src/features/session-setup/DetailsStep.tsx
  * Purpose: Step 1 of the Create/Edit session wizard (spec S4): session type, "Paste a job link", company,
- *          role or topic, contact name, job description, then Context: CV / Resume, Documents and Key
- *          terms, with the room left against the session's character cap. Switching type keeps the
- *          fields they share.
+ *          role or topic, job description, then Context: CV / Resume and Documents, with the room left
+ *          against the session's character cap, and a collapsed Advanced section with Key terms at the
+ *          bottom. Switching type keeps the fields they share. v1.3.0 (ADR-0057): Contact name is no
+ *          longer asked for or shown; a session that has one keeps it unchanged.
  * Used by: src/features/session-setup/SessionWizard.tsx
  * Depends on: lucide-react, src/ui (Input, SegmentedControl, Textarea), src/core/documents/limits.ts,
  *             ./CompanyField.tsx, ./ContextFields.tsx, ./draft.ts, ./JobLinkField.tsx,
@@ -16,7 +17,7 @@
 'use client';
 
 import type { JobImportFields } from '@kite/shared';
-import { Bot, Briefcase, Phone } from 'lucide-react';
+import { Bot, Briefcase, ChevronRight, Phone } from 'lucide-react';
 import { MAX_SESSION_CHARS, roomLeft } from '@/core/documents/limits';
 import type { LibraryItem, SessionType } from '@/core/storage/types';
 import { Input } from '@/ui/Input';
@@ -133,13 +134,6 @@ export function DetailsStep({
         rows={5}
         maxLength={5_000}
       />
-      <Input
-        label="Contact name"
-        value={draft.contactName}
-        onChange={(event) => onChange({ contactName: event.target.value })}
-        hint="Optional. Shown on their lines in the live transcript."
-        maxLength={100}
-      />
 
       <section aria-label="Context" className="flex flex-col gap-3">
         <h2 className="text-section text-ui-muted">Context</h2>
@@ -161,14 +155,32 @@ export function DetailsStep({
             onBusy={onBusy}
           />
         </div>
-        <KeyTermsInput
-          value={draft.preferences.keyTerms}
-          onChange={(keyTerms) => onChange({ preferences: { ...draft.preferences, keyTerms } })}
-        />
         <p className="text-[13px] text-ui-muted">
           {count(roomLeft(used))} of {count(MAX_SESSION_CHARS)} characters left in this session
         </p>
       </section>
+
+      {/* v1.3.0 (ADR-0057): Key terms, collapsed until opened. */}
+      <details className="group rounded-control border border-ui-border">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 text-label text-ui-text [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            size={16}
+            strokeWidth={1.75}
+            aria-hidden="true"
+            className="shrink-0 text-ui-muted transition-transform duration-150 group-open:rotate-90"
+          />
+          Advanced
+          {draft.preferences.keyTerms.trim() && (
+            <span className="text-[13px] font-normal text-ui-muted">Key terms added</span>
+          )}
+        </summary>
+        <div className="px-3 pb-3">
+          <KeyTermsInput
+            value={draft.preferences.keyTerms}
+            onChange={(keyTerms) => onChange({ preferences: { ...draft.preferences, keyTerms } })}
+          />
+        </div>
+      </details>
     </div>
   );
 }

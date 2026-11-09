@@ -24,6 +24,7 @@ import { CLAUDE_UNAVAILABLE_MESSAGES, type AnswerRequest } from '@kite/shared';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 import { SHOT_DIR, check, type Width, type WatchedPage } from '../ui/shots';
+import { brandFonts } from '../lib/fonts';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -147,12 +148,8 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
         res.end('<!doctype html><html><body><h1>Dashboard stand-in</h1></body></html>');
         return;
       }
-      // The brand fonts for screenshots only (the app self-hosts them with next/font; CI does
-      // not need them, and makes no request to Google).
-      const fonts = SHOT_DIR
-        ? '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=block">' +
-          "<style>:root{--font-inter:'Inter'}</style>"
-        : '';
+      // The brand font for screenshots only (tests/lib/fonts.ts).
+      const fonts = brandFonts();
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(
         '<!doctype html><html data-theme="' +
@@ -973,7 +970,10 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   const themBox = (await them.boundingBox())!;
   expect(youBox.x + youBox.width).toBeGreaterThan(themBox.x + themBox.width);
   await expect(you).toContainText(/You\s*·\s*\d/);
-  await expect(you.locator('span').first()).toHaveCSS('font-size', '15px');
+  // v1.3.0 (ADR-0057): the reference's lines, 17/600 with a 14 px name and time line.
+  await expect(you.locator('span').first()).toHaveCSS('font-size', '17px');
+  await expect(you.locator('span').first()).toHaveCSS('font-weight', '600');
+  await expect(you).toHaveCSS('text-align', 'right');
 
   // The header: nav chips, Auto answer, Clear and collapse, in one line.
   await expect(

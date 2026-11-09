@@ -52,10 +52,28 @@ export interface TranscriptBubblesProps<T extends BubbleGroup = BubbleGroup> {
 /** A bubble's time of day without seconds, for example "14:05". */
 const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
 
-/** Text size of each layout. */
+/**
+ * The overlay's time of day, as the reference writes it: "12:29 AM" where the clock is 12-hour (v1.3.0,
+ * ADR-0057).
+ */
+const OVERLAY_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+/**
+ * Text size of each layout. v1.3.0 (ADR-0057): the overlay's lines are 17/600, as in the reference, with
+ * a 14 px name and time line under each.
+ */
 const TEXT_SIZE = {
   panel: 'text-[15px] leading-6',
-  overlay: 'text-[15px] font-medium leading-snug',
+  overlay: 'text-[17px] font-semibold leading-6',
+};
+
+/** The name and time line under each bubble, per layout. */
+const META_SIZE = {
+  panel: 'text-[12px] leading-4',
+  overlay: 'text-[14px] leading-5',
 };
 
 /**
@@ -91,7 +109,7 @@ export function TranscriptBubbles<T extends BubbleGroup>({
       <li
         key={group.id}
         aria-label={you ? 'You said' : 'Them said'}
-        className={`group/bubble flex max-w-[85%] flex-col gap-0.5 ${you ? 'items-end self-end' : 'items-start self-start'}`}
+        className={`group/bubble flex max-w-[85%] flex-col gap-0.5 ${you ? 'items-end self-end text-right' : 'items-start self-start'}`}
       >
         <span
           className={`flex items-start gap-2 text-ui-text ${TEXT_SIZE[size]} ${size === 'overlay' ? '' : `rounded-card px-3 py-1.5 ${you ? 'bg-ui-pale' : 'bg-ui-band'}`}`}
@@ -116,10 +134,12 @@ export function TranscriptBubbles<T extends BubbleGroup>({
             )}
           </span>
         </span>
-        <span className="flex items-center gap-1.5 text-[12px] leading-4 text-ui-muted">
+        <span className={`flex items-center gap-1.5 ${META_SIZE[size]} text-ui-muted`}>
           <span className={size === 'overlay' ? '' : `font-medium ${style.label}`}>{name}</span>
           <span aria-hidden="true">·</span>
-          <span>{TIME_FORMAT.format(group.tStart)}</span>
+          <span>
+            {(size === 'overlay' ? OVERLAY_TIME_FORMAT : TIME_FORMAT).format(group.tStart)}
+          </span>
           {!you &&
             onAnswerThis &&
             (answered ? (
@@ -163,5 +183,9 @@ export function TranscriptBubbles<T extends BubbleGroup>({
     );
   };
 
-  return <ol className="flex flex-col gap-3">{collapseUnclear(groups).map(item)}</ol>;
+  return (
+    <ol className={`flex flex-col ${size === 'overlay' ? 'gap-2' : 'gap-3'}`}>
+      {collapseUnclear(groups).map(item)}
+    </ol>
+  );
 }

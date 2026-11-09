@@ -21,6 +21,7 @@ import {
 } from '@playwright/test';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
+import { brandFonts } from '../lib/fonts';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -90,8 +91,10 @@ test.beforeAll(async () => {
       '<!doctype html><html data-theme="' +
         (process.env.KITE_VISUAL_THEME ?? 'light') +
         '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Hand-off harness</title>' +
-        '<link rel="stylesheet" href="/harness/handoff.css"></head>' +
-        '<body class="bg-ui-bg font-sans text-[15px] text-ui-text"><div id="root"></div>' +
+        '<link rel="stylesheet" href="/harness/handoff.css">' +
+        brandFonts() +
+        '</head>' +
+        '<body class="bg-ui-bg font-sans text-[16px] leading-6 text-ui-text"><div id="root"></div>' +
         '<script type="module" src="/harness/handoff.js"></script></body></html>',
     );
   });

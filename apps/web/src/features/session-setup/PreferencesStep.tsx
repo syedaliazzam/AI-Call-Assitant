@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/features/session-setup/PreferencesStep.tsx
  * Purpose: Step 2 of the Create/Edit session wizard (spec S5), as rows with an icon, a title, a line and
- *          a control. Session: Language (a list with a search box), Model, Answer preferences and AI
+ *          a control. Session: Language (a list with a search box), Select model (v1.3.0: was Model), Answer preferences and AI
  *          instructions (each its own window). Extra: Auto answer and Save transcript.
  * Used by: src/features/session-setup/SessionWizard.tsx
  * Depends on: lucide-react, src/core/session/modelAccess.ts, src/core/storage/types.ts, src/ui (Button,
@@ -132,12 +132,12 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
         />
         <Row
           icon={<Cpu {...ICON} />}
-          title="Model"
+          title="Select model"
           subtitle="Speed or depth"
           control={
             <div className="w-56">
               <Select<AnswerModel>
-                label="Model"
+                label="Select model"
                 hideLabel
                 align="end"
                 options={MODEL_OPTIONS.map((option) => ({

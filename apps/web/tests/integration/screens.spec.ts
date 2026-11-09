@@ -14,6 +14,7 @@ import { chromium, expect, test, type Browser } from '@playwright/test';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 import { check, WIDTHS } from '../ui/shots';
+import { brandFonts } from '../lib/fonts';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -106,8 +107,10 @@ test.beforeAll(async () => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end(
       '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Screens harness</title>' +
-        '<link rel="stylesheet" href="/harness/screens.css"></head>' +
-        '<body class="bg-ui-bg font-sans text-[15px] text-ui-text"><div id="root"></div>' +
+        '<link rel="stylesheet" href="/harness/screens.css">' +
+        brandFonts() +
+        '</head>' +
+        '<body class="bg-ui-bg font-sans text-[16px] leading-6 text-ui-text"><div id="root"></div>' +
         '<script type="module" src="/harness/screens.js"></script></body></html>',
     );
   });

@@ -22,6 +22,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
+import { brandFonts } from '../lib/fonts';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -119,8 +120,9 @@ function page(script: string): string {
   return (
     '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>Kite rig</title><link rel="stylesheet" href="/rig/rig.css">' +
-    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=block">' +
-    "<style>:root{--font-inter:'Inter'}</style></head>" +
+    // The brand font (tests/lib/fonts.ts): a rig is only ever used for pictures.
+    brandFonts(true) +
+    '</head>' +
     `<body class="font-sans"><div id="root"></div><script type="module" src="/rig/${script}"></script></body></html>`
   );
 }

@@ -135,15 +135,21 @@
   --k-radius-control: 10px;
   --k-radius-card: 16px;
   --k-radius-modal: 20px;
-  --k-radius-session: 20px; /* the session card's outer edge; its inner panel uses the card radius */
+  --k-radius-session: 48px; /* the session card's outer edge (v1.3.0, ADR-0057: was 20) */
+  --k-radius-session-panel: 32px; /* the session card's inner grey panel */
+  --k-radius-tab: 14px; /* a tab's corners (v1.3.0) */
   --k-radius-menu: 14px;
   --k-radius-bar: 12px; /* the call bars */
   --k-segment-shadow: rgba(0, 0, 0, 0.12); /* under the raised segment of a segmented control */
   --k-shadow-card: none; /* cards have no shadow (spec §1) */
   --k-shadow-modal: 0 8px 30px rgba(0, 0, 0, 0.08); /* menus and modals */
+  /* v1.3.0 (ADR-0057): the subtle shadow under raised buttons, and the session card's inner panel. */
+  --k-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.03);
+  --k-shadow-panel: 0 1px 3px rgba(0, 0, 0, 0.05);
   --k-border-w: 1px;
   --k-font:
-    var(--font-inter), 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    var(--font-inter-tight), 'Inter Tight', 'Inter', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', sans-serif;
   --k-dur: 150ms;
 }
 
@@ -501,24 +507,30 @@ html:has(.k-glass) body {
   --radius-card: var(--k-radius-card);
   --radius-modal: var(--k-radius-modal);
   --radius-session: var(--k-radius-session);
+  --radius-session-panel: var(--k-radius-session-panel);
+  --radius-tab: var(--k-radius-tab);
   --radius-menu: var(--k-radius-menu);
   --radius-bar: var(--k-radius-bar);
   --shadow-card: var(--k-shadow-card);
   --shadow-modal: var(--k-shadow-modal);
+  --shadow-raised: var(--k-shadow-raised);
+  --shadow-panel: var(--k-shadow-panel);
   --font-sans: var(--k-font);
   /* The type scale (spec §1), as text-* classes: size, weight and line height together. */
-  --text-page-title: 16px;
-  --text-page-title--font-weight: 600;
-  --text-page-title--line-height: 22px;
+  /* v1.3.0 (ADR-0057): the reference's type scale. H1 24/500, body 16/400/24, section headings 16/500,
+     buttons and labels 14/500/20. */
+  --text-page-title: 24px;
+  --text-page-title--font-weight: 500;
+  --text-page-title--line-height: 30px;
   --text-page-subtitle: 14px;
   --text-page-subtitle--font-weight: 400;
   --text-page-subtitle--line-height: 20px;
   --text-nav: 15px;
   --text-nav--font-weight: 500;
   --text-nav--line-height: 20px;
-  --text-section: 13px;
+  --text-section: 16px;
   --text-section--font-weight: 500;
-  --text-section--line-height: 18px;
+  --text-section--line-height: 24px;
   --text-card-date: 12px;
   --text-card-date--font-weight: 500;
   --text-card-date--line-height: 16px;
@@ -532,15 +544,15 @@ html:has(.k-glass) body {
   --text-modal-title--line-height: 30px;
   --text-modal-subtitle: 15px;
   --text-modal-subtitle--line-height: 22px;
-  --text-label: 15px;
+  --text-label: 14px;
   --text-label--font-weight: 500;
   --text-label--line-height: 20px;
   --text-input: 15px;
   --text-input--line-height: 20px;
   --text-helper: 14px;
   --text-helper--line-height: 20px;
-  --text-btn: 15px;
-  --text-btn--font-weight: 600;
+  --text-btn: 14px;
+  --text-btn--font-weight: 500;
   --text-btn--line-height: 20px;
   --text-chip: 12px;
   --text-chip--font-weight: 500;

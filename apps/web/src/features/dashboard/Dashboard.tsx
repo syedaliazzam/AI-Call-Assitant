@@ -290,15 +290,20 @@ export function Dashboard() {
         <LegacyUploadCard />
         <div className="flex items-center justify-between gap-3">
           {/* The search box and the sort button read as one control. */}
-          <div className="flex h-10 w-full max-w-xs items-center rounded-control border border-ui-border bg-ui-input focus-within:border-ui-link pointer-coarse:min-h-11">
-            <Search aria-hidden="true" size={18} className="ml-3 shrink-0 text-ui-muted" />
+          {/* v1.3.0 (ADR-0057): 39 tall, 14 px text, the words 32 px in, after the icon. */}
+          <div className="relative flex h-[39px] w-full min-w-0 max-w-xs items-center rounded-control border border-ui-border bg-ui-input shadow-raised focus-within:border-ui-link pointer-coarse:min-h-11">
+            <Search
+              aria-hidden="true"
+              size={16}
+              className="pointer-events-none absolute left-2.5 shrink-0 text-ui-muted"
+            />
             <input
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search by company or role"
               aria-label="Search sessions"
-              className="h-full min-w-0 flex-1 bg-transparent px-2 text-base text-ui-text placeholder:text-ui-muted focus:outline-none md:text-input"
+              className="h-full min-w-0 flex-1 bg-transparent pl-8 pr-2 text-base text-ui-text placeholder:text-ui-muted focus:outline-none md:text-[14px]"
             />
             <div className="h-full border-l border-ui-border">
               <Menu
