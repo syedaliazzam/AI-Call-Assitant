@@ -393,6 +393,21 @@ export const browserPlatform: Platform = {
   windowControl(_action) {},
 
   /**
+   * Nothing to do: a browser runs a call in its own tab (the browser's Connect card).
+   *
+   * @param _sessionId Ignored.
+   */
+  openCallWindow(_sessionId) {},
+
+  /**
+   * Nothing to do: a web page cannot size its window.
+   *
+   * @param _width  Ignored.
+   * @param _height Ignored.
+   */
+  sizePanel(_width, _height) {},
+
+  /**
    * A picture-in-picture window cannot be resized by the page.
    *
    * @returns False.

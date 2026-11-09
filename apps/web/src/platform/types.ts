@@ -248,6 +248,23 @@ export interface Platform {
   openPagesWindow(path: string): void;
 
   /**
+   * v1.3.0 (ADR-0055): opens the window that runs a call on a session's live page. A desktop app from
+   * 1.3.0 opens it minimised (the Connect card stays in front); an older one opens it like any page;
+   * elsewhere nothing happens (a browser runs the call in its own tab).
+   *
+   * @param sessionId The session.
+   */
+  openCallWindow(sessionId: string): void;
+
+  /**
+   * v1.3.0 (ADR-0055): asks for the home panel's size. Nothing happens where it is not supported.
+   *
+   * @param width  Width, CSS px.
+   * @param height Height, CSS px.
+   */
+  sizePanel(width: number, height: number): void;
+
+  /**
    * v1.1.0: minimises or closes this window (the frameless home panel draws its own buttons). Nothing
    * happens where it is not supported.
    *

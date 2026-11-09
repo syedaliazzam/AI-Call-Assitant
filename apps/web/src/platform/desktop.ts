@@ -350,6 +350,33 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * Opens the window that runs a call on a session's live page: minimised in 1.3.0, otherwise as any
+     * page (the 1.1.0 and 1.2.0 main window, in front).
+     *
+     * @param sessionId The session.
+     */
+    openCallWindow(sessionId: string) {
+      if (bridge.openCallWindow) {
+        // An older 1.3.0 build that refuses: the page opens the way every shell knows.
+        void bridge
+          .openCallWindow(sessionId)
+          .catch(() => this.openPagesWindow(`/live/${encodeURIComponent(sessionId)}`));
+        return;
+      }
+      this.openPagesWindow(`/live/${encodeURIComponent(sessionId)}`);
+    },
+
+    /**
+     * Asks for the home panel's size (desktop 1.3.0; older shells keep theirs).
+     *
+     * @param width  Width, CSS px.
+     * @param height Height, CSS px.
+     */
+    sizePanel(width: number, height: number) {
+      void bridge.sizePanel?.({ width, height }).catch(() => undefined);
+    },
+
+    /**
      * Minimises or closes this window (older shells ignore it).
      *
      * @param action What to do.

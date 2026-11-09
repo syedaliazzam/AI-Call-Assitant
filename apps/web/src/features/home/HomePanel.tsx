@@ -1,14 +1,16 @@
 /**
  * File: apps/web/src/features/home/HomePanel.tsx
- * Purpose: The home panel, the desktop app's window between calls (v1.1.0, ADR-0041): a header with the
+ * Purpose: The home panel, the desktop app's window between calls (v1.1.0, ADR-0041). An account with
+ *          account sync gets the launcher instead (Launcher.tsx: ADR-0051, ADR-0055); everyone else gets
+ *          the classic panel below, unchanged: a header with the
  *          logo, minimise, move, ⋮ and close; session search and sort; the session cards; and at the
  *          bottom "View in dashboard ↗" and "Create session". Everything else opens in the main
  *          window through the shell. Starting a session shows its "Start your session" card first (spec
  *          S10). Opened anywhere but a desktop app from 1.1.0, it goes to the dashboard. Also offers the
  *          accurate-transcription download once (never starts it itself).
  * Used by: app/home/page.tsx
- * Depends on: src/core/storage (sessions.ts, hintPrefs.ts, types), src/features/sync/LegacyUploadCard.tsx
- *             (ADR-0049), src/features/appearance/useAppearance,
+ * Depends on: src/core/storage (sessions.ts, hintPrefs.ts, types), src/features/sync/SyncScope.tsx,
+ *             ./Launcher.tsx, src/features/appearance/useAppearance,
  *             src/features/home (HomeCard, HomeMenu, StartSessionCard),
  *             src/features/notices/AcceptableUseNotice.tsx,
  *             src/platform, src/ui (BrandLockup, Button, Input styles, icons)
@@ -26,7 +28,6 @@ import {
   duplicateSession,
   sortSessions,
   updateSession,
-  shownStatus,
   watchSessions,
   type SessionSort,
 } from '@/core/storage/sessions';
@@ -47,11 +48,10 @@ import {
   SortIcon,
 } from '@/ui/icons';
 import { AccurateOffer } from './AccurateOffer';
-import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
-import { openDashboard } from '@/features/sync/dashboardLink';
 import { useSyncAccount } from '@/features/sync/SyncScope';
 import { homeCardDescription, homeCardTitle, HomeCard } from './HomeCard';
 import { HomeMenu } from './HomeMenu';
+import { Launcher } from './Launcher';
 import { StartSessionCard } from './StartSessionCard';
 
 /** Props for HomePanel. */
@@ -61,9 +61,6 @@ export interface HomePanelProps {
   /** The session a paramountai:// link named: its start card shows first. */
   startSessionId?: string;
 }
-
-/** How long after a call the launcher offers its notes (ADR-0051), in ms. */
-const LAST_CALL_MS = 2 * 60 * 60 * 1000;
 
 /** A button in the header: not part of the drag handle, always a clear focus ring. */
 const HEADER_BUTTON =
@@ -84,13 +81,30 @@ const subscribeNever = () => () => undefined;
 const hasPanel = () => getPlatform().hasHomePanel();
 
 /**
- * The home panel.
+ * The home panel: the launcher for an account with account sync, the classic panel otherwise.
  *
  * @param props See HomePanelProps.
  * @returns The panel.
  * Rendered by: app/home/page.tsx
  */
 export function HomePanel({ email, startSessionId }: HomePanelProps) {
+  // ADR-0051, ADR-0055: with account sync the desktop app's window is the launcher.
+  if (useSyncAccount() !== null) {
+    return (
+      <Launcher email={email} {...(startSessionId ? { fromBrowserId: startSessionId } : {})} />
+    );
+  }
+  return <ClassicHomePanel email={email} {...(startSessionId ? { startSessionId } : {})} />;
+}
+
+/**
+ * The classic home panel (accounts without account sync; unchanged since v1.2.0).
+ *
+ * @param props See HomePanelProps.
+ * @returns The panel.
+ * Rendered by: HomePanel
+ */
+function ClassicHomePanel({ email, startSessionId }: HomePanelProps) {
   const router = useRouter();
   const available = useSyncExternalStore(subscribeNever, hasPanel, () => true);
   const { theme, resolved, zoom } = useAppearance('dashboard');
@@ -141,30 +155,7 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
     [],
   );
 
-  // ADR-0051: with account sync the panel is a launcher: the account's ready sessions, Start, the last
-  // call's notes and Open dashboard (the one dashboard is the web app, in the browser).
-  const launcher = useSyncAccount() !== null;
-  const lastCall = useMemo(() => {
-    if (!launcher || sessions === null) return null;
-    // A call that ended in the last 2 hours: its notes are one click away.
-    const recent = sessions
-      .filter(
-        (session) =>
-          shownStatus(session, now) === 'ended' &&
-          now - (session.lastActiveAt ?? session.createdAt) < LAST_CALL_MS,
-      )
-      .sort((a, b) => (b.lastActiveAt ?? b.createdAt) - (a.lastActiveAt ?? a.createdAt));
-    return recent[0] ?? null;
-  }, [launcher, sessions, now]);
-
   const shown = useMemo(() => {
-    if (launcher) {
-      // Ready sessions only, newest first; finished ones live in the dashboard.
-      return sortSessions(
-        (sessions ?? []).filter((session) => shownStatus(session, now) !== 'ended'),
-        'newest',
-      );
-    }
     const words = search.trim().toLowerCase();
     const matching = (sessions ?? []).filter(
       (session) =>
@@ -172,7 +163,7 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
         `${homeCardTitle(session)} ${homeCardDescription(session)}`.toLowerCase().includes(words),
     );
     return sortSessions(matching, sort);
-  }, [launcher, sessions, search, sort, now]);
+  }, [sessions, search, sort]);
 
   /**
    * Opens a page in the main window.
@@ -241,13 +232,7 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
           <CloseIcon />
         </button>
         {menuOpen && (
-          <HomeMenu
-            email={email}
-            theme={theme}
-            zoom={zoom}
-            onClose={() => setMenuOpen(false)}
-            launcher={launcher}
-          />
+          <HomeMenu email={email} theme={theme} zoom={zoom} onClose={() => setMenuOpen(false)} />
         )}
       </header>
 
@@ -264,14 +249,13 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
             onBack={() => setStarting(null)}
             onCreateHere={() => {
               setStarting(null);
-              if (launcher) openDashboard('/sessions/new');
-              else open('/sessions/new');
+              open('/sessions/new');
             }}
           />
         </div>
       ) : (
         <>
-          {!launcher && (
+          {
             <div className="flex shrink-0 items-center gap-1.5 px-3 pb-2">
               <label className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-ui-border bg-ui-input px-2.5 text-ui-muted focus-within:border-ui-link">
                 <SearchIcon />
@@ -292,28 +276,9 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
                 <SortIcon />
               </button>
             </div>
-          )}
+          }
 
           <AccurateOffer />
-          {lastCall && (
-            <div
-              role="status"
-              className="mx-3 mb-2 flex items-center justify-between gap-2 rounded-card border border-ui-border bg-ui-surface px-3 py-2"
-            >
-              <p className="min-w-0 truncate text-[13px] text-ui-text">
-                Call ended · {homeCardTitle(lastCall)}
-              </p>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => openDashboard(`/sessions/${lastCall.id}`)}
-              >
-                View notes
-              </Button>
-            </div>
-          )}
-          {/* ADR-0049: with account sync, offers once to add this computer's own data. */}
-          <LegacyUploadCard compact />
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
             {failed ? (
@@ -325,44 +290,24 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
             ) : shown.length === 0 ? (
               <div className="flex flex-col items-center gap-1 p-8 text-center">
                 <p className="text-[15px] font-semibold text-ui-heading">
-                  {launcher
-                    ? 'No sessions ready'
-                    : sessions.length === 0
-                      ? 'No sessions yet'
-                      : 'Nothing matches that'}
+                  {sessions.length === 0 ? 'No sessions yet' : 'Nothing matches that'}
                 </p>
                 <p className="text-[13px] text-ui-muted">
-                  {launcher
-                    ? 'Create a session in the dashboard, and it shows here.'
-                    : sessions.length === 0
-                      ? 'Create a session to get ready for a call.'
-                      : 'Try other words, or clear the search.'}
+                  {sessions.length === 0
+                    ? 'Create a session to get ready for a call.'
+                    : 'Try other words, or clear the search.'}
                 </p>
               </div>
             ) : (
               <ul aria-label="Sessions" className="flex flex-col gap-2">
                 {shown.map((session) => (
-                  <HomeCard
-                    key={session.id}
-                    session={session}
-                    now={now}
-                    launcher={launcher}
-                    {...actions}
-                  />
+                  <HomeCard key={session.id} session={session} now={now} {...actions} />
                 ))}
               </ul>
             )}
           </div>
 
-          {launcher ? (
-            <footer className="flex shrink-0 gap-2 border-t border-ui-border p-3">
-              <Button className="min-w-0 flex-1 px-2" onClick={() => openDashboard('/')}>
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-                  Open dashboard <OutIcon />
-                </span>
-              </Button>
-            </footer>
-          ) : (
+          {
             <footer className="flex shrink-0 gap-2 border-t border-ui-border p-3">
               <Button variant="secondary" className="min-w-0 flex-1 px-2" onClick={() => open('/')}>
                 <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -375,7 +320,7 @@ export function HomePanel({ email, startSessionId }: HomePanelProps) {
                 </span>
               </Button>
             </footer>
-          )}
+          }
         </>
       )}
     </div>

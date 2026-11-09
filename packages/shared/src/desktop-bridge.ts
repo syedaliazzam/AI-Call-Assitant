@@ -266,6 +266,32 @@ export interface KiteDesktopApi {
    * @returns The code, or null when there is none (or it was already taken).
    */
   consumeLinkCode?: () => Promise<string | null>;
+  /**
+   * v1.3.0 (ADR-0055): opens the window that runs a call (the main window) on a session's live page,
+   * minimised, so the Connect card in the small window stays in front while the call connects. The
+   * session id must be a UUID. Optional: an older shell opens the live page with openPagesWindow, in
+   * front.
+   *
+   * @param sessionId The session.
+   * @returns Resolves when the window is opening.
+   */
+  openCallWindow?: (sessionId: string) => Promise<void>;
+  /**
+   * v1.3.0 (ADR-0055): asks for the home panel's size (the desktop cards are about 560 wide). The shell
+   * keeps it inside the screen. Optional: older shells keep their size.
+   *
+   * @param size The wanted size, in DIPs.
+   * @returns Resolves when applied.
+   */
+  sizePanel?: (size: PanelSize) => Promise<void>;
+}
+
+/** A size the home panel can ask for (v1.3.0, ADR-0055). */
+export interface PanelSize {
+  /** Width, DIPs. */
+  width: number;
+  /** Height, DIPs. */
+  height: number;
 }
 
 /** A session file picked in the system's dialog (v1.2.0, ADR-0045). */
