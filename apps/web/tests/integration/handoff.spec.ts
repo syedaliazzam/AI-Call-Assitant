@@ -80,9 +80,9 @@ test.beforeAll(async () => {
       res.end(readFileSync(path.join(bundleDir, isCss ? 'handoff.css' : 'handoff.js')));
       return;
     }
-    if (req.url === '/brand/logo-lockup.png') {
+    if (req.url === '/images/logo-mark.png') {
       res.writeHead(200, { 'Content-Type': 'image/png' });
-      res.end(readFileSync(path.join(WEB_DIR, 'public', 'brand', 'logo-lockup.png')));
+      res.end(readFileSync(path.join(WEB_DIR, 'public', 'images', 'logo-mark.png')));
       return;
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -414,7 +414,7 @@ test('the window header and its ⋮ menu', async () => {
   await open(true);
   await page.evaluate(() => window.kiteHandoffHarness.showHome());
   const header = page.getByRole('banner');
-  await expect(header.getByRole('img', { name: 'Paramount AI' })).toBeVisible();
+  await expect(header).toContainText('Paramount AI');
   await expect(header.getByRole('button', { name: 'Compact' })).toBeVisible();
   await expect(header.getByRole('img', { name: 'Drag here to move' })).toBeVisible();
   await expect(header.getByRole('button', { name: 'Close' })).toHaveCSS(

@@ -80,9 +80,9 @@ test.beforeAll(async () => {
       res.end(readFileSync(path.join(bundleDir, isCss ? 'shell.css' : 'shell.js')));
       return;
     }
-    if (req.url === '/brand/logo-lockup.png') {
+    if (req.url === '/images/logo-mark.png') {
       res.writeHead(200, { 'Content-Type': 'image/png' });
-      res.end(readFileSync(path.join(WEB_DIR, 'public', 'brand', 'logo-lockup.png')));
+      res.end(readFileSync(path.join(WEB_DIR, 'public', 'images', 'logo-mark.png')));
       return;
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -151,13 +151,12 @@ async function shot(name: string): Promise<void> {
 test('header: wordmark, the page’s words, and the split button’s addresses', async () => {
   await open();
   const header = page.getByRole('banner');
-  // The final logo carries the name itself (one image, alt "Paramount AI").
-  await expect(header.getByRole('img', { name: 'Paramount AI' })).toHaveCount(1);
+  await expect(header).toContainText('Paramount AI');
   await expect(header).toContainText('Call Sessions');
   await expect(header).toContainText('Your upcoming calls and everything you’ve done before.');
   expect((await header.boundingBox())!.height).toBe(76);
-  await expect(header.getByRole('img')).toHaveCount(1);
-  await expect(page.locator('header img')).toHaveAttribute('src', '/brand/logo-lockup.png');
+  await expect(header.getByRole('img')).toHaveCount(0);
+  await expect(page.locator('header img')).toHaveAttribute('src', '/images/logo-mark.png');
 
   await page.evaluate(() => {
     (window as unknown as { pushed: string[] }).pushed = [];
@@ -227,7 +226,7 @@ test('collapsing goes to icons, is remembered, and names each icon', async () =>
   await toggle.click();
   const aside = page.locator('aside');
   await expect(aside).toHaveCSS('width', '64px');
-  await expect(page.locator('header').getByRole('img', { name: 'Paramount AI' })).toBeHidden();
+  await expect(page.locator('header').getByText('Paramount AI')).toBeHidden();
   const documents = page.getByRole('link', { name: 'Documents' });
   await documents.hover();
   await expect(page.getByRole('tooltip')).toHaveText('Documents');

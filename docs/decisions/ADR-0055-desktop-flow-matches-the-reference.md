@@ -24,7 +24,7 @@ All behind the accountSync switch (accounts without it see no change), in the we
 4. **Bars as in the reference:** bar 1 adds a **Transcript** pill with an on/off switch (opens or closes the transcript panel, remembered with the panels); the bars are 900 wide, so every key-cap fits; desktop 1.3.0 opens the overlay 900 wide and widens a saved place once. The **chat bar** is the reference's: dark input, [Ctrl Alt ↵], Send [↵], ✕. The answer-target switch and the microphone button left the bar; voice stays on Ctrl+Shift+Space twice, with a red microphone shown only while it listens.
 5. **Typing behind the bars:** the overlay marks its transparent layout boxes `data-gap`. Over a gap, desktop 1.3.0 passes clicks through (`setIgnoreMouseEvents(true, { forward: true })`); over a bar, panel or open menu it takes them again; never for the icon. IPC `kite:overlay-click-through` from the overlay's own page only.
 6. **Private covers every window and popup:** every `BrowserWindow` is protected as it is created (`browser-window-created`; attaching is idempotent). In the desktop app, `<select>` lists are drawn in the page and `title` tooltips become `aria-description`, because both were separate system windows that protection does not reach (`platform/desktopDocument.ts`). Nothing is hidden from the taskbar or process lists, and nothing tries to evade monitoring or proctoring tools.
-7. **The final logo** (`images/final-logo.png`) is shown everywhere as one lockup; favicons and desktop icons come from its parrot (`scripts/make-brand.ts`).
+7. **The logo** is the company mark (`images/logo-mark.png`, `BRAND_LOGO_SRC`), one swappable file; favicons and desktop icons come from it (`scripts/make-brand.ts`). No parrot or mascot image is used anywhere.
 
 ## Consequences
 
@@ -33,7 +33,7 @@ All behind the accountSync switch (accounts without it see no change), in the we
 - In 1.2.0 the main window shows "Connecting your call…" in front until the call starts, then minimises, as before.
 - Notes still need the main window's page to finish after End (about 10 s); it closes itself after that.
 - Windows' own "Restart now / Later" update question is drawn by Windows and is not covered by Private; it appears only between calls.
-- The icon-1024 desktop icon is scaled up from a 443 × 504 parrot until a square 1024 px mark exists.
+- A new original logo replaces `images/logo-mark.png` later (then run `pnpm --filter web make-brand`).
 
 ## Alternatives considered
 
