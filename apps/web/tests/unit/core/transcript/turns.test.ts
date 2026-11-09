@@ -51,10 +51,23 @@ describe('mergeTurns', () => {
   it('starts a new turn when the speaker changes', () => {
     const turns = mergeTurns([
       part('a', 'them', 0, 1_000),
-      part('b', 'you', 1_500, 2_000),
+      part('b', 'you', 1_500, 2_000, 'We moved the export to a queue.'),
       part('c', 'them', 2_500, 3_000),
     ]);
     expect(turns.map((turn) => turn.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('v1.4: keeps a turn going across the listener blip, and shows the blip after it', () => {
+    const turns = mergeTurns([
+      part('a', 'them', 0, 1_000, 'Tell me about a time a deployment went wrong,'),
+      part('b', 'you', 1_200, 1_400, 'Um.'),
+      part('c', 'them', 2_500, 4_000, 'and how you found the cause.'),
+      part('d', 'you', 5_000, 9_000, 'Last spring our billing export failed.'),
+    ]);
+    expect(turns.map((turn) => turn.parts.map((item) => item.id))).toEqual([
+      ['a', 'c'],
+      ['b', 'd'],
+    ]);
   });
 
   it('starts a new turn after a pause over 8 s, and keeps one of exactly 8 s', () => {

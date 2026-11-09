@@ -29,9 +29,9 @@ const TABLE: ReadonlyArray<readonly [string, LineKind]> = [
   ['How are you doing today?', 'greeting'],
   ["HOW'S IT GOING", 'greeting'],
   ['HOW IS YOUR DAY GOING', 'greeting'],
-  ['CAN YOU HEAR ME', 'greeting'],
-  ['Can you hear me okay?', 'greeting'],
-  ['CAN YOU SEE ME', 'greeting'],
+  ['CAN YOU HEAR ME', 'meta'],
+  ['Can you hear me okay?', 'meta'],
+  ['CAN YOU SEE ME', 'meta'],
   ['ARE YOU THERE', 'greeting'],
   ['BYE', 'greeting'],
   ['TAKE CARE', 'greeting'],
@@ -43,7 +43,7 @@ const TABLE: ReadonlyArray<readonly [string, LineKind]> = [
   ['ARE YOU READY TO BEGIN', 'instruction'],
   ['SHALL WE GET STARTED', 'instruction'],
   ['PLEASE SHARE YOUR SCREEN', 'instruction'],
-  ['YOU ARE ON MUTE', 'instruction'],
+  ['YOU ARE ON MUTE', 'meta'],
   ['GIVE ME A SECOND', 'instruction'],
   ['HOLD ON', 'instruction'],
   ['JUST A MOMENT', 'instruction'],
@@ -71,7 +71,18 @@ const TABLE: ReadonlyArray<readonly [string, LineKind]> = [
   ['And onboarding is included?', 'question'],
   // Plain statements.
   ['THE OPERATIONS TEAM LIKED THE RESULTS', 'statement'],
-  ['I WOULD LIKE TO HEAR ABOUT YOUR KUBERNETES WORK', 'statement'],
+  // v1.4: a request worded as a statement asks for an answer.
+  ['I WOULD LIKE TO HEAR ABOUT YOUR KUBERNETES WORK', 'question'],
+  // v1.4 (ADR-0062): talk about the call itself.
+  ['SORRY CAN YOU REPEAT THAT', 'meta'],
+  ['Could you repeat the question?', 'meta'],
+  ['Can you hear me okay? I think my connection dropped for a second.', 'meta'],
+  ['CAN YOU GUYS HEAR ME', 'meta'],
+  ['IS MY AUDIO OKAY', 'meta'],
+  ['YOU ARE BREAKING UP', 'meta'],
+  ['LET ME SHARE MY SCREEN', 'meta'],
+  ["Sorry, I didn't catch that, what was your role there?", 'question'],
+  ['CAN YOU HEAR ME OKAY SO HOW WOULD YOU DESIGN THE CACHE', 'question'],
   ['WE ARE LOOKING AT THE NUMBERS FOR THE QUARTER', 'statement'],
   ['It has been raining here all week.', 'statement'],
   ['OKAY', 'statement'],
@@ -199,5 +210,42 @@ describe('pickQuestion', () => {
     expect(pickQuestion([line('a', 'them', 'GOOD MORNING', 0)]).kind).toBe('none');
     expect(pickQuestion([line('a', 'you', 'WHAT DOES THE PLAN COST', 0)]).kind).toBe('none');
     expect(pickQuestion([]).kind).toBe('none');
+  });
+});
+
+describe('pickQuestion v1.4 (ADR-0062): remarks and another language', () => {
+  it('looks back past a remark to the last real question, without adding the remark', () => {
+    const lines = [
+      line('a', 'them', 'WHAT IS YOUR BIGGEST WEAKNESS', 1_000),
+      line('b', 'you', 'I TEND TO TAKE ON TOO MUCH AT ONCE', 3_000),
+      line('c', 'them', 'STOP SMIRKING', 5_000),
+    ];
+    const picked = pickQuestion(lines);
+    expect(picked).toMatchObject({ kind: 'question', lookedBack: true });
+    expect(picked.kind === 'question' && picked.selected.lineIds).toEqual(['a']);
+  });
+
+  it('answers a lone remark only when there is no question to go back to (or reports none when asked)', () => {
+    const lines = [line('c', 'them', 'I WOULD WANT A BIT MORE DETAIL ON THAT', 1_000)];
+    expect(pickQuestion(lines)).toMatchObject({ kind: 'question', lookedBack: false });
+    expect(pickQuestion(lines, { allowStatement: false })).toEqual({ kind: 'none' });
+  });
+
+  it('never takes another language as the question', () => {
+    const lines = [
+      line('a', 'them', 'HOW BIG IS THE TEAM', 1_000),
+      { ...line('b', 'them', '[non-English speech]', 3_000), nonEnglish: true },
+    ];
+    const picked = pickQuestion(lines);
+    expect(picked.kind === 'question' && picked.selected.lineIds).toEqual(['a']);
+  });
+
+  it('treats talk about the call like a greeting: skipped, back to the real question', () => {
+    expect(isSkippedLine('SORRY CAN YOU REPEAT THAT')).toBe(true);
+    const lines = [
+      line('a', 'them', 'HOW WOULD YOU DESIGN THE CACHE', 1_000),
+      line('b', 'them', 'CAN YOU HEAR ME OKAY', 5_000),
+    ];
+    expect(pickQuestion(lines)).toMatchObject({ kind: 'question', lookedBack: true });
   });
 });

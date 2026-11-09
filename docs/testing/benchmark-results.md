@@ -312,3 +312,14 @@ Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200, 150% scaling); Play
 | Real-feed update check (`update-check.ts`, kept 1.2.0 copy) | PASS | 1.2.0 found, downloaded and verified 1.3.0 from the real releases repository, into its own cache (removed after). |
 | `KITE_SYNC_USERS=*` (Production) | set, redeployed | The value is a sensitive variable and cannot be read back; it was set by piping exactly `*`. |
 | `desktop.spec.ts` (paid, rewritten for the 1.3.0 flow) | 4 of 4 tests, 12 of 12 steps | Speech model downloaded on the fresh profile; connected in 60 s; transcript lines; a real answer (answer line 11 words), rated; asking again added no entry; Private on 3 of 3 windows; Position grid to the bottom row and back; Exit closed the overlay, the panel showed Call ended and the call window closed itself. Two answers on the fast model, about $0.01 (estimated; the run prints no token counts). An earlier attempt stopped before any answer (the test did not wait for the speech-model dialog). |
+
+## Call quality, Phase 1 (9 Nov 2026, ADR-0062)
+
+Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200), plugged in. Only numbers were printed, never words.
+
+| Run | Result | Notes |
+|---|---|---|
+| Re-score of the Day 6 trial result files (42 names clips + 2 read clips, 457 words), by error type | Live engine: WER 43.3% = 34.4% wrong words + 4.2% missed + 4.8% extra; median clip 50%; 29 of 42 clips over 30%. Parakeet: 17.3% = 14.2% + 1.3% + 1.8%; median clip 14%; 10 of 42 over 30% | The live engine's errors are mostly wrong words (the model), not words cut at the ends of a line. |
+| Loopback track settings, Electron 44.9.3 (`track.getSettings()`) | `getDisplayMedia({ audio: true })`: echoCancellation, noiseSuppression, autoGainControl all **true**. With the three set to false: all **false**; the microphone keeps all three true | The desktop app now asks for them off (`DESKTOP_DISPLAY_OPTIONS`). |
+| Confidence calibration (the real `stt.worker.ts` in Chromium; 30 synthetic English lines from two Windows voices, 41 lines of the names set, 30 lines of romanised Urdu read by the same two voices) | Mean token log probability: synthetic English p50 −0.32 (min −0.44); names set p50 −0.72, p5 −1.13 (min −1.17); Urdu stand-in p50 −0.93 (max −0.76). Share of unsure pieces (< −1): 0.00 / 0.26 / 0.45 at p50 | Confidence alone cannot tell accented English from the stand-in. With "five words or more, mean < −0.75, over 30% unsure pieces, under 25% everyday English words": **0 of 30** synthetic English, **1 of 41** names-set lines and **21 of 30** stand-in lines marked as another language. |
+| Checks | Unit 1,682 + desktop 200; integration 161 of 161 (including the simulated call (e) for each new rule) | |

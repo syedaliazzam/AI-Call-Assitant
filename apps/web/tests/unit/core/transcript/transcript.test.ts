@@ -137,7 +137,10 @@ describe('createTranscript', () => {
       t.addFinal({ speaker: 'them', text: 'YES EXACTLY', tStart: 1_000, tEnd: 2_000 });
       t.addFinal({ speaker: 'you', text: 'YES EXACTLY', tStart: 2_200, tEnd: 3_000 });
       t.addFinal({ speaker: 'them', text: 'YES EXACTLY', tStart: 3_200, tEnd: 4_000 });
-      expect(t.lines().map((line) => line.speaker)).toEqual(['them', 'you', 'them']);
+      // v1.4: the reply is kept (it came after "Them" stopped, so it is no echo), and the two "Them"
+      // lines join across it, because a two-word reply is a blip that does not cut their speech.
+      expect(t.lines().map((line) => line.speaker)).toEqual(['them', 'you']);
+      expect(t.lines()[0]!.text).toBe('YES EXACTLY YES EXACTLY');
       expect(t.echoStats().count).toBe(0);
     });
 
@@ -234,6 +237,119 @@ describe('createTranscript', () => {
       expect(t.displayLines().some((line) => line.speaker === 'you')).toBe(false);
       advance(DISPLAY_HOLD_MS - 500);
       expect(t.displayLines().some((line) => line.speaker === 'you')).toBe(true);
+    });
+  });
+  describe('v1.4 (ADR-0062)', () => {
+    it("joins the other person's lines across the user's blip, and keeps the blip", () => {
+      const t = setup();
+      t.addFinal({
+        speaker: 'them',
+        text: 'TELL ME ABOUT A TIME A DEPLOYMENT WENT WRONG',
+        tStart: 1_000,
+        tEnd: 4_000,
+      });
+      t.addFinal({ speaker: 'you', text: 'UM', tStart: 4_200, tEnd: 4_400 });
+      t.addFinal({
+        speaker: 'them',
+        text: 'AND HOW YOU FOUND THE CAUSE',
+        tStart: 5_000,
+        tEnd: 7_000,
+      });
+      expect(t.lines().map((line) => line.speaker)).toEqual(['them', 'you']);
+      expect(t.lines()[0]!.text).toBe(
+        'TELL ME ABOUT A TIME A DEPLOYMENT WENT WRONG AND HOW YOU FOUND THE CAUSE',
+      );
+    });
+
+    it('does not join across a real reply from the user', () => {
+      const t = setup();
+      t.addFinal({ speaker: 'them', text: 'HOW BIG IS THE TEAM', tStart: 1_000, tEnd: 2_000 });
+      t.addFinal({ speaker: 'you', text: 'ABOUT TWELVE PEOPLE', tStart: 2_200, tEnd: 3_000 });
+      t.addFinal({ speaker: 'them', text: 'WHO DO YOU REPORT TO', tStart: 3_200, tEnd: 4_000 });
+      expect(t.lines().map((line) => line.speaker)).toEqual(['them', 'you', 'them']);
+    });
+
+    it('waits up to 4 s to join after a line that sounds cut off, 1.5 s otherwise', () => {
+      const cut = setup();
+      cut.addFinal({
+        speaker: 'them',
+        text: 'COULD YOU WALK ME THROUGH THE SYSTEM AND',
+        tStart: 1_000,
+        tEnd: 3_000,
+      });
+      cut.addFinal({ speaker: 'them', text: 'WHAT YOU WOULD CHANGE', tStart: 6_500, tEnd: 8_000 });
+      expect(cut.lines()).toHaveLength(1);
+      const done = setup();
+      done.addFinal({ speaker: 'them', text: 'HOW BIG IS THE TEAM', tStart: 1_000, tEnd: 3_000 });
+      done.addFinal({ speaker: 'them', text: 'WHO DO YOU REPORT TO', tStart: 6_500, tEnd: 8_000 });
+      expect(done.lines()).toHaveLength(2);
+    });
+
+    it('stores another language as its mark, never joins it with English, and never refines it', () => {
+      const t = setup();
+      t.addFinal({
+        speaker: 'them',
+        text: 'MERA NAAM HAI PICHLE SAAL',
+        tStart: 1_000,
+        tEnd: 3_000,
+        nonEnglish: true,
+      });
+      t.addFinal({ speaker: 'them', text: 'SO HOW BIG IS THE TEAM', tStart: 3_500, tEnd: 5_000 });
+      expect(t.lines().map((line) => line.text)).toEqual([
+        '[non-English speech]',
+        'SO HOW BIG IS THE TEAM',
+      ]);
+      expect(t.lines()[0]!.nonEnglish).toBe(true);
+      expect(t.refineFinal(t.lines()[0]!.id, '[non-English speech]', 'MY NAME IS')).toBe(false);
+    });
+
+    it('hides the user own voice coming back on "Them", without counting it as speaker echo', () => {
+      const t = setup();
+      t.addFinal({
+        speaker: 'you',
+        text: 'I LED THE MIGRATION TO KUBERNETES LAST YEAR',
+        tStart: 1_000,
+        tEnd: 4_000,
+      });
+      t.addFinal({
+        speaker: 'them',
+        text: 'I LED THE MIGRATION TO KUBERNETES',
+        tStart: 1_500,
+        tEnd: 4_300,
+      });
+      expect(t.lines().map((line) => line.speaker)).toEqual(['you']);
+      expect(t.allLines().find((line) => line.speaker === 'them')?.hiddenAs).toBe('you-echo');
+      expect(t.echoStats().count).toBe(0);
+    });
+
+    it('hides a one-word noise on "You" inside "Them" speech, but keeps a short answer', () => {
+      const t = setup();
+      t.addFinal({
+        speaker: 'them',
+        text: 'WALK ME THROUGH THE ARCHITECTURE OF THE BILLING SYSTEM',
+        tStart: 1_000,
+        tEnd: 6_000,
+      });
+      t.addFinal({ speaker: 'you', text: 'A', tStart: 2_000, tEnd: 2_300 });
+      t.addFinal({ speaker: 'you', text: 'OKAY', tStart: 4_000, tEnd: 4_300 });
+      expect(t.lines().map((line) => line.text)).toEqual([
+        'WALK ME THROUGH THE ARCHITECTURE OF THE BILLING SYSTEM',
+        'OKAY',
+      ]);
+    });
+
+    it('marks a line while the accurate engine rewrites it', () => {
+      const t = setup();
+      const line = t.addFinal({
+        speaker: 'them',
+        text: 'HOW BIG IS THE TEAM',
+        tStart: 1_000,
+        tEnd: 2_000,
+      });
+      t.setRefining(line.id, true);
+      expect(t.lines()[0]!.refining).toBe(true);
+      t.setRefining(line.id, false);
+      expect(t.lines()[0]!.refining).toBeUndefined();
     });
   });
 });

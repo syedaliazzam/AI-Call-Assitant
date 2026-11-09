@@ -1,17 +1,25 @@
 /**
- * Tests for apps/web/src/core/answer/autoAnswer.ts (Day 6 Stage 4f), on invented lines:
- * isAutoQuestion() is right on at least 90% of 30 labelled examples (written as the speech
- * model writes, in capitals without punctuation, plus a few typed with "?"); autoAnswerDue()
- * waits for the 1.2 s pause, needs a finished "Them" line, fires once per line, never while
- * an answer streams, never when off, at most once per 15 s, and answers a line again only after
- * it grew (merged lines keep their id).
+ * Tests for apps/web/src/core/answer/autoAnswer.ts (Day 6 Stage 4f; reworked in v1.4, ADR-0062), on
+ * invented lines: isAutoQuestion() is right on at least 90% of 30 labelled examples (written as the
+ * speech model writes, in capitals without punctuation, plus a few typed with "?") and never answers talk
+ * about the call; autoAnswerDue() answers the whole question window, waits 1.2 s after a line that sounds
+ * finished and 3.0 s after one that sounds cut off, waits up to 1.5 s more for the accurate engine, is
+ * not stopped by the user's blips but is by a real reply, never fires while someone is speaking, when off,
+ * while streaming, or for lines already answered, ignores another language, and asks again on the same
+ * card when the other person goes on within 4 s (a rerun); continuationOf() finds those words.
  */
 import { describe, expect, it } from 'vitest';
 import {
-  AUTO_MIN_GAP_MS,
+  ACCURATE_WAIT_MS,
+  AUTO_MAX_AGE_MS,
   AUTO_PAUSE_MS,
   autoAnswerDue,
+  continuationOf,
   isAutoQuestion,
+  questionWindow,
+  RERUN_WINDOW_MS,
+  UNFINISHED_PAUSE_MS,
+  type AnsweredQuestion,
   type AutoAnswerState,
 } from '@/core/answer/autoAnswer';
 import type { Utterance } from '@/core/transcript/transcript';
@@ -57,14 +65,19 @@ const EXAMPLES: readonly [string, boolean][] = [
  * @param speaker Who spoke.
  * @param text    The words, as the engine writes them.
  * @param tEnd    When it ended.
- * @param final   False for a grey line still being heard.
+ * @param extra   Other fields (final: false for a grey line; refining; nonEnglish; tStart).
  * @returns The line.
  */
-const line = (id: string, speaker: 'you' | 'them', text: string, tEnd: number, final = true) =>
-  ({ id, speaker, text, tStart: tEnd - 2_000, tEnd, final }) as Utterance;
+const line = (
+  id: string,
+  speaker: 'you' | 'them',
+  text: string,
+  tEnd: number,
+  extra: Partial<Utterance> = {},
+): Utterance => ({ id, speaker, text, tStart: tEnd - 2_000, tEnd, final: true, ...extra });
 
 /**
- * A state with auto-answer on, nothing streaming, and the given lines.
+ * A state with auto-answer on, nothing streaming, nothing answered, and the given lines.
  *
  * @param lines The lines.
  * @param extra Fields to override.
@@ -74,8 +87,8 @@ const state = (lines: Utterance[], extra: Partial<AutoAnswerState> = {}): AutoAn
   enabled: true,
   streaming: false,
   lines,
-  lastAutoAt: null,
-  lastAutoLineEnd: null,
+  answeredLineIds: new Set(),
+  last: null,
   ...extra,
 });
 
@@ -88,61 +101,230 @@ describe('isAutoQuestion', () => {
     expect(EXAMPLES).toHaveLength(30);
     expect((EXAMPLES.length - wrong.length) / EXAMPLES.length).toBeGreaterThanOrEqual(0.9);
   });
-});
 
-describe('autoAnswerDue', () => {
-  it('waits for the pause after a finished "Them" question', () => {
-    const lines = [line('a', 'them', QUESTION, T)];
-    expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS - 1)).toBeNull();
-    expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS)).toEqual({ id: 'a', tEnd: T });
+  it('never answers talk about the call (v1.4)', () => {
+    for (const text of [
+      'SORRY CAN YOU REPEAT THAT',
+      'CAN YOU HEAR ME OKAY I THINK MY CONNECTION DROPPED FOR A SECOND',
+      'CAN YOU GUYS HEAR ME',
+      'IS MY AUDIO OKAY',
+      'Could you repeat the question?',
+      'YOU ARE BREAKING UP',
+      'CAN YOU SEE MY SCREEN',
+    ]) {
+      expect(isAutoQuestion(text)).toBe(false);
+    }
   });
 
-  it('does nothing while the line is still grey, after the user spoke, or for a statement', () => {
+  it('answers a request worded as a statement (v1.4)', () => {
+    expect(isAutoQuestion("I'D LIKE TO HEAR ABOUT YOUR KUBERNETES WORK")).toBe(true);
+  });
+});
+
+describe('autoAnswerDue: when', () => {
+  it('waits 1.2 s after a question that sounds finished', () => {
+    const lines = [line('a', 'them', QUESTION, T)];
+    expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS - 1)).toBeNull();
+    expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS)).toEqual({
+      kind: 'answer',
+      lineIds: ['a'],
+      tEnd: T,
+    });
+  });
+
+  it('waits 3.0 s after a line that sounds cut off (a thinking pause)', () => {
+    const lines = [line('a', 'them', 'COULD YOU WALK ME THROUGH THE SYSTEM YOU BUILT AND', T)];
+    expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS + 500)).toBeNull();
+    expect(autoAnswerDue(state(lines), T + UNFINISHED_PAUSE_MS - 1)).toBeNull();
+    expect(autoAnswerDue(state(lines), T + UNFINISHED_PAUSE_MS)?.kind).toBe('answer');
+  });
+
+  it('waits up to 1.5 s more while the accurate engine rewrites a line', () => {
+    const lines = [line('a', 'them', QUESTION, T, { refining: true })];
+    expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS)).toBeNull();
+    expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS + ACCURATE_WAIT_MS)?.kind).toBe('answer');
+    // Done earlier: no wait beyond the pause.
+    expect(autoAnswerDue(state([line('a', 'them', QUESTION, T)]), T + AUTO_PAUSE_MS)?.kind).toBe(
+      'answer',
+    );
+  });
+});
+
+describe('autoAnswerDue: what', () => {
+  it('answers the whole window: every unanswered "Them" line since the user really spoke', () => {
+    const lines = [
+      line('o', 'them', 'HOW DID YOU TEST IT', T - 20_000),
+      line('y', 'you', 'WE USED CONTRACT TESTS FOR EVERY SERVICE', T - 15_000),
+      line('a', 'them', 'COULD YOU WALK ME THROUGH THE SYSTEM', T - 4_000),
+      line('b', 'you', 'UM', T - 3_000),
+      line('c', 'them', 'AND WHAT YOU WOULD CHANGE TODAY', T),
+    ];
+    expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS)).toEqual({
+      kind: 'answer',
+      lineIds: ['a', 'c'],
+      tEnd: T,
+    });
+    expect(questionWindow(lines, new Set(['a'])).map((item) => item.id)).toEqual(['c']);
+  });
+
+  it('is not stopped by a blip after the question, but is by a real reply', () => {
     const later = T + 5_000;
-    expect(autoAnswerDue(state([line('a', 'them', QUESTION, T, false)]), later)).toBeNull();
     expect(
       autoAnswerDue(
-        state([line('a', 'them', QUESTION, T), line('b', 'you', 'SURE', T + 500)]),
+        state([line('a', 'them', QUESTION, T), line('b', 'you', 'OKAY', T + 500)]),
+        later,
+      )?.kind,
+    ).toBe('answer');
+    expect(
+      autoAnswerDue(
+        state([
+          line('a', 'them', QUESTION, T),
+          line('b', 'you', 'IT COSTS ABOUT FORTY A SEAT', T + 900),
+        ]),
+        later,
+      ),
+    ).toBeNull();
+  });
+
+  it('does nothing while someone is still speaking, or for a remark', () => {
+    const later = T + 4_000;
+    expect(
+      autoAnswerDue(state([line('a', 'them', QUESTION, T, { final: false })]), later),
+    ).toBeNull();
+    expect(
+      autoAnswerDue(
+        state([
+          line('a', 'them', QUESTION, T),
+          line('b', 'you', 'SO WE STARTED WITH', T + 900, { final: false }),
+        ]),
         later,
       ),
     ).toBeNull();
     expect(autoAnswerDue(state([line('a', 'them', 'OKAY THAT SOUNDS GOOD', T)]), later)).toBeNull();
   });
 
-  it('never fires when off, while streaming, or twice for the same line', () => {
+  it('never fires when off, while streaming, for answered lines, or for another language', () => {
     const lines = [line('a', 'them', QUESTION, T)];
     const later = T + 5_000;
     expect(autoAnswerDue(state(lines, { enabled: false }), later)).toBeNull();
     expect(autoAnswerDue(state(lines, { streaming: true }), later)).toBeNull();
+    expect(autoAnswerDue(state(lines, { answeredLineIds: new Set(['a']) }), later)).toBeNull();
     expect(
-      autoAnswerDue(state(lines, { lastAutoLineEnd: T, lastAutoAt: T - 60_000 }), later),
+      autoAnswerDue(
+        state([line('n', 'them', '[non-English speech]', T, { nonEnglish: true })]),
+        later,
+      ),
     ).toBeNull();
   });
 
-  it('fires at most once per 15 s', () => {
-    const lines = [line('b', 'them', 'HOW LONG DOES THE ROLLOUT TAKE', T + 3_000)];
-    const first = T;
+  it('ignores a grey line unchanged for 5 s, and never answers a question older than 10 s', () => {
+    const stuck = line('p', 'you', 'LET ME CHECK THE PRICE LIST', T - 6_000, { final: false });
     expect(
-      autoAnswerDue(
-        state(lines, { lastAutoAt: first, lastAutoLineEnd: T - 10_000 }),
-        first + AUTO_MIN_GAP_MS - 1,
-      ),
+      autoAnswerDue(state([stuck, line('a', 'them', QUESTION, T)]), T + AUTO_PAUSE_MS)?.kind,
+    ).toBe('answer');
+    expect(
+      autoAnswerDue(state([line('a', 'them', QUESTION, T)]), T + AUTO_MAX_AGE_MS + 1),
     ).toBeNull();
-    expect(
-      autoAnswerDue(
-        state(lines, { lastAutoAt: first, lastAutoLineEnd: T - 10_000 }),
-        first + AUTO_MIN_GAP_MS,
-      ),
-    ).toEqual({ id: 'b', tEnd: T + 3_000 });
   });
+});
 
-  it('answers a line that grew under the same id after the last auto-answer', () => {
-    const grown = [
-      line('a', 'them', 'WHAT DOES IT COST HOW LONG DOES THE ROLLOUT TAKE', T + 20_000),
+describe('autoAnswerDue: rerun', () => {
+  /** An auto-answer for line 'a' (ended at T), asked 1.2 s later. */
+  const last: AnsweredQuestion = {
+    answerId: 'answer-1',
+    lineIds: ['a'],
+    end: T,
+    askedAt: T + AUTO_PAUSE_MS,
+    auto: true,
+  };
+  const answered = { answeredLineIds: new Set(['a']), last };
+
+  it('asks again with the whole question when they go on within 4 s, even while streaming', () => {
+    const lines = [
+      line('a', 'them', 'HOW BIG IS THE TEAM', T),
+      line('b', 'them', 'AND WHAT DOES YOUR ON CALL ROTATION LOOK LIKE', T + 5_000, {
+        tStart: T + 2_500,
+      }),
     ];
-    expect(autoAnswerDue(state(grown, { lastAutoAt: T, lastAutoLineEnd: T }), T + 22_000)).toEqual({
-      id: 'a',
-      tEnd: T + 20_000,
+    expect(
+      autoAnswerDue(state(lines, { ...answered, streaming: true }), T + 5_000 + AUTO_PAUSE_MS),
+    ).toEqual({
+      kind: 'rerun',
+      replaces: 'answer-1',
+      lineIds: ['a', 'b'],
+      tEnd: T + 5_000,
     });
+  });
+
+  it('also when the answered line itself grew (lines that follow each other merge under one id)', () => {
+    const lines = [
+      line('a', 'them', 'HOW BIG IS THE TEAM AND WHO IS YOUR MANAGER', T + 4_000, {
+        tStart: T - 3_000,
+      }),
+    ];
+    expect(autoAnswerDue(state(lines, answered), T + 4_000 + AUTO_PAUSE_MS)?.kind).toBe('rerun');
+  });
+
+  it('not after the user replied, not for new words starting after 4 s, nor for a manual answer', () => {
+    const reply = [
+      line('a', 'them', 'HOW BIG IS THE TEAM', T),
+      line('y', 'you', 'ABOUT TWELVE PEOPLE IN TWO SQUADS', T + 2_000),
+      line('b', 'them', 'AND WHO DO YOU REPORT TO', T + 4_000, { tStart: T + 2_500 }),
+    ];
+    expect(autoAnswerDue(state(reply, answered), T + 9_000)?.kind).not.toBe('rerun');
+    const late = [
+      line('a', 'them', 'HOW BIG IS THE TEAM', T),
+      line('b', 'them', 'WHO DO YOU REPORT TO', T + 9_000, {
+        tStart: T + AUTO_PAUSE_MS + RERUN_WINDOW_MS + 1,
+      }),
+    ];
+    expect(autoAnswerDue(state(late, answered), T + 12_000)).toEqual({
+      kind: 'answer',
+      lineIds: ['b'],
+      tEnd: T + 9_000,
+    });
+    const manual = { ...answered, last: { ...last, auto: false } };
+    expect(
+      autoAnswerDue(
+        state(
+          reply.filter((item) => item.id !== 'y'),
+          manual,
+        ),
+        T + 9_000,
+      )?.kind,
+    ).toBe('answer');
+  });
+});
+
+describe('continuationOf', () => {
+  const last: AnsweredQuestion = {
+    answerId: 'x',
+    lineIds: ['a'],
+    end: T,
+    askedAt: T + 1_000,
+    auto: false,
+  };
+
+  it('finds the plain words that go on after the answered question, within the window', () => {
+    const lines = [
+      line('a', 'them', 'WHAT DOES THE PLAN COST', T),
+      line('b', 'them', 'FOR FORTY SEATS', T + 3_000, { tStart: T + 1_500 }),
+    ];
+    expect(continuationOf(lines, last, 8_000, T).map((item) => item.id)).toEqual(['b']);
+    expect(continuationOf(lines, last, 1_000, T)).toEqual([]);
+  });
+
+  it('stops at a real reply and at talk about the call', () => {
+    const reply = [
+      line('a', 'them', 'WHAT DOES THE PLAN COST', T),
+      line('y', 'you', 'IT IS FORTY A SEAT', T + 2_000),
+      line('b', 'them', 'FOR FORTY SEATS', T + 4_000),
+    ];
+    expect(continuationOf(reply, last, 8_000, T)).toEqual([]);
+    const meta = [
+      line('a', 'them', 'WHAT DOES THE PLAN COST', T),
+      line('b', 'them', 'CAN YOU HEAR ME', T + 3_000, { tStart: T + 1_500 }),
+    ];
+    expect(continuationOf(meta, last, 8_000, T)).toEqual([]);
   });
 });

@@ -13,6 +13,7 @@
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
 import {
+  defaultOutputKind,
   listMicrophones,
   openMicrophone,
   requestDisplayMedia,
@@ -149,6 +150,7 @@ export const browserPlatform: Platform = {
   getMicStream: openMicrophone,
   listMicrophones,
   watchBattery: watchBatteryState,
+  outputKind: defaultOutputKind,
 
   /**
    * A browser draws no snap zones.

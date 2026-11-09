@@ -14,6 +14,7 @@
  * Transcript text is only arranged for the screen and the downloads here; it is never logged.
  */
 import type { Session } from '../storage/types';
+import { isBlip } from './blip';
 import { groupLines, type GroupLine, type TranscriptGroup } from './group';
 import type { DisplayTerm } from './display';
 import { isUnclearGroup } from './unclear';
@@ -92,8 +93,13 @@ export function mergeTurns<T extends TurnPart>(
 ): Turn<T>[] {
   const gapMs = options.gapMs ?? TURN_GAP_MS;
   const turns: Turn<T>[] = [];
-  for (const part of parts) {
-    if (`${part.finalText}${part.provisionalText}`.trim() === '') continue;
+  // v1.4 (ADR-0062): the listener's blips ("okay", "um") while the other person talks are held back
+  // and shown after that person's turn, so they no longer cut it in two.
+  const ordered = deferBlips(
+    parts.filter((part) => `${part.finalText}${part.provisionalText}`.trim() !== ''),
+    gapMs,
+  );
+  for (const part of ordered) {
     const end = part.tEnd ?? part.tStart;
     const last = turns.at(-1);
     const lastPart = last?.parts.at(-1);
@@ -124,6 +130,46 @@ export function mergeTurns<T extends TurnPart>(
     last.unclear = last.unclear && isUnclearGroup(part);
   }
   return turns;
+}
+
+/**
+ * Moves the listener's blips that fall inside the other person's speech to just after it (v1.4): a
+ * finished blip part ("okay", "um": blip.ts) whose next non-blip part is the other speaker's, within
+ * gapMs of the part before the blip, waits until that speaker stops.
+ *
+ * @param parts The parts with words, oldest first.
+ * @param gapMs The longest pause inside a turn.
+ * @returns The same parts, with such blips moved later.
+ * Called from: mergeTurns()
+ */
+function deferBlips<T extends TurnPart>(parts: readonly T[], gapMs: number): T[] {
+  const out: T[] = [];
+  const held: T[] = [];
+  let speaker: TurnPart['speaker'] | null = null;
+  let lastEnd = 0;
+  const flush = () => {
+    out.push(...held.splice(0));
+  };
+  for (const part of parts) {
+    const blip =
+      speaker !== null &&
+      part.speaker !== speaker &&
+      part.provisionalText === '' &&
+      isBlip(part.finalText);
+    if (blip) {
+      held.push(part);
+      continue;
+    }
+    // The other speaker going on within the pause keeps the held blips waiting; anything else
+    // ends their turn and lets them out first.
+    if (!(part.speaker === speaker && part.tStart - lastEnd <= gapMs)) flush();
+    out.push(part);
+    const end = part.tEnd ?? part.tStart;
+    lastEnd = part.speaker === speaker ? Math.max(lastEnd, end) : end;
+    speaker = part.speaker;
+  }
+  flush();
+  return out;
 }
 
 /**

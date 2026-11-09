@@ -274,6 +274,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     transcript: props.transcript,
     streaming: answering,
     autoAnswer: answers.autoAnswer,
+    answeredState: answers.answeredState,
     enabled: autoOn,
   });
   const [compactNotice, setCompactNotice] = useState<string | null>(null);
@@ -302,8 +303,26 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const answeredSpanList = answers.answeredSpans;
   const language = props.session.preferences.language;
   const echoCount = props.echoCount ?? 0;
+  // v1.4 (ADR-0062): the same one-time hint also shows at once when the sound plays through speakers
+  // (from the output's name), before any echo has had to be hidden. Headphones are recommended, never
+  // required.
+  const [onSpeakers, setOnSpeakers] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void getPlatform()
+      .outputKind?.()
+      .then((kind) => {
+        if (active) setOnSpeakers(kind === 'speakers');
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
   const headphonesHint =
-    !headphonesClosed && echoCount >= HEADPHONES_HINT_AFTER && !hintSeen('headphones');
+    !headphonesClosed &&
+    (onSpeakers || echoCount >= HEADPHONES_HINT_AFTER) &&
+    !hintSeen('headphones');
   const compactState = useMemo<CompactState>(() => {
     const parts = entry ? splitAnswer(entry.text) : null;
     const answeredIds = answeredGroupIds(

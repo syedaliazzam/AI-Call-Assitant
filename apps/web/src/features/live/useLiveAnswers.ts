@@ -30,6 +30,12 @@ import {
 } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAnswerRunner, type AnswerTimeline } from '@/core/answer/answerClient';
+import {
+  CONTINUE_WINDOW_MS,
+  continuationOf,
+  type AnsweredQuestion,
+  type AutoDecision,
+} from '@/core/answer/autoAnswer';
 import { settleAnswerType, type LabelledQuestion } from '@/core/answer/answerType';
 import { mergeAnswers, stoppedEmpty } from '@/core/answer/history';
 import { createRepeatGuard, themSpan, type SpeechSpan } from '@/core/answer/repeatGuard';
@@ -38,7 +44,7 @@ import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/con
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { warmSession } from '@/core/answer/warm';
 import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
-import { pickQuestion, type PickedQuestion } from '@/core/transcript/questionKind';
+import { lineKind, pickQuestion, type PickedQuestion } from '@/core/transcript/questionKind';
 import { isOnline } from '@/core/net/online';
 import { prepareScreenshot } from '@/core/screenshot/prepare';
 import { rateAnswer, reportAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
@@ -223,6 +229,23 @@ export function claimSources(
   ];
 }
 
+/**
+ * Lines as one question: their words joined, with their ids (v1.4).
+ *
+ * @param lines The lines, oldest first.
+ * @returns The question as selectQuestion() would give it.
+ * Called from: useLiveAnswers() (ask)
+ */
+function asSelected(lines: readonly { id: string; text: string }[]): {
+  text: string;
+  lineIds: string[];
+} {
+  return {
+    text: lines.map((line) => line.text.trim()).join(' '),
+    lineIds: lines.map((line) => line.id),
+  };
+}
+
 /** No lessons: one shared empty list, so hook dependencies stay stable between renders. */
 const NO_LESSONS: readonly string[] = [];
 
@@ -259,8 +282,15 @@ export interface LiveAnswers {
   notice: string | null;
   /** Answers the latest question from the transcript. */
   answer: () => void;
-  /** Answers the latest question by itself (auto-answer, Day 6 Stage 4f; marked "Auto"). */
-  autoAnswer: () => void;
+  /**
+   * Answers by itself (auto-answer, Day 6 Stage 4f; marked "Auto"). v1.4: with the lines the rule chose,
+   * or asks again with the whole question on the card it replaces (a rerun).
+   *
+   * @param decision What core/answer/autoAnswer.ts decided (absent: pick the question as Answer does).
+   */
+  autoAnswer: (decision?: AutoDecision) => void;
+  /** v1.4: what auto-answer needs to know: the lines answered so far and the latest answered question. */
+  answeredState: () => { answeredLineIds: ReadonlySet<string>; last: AnsweredQuestion | null };
   /** Answers a typed question. */
   chat: (question: string) => void;
   /**
@@ -337,6 +367,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const noiseLinesRef = useRef(new Set<string>());
   // Lines Answer has already answered in this call (v1.1.0).
   const answeredLinesRef = useRef(new Set<string>());
+  // v1.4 (ADR-0062): the latest answer to speech, which a rerun or a continuation replaces.
+  const lastAnsweredRef = useRef<AnsweredQuestion | null>(null);
   // What the conversation has sent so far, and the finished answers (refs: read when asked).
   const logRef = useRef(emptyLog());
   const finishedRef = useRef<CallAnswer[]>([]);
@@ -362,6 +394,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     logRef.current = emptyLog();
     finishedRef.current = [];
     labelsRef.current = [];
+    lastAnsweredRef.current = null;
     return () => {
       runner.cancel();
       // Fail safe: an answer stopped here must not stay "streaming" (its card would show "…" for
@@ -437,24 +470,29 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         question?: string;
         /** The speech a bubble's question came from ("Answer this"): guarded like Answer. */
         span?: SpeechSpan;
+        /** v1.4: the transcript lines that make the question (auto-answer's choice, a rerun). */
+        lineIds?: readonly string[];
+        /** v1.4: the answer this one replaces, on the same card (a rerun or a continuation). */
+        replaces?: string;
       } = {},
-    ) => {
+    ): boolean => {
       const { typed, image, auto = false, answerType } = options;
       const keyPressAt = options.pressedAt ?? performance.now();
       // Offline: answers are paused (the banner says so); the transcript keeps going.
       if (!isOnline()) {
         setNotice(OFFLINE_TEXT);
-        return;
+        return false;
       }
       // Lines Claude found to be noise are not part of any later question (ADR-0043).
       const lines = transcript.lines().filter((line) => !noiseLinesRef.current.has(line.id));
       if (
         mode === 'answer' &&
         !options.question &&
+        !options.lineIds &&
         !lines.some((line) => line.speaker === 'them')
       ) {
         setNotice('Nothing from the other person yet. Type a question in Chat instead.');
-        return;
+        return false;
       }
       // v1.1.0 (ADR-0043): only real questions. A greeting or an instruction looks back to the last
       // real question; noise is reported once, and a second press on the same words sends them.
@@ -462,26 +500,48 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       let picked: PickedQuestion | null = null;
       // Whether the question comes from only part of the lines, so it must be passed on as it is.
       let partOfLines = false;
-      if (mode === 'answer' && !options.question) {
-        // A question already answered is not part of the next one, even with no reply in between:
-        // "how did you test it" answered, then "why Go" is asked, is "why Go". With nothing new, Answer
-        // goes back to what is there.
-        const fresh = lines.filter((line) => !answeredLinesRef.current.has(line.id));
-        picked = pickQuestion(fresh);
-        partOfLines = fresh.length !== lines.length;
-        if (picked.kind === 'none' && partOfLines) {
-          picked = pickQuestion(lines);
-          partOfLines = false;
+      // v1.4: the answer this one replaces on the same card (a rerun or a continuation), if any.
+      let replaces = options.replaces;
+      if (mode === 'answer' && options.lineIds && !options.question) {
+        // Auto-answer chose the lines (core/answer/autoAnswer.ts): asked as they are.
+        const chosen = lines.filter((line) => options.lineIds!.includes(line.id));
+        if (chosen.length === 0) return false;
+        picked = { kind: 'question', selected: asSelected(chosen), lookedBack: false };
+        partOfLines = true;
+      } else if (mode === 'answer' && !options.question) {
+        // v1.4 (ADR-0062): new words that only continue the question just answered (no reply from the
+        // user, not a new question) are joined to it, and it is asked again on its card.
+        const last = lastAnsweredRef.current;
+        const more = last ? continuationOf(lines, last, CONTINUE_WINDOW_MS, last.end) : [];
+        if (last && more.length > 0 && lineKind(asSelected(more).text) === 'statement') {
+          const whole = lines.filter(
+            (line) => last.lineIds.includes(line.id) || more.includes(line),
+          );
+          picked = { kind: 'question', selected: asSelected(whole), lookedBack: false };
+          partOfLines = true;
+          replaces = last.answerId;
+        } else {
+          // A question already answered is not part of the next one, even with no reply in between:
+          // "how did you test it" answered, then "why Go" is asked, is "why Go". With nothing new,
+          // Answer goes back to what is there. v1.4: a lone remark among the new lines is not answered
+          // when an earlier question exists (allowStatement: false here, then all the lines).
+          const fresh = lines.filter((line) => !answeredLinesRef.current.has(line.id));
+          partOfLines = fresh.length !== lines.length;
+          picked = pickQuestion(fresh, { allowStatement: !partOfLines });
+          if (picked.kind === 'none' && partOfLines) {
+            picked = pickQuestion(lines);
+            partOfLines = false;
+          }
         }
         if (picked.kind === 'none') {
           setNotice(NO_QUESTION_NOTICE);
-          return;
+          return false;
         }
         if (picked.kind === 'garbled') {
           if (garbledRef.current !== picked.selected.text) {
             garbledRef.current = picked.selected.text;
             setNotice(GARBLED_NOTICE);
-            return;
+            return false;
           }
         }
       }
@@ -520,7 +580,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ((pickedLines ?? built.selected?.lineIds)
           ? themSpan(lines, pickedLines ?? built.selected?.lineIds ?? [])
           : null);
-      const guarded = mode === 'answer' && (!options.question || options.span !== undefined);
+      // v1.4: a rerun or a continuation is a deliberate new request for a longer question: not guarded.
+      const guarded =
+        mode === 'answer' && !replaces && (!options.question || options.span !== undefined);
       const lookedBack = picked?.kind === 'question' && picked.lookedBack;
       if (guarded) {
         const decision = repeatGuard.decide({
@@ -532,12 +594,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           ...(lookedBack ? { lookedBack: true } : {}),
         });
         if (decision.kind === 'show') setShownId(decision.answerId);
-        if (decision.kind !== 'answer') return;
+        if (decision.kind !== 'answer') return false;
       }
       logRef.current = built.log;
       keepWarmRef.current?.noteActivity();
       const entry: AnswerEntry = {
-        id: crypto.randomUUID(),
+        // v1.4: a rerun keeps the card it replaces (same id), so one question has one card; a saved
+        // row with this id is replaced when the new answer finishes (saveAnswer puts by id).
+        id: replaces ?? crypto.randomUUID(),
         mode,
         ...(auto ? { auto: true } : {}),
         question:
@@ -562,19 +626,34 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         rating: null,
         note: '',
       };
-      // A new answer cancels the one still streaming (the runner does; mark it here).
+      // A new answer cancels the one still streaming (the runner does; mark it here). A rerun takes
+      // the place of the answer it replaces.
       setEntries((current) => [
-        ...current.map((old) =>
-          old.status === 'streaming' ? { ...old, status: 'cancelled' as const } : old,
-        ),
+        ...current
+          .filter((old) => old.id !== entry.id)
+          .map((old) =>
+            old.status === 'streaming' ? { ...old, status: 'cancelled' as const } : old,
+          ),
         entry,
       ]);
       setShownId(entry.id);
-      if (guarded && span) {
+      if (span && (guarded || replaces)) {
         repeatGuard.remember(span, entry.id, Date.now());
-        setAnsweredSpans((current) => [...current, { span, answerId: entry.id }]);
+        setAnsweredSpans((current) => [
+          ...current.filter((item) => item.answerId !== entry.id),
+          { span, answerId: entry.id },
+        ]);
       }
       for (const id of pickedLines ?? []) answeredLinesRef.current.add(id);
+      if (mode === 'answer' && span && pickedLines) {
+        lastAnsweredRef.current = {
+          answerId: entry.id,
+          lineIds: pickedLines,
+          end: span.end,
+          askedAt: Date.now(),
+          auto,
+        };
+      }
       // Kept here as well as in state: the answer's end needs them in the same tick.
       let meta: AnswerMeta | undefined;
       let cleanQuestion: string | undefined;
@@ -677,6 +756,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           });
         },
       });
+      return true;
     },
     [session, documents, lessons, transcript, callStartedAt, runner, repeatGuard, update],
   );
@@ -818,8 +898,20 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     entries: list,
     index,
     notice,
-    answer: useCallback(() => ask('answer'), [ask]),
-    autoAnswer: useCallback(() => ask('answer', { auto: true }), [ask]),
+    answer: useCallback(() => void ask('answer'), [ask]),
+    autoAnswer: useCallback(
+      (decision?: AutoDecision) =>
+        void ask('answer', {
+          auto: true,
+          ...(decision ? { lineIds: decision.lineIds } : {}),
+          ...(decision?.kind === 'rerun' ? { replaces: decision.replaces } : {}),
+        }),
+      [ask],
+    ),
+    answeredState: useCallback(
+      () => ({ answeredLineIds: answeredLinesRef.current, last: lastAnsweredRef.current }),
+      [],
+    ),
     chat: useCallback((question: string) => ask('chat', { typed: question }), [ask]),
     answerThis: useCallback(
       (question: string, span: SpeechSpan) => ask('answer', { question, span }),

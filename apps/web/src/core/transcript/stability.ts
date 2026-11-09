@@ -4,7 +4,7 @@
  *          and no longer able to change. Stable lines go into the cached, append-only
  *          conversation of an answer request; every other line goes into the uncached tail.
  * Used by: src/core/answer/context.ts (buildAnswerRequest)
- * Depends on: src/core/transcript/transcript.ts (Utterance), merge.ts (MERGE_GAP_MS),
+ * Depends on: src/core/transcript/transcript.ts (Utterance), merge.ts (mergeGapFor),
  *             echo.ts (ECHO_WINDOW_AFTER_MS)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3; day-04-answers.md
  *               "Prompt design" (stable line) and Stage 4; ADR-0025
@@ -12,13 +12,14 @@
  * Why so careful: a line in the cached conversation is never sent differently again (the
  * cache matches bytes), so it must not change after it is frozen. A final line can still
  * change in two ways: it merges with the same speaker's next line when that one starts within
- * MERGE_GAP_MS of its end (merge.ts), and a "You" line is marked as an echo when a matching
- * "Them" line becomes final (echo.ts). Both depend on a line that is still being heard (a
+ * mergeGapFor() of its end (merge.ts: 1.5 s, or 4 s after a line that sounds cut off, v1.4), and a
+ * line is marked as an echo when a matching line of the other speaker becomes final (echo.ts; a "Them"
+ * line can be the user's own echo since v1.4). Both depend on a line that is still being heard (a
  * partial), which may finish long after 5 s when the speaker talks for a while, so the rules
  * check the open partials too, not only the age.
  */
 import { ECHO_WINDOW_AFTER_MS } from './echo';
-import { MERGE_GAP_MS } from './merge';
+import { mergeGapFor } from './merge';
 import type { Utterance } from './transcript';
 
 /** How old (since its end) a final line must be before it can be stable, in ms. */
@@ -45,8 +46,14 @@ function isStable(line: Utterance, partials: readonly Utterance[], now: number):
   if (!line.final || line.echo) return false;
   if (now - line.tEnd < STABLE_AFTER_MS) return false;
   for (const partial of partials) {
-    // The same speaker's open line could still merge into this one.
-    if (partial.speaker === line.speaker && partial.tStart <= line.tEnd + MERGE_GAP_MS) {
+    // The same speaker's open line could still merge into this one (v1.4: after a longer pause when
+    // this line sounds cut off, merge.ts mergeGapFor).
+    if (partial.speaker === line.speaker && partial.tStart <= line.tEnd + mergeGapFor(line)) {
+      return false;
+    }
+    // v1.4: an open "You" line that began before this "Them" line could still show it to be the user's
+    // own voice coming back (echo.ts isReverseEcho).
+    if (line.speaker === 'them' && partial.speaker === 'you' && partial.tStart <= line.tStart) {
       return false;
     }
     // An open "Them" line could still turn out to be this "You" line's original (echo).

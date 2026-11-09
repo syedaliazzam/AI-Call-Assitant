@@ -81,6 +81,53 @@ export async function listMicrophones(): Promise<MicDevice[]> {
     }));
 }
 
+/** What the computer plays sound through (v1.4): the default output's kind, from its name. */
+export type OutputKind = 'speakers' | 'headphones' | 'unknown';
+
+/**
+ * Tells from an output device's name whether it is headphones or speakers (v1.4, ADR-0062). Windows and
+ * macOS name them plainly ("Speakers (Realtek(R) Audio)", "Headphones (WH-1000XM4)", "AirPods Pro",
+ * "MacBook Pro Speakers").
+ *
+ * @param label The device's name ('' when unknown).
+ * @returns Its kind; 'unknown' when the name says neither.
+ * Called from: defaultOutputKind(); tests
+ */
+export function outputKindOf(label: string): OutputKind {
+  if (
+    /head ?(?:phone|set)|ear ?(?:phone|bud|piece)|airpods|\bbuds?\d*\b|hands-?free|\bw[hf]-\d|bluetooth headset/i.test(
+      label,
+    )
+  ) {
+    return 'headphones';
+  }
+  if (/speaker|built-?in output|internal/i.test(label)) return 'speakers';
+  return 'unknown';
+}
+
+/**
+ * The kind of the computer's default sound output (v1.4): Kite recommends headphones when it is
+ * speakers, because the microphone then also hears the other side. Names are available once the
+ * microphone has been allowed, as during a call.
+ *
+ * @returns 'speakers', 'headphones' or 'unknown' (also when devices cannot be listed).
+ * Called from: browserPlatform.outputKind(), createDesktopPlatform().outputKind(); tests
+ */
+export async function defaultOutputKind(): Promise<OutputKind> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices)
+    return 'unknown';
+  try {
+    const outputs = (await navigator.mediaDevices.enumerateDevices()).filter(
+      (device) => device.kind === 'audiooutput',
+    );
+    // Chromium lists the default output first, with the id 'default' and a name "Default - …".
+    const output = outputs.find((device) => device.deviceId === 'default') ?? outputs[0];
+    return outputKindOf(output?.label ?? '');
+  } catch {
+    return 'unknown';
+  }
+}
+
 /**
  * Watches whether the computer is on battery (v1.1.0, ADR-0044: Accurate transcription on Auto). The
  * page's own Battery API, so it also works in a desktop app before 1.1.0.

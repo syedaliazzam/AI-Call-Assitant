@@ -105,4 +105,20 @@ describe('splitStable', () => {
     expect(splitStable(transcript.lines(), 23_999).stable).toEqual([]);
     expect(splitStable(transcript.lines(), 24_000).stable).toHaveLength(1);
   });
+
+  it('v1.4: keeps a cut-off line open longer, and a "Them" line open while the user is still talking', () => {
+    const now = 30_000;
+    const cut = { ...line('u1', 'them', 1_000, 2_000), text: 'TELL ME ABOUT THE' };
+    expect(ids([cut, line('partial-them', 'them', 5_000, 6_000, false)], now).tail).toContain('u1');
+    expect(
+      ids(
+        [line('u1', 'them', 1_000, 2_000), line('partial-them', 'them', 5_000, 6_000, false)],
+        now,
+      ).stable,
+    ).toEqual(['u1']);
+    expect(
+      ids([line('u1', 'them', 1_000, 2_000), line('partial-you', 'you', 500, 9_000, false)], now)
+        .tail,
+    ).toContain('u1');
+  });
 });

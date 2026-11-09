@@ -5,7 +5,9 @@
  *    follow-up;
  * b) a coding round with a problem on screen;
  * c) a slide, a table, a code error and a screen that cannot be read;
- * d) a 40-minute call with silence gaps (hygiene prompts), echo and background speech.
+ * d) a 40-minute call with silence gaps (hygiene prompts), echo and background speech;
+ * e) v1.4 (ADR-0062) timelines with auto-answer on: a thinking pause, the user's "um" mid-question, a
+ *    multi-part question asked again on one card, talk about the call, another language, and a remark.
  * Checks that the right questions are answered, with no duplicates; that panels, hotkeys and arrows
  * behave; and that the transcript is readable. Also the home panel and a keyboard pass (item 26).
  * All text is invented.
@@ -557,6 +559,108 @@ test('the overlay: panels open with an answer, the arrows move, Clear keeps the 
   await overlay.reload();
   await expect(overlay.getByRole('region', { name: 'Transcript panel' })).toBeVisible();
   await expect(overlay.getByRole('region', { name: 'Latest answer' })).toBeVisible();
+});
+
+/**
+ * v1.4 (ADR-0062): opens the call with auto-answer on, and a way to say a line that ends now.
+ *
+ * @returns speak(), which adds a line ending now; since(), the questions sent after a mark.
+ */
+async function openAutoCall() {
+  await page.goto(`${origin}/?view=call&auto=1`);
+  await expect(page.getByRole('button', { name: 'Answer', exact: true }).first()).toBeVisible();
+  await page.locator('body').click();
+  return {
+    speak: async (speaker: 'you' | 'them', text: string, ms = 1_500, nonEnglish = false) => {
+      await page.evaluate(
+        ([who, words, duration, other]) =>
+          window.kiteSim.speak(
+            who as 'you' | 'them',
+            words as string,
+            duration as number,
+            other as boolean,
+          ),
+        [speaker, text, ms, nonEnglish] as const,
+      );
+    },
+    mark: () => received.length,
+    since: (mark: number) => received.slice(mark).map((request) => request.question ?? ''),
+  };
+}
+
+/**
+ * Waits a while (real time: the auto-answer rules wait on the clock).
+ *
+ * @param ms How long.
+ * @returns A promise that settles after the wait.
+ */
+const pause = (ms: number) => page.waitForTimeout(ms);
+
+test('e) v1.4 timelines: whole questions, one answer each, no answers to talk about the call', async () => {
+  const call = await openAutoCall();
+
+  // 1. A thinking pause after a line that sounds cut off: no answer at 1.2 s; one, with both parts,
+  //    after the rest.
+  let mark = call.mark();
+  await call.speak('them', 'COULD YOU WALK ME THROUGH THE MOST COMPLEX SYSTEM YOU HAVE BUILT AND');
+  await pause(2_200);
+  expect(call.since(mark)).toEqual([]);
+  await call.speak('them', 'WHAT YOU WOULD CHANGE ABOUT IT TODAY');
+  await expect.poll(() => call.since(mark).length, { timeout: 5_000 }).toBe(1);
+  expect(call.since(mark)[0]).toContain('MOST COMPLEX SYSTEM');
+  expect(call.since(mark)[0]).toContain('CHANGE ABOUT IT TODAY');
+  await pause(2_000);
+  expect(call.since(mark)).toHaveLength(1);
+
+  // 2. The user's "um" in the middle does not cut the question in two.
+  await call.speak('you', 'THAT WAS THE BILLING EXPORT REBUILD LAST YEAR', 3_000);
+  mark = call.mark();
+  await call.speak('them', 'TELL ME ABOUT A TIME A DEPLOYMENT WENT WRONG');
+  await call.speak('you', 'UM', 300);
+  await pause(400);
+  await call.speak('them', 'AND HOW YOU FOUND THE CAUSE');
+  await expect.poll(() => call.since(mark).length, { timeout: 5_000 }).toBe(1);
+  expect(call.since(mark)[0]).toContain('DEPLOYMENT WENT WRONG');
+  expect(call.since(mark)[0]).toContain('FOUND THE CAUSE');
+  await pause(2_000);
+  expect(call.since(mark)).toHaveLength(1);
+
+  // 3. A multi-part question: the first part is answered, the second asks again on the same card.
+  await call.speak('you', 'WE FOUND IT IN THE QUEUE METRICS AND ROLLED BACK', 3_000);
+  mark = call.mark();
+  const before = await cards().count();
+  await call.speak('them', 'THREE QUICK THINGS FIRST HOW BIG IS THE TEAM');
+  await expect.poll(() => call.since(mark).length, { timeout: 5_000 }).toBe(1);
+  await call.speak('them', 'SECOND WHAT DOES YOUR ON CALL ROTATION LOOK LIKE');
+  await expect.poll(() => call.since(mark).length, { timeout: 5_000 }).toBe(2);
+  expect(call.since(mark)[1]).toContain('HOW BIG IS THE TEAM');
+  expect(call.since(mark)[1]).toContain('ON CALL ROTATION');
+  await expect(cards()).toHaveCount(before + 1);
+
+  // 4. Talk about the call is never answered by itself.
+  await call.speak('you', 'ABOUT TWELVE PEOPLE AND A WEEKLY ROTATION', 3_000);
+  mark = call.mark();
+  await call.speak('them', 'SORRY CAN YOU HEAR ME OKAY I THINK MY CONNECTION DROPPED FOR A SECOND');
+  await pause(1_000);
+  await call.speak('them', 'CAN YOU REPEAT THAT');
+  await pause(3_500);
+  expect(call.since(mark)).toEqual([]);
+
+  // 5. Another language shows its mark and is never answered.
+  await call.speak('them', 'MERA NAAM HAI PICHLE SAAL KAAM KAR RAHA', 2_500, true);
+  await pause(3_500);
+  expect(call.since(mark)).toEqual([]);
+  await expect(page.getByText(/non-English speech/i).first()).toBeVisible();
+
+  // 6. A remark after a question: pressing Answer shows the existing answer, no new request.
+  await call.speak('them', 'WHY DO YOU WANT TO LEAVE YOUR CURRENT COMPANY');
+  await expect.poll(() => call.since(mark).length, { timeout: 5_000 }).toBe(1);
+  await call.speak('you', 'I WANT TO WORK ON LARGER SYSTEMS', 2_000);
+  await call.speak('them', 'STOP SMIRKING');
+  await pause(500);
+  await page.keyboard.press('Control+Enter');
+  await pause(1_500);
+  expect(call.since(mark)).toHaveLength(1);
 });
 
 test('home panel: cards, search, sort, the menu and its buttons', async () => {

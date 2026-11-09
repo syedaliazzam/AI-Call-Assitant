@@ -126,6 +126,12 @@ describe('desktop getOtherSideStream', () => {
     const getDisplayMedia = stubDisplayMedia(async () => fakeStream([video, audio]));
     const result = await windows.getOtherSideStream();
     expect(getDisplayMedia).toHaveBeenCalledWith(DESKTOP_DISPLAY_OPTIONS);
+    // v1.4 (ADR-0062): the other side's sound is not processed like a microphone.
+    expect(DESKTOP_DISPLAY_OPTIONS.audio).toEqual({
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    });
     expect(video.stop).toHaveBeenCalled();
     expect(result.source).toBe('system-loopback');
     expect(result.stream.getVideoTracks()).toHaveLength(0);

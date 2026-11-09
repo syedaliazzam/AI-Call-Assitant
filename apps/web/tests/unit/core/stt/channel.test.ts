@@ -9,11 +9,12 @@
  * from the LATEST onset before text appears (background noise without text does not count),
  * and each utterance records the gate's added delay.
  * The final line carries the end of speech: the last loud 10 ms frame, but never after the last
- * text change.
+ * text change. v1.4: the final line carries the model's confidence when the runtime gives one.
  */
 import { describe, expect, it } from 'vitest';
 import {
   ChannelDecoder,
+  lineConfidence,
   PAUSE_END_MS,
   type ChannelEvent,
   type RecognizerLike,
@@ -362,6 +363,39 @@ describe('ChannelDecoder: audio for accurate transcription (v1.0.1, ADR-0034)', 
       } else {
         expect(final.audio).toBeUndefined();
       }
+    }
+  });
+});
+
+describe('ChannelDecoder: confidence (v1.4, ADR-0062)', () => {
+  it('sums up the per-token log probabilities', () => {
+    expect(lineConfidence(undefined)).toBeUndefined();
+    expect(lineConfidence([])).toBeUndefined();
+    expect(lineConfidence([-0.5, -1.5, Number.NaN, -0.1])).toEqual({
+      tokens: 3,
+      meanLogProb: expect.closeTo(-0.7, 6),
+      lowShare: 1 / 3,
+    });
+  });
+
+  it('puts the confidence on the final line when the runtime gives ys_probs, and none otherwise', () => {
+    for (const probs of [[-0.2, -1.4, -0.3], undefined]) {
+      const { recognizer } = fakeRecognizer(['', 'HELLO', 'HELLO THERE'], [3]);
+      const plain = recognizer.getResult.bind(recognizer);
+      recognizer.getResult = (stream) => ({
+        ...plain(stream),
+        ...(probs ? { ys_probs: probs } : {}),
+      });
+      const events: ChannelEvent[] = [];
+      const decoder = new ChannelDecoder('them', recognizer, (e) => events.push(e), {
+        clock: fakeClock(),
+        gate: null,
+      });
+      for (let i = 0; i < 4; i += 1) decoder.accept(loud(), i * 0.1 + 0.1);
+      const final = events.find((e) => e.type === 'final');
+      expect(final?.type === 'final' && final.confidence).toEqual(
+        probs ? { tokens: 3, meanLogProb: expect.closeTo(-0.633, 3), lowShare: 1 / 3 } : undefined,
+      );
     }
   });
 });

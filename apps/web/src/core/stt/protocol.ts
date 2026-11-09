@@ -26,6 +26,23 @@ export const CHANNELS: readonly ChannelId[] = ['you', 'them'];
 export type EndpointReason = 'model' | 'pause' | 'flush';
 
 /**
+ * How sure the speech model was of a final line (v1.4, ADR-0062), from the log probability sherpa-onnx
+ * gives each word piece it wrote. Used to spot speech the English model cannot write (another
+ * language) and noise it turned into a word. Numbers only.
+ */
+export interface LineConfidence {
+  /** Number of word pieces (tokens) in the line. */
+  tokens: number;
+  /** Mean log probability of those pieces (0 = certain; more negative = less sure). */
+  meanLogProb: number;
+  /** Share of pieces with a log probability below LOW_TOKEN_LOG_PROB (0…1). */
+  lowShare: number;
+}
+
+/** A word piece whose log probability is below this counts as unsure (about 37% likely or less). */
+export const LOW_TOKEN_LOG_PROB = -1;
+
+/**
  * How many candidate texts beam search keeps (sherpa-onnx maxActivePaths). 4 is sherpa-onnx's
  * default and what live sessions use; 8 is offered on /dev/stt-test only, to measure whether a
  * wider beam lets hotwords reach names (Day 3 Stage 4 measurement) and what it costs in CPU.
@@ -250,6 +267,11 @@ export type FromWorker =
        * after tEnd. Latencies are measured from here.
        */
       speechEnd: number;
+      /**
+       * v1.4 (ADR-0062): how sure the model was of the line's words, from sherpa-onnx's per-token log
+       * probabilities. Absent when the runtime gives none. Numbers only, never text.
+       */
+      confidence?: LineConfidence;
     }
   | {
       /** Updated statistics (about once a second while loaded). */

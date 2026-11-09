@@ -4,7 +4,7 @@
  * louder words, words right after other speech and longer lines are kept.
  */
 import { describe, expect, it } from 'vitest';
-import { ISOLATION_MS, isNoiseLine } from '@/core/stt/noiseLine';
+import { ISOLATION_MS, isNoiseLine, isShortAnswer } from '@/core/stt/noiseLine';
 
 /** A quiet lone line at the gate's starting threshold (0.004): peak just above it. */
 const quiet = { peakRms: 0.006, threshold: 0.004, msSincePrevious: Number.POSITIVE_INFINITY };
@@ -29,5 +29,20 @@ describe('isNoiseLine', () => {
       false,
     );
     expect(isNoiseLine({ ...quiet, text: 'I THINK SO' })).toBe(false);
+  });
+});
+
+describe('v1.4 (ADR-0062): lone function words and short answers', () => {
+  it('drops a lone "a", "and", "the" or "uh" however loud, when it stands alone', () => {
+    for (const text of ['A', 'And.', 'THE', 'UH']) {
+      expect(isNoiseLine({ ...quiet, text, peakRms: 0.3 })).toBe(true);
+    }
+    // Right after the same speaker's words it may end their sentence: kept.
+    expect(isNoiseLine({ ...quiet, text: 'AND', peakRms: 0.3, msSincePrevious: 500 })).toBe(false);
+  });
+
+  it('tells a real one-word reply', () => {
+    expect(isShortAnswer('Okay.')).toBe(true);
+    expect(isShortAnswer('NOTHING')).toBe(false);
   });
 });

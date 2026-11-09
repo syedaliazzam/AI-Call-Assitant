@@ -22,8 +22,24 @@ import {
 } from './question';
 import type { Utterance } from './transcript';
 
-/** What a line is. */
-export type LineKind = 'question' | 'greeting' | 'instruction' | 'garbled' | 'statement';
+/** What a line is. v1.4: 'meta' is talk about the call itself (repeat that, can you hear me). */
+export type LineKind = 'question' | 'greeting' | 'instruction' | 'meta' | 'garbled' | 'statement';
+
+/**
+ * v1.4 (ADR-0062): talk about the call itself, never a question to answer: asking to repeat, checking the
+ * sound or the connection, and sharing screens. Unlike a greeting, such a phrase is the whole point of
+ * the line, so it is not looked for again once removed ("Can you hear me okay? I think my connection
+ * dropped" is about the call, not a question about hearing).
+ */
+const META_PHRASES =
+  /\b(?:(?:can|could|would) you (?:please )?(?:repeat|say) (?:that|it|this|the question|your question|the last part)(?: again| please| one more time| for me)*|(?:can|could) you (?:please )?repeat|say (?:that|it) again|come again|repeat (?:that|the question)|one more time|what was (?:the|your) question|i (?:did ?n['o]?t|didn't|couldn't|could not) (?:quite )?(?:catch|get|hear) (?:that|it|the question|you|what you said|the last part)|(?:can|could|do) you (?:guys |all |both )?(?:hear|see) me(?: (?:okay|ok|alright|clearly|now|properly|well|fine))*|(?:is|are) (?:my|the) (?:audio|voice|mic|microphone|sound|video|camera|connection|internet|screen)(?: (?:okay|ok|fine|working|clear|good|visible|coming through|better|now))*|am i audible|is (?:this|that) better|you(?:'re| are) (?:breaking up|cutting out|frozen|on mute|muted|lagging)|you (?:broke|froze|cut out)(?: up)?|(?:i|we) (?:lost|can't hear|cannot hear|couldn't hear|can not hear) you|(?:my|the|your) (?:connection|internet|audio|network|video) (?:dropped|is bad|is poor|froze|cut out|went|is lagging|is slow|is unstable)|(?:can|could) you see my screen|(?:let me|i'll|i will|i'm going to) (?:share|stop sharing) my screen|stop (?:sharing|presenting)(?: (?:your|the|my) screen)?|is my screen visible|sorry,? (?:what|pardon)|pardon(?: me)?)\b/gi;
+
+/**
+ * v1.4: a request for an answer worded as a statement ("I'd like to hear about your Kubernetes work").
+ * Treated as a question.
+ */
+const REQUEST_PHRASES =
+  /\b(?:i(?:'d| would) (?:like|love) (?:to (?:hear|know|understand|learn)|you to (?:explain|describe|tell|walk|talk|share))|i want to (?:hear|know|understand)|(?:talk|walk) (?:me|us) (?:through|about)|tell (?:me|us) (?:about|how|why|what|more)|share (?:with (?:me|us) )?(?:how|why|what|your|an example)|give (?:me|us) (?:an|a|some) (?:example|overview|summary)|describe (?:how|why|what|your|a time|the))\b/i;
 
 /**
  * Greetings, thanks, checks that the line works, and goodbyes. Removed from a line before it is judged:
@@ -91,6 +107,16 @@ export function looksGarbled(text: string): boolean {
 export function lineKind(text: string): LineKind {
   const trimmed = text.trim();
   if (looksGarbled(trimmed)) return 'garbled';
+  // v1.4: talk about the call is judged on what is left once it, a greeting and an instruction are
+  // removed; only a real question in that rest makes it a question. The "?" of the removed phrase
+  // does not count (questionSpan needs three words in the sentence holding a mark).
+  if (trimmed.search(META_PHRASES) !== -1) {
+    const rest = trimmed
+      .replace(META_PHRASES, ' ')
+      .replace(GREETING_PHRASES, ' ')
+      .replace(INSTRUCTION_PHRASES, ' ');
+    return questionSpan(rest) !== null || REQUEST_PHRASES.test(rest) ? 'question' : 'meta';
+  }
   // A greeting or an instruction with a real question in it is the question.
   const rest = trimmed.replace(GREETING_PHRASES, ' ').replace(INSTRUCTION_PHRASES, ' ');
   const hadInstruction = trimmed.search(INSTRUCTION_PHRASES) !== -1;
@@ -104,6 +130,8 @@ export function lineKind(text: string): LineKind {
     if (wordsOf(rest).length <= 3) return hadInstruction ? 'instruction' : 'greeting';
   }
   if (trimmed.includes('?') || questionSpan(trimmed) !== null) return 'question';
+  // v1.4: "I'd like to hear about your Kubernetes work" asks for an answer.
+  if (REQUEST_PHRASES.test(trimmed)) return 'question';
   return 'statement';
 }
 
@@ -117,7 +145,7 @@ export function lineKind(text: string): LineKind {
  */
 export function isSkippedLine(text: string): boolean {
   const kind = lineKind(text);
-  return kind === 'greeting' || kind === 'instruction';
+  return kind === 'greeting' || kind === 'instruction' || kind === 'meta';
 }
 
 /** The longest pause inside one question's lines when looking back, in ms (group.ts's turn gap). */
@@ -166,15 +194,34 @@ function asQuestion(lines: readonly Utterance[]): SelectedQuestion {
  * Picks what Answer answers (v1.1.0, item 14). The latest words are used unless they are a greeting or
  * an instruction; then the last real question of this call, with any lines that finished it. Garbled
  * latest words are reported, and nothing at all to answer is reported too: neither spends a request.
+ * v1.4 (ADR-0062): talk about the call is skipped like a greeting; a remark looks back too, and is
+ * answered as it is only when there is no question to go back to; another language is left out.
  *
- * @param lines The visible lines of this call, in order.
+ * @param allLines The visible lines of this call, in order.
+ * @param options  Whether a lone remark may be answered (default yes).
  * @returns See PickedQuestion.
  * Called from: useLiveAnswers.ts (ask); tests
  */
-export function pickQuestion(lines: readonly Utterance[]): PickedQuestion {
+export function pickQuestion(
+  allLines: readonly Utterance[],
+  options: PickOptions = {},
+): PickedQuestion {
+  // v1.4: speech in another language is never a question (it reads "[non-English speech]").
+  const lines = allLines.filter((line) => !line.nonEnglish);
   const selected = selectQuestion(lines);
   if (!selected) return { kind: 'none' };
-  if (lineKind(selected.text) === 'garbled') return { kind: 'garbled', selected };
+  const kind = lineKind(selected.text);
+  if (kind === 'garbled') return { kind: 'garbled', selected };
+  // v1.4 (ADR-0062): a remark with no question in it ("stop smirking", "that's great") looks back to
+  // the last real question, like a greeting does. Only when there is none is it answered as it is,
+  // because refusing a real request the rules cannot read is the worse mistake.
+  if (kind === 'statement') {
+    const earlier = lookBack(lines, selected, true);
+    if (earlier) return earlier;
+    return options.allowStatement === false
+      ? { kind: 'none' }
+      : { kind: 'question', selected, lookedBack: false };
+  }
   if (!isSkippedLine(selected.text)) {
     // selectQuestion() keeps the lines after a question, which may finish it. A greeting or an
     // instruction among them does not: "…cost for forty seats / say yes when ready" asks about the cost.
@@ -188,16 +235,48 @@ export function pickQuestion(lines: readonly Utterance[]): PickedQuestion {
       ? { kind: 'question', selected, lookedBack: false }
       : { kind: 'question', selected: asQuestion(chosen.slice(0, end)), lookedBack: true };
   }
+  return lookBack(lines, selected) ?? { kind: 'none' };
+}
+
+/** Options for pickQuestion(). */
+export interface PickOptions {
+  /**
+   * v1.4: false to report 'none' instead of answering a lone remark (Answer first tries only the lines
+   * not answered yet, then all of them).
+   */
+  allowStatement?: boolean;
+}
+
+/**
+ * The last real question of the call before what was selected, with the plain words right after it
+ * that finish it.
+ *
+ * @param lines    The visible lines of this call, in order.
+ * @param selected What selectQuestion() picked (a greeting, an instruction, talk about the call or a
+ *                 remark).
+ * @param keepSelectedOut True (a remark) to never add the selected lines to the question found.
+ * @returns The question, marked as looked back, or null when there is none.
+ * Called from: pickQuestion()
+ */
+function lookBack(
+  lines: readonly Utterance[],
+  selected: SelectedQuestion,
+  keepSelectedOut = false,
+): Extract<PickedQuestion, { kind: 'question' }> | null {
   const spoken = lines.filter((line) => line.speaker === 'them' && line.text.trim() !== '');
   const found = spoken.findLastIndex(
     (line) => !selected.lineIds.includes(line.id) && lineKind(line.text) === 'question',
   );
-  if (found === -1) return { kind: 'none' };
+  if (found === -1) return null;
   // A pause can cut a question in two ("…the plan cost / for forty seats"): the plain words right
   // after it finish it.
   const used = [spoken[found]!];
   for (const next of spoken.slice(found + 1)) {
-    if (next.tStart - used.at(-1)!.tEnd > QUESTION_GAP_MS || lineKind(next.text) !== 'statement') {
+    if (
+      next.tStart - used.at(-1)!.tEnd > QUESTION_GAP_MS ||
+      lineKind(next.text) !== 'statement' ||
+      (keepSelectedOut && selected.lineIds.includes(next.id))
+    ) {
       break;
     }
     used.push(next);

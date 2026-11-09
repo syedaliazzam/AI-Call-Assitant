@@ -552,7 +552,7 @@ test('overlay: a coding answer, a figure to check and a private answer fit (ADR-
   }
 });
 
-test('auto-answer: answers a finished question by itself, at most once per 15 s', async () => {
+test('auto-answer: answers each finished question by itself, once (v1.4: no 15 s limit)', async () => {
   test.setTimeout(60_000);
   const size: Width = { width: 1440, height: 900, touch: false };
   const watched = await open('auto', size);
@@ -570,22 +570,24 @@ test('auto-answer: answers a finished question by itself, at most once per 15 s'
       text,
     );
 
+  // The opening lines ended over a minute ago: too old to answer by itself (v1.4, AUTO_MAX_AGE_MS).
   await page.waitForTimeout(2_000);
   expect(answers, 'no auto-answer for the opening lines').toBe(0);
+  // The grey "You" line of the fixture is stuck after 5 s (STALE_PARTIAL_MS), so it no longer counts as
+  // the user speaking.
+  await page.waitForTimeout(3_500);
   await addThem('WHAT DOES THE ANNUAL PLAN COST FOR FORTY SEATS');
   const panel = page.getByRole('region', { name: 'Answer' });
   await expect(panel.getByText('Auto', { exact: true })).toBeVisible({ timeout: 5_000 });
   expect(answers).toBe(1);
-  const firstAt = Date.now();
 
-  // A second question within 15 s is not answered by itself.
+  // v1.4 (ADR-0062): a new question a few seconds later gets its own answer (the old 15 s limit is
+  // gone: one answer per question instead), once.
+  await page.waitForTimeout(5_000);
   await addThem('HOW LONG DOES THE ROLLOUT TAKE');
-  await page.waitForTimeout(4_000);
-  expect(answers, 'rate limit: one auto-answer per 15 s').toBe(1);
-
-  // After 15 s, the still-unanswered question is answered.
-  await page.waitForTimeout(Math.max(0, 15_500 - (Date.now() - firstAt)));
-  await expect.poll(() => answers, { timeout: 3_000 }).toBe(2);
+  await expect.poll(() => answers, { timeout: 4_000 }).toBe(2);
+  await page.waitForTimeout(3_000);
+  expect(answers, 'each question answered once').toBe(2);
   await shot(watched, size, 'live-auto-answer');
   await watched.context.close();
 });
