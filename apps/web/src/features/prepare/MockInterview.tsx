@@ -6,7 +6,8 @@
  *          feedback on each answer, sums up at the end, and saves it all as a Mock session.
  * Used by: app/(app)/mock/page.tsx; tests/integration/harness/prepare.tsx
  * Depends on: src/core/prepare (client, speech, mockSession), src/core/stt/sttEngine.ts,
- *             src/core/answer/warm.ts (toSessionContext), src/core/storage (sessions, documents),
+ *             src/core/documents/summary.ts (smartSessionContext: the CV and a summary of the
+ *             other documents, ADR-0067), src/core/storage (sessions, documents),
  *             src/platform (getMicStream), src/ui (Button, LinkButton, PageShell, Select, Textarea)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5; ADR-0029
  *
@@ -17,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MockItem, MockSummaryResponse } from '@kite/shared';
-import { toSessionContext } from '@/core/answer/warm';
+import { smartSessionContext } from '@/core/documents/summary';
 import { prepare } from '@/core/prepare/client';
 import { saveMockInterview } from '@/core/prepare/mockSession';
 import { speak, stopSpeaking } from '@/core/prepare/speech';
@@ -184,7 +185,7 @@ export function MockInterview({
     startedAt.current = Date.now();
     const outcome = await prepare({
       kind: 'mock-questions',
-      session: toSessionContext(session, documents),
+      session: await smartSessionContext(session, documents),
       count: Number(count),
     });
     if (!alive.current) return;
@@ -241,7 +242,7 @@ export function MockInterview({
     const question = questions[index]!;
     const outcome = await prepare({
       kind: 'mock-feedback',
-      session: toSessionContext(current.session, current.documents),
+      session: await smartSessionContext(current.session, current.documents),
       question,
       answer: answer || '(no answer was given)',
     });
@@ -280,7 +281,7 @@ export function MockInterview({
     setPhase('finishing');
     const outcome = await prepare({
       kind: 'mock-summary',
-      session: toSessionContext(current.session, current.documents),
+      session: await smartSessionContext(current.session, current.documents),
       items: [...answered],
     });
     if (!alive.current) return;

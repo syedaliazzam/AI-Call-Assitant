@@ -146,6 +146,25 @@ export interface Session {
    * file replaces it. Absent on a session made on this device.
    */
   handoffAt?: number;
+  /**
+   * ADR-0067: the short summary of the session's documents other than the CV, written by the fast
+   * model (POST /api/summary) and sent to the smart-model routes instead of those documents. Absent
+   * until first needed; replaced when the documents change (the fingerprint no longer matches).
+   */
+  documentsSummary?: StoredDocumentsSummary;
+}
+
+/** A session's documents summary (ADR-0067), as kept on the device. */
+export interface StoredDocumentsSummary {
+  /**
+   * SHA-256 (hex) of the summarised documents' names and texts, in prompt order. A different
+   * fingerprint means the documents changed and the summary must be written again.
+   */
+  fingerprint: string;
+  /** The summary text. Never logged. */
+  text: string;
+  /** When it was written (Unix ms). */
+  createdAt: number;
 }
 
 /** A document attached to a session, as extracted text (architecture §7.4 `documents`). */

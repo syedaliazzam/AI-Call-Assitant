@@ -597,3 +597,20 @@ i5-8350U laptop, synthetic headphones call (`stt:calls --accurate=<threads>`): t
 | Engine CPU during the call | — | 0.62 and 0.54 core | 0.40 core |
 | 14 "You" lines after the call | — | 27.4 and 26.6 s | 33.5 s |
 | Model load | — | 6–8 s | 12.5 s |
+
+## Larger documents: 480k characters per session (10 Nov 2026, ADR-0067)
+
+i5-8350U laptop, Node (no browser), `pnpm --filter web measure:large-docs`: the real server code against the Claude API, from the developer's connection. Invented test set of 480,000 characters (a CV of 1,952 characters and three documents of 200,000, 150,000 and 128,048) = **164,384 tokens** in the cached prefix (rules + session block). Prices from the official pricing page (Haiku 5.5 over 100,000 tokens: input $0.50, cache write $0.625, cache read $0.05, output $2.50 per MTok; Sonnet 5.5: $2 / $2.50 / $0.10 / $10). One run, so the times vary with the network and Claude's load.
+
+| Request | Model | Input / cache write / cache read / output tokens | First text | Total | Cost |
+|---|---|---|---|---|---|
+| Answer 1, no warm-up (writes the cache) | Haiku 5.5 | 327 / 164,384 / 0 / 133 | 2,902 ms | 3,429 ms | $0.1032 |
+| Answer 2 (reads it) | Haiku 5.5 | 324 / 209 / 164,384 / 111 | 1,371 ms | 1,833 ms | $0.0088 |
+| Answer 3 (reads it) | Haiku 5.5 | 311 / 175 / 164,593 / 80 | 1,060 ms | 1,345 ms | $0.0087 |
+| Documents summary (3 documents, 478,048 characters → 2,685 characters) | Haiku 5.5 | 159,346 / 517 / 0 / 949 | — | 7,291 ms | $0.0824 |
+| Notes now (CV + summary + 3-answer call) | Sonnet 5.5 | 766 / 3,350 / 0 / 316 | — | 3,812 ms | $0.0131 |
+| Notes before (every document; counted with the token-count endpoint, not run) | Sonnet 5.5 | about 161,669 input | — | — | about $0.41 |
+
+- Answers 2 and 3 read the whole cached prefix (164,384 tokens): **cache hits confirmed** after the first answer.
+- **Estimated 20-answer call:** 1 write + 19 reads = **$0.27**; each idle re-warm (4.5 min with no answer) adds about $0.008. For comparison, the old 150,000-character cap is about 51k tokens (under the 100k price line): about $0.02 for the same call.
+- In the app the warm-up at session open writes the cache, so the first answer normally reads it (about 1.1–1.4 s to the first word here); 2.9 s is the case with no warm-up.

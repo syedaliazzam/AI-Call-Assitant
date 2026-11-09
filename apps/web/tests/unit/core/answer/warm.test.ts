@@ -4,11 +4,12 @@
  * first, the same JSON whatever order the documents were read in); warmSession() sends mode
  * 'warm' with the session's model tier (and the conversation chunks for the idle re-warm),
  * resolves with the usage, resolves null on failure
- * (never throws), and logs only the id, times and token counts. All text is invented.
+ * (never throws), and logs only the id, times and token counts. ADR-0067: the CV goes first,
+ * marked kind 'resume' (sortDocuments()). All text is invented.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AnswerDone, AnswerHandlers, streamAnswer } from '@/core/answer/answerClient';
-import { toSessionContext, warmSession } from '@/core/answer/warm';
+import { sortDocuments, toSessionContext, warmSession } from '@/core/answer/warm';
 import type { Session, StoredDocument } from '@/core/storage/types';
 
 /** An invented session. */
@@ -180,5 +181,25 @@ describe('warmSession', () => {
     expect(logged).toContain('"cacheWrite":2100');
     expect(logged).not.toContain('SECRET');
     expect(logged).not.toContain('Northwind');
+  });
+});
+
+describe('the CV first (ADR-0067)', () => {
+  it('puts the CV before older documents and marks it, the rest oldest first', () => {
+    const cv: StoredDocument = { ...doc('cv', 9), kind: 'resume' };
+    const context = toSessionContext(SESSION, [doc('b', 2), cv, doc('a', 1)]);
+    expect(context.documents.map((document) => document.name)).toEqual([
+      'cv.txt',
+      'a.txt',
+      'b.txt',
+    ]);
+    expect(context.documents[0]).toEqual({ name: 'cv.txt', text: 'SECRET cv', kind: 'resume' });
+    expect(context.documents[1]).not.toHaveProperty('kind');
+  });
+
+  it('sorts the same whatever the order read, ties by id', () => {
+    const one = [doc('b', 1), doc('a', 1), { ...doc('cv', 5), kind: 'resume' as const }];
+    expect(sortDocuments(one).map((document) => document.id)).toEqual(['cv', 'a', 'b']);
+    expect(sortDocuments([...one].reverse())).toEqual(sortDocuments(one));
   });
 });

@@ -6,10 +6,13 @@
  * devices both survive (conflict merge); a delete on one device removes the session and its documents
  * and lines on the other, and a stale edit cannot revive it; offline changes wait in the outbox and go
  * once the server answers again; Save transcript off keeps lines off the server; account preferences
- * follow the account; an already-applied revision is not applied again. Invented data only.
+ * follow the account; an already-applied revision is not applied again. ADR-0067: two 250k-character
+ * documents (one in a 3-byte script) and a session's documents summary go in pushes the server
+ * accepts (checkPush(), under its byte limit) and arrive on the other device unchanged, through the
+ * real encryption. Invented data only.
  */
 import 'fake-indexeddb/auto';
-import type { SyncOp } from '@kite/shared';
+import { SYNC_LIMITS, type SyncOp } from '@kite/shared';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addDocument, listDocuments } from '@/core/storage/documents';
 import { forgetDb, getDb, selectAccountDatabase } from '@/core/storage/db';
@@ -24,6 +27,7 @@ import { listUtterances, saveUtterance } from '@/core/storage/utterances';
 import { pullAll, pushOnce, type SyncTransport } from '@/core/sync/engine';
 import { accountPrefChanged } from '@/core/sync/prefsSignal';
 import { applyOps, pullChanges, type StoreContext } from '@/server/calldata/store';
+import { checkPush } from '@/server/calldata/validate';
 import { ALICE, createTestDb, resetTestDb, type TestDb } from '../../server/calldata/pgliteDb';
 import { sessionInput } from '../storage/helpers';
 
@@ -33,12 +37,17 @@ const DEVICE_B = `${ALICE}-device-b`;
 
 let server: StoreContext;
 let offline = false;
+/** UTF-8 sizes of the push bodies sent, and whether the server's body check accepted each. */
+let pushed: { bytes: number; accepted: boolean }[] = [];
 
 /** The transport: the real server functions, as the routes would call them (JSON round trip). */
 const transport: SyncTransport = {
   async push(ops: SyncOp[]) {
     if (offline) throw new TypeError('Failed to fetch');
-    return { results: await applyOps(server, JSON.parse(JSON.stringify(ops)) as SyncOp[]) };
+    // The body as httpTransport sends it, checked as POST /api/sync/push checks it.
+    const body = JSON.stringify({ ops });
+    pushed.push({ bytes: Buffer.byteLength(body), accepted: checkPush(body).ok });
+    return { results: await applyOps(server, JSON.parse(body).ops as SyncOp[]) };
   },
   async pull(since, after) {
     if (offline) throw new TypeError('Failed to fetch');
@@ -73,6 +82,7 @@ beforeEach(async () => {
   await resetTestDb(t);
   server = { db: t.db, keys: t.keys, userId: ALICE };
   offline = false;
+  pushed = [];
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 });
 
@@ -224,4 +234,56 @@ describe('account preferences', () => {
     expect(store.get('kite.codingLanguage')).toBe('Go');
     expect(store.has('kite.autoAnswer')).toBe(false);
   });
+});
+
+describe('large documents (ADR-0067)', () => {
+  it('two 250k-character documents and a summary sync in accepted pushes and arrive unchanged', async () => {
+    on(DEVICE_A);
+    const session = await createSession(sessionInput({ company: 'Invented Large' }));
+    const english = 'Invented handbook line. '.repeat(10_417).slice(0, 250_000);
+    const japanese = '日本語の資料'.repeat(41_667).slice(0, 250_000);
+    await addDocument({ sessionId: session.id, name: 'en.txt', text: english });
+    await addDocument({ sessionId: session.id, name: 'ja.txt', text: japanese });
+    const summary = { fingerprint: 'f'.repeat(64), text: '## en.txt\n- Invented.', createdAt: 7 };
+    await updateSession(session.id, { documentsSummary: summary });
+    await pushAll();
+    expect(await getDb().outbox.count()).toBe(0);
+    expect(pushed.length).toBeGreaterThan(0);
+    for (const push of pushed) {
+      expect(push.accepted).toBe(true);
+      expect(push.bytes).toBeLessThanOrEqual(SYNC_LIMITS.requestBytes);
+    }
+
+    on(DEVICE_B);
+    await pullAll(getDb(), transport);
+    const texts = new Map((await listDocuments(session.id)).map((d) => [d.name, d.text]));
+    expect(texts.get('en.txt')).toBe(english);
+    expect(texts.get('ja.txt')).toBe(japanese);
+    expect((await getSession(session.id))?.documentsSummary).toEqual(summary);
+  });
+
+  it('splits pushes by UTF-8 bytes: six 3-byte-script documents need more than one push', async () => {
+    on(DEVICE_A);
+    const japanese = '日本語の資料'.repeat(41_667).slice(0, 250_000);
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const session = await createSession(sessionInput({ company: `Invented ${i}` }));
+      ids.push(session.id);
+      await addDocument({ sessionId: session.id, name: 'a.txt', text: japanese });
+      await addDocument({ sessionId: session.id, name: 'b.txt', text: japanese });
+    }
+    // About 4.5 MB as UTF-8 but only 1.5M characters: one push by string length, refused by the server.
+    await pushAll();
+    expect(await getDb().outbox.count()).toBe(0);
+    expect(pushed.length).toBeGreaterThan(1);
+    expect(pushed.every((push) => push.accepted && push.bytes <= SYNC_LIMITS.requestBytes)).toBe(
+      true,
+    );
+
+    on(DEVICE_B);
+    await pullAll(getDb(), transport);
+    for (const id of ids) {
+      expect((await listDocuments(id)).map((d) => d.text === japanese)).toEqual([true, true]);
+    }
+  }, 60_000);
 });

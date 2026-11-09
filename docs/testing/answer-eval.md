@@ -496,3 +496,14 @@ Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 run
 **Did `none` swallow real questions?** No. Every question-detection scenario with a real question scored 9–10, so each got an answer. The runs where the type differed from the expected one (12 of 100) were the same scenarios that differed in the 4 Nov runs (`a-pm-product`, `a-success-client`, `a-success-sla`, `a-frontend-design`, `qd-real-1`, `st-document`). The rule change did not cause them.
 
 **`cv-embellishment`.** The score is the same as at the last release, which was released by the developer's decision. The grader's list of invented items is longer (13 against 6), spread over all four scenarios (2/1, 2/0, 3/0, 2/3 per run). The change adds one type and one rule line, neither about the CV. Earlier releases showed that 2-run readings of this 4-scenario group move by about a point between identical runs. So this reads as noise, not a regression, but it was not re-run to confirm (no budget was asked for a second paid run). It remains the open item from v1.1.0.
+
+## Larger documents (2026-11-10, ADR-0067)
+
+Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario. The groups the developer asked for, once each. **Spend: $0.106 for 76 requests** ($0.0837 for 60, $0.0224 for 16).
+
+| Group | Gate | Result | Last run (2026-11-10, ADR-0065) | Verdict |
+|---|---|---|---|---|
+| `answers` (15) | 3-run mean ≥ 8.86 | 9.40 (one run) | 9.03 (one run) | passes |
+| `cv-embellishment` (4) | ≥ 7.10, at most 6 invented items | 6.50; 9 invented items in 6 of 8 runs | 6.75; 13 items in 6 of 8 runs | **fails, as at the last two releases**; within the group's spread (6.00–7.25) |
+
+**What these runs test.** The evaluation scenarios build their sessions directly, with no CV marker and small documents, so their answer prompts are byte for byte what they were before this change (`sessionBlock()` was split into helpers with the same output, pinned by `tests/unit/server/prompt-documents.test.ts`). They show the refactor changed nothing; they do not test answers over 500k characters of documents. That was measured for cost and caching only (`docs/testing/benchmark-results.md`, "Larger documents"), because one `answers` pass with 480k-character sessions would cost about $1.80 for the answers alone (15 cache writes of 164k tokens at the long-prompt price, then 30 cache reads), over the $1 cap for this change.

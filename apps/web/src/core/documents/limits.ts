@@ -7,8 +7,8 @@
  *          Stage 3: room left, refusing a document that does not fit); server/validate.ts uses
  *          the same session cap (Stage 5)
  * Depends on: nothing
- * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (documents ≤ ~150k characters
- *               per request); day-03-sessions.md Stage 2
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (documents ≤ 500k characters
+ *               per session, ADR-0067); day-03-sessions.md Stage 2
  */
 
 /**
@@ -19,17 +19,29 @@
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
 /**
- * Most document text one session may hold, in characters (architecture §7.2). All of it is
- * sent to Claude in the cached session block: 150,000 characters is roughly 37,000 tokens, which
- * keeps every answer request well inside the model's context and the 4 MB request cap.
+ * Most document text one session may hold, in characters (architecture §7.2, ADR-0067). All of it
+ * is sent to the fast model in the cached session block of every live answer. The official docs put
+ * 1M tokens at about 2.5M characters, so 500,000 characters is at most about 200,000 tokens: a fifth
+ * of the 1M-token context of claude-haiku-5-5 and claude-sonnet-5-5, leaving room for the rules, the
+ * conversation and the answer. As UTF-8 it is at most about 1.5 MB, inside the 4 MB request cap.
  */
-export const MAX_SESSION_CHARS = 150_000;
+export const MAX_SESSION_CHARS = 500_000;
 
 /**
- * Most text one document may add, in characters. Two thirds of the session cap, so one long
- * document cannot take all of it and a second, shorter one (for example a price list) still fits.
+ * Most text one document may add, in characters. Half the session cap, so one long document cannot
+ * take all of it and a second one (for example a price list) still fits.
  */
-export const MAX_DOCUMENT_CHARS = 100_000;
+export const MAX_DOCUMENT_CHARS = 250_000;
+
+/**
+ * Above this many characters the wizard warns that the first answer may be slower: the first
+ * request of a call writes the whole document block to Claude's cache, and Claude reads it all
+ * before the first word (ADR-0067).
+ */
+export const LARGE_SESSION_CHARS = 400_000;
+
+/** The wizard's warning above LARGE_SESSION_CHARS. */
+export const LARGE_SESSION_WARNING = 'Very large documents can slow the first answer.';
 
 /** Whether a document fits, from fitsInSession(). */
 export type FitResult =

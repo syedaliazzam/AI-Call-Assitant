@@ -6,7 +6,8 @@
  * Used by: app/api/answer/route.ts, app/api/notes/route.ts (Day 5)
  * Depends on: zod, @kite/shared (AnswerRequest, request limits, estimateItemTokens)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (server rules: validate with zod,
- *               documents ≤ ~150k characters, request ≤ 4 MB); day-04-answers.md Stage 1
+ *               documents ≤ 500k characters per session (ADR-0067), request ≤ 4 MB);
+ *               day-04-answers.md Stage 1
  *
  * Error messages name the field and the rule, never the submitted text.
  */
@@ -47,14 +48,26 @@ import {
   type PrepareRequest,
   type AskRequest,
   type JobImportRequest,
+  MAX_DOCUMENTS_SUMMARY_CHARS,
+  MAX_SESSION_DOCUMENT_CHARS,
+  type DocumentsSummaryRequest,
 } from '@kite/shared';
 import { z } from 'zod';
 
 /** Largest request body accepted, in bytes (architecture §7.2). */
 export const MAX_REQUEST_BYTES = 4 * 1024 * 1024;
 
-/** Largest total length of all session document texts, in characters (architecture §7.2). */
-export const MAX_DOCUMENT_CHARS = 150_000;
+/**
+ * Largest total length of all session document texts, in characters (architecture §7.2; 500k since
+ * ADR-0067). The same number as the wizard's session cap (core/documents/limits.ts).
+ */
+export const MAX_DOCUMENT_CHARS = MAX_SESSION_DOCUMENT_CHARS;
+
+/**
+ * Largest total length of an Ask Kite chat's attachments, in characters. It stays at 150k when the
+ * session cap rose (ADR-0067): the chat sends them in full to the smart model on every message.
+ */
+export const MAX_ATTACHMENT_CHARS = 150_000;
 
 /**
  * Most key terms kept from a request (shared rule, packages/shared/src/keyTerms.ts). Extra terms are
@@ -70,10 +83,11 @@ const styleSchema = z.object({
   star: z.boolean().optional(),
 });
 
-/** One attached document (SessionDocument). */
+/** One attached document (SessionDocument); kind marks the CV (ADR-0067). */
 const documentSchema = z.object({
   name: z.string().min(1).max(200),
   text: z.string().max(MAX_DOCUMENT_CHARS),
+  kind: z.literal('resume').optional(),
 });
 
 /** Session details (SessionContext); the document total is checked across all documents. */
@@ -96,6 +110,8 @@ const sessionSchema = z
     codingLanguage: z.string().max(50).optional(),
     missingInfo: z.enum(['approach', 'story']).optional(),
     documents: z.array(documentSchema).max(20),
+    // Smart-model routes only (ADR-0067): the summary of the documents other than the CV.
+    documentsSummary: z.string().max(MAX_DOCUMENTS_SUMMARY_CHARS).optional(),
   })
   .refine(
     (session) =>
@@ -222,11 +238,11 @@ export const answerRequestSchema = z
         context.addIssue({ code: 'custom', path: ['question'], message: 'required for mode kite' });
       }
       const total = (request.attachments ?? []).reduce((sum, item) => sum + item.text.length, 0);
-      if (total > MAX_DOCUMENT_CHARS) {
+      if (total > MAX_ATTACHMENT_CHARS) {
         context.addIssue({
           code: 'custom',
           path: ['attachments'],
-          message: `attachments may hold at most ${MAX_DOCUMENT_CHARS} characters`,
+          message: `attachments may hold at most ${MAX_ATTACHMENT_CHARS} characters`,
         });
       }
     } else {
@@ -378,7 +394,7 @@ export type SmallParseResult<T> =
  * @param schema The schema.
  * @param body   The JSON value from the request.
  * @returns The validated request, or a message.
- * Called from: parseJobImportRequest()
+ * Called from: parseJobImportRequest(), parseAskRequest(), parsePrepareRequest(), parseSummaryRequest()
  */
 function parseSmall<T>(schema: z.ZodType<T>, body: unknown): SmallParseResult<T> {
   const result = schema.safeParse(body);
@@ -479,6 +495,39 @@ const prepareRequestSchema = z.discriminatedUnion('kind', [
 export function parsePrepareRequest(body: unknown): SmallParseResult<PrepareRequest> {
   return parseSmall<PrepareRequest>(
     prepareRequestSchema as unknown as z.ZodType<PrepareRequest>,
+    body,
+  );
+}
+
+/**
+ * The body of POST /api/summary (ADR-0067): the session's documents other than the CV, at most
+ * MAX_DOCUMENT_CHARS in all and at least one. Unknown fields are rejected.
+ */
+const summaryRequestSchema = z
+  .object({
+    documents: z
+      .array(documentSchema)
+      .min(1)
+      .max(20)
+      .refine(
+        (documents) =>
+          documents.reduce((total, document) => total + document.text.length, 0) <=
+          MAX_DOCUMENT_CHARS,
+        { message: `at most ${MAX_DOCUMENT_CHARS} characters in all` },
+      ),
+  })
+  .strict();
+
+/**
+ * Validates a documents summary request.
+ *
+ * @param body The JSON value from the request.
+ * @returns The validated request, or a message (field paths only).
+ * Called from: POST handler in app/api/summary/route.ts
+ */
+export function parseSummaryRequest(body: unknown): SmallParseResult<DocumentsSummaryRequest> {
+  return parseSmall<DocumentsSummaryRequest>(
+    summaryRequestSchema as unknown as z.ZodType<DocumentsSummaryRequest>,
     body,
   );
 }

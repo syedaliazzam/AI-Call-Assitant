@@ -5,7 +5,8 @@
  *          description and resume. Saved on this device, so it can be reviewed later at no cost;
  *          writing it again replaces it.
  * Used by: app/(app)/question-bank/page.tsx
- * Depends on: src/core/prepare/client.ts, src/core/answer/warm.ts (toSessionContext),
+ * Depends on: src/core/prepare/client.ts, src/core/documents/summary.ts (smartSessionContext: the
+ *             CV and a summary of the other documents, ADR-0067),
  *             src/core/answer/format.ts (splitAnswer), src/core/storage (sessions, documents,
  *             questionBanks), src/ui (Button, LinkButton, PageShell, Select)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5; ADR-0029
@@ -15,7 +16,7 @@
 import { useEffect, useState } from 'react';
 import type { BankQuestionType } from '@kite/shared';
 import { splitAnswer } from '@/core/answer/format';
-import { toSessionContext } from '@/core/answer/warm';
+import { smartSessionContext } from '@/core/documents/summary';
 import { prepare } from '@/core/prepare/client';
 import { listDocuments } from '@/core/storage/documents';
 import { getQuestionBank, saveQuestionBank } from '@/core/storage/questionBanks';
@@ -99,7 +100,7 @@ export function QuestionBank() {
     const documents = await listDocuments(session.id);
     const outcome = await prepare({
       kind: 'question-bank',
-      session: toSessionContext(session, documents),
+      session: await smartSessionContext(session, documents),
     });
     setWriting(false);
     if (!outcome.ok) {
