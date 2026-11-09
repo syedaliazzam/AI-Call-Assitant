@@ -465,6 +465,9 @@ function start(): void {
       store,
       protection: shield,
       snap,
+      // v1.3.1 (ADR-0058): jumps between the six places slide over 150 ms, unless the system asks for
+      // reduced motion (Windows: Settings → Accessibility → Visual effects → Animation effects off).
+      slideJumps: () => !systemPreferences.getAnimationSettings().prefersReducedMotion,
       // The overlay is gone: never leave the user with the main window still minimised.
       onClosed: () => {
         snap.close();

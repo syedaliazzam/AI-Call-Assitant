@@ -600,6 +600,41 @@ export interface CompactDeps {
   onClosed?: () => void;
   /** Snap zones during a drag (v1.1.0, src/snapZones.ts). Optional in tests. */
   snap?: OverlayDragWatcher;
+  /**
+   * v1.3.1 (ADR-0058): whether a jump between the six positions slides (150 ms) instead of moving at
+   * once. main.ts answers from the system's "reduce motion" setting. Missing (tests): it never slides.
+   */
+  slideJumps?: () => boolean;
+}
+
+/** v1.3.1 (ADR-0058): how long a jump between positions slides, in ms (the web's --k-dur token). */
+export const JUMP_SLIDE_MS = 150;
+
+/** One frame of the slide, in ms (about 60 a second). */
+const JUMP_FRAME_MS = 16;
+
+/**
+ * The in-between places of a slide from one place to another, eased out (fast, then settling), the
+ * last one exactly the target. Only the position moves; the size is the target's throughout.
+ *
+ * @param from   Where the window is.
+ * @param to     Where it goes.
+ * @param frames How many steps (at least 1).
+ * @returns The bounds for each frame, in order.
+ * Called from: goTo() in createCompactWindows(); tests
+ */
+export function slideFrames(from: Bounds, to: Bounds, frames: number): Bounds[] {
+  const count = Math.max(1, Math.round(frames));
+  return Array.from({ length: count }, (_, index) => {
+    const t = (index + 1) / count;
+    // Cubic ease-out, close to the web's --k-ease-out curve.
+    const eased = 1 - (1 - t) ** 3;
+    return {
+      ...to,
+      x: Math.round(from.x + (to.x - from.x) * eased),
+      y: Math.round(from.y + (to.y - from.y) * eased),
+    };
+  });
 }
 
 /** What the overlay tells the snap zones about a drag (v1.1.0). */
@@ -1049,8 +1084,20 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     );
   };
 
+  /** v1.3.1: the timer of a jump that is still sliding, and whether one is. */
+  let slideTimer: ReturnType<typeof setInterval> | null = null;
+  let sliding = false;
+
+  /** Ends a slide where it is (a new jump starts from there, or the slide reached its place). */
+  const stopSlide = () => {
+    if (slideTimer) clearInterval(slideTimer);
+    slideTimer = null;
+    sliding = false;
+  };
+
   /**
    * Puts the open overlay at one of the six positions at its current size (see CompactWindows.goTo).
+   * v1.3.1: it slides there over 150 ms unless the system asks for reduced motion.
    *
    * @param preset Where.
    */
@@ -1061,7 +1108,31 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     const bounds = current.getBounds();
     const area = areaFor(bounds);
     position = preset;
-    current.setBounds({ ...bounds, ...positionPlace(preset, area, bounds.width, bounds.height) });
+    const target = { ...bounds, ...positionPlace(preset, area, bounds.width, bounds.height) };
+    stopSlide();
+    if (deps.slideJumps?.() === true) {
+      // v1.3.1 (ADR-0058): slide there over 150 ms. The window's own 'moved' events are ignored
+      // meanwhile, so the edge snap (save()) never pulls it off the exact place.
+      const window = current;
+      const frames = slideFrames(bounds, target, JUMP_SLIDE_MS / JUMP_FRAME_MS);
+      sliding = true;
+      let frame = 0;
+      slideTimer = setInterval(() => {
+        const next = frames[frame];
+        frame += 1;
+        if (window.isDestroyed() || next === undefined) {
+          stopSlide();
+          return;
+        }
+        // The size it has now (a panel may open mid-slide), stated with the place: at some display
+        // scales a plain move lets a small window creep.
+        const { width, height } = window.getBounds();
+        window.setBounds({ x: next.x, y: next.y, width, height });
+        if (frame >= frames.length) stopSlide();
+      }, JUMP_FRAME_MS);
+    } else {
+      current.setBounds(target);
+    }
     if (fullBounds !== null) {
       // Collapsed or the icon: going back to full opens at the new position too.
       fullBounds = {
@@ -1158,6 +1229,8 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       // Snapping waits for the same quiet moment as saving: on macOS 'moved' fires all through a
       // drag, and moving the window under the user's pointer mid-drag would fight them.
       window.on('moved', () => {
+        // A jump's slide moves the window itself (macOS reports each step as 'moved'): not a drag.
+        if (sliding) return;
         movedSinceSave = true;
         later();
         deps.snap?.moved();
