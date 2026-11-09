@@ -68,7 +68,7 @@ During a call the desktop app is a set of slim bars over your screen, with panel
 - **Move:** the bars have six places: top left, top centre, top right, and the same along the bottom, 16 px from the screen's edges (never under the taskbar). **Ctrl+Alt+Left / Right** jumps one place along the row, **Ctrl+Alt+Up / Down** to the top or bottom row, and **Ctrl+Alt+Shift+Arrows** nudges them a little. Dragging the bar shows the six places; let go and the bars go to the nearest one. **⋮ → Position** has the same six as a small grid. On the bottom row everything is mirrored: the bars sit at the bottom and the panels and menus open above them. **Ctrl+Alt+H** shows or hides the bars, and each screen remembers its own place.
 - **Transcript:** the **Transcript** switch on bar 1, or **Ctrl+Alt+T** while the bars have focus, turns the live transcript on or off.
 - **Compact** shrinks everything to a small square with moving level bars. Drag it to move it; click it to bring the bars back. The shortcuts keep working, and an answer starting brings the bars back by itself.
-- The **timer**, **⋮**, and **Exit**, which asks first.
+- The **timer**, **⋮**, and **Exit**, which ends the call and closes the bars at once.
 
 **Bar 2** has the **level button**, which opens the transcript panel, the answer **language**, **Clear** (**Ctrl+Shift+Backspace**, clears the words on screen) and collapse, with the latest words below: **Listening…** until someone speaks, and their question, highlighted, when they ask one. To its right, **Auto answer** turns on or off answering finished questions by itself.
 

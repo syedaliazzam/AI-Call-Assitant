@@ -177,10 +177,9 @@ test('a 1.1.0 shell keeps working with the new web app', async () => {
     await expect(overlay.getByRole('group', { name: 'Answer preferences' })).toBeVisible();
     await overlay.keyboard.press('Escape');
 
-    // Exit asks first. The rig's End does nothing, so the test then makes the call a real live page
+    // Exit ends the call at once (9 Nov 2026). The rig's End does nothing, so the test then makes the call a real live page
     // makes when a call ends, on this shell.
     await overlay.getByRole('button', { name: 'Exit: end call' }).click();
-    await overlay.getByRole('button', { name: 'End call?' }).click();
     await main.evaluate(() => (window as never as ShellWindow).kiteDesktop.closeCompactView());
     await expect.poll(() => Boolean(findOverlay()), { timeout: 15_000 }).toBe(false);
     console.log('[old shell] 1.1.0 works with the new web app');

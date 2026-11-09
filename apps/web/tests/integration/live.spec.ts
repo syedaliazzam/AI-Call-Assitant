@@ -796,7 +796,7 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
   await expect(bar.getByRole('button', { name: 'Chat' }).locator('kbd')).toContainText('␣');
   await shot(watched, BARS_SIZE, 'call-bars');
   // At the width a 1.1.0 window keeps, at its smallest, and in a narrow picture-in-picture window,
-  // everything still fits, Exit's question too.
+  // everything still fits.
   const exit = bar.getByRole('button', { name: 'Exit: end call' });
   for (const width of [900, 780, 680, 560, 460]) {
     await page.setViewportSize({ width, height: 400 });
@@ -807,17 +807,13 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
      */
     const fits = () => bar.evaluate((element) => element.scrollWidth <= element.clientWidth);
     expect(await fits(), `bar 1 fits ${width}`).toBe(true);
-    await exit.click();
-    await expect(bar.getByRole('button', { name: 'Cancel' })).toBeVisible();
-    expect(await fits(), `the question fits ${width}`).toBe(true);
-    await bar.getByRole('button', { name: 'Cancel' }).click();
   }
-  // Exit is red, and asks first.
+  // Exit is red, and one press ends the call (9 Nov 2026: no "End call?" step).
   await page.setViewportSize({ width: 780, height: 400 });
   await expect(exit).toHaveCSS('background-color', 'rgb(220, 38, 38)');
   await exit.click();
-  await bar.getByRole('button', { name: 'End call?' }).click();
   expect(await watched.log()).toContainEqual({ type: 'end' });
+  await expect(bar.getByRole('button', { name: 'End call?' })).toHaveCount(0);
   await watched.context.close();
 });
 

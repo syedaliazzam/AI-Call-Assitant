@@ -131,7 +131,6 @@ test('a shell before 1.1.0 keeps working with the new web app', async () => {
 
     // End closes the overlay.
     await overlay.getByRole('button', { name: 'End call' }).click();
-    await overlay.getByRole('button', { name: 'End call?' }).click();
     console.log('[old shell] version', version, 'works with the new web app');
   } finally {
     await app.close().catch(() => undefined);
