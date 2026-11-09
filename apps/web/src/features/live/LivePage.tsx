@@ -17,6 +17,11 @@
  * v1.1.0: one call at a time on a device (core/live/callLock.ts); Accurate transcription follows the
  * power source on Auto (ADR-0044); listening pauses when a call was left running (core/live/hygiene.ts).
  *
+ * ADR-0055: in a desktop app with the home panel and account sync, the Connect card is in the small
+ * window (features/home/LauncherConnect.tsx). This page runs the call it starts (core/live/callStart.ts):
+ * it connects without a card of its own, reports how it went, shows only a status
+ * (BackgroundCallStatus.tsx), and after End closes its window once the notes are saved.
+ *
  * ADR-0053: Connect opens the overlay first (when calls start in it), inside the click, because a
  * browser's picture-in-picture window needs the click and the share picker does not (measured in
  * Chrome 156: the picker still opens after picture-in-picture used the click). Then the capture,
@@ -58,6 +63,9 @@ import { displayTerms } from '@/core/transcript/display';
 import { isSound, themSilent } from '@/core/audio/silence';
 import { ThemSilentNotice } from './ThemSilentNotice';
 import { endCall } from '@/core/transcript/endCall';
+import { reportCallStart, takeCallStart, watchCallStart } from '@/core/live/callStart';
+import { useSyncAccount } from '@/features/sync/SyncScope';
+import { BackgroundCallStatus, type BackgroundCallState } from './BackgroundCallStatus';
 import { startTranscriptSaver, type TranscriptSaver } from '@/core/transcript/saver';
 import { createTranscript, type Speaker } from '@/core/transcript/transcript';
 import { SESSION_TYPE_LABELS, sessionSummary } from '@/features/session-setup/labels';
@@ -158,6 +166,9 @@ function channelEndedMessage(speaker: Speaker, platform: 'desktop' | 'browser'):
     : 'Paramount AI stopped hearing your computer’s sound. Reconnect to continue.';
 }
 
+/** Why a second call cannot start (shown on the Connect card, or sent to the desktop's card). */
+const LOCKED_OUT_TEXT = 'A call is already running in another Paramount AI window. End it first.';
+
 /**
  * The live session screen: the Connect view first, then the live transcript of both channels.
  * It owns the speech-to-text engine and the call capture for the session.
@@ -189,6 +200,15 @@ export function LivePage({
     () => getPlatform().kind,
     () => 'browser' as const,
   );
+  // ADR-0055: a desktop app with the home panel and account sync starts calls from its Connect card;
+  // this page then runs the call in the background. The server snapshot is false, like the platform's.
+  const panelApp = useSyncExternalStore(
+    subscribeNever,
+    () => getPlatform().hasHomePanel(),
+    () => false,
+  );
+  const synced = useSyncAccount() !== null;
+  const launcherCall = platform === 'desktop' && panelApp && synced;
   const [transcript] = useState(() => createTranscript());
   // What the strip shows: "You" lines that arrive while "Them" speaks are held back briefly, so
   // an echo does not flash up before it is recognised (transcript.ts). Answers (Day 4) use
@@ -278,6 +298,23 @@ export function LivePage({
   const [notesStatus, setNotesStatus] = useState<'idle' | 'writing' | 'saved' | 'failed'>('idle');
   // Why the notes failed when Claude was unavailable (usage limit or overload), else null.
   const [notesUnavailable, setNotesUnavailable] = useState<UnavailableReason | null>(null);
+  // ADR-0055: the background window's status, and why a start failed (a fixed sentence).
+  const [launcherState, setLauncherState] = useState<BackgroundCallState>('waiting');
+  const [launcherProblem, setLauncherProblem] = useState<string | null>(null);
+
+  /**
+   * A call from the Connect card could not start: tells the card and shows it here.
+   *
+   * @param message What to tell the person (the app's own sentence).
+   */
+  const failLauncherCall = useCallback(
+    (message: string) => {
+      setLauncherState('failed');
+      setLauncherProblem(message);
+      reportCallStart(session.id, 'failed', message);
+    },
+    [session.id],
+  );
 
   const engineRef = useRef<SttEngine | null>(null);
   const captureRef = useRef<CallCapture | null>(null);
@@ -292,7 +329,9 @@ export function LivePage({
   // the microphone during a call.
   const micPreview = useMicPreview({
     deviceId: micDeviceId,
-    enabled: view === 'connect' && connection === 'idle' && !ending,
+    // Never in the background window: its card is in the small window, and the meter would hold the
+    // microphone for nothing.
+    enabled: !launcherCall && view === 'connect' && connection === 'idle' && !ending,
   });
 
   // Builds the speech engine with the standard callbacks. The initial effect and a watchdog
@@ -497,6 +536,7 @@ export function LivePage({
       const release = await takeCallLock();
       if (!release) {
         setLockedOut(true);
+        if (launcherCall) failLauncherCall(LOCKED_OUT_TEXT);
         return;
       }
       releaseLock.current = release;
@@ -570,6 +610,8 @@ export function LivePage({
         setOverlayAtStart(overlay);
         setView('live');
       }
+      // ADR-0055: the Connect card in the small window learns that the call runs.
+      if (launcherCall) reportCallStart(session.id, 'connected');
     } catch (error) {
       setConnection('idle');
       setLevels({ you: 0, them: 0 });
@@ -584,6 +626,14 @@ export function LivePage({
         setChannelErrors({ [error.channel]: error.message });
       } else if (model.status !== 'error') {
         setChannelErrors({ them: 'Paramount AI could not connect. Try again.' });
+      }
+      // The capture's messages are the app's own sentences (never call text).
+      if (launcherCall) {
+        failLauncherCall(
+          error instanceof CallCaptureError
+            ? error.message
+            : 'Paramount AI could not connect. Try again.',
+        );
       }
     }
   };
@@ -633,7 +683,7 @@ export function LivePage({
     setPreviewStream(null);
     setTranscriptClearedAt(0);
     setEnding(false);
-    updateSession(session.id, {
+    const saving = updateSession(session.id, {
       status: 'ended',
       // v1.1.0: for the session cards.
       ...(startedAt !== null ? { lastCallMs: Date.now() - startedAt } : {}),
@@ -647,10 +697,11 @@ export function LivePage({
       .catch(() => undefined);
     // The call's notes (Day 5): written after the call by the server, saved here. Not awaited:
     // End never waits for them.
+    let notesDone: Promise<unknown> = Promise.resolve();
     if (startedAt !== null && finalLines.length > 0) {
       setNotesStatus('writing');
       setNotesUnavailable(null);
-      void listAnswers(session.id)
+      notesDone = listAnswers(session.id)
         .catch(() => [])
         .then((answers) =>
           generateNotes({
@@ -665,6 +716,13 @@ export function LivePage({
           setNotesStatus(outcome.status === 'saved' ? 'saved' : 'failed');
           setNotesUnavailable(outcome.status === 'failed' ? outcome.unavailable : null);
         });
+    }
+    // ADR-0055: a call started from the Connect card: the small window comes back (the shell shows it
+    // when the call ends), and this window closes once the call's data and notes are saved.
+    if (launcherCall) {
+      setLauncherState('ended');
+      reportCallStart(session.id, 'ended');
+      void Promise.allSettled([saving, notesDone]).then(() => getPlatform().windowControl('close'));
     }
     // Show the lines just saved under "Saved transcript".
     if (saver) {
@@ -736,6 +794,52 @@ export function LivePage({
     lastActivityAt.current = Date.now();
   }, []);
 
+  // ADR-0055: the Connect card asks this page to connect: a note read as the page opens, or a message
+  // to a page already open (Try again). The call connects once the speech model is ready.
+  const [startWanted, setStartWanted] = useState(false);
+  useEffect(() => {
+    if (!launcherCall) return;
+    const stop = watchCallStart(session.id, 'start', () => setStartWanted(true));
+    // Read after listening, so a request in between is not lost; a microtask keeps setState out of
+    // the effect's own run.
+    void Promise.resolve().then(() => {
+      if (takeCallStart(session.id)) setStartWanted(true);
+    });
+    return stop;
+  }, [launcherCall, session.id]);
+  // The latest connect(), for the effect below (it is a new function on every render).
+  const connectRef = useRef(connect);
+  useEffect(() => {
+    connectRef.current = connect;
+  });
+  useEffect(() => {
+    if (!startWanted || !launcherCall) return;
+    if (model.status === 'error') {
+      void Promise.resolve().then(() => {
+        setStartWanted(false);
+        failLauncherCall(model.error ?? 'The speech model could not load. Try again.');
+      });
+      return;
+    }
+    if (model.status !== 'ready' || view !== 'connect' || connection !== 'idle' || ending) return;
+    void Promise.resolve().then(() => {
+      setStartWanted(false);
+      setLauncherState('connecting');
+      reportCallStart(session.id, 'connecting');
+      void connectRef.current(true);
+    });
+  }, [
+    startWanted,
+    launcherCall,
+    model.status,
+    model.error,
+    view,
+    connection,
+    ending,
+    session.id,
+    failLauncherCall,
+  ]);
+
   // Pausing stops feeding the speech engine, and the watchdog with it, which would otherwise take
   // the silence for a stuck engine. The streams stay open, so Resume asks for nothing again.
   useEffect(() => {
@@ -767,6 +871,17 @@ export function LivePage({
     [session, language],
   );
 
+  if (view === 'connect' && launcherCall) {
+    return (
+      <BackgroundCallStatus
+        state={launcherState}
+        problem={launcherProblem}
+        progress={model.status === 'loading' ? model.progress : null}
+        notes={notesStatus}
+      />
+    );
+  }
+
   if (view === 'connect') {
     return (
       // The Connect card follows the app's theme (spec S11).
@@ -776,7 +891,7 @@ export function LivePage({
             role="alert"
             className="mx-auto mt-4 max-w-3xl rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
           >
-            A call is already running in another Paramount AI window. End it first.
+            {LOCKED_OUT_TEXT}
           </p>
         )}
         <ConnectPanel

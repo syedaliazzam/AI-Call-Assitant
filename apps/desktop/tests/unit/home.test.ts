@@ -16,6 +16,9 @@ import {
   homeBounds,
   homeDefaultBounds,
   homeWindowOptions,
+  HOME_MAX_SIZE,
+  isPanelSize,
+  panelSizeBounds,
 } from '../../src/home';
 
 /** A primary display's work area. */
@@ -40,6 +43,9 @@ class FakeWindow {
   isDestroyed = () => this.destroyed;
   isMinimized = () => this.minimized;
   getBounds = () => this.bounds;
+  setBounds = (next: typeof this.bounds) => {
+    this.bounds = next;
+  };
   on(event: string, handler: (...args: unknown[]) => void) {
     this.listeners.set(event, [...(this.listeners.get(event) ?? []), handler]);
     return this;
@@ -332,5 +338,52 @@ describe('the controller', () => {
     const { home } = setup();
     expect(() => home.hide()).not.toThrow();
     expect(() => home.showInactive()).not.toThrow();
+  });
+});
+
+describe('the size the page asks for (ADR-0055)', () => {
+  const at = { x: 1496, y: 240, width: 400, height: 560 };
+
+  it('grows to the launcher size, keeping the right edge and the vertical centre', () => {
+    const next = panelSizeBounds(at, { width: 560, height: 720 }, AREA);
+    expect(next).toEqual({ x: 1336, y: 160, width: 560, height: 720 });
+  });
+
+  it('stays inside the smallest and largest sizes and the screen', () => {
+    expect(panelSizeBounds(at, { width: 10, height: 10 }, AREA)).toMatchObject(HOME_MIN_SIZE);
+    const big = panelSizeBounds(at, { width: 5000, height: 5000 }, AREA);
+    expect(big.width).toBe(HOME_MAX_SIZE.width);
+    expect(big.height).toBe(HOME_MAX_SIZE.height);
+    const small = { x: 0, y: 0, width: 1280, height: 672 };
+    const fitted = panelSizeBounds(
+      { x: 856, y: 56, width: 400, height: 560 },
+      { width: 560, height: 720 },
+      small,
+    );
+    expect(fitted.height).toBe(624);
+    expect(fitted.y).toBeGreaterThanOrEqual(0);
+    expect(fitted.y + fitted.height).toBeLessThanOrEqual(672);
+  });
+
+  it('accepts only two finite positive numbers', () => {
+    expect(isPanelSize({ width: 560, height: 720 })).toBe(true);
+    for (const value of [
+      null,
+      'x',
+      {},
+      { width: 560 },
+      { width: -1, height: 2 },
+      { width: Infinity, height: 2 },
+    ]) {
+      expect(isPanelSize(value)).toBe(false);
+    }
+  });
+
+  it('resizes the open panel and remembers it', () => {
+    const { home, windows, stored } = setup();
+    home.open();
+    home.resize({ width: 560, height: 720 });
+    expect(windows[0]!.getBounds().width).toBe(560);
+    expect(stored().homeBounds?.width).toBe(560);
   });
 });

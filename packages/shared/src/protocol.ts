@@ -18,6 +18,17 @@ export const DESKTOP_OPEN_LINK = `${DESKTOP_PROTOCOL}://open`;
 /** A session id: the UUID crypto.randomUUID() makes. */
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Whether a value is a session id (a UUID), as the desktop shell accepts it from a page (ADR-0055).
+ *
+ * @param value What arrived.
+ * @returns True for a UUID string.
+ * Called from: apps/desktop/src/main.ts (openCallWindow); tests
+ */
+export function isSessionId(value: unknown): value is string {
+  return typeof value === 'string' && SESSION_ID.test(value);
+}
+
 /** A one-time sign-in code in a link (ADR-0052): 32 random bytes, base64url, so 43 characters. */
 export const LINK_CODE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 

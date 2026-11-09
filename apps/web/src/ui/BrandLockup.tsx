@@ -19,8 +19,8 @@ const SIZES = {
   xs: { height: 18, tile: 'px-1 py-0.5', auto: 'theme-dark:px-1 theme-dark:py-0.5' },
   /** Live view top bar, and the sidebar. */
   sm: { height: 24, tile: 'px-1.5 py-1', auto: 'theme-dark:px-1.5 theme-dark:py-1' },
-  /** The desktop app's window frame (reference: about 30 px), the UI gallery. */
-  md: { height: 30, tile: 'px-1.5 py-1', auto: 'theme-dark:px-1.5 theme-dark:py-1' },
+  /** The desktop app's window frame (reference: about as tall as its 40 px buttons), the UI gallery. */
+  md: { height: 34, tile: 'px-1.5 py-1', auto: 'theme-dark:px-1.5 theme-dark:py-1' },
   /** Sign-in hero. */
   lg: { height: 40, tile: 'px-2 py-1.5', auto: 'theme-dark:px-2 theme-dark:py-1.5' },
 } as const;

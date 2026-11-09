@@ -81,6 +81,8 @@ describe('the exposed bridge', () => {
       'moveOverlay',
       'onHotkey',
       'onSnapZone',
+      // v1.3.0 (ADR-0055): the Connect card's call window.
+      'openCallWindow',
       'openCompactView',
       'openPagesWindow',
       'os',
@@ -96,6 +98,8 @@ describe('the exposed bridge', () => {
       'setOverlayOpacity',
       'setShareProtection',
       'showCallWindow',
+      // v1.3.0 (ADR-0055): the launcher's window size.
+      'sizePanel',
       'version',
       'windowControl',
     ]);

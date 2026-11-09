@@ -11,7 +11,7 @@
  * Depends on: next/navigation, src/core/storage/sessions.ts, src/core/sync/client.ts,
  *             src/features/appearance/useAppearance, src/features/notices/AcceptableUseNotice.tsx,
  *             src/features/sync/LegacyUploadCard.tsx, src/platform, ./AccurateOffer.tsx,
- *             ./DesktopFrame.tsx, ./LauncherSessions.tsx, ./LauncherStart.tsx
+ *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx, ./LauncherStart.tsx
  * Architecture: ADR-0051, ADR-0052, ADR-0055
  *
  * Session text is shown on screen only; it is never logged.
@@ -30,6 +30,7 @@ import { getPlatform } from '@/platform';
 import { AccurateOffer } from './AccurateOffer';
 import { DesktopFrame } from './DesktopFrame';
 import { LauncherSessions } from './LauncherSessions';
+import { LauncherConnect } from './LauncherConnect';
 import { LauncherStart } from './LauncherStart';
 
 /** Props for Launcher. */
@@ -189,11 +190,20 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
             </>
           }
         />
-      ) : (
+      ) : view.kind === 'start' ? (
         <LauncherStart
           email={email}
-          onStartFree={() => getPlatform().openPagesWindow(`/live/${view.sessionId}`)}
+          onStartFree={() => setView({ kind: 'connect', sessionId: view.sessionId })}
           onBack={toSessions}
+        />
+      ) : (
+        <LauncherConnect
+          key={view.sessionId}
+          sessionId={view.sessionId}
+          onBack={() => setView({ kind: 'start', sessionId: view.sessionId })}
+          // The call runs: the shell hides this window; when it comes back after End, the sessions
+          // card shows "Call ended · View notes".
+          onConnected={toSessions}
         />
       )}
     </DesktopFrame>

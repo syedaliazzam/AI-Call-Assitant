@@ -45,6 +45,8 @@ import {
   MINIMIZE_MAIN_CHANNEL,
   OPEN_COMPACT_CHANNEL,
   LINK_CODE_CHANNEL,
+  OPEN_CALL_WINDOW_CHANNEL,
+  SIZE_PANEL_CHANNEL,
   OPEN_PAGES_CHANNEL,
   OVERLAY_COLLAPSE_CHANNEL,
   CHAT_HOTKEY_CHANNEL,
@@ -198,6 +200,14 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
     const code: unknown = await ipcRenderer.invoke(LINK_CODE_CHANNEL);
     return typeof code === 'string' ? code : null;
   },
+  // v1.3.0 (ADR-0055): a session id (the shell checks it is a UUID) and two numbers; nothing else.
+  openCallWindow: (sessionId: string) =>
+    ipcRenderer.invoke(OPEN_CALL_WINDOW_CHANNEL, String(sessionId)),
+  sizePanel: (size: { width: number; height: number }) =>
+    ipcRenderer.invoke(SIZE_PANEL_CHANNEL, {
+      width: Number(size?.width),
+      height: Number(size?.height),
+    }),
   // v1.0.1 (ADR-0034): accurate transcription. Nothing but a Float32Array of audio crosses (the
   // shell checks its type and length again); the text comes back in memory only.
   accurateStatus: () => ipcRenderer.invoke(ACCURATE_STATUS_CHANNEL),
