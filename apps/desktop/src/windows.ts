@@ -70,9 +70,10 @@ import type { Bounds, OverlayLayoutKey, ShellStore } from './store';
  * The overlay's default size, in DIPs (v1.0.3, ADR-0039; 560 × 420 in v1.0.2): three bars with a
  * typical answer (answer line, three bullets, footer) visible without scrolling, still small
  * enough to sit above a meeting's video at the top centre. v1.2.0: 780 wide, which fits every key-cap on
- * bar 1 (spec S13); the height is what a web app before 1.1.0 gets.
+ * bar 1 (spec S13); v1.3.0 (ADR-0055): 900, for the Transcript pill too. The height is what a web app
+ * before 1.1.0 gets.
  */
-export const COMPACT_DEFAULT_SIZE = { width: 780, height: 480 };
+export const COMPACT_DEFAULT_SIZE = { width: 900, height: 480 };
 
 /** v1.2.0 (spec S15): the window's width with both panels open, side by side, in DIPs. */
 export const OVERLAY_BOTH_WIDTH = 1080;
@@ -969,9 +970,10 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       // v1.1.0: the place last used on this display, if any (its height follows the panels).
       const place = settings.overlayPlaces?.[String(deps.screen.getDisplayMatching(bounds)?.id)];
       if (place) Object.assign(bounds, place);
-      // v1.2.0: a place saved by 1.1.0 is too narrow for bar 1's key-caps. Widened once, about its
-      // centre; a width chosen after this stays.
-      if (!settings.overlayBarsWidened) {
+      // v1.2.0: a place saved by 1.1.0 is too narrow for bar 1's key-caps; v1.3.0: one saved before the
+      // Transcript pill too. Widened once per change, about its centre; a width chosen after this stays.
+      const widenedTo = settings.overlayBarsWidth ?? (settings.overlayBarsWidened ? 780 : 0);
+      if (widenedTo < COMPACT_DEFAULT_SIZE.width) {
         if (bounds.width < COMPACT_DEFAULT_SIZE.width) {
           Object.assign(
             bounds,
@@ -983,7 +985,10 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
             ),
           );
         }
-        deps.store.write({ overlayBarsWidened: true });
+        deps.store.write({
+          overlayBarsWidened: true,
+          overlayBarsWidth: COMPACT_DEFAULT_SIZE.width,
+        });
       }
       mode = 'full';
       fullBounds = null;

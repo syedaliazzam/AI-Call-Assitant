@@ -1,8 +1,10 @@
 /**
  * File: apps/web/src/features/live/overlay/ControlBar.tsx
  * Purpose: Bar 1 of the call bars (spec S13): the screen-audio and microphone icons, each with its ▾;
- *          Answer, Screenshot and Chat with their key-caps; move and compact; the call timer; ⋮; and Exit
- *          (red, asks first). The bar is the window's drag handle; its buttons opt out.
+ *          Answer, Screenshot and Chat with their key-caps; the Transcript pill with its on/off switch
+ *          (ADR-0055: it opens and closes the transcript panel, as the live words do); move and compact;
+ *          the call timer; ⋮; and Exit (red, asks first). The bar is the window's drag handle; its
+ *          buttons opt out. In a narrow window the key-caps give way first, then the word "Transcript".
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys), lucide-react, src/core/live/liveChannel.ts, ./parts.tsx,
  *             src/features/live/callClock.ts, src/ui/icons.tsx
@@ -11,7 +13,7 @@
 'use client';
 
 import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
-import { Clock } from 'lucide-react';
+import { Clock, ScrollText } from 'lucide-react';
 import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { callClock } from '@/features/live/callClock';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
@@ -65,6 +67,59 @@ export interface ControlBarProps {
   onChatOpen: (open: boolean) => void;
   /** The ⋮ button: a click on it is not a click outside the menu. */
   menuButton: RefObject<HTMLButtonElement | null>;
+  /** Whether the transcript panel is open (the Transcript pill's switch). */
+  transcriptOpen?: boolean;
+  /** Opens or closes the transcript panel (remembered with the panels). */
+  onTranscript?: (open: boolean) => void;
+}
+
+/**
+ * The Transcript pill (ADR-0055): the word and a small switch inside; on opens the transcript panel,
+ * off closes it. In a narrow window the word gives way to an icon.
+ *
+ * @param props.open     True while the transcript panel is open.
+ * @param props.disabled True before the live page answers, or once the call ended.
+ * @param props.onToggle Opens or closes the panel.
+ * @returns The pill.
+ * Rendered by: ControlBar
+ */
+function TranscriptPill({
+  open,
+  disabled,
+  onToggle,
+}: {
+  /** True while the transcript panel is open. */
+  open: boolean;
+  /** True before the live page answers, or once the call ended. */
+  disabled: boolean;
+  /** Opens or closes the panel. */
+  onToggle: (open: boolean) => void;
+}) {
+  return (
+    // Below 520 px (a narrow picture-in-picture window) it gives way: the live words open the panel.
+    <span className="hidden shrink-0 @min-[520px]:inline-flex">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={open}
+        aria-label="Transcript"
+        className={`${PILL} gap-2`}
+        onClick={() => onToggle(!open)}
+        disabled={disabled}
+      >
+        <span className="hidden @min-[880px]:inline">Transcript</span>
+        <ScrollText aria-hidden="true" size={16} className="@min-[880px]:hidden" />
+        <span
+          aria-hidden="true"
+          className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-150 ${open ? 'bg-ui-accent-fill' : 'bg-ui-control-strong'}`}
+        >
+          <span
+            className={`absolute left-0.5 size-3 rounded-full bg-white transition-transform duration-150 ${open ? 'translate-x-3' : 'translate-x-0'}`}
+          />
+        </span>
+      </button>
+    </span>
+  );
 }
 
 /**
@@ -251,7 +306,7 @@ export function ControlBar(props: ControlBarProps) {
         disabled={ended}
         aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)}
       >
-        Answer <KeyChip hotkey="answer" visibleAt="@min-[640px]:inline-flex" />
+        Answer <KeyChip hotkey="answer" visibleAt="@min-[700px]:inline-flex" />
       </button>
       <button
         type="button"
@@ -261,7 +316,7 @@ export function ControlBar(props: ControlBarProps) {
         aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)}
       >
         {state?.capturing ? 'Screenshot…' : 'Screenshot'}{' '}
-        <KeyChip hotkey="screenshot" visibleAt="@min-[760px]:inline-flex" />
+        <KeyChip hotkey="screenshot" visibleAt="@min-[820px]:inline-flex" />
       </button>
       <button
         type="button"
@@ -274,8 +329,18 @@ export function ControlBar(props: ControlBarProps) {
         disabled={ended}
         aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.chat, mac)}
       >
-        Chat <KeyChip hotkey="chat" visibleAt="@min-[700px]:inline-flex" />
+        Chat <KeyChip hotkey="chat" visibleAt="@min-[760px]:inline-flex" />
       </button>
+      {props.onTranscript && (
+        <TranscriptPill
+          open={props.transcriptOpen ?? false}
+          disabled={ended}
+          onToggle={(open) => {
+            if (collapsed) props.onCollapse(false);
+            props.onTranscript?.(open);
+          }}
+        />
+      )}
       <span className="min-w-1 flex-1" />
 
       {/* The whole bar drags the window; this is where people look for it. */}

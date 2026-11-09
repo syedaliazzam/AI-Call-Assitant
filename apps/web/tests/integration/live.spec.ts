@@ -749,7 +749,7 @@ function isLoggedLayout(entry: unknown): entry is LoggedLayout {
 }
 
 /** The window the bars are drawn for. */
-const BARS_SIZE: Width = { width: 780, height: 520, touch: false };
+const BARS_SIZE: Width = { width: 900, height: 520, touch: false };
 
 /** A window wide enough for both panels side by side. */
 const WIDE_SIZE: Width = { width: 1080, height: 560, touch: false };
@@ -772,6 +772,8 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
     expect.stringMatching(/^Answer/),
     expect.stringMatching(/^Screenshot/),
     expect.stringMatching(/^Chat/),
+    // ADR-0055: the Transcript pill with its switch.
+    'Transcript',
     'Drag here to move',
     'Shrink to an icon',
     'Call time',
@@ -787,7 +789,7 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
   // At the width a 1.1.0 window keeps, at its smallest, and in a narrow picture-in-picture window,
   // everything still fits, Exit's question too.
   const exit = bar.getByRole('button', { name: 'Exit: end call' });
-  for (const width of [780, 680, 560, 460]) {
+  for (const width of [900, 780, 680, 560, 460]) {
     await page.setViewportSize({ width, height: 400 });
     /**
      * Whether nothing on the bar is cut off.
@@ -945,7 +947,8 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   expect(Math.abs(left.y - right.y)).toBeLessThanOrEqual(2);
   // The bars keep their width, centred over the panels.
   const bar1 = (await page.getByRole('toolbar', { name: 'Overlay controls' }).boundingBox())!;
-  expect(bar1.width).toBeLessThanOrEqual(782);
+  // ADR-0055: 900 wide since bar 1 holds the Transcript pill.
+  expect(bar1.width).toBeLessThanOrEqual(902);
   expect(Math.abs(bar1.x + bar1.width / 2 - 540)).toBeLessThanOrEqual(2);
 
   // You on the right, Them on the left, plain words with who and when under them.

@@ -134,8 +134,11 @@ export interface CompactViewProps {
 /** Which floating list or menu is open. */
 type Popup = DeviceList | 'menu' | 'preferences' | 'language';
 
-/** The bars keep their own width; only the panels fill a window wider than this (spec S13). */
-const BARS_WIDTH = 'mx-auto w-full max-w-[780px]';
+/**
+ * The bars keep their own width; only the panels fill a window wider than this (spec S13). 900 since
+ * ADR-0055: bar 1 also holds the Transcript pill, and every key-cap shows at that width.
+ */
+const BARS_WIDTH = 'mx-auto w-full max-w-[900px]';
 
 /**
  * How far an element's bottom is below the top of the overlay, whatever it sits inside.
@@ -383,6 +386,8 @@ export function CompactView(props: CompactViewProps) {
             chatOpen={props.chatOpen}
             onChatOpen={props.onChatOpen}
             menuButton={menuButton}
+            transcriptOpen={panels.transcript}
+            onTranscript={(open) => onPanels({ ...panels, transcript: open })}
           />
         </div>
         {popup === 'menu' && (

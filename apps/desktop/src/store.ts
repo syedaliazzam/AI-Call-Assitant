@@ -49,6 +49,11 @@ export interface ShellSettings {
   overlayBothWidth?: number;
   /** v1.2.0: true once a place saved by 1.1.0 has been widened for the new bar 1. */
   overlayBarsWidened?: boolean;
+  /**
+   * v1.3.0 (ADR-0055): the width a saved place was last widened to for bar 1 (900 since the Transcript
+   * pill). Absent: 780 when overlayBarsWidened is set, otherwise never widened.
+   */
+  overlayBarsWidth?: number;
 }
 
 /** The stacked overlay's place on one display (v1.1.0). */
@@ -150,6 +155,9 @@ export function createStore(file: string): ShellStore {
         settings.overlayBothWidth = raw.overlayBothWidth;
       }
       if (raw.overlayBarsWidened === true) settings.overlayBarsWidened = true;
+      if (typeof raw.overlayBarsWidth === 'number' && Number.isFinite(raw.overlayBarsWidth)) {
+        settings.overlayBarsWidth = raw.overlayBarsWidth;
+      }
       if (raw.overlayHeights && typeof raw.overlayHeights === 'object') {
         const heights = raw.overlayHeights as Record<string, unknown>;
         settings.overlayHeights = Object.fromEntries(
