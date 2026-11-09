@@ -113,7 +113,7 @@ function parts(word: string): TextWord {
  * @param text  The engine's text.
  * @param terms The session's key terms and company.
  * @returns The text, with the terms in place.
- * Called from: refineLine() in refine.ts; tests
+ * Called from: refineLine() in refine.ts, rewriteAfterCall() in afterCall.ts; tests
  */
 export function correctTerms(text: string, terms: readonly string[]): string {
   const usable = terms

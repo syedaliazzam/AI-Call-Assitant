@@ -22,7 +22,7 @@ export type ToWorker =
       modelDir: string;
       /** The staged native runtime folder (holds modules/sherpa-onnx-node). */
       nativeDir: string;
-      /** Decoding threads (4, as measured in the ADR-0027 trial). */
+      /** Decoding threads (2 since v1.4, ADR-0066). */
       threads: number;
     }
   | {

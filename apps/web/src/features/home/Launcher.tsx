@@ -11,7 +11,7 @@
  * Depends on: next/navigation, src/core/storage/sessions.ts, src/core/stt/prefetch.ts,
  *             src/core/sync/client.ts,
  *             src/features/appearance/useAppearance, src/features/notices/AcceptableUseNotice.tsx,
- *             src/features/sync/LegacyUploadCard.tsx, src/platform, ./AccurateOffer.tsx,
+ *             src/features/sync/LegacyUploadCard.tsx, src/platform, ./AccurateDownload.tsx,
  *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx, ./LauncherStart.tsx
  * Architecture: ADR-0051, ADR-0052, ADR-0055
  *
@@ -29,7 +29,7 @@ import { useAppearance } from '@/features/appearance/useAppearance';
 import { AcceptableUseNotice } from '@/features/notices/AcceptableUseNotice';
 import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
 import { getPlatform } from '@/platform';
-import { AccurateOffer } from './AccurateOffer';
+import { AccurateDownload } from './AccurateDownload';
 import { DesktopFrame } from './DesktopFrame';
 import { LauncherSessions } from './LauncherSessions';
 import { LauncherConnect } from './LauncherConnect';
@@ -192,7 +192,7 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
           onOpen={(session) => setView({ kind: 'start', sessionId: session.id })}
           notices={
             <>
-              <AccurateOffer />
+              <AccurateDownload />
               {/* ADR-0049: offers once to add this computer's own data to the account. */}
               <LegacyUploadCard compact />
             </>

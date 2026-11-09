@@ -16,6 +16,8 @@
  *
  * v1.1.0: one call at a time on a device (core/live/callLock.ts); Accurate transcription follows the
  * power source on Auto (ADR-0044); listening pauses when a call was left running (core/live/hygiene.ts).
+ * v1.4 (ADR-0066): Accurate transcription is on by default; during the call it rewrites only the other
+ * person's lines, and the user's saved lines are rewritten after End (core/transcript/afterCall.ts).
  *
  * ADR-0055: in a desktop app with the home panel and account sync, the Connect card is in the small
  * window (features/home/LauncherConnect.tsx). This page runs the call it starts (core/live/callStart.ts):
@@ -45,7 +47,7 @@ import {
 import { warmSession } from '@/core/answer/warm';
 import { markSessionActive, updateSession } from '@/core/storage/sessions';
 import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
-import { clearTranscript, listUtterances } from '@/core/storage/utterances';
+import { clearTranscript, listUtterances, saveUtterance } from '@/core/storage/utterances';
 import { flushAccountSync } from '@/core/sync/client';
 import { listAnswers } from '@/core/storage/answers';
 import { notesFailureText, type UnavailableReason } from '@/core/answer/unavailable';
@@ -59,6 +61,7 @@ import { hygieneState, type HygieneState } from '@/core/live/hygiene';
 import { getMicDevice, setMicDevice } from '@/core/storage/overlayPrefs';
 import { createPunctuator, punctuateLine } from '@/core/punctuation/punctuator';
 import { createTurnDetector } from '@/core/turn/turnDetector';
+import { createYouAudio, rewriteAfterCall, type AfterCallLine } from '@/core/transcript/afterCall';
 import { refineLine } from '@/core/transcript/refine';
 import { looksNonEnglish } from '@/core/stt/language';
 import { displayTerms } from '@/core/transcript/display';
@@ -277,6 +280,16 @@ export function LivePage({
   // v1.1.0 (ADR-0044): whether the accurate engine should run now. A ref, because the speech engine's
   // callbacks read it for each line; on Auto it follows the power source during the call.
   const accurateOn = useRef(false);
+  // v1.4 (ADR-0066): the user's line audio, kept for the rewrite after the call (never stored).
+  const youAudio = useRef(createYouAudio());
+  // False once the page closes: the rewrite after a call stops there (the rest keep their words).
+  const pageOpen = useRef(true);
+  useEffect(() => {
+    pageOpen.current = true;
+    return () => {
+      pageOpen.current = false;
+    };
+  }, []);
   // v1.1.0 (ADR-0044): marks and capitals for the live engine's lines, offline, in a worker of its own.
   const [punctuator] = useState(() => createPunctuator());
   useEffect(() => () => punctuator.dispose(), [punctuator]);
@@ -420,7 +433,12 @@ export function LivePage({
           // accurate engine writes its own marks; the live engine's lines get theirs from the
           // punctuation pass, as do lines the accurate engine could not do. v1.4: the line is marked
           // as being rewritten meanwhile, so auto-answer can wait a moment for the better words.
-          if (accurate && audio && accurateOn.current) {
+          // ADR-0066: during the call only the other person's lines (they make the questions, and the
+          // engine's CPU is better left to the live engine); the user's after the call.
+          if (accurate && channel === 'you') {
+            youAudio.current.add(line.id, accurateOn.current ? (audio ?? null) : null);
+          }
+          if (accurate && audio && accurateOn.current && channel === 'them') {
             transcript.setRefining(line.id, true);
             void refineLine(accurate, transcript, line.id, text, audio, plainTerms).then((done) => {
               transcript.setRefining(line.id, false);
@@ -704,12 +722,31 @@ export function LivePage({
     // The call's final lines, taken just before the transcript is cleared (after the line
     // still being spoken was flushed), for the notes.
     let finalLines: NotesLine[] = [];
+    // ADR-0066: the user's saved lines and their audio, for the rewrite after the call.
+    const kept = youAudio.current.take();
+    const afterLines: AfterCallLine[] = [];
     await endCall({
       stopCapture: () => capture?.stop(),
       engine: engineRef.current,
       saver,
       transcript: {
         clear: () => {
+          for (const line of transcript.allLines()) {
+            const pieces = kept.get(line.id);
+            if (!saver || !pieces || line.speaker !== 'you' || line.echo || line.nonEnglish)
+              continue;
+            afterLines.push({
+              saved: {
+                id: saver.storedId(line.id),
+                sessionId: session.id,
+                speaker: line.speaker,
+                text: line.text,
+                tStart: line.tStart,
+                tEnd: line.tEnd,
+              },
+              pieces,
+            });
+          }
           finalLines = transcript
             .lines()
             .filter((line) => line.final)
@@ -731,6 +768,7 @@ export function LivePage({
     setPreviewStream(null);
     setTranscriptClearedAt(0);
     setEnding(false);
+    let keepLines = false;
     const saving = updateSession(session.id, {
       status: 'ended',
       // v1.1.0: for the session cards.
@@ -738,11 +776,35 @@ export function LivePage({
     })
       // Spec §6: with Save transcript off, no line stays. Read from storage, not this page's copy:
       // the setting can be changed during the call. Notes and answers are kept.
-      .then((saved) => (saved.saveTranscript ? undefined : clearTranscript(session.id)))
+      .then((saved) => {
+        keepLines = saved.saveTranscript;
+        return saved.saveTranscript ? undefined : clearTranscript(session.id);
+      })
       // ADR-0049: with account sync, the call's last lines, answers and status reach the account
       // now, before the window may close (does nothing without account sync).
       .then(() => flushAccountSync())
       .catch(() => undefined);
+    // ADR-0066: the user's own saved lines, transcribed again now that the call is over, one at a
+    // time. Not awaited; the notes below use the words as heard. Only lines that are kept.
+    const accurateEngine = getPlatform().accurate;
+    const rewriting =
+      afterLines.length === 0 || !accurateEngine
+        ? Promise.resolve()
+        : saving
+            .then(async () => {
+              if (!keepLines) return;
+              const result = await rewriteAfterCall(
+                accurateEngine,
+                afterLines,
+                saveUtterance,
+                plainTerms,
+                () => !pageOpen.current,
+              );
+              if (result.rewritten === 0) return;
+              await flushAccountSync();
+              if (pageOpen.current) setSaved(await listUtterances(session.id));
+            })
+            .catch(() => undefined);
     // The call's notes (Day 5): written after the call by the server, saved here. Not awaited:
     // End never waits for them.
     let notesDone: Promise<unknown> = Promise.resolve();
@@ -770,7 +832,9 @@ export function LivePage({
     if (launcherCall) {
       setLauncherState('ended');
       reportCallStart(session.id, 'ended');
-      void Promise.allSettled([saving, notesDone]).then(() => getPlatform().windowControl('close'));
+      void Promise.allSettled([saving, notesDone, rewriting]).then(() =>
+        getPlatform().windowControl('close'),
+      );
     }
     // Show the lines just saved under "Saved transcript".
     if (saver) {

@@ -28,9 +28,11 @@ import { parseArgs } from 'node:util';
 import { chromium } from '@playwright/test';
 import { build } from 'esbuild';
 import { DEFAULT_STT_MODEL, getSttModel, resolveDownloads } from '../src/core/stt/models';
+import { startAccurateEngine, type AccurateDecode } from './lib/accurate-engine';
 import { readWav } from './lib/call-audio';
 import {
   computeCallMetrics,
+  percentileOf,
   type CallMetrics,
   type CountOf,
   type TimedScriptLine,
@@ -50,14 +52,54 @@ interface PageRun {
   events: CallEvent[];
   /** When the first sample was handed over (Unix ms): the call's time zero. */
   startedAt: number;
+  /** v1.4 Phase 5a: when the last sample was handed over (Unix ms; recordings since then). */
+  endedAt?: number;
+  /** v1.4 Phase 5a: from the call's end until every "you" line was rewritten, ms (with --accurate). */
+  afterCallMs?: number;
+  /** v1.4 Phase 5a (ADR-0066): the accurate engine's measurements (with --accurate). */
+  accurate?: AccurateStats;
+}
+
+/** The accurate engine during one call (ADR-0066). */
+interface AccurateStats {
+  /** Decoding threads. */
+  threads: number;
+  /** Model loading, ms. */
+  loadMs: number;
+  /** Every decode. */
+  decodes: AccurateDecode[];
+  /** The engine process's CPU time during the call (to its end), ms. */
+  callCpuMs: number;
+  /** The call's length, ms. */
+  callMs: number;
+  /** The engine process's CPU time for the "you" lines after the call, ms. */
+  afterCallCpuMs: number;
+}
+
+/** --accurate settings. */
+interface AccurateOption {
+  /** Decoding threads. */
+  threads: number;
+  /** The Parakeet model folder. */
+  modelDir: string;
 }
 
 /** The page side: the real worker, fed two channels side by side at real-time speed. */
 const PAGE = `
 const worker = new Worker('/bundle/stt.worker.js');
 const events = [];
+const accuratePending = [];
+const youAudio = [];
 const pongs = new Map();
 let onReady;
+// ADR-0066: the accurate engine, through the local server as raw samples (null when not running).
+window.accurateDecode = null;
+window.useAccurate = () => {
+  window.accurateDecode = async (channel, audio) => {
+    const response = await fetch('/accurate/' + channel, { method: 'POST', body: audio });
+    return (await response.json()).text;
+  };
+};
 const ready = new Promise((resolve, reject) => { onReady = { resolve, reject }; });
 const unix = () => performance.timeOrigin + performance.now();
 // v1.4 (ADR-0065): the end-of-turn model, as LivePage.tsx runs it (judged at a pause, used by the final).
@@ -86,6 +128,18 @@ worker.onmessage = ({ data }) => {
     const speechEnd = data.speechEnd;
     judged.then((probability) => events.push({ type: 'turn', channel: 'them', speechEnd, probability, arrivedAt: unix() }));
   }
+  // v1.4 Phase 5a (ADR-0066): with --accurate, "them" lines go to the accurate engine as they become final
+  // (as LivePage.tsx does), "you" lines after the call.
+  if (data.type === 'final' && data.audio && window.accurateDecode && data.audio.length <= 480000) {
+    if (data.channel === 'them') {
+      const tEnd = data.tEnd;
+      accuratePending.push(window.accurateDecode('them', data.audio).then((text) => {
+        if (text !== null) events.push({ type: 'refine', channel: 'them', text, tEnd, arrivedAt: unix() });
+      }));
+    } else {
+      youAudio.push({ tEnd: data.tEnd, audio: data.audio });
+    }
+  }
   if (data.type === 'ready') onReady.resolve(data.load);
   if (data.type === 'error') onReady.reject(new Error(data.code + ': ' + data.message));
   if (data.type === 'partial') events.push({ type: 'partial', channel: data.channel, text: data.text, tStart: data.tStart, arrivedAt: unix() });
@@ -99,6 +153,15 @@ window.callRun = {
     const them = new Float32Array(await (await fetch('/pcm/them')).arrayBuffer());
     const total = Math.max(you.length, them.length);
     const chunk = 1600;
+    // With --accurate the channels are attached as the app attaches them, so final lines carry their audio.
+    const ports = {};
+    if (window.accurateDecode) {
+      for (const channel of ['you', 'them']) {
+        const pipe = new MessageChannel();
+        worker.postMessage({ type: 'attach', channel, port: pipe.port2, inputSampleRate: 16000, keepAudio: true }, [pipe.port2]);
+        ports[channel] = pipe.port1;
+      }
+    }
     const startedAt = unix();
     const start = performance.now();
     let clock = 1;
@@ -107,15 +170,25 @@ window.callRun = {
       for (const [channel, pcm] of [['you', you], ['them', them]]) {
         const samples = new Float32Array(chunk);
         samples.set(pcm.subarray(i, Math.min(i + chunk, pcm.length)));
-        worker.postMessage({ type: 'accept', channel, samples, endTime: clock }, [samples.buffer]);
+        if (ports[channel]) ports[channel].postMessage({ samples, endTime: clock }, [samples.buffer]);
+        else worker.postMessage({ type: 'accept', channel, samples, endTime: clock }, [samples.buffer]);
       }
       const wait = start + (n + 1) * 100 - performance.now();
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     }
+    // Port messages travel apart from worker messages: let the last chunks arrive before detaching.
+    if (window.accurateDecode) await new Promise((resolve) => setTimeout(resolve, 1000));
     worker.postMessage({ type: 'detach', channel: 'you' });
     worker.postMessage({ type: 'detach', channel: 'them' });
     await new Promise((resolve) => { pongs.set(1, resolve); worker.postMessage({ type: 'ping', id: 1 }); });
-    return { events, startedAt };
+    const endedAt = unix();
+    // After the call (ADR-0066): the "them" passes still running, then every "you" line, one at a time.
+    await Promise.all(accuratePending);
+    for (const { tEnd, audio } of youAudio) {
+      const text = await window.accurateDecode('you', audio);
+      if (text !== null) events.push({ type: 'refine', channel: 'you', text, tEnd, arrivedAt: unix() });
+    }
+    return { events, startedAt, endedAt, afterCallMs: youAudio.length > 0 ? Math.round(unix() - endedAt) : 0 };
   },
 };
 `;
@@ -198,16 +271,41 @@ async function bundle(srcDir: string): Promise<{ dir: string; logic: CallLogic }
  *
  * @param variant   The variant.
  * @param bundleDir The bundle folder.
+ * @param accurate  v1.4 Phase 5a: run the accurate engine with these settings, or null.
  * @returns What the page recorded.
  * Called from: main()
  */
-async function record(variant: Variant, bundleDir: string): Promise<PageRun> {
+async function record(
+  variant: Variant,
+  bundleDir: string,
+  accurate: AccurateOption | null,
+): Promise<PageRun> {
   const tracks = {
     you: readWav(path.join(CALLS_DIR, variant, 'you.wav')).samples,
     them: readWav(path.join(CALLS_DIR, variant, 'them.wav')).samples,
   };
+  const engine = accurate
+    ? await startAccurateEngine(accurate.threads, accurate.modelDir, bundleDir)
+    : null;
   const server = createServer((req, res) => {
     const pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
+    if (engine && req.method === 'POST' && pathname.startsWith('/accurate/')) {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        const bytes = Buffer.concat(chunks);
+        // Copied into its own buffer: a Float32Array needs 4-byte alignment.
+        const samples = new Float32Array(new Uint8Array(bytes).buffer);
+        void engine
+          .transcribe(pathname.endsWith('/you') ? 'you' : 'them', samples)
+          .then((text) =>
+            res
+              .writeHead(200, { 'Content-Type': 'application/json' })
+              .end(JSON.stringify({ text })),
+          );
+      });
+      return;
+    }
     if (pathname === '/')
       return void res
         .writeHead(200, { 'Content-Type': 'text/html' })
@@ -239,6 +337,9 @@ async function record(variant: Variant, bundleDir: string): Promise<PageRun> {
     const page = await browser.newPage();
     await page.goto(origin);
     await page.addScriptTag({ url: '/page.js' });
+    if (engine) {
+      await page.evaluate(() => (window as unknown as { useAccurate: () => void }).useAccurate());
+    }
     if (existsSync(path.join(bundleDir, 'turn.worker.js'))) {
       await page.evaluate(() => (window as unknown as { startTurn: () => void }).startTurn());
     }
@@ -254,8 +355,29 @@ async function record(variant: Variant, bundleDir: string): Promise<PageRun> {
       // v1.4 (ADR-0065): "them" lines carry their recent audio when there is a turn worker.
       ...(existsSync(path.join(bundleDir, 'turn.worker.js')) ? { turnAudio: true } : {}),
     });
-    return await page.evaluate(() => window.callRun.run());
+    if (!engine) return await page.evaluate(() => window.callRun.run());
+    const cpuBefore = await engine.cpuMs();
+    const run = await page.evaluate(() => window.callRun.run());
+    const cpuAfter = await engine.cpuMs();
+    const youMs = engine.decodes
+      .filter((decode) => decode.channel === 'you')
+      .reduce((sum, decode) => sum + decode.ms, 0);
+    const allMs = engine.decodes.reduce((sum, decode) => sum + decode.ms, 0) || 1;
+    const total = cpuAfter - cpuBefore;
+    return {
+      ...run,
+      accurate: {
+        threads: accurate!.threads,
+        loadMs: engine.loadMs,
+        decodes: engine.decodes,
+        // CPU split by decoding time between the call and after it: the engine does nothing else.
+        callCpuMs: Math.round((total * (allMs - youMs)) / allMs),
+        afterCallCpuMs: Math.round((total * youMs) / allMs),
+        callMs: Math.round((run.endedAt ?? run.startedAt) - run.startedAt),
+      },
+    };
   } finally {
+    engine?.stop();
     await browser.close();
     server.close();
   }
@@ -329,6 +451,79 @@ function rows(metrics: CallMetrics): [string, string][] {
   ];
 }
 
+/** The accurate engine's numbers for the report (ADR-0066). */
+interface AccurateSummary {
+  /** Decoding threads. */
+  threads: number;
+  /** Model loading, ms. */
+  loadMs: number;
+  /** "Them" lines: decode ms p50 / p95. */
+  themMs: [number, number];
+  /** "Them" lines: from final line to new words, ms p50 / p95 (queue included). */
+  themWaitMs: [number, number];
+  /** "Them" lines decoded. */
+  themLines: number;
+  /** Seconds of decoding per second of "them" audio (one decode at a time). */
+  themRtf: number;
+  /** The engine's CPU during the call, as a share of one core. */
+  callCores: number;
+  /** "You" lines rewritten after the call. */
+  afterCall: AfterCall;
+}
+
+/** The "you" rewrite after the call (ADR-0066). */
+interface AfterCall {
+  /** Lines rewritten. */
+  lines: number;
+  /** From the call's end until the last one was done, ms. */
+  ms: number;
+  /** The engine's CPU time for them, ms. */
+  cpuMs: number;
+}
+
+/**
+ * Sums up the accurate engine's measurements.
+ *
+ * @param run A recording made with --accurate.
+ * @returns The numbers for the report.
+ * Called from: main()
+ */
+function accurateSummary(run: PageRun): AccurateSummary {
+  const stats = run.accurate!;
+  const them = stats.decodes.filter((decode) => decode.channel === 'them');
+  const you = stats.decodes.filter((decode) => decode.channel === 'you');
+  const p = (values: number[], q: number) => Math.round(percentileOf(values, q));
+  const seconds = them.reduce((sum, decode) => sum + decode.seconds, 0) || 1;
+  return {
+    threads: stats.threads,
+    loadMs: stats.loadMs,
+    themMs: [
+      p(
+        them.map((d) => d.ms),
+        50,
+      ),
+      p(
+        them.map((d) => d.ms),
+        95,
+      ),
+    ],
+    themWaitMs: [
+      p(
+        them.map((d) => d.waitMs),
+        50,
+      ),
+      p(
+        them.map((d) => d.waitMs),
+        95,
+      ),
+    ],
+    themLines: them.length,
+    themRtf: Math.round((them.reduce((sum, d) => sum + d.ms, 0) / 1000 / seconds) * 1000) / 1000,
+    callCores: Math.round((stats.callCpuMs / Math.max(1, stats.callMs)) * 1000) / 1000,
+    afterCall: { lines: you.length, ms: run.afterCallMs ?? 0, cpuMs: stats.afterCallCpuMs },
+  };
+}
+
 /**
  * Prints saved results side by side: one column per label and variant.
  *
@@ -351,6 +546,28 @@ function printReport(labels: string[]): void {
     table[0]!.forEach(([name], index) => {
       console.log(`| ${name} | ${table.map((column) => column[index]![1]).join(' | ')} |`);
     });
+    // ADR-0066: the accurate engine's numbers, for the runs that had it.
+    const withAccurate = labels.flatMap((label) => {
+      const file = path.join(RESULTS_DIR, `${label}-${variant}.json`);
+      const saved = existsSync(file)
+        ? (JSON.parse(readFileSync(file, 'utf8')) as { accurate?: AccurateSummary })
+        : {};
+      return saved.accurate ? [[label, saved.accurate] as const] : [];
+    });
+    if (withAccurate.length === 0) continue;
+    console.log(`
+| Accurate engine | ${withAccurate.map(([label]) => label).join(' | ')} |`);
+    console.log(`|---|${withAccurate.map(() => '---').join('|')}|`);
+    const line = (name: string, value: (a: AccurateSummary) => string) =>
+      console.log(`| ${name} | ${withAccurate.map(([, a]) => value(a)).join(' | ')} |`);
+    line('Threads', (a) => String(a.threads));
+    line('Model load', (a) => `${a.loadMs} ms`);
+    line('"Them" lines rewritten', (a) => String(a.themLines));
+    line('Decode p50 / p95', (a) => `${a.themMs[0]} / ${a.themMs[1]} ms`);
+    line('Final line → new words p50 / p95', (a) => `${a.themWaitMs[0]} / ${a.themWaitMs[1]} ms`);
+    line('Decode time per second of speech', (a) => `${a.themRtf} s`);
+    line('Engine CPU during the call (cores)', (a) => a.callCores.toFixed(3));
+    line('"You" after the call: lines, time', (a) => `${a.afterCall.lines}, ${a.afterCall.ms} ms`);
   }
 }
 
@@ -367,6 +584,16 @@ async function main(): Promise<void> {
       src: { type: 'string' },
       replay: { type: 'boolean', default: false },
       report: { type: 'string' },
+      // v1.4 Phase 5a (ADR-0066): run the desktop app's accurate engine with this many threads.
+      accurate: { type: 'string' },
+      'accurate-model': {
+        type: 'string',
+        default: path.join(
+          process.env.LOCALAPPDATA ?? '',
+          'kite-stt-trial',
+          'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8',
+        ),
+      },
     },
   });
   if (values.report) {
@@ -388,14 +615,27 @@ async function main(): Promise<void> {
       run = JSON.parse(readFileSync(runFile, 'utf8')) as PageRun;
     } else {
       console.log(`${values.label} / ${variant}: playing the call (real time)…`);
-      run = await record(variant, dir);
+      run = await record(
+        variant,
+        dir,
+        values.accurate
+          ? { threads: Number(values.accurate), modelDir: values['accurate-model']! }
+          : null,
+      );
       writeFileSync(runFile, JSON.stringify(run));
     }
     const metrics = score(variant, run, logic);
     writeFileSync(
       path.join(RESULTS_DIR, `${values.label}-${variant}.json`),
       JSON.stringify(
-        { label: values.label, variant, src: srcDir, at: new Date().toISOString(), metrics },
+        {
+          label: values.label,
+          variant,
+          src: srcDir,
+          at: new Date().toISOString(),
+          metrics,
+          ...(run.accurate ? { accurate: accurateSummary(run) } : {}),
+        },
         null,
         1,
       ),

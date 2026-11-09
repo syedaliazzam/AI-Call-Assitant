@@ -47,7 +47,7 @@ import {
   SearchIcon,
   SortIcon,
 } from '@/ui/icons';
-import { AccurateOffer } from './AccurateOffer';
+import { AccurateDownload } from './AccurateDownload';
 import { useSyncAccount } from '@/features/sync/SyncScope';
 import { homeCardDescription, homeCardTitle, HomeCard } from './HomeCard';
 import { HomeMenu } from './HomeMenu';
@@ -278,7 +278,7 @@ function ClassicHomePanel({ email, startSessionId }: HomePanelProps) {
             </div>
           }
 
-          <AccurateOffer />
+          <AccurateDownload />
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-2">
             {failed ? (

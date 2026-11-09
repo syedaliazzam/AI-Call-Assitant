@@ -1,7 +1,8 @@
 /**
  * File: apps/desktop/src/accurate/host.ts
- * Purpose: The main-process side of accurate transcription (ADR-0034, opt-in, default off in the
- *          page's Settings). Answers four requests from the Kite page only: status, download
+ * Purpose: The main-process side of accurate transcription (ADR-0034; on by default since v1.4,
+ *          ADR-0066, which the page decides: it also starts the download by itself, unless the user
+ *          turned Accurate transcription off). Answers four requests from the Kite page only: status, download
  *          (resumable, SHA-256 checked, in the background), remove, and transcribe one utterance.
  *          The engine runs in a utility process started on the first transcription and kept for
  *          the app's life; a crash or a slow decode answers "engine", and the page keeps the live
@@ -26,8 +27,8 @@ import { bytesOnDisk, downloadModel, isModelReady, removeModel } from './downloa
 import { MODEL_BYTES, MODEL_FILES } from './model';
 import type { FromWorker, ToWorker } from './worker';
 
-/** Decoding threads: as measured in the ADR-0027 trial. */
-const THREADS = 4;
+/** Decoding threads: 2, measured against 4 during a call on the test laptop (ADR-0066): a third less CPU, which leaves the live engine room. */
+const THREADS = 2;
 
 /** Longest a decode may take before the page keeps the live line, in ms. */
 export const DECODE_TIMEOUT_MS = 15_000;
@@ -115,7 +116,7 @@ export function createAccurateHost(
   let loaded: Promise<boolean> | null = null;
   let nextId = 1;
   const pending = new Map<number, (result: AccurateResult) => void>();
-  // One decode at a time: the engine uses 4 threads, and the live engine needs the rest.
+  // One decode at a time: the engine uses 2 threads, and the live engine needs the rest.
   let queue: Promise<unknown> = Promise.resolve();
 
   const status = async (): Promise<AccurateStatus> => {
