@@ -2,7 +2,8 @@
  * File: apps/web/src/features/auth/LoginForm.tsx
  * Purpose: Email + password sign-in form. No sign-up link: accounts are created by an admin.
  * Used by: app/login/page.tsx
- * Depends on: src/core/auth/authClient.ts, src/core/auth/messages.ts, src/ui/Button.tsx, src/ui/Input.tsx
+ * Depends on: src/core/auth/authClient.ts, src/core/auth/messages.ts, src/ui/Button.tsx, src/ui/Input.tsx,
+ *             src/platform (hasHomePanel)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Sign in), §8.2
  */
 'use client';
@@ -13,6 +14,7 @@ import { signIn } from '@/core/auth/authClient';
 import { Button } from '@/ui/Button';
 import { Input } from '@/ui/Input';
 import { messageFor } from '@/core/auth/messages';
+import { getPlatform } from '@/platform';
 
 /**
  * The sign-in form. On success it opens the dashboard; the server then sends users who still
@@ -45,8 +47,10 @@ export function LoginForm() {
       setPending(false);
       return;
     }
-    // refresh() makes the server components re-read the new session cookie.
-    router.replace('/');
+    // refresh() makes the server components re-read the new session cookie. In a desktop app with the
+    // home panel (where sign-in happens) straight to /home: its window keeps to its own pages, and with
+    // account sync the dashboard ("/") belongs to the browser (ADR-0055).
+    router.replace(getPlatform().hasHomePanel() ? '/home' : '/');
     router.refresh();
   }
 

@@ -1,8 +1,9 @@
 /**
  * File: apps/web/src/features/shell/DesktopAway.tsx
  * Purpose: What a desktop window shows when it reaches a page the desktop app does not keep (ADR-0055):
- *          the page opens in the system browser once, and this window closes (with no call running the
- *          shell then brings the sessions card back). A note with "Open it again" stays in case the
+ *          after a moment (a page only passed through is left alone), the page opens in the system
+ *          browser once, and this window closes (with no call running the shell then brings the sessions
+ *          card back). A note with "Open it again" stays in case the
  *          window cannot close (an older shell).
  * Used by: src/features/shell/AppShell.tsx
  * Depends on: src/features/sync/dashboardLink.ts, src/platform, src/ui/Button.tsx, ./desktopPages.ts
@@ -15,6 +16,13 @@ import { openDashboard } from '@/features/sync/dashboardLink';
 import { getPlatform } from '@/platform';
 import { Button } from '@/ui/Button';
 import { browserPathFor } from './desktopPages';
+
+/**
+ * How long the page waits before acting, in ms. The home panel passes through "/" for a moment (a
+ * server redirect after changing a password); the shell sends it back to /home at once, and this page
+ * is gone before it would close the panel.
+ */
+export const DESKTOP_AWAY_DELAY_MS = 600;
 
 /** Props for DesktopAway. */
 export interface DesktopAwayProps {
@@ -37,10 +45,13 @@ export function DesktopAway({ pathname }: DesktopAwayProps) {
 
   useEffect(() => {
     if (done.current === pathname) return;
-    done.current = pathname;
-    openDashboard(browserPathFor(pathname, globalThis.location.search, globalThis.location.hash));
-    // The shell closes the window (the main window steps aside instead during a call).
-    getPlatform().windowControl('close');
+    const timer = setTimeout(() => {
+      done.current = pathname;
+      openDashboard(browserPathFor(pathname, globalThis.location.search, globalThis.location.hash));
+      // The shell closes the window (the main window steps aside instead during a call).
+      getPlatform().windowControl('close');
+    }, DESKTOP_AWAY_DELAY_MS);
+    return () => clearTimeout(timer);
   }, [pathname]);
 
   return (
