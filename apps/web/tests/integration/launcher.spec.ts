@@ -106,9 +106,9 @@ test.beforeAll(async () => {
       res.end(readFileSync(path.join(bundleDir, isCss ? 'launcher.css' : 'launcher.js')));
       return;
     }
-    if (req.url === '/images/logo-mark.png') {
+    if (req.url === '/images/green-logo-lockup.png') {
       res.writeHead(200, { 'Content-Type': 'image/png' });
-      res.end(readFileSync(path.join(WEB_DIR, 'public', 'images', 'logo-mark.png')));
+      res.end(readFileSync(path.join(WEB_DIR, 'public', 'images', 'green-logo-lockup.png')));
       return;
     }
     if (req.url?.startsWith('/api/')) {

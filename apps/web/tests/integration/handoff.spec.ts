@@ -82,9 +82,9 @@ test.beforeAll(async () => {
       res.end(readFileSync(path.join(bundleDir, isCss ? 'handoff.css' : 'handoff.js')));
       return;
     }
-    if (req.url === '/images/logo-mark.png') {
+    if (req.url === '/images/green-logo-lockup.png') {
       res.writeHead(200, { 'Content-Type': 'image/png' });
-      res.end(readFileSync(path.join(WEB_DIR, 'public', 'images', 'logo-mark.png')));
+      res.end(readFileSync(path.join(WEB_DIR, 'public', 'images', 'green-logo-lockup.png')));
       return;
     }
     res.writeHead(200, { 'Content-Type': 'text/html' });

@@ -1,17 +1,18 @@
 /**
  * File: apps/web/src/ui/BrandLockup.tsx
- * Purpose: The product's lockup: the logo mark (src/ui/brand.ts), the name in Inter 600 and, optionally,
- *          a small "by Paramount Intelligence". The mark has no light version, so on dark surfaces it
- *          sits on a small white tile.
+ * Purpose: The product's lockup: the logo (src/ui/brand.ts), the name in Inter 600 and, optionally,
+ *          a small "by Paramount Intelligence". The logo has no dark version, so on dark surfaces it
+ *          sits on a small white tile. v1.3.2 (ADR-0060): the green logo already shows the name, so
+ *          the name is kept for screen readers only (BRAND_LOGO_HAS_NAME).
  * Used by: src/ui/Sidebar.tsx, src/ui/AuthCard.tsx, src/features/home/HomePanel.tsx,
  *          src/features/live/LiveCallLayout.tsx, src/features/dev/UiGallery.tsx
  * Depends on: React, ./brand.ts
  * Architecture: docs/design/paramount-ai-ui-spec.md §0 (logo), §2; docs/architecture/kite-architecture-v3.1.md §9.1
  * Theme: tokens from src/ui/tokens/theme.css
  */
-import { BRAND_LOGO_SRC, BRAND_NAME } from './brand';
+import { BRAND_LOGO_HAS_NAME, BRAND_LOGO_SRC, BRAND_NAME } from './brand';
 
-/** The lockup's sizes: the mark's height and the name's size. */
+/** The lockup's sizes for a mark-only logo: the mark's height and the name's size. */
 const SIZES = {
   /** Compact window header. */
   xs: { mark: 'h-4', tile: 'p-0.5', auto: 'theme-dark:p-0.5', name: 'text-[13px]', gap: 'gap-1.5' },
@@ -22,6 +23,17 @@ const SIZES = {
   /** Sign-in hero. */
   lg: { mark: 'h-9', tile: 'p-1.5', auto: 'theme-dark:p-1.5', name: 'text-[18px]', gap: 'gap-3' },
 } as const;
+
+/**
+ * v1.3.2 (ADR-0060): the heights of a logo that contains the name (the green logo, about 3.8 : 1).
+ * Taller than a mark, because its words must stay readable; the name is not printed beside it.
+ */
+const WORDMARK_HEIGHTS: Record<keyof typeof SIZES, string> = {
+  xs: 'h-5',
+  sm: 'h-8',
+  md: 'h-9',
+  lg: 'h-12',
+};
 
 /** Props for BrandLockup. */
 export interface BrandLockupProps {
@@ -52,9 +64,14 @@ export function BrandLockup({
   name = BRAND_NAME,
 }: BrandLockupProps) {
   const s = SIZES[size];
-  // The mark keeps its proportions: only its height is set.
+  // The mark keeps its proportions: only its height is set. The green logo is on white with no
+  // transparency: multiply blends that white into a light page (on the dark theme's white tile it
+  // changes nothing).
+  const height = BRAND_LOGO_HAS_NAME ? WORDMARK_HEIGHTS[size] : s.mark;
   // eslint-disable-next-line @next/next/no-img-element
-  const mark = <img src={BRAND_LOGO_SRC} alt="" className={`${s.mark} w-auto`} />;
+  const mark = (
+    <img src={BRAND_LOGO_SRC} alt="" className={`${height} w-auto mix-blend-multiply`} />
+  );
   return (
     <span className={`flex min-w-0 items-center ${s.gap}`}>
       {tone === 'dark' && (
@@ -78,7 +95,8 @@ export function BrandLockup({
           {mark}
         </span>
       )}
-      <span className="flex min-w-0 flex-col">
+      {/* The name: beside a mark-only logo; for screen readers only when the logo shows it. */}
+      <span className={BRAND_LOGO_HAS_NAME ? 'sr-only' : 'flex min-w-0 flex-col'}>
         <span className={`truncate font-semibold leading-none text-ui-heading ${s.name}`}>
           {name}
         </span>

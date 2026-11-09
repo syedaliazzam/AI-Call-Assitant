@@ -15,7 +15,7 @@
 - Light, dark and system themes.
 
 **Do NOT copy:**
-- Their logo, parrot or mascot.
+- Their logo, parrot or mascot. *(Changed for the logo only, ADR-0060: the developer chose a green parrot logo, `images/green-logo.png`. No parrot or mascot elsewhere.)*
 - Their green brand colour. *(Changed in v1.3.1, ADR-0058: the developer chose a green accent, .)*
 - Their icon artwork. Use **Lucide** icons, the closest meaning for each.
 - Their sentences. Use the copy in this file.
@@ -23,7 +23,7 @@
 
 Short functional labels are fine to match: Create session, Answer, Screenshot, Chat, Exit, Resumes, Documents.
 
-**Logo:** the developer supplies the Paramount AI mark (`apps/web/public/images/…`). It must not resemble the reference parrot.
+**Logo (v1.3.2, ADR-0060):** the green logo, `apps/web/public/images/green-logo.png`, which includes the name; `scripts/make-brand.ts` makes the trimmed lockup and the icons from it. (Before: a mark that must not resemble the reference parrot.)
 
 ## 1. Design tokens (one source: `src/ui/tokens`)
 
