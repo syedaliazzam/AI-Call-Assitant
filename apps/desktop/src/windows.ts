@@ -898,6 +898,8 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
    */
   const applyLayout = () => {
     if (!current || current.isDestroyed() || !layout || mode !== 'full') return;
+    // v1.3.1: a panel opening mid-slide sizes the window at the slide's place.
+    finishSlide();
     const bounds = current.getBounds();
     const area = areaFor(bounds);
     const key = layoutKey(layout);
@@ -1007,6 +1009,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
    */
   const setMode = (next: OverlayMode) => {
     if (!current || current.isDestroyed() || next === mode) return;
+    finishSlide();
     const bounds = current.getBounds();
     const previous = mode;
     if (next === 'full') {
@@ -1084,15 +1087,27 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     );
   };
 
-  /** v1.3.1: the timer of a jump that is still sliding, and whether one is. */
+  /** v1.3.1: the timer of a jump that is still sliding, where it is going, and whether one is. */
   let slideTimer: ReturnType<typeof setInterval> | null = null;
+  let slideTarget: Bounds | null = null;
   let sliding = false;
 
-  /** Ends a slide where it is (a new jump starts from there, or the slide reached its place). */
+  /** Forgets a slide (it reached its place, or its window closed). */
   const stopSlide = () => {
     if (slideTimer) clearInterval(slideTimer);
     slideTimer = null;
+    slideTarget = null;
     sliding = false;
+  };
+
+  /**
+   * Ends a running slide at its place at once. Called first by everything else that moves or resizes
+   * the overlay (a panel, a mode, a nudge, a resize, another jump), so they start from an exact place.
+   */
+  const finishSlide = () => {
+    const target = slideTarget;
+    stopSlide();
+    if (target && current && !current.isDestroyed()) current.setBounds(target);
   };
 
   /**
@@ -1105,17 +1120,21 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     if (!current || current.isDestroyed()) return;
     // The script bar sits near the camera on purpose; it keeps its place.
     if (mode === 'script' || mode === 'script-input') return;
+    // A second jump during a slide starts from where the first one was going.
+    finishSlide();
     const bounds = current.getBounds();
     const area = areaFor(bounds);
     position = preset;
     const target = { ...bounds, ...positionPlace(preset, area, bounds.width, bounds.height) };
-    stopSlide();
     if (deps.slideJumps?.() === true) {
       // v1.3.1 (ADR-0058): slide there over 150 ms. The window's own 'moved' events are ignored
-      // meanwhile, so the edge snap (save()) never pulls it off the exact place.
+      // meanwhile, so the edge snap (save()) never pulls it off the exact place. Every step states
+      // the target's size with the place: re-reading the size each step lets it creep by a pixel at
+      // some display scales (150 %), and the last step is the exact target.
       const window = current;
       const frames = slideFrames(bounds, target, JUMP_SLIDE_MS / JUMP_FRAME_MS);
       sliding = true;
+      slideTarget = target;
       let frame = 0;
       slideTimer = setInterval(() => {
         const next = frames[frame];
@@ -1124,10 +1143,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
           stopSlide();
           return;
         }
-        // The size it has now (a panel may open mid-slide), stated with the place: at some display
-        // scales a plain move lets a small window creep.
-        const { width, height } = window.getBounds();
-        window.setBounds({ x: next.x, y: next.y, width, height });
+        window.setBounds(next);
         if (frame >= frames.length) stopSlide();
       }, JUMP_FRAME_MS);
     } else {
@@ -1275,6 +1291,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     },
     move(dx, dy) {
       if (!current || current.isDestroyed()) return;
+      finishSlide();
       const [x = 0, y = 0] = current.getPosition();
       if (mode === 'icon') {
         // With its size stated: at some display scales a plain move lets a small window creep.
@@ -1305,6 +1322,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     place(preset) {
       deps.store.write({ overlayPreset: preset });
       if (!current || current.isDestroyed()) return;
+      finishSlide();
       const target = presetBounds(preset, areaFor(fullBounds ?? current.getBounds()));
       position = preset;
       rememberPosition(preset, target);
@@ -1345,6 +1363,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     },
     resize(step) {
       if (!current || current.isDestroyed()) return;
+      finishSlide();
       if (step.phase === 'start') {
         resizeStart = current.getBounds();
         return;
