@@ -181,6 +181,8 @@ export async function createSession(page: Page, session: NewSession): Promise<vo
       { timeout: 30_000 },
     );
   }
+  // v1.3.0 (ADR-0057): Key terms sit in a collapsed Advanced section at the bottom of step 1.
+  await page.getByText('Advanced', { exact: true }).click();
   await page.getByLabel('Key terms').fill(session.keyTerms.join(','));
   await page.getByLabel('Key terms').press('Enter');
   await page.getByRole('button', { name: 'Next' }).click();
