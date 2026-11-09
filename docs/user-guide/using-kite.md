@@ -187,7 +187,7 @@ On macOS, Ctrl is ⌘. In a browser, all of them work while the tab has focus.
 
 ## Settings
 
-- **Accurate transcription:** **Auto** (the default) uses it when plugged in and not on battery, once its 661 MB model is downloaded; that download never starts by itself. **On** and **Off** are there too.
+- **Accurate transcription** (desktop app): **On** by default, on battery too. A second engine rewrites the other person's lines a moment after they appear, and Paramount AI answers from those words. Your own lines are rewritten after the call, when the transcript is saved. The 661 MB model downloads by itself in the background after the app starts, and the home screen shows its progress. Calls work meanwhile with the standard transcription. Choose **Only when plugged in** to save battery, or **Off** to skip it and its download.
 - **Defaults for new sessions**, **Answers** (format, length, tone, model, coding language, what to do when your CV has no example, your own AI instructions).
 - **Privacy → Company suggestions:** on by default. The company name you type, and the websites of companies you pick, go to Brandfetch to suggest names and show logos. Off: nothing goes to Brandfetch, only your past sessions are suggested, and session cards show a letter instead of a logo.
 - **Overlay:** Private, opacity and how far it fades away from the pointer.

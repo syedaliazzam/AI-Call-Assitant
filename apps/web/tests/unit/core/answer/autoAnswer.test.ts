@@ -300,6 +300,17 @@ describe('autoAnswerDue: rerun', () => {
     });
   });
 
+  it('does not wait for the accurate engine (ADR-0066): the user is about to reply', () => {
+    const lines = [
+      line('a', 'them', 'HOW BIG IS THE TEAM', T),
+      line('b', 'them', 'AND WHAT DOES YOUR ON CALL ROTATION LOOK LIKE', T + 5_000, {
+        tStart: T + 2_500,
+        refining: true,
+      }),
+    ];
+    expect(autoAnswerDue(state(lines, answered), T + 5_000 + AUTO_PAUSE_MS)?.kind).toBe('rerun');
+  });
+
   it('also when the answered line itself grew (lines that follow each other merge under one id)', () => {
     const lines = [
       line('a', 'them', 'HOW BIG IS THE TEAM AND WHO IS YOUR MANAGER', T + 4_000, {

@@ -224,12 +224,13 @@ export function continuationOf(
 /**
  * How long to wait after a window's last line before answering it.
  *
- * @param window The window's lines.
- * @param now    The current time (Unix ms).
+ * @param window           The window's lines.
+ * @param now              The current time (Unix ms).
+ * @param waitForAccurate  False for a rerun: it does not wait for the accurate engine's words.
  * @returns The pause needed, in ms (Infinity when the accurate engine is still busy and may still be).
  * Called from: autoAnswerDue()
  */
-function pauseNeeded(window: readonly Utterance[], now: number): number {
+function pauseNeeded(window: readonly Utterance[], now: number, waitForAccurate = true): number {
   const last = window.at(-1)!;
   // v1.4 (ADR-0065): the end-of-turn model may only SHORTEN the wait. When the words look cut off
   // (3 s), a clear "finished" from the voice (TURN_FINISHED_AT) brings it back to 1.2 s; while it is
@@ -245,7 +246,11 @@ function pauseNeeded(window: readonly Utterance[], now: number): number {
   }
   const pause = unfinished ? UNFINISHED_PAUSE_MS : AUTO_PAUSE_MS;
   // Wait for the accurate engine's words, but never more than ACCURATE_WAIT_MS on top.
-  if (window.some((line) => line.refining) && now - last.tEnd < pause + ACCURATE_WAIT_MS) {
+  if (
+    waitForAccurate &&
+    window.some((line) => line.refining) &&
+    now - last.tEnd < pause + ACCURATE_WAIT_MS
+  ) {
     return Number.POSITIVE_INFINITY;
   }
   return pause;
@@ -284,7 +289,10 @@ export function autoAnswerDue(state: AutoAnswerState, now: number): AutoDecision
         ...more,
       ];
       const end = Math.max(...more.map((line) => line.tEnd));
-      if (now - end < pauseNeeded(more, now)) return null;
+      // ADR-0066: a rerun does not wait for the accurate engine. Its card is already on screen and the
+      // user is about to reply; on the synthetic calls that wait let the user's first words cancel
+      // the rerun, and the rest of the question then got a card of its own.
+      if (now - end < pauseNeeded(more, now, false)) return null;
       return {
         kind: 'rerun',
         replaces: last.answerId,

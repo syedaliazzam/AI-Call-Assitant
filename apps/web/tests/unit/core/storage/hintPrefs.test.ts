@@ -18,7 +18,6 @@ describe('hintPrefs', () => {
     markHintSeen('acceptable-use');
     expect(hintSeen('acceptable-use')).toBe(true);
     expect(hintSeen('headphones')).toBe(false);
-    expect(hintSeen('accurate-offer')).toBe(false);
   });
 
   it('shows again when storage is blocked, without throwing', () => {

@@ -17,8 +17,11 @@ import type { MeasuredAnswer, MeasuredLine } from './call-metrics';
 
 /** One message of the speech worker, with when it reached the page. */
 export interface CallEvent {
-  /** 'partial' (grey text) or 'final' (a finished line). */
-  type: 'partial' | 'final' | 'turn';
+  /**
+   * 'partial' (grey text), 'final' (a finished line), 'turn' (an end-of-turn judgment, ADR-0065) or
+   * 'refine' (the accurate engine's words for the final line with this tEnd, ADR-0066).
+   */
+  type: 'partial' | 'final' | 'turn' | 'refine';
   /** Which channel. */
   channel: 'you' | 'them';
   /** Its text. */
@@ -65,6 +68,10 @@ interface LogicTranscript {
   addFinal(line: Record<string, unknown>): LogicLine;
   /** v1.4 (ADR-0065): records an end-of-turn judgment (absent before). */
   setTurnEnd?(id: string, value: number | 'pending' | null): void;
+  /** v1.4 (ADR-0062): marks a line as being rewritten by the accurate engine (absent before). */
+  setRefining?(id: string, on: boolean): void;
+  /** v1.0.1 (ADR-0034): puts the accurate engine's words in place of the live ones. */
+  refineFinal?(id: string, heard: string, refined: string): boolean;
   /** The shown lines. */
   lines(): readonly LogicLine[];
   /** Every final line, hidden ones too. */
@@ -197,6 +204,8 @@ export function replayCall(
   let nextId = 1;
   // v1.4: the line each end-of-turn judgment is for, by its end of speech.
   const judging = new Map<number, string>();
+  // ADR-0066: the final line each accurate rewrite is for, by its end (with the words it replaces).
+  const refining = new Map<number, { id: string; heard: string }>();
 
   /**
    * Records a new card, or a rerun on an existing one.
@@ -309,6 +318,15 @@ export function replayCall(
         transcript.addPartial(event.channel, event.text, event.tStart);
         continue;
       }
+      if (event.type === 'refine') {
+        // As refine.ts: the new words replace the live ones, and the line is no longer being rewritten.
+        const target = event.tEnd === undefined ? undefined : refining.get(event.tEnd);
+        if (target) {
+          transcript.refineFinal?.(target.id, target.heard, event.text);
+          transcript.setRefining?.(target.id, false);
+        }
+        continue;
+      }
       if (event.type === 'turn') {
         // As LivePage.tsx: the judgment reaches the line it was made for.
         const lineId = event.speechEnd === undefined ? undefined : judging.get(event.speechEnd);
@@ -328,6 +346,14 @@ export function replayCall(
         tEnd: event.tEnd ?? event.arrivedAt,
         ...(nonEnglish ? { nonEnglish: true } : {}),
       });
+      // ADR-0066: as LivePage.tsx, a line the accurate engine will rewrite is marked meanwhile.
+      if (
+        event.tEnd !== undefined &&
+        events.some((other) => other.type === 'refine' && other.tEnd === event.tEnd)
+      ) {
+        refining.set(event.tEnd, { id: added.id, heard: event.text });
+        if (event.channel === 'them') transcript.setRefining?.(added.id, true);
+      }
       // v1.4 (ADR-0065): a judgment is coming for this line (the page asks for every "them" final).
       if (
         event.channel === 'them' &&

@@ -583,3 +583,17 @@ Same laptop and harness. **after-p4** = Smart Turn v3.2 judging "Them" lines tha
 | Question end → answer sent p50 / p95 | 1530 / 1530 ms | 1592 / 1968 ms | 1902 / 2453 ms |
 | Other-language lines marked | 0/2 | 2/2 | 2/2 |
 | English lines wrongly marked | 0 | 0 | 0 |
+
+## Call quality, Phase 5a: Accurate on "Them" (10 Nov 2026, ADR-0066)
+
+i5-8350U laptop, synthetic headphones call (`stt:calls --accurate=<threads>`): the desktop app's own Parakeet worker in a Node process, alongside the live engine in Chromium, in real time.
+
+| | No Accurate | 4 threads (2 runs) | 2 threads (chosen) |
+|---|---|---|---|
+| WER as shown, You / Them | 7.3% / 5.1% | 0.6% / 4.0% | 0.6% / 4.0% |
+| Questions answered whole, duplicates | 7/7, 0 | 7/7, 0 | 7/7, 0 |
+| Question end → answer sent p50 / p95 | 2,182 / 2,569 ms | 3,132 / 4,371 and 2,712 / 3,281 ms | 3,273 / 3,438 ms |
+| One "Them" line: decode p50 / p95 | — | 1,034 / 2,376 and 971 / 1,955 ms | 1,684 / 3,126 ms |
+| Engine CPU during the call | — | 0.62 and 0.54 core | 0.40 core |
+| 14 "You" lines after the call | — | 27.4 and 26.6 s | 33.5 s |
+| Model load | — | 6–8 s | 12.5 s |

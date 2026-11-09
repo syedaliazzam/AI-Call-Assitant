@@ -41,6 +41,14 @@ export interface SaverOptions {
 
 /** A running saver. */
 export interface TranscriptSaver {
+  /**
+   * v1.4 (ADR-0066): the stored id of a transcript line (session, call and line), so a line saved
+   * during the call can be saved again after it (core/transcript/afterCall.ts).
+   *
+   * @param lineId The transcript line's id.
+   * @returns Its stored id.
+   */
+  storedId(lineId: string): string;
   /** Stops watching the transcript (writes already queued still finish). */
   stop(): void;
   /**
@@ -69,6 +77,13 @@ export function startTranscriptSaver(
   const callId = options.callId ?? crypto.randomUUID();
   /** What is stored, by transcript line id: the version last written (text and times). */
   const saved = new Map<string, Utterance>();
+  /**
+   * The stored id of a line.
+   *
+   * @param lineId The transcript line's id.
+   * @returns The id it is stored under.
+   */
+  const storedIdOf = (lineId: string) => `${sessionId}:${callId}:${lineId}`;
   /** The write queue: each write starts after the previous one finished. */
   let queue: Promise<void> = Promise.resolve();
 
@@ -84,7 +99,7 @@ export function startTranscriptSaver(
   /** Compares the transcript with what is stored and queues the differences. */
   const sync = () => {
     for (const line of transcript.allLines()) {
-      const storedId = `${sessionId}:${callId}:${line.id}`;
+      const storedId = storedIdOf(line.id);
       const previous = saved.get(line.id);
       if (line.echo) {
         // Recognised as an echo after it was saved: remove it (echo lines are never kept).
@@ -119,6 +134,7 @@ export function startTranscriptSaver(
   // Lines that are already final when saving starts (for example after a reconnect).
   sync();
   return {
+    storedId: storedIdOf,
     stop: unsubscribe,
     flush: () => queue,
   };

@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "4.6.0"
+version: "4.7.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-09"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 4.6.0, **Current**: the only document to build from |
+| Version | 4.7.0, **Current**: the only document to build from |
+| Changes in 4.7.0 | **Call quality, Phase 5a** (ADR-0066; desktop 1.4.0 and web). Accurate transcription is On by default (on battery too; "Only when plugged in" and Off remain); the desktop app downloads its model by itself after it starts, with progress on the home panel. During the call it rewrites only "Them" lines (auto-answer uses those words); "You" lines are rewritten after the call when the transcript is saved. 2 decoding threads. A re-ask does not wait for the accurate words. |
 | Changes in 4.6.0 | **Call quality, Phase 4** (ADR-0065; web only, prompt change). §6.1 step 3, §7.5: the **end-of-turn model** (Pipecat Smart Turn v3.2, int8, 8.7 MB, BSD-2-Clause; `/turn/`, fetched and checked by the build; ONNX Runtime WebAssembly in its own worker, `core/turn`). The speech worker posts a "Them" line's recent audio when it looks cut off: at a 300 ms pause (`pause` message) and with the final line; Whisper log-mel features in TypeScript. Auto-answer uses the judgment only to shorten the 3 s wait to 1.2 s when the voice is clearly finished (≥ 0.8); it never lengthens a wait. §6.1: a new hidden reply type **none** (talk about the call itself, a remark needing no reply): no card; a press of Answer gets "That wasn't a question…", auto-answer stays silent. |
 | Changes in 4.5.0 | **Call quality, Phase 3** (ADR-0064; web only). §6.1 step 2: the **coupling gate** in the speech worker (`core/stt/coupling.ts`): it learns how late and how loud the other side comes back on the microphone (laptop speakers) from the two channels' loudness, and silences a "You" chunk that echo fully explains; the user talking over them passes; with headphones nothing is learnt. A "You" chunk waits at most one step for its reference. Measured on the synthetic speakers call: right-channel words 91% → 100%, "You" WER 49% → 5%. A line of listening sounds with one stray word ("um … O K") is a blip; the other side's "mm-hm" is never part of their next question. |
 | Changes in 4.4.0 | **Call quality, Phase 2** (ADR-0063; web only). §11: the **synthetic call harness**: `calls:make` builds a three-minute two-voice interview (Windows text-to-speech) in four variants (headphones, speakers, reverse echo, noise); `stt:calls` plays it through the real speech worker in Chromium at real time and replays the lines through the transcript and auto-answer code on a simulated clock, scoring right-channel words, WER, noise lines, split questions, whole/duplicate/non-question answers and answer delay against the script, for this checkout or another (`--src`, a baseline). §7.5 (found by it): the user's grey words no longer hold auto-answer back; the other person's "mm-hm" is never more of the question; §6.1: a "Them" line that started over 0.5 s after a "You" line is never that line's original; the user's own echo on "Them" needs 0.6 (0.5 overlapping) and must end after the user's words; one-word "Them" noise while the user talks is hidden. |

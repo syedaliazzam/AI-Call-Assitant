@@ -1,53 +1,70 @@
 /**
  * File: apps/web/src/core/storage/transcriptionPrefs.ts
- * Purpose: The device's transcription setting (v1.0.1, ADR-0034; v1.1.0, ADR-0044): "Accurate
- *          transcription", which re-transcribes each finished line with the desktop app's Parakeet
- *          engine. Auto (the default) uses it when plugged in and not on battery; On and Off are also
- *          available. Auto never starts the model's download: it only uses a model that is already on
- *          this computer. Kept in this browser profile's localStorage (a device setting, like the
- *          overlay's), never sent anywhere.
+ * Purpose: The device's transcription setting (v1.0.1, ADR-0034; v1.1.0, ADR-0044; v1.4, ADR-0066):
+ *          "Accurate transcription", which transcribes the other person's finished lines again with the
+ *          desktop app's Parakeet engine during the call, and the user's own lines after it. On (the
+ *          default since ADR-0066, on battery too), "Only when plugged in", or Off. With On or "Only
+ *          when plugged in" the desktop app downloads the model by itself; Off never downloads it. Kept
+ *          in this browser profile's localStorage (a device setting, like the overlay's), never sent
+ *          anywhere.
  * Used by: src/features/settings/TranscriptionSetting.tsx, src/features/live/LivePage.tsx,
- *          src/features/home/AccurateOffer.tsx; tests
- * Depends on: localStorage (a missing or blocked one means the default: Auto)
- * Architecture: docs/decisions/ADR-0034-accurate-transcription-opt-in.md, ADR-0044
+ *          src/features/home/AccurateDownload.tsx; tests
+ * Depends on: localStorage (a missing or blocked one means the default: On)
+ * Architecture: docs/decisions/ADR-0034-accurate-transcription-opt-in.md, ADR-0044, ADR-0066
  */
 
-/** localStorage key: 'on' or 'off' for a choice the user made; nothing stored means Auto. */
+/**
+ * localStorage key: 'plugged' or 'off' for a choice the user made ('on' from before ADR-0066 is
+ * read as On); nothing stored means the default, On.
+ */
 export const ACCURATE_TRANSCRIPTION_KEY = 'kite.accurateTranscription';
 
-/** The setting: on when plugged in, always on, or always off. */
-export type TranscriptionMode = 'auto' | 'on' | 'off';
+/** The setting: always on (default), only when plugged in, or off. */
+export type TranscriptionMode = 'on' | 'plugged' | 'off';
 
 /**
- * The setting on this device. Before v1.1.0 the switch stored 'on' or 'off' only once it was changed,
- * so those choices carry over and a device that never touched it becomes Auto.
+ * The setting on this device. Before ADR-0066 the default was Auto (plugged in only), stored as
+ * nothing: those devices now get the new default, On. A stored 'on' or 'off' keeps its meaning.
  *
- * @returns The setting (default 'auto').
- * Called from: TranscriptionSetting.tsx, LivePage.tsx, AccurateOffer.tsx; tests
+ * @returns The setting (default 'on').
+ * Called from: TranscriptionSetting.tsx, LivePage.tsx, AccurateDownload.tsx; tests
  */
 export function getTranscriptionMode(): TranscriptionMode {
   try {
     const stored = localStorage.getItem(ACCURATE_TRANSCRIPTION_KEY);
-    return stored === 'on' || stored === 'off' ? stored : 'auto';
+    return stored === 'plugged' || stored === 'off' ? stored : 'on';
   } catch {
     // Storage blocked (private window, policy): the default.
-    return 'auto';
+    return 'on';
   }
 }
 
 /**
  * Changes the setting on this device.
  *
- * @param mode The new setting. 'auto' removes the stored choice.
+ * @param mode The new setting. 'on' (the default) removes the stored choice.
  * Called from: TranscriptionSetting.tsx; tests
  */
 export function setTranscriptionMode(mode: TranscriptionMode): void {
   try {
-    if (mode === 'auto') localStorage.removeItem(ACCURATE_TRANSCRIPTION_KEY);
+    if (mode === 'on') localStorage.removeItem(ACCURATE_TRANSCRIPTION_KEY);
     else localStorage.setItem(ACCURATE_TRANSCRIPTION_KEY, mode);
   } catch {
     // Storage blocked: the setting simply does not stick.
   }
+}
+
+/**
+ * v1.4 (ADR-0066): whether the desktop app should start (or resume) the model's download by itself.
+ *
+ * @param mode  The setting.
+ * @param state The engine's state on this computer (AccurateStatus.state).
+ * @returns True unless the setting is Off or there is nothing to download (no engine build, already
+ *          there, or already downloading).
+ * Called from: AccurateDownload.tsx; tests
+ */
+export function downloadWanted(mode: TranscriptionMode, state: string): boolean {
+  return mode !== 'off' && (state === 'not-downloaded' || state === 'error');
 }
 
 /**

@@ -1,12 +1,13 @@
 /**
  * File: apps/web/src/features/settings/TranscriptionSetting.tsx
- * Purpose: Settings → Transcription (v1.0.1, ADR-0034; v1.1.0, ADR-0044): "Accurate transcription":
- *          Auto (the default: when plugged in), On or Off. The Parakeet model (about 661 MB, resumable,
- *          each file checked) downloads only when the user asks: Auto never starts it. During a call
- *          each finished line is then transcribed again by it, and the live engine's text stays
- *          wherever the accurate engine is not ready or fails. Shows the download's progress, a retry
- *          after a failure, and a way to delete the download. In the browser (or an older desktop app)
- *          it explains that this needs the desktop app.
+ * Purpose: Settings → Transcription (v1.0.1, ADR-0034; v1.1.0, ADR-0044; v1.4, ADR-0066): "Accurate
+ *          transcription": On (the default, on battery too), "Only when plugged in", or Off. Unless it
+ *          is Off, the desktop app downloads the Parakeet model (about 661 MB, resumable, each file
+ *          checked) by itself (home/AccurateDownload.tsx). During a call the other person's finished
+ *          lines are then transcribed again by it, and the user's own lines after the call; the live
+ *          engine's text stays wherever the accurate engine is not ready or fails. Shows the
+ *          download's progress, a retry after a failure, and a way to delete the download. In the
+ *          browser (or an older desktop app) it explains that this needs the desktop app.
  * Used by: src/features/settings/Settings.tsx
  * Depends on: src/platform (accurate engine), src/core/storage/transcriptionPrefs.ts,
  *             src/ui/Select.tsx, src/ui/Button.tsx
@@ -27,8 +28,8 @@ import { Select } from '@/ui/Select';
 
 /** The setting's choices, in the order shown. */
 const MODE_OPTIONS: readonly { value: TranscriptionMode; label: string }[] = [
-  { value: 'auto', label: 'Auto: when plugged in (default)' },
-  { value: 'on', label: 'On' },
+  { value: 'on', label: 'On (default)' },
+  { value: 'plugged', label: 'Only when plugged in' },
   { value: 'off', label: 'Off' },
 ];
 
@@ -60,7 +61,7 @@ export function TranscriptionSetting() {
   const saved = useSyncExternalStore<TranscriptionMode>(
     subscribeNever,
     getTranscriptionMode,
-    () => 'auto',
+    () => 'on',
   );
   const [choice, setChoice] = useState<TranscriptionMode | null>(null);
   const mode = choice ?? saved;
@@ -115,7 +116,7 @@ export function TranscriptionSetting() {
     <div className="flex flex-col gap-3">
       <Select
         label="Accurate transcription"
-        hint={`After each line appears, a second, more accurate engine transcribes it again and replaces it about a second later, with better names and fewer mistakes. It uses more processor time, so Auto runs it only when this computer is plugged in. It needs a one-time ${megabytes(status?.totalBytes ?? 661_000_000)} download, which only starts when you press Download.`}
+        hint={`A second, more accurate engine transcribes the other person's lines again a moment after they appear, with better names and fewer mistakes, and Kite answers from its words. Your own lines are rewritten after the call. It needs a one-time ${megabytes(status?.totalBytes ?? 661_000_000)} download, which starts by itself unless this is Off. It uses more processor time: choose "Only when plugged in" to save battery.`}
         options={MODE_OPTIONS}
         value={mode}
         onChange={(next) => {
