@@ -8,7 +8,8 @@
  *            page (theme.css: appearance: base-select), and each title is moved to aria-description
  *            (screen readers still read it; no tooltip window opens).
  *          The browser is unchanged.
- * Used by: src/platform/index.ts (getPlatform(), in a desktop app); tests/unit/platform/desktopDocument.test.ts
+ * Used by: src/platform/desktop.ts (keepPopupsInWindow, from SyncScope for accounts with account sync);
+ *          tests/unit/platform/desktopDocument.test.ts
  * Depends on: the DOM (MutationObserver)
  * Architecture: ADR-0042 (Private covers every window), ADR-0055
  */
@@ -44,7 +45,7 @@ export function moveTitle(element: TitledElement): boolean {
   return true;
 }
 
-/** Documents already set up (React and HMR may call getPlatform() many times). */
+/** Documents already set up (SyncScope may render, and call this, many times). */
 const installed = new WeakSet<Document>();
 
 /**
@@ -52,7 +53,7 @@ const installed = new WeakSet<Document>();
  * Does nothing a second time for the same document, or where there is no DOM.
  *
  * @param doc The page's document (default: this page's).
- * Called from: getPlatform() in src/platform/index.ts
+ * Called from: keepPopupsInWindow() in src/platform/desktop.ts
  */
 export function installDesktopDocument(doc: Document | undefined = globalThis.document): void {
   if (!doc || installed.has(doc) || typeof MutationObserver === 'undefined') return;

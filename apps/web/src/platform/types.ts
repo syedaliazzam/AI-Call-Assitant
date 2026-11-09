@@ -273,6 +273,12 @@ export interface Platform {
   setOverlayClickThrough(through: boolean): void;
 
   /**
+   * v1.3.0 (ADR-0055): keeps this page's popups inside its window, where screen-share protection
+   * reaches: <select> lists drawn in the page and no native tooltips (desktop app only; once per page).
+   */
+  keepPopupsInWindow(): void;
+
+  /**
    * v1.1.0: minimises or closes this window (the frameless home panel draws its own buttons). Nothing
    * happens where it is not supported.
    *

@@ -415,6 +415,11 @@ export const browserPlatform: Platform = {
   setOverlayClickThrough(_through) {},
 
   /**
+   * Nothing to do: a browser's popups are its own, and screen-share protection is the desktop app's.
+   */
+  keepPopupsInWindow() {},
+
+  /**
    * A picture-in-picture window cannot be resized by the page.
    *
    * @returns False.

@@ -138,16 +138,24 @@ export interface CompactViewProps {
    * solid or the shell cannot.
    */
   onClickThrough?: (through: boolean) => void;
+  /**
+   * The reference app's bars and chat bar (ADR-0055: accounts with account sync): the Transcript pill,
+   * 900-wide bars and the reference chat bar. Otherwise the classic look, unchanged.
+   */
+  referenceLook?: boolean;
 }
 
 /** Which floating list or menu is open. */
 type Popup = DeviceList | 'menu' | 'preferences' | 'language';
 
 /**
- * The bars keep their own width; only the panels fill a window wider than this (spec S13). 900 since
- * ADR-0055: bar 1 also holds the Transcript pill, and every key-cap shows at that width.
+ * The bars keep their own width; only the panels fill a window wider than this (spec S13): 780, or 900
+ * in the reference look (ADR-0055: bar 1 also holds the Transcript pill, and every key-cap shows).
  */
-const BARS_WIDTH = 'mx-auto w-full max-w-[900px]';
+const BARS_WIDTHS = {
+  classic: 'mx-auto w-full max-w-[780px]',
+  reference: 'mx-auto w-full max-w-[900px]',
+} as const;
 
 /**
  * How far an element's bottom is below the top of the overlay, whatever it sits inside.
@@ -175,6 +183,8 @@ export function CompactView(props: CompactViewProps) {
   const { state, onCommand, mac = false, panels, onPanels, onMove } = props;
   const { levels, onResize, copy, chatBar } = props;
   const glass = props.glass ?? false;
+  const referenceLook = props.referenceLook ?? false;
+  const BARS_WIDTH = BARS_WIDTHS[referenceLook ? 'reference' : 'classic'];
   const zoom = props.zoom ?? 1;
   const fontScale = props.fontScale ?? 1;
   const [popup, setPopup] = useState<Popup | null>(null);
@@ -404,8 +414,13 @@ export function CompactView(props: CompactViewProps) {
             chatOpen={props.chatOpen}
             onChatOpen={props.onChatOpen}
             menuButton={menuButton}
-            transcriptOpen={panels.transcript}
-            onTranscript={(open) => onPanels({ ...panels, transcript: open })}
+            referenceLook={referenceLook}
+            {...(referenceLook
+              ? {
+                  transcriptOpen: panels.transcript,
+                  onTranscript: (open: boolean) => onPanels({ ...panels, transcript: open }),
+                }
+              : {})}
           />
         </div>
         {popup === 'menu' && (
@@ -484,6 +499,7 @@ export function CompactView(props: CompactViewProps) {
             onCommand={onCommand}
             onClose={() => props.onChatOpen(false)}
             mac={mac}
+            look={referenceLook ? 'reference' : 'classic'}
           />
         </div>
       )}

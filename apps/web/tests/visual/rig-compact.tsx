@@ -4,12 +4,19 @@
  *          session, served at /compact/harness-session, so the real desktop shell loads it in the
  *          real see-through overlay window with the real preload (window.kiteDesktop).
  * Used by: tests/visual/overlay-rig.ts (bundled with esbuild)
- * Depends on: src/features/live/CompactLive.tsx, react-dom
+ * Depends on: src/features/live/CompactLive.tsx, src/features/sync/SyncScope.tsx, react-dom
  * Architecture: docs/decisions/ADR-0039-v1.0.3-overlay-fixes-and-visual-checks.md
  */
 import { createRoot } from 'react-dom/client';
 import { CompactLive } from '@/features/live/CompactLive';
+import { SyncScope } from '@/features/sync/SyncScope';
 
 // The session id from the address (/compact/<id>), as the app's route does.
 const sessionId = window.location.pathname.split('/').pop() || 'harness-session';
-createRoot(document.getElementById('root')!).render(<CompactLive sessionId={sessionId} />);
+// ADR-0055: as an account with account sync sees it (the reference look, click-through); an invented
+// account, with no sync engine and no network.
+createRoot(document.getElementById('root')!).render(
+  <SyncScope syncUserId="rig-user" runEngine={false}>
+    <CompactLive sessionId={sessionId} />
+  </SyncScope>,
+);

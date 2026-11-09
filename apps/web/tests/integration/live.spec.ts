@@ -747,6 +747,25 @@ const BARS_SIZE: Width = { width: 900, height: 520, touch: false };
 /** A window wide enough for both panels side by side. */
 const WIDE_SIZE: Width = { width: 1080, height: 560, touch: false };
 
+test('ADR-0055: accounts without sync keep the classic bar 1 and chat bar', async () => {
+  const classic: Width = { width: 780, height: 520, touch: false };
+  const watched = await openOverlayView(classic, '&panels=none&shell=1&look=classic');
+  const { page } = watched;
+  const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+  await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveCount(0);
+  // Every key-cap still shows at 780, as before.
+  await expect(bar.getByRole('button', { name: 'Screenshot' }).locator('kbd')).toBeVisible();
+  expect(await bar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await bar.getByRole('button', { name: 'Chat' }).click();
+  const chat = page.getByRole('group', { name: 'Chat' });
+  await expect(chat.getByLabel('Type a question')).toHaveAttribute(
+    'placeholder',
+    'Type a message…',
+  );
+  await expect(chat.getByRole('radiogroup', { name: 'Who the answer is for' })).toBeVisible();
+  await watched.context.close();
+});
+
 test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothing cut off', async () => {
   const watched = await openOverlayView(BARS_SIZE, '&panels=none&shell=1');
   const { page } = watched;

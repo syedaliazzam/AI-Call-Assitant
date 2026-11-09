@@ -67,6 +67,11 @@ export interface ControlBarProps {
   onChatOpen: (open: boolean) => void;
   /** The ⋮ button: a click on it is not a click outside the menu. */
   menuButton: RefObject<HTMLButtonElement | null>;
+  /**
+   * The reference app's bar 1 (ADR-0055, accounts with account sync): 900 wide with the Transcript pill,
+   * so the key-caps give way at wider widths. Otherwise the classic 780 bar.
+   */
+  referenceLook?: boolean;
   /** Whether the transcript panel is open (the Transcript pill's switch). */
   transcriptOpen?: boolean;
   /** Opens or closes the transcript panel (remembered with the panels). */
@@ -96,8 +101,8 @@ function TranscriptPill({
   onToggle: (open: boolean) => void;
 }) {
   return (
-    // Below 520 px (a narrow picture-in-picture window) it gives way: the live words open the panel.
-    <span className="hidden shrink-0 @min-[520px]:inline-flex">
+    // Below 600 px (a narrow picture-in-picture window) it gives way: the live words open the panel.
+    <span className="hidden shrink-0 @min-[600px]:inline-flex">
       <button
         type="button"
         role="switch"
@@ -270,6 +275,18 @@ export function ControlBar(props: ControlBarProps) {
   const { state, onCommand, mac, collapsed, menuButton, menuOpen, onMenu, onIcon } = props;
   const { deviceList, onDeviceList } = props;
   const ended = !state || state.ended;
+  // Where each key-cap gives way: later with the Transcript pill on the bar (ADR-0055).
+  const chips = props.referenceLook
+    ? {
+        answer: '@min-[700px]:inline-flex',
+        chat: '@min-[760px]:inline-flex',
+        shot: '@min-[820px]:inline-flex',
+      }
+    : {
+        answer: '@min-[640px]:inline-flex',
+        chat: '@min-[700px]:inline-flex',
+        shot: '@min-[760px]:inline-flex',
+      };
   // The question is wider than Exit: while it shows, the timer makes room, and in a narrow window the
   // audio icons too, so "Cancel" is never cut off.
   const [asking, setAsking] = useState(false);
@@ -306,7 +323,7 @@ export function ControlBar(props: ControlBarProps) {
         disabled={ended}
         aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.answer, mac)}
       >
-        Answer <KeyChip hotkey="answer" visibleAt="@min-[700px]:inline-flex" />
+        Answer <KeyChip hotkey="answer" visibleAt={chips.answer} />
       </button>
       <button
         type="button"
@@ -316,7 +333,7 @@ export function ControlBar(props: ControlBarProps) {
         aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.screenshot, mac)}
       >
         {state?.capturing ? 'Screenshot…' : 'Screenshot'}{' '}
-        <KeyChip hotkey="screenshot" visibleAt="@min-[820px]:inline-flex" />
+        <KeyChip hotkey="screenshot" visibleAt={chips.shot} />
       </button>
       <button
         type="button"
@@ -329,7 +346,7 @@ export function ControlBar(props: ControlBarProps) {
         disabled={ended}
         aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.chat, mac)}
       >
-        Chat <KeyChip hotkey="chat" visibleAt="@min-[760px]:inline-flex" />
+        Chat <KeyChip hotkey="chat" visibleAt={chips.chat} />
       </button>
       {props.onTranscript && (
         <TranscriptPill

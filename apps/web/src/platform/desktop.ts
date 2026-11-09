@@ -22,6 +22,7 @@ import type {
   WindowControlAction,
 } from '@kite/shared';
 import { LINK_CODE_PATTERN } from '@kite/shared';
+import { installDesktopDocument } from './desktopDocument';
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
 import {
@@ -384,6 +385,13 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
      */
     setOverlayClickThrough(through: boolean) {
       void bridge.setOverlayClickThrough?.(through).catch(() => undefined);
+    },
+
+    /**
+     * Keeps the page's popups inside its window (platform/desktopDocument.ts).
+     */
+    keepPopupsInWindow() {
+      installDesktopDocument();
     },
 
     /**
