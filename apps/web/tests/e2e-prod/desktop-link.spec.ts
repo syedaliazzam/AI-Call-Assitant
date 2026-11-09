@@ -211,6 +211,12 @@ test('2. desktop 1.3.0: a link with a code opens the start card, signed in', asy
         electronApp.emit('second-instance', {}, ['app.exe', link], ''),
       desktopSessionLink(SESSION, code),
     );
+    // A fresh profile shows the acceptable-use notice once, over the card.
+    await panel
+      .getByRole('dialog', { name: 'Using Paramount AI' })
+      .getByRole('button', { name: 'Got it' })
+      .click({ timeout: 60_000 })
+      .catch(() => undefined);
     // ADR-0055: the sessions card, with the link's session first and highlighted; a click opens its
     // Start card, signed in.
     const fromBrowser = panel
