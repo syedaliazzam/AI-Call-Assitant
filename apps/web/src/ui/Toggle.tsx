@@ -62,13 +62,13 @@ export function Switch({
       <span
         aria-hidden="true"
         className={[
-          'relative inline-flex h-5 w-9 rounded-full transition-colors duration-150',
+          'relative inline-flex h-5 w-9 rounded-full transition-colors duration-(--k-dur)',
           checked ? 'bg-ui-accent-fill' : 'bg-ui-control-strong',
         ].join(' ')}
       >
         <span
           className={[
-            'absolute top-0.5 size-4 rounded-full bg-ui-on-accent transition-transform duration-150',
+            'absolute top-0.5 size-4 rounded-full bg-ui-on-accent transition-transform duration-(--k-dur)',
             checked ? 'translate-x-[18px]' : 'translate-x-0.5',
           ].join(' ')}
         />

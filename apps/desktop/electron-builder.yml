@@ -21,10 +21,16 @@ files:
   - package.json
 # The accurate-transcription engine's native runtime (v1.0.1, ADR-0034), staged by
 # scripts/stage-native.mjs. Outside the app archive, because native code cannot load from it.
-# The model itself is not shipped: it downloads only when the user turns the setting on.
+# The accurate model itself (661 MB) is not shipped: it downloads only when the user turns it on.
 extraResources:
   - from: native/sherpa-onnx
     to: sherpa-onnx
+  # v1.3.1 (ADR-0059): the streaming speech model (about 204 MB) and its SHA-256 manifest, staged by
+  # scripts/stage-stt-model.mjs. src/speechModel.ts answers the web app's model addresses from it, so a
+  # fresh install connects without a download. The files never change between releases, so differential
+  # updates reuse them (checked at each release from the installers' block maps).
+  - from: native/stt-model
+    to: stt-model
 extraMetadata:
   # The installed folder (%LOCALAPPDATA%Programskite) comes from the package name; the
   # workspace name "@kite/desktop" would give "@kitedesktop".

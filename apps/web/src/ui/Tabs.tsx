@@ -8,7 +8,17 @@
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S3); docs/architecture/kite-architecture-v3.1.md §9.1
  * Theme: tokens from src/ui/tokens/theme.css
  */
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+
+/** Where the underline sits, in px from the group's top-left corner. */
+interface IndicatorBox {
+  /** Distance from the group's left edge. */
+  left: number;
+  /** Distance from the group's top edge to the underline. */
+  top: number;
+  /** The selected tab's width. */
+  width: number;
+}
 
 /** One tab. */
 export interface TabOption<T extends string> {
@@ -39,6 +49,9 @@ export interface TabsProps<T extends string> {
 /**
  * Filter tabs: toggle buttons in a group, the selected one marked with aria-pressed (a filter
  * is a choice of what the list shows, so buttons fit better than ARIA tab panels).
+ * v1.3.1 (ADR-0058): one underline slides to the selected tab over 200 ms (--k-dur-slow; instant
+ * under "reduce motion"). It is measured from the selected button, and measured again when the row
+ * changes size (the tabs wrap on narrow screens).
  *
  * @param props See TabsProps.
  * @returns The group of buttons.
@@ -52,11 +65,43 @@ export function Tabs<T extends string>({
   end,
   inset = false,
 }: TabsProps<T>) {
+  const group = useRef<HTMLDivElement>(null);
+  const [indicator, setIndicator] = useState<IndicatorBox | null>(null);
+
+  // Measure before paint, so the underline never shows under the old tab for a frame.
+  useLayoutEffect(() => {
+    const row = group.current;
+    if (!row) return undefined;
+    const measure = () => {
+      const button = row.querySelector<HTMLElement>('button[aria-pressed="true"]');
+      setIndicator(
+        button
+          ? {
+              left: button.offsetLeft,
+              top: button.offsetTop + button.offsetHeight - 2,
+              width: button.offsetWidth,
+            }
+          : null,
+      );
+    };
+    measure();
+    // jsdom (unit tests) has no ResizeObserver; the first measurement is enough there.
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [value, options]);
+
   return (
     <div
       className={`flex flex-wrap items-center justify-between gap-x-4 border-b border-ui-border ${inset ? 'px-5 max-sm:px-3' : ''}`}
     >
-      <div role="group" aria-label={label} className="flex min-w-0 flex-wrap gap-1">
+      <div
+        ref={group}
+        role="group"
+        aria-label={label}
+        className="relative flex min-w-0 flex-wrap gap-1"
+      >
         {options.map((option) => {
           const selected = option.value === value;
           return (
@@ -67,11 +112,12 @@ export function Tabs<T extends string>({
               onClick={() => onChange(option.value)}
               className={[
                 // v1.3.0 (ADR-0057): 44 tall, padding 12 × 16, radius 14; the selected one at 600.
-                '-mb-px inline-flex h-11 items-center gap-2 rounded-t-tab border-b-2 px-4 py-3 text-[16px] transition-colors duration-150 max-sm:px-2.5',
+                // The transparent bottom border keeps the height; the sliding underline is drawn below.
+                '-mb-px inline-flex h-11 items-center gap-2 rounded-t-tab border-b-2 border-transparent px-4 py-3 text-[16px] transition-colors duration-(--k-dur) max-sm:px-2.5',
                 'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
                 selected
-                  ? 'border-ui-primary font-semibold text-ui-heading'
-                  : 'border-transparent font-medium text-ui-muted hover:bg-ui-hover hover:text-ui-heading',
+                  ? 'font-semibold text-ui-heading'
+                  : 'font-medium text-ui-muted hover:bg-ui-hover hover:text-ui-heading',
               ].join(' ')}
             >
               {option.icon}
@@ -79,6 +125,18 @@ export function Tabs<T extends string>({
             </button>
           );
         })}
+        {indicator && (
+          <span
+            aria-hidden="true"
+            data-testid="tab-indicator"
+            className="pointer-events-none absolute h-0.5 bg-ui-primary transition-[left,top,width] duration-(--k-dur-slow) ease-(--k-ease-out)"
+            style={{
+              left: indicator.left,
+              top: indicator.top,
+              width: indicator.width,
+            }}
+          />
+        )}
       </div>
       {end}
     </div>

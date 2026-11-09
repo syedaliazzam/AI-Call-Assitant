@@ -98,7 +98,7 @@ export const ChatBar = forwardRef<ChatBarHandle, ChatBarProps>(function ChatBar(
     <div
       role="group"
       aria-label="Chat"
-      className={`flex h-11 min-w-0 items-center px-1.5 [-webkit-app-region:no-drag] ${reference ? 'gap-1.5' : 'gap-1'}`}
+      className={`k-anim-menu flex h-11 min-w-0 items-center px-1.5 [-webkit-app-region:no-drag] ${reference ? 'gap-1.5' : 'gap-1'}`}
     >
       {!reference && (
         <div

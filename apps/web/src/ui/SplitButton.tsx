@@ -70,7 +70,7 @@ export function SplitButton({
         <ChevronDown
           aria-hidden="true"
           size={18}
-          className={`transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+          className={`transition-transform duration-(--k-dur) ${open ? 'rotate-180' : ''}`}
         />
       </button>
       {open && (

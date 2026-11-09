@@ -35,6 +35,8 @@ import {
   dialog,
   globalShortcut,
   ipcMain,
+  net,
+  protocol,
   screen,
   session,
   systemPreferences,
@@ -59,6 +61,12 @@ import { appIconPath } from './icon';
 import { createProtection, installProtection, type Protection } from './protection';
 import { installScreenshot } from './screenshot';
 import { createSnapZones } from './snapZones';
+import {
+  BUNDLED_MODEL_FOLDER,
+  installBundledModel,
+  MODEL_SCHEME,
+  VERIFIED_FILE,
+} from './speechModel';
 import { createStore } from './store';
 import {
   createCompactWindows,
@@ -348,6 +356,22 @@ function start(): void {
   app.enableSandbox();
   if (!ensureSingleInstance()) return;
 
+  // v1.3.1 (ADR-0059): the private scheme the bundled speech model is served on. Before 'ready'
+  // (Electron's rule). Privileged so the page's and the worker's fetch() can read it after the
+  // redirect (secure, fetch, CORS, streamed); nothing navigates to it (security.ts locks navigation).
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: MODEL_SCHEME,
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+        stream: true,
+      },
+    },
+  ]);
+
   // spec S9: the system opens this app for paramountai:// links. A test run must not change that.
   if (
     shouldRegisterProtocol({
@@ -373,6 +397,25 @@ function start(): void {
 
   void app.whenReady().then(() => {
     allowOnlyOurPermissions(session.defaultSession, config.allowedOrigin);
+    // v1.3.1 (ADR-0059): the streaming speech model ships in the installer. Its exact addresses are
+    // answered from the bundle (checked against SHA-256 first); anything missing or damaged still
+    // downloads as before. KITE_BUNDLED_MODEL_DIR points tests at another folder (or none).
+    const bundledModel = installBundledModel({
+      session: session.defaultSession,
+      fetchFile: (url) => net.fetch(url),
+      dir:
+        process.env.KITE_BUNDLED_MODEL_DIR ??
+        (app.isPackaged
+          ? path.join(process.resourcesPath, BUNDLED_MODEL_FOLDER)
+          : path.join(__dirname, '..', 'native', BUNDLED_MODEL_FOLDER)),
+      origin: config.allowedOrigin,
+      verifiedFile: path.join(app.getPath('userData'), VERIFIED_FILE),
+    });
+    // Checked in the background now, so the first Connect does not wait for the hashing (about a
+    // second, once per install: a file that passed is remembered).
+    void bundledModel
+      ?.verifyAll()
+      .then((result) => console.info('speech model: bundled files checked', result));
     // "Them": the page's getDisplayMedia gets system audio with no picker (Kite origin only).
     allowSystemAudioLoopback(session.defaultSession, config.allowedOrigin);
     hotkeys = installHotkeys({
@@ -465,6 +508,9 @@ function start(): void {
       store,
       protection: shield,
       snap,
+      // v1.3.1 (ADR-0058): jumps between the six places slide over 150 ms, unless the system asks for
+      // reduced motion (Windows: Settings → Accessibility → Visual effects → Animation effects off).
+      slideJumps: () => !systemPreferences.getAnimationSettings().prefersReducedMotion,
       // The overlay is gone: never leave the user with the main window still minimised.
       onClosed: () => {
         snap.close();

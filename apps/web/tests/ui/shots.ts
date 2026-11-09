@@ -12,6 +12,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { testAccount } from '../e2e-prod/helpers';
+import { settleAnimations } from '../lib/motion';
 import { closeUseNotice, signInOnce } from '../lib/sign-in';
 
 /** The Kite to screenshot (default the local `pnpm dev`). */
@@ -105,6 +106,8 @@ export async function signIn(page: Page): Promise<void> {
 export async function check(watched: WatchedPage, size: Width, name: string): Promise<void> {
   const { page } = watched;
   await page.evaluate(() => document.fonts.ready);
+  // v1.3.1: measured after the entrance animations, which scale a modal from 98 % (ADR-0058).
+  await settleAnimations(page);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );

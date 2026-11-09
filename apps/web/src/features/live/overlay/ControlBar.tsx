@@ -116,10 +116,10 @@ function TranscriptPill({
         <ScrollText aria-hidden="true" size={16} className="@min-[880px]:hidden" />
         <span
           aria-hidden="true"
-          className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-150 ${open ? 'bg-ui-accent-fill' : 'bg-ui-control-strong'}`}
+          className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-(--k-dur) ${open ? 'bg-ui-accent-fill' : 'bg-ui-control-strong'}`}
         >
           <span
-            className={`absolute left-0.5 size-3 rounded-full bg-white transition-transform duration-150 ${open ? 'translate-x-3' : 'translate-x-0'}`}
+            className={`absolute left-0.5 size-3 rounded-full bg-white transition-transform duration-(--k-dur) ${open ? 'translate-x-3' : 'translate-x-0'}`}
           />
         </span>
       </button>

@@ -219,7 +219,7 @@ export function Select<T extends string>({
         <ChevronDown
           aria-hidden="true"
           size={16}
-          className={`shrink-0 text-ui-muted transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+          className={`shrink-0 text-ui-muted transition-transform duration-(--k-dur) ${open ? 'rotate-180' : ''}`}
         />
       </button>
       {open && (
@@ -229,7 +229,7 @@ export function Select<T extends string>({
           tabIndex={-1}
           onKeyDown={onListKey}
           aria-activedescendant={highlight >= 0 ? `${id}-option-${highlight}` : undefined}
-          className="fixed inset-auto m-0 flex max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-menu border border-ui-border bg-ui-surface p-0 text-ui-text shadow-modal outline-none"
+          className="k-anim-menu fixed inset-auto m-0 flex max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-menu border border-ui-border bg-ui-surface p-0 text-ui-text shadow-modal outline-none"
         >
           {searchable && (
             <div className="flex items-center gap-2 border-b border-ui-border p-1.5">

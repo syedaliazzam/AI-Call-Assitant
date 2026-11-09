@@ -98,7 +98,7 @@ function ListRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors duration-150 hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+      className="flex w-full items-center gap-3 px-3 py-3 text-left transition-colors duration-(--k-dur) hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
     >
       <span
         aria-hidden="true"

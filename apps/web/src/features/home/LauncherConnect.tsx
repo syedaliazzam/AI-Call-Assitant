@@ -4,28 +4,28 @@
  *          ADR-0055): the title and "Your session is ready. Connect to start transcribing.", "Audio
  *          source" with "System audio", three tips (Zoom's window filtering, testing privacy, a mock
  *          video), then Back and Connect; under the card "Need it for macOS?" and "← Back to dashboard".
- *          The microphone is chosen on the call bar (▾), not here. Connect checks that the speech model
- *          is on this computer: if not, a small dialog offers the one-time download (about 204 MB) with
- *          a progress bar, then connects. Connecting starts the call in the main window
- *          (core/live/callStart.ts); the shell then hides this window and the call bars appear. A call
- *          that fails to start says why here, with Connect to try again.
+ *          The microphone is chosen on the call bar (▾), not here. v1.3.1 (ADR-0059): there is no
+ *          "Speech model needed" dialog any more. The model ships in the installer and is made ready in
+ *          the background when the app opens (core/stt/prefetch.ts); Connect waits for that, and shows a
+ *          small progress bar only if it is still running (a silent download when the installer's copy
+ *          was missing). Connecting starts the call in the main window (core/live/callStart.ts); the
+ *          shell then hides this window and the call bars appear. A call that fails to start says why
+ *          here, with Connect to try again.
  * Used by: src/features/home/Launcher.tsx
- * Depends on: lucide-react, src/core/live/callStart.ts, src/core/stt/modelCache.ts,
- *             src/core/stt/download.ts (types), src/features/sync/dashboardLink.ts, src/platform,
- *             src/ui (Dialog, ProgressBar, Select, Tooltip, Chip)
- * Architecture: ADR-0053 (Connect starts the call), ADR-0055
+ * Depends on: lucide-react, src/core/live/callStart.ts, src/core/stt/prefetch.ts,
+ *             src/features/sync/dashboardLink.ts, src/platform,
+ *             src/ui (ProgressBar, Select, Tooltip, Chip)
+ * Architecture: ADR-0053 (Connect starts the call), ADR-0055, ADR-0059
  */
 'use client';
 
 import { ArrowLeft, Play, ShieldCheck, TriangleAlert, Upload } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { requestCallStart, watchCallStart } from '@/core/live/callStart';
-import type { DownloadProgress } from '@/core/stt/download';
-import { downloadSpeechModel, speechModelBytes, speechModelCached } from '@/core/stt/modelCache';
+import { speechModelPrefetch, type PrefetchState } from '@/core/stt/prefetch';
 import { openDashboard } from '@/features/sync/dashboardLink';
 import { getPlatform } from '@/platform';
 import { SOON_TOOLTIP } from '@/ui/Chip';
-import { Dialog } from '@/ui/Dialog';
 import { ProgressBar } from '@/ui/ProgressBar';
 import { Select } from '@/ui/Select';
 import { Tooltip } from '@/ui/Tooltip';
@@ -46,8 +46,11 @@ export const MOCK_VIDEO_URL = 'https://www.youtube.com/results?search_query=mock
 /** How long Connect waits for the main window to report, in ms (the speech model loads first). */
 const START_TIMEOUT_MS = 60_000;
 
-/** Where Connect is. */
-type Phase = 'idle' | 'checking' | 'model-needed' | 'downloading' | 'connecting' | 'failed';
+/** Where Connect is ('preparing': waiting for the speech model to be ready). */
+type Phase = 'idle' | 'preparing' | 'connecting' | 'failed';
+
+/** The server render's model state (the prefetch runs only in the browser). */
+const IDLE: PrefetchState = { kind: 'idle' };
 
 /** The look of a tip's link (reference: underlined, at the right). */
 const TIP_LINK =
@@ -87,16 +90,6 @@ function Tip({
 }
 
 /**
- * Formats bytes as whole megabytes.
- *
- * @param bytes Bytes.
- * @returns For example "204 MB".
- */
-function mb(bytes: number): string {
-  return `${Math.round(bytes / 1e6)} MB`;
-}
-
-/**
  * The card.
  *
  * @param props See LauncherConnectProps.
@@ -106,8 +99,9 @@ function mb(bytes: number): string {
 export function LauncherConnect({ sessionId, onBack, onConnected }: LauncherConnectProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [problem, setProblem] = useState<string | null>(null);
-  const [progress, setProgress] = useState<DownloadProgress | null>(null);
-  const download = useRef<AbortController | null>(null);
+  const prefetch = speechModelPrefetch(globalThis.location?.origin ?? '');
+  const model = useSyncExternalStore(prefetch.subscribe, prefetch.state, () => IDLE);
+  const mounted = useRef(true);
   const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectedRef = useRef(onConnected);
   useEffect(() => {
@@ -131,14 +125,14 @@ export function LauncherConnect({ sessionId, onBack, onConnected }: LauncherConn
     [sessionId],
   );
 
-  // Leaving the card stops a download and the wait.
-  useEffect(
-    () => () => {
-      download.current?.abort();
+  // Leaving the card stops the wait. The model keeps getting ready in the background.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
       if (timeout.current) clearTimeout(timeout.current);
-    },
-    [],
-  );
+    };
+  }, []);
 
   /** Asks the main window to start the call, and waits for its answer. */
   const start = () => {
@@ -153,48 +147,30 @@ export function LauncherConnect({ sessionId, onBack, onConnected }: LauncherConn
     }, START_TIMEOUT_MS);
   };
 
-  /** Connect: the speech model first (a dialog when it must be downloaded), then the call. */
+  /**
+   * Connect: waits for the speech model (usually ready already; otherwise its background load
+   * continues, or starts again after a failure), then starts the call.
+   */
   const connect = async () => {
-    setPhase('checking');
+    setPhase('preparing');
     setProblem(null);
-    if (await speechModelCached(globalThis.location.origin)) start();
-    else setPhase('model-needed');
-  };
-
-  /** "Download and connect": the one-time download, then the call. */
-  const downloadThenConnect = async () => {
-    const controller = new AbortController();
-    download.current = controller;
-    setPhase('downloading');
-    setProgress(null);
-    try {
-      await downloadSpeechModel(globalThis.location.origin, setProgress, controller.signal);
-      download.current = null;
+    const ready = await prefetch.start();
+    if (!mounted.current) return;
+    if (ready) {
       start();
-    } catch {
-      download.current = null;
-      if (controller.signal.aborted) {
-        setPhase('idle');
-        return;
-      }
-      setPhase('failed');
-      setProblem('The speech model could not be downloaded. Check the connection and try again.');
+      return;
     }
+    setPhase('failed');
+    setProblem('The speech model could not be downloaded. Check the connection and try again.');
   };
 
-  /** Cancel in the dialog: stops a download. */
-  const cancelDownload = () => {
-    download.current?.abort();
-    download.current = null;
-    setPhase('idle');
-  };
-
-  const busy = phase === 'checking' || phase === 'connecting';
-  const dialogOpen = phase === 'model-needed' || phase === 'downloading';
+  const busy = phase === 'preparing' || phase === 'connecting';
+  // The bar shows only while Connect waits on a load that is still running.
+  const loading = phase === 'preparing' && model.kind === 'downloading' ? model : null;
 
   return (
     <div className="flex flex-col gap-4 px-4 pb-4 pt-1">
-      <div className="flex flex-col gap-5 rounded-[16px] border border-ui-border bg-ui-bg p-5">
+      <div className="k-anim-modal k-card-texture flex flex-col gap-5 rounded-[16px] border border-ui-border p-5">
         <header className="flex flex-col items-center gap-2 pt-1 text-center">
           <h1 className="text-[24px] font-medium leading-tight text-ui-heading">
             Connect Call Session
@@ -283,13 +259,26 @@ export function LauncherConnect({ sessionId, onBack, onConnected }: LauncherConn
           <button
             type="button"
             onClick={() => void connect()}
-            disabled={busy || dialogOpen}
+            disabled={busy}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] bg-ui-primary px-4 text-[15px] font-semibold text-ui-on-primary hover:bg-ui-primary-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] disabled:opacity-70"
           >
             <Upload aria-hidden="true" size={18} strokeWidth={1.75} />
             {busy ? 'Connecting…' : 'Connect'}
           </button>
         </div>
+
+        {loading && (
+          <div className="flex flex-col gap-1.5" data-testid="model-progress">
+            <ProgressBar
+              value={loading.progress?.fraction ?? 0}
+              label="Getting the speech model ready"
+            />
+            <p className="text-[13px] tabular-nums text-ui-muted">
+              Getting the speech model ready
+              {loading.progress ? ` · ${Math.round(loading.progress.fraction * 100)}%` : '…'}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col items-center gap-3 pb-2 text-[15px] text-ui-muted">
@@ -311,48 +300,6 @@ export function LauncherConnect({ sessionId, onBack, onConnected }: LauncherConn
           Back to dashboard
         </button>
       </div>
-
-      <Dialog
-        open={dialogOpen}
-        onClose={cancelDownload}
-        title="Speech model needed"
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={cancelDownload}
-              className="inline-flex h-10 items-center justify-center rounded-[10px] border border-ui-border px-4 text-[15px] font-medium text-ui-heading hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => void downloadThenConnect()}
-              disabled={phase === 'downloading'}
-              className="inline-flex h-10 items-center justify-center rounded-[10px] bg-ui-primary px-4 text-[15px] font-semibold text-ui-on-primary hover:bg-ui-primary-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] disabled:opacity-70"
-            >
-              {phase === 'downloading' ? 'Downloading…' : 'Download and connect'}
-            </button>
-          </>
-        }
-      >
-        <div className="flex flex-col gap-3">
-          <p className="text-[15px] text-ui-text">
-            One-time download, about {mb(speechModelBytes(globalThis.location.origin))}. It stays on
-            this computer for every call.
-          </p>
-          {phase === 'downloading' && (
-            <div className="flex flex-col gap-1.5">
-              <ProgressBar value={progress?.fraction ?? 0} label="Speech model download" />
-              <p className="text-[13px] tabular-nums text-ui-muted">
-                {progress
-                  ? `${mb(progress.loadedBytes)} of ${mb(progress.totalBytes)} · ${Math.round(progress.fraction * 100)}%`
-                  : 'Starting…'}
-              </p>
-            </div>
-          )}
-        </div>
-      </Dialog>
     </div>
   );
 }

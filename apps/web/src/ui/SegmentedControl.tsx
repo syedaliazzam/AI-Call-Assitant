@@ -91,7 +91,7 @@ export function SegmentedControl<T extends string>({
               tabIndex={selected ? 0 : -1}
               onClick={() => onChange(option.value)}
               className={[
-                'flex h-9 min-w-0 flex-1 items-center justify-center gap-2 rounded-[8px] text-[15px] font-medium transition-colors duration-150 pointer-coarse:min-h-11',
+                'flex h-9 min-w-0 flex-1 items-center justify-center gap-2 rounded-[8px] text-[15px] font-medium transition-colors duration-(--k-dur) pointer-coarse:min-h-11',
                 'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]',
                 selected
                   ? 'bg-ui-segment text-ui-heading [box-shadow:0_1px_2px_var(--k-segment-shadow)]'

@@ -821,17 +821,26 @@ test('the six positions: 16 from the work area, the bottom row grows upward, the
     expect(await page.evaluate((p) => window.kiteDesktop!.setOverlayPosition!(p), preset)).toBe(
       preset,
     );
-    const { bounds, area } = await where();
-    const left = preset.endsWith('left');
-    const right = preset.endsWith('right');
-    const x = left
-      ? area.x + 16
-      : right
-        ? area.x + area.width - bounds.width - 16
-        : area.x + Math.round((area.width - bounds.width) / 2);
-    const y = preset.startsWith('top') ? area.y + 16 : area.y + area.height - bounds.height - 16;
-    expect(Math.abs(bounds.x - x)).toBeLessThanOrEqual(1);
-    expect(Math.abs(bounds.y - y)).toBeLessThanOrEqual(1);
+    // v1.3.1 (ADR-0058): a jump slides there over 150 ms, so the place is checked once it arrives.
+    await expect
+      .poll(
+        async () => {
+          const { bounds, area } = await where();
+          const left = preset.endsWith('left');
+          const right = preset.endsWith('right');
+          const x = left
+            ? area.x + 16
+            : right
+              ? area.x + area.width - bounds.width - 16
+              : area.x + Math.round((area.width - bounds.width) / 2);
+          const y = preset.startsWith('top')
+            ? area.y + 16
+            : area.y + area.height - bounds.height - 16;
+          return Math.max(Math.abs(bounds.x - x), Math.abs(bounds.y - y));
+        },
+        { timeout: 5_000 },
+      )
+      .toBeLessThanOrEqual(1);
   }
   expect(await page.evaluate(() => window.kiteDesktop!.getOverlayPosition!())).toBe('bottom-right');
   // On the bottom row an answer panel grows the window upward: its bottom edge stays.

@@ -54,7 +54,9 @@ import {
   resizeBounds,
   restoreBounds,
   SCRIPT_BAR_SIZE,
+  slideFrames,
   snapBounds,
+  JUMP_SLIDE_MS,
 } from '../../src/windows';
 
 /** The Kite URL and origin used in these tests. */
@@ -1032,5 +1034,76 @@ describe('the six positions (v1.3.0, ADR-0056)', () => {
     expect(position(from(KITE), 'bottom-right')).toBe('bottom-right');
     expect(() => position(from(KITE), 'middle')).toThrow('Not an overlay position');
     expect(() => position(from('https://evil.example/'))).toThrow();
+  });
+});
+
+describe('v1.3.1: a jump between positions slides (ADR-0058)', () => {
+  it('slideFrames eases from one place to the other and ends exactly on the target', () => {
+    const from = { x: 0, y: 0, width: 900, height: 120 };
+    const to = { x: 1000, y: 500, width: 900, height: 120 };
+    const frames = slideFrames(from, to, 9);
+    expect(frames).toHaveLength(9);
+    expect(frames.at(-1)).toEqual(to);
+    // Eased out: the first step covers more ground than the last.
+    expect(frames[0]!.x).toBeGreaterThan(to.x - frames.at(-2)!.x);
+    // Never overshoots.
+    for (const frame of frames) expect(frame.x).toBeLessThanOrEqual(to.x);
+    expect(slideFrames(from, to, 0)).toEqual([to]);
+  });
+
+  /**
+   * The controller with the slide switched on or off.
+   *
+   * @param slide What slideJumps() answers.
+   * @returns The controller.
+   */
+  function sliding(slide: boolean) {
+    const store = memoryStore({});
+    return createCompactWindows({
+      createWindow: (options) => new FakeWindow(options as Record<string, unknown>) as never,
+      screen: {
+        getAllDisplays: () => [{ workArea: PRIMARY }] as never,
+        getPrimaryDisplay: () => ({ workArea: PRIMARY }) as never,
+        getDisplayMatching: () => ({ workArea: PRIMARY }) as never,
+      },
+      kiteUrl: KITE,
+      preloadPath: '/app/preload.js',
+      appVersion: '1.3.1',
+      store,
+      protection: createProtection(store, 'win32', '10.0.26200'),
+      slideJumps: () => slide,
+    });
+  }
+
+  it('slides over 150 ms to the exact place, and a move event meanwhile is not a drag', () => {
+    vi.useFakeTimers();
+    const compact = sliding(true);
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { x: 500, y: 16, width: 900, height: 120 };
+    compact.goTo('top-right');
+    const target = { x: PRIMARY.width - 900 - 16, y: 16 };
+    // Not there at once.
+    expect(window.bounds.x).toBe(500);
+    vi.advanceTimersByTime(JUMP_SLIDE_MS / 2);
+    expect(window.bounds.x).toBeGreaterThan(500);
+    expect(window.bounds.x).toBeLessThan(target.x);
+    window.emit('moved');
+    vi.advanceTimersByTime(JUMP_SLIDE_MS);
+    expect(window.bounds).toMatchObject(target);
+    // The 'moved' during the slide scheduled no edge snap that could pull it off the place.
+    vi.advanceTimersByTime(5_000);
+    expect(window.bounds).toMatchObject(target);
+    compact.close();
+  });
+
+  it('moves at once when the system asks for reduced motion', () => {
+    const compact = sliding(false);
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { x: 500, y: 16, width: 900, height: 120 };
+    compact.goTo('top-right');
+    expect(window.bounds).toMatchObject({ x: PRIMARY.width - 900 - 16, y: 16 });
+    compact.close();
   });
 });

@@ -118,7 +118,7 @@ function Section({
         <ChevronDown
           aria-hidden="true"
           size={16}
-          className={`transition-transform duration-150 ${open ? '' : '-rotate-90'}`}
+          className={`transition-transform duration-(--k-dur) ${open ? '' : '-rotate-90'}`}
         />
         {title}
         <span className="font-normal text-ui-muted">{count}</span>
@@ -346,7 +346,7 @@ export function Dashboard() {
                   setDashboardLayout(value);
                 }}
                 className={[
-                  'flex size-8 items-center justify-center rounded-[8px] transition-colors duration-150 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:size-11',
+                  'flex size-8 items-center justify-center rounded-[8px] transition-colors duration-(--k-dur) focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:size-11',
                   layout === value ? 'bg-ui-segment text-ui-heading' : 'text-ui-muted',
                 ].join(' ')}
               >

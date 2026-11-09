@@ -43,7 +43,7 @@ async function focused(page: Page): Promise<Focused> {
       return { what: 'outside the page', ring: true };
     }
     const cs = getComputedStyle(el);
-    const accent = '37, 99, 235';
+    const accent = '22, 163, 74';
     const ring =
       (cs.outlineStyle !== 'none' &&
         parseFloat(cs.outlineWidth) > 0 &&

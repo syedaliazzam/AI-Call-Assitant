@@ -292,7 +292,7 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
     };
   });
   expect(colours).toEqual({
-    you: 'rgb(96, 165, 250)',
+    you: 'rgb(34, 197, 94)',
     them: 'rgb(212, 212, 216)',
     provisional: 'rgb(161, 161, 170)',
     italic: 'italic',

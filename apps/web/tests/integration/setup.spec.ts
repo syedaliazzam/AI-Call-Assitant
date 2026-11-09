@@ -32,6 +32,7 @@ import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 import { pickOption } from '../lib/pick-option';
 import { brandFonts } from '../lib/fonts';
+import { settleAnimations } from '../lib/motion';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -441,6 +442,8 @@ test('the wizard: modal, stepper, validation, type switch and the discard questi
   await go('/sessions/new');
   const dialog = page.getByRole('dialog', { name: 'Create session' });
   await expect(dialog).toBeVisible();
+  // v1.3.1: measured once the modal has finished scaling in from 98 % (ADR-0058).
+  await settleAnimations(page);
   const box = (await dialog.boundingBox())!;
   expect(box.width).toBeCloseTo(760, 0);
   expect(box.height).toBeCloseTo(600, 0);

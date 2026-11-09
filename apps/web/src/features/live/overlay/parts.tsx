@@ -133,7 +133,7 @@ export function LevelBars({
       aria-label={
         on ? "The other side's audio: connected" : "The other side's audio: not connected"
       }
-      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center gap-[3px] ${on ? 'text-ui-accent' : 'text-ui-danger'}`}
+      className={`inline-flex h-7 w-7 shrink-0 items-center justify-center gap-[3px] ${on ? 'text-ui-indicator' : 'text-ui-danger'}`}
     >
       {BAR_SHAPE.map((shape, i) => (
         <span
@@ -326,7 +326,7 @@ export function AutoAnswerPill({
     >
       <span
         aria-hidden="true"
-        className={`size-2 rounded-full ${on ? 'bg-ui-accent' : 'bg-ui-muted'}`}
+        className={`size-2 rounded-full ${on ? 'bg-ui-indicator' : 'bg-ui-muted'}`}
       />
       Auto answer {on ? 'On' : 'Off'}
     </button>
