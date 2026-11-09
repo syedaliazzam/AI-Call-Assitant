@@ -28,7 +28,8 @@ export function ThemeSync() {
     const query = window.matchMedia('(prefers-color-scheme: dark)');
     /** Paints the current choice. */
     const apply = () => {
-      applyResolvedTheme(resolveTheme(getTheme(), query.matches));
+      // The page's own theme is the dashboard's; call views paint theirs on their own root (v1.3.0).
+      applyResolvedTheme(resolveTheme(getTheme('dashboard'), query.matches));
     };
     apply();
     const stop = subscribeAppearance(apply);

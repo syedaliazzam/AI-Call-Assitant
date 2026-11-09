@@ -188,12 +188,13 @@ async function open(view: string, size: Width, ua = WINDOWS_UA): Promise<Watched
     ...(size.touch ? { isMobile: true, hasTouch: true } : {}),
   });
   const page = await context.newPage();
-  // KITE_VISUAL_THEME: the pictures of either theme (spec §7). The call views read the stored choice.
+  // KITE_VISUAL_THEME: the pictures of either theme (spec §7). The call views read the call's stored
+  // choice, the page around them the dashboard's (two settings since v1.3.0).
   if (process.env.KITE_VISUAL_THEME) {
-    await page.addInitScript(
-      (theme) => localStorage.setItem('kite.theme', theme),
-      process.env.KITE_VISUAL_THEME,
-    );
+    await page.addInitScript((theme) => {
+      localStorage.setItem('kite.theme', theme);
+      localStorage.setItem('kite.callTheme', theme);
+    }, process.env.KITE_VISUAL_THEME);
   }
   const problems: string[] = [];
   page.on('console', (message) => {
@@ -268,7 +269,8 @@ test('live view: dark, transcript beside answers when wide, no layout shift whil
   const size: Width = { width: 1440, height: 900, touch: false };
   const watched = await open('live', size);
   const { page } = watched;
-  // The call window follows the one Theme setting (v1.1.0); System here means what this asks for.
+  // The call window follows the call's Theme setting, Dark until chosen (v1.3.0); the computer's dark
+  // preference too, in case a picture run stored System.
   await page.emulateMedia({ colorScheme: 'dark' });
   const transcriptBox = await box(page, '[aria-label="Live transcript"]');
   const panel = '[aria-label="Answers"]';

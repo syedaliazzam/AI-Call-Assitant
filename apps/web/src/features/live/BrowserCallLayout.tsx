@@ -102,8 +102,8 @@ function useMediaQuery(query: string): boolean {
  * Rendered by: LivePage.tsx (browser)
  */
 export function BrowserCallLayout({ topBarSlot, ...props }: BrowserCallLayoutProps) {
-  // v1.1.0: the one Theme setting. Read only here: LiveAnswers' ⋮ changes it.
-  const { resolved } = useAppearance(false);
+  // The call's theme (v1.3.0: dark until chosen). Read only here: LiveAnswers' ⋮ changes it.
+  const { resolved } = useAppearance('call', false);
   // 1280 px and wider: the two halves sit side by side with a draggable divider; narrower: stacked.
   const wide = useMediaQuery('(min-width: 1280px)');
   // The remembered divider position (server render uses the default, so the two renders match);

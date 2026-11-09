@@ -121,6 +121,13 @@ async function open(query = '', width = 1440, height = 900): Promise<void> {
     ...(process.env.KITE_VISUAL_THEME === 'dark' ? { colorScheme: 'dark' as const } : {}),
   });
   page = await context.newPage();
+  // The dashboard is Light until chosen (v1.3.0), so the dark pictures choose Dark.
+  if (process.env.KITE_VISUAL_THEME) {
+    await page.addInitScript(
+      (theme) => localStorage.setItem('kite.theme', theme),
+      process.env.KITE_VISUAL_THEME,
+    );
+  }
   await page.goto(`${origin}/${query}`);
   await page.waitForFunction(() => 'shellReady' in window);
   await page.evaluate(() => document.fonts.ready);

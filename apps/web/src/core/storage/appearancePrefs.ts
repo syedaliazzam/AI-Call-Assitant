@@ -1,7 +1,10 @@
 /**
  * File: apps/web/src/core/storage/appearancePrefs.ts
- * Purpose: How the desktop panels look on this device (v1.1.0, ADR-0041): the theme (light, dark or
+ * Purpose: How the desktop panels look on this device (v1.1.0, ADR-0041): the themes (light, dark or
  *          following the system), the UI scale and the overlay's answer and transcript text size.
+ *          Two themes (v1.3.0): one for the dashboard (the web pages and the home panel; light unless
+ *          chosen) and one for the call (the compact view, the call window and the browser's call view;
+ *          dark unless chosen), so a light dashboard keeps a dark overlay.
  *          Kept in localStorage, which every Kite window on this device shares, so a change in the
  *          home panel's menu shows in the overlay's and the other way round.
  * Used by: src/features/appearance/useAppearance.ts
@@ -15,8 +18,26 @@ export type ThemeChoice = 'light' | 'dark' | 'system';
 /** A theme that is actually painted. */
 export type ResolvedTheme = 'light' | 'dark';
 
-/** The localStorage key for the theme. */
+/** Which theme setting: the dashboard's (web pages, home panel) or the call's (compact view, call windows). */
+export type ThemeSurface = 'dashboard' | 'call';
+
+/** The localStorage key for the dashboard's theme (the one theme before v1.3.0, so old choices stay). */
 export const THEME_KEY = 'kite.theme';
+
+/** The localStorage key for the call's theme (v1.3.0). */
+export const CALL_THEME_KEY = 'kite.callTheme';
+
+/** Where each theme is kept. */
+const THEME_KEYS: Readonly<Record<ThemeSurface, string>> = {
+  dashboard: THEME_KEY,
+  call: CALL_THEME_KEY,
+};
+
+/** Each theme until the user chooses one: a light dashboard and a dark call view. */
+export const THEME_DEFAULTS: Readonly<Record<ThemeSurface, ThemeChoice>> = {
+  dashboard: 'light',
+  call: 'dark',
+};
 
 /** The localStorage key for the UI scale. */
 export const ZOOM_KEY = 'kite.uiZoom';
@@ -92,24 +113,28 @@ function readNumber(key: string, range: { min: number; max: number }, fallback: 
 }
 
 /**
- * The theme the user chose.
+ * The theme the user chose for one surface.
  *
- * @returns The choice (default 'system').
- * Called from: useAppearance(); tests
+ * @param surface The dashboard or the call.
+ * @returns The choice; THEME_DEFAULTS[surface] when none (or a broken one) is stored.
+ * Called from: useAppearance(), ThemeSync, UserMenu; tests
  */
-export function getTheme(): ThemeChoice {
-  const stored = read(THEME_KEY);
-  return stored === 'light' || stored === 'dark' ? stored : 'system';
+export function getTheme(surface: ThemeSurface): ThemeChoice {
+  const stored = read(THEME_KEYS[surface]);
+  return stored === 'light' || stored === 'dark' || stored === 'system'
+    ? stored
+    : THEME_DEFAULTS[surface];
 }
 
 /**
- * Changes the theme.
+ * Changes the theme of one surface.
  *
- * @param theme The choice.
- * Called from: useAppearance(); tests
+ * @param theme   The choice.
+ * @param surface The dashboard or the call.
+ * Called from: HomeMenu, UserMenu (dashboard); LiveMenu, LiveAnswers (call); tests
  */
-export function setTheme(theme: ThemeChoice): void {
-  write(THEME_KEY, theme);
+export function setTheme(theme: ThemeChoice, surface: ThemeSurface): void {
+  write(THEME_KEYS[surface], theme);
 }
 
 /**
@@ -127,10 +152,11 @@ export function resolveTheme(choice: ThemeChoice, prefersDark: boolean): Resolve
 
 /**
  * Runs before the first paint, in the page's <head>, so a dark theme never flashes white while the app
- * loads (v1.2.0). It reads the same key as getTheme() and repeats resolveTheme(), because no module has
- * loaded yet at that point.
+ * loads (v1.2.0). It reads the same key as getTheme('dashboard') and repeats resolveTheme(), because no
+ * module has loaded yet at that point: dark only when Dark is chosen, or System on a computer that
+ * prefers dark. Nothing stored means light (v1.3.0).
  */
-export const THEME_BOOT_SCRIPT = `try{var t=localStorage.getItem(${JSON.stringify(THEME_KEY)});if(t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.dataset.theme='dark'}catch(e){}`;
+export const THEME_BOOT_SCRIPT = `try{var t=localStorage.getItem(${JSON.stringify(THEME_KEY)});if(t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.dataset.theme='dark'}catch(e){}`;
 
 /**
  * Paints the whole document in a theme, through <html data-theme> (src/ui/tokens/theme.css).
@@ -197,7 +223,11 @@ export function setFontScale(scale: number): void {
 export function subscribeAppearance(listener: () => void): () => void {
   listeners.add(listener);
   const onStorage = (event: StorageEvent) => {
-    if (event.key === null || [THEME_KEY, ZOOM_KEY, FONT_SCALE_KEY].includes(event.key)) listener();
+    if (
+      event.key === null ||
+      [THEME_KEY, CALL_THEME_KEY, ZOOM_KEY, FONT_SCALE_KEY].includes(event.key)
+    )
+      listener();
   };
   window.addEventListener('storage', onStorage);
   return () => {

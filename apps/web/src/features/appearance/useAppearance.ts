@@ -16,8 +16,10 @@ import {
   getZoom,
   resolveTheme,
   subscribeAppearance,
+  THEME_DEFAULTS,
   type ResolvedTheme,
   type ThemeChoice,
+  type ThemeSurface,
 } from '@/core/storage/appearancePrefs';
 
 /** The media query for a system set to dark. */
@@ -59,15 +61,21 @@ export interface Appearance {
 /**
  * The saved appearance, kept up to date, with the UI scale applied to this page. CSS zoom on the root
  * rather than a shell call, so it also works in a desktop app before 1.1.0. Server render: the
- * defaults, painted dark, the look the overlay has always had.
+ * surface's default theme.
  *
- * @param apply False to leave the page's scale alone (the browser's picture-in-picture window shares
- *              its document with the call's tab). Default true.
+ * @param surface Whose theme: 'dashboard' (home panel) or 'call' (compact view, call windows; v1.3.0).
+ * @param apply   False to leave the page's scale alone (the browser's picture-in-picture window shares
+ *                its document with the call's tab). Default true.
  * @returns The appearance.
- * Called from: HomePanel.tsx, CompactLive.tsx
+ * Called from: HomePanel.tsx, CompactLive.tsx, LiveAnswers.tsx, LiveCallLayout.tsx,
+ *              BrowserCallLayout.tsx, TranscriptStrip.tsx
  */
-export function useAppearance(apply = true): Appearance {
-  const theme = useSyncExternalStore<ThemeChoice>(subscribeAppearance, getTheme, () => 'system');
+export function useAppearance(surface: ThemeSurface, apply = true): Appearance {
+  const theme = useSyncExternalStore<ThemeChoice>(
+    subscribeAppearance,
+    () => getTheme(surface),
+    () => THEME_DEFAULTS[surface],
+  );
   const zoom = useSyncExternalStore(subscribeAppearance, getZoom, () => 1);
   const fontScale = useSyncExternalStore(subscribeAppearance, getFontScale, () => 1);
   const prefersDark = useSyncExternalStore(subscribeSystem, systemPrefersDark, () => true);

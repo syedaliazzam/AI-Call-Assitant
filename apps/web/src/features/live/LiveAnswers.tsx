@@ -213,7 +213,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
   // ADR-0051: with account sync, Edit session opens the dashboard in the browser.
   const synced = useSyncAccount() !== null;
   // Read only: the layout around this panel paints the theme (v1.1.0).
-  const appearance = useAppearance(false);
+  const appearance = useAppearance('call', false);
   // The overlay's menu can change how answers are written during a call (ADR-0029).
   const [style, setStyle] = useState(props.session.preferences.style);
   const session = useMemo(
@@ -653,7 +653,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const menu: MenuItem[] = [
     {
       label: `Theme: ${THEME_LABELS[appearance.theme]}`,
-      onSelect: () => setTheme(nextTheme(appearance.theme)),
+      onSelect: () => setTheme(nextTheme(appearance.theme), 'call'),
     },
     {
       label: `Larger text (${Math.round(appearance.fontScale * 100)}%)`,

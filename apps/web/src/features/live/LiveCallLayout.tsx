@@ -63,8 +63,8 @@ export interface LiveCallLayoutProps {
  * Rendered by: LivePage.tsx (live view); the live harness
  */
 export function LiveCallLayout({ topBarSlot, ...props }: LiveCallLayoutProps) {
-  // v1.1.0: the one Theme setting. Read only here: LiveAnswers' ⋮ changes it.
-  const { resolved } = useAppearance(false);
+  // The call's theme (v1.3.0: dark until chosen). Read only here: LiveAnswers' ⋮ changes it.
+  const { resolved } = useAppearance('call', false);
   // The collapse arrow: the answers panel hides and the transcript takes the whole width.
   const [collapsed, setCollapsed] = useState(false);
   return (

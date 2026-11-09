@@ -41,7 +41,11 @@ import {
   type RefObject,
 } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
-import type { ResolvedTheme, ThemeChoice } from '@/core/storage/appearancePrefs';
+import {
+  THEME_DEFAULTS,
+  type ResolvedTheme,
+  type ThemeChoice,
+} from '@/core/storage/appearancePrefs';
 import { OVERLAY_OPACITY, type OverlayPanels } from '@/core/storage/overlayPrefs';
 import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
 import { ChatBar, type ChatBarHandle } from './overlay/ChatBar';
@@ -389,7 +393,7 @@ export function CompactView(props: CompactViewProps) {
             protection={props.protection}
             onProtection={props.onProtection}
             email={props.email}
-            theme={props.theme ?? 'system'}
+            theme={props.theme ?? THEME_DEFAULTS.call}
             zoom={zoom}
             fontScale={fontScale}
             opacity={props.windowSettings?.opacity}

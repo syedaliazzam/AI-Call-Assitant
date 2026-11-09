@@ -30,6 +30,7 @@ import {
   getTheme,
   setTheme,
   subscribeAppearance,
+  THEME_DEFAULTS,
   type ThemeChoice,
 } from '@/core/storage/appearancePrefs';
 import { getPlatform } from '@/platform';
@@ -103,7 +104,12 @@ const inBrowser = () => getPlatform().offersPlatformChoice;
  */
 export function UserMenu({ user, collapsed }: UserMenuProps) {
   const router = useRouter();
-  const theme = useSyncExternalStore<ThemeChoice>(subscribeAppearance, getTheme, () => 'system');
+  // The dashboard's theme (v1.3.0: light until chosen; the call view has its own).
+  const theme = useSyncExternalStore<ThemeChoice>(
+    subscribeAppearance,
+    () => getTheme('dashboard'),
+    () => THEME_DEFAULTS.dashboard,
+  );
   const browser = useSyncExternalStore(subscribeNever, inBrowser, () => false);
   const admin = user.role === 'admin';
 
@@ -123,7 +129,7 @@ export function UserMenu({ user, collapsed }: UserMenuProps) {
       items: (Object.keys(THEME_LABELS) as ThemeChoice[]).map((choice) => ({
         label: THEME_LABELS[choice],
         selected: choice === theme,
-        onSelect: () => setTheme(choice),
+        onSelect: () => setTheme(choice, 'dashboard'),
       })),
     },
     { label: 'Settings', icon: <Settings {...ICON} />, onSelect: () => router.push('/settings') },
