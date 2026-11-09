@@ -388,6 +388,48 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * Whether the shell has the overlay's six positions (1.3.0 and later).
+     *
+     * @returns True when it has the three position methods.
+     */
+    overlayPositions() {
+      return (
+        typeof bridge.getOverlayPosition === 'function' &&
+        typeof bridge.setOverlayPosition === 'function' &&
+        typeof bridge.onOverlayPosition === 'function'
+      );
+    },
+
+    /**
+     * The open overlay's position.
+     *
+     * @returns The position, or null on an older shell or when the shell does not answer.
+     */
+    async getOverlayPosition() {
+      if (!bridge.getOverlayPosition) return null;
+      return bridge.getOverlayPosition().catch(() => null);
+    },
+
+    /**
+     * Puts the open overlay at a position (older shells ignore it).
+     *
+     * @param preset Where.
+     */
+    setOverlayPosition(preset: OverlayPreset) {
+      void bridge.setOverlayPosition?.(preset).catch(() => null);
+    },
+
+    /**
+     * Listens for the overlay's position.
+     *
+     * @param handler Called with the position.
+     * @returns A function that stops listening.
+     */
+    onOverlayPosition(handler: (preset: OverlayPreset) => void) {
+      return bridge.onOverlayPosition?.(handler) ?? (() => undefined);
+    },
+
+    /**
      * Keeps the page's popups inside its window (platform/desktopDocument.ts).
      */
     keepPopupsInWindow() {

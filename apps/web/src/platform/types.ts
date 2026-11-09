@@ -273,6 +273,36 @@ export interface Platform {
   setOverlayClickThrough(through: boolean): void;
 
   /**
+   * v1.3.0 (ADR-0056): whether the overlay has the six positions (the ⋮ grid, the jump shortcuts, panels
+   * above the bars on the bottom row): a desktop app from 1.3.0.
+   *
+   * @returns True where the position methods below do something.
+   */
+  overlayPositions(): boolean;
+
+  /**
+   * v1.3.0: the open overlay's position.
+   *
+   * @returns The position, or null (no overlay, an older shell, a browser).
+   */
+  getOverlayPosition(): Promise<OverlayPreset | null>;
+
+  /**
+   * v1.3.0: puts the open overlay at a position at its current size. Nothing happens elsewhere.
+   *
+   * @param preset Where.
+   */
+  setOverlayPosition(preset: OverlayPreset): void;
+
+  /**
+   * v1.3.0: the overlay's position whenever it changes (a jump shortcut, a drop, the ⋮ grid).
+   *
+   * @param handler Called with the position.
+   * @returns A function that stops listening (does nothing where there are no positions).
+   */
+  onOverlayPosition(handler: (preset: OverlayPreset) => void): () => void;
+
+  /**
    * v1.3.0 (ADR-0055): keeps this page's popups inside its window, where screen-share protection
    * reaches: <select> lists drawn in the page and no native tooltips (desktop app only; once per page).
    */

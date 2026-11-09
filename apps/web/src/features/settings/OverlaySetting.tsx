@@ -31,6 +31,21 @@ export const OVERLAY_POSITION_OPTIONS: readonly { value: OverlayPreset; label: s
   { value: 'top-right', label: 'Top right' },
 ];
 
+/** v1.3.0 (ADR-0056): the bottom row, offered by a desktop app with the six positions. */
+export const OVERLAY_BOTTOM_OPTIONS: readonly { value: OverlayPreset; label: string }[] = [
+  { value: 'bottom-left', label: 'Bottom left' },
+  { value: 'bottom-center', label: 'Bottom centre' },
+  { value: 'bottom-right', label: 'Bottom right' },
+];
+
+/**
+ * Whether the overlay has the six positions (a desktop app from 1.3.0). Server render: no.
+ *
+ * @returns True where the bottom row is offered.
+ * Called from: OverlaySetting (useSyncExternalStore)
+ */
+const hasPositions = () => getPlatform().overlayPositions();
+
 /**
  * The setting never changes from outside this page, so nothing needs to be subscribed to.
  *
@@ -75,6 +90,7 @@ export function OverlaySetting() {
   const saved = useSyncExternalStore(subscribeNever, getStartInOverlay, () => true);
   const [choice, setChoice] = useState<boolean | null>(null);
   const placement = useSyncExternalStore(subscribeNever, canPlace, () => false);
+  const positions = useSyncExternalStore(subscribeNever, hasPositions, () => false);
   const always = useSyncExternalStore(subscribeNever, alwaysOverlay, () => false);
   const windowControls = useSyncExternalStore(subscribeNever, hasWindowControls, () => false);
   const savedFade = useSyncExternalStore(subscribeNever, getOverlayFade, () => false);
@@ -126,7 +142,11 @@ export function OverlaySetting() {
             <Select
               label="Overlay position"
               hint="Where the overlay opens. Choosing one also moves an open overlay there."
-              options={OVERLAY_POSITION_OPTIONS}
+              options={
+                positions
+                  ? [...OVERLAY_POSITION_OPTIONS, ...OVERLAY_BOTTOM_OPTIONS]
+                  : OVERLAY_POSITION_OPTIONS
+              }
               value={preset ?? 'top-center'}
               onChange={(next) => {
                 setPreset(next);

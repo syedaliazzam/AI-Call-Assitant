@@ -52,9 +52,19 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
 /** A direction the overlay can move in. */
 export type OverlayDirection = 'up' | 'down' | 'left' | 'right';
 
-/** Something the shell does to the overlay window itself, without the page. */
-export type OverlayAction =
-  'overlay-toggle' | `overlay-${OverlayDirection}` | `overlay-${OverlayDirection}-big`;
+/**
+ * A jump between the overlay's six positions (v1.3.0, ADR-0056): one spot left or right within its row
+ * (stopping at the edges), or to the top or bottom row.
+ */
+export type OverlayJump =
+  'overlay-spot-left' | 'overlay-spot-right' | 'overlay-row-top' | 'overlay-row-bottom';
+
+/**
+ * Something the shell does to the overlay window itself, without the page: show or hide it, jump
+ * between positions, or nudge it a little (`overlay-up` and so on). Until 1.2.0 the nudge was on
+ * Ctrl+Alt+Arrows and a bigger nudge (`-big`) on Ctrl+Alt+Shift+Arrows; 1.3.0 has no bigger nudge.
+ */
+export type OverlayAction = 'overlay-toggle' | `overlay-${OverlayDirection}` | OverlayJump;
 
 /**
  * A shortcut that works from any app while a call is on. `chat` and `script-bar` go to the page like
@@ -99,15 +109,24 @@ export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
   // where Ctrl+Alt types a letter (AltGr; Polish: AltGr+S types "ś") it can clash, and on macOS
   // ⌘⌥S is "Save All" in some apps; Settings → Hotkeys reports a shortcut another app holds.
   'script-bar': 'CommandOrControl+Alt+S',
-  'overlay-up': 'CommandOrControl+Alt+Up',
-  'overlay-down': 'CommandOrControl+Alt+Down',
-  'overlay-left': 'CommandOrControl+Alt+Left',
-  'overlay-right': 'CommandOrControl+Alt+Right',
-  'overlay-up-big': 'CommandOrControl+Alt+Shift+Up',
-  'overlay-down-big': 'CommandOrControl+Alt+Shift+Down',
-  'overlay-left-big': 'CommandOrControl+Alt+Shift+Left',
-  'overlay-right-big': 'CommandOrControl+Alt+Shift+Right',
+  // v1.3.0 (ADR-0056): Ctrl+Alt+Arrows jump between the six positions; the small nudge moved to
+  // Ctrl+Alt+Shift+Arrows. Never Ctrl+Shift+Arrows: in other apps that selects text by word.
+  'overlay-spot-left': 'CommandOrControl+Alt+Left',
+  'overlay-spot-right': 'CommandOrControl+Alt+Right',
+  'overlay-row-top': 'CommandOrControl+Alt+Up',
+  'overlay-row-bottom': 'CommandOrControl+Alt+Down',
+  'overlay-up': 'CommandOrControl+Alt+Shift+Up',
+  'overlay-down': 'CommandOrControl+Alt+Shift+Down',
+  'overlay-left': 'CommandOrControl+Alt+Shift+Left',
+  'overlay-right': 'CommandOrControl+Alt+Shift+Right',
 };
+
+/**
+ * Turns the transcript on or off (v1.3.0, ADR-0056): only while the overlay's bars have focus (the
+ * page's own key handling), never global. Settings checks whether another app holds it globally (then
+ * it never reaches the bars). On layouts where Ctrl+Alt is AltGr, Ctrl+Alt+T may type a letter there.
+ */
+export const TRANSCRIPT_HOTKEY = 'CommandOrControl+Alt+T';
 
 /** The global shortcuts, in the order the shell registers them. */
 export const GLOBAL_HOTKEYS = Object.keys(DEFAULT_GLOBAL_HOTKEYS) as readonly CallHotkey[];
@@ -128,8 +147,11 @@ export const FOCUSED_HOTKEYS: Readonly<
 
 /** Whether one global shortcut could be registered. */
 export interface HotkeyStatus {
-  /** The shortcut. */
-  action: GlobalHotkey;
+  /**
+   * The shortcut. 'transcript' (v1.3.0) is never held: Settings only checks that no other app holds
+   * its keys.
+   */
+  action: GlobalHotkey | 'transcript';
   /** Its keys, as an Electron accelerator (for example 'CommandOrControl+Enter'). */
   accelerator: string;
   /**
@@ -150,7 +172,12 @@ export interface HotkeyRow {
   /** 'global' works from any app; 'focused' only while Kite has focus. */
   scope: 'global' | 'focused';
   /** The global shortcuts this row stands for (to report conflicts). */
-  actions: readonly GlobalHotkey[];
+  actions: readonly (GlobalHotkey | 'transcript')[];
+  /**
+   * Which desktop apps the row is for (v1.3.0, ADR-0056): 'positions' for one with the six positions
+   * (1.3.0 and later, and the browser's list), 'classic' only for an older desktop app. Absent: all.
+   */
+  shells?: 'positions' | 'classic';
 }
 
 /** The list Settings shows. */
@@ -192,26 +219,42 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     actions: ['script-bar'],
   },
   {
-    label: 'Move overlay (add Shift for bigger steps)',
-    accelerator: DEFAULT_GLOBAL_HOTKEYS['overlay-up'],
+    label: 'Move overlay to the next position (← → in its row, ↑ ↓ top or bottom row)',
+    accelerator: DEFAULT_GLOBAL_HOTKEYS['overlay-row-top'],
     keysOverride: 'CommandOrControl+Alt+Arrows',
     scope: 'global',
-    actions: [
-      'overlay-up',
-      'overlay-down',
-      'overlay-left',
-      'overlay-right',
-      'overlay-up-big',
-      'overlay-down-big',
-      'overlay-left-big',
-      'overlay-right-big',
-    ],
+    actions: ['overlay-spot-left', 'overlay-spot-right', 'overlay-row-top', 'overlay-row-bottom'],
+    shells: 'positions',
+  },
+  {
+    label: 'Nudge overlay',
+    accelerator: DEFAULT_GLOBAL_HOTKEYS['overlay-up'],
+    keysOverride: 'CommandOrControl+Alt+Shift+Arrows',
+    scope: 'global',
+    actions: ['overlay-up', 'overlay-down', 'overlay-left', 'overlay-right'],
+    shells: 'positions',
+  },
+  {
+    // An older desktop app (before 1.3.0) still moves the overlay step by step on these keys.
+    label: 'Move overlay (add Shift for bigger steps)',
+    accelerator: 'CommandOrControl+Alt+Up',
+    keysOverride: 'CommandOrControl+Alt+Arrows',
+    scope: 'global',
+    actions: [],
+    shells: 'classic',
   },
   {
     label: 'Open Ask AI',
     accelerator: ASK_KITE_HOTKEY,
     scope: 'global',
     actions: ['ask-kite'],
+  },
+  {
+    label: 'Transcript on or off (while the bars have focus)',
+    accelerator: TRANSCRIPT_HOTKEY,
+    scope: 'focused',
+    actions: ['transcript'],
+    shells: 'positions',
   },
   {
     label: 'Clear transcript',
@@ -230,7 +273,7 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
 ];
 
 /** A shortcut a key-cap chip can show (v1.2.0, spec §4): any global or focused one. */
-export type KeycapHotkey = GlobalHotkey | keyof typeof FOCUSED_HOTKEYS | 'chat-send';
+export type KeycapHotkey = GlobalHotkey | keyof typeof FOCUSED_HOTKEYS | 'chat-send' | 'transcript';
 
 /**
  * The keys of a shortcut, from the one map above, so no screen ever writes a key itself.
@@ -243,6 +286,7 @@ export function hotkeyAccelerator(hotkey: KeycapHotkey): string {
   if (hotkey === 'ask-kite') return ASK_KITE_HOTKEY;
   if (hotkey === 'screenshot-send') return SCREENSHOT_SEND_HOTKEY;
   if (hotkey === 'chat-send') return CHAT_SEND_KEY;
+  if (hotkey === 'transcript') return TRANSCRIPT_HOTKEY;
   if (hotkey in FOCUSED_HOTKEYS) return FOCUSED_HOTKEYS[hotkey as keyof typeof FOCUSED_HOTKEYS];
   return DEFAULT_GLOBAL_HOTKEYS[hotkey as CallHotkey];
 }

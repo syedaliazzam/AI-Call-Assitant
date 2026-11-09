@@ -54,6 +54,11 @@ export interface ShellSettings {
    * pill). Absent: 780 when overlayBarsWidened is set, otherwise never widened.
    */
   overlayBarsWidth?: number;
+  /**
+   * v1.3.0 (ADR-0056): the overlay's last position (one of the six) on each display, by display id. The
+   * overlay opens there on that display.
+   */
+  overlayPositions?: Record<string, OverlayPreset>;
 }
 
 /** The stacked overlay's place on one display (v1.1.0). */
@@ -153,6 +158,12 @@ export function createStore(file: string): ShellStore {
       }
       if (typeof raw.overlayBothWidth === 'number' && Number.isFinite(raw.overlayBothWidth)) {
         settings.overlayBothWidth = raw.overlayBothWidth;
+      }
+      if (raw.overlayPositions && typeof raw.overlayPositions === 'object') {
+        const positions = Object.entries(raw.overlayPositions).filter(([, preset]) =>
+          (OVERLAY_PRESETS as readonly unknown[]).includes(preset),
+        );
+        settings.overlayPositions = Object.fromEntries(positions) as Record<string, OverlayPreset>;
       }
       if (raw.overlayBarsWidened === true) settings.overlayBarsWidened = true;
       if (typeof raw.overlayBarsWidth === 'number' && Number.isFinite(raw.overlayBarsWidth)) {

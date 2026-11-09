@@ -4,6 +4,8 @@
  *          Opacity, Answer text size, Language, Auto answer, Answer preferences and Edit session, then
  *          Open call window and Reset position. An entry shows only where it can work: a browser's
  *          picture-in-picture window has no opacity, a shell before 1.1.0 no separate pages window.
+ *          v1.3.0 (ADR-0056): in desktop 1.3.0 a Position row, a 2 × 3 grid of the overlay's six
+ *          positions with the current one highlighted, replaces Reset position.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (ShareProtectionState), lucide-react, src/core/storage (appearancePrefs,
  *             overlayPrefs, types), src/core/live/liveChannel.ts, src/features/privacy/usePrivate.ts,
@@ -12,7 +14,7 @@
  */
 'use client';
 
-import type { ShareProtectionState } from '@kite/shared';
+import { OVERLAY_GRID, type OverlayPreset, type ShareProtectionState } from '@kite/shared';
 import { LifeBuoy, SlidersHorizontal, User } from 'lucide-react';
 import { forwardRef } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
@@ -44,6 +46,76 @@ const OPACITY_STEP = 0.05;
 /** The icons in the rows this file adds. */
 const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true, className: 'shrink-0' } as const;
 
+/** Each position's name, for its button (ADR-0056). */
+export const POSITION_NAMES: Readonly<Record<OverlayPreset, string>> = {
+  'top-left': 'Top left',
+  'top-center': 'Top centre',
+  'top-right': 'Top right',
+  'bottom-left': 'Bottom left',
+  'bottom-center': 'Bottom centre',
+  'bottom-right': 'Bottom right',
+};
+
+/**
+ * The Position row (v1.3.0, ADR-0056): six small screens in a 2 × 3 grid, each with a bar where the
+ * overlay would sit; the current one is highlighted. A click puts the overlay there.
+ *
+ * @param props.position The current position (null until the shell says).
+ * @param props.onSelect Puts the overlay at a position.
+ * @returns The row.
+ * Rendered by: LiveMenu
+ */
+export function PositionGrid({
+  position,
+  onSelect,
+}: {
+  /** The current position (null until the shell says). */
+  position: OverlayPreset | null;
+  /** Puts the overlay at a position. */
+  onSelect: (preset: OverlayPreset) => void;
+}) {
+  return (
+    <div className="flex min-h-10 items-center justify-between gap-3 px-3 py-2 text-input text-ui-text">
+      <span id="overlay-position-label">Position</span>
+      <div
+        role="radiogroup"
+        aria-labelledby="overlay-position-label"
+        className="grid grid-cols-3 gap-1"
+      >
+        {[...OVERLAY_GRID.top, ...OVERLAY_GRID.bottom].map((preset) => {
+          const current = preset === position;
+          const bottom = preset.startsWith('bottom');
+          const column = preset.endsWith('left')
+            ? 'justify-start'
+            : preset.endsWith('right')
+              ? 'justify-end'
+              : 'justify-center';
+          return (
+            <button
+              key={preset}
+              type="button"
+              role="radio"
+              aria-checked={current}
+              aria-label={POSITION_NAMES[preset]}
+              onClick={() => onSelect(preset)}
+              className={`flex h-6 w-9 rounded-[5px] border p-[3px] ${column} ${bottom ? 'items-end' : 'items-start'} ${
+                current
+                  ? 'border-ui-primary bg-ui-primary/15'
+                  : 'border-ui-border hover:bg-ui-hover'
+              } focus-visible:outline-none focus-visible:shadow-[var(--k-focus)]`}
+            >
+              <span
+                aria-hidden="true"
+                className={`block h-1.5 w-3.5 rounded-[2px] ${current ? 'bg-ui-primary' : 'bg-ui-muted'}`}
+              />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Props for LiveMenu. */
 export interface LiveMenuProps {
   /** What the live page shows. */
@@ -72,8 +144,12 @@ export interface LiveMenuProps {
   onHelp?: (() => void) | undefined;
   /** Opens Edit session, likewise. */
   onEditSession?: (() => void) | undefined;
-  /** Puts the overlay back at the top centre, where the window can do it. */
+  /** Puts the overlay back at the top centre, where the window can do it (before desktop 1.3.0). */
   onResetPosition?: (() => void) | undefined;
+  /** The overlay's position (desktop 1.3.0, ADR-0056). */
+  position?: OverlayPreset | null;
+  /** Puts the overlay at one of the six positions; absent where there are none. */
+  onPosition?: ((preset: OverlayPreset) => void) | undefined;
   /** Opens the full call window. */
   onCallWindow: () => void;
   /** Opens the answer preferences. */
@@ -198,6 +274,9 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
 
       <MenuBlock>
         <MenuAction label="Open call window" icon={<MonitorIcon />} onSelect={props.onCallWindow} />
+        {props.onPosition && (
+          <PositionGrid position={props.position ?? null} onSelect={props.onPosition} />
+        )}
         {props.onResetPosition && (
           <MenuAction label="Reset position" onSelect={props.onResetPosition} />
         )}

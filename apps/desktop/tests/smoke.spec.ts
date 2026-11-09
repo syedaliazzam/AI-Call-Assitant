@@ -247,6 +247,10 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.openCallWindow,
       typeof window.kiteDesktop?.sizePanel,
       typeof window.kiteDesktop?.setOverlayClickThrough,
+      // v1.3.0 (ADR-0056): the six positions.
+      typeof window.kiteDesktop?.getOverlayPosition,
+      typeof window.kiteDesktop?.setOverlayPosition,
+      typeof window.kiteDesktop?.onOverlayPosition,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -266,12 +270,15 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'closeCompactView',
     // v1.3.0 (ADR-0052): the link's one-time sign-in code, given once.
     'consumeLinkCode',
+    // v1.3.0 (ADR-0056): the six positions.
+    'getOverlayPosition',
     'getOverlayPreset',
     'getShareProtection',
     'minimizeMainWindow',
     // v1.2.0 (spec S13): dragging the icon.
     'moveOverlay',
     'onHotkey',
+    'onOverlayPosition',
     'onSnapZone',
     // v1.3.0 (ADR-0055): the Connect card's call window.
     'openCallWindow',
@@ -290,6 +297,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'setOverlayLayout',
     'setOverlayMode',
     'setOverlayOpacity',
+    'setOverlayPosition',
     'setShareProtection',
     'showCallWindow',
     // v1.3.0 (ADR-0055): the launcher's window size.
@@ -297,7 +305,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'version',
     'windowControl',
   ]);
-  expect(bridge.methods).toEqual(Array(27).fill('function'));
+  expect(bridge.methods).toEqual(Array(30).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
@@ -769,6 +777,99 @@ test('overlay: opacity, collapse, minimises the main window and brings it back (
   await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
   await expect.poll(async () => (await read()).minimized).toBe(false);
   expect((await read()).count).toBe(2);
+});
+
+test('the six positions: 16 from the work area, the bottom row grows upward, the page is told (ADR-0056)', async () => {
+  await page.evaluate(() => window.kiteDesktop!.openCompactView!('smoke-positions'));
+  await expect.poll(windowCount).toBe(3);
+  /**
+   * The overlay's bounds and the work area of the display it is on, from the real shell.
+   *
+   * @returns Both, in DIPs.
+   */
+  const where = () =>
+    app.evaluate(({ BrowserWindow, screen }) => {
+      const overlay = BrowserWindow.getAllWindows().find((w) => w.isAlwaysOnTop())!;
+      const bounds = overlay.getBounds();
+      return { bounds, area: screen.getDisplayMatching(bounds).workArea };
+    });
+  // The overlay's own page hears about each change.
+  await expect
+    .poll(() => app.windows().some((w) => w.url().includes('/compact/smoke-positions')), {
+      timeout: 15_000,
+    })
+    .toBe(true);
+  const overlayPage = app.windows().find((w) => w.url().includes('/compact/smoke-positions'))!;
+  await overlayPage.waitForLoadState();
+  await overlayPage.evaluate(() => {
+    (window as unknown as { __positions: string[] }).__positions = [];
+    window.kiteDesktop!.onOverlayPosition!((preset) =>
+      (window as unknown as { __positions: string[] }).__positions.push(preset),
+    );
+  });
+  await page.evaluate(() =>
+    window.kiteDesktop!.setOverlayLayout!({ transcript: false, answer: false, popupHeight: 0 }),
+  );
+  for (const preset of [
+    'top-left',
+    'top-center',
+    'top-right',
+    'bottom-left',
+    'bottom-center',
+    'bottom-right',
+  ] as const) {
+    expect(await page.evaluate((p) => window.kiteDesktop!.setOverlayPosition!(p), preset)).toBe(
+      preset,
+    );
+    const { bounds, area } = await where();
+    const left = preset.endsWith('left');
+    const right = preset.endsWith('right');
+    const x = left
+      ? area.x + 16
+      : right
+        ? area.x + area.width - bounds.width - 16
+        : area.x + Math.round((area.width - bounds.width) / 2);
+    const y = preset.startsWith('top') ? area.y + 16 : area.y + area.height - bounds.height - 16;
+    expect(Math.abs(bounds.x - x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(bounds.y - y)).toBeLessThanOrEqual(1);
+  }
+  expect(await page.evaluate(() => window.kiteDesktop!.getOverlayPosition!())).toBe('bottom-right');
+  // On the bottom row an answer panel grows the window upward: its bottom edge stays.
+  const before = (await where()).bounds;
+  await page.evaluate(() =>
+    window.kiteDesktop!.setOverlayLayout!({ transcript: false, answer: true, popupHeight: 0 }),
+  );
+  await expect.poll(async () => (await where()).bounds.height).toBeGreaterThan(before.height);
+  const after = (await where()).bounds;
+  expect(Math.abs(after.y + after.height - (before.y + before.height))).toBeLessThanOrEqual(1);
+  await expect
+    .poll(() =>
+      overlayPage.evaluate(() => (window as unknown as { __positions: string[] }).__positions),
+    )
+    .toEqual([
+      'top-left',
+      'top-center',
+      'top-right',
+      'bottom-left',
+      'bottom-center',
+      'bottom-right',
+    ]);
+  // A name the shell does not know is refused.
+  await expect(
+    page.evaluate(() => window.kiteDesktop!.setOverlayPosition!('middle' as never)),
+  ).rejects.toThrow();
+  // The jump and nudge keys are registered during a call; Ctrl+Shift+Arrows never are.
+  const statuses = await page.evaluate(() => window.kiteDesktop!.setHotkeysEnabled!(true));
+  const keys = statuses.map((status) => status.accelerator);
+  expect(keys).toEqual(
+    expect.arrayContaining(['CommandOrControl+Alt+Left', 'CommandOrControl+Alt+Shift+Left']),
+  );
+  expect(keys).not.toContain('CommandOrControl+Shift+Left');
+  await page.evaluate(() => window.kiteDesktop!.setHotkeysEnabled!(false));
+  // Back to the top centre for the tests after this one, then closed.
+  await page.evaluate(() => window.kiteDesktop!.setOverlayPosition!('top-center'));
+  await page.evaluate(() => window.kiteDesktop!.closeCompactView!());
+  await expect.poll(windowCount).toBe(2);
 });
 
 test('window icon (Windows): the taskbar icon is the company logo mark (UI U4)', async () => {

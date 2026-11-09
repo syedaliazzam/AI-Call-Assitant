@@ -415,6 +415,41 @@ export const browserPlatform: Platform = {
   setOverlayClickThrough(_through) {},
 
   /**
+   * A browser's picture-in-picture window has no positions.
+   *
+   * @returns False.
+   */
+  overlayPositions() {
+    return false;
+  },
+
+  /**
+   * A browser has no overlay position.
+   *
+   * @returns Null.
+   */
+  async getOverlayPosition() {
+    return null;
+  },
+
+  /**
+   * Nothing to do: a picture-in-picture window is placed by the browser.
+   *
+   * @param _preset Ignored.
+   */
+  setOverlayPosition(_preset) {},
+
+  /**
+   * Nothing to listen for in a browser.
+   *
+   * @param _handler Ignored.
+   * @returns A function that does nothing.
+   */
+  onOverlayPosition(_handler) {
+    return () => undefined;
+  },
+
+  /**
    * Nothing to do: a browser's popups are its own, and screen-share protection is the desktop app's.
    */
   keepPopupsInWindow() {},

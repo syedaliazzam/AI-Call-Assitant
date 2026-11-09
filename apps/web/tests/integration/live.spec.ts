@@ -1079,6 +1079,47 @@ test('S16: the ⋮ menu in order; Answer preferences as a sheet that fits the ov
   await watched.context.close();
 });
 
+test('ADR-0056: the bottom row mirrors the overlay; the ⋮ Position grid; Ctrl+Alt+T toggles the transcript', async () => {
+  const watched = await openOverlayView(OVERLAY_SIZES.default, '&position=bottom-left');
+  const { page, log } = watched;
+  const bar1 = page.getByRole('toolbar', { name: 'Overlay controls' });
+  const answer = page.getByRole('region', { name: 'Latest answer' });
+  // Bar 1 sits at the bottom edge, the answer panel above it.
+  const barBox = (await bar1.boundingBox())!;
+  const answerBox = (await answer.boundingBox())!;
+  expect(answerBox.y + answerBox.height).toBeLessThanOrEqual(barBox.y);
+  expect(barBox.y + barBox.height).toBeGreaterThan(OVERLAY_SIZES.default.height - 12);
+  // The ⋮ menu opens upward, over the panel, with the Position grid; the current one is checked.
+  await page.getByRole('button', { name: 'Overlay menu' }).click();
+  const menu = page.getByRole('group', { name: 'Overlay settings' });
+  const menuBox = (await menu.boundingBox())!;
+  expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(barBox.y);
+  const grid = menu.getByRole('radiogroup', { name: 'Position' });
+  await expect(grid.getByRole('radio')).toHaveCount(6);
+  await expect(grid.getByRole('radio', { name: 'Bottom left' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await expect(menu.getByRole('button', { name: 'Reset position' })).toHaveCount(0);
+  await menu.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+  await shot(watched, OVERLAY_SIZES.default, 'overlay-bottom-row-menu');
+  await grid.getByRole('radio', { name: 'Top right' }).click();
+  expect(await log()).toContainEqual({ position: 'top-right' });
+  // Top row: bar 1 back at the top, the answer below it.
+  await expect(page.locator('.k-overlay-root')).toHaveAttribute('data-row', 'top');
+  const topBar = (await bar1.boundingBox())!;
+  expect(topBar.y).toBeLessThan(12);
+  expect((await answer.boundingBox())!.y).toBeGreaterThan(topBar.y + topBar.height);
+  // Ctrl+Alt+T, with the bars focused: the transcript opens, and closes again.
+  await page.keyboard.press('Escape');
+  await bar1.click({ position: { x: 4, y: 4 } });
+  await page.keyboard.press('Control+Alt+t');
+  await expect(page.getByRole('region', { name: 'Transcript panel' })).toBeVisible();
+  await page.keyboard.press('Control+Alt+t');
+  await expect(page.getByRole('region', { name: 'Transcript panel' })).toHaveCount(0);
+  await shot(watched, OVERLAY_SIZES.default, 'overlay-position-grid');
+});
+
 test('overlay look: panel background at 40% and 82% over light and dark busy backgrounds (ADR-0033)', async () => {
   // The opacity slider dims the panel background only; the text stays opaque with a shadow. Render
   // the minimum (0.4) and the default (0.82, spec §1) over each backdrop and size.

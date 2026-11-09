@@ -76,7 +76,8 @@ export function SnapZones(props: { zones: string | null }) {
           key={ghost.preset}
           data-zone={ghost.preset}
           data-active={hover === ghost.preset}
-          className="k-snap-zone absolute flex flex-col gap-1.5 rounded-card p-1.5"
+          // ADR-0056: a bottom-row ghost is mirrored like the overlay there (bar at the bottom).
+          className={`k-snap-zone absolute flex ${ghost.preset.startsWith('bottom') ? 'flex-col-reverse' : 'flex-col'} gap-1.5 rounded-card p-1.5`}
           style={{ left: ghost.x, top: ghost.y, width: ghost.width, height: ghost.height }}
         >
           <span className="k-snap-ghost h-10 shrink-0 rounded-control" />

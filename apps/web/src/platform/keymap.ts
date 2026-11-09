@@ -97,6 +97,25 @@ export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
 }
 
 /**
+ * Whether a key press is the overlay's Transcript key (v1.3.0, ADR-0056: Ctrl+Alt+T, ⌘⌥T on macOS),
+ * handled only by the overlay's own page while it has focus. Never while typing in a box, and never where
+ * Ctrl+Alt is AltGr and types a letter (e.key is then that letter, not "t").
+ *
+ * @param press The key press.
+ * @param mac   True on macOS.
+ * @returns True for the Transcript key.
+ * Called from: src/features/live/CompactView.tsx; tests
+ */
+export function isTranscriptKey(press: KeyPress, mac: boolean): boolean {
+  if (press.repeat || !press.altKey || press.shiftKey) return false;
+  const held = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;
+  if (!held || isTyping(press.target)) return false;
+  // On macOS Option changes e.key ("†"), so the key's place (e.code) is checked there too.
+  const code = (press as KeyPress & { code?: string }).code;
+  return press.key.toLowerCase() === 't' || (mac && code === 'KeyT');
+}
+
+/**
  * Listens for the Ask Kite shortcut alone, on every signed-in page. Unlike listenForHotkeys(), it
  * leaves every other key to the page and the browser, because no call is going on there.
  *

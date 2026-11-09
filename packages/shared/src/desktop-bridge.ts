@@ -294,6 +294,29 @@ export interface KiteDesktopApi {
    * @returns Resolves when applied.
    */
   setOverlayClickThrough?: (through: boolean) => Promise<void>;
+  /**
+   * v1.3.0 (ADR-0056): the overlay's position (one of the six), or null when it has none yet (no
+   * overlay open). Optional: an older shell has no positions grid.
+   *
+   * @returns The position.
+   */
+  getOverlayPosition?: () => Promise<OverlayPreset | null>;
+  /**
+   * v1.3.0 (ADR-0056): puts the open overlay at one of the six positions at its current size (the ⋮
+   * grid), remembered for the display it is on. Optional, as above.
+   *
+   * @param preset Where.
+   * @returns The overlay's position afterwards, or null with no overlay open.
+   */
+  setOverlayPosition?: (preset: OverlayPreset) => Promise<OverlayPreset | null>;
+  /**
+   * v1.3.0 (ADR-0056): the overlay's position whenever it changes (a shortcut, a drop, the ⋮ grid), so
+   * the page puts its panels below the bars on the top row and above them on the bottom row.
+   *
+   * @param handler Called with the position.
+   * @returns A function that removes the listener.
+   */
+  onOverlayPosition?: (handler: (preset: OverlayPreset) => void) => () => void;
 }
 
 /** A size the home panel can ask for (v1.3.0, ADR-0055). */
@@ -336,22 +359,51 @@ export interface OverlayLayout {
   scale?: number;
 }
 
-/** Where the overlay can be put by a preset (ADR-0035; top-left from v1.1.0). */
-export type OverlayPreset = 'top-center' | 'top-left' | 'top-right' | 'bottom-center';
+/**
+ * Where the overlay can be put by a preset (ADR-0035; top-left from v1.1.0; bottom-left and bottom-right
+ * from v1.3.0, ADR-0056: six positions in a 2 × 3 grid).
+ */
+export type OverlayPreset =
+  'top-center' | 'top-left' | 'top-right' | 'bottom-center' | 'bottom-left' | 'bottom-right';
 
 /**
- * Every overlay preset (the first is the default). 'bottom-center' stays valid for positions saved by
- * an earlier version, but is no longer offered (v1.1.0).
+ * Every overlay preset (the first is the default). A shell before 1.3.0 knows only the first four, and
+ * refuses the other two.
  */
 export const OVERLAY_PRESETS: readonly OverlayPreset[] = [
   'top-center',
   'top-left',
   'top-right',
   'bottom-center',
+  'bottom-left',
+  'bottom-right',
 ];
 
-/** The three places the overlay snaps to while it is dragged, left to right (v1.1.0, ADR-0041). */
-export const SNAP_PRESETS: readonly OverlayPreset[] = ['top-left', 'top-center', 'top-right'];
+/** A row of the overlay's positions (v1.3.0, ADR-0056). */
+export type OverlayRow = 'top' | 'bottom';
+
+/** The six positions as a grid: two rows, each left to right (v1.3.0, ADR-0056). */
+export const OVERLAY_GRID: Readonly<Record<OverlayRow, readonly OverlayPreset[]>> = {
+  top: ['top-left', 'top-center', 'top-right'],
+  bottom: ['bottom-left', 'bottom-center', 'bottom-right'],
+};
+
+/**
+ * The row a position is in: on the top row the panels open below the bars, on the bottom row above.
+ *
+ * @param preset The position.
+ * @returns Its row.
+ * Called from: apps/desktop/src/positions.ts, apps/web/src/features/live (CompactView, LiveMenu); tests
+ */
+export function overlayRow(preset: OverlayPreset): OverlayRow {
+  return preset.startsWith('bottom') ? 'bottom' : 'top';
+}
+
+/**
+ * The places the overlay snaps to while it is dragged (v1.1.0, ADR-0041: the top three; v1.3.0,
+ * ADR-0056: all six).
+ */
+export const SNAP_PRESETS: readonly OverlayPreset[] = [...OVERLAY_GRID.top, ...OVERLAY_GRID.bottom];
 
 /** An edge or corner of the overlay that the page resizes it from (ADR-0035). */
 export type OverlayEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';

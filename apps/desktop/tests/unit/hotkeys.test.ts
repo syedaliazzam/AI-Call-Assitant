@@ -62,8 +62,10 @@ describe('createHotkeys', () => {
     expect(statuses.every((status) => status.registered)).toBe(true);
     expect([...callbacks.keys()].sort()).toEqual(Object.values(DEFAULT_GLOBAL_HOTKEYS).sort());
     press('CommandOrControl+Enter');
+    // v1.3.0 (ADR-0056): Ctrl+Alt+Left jumps a spot; the nudge is Ctrl+Alt+Shift+Left.
     press('CommandOrControl+Alt+Left');
-    expect(send.mock.calls).toEqual([['answer'], ['overlay-left']]);
+    press('CommandOrControl+Alt+Shift+Left');
+    expect(send.mock.calls).toEqual([['answer'], ['overlay-spot-left'], ['overlay-left']]);
     expect(hotkeys.enabled()).toBe(true);
   });
 
@@ -163,13 +165,18 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     press('CommandOrControl+Enter');
     press('CommandOrControl+Alt+H');
     press('CommandOrControl+Alt+Shift+Up');
+    press('CommandOrControl+Alt+Down');
     // v1.0.2 (ADR-0035): the script bar goes to the page, which decides what the overlay shows.
     press('CommandOrControl+Alt+S');
     expect(sendToPage.mock.calls).toEqual([
       [HOTKEY_CHANNEL, 'answer'],
       [HOTKEY_CHANNEL, 'script-bar'],
     ]);
-    expect(overlayAction.mock.calls).toEqual([['overlay-toggle'], ['overlay-up-big']]);
+    expect(overlayAction.mock.calls).toEqual([
+      ['overlay-toggle'],
+      ['overlay-up'],
+      ['overlay-row-bottom'],
+    ]);
   });
 
   it('registers the script bar only during a call, and reports it when taken (v1.0.2)', () => {
@@ -201,14 +208,44 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     void callbacks;
   });
 
+  it('never holds Ctrl+Shift+Arrows, which select text by word in other apps (v1.3.0)', () => {
+    const accelerators = Object.values(DEFAULT_GLOBAL_HOTKEYS);
+    for (const arrow of ['Up', 'Down', 'Left', 'Right']) {
+      expect(accelerators).not.toContain(`CommandOrControl+Shift+${arrow}`);
+    }
+  });
+
+  it('check() also tries Transcript (Ctrl+Alt+T) for a moment, and reports another app holding it', () => {
+    const free = fakeGlobalShortcut();
+    const freeStatus = createHotkeys(free.globalShortcut, vi.fn())
+      .check()
+      .find((status) => status.action === 'transcript');
+    expect(freeStatus).toEqual({
+      action: 'transcript',
+      accelerator: 'CommandOrControl+Alt+T',
+      registered: true,
+    });
+    expect(free.globalShortcut.unregister).toHaveBeenCalledWith('CommandOrControl+Alt+T');
+    const taken = fakeGlobalShortcut(['CommandOrControl+Alt+T']);
+    expect(
+      createHotkeys(taken.globalShortcut, vi.fn())
+        .check()
+        .find((status) => status.action === 'transcript')?.registered,
+    ).toBe(false);
+  });
+
   it('check() during a call reports the current state and leaves the shortcuts on', () => {
     const { globalShortcut } = fakeGlobalShortcut();
     const hotkeys = createHotkeys(globalShortcut, vi.fn());
     const statuses = hotkeys.enable();
     expect(hotkeys.check().slice(0, statuses.length)).toEqual(statuses);
     expect(hotkeys.enabled()).toBe(true);
-    // Only the moment's try of the chat bar's shortcut was released; the call's shortcuts stay.
-    expect(globalShortcut.unregister).toHaveBeenCalledExactlyOnceWith(SCREENSHOT_SEND_HOTKEY);
+    // Only the moment's tries (the chat bar's shortcut, Transcript's keys) were released; the call's
+    // shortcuts stay.
+    expect(globalShortcut.unregister.mock.calls).toEqual([
+      [SCREENSHOT_SEND_HOTKEY],
+      ['CommandOrControl+Alt+T'],
+    ]);
   });
 });
 

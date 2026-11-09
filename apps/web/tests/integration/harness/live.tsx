@@ -21,7 +21,7 @@
  *               docs/design/kite-ui-theme.md §6
  */
 import { useState } from 'react';
-import { CLAUDE_UNAVAILABLE_MESSAGES } from '@kite/shared';
+import { CLAUDE_UNAVAILABLE_MESSAGES, type OverlayPreset } from '@kite/shared';
 import { createRoot } from 'react-dom/client';
 import type { CompactState } from '@/core/live/liveChannel';
 import type { OverlayPanels } from '@/core/storage/overlayPrefs';
@@ -395,6 +395,10 @@ function CompactHarness({
   const alpha = alphaParam === null ? null : Number(alphaParam);
   // What the view asks for, so a test can read it. ?shell=1: a shell from 1.2.0, with the icon.
   const log = (window as unknown as { overlayLog: unknown[] }).overlayLog;
+  // ?position=bottom-left: a shell from 1.3.0 with the six positions (ADR-0056), at that one.
+  const [position, setPosition] = useState<OverlayPreset | null>(
+    () => params.get('position') as OverlayPreset | null,
+  );
   return (
     <CompactView
       state={state}
@@ -412,6 +416,15 @@ function CompactHarness({
             onMove: (dx: number, dy: number) => log.push({ move: [dx, dy] }),
             onResize: () => undefined,
             onPlace: () => log.push('reset-position'),
+          }
+        : {})}
+      {...(params.has('position')
+        ? {
+            position,
+            onPosition: (preset: OverlayPreset) => {
+              log.push({ position: preset });
+              setPosition(preset);
+            },
           }
         : {})}
       chatOpen={chatOpen}
