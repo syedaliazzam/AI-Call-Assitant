@@ -24,6 +24,7 @@ import {
   type Browser,
   type BrowserContext,
   type Page,
+  type Route,
 } from '@playwright/test';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
@@ -50,6 +51,17 @@ let browser: Browser | null = null;
 let origin = '';
 let context: BrowserContext;
 let page: Page;
+
+/**
+ * v1.3.1 (ADR-0059): the speech model's addresses (engine and model files, wherever they are served
+ * from). The launcher starts loading them when it opens; the harness holds those requests, so no test
+ * downloads anything and the Connect test decides when the load fails.
+ */
+const MODEL_FILE =
+  /\/(sherpa-onnx[\w.-]*|[\w-]+-epoch-99-avg-1[\w.]*\.onnx|tokens\.txt|bpe\.model)$/;
+
+/** The held speech model requests of the open page. */
+let heldModel: Route[] = [];
 
 test.beforeAll(async () => {
   bundleDir = mkdtempSync(path.join(tmpdir(), 'kite-launcher-test-'));
@@ -138,6 +150,13 @@ test.afterEach(async () => {
 async function open(): Promise<void> {
   context = await browser!.newContext({ viewport: WINDOW, deviceScaleFactor: 1.5 });
   page = await context.newPage();
+  heldModel = [];
+  await page.route(
+    (url) => MODEL_FILE.test(url.pathname),
+    (route) => {
+      heldModel.push(route);
+    },
+  );
   if (process.env.KITE_VISUAL_THEME) {
     await page.addInitScript(
       (theme) => localStorage.setItem('kite.theme', theme),
@@ -290,7 +309,7 @@ test('the Start card: two tiles, Team, Buy credits only shows a toast, Back', as
   await expect(page.getByRole('region', { name: 'Your sessions' })).toBeVisible();
 });
 
-test('the Connect card: tips, no meter or status, the model dialog, and the call start', async () => {
+test('the Connect card: tips, no meter or status, no model dialog (background load), and the call start', async () => {
   await open();
   const ids = await seedAndShow();
   const newest = ids[2]!;
@@ -325,14 +344,24 @@ test('the Connect card: tips, no meter or status, the model dialog, and the call
   await expect(page.getByText('Need it for')).toBeVisible();
   await shot('launcher-connect-560');
 
-  // No speech model yet: the dialog, and Cancel.
+  // v1.3.1 (ADR-0059): the model started loading when the app opened (held here). Connect asks
+  // nothing: no "Speech model needed" dialog, only a small progress bar while it waits.
+  await expect.poll(() => heldModel.length).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: 'Speech model needed' });
-  await expect(dialog).toContainText('One-time download, about 204 MB');
-  await expect(dialog.getByRole('button', { name: 'Download and connect' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Connecting…' })).toBeVisible();
+  await expect(page.getByTestId('model-progress')).toBeVisible();
+  await expect(page.getByTestId('model-progress')).toContainText('Getting the speech model ready');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByText(/Speech model needed|Download and connect/)).toHaveCount(0);
   await shot('launcher-model-560');
-  await dialog.getByRole('button', { name: 'Cancel' }).click();
-  await expect(dialog).toBeHidden();
+  expect(await page.evaluate(() => window.launcherDesktop.callWindows)).toEqual([]);
+
+  // The background load fails (no connection): the card says so; Connect tries again.
+  for (const route of heldModel.splice(0)) await route.abort('internetdisconnected');
+  await expect(page.getByRole('alert')).toHaveText(
+    'The speech model could not be downloaded. Check the connection and try again.',
+  );
+  await expect(page.getByTestId('model-progress')).toBeHidden();
   expect(await page.evaluate(() => window.launcherDesktop.callWindows)).toEqual([]);
 
   // With the model: Connect asks for the call window and leaves the note for its live page.

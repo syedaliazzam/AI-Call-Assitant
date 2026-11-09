@@ -8,7 +8,8 @@
  *          highlighted. The acceptable-use notice, the accurate-transcription offer and the one-time
  *          upload of this computer's own data keep their places.
  * Used by: src/features/home/HomePanel.tsx (accounts with account sync)
- * Depends on: next/navigation, src/core/storage/sessions.ts, src/core/sync/client.ts,
+ * Depends on: next/navigation, src/core/storage/sessions.ts, src/core/stt/prefetch.ts,
+ *             src/core/sync/client.ts,
  *             src/features/appearance/useAppearance, src/features/notices/AcceptableUseNotice.tsx,
  *             src/features/sync/LegacyUploadCard.tsx, src/platform, ./AccurateOffer.tsx,
  *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx, ./LauncherStart.tsx
@@ -21,6 +22,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { shownStatus, watchSessions } from '@/core/storage/sessions';
+import { speechModelPrefetch } from '@/core/stt/prefetch';
 import type { Session } from '@/core/storage/types';
 import { pullAccountSync } from '@/core/sync/client';
 import { useAppearance } from '@/features/appearance/useAppearance';
@@ -121,6 +123,12 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
   useEffect(() => {
     getPlatform().sizePanel(LAUNCHER_SIZE.width, LAUNCHER_SIZE.height);
   }, []);
+
+  // v1.3.1 (ADR-0059): the speech model gets ready in the background as soon as the app opens (from
+  // the installer's copy, or a silent download when that is missing), so Connect does not wait.
+  useEffect(() => {
+    if (available) void speechModelPrefetch(globalThis.location.origin).start();
+  }, [available]);
 
   useEffect(
     () =>

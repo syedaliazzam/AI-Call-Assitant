@@ -210,21 +210,12 @@ test('3. a call: Start → Connect, the overlay, an answer, Private, positions, 
    */
   const findOverlay = () => app.windows().find((window) => window.url().includes('/compact/'));
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  // A fresh profile has no speech model: the one-time download dialog comes first, a moment later.
+  // v1.3.1 (ADR-0059): never a "Speech model needed" dialog. The model ships in the installer (or,
+  // on an older shell, loads in the background); Connect waits, with a progress bar if it must.
   const modelDialog = page.getByRole('dialog', { name: 'Speech model needed' });
-  await expect
-    .poll(
-      async () => (findOverlay() ? 'overlay' : (await modelDialog.isVisible()) ? 'dialog' : ''),
-      {
-        timeout: 60_000,
-      },
-    )
-    .not.toBe('');
-  if (!findOverlay() && (await modelDialog.isVisible())) {
-    await modelDialog.getByRole('button', { name: 'Download and connect' }).click();
-    report('desktop speech model download asked', true);
-  }
   await expect.poll(() => findOverlay() !== undefined, { timeout: MODEL_TIMEOUT_MS }).toBe(true);
+  expect(await modelDialog.count()).toBe(0);
+  report('desktop speech model dialog absent', true);
   const overlay = findOverlay()!;
   await overlay.waitForLoadState();
   await expect(overlay.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
