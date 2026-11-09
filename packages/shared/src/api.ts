@@ -65,7 +65,18 @@ export interface SessionDocument {
   name: string;
   /** Extracted plain text of the document. Never logged. */
   text: string;
+  /**
+   * 'resume' for the session's CV (ADR-0067). The CV is sent first and, to the smart model, in
+   * full; other documents are absent here. Never written into the prompt, so it changes no cache.
+   */
+  kind?: 'resume';
 }
+
+/** Most characters of document text one session may send (ADR-0067: 500k, about 200k tokens). */
+export const MAX_SESSION_DOCUMENT_CHARS = 500_000;
+
+/** Most characters of the documents summary the smart-model routes accept (ADR-0067). */
+export const MAX_DOCUMENTS_SUMMARY_CHARS = 20_000;
 
 /** The session details sent with every answer request; forms the cached part of the prompt. */
 export interface SessionContext {
@@ -105,8 +116,34 @@ export interface SessionContext {
    * and steps, nothing invented); only 'story' is ever sent (ADR-0030).
    */
   missingInfo?: MissingInfoMode;
-  /** Attached documents (total capped at about 150k characters by the server). */
+  /**
+   * Attached documents, the CV first (total capped at MAX_SESSION_DOCUMENT_CHARS by the server).
+   * For the smart-model routes (notes, Ask AI, Prepare) only the CV is sent here (ADR-0067).
+   */
   documents: SessionDocument[];
+  /**
+   * Smart-model routes only (ADR-0067): a short summary of the session's documents other than the CV,
+   * written once per session by the fast model (POST /api/summary) and kept on the device. When it
+   * is present ('' = no other documents, or no summary could be written) the server writes it in
+   * place of those documents. Absent: an older page, whose documents are written in full.
+   */
+  documentsSummary?: string;
+}
+
+/** POST /api/summary: summarise a session's documents other than the CV (ADR-0067). */
+export interface DocumentsSummaryRequest {
+  /** The documents to summarise (never the CV), in the session's order. */
+  documents: SessionDocument[];
+}
+
+/** The reply of POST /api/summary. */
+export interface DocumentsSummaryResponse {
+  /** The summary text (at most MAX_DOCUMENTS_SUMMARY_CHARS). Never logged. */
+  summary: string;
+  /** Token usage of the request. */
+  usage: AnswerUsage;
+  /** Server time for the request, in ms. */
+  ms: number;
 }
 
 /**

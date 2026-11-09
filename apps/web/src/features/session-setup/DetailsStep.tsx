@@ -1,8 +1,8 @@
 /**
  * File: apps/web/src/features/session-setup/DetailsStep.tsx
  * Purpose: Step 1 of the Create/Edit session wizard (spec S4): session type, "Paste a job link", company,
- *          role or topic, job description, then Context: CV / Resume and Documents, with the room left
- *          against the session's character cap, and a collapsed Advanced section with Key terms at the
+ *          role or topic, job description, then Context: CV / Resume and Documents, with a used / limit
+ *          counter for the session's character cap (a warning above 400k, ADR-0067), and a collapsed Advanced section with Key terms at the
  *          bottom. Switching type keeps the fields they share. v1.3.0 (ADR-0057): Contact name is no
  *          longer asked for or shown; a session that has one keeps it unchanged.
  * Used by: src/features/session-setup/SessionWizard.tsx
@@ -18,7 +18,11 @@
 
 import type { JobImportFields } from '@kite/shared';
 import { Bot, Briefcase, ChevronRight, Phone } from 'lucide-react';
-import { MAX_SESSION_CHARS, roomLeft } from '@/core/documents/limits';
+import {
+  LARGE_SESSION_CHARS,
+  LARGE_SESSION_WARNING,
+  MAX_SESSION_CHARS,
+} from '@/core/documents/limits';
 import type { LibraryItem, SessionType } from '@/core/storage/types';
 import { Input } from '@/ui/Input';
 import { SegmentedControl } from '@/ui/SegmentedControl';
@@ -155,9 +159,15 @@ export function DetailsStep({
             onBusy={onBusy}
           />
         </div>
-        <p className="text-[13px] text-ui-muted">
-          {count(roomLeft(used))} of {count(MAX_SESSION_CHARS)} characters left in this session
+        {/* Used / limit for all the session's documents together (ADR-0067). */}
+        <p className="text-[13px] text-ui-muted" data-testid="document-chars">
+          {count(used)} / {count(MAX_SESSION_CHARS)} characters used
         </p>
+        {used > LARGE_SESSION_CHARS && (
+          <p className="text-[13px] text-ui-warning" role="status">
+            {LARGE_SESSION_WARNING}
+          </p>
+        )}
       </section>
 
       {/* v1.3.0 (ADR-0057): Key terms, collapsed until opened. */}

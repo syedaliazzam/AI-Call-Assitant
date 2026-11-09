@@ -6,7 +6,8 @@
  *          A session that does not exist here gets a message and a link to the dashboard.
  * Used by: app/(app)/live/[id]/page.tsx
  * Depends on: src/core/storage (sessions, documents, utterances),
- *             src/core/stt/sessionHotwords.ts, src/core/answer/warm.ts, ./LivePage.tsx
+ *             src/core/stt/sessionHotwords.ts, src/core/answer/warm.ts,
+ *             src/core/documents/summary.ts (ADR-0067), ./LivePage.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §8.1
  *               (data stays on this computer), §6.3 (pre-warm); day-03-sessions.md Stages 4–5
  *
@@ -16,12 +17,15 @@
  *
  * The warm-up runs every time the session is loaded here, so after the session's documents are
  * edited (on the edit page) and the live screen is opened again, the new documents are warmed.
- * It is not awaited: the screen never waits for it.
+ * It is not awaited: the screen never waits for it. The documents summary (ADR-0067) is written
+ * the same way, if it is missing or the documents changed, so the notes at the end of the call do
+ * not have to wait for it.
  */
 'use client';
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { warmSession } from '@/core/answer/warm';
+import { ensureDocumentsSummary } from '@/core/documents/summary';
 import { loadActiveLessons } from '@/core/lessons/active';
 import { listDocuments } from '@/core/storage/documents';
 import { getSession } from '@/core/storage/sessions';
@@ -111,6 +115,8 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
       ]);
       // Not awaited: warmSession() never throws, and the screen does not wait for Claude.
       if (!cancelled) void warmSession(session, documents, { lessons });
+      // Not awaited either (never throws): the summary the notes and Ask AI read, kept on the session.
+      if (!cancelled) void ensureDocumentsSummary(session, documents);
       const hotwords = buildHotwords(session, documents);
       return {
         state: 'ready',

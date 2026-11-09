@@ -4,7 +4,8 @@
  *          which streams a reply as text pieces and finishes with the token usage; and
  *          warmCache(), which writes the prompt cache for a session without answering (Day 3);
  *          and jsonReply(), a non-streaming reply in a fixed JSON shape (structured outputs),
- *          used by the call notes (Day 5) and the evaluations' graders.
+ *          used by the call notes (Day 5), the documents summary (ADR-0067) and the evaluations'
+ *          graders; and countInputTokens(), the free token count a measurement uses (ADR-0067).
  * Used by: app/api/answer/route.ts, src/server/prompt.ts (cachedBlock); app/api/notes/route.ts
  *          (Day 5); scripts/verify-warm.ts, scripts/verify-answer-cache.ts,
  *          scripts/eval-answers.ts (developer-only)
@@ -275,6 +276,37 @@ export async function jsonReply(
   const text = message.content.find((block) => block.type === 'text');
   if (!text || text.type !== 'text') throw new Error('NO_JSON');
   return { value: JSON.parse(text.text) as unknown, usage: toAnswerUsage(message.usage) };
+}
+
+/** Input for countInputTokens(). */
+export interface CountTokensInput {
+  /** Full model name (token counts are per model). */
+  model: string;
+  /** Which tier that model is (thinking setting, as the real request sends it). */
+  tier: ModelTier;
+  /** The system blocks, as the real request sends them. */
+  system: Anthropic.TextBlockParam[];
+  /** The messages, as the real request sends them. */
+  messages: Anthropic.MessageParam[];
+}
+
+/**
+ * Counts a prompt's input tokens without running it (the free token-counting endpoint), so a
+ * measurement can price a prompt it does not send.
+ *
+ * @param input See CountTokensInput.
+ * @returns The prompt's input tokens.
+ * @throws Anthropic.APIError for API failures.
+ * Called from: scripts/measure-large-docs.ts (developer-only, ADR-0067)
+ */
+export async function countInputTokens(input: CountTokensInput): Promise<number> {
+  const result = await getClaude().messages.countTokens({
+    model: input.model,
+    system: input.system,
+    messages: input.messages,
+    thinking: thinkingFor(input.tier),
+  });
+  return result.input_tokens;
 }
 
 /** The `error` object inside an Anthropic error body ({ type: 'error', error: { type, message } }). */

@@ -7,7 +7,8 @@
  *          blocks End: it runs after the call, and a failure only means no notes (the outcome
  *          says when that was because Claude was unavailable, so the page can say so).
  * Used by: src/features/live/LivePage.tsx (at End); the review page's Regenerate (Stage 6)
- * Depends on: @kite/shared (notes types and limits), src/core/answer/warm.ts (toSessionContext),
+ * Depends on: @kite/shared (notes types and limits), src/core/documents/summary.ts (the CV and a
+ *             summary of the other documents, ADR-0067),
  *             src/core/answer/unavailable.ts (why Claude was unavailable),
  *             src/core/storage (notes.ts, types.ts), the browser's fetch
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (/api/notes), §7.4;
@@ -26,7 +27,11 @@ import {
   type NotesResponse,
 } from '@kite/shared';
 import { unavailableReason, type UnavailableReason } from '../answer/unavailable';
-import { toSessionContext } from '../answer/warm';
+import {
+  ensureDocumentsSummary,
+  withDocumentsSummary,
+  type SummaryDeps,
+} from '../documents/summary';
 import { saveNotes } from '../storage/notes';
 import type { Session, StoredAnswer, StoredDocument, StoredNotes } from '../storage/types';
 
@@ -62,6 +67,8 @@ export interface NotesDeps {
   save?: (notes: StoredNotes) => Promise<void>;
   /** Clock (Unix ms). Default Date.now. */
   now?: () => number;
+  /** How the documents summary is written and kept (ADR-0067). Default the real ones. */
+  summary?: SummaryDeps;
 }
 
 /**
@@ -80,11 +87,15 @@ function secondsSince(unixMs: number, callStartedAt: number): number {
  * Builds the notes request, within the limits: the newest lines are kept when a very long call
  * is over MAX_NOTES_CHARS or MAX_NOTES_LINES (about four hours of speech).
  *
- * @param input The call.
+ * The session goes as the smart model reads it (ADR-0067): the CV in full and the summary of the
+ * other documents (withDocumentsSummary()).
+ *
+ * @param input   The call.
+ * @param summary The documents summary from ensureDocumentsSummary() ('' or null: none).
  * @returns The request.
- * Called from: generateNotes(); tests
+ * Called from: generateNotes(); core/review/ask.ts (askRequest()); tests
  */
-export function notesRequest(input: NotesInput): NotesRequest {
+export function notesRequest(input: NotesInput, summary: string | null = null): NotesRequest {
   const lines: CallLine[] = input.lines
     .filter((line) => line.text.trim() !== '')
     .map((line) => ({
@@ -114,7 +125,7 @@ export function notesRequest(input: NotesInput): NotesRequest {
       note: (answer.note ?? '').slice(0, MAX_LINE_CHARS),
     }));
   return {
-    session: toSessionContext(input.session, input.documents),
+    session: withDocumentsSummary(input.session, input.documents, summary),
     lines: lines.slice(first),
     answers,
   };
@@ -160,8 +171,13 @@ export async function generateNotes(
   input: NotesInput,
   deps: NotesDeps = {},
 ): Promise<NotesOutcome> {
-  const request = notesRequest(input);
-  if (request.lines.length === 0 && request.answers.length === 0) return { status: 'skipped' };
+  const empty = notesRequest(input);
+  if (empty.lines.length === 0 && empty.answers.length === 0) return { status: 'skipped' };
+  // Written once per session and kept (usually already written when the call opened).
+  const request = notesRequest(
+    input,
+    await ensureDocumentsSummary(input.session, input.documents, deps.summary),
+  );
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
   const startedAt = performance.now();

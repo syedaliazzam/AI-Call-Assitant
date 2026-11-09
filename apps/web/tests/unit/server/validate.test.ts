@@ -4,8 +4,10 @@
  * answer request and a chat request; rejects unknown modes and fields, warm/answer/chat without
  * a session, chat without a question, the old Day 1–3 transcript field, more than 100 key terms,
  * and each conversation and tail limit (tokens, chunks, empty chunk, line and answer length,
- * times); enforces the 150k-character document total; and reports field paths without echoing
- * submitted values. All text is invented.
+ * times); enforces the 500k-character document total (ADR-0067); and reports field paths without
+ * echoing submitted values. ADR-0067: keeps the CV's kind and the documents summary, keeps Ask
+ * Kite attachments at 150k, and checks POST /api/summary's body (parseSummaryRequest()). All text is
+ * invented.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -16,7 +18,14 @@ import {
   MAX_LINE_CHARS,
   MAX_TAIL_LINES,
 } from '@kite/shared';
-import { MAX_DOCUMENT_CHARS, MAX_KEY_TERMS, parseAnswerRequest } from '@/server/validate';
+import {
+  MAX_ATTACHMENT_CHARS,
+  MAX_DOCUMENT_CHARS,
+  MAX_KEY_TERMS,
+  parseAnswerRequest,
+  parseSummaryRequest,
+} from '@/server/validate';
+import { MAX_DOCUMENTS_SUMMARY_CHARS } from '@kite/shared';
 
 /** A complete, valid session block. */
 const SESSION = {
@@ -269,5 +278,83 @@ describe('screenshot image (Day 5)', () => {
       [{ kind: 'answer', mode: 'screenshot', question: 'Q', text: 'A', at: 1 }],
     ];
     expect(parseAnswerRequest(answerWith({ conversation })).ok).toBe(true);
+  });
+});
+
+describe('larger documents (ADR-0067)', () => {
+  it('accepts 500k characters of documents in all, the CV marked, with a summary', () => {
+    expect(MAX_DOCUMENT_CHARS).toBe(500_000);
+    const result = parseAnswerRequest({
+      mode: 'warm',
+      session: {
+        ...SESSION,
+        documents: [
+          { name: 'cv.txt', text: 'x'.repeat(250_000), kind: 'resume' },
+          { name: 'b.txt', text: 'x'.repeat(250_000) },
+        ],
+        documentsSummary: '## b.txt\n- A short summary.',
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.session?.documents[0]?.kind).toBe('resume');
+      expect(result.data.session?.documentsSummary).toContain('short summary');
+    }
+  });
+
+  it('rejects another document kind and a summary over its limit', () => {
+    const withKind = parseAnswerRequest({
+      mode: 'warm',
+      session: { ...SESSION, documents: [{ name: 'a.txt', text: 'a', kind: 'other' }] },
+    });
+    expect(withKind.ok).toBe(false);
+    const longSummary = parseAnswerRequest({
+      mode: 'warm',
+      session: { ...SESSION, documentsSummary: 's'.repeat(MAX_DOCUMENTS_SUMMARY_CHARS + 1) },
+    });
+    expect(longSummary).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('documentsSummary'),
+    });
+  });
+
+  it('keeps Ask Kite attachments at 150k characters', () => {
+    expect(MAX_ATTACHMENT_CHARS).toBe(150_000);
+    const kite = (chars: number) =>
+      parseAnswerRequest({
+        mode: 'kite',
+        question: 'What does it say?',
+        attachments: [{ name: 'a.txt', text: 'x'.repeat(chars) }],
+      });
+    expect(kite(MAX_ATTACHMENT_CHARS).ok).toBe(true);
+    expect(kite(MAX_ATTACHMENT_CHARS + 1)).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('attachments'),
+    });
+  });
+});
+
+describe('parseSummaryRequest (ADR-0067)', () => {
+  it('accepts one or more documents up to the session total', () => {
+    const result = parseSummaryRequest({
+      documents: [
+        { name: 'a.txt', text: 'x'.repeat(250_000) },
+        { name: 'b.txt', text: 'x'.repeat(250_000) },
+      ],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects no documents, too much text and unknown fields, naming paths only', () => {
+    expect(parseSummaryRequest({ documents: [] }).ok).toBe(false);
+    const over = parseSummaryRequest({
+      documents: [
+        { name: 'a.txt', text: 'SECRET'.repeat(50_000) },
+        { name: 'b.txt', text: 'SECRET'.repeat(50_000) },
+      ],
+    });
+    expect(over.ok).toBe(false);
+    if (!over.ok) expect(over.message).not.toContain('SECRET');
+    expect(parseSummaryRequest({ documents: [{ name: 'a', text: 'b' }], extra: 1 }).ok).toBe(false);
   });
 });

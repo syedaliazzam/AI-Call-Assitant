@@ -30,21 +30,44 @@ import { answerLanguageName, type Session, type StoredDocument } from '@/core/st
 import { streamAnswer, type AnswerDone } from './answerClient';
 
 /**
- * Builds the request's session details from what is stored on this computer. Documents are
- * sorted oldest first (ties by id), so the order never depends on how they were read.
+ * Puts a session's documents in the order the prompt uses: the CV first (ADR-0067), then the rest
+ * oldest first; ties by id, so the order never depends on how they were read.
+ *
+ * @param documents The documents (any order).
+ * @returns A new, sorted array.
+ * Called from: toSessionContext(); core/documents/summary.ts
+ */
+export function sortDocuments<T extends Pick<StoredDocument, 'id' | 'addedAt' | 'kind'>>(
+  documents: readonly T[],
+): T[] {
+  const rank = (document: T) => (document.kind === 'resume' ? 0 : 1);
+  return [...documents].sort((a, b) =>
+    rank(a) !== rank(b)
+      ? rank(a) - rank(b)
+      : a.addedAt !== b.addedAt
+        ? a.addedAt - b.addedAt
+        : a.id < b.id
+          ? -1
+          : 1,
+  );
+}
+
+/**
+ * Builds the request's session details from what is stored on this computer. The job description
+ * and the user's instructions are part of the details; the documents follow, the CV first
+ * (sortDocuments()). The CV carries kind 'resume', which is never written into the prompt.
  *
  * @param session   The stored session.
  * @param documents Its documents (any order).
  * @returns The session details for /api/answer.
- * Called from: warmSession(); the live answer panel (Day 4)
+ * Called from: warmSession(); the live answer panel (Day 4); core/documents/summary.ts
+ *              (smartSessionContext())
  */
 export function toSessionContext(
   session: Session,
   documents: readonly StoredDocument[],
 ): SessionContext {
-  const sorted = [...documents].sort((a, b) =>
-    a.addedAt !== b.addedAt ? a.addedAt - b.addedAt : a.id < b.id ? -1 : 1,
-  );
+  const sorted = sortDocuments(documents);
   const language = answerLanguageName(session.preferences.language);
   // Settings → Answers (ADR-0030). The defaults send nothing, so a session on them keeps its bytes.
   const codingLanguage = getCodingLanguage();
@@ -68,7 +91,11 @@ export function toSessionContext(
     ...(language ? { language } : {}),
     ...(codingLanguage !== DEFAULT_CODING_LANGUAGE ? { codingLanguage } : {}),
     ...(missingInfo === 'story' ? { missingInfo } : {}),
-    documents: sorted.map((document) => ({ name: document.name, text: document.text })),
+    documents: sorted.map((document) => ({
+      name: document.name,
+      text: document.text,
+      ...(document.kind === 'resume' ? { kind: 'resume' as const } : {}),
+    })),
   };
 }
 

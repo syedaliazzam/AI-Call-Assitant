@@ -47,7 +47,10 @@ export const SYNC_LIMITS = {
   opsPerPush: 200,
   /** Bytes in one push request (Vercel accepts up to 4.5 MB). */
   requestBytes: 4_000_000,
-  /** Bytes of one record as JSON (a 100,000-character document fits with room to spare). */
+  /**
+   * UTF-8 bytes of one record as JSON. A 250,000-character document (the largest, ADR-0067) is at
+   * most about 750 KB, so it fits with room to spare.
+   */
   recordBytes: 1_500_000,
   /** Records in one pull page. */
   pullRows: 300,

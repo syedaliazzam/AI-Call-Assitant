@@ -10,7 +10,8 @@
  *          nothing twice. A lesson the account already has (same wording key) and a library item with
  *          the same kind, name and text are skipped. Afterwards the account's changes are pulled.
  * Used by: src/features/sync/LegacyUploadCard.tsx
- * Depends on: dexie, @kite/shared (sync limits), src/core/storage/db.ts, src/core/sync/engine.ts
+ * Depends on: dexie, @kite/shared (sync limits), src/core/storage/db.ts, src/core/sync/engine.ts,
+ *             src/core/sync/size.ts
  * Architecture: ADR-0049 (migration)
  *
  * Logs counts only, never ids or content.
@@ -26,6 +27,7 @@ import Dexie from 'dexie';
 import { DB_NAME, getDb, KiteDb } from '../storage/db';
 import type { LibraryItem, Session, StoredLesson } from '../storage/types';
 import { httpTransport, pullAll, type SyncTransport } from './engine';
+import { jsonBytes } from './size';
 
 /** What this device holds that the account may not have. */
 export interface LegacySummary {
@@ -135,7 +137,7 @@ async function hashOf(text: string): Promise<string> {
 function insertOf(kind: SyncKind, id: string, record: object, sessionId?: string): SyncOp | null {
   if (!SYNC_ID_PATTERN.test(id)) return null;
   if (sessionId !== undefined && !SYNC_ID_PATTERN.test(sessionId)) return null;
-  if (JSON.stringify(record).length > SYNC_LIMITS.recordBytes) return null;
+  if (jsonBytes(record) > SYNC_LIMITS.recordBytes) return null;
   const child = (SESSION_CHILD_KINDS as readonly string[]).includes(kind);
   return {
     op: 'insert',
@@ -165,7 +167,7 @@ async function sendAll(transport: SyncTransport, ops: SyncOp[]): Promise<string[
     bytes = 0;
   };
   for (const op of ops) {
-    const size = JSON.stringify(op).length;
+    const size = jsonBytes(op); // UTF-8 bytes, as the server counts (ADR-0067)
     if (
       batch.length >= SYNC_LIMITS.opsPerPush ||
       (batch.length > 0 && bytes + size > SYNC_LIMITS.requestBytes - 500_000)

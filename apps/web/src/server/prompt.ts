@@ -205,14 +205,14 @@ function escapeTags(text: string): string {
 }
 
 /**
- * Writes a session as the cached session block. Fixed order and labels; the same session always
- * gives the same text, byte for byte.
+ * Writes a session's details (everything but the documents) as the `<session>` part of the session
+ * block. Fixed order and labels; the same session always gives the same lines.
  *
  * @param session The session details from the request.
- * @returns The block's text.
- * Called from: buildPrompt(); tests
+ * @returns The lines, from '<session>' to '</session>'.
+ * Called from: sessionBlock(), smartSessionBlock()
  */
-export function sessionBlock(session: SessionContext): string {
+function sessionLines(session: SessionContext): string[] {
   const keyTerms = session.keyTerms.map((term) => term.trim()).filter((term) => term !== '');
   const lines = [
     '<session>',
@@ -254,11 +254,22 @@ export function sessionBlock(session: SessionContext): string {
     'Instructions from the user:',
     session.instructions.trim() || NOT_GIVEN,
     '</session>',
-    '',
-    '<documents>',
   ];
-  if (session.documents.length === 0) lines.push(NOT_GIVEN);
-  for (const document of session.documents) {
+  return lines;
+}
+
+/**
+ * Writes documents as the `<documents>` part of the session block, in the order given (the CV
+ * first: core/answer/warm.ts toSessionContext() sorts them).
+ *
+ * @param documents The documents.
+ * @returns The lines, from '<documents>' to '</documents>'.
+ * Called from: sessionBlock(), smartSessionBlock()
+ */
+function documentLines(documents: SessionContext['documents']): string[] {
+  const lines = ['<documents>'];
+  if (documents.length === 0) lines.push(NOT_GIVEN);
+  for (const document of documents) {
     lines.push(
       `<document name="${escapeTags(document.name).replaceAll('"', '&quot;')}">`,
       escapeTags(document.text),
@@ -266,7 +277,63 @@ export function sessionBlock(session: SessionContext): string {
     );
   }
   lines.push('</documents>');
-  return lines.join('\n');
+  return lines;
+}
+
+/**
+ * Writes documents as one `<documents>` block, escaped like the session block.
+ *
+ * @param documents The documents.
+ * @returns The block's text.
+ * Called from: summaryPrompt() in server/summary.ts
+ */
+export function documentsBlock(documents: SessionContext['documents']): string {
+  return documentLines(documents).join('\n');
+}
+
+/**
+ * Writes a session as the cached session block of the live answers: the details, then every
+ * document in full. Fixed order and labels; the same session always gives the same text, byte for
+ * byte (the same text as before ADR-0067 split it into two helpers).
+ *
+ * @param session The session details from the request.
+ * @returns The block's text.
+ * Called from: buildPrompt(); smartSessionBlock() (older pages); tests
+ */
+export function sessionBlock(session: SessionContext): string {
+  return [...sessionLines(session), '', ...documentLines(session.documents)].join('\n');
+}
+
+/**
+ * The heading over the documents summary in smartSessionBlock(). It says the summary is shorter
+ * than the documents, so the smart model does not read a missing detail as absent from them.
+ */
+export const SUMMARY_HEADING =
+  'Summary of the other documents (written from the full documents; a detail not in it may still be in them):';
+
+/**
+ * Writes a session for the smart-model routes (notes, Ask AI, Prepare; ADR-0067): the details (the
+ * job description and the user's instructions included), the documents sent (only the CV from a
+ * current page) in full, then the short summary of the other documents. A request without
+ * `documentsSummary` comes from a page older than ADR-0067 and gets sessionBlock(), as before.
+ *
+ * @param session The session details from the request.
+ * @returns The block's text.
+ * Called from: notesPrompt() in server/notes.ts, askPrompt() in server/ask.ts, systemBlocks() in
+ *              server/prepare.ts; tests
+ */
+export function smartSessionBlock(session: SessionContext): string {
+  if (session.documentsSummary === undefined) return sessionBlock(session);
+  const summary = session.documentsSummary.trim();
+  return [
+    ...sessionLines(session),
+    '',
+    ...documentLines(session.documents),
+    '',
+    '<documents_summary>',
+    ...(summary ? [SUMMARY_HEADING, escapeTags(summary)] : [NOT_GIVEN]),
+    '</documents_summary>',
+  ].join('\n');
 }
 
 /** Shown at the start of the conversation when the long-call cap dropped its oldest part. */

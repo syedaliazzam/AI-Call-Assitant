@@ -5,7 +5,7 @@
  *          session and the call are three cached blocks, so later questions about the same call
  *          read them from the cache.
  * Used by: app/api/ask/route.ts
- * Depends on: src/server/claude.ts (jsonReply, cachedBlock), src/server/prompt.ts (sessionBlock),
+ * Depends on: src/server/claude.ts (jsonReply, cachedBlock), src/server/prompt.ts (smartSessionBlock),
  *             src/server/notes.ts (callRecord), @kite/shared (types)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (/api/ask); ADR-0029
  *
@@ -15,7 +15,7 @@ import 'server-only';
 import type { AnswerUsage, AskRequest } from '@kite/shared';
 import { cachedBlock, jsonReply } from './claude';
 import { callRecord } from './notes';
-import { sessionBlock } from './prompt';
+import { smartSessionBlock } from './prompt';
 
 /** Most tokens a reply may write: replies are short by design. */
 const ASK_MAX_TOKENS = 800;
@@ -75,7 +75,7 @@ export async function answerAboutCall(
     tier: 'smart',
     system: [
       cachedBlock(ASK_RULES),
-      cachedBlock(sessionBlock(request.session)),
+      cachedBlock(smartSessionBlock(request.session)),
       cachedBlock(record),
     ],
     prompt: [

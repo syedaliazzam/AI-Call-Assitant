@@ -5,13 +5,13 @@
  *          answer's rating), the agreed next steps, the parts too unclear to summarise, and up to
  *          3 proposed lessons from the user's ratings and notes. One structured (JSON) request.
  * Used by: app/api/notes/route.ts; scripts/verify-notes.ts, scripts/eval-notes.ts
- * Depends on: src/server/claude.ts (jsonReply, cachedBlock), src/server/prompt.ts (sessionBlock,
+ * Depends on: src/server/claude.ts (jsonReply, cachedBlock), src/server/prompt.ts (smartSessionBlock,
  *             clockTime), @kite/shared (notes types and limits)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (/api/notes), §7.6 (learning
  *               loop); day-05-overlay-screenshots-notes.md Stage 5
  *
- * - The session block is the same text as the answers use (sessionBlock()), cached; the notes
- *   rules are a constant, cached too. (The answers' cache is not shared: it is per model.)
+ * - The session block is the smart-model session block (smartSessionBlock(): the CV in full and a
+ *   summary of the other documents, ADR-0067), cached; the notes rules are a constant, cached too. (The answers' cache is not shared: it is per model.)
  * - Ratings in the notes come from the request (the user's own ratings), never from the model.
  * - A part of the call too unclear to follow is listed as unclear instead of guessed.
  * - Proposed lessons are suggestions: nothing is learned until the user approves one (Stage 7).
@@ -28,7 +28,7 @@ import {
   type AnswerUsage,
 } from '@kite/shared';
 import { cachedBlock, jsonReply } from './claude';
-import { clockTime, sessionBlock } from './prompt';
+import { clockTime, smartSessionBlock } from './prompt';
 
 /** Most tokens the notes may use (a long call's notes are about 1,000–1,500). */
 export const NOTES_MAX_TOKENS = 4_000;
@@ -200,7 +200,7 @@ export function notesPrompt(request: NotesRequest) {
     'Write the notes.',
   ].join('\n');
   return {
-    system: [cachedBlock(NOTES_RULES), cachedBlock(sessionBlock(request.session))],
+    system: [cachedBlock(NOTES_RULES), cachedBlock(smartSessionBlock(request.session))],
     prompt,
   };
 }

@@ -9,7 +9,7 @@
  *          the server, so it is not sent back.
  * Used by: src/core/sync/client.ts (when to run them); tests
  * Depends on: dexie, @kite/shared (sync types and limits), src/core/storage/db.ts,
- *             src/core/sync/{capture,events,mapping,outbox,prefs}.ts
+ *             src/core/sync/{capture,events,mapping,outbox,prefs,size}.ts
  * Architecture: ADR-0049
  *
  * Logs carry counts only, never ids or record content.
@@ -40,6 +40,7 @@ import {
 } from './mapping';
 import { coalesce, mergeChanged, type PendingChange } from './outbox';
 import { readAccountPrefs, writeAccountPrefs } from './prefs';
+import { jsonBytes } from './size';
 
 /** How the engine reaches the server (tests pass a fake). */
 export interface SyncTransport {
@@ -170,7 +171,7 @@ async function toOp(db: KiteDb, change: PendingChange): Promise<SyncOp | null> {
     store,
   );
   if (childOfSession && sessionId === undefined) return null;
-  if (JSON.stringify(record).length > SYNC_LIMITS.recordBytes) return null;
+  if (jsonBytes(record) > SYNC_LIMITS.recordBytes) return null;
   const baseRev = (await db.syncRevs.get(change.ref))?.rev ?? null;
   return { op: 'put', kind, id: key, ...(sessionId ? { sessionId } : {}), baseRev, record };
 }
@@ -212,7 +213,7 @@ export async function pushOnce(
       record: readAccountPrefs(),
     };
     outgoing.push({ change: null, op });
-    bytes += JSON.stringify(op).length;
+    bytes += jsonBytes(op);
   }
   for (const change of changes) {
     const op = await toOp(db, change);
@@ -220,7 +221,7 @@ export async function pushOnce(
       unsyncable.push(change);
       continue;
     }
-    const size = JSON.stringify(op).length;
+    const size = jsonBytes(op); // UTF-8 bytes, as the server counts (ADR-0067)
     if (
       outgoing.length > 0 &&
       (outgoing.length >= SYNC_LIMITS.opsPerPush || bytes + size > maxBytes)

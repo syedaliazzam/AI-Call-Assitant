@@ -6,12 +6,14 @@
  * returns 'skipped' without posting when there is nothing to write about, and 'failed' (never
  * throws) on a failure, with the reason when Claude was unavailable (usage limit or overload),
  * leaving the saved transcript and answers as they were; its logs hold ids, sizes, times and
- * token counts only.
+ * token counts only. ADR-0067: the session goes with the CV only and the documents summary, which
+ * is written (once) before the notes are posted.
  * All text is invented.
  */
 import 'fake-indexeddb/auto';
 import { CLAUDE_UNAVAILABLE_MESSAGES, MAX_NOTES_CHARS } from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetSummaryMemory } from '@/core/documents/summary';
 import { generateNotes, notesRequest, type NotesInput } from '@/core/notes/generate';
 import { listAnswers, saveAnswer } from '@/core/storage/answers';
 import { getNotes } from '@/core/storage/notes';
@@ -142,6 +144,72 @@ describe('notesRequest', () => {
     expect(total).toBeLessThanOrEqual(MAX_NOTES_CHARS);
     expect(request.lines.at(-1)!.at).toBe(199);
     expect(request.lines[0]!.at).toBe(200 - MAX_NOTES_CHARS / 2_000);
+  });
+});
+
+describe('the documents summary (ADR-0067)', () => {
+  /** A CV and one other document, invented. */
+  const DOCUMENTS = [
+    { id: 'd1', sessionId: 's1', name: 'price.txt', text: 'SECRET-PRICE', chars: 12, addedAt: 1 },
+    {
+      id: 'd2',
+      sessionId: 's1',
+      name: 'cv.txt',
+      text: 'SECRET-CV',
+      chars: 9,
+      addedAt: 2,
+      kind: 'resume' as const,
+    },
+  ];
+
+  it('sends only the CV and the summary', () => {
+    const request = notesRequest({ ...INPUT, documents: DOCUMENTS }, 'the summary');
+    expect(request.session.documents.map((document) => document.name)).toEqual(['cv.txt']);
+    expect(request.session.documentsSummary).toBe('the summary');
+  });
+
+  it('writes the summary before posting the notes, and skips it for an empty call', async () => {
+    resetSummaryMemory();
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const summaryFetch = vi.fn(async () =>
+      Response.json({
+        summary: 'SUMMARY-TEXT',
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+        ms: 1,
+      }),
+    );
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      Response.json({ code: 'upstream_error' }, { status: 502 }),
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const summary = {
+      fetchImpl: summaryFetch,
+      load: async () => null,
+      save: async () => undefined,
+    };
+    await generateNotes(
+      { ...INPUT, lines: [], answers: [], documents: DOCUMENTS },
+      { fetchImpl, summary },
+    );
+    expect(summaryFetch).not.toHaveBeenCalled();
+    await generateNotes({ ...INPUT, documents: DOCUMENTS }, { fetchImpl, summary });
+    expect(summaryFetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body)) as {
+      /** The session as the notes request sent it. */
+      session: {
+        /** The documents sent (only the CV). */
+        documents: { name: string }[];
+        /** The summary of the other documents. */
+        documentsSummary: string;
+      };
+    };
+    expect(body.session.documents.map((document) => document.name)).toEqual(['cv.txt']);
+    expect(body.session.documentsSummary).toBe('SUMMARY-TEXT');
   });
 });
 

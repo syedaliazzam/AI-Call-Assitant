@@ -5,7 +5,7 @@
  *          a question bank with suggested answers. Questions, summary and bank use the smart model;
  *          feedback uses the fast one, because the user is waiting between questions.
  * Used by: app/api/prepare/route.ts
- * Depends on: src/server/claude.ts (jsonReply, cachedBlock), src/server/prompt.ts (sessionBlock),
+ * Depends on: src/server/claude.ts (jsonReply, cachedBlock), src/server/prompt.ts (smartSessionBlock),
  *             @kite/shared (types)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2; ADR-0029
  *
@@ -25,7 +25,7 @@ import type {
   QuestionBankResponse,
 } from '@kite/shared';
 import { cachedBlock, jsonReply } from './claude';
-import { sessionBlock } from './prompt';
+import { smartSessionBlock } from './prompt';
 
 /** The model names this file chooses between. */
 export interface PrepareModels {
@@ -91,7 +91,7 @@ ${SHARED_RULES}`;
  * Called from: the functions below
  */
 function system(rules: string, request: PrepareRequest) {
-  return [cachedBlock(rules), cachedBlock(sessionBlock(request.session))];
+  return [cachedBlock(rules), cachedBlock(smartSessionBlock(request.session))];
 }
 
 /**

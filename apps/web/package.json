@@ -19,6 +19,7 @@
     "verify:answer-cache": "tsx --env-file=.env.local --conditions=react-server scripts/verify-answer-cache.ts",
     "verify:screenshot": "tsx --env-file=.env.local --conditions=react-server scripts/verify-screenshot.ts",
     "verify:notes": "tsx --env-file=.env.local --conditions=react-server scripts/verify-notes.ts",
+    "measure:large-docs": "tsx --env-file=.env.local --conditions=react-server scripts/measure-large-docs.ts",
     "verify:setup": "tsx --env-file=.env.local --conditions=react-server scripts/verify-setup.ts",
     "eval:notes": "tsx --env-file-if-exists=.env.local --conditions=react-server scripts/eval-notes.ts",
     "eval:answers": "tsx --env-file-if-exists=.env.local --conditions=react-server scripts/eval-answers.ts",
