@@ -1,13 +1,15 @@
 /**
  * File: apps/web/src/features/live/overlay/ChatBar.tsx
- * Purpose: The chat bar under bar 1 (spec S14; Ctrl+Shift+Space): type or speak a message, choose Auto,
- *          For the call or Ask AI, send it with a screenshot of the screen (Ctrl+Alt+Enter) or on its own
- *          (Enter); the reply appears in the answer panel. Escape closes it, and stops any dictation
- *          without sending. Three plain buttons rather than a dropdown: a browser's own list is a
- *          separate window that screen-share protection may not reach (ADR-0042).
+ * Purpose: The chat bar under bar 1 (spec S14; Ctrl+Shift+Space), as in the reference (ADR-0055): a dark
+ *          input "Enter a message…", the screenshot button [Ctrl Alt ↵] (sends what is typed with a
+ *          screenshot), Send [↵] (muted until there is text) and ✕. The reply appears in the answer panel.
+ *          Voice stays on Ctrl+Shift+Space pressed twice (ADR-0038): while it listens, a red microphone
+ *          shows, which stops it. Escape closes the bar and stops any dictation without sending. Who the
+ *          answer is for keeps the live page's choice (Auto, or Ask AI after Ctrl+Alt+K); the full call
+ *          window's message box still has the switch.
  * Used by: src/features/live/CompactView.tsx
- * Depends on: lucide-react, @kite/shared (hotkeys), src/core/live/liveChannel.ts,
- *             src/features/live/ChatBox.tsx (the choices), ./parts.tsx, src/ui/icons.tsx
+ * Depends on: lucide-react, @kite/shared (hotkeys), src/core/live/liveChannel.ts, ./parts.tsx,
+ *             src/ui/icons.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S14); ADR-0030, ADR-0038, ADR-0041
  *
  * The typed text only goes to the live page; it is never logged.
@@ -18,7 +20,6 @@ import { hotkeyLabel, SCREENSHOT_SEND_HOTKEY } from '@kite/shared';
 import { Scan } from 'lucide-react';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
-import { TARGET_OPTIONS } from '@/features/live/ChatBox';
 import { CloseIcon, MicIcon } from '@/ui/icons';
 import { ICON_BUTTON, KeyChip, PILL } from './parts';
 
@@ -53,7 +54,6 @@ export const ChatBar = forwardRef<ChatBarHandle, ChatBarProps>(function ChatBar(
   ref,
 ) {
   const [question, setQuestion] = useState('');
-  const target = state?.chatTarget ?? 'auto';
   const listening = state?.dictating ?? false;
   const typed = question.trim();
 
@@ -89,31 +89,14 @@ export const ChatBar = forwardRef<ChatBarHandle, ChatBarProps>(function ChatBar(
     <div
       role="group"
       aria-label="Chat"
-      className="flex h-11 min-w-0 items-center gap-1 px-1.5 [-webkit-app-region:no-drag]"
+      className="flex h-11 min-w-0 items-center gap-1.5 px-1.5 [-webkit-app-region:no-drag]"
     >
-      <div
-        role="radiogroup"
-        aria-label="Who the answer is for"
-        className="hidden shrink-0 rounded-control bg-ui-overlay-button p-0.5 @min-[620px]:inline-flex"
-      >
-        {TARGET_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={target === option.value}
-            onClick={() => onCommand({ type: 'chat-target', target: option.value })}
-            className={`rounded-control px-1.5 py-1 text-[12px] font-medium focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] ${target === option.value ? 'bg-ui-primary text-ui-on-primary' : 'text-ui-text hover:bg-ui-overlay-button-hover'}`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
       <input
         autoFocus
         aria-label="Type a question"
-        className="h-8 min-w-0 flex-1 rounded-control border border-ui-border bg-ui-input px-2 text-[14px] text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
-        placeholder={listening ? 'Listening… speak your question' : 'Type a message…'}
+        // The reference's dark field: as tall as the pills, rounded like them, no border until focused.
+        className="h-8 min-w-0 flex-1 rounded-[10px] border border-transparent bg-ui-field px-3 text-[15px] text-ui-text placeholder:text-ui-muted focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
+        placeholder={listening ? 'Listening… speak your question' : 'Enter a message…'}
         value={question}
         maxLength={2_000}
         onChange={(event) => setQuestion(event.target.value)}
@@ -131,14 +114,14 @@ export const ChatBar = forwardRef<ChatBarHandle, ChatBarProps>(function ChatBar(
           }
         }}
       />
-      {state?.dictationSupported && (
-        // Speak the question (ADR-0038): it becomes text only, sent on a pause.
+      {listening && (
+        // Voice (ADR-0038; Ctrl+Shift+Space twice): shown only while it listens, so it can be stopped.
         <button
           type="button"
-          className={`${ICON_BUTTON} ${listening ? 'animate-pulse text-ui-danger' : ''}`}
-          aria-label={listening ? 'Stop listening' : 'Speak a question'}
-          aria-pressed={listening}
-          onClick={() => onCommand({ type: 'dictate', on: !listening })}
+          className={`${ICON_BUTTON} animate-pulse text-ui-danger`}
+          aria-label="Stop listening"
+          aria-pressed
+          onClick={() => onCommand({ type: 'dictate', on: false })}
         >
           <MicIcon />
         </button>

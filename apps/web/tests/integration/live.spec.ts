@@ -541,16 +541,9 @@ test('overlay: a coding answer, a figure to check and a private answer fit (ADR-
     );
     expect(fits, 'the window itself does not scroll').toBe(true);
     await shot(coding, size, `overlay-coding-${size.width}`);
-    // The chat box's switch sits next to it, on the choice the live page holds.
+    // ADR-0055: the chat bar as in the reference: no switch on it (the live page keeps the choice).
     await page.getByRole('button', { name: 'Chat', exact: false }).first().click();
-    // Below 620 px the switch is hidden to leave room to type; the last choice still applies.
-    if (size.width >= 620) {
-      await expect(
-        page.getByRole('radiogroup', { name: 'Who the answer is for' }).getByRole('radio', {
-          name: 'Ask AI',
-        }),
-      ).toHaveAttribute('aria-checked', 'true');
-    }
+    await expect(page.getByRole('radiogroup', { name: 'Who the answer is for' })).toHaveCount(0);
     await shot(coding, size, `overlay-chat-${size.width}`);
     await coding.context.close();
 
@@ -903,7 +896,7 @@ test('S14: the chat bar opens under bar 1 at its width; Send waits for words; a 
   expect(Math.abs(box.width - bar1.width)).toBeLessThanOrEqual(2);
   const input = chat.getByLabel('Type a question');
   await expect(input).toBeFocused();
-  await expect(input).toHaveAttribute('placeholder', 'Type a message…');
+  await expect(input).toHaveAttribute('placeholder', 'Enter a message…');
   // [Ctrl Alt ↵] and [↵], from the map; Send is muted until there are words.
   await expect(
     chat.getByRole('button', { name: 'Send with a screenshot' }).locator('kbd'),
@@ -928,9 +921,10 @@ test('S14: the chat bar opens under bar 1 at its width; Send waits for words; a 
     type: 'chat-screenshot',
     question: 'And this diagram?',
   });
-  // The ✕ closes it, and who the answer is for stays available.
+  // The ✕ closes it. As in the reference: no switch and no microphone on the bar.
   await page.getByRole('button', { name: 'Chat' }).first().click();
-  await expect(chat.getByRole('radiogroup', { name: 'Who the answer is for' })).toBeVisible();
+  await expect(chat.getByRole('radiogroup', { name: 'Who the answer is for' })).toHaveCount(0);
+  await expect(chat.getByRole('button', { name: /listening|Speak/ })).toHaveCount(0);
   await chat.getByRole('button', { name: 'Close chat' }).click();
   await expect(chat).toHaveCount(0);
   await watched.context.close();

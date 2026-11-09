@@ -632,7 +632,7 @@ test('the chat bar: Ctrl+Alt+Enter sends with a screenshot; pressing Chat twice 
   await overlay.locator('body').click();
   await overlay.keyboard.press('Control+Shift+Space');
   await expect(input).toBeFocused();
-  await expect(overlay.getByRole('button', { name: 'Speak a question' })).toBeVisible();
+  await expect(overlay.getByRole('button', { name: 'Stop listening' })).toHaveCount(0);
   await overlay.keyboard.press('Escape');
   await expect(input).toHaveCount(0);
 
@@ -661,7 +661,7 @@ test('the chat bar: Ctrl+Alt+Enter sends with a screenshot; pressing Chat twice 
   expect(received.length, 'not before the 1.5 s').toBe(before);
   await expect.poll(() => received.length, { timeout: 2_000 }).toBe(before + 1);
   expect(received.at(-1)!.question).toBe('WHAT IS THE NOTICE PERIOD');
-  await expect(overlay.getByRole('button', { name: 'Speak a question' })).toBeVisible();
+  await expect(overlay.getByRole('button', { name: 'Stop listening' })).toHaveCount(0);
 });
 
 test('keyboard pass: every control of the overlay and the panel can be reached and used', async () => {
