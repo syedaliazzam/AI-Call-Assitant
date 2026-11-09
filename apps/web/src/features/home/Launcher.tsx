@@ -11,7 +11,7 @@
  * Depends on: next/navigation, src/core/storage/sessions.ts, src/core/sync/client.ts,
  *             src/features/appearance/useAppearance, src/features/notices/AcceptableUseNotice.tsx,
  *             src/features/sync/LegacyUploadCard.tsx, src/platform, ./AccurateOffer.tsx,
- *             ./DesktopFrame.tsx, ./LauncherSessions.tsx, ./StartSessionCard.tsx
+ *             ./DesktopFrame.tsx, ./LauncherSessions.tsx, ./LauncherStart.tsx
  * Architecture: ADR-0051, ADR-0052, ADR-0055
  *
  * Session text is shown on screen only; it is never logged.
@@ -30,7 +30,7 @@ import { getPlatform } from '@/platform';
 import { AccurateOffer } from './AccurateOffer';
 import { DesktopFrame } from './DesktopFrame';
 import { LauncherSessions } from './LauncherSessions';
-import { StartSessionCard } from './StartSessionCard';
+import { LauncherStart } from './LauncherStart';
 
 /** Props for Launcher. */
 export interface LauncherProps {
@@ -190,13 +190,10 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
           }
         />
       ) : (
-        <StartSessionCard
-          key={view.sessionId}
-          sessionId={view.sessionId}
+        <LauncherStart
           email={email}
-          onContinue={(id) => getPlatform().openPagesWindow(`/live/${id}`)}
+          onStartFree={() => getPlatform().openPagesWindow(`/live/${view.sessionId}`)}
           onBack={toSessions}
-          onCreateHere={toSessions}
         />
       )}
     </DesktopFrame>
