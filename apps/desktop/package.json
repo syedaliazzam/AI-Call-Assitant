@@ -1,6 +1,6 @@
 {
   "name": "@kite/desktop",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "private": true,
   "description": "Kite desktop shell (Electron): opens the deployed Kite web app in a locked-down window and adds native features via window.kiteDesktop.",
   "author": "Paramount Intelligence",
@@ -14,9 +14,10 @@
     "test": "pnpm electron:install && pnpm build && playwright test",
     "test:unit": "vitest run",
     "test:manual": "pnpm electron:install && pnpm build && playwright test -c playwright.manual.config.ts",
-    "dist:win": "pnpm electron:install && pnpm build && electron-builder --win --publish never",
-    "dist:mac": "pnpm electron:install && pnpm build && electron-builder --mac --publish never",
-    "dist:store": "pnpm electron:install && pnpm build && electron-builder --win appx --publish never"
+    "dist:win": "pnpm electron:install && pnpm build && node scripts/stage-stt-model.mjs && electron-builder --win --publish never",
+    "dist:mac": "pnpm electron:install && pnpm build && node scripts/stage-stt-model.mjs && electron-builder --mac --publish never",
+    "dist:store": "pnpm electron:install && pnpm build && node scripts/stage-stt-model.mjs && electron-builder --win appx --publish never",
+    "stage:model": "node scripts/stage-stt-model.mjs"
   },
   "devDependencies": {
     "@kite/shared": "workspace:*",
