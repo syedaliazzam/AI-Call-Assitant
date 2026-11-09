@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "3.28.0"
+version: "4.0.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-09"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 3.28.0, **Current**: the only document to build from |
+| Version | 4.0.0, **Current**: the only document to build from |
+| Changes in 4.0.0 | **Release 1.3.0 is live for everyone (9 Nov 2026).** Call data lives in the account for every user (ADR-0049; `KITE_SYNC_USERS=*` in Production; the switch's code stays until 16 Nov 2026 as a kill switch, then the classic path is removed). One dashboard in the browser; the desktop app is Your sessions → Start → Connect and the overlay (ADR-0051, ADR-0053, ADR-0055); desktop link codes (ADR-0052); six overlay positions (ADR-0056); the reference typography (ADR-0057). Desktop 1.3.0 is the Latest release. Sign-in forms post and wait for hydration (PR #32). |
 | Changes in 3.28.0 | §5, §7.3: **the overlay has six positions** (ADR-0056), a 2 × 3 grid 16 DIPs inside the display's work area (`apps/desktop/src/positions.ts`). Ctrl+Alt+Left / Right jump within the row, Ctrl+Alt+Up / Down to the top or bottom row, Ctrl+Alt+Shift+Arrows nudge; dragging shows six zones and snaps to the nearest; the ⋮ menu has a Position grid; the last position is remembered per display. On the bottom row the window is anchored at its bottom edge and the page mirrors itself (panels and menus above the bars), told by `kite:overlay-position-changed`. New bridge methods `getOverlayPosition`, `setOverlayPosition`, `onOverlayPosition`. Ctrl+Alt+T toggles the transcript while the bars have focus. |
 | Changes in 3.27.0 | §4, §5, §7.3: **the desktop flow and call UI match the reference** (ADR-0055), behind the accountSync switch. The desktop app has no dashboard: `AppShell` keeps only the call page; other pages open in the browser. The home panel is a frame (logo, Buy credits on Start and Connect, compact, move, ⋮, close) with one card: Your sessions (all, the browser's first) → Start your session (Free / Paid tiles; Buy credits only shows a toast, no payments) → Connect Call Session (System audio, tips, a speech model dialog). Connect asks the main window's live page to start the call (`core/live/callStart.ts`: a 60 s localStorage note and a BroadcastChannel); desktop 1.3.0 opens that window minimised (`openCallWindow`) and sizes the panel 560 × 720 (`sizePanel`). Bar 1 gets a Transcript pill; the bars are 900 wide; the chat bar is the reference's. The overlay's `data-gap` boxes pass clicks through in 1.3.0 (`setOverlayClickThrough`). Private: every window as it is created, `<select>` lists in the page and no native tooltips in the desktop app. The logo is the company mark `images/logo-mark.png` (BRAND_LOGO_SRC), one swappable file. |
 | Changes in 3.26.0 | §5: **two themes** (ADR-0054). The dashboard (web pages, home panel; `kite.theme`) is Light until chosen; the call (compact view, call windows; `kite.callTheme`) is Dark until chosen. Each menu changes its own. Web only. |

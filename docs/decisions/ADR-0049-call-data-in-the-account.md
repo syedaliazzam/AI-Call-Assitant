@@ -1,6 +1,6 @@
 # ADR-0049: Call data is stored in the account
 
-- **Status:** Accepted (lead approval of server storage, 8 Nov 2026)
+- **Status:** Accepted (lead approval of server storage, 8 Nov 2026) · **Shipped to everyone in release 1.3.0 (9 Nov 2026).** The accountSync switch stays in the code until 16 Nov 2026 as a kill switch.
 - **Date:** 2026-11-08
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §7.2, §7.4, §8.1, §8.3, §14 (item 1)
 - **Supersedes / superseded by:** **supersedes ADR-0024** (call data on the device only). Rolled out behind the accountSync switch.

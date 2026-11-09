@@ -1,6 +1,6 @@
 # ADR-0052: The desktop link signs in with a one-time code; the session file hand-off goes
 
-- **Status:** Accepted (developer, 8 Nov 2026)
+- **Status:** Accepted (developer, 8 Nov 2026) · **Shipped to everyone in release 1.3.0 (9 Nov 2026).** The accountSync switch stays in the code until 16 Nov 2026 as a kill switch.
 - **Date:** 2026-11-08
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §3.3, §5 (Choose platform, Home panel), §7.2, §7.3; `docs/design/paramount-ai-ui-spec.md` §3 (S9)
 - **Supersedes / superseded by:** replaces ADR-0045's "desktop link and the session file" for accounts with account sync (ADR-0049). Desktop 1.3.0.

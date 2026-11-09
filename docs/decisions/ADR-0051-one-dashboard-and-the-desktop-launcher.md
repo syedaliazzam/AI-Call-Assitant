@@ -1,6 +1,6 @@
 # ADR-0051: One dashboard, and a launcher in the desktop app
 
-- **Status:** Accepted (developer, 8 Nov 2026)
+- **Status:** Accepted (developer, 8 Nov 2026) · **Shipped to everyone in release 1.3.0 (9 Nov 2026).** The accountSync switch stays in the code until 16 Nov 2026 as a kill switch.
 - **Date:** 2026-11-08
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5 (Home panel, Dashboard), §7.3
 - **Supersedes / superseded by:** replaces the dashboard part of ADR-0041 (the home panel as a second place to manage sessions) for accounts with account sync. Rolled out with ADR-0049's accountSync switch.

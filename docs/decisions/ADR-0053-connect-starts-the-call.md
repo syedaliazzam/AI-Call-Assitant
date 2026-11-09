@@ -1,6 +1,6 @@
 # ADR-0053: Connect starts the call
 
-- **Status:** Accepted (developer, 8 Nov 2026)
+- **Status:** Accepted (developer, 8 Nov 2026) · **Shipped to everyone in release 1.3.0 (9 Nov 2026).** The accountSync switch stays in the code until 16 Nov 2026 as a kill switch.
 - **Date:** 2026-11-08
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5 (Connect, overlay); `docs/design/paramount-ai-ui-spec.md` §3 (S11)
 - **Supersedes / superseded by:** adjusts ADR-0029 ("Starting a call": a browser no longer asks for a second click for the overlay). Web only; no desktop release.

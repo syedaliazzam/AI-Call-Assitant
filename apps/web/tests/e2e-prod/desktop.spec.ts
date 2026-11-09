@@ -202,18 +202,30 @@ test('3. a call: Start → Connect, the overlay, an answer, Private, positions, 
   await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
 
   const startedAt = Date.now();
-  const overlayOpened = app.waitForEvent('window', {
-    predicate: (window) => window.url().includes('/compact/'),
-    timeout: MODEL_TIMEOUT_MS,
-  });
+  /**
+   * The overlay's page, once it is there (a new window's address is still blank when it opens, so
+   * the windows are looked at again rather than filtered as they open).
+   *
+   * @returns The page, or undefined.
+   */
+  const findOverlay = () => app.windows().find((window) => window.url().includes('/compact/'));
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  // A fresh profile has no speech model: the one-time download comes first.
+  // A fresh profile has no speech model: the one-time download dialog comes first, a moment later.
   const modelDialog = page.getByRole('dialog', { name: 'Speech model needed' });
-  if (await modelDialog.isVisible({ timeout: 5_000 }).catch(() => false)) {
+  await expect
+    .poll(
+      async () => (findOverlay() ? 'overlay' : (await modelDialog.isVisible()) ? 'dialog' : ''),
+      {
+        timeout: 60_000,
+      },
+    )
+    .not.toBe('');
+  if (!findOverlay() && (await modelDialog.isVisible())) {
     await modelDialog.getByRole('button', { name: 'Download and connect' }).click();
     report('desktop speech model download asked', true);
   }
-  const overlay = await overlayOpened;
+  await expect.poll(() => findOverlay() !== undefined, { timeout: MODEL_TIMEOUT_MS }).toBe(true);
+  const overlay = findOverlay()!;
   await overlay.waitForLoadState();
   await expect(overlay.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
   report('desktop call connected', true, { seconds: Math.round((Date.now() - startedAt) / 1000) });

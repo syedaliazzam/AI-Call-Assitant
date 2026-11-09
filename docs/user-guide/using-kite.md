@@ -1,22 +1,25 @@
-# Using Paramount AI (version 1.2.0)
+# Using Paramount AI (version 1.3.0)
 
 Paramount AI listens to your call, shows a live transcript, and writes a short answer you can say when you press a key. It runs in the **desktop app** (Windows) or in **Chrome or Edge** at **call.paramountintelligence.co**. To install the desktop app, download it from [Paramount AI releases](https://github.com/Zainpak123/kite-releases/releases/latest).
 
 **If you see "Windows protected your PC":** click **More info** → **Run anyway**. If Smart App Control blocks it, use the browser version at [https://call.paramountintelligence.co](https://call.paramountintelligence.co), or ask IT.
 
-**Used the old address in your browser?** It still works, but your sessions are stored under the address you used them on, so they won't appear at the new one by themselves, and you'll need to sign in there. To bring them over, go to **Settings** on the old address and choose **Export my data**, then **Import data** on the new one. Nothing is duplicated. The desktop app isn't affected.
+**Your sessions are in your account:** the same sessions, documents, answers and notes on every browser and computer you sign in on, including the old address (sign in there once). The first time a browser or the desktop app still holds sessions from before, it asks **Add your sessions to <your email>?** once: **Add** copies them into your account.
 
 ## Use it where AI assistance is allowed
 
 Use Paramount AI in calls where AI assistance is allowed — your own meetings, client calls, practice and mock interviews. Don't use it to get hidden help in interviews, exams or assessments where outside help isn't permitted. Screen-share protection only hides Paramount AI's windows; it does nothing against monitoring or proctoring tools. Recording or transcribing others may require their consent.
 
-## Between calls: the home panel (desktop app)
+## Between calls: the desktop app
 
-The desktop app opens as a small panel: your sessions, newest first, with a search box and a sort button. Each card shows the date, title, description, type, whether the transcript is saved, and its status. **Start** shows what the call will use (company, role, CV, documents, language, model and answer preferences), then **Continue** begins it; **View transcript** opens an ended one.
+The desktop app has no dashboard of its own: creating, editing and reviewing sessions happen in your browser at **call.paramountintelligence.co**, and every **Dashboard** or **Open dashboard** button opens it there. The app opens on **Your sessions**: the same sessions as the dashboard, newest first, each with its logo, company, role, date and status. After a call, **Call ended · View notes** sits on top.
 
-- **View in dashboard** and **Create session** open the full pages in a larger window.
-- **⋮** has your email, **Dashboard**, **Get help**, **Private** (see below), **Zoom**, **Theme** (Light, Dark or System; for this panel and the dashboard, Light until you change it) and **Log out**.
-- Drag the header's move button to move the panel, and any edge to resize it. Paramount AI remembers where you left it.
+1. Click a session: **Start your session** (Free session for the team: **Start free**).
+2. **Connect Call Session**: system audio, three tips (Zoom's setting, checking Private, a mock interview to practise on), then **Connect**. The first time, it downloads the speech model (about 204 MB) once.
+3. The bars appear on top of your meeting; the app's window steps aside.
+
+- **⋮** has your email, **Dashboard**, **Get help**, **Private** (see below), **Zoom**, **Theme** (Light, Dark or System; Light until you change it) and **Log out**.
+- Drag the header's move button to move the window. Paramount AI remembers where you left it.
 
 ## Before a call: create a session
 
@@ -24,24 +27,21 @@ The desktop app opens as a small panel: your sessions, newest first, with a sear
 2. **Details:** the call type, the company (after two letters it suggests companies from your past sessions, then others with their logos; pick one, or keep typing any name), the topic, your role, a short description or a job link, and the documents Paramount AI should use (a CV, a price list, a runbook). Under **Advanced** at the bottom, add **key terms** (names, product words) so the transcript spells them right; it also recognises spoken numbers, such as "BM twenty five" for BM25.
 3. **Preferences:** the answer language, the model, your own AI instructions, and **Answer preferences**: format, length (Short ≈ 10–20 s of speech, Balanced ≈ 20–40 s, Detailed ≈ 40–60 s) and tone, with a sample that changes as you choose. **STAR structure** shapes behavioural answers as Situation, Task, Action and Result, from what your CV says. You can change your defaults for new sessions in **Settings**.
 
-Your sessions, documents, transcripts and answers are stored **on this computer only**. Audio never leaves it.
+Your sessions, documents, answers and notes are kept in your account, so they appear on every device you sign in on. A transcript is kept only when **Save transcript** is on. Audio never leaves your computer.
 
 ### Starting from the browser
 
-When you start a session in the browser, **Choose platform** asks where to run it. **Open in browser** starts it there. **Desktop app** opens the desktop app; it does not need anything else if the session was made there.
+When you start a session in the browser, **Choose platform** asks where to run it. **Open in browser** starts it there. **Desktop app** opens the desktop app (1.3.0 or later):
 
-Browsers and the desktop app keep separate data, so a session made in the browser reaches the desktop app as a file. For desktop calls, creating the session in the desktop app is fastest. Use the hand-off only for sessions made in the browser.
-
-1. Choose **Desktop app**. The browser saves `paramount-ai-session-<short id>.json` to your downloads.
-2. Choose **Open Paramount AI** in the browser's prompt, or **Open in desktop app** on the page.
-3. The desktop app asks for that file: **Choose the file**. Afterwards it offers **Delete the hand-off file**, ticked by default; it deletes only the file you chose. Choosing a newer file for the same session replaces the older copy.
+1. Choose **Desktop app**, then **Open Paramount AI** in the browser's prompt.
+2. The app comes forward on **Your sessions** with that session first, marked **From your browser**, signed in. If it is signed in to another account, it asks **Switch to …?** first.
 
 ## During a call
 
 1. Start the session, and **Connect call session** opens. Paramount AI listens on two channels: **You** (your microphone) and **Them** (the other person).
    - **Desktop app:** it hears the other person through system audio; there is no picker.
    - **Browser:** share the tab the call is in when Chrome or Edge asks. Turn on **Also share tab audio**.
-2. Check the **You** level bar: it moves when you speak. In a browser, press **Test microphone** first.
+2. **Browser:** check the **You** level bar (it moves when you speak); press **Test microphone** first. **Desktop app:** the microphone is chosen on bar 1 (**▾**) once the call is on.
 3. Choose **Connect**. The call starts at once: the overlay opens and the transcript fills in, oldest at the top and newest at the bottom.
 4. When they ask a question, press **Answer** (**Ctrl+Enter**). The answer streams in: one line you can say as it is, 2 to 4 short points, and sometimes a **Tip**.
 
