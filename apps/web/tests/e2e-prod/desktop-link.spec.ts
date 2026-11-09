@@ -5,7 +5,8 @@
  *   second time, a code shown with another session, and a code after 60 seconds are all refused;
  * - desktop: this checkout's 1.3.0 shell, with a fresh temporary profile (never signed in), receives
  *   paramountai://session/<id>/<code> as a second launch would pass it, opens the link page, signs in
- *   with the code and shows the session's start card with "Signed in as …".
+ *   with the code and shows the sessions card with that session first, "From your browser" (ADR-0055);
+ *   its Start card says "Signed in as …".
  * Every session this run signs in with is signed out again, and the invented session is deleted. Codes
  * are never printed. Prints step names only.
  * Run: pnpm --filter @kite/desktop build, then
@@ -210,11 +211,15 @@ test('2. desktop 1.3.0: a link with a code opens the start card, signed in', asy
         electronApp.emit('second-instance', {}, ['app.exe', link], ''),
       desktopSessionLink(SESSION, code),
     );
-    await expect(panel.getByRole('heading', { name: 'Start your session' })).toBeVisible({
-      timeout: 60_000,
-    });
+    // ADR-0055: the sessions card, with the link's session first and highlighted; a click opens its
+    // Start card, signed in.
+    const fromBrowser = panel
+      .getByRole('list', { name: 'Sessions' })
+      .getByRole('button', { name: /from your browser/ });
+    await expect(fromBrowser).toContainText(COMPANY, { timeout: 60_000 });
+    await fromBrowser.click();
+    await expect(panel.getByRole('heading', { name: 'Start your session' })).toBeVisible();
     await expect(panel.getByText(/^Signed in as /)).toBeVisible();
-    await expect(panel.getByText(COMPANY)).toBeVisible();
     // The code never reached an address.
     expect(panel.url()).not.toContain(code);
     report('desktop link: start card, signed in', true);

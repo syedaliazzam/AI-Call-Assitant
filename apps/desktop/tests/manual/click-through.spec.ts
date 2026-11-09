@@ -169,6 +169,9 @@ test('a click in a gap reaches the window behind, typing follows it; a bar keeps
     y: Math.round(content.y + spot!.y * zoom),
   };
 
+  // Twice: a real mouse sends a stream of moves; one short burst can arrive before a just-started
+  // overlay listens.
+  pointAt(gap.x, gap.y);
   pointAt(gap.x, gap.y);
   click();
   const clicks = await app.evaluate(() =>

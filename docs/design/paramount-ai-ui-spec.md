@@ -280,6 +280,8 @@ These map to Kite's existing format, length and tone values. Add "Balanced" only
 - **STOP AND ASK before building:** sessions live in IndexedDB, which is separate for Chrome and the desktop app. Check how a session created in Chrome reaches the desktop app today. If it doesn't, propose options (create in the desktop only / a local one-time hand-off / other) and wait.
 
 ### S10 · Desktop window header and the first card: `first desktop app card appear.jpeg`
+
+> **Changed by ADR-0055 (accounts with account sync):** the first card is "Your sessions"; the Start card matches the reference (Free / Paid tiles, a "Team" badge), and the header has the dark **Buy credits**, which only shows "Not needed, your team account is unlimited." There are no payments.
 - **Window header:**
   - the logo and the wordmark;
   - on the right: **compact** (`Minimize2`), **move** (`Move`, drag handle), **⋮**, and **close** (red square, `X`).
@@ -290,6 +292,8 @@ These map to Kite's existing format, length and tone values. Add "Balanced" only
   - Then a primary **Continue** and **← Back** (goes to the home panel).
 
 ### S11 · Connect call session: `connect call session card.jpeg`
+
+> **Changed by ADR-0055 (desktop, accounts with account sync):** "Connect Call Session" in the desktop frame, with the reference's subtitle and tips (Zoom window filtering → How, test privacy → Watch, mock video → Open). No microphone picker, meter or status text (the microphone is on the call bar); a dialog offers the speech model when it is missing. The browser's Connect card is unchanged.
 - Title "Connect call session", and the subtitle *"Ready when you are. Connect to start the transcript."*
 - **Audio source:**
   - a select on the right, defaulting to **System audio**, plus the mic picker (existing).
@@ -315,6 +319,8 @@ These map to Kite's existing format, length and tone values. Add "Balanced" only
 Rows are 40 tall with dividers between them, radius 14.
 
 ### S13 · Compact call bars: `compact view.jpeg`, `compact view icon.jpeg`
+
+> **Changed by ADR-0055:** bar 1 gets a **Transcript** pill with an on/off switch after Chat; the bars are 900 wide; in desktop 1.3.0 clicks in the gaps pass through to the app behind.
 **Bar 1** (dark translucent, radius 12, 44 tall), from left to right:
 - the screen-audio icon with a red dot and ▾, and the mic icon with a red dot and ▾ (device pickers);
 - **Answer** `[Ctrl ↵]`, **Screenshot** `[Ctrl ⇧ ↵]`, **Chat** `[Ctrl ⇧ ␣]`: pill buttons, each with a **key-cap chip**;
@@ -339,6 +345,8 @@ Under it, the **live strip**: *"Listening…"* or the latest words.
 - the hotkeys keep working.
 
 ### S14 · Chat bar: `chat window.jpeg`
+
+> **Changed by ADR-0055:** as in the reference: input "Enter a message…", [Ctrl Alt ↵], Send, ✕. No answer-target switch or microphone button on the bar; voice stays on Ctrl+Shift+Space twice (a red microphone shows while it listens).
 - Opens under bar 1 at full width, with Ctrl+Shift+Space.
 - A dark input (*"Type a message…"*), then a **screenshot-and-send** button `[⌗ Ctrl Alt ↵]` (new hotkey), **Send** `[↵]` (muted until there's text), and **✕**.
 - The **mic** for dictation stays. Pressing **Ctrl+Shift+Space twice** opens it with the mic on and auto-sends after 1.5 s of silence; Esc cancels.
