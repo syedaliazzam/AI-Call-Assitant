@@ -614,3 +614,46 @@ i5-8350U laptop, Node (no browser), `pnpm --filter web measure:large-docs`: the 
 - Answers 2 and 3 read the whole cached prefix (164,384 tokens): **cache hits confirmed** after the first answer.
 - **Estimated 20-answer call:** 1 write + 19 reads = **$0.27**; each idle re-warm (4.5 min with no answer) adds about $0.008. For comparison, the old 150,000-character cap is about 51k tokens (under the 100k price line): about $0.02 for the same call.
 - In the app the warm-up at session open writes the cache, so the first answer normally reads it (about 1.1–1.4 s to the first word here); 2.9 s is the case with no warm-up.
+
+## Meeting recording: investigation and Phase 0 spike (10 Nov 2026, ADR-0068)
+
+i5-8350U laptop (4 cores / 8 threads, Intel UHD 620), Windows 11 Pro 10.0.26200, plugged in; one display, 1920 × 1080 at 150% (1280 × 720 DIPs). Electron 44.9.3 (Chromium 152), temporary profiles. A throwaway bench (not in the repository) recorded the screen with `getDisplayMedia` (granted by `setDisplayMediaRequestHandler`) and MediaRecorder, written to disk in pieces over IPC. **The real screen was never recorded:** a full-screen synthetic "meeting" window (static app chrome, four moving camera-like tiles, a changing caption line) covered the display, and the bench checked its corner markers before every capture. Files were deleted after measuring; no file was opened or viewed. CPU is CPU-seconds per second per process (1.0 = one core); system-wide CPU was not usable (other apps used about 40% at idle).
+
+**Encoders.** `VideoEncoder.isConfigSupported` with `prefer-hardware`: H.264 yes (720p and 1080p); VP8, VP9 and AV1 software only. MediaRecorder accepts WebM (VP8, VP9, AV1, H.264), Matroska (`video/x-matroska;codecs=avc1,opus`) and MP4. AAC is not accepted in Matroska or WebM.
+
+| 40 s each | Codec | Page process CPU | Video size |
+|---|---|---|---|
+| 720p15, 1.2 Mbps cap | H.264 (hardware), WebM / MP4 | 0.16 / 0.16 | 217 / 219 MB/h |
+| 720p15 | VP8 / VP9 | 0.44 / 0.78 | 217 / 339 MB/h |
+| 1080p30, 4 Mbps cap | H.264 (hardware), WebM / MP4 | 0.15 / 0.17 | 753 / 497 MB/h |
+| 1080p30 | VP8 / VP9 | 1.17 / **3.14** | 668 / 1,490 MB/h |
+
+**During a call.** The synthetic headphones call (`stt:calls --accurate=2`: live engine in Chromium and the Accurate worker, real time, no Claude request) with the bench recording alongside for 150 s; one run each.
+
+| | No recording | 720p15 H.264, 1.5 Mbps | 1080p30 H.264, 4 Mbps |
+|---|---|---|---|
+| Extra CPU of the recording app (all its processes) | — | +0.24 core | +0.53 core |
+| Accurate engine CPU | 0.23 | 0.25 | 0.31 |
+| Accurate decode per "Them" line, p50 / p95 | 687 / 2,692 ms | 774 / 1,870 ms | 1,051 / 2,335 ms |
+| Question end → auto-answer sent, p50 / p95 | 2,397 / 3,023 ms | 2,539 / 3,477 ms | 2,856 / 3,482 ms |
+| WER You / Them | 0.6% / 4.0% | 0.6% / 4.0% | 0.6% / 4.0% |
+| Recording page main thread delay, p95 / max | — | 2 / 22 ms | 2 / 66 ms |
+| File size | — | 265 MB/h video + 29 MB/h stereo | 837 + 29 MB/h |
+
+Claude's time to first word was not measured (no paid calls). One run each; run-to-run noise of the send delay is a few hundred ms (ADR-0066's baseline run of the same call measured 3,273 ms p50).
+
+**Crash safety** (app killed at 14 s, 1 s pieces): WebM/Matroska H.264 → 13.5 s of video and 13.1 s of stereo sound play; MP4 → 1,235 bytes on disk (the header only; Chromium writes MP4 data only every several seconds and the rest at stop).
+
+**Private.** Two windows over the cover during a recording, one with `setContentProtection(true)` (magenta), one without (cyan), three frames each of the decoded recording: protected window 0 of 152,100 of its pixels at 1080p (0 of 67,600 at 720p), and the area shows what is behind it, not black; unprotected window 152,100 of 152,100.
+
+**Phase 0: 20-minute soak** (720p15 Matroska H.264 at 1.5 Mbps + the stereo WebM, 1 s pieces, 1,169 pieces): 87.2 MB video (**261 MB/h**) + 9.7 MB stereo (29 MB/h); memory sampled every minute stayed flat (recording page 34–48 MB, GPU process 106–117 MB, browser process 78–105 MB); recording page CPU 0.15, GPU process 0.51, browser process 0.21 (screen capture and the file writes); page main thread delay p95 2 ms, max 185 ms.
+
+**Phase 0: finalising with Mediabunny 1.62.1** (Node 24, no re-encoding) on the 20-minute files:
+
+| Step | Time | Output | Peak memory (Node RSS) |
+|---|---|---|---|
+| Matroska → Matroska with length and seek index | 1,230 ms | 87.2 MB | 165 MB |
+| Matroska → MP4 (H.264 + Opus, moov at the end) | 919 ms | 87.4 MB | 250 MB |
+| Stereo WebM → WebM with length and seek index | 328 ms | 9.8 MB | 254 MB |
+
+MP4 with `fastStart: 'reserve'` is refused by Mediabunny without packet counts per track; not needed (local files). In Chromium (`<video>` on the local file): the raw file has **no length when it loads** (found only by seeking to the end); the finalised Matroska and MP4 give 1,199.8 s at once, and seeks to 25 / 50 / 90 / 10% took 59 / 63 / 86 / 46 ms (Matroska) and 66 / 59 / 117 / 72 ms (MP4); the finalised stereo file 17 / 8 / 9 / 4 ms. **Second monitor:** not checked, this laptop has one display.
