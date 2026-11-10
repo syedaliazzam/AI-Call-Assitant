@@ -1,6 +1,7 @@
 /**
  * Tests for apps/web/src/core/documents/limits.ts: the caps are 500k characters per session and
- * 250k per document, with the 400k warning between them (ADR-0067); roomLeft() never goes below
+ * 250k per document; above 280k the wizard warns, with one more line for Sonnet (documentWarnings(),
+ * ADR-0067); roomLeft() never goes below
  * 0; fitsInSession() accepts a document that fits (up to exactly the cap), refuses one over the
  * per-document cap ('document-too-long') and one that would overfill the session
  * ('session-full'), with messages that give the numbers.
@@ -8,6 +9,8 @@
 import { MAX_SESSION_DOCUMENT_CHARS } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
 import {
+  DEEP_MODEL_WARNING,
+  documentWarnings,
   fitsInSession,
   LARGE_SESSION_CHARS,
   LARGE_SESSION_WARNING,
@@ -23,9 +26,30 @@ describe('the caps (ADR-0067)', () => {
     expect(MAX_SESSION_CHARS).toBe(MAX_SESSION_DOCUMENT_CHARS);
   });
 
-  it('warns above 400k with the agreed words', () => {
-    expect(LARGE_SESSION_CHARS).toBe(400_000);
-    expect(LARGE_SESSION_WARNING).toBe('Very large documents can slow the first answer.');
+  it('warns above 280k with the agreed words', () => {
+    expect(LARGE_SESSION_CHARS).toBe(280_000);
+    expect(LARGE_SESSION_WARNING).toBe(
+      "Above about 280k characters, each answer costs about 5× more and the first answer is slower. Remove documents you don't need.",
+    );
+    expect(DEEP_MODEL_WARNING).toBe(
+      'Large documents with the deeper model are expensive. Haiku is recommended.',
+    );
+  });
+});
+
+describe('documentWarnings', () => {
+  it('says nothing at or under 280k, whatever the model', () => {
+    expect(documentWarnings(0, 'fast')).toEqual([]);
+    expect(documentWarnings(LARGE_SESSION_CHARS, 'fast')).toEqual([]);
+    expect(documentWarnings(LARGE_SESSION_CHARS, 'smart')).toEqual([]);
+  });
+
+  it('warns above 280k, and adds the deeper-model line only for Sonnet', () => {
+    expect(documentWarnings(LARGE_SESSION_CHARS + 1, 'fast')).toEqual([LARGE_SESSION_WARNING]);
+    expect(documentWarnings(LARGE_SESSION_CHARS + 1, 'smart')).toEqual([
+      LARGE_SESSION_WARNING,
+      DEEP_MODEL_WARNING,
+    ]);
   });
 });
 
