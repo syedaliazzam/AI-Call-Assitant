@@ -6,10 +6,11 @@
  * Used by: src/core/documents/extract.ts (file size); the Create/Edit session wizard (Day 3
  *          Stage 3: room left, refusing a document that does not fit); server/validate.ts uses
  *          the same session cap (Stage 5)
- * Depends on: nothing
+ * Depends on: src/core/storage/types.ts (AnswerModel, a type only)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (documents ≤ 500k characters
  *               per session, ADR-0067); day-03-sessions.md Stage 2
  */
+import type { AnswerModel } from '../storage/types';
 
 /**
  * Largest file Kite reads, in bytes (20 MB). Reading happens on the user's laptop; past this,
@@ -34,14 +35,37 @@ export const MAX_SESSION_CHARS = 500_000;
 export const MAX_DOCUMENT_CHARS = 250_000;
 
 /**
- * Above this many characters the wizard warns that the first answer may be slower: the first
- * request of a call writes the whole document block to Claude's cache, and Claude reads it all
- * before the first word (ADR-0067).
+ * Above this many characters the wizard warns about cost and speed (ADR-0067). About 280k
+ * characters is where a live answer's prompt passes 100,000 tokens (measured: 480k characters =
+ * 164k tokens), and Haiku 5.5 charges about 5× more for every request over that line, cache reads
+ * included. The first request of a call also writes the whole block to Claude's cache, so it is
+ * slower.
  */
-export const LARGE_SESSION_CHARS = 400_000;
+export const LARGE_SESSION_CHARS = 280_000;
 
 /** The wizard's warning above LARGE_SESSION_CHARS. */
-export const LARGE_SESSION_WARNING = 'Very large documents can slow the first answer.';
+export const LARGE_SESSION_WARNING =
+  "Above about 280k characters, each answer costs about 5× more and the first answer is slower. Remove documents you don't need.";
+
+/**
+ * The wizard's warning above LARGE_SESSION_CHARS when the session uses the deeper model (Sonnet),
+ * which reads every document on each live answer at Sonnet's price.
+ */
+export const DEEP_MODEL_WARNING =
+  'Large documents with the deeper model are expensive. Haiku is recommended.';
+
+/**
+ * The warnings the wizard shows for a session's document size and model.
+ *
+ * @param usedChars Characters the session's documents hold.
+ * @param model     The session's model: 'fast' (Haiku) or 'smart' (Sonnet).
+ * @returns The warnings to show, in order ([] at or under LARGE_SESSION_CHARS).
+ * Called from: DetailsStep.tsx, PreferencesStep.tsx; tests
+ */
+export function documentWarnings(usedChars: number, model: AnswerModel): string[] {
+  if (usedChars <= LARGE_SESSION_CHARS) return [];
+  return model === 'smart' ? [LARGE_SESSION_WARNING, DEEP_MODEL_WARNING] : [LARGE_SESSION_WARNING];
+}
 
 /** Whether a document fits, from fitsInSession(). */
 export type FitResult =

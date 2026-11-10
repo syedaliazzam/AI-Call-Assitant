@@ -4,7 +4,8 @@
  *          a control. Session: Language (a list with a search box), Select model (v1.3.0: was Model), Answer preferences and AI
  *          instructions (each its own window). Extra: Auto answer and Save transcript.
  * Used by: src/features/session-setup/SessionWizard.tsx
- * Depends on: lucide-react, src/core/session/modelAccess.ts, src/core/storage/types.ts, src/ui (Button,
+ * Depends on: lucide-react, src/core/documents/limits.ts (the deeper-model warning, ADR-0067),
+ *             src/core/session/modelAccess.ts, src/core/storage/types.ts, src/ui (Button,
  *             Select, Toggle), ./AiInstructionsDialog.tsx, ./AnswerPreferencesDialog.tsx, ./draft.ts,
  *             ./labels.ts
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S5), §6
@@ -22,6 +23,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
+import { DEEP_MODEL_WARNING, documentWarnings } from '@/core/documents/limits';
 import { deepModelEnabled } from '@/core/session/modelAccess';
 import { ANSWER_LANGUAGES, type AnswerModel } from '@/core/storage/types';
 import { Button } from '@/ui/Button';
@@ -29,7 +31,7 @@ import { Select } from '@/ui/Select';
 import { Switch } from '@/ui/Toggle';
 import { AiInstructionsDialog } from './AiInstructionsDialog';
 import { AnswerPreferencesDialog } from './AnswerPreferencesDialog';
-import type { SessionDraft } from './draft';
+import { draftChars, type SessionDraft } from './draft';
 import { MODEL_OPTIONS } from './labels';
 
 /** Props for PreferencesStep. */
@@ -95,6 +97,10 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
   const [window, setWindow] = useState<'answers' | 'instructions' | null>(null);
   const [deepModel, setDeepModel] = useState(true);
   const instructions = draft.instructions.trim();
+  // The Sonnet line only: the size warning itself is on step 1, next to the documents.
+  const deepModelWarning = documentWarnings(draftChars(draft), preferences.model).includes(
+    DEEP_MODEL_WARNING,
+  );
 
   // An admin can turn the deeper model off. The server enforces it either way: this only says so.
   useEffect(() => {
@@ -153,6 +159,12 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
             </div>
           }
         />
+        {/* ADR-0067: Sonnet reads every document on each live answer at its own price. */}
+        {deepModelWarning && (
+          <p className="text-[13px] text-ui-warning" role="status">
+            {DEEP_MODEL_WARNING}
+          </p>
+        )}
         <Row
           icon={<MessageSquareText {...ICON} />}
           title="Answer preferences"
