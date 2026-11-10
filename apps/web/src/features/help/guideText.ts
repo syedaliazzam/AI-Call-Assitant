@@ -8,7 +8,7 @@
  */
 
 /** The guide, as Markdown. */
-export const USER_GUIDE_MD = `# Using Paramount AI (version 1.3.0)
+export const USER_GUIDE_MD = `# Using Paramount AI (version 1.5.0)
 
 Paramount AI listens to your call, shows a live transcript, and writes a short answer you can say when you press a key. It runs in the **desktop app** (Windows) or in **Chrome or Edge** at **call.paramountintelligence.co**. To install the desktop app, download it from [Paramount AI releases](https://github.com/Zainpak123/kite-releases/releases/latest).
 
@@ -18,7 +18,9 @@ Paramount AI listens to your call, shows a live transcript, and writes a short a
 
 ## Use it where AI assistance is allowed
 
-Use Paramount AI in calls where AI assistance is allowed — your own meetings, client calls, practice and mock interviews. Don't use it to get hidden help in interviews, exams or assessments where outside help isn't permitted. Screen-share protection only hides Paramount AI's windows; it does nothing against monitoring or proctoring tools. Recording or transcribing others may require their consent.
+Use Paramount AI in calls where AI assistance is allowed — your own meetings, client calls, practice and mock interviews. Don't use it to get hidden help in interviews, exams or assessments where outside help isn't permitted. Screen-share protection only hides Paramount AI's windows; it does nothing against monitoring or proctoring tools. Record a meeting only when everyone on it has agreed; recording or transcribing others may require their consent.
+
+**Recording a meeting:** tell everyone on the call before you record, and record only when they agree. Some places require everyone's consent; recording without it may be against the law. Paramount AI asks you to confirm this every time a recording starts.
 
 ## Between calls: the desktop app
 
@@ -101,7 +103,7 @@ With both panels open they sit side by side, and the window widens for them when
 
 ### The ⋮ menu during a call
 
-Your email, **Dashboard** and **Get help** (in their own window, so the call keeps going), **Private**, **Zoom**, **Theme** (for the call windows only, Dark until you change it), **Opacity**, **Answer text size**, **Language**, **Auto answer**, **Click-through** (see below), **Answer preferences**, **Edit session**, **Open call window** (the full view, for when you want everything large) and **Position** (the six places, the current one highlighted; **Reset position** in desktop apps before 1.3.0).
+Your email, **Dashboard** and **Get help** (in their own window, so the call keeps going), **Private**, **Zoom**, **Theme** (for the call windows only, Dark until you change it), **Opacity**, **Answer text size**, **Language**, **Recording type** (desktop app 1.5.0: **Screen + audio** or **Audio only**, for the **Rec** pill), **Auto answer**, **Click-through** (see below), **Answer preferences**, **Edit session**, **Open call window** (the full view, for when you want everything large) and **Position** (the six places, the current one highlighted; **Reset position** in desktop apps before 1.3.0).
 
 ### Coding questions
 
@@ -154,6 +156,21 @@ Zoom leaves Paramount AI's windows out of a share only when it captures with win
 
 Without it, the people in the call may see a black box where Paramount AI's windows are. Test it with your phone, as above.
 
+### Recording a meeting (desktop app 1.5.0)
+
+Paramount AI can record your meeting like a Zoom or Meet recording: your whole screen with both sides' sound, or the sound only. **Recordings stay on your computer**, in **Documents › Paramount AI › Recordings**. They are never uploaded; your account keeps only a small record (date, length, size, file name, which computer) so the **Meetings** page can list them.
+
+- **From the start:** on the **Connect Call Session** card set **Record** to **Audio only** or **Screen + audio** (it is **Off** every time), tick **Everyone on the call has agreed to be recorded**, then **Connect**. With several monitors, pick the screen.
+- **During the call:** the **Rec** pill on the bars (after **Transcript**), or **Ctrl+Alt+R**. It asks **Everyone has agreed to be recorded?**; **Start recording** starts it. While it records, the pill is red and shows the time (**● Rec 4:07**). Press it again (or **Ctrl+Alt+R**) and **Stop recording**. Starting again in the same call makes a new **part** of the same meeting.
+- **Private comes on** when a screen recording starts, so Paramount AI's windows and answers stay out of the video (you can turn it off in **⋮**).
+- **Exit** stops the recording. Afterwards **Recording saved · Open in Meetings** shows in the app's window.
+- If the app or the computer stops during a recording, what was recorded is kept: the next start finishes the file, and **Meetings** shows it as recovered.
+- About **0.3 GB an hour** at Standard quality (720p), **0.9 GB** at High (1080p, Settings → Recording). A recording does not start with less than about 2 GB free, warns when space runs low, and stops by itself at 300 MB.
+- When **Save transcript** is off, the video is kept but the separate sound file for re-transcription is not.
+- The files are not encrypted by Paramount AI. Turn on **BitLocker** (Windows) or **FileVault** (macOS) so a lost laptop does not expose them.
+
+**Meetings** (in the sidebar of the dashboard) lists every recorded meeting with its session, date, length, size, parts and **Saved on** the computer that holds it. **Open in desktop app** opens Paramount AI's player on that computer: the video with the transcript beside it (click a line to jump there), **Save as…** (the file as recorded, or an MP4 copy), **Open folder** and **Delete** (to the Recycle Bin). On another computer there is nothing to download: the recording is only where it was made. Rename this computer on the **Meetings** page in the desktop app. Deleting a session removes its recordings from **Meetings**; the files stay in the Recordings folder until you delete them.
+
 ### If nobody seems to be there
 
 After 10 minutes with nothing from the other person and no answers, it asks **Still in a call?**. After 30, it pauses listening, with a **Resume** button. If your speakers keep repeating the other person into your microphone, it hides those lines and suggests headphones, once; it also suggests them at the start of a call when your sound plays through speakers. Headphones give the cleanest transcript, but they are never required.
@@ -184,6 +201,7 @@ The **Transcript** section has two tabs. **Conversation** reads like an Otter ex
 | Send chat with a screenshot | Ctrl+Alt+Enter | While the chat bar is open |
 | Script bar | Ctrl+Alt+S | Any app, during a call |
 | Click-through on or off | Ctrl+Alt+X | Any app, during a call |
+| Start or stop recording (asks first) | Ctrl+Alt+R | Any app, during a call (desktop app 1.5.0) |
 | Show or hide the bars | Ctrl+Alt+H | Any app, during a call |
 | Move the bars to the next place (← → along the row, ↑ ↓ top or bottom row) | Ctrl+Alt+Arrows | Any app, during a call |
 | Nudge the bars | Ctrl+Alt+Shift+Arrows | Any app, during a call |
@@ -201,6 +219,7 @@ On macOS, Ctrl is ⌘. In a browser, all of them work while the tab has focus.
 - **Defaults for new sessions**, **Answers** (format, length, tone, model, coding language, what to do when your CV has no example, your own AI instructions).
 - **Privacy → Company suggestions:** on by default. The company name you type, and the websites of companies you pick, go to Brandfetch to suggest names and show logos. Off: nothing goes to Brandfetch, only your past sessions are suggested, and session cards show a letter instead of a logo.
 - **Overlay:** Private, opacity and how far it fades away from the pointer.
+- **Recording** (desktop app 1.5.0): the video quality (Standard 720p, or High 1080p where the computer has a hardware video encoder), where the files go, and the advice to turn on BitLocker.
 - **Hotkeys:** see and check every shortcut. On keyboards where Ctrl+Alt types a letter (AltGr), it tells you if a shortcut clashes.
 - **What Paramount AI has learned:** the lessons it has picked up from your ratings; remove any you do not want.
 - **Export my data** and **Local data** (delete everything stored on this computer).

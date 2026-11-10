@@ -7,7 +7,8 @@
  * Used by: Electron (package.json "main": dist/main.js, built by esbuild)
  * Depends on: electron, src/config.ts, src/security.ts, src/media.ts, src/hotkeys.ts,
  *             src/screenshot.ts, src/windows.ts, src/snapZones.ts, src/home.ts, src/protection.ts,
- *             src/store.ts, src/icon.ts, src/accurate/host.ts (accurate transcription, ADR-0034)
+ *             src/store.ts, src/icon.ts, src/accurate/host.ts (accurate transcription, ADR-0034),
+ *             src/recordings/host.ts (meeting recording and the player, 1.5.0, ADR-0068)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * The windows (v1.1.0): the home panel between calls; the main window for the dashboard, the wizard,
@@ -22,6 +23,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   DESKTOP_PROTOCOL,
+  RECORDING_SCHEME,
   isSessionId,
   PAGES_WINDOW_PATH,
   parseDesktopLink,
@@ -39,6 +41,7 @@ import {
   protocol,
   screen,
   session,
+  shell,
   systemPreferences,
   utilityProcess,
 } from 'electron';
@@ -67,6 +70,7 @@ import {
   MODEL_SCHEME,
   VERIFIED_FILE,
 } from './speechModel';
+import { installRecordings, type FinaliseProcess, type RecordingsHost } from './recordings/host';
 import { createStore } from './store';
 import {
   createCompactWindows,
@@ -82,6 +86,15 @@ let mainWindow: BrowserWindow | null = null;
 
 /** The side window for pages opened during a call (v1.1.0), or null. */
 let sideWindow: BrowserWindow | null = null;
+
+/** 1.5.0 (ADR-0068): the recording player window, or null. */
+let playerWindow: BrowserWindow | null = null;
+
+/** 1.5.0 (ADR-0068): meeting recording (created when the app is ready). */
+let recordings: RecordingsHost | null = null;
+
+/** The Kite URL, once loaded (the player opens on it). */
+let kiteConfig: DesktopConfig | null = null;
 
 /** The home panel (created when the app is ready; v1.1.0). */
 let home: HomeWindow | null = null;
@@ -154,8 +167,33 @@ function followLink(link: DesktopLink | null): void {
     earlyLink = link;
     return;
   }
-  if (link?.kind === 'session' && !callActive) home.openSession(link.sessionId, link.code);
+  // 1.5.0 (ADR-0068): a recording link opens the player; the page says when the file is not here.
+  if (link?.kind === 'recording') openPlayer(`/player/${link.recordingId}`);
+  else if (link?.kind === 'session' && !callActive) home.openSession(link.sessionId, link.code);
   else showFront();
+}
+
+/**
+ * 1.5.0 (ADR-0068): opens the player window on a page (or brings it forward on that page). It is a
+ * normal window of its own, so playing a recording never navigates a window that runs a call.
+ *
+ * @param page The player's path, /player/<id> (the id was checked by the link parser or the index).
+ * Called from: followLink(), the recordings host (Play)
+ */
+function openPlayer(page: string): void {
+  if (!kiteConfig) return;
+  const url = new URL(page, kiteConfig.kiteUrl).toString();
+  if (playerWindow && !playerWindow.isDestroyed()) {
+    if (playerWindow.webContents.getURL() !== url) void playerWindow.loadURL(url);
+    bringForward(playerWindow);
+    return;
+  }
+  const window = createPagesWindow(kiteConfig, page, true);
+  window.setSize(1180, 760);
+  window.on('closed', () => {
+    if (playerWindow === window) playerWindow = null;
+  });
+  playerWindow = window;
 }
 
 /**
@@ -346,6 +384,7 @@ function start(): void {
   let config: DesktopConfig;
   try {
     config = loadConfig();
+    kiteConfig = config;
   } catch (error) {
     dialog.showErrorBox(APP_NAME, error instanceof Error ? error.message : String(error));
     app.exit(1);
@@ -368,6 +407,18 @@ function start(): void {
         supportFetchAPI: true,
         corsEnabled: true,
         stream: true,
+      },
+    },
+    // 1.5.0 (ADR-0068): the player's video. Streamed with byte ranges so it seeks; secure, so an https
+    // page may play it. Nothing navigates to it (security.ts locks navigation).
+    {
+      scheme: RECORDING_SCHEME,
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        stream: true,
+        corsEnabled: true,
       },
     },
   ]);
@@ -416,8 +467,14 @@ function start(): void {
     void bundledModel
       ?.verifyAll()
       .then((result) => console.info('speech model: bundled files checked', result));
-    // "Them": the page's getDisplayMedia gets system audio with no picker (Kite origin only).
-    allowSystemAudioLoopback(session.defaultSession, config.allowedOrigin);
+    // "Them": the page's getDisplayMedia gets system audio with no picker (Kite origin only). 1.5.0
+    // (ADR-0068): a video-only request (the recording's screen) gets the display picked for recordings.
+    allowSystemAudioLoopback(session.defaultSession, config.allowedOrigin, {
+      getSources: (options) => desktopCapturer.getSources(options),
+      platform: process.platform,
+      osVersion: process.getSystemVersion(),
+      recordingDisplay: () => recordings?.pickedDisplay() ?? null,
+    });
     hotkeys = installHotkeys({
       globalShortcut,
       ipcMain,
@@ -553,6 +610,30 @@ function start(): void {
     });
     // ADR-0042: one toggle, one state, every window.
     installProtection(ipcMain, shield, () => BrowserWindow.getAllWindows(), config.allowedOrigin);
+    // 1.5.0 (ADR-0068): meeting recording. The files go to Documents/Paramount AI/Recordings (or
+    // KITE_RECORDINGS_DIR, for tests), never anywhere else; a background process finalises them.
+    recordings = installRecordings({
+      ipcMain,
+      allowedOrigin: config.allowedOrigin,
+      session: session.defaultSession,
+      folder: () =>
+        process.env.KITE_RECORDINGS_DIR ??
+        path.join(app.getPath('documents'), APP_NAME, 'Recordings'),
+      dataFolder: app.getPath('userData'),
+      store,
+      forkWorker: () =>
+        utilityProcess.fork(path.join(__dirname, 'recording-worker.js'), [], {
+          serviceName: `${APP_NAME} recording finaliser`,
+          stdio: 'ignore',
+        }) as unknown as FinaliseProcess,
+      openPlayer,
+      dialog,
+      shell,
+      screen,
+      windowOf: (contents) => BrowserWindow.fromWebContents(contents),
+    });
+    // Recordings a crash or a quit left open are finalised now, in the background process.
+    void recordings.manager.recover();
 
     // v1.1.0 (ADR-0041): the panel's own buttons, and the pages it opens. Each value is checked.
     ipcMain.handle(OPEN_PAGES_CHANNEL, (event, page: unknown) => {
@@ -628,6 +709,8 @@ function start(): void {
     earlyLink = null;
     if (firstLink?.kind === 'session') home.openSession(firstLink.sessionId, firstLink.code);
     else home.open();
+    // 1.5.0 (ADR-0068): a first start from a recording link also opens the player, beside the panel.
+    if (firstLink?.kind === 'recording') openPlayer(`/player/${firstLink.recordingId}`);
 
     // v1.3.0 (ADR-0052): a link's one-time sign-in code goes to the Kite page once, and only from the
     // shell's memory: it is never put in an address. (1.2.0's session file hand-off is gone.)
@@ -649,8 +732,12 @@ function start(): void {
     app.on('activate', showFront);
   });
 
-  // Global shortcuts must be released before the app exits (Electron docs).
-  app.on('will-quit', () => hotkeys?.releaseAll());
+  // Global shortcuts must be released before the app exits (Electron docs). 1.5.0: open recordings
+  // are closed with what they hold; the next start finalises them.
+  app.on('will-quit', () => {
+    hotkeys?.releaseAll();
+    recordings?.manager.closeAllNow();
+  });
 
   // Quit when the window is closed, except on macOS, where apps stay in the Dock.
   app.on('window-all-closed', () => {

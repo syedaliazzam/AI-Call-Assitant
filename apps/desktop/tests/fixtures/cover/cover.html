@@ -1,0 +1,77 @@
+<!doctype html>
+<!--
+  File: apps/desktop/tests/fixtures/cover/cover.html
+  Purpose: Test fixture (not shipped): the synthetic "meeting" the recording test records instead of the
+           real screen (desktop 1.5.0, ADR-0068): static app chrome, four moving camera-like tiles and a
+           changing caption line, at about 30 frames a second; red, green, blue and yellow 60 px markers in
+           the four corners prove it covers the whole display. Invented content only.
+  Used by: apps/desktop/tests/fixtures/cover/main.mjs
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Recording test cover</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #f3f4f6;
+      }
+      canvas {
+        display: block;
+      }
+      .m {
+        position: fixed;
+        width: 60px;
+        height: 60px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div class="m" style="left: 0; top: 0; background: #ff0000"></div>
+    <div class="m" style="right: 0; top: 0; background: #00c800"></div>
+    <div class="m" style="left: 0; bottom: 0; background: #0000ff"></div>
+    <div class="m" style="right: 0; bottom: 0; background: #ffdc00"></div>
+    <script>
+      // Static chrome once; the tiles and the caption move every frame (realistic encoding work).
+      const c = document.getElementById('c');
+      const W = (c.width = innerWidth);
+      const H = (c.height = innerHeight);
+      const g = c.getContext('2d');
+      const tw = Math.floor(W * 0.32);
+      const th = Math.floor((tw * 9) / 16);
+      const tiles = [0, 1, 2, 3].map((i) => ({
+        x: 80 + (i % 2) * (tw + 20),
+        y: 90 + Math.floor(i / 2) * (th + 20),
+        hue: i * 80,
+      }));
+      g.fillStyle = '#1f2937';
+      g.fillRect(0, 0, W, 60);
+      g.fillStyle = '#e5e7eb';
+      g.fillRect(W - 420, 80, 380, H - 160);
+      const t0 = performance.now();
+      function tick(now) {
+        const t = (now - t0) / 1000;
+        for (const tl of tiles) {
+          g.fillStyle = `hsl(${(tl.hue + t * 10) % 360},35%,40%)`;
+          g.fillRect(tl.x, tl.y, tw, th);
+          const cx = tl.x + tw / 2 + Math.sin(t * 1.3 + tl.hue) * tw * 0.08;
+          g.fillStyle = '#d6a77a';
+          g.beginPath();
+          g.ellipse(cx, tl.y + th * 0.45, tw * 0.11, th * 0.22, 0, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.fillStyle = '#f3f4f6';
+        g.fillRect(80, H - 90, W - 560, 40);
+        g.fillStyle = '#111827';
+        g.font = '22px sans-serif';
+        g.fillText('Speaker ' + ((Math.floor(t / 4) % 4) + 1) + ' (invented caption)', 90, H - 62);
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>

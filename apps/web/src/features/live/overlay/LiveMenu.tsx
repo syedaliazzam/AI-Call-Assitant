@@ -5,7 +5,8 @@
  *          Open call window and Reset position. An entry shows only where it can work: a browser's
  *          picture-in-picture window has no opacity, a shell before 1.1.0 no separate pages window.
  *          v1.3.0 (ADR-0056): in desktop 1.3.0 a Position row, a 2 × 3 grid of the overlay's six
- *          positions with the current one highlighted, replaces Reset position.
+ *          positions with the current one highlighted, replaces Reset position. Desktop 1.5.0
+ *          (ADR-0068): Recording type (Screen + audio / Audio only), where the app can record.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (ShareProtectionState), lucide-react, src/core/storage (appearancePrefs,
  *             overlayPrefs, types), src/core/live/liveChannel.ts, src/features/privacy/usePrivate.ts,
@@ -19,9 +20,10 @@ import {
   hotkeyLabel,
   OVERLAY_GRID,
   type OverlayPreset,
+  type RecordingKind,
   type ShareProtectionState,
 } from '@kite/shared';
-import { LifeBuoy, SlidersHorizontal, User } from 'lucide-react';
+import { LifeBuoy, SlidersHorizontal, User, Video } from 'lucide-react';
 import { forwardRef } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import {
@@ -45,6 +47,12 @@ import {
   MenuSwitch,
   MenuTheme,
 } from '@/ui/PanelMenu';
+
+/** The ⋮ menu's recording types (desktop 1.5.0, ADR-0068). */
+export const RECORDING_TYPE_OPTIONS: readonly { value: RecordingKind; label: string }[] = [
+  { value: 'screen', label: 'Screen + audio' },
+  { value: 'audio', label: 'Audio only' },
+];
 
 /** How much + and − change the opacity. */
 const OPACITY_STEP = 0.05;
@@ -260,6 +268,16 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           options={ANSWER_LANGUAGES}
           onChange={(code) => onCommand({ type: 'language', code })}
         />
+        {state?.recording && (
+          // Desktop 1.5.0 (ADR-0068): the type the Rec pill and Ctrl+Alt+R start (remembered here).
+          <MenuList
+            label="Recording type"
+            icon={<Video {...ICON} />}
+            value={state.recording.kind}
+            options={RECORDING_TYPE_OPTIONS}
+            onChange={(kind) => onCommand({ type: 'record-kind', kind })}
+          />
+        )}
         <MenuSwitch
           label="Auto answer"
           checked={state?.autoAnswer ?? false}

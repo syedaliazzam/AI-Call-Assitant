@@ -280,6 +280,9 @@ export const browserPlatform: Platform = {
   /** No accurate engine in the browser (ADR-0034: the desktop app only). */
   accurate: null,
 
+  /** No meeting recording in the browser yet (ADR-0068: Phase 1 records in the desktop app only). */
+  recording: null,
+
   /**
    * A picture-in-picture window cannot change its opacity or be resized by the page.
    *

@@ -30,15 +30,19 @@ export function rowHasConflict(row: HotkeyRow, statuses: readonly HotkeyStatus[]
 }
 
 /**
- * The rows for a desktop app with or without the overlay's six positions.
+ * The rows for a desktop app with or without the overlay's six positions, and with or without
+ * recording (desktop 1.5.0, ADR-0068).
  *
  * @param positions True for a desktop app from 1.3.0, or the browser.
+ * @param recording True where meetings can be recorded (a desktop app from 1.5.0).
  * @returns The rows to show.
  * Called from: HotkeyList; tests
  */
-export function hotkeyRowsFor(positions: boolean): readonly HotkeyRow[] {
+export function hotkeyRowsFor(positions: boolean, recording = false): readonly HotkeyRow[] {
   return HOTKEY_ROWS.filter(
-    (row) => row.shells === undefined || (row.shells === 'positions') === positions,
+    (row) =>
+      (row.shells === undefined || (row.shells === 'positions') === positions) &&
+      (!row.recording || recording),
   );
 }
 
@@ -69,7 +73,12 @@ export function HotkeyList() {
     () => getPlatform().kind !== 'desktop' || getPlatform().overlayPositions(),
     () => true,
   );
-  const rows = hotkeyRowsFor(positions);
+  const recording = useSyncExternalStore(
+    subscribeNever,
+    () => getPlatform().recording !== null,
+    () => false,
+  );
+  const rows = hotkeyRowsFor(positions, recording);
   const conflicts = rows.filter((row) => rowHasConflict(row, statuses));
   return (
     <>

@@ -4,13 +4,23 @@
  *          between the desktop app (Electron) and a normal browser (Chrome / Edge).
  * Used by: src/platform/browser.ts, src/platform/desktop.ts, src/platform/index.ts, and any code
  *          that calls getPlatform()
- * Depends on: @kite/shared (HotkeyAction, the overlay and window types)
+ * Depends on: @kite/shared (HotkeyAction, the overlay and window types, the recording contract)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (the platform adapter); ADR-0035
  */
 import type {
   AccurateResult,
   AccurateStatus,
+  DeviceIdentity,
   HandoffPick,
+  LocalRecording,
+  RecordingCloseResult,
+  RecordingDisplay,
+  RecordingOpenRequest,
+  RecordingOpenResult,
+  RecordingQualitySpec,
+  RecordingSaveResult,
+  RecordingTrack,
+  RecordingWriteResult,
   HotkeyAction,
   HotkeyStatus,
   OverlayEdge,
@@ -429,6 +439,12 @@ export interface Platform {
   readonly accurate: AccurateEngine | null;
 
   /**
+   * Desktop 1.5.0 (ADR-0068): meeting recording into the computer's Recordings folder, or null where
+   * there is none: the browser (Phase 1 records in the desktop app only), and a desktop app before 1.5.0.
+   */
+  readonly recording: RecordingHost | null;
+
+  /**
    * Listens for hotkey actions (answer, screenshot, chat, clear, prev, next). Call it for the length
    * of a live call only: in the desktop app it takes the shortcuts from every other app.
    * - Desktop: Electron global shortcuts, which work from any app, forwarded to the page (turned
@@ -513,4 +529,99 @@ export interface AccurateEngine {
    * @returns The text, or why not (the page then keeps the live line).
    */
   transcribe(samples: Float32Array): Promise<AccurateResult>;
+}
+
+/**
+ * Meeting recording in the desktop app (1.5.0, ADR-0068). The page records with MediaRecorder
+ * (core/recording); the shell writes the files, finalises them and plays them. Nothing leaves the
+ * computer.
+ */
+export interface RecordingHost {
+  /**
+   * Opens the screen's video for a screen recording: a video-only capture of the display picked for
+   * recordings (the main one when none is), scaled down to the quality's size and frame rate. The
+   * shell grants it with no picker.
+   *
+   * @param quality   The largest size and frame rate.
+   * @param displayId The display to record, or null for the main one.
+   * @returns A stream with one video track.
+   * @throws CaptureError when the screen cannot be captured.
+   */
+  openScreen(quality: RecordingQualitySpec, displayId: string | null): Promise<MediaStream>;
+  /**
+   * Opens a recording's files (refused when the drive has less than about 2 GB free).
+   *
+   * @param request What is recorded.
+   * @returns The file's name, or why it cannot start.
+   */
+  open(request: RecordingOpenRequest): Promise<RecordingOpenResult>;
+  /**
+   * Appends one encoded piece, in order.
+   *
+   * @param id    The recording.
+   * @param track The main file or the stereo file.
+   * @param bytes The piece.
+   * @returns Whether it was written, and how full the drive is.
+   */
+  write(id: string, track: RecordingTrack, bytes: Uint8Array): Promise<RecordingWriteResult>;
+  /**
+   * Closes and finalises a recording (length and seek index).
+   *
+   * @param id The recording.
+   * @returns The recording as it now is.
+   */
+  close(id: string): Promise<RecordingCloseResult>;
+  /**
+   * The recordings on this computer.
+   *
+   * @returns The shell's index.
+   */
+  list(): Promise<LocalRecording[]>;
+  /**
+   * Opens the player window on a recording saved here.
+   *
+   * @param id The recording.
+   * @returns False when this computer does not have it.
+   */
+  play(id: string): Promise<boolean>;
+  /**
+   * Saves a copy where the person picks.
+   *
+   * @param id The recording.
+   * @returns What happened.
+   */
+  saveAs(id: string): Promise<RecordingSaveResult>;
+  /**
+   * Shows the file in the file manager.
+   *
+   * @param id The recording.
+   * @returns False when the file is not there.
+   */
+  showInFolder(id: string): Promise<boolean>;
+  /**
+   * Moves the files to the Recycle Bin.
+   *
+   * @param id The recording.
+   * @returns False when they could not be deleted.
+   */
+  remove(id: string): Promise<boolean>;
+  /**
+   * The displays a screen recording can capture.
+   *
+   * @returns The displays, the main one first.
+   */
+  displays(): Promise<RecordingDisplay[]>;
+  /**
+   * This computer's id and name.
+   *
+   * @returns The identity.
+   */
+  device(): Promise<DeviceIdentity>;
+  /**
+   * Renames this computer for recordings.
+   *
+   * @param name The new name ('' goes back to the computer's own name).
+   * @returns The identity afterwards.
+   */
+  renameDevice(name: string): Promise<DeviceIdentity>;
 }

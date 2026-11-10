@@ -3,8 +3,9 @@
  * Purpose: The Settings page: default preferences for new sessions, the hotkey list
  *          (read-only; the shortcuts themselves arrive on Day 4), the screen-share protection
  *          switch (Day 5), "What Kite has learned" (Day 5 Stage 7: LearnedLessons.tsx), and
- *          "Export my data" and "Import data" (Day 6, DataTransfer.tsx), and "Delete all local
- *          data" (asks first, then shows what was deleted).
+ *          "Export my data" and "Import data" (Day 6, DataTransfer.tsx), "Delete all local
+ *          data" (asks first, then shows what was deleted), and Recording (desktop 1.5.0, ADR-0068:
+ *          RecordingSetting.tsx).
  * Used by: app/(app)/settings/page.tsx
  * Depends on: src/core/storage (settings, wipe, db), src/core/sync/client.ts (Delete all my data,
  *             ADR-0049), src/platform (share protection),
@@ -46,6 +47,7 @@ import { HotkeyList } from './HotkeyList';
 import { LearnedLessons } from './LearnedLessons';
 import { OverlaySetting } from './OverlaySetting';
 import { TranscriptionSetting } from './TranscriptionSetting';
+import { RecordingSetting } from './RecordingSetting';
 
 /**
  * A titled section of the page.
@@ -248,6 +250,11 @@ export function Settings({ isAdmin }: SettingsProps) {
       {/* v1.0.1 (ADR-0034): the opt-in accurate engine (desktop app only). */}
       <Section title="Transcription">
         <TranscriptionSetting />
+      </Section>
+
+      {/* Desktop 1.5.0 (ADR-0068): meeting recording. */}
+      <Section title="Recording">
+        <RecordingSetting />
       </Section>
 
       <Section title="Answers">

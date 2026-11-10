@@ -24,6 +24,9 @@ export const SYNC_KINDS = [
   'chat',
   'settings',
   'prefs',
+  // Desktop 1.5.0 (ADR-0068): one small record per recording part (when, how long, how big, which
+  // computer). The video and sound files stay on that computer; they never sync.
+  'recording',
 ] as const;
 
 /** One kind of synced record. */
@@ -39,6 +42,7 @@ export const SESSION_CHILD_KINDS = [
   'answer',
   'notes',
   'questionBank',
+  'recording',
 ] as const satisfies readonly SyncKind[];
 
 /** Size limits for the sync routes (the server enforces them; the client stays under them). */

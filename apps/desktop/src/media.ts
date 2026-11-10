@@ -25,6 +25,10 @@
  *
  * The video part of the grant is required by getDisplayMedia; the page stops the video track
  * immediately (screenshots arrive on Day 5 through their own path).
+ *
+ * Desktop 1.5.0 (ADR-0068): a request for video only (no audio) is the meeting recording's screen. It
+ * gets the display the person picked for recordings (the main one when none is picked, or when the
+ * picked one has been unplugged), never a picker.
  */
 import { desktopCapturer, type Session } from 'electron';
 import { isAllowedUrl } from './security';
@@ -97,6 +101,28 @@ export function decideDisplayMedia(
   return { kind: 'grant', audio: audio ? 'loopback' : null };
 }
 
+/**
+ * The screen source to grant: for a recording (video only), the picked display's source when it is
+ * still connected; otherwise, and for the call's system audio, the first one (the main display).
+ *
+ * @param sources        desktopCapturer's screen sources.
+ * @param audioRequested True when the request asked for audio (the call's "Them").
+ * @param pickedDisplay  The display picked for recordings, or null.
+ * @returns The source, or undefined when there is none.
+ * Called from: allowSystemAudioLoopback(); tests
+ */
+export function pickScreenSource<T extends { display_id: string }>(
+  sources: readonly T[],
+  audioRequested: boolean,
+  pickedDisplay: string | null,
+): T | undefined {
+  if (!audioRequested && pickedDisplay) {
+    const picked = sources.find((source) => source.display_id === pickedDisplay);
+    if (picked) return picked;
+  }
+  return sources[0];
+}
+
 /** Things allowSystemAudioLoopback() uses from Electron and Node (injectable for tests). */
 export interface LoopbackDeps {
   /** desktopCapturer.getSources. */
@@ -105,6 +131,8 @@ export interface LoopbackDeps {
   platform: NodeJS.Platform;
   /** process.getSystemVersion(). */
   osVersion: string;
+  /** 1.5.0 (ADR-0068): the display picked for recordings, or null (absent in tests of older code). */
+  recordingDisplay?: () => string | null;
 }
 
 /**
@@ -113,7 +141,7 @@ export interface LoopbackDeps {
  *
  * @param session       The session the Kite window uses (the default session).
  * @param allowedOrigin The Kite origin.
- * @param deps          Electron/Node functions (tests only).
+ * @param deps          Electron/Node functions, and the display picked for recordings.
  * Called from: start() in src/main.ts, once the app is ready
  */
 export function allowSystemAudioLoopback(
@@ -135,7 +163,11 @@ export function allowSystemAudioLoopback(
     // No thumbnails: only the source id is needed, and thumbnails cost a screen capture each.
     deps.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).then(
       (sources) => {
-        const screen = sources[0];
+        const screen = pickScreenSource(
+          sources,
+          request.audioRequested,
+          deps.recordingDisplay?.() ?? null,
+        );
         if (!screen) {
           // For example macOS without the Screen Recording permission.
           console.warn('desktop: no screen source available for getDisplayMedia');

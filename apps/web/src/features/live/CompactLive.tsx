@@ -235,6 +235,9 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
       } else if (action === 'ask-kite') {
         channel.current?.send({ type: 'chat-target', target: 'kite' });
         setChatOpen(true);
+      } else if (action === 'record') {
+        // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R with the overlay focused: the bars ask Start or Stop.
+        channel.current?.send({ type: 'record-prompt' });
       } else channel.current?.send({ type: action });
     });
   }, []);

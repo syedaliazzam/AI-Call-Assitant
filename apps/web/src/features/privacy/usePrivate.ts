@@ -4,7 +4,8 @@
  *          the same way in both ⋮ menus and in Settings, and kept in step between windows. The words
  *          say plainly what it does and does not do.
  * Used by: src/features/home/HomeMenu.tsx, src/features/live/overlay/LiveMenu.tsx,
- *          src/features/settings/Settings.tsx
+ *          src/features/settings/Settings.tsx, src/features/live/useCallRecording.ts (turns it on when
+ *          a screen recording starts, 1.5.0, ADR-0068)
  * Depends on: src/platform (share protection), @kite/shared (ShareProtectionState)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §4; ADR-0042; CLAUDE.md (protection)
  */
@@ -95,4 +96,26 @@ export function usePrivate(): PrivateSetting {
   }, []);
 
   return { state, change };
+}
+
+/**
+ * Turns Private on when a screen recording starts (desktop 1.5.0, ADR-0068), so Paramount AI's own
+ * windows and answers stay out of the video, and tells the other windows (their ⋮ menus show it). The
+ * person can turn it off again in ⋮.
+ *
+ * @returns True when it was off and is now on; false when it was on already, or cannot be.
+ * Called from: src/features/live/useCallRecording.ts
+ */
+export async function turnPrivateOnForRecording(): Promise<boolean> {
+  try {
+    const now = await getPlatform().getShareProtection();
+    if (now.on || !now.supported) return false;
+    const next = await getPlatform().setShareProtection(true);
+    const channel = new BroadcastChannel(PRIVATE_CHANNEL);
+    channel.postMessage('changed');
+    channel.close();
+    return next.on;
+  } catch {
+    return false;
+  }
 }

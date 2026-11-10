@@ -1,9 +1,11 @@
 /**
  * Tests packages/shared/src/protocol.ts (spec S9): a paramountai:// link opens the app or names one
  * session by UUID, and anything else in a link makes it invalid, because any web page can send one.
+ * Desktop 1.5.0 (ADR-0068): recording/<id> names one recording, and nothing more.
  */
 import {
   DESKTOP_OPEN_LINK,
+  desktopRecordingLink,
   desktopSessionLink,
   handoffFileName,
   parseDesktopLink,
@@ -76,5 +78,19 @@ describe('parseDesktopLink', () => {
 
   it('refuses other hosts', () => {
     expect(parseDesktopLink(`paramountai://settings/${ID}`)).toBeNull();
+  });
+});
+
+describe('recording links (desktop 1.5.0, ADR-0068)', () => {
+  it('names one recording by UUID, and nothing more', () => {
+    expect(desktopRecordingLink(ID)).toBe(`paramountai://recording/${ID}`);
+    expect(parseDesktopLink(desktopRecordingLink(ID))).toEqual({
+      kind: 'recording',
+      recordingId: ID,
+    });
+    expect(parseDesktopLink('paramountai://recording/not-a-uuid')).toBeNull();
+    expect(parseDesktopLink(`paramountai://recording/${ID}/extra`)).toBeNull();
+    expect(parseDesktopLink(`paramountai://recording/${ID}?play=1`)).toBeNull();
+    expect(parseDesktopLink('paramountai://recording')).toBeNull();
   });
 });

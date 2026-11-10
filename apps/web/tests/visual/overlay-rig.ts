@@ -4,7 +4,8 @@
  *          call in the real full call window at / (rig-live.tsx), the real overlay at
  *          /compact/harness-session (rig-compact.tsx), the real Ask Kite and history screens at /ask
  *          and /history (rig-pages.tsx), the home panel and snap zones at /home and /overlay-zones
- *          (rig-extra.tsx), and a mocked /api/answer, with the app's real stylesheet
+ *          (rig-extra.tsx), the Meetings page and the recording player at /meetings and /player/<id>
+ *          (rig-meetings.tsx, desktop 1.5.0), and a mocked /api/answer, with the app's real stylesheet
  *          (Tailwind). Start the desktop shell against it (`electron . --kite-url=http://localhost:3123`,
  *          or call-window-shots.ts) to see the real windows over whatever is on screen.
  *          Usage: pnpm --filter web exec tsx tests/visual/overlay-rig.ts
@@ -51,6 +52,7 @@ async function bundle(): Promise<string> {
       path.join(WEB_DIR, 'tests', 'visual', 'rig-call.tsx'),
       path.join(WEB_DIR, 'tests', 'visual', 'rig-pages.tsx'),
       path.join(WEB_DIR, 'tests', 'visual', 'rig-extra.tsx'),
+      path.join(WEB_DIR, 'tests', 'visual', 'rig-meetings.tsx'),
     ],
     bundle: true,
     platform: 'browser',
@@ -263,7 +265,9 @@ async function main(): Promise<void> {
                 ? 'rig-extra.js'
                 : url.startsWith('/ask') || url.startsWith('/history')
                   ? 'rig-pages.js'
-                  : 'rig-live.js',
+                  : url.startsWith('/meetings') || url.startsWith('/player/')
+                    ? 'rig-meetings.js'
+                    : 'rig-live.js',
       ),
     );
   }).listen(PORT, '127.0.0.1', () => console.info(`overlay rig: http://localhost:${PORT}`));

@@ -433,3 +433,44 @@ export interface StoredQuestionBank {
   /** When it was written (Unix ms). */
   createdAt: number;
 }
+
+/** Where a recording stands, as the account knows it (desktop 1.5.0, ADR-0068). */
+export type RecordingStatus = 'recording' | 'complete' | 'recovered';
+
+/**
+ * One recording part, as the account keeps it (desktop 1.5.0, ADR-0068): when, how long, how big, the
+ * file's name and which computer holds it. The video and sound stay on that computer and never sync;
+ * this record syncs encrypted like the other call data (ADR-0049) and goes with its session.
+ */
+export interface StoredRecording {
+  /** The part's id (a UUID; the shell's index uses the same id). */
+  id: string;
+  /** The session it belongs to. */
+  sessionId: string;
+  /** The meeting (one call) its parts belong to; Meetings shows a meeting's parts together. */
+  meetingId: string;
+  /** Which part of the meeting, from 1. */
+  part: number;
+  /** 'screen' (screen and sound) or 'audio' (sound only). */
+  kind: 'screen' | 'audio';
+  /** 'standard' (720p) or 'high' (1080p); absent for sound only. */
+  quality?: 'standard' | 'high';
+  /** When it started (Unix ms). */
+  startedAt: number;
+  /** Its length, ms (the time recorded so far while it records). */
+  durationMs: number;
+  /** The main file's size, bytes (0 until it stops). */
+  bytes: number;
+  /** The main file's name on that computer (no folder; never call details). */
+  fileName: string;
+  /** True when a stereo sound file (You left, Them right) was kept beside it. */
+  hasStereo: boolean;
+  /** The computer that holds the files: its random id (the desktop app's). */
+  deviceId: string;
+  /** That computer's name when it was recorded or last renamed ("Saved on <name>"). */
+  deviceName: string;
+  /** Recording, complete, or recovered after the app stopped during it. */
+  status: RecordingStatus;
+  /** When this record last changed (Unix ms). */
+  updatedAt: number;
+}

@@ -68,6 +68,7 @@ import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
 import { ChatBar, type ChatBarHandle } from './overlay/ChatBar';
 import { ControlBar, type DeviceList } from './overlay/ControlBar';
 import { DevicePicker } from './overlay/DevicePicker';
+import { RecordPopover } from './overlay/RecordControls';
 import { IconMode } from './overlay/IconMode';
 import { LiveMenu } from './overlay/LiveMenu';
 import { LiveStrip } from './overlay/LiveStrip';
@@ -172,15 +173,17 @@ export interface CompactViewProps {
 }
 
 /** Which floating list or menu is open. */
-type Popup = DeviceList | 'menu' | 'preferences' | 'language';
+type Popup = DeviceList | 'menu' | 'preferences' | 'language' | 'record' | 'record-notice';
 
 /**
- * The bars keep their own width; only the panels fill a window wider than this (spec S13): 780, or 900
- * in the reference look (ADR-0055: bar 1 also holds the Transcript pill, and every key-cap shows).
+ * The bars keep their own width; only the panels fill a window wider than this (spec S13): 780, or 980
+ * in the reference look (ADR-0055: bar 1 also holds the Transcript pill; desktop 1.5.0, ADR-0068: and the
+ * Rec pill, so a 1.5.0 overlay opens 980 wide and every key-cap shows; in a 900-wide window of an older
+ * shell, which has no Rec pill, the bar fills the window as before).
  */
 const BARS_WIDTHS = {
   classic: 'mx-auto w-full max-w-[780px]',
-  reference: 'mx-auto w-full max-w-[900px]',
+  reference: 'mx-auto w-full max-w-[980px]',
 } as const;
 
 /**
@@ -265,6 +268,10 @@ export function CompactView(props: CompactViewProps) {
   const languagesElement = useRef<HTMLUListElement>(null);
   const barsEnd = useRef<HTMLDivElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
+  // Desktop 1.5.0 (ADR-0068): the Rec pill, whose popover sits under it (its left edge, measured when
+  // the popover opens).
+  const recButton = useRef<HTMLButtonElement>(null);
+  const [recLeft, setRecLeft] = useState(6);
   const root = useRef<HTMLDivElement>(null);
   // v1.3.2: the panels' area, measured for the window's height.
   const panelsArea = useRef<HTMLDivElement>(null);
@@ -287,6 +294,27 @@ export function CompactView(props: CompactViewProps) {
   if (icon && props.chatOpen) {
     setIcon(false);
     setCollapsed(false);
+  }
+
+  // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R (the live page counts the presses) opens the Start or Stop
+  // question; a new recording notice opens on its own unless another list is open. While rendering, as
+  // React advises for state that follows a changed value.
+  const recordPrompts = state?.recording?.promptCount ?? 0;
+  const [seenPrompts, setSeenPrompts] = useState(recordPrompts);
+  if (recordPrompts !== seenPrompts) {
+    setSeenPrompts(recordPrompts);
+    if (recordPrompts > seenPrompts) {
+      setPopup('record');
+      setIcon(false);
+      setCollapsed(false);
+    }
+  }
+  const recordNotice = state?.recording?.notice ?? null;
+  const [seenNotice, setSeenNotice] = useState(recordNotice);
+  if (recordNotice !== seenNotice) {
+    setSeenNotice(recordNotice);
+    if (recordNotice && (popup === null || popup === 'record-notice')) setPopup('record-notice');
+    else if (!recordNotice && popup === 'record-notice') setPopup(null);
   }
 
   // The script bar (v1.0.2): the live page holds whether it is on (Ctrl+Alt+S reaches it there).
@@ -323,6 +351,14 @@ export function CompactView(props: CompactViewProps) {
     const forBars = noPanels && barsEnd.current ? extentOf(barsEnd.current, up, height) + 2 : 0;
     setNeededHeight(Math.max(forPopup, forBars) * zoom);
   }, [popup, noPanels, chatOpen, zoom, collapsed, icon, scriptBar, up]);
+
+  // Desktop 1.5.0 (ADR-0068): the Rec popover sits under its pill.
+  useLayoutEffect(() => {
+    if (popup !== 'record' && popup !== 'record-notice') return;
+    // Under the pill, but inside the window (the popover is 320 wide).
+    const width = root.current?.clientWidth ?? 900;
+    setRecLeft(Math.max(6, Math.min(recButton.current?.offsetLeft ?? 6, width - 326)));
+  }, [popup]);
 
   // v1.3.2: with a panel open, how tall the bars and panels are, so the shell can fit the window to them.
   // Measured after every render (new lines, a streaming answer); a new value only when it changes by a
@@ -566,6 +602,9 @@ export function CompactView(props: CompactViewProps) {
             onChatOpen={props.onChatOpen}
             menuButton={menuButton}
             referenceLook={referenceLook}
+            recordOpen={popup === 'record'}
+            onRecord={() => setPopup(popup === 'record' ? null : 'record')}
+            recButton={recButton}
             {...(clickThrough && glass
               ? { onClickThroughOff: () => onCommand({ type: 'click-through', on: false }) }
               : {})}
@@ -643,6 +682,17 @@ export function CompactView(props: CompactViewProps) {
             style={state.style}
             onCommand={onCommand}
             onBack={() => setPopup('menu')}
+          />
+        )}
+        {(popup === 'record' || popup === 'record-notice') && state?.recording && (
+          <RecordPopover
+            ref={popupElement}
+            recording={state.recording}
+            mode={popup === 'record' ? 'question' : 'notice'}
+            onCommand={onCommand}
+            onClose={() => setPopup(null)}
+            left={recLeft}
+            up={up}
           />
         )}
         {(popup === 'audio' || popup === 'mic') && (

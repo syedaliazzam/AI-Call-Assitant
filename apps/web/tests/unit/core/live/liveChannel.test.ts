@@ -3,6 +3,7 @@
  * channel per session (kite-live-<id>); a state published by the live page reaches the compact
  * view; a command sent by the compact view reaches the live page; malformed states and commands
  * are dropped (an empty or over-long chat question, an unknown type); close() stops delivery.
+ * Desktop 1.5.0 (ADR-0068): the recording commands in their shapes.
  * All text is invented.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -187,6 +188,31 @@ describe('the channel in v1.1.0 (ADR-0041)', () => {
       { type: 'language' },
       { type: 'auto-answer', on: 'yes' },
       { type: 'mic', deviceId: 3 },
+    ]) {
+      expect(isCommand(command), JSON.stringify(command)).toBe(false);
+    }
+  });
+});
+
+describe('the recording commands (desktop 1.5.0, ADR-0068)', () => {
+  it('accepts them in their shapes, and refuses others', () => {
+    for (const command of [
+      { type: 'record-start', displayId: null },
+      { type: 'record-start', displayId: '2528732444' },
+      { type: 'record-stop' },
+      { type: 'record-kind', kind: 'audio' },
+      { type: 'record-kind', kind: 'screen' },
+      { type: 'record-notice-seen' },
+      { type: 'record-prompt' },
+    ]) {
+      expect(isCommand(command), JSON.stringify(command)).toBe(true);
+    }
+    for (const command of [
+      { type: 'record-start' },
+      { type: 'record-start', displayId: 5 },
+      { type: 'record-start', displayId: 'x'.repeat(65) },
+      { type: 'record-kind', kind: 'video' },
+      { type: 'record-kind' },
     ]) {
       expect(isCommand(command), JSON.stringify(command)).toBe(false);
     }

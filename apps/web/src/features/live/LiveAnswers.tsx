@@ -8,7 +8,8 @@
  *          overlay (core/live/liveChannel.ts: state out, commands in, including the script bar and
  *          dictation), going between the overlay and this window (⋮, Back to compact, Esc), and the
  *          duplicate-safe "Answer this" for transcript bubbles (registered with the live page). v1.1.0
- *          (ADR-0041): also what the stacked overlay's panels and menu need.
+ *          (ADR-0041): also what the stacked overlay's panels and menu need. Desktop 1.5.0 (ADR-0068): the
+ *          meeting recording's state, its commands and Ctrl+Alt+R.
  * Used by: src/features/live/LivePage.tsx (live view);
  *          tests/integration/harness/answers.tsx (the answer harness test)
  * Depends on: src/features/live (useLiveAnswers, TopBar, ChatBox, AnswerPanel, useCallDictation),
@@ -46,6 +47,7 @@ import { liveQuestion } from '@/core/transcript/liveQuestion';
 import {
   openLiveChannel,
   type CompactAudio,
+  type CompactCommand,
   type CompactLevels,
   type CompactState,
   type LiveChannel,
@@ -67,6 +69,7 @@ import type { CallDictation } from './useCallDictation';
 import { openDashboard } from '@/features/sync/dashboardLink';
 import { useSyncAccount } from '@/features/sync/SyncScope';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
+import type { CallRecording } from './useCallRecording';
 
 /** Props for LiveAnswers. */
 export interface LiveAnswersProps {
@@ -142,6 +145,11 @@ export interface LiveAnswersProps {
   onActivity?: () => void;
   /** v1.1.0: how many echo lines were hidden in this call (the one-time headphones hint). */
   echoCount?: number;
+  /**
+   * Desktop 1.5.0 (ADR-0068): the call's meeting recording (the Rec pill on both bars, Ctrl+Alt+R and
+   * the ⋮ menu's type). Absent where the app cannot record, and in harnesses.
+   */
+  recording?: CallRecording;
 }
 
 /** How many of the latest bubbles the overlay gets: the call window and Review have them all. */
@@ -323,6 +331,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     !headphonesClosed &&
     (onSpeakers || echoCount >= HEADPHONES_HINT_AFTER) &&
     !hintSeen('headphones');
+  // Desktop 1.5.0 (ADR-0068): the recording's state for the bars (a plain value, for the memo below).
+  const recordingCompact = props.recording?.compact;
   const compactState = useMemo<CompactState>(() => {
     const parts = entry ? splitAnswer(entry.text) : null;
     const answeredIds = answeredGroupIds(
@@ -398,8 +408,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
       dictating: props.dictation?.listening ?? false,
       dictationNotice: props.dictation?.notice ?? null,
       startedAt: props.callStartedAt,
+      ...(recordingCompact ? { recording: recordingCompact } : {}),
     };
   }, [
+    recordingCompact,
     groups,
     visibleLines,
     answeredSpanList,
@@ -455,6 +467,20 @@ export function LiveAnswers(props: LiveAnswersProps) {
     onClearTranscript.current?.();
   });
   const overlayProps = useRef(props);
+  /**
+   * Desktop 1.5.0 (ADR-0068): a recording command, from either bar's Rec pill or the ⋮ menu. Consent was
+   * given in the question that sent 'record-start'.
+   * @param command The command.
+   */
+  const recordCommand = useCallback((command: CompactCommand) => {
+    const recording = overlayProps.current.recording;
+    if (!recording) return;
+    if (command.type === 'record-start') void recording.start({ displayId: command.displayId });
+    else if (command.type === 'record-stop') void recording.stop();
+    else if (command.type === 'record-kind') recording.setKind(command.kind);
+    else if (command.type === 'record-notice-seen') recording.clearNotice();
+    else if (command.type === 'record-prompt') recording.prompt();
+  }, []);
   // Whether the overlay has been open in this call: only then does Escape go back to it.
   const overlayOpened = useRef(false);
   useEffect(() => {
@@ -520,6 +546,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         setTarget(command.target);
         setChatTarget(props.session.id, command.target);
       } else if (command.type === 'end') onEnd.current();
+      else if (command.type.startsWith('record-')) recordCommand(command);
       else if (command.type === 'chat') actions.current.chat(command.question);
       else if (command.type === 'chat-screenshot') actions.current.screenshot(command.question);
       else if (command.type === 'style') {
@@ -537,7 +564,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         .closeCompactView()
         .catch(() => undefined);
     };
-  }, [props.session.id]);
+  }, [props.session.id, recordCommand]);
   useEffect(() => {
     compactStateRef.current = compactState;
     channel.current?.publish(compactState);
@@ -603,6 +630,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
         } else if (action === 'click-through') {
           // v1.3.2: Ctrl+Alt+X from any app turns Click-through on or off.
           setClickThrough((on) => !on);
+        } else if (action === 'record') {
+          // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R from any app: the bars ask Start or Stop (consent
+          // is a click, never the shortcut alone).
+          overlayProps.current.recording?.prompt();
         } else if (action === 'ask-kite') {
           // Leaving this page would end the call, so during a call the shortcut opens the chat
           // box, here and in the overlay, set to a private answer (ADR-0030).
@@ -754,6 +785,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       dictation={dictation?.supported ? dictation : undefined}
       target={chatTarget}
       slim={props.slimTopBar}
+      recording={props.recording?.compact}
+      onRecordCommand={recordCommand}
     />
   );
 

@@ -197,6 +197,8 @@ test('sidebar: order, sizes, the active item and "Soon" items that do nothing', 
   await expect(nav.getByRole('link')).toHaveText([
     'Create session',
     'Call Sessions',
+    // Desktop 1.5.0 (ADR-0068): the recorded meetings.
+    'Meetings',
     'Resumes',
     'Documents',
     'Ask AI',

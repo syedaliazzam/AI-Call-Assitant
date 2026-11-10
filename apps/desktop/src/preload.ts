@@ -8,8 +8,10 @@
  *          windowControl, setOverlayLayout; ADR-0041), the link's one-time sign-in code (v1.3.0:
  *          consumeLinkCode; ADR-0052; the 1.2.0 hand-off file calls are gone), the icon and chat bar (v1.2.0: moveOverlay, setChatHotkey),
  *          the keyboard back to the app behind (v1.3.2: releaseOverlayFocus; ADR-0061),
- *          and accurateStatus / accurateDownload /
- *          accurateRemove / accurateTranscribe (v1.0.1, ADR-0034) } (frozen). Nothing
+ *          accurateStatus / accurateDownload / accurateRemove / accurateTranscribe (v1.0.1, ADR-0034),
+ *          and meeting recording (1.5.0, ADR-0068: recordingOpen / Write / Close / List / Play / SaveAs /
+ *          ShowInFolder / Delete, listDisplays, setRecordingDisplay, deviceIdentity, renameDevice) }
+ *          (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
  * Depends on: electron (contextBridge, ipcRenderer); @kite/shared (KiteDesktopApi,
@@ -29,6 +31,8 @@ import {
   type OverlayMode,
   type OverlayPreset,
   type OverlayResizeStep,
+  type RecordingOpenRequest,
+  type RecordingTrack,
   type WindowControlAction,
 } from '@kite/shared';
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
@@ -67,6 +71,18 @@ import {
   SET_PROTECTION_CHANNEL,
   SNAP_ZONE_CHANNEL,
   WINDOW_CONTROL_CHANNEL,
+  DEVICE_IDENTITY_CHANNEL,
+  LIST_DISPLAYS_CHANNEL,
+  RECORDING_CLOSE_CHANNEL,
+  RECORDING_DELETE_CHANNEL,
+  RECORDING_DISPLAY_CHANNEL,
+  RECORDING_LIST_CHANNEL,
+  RECORDING_OPEN_CHANNEL,
+  RECORDING_PLAY_CHANNEL,
+  RECORDING_SAVE_AS_CHANNEL,
+  RECORDING_SHOW_CHANNEL,
+  RECORDING_WRITE_CHANNEL,
+  RENAME_DEVICE_CHANNEL,
 } from './channels';
 
 /** Prefix of the argument main.ts passes with the app version. */
@@ -253,6 +269,38 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
       ACCURATE_TRANSCRIBE_CHANNEL,
       samples instanceof Float32Array ? samples : new Float32Array(0),
     ),
+  // 1.5.0 (ADR-0068): meeting recording. Only plain fields, ids, a track name and the encoded bytes
+  // cross (copied here, so no page object is passed on); the shell checks each value again and writes
+  // only into its Recordings folder, under names it makes itself.
+  recordingOpen: (request: RecordingOpenRequest) =>
+    ipcRenderer.invoke(RECORDING_OPEN_CHANNEL, {
+      id: String(request?.id),
+      sessionId: String(request?.sessionId),
+      meetingId: String(request?.meetingId),
+      part: Number(request?.part),
+      kind: String(request?.kind),
+      startedAt: Number(request?.startedAt),
+      container: String(request?.container),
+      stereo: request?.stereo === true,
+    }),
+  recordingWrite: (id: string, track: RecordingTrack, bytes: Uint8Array) =>
+    ipcRenderer.invoke(
+      RECORDING_WRITE_CHANNEL,
+      String(id),
+      String(track),
+      bytes instanceof Uint8Array ? bytes : new Uint8Array(0),
+    ),
+  recordingClose: (id: string) => ipcRenderer.invoke(RECORDING_CLOSE_CHANNEL, String(id)),
+  recordingList: () => ipcRenderer.invoke(RECORDING_LIST_CHANNEL),
+  recordingPlay: (id: string) => ipcRenderer.invoke(RECORDING_PLAY_CHANNEL, String(id)),
+  recordingSaveAs: (id: string) => ipcRenderer.invoke(RECORDING_SAVE_AS_CHANNEL, String(id)),
+  recordingShowInFolder: (id: string) => ipcRenderer.invoke(RECORDING_SHOW_CHANNEL, String(id)),
+  recordingDelete: (id: string) => ipcRenderer.invoke(RECORDING_DELETE_CHANNEL, String(id)),
+  listDisplays: () => ipcRenderer.invoke(LIST_DISPLAYS_CHANNEL),
+  setRecordingDisplay: (displayId: string | null) =>
+    ipcRenderer.invoke(RECORDING_DISPLAY_CHANNEL, displayId === null ? null : String(displayId)),
+  deviceIdentity: () => ipcRenderer.invoke(DEVICE_IDENTITY_CHANNEL),
+  renameDevice: (name: string) => ipcRenderer.invoke(RENAME_DEVICE_CHANNEL, String(name)),
 });
 
 contextBridge.exposeInMainWorld('kiteDesktop', kiteDesktop);

@@ -125,3 +125,39 @@ export const OVERLAY_MOVE_CHANNEL = 'kite:overlay-move';
 
 /** v1.2.0 (spec S14): holds or releases the chat bar's screenshot shortcut. */
 export const CHAT_HOTKEY_CHANNEL = 'kite:chat-hotkey';
+
+/** 1.5.0 (ADR-0068): open a recording's files (invoke; a RecordingOpenRequest, answers RecordingOpenResult). */
+export const RECORDING_OPEN_CHANNEL = 'kite:recording-open';
+
+/** 1.5.0: append one piece to a recording (invoke; id, track, bytes; answers RecordingWriteResult). */
+export const RECORDING_WRITE_CHANNEL = 'kite:recording-write';
+
+/** 1.5.0: close and finalise a recording (invoke; an id; answers RecordingCloseResult). */
+export const RECORDING_CLOSE_CHANNEL = 'kite:recording-close';
+
+/** 1.5.0: the recordings on this computer (invoke; answers LocalRecording[]). */
+export const RECORDING_LIST_CHANNEL = 'kite:recording-list';
+
+/** 1.5.0: open the player window on a recording (invoke; an id; answers a boolean). */
+export const RECORDING_PLAY_CHANNEL = 'kite:recording-play';
+
+/** 1.5.0: Save as… a copy of a recording (invoke; an id; answers RecordingSaveResult). */
+export const RECORDING_SAVE_AS_CHANNEL = 'kite:recording-save-as';
+
+/** 1.5.0: show a recording in the file manager (invoke; an id; answers a boolean). */
+export const RECORDING_SHOW_CHANNEL = 'kite:recording-show';
+
+/** 1.5.0: move a recording to the Recycle Bin (invoke; an id; answers a boolean). */
+export const RECORDING_DELETE_CHANNEL = 'kite:recording-delete';
+
+/** 1.5.0: the displays a screen recording can capture (invoke; answers RecordingDisplay[]). */
+export const LIST_DISPLAYS_CHANNEL = 'kite:list-displays';
+
+/** 1.5.0: the display the next screen recording captures (invoke; a display id or null). */
+export const RECORDING_DISPLAY_CHANNEL = 'kite:recording-display';
+
+/** 1.5.0: this computer's id and name for recordings (invoke; answers DeviceIdentity). */
+export const DEVICE_IDENTITY_CHANNEL = 'kite:device-identity';
+
+/** 1.5.0: rename this computer for recordings (invoke; a string; answers DeviceIdentity). */
+export const RENAME_DEVICE_CHANNEL = 'kite:rename-device';
