@@ -249,7 +249,10 @@ describe('CallCapture: changing the microphone and pausing (v1.1.0)', () => {
     const next = fakeStream(0.5);
     fakes.platform.getMicStream.mockResolvedValueOnce(next.stream);
     fakes.engine.attach.mockClear();
+    expect(capture.micStream()).toBe(fakes.mic.stream);
     await capture.changeMic('headset');
+    // Desktop 1.5.0 (ADR-0068): the recording mixes the current microphone stream.
+    expect(capture.micStream()).toBe(next.stream);
     expect(fakes.platform.getMicStream).toHaveBeenLastCalledWith('headset');
     expect(fakes.engine.attach).toHaveBeenCalledWith('you', next.stream);
     expect(fakes.mic.track.stop).toHaveBeenCalled();

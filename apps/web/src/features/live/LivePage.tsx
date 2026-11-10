@@ -18,6 +18,9 @@
  * power source on Auto (ADR-0044); listening pauses when a call was left running (core/live/hygiene.ts).
  * v1.4 (ADR-0066): Accurate transcription is on by default; during the call it rewrites only the other
  * person's lines, and the user's saved lines are rewritten after End (core/transcript/afterCall.ts).
+ * Desktop 1.5.0 (ADR-0068): the meeting recording (useCallRecording.ts) records the call's own streams;
+ * the Connect card's Record choice starts it once the call connects (core/recording/handoff.ts), and End
+ * stops it first.
  *
  * ADR-0055: in a desktop app with the home panel and account sync, the Connect card is in the small
  * window (features/home/LauncherConnect.tsx). This page runs the call it starts (core/live/callStart.ts):
@@ -69,6 +72,7 @@ import { isSound, themSilent } from '@/core/audio/silence';
 import { ThemSilentNotice } from './ThemSilentNotice';
 import { endCall } from '@/core/transcript/endCall';
 import { reportCallStart, takeCallStart, watchCallStart } from '@/core/live/callStart';
+import { announceRecordingSaved, takeRecordStart } from '@/core/recording/handoff';
 import { useSyncAccount } from '@/features/sync/SyncScope';
 import { useAccountName } from '@/features/shell/AccountName';
 import { BackgroundCallStatus, type BackgroundCallState } from './BackgroundCallStatus';
@@ -79,6 +83,7 @@ import { getPlatform, type OtherSideSource } from '@/platform';
 import { Button } from '@/ui/Button';
 import { AudioMeter } from './AudioMeter';
 import { LiveAnswers, type AnswerThisBridge } from './LiveAnswers';
+import { useCallRecording } from './useCallRecording';
 import { LiveCallLayout, type LiveCallStatus } from './LiveCallLayout';
 import { BrowserCallLayout } from './BrowserCallLayout';
 import { openOverlay, startsCallsInOverlay, type OverlayAtStart } from './openOverlay';
@@ -348,6 +353,21 @@ export function LivePage({
   const engineRef = useRef<SttEngine | null>(null);
   const captureRef = useRef<CallCapture | null>(null);
   const saverRef = useRef<TranscriptSaver | null>(null);
+  // Desktop 1.5.0 (ADR-0068): the meeting recording, from the call's own streams.
+  const recording = useCallRecording({
+    sessionId: session.id,
+    saveTranscript: session.saveTranscript,
+    connected: connection === 'connected',
+    streams: () => {
+      const capture = captureRef.current;
+      return capture ? { you: capture.micStream(), them: capture.otherSideStream() } : null;
+    },
+  });
+  // For callbacks made once (changeMic): the latest recording controls.
+  const recordingRef = useRef(recording);
+  useEffect(() => {
+    recordingRef.current = recording;
+  });
   const monitor = useRef(new SttHealthMonitor());
   // Day 6 Stage 4: watches for a stuck engine (audio in, no transcript out) and a flag so a
   // restart cannot overlap with itself. restartedAt drives the "Transcription restarted" note.
@@ -678,6 +698,10 @@ export function LivePage({
       }
       // ADR-0055: the Connect card in the small window learns that the call runs.
       if (launcherCall) reportCallStart(session.id, 'connected');
+      // Desktop 1.5.0 (ADR-0068): Record was on at the Connect card, with consent ticked: record from
+      // the start. The note is taken once, so a Reconnect does not start another part.
+      const recordFromStart = takeRecordStart(session.id);
+      if (recordFromStart && recording.available) void recording.start(recordFromStart);
     } catch (error) {
       setConnection('idle');
       setLevels({ you: 0, them: 0 });
@@ -717,6 +741,11 @@ export function LivePage({
     setRestartedAt(null);
     const saver = saverRef.current;
     saverRef.current = null;
+    // Desktop 1.5.0 (ADR-0068): the recording stops first (its MediaRecorders stop at once, before the
+    // streams end); its files are finalised meanwhile, and the small window is told once they are.
+    const recordingDone = recording.finish().then((recorded) => {
+      if (recorded) announceRecordingSaved();
+    });
     const capture = captureRef.current;
     captureRef.current = null;
     // The call's final lines, taken just before the transcript is cleared (after the line
@@ -832,7 +861,7 @@ export function LivePage({
     if (launcherCall) {
       setLauncherState('ended');
       reportCallStart(session.id, 'ended');
-      void Promise.allSettled([saving, notesDone, rewriting]).then(() =>
+      void Promise.allSettled([saving, notesDone, rewriting, recordingDone]).then(() =>
         getPlatform().windowControl('close'),
       );
     }
@@ -854,6 +883,7 @@ export function LivePage({
     try {
       setThemSource(await capture.changeOtherSide());
       setPreviewStream(capture.otherSideStream());
+      recording.replaceSource('them', capture.otherSideStream());
       themSoundAt.current = Date.now();
     } catch {
       // The picker was cancelled or denied: the current share stays.
@@ -880,11 +910,16 @@ export function LivePage({
   const changeMic = useCallback((deviceId: string) => {
     setMicDevice(deviceId);
     setMicDeviceId(deviceId);
-    captureRef.current?.changeMic(deviceId).catch((error: unknown) => {
-      if (error instanceof CallCaptureError) {
-        setChannelErrors((current) => ({ ...current, you: error.message }));
-      }
-    });
+    const capture = captureRef.current;
+    capture
+      ?.changeMic(deviceId)
+      // Desktop 1.5.0 (ADR-0068): the recording's mix follows the new microphone.
+      .then(() => recordingRef.current.replaceSource('you', capture.micStream()))
+      .catch((error: unknown) => {
+        if (error instanceof CallCaptureError) {
+          setChannelErrors((current) => ({ ...current, you: error.message }));
+        }
+      });
   }, []);
 
   /** Yes, still in a call: the quiet time starts again (ADR-0044). */
@@ -1107,6 +1142,7 @@ export function LivePage({
         onResume={resumeListening}
         onActivity={noteActivity}
         echoCount={echoStats.count}
+        {...(recording.available ? { recording } : {})}
       />
     ) : (
       <div className="flex justify-end">

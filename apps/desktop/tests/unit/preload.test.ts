@@ -74,10 +74,13 @@ describe('the exposed bridge', () => {
       'closeCompactView',
       // v1.3.0 (ADR-0052): the link's one-time sign-in code, given once.
       'consumeLinkCode',
+      // 1.5.0 (ADR-0068): meeting recording, the player, displays and this computer's name.
+      'deviceIdentity',
       // v1.3.0 (ADR-0056): the six positions.
       'getOverlayPosition',
       'getOverlayPreset',
       'getShareProtection',
+      'listDisplays',
       'minimizeMainWindow',
       // v1.2.0 (spec S13): dragging the icon.
       'moveOverlay',
@@ -90,8 +93,17 @@ describe('the exposed bridge', () => {
       'openPagesWindow',
       'os',
       'placeOverlay',
+      'recordingClose',
+      'recordingDelete',
+      'recordingList',
+      'recordingOpen',
+      'recordingPlay',
+      'recordingSaveAs',
+      'recordingShowInFolder',
+      'recordingWrite',
       // v1.3.2: the keyboard back to the app behind the overlay.
       'releaseOverlayFocus',
+      'renameDevice',
       'resizeOverlay',
       'setCallActive',
       // v1.2.0 (spec S14): the chat bar's shortcut.
@@ -104,6 +116,7 @@ describe('the exposed bridge', () => {
       'setOverlayMode',
       'setOverlayOpacity',
       'setOverlayPosition',
+      'setRecordingDisplay',
       'setShareProtection',
       'showCallWindow',
       // v1.3.0 (ADR-0055): the launcher's window size.

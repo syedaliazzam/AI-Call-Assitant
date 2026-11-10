@@ -7,10 +7,22 @@
  * Depends on: ./hotkeys.ts, ./screenshot.ts (types only)
  * Also: the accurate-transcription contract (v1.0.1, ADR-0034): status, download, remove, transcribe;
  *       the overlay's presets, page-driven resizing and modes (v1.0.2, ADR-0035); opening pages from
- *       the home panel, window controls and the stacked overlay's layout (v1.1.0, ADR-0041).
+ *       the home panel, window controls and the stacked overlay's layout (v1.1.0, ADR-0041); meeting
+ *       recording, the player, displays and this computer's name (desktop 1.5.0, ADR-0068).
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 and §7.3 (preload.ts)
  */
 import type { HotkeyAction, HotkeyStatus } from './hotkeys';
+import type {
+  DeviceIdentity,
+  LocalRecording,
+  RecordingCloseResult,
+  RecordingDisplay,
+  RecordingOpenRequest,
+  RecordingOpenResult,
+  RecordingSaveResult,
+  RecordingTrack,
+  RecordingWriteResult,
+} from './recording';
 import type { DesktopScreenshot } from './screenshot';
 
 /** Operating system the desktop app is running on. */
@@ -325,6 +337,87 @@ export interface KiteDesktopApi {
    * @returns A function that removes the listener.
    */
   onOverlayPosition?: (handler: (preset: OverlayPreset) => void) => () => void;
+  /**
+   * Desktop 1.5.0 (ADR-0068): opens a recording's files in Documents/Paramount AI/Recordings and adds it
+   * to the shell's index as 'recording'. Refused below RECORDING_DISK.minStartBytes free. Optional: a
+   * shell before 1.5.0 cannot record, and the page offers no Record option.
+   * @param request What is recorded.
+   * @returns The file's name, or why it cannot start.
+   */
+  recordingOpen?: (request: RecordingOpenRequest) => Promise<RecordingOpenResult>;
+  /**
+   * Desktop 1.5.0: appends one encoded piece to a recording's file, in order. Never read or logged.
+   * @param id    The recording's id.
+   * @param track The main file or the stereo file.
+   * @param bytes The piece.
+   * @returns Whether it was written, and how full the drive is.
+   */
+  recordingWrite?: (
+    id: string,
+    track: RecordingTrack,
+    bytes: Uint8Array,
+  ) => Promise<RecordingWriteResult>;
+  /**
+   * Desktop 1.5.0: closes a recording's files and finalises them (length and seek index), in the
+   * background process. Resolves when it is done.
+   * @param id The recording's id.
+   * @returns The recording as it now is.
+   */
+  recordingClose?: (id: string) => Promise<RecordingCloseResult>;
+  /**
+   * Desktop 1.5.0: the recordings on this computer (the shell's index; a recording whose file has gone
+   * is 'missing').
+   * @returns Every recording the index holds.
+   */
+  recordingList?: () => Promise<LocalRecording[]>;
+  /**
+   * Desktop 1.5.0: opens the player window on a recording saved on this computer.
+   * @param id The recording's id.
+   * @returns False when this computer does not have it.
+   */
+  recordingPlay?: (id: string) => Promise<boolean>;
+  /**
+   * Desktop 1.5.0: copies a recording's main file to where the person picks (the system's Save dialog).
+   * @param id The recording's id.
+   * @returns What happened.
+   */
+  recordingSaveAs?: (id: string) => Promise<RecordingSaveResult>;
+  /**
+   * Desktop 1.5.0: shows a recording's file in the system's file manager.
+   * @param id The recording's id.
+   * @returns False when the file is not there.
+   */
+  recordingShowInFolder?: (id: string) => Promise<boolean>;
+  /**
+   * Desktop 1.5.0: moves a recording's files to the Recycle Bin (Trash) and forgets it.
+   * @param id The recording's id.
+   * @returns False when it could not be deleted.
+   */
+  recordingDelete?: (id: string) => Promise<boolean>;
+  /**
+   * Desktop 1.5.0: the displays a screen recording can be made of (more than one shows a picker).
+   * @returns The displays, the main one first.
+   */
+  listDisplays?: () => Promise<RecordingDisplay[]>;
+  /**
+   * Desktop 1.5.0: which display the next screen recording captures (the next video-only
+   * getDisplayMedia request gets it). Null for the main display.
+   * @param displayId The display, or null.
+   * @returns Resolves when set.
+   */
+  setRecordingDisplay?: (displayId: string | null) => Promise<void>;
+  /**
+   * Desktop 1.5.0: this computer's id and name ("Saved on <name>").
+   * @returns The identity.
+   */
+  deviceIdentity?: () => Promise<DeviceIdentity>;
+  /**
+   * Desktop 1.5.0: renames this computer for the account's recordings.
+   * @param name The new name (trimmed; at most DEVICE_NAME_MAX characters; empty goes back to the
+   *             computer's own name).
+   * @returns The identity afterwards.
+   */
+  renameDevice?: (name: string) => Promise<DeviceIdentity>;
 }
 
 /** A size the home panel can ask for (v1.3.0, ADR-0055). */
@@ -348,9 +441,9 @@ export interface HandoffPick {
 /** What windowControl() can do (v1.1.0). */
 export type WindowControlAction = 'minimize' | 'close';
 
-/** The paths openPagesWindow() accepts: Kite's own pages, nothing else (v1.1.0). */
+/** The paths openPagesWindow() accepts: Kite's own pages, nothing else (v1.1.0; /meetings from 1.5.0, ADR-0068). */
 export const PAGES_WINDOW_PATH =
-  /^\/(?:|sessions(?:\/[\w-]+(?:\/edit)?|\/new)?|live\/[\w-]+|settings|ask-kite|resumes|documents|question-bank|mock|help|profile)$/;
+  /^\/(?:|sessions(?:\/[\w-]+(?:\/edit)?|\/new)?|live\/[\w-]+|settings|ask-kite|resumes|documents|question-bank|mock|help|profile|meetings)$/;
 
 /** Which of the stacked overlay's panels are open (v1.1.0, ADR-0041). */
 export interface OverlayLayout {

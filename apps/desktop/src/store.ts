@@ -2,7 +2,8 @@
  * File: apps/desktop/src/store.ts
  * Purpose: The shell's own small settings file (Day 5): the compact window's last position and
  *          size, the screen-share protection setting, (v1.0.2) the overlay preset, and (v1.1.0) the
- *          home panel's place, the overlay's place on each display and its panel heights. A JSON
+ *          home panel's place, the overlay's place on each display and its panel heights, and (1.5.0,
+ *          ADR-0068) this computer's id and name for recordings and the display to record. A JSON
  *          file in Electron's userData folder; holds no call content.
  * Used by: src/windows.ts, src/protection.ts, src/main.ts
  * Depends on: node:fs, @kite/shared (OVERLAY_PRESETS)
@@ -59,6 +60,12 @@ export interface ShellSettings {
    * overlay opens there on that display.
    */
   overlayPositions?: Record<string, OverlayPreset>;
+  /** 1.5.0 (ADR-0068): this installation's random id for the account's recordings ("Saved on …"). */
+  deviceId?: string;
+  /** 1.5.0: the name the person gave this computer (absent: the computer's own name). */
+  deviceName?: string;
+  /** 1.5.0: the display the next screen recording captures, by display id (absent: the main one). */
+  recordingDisplay?: string;
 }
 
 /** The stacked overlay's place on one display (v1.1.0). */
@@ -168,6 +175,14 @@ export function createStore(file: string): ShellStore {
       if (raw.overlayBarsWidened === true) settings.overlayBarsWidened = true;
       if (typeof raw.overlayBarsWidth === 'number' && Number.isFinite(raw.overlayBarsWidth)) {
         settings.overlayBarsWidth = raw.overlayBarsWidth;
+      }
+      if (typeof raw.deviceId === 'string' && raw.deviceId.length <= 64)
+        settings.deviceId = raw.deviceId;
+      if (typeof raw.deviceName === 'string' && raw.deviceName.length <= 200) {
+        settings.deviceName = raw.deviceName;
+      }
+      if (typeof raw.recordingDisplay === 'string' && raw.recordingDisplay.length <= 64) {
+        settings.recordingDisplay = raw.recordingDisplay;
       }
       if (raw.overlayHeights && typeof raw.overlayHeights === 'object') {
         const heights = raw.overlayHeights as Record<string, unknown>;

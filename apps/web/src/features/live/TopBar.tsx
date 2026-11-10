@@ -3,21 +3,24 @@
  * Purpose: The full call window's top bar (v1.0.4, ADR-0040): the same controls as the overlay's, on
  *          the solid dark tokens: the microphone, Answer, Screenshot and Chat with their keys, the
  *          call timer, Back to compact, the ⋮ menu (Script bar, Answer preferences, Clear answers,
- *          Reset overlay size and position, End call) and End.
+ *          Reset overlay size and position, End call) and End. Desktop 1.5.0 (ADR-0068): the Rec pill
+ *          and its popover after Chat, where the app can record.
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/ui (Menu, icons), @kite/shared (hotkeys), src/features/live/overlay/parts.tsx
  *             (KeyChip), src/features/live/callClock.ts, src/features/live/useCallDictation.ts
- *             (CallDictation)
+ *             (CallDictation), src/features/live/overlay/RecordControls.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session); ADR-0040
  */
 'use client';
 
 import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel, type TargetChoice } from '@kite/shared';
 import { useEffect, useState } from 'react';
+import type { CompactCommand, CompactRecording } from '@/core/live/liveChannel';
 import { MenuIcon, MicIcon } from '@/ui/icons';
 import { Menu, type MenuItem } from '@/ui/Menu';
 import { callClock } from './callClock';
 import { KeyChip } from './overlay/parts';
+import { RecordPopover, RecPill } from './overlay/RecordControls';
 import type { CallDictation } from './useCallDictation';
 
 /** Props for TopBar. */
@@ -53,6 +56,70 @@ export interface TopBarProps {
    * the big Answer and Screenshot buttons, the message box with its microphone, and Minimize.
    */
   slim?: boolean | undefined;
+  /** Desktop 1.5.0 (ADR-0068): the meeting recording, where this app can record. */
+  recording?: CompactRecording | undefined;
+  /** Desktop 1.5.0: sends a recording command (the same as the overlay's). */
+  onRecordCommand?: ((command: CompactCommand) => void) | undefined;
+}
+
+/**
+ * The Rec pill and its popover in the top bar (desktop 1.5.0, ADR-0068). Ctrl+Alt+R opens the question
+ * here too (the overlay may be hidden while this window is in front); a new notice opens by itself.
+ * @param props.recording The recording's state.
+ * @param props.onCommand Sends a recording command.
+ * @param props.mac       True on macOS.
+ * @param props.disabled  True while the call ends.
+ * @returns The pill and, when open, its popover.
+ * Rendered by: TopBar
+ */
+function TopBarRecord({
+  recording,
+  onCommand,
+  mac,
+  disabled,
+}: {
+  /** The recording's state. */
+  recording: CompactRecording;
+  /** Sends a recording command. */
+  onCommand: (command: CompactCommand) => void;
+  /** True on macOS. */
+  mac: boolean;
+  /** True while the call ends. */
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState<'question' | 'notice' | null>(null);
+  const [seenPrompts, setSeenPrompts] = useState(recording.promptCount);
+  if (recording.promptCount !== seenPrompts) {
+    setSeenPrompts(recording.promptCount);
+    if (recording.promptCount > seenPrompts) setOpen('question');
+  }
+  const [seenNotice, setSeenNotice] = useState(recording.notice);
+  if (recording.notice !== seenNotice) {
+    setSeenNotice(recording.notice);
+    if (recording.notice && open !== 'question') setOpen('notice');
+    else if (!recording.notice && open === 'notice') setOpen(null);
+  }
+  return (
+    <span className="relative inline-flex">
+      <RecPill
+        recording={recording}
+        open={open === 'question'}
+        onToggle={() => setOpen(open === 'question' ? null : 'question')}
+        disabled={disabled}
+        mac={mac}
+        keyAt="inline-flex"
+      />
+      {open && (
+        <RecordPopover
+          recording={recording}
+          mode={open}
+          onCommand={onCommand}
+          onClose={() => setOpen(null)}
+          left={0}
+        />
+      )}
+    </span>
+  );
 }
 
 /** A button in the bar: its normal size and focus ring; the caller adds its colours. */
@@ -148,6 +215,14 @@ export function TopBar(props: TopBarProps) {
       >
         Chat <KeyChip hotkey="chat" />
       </button>
+      {props.recording && props.onRecordCommand && (
+        <TopBarRecord
+          recording={props.recording}
+          onCommand={props.onRecordCommand}
+          mac={mac}
+          disabled={props.ending}
+        />
+      )}
       <span
         className="px-1.5 font-mono text-[14px] tabular-nums text-ui-text"
         aria-label="Call time"

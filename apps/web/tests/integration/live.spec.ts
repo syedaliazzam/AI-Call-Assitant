@@ -955,8 +955,8 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   expect(Math.abs(left.y - right.y)).toBeLessThanOrEqual(2);
   // The bars keep their width, centred over the panels.
   const bar1 = (await page.getByRole('toolbar', { name: 'Overlay controls' }).boundingBox())!;
-  // ADR-0055: 900 wide since bar 1 holds the Transcript pill.
-  expect(bar1.width).toBeLessThanOrEqual(902);
+  // ADR-0055: 900 wide since bar 1 holds the Transcript pill; ADR-0068 (1.5.0): 980 with the Rec pill.
+  expect(bar1.width).toBeLessThanOrEqual(982);
   expect(Math.abs(bar1.x + bar1.width / 2 - 540)).toBeLessThanOrEqual(2);
 
   // v1.3.2 (like an Otter export): every turn from the same left edge, "<name>  <mm:ss>" above its words.

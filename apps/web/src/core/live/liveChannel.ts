@@ -7,7 +7,7 @@
  *          sends back what the user pressed. One BroadcastChannel per session, so it works between
  *          the desktop app's two windows and with a browser picture-in-picture window. v1.1.0
  *          (ADR-0041): also the transcript's bubbles, the audio levels and the stacked overlay's
- *          commands.
+ *          commands. Desktop 1.5.0 (ADR-0068): the meeting recording's state and its Rec pill's commands.
  * Used by: src/features/live/LiveAnswers.tsx (publishes, takes commands),
  *          src/features/live/CompactLive.tsx (shows, sends commands)
  * Depends on: the browser's BroadcastChannel (injectable for tests)
@@ -17,7 +17,15 @@
  * BroadcastChannel stays inside this browser profile and origin: nothing leaves the computer.
  * Messages are checked before use, and their text is never logged.
  */
-import { ANSWER_TYPES, type AnswerMeta, type AnswerType, type TargetChoice } from '@kite/shared';
+import {
+  ANSWER_TYPES,
+  RECORDING_KINDS,
+  type AnswerMeta,
+  type AnswerType,
+  type RecordingDisplay,
+  type RecordingKind,
+  type TargetChoice,
+} from '@kite/shared';
 import type { AnswerStyle } from '@/core/storage/types';
 
 /** A few of the latest words, as one chip in the overlay's transcript bar. */
@@ -105,6 +113,31 @@ export interface CompactAnswer {
   unavailable: boolean;
 }
 
+/**
+ * The meeting recording, as the call bars show it (desktop 1.5.0, ADR-0068). Absent from an older live
+ * page, and where this app cannot record (the bars then show no Rec pill).
+ */
+export interface CompactRecording {
+  /** Off, starting, recording, or stopping (finalising the files). */
+  state: 'off' | 'starting' | 'on' | 'stopping';
+  /** When the part being recorded started (Unix ms), or null. */
+  startedAt: number | null;
+  /** The type the next start uses (the ⋮ menu's "Recording type"). */
+  kind: RecordingKind;
+  /** The displays (a picker shows in the Start popover when there are several). */
+  displays: RecordingDisplay[];
+  /** The display picked for the next screen recording, or null for the main one. */
+  displayId: string | null;
+  /** True when the session saves its transcript (the stereo file is kept); false shows a warning. */
+  stereo: boolean;
+  /** Grows each time Ctrl+Alt+R is pressed, so the bars open the Start or Stop question. */
+  promptCount: number;
+  /** How many parts this call has recorded so far. */
+  parts: number;
+  /** A short notice (Private turned on, low disk, a stop or failure), or null. */
+  notice: string | null;
+}
+
 /** Everything the overlay shows. */
 export interface CompactState {
   /** Whether each side of the call is coming through. */
@@ -175,6 +208,8 @@ export interface CompactState {
   micDeviceId?: string;
   /** v1.1.0: where "Them" comes from, in words. */
   themSourceLabel?: string;
+  /** Desktop 1.5.0 (ADR-0068): the meeting recording, where this app can record. */
+  recording?: CompactRecording;
 }
 
 /** A command without details. */
@@ -186,7 +221,9 @@ export interface SimpleCommand {
    * 'call-window': open the full call window at the newest answer (v1.0.4, ADR-0040);
    * v1.1.0: 'stop': stop the answer streaming, keeping what arrived; 'clear-transcript': clear the
    * words on screen; 'still-here': yes, still in a call; 'resume': listen again after a pause;
-   * 'headphones-seen': the hint was closed.
+   * 'headphones-seen': the hint was closed. Desktop 1.5.0 (ADR-0068): 'record-stop': stop recording
+   * (after the Stop question); 'record-notice-seen': the recording notice was closed; 'record-prompt':
+   * Ctrl+Alt+R pressed while the overlay had focus (the bars then ask Start or Stop).
    */
   type:
     | 'answer'
@@ -201,7 +238,10 @@ export interface SimpleCommand {
     | 'clear-transcript'
     | 'still-here'
     | 'resume'
-    | 'headphones-seen';
+    | 'headphones-seen'
+    | 'record-stop'
+    | 'record-notice-seen'
+    | 'record-prompt';
 }
 
 /** Answers one transcript bubble, from the overlay's transcript panel (v1.1.0). */
@@ -322,6 +362,25 @@ export interface ReanswerCommand {
   answerType: AnswerType;
 }
 
+/**
+ * Starts recording (desktop 1.5.0, ADR-0068), after the person said everyone agreed (the Rec pill's or
+ * Ctrl+Alt+R's question). The type is the ⋮ menu's.
+ */
+export interface RecordStartCommand {
+  /** Command type. */
+  type: 'record-start';
+  /** The display to record (screen recordings), or null for the main one. */
+  displayId: string | null;
+}
+
+/** Sets the type later recordings in this call use (the ⋮ menu; remembered on this device). */
+export interface RecordKindCommand {
+  /** Command type. */
+  type: 'record-kind';
+  /** Screen and sound, or sound only. */
+  kind: RecordingKind;
+}
+
 /** What the compact view can ask the live page to do. */
 export type CompactCommand =
   | SimpleCommand
@@ -338,7 +397,9 @@ export type CompactCommand =
   | AnswerThisCommand
   | LanguageCommand
   | AutoAnswerCommand
-  | MicCommand;
+  | MicCommand
+  | RecordStartCommand
+  | RecordKindCommand;
 
 /** One message on the channel. */
 type Message =
@@ -500,6 +561,13 @@ export function isCommand(value: unknown): value is CompactCommand {
     const deviceId = (value as { deviceId?: unknown }).deviceId;
     return typeof deviceId === 'string' && deviceId.length <= 256;
   }
+  if (command.type === 'record-start') {
+    const displayId = (value as { displayId?: unknown }).displayId;
+    return displayId === null || (typeof displayId === 'string' && displayId.length <= 64);
+  }
+  if (command.type === 'record-kind') {
+    return (RECORDING_KINDS as readonly unknown[]).includes((value as { kind?: unknown }).kind);
+  }
   return [
     'answer',
     'screenshot',
@@ -514,6 +582,9 @@ export function isCommand(value: unknown): value is CompactCommand {
     'still-here',
     'resume',
     'headphones-seen',
+    'record-stop',
+    'record-notice-seen',
+    'record-prompt',
   ].includes(command.type);
 }
 

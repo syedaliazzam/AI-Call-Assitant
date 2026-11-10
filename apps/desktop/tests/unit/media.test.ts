@@ -6,13 +6,15 @@
  *   "not supported"); other origins are denied;
  * - allowSystemAudioLoopback(): installs a handler (no system picker) that answers the Kite
  *   origin with the first screen + loopback, denies other origins with callback(null), and
- *   denies when no screen source exists or listing sources fails.
+ *   denies when no screen source exists or listing sources fails;
+ * - pickScreenSource() (1.5.0, ADR-0068): a video-only request (the recording) gets the picked display
+ *   while it is connected; the call's system audio always gets the first (main) one.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ desktopCapturer: { getSources: vi.fn() } }));
 
-const { allowSystemAudioLoopback, canCaptureSystemAudio, decideDisplayMedia } =
+const { allowSystemAudioLoopback, canCaptureSystemAudio, decideDisplayMedia, pickScreenSource } =
   await import('../../src/media');
 
 /** The Kite origin used in these tests. */
@@ -140,5 +142,18 @@ describe('allowSystemAudioLoopback', () => {
         }),
       ).ask(KITE_REQUEST),
     ).resolves.toBe(null);
+  });
+});
+
+describe('pickScreenSource (1.5.0, ADR-0068)', () => {
+  const sources = [{ display_id: '1' }, { display_id: '2' }];
+  it('gives a recording the picked display while it is connected', () => {
+    expect(pickScreenSource(sources, false, '2')).toEqual({ display_id: '2' });
+    expect(pickScreenSource(sources, false, 'gone')).toEqual({ display_id: '1' });
+    expect(pickScreenSource(sources, false, null)).toEqual({ display_id: '1' });
+  });
+  it('gives the call’s system audio the main display', () => {
+    expect(pickScreenSource(sources, true, '2')).toEqual({ display_id: '1' });
+    expect(pickScreenSource([], false, '2')).toBeUndefined();
   });
 });

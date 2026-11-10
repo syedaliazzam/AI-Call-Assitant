@@ -24,6 +24,8 @@
  * - `screenshot-send`: send the chat bar's message with a screenshot (v1.2.0, spec S14).
  * - `click-through`: turn the overlay's Click-through mode on or off (v1.3.2): every click and key outside
  *   the bars goes to the app behind.
+ * - `record`: start or stop recording the meeting (desktop 1.5.0, ADR-0068). The page asks for consent
+ *   before a start and confirms a stop, as the Rec pill does.
  */
 export type HotkeyAction =
   | 'answer'
@@ -36,7 +38,8 @@ export type HotkeyAction =
   | 'ask-kite'
   | 'script-bar'
   | 'screenshot-send'
-  | 'click-through';
+  | 'click-through'
+  | 'record';
 
 /** Every action the Kite page carries out (messages from the shell are checked against it). */
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
@@ -51,6 +54,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
   'script-bar',
   'screenshot-send',
   'click-through',
+  'record',
 ];
 
 /** A direction the overlay can move in. */
@@ -75,7 +79,7 @@ export type OverlayAction = 'overlay-toggle' | `overlay-${OverlayDirection}` | O
  * Answer (the live page decides what the overlay shows); the overlay actions are done by the shell.
  */
 export type CallHotkey =
-  'answer' | 'screenshot' | 'chat' | 'script-bar' | 'click-through' | OverlayAction;
+  'answer' | 'screenshot' | 'chat' | 'script-bar' | 'click-through' | 'record' | OverlayAction;
 
 /** A shortcut that works from any app, or the shortcut held for as long as the app runs. */
 export type GlobalHotkey = CallHotkey | 'ask-kite' | 'screenshot-send';
@@ -117,6 +121,10 @@ export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
   // v1.3.2: Click-through. X is free among the Ctrl+Alt shortcuts (H, S, K, T, Enter, Arrows). Goes to the
   // live page like the script bar; on AltGr layouts it can clash, which Settings → Hotkeys reports.
   'click-through': 'CommandOrControl+Alt+X',
+  // Desktop 1.5.0 (ADR-0068): start or stop recording. R is free among the Ctrl+Alt shortcuts (H, S, K,
+  // T, X, Enter, Arrows). Goes to the live page, which asks for consent first; on AltGr layouts it can
+  // clash, which Settings → Hotkeys reports. A shell before 1.5.0 does not register it.
+  record: 'CommandOrControl+Alt+R',
   // v1.3.0 (ADR-0056): Ctrl+Alt+Arrows jump between the six positions; the small nudge moved to
   // Ctrl+Alt+Shift+Arrows. Never Ctrl+Shift+Arrows: in other apps that selects text by word.
   'overlay-spot-left': 'CommandOrControl+Alt+Left',
@@ -181,6 +189,8 @@ export interface HotkeyRow {
   scope: 'global' | 'focused';
   /** The global shortcuts this row stands for (to report conflicts). */
   actions: readonly (GlobalHotkey | 'transcript')[];
+  /** Desktop 1.5.0 (ADR-0068): shown only where meetings can be recorded (a desktop app from 1.5.0). */
+  recording?: true;
   /**
    * Which desktop apps the row is for (v1.3.0, ADR-0056): 'positions' for one with the six positions
    * (1.3.0 and later, and the browser's list), 'classic' only for an older desktop app. Absent: all.
@@ -231,6 +241,13 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     accelerator: DEFAULT_GLOBAL_HOTKEYS['click-through'],
     scope: 'global',
     actions: ['click-through'],
+  },
+  {
+    label: 'Start or stop recording (asks first)',
+    accelerator: DEFAULT_GLOBAL_HOTKEYS.record,
+    scope: 'global',
+    actions: ['record'],
+    recording: true,
   },
   {
     label: 'Move overlay to the next position (← → in its row, ↑ ↓ top or bottom row)',

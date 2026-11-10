@@ -251,6 +251,19 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.getOverlayPosition,
       typeof window.kiteDesktop?.setOverlayPosition,
       typeof window.kiteDesktop?.onOverlayPosition,
+      // 1.5.0 (ADR-0068): meeting recording, the player, displays and this computer's name.
+      typeof window.kiteDesktop?.recordingOpen,
+      typeof window.kiteDesktop?.recordingWrite,
+      typeof window.kiteDesktop?.recordingClose,
+      typeof window.kiteDesktop?.recordingList,
+      typeof window.kiteDesktop?.recordingPlay,
+      typeof window.kiteDesktop?.recordingSaveAs,
+      typeof window.kiteDesktop?.recordingShowInFolder,
+      typeof window.kiteDesktop?.recordingDelete,
+      typeof window.kiteDesktop?.listDisplays,
+      typeof window.kiteDesktop?.setRecordingDisplay,
+      typeof window.kiteDesktop?.deviceIdentity,
+      typeof window.kiteDesktop?.renameDevice,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -270,10 +283,13 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'closeCompactView',
     // v1.3.0 (ADR-0052): the link's one-time sign-in code, given once.
     'consumeLinkCode',
+    // 1.5.0 (ADR-0068): meeting recording, the player, displays and this computer's name.
+    'deviceIdentity',
     // v1.3.0 (ADR-0056): the six positions.
     'getOverlayPosition',
     'getOverlayPreset',
     'getShareProtection',
+    'listDisplays',
     'minimizeMainWindow',
     // v1.2.0 (spec S13): dragging the icon.
     'moveOverlay',
@@ -286,8 +302,17 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'openPagesWindow',
     'os',
     'placeOverlay',
+    'recordingClose',
+    'recordingDelete',
+    'recordingList',
+    'recordingOpen',
+    'recordingPlay',
+    'recordingSaveAs',
+    'recordingShowInFolder',
+    'recordingWrite',
     // v1.3.2 (ADR-0061): the keyboard back to the app behind the overlay.
     'releaseOverlayFocus',
+    'renameDevice',
     'resizeOverlay',
     'setCallActive',
     // v1.2.0 (spec S14): the chat bar's shortcut.
@@ -300,6 +325,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'setOverlayMode',
     'setOverlayOpacity',
     'setOverlayPosition',
+    'setRecordingDisplay',
     'setShareProtection',
     'showCallWindow',
     // v1.3.0 (ADR-0055): the launcher's window size.
@@ -307,7 +333,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'version',
     'windowControl',
   ]);
-  expect(bridge.methods).toEqual(Array(30).fill('function'));
+  expect(bridge.methods).toEqual(Array(42).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);

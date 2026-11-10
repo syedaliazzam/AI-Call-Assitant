@@ -70,11 +70,30 @@ export type DesktopLink =
       sessionId: string;
       /** A one-time sign-in code (ADR-0052), already checked; absent in a link without one. */
       code?: string;
+    }
+  /** Desktop 1.5.0 (ADR-0068): open the player on one recording saved on this computer. */
+  | {
+      /** Which kind of link. */
+      kind: 'recording';
+      /** The recording's id (a UUID), already checked. */
+      recordingId: string;
     };
 
 /**
+ * The link that opens a recording in the desktop app's player (desktop 1.5.0, ADR-0068). It carries
+ * only the recording's id: the app plays it only when the file is on that computer.
+ * @param recordingId The recording's id (a UUID).
+ * @returns The link.
+ * Called from: apps/web/src/features/meetings/*; tests
+ */
+export function desktopRecordingLink(recordingId: string): string {
+  return `${DESKTOP_PROTOCOL}://recording/${recordingId}`;
+}
+
+/**
  * Reads a paramountai:// link. Query strings, fragments, credentials and extra path parts make it
- * invalid: the link has exactly three shapes (open; session/<id>; session/<id>/<code>, ADR-0052).
+ * invalid: the link has exactly four shapes (open; session/<id>; session/<id>/<code>, ADR-0052;
+ * recording/<id>, ADR-0068).
  *
  * @param text The link, as the operating system passed it.
  * @returns What it asks for, or null when it is not a valid link.
@@ -92,8 +111,15 @@ export function parseDesktopLink(text: string): DesktopLink | null {
   if (url.hostname === 'open' && (url.pathname === '' || url.pathname === '/')) {
     return { kind: 'open' };
   }
-  if (url.hostname !== 'session') return null;
   const parts = url.pathname.replace(/^\//, '').split('/');
+  // Desktop 1.5.0 (ADR-0068): recording/<id>, nothing more. A 1.4.0 app reads it as invalid and only
+  // comes forward; the browser page then says to update (features/meetings).
+  if (url.hostname === 'recording') {
+    return parts.length === 1 && SESSION_ID.test(parts[0] ?? '')
+      ? { kind: 'recording', recordingId: parts[0]! }
+      : null;
+  }
+  if (url.hostname !== 'session') return null;
   const [sessionId = '', code] = parts;
   if (parts.length > 2 || !SESSION_ID.test(sessionId)) return null;
   if (code === undefined) return { kind: 'session', sessionId };

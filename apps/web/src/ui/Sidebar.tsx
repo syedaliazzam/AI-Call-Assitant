@@ -23,6 +23,7 @@ import {
   LifeBuoy,
   MessageSquare,
   Plus,
+  Video,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -49,6 +50,8 @@ interface NavItem {
 /** The main links, in display order. */
 const MAIN_ITEMS: readonly NavItem[] = [
   { label: 'Call Sessions', href: '/', icon: <AudioLines {...ICON} /> },
+  // Desktop 1.5.0 (ADR-0068): the recorded meetings (the recordings stay on the computer that made them).
+  { label: 'Meetings', href: '/meetings', icon: <Video {...ICON} /> },
   { label: 'Resumes', href: '/resumes', icon: <IdCard {...ICON} /> },
   { label: 'Documents', href: '/documents', icon: <FileText {...ICON} /> },
   { label: 'Ask AI', href: '/ask-kite', icon: <MessageSquare {...ICON} /> },

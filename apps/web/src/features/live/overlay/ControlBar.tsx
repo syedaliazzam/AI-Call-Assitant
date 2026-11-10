@@ -3,10 +3,12 @@
  * Purpose: Bar 1 of the call bars (spec S13): the screen-audio and microphone icons, each with its ▾;
  *          Answer, Screenshot and Chat with their key-caps; the Transcript pill with its on/off switch
  *          (ADR-0055: it opens and closes the transcript panel, as the live words do); move and compact;
+ *          desktop 1.5.0 (ADR-0068): the Rec pill after the Transcript pill, where the app can record;
  *          the call timer; ⋮; and Exit (red; web 9 Nov 2026: one press ends the call). The bar is the window's drag handle; its
  *          buttons opt out. In a narrow window the key-caps give way first, then the word "Transcript".
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys), lucide-react, src/core/live/liveChannel.ts, ./parts.tsx,
+ *             ./RecordControls.tsx,
  *             src/features/live/callClock.ts, src/ui/icons.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S13); ADR-0041, ADR-0045
  */
@@ -27,6 +29,7 @@ import {
   MoveIcon,
 } from '@/ui/icons';
 import { BUTTON_BASE, CHEVRON_BUTTON, ICON_BUTTON, KeyChip, PILL, StatusIcon } from './parts';
+import { RecPill } from './RecordControls';
 
 /** Which device list is open. */
 export type DeviceList = 'audio' | 'mic';
@@ -73,6 +76,12 @@ export interface ControlBarProps {
    * still take clicks, so the mouse can always turn it off).
    */
   onClickThroughOff?: () => void;
+  /** Desktop 1.5.0 (ADR-0068): whether the Rec pill's popover is open. */
+  recordOpen?: boolean;
+  /** Desktop 1.5.0: opens or closes the Rec pill's popover. */
+  onRecord?: () => void;
+  /** Desktop 1.5.0: the Rec pill (its popover sits under it). */
+  recButton?: RefObject<HTMLButtonElement | null>;
 }
 
 /**
@@ -326,6 +335,17 @@ export function ControlBar(props: ControlBarProps) {
             if (collapsed) props.onCollapse(false);
             props.onTranscript?.(open);
           }}
+        />
+      )}
+      {state?.recording && props.onRecord && (
+        // Desktop 1.5.0 (ADR-0068): after the Transcript pill, in the same style.
+        <RecPill
+          recording={state.recording}
+          open={props.recordOpen ?? false}
+          onToggle={props.onRecord}
+          disabled={ended}
+          mac={mac}
+          buttonRef={props.recButton}
         />
       )}
       <span className="min-w-1 flex-1" />

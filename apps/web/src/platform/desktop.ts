@@ -5,7 +5,8 @@
  *          It reports the shell version and OS, opens the microphone (Day 1) and the other side as
  *          system audio (Day 2), the hotkeys (Day 4), and screenshots, the compact live window and
  *          its screen-share protection through the shell (Day 5), and the overlay's presets,
- *          page-driven resizing and modes (v1.0.2, ADR-0035).
+ *          page-driven resizing and modes (v1.0.2, ADR-0035), and meeting recording (1.5.0, ADR-0068,
+ *          recording.ts).
  * Used by: src/platform/index.ts (getPlatform)
  * Depends on: @kite/shared (KiteDesktopApi), src/platform/types.ts, errors.ts, media.ts,
  *             keymap.ts
@@ -25,6 +26,7 @@ import { LINK_CODE_PATTERN } from '@kite/shared';
 import { installDesktopDocument } from './desktopDocument';
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
+import { desktopRecordingHost } from './recording';
 import {
   defaultOutputKind,
   listMicrophones,
@@ -596,6 +598,9 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
               })),
           }
         : null,
+
+    // 1.5.0 (ADR-0068): meeting recording, when this shell has every recording method.
+    recording: desktopRecordingHost(bridge),
 
     /**
      * The hotkeys: the shell's global shortcuts (work from any app, Stage 8) and the in-page

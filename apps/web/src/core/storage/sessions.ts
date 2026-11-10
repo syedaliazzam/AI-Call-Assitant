@@ -352,8 +352,10 @@ export function sortSessions(sessions: readonly Session[], sort: SessionSort): S
 
 /**
  * Deletes a session and everything stored for it (documents, transcript lines, answers,
- * notes, its question bank and its rejected lesson decisions) in one transaction, so a failure part-way leaves
- * nothing half-deleted. Approved lessons it proposed stay (Settings manages them).
+ * notes, its question bank, its recording records (1.5.0, ADR-0068: the records only; the files stay in
+ * the Recordings folder of the computer that made them) and its rejected lesson decisions) in one
+ * transaction, so a failure part-way leaves nothing half-deleted. Approved lessons it proposed stay
+ * (Settings manages them).
  *
  * @param id The session id.
  * @returns How many related rows were removed (all 0 when the session did not exist).
@@ -363,7 +365,16 @@ export async function deleteSession(id: string): Promise<DeletedSessionData> {
   const db = getDb();
   return db.transaction(
     'rw',
-    [db.sessions, db.documents, db.utterances, db.answers, db.notes, db.lessons, db.questionBanks],
+    [
+      db.sessions,
+      db.documents,
+      db.utterances,
+      db.answers,
+      db.notes,
+      db.lessons,
+      db.questionBanks,
+      db.recordings,
+    ],
     async () => {
       const documents = await db.documents.where('sessionId').equals(id).delete();
       const utterances = await db.utterances.where('sessionId').equals(id).delete();
@@ -377,6 +388,7 @@ export async function deleteSession(id: string): Promise<DeletedSessionData> {
         .delete();
       const questionBanks = (await db.questionBanks.get(id)) ? 1 : 0;
       await db.questionBanks.delete(id);
+      await db.recordings.where('sessionId').equals(id).delete();
       await db.sessions.delete(id);
       return { documents, utterances, answers, notes, rejectedLessons, questionBanks };
     },

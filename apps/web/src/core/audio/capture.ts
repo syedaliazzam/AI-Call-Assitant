@@ -95,6 +95,11 @@ export interface CallCapture {
    * track, which the split-view preview renders; on the desktop (system audio) it has no video.
    */
   otherSideStream(): MediaStream;
+  /**
+   * The current microphone ("You") MediaStream (desktop 1.5.0, ADR-0068: the meeting recording mixes the
+   * call's own streams; changeMic() replaces it).
+   */
+  micStream(): MediaStream;
   /** The latest meter levels. */
   levels(): ChannelLevels;
   /**
@@ -305,6 +310,7 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
       return themSourceValue;
     },
     otherSideStream: () => streams.them,
+    micStream: () => streams.you,
     levels: () => ({ ...current }),
     async reattach(nextEngine) {
       engine = nextEngine;

@@ -6,14 +6,17 @@
  *          hides this window until the call ends. Opened from the Start menu it shows the sessions; opened
  *          by the browser's "Desktop app" link (/home?session=<id>) that session comes first,
  *          highlighted. The acceptable-use notice, the accurate-transcription offer and the one-time
- *          upload of this computer's own data keep their places.
+ *          upload of this computer's own data keep their places. Desktop 1.5.0 (ADR-0068): "Recording saved ·
+ *          Open in Meetings" after a call that recorded, and this computer's recordings brought up to date
+ *          in the account (core/recording/reconcile.ts).
  * Used by: src/features/home/HomePanel.tsx (accounts with account sync)
  * Depends on: next/navigation, src/core/storage/sessions.ts, src/core/stt/prefetch.ts,
  *             src/core/sync/client.ts,
  *             src/features/appearance/useAppearance, src/features/notices/AcceptableUseNotice.tsx,
  *             src/features/sync/LegacyUploadCard.tsx, src/platform, ./AccurateDownload.tsx,
- *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx, ./LauncherStart.tsx
- * Architecture: ADR-0051, ADR-0052, ADR-0055
+ *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx, ./LauncherStart.tsx,
+ *             ./RecordingSavedNotice.tsx, src/core/recording (handoff.ts, reconcile.ts)
+ * Architecture: ADR-0051, ADR-0052, ADR-0055, ADR-0068
  *
  * Session text is shown on screen only; it is never logged.
  */
@@ -33,6 +36,9 @@ import { AccurateDownload } from './AccurateDownload';
 import { DesktopFrame } from './DesktopFrame';
 import { LauncherSessions } from './LauncherSessions';
 import { LauncherConnect } from './LauncherConnect';
+import { RecordingSavedNotice } from './RecordingSavedNotice';
+import { reconcileRecordings } from '@/core/recording/reconcile';
+import { watchRecordingSaved } from '@/core/recording/handoff';
 import { LauncherStart } from './LauncherStart';
 
 /** Props for Launcher. */
@@ -113,6 +119,16 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
   const [view, setView] = useState<LauncherView>({ kind: 'sessions' });
   // The link's session is looked for in the account once when this computer does not have it yet.
   const [pulled, setPulled] = useState(false);
+  // Desktop 1.5.0 (ADR-0068): a call just ended with a recording saved ("Recording saved · Open in
+  // Meetings").
+  const [recordingSaved, setRecordingSaved] = useState(false);
+  useEffect(() => watchRecordingSaved(() => setRecordingSaved(true)), []);
+  // Recordings this computer finalised after a crash or a quit get their length and size in the
+  // account (the shell recovers them when it starts).
+  useEffect(() => {
+    const host = getPlatform().recording;
+    if (available && host) void reconcileRecordings(host).catch(() => undefined);
+  }, [available]);
 
   // Anywhere but a desktop app from 1.1.0 this page has no window of its own.
   useEffect(() => {
@@ -192,6 +208,7 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
           onOpen={(session) => setView({ kind: 'start', sessionId: session.id })}
           notices={
             <>
+              {recordingSaved && <RecordingSavedNotice onClose={() => setRecordingSaved(false)} />}
               <AccurateDownload />
               {/* ADR-0049: offers once to add this computer's own data to the account. */}
               <LegacyUploadCard compact />
@@ -208,6 +225,9 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
         <LauncherConnect
           key={view.sessionId}
           sessionId={view.sessionId}
+          saveTranscript={
+            sessions?.find((session) => session.id === view.sessionId)?.saveTranscript ?? true
+          }
           onBack={() => setView({ kind: 'start', sessionId: view.sessionId })}
           // The call runs: the shell hides this window; when it comes back after End, the sessions
           // card shows "Call ended · View notes".

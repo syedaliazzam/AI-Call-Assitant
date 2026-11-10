@@ -3,7 +3,8 @@
  * hotkey list (ADR-0029): a row reports a conflict only for its own global shortcuts; focused
  * shortcuts never conflict; labels read correctly on Windows and macOS; v1.3.0 (ADR-0056): a desktop
  * app with the six positions (and the browser) gets the jump, nudge and Transcript rows, an older one
- * its own move row.
+ * its own move row. Desktop 1.5.0 (ADR-0068): the recording row (Ctrl+Alt+R) only where meetings can be
+ * recorded, and it reports a conflict when another app holds the keys.
  */
 import { DEFAULT_GLOBAL_HOTKEYS, HOTKEY_ROWS, hotkeyLabel, type HotkeyStatus } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
@@ -55,5 +56,20 @@ describe('hotkeyLabel', () => {
     expect(hotkeyLabel('CommandOrControl+Alt+H', false)).toBe('Ctrl+Alt+H');
     expect(hotkeyLabel('CommandOrControl+Left', true)).toBe('⌘ ←');
     expect(hotkeyLabel('CommandOrControl+Backspace', false)).toBe('Ctrl+⌫');
+  });
+});
+
+describe('the recording row (desktop 1.5.0, ADR-0068)', () => {
+  it('shows only where meetings can be recorded, and reports a taken Ctrl+Alt+R', () => {
+    const label = 'Start or stop recording (asks first)';
+    expect(hotkeyRowsFor(true).map((row) => row.label)).not.toContain(label);
+    expect(hotkeyRowsFor(true, true).map((row) => row.label)).toContain(label);
+    const taken: HotkeyStatus[] = [
+      { action: 'record', accelerator: DEFAULT_GLOBAL_HOTKEYS.record, registered: false },
+    ];
+    expect(HOTKEY_ROWS.filter((row) => rowHasConflict(row, taken)).map((row) => row.label)).toEqual(
+      [label],
+    );
+    expect(DEFAULT_GLOBAL_HOTKEYS.record).toBe('CommandOrControl+Alt+R');
   });
 });

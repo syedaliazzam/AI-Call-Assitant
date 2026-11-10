@@ -2,8 +2,8 @@
  * File: apps/web/src/core/storage/db.ts
  * Purpose: Kite's local database on the user's device: one IndexedDB database ("kite") opened
  *          with Dexie, with the stores of architecture §7.4 (sessions, documents, utterances,
- *          answers, notes; settings from version 2; lessons from version 3) and the indexes the
- *          dashboard and per-session lookups need.
+ *          answers, notes; settings from version 2; lessons from version 3; recording records from
+ *          version 10, ADR-0068) and the indexes the dashboard and per-session lookups need.
  * Used by: src/core/storage/sessions.ts, documents.ts, utterances.ts, lessons.ts, wipe.ts
  * Depends on: dexie; src/core/storage/types.ts; src/core/sync/capture.ts (account caches, ADR-0049)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (data model), §8.1;
@@ -35,6 +35,7 @@ import type {
   StoredLesson,
   StoredNotes,
   StoredQuestionBank,
+  StoredRecording,
   StoredSettings,
   StoredUtterance,
 } from './types';
@@ -73,6 +74,8 @@ export class KiteDb extends Dexie {
   declare syncRevs: EntityTable<SyncRev, 'ref'>;
   /** Sync bookkeeping: the last pull's server time, pending account preferences (version 9). */
   declare syncMeta: EntityTable<SyncMetaRow, 'id'>;
+  /** Recording parts (version 10, ADR-0068): small records; the files stay on the computer that made them. */
+  declare recordings: EntityTable<StoredRecording, 'id'>;
 
   /**
    * Declares the schema. Only indexed fields are listed (Dexie stores every field of a row);
@@ -203,6 +206,11 @@ export class KiteDb extends Dexie {
       outbox: '++seq, ref',
       syncRevs: 'ref',
       syncMeta: 'id',
+    });
+    // Version 10 (desktop 1.5.0, ADR-0068): one small record per recording part, by session and by
+    // meeting. Nothing existing changes.
+    this.version(10).stores({
+      recordings: 'id, sessionId, meetingId, startedAt',
     });
   }
 }

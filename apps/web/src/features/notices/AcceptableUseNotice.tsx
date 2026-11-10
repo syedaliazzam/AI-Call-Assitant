@@ -16,7 +16,7 @@ import { Dialog } from '@/ui/Dialog';
 
 /** The notice's words, exactly as the developer wrote them. */
 export const ACCEPTABLE_USE_TEXT =
-  "Use Paramount AI in calls where AI assistance is allowed — your own meetings, client calls, practice and mock interviews. Don't use it to get hidden help in interviews, exams or assessments where outside help isn't permitted. Screen-share protection only hides Paramount AI's windows; it does nothing against monitoring or proctoring tools. Recording or transcribing others may require their consent.";
+  "Use Paramount AI in calls where AI assistance is allowed — your own meetings, client calls, practice and mock interviews. Don't use it to get hidden help in interviews, exams or assessments where outside help isn't permitted. Screen-share protection only hides Paramount AI's windows; it does nothing against monitoring or proctoring tools. Record a meeting only when everyone on it has agreed; recording or transcribing others may require their consent.";
 
 /**
  * Nothing to subscribe to: only this component marks the notice as seen, and it holds that in state.
