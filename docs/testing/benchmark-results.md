@@ -657,3 +657,17 @@ Claude's time to first word was not measured (no paid calls). One run each; run-
 | Stereo WebM → WebM with length and seek index | 328 ms | 9.8 MB | 254 MB |
 
 MP4 with `fastStart: 'reserve'` is refused by Mediabunny without packet counts per track; not needed (local files). In Chromium (`<video>` on the local file): the raw file has **no length when it loads** (found only by seeking to the end); the finalised Matroska and MP4 give 1,199.8 s at once, and seeks to 25 / 50 / 90 / 10% took 59 / 63 / 86 / 46 ms (Matroska) and 66 / 59 / 117 / 72 ms (MP4); the finalised stereo file 17 / 8 / 9 / 4 ms. **Second monitor:** not checked, this laptop has one display.
+
+## Meeting recording: release 1.5.0 checks (10 Nov 2026, ADR-0068)
+
+Same laptop (i5-8350U, Windows 11 Pro 10.0.26200), plugged in. Every recording was of the synthetic cover (`apps/desktop/tests/fixtures/cover`, its own Electron process, its corner markers checked before any capture and in every decoded frame); the files were in temporary folders and deleted. Numbers only.
+
+| Check | Result | Notes |
+|---|---|---|
+| Lint, typecheck, unit tests | web 1,809 of 1,809; desktop 221 of 221 | New: core/recording (format, recorder with fake Web Audio and MediaRecorder, handoff, reconcile, meetings), storage, platform host, the shell's manager on real files and its host (IPC, byte ranges, Save as / MP4, displays, device name). |
+| Integration harness (`tests/integration`, all) | 161 of 161 | Updated for the schema version (10), the Meetings sidebar link and bar 1's 980 width. |
+| Desktop smoke test | 20 of 20 (this checkout's build and the packaged program) | The bridge has 49 keys (12 new methods). |
+| Recording check (`tests/manual/recording.spec.ts`, real shell + the rig's real call page) | 2 of 2 (this checkout's build and the packaged program) | Part 1 started with the Rec pill (consent question), stopped with Ctrl+Alt+R; part 2 the other way round; Ctrl+Alt+R registered during the call; Private on by itself. In the decoded part 2 (8.4–9.3 s), the overlay's painted area: **0.000** with Private on, **0.999–1.000** with it off. Meetings: one meeting, 2 parts, rename, Play opens the player (length, two parts, transcript, Save as / Open folder / Delete). Crash (the app's process tree killed while recording): recovered at the next start, playable, 6.1–6.7 s. |
+| Overlay layout with the Rec pill | bar 1 fits at 980 wide | At 900 (the 1.4.0 width) ⋮ and Exit were cut off (page screenshots of the overlay only); 1.5.0 opens the overlay 980 wide and widens a saved 900 place once; the pill's key-cap gives way to the time while recording. |
+| Upgrade 1.4.0 → 1.5.0 (`upgrade.spec.ts`, the released 1.4.0 program extracted from its installer, never installed) | 1 of 1 | Sessions, settings, sign-in and the Private setting kept. |
+| `Paramount-AI-Setup-1.5.0.exe` | 288,801,386 bytes; SHA-256 `3da2965f1930715475f39b908e58894fea87b73f705d4950d6e669ae8f0a7f85` | 1.4.0 was 288,617,707 bytes (+0.18 MB: Mediabunny in the finalising worker). The Windows install step itself is not run on this computer. |

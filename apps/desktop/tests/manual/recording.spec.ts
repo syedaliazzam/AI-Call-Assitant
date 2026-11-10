@@ -16,7 +16,8 @@
  *          this computer's real sound (as in any call): the files stay in a temporary folder, are only
  *          decoded for pixels, and are deleted at the end. Numbers only are printed.
  *          Needs the overlay rig running (`pnpm --filter web exec tsx tests/visual/overlay-rig.ts`, port
- *          3123) and this checkout's shell built (`pnpm --filter @kite/desktop build`). Temporary profiles.
+ *          3123) and this checkout's shell built (`pnpm --filter @kite/desktop build`), or a packaged program
+ *          named by KITE_INSTALLED_EXE (release/win-unpacked/Paramount AI.exe). Temporary profiles.
  *          Usage: pnpm --filter @kite/desktop exec playwright test -c playwright.manual.config.ts recording
  * Used by: the developer before a release (docs/testing/benchmark-results.md, 1.5.0)
  * Depends on: @playwright/test (_electron), tests/fixtures/cover, the rig's /call page
@@ -129,9 +130,13 @@ test.afterAll(() => {
  * @returns The app.
  */
 async function launch(): Promise<ElectronApplication> {
+  // KITE_INSTALLED_EXE: a packaged program (release/win-unpacked) instead of this checkout's build, so
+  // the finalising worker is checked from inside the app archive too.
+  const installed = process.env.KITE_INSTALLED_EXE;
   return electron.launch({
+    ...(installed ? { executablePath: installed } : {}),
     args: [
-      APP_DIR,
+      ...(installed ? [] : [APP_DIR]),
       `--user-data-dir=${PROFILE}`,
       '--use-fake-device-for-media-stream',
       `--use-file-for-fake-audio-capture=${MIC}`,
