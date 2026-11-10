@@ -85,16 +85,22 @@ const ELECTRON = createRequire(__filename)('electron') as string;
 /** The environment without the editor's ELECTRON_RUN_AS_NODE (it would start Electron as Node). */
 const { ELECTRON_RUN_AS_NODE: _runAsNode, ...BASE_ENV } = process.env;
 
-/** Where this run's recordings go, and the folders to remove at the end. */
-const RECORDINGS = mkdtempSync(path.join(tmpdir(), 'kite-rec-files-'));
-const PROFILE = mkdtempSync(path.join(tmpdir(), 'kite-rec-profile-'));
-const COVER_PROFILE = mkdtempSync(path.join(tmpdir(), 'kite-rec-cover-'));
+/**
+ * Where this run's recordings go, the shell's profile and the cover's: made in beforeAll (Playwright also
+ * loads this file just to list the tests, which must leave nothing behind) and removed in afterAll.
+ */
+let RECORDINGS = '';
+let PROFILE = '';
+let COVER_PROFILE = '';
 
 let cover: ChildProcess | null = null;
 
 test.describe.configure({ mode: 'serial', timeout: 600_000 });
 
 test.beforeAll(async () => {
+  RECORDINGS = mkdtempSync(path.join(tmpdir(), 'kite-rec-files-'));
+  PROFILE = mkdtempSync(path.join(tmpdir(), 'kite-rec-profile-'));
+  COVER_PROFILE = mkdtempSync(path.join(tmpdir(), 'kite-rec-cover-'));
   cover = spawn(
     ELECTRON,
     [
@@ -118,10 +124,16 @@ test.beforeAll(async () => {
   });
 });
 
-test.afterAll(() => {
-  cover?.kill();
-  for (const dir of [RECORDINGS, PROFILE, COVER_PROFILE]) {
-    rmSync(dir, { recursive: true, force: true });
+test.afterAll(async () => {
+  // The cover's process holds its profile until it has exited, and Windows refuses to delete a folder in
+  // use: wait for it, then retry a little, so no recording is ever left behind in the temporary folder.
+  if (cover && cover.exitCode === null) {
+    const exited = new Promise((resolve) => cover!.once('exit', resolve));
+    cover.kill();
+    await exited;
+  }
+  for (const dir of [RECORDINGS, PROFILE, COVER_PROFILE].filter(Boolean)) {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
   }
 });
 
