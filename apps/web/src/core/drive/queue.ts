@@ -52,8 +52,9 @@ export function rememberDriveStatus(status: DriveStatusResponse): void {
 /**
  * The last remembered answer.
  * @returns True when the account saved to Drive last time this device asked.
+ * Called from: queueCallForDrive(); features/drive/useDrive.ts (useDriveSaves)
  */
-function rememberedSaves(): boolean {
+export function rememberedSaves(): boolean {
   try {
     return localStorage.getItem(DRIVE_ENABLED_KEY) === '1';
   } catch {

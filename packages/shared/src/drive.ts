@@ -37,8 +37,8 @@ export const MAX_ALSO_NOTIFY = 20;
 /** The longest email address accepted, characters (RFC 5321's path limit). */
 export const MAX_EMAIL_CHARS = 254;
 
-/** The most files one "saved" email lists. */
-export const MAX_SAVED_FILES = 40;
+/** The most files (or recording parts) one report or one session record carries. */
+export const MAX_SAVED_FILES = 200;
 
 /** The longest session title or file name an email carries, characters. */
 export const MAX_SAVED_NAME_CHARS = 200;
@@ -123,16 +123,44 @@ export interface DriveSettingsRequest {
 /** Which session subfolder a saved file is in. */
 export type DriveSubfolder = 'Recordings' | 'Transcripts';
 
-/** One file a session's upload saved, as the email lists it (name only, never content). */
+/** What a saved file is, for its label in the email ("Recording Part 1", "Stereo audio", …). */
+export type DriveFileKind =
+  'recording' | 'stereo' | 'transcript-txt' | 'transcript-pdf' | 'notes-pdf';
+
+/** One file a session's upload saved, as the email lists it (name and Drive id only, never content). */
 export interface DriveSavedFile {
   /** The file's name in Drive. */
   name: string;
   /** Its subfolder. */
   folder: DriveSubfolder;
+  /**
+   * Its stable key ('rec:<recording>:main', 'call:<start>:notes-pdf', …), so reports from several
+   * devices and retries merge instead of repeating. Absent in records made before 1.6.0's release.
+   */
+  key?: string;
+  /** Its Drive id, for a direct link. Absent in older records. */
+  fileId?: string;
+  /** What it is. Absent in older records. */
+  kind?: DriveFileKind;
+  /** The recording part (recordings and stereo files). */
+  part?: number;
+}
+
+/** A recording part the account knows the session has (from any computer), which the email waits for. */
+export interface DriveExpectedRecording {
+  /** The recording's id. */
+  id: string;
+  /** Its part, from 1. */
+  part: number;
+  /** True when it has a stereo sound file too (also waited for). */
+  stereo: boolean;
 }
 
 /**
- * POST /api/drive/notify: a session's uploads all finished. Only these fields exist, so an email can
+ * POST /api/drive/notify: a device's report of what it saved for a session (when its uploads finish, or
+ * stop with some files saved). The server merges every device's reports per session and sends ONE email
+ * when every expected file is in (or after 24 hours, saying the recording upload is pending). Only these
+ * fields exist, so an email can
  * never carry transcript, notes, answer or document text.
  */
 export interface DriveNotifyRequest {
@@ -152,6 +180,15 @@ export interface DriveNotifyRequest {
   timeZone: string;
   /** This session's own "Also notify" list, replacing the Settings list; null to use Settings. */
   alsoNotify: string[] | null;
+  /** Every recording part the account knows this session has (this computer's and other computers'). */
+  expectedRecordings: DriveExpectedRecording[];
+  /** Recordings that can never be uploaded (their files were deleted): no longer waited for. */
+  goneRecordings: string[];
+  /**
+   * True for a session that must not be emailed automatically (saved before the combined email, or with
+   * "Upload to Drive"): a new record waits for "Send email" in Settings.
+   */
+  manualOnly: boolean;
 }
 
 /**
@@ -159,10 +196,12 @@ export interface DriveNotifyRequest {
  * - sent: the mail server accepted it;
  * - failed: the mail server refused it or could not be reached (Retry in Settings);
  * - off: the person's email switch was off;
- * - not-set-up: email (SMTP) is not configured on this deployment;
- * - pending: being sent now.
+ * - not-set-up: email (SMTP) was not configured when the session was complete ("Send email" in Settings);
+ * - pending: being sent now;
+ * - collecting: files are still arriving (a recording from the desktop app, for example).
  */
-export type DriveNotificationStatus = 'sent' | 'failed' | 'off' | 'not-set-up' | 'pending';
+export type DriveNotificationStatus =
+  'sent' | 'failed' | 'off' | 'not-set-up' | 'pending' | 'collecting';
 
 /** POST /api/drive/notify's reply. */
 export interface DriveNotifyResponse {
@@ -186,6 +225,10 @@ export interface DriveNotificationItem {
   folderUrl: string;
   /** How many addresses the email went (or would go) to. */
   recipients: number;
+  /** How many files are in Drive. */
+  files: number;
+  /** True when the email was (or will be) sent without the recording, whose upload had not finished. */
+  recordingPending: boolean;
 }
 
 /** GET /api/drive/notifications. */

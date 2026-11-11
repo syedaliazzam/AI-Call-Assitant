@@ -17,7 +17,10 @@
  * Never logs: ids, names, titles and file contents stay out of the console.
  */
 import {
+  MAX_SAVED_FILES,
   savedHeadline,
+  type DriveExpectedRecording,
+  type DriveFileKind,
   type DesktopNotice,
   type DriveSavedFile,
   type DriveStatusResponse,
@@ -52,6 +55,24 @@ export interface DriveRecordingHost {
     request: DriveUploadRequest,
     onProgress: (progress: DriveUploadProgress) => void,
   ): Promise<DriveUploadResult>;
+}
+
+/** A recording part the account knows of, with its start (to match it to a call). */
+export interface KnownRecording extends DriveExpectedRecording {
+  /** When it started (Unix ms). */
+  startedAt: number;
+}
+
+/**
+ * Whether a recording belongs to one of a job's calls (the window planFiles() uses).
+ * @param job       The job.
+ * @param startedAt When the recording started.
+ * @returns True when it was made during one of the job's calls.
+ */
+function inJobCalls(job: Pick<DriveSessionJob, 'calls'>, startedAt: number): boolean {
+  return job.calls.some(
+    (call) => startedAt >= call.startedAt - RECORDING_SLACK_MS && startedAt <= call.endedAt,
+  );
 }
 
 /** The job store (core/storage/driveUploads.ts; tests use a Map). */
@@ -105,6 +126,12 @@ export interface UploaderDeps {
   now(): number;
   /** The person's time zone (for the email's date). */
   timeZone(): string;
+  /**
+   * Every recording part the account knows a session has (this computer's index and the synced records
+   * of other computers), finished ones only, with when each started.
+   * @param sessionId The session.
+   */
+  expectedRecordings(sessionId: string): Promise<KnownRecording[]>;
 }
 
 /** How one job's turn ended. */
@@ -190,6 +217,7 @@ export function planFiles(
         ),
         recordingId: recording.id,
         track: 'main',
+        part: recording.part,
         bytes: recording.bytes,
         sent: 0,
         done: false,
@@ -201,6 +229,7 @@ export function planFiles(
           name: recordingDriveName(call.startedAt, recording.part, 'webm', true),
           recordingId: recording.id,
           track: 'stereo',
+          part: recording.part,
           bytes: 0,
           sent: 0,
           done: false,
@@ -401,47 +430,94 @@ export async function processDriveJob(
 
   // A recording kept on another computer is left to that computer; the rest is done here.
   const pendingElsewhere = job.files.some((file) => !file.done);
-  await save({ state: 'done', reason: undefined, autoRetry: undefined, noticeShown: false });
-  const saved: DriveSavedFile[] = job.files
-    .filter((file) => file.done && !file.missing)
-    .map((file) => ({ name: file.name, folder: file.folder }));
+  await save({
+    state: 'done',
+    reason: undefined,
+    autoRetry: undefined,
+    noticeShown: false,
+    notified: false,
+  });
+  const saved = savedFiles(job);
   if (saved.length > 0 && !pendingElsewhere) {
-    const folderUrl = `https://drive.google.com/drive/folders/${encodeURIComponent(job.folderId!)}`;
     deps.notice({
       title: `${savedHeadline(saved)} — ${title}`,
       body: 'Open in Drive',
-      url: folderUrl,
+      url: `https://drive.google.com/drive/folders/${encodeURIComponent(job.folderId!)}`,
     });
-    await notifyServer(deps, job, session, title, saved, folderUrl, save);
   }
+  await reportToServer(deps, job, session, title, save);
   return 'done';
 }
 
 /**
- * Tells the server a session's uploads finished (it sends at most one email per session). A refusal is
- * not retried (the server already has it, or the email is off); a lost connection is, at the next run.
+ * The files a job has in Drive, as the server's report lists them: name, subfolder, stable key, Drive
+ * id, what it is and its part. Never content.
  *
- * @param deps      The dependencies.
- * @param job       The job.
- * @param session   The session.
- * @param title     Its title.
- * @param files     The saved files.
- * @param folderUrl The session folder.
- * @param save      Saves the job.
+ * @param job The job.
+ * @returns The saved files.
+ * Called from: processDriveJob(), reportToServer(); tests
+ */
+export function savedFiles(job: Pick<DriveSessionJob, 'files'>): DriveSavedFile[] {
+  return job.files
+    .filter((file) => file.done && !file.missing)
+    .map((file) => {
+      const kind = /:(transcript-txt|transcript-pdf|notes-pdf)$/.exec(file.key)?.[1] as
+        DriveFileKind | undefined;
+      const part = file.part ?? Number(/Part (\d+)/.exec(file.name)?.[1] ?? 1);
+      return {
+        name: file.name,
+        folder: file.folder,
+        key: file.key,
+        ...(file.driveFileId ? { fileId: file.driveFileId } : {}),
+        ...(file.track
+          ? { kind: (file.track === 'main' ? 'recording' : 'stereo') as DriveFileKind, part }
+          : kind
+            ? { kind }
+            : {}),
+      };
+    });
+}
+
+/**
+ * Whether the server should be told about this job now: it has saved files the server has not heard
+ * of, or it finished since its last report.
+ *
+ * @param job The job.
+ * @returns True when a report is due.
+ * Called from: runDriveQueue(); tests
+ */
+export function reportDue(job: DriveSessionJob): boolean {
+  if (!job.folderId || (job.state !== 'done' && job.state !== 'error')) return false;
+  const saved = savedFiles(job).length;
+  return saved > 0 && (saved > (job.reportedFiles ?? 0) || (job.state === 'done' && !job.notified));
+}
+
+/**
+ * Reports what this device saved for a session to the server, which merges every device's reports and
+ * sends the session's one email when everything expected is in (or after 24 hours). Sent with the
+ * recordings the account knows the session has, so the email waits for a recording another computer is
+ * still uploading. A refusal is not retried (the record is there, or the request is wrong); a lost
+ * connection is, at the next run.
+ *
+ * @param deps    The dependencies.
+ * @param job     The job.
+ * @param session The session.
+ * @param title   Its title.
+ * @param save    Saves the job.
  * @returns When done.
  * Called from: processDriveJob(), runDriveQueue()
  */
-async function notifyServer(
+async function reportToServer(
   deps: UploaderDeps,
   job: DriveSessionJob,
   session: Session,
   title: string,
-  files: DriveSavedFile[],
-  folderUrl: string,
   save: (changes: Partial<DriveSessionJob>) => Promise<void>,
 ): Promise<void> {
-  if (job.notified) return;
+  const files = savedFiles(job);
+  if (files.length === 0 || !job.folderId) return;
   const first = job.calls[0];
+  const reported = { reportedFiles: files.length, notified: job.state === 'done' };
   try {
     await deps.api.notify({
       sessionId: job.sessionId,
@@ -451,12 +527,24 @@ async function notifyServer(
         (sum, call) => sum + Math.max(0, call.endedAt - call.startedAt),
         0,
       ),
-      files: files.slice(0, 40),
-      folderUrl,
+      files: files.slice(0, MAX_SAVED_FILES),
+      folderUrl: `https://drive.google.com/drive/folders/${encodeURIComponent(job.folderId)}`,
       timeZone: deps.timeZone(),
       alsoNotify: session.driveAlsoNotify?.length ? session.driveAlsoNotify : null,
+      // Only the recordings of the calls this upload covers: an older call's recording that was never
+      // part of an upload is not waited for.
+      expectedRecordings: (await deps.expectedRecordings(job.sessionId))
+        .filter((recording) => inJobCalls(job, recording.startedAt))
+        .map(({ id, part, stereo }) => ({ id, part, stereo }))
+        .slice(0, MAX_SAVED_FILES),
+      goneRecordings: [
+        ...new Set(
+          job.files.filter((file) => file.missing && file.recordingId).map((f) => f.recordingId!),
+        ),
+      ],
+      manualOnly: job.manualEmail === true,
     });
-    await save({ notified: true });
+    await save(reported);
   } catch (error) {
     if (
       error instanceof DriveApiError &&
@@ -464,7 +552,7 @@ async function notifyServer(
       error.status < 500 &&
       error.status !== 429
     ) {
-      await save({ notified: true });
+      await save(reported);
     }
   }
 }
@@ -586,7 +674,23 @@ export const AUTO_RETRY_MS = 2 * 60_000;
  */
 export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
   if (await deps.callActive()) return 'call';
+  const local = deps.host ? await deps.host.recordings().catch(() => []) : [];
   for (const job of await deps.jobs.list()) {
+    // A job from before the combined email (1.6.0): told once more, with Drive ids, but never emailed
+    // automatically ("Send email" in Settings).
+    if (job.reportedFiles === undefined) {
+      await deps.jobs.put({ ...job, reportedFiles: 0, manualEmail: job.notified || undefined });
+      continue;
+    }
+    // A finished session with a recording on this computer it has not saved (recorded before this
+    // app could upload, or finalised after the job finished): queued again for it. Nothing saved is
+    // uploaded twice.
+    if (job.state === 'done' && local.length > 0) {
+      if (planFiles(job, local, new Map()).length > job.files.length) {
+        await deps.jobs.put({ ...job, state: 'queued', updatedAt: deps.now() });
+        continue;
+      }
+    }
     if (job.state === 'error' && job.autoRetry && deps.now() - job.updatedAt >= AUTO_RETRY_MS) {
       await deps.jobs.put({
         ...job,
@@ -607,7 +711,7 @@ export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
       job.state === 'uploading' ||
       job.state === 'paused' ||
       job.state === 'waiting' ||
-      (job.state === 'done' && !job.notified),
+      reportDue(job),
   );
   if (moving.length === 0) return 'idle';
   let status: DriveStatusResponse;
@@ -622,27 +726,16 @@ export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
       await deps.jobs.put({ ...job, state: 'queued', reason: undefined, updatedAt: deps.now() });
     }
   }
-  // Finished jobs whose notification did not reach the server (offline at the time).
-  for (const job of all.filter((j) => j.state === 'done' && !j.notified && j.folderId)) {
+  // Reports still due: a finish the server did not hear of (offline at the time), or files saved before
+  // an error (so a session that waits 24 hours for its recording has a record to send from).
+  for (const job of all.filter(reportDue)) {
     const session = await deps.session(job.sessionId);
     if (!session) continue;
-    const saved = job.files
-      .filter((file) => file.done && !file.missing)
-      .map((file) => ({ name: file.name, folder: file.folder }));
-    if (saved.length === 0) continue;
     let current = job;
-    await notifyServer(
-      deps,
-      job,
-      session,
-      sessionTitle(session),
-      saved,
-      `https://drive.google.com/drive/folders/${encodeURIComponent(job.folderId!)}`,
-      async (changes) => {
-        current = { ...current, ...changes };
-        await deps.jobs.put(current);
-      },
-    );
+    await reportToServer(deps, job, session, sessionTitle(session), async (changes) => {
+      current = { ...current, ...changes };
+      await deps.jobs.put(current);
+    });
   }
   for (;;) {
     if (await deps.callActive()) return 'call';

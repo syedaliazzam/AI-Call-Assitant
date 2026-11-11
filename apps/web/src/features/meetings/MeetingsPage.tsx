@@ -110,7 +110,7 @@ function MeetingRow({
           {status ? <span className="text-ui-muted"> · {status}</span> : null}
         </p>
         {/* 1.6.0 (ADR-0072): the session's Google Drive upload from this computer. */}
-        <DriveSessionStatus sessionId={meeting.sessionId} />
+        <DriveSessionStatus sessionId={meeting.sessionId} canUpload />
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {here === true && (

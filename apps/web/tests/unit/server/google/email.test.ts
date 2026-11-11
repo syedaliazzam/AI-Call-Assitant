@@ -15,6 +15,8 @@ import {
   smtpTransportOptions,
   type Mailer,
   type OutgoingEmail,
+  RECORDING_PENDING_TEXT,
+  emailFiles,
   formatLength,
   formatWhen,
   sendSavedEmail,
@@ -42,10 +44,12 @@ describe('buildSavedEmail', () => {
     const email = buildSavedEmail(CONTENT);
     expect(email.subject).toBe('Recording and transcript saved — Acme – Backend <Engineer>');
     expect(email.text).toContain('Date: Wed, 11 Nov 2026, 14:30');
-    expect(email.text).toContain('Length: 42 min');
-    expect(email.text).toContain('- Recordings/2026-11-11 14.30 Part 1.mkv');
-    expect(email.text).toContain('Open in Drive: https://drive.google.com/drive/folders/F1');
-    expect(email.text).toContain('People need access to the Drive folder to open the link.');
+    expect(email.text).toContain('Duration: 42 min');
+    // Records made before file ids were kept: labelled, without a direct link.
+    expect(email.text).toContain('- Recording Part 1 (2026-11-11 14.30 Part 1.mkv)');
+    expect(email.text).toContain('Open folder in Drive: https://drive.google.com/drive/folders/F1');
+    expect(email.text).toContain('People need access to the Drive folder to open the links.');
+    expect(email.html).toContain('Open folder in Drive</a>');
     expect(email.html).toContain('Backend &lt;Engineer&gt;');
     expect(email.html).not.toContain('<Engineer>');
   });
@@ -161,5 +165,55 @@ describe('createRateLimiter', () => {
     expect(limiter.allow('b')).toBe(true);
     now = 1_001;
     expect(limiter.allow('a')).toBe(true);
+  });
+});
+
+describe('file links (1.6.0)', () => {
+  it('links each file directly, labelled and in order, and says when the recording is pending', () => {
+    const files = [
+      {
+        name: 'n.pdf',
+        folder: 'Transcripts',
+        key: 'call:1:notes-pdf',
+        fileId: 'NOTES1',
+        kind: 'notes-pdf',
+      },
+      {
+        name: 't.pdf',
+        folder: 'Transcripts',
+        key: 'call:1:transcript-pdf',
+        fileId: 'TPDF1',
+        kind: 'transcript-pdf',
+      },
+      {
+        name: 's.webm',
+        folder: 'Recordings',
+        key: 'rec:r:stereo',
+        fileId: 'ST1',
+        kind: 'stereo',
+        part: 1,
+      },
+      {
+        name: 'p.mkv',
+        folder: 'Recordings',
+        key: 'rec:r:main',
+        fileId: 'REC1',
+        kind: 'recording',
+        part: 1,
+      },
+    ] as const;
+    expect(emailFiles([...files]).map((f) => [f.label, f.url])).toEqual([
+      ['Recording Part 1', 'https://drive.google.com/file/d/REC1/view'],
+      ['Stereo audio', 'https://drive.google.com/file/d/ST1/view'],
+      ['Transcript (PDF)', 'https://drive.google.com/file/d/TPDF1/view'],
+      ['Notes (PDF)', 'https://drive.google.com/file/d/NOTES1/view'],
+    ]);
+    const email = buildSavedEmail({ ...CONTENT, files: [...files], recordingPending: true });
+    expect(email.text).toContain('- Recording Part 1: https://drive.google.com/file/d/REC1/view');
+    expect(email.html).toContain('href="https://drive.google.com/file/d/NOTES1/view"');
+    expect(email.text).toContain(RECORDING_PENDING_TEXT);
+    expect(buildSavedEmail({ ...CONTENT, files: [...files] }).text).not.toContain(
+      RECORDING_PENDING_TEXT,
+    );
   });
 });

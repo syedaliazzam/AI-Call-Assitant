@@ -235,7 +235,7 @@ export function SessionCardFrame({
           )}
         </div>
         {/* 1.6.0 (ADR-0072): this device's Google Drive upload, when it saves this session. */}
-        <DriveSessionStatus sessionId={session.id} />
+        <DriveSessionStatus sessionId={session.id} canUpload={session.lastActiveAt !== null} />
       </div>
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <SessionStatusLines session={session} status={status} answers={answers} />
