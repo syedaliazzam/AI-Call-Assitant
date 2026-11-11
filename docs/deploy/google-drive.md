@@ -58,6 +58,19 @@ Today's project is the developer's own test project (External, testing mode). To
 
 **8. Everyone reconnects.** A refresh token belongs to the OAuth client that issued it. After the switch each person's next upload fails with `invalid_client` and their Settings shows **Reconnect Google Drive**; queued uploads are kept. Each person: Settings → Google Drive → **Reconnect Google Drive** → allow → in the Picker choose the **team folder** (Change folder if a folder from the old project is still shown). Uploads then continue by themselves.
 
+### Switched to team project (12 November 2026)
+
+Done on 12 November 2026 (deployment live 2026-11-11 19:49 UTC):
+
+- **Google project:** the team's company project. Consent screen **Internal** (only `@paramountintelligence.co` Google accounts can connect; no test users, no 7-day expiry), scope `drive.file` only.
+- **Where files go:** a folder in the Shared Drive **Paramount AI Calls**, which each person picks in the Picker after reconnecting.
+- **Sender:** the company's dedicated notifications mailbox (Google Workspace SMTP; the address is `SMTP_USER` / `NOTIFY_FROM_EMAIL` in Vercel; `SMTP_HOST` and `SMTP_PORT` unchanged).
+- **Vercel Production values replaced:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_PICKER_API_KEY`, `NEXT_PUBLIC_GOOGLE_APP_ID`, `SMTP_USER`, `SMTP_PASS`, `NOTIFY_FROM_EMAIL`, `CRON_SECRET`. Then `vercel deploy --prod`.
+- **Checked after the deploy (both addresses):** picker-config answers 200 for a signed-in account, with a digits-only app id; the Connect redirect goes to Google with a client id from the same project number, the matching callback address and only the `drive.file` scope; email shows as configured; the daily `/api/cron/drive-flush` job is registered (06:00 UTC) and the route requires the secret.
+- **Existing connections:** made with the test project's client, so their tokens no longer work (`invalid_client`). `pnpm --filter web drive-mark-reconnect --connected-before 2026-11-11T19:49:10Z` shows how many there are (read-only); adding `--prod` sets them to "reconnect" at once (only `google_drive.status`; folder, switches, team list, notification records and queued uploads kept). Everyone reconnects with their company Google account (step 8) and picks a folder in the Shared Drive.
+
+The **Google Workspace** route for SMTP below applies (with the notifications mailbox in place of the `notify@` examples).
+
 ### Shared Drives
 
 - The Picker shows My Drive and a "Shared drives" view; a folder in a Shared Drive works like any other (every Drive call uses `supportsAllDrives`).
