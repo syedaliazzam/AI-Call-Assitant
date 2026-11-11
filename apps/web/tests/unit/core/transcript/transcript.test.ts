@@ -11,9 +11,20 @@
  * "Them" lines are never hidden; an echo does not merge with real lines. Display hold (Day 2):
  * while "Them" is speaking, a new "You" line is left out of displayLines() for 1.5 s, then shown
  * unless it turned out to be an echo; when "Them" is quiet it shows at once; lines() is never held.
+ * 1.5.2 (ADR-0070): one id per spoken line from its grey words to its final line; a grey line that joins
+ * the line before it leads there through resolveId(); each new grey line gets its own id (built from the
+ * real call of 11 Nov 2026, where the shared 'partial-them' id made presses answer the previous question).
+ * Pauses: a pause and its judgment sit on the grey line until new words come; a punctuated reading is kept
+ * for exactly the words it was made for (grey or final) and dropped when the shown words change;
+ * readableLine() reads a line through it, its pause with it.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { createTranscript, DISPLAY_HOLD_MS, THEM_ACTIVE_MS } from '@/core/transcript/transcript';
+import {
+  createTranscript,
+  DISPLAY_HOLD_MS,
+  readableLine,
+  THEM_ACTIVE_MS,
+} from '@/core/transcript/transcript';
 
 /**
  * A transcript whose clock is fixed.
@@ -31,15 +42,71 @@ describe('createTranscript', () => {
     t.addPartial('them', 'what', 1_000);
     t.addPartial('them', 'what would', 1_000);
     expect(t.lines()).toEqual([
-      expect.objectContaining({ id: 'partial-them', text: 'what would', final: false }),
+      expect.objectContaining({ id: 'u1', text: 'what would', final: false }),
     ]);
     t.addPartial('them', '', null);
     expect(t.lines()).toEqual([]);
     t.addPartial('you', 'hello', 5_000);
     t.addFinal({ speaker: 'you', text: 'hello there', tStart: 5_000, tEnd: 6_000 });
     expect(t.lines()).toEqual([
-      expect.objectContaining({ id: 'u1', text: 'hello there', final: true }),
+      expect.objectContaining({ id: 'u2', text: 'hello there', final: true }),
     ]);
+  });
+
+  describe('1.5.2: line ids from grey to final (ADR-0070)', () => {
+    it('keeps the grey line id on its final line', () => {
+      const t = setup();
+      t.addPartial('them', 'next question have you built', 1_000);
+      const greyId = t.lines()[0]!.id;
+      const stored = t.addFinal({
+        speaker: 'them',
+        text: 'next question have you built dynamic pricing systems',
+        tStart: 1_000,
+        tEnd: 4_000,
+      });
+      expect(stored.id).toBe(greyId);
+      expect(t.resolveId(greyId)).toBe(greyId);
+    });
+
+    it('gives every new grey line its own id (an answered one never covers the next)', () => {
+      const t = setup();
+      t.addPartial('them', 'tell me briefly about your company', 1_000);
+      const first = t.lines()[0]!.id;
+      t.addFinal({
+        speaker: 'them',
+        text: 'tell me briefly about your company',
+        tStart: 1_000,
+        tEnd: 4_000,
+      });
+      t.addFinal({
+        speaker: 'you',
+        text: 'we build production AI systems',
+        tStart: 5_000,
+        tEnd: 9_000,
+      });
+      t.addPartial('them', 'our chatbot hits rate limits', 20_000);
+      const second = t.lines().at(-1)!.id;
+      expect(second).not.toBe(first);
+      expect(t.lines().at(-1)!.final).toBe(false);
+    });
+
+    it('leads a grey line that joined the line before it to that line', () => {
+      const t = setup();
+      t.addFinal({ speaker: 'them', text: 'what would the rollout', tStart: 1_000, tEnd: 2_000 });
+      t.addPartial('them', 'timeline', 2_800);
+      const greyId = t.lines().at(-1)!.id;
+      const merged = t.addFinal({
+        speaker: 'them',
+        text: 'timeline be',
+        tStart: 2_800,
+        tEnd: 4_000,
+      });
+      expect(merged.id).toBe('u1');
+      expect(greyId).not.toBe('u1');
+      expect(t.resolveId(greyId)).toBe('u1');
+      t.clear();
+      expect(t.resolveId(greyId)).toBe(greyId);
+    });
   });
 
   it('keeps time order when finals arrive out of order, with partial lines by start time', () => {
@@ -129,7 +196,7 @@ describe('createTranscript', () => {
       const t = setup(20_000);
       t.addPartial('them', THEM, 10_000);
       t.addPartial('you', ECHO, 10_300);
-      expect(t.lines().map((line) => line.id)).toEqual(['partial-them']);
+      expect(t.lines().map((line) => line.id)).toEqual(['u1']);
     });
 
     it('keeps short genuine replies and every Them line', () => {
@@ -384,5 +451,55 @@ describe('createTranscript', () => {
       t.setRefining(line.id, false);
       expect(t.lines()[0]!.refining).toBeUndefined();
     });
+  });
+});
+
+describe('1.5.2: pauses and punctuated readings (ADR-0070)', () => {
+  it('keeps a pause and its judgment on the grey line until the voice comes back', () => {
+    const t = createTranscript(() => 10_000);
+    t.addPartial('them', 'have you built dynamic pricing systems', 1_000);
+    t.notePause('them', 4_000);
+    expect(t.lines()[0]!.pause).toEqual({
+      speechEnd: 4_000,
+      turnEnd: 'pending',
+      text: 'have you built dynamic pricing systems',
+    });
+    t.setPauseTurn('them', 4_000, 0.9);
+    expect(t.lines()[0]!.pause?.turnEnd).toBe(0.9);
+    t.setPauseTurn('them', 3_000, 0.1);
+    expect(t.lines()[0]!.pause?.turnEnd).toBe(0.9);
+    // Late words from audio before the pause keep it; the voice coming back (clearPause) ends it.
+    t.addPartial('them', 'have you built dynamic pricing systems now', 1_000);
+    expect(t.lines()[0]!.pause?.turnEnd).toBe(0.9);
+    t.clearPause('them');
+    expect(t.lines()[0]!.pause).toBeUndefined();
+  });
+
+  it('keeps a punctuated reading only for its words, and drops it when the shown words change', () => {
+    const t = createTranscript(() => 10_000);
+    const words = 'we cannot call them back fast enough could ai voice agents help';
+    const marked = 'We cannot call them back fast enough. Could AI voice agents help?';
+    t.addPartial('them', words, 1_000);
+    const id = t.lines()[0]!.id;
+    t.setPunctuated(id, 'something else', marked);
+    expect(t.lines()[0]!.punctuated).toBeUndefined();
+    t.setPunctuated(id, words, marked);
+    expect(readableLine(t.lines()[0]!).text).toBe(marked);
+    const stored = t.addFinal({ speaker: 'them', text: words, tStart: 1_000, tEnd: 5_000 });
+    expect(stored.punctuated).toBeUndefined();
+    t.setPunctuated(id, words, marked);
+    expect(t.lines()[0]!.punctuated).toBe(marked);
+    t.refineFinal(id, words, "We can't call them back fast enough. Could AI voice agents help?");
+    expect(t.lines()[0]!.punctuated).toBeUndefined();
+  });
+
+  it('reads a paused grey line through its punctuation with its pause', () => {
+    const t = createTranscript(() => 10_000);
+    t.addPartial('them', 'any real numbers', 1_000);
+    t.notePause('them', 2_000);
+    t.setPunctuated(t.lines()[0]!.id, 'any real numbers', 'Any real numbers?');
+    const read = readableLine(t.lines()[0]!);
+    expect(read.text).toBe('Any real numbers?');
+    expect(read.pause?.text).toBe('Any real numbers?');
   });
 });

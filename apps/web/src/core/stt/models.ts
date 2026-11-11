@@ -82,6 +82,44 @@ export const RUNTIME_FILES = {
   },
 } satisfies Record<string, PinnedFile>;
 
+/** 1.5.2 (ADR-0070): public URL folder of the echo canceller (copied from npm by fetch-models.ts). */
+export const AEC_PUBLIC_PATH = '/aec';
+
+/**
+ * 1.5.2 (ADR-0070): WebRTC AEC3 compiled to WebAssembly (@ennuicastr/webrtcaec3.js 0.3.0, BSD-3-Clause),
+ * served from our own origin and checked like the runtime. `url` is the npm package they come from.
+ */
+export const AEC_FILES = {
+  /** The Emscripten loader (defines the global factory `WebRtcAec3`). */
+  loader: {
+    name: 'webrtcaec3-0.3.0.js',
+    url: 'npm:@ennuicastr/webrtcaec3.js@0.3.0/dist/webrtcaec3-0.3.0.js',
+    bytes: 260_892,
+    sha256: '2e90b0ab542eaff7f235f148fd5ae5df4608580ccba918dc01afe27d2880c4eb',
+  },
+  /** The compiled echo canceller. */
+  wasm: {
+    name: 'webrtcaec3-0.3.0.wasm',
+    url: 'npm:@ennuicastr/webrtcaec3.js@0.3.0/dist/webrtcaec3-0.3.0.wasm',
+    bytes: 170_421,
+    sha256: 'a2f432546daf1b366d04b4921e1a1cdf0d097da7722fb1d5fe553bed3cadb756',
+  },
+} satisfies Record<string, PinnedFile>;
+
+/**
+ * 1.5.2: where the echo canceller's files are served on an origin.
+ *
+ * @param origin The app's origin.
+ * @returns Both files with their URLs.
+ * Called from: sttEngine.ts (the 'load' message), scripts/lib/worker-run.ts
+ */
+export function aecDownloads(origin: string): Record<keyof typeof AEC_FILES, DownloadFile> {
+  return {
+    loader: { ...AEC_FILES.loader, url: `${origin}${AEC_PUBLIC_PATH}/${AEC_FILES.loader.name}` },
+    wasm: { ...AEC_FILES.wasm, url: `${origin}${AEC_PUBLIC_PATH}/${AEC_FILES.wasm.name}` },
+  };
+}
+
 /** Hugging Face repository of the model, at the pinned commit. */
 const MODEL_2023_06_21_BASE =
   'https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21/resolve/9a65b6ea94c311ca770c2bf895b30f456a22d703';

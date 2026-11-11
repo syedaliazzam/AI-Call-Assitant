@@ -32,6 +32,8 @@ apps/web/public/models/**
 apps/web/public/stt-runtime/**
 apps/web/public/punct/**
 apps/web/public/turn/**
+# 1.5.2 (ADR-0070): the echo canceller, copied from npm by fetch-models.ts
+apps/web/public/aec/**
 
 # Evaluation results: per-scenario scores and grader reasons, kept on the developer's machine
 apps/web/eval-results/

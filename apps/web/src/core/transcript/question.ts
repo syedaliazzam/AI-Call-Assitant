@@ -14,6 +14,7 @@
  * punctuated text. Claude gets the whole conversation anyway; this only says which part to
  * answer, so a near miss still gives a good answer. Transcript text is never logged.
  */
+import { startedOverThem } from './reply';
 import type { Utterance } from './transcript';
 
 /**
@@ -63,6 +64,13 @@ const ASKS_INSIDE: readonly RegExp[] = [
   /\b(?<start>(?:can|could|would|will|do|did|have|are|were)\s+you\b|(?:is|are)\s+there\b|tell me\b|walk me through\b)/i,
 ];
 
+/**
+ * 1.5.2 (ADR-0070): what a sentence of punctuated text opens with when it asks something; as
+ * OPENS_QUESTION, but a contraction ("can't", "don't") opens a statement.
+ */
+const OPENS_SENTENCE_QUESTION =
+  /^(what|whats|what's|why|how|when|where|who|whom|whose|which|can|could|would|will|should|shall|do|does|did|is|are|was|were|have|has|had|may|might|tell me|walk me through|explain|describe)\b(?!['’]t|n['’]t)/i;
+
 /** A question has at least this many words ("What?" or "Sorry?" alone is not one). */
 const MIN_QUESTION_WORDS = 3;
 
@@ -96,6 +104,24 @@ export function questionSpan(text: string): QuestionSpan | null {
     const raw = stop + 1;
     const start = raw + (text.slice(raw).length - text.slice(raw).trimStart().length);
     return words(start, mark + 1) >= MIN_QUESTION_WORDS ? { start, end: mark + 1 } : null;
+  }
+  // 1.5.2 (ADR-0070): punctuated text without a "?" (the punctuation model often writes "Could AI voice
+  // agents help." with a full stop): the newest sentence that opens like a question is one.
+  const sentences = [...text.matchAll(/[^.!]+[.!]*/g)];
+  if (sentences.length > 1) {
+    for (let i = sentences.length - 1; i >= 0; i -= 1) {
+      const sentence = sentences[i]!;
+      const raw = sentence[0];
+      const offset = (sentence.index ?? 0) + (raw.length - raw.trimStart().length);
+      const body = raw.trim();
+      const bodyLead = LEAD_IN.exec(body)?.[0].length ?? 0;
+      if (
+        OPENS_SENTENCE_QUESTION.test(body.slice(bodyLead)) &&
+        words(offset, text.trimEnd().length) >= MIN_QUESTION_WORDS
+      ) {
+        return { start: offset + bodyLead, end: text.trimEnd().length };
+      }
+    }
   }
   const lead = LEAD_IN.exec(text)?.[0].length ?? 0;
   const end = text.trimEnd().length;
@@ -150,6 +176,33 @@ function wordCount(text: string): number {
 }
 
 /**
+ * Where the user's last real reply is among some lines: a finished "You" line of more than
+ * BACKCHANNEL_MAX_WORDS words that (1.5.2, ADR-0070) did not begin over the other person's words.
+ *
+ * @param spoken The lines with words, in transcript order.
+ * @returns Its index, or -1 when the user has not replied.
+ * Called from: selectQuestion(); core/answer/pressQuestion.ts
+ */
+export function lastReplyIndex(spoken: readonly Utterance[]): number {
+  let lastYou = -1;
+  spoken.forEach((line, index) => {
+    // 1.5.1 (ADR-0069): only a finished reply counts. People start "So, um…" over the end of a question
+    // and press Answer: their grey words must not push the newest question out of the window. 1.5.2: nor
+    // does a finished line they began while the other person was still asking (reading the last answer
+    // aloud, or the speakers' echo of the question).
+    if (
+      line.speaker === 'you' &&
+      line.final &&
+      wordCount(line.text) > BACKCHANNEL_MAX_WORDS &&
+      !startedOverThem(line, spoken)
+    ) {
+      lastYou = index;
+    }
+  });
+  return lastYou;
+}
+
+/**
  * Picks the question to answer.
  *
  * @param lines The visible lines (Transcript.lines(): finals and partials, no echoes), in
@@ -161,14 +214,7 @@ function wordCount(text: string): number {
 export function selectQuestion(lines: readonly Utterance[]): SelectedQuestion | null {
   const spoken = lines.filter((line) => line.text.trim() !== '');
   // The user's last real turn (a backchannel does not count).
-  let lastYou = -1;
-  spoken.forEach((line, index) => {
-    // 1.5.1 (ADR-0069): only a finished reply counts. People start "So, um…" over the end of a question
-    // and press Answer: their grey words must not push the newest question out of the window.
-    if (line.speaker === 'you' && line.final && wordCount(line.text) > BACKCHANNEL_MAX_WORDS) {
-      lastYou = index;
-    }
-  });
+  const lastYou = lastReplyIndex(spoken);
   let span = spoken.slice(lastYou + 1).filter((line) => line.speaker === 'them');
   if (span.length === 0) {
     // "Them" has not spoken since: answer their last line.

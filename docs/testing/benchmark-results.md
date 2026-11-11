@@ -706,3 +706,26 @@ i5-8350U laptop (4 cores / 8 threads), Windows 11 Pro 10.0.26200, plugged in, Ba
 | Windows install check (`install-check.yml`, a clean runner) | all expectations pass | Fresh 1.5.1; 1.5.0 with its Start Menu shortcut deleted then 1.5.1 by the updater (/S --updated) and by hand: shortcut back, Start lists "Paramount AI" with AppID `co.paramountintelligence.kite`; Kite 1.1.0 → 1.2.0 → 1.4.0 → 1.5.0 → 1.5.1: one shortcut; opened directly: its window. (1.5.0 checked the same way: a deleted shortcut was never recreated.) |
 | `Paramount-AI-Setup-1.5.1.exe` | 288,801,673 bytes; SHA-256 `91a9966f1b339542d6b722f75db678f597c8ecfdc35444fb0bb2757a6ca08118` | Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.5.1. |
 | Real-feed update check (`update-check.ts`, 1.5.0 extracted from its installer, never installed) | PASS | 1.5.0 found, downloaded and verified 1.5.1 from the real releases repository, into its own cache (removed after). |
+
+## 1.5.2: the real call replayed (11 Nov 2026, ADR-0070)
+
+i5-8350U laptop, Windows 11, plugged in. **Evidence:** the real call of 11 Nov 2026 14:31 on desktop 1.5.1 (Claude voice as the prospect on the laptop speakers, ~456k characters of documents, screen recording on): its call timing log (from a copy of the profile's `kite.callTimings`: ids and times only), the server's records of its 26 requests, and its stereo file replayed by `pnpm --filter web call:real`: both channels through the real speech worker, the end-of-turn model, the punctuation model and Accurate (Parakeet, 2 threads) in Chromium **in real time**, then through the app's transcript, auto-answer and press code (the version measured, bundled from its own checkout) with the person's 18 real press times, auto-answer on from round 2 as on the call. "Before" = `main` (cdc8f27) scored on the same worker run; "busy" = 4 threads spinning for the whole replay. Truth: 22 questions, 2 talk-about-the-call lines, a greeting and a wrap-up, timed from the right channel. Numbers only.
+
+| Measure | Real call (1.5.1) | Replay, before | Replay, after | Replay, after, busy |
+|---|---|---|---|---|
+| Them speech → first grey words, p50 / p95 | 0.86 / 1.28 s | 0.6 / 0.8 s | 0.6 / 0.8 s | 0.7 / 1.0 s |
+| Them speech end → final line, p50 / p95 | 1.31 / 1.72 s | 1.5 / 1.8 s | 1.5 / 1.8 s | 1.6 / 2.1 s |
+| Presses that answered the right question | 9 of 18 | 12 of 16 cards | **12 of 12** cards (the other presses showed the card already there) | **12 of 12** |
+| Question end → auto-answer **sent**, p50 / p95 | 1.87 / 3.38 s | 2.3 / 3.8 s | **0.6 / 2.0 s** | **0.9 / 2.0 s** |
+| Question end → auto **first word**, p50 / p95 | 3.93 / 5.25 s (456k docs) | — | ≈ 1.7 / 3.3 s CV-only, ≈ 2.7 / 5.6 s 456k docs (sent + the request's own time below) | |
+| Questions with no card / duplicate cards / cards for talk about the call | 3 (auto, round 2) / 1 / 2 | 0 / 2 / 2 | **0 / 0 / 0** | **0 / 0 / 0** |
+| "You" content words that the other side said | — | 7.0% (7 of 100); lines mostly theirs: 3 | **5.5%** (5 of 91); 1 | **4.3%** (4 of 93); 1 |
+| "You" WER while reading answers aloud: live / Accurate | — | 55.6% / 31.0% | 58.0% / 33.6% | 56.9% / 36.0% |
+
+- **The request's own time** (sent → first word, the network and Claude): with ~456k characters of documents 2.08 / 3.63 s (p50 / p95, 25 answers of the real call; unchanged by 1.5.2). CV-only: see the production latency check below.
+- **Echo, measured on the audio:** on the left channel the other side's voice was −1.4 dB below the user's level (median, 10 ms late). WebRTC AEC3 (the same build the worker runs) brought it to **−48.2 dB**; the user's own voice changed by **0.0 dB**; 36× real time at 16 kHz (about 3% of one core). The word count above is small and noisy: the user reads answers that repeat the question's words.
+- **"You" WER:** the reference is the answer cards the user read aloud (best-matching stretch). The live engine's words are unchanged by AEC (within run-to-run noise); Accurate's are about 23 points better, and 1.5.2 now rewrites the user's lines during the call when the engine is free: in the replay **32 of 32** "You" lines arrived while Accurate was idle.
+- **Smart Turn at the pause:** asked for every grey line of 3+ words; on the real speech it judged question ends 0.74–0.99 (one 0.32), ready 0.5–0.9 s after the voice stopped; the live model wrote its last word 0.1–0.5 s after the pause on most questions (the `resume` rule).
+- **Recordings** (the call's stereo file through the 1.5.2 graph in Chromium's Web Audio): main mix peak **+5.2 dBFS (4,388 samples over full scale) → −1.0 dBFS (0 over)**; stereo file You +1.9 → −2.0 dBFS, Them +0.3 → −2.5 dBFS.
+- **Not measured here:** getUserMedia's processing options (the recording was made with them on; they cannot be applied again to a file); this laptop has one microphone.
+- **Overlay answer panel (found on the way):** since 1.5.1 the overlay opened its answer panel only when it first saw an answer _streaming_; with its state sent at most every 200 ms, a quick answer could arrive already finished and the panel stayed shut (the compact-view harness test failing in CI on `main`, and three `sim-calls.spec.ts` tests). Any new answer now opens it: `sim-calls.spec.ts` 9 of 9.

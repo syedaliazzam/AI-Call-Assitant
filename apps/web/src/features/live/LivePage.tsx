@@ -76,6 +76,7 @@ import { ChannelSilence, type CallChannel } from '@/core/audio/channelSilence';
 import { watchDeviceChanges } from '@/core/audio/deviceWatch';
 import { callNoticeFor, type CallNotice } from '@/core/live/callNotice';
 import { SilentChannelNotice } from './ThemSilentNotice';
+import { PrivateOffWarning, usePrivateOffWhileRecording } from './PrivateOffWarning';
 import { endCall } from '@/core/transcript/endCall';
 import { reportCallStart, takeCallStart, watchCallStart } from '@/core/live/callStart';
 import { announceRecordingSaved, takeRecordStart } from '@/core/recording/handoff';
@@ -433,6 +434,8 @@ export function LivePage({
         hotwords,
         keepAudio: accurate !== null,
         turnAudio: true,
+        // 1.5.2 (ADR-0070): the other side's voice is removed from the microphone before decoding.
+        echoCancel: true,
         onProgress: (progress) => {
           if (isActive()) setModel((current) => ({ ...current, progress }));
         },
@@ -446,11 +449,43 @@ export function LivePage({
           }
           transcript.addPartial(channel, text, tStart);
           if (text !== '') callTimings.notePartial(channel);
+          // 1.5.2 (ADR-0070): words that settle after a pause get their punctuated reading too.
+          const settling = transcript
+            .lines()
+            .findLast((line) => line.speaker === channel && !line.final);
+          if (channel === 'them' && settling?.pause && text !== '') {
+            void punctuator.punctuate(text).then((marked) => {
+              if (marked !== null && isActive())
+                transcript.setPunctuated(settling.id, text, marked);
+            });
+          }
           watchdog.current.noteProgress(performance.now());
         },
         onPause: ({ channel, speechEnd, recent }) => {
           if (!isActive() || channel !== 'them') return;
-          earlyTurn.current = { speechEnd, probability: turnDetector.judge(recent) };
+          const probability = turnDetector.judge(recent);
+          earlyTurn.current = { speechEnd, probability };
+          // 1.5.2 (ADR-0070): the grey line carries the pause and its judgment, so auto-answer can answer a
+          // finished question before its line is final (autoAnswer.ts finishedAtPause).
+          transcript.notePause('them', speechEnd);
+          void probability.then((value) => {
+            if (isActive()) transcript.setPauseTurn('them', speechEnd, value);
+          });
+          // 1.5.2: and the punctuation model's reading of those words (about 25 ms), so the question rules
+          // see the "?" of a question asked mid-line before the line is final.
+          const grey = transcript
+            .lines()
+            .findLast((line) => line.speaker === 'them' && !line.final);
+          if (grey) {
+            const words = grey.text;
+            void punctuator.punctuate(words).then((marked) => {
+              if (marked !== null && isActive()) transcript.setPunctuated(grey.id, words, marked);
+            });
+          }
+        },
+        onResume: ({ channel }) => {
+          // 1.5.2 (ADR-0070): the other person went on: their grey line is no longer paused.
+          if (isActive() && channel === 'them') transcript.clearPause('them');
         },
         onFinal: ({ channel, text, tStart, tEnd, audio, confidence, recent, speechEnd }) => {
           if (!isActive()) return;
@@ -496,6 +531,11 @@ export function LivePage({
             youAudio.current.add(line.id, accurateOn.current ? (audio ?? null) : null);
           }
           if (accurate && audio && accurateOn.current && channel === 'them') {
+            // 1.5.2 (ADR-0070): the question rules get the punctuation model's reading at once; the shown
+            // words wait for the accurate engine's own marks (about 2 s).
+            void punctuator.punctuate(text).then((marked) => {
+              if (marked !== null && isActive()) transcript.setPunctuated(line.id, text, marked);
+            });
             // 1.5.1 (ADR-0069): through the refine queue; the line is marked as being rewritten only
             // while its rewrite really runs, so auto-answer never waits for a queued one.
             refineQueue.push({
@@ -520,6 +560,32 @@ export function LivePage({
                 void punctuateLine(punctuator, transcript, line.id, text);
               },
             });
+          } else if (
+            accurate &&
+            audio &&
+            accurateOn.current &&
+            channel === 'you' &&
+            // 1.5.2 (ADR-0070): the user's line is rewritten now only when the engine is free (nothing
+            // of the other side's waiting, the live engine keeping up); otherwise after the call, as before.
+            refineQueue.offerIdle({
+              lineId: line.id,
+              finalAt: Date.now(),
+              run: async () => {
+                const done = await refineLine(
+                  accurate,
+                  transcript,
+                  line.id,
+                  text,
+                  audio,
+                  plainTerms,
+                );
+                callTimings.noteRefine(line.id, done ? 'done' : 'kept');
+                if (!done) void punctuateLine(punctuator, transcript, line.id, text);
+              },
+              skip: () => void punctuateLine(punctuator, transcript, line.id, text),
+            })
+          ) {
+            // Started: the rewrite punctuates; a failed one falls back to the punctuation pass.
           } else {
             void punctuateLine(punctuator, transcript, line.id, text);
           }
@@ -528,6 +594,8 @@ export function LivePage({
           if (!isActive()) return;
           monitor.current.push(stats, performance.now());
           if (stats.backlog) noteBacklog(stats.backlog);
+          // 1.5.2 (ADR-0070): whether the echo canceller runs (it fails quietly: the log shows it).
+          if (stats.echoCancel) callTimings.noteEchoCancel(stats.echoCancel);
         },
         onBacklog: (info) => {
           if (isActive()) noteBacklog(info);
@@ -1132,6 +1200,8 @@ export function LivePage({
     if (noticeKind) callTimings.noteNotice(noticeKind);
   }, [noticeKind]);
   // 1.5.1: the timing log notes when the meeting is recorded, and how.
+  // 1.5.2 (ADR-0070): a screen recording with Private off shows a warning in this window too.
+  const privateOff = usePrivateOffWhileRecording(recording.compact);
   const recordingState = recording.compact?.state;
   const recordingKind = recording.compact?.kind;
   useEffect(() => {
@@ -1304,6 +1374,7 @@ export function LivePage({
             ),
         )}
         {callNotice && <SilentChannelNotice notice={callNotice} alert={silentShown} />}
+        {privateOff.visible && <PrivateOffWarning look="window" onTurnOn={privateOff.turnOn} />}
         {saveFailed && (
           <p
             role="alert"

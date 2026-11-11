@@ -48,7 +48,11 @@ export type Speaker = 'you' | 'them';
 
 /** One line of the transcript. */
 export interface Utterance {
-  /** Stable id ('u1', 'u2', …; a partial line uses 'partial-you' / 'partial-them'). */
+  /**
+   * Stable id ('u1', 'u2', …). 1.5.2 (ADR-0070): one id per spoken line from its first grey words to its
+   * final line, so an answer to grey words is an answer to the line they become (before, every grey line
+   * was 'partial-you' / 'partial-them', and an answered grey line made every later one look answered).
+   */
   id: string;
   /** Who spoke. */
   speaker: Speaker;
@@ -81,6 +85,31 @@ export interface Utterance {
    * model (0…1), or 'pending' while it is being judged. Absent when there is no judgment.
    */
   turnEnd?: number | 'pending';
+  /**
+   * 1.5.2 (ADR-0070): on a grey line, the pause the speech worker heard while its words showed: when the
+   * voice stopped, the end-of-turn model's judgment ('pending' while it runs), and the words at that
+   * moment. It lasts until the voice comes back (clearPause): the model often writes the last word or two
+   * a moment after the pause, from audio before it (measured on the real call of 11 Nov 2026: 0.1–0.5 s).
+   */
+  pause?: {
+    /**
+     *
+     */
+    speechEnd: number; /**
+     *
+     */
+    turnEnd: number | 'pending'; /**
+     *
+     */
+    text: string;
+  };
+  /**
+   * 1.5.2 (ADR-0070): the punctuation model's reading of these exact words (marks and capitals), made at a
+   * pause or as the line became final, before the shown words get their own marks (the accurate engine
+   * takes about 2 s). The question rules read it (readableLine), so "…fast enough could AI voice agents
+   * help" is a question a second sooner. Dropped when the words change.
+   */
+  punctuated?: string;
   /**
    * Display only: until when (Unix ms, the transcript's clock) displayLines() holds this "You"
    * line back, because "Them" was speaking when it arrived. lines() and window() ignore it.
@@ -146,6 +175,38 @@ export interface Transcript {
    */
   setTurnEnd(id: string, value: number | 'pending' | null): void;
   /**
+   * 1.5.2 (ADR-0070): the speech worker heard the speaker stop while their grey line shows: records the
+   * pause on that line, judgment pending.
+   *
+   * @param speaker   Who paused.
+   * @param speechEnd When the voice stopped (Unix ms, capture time).
+   */
+  notePause(speaker: Speaker, speechEnd: number): void;
+  /**
+   * 1.5.2: the end-of-turn model's judgment of a pause (notePause), when the grey line still shows the same
+   * words; otherwise nothing changes.
+   *
+   * @param speaker   Who paused.
+   * @param speechEnd The pause's end of speech, as passed to notePause.
+   * @param value     The probability that the speaker finished, or null when it failed (then removed).
+   */
+  setPauseTurn(speaker: Speaker, speechEnd: number, value: number | null): void;
+  /**
+   * 1.5.2 (ADR-0070): records the punctuation model's reading of a line's words (a final line, or the
+   * current grey line with this id), when the line still has exactly those words.
+   *
+   * @param id         The line's id.
+   * @param words      The words that were punctuated.
+   * @param punctuated The punctuated words.
+   */
+  setPunctuated(id: string, words: string, punctuated: string): void;
+  /**
+   * 1.5.2 (ADR-0070): the speaker's voice came back after a pause: the grey line is no longer paused.
+   *
+   * @param speaker Who went on.
+   */
+  clearPause(speaker: Speaker): void;
+  /**
    * v1.0.1 (ADR-0034): replaces the words one utterance added to a final line with the accurate
    * engine's text. A line can hold several merged utterances, so only the last place where the
    * heard words appear is replaced, never the whole line.
@@ -158,6 +219,14 @@ export interface Transcript {
   refineFinal(id: string, heard: string, refined: string): boolean;
   /** Visible lines (no echoes), finals and partials, in time order. Same array until a change. */
   lines(): readonly Utterance[];
+  /**
+   * 1.5.2 (ADR-0070): the id a line has now. A grey line keeps its id when it becomes final, unless it
+   * joined the line before it; then its id leads to that line.
+   *
+   * @param id Any id this transcript gave out.
+   * @returns The id of the line holding those words now (the same id when it was not joined).
+   */
+  resolveId(id: string): string;
   /**
    * What the transcript strip shows: lines() minus "You" lines still held back (heldUntil).
    * Listeners are told again when a hold ends. Same array until a change.
@@ -182,6 +251,24 @@ export interface Transcript {
    * @returns A function that removes the listener.
    */
   subscribe(listener: () => void): () => void;
+}
+
+/**
+ * 1.5.2 (ADR-0070): a line as the question rules read it: with the punctuation model's marks when the shown
+ * words do not have their own yet.
+ *
+ * @param line A line.
+ * @returns The line, its text replaced by its punctuated reading when there is one.
+ * Called from: core/answer/autoAnswer.ts, core/answer/pressQuestion.ts
+ */
+export function readableLine(line: Utterance): Utterance {
+  if (!line.punctuated || line.punctuated === line.text) return line;
+  return {
+    ...line,
+    text: line.punctuated,
+    // Its pause, with the words as they read now.
+    ...(line.pause ? { pause: { ...line.pause, text: line.punctuated } } : {}),
+  };
 }
 
 /**
@@ -224,6 +311,8 @@ export function createTranscript(
   /** Cached result of displayLines() (lines() minus held lines). */
   let displaySnapshot: readonly Utterance[] = [];
   let nextId = 1;
+  /** 1.5.2: grey lines' ids that joined an earlier line, to that line's id. */
+  const aliases = new Map<string, string>();
   let echoes: EchoStats = { count: 0, lastAt: null };
   /** When the latest "Them" final line arrived (clock time), or null. */
   let lastThemFinalAt: number | null = null;
@@ -485,7 +574,8 @@ export function createTranscript(
       const existing = partials.get(speaker);
       const start = tStart ?? existing?.tStart ?? now;
       partials.set(speaker, {
-        id: `partial-${speaker}`,
+        // 1.5.2 (ADR-0070): a line's id is given with its first grey words and kept by its final line.
+        id: existing?.id ?? `u${nextId++}`,
         speaker,
         text,
         tStart: start,
@@ -496,7 +586,65 @@ export function createTranscript(
         // user's own voice coming back.
         echo: speaker === 'you' ? echoOfThem(text, start, now) : echoOfYou(text, start, now),
         heldUntil: holdFor(speaker, existing?.heldUntil, existing !== undefined),
+        // 1.5.2: a pause holds until the voice comes back (clearPause), not when late words arrive.
+        ...(existing?.pause ? { pause: existing.pause } : {}),
+        ...(existing?.punctuated && existing.text === text
+          ? { punctuated: existing.punctuated }
+          : {}),
       });
+      changed();
+    },
+
+    notePause(speaker, speechEnd) {
+      const partial = partials.get(speaker);
+      if (!partial) return;
+      partials.set(speaker, {
+        ...partial,
+        pause: { speechEnd, turnEnd: 'pending', text: partial.text },
+      });
+      changed();
+    },
+
+    clearPause(speaker) {
+      const partial = partials.get(speaker);
+      if (!partial?.pause) return;
+      const { pause: _gone, ...rest } = partial;
+      void _gone;
+      partials.set(speaker, rest);
+      changed();
+    },
+
+    setPunctuated(id, words, punctuated) {
+      const text = punctuated.trim();
+      if (text === '') return;
+      for (const [speaker, partial] of partials) {
+        if (partial.id === id && partial.text === words) {
+          partials.set(speaker, { ...partial, punctuated: text });
+          changed();
+          return;
+        }
+      }
+      const index = finals.findIndex((line) => line.id === id);
+      const line = finals[index];
+      if (!line || line.text !== words) return;
+      finals = [
+        ...finals.slice(0, index),
+        { ...line, punctuated: text },
+        ...finals.slice(index + 1),
+      ];
+      changed();
+    },
+
+    setPauseTurn(speaker, speechEnd, value) {
+      const partial = partials.get(speaker);
+      if (!partial?.pause || partial.pause.speechEnd !== speechEnd) return;
+      if (value === null) {
+        const { pause: _dropped, ...rest } = partial;
+        void _dropped;
+        partials.set(speaker, rest);
+      } else {
+        partials.set(speaker, { ...partial, pause: { ...partial.pause, turnEnd: value } });
+      }
       changed();
     },
 
@@ -525,10 +673,13 @@ export function createTranscript(
       if (!hidden && shouldMerge(previous, line)) {
         stored = mergeLines(previous!, line);
         finals = [...finals.slice(0, previousIndex), stored, ...finals.slice(previousIndex + 1)];
+        // 1.5.2: the grey line's words are now in the earlier line.
+        if (partial && partial.id !== stored.id) aliases.set(partial.id, stored.id);
       } else {
         const heldUntil = holdFor(line.speaker, partial?.heldUntil, partial !== undefined);
         const created: Utterance = {
-          id: `u${nextId++}`,
+          // 1.5.2 (ADR-0070): the id its grey words had, so an answer to them is an answer to this line.
+          id: partial?.id ?? `u${nextId++}`,
           ...line,
           final: true,
           ...(heldUntil !== undefined ? { heldUntil } : {}),
@@ -617,6 +768,8 @@ export function createTranscript(
         ...line,
         text: line.text.slice(0, at) + text + line.text.slice(at + heard.length),
       };
+      // 1.5.2: the shown words now have their own marks.
+      delete next.punctuated;
       finals = [...finals.slice(0, index), next, ...finals.slice(index + 1)];
       changed();
       return true;
@@ -624,6 +777,17 @@ export function createTranscript(
 
     lines() {
       return snapshot;
+    },
+
+    resolveId(id) {
+      let current = id;
+      // A chain is short (a grey line joins a line that may itself have joined one); the limit guards a loop.
+      for (let hops = 0; hops < 20; hops += 1) {
+        const next = aliases.get(current);
+        if (next === undefined || next === current) return current;
+        current = next;
+      }
+      return current;
     },
 
     displayLines() {
@@ -646,6 +810,7 @@ export function createTranscript(
     clear() {
       finals = [];
       partials.clear();
+      aliases.clear();
       lastThemFinalAt = null;
       echoes = { count: 0, lastAt: null };
       changed();

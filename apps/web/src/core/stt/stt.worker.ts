@@ -24,6 +24,7 @@
 import { BacklogController, DeferredAudio } from './backlog';
 import { ChannelDecoder, type RecognizerLike } from './channel';
 import { CouplingGate } from './coupling';
+import { AEC_RATE, EchoCanceller, type Aec3Instance } from './echoCanceller';
 import {
   clearSttCache,
   downloadModelFiles,
@@ -156,6 +157,14 @@ let turnAudio = false;
 const channels = new Map<ChannelId, ChannelDecoder>();
 /** Cancels a download in progress (on 'stop'). */
 let loadAbort: AbortController | null = null;
+/** 1.5.2 (ADR-0070): the echo canceller's WebAssembly module once loaded, or null. */
+let aecModule: {
+  AEC3: new (rate: number, render: number, capture: number) => Aec3Instance;
+} | null = null;
+/** 1.5.2: this call's echo canceller (a new one for each "Them" stream), or null. */
+let echo: EchoCanceller | null = null;
+/** 1.5.2: the echo canceller's state, for the statistics. */
+let echoState: 'on' | 'off' | 'failed' = 'off';
 let statsTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
@@ -171,6 +180,77 @@ function runVerifiedScript(bytes: ArrayBuffer): void {
     scope.importScripts(url);
   } finally {
     URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * 1.5.2 (ADR-0070): downloads and checks the echo canceller's files (as the runtime's), and starts its
+ * WebAssembly module from the checked bytes. Never throws: a failure leaves echo cancelling off.
+ *
+ * @param files The loader and the .wasm (models.ts aecDownloads).
+ * Called from: loadModel()
+ */
+async function loadEchoCanceller(files: {
+  loader: DownloadFile;
+  wasm: DownloadFile;
+}): Promise<void> {
+  try {
+    const { files: got } = await downloadModelFiles([files.wasm, files.loader]);
+    const bytes = new Map(got.map((file) => [file.name, file.bytes]));
+    runVerifiedScript(bytes.get(files.loader.name)!);
+    const factory = (
+      globalThis as unknown as {
+        WebRtcAec3?: (config: object) => Promise<NonNullable<typeof aecModule>>;
+      }
+    ).WebRtcAec3;
+    if (!factory) throw new Error('The echo canceller did not start');
+    aecModule = await factory({
+      // The checked bytes: nothing is fetched by the loader itself.
+      wasmBinary: bytes.get(files.wasm.name),
+      print: () => {},
+      printErr: () => {},
+    });
+    echoState = 'on';
+  } catch {
+    aecModule = null;
+    echoState = 'failed';
+  }
+}
+
+/**
+ * 1.5.2: a fresh echo canceller for a new "Them" stream (the echo path is learnt again), or null.
+ *
+ * @returns The canceller, or null when there is none.
+ */
+function newEchoCanceller(): EchoCanceller | null {
+  if (!aecModule) return null;
+  try {
+    return new EchoCanceller(new aecModule.AEC3(AEC_RATE, 1, 1));
+  } catch {
+    echoState = 'failed';
+    return null;
+  }
+}
+
+/**
+ * 1.5.2: runs one echo canceller step; a failure turns echo cancelling off for the rest of the call and
+ * hands the audio back unchanged (decoding never stops for it).
+ *
+ * @param step     The step.
+ * @param fallback The audio to use when it fails.
+ * @returns The step's result, or the fallback.
+ */
+function safeEcho(
+  step: (canceller: EchoCanceller) => Float32Array,
+  fallback: Float32Array,
+): Float32Array {
+  if (!echo) return fallback;
+  try {
+    return step(echo);
+  } catch {
+    echo = null;
+    echoState = 'failed';
+    return fallback;
   }
 }
 
@@ -300,6 +380,8 @@ async function loadModel(message: Extract<ToWorker, { type: 'load' }>): Promise<
   beamWidth = message.beamWidth;
   turnAudio = message.turnAudio === true;
   recognizer = createRecognizer(message.hotwords);
+  // 1.5.2 (ADR-0070): the echo canceller, when asked for. Any failure only turns it off.
+  if (message.aec) await loadEchoCanceller(message.aec);
   const readyAt = performance.now();
 
   statsTimer = setInterval(sendStats, STATS_INTERVAL_MS);
@@ -372,25 +454,29 @@ function decodeChunk(channel: ChannelId, samples: Float32Array, endTime: number)
   // v1.4 (ADR-0064): the coupling gate sees both channels. "Them" is its reference; a "You" chunk
   // waits (at most one step) for the "Them" sound up to its end, then may be silenced as echo.
   if (channel === 'them') {
+    // 1.5.2 (ADR-0070): the echo canceller and the coupling gate always get the reference, even while its
+    // decoding is skipped to catch up, so the user's audio is still cleaned.
+    if (!echo) echo = newEchoCanceller();
+    safeEcho((canceller) => {
+      canceller.addReference(samples);
+      return samples;
+    }, samples);
+    coupling.pushThem(samples, endTime);
     if (state === 'dropping') {
       droppedMs += (samples.length / 16_000) * 1000;
+      releaseHeldYou(false);
       return;
     }
-    coupling.pushThem(samples, endTime);
     decodeNow('them', samples, endTime);
     releaseHeldYou(false);
     return;
   }
-  // 1.5.1: while behind, or while set-aside audio is still waiting, "You" audio goes to the back of the
-  // set-aside store (the stream must get its audio in order) and the oldest is decoded as time allows.
-  if (state !== 'ok' || deferredYou.length > 0) {
-    while (heldYou.length > 0) deferredYou.push(heldYou.shift()!);
-    deferredYou.push({ samples, endTime });
-    drainDeferredYou(backlog.catchUp(lagMs));
-    return;
-  }
+  // 1.5.2: every "You" chunk is cleaned in time order (echo canceller, coupling gate) as its reference
+  // arrives; only then is it decoded, or set aside while the worker is behind (1.5.1). Before, set-aside
+  // audio skipped the gate, and the other side's words reached "You" exactly when the laptop was busiest.
   heldYou.push({ samples, endTime });
   releaseHeldYou(false);
+  if (deferredYou.length > 0) drainDeferredYou(backlog.catchUp(lagMs));
 }
 
 /** 1.5.1 (ADR-0069): the backlog rules (backlog.ts). */
@@ -422,8 +508,8 @@ function backlogInfo(): BacklogInfo {
 }
 
 /**
- * Decodes up to `count` set-aside "You" chunks, oldest first. They skip the coupling gate: the "Them"
- * sound they would be compared with has gone; the text echo rules still apply on the page.
+ * Decodes up to `count` set-aside "You" chunks, oldest first. 1.5.2 (ADR-0070): they were cleaned (echo
+ * canceller, coupling gate) before they were set aside.
  *
  * @param count How many chunks (Infinity for all).
  */
@@ -460,7 +546,17 @@ function releaseHeldYou(force: boolean): void {
       !coupling.hasReferenceFor(next.samples, next.endTime);
     if (waiting) return;
     heldYou.shift();
-    decodeNow('you', coupling.processYou(next.samples, next.endTime), next.endTime);
+    const cleaned = coupling.processYou(
+      safeEcho((canceller) => canceller.cancel(next.samples), next.samples),
+      next.endTime,
+    );
+    // 1.5.1: while behind, or while set-aside audio is still waiting, "You" audio goes to the back of
+    // the set-aside store (the stream must get its audio in order).
+    if (backlog.state !== 'ok' || deferredYou.length > 0) {
+      deferredYou.push({ samples: cleaned, endTime: next.endTime });
+    } else {
+      decodeNow('you', cleaned, next.endTime);
+    }
   }
 }
 
@@ -501,6 +597,7 @@ function sendStats(): void {
   stats.combinedRtf = stats.totalAudioMs > 0 ? stats.totalDecodeMs / stats.totalAudioMs : 0;
   // 1.5.1: the backlog, and a fresh "worst in this second".
   stats.backlog = backlogInfo();
+  stats.echoCancel = echoState;
   secondMaxLagMs = 0;
   send({ type: 'stats', stats });
 }
@@ -513,14 +610,13 @@ function sendStats(): void {
 function detachChannel(channel: ChannelId): void {
   // Waiting "You" chunks are decoded first: no more reference is coming, or the channel is ending.
   // 1.5.1 (ADR-0069): set-aside "You" audio goes after them, so the user's lines are filled in at End.
-  if (deferredYou.length > 0) {
-    while (heldYou.length > 0) deferredYou.push(heldYou.shift()!);
-    if (channel === 'you') drainDeferredYou(Infinity);
-  } else {
-    releaseHeldYou(true);
+  releaseHeldYou(true);
+  if (channel === 'you' && deferredYou.length > 0) drainDeferredYou(Infinity);
+  // A new "Them" stream (a new share) is a new path: the coupling (1.5.2: and the echo) is learnt again.
+  if (channel === 'them') {
+    coupling = new CouplingGate();
+    echo = null;
   }
-  // A new "Them" stream (a new share) is a new path: the coupling is learnt again.
-  if (channel === 'them') coupling = new CouplingGate();
   const decoder = channels.get(channel);
   if (!decoder) return;
   decoder.flush();

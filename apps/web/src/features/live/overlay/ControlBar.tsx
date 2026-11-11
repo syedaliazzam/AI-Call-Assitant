@@ -30,6 +30,7 @@ import {
 } from '@/ui/icons';
 import { BUTTON_BASE, CHEVRON_BUTTON, ICON_BUTTON, KeyChip, PILL, StatusIcon } from './parts';
 import { RecPill } from './RecordControls';
+import { usePrivateOffWhileRecording } from '../PrivateOffWarning';
 
 /** Which device list is open. */
 export type DeviceList = 'audio' | 'mic';
@@ -255,6 +256,8 @@ function DeviceButton({
  */
 export function ControlBar(props: ControlBarProps) {
   const { state, onCommand, mac, collapsed, menuButton, menuOpen, onMenu, onIcon } = props;
+  // 1.5.2 (ADR-0070): the Rec pill says "Visible in recording" while Private is off.
+  const privateOff = usePrivateOffWhileRecording(state?.recording);
   const { deviceList, onDeviceList } = props;
   const ended = !state || state.ended;
   // Where each key-cap gives way: later with the Transcript pill on the bar (ADR-0055).
@@ -346,6 +349,7 @@ export function ControlBar(props: ControlBarProps) {
           disabled={ended}
           mac={mac}
           buttonRef={props.recButton}
+          visibleInRecording={privateOff.visible}
         />
       )}
       <span className="min-w-1 flex-1" />

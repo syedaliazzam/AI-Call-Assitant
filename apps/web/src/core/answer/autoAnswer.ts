@@ -15,6 +15,14 @@
  *          If the other person goes on within RERUN_WINDOW_MS of an auto-answer starting, their new
  *          words continue that question: the answer is cancelled and asked again with the whole
  *          question, on the same card (a "rerun"), never as a second card.
+ *
+ *          1.5.2 (ADR-0070), from the real call of 11 Nov 2026: speech of the user's that began while the other
+ *          person was still talking (reading the last answer aloud, the speakers' echo) is not a reply and no
+ *          longer ends the window (reply.ts); a question whose grey line paused and that the end-of-turn
+ *          model heard as finished is answered at once, before its line is final (about a second sooner); a
+ *          question that came due while another answer streamed is answered when that one finishes, however
+ *          long it took; and a press that answered grey words is asked again on its card when the other
+ *          person went on, as an auto-answer is.
  * Used by: src/features/live/useAutoAnswer.ts, src/features/live/useLiveAnswers.ts (continuation)
  * Depends on: src/core/transcript (questionKind.ts lineKind, blip.ts isBlip, complete.ts
  *             looksUnfinished, transcript.ts Utterance)
@@ -26,7 +34,8 @@
 import { isBlip } from '../transcript/blip';
 import { looksUnfinished } from '../transcript/complete';
 import { lineKind } from '../transcript/questionKind';
-import type { Utterance } from '../transcript/transcript';
+import { startedOverThem } from '../transcript/reply';
+import { readableLine, type Utterance } from '../transcript/transcript';
 
 /** Silence after a question that sounds finished before Kite answers, ms. */
 export const AUTO_PAUSE_MS = 1_200;
@@ -47,8 +56,28 @@ export const TURN_FINISHED_AT = 0.8;
  */
 export const ACCURATE_WAIT_MS = 500;
 
+/**
+ * 1.5.2 (ADR-0070): the end-of-turn probability at a pause from which a question still grey is answered at
+ * once. Measured on the real call of 11 Nov 2026: 0.74 and 0.89 at question ends, ready 0.73–0.76 s after
+ * the voice stopped; a wrong early answer is asked again on its card when the person goes on.
+ */
+export const EARLY_TURN_AT = 0.7;
+
+/**
+ * 1.5.2: after an answer stops streaming, a question that came due meanwhile is still answered for this
+ * long even when it is older than AUTO_MAX_AGE_MS, ms.
+ */
+export const AFTER_STREAM_GRACE_MS = 2_000;
+
 /** v1.4: new words starting within this long after an auto-answer started continue its question, ms. */
 export const RERUN_WINDOW_MS = 4_000;
+
+/**
+ * 1.5.2 (ADR-0070): new words that are a question of their own and start this long after the answered
+ * speech ended are the next question, never a continuation (with answers sent about a second after a
+ * question, the next "Next question. …" fell inside the 4 s rerun window on the real call), ms.
+ */
+export const NEW_QUESTION_GAP_MS = 2_500;
 
 /** v1.4: Answer pressed after new words that started within this long of the last question's end, ms. */
 export const CONTINUE_WINDOW_MS = 8_000;
@@ -101,6 +130,30 @@ export interface AnsweredQuestion {
   askedAt: number;
   /** True when Kite asked it by itself. */
   auto: boolean;
+  /**
+   * 1.5.2 (ADR-0070): true when a press answered words that were still grey: if the person goes on, it is
+   * asked again on its card, as an auto-answer is.
+   */
+  grey?: boolean;
+  /**
+   * 1.5.2: how many words the question had when it was asked. A line that only grew is asked again only
+   * with GROWN_WORDS more (the model often writes the last word a moment after the pause).
+   */
+  words?: number;
+}
+
+/** 1.5.2 (ADR-0070): new words a line that only grew needs before its card is asked again. */
+export const GROWN_WORDS = 2;
+
+/**
+ * Words in some text.
+ *
+ * @param text The text.
+ * @returns How many.
+ * Called from: autoAnswerDue(); useLiveAnswers.ts
+ */
+export function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
 /** What autoAnswerDue() needs to know about the call. */
@@ -115,6 +168,11 @@ export interface AutoAnswerState {
   answeredLineIds: ReadonlySet<string>;
   /** The latest answer to speech in this call, or null. */
   last: AnsweredQuestion | null;
+  /**
+   * 1.5.2: when the last answer stopped streaming (the same clock as now), or null. A question that came
+   * due while it streamed is still answered just after (AFTER_STREAM_GRACE_MS).
+   */
+  idleSince?: number | null;
 }
 
 /** What auto-answer should do now. */
@@ -139,14 +197,16 @@ export type AutoDecision =
     };
 
 /**
- * Whether a line is something the user really said (a turn), not a blip.
+ * Whether a line is something the user really said in reply (a turn): not a blip, and (1.5.2, ADR-0070)
+ * not speech that began while the other person was still talking (reply.ts).
  *
- * @param line A visible line.
- * @returns True for a "You" line that is not a blip.
- * Called from: questionWindow(), continuationOf()
+ * @param line  A visible line.
+ * @param lines The visible lines it is among.
+ * @returns True for a "You" line that is a reply.
+ * Called from: questionWindow(), continuationOf(), autoAnswerDue()
  */
-function isUserTurn(line: Utterance): boolean {
-  return line.speaker === 'you' && !isBlip(line.text);
+function isUserTurn(line: Utterance, lines: readonly Utterance[]): boolean {
+  return line.speaker === 'you' && !isBlip(line.text) && !startedOverThem(line, lines);
 }
 
 /**
@@ -174,7 +234,7 @@ export function questionWindow(
 ): Utterance[] {
   const spoken = speech(lines);
   // The user's last finished turn (their grey words may still be a blip or not).
-  const lastTurn = spoken.findLastIndex((line) => line.final && isUserTurn(line));
+  const lastTurn = spoken.findLastIndex((line) => line.final && isUserTurn(line, spoken));
   return spoken.slice(lastTurn + 1).filter((line) => {
     if (line.speaker !== 'them' || answered.has(line.id)) return false;
     // Their "mm-hm" while the user answered is not part of their next question.
@@ -211,7 +271,7 @@ export function continuationOf(
     if (line.tEnd <= last.end + GROWN_SLACK_MS) continue;
     // The user took the turn after the question (finished or still talking): what follows is a new
     // exchange.
-    if (isUserTurn(line)) return [];
+    if (isUserTurn(line, spoken)) return [];
     if (line.speaker !== 'them') continue;
     const grown = last.lineIds.includes(line.id);
     // The other person's "mm-hm" while the user answers is listening, never more of the question
@@ -220,9 +280,39 @@ export function continuationOf(
     if (!grown && line.tStart > from + withinMs) return after;
     const kind = lineKind(line.text);
     if (!grown && (kind === 'greeting' || kind === 'instruction' || kind === 'meta')) return after;
+    // 1.5.2: a question of its own after a real gap is the next question (its own card).
+    if (!grown && kind === 'question' && line.tStart - last.end > NEW_QUESTION_GAP_MS) return after;
     after.push(line);
   }
   return after;
+}
+
+/**
+ * 1.5.2 (ADR-0070): whether a grey line paused and the end-of-turn model heard the speaker finish at that
+ * pause, with no voice since: the question can be answered before its line is final.
+ *
+ * @param line A visible line.
+ * @returns True for a grey line judged finished at its pause.
+ * Called from: pauseNeeded(), endOf(), autoAnswerDue()
+ */
+export function finishedAtPause(line: Utterance): boolean {
+  const pause = line.pause;
+  // The pause holds until the voice comes back (the transcript removes it then); words written a moment
+  // late from audio before it do not end it.
+  if (line.final || !pause || typeof pause.turnEnd !== 'number') return false;
+  // Words that look cut off ("…and") need the clearer judgment, as for a final line (ADR-0065).
+  return pause.turnEnd >= (looksUnfinished(line.text) ? TURN_FINISHED_AT : EARLY_TURN_AT);
+}
+
+/**
+ * Where a window's speech ended: a grey line judged finished at its pause ends at that pause.
+ *
+ * @param line The window's last line.
+ * @returns The end of speech (Unix ms).
+ * Called from: autoAnswerDue()
+ */
+function endOf(line: Utterance): number {
+  return finishedAtPause(line) ? line.pause!.speechEnd : line.tEnd;
 }
 
 /**
@@ -236,6 +326,10 @@ export function continuationOf(
  */
 function pauseNeeded(window: readonly Utterance[], now: number, waitForAccurate = true): number {
   const last = window.at(-1)!;
+  // 1.5.2 (ADR-0070): the model already heard the speaker finish at the pause: no more waiting, and no
+  // waiting for the accurate engine either (a better word or two does not change the answer; on the real
+  // call that wait made answers 0.5 s later).
+  if (finishedAtPause(last)) return 0;
   // v1.4 (ADR-0065): the end-of-turn model may only SHORTEN the wait. When the words look cut off
   // (3 s), a clear "finished" from the voice (TURN_FINISHED_AT) brings it back to 1.2 s; while it is
   // still judging, wait for it, at most TURN_WAIT_MS past the short pause (always inside the 3 s).
@@ -263,36 +357,50 @@ function pauseNeeded(window: readonly Utterance[], now: number, waitForAccurate 
 /**
  * Whether an auto-answer (or a rerun) is due now, and for which lines.
  *
- * @param state See AutoAnswerState.
+ * @param input See AutoAnswerState.
  * @param now   The current time, in the lines' time base (ms).
  * @returns What to do, or null when nothing is due.
  * Called from: useAutoAnswer.ts (on a timer); tests
  */
-export function autoAnswerDue(state: AutoAnswerState, now: number): AutoDecision | null {
-  if (!state.enabled) return null;
+export function autoAnswerDue(input: AutoAnswerState, now: number): AutoDecision | null {
+  // 1.5.2 (ADR-0070): lines are read with the punctuation model's marks when they have no marks yet.
+  const state = { ...input, lines: input.lines.map(readableLine) };
+  const last = state.last;
+  // 1.5.2: a press that answered grey words is asked again when the person goes on, even with auto-answer
+  // off; nothing else happens by itself then.
+  if (!state.enabled && !last?.grey) return null;
   const spoken = speech(state.lines);
   // The other person still speaking (a grey line that changed lately) means the question may go on.
   // The user's own grey line does not wait (measured on the synthetic calls, ADR-0063): people start
   // "So, um…" right after a question, which is exactly when they need the answer. A finished reply
-  // from the user still ends the moment (the window below).
+  // from the user still ends the moment (the window below). 1.5.2 (ADR-0070): unless that grey line paused
+  // and the end-of-turn model heard them finish there.
   if (
     spoken.some(
-      (line) => !line.final && line.speaker === 'them' && now - line.tEnd < STALE_PARTIAL_MS,
+      (line) =>
+        !line.final &&
+        line.speaker === 'them' &&
+        now - line.tEnd < STALE_PARTIAL_MS &&
+        !finishedAtPause(line),
     )
   ) {
     return null;
   }
 
-  // The other person went on after an auto-answer started: ask again with the whole question.
-  const last = state.last;
-  if (last?.auto) {
+  // The other person went on after an auto-answer (1.5.2: or a press on grey words) started: ask again
+  // with the whole question.
+  if (last?.auto || last?.grey) {
     const more = continuationOf(state.lines, last, RERUN_WINDOW_MS, last.askedAt);
     if (more.length > 0) {
       const whole = [
         ...spoken.filter((line) => last.lineIds.includes(line.id) && !more.includes(line)),
         ...more,
       ];
-      const end = Math.max(...more.map((line) => line.tEnd));
+      const end = Math.max(...more.map((line) => endOf(line)));
+      // 1.5.2: the same lines with a word or so more are not a new question (no second request).
+      const onlyGrown = more.every((line) => last.lineIds.includes(line.id));
+      const words = wordCount(whole.map((line) => line.text).join(' '));
+      if (onlyGrown && last.words !== undefined && words < last.words + GROWN_WORDS) return null;
       // ADR-0066: a rerun does not wait for the accurate engine. Its card is already on screen and the
       // user is about to reply; on the synthetic calls that wait let the user's first words cancel
       // the rerun, and the rest of the question then got a card of its own.
@@ -306,18 +414,29 @@ export function autoAnswerDue(state: AutoAnswerState, now: number): AutoDecision
     }
   }
 
-  if (state.streaming) return null;
+  if (!state.enabled || state.streaming) return null;
   const window = questionWindow(state.lines, state.answeredLineIds);
   if (window.length === 0) return null;
-  // The newest finished words must be the other person's: a finished reply from the user ends the
-  // moment (their grey words do not, see above).
+  // The newest words must be the other person's: a finished reply from the user ends the moment
+  // (their grey words do not, see above; 1.5.2: nor does speech of theirs that began over the question).
   const newest = spoken
-    .filter((line) => line.final && (line.speaker === 'them' || !isBlip(line.text)))
+    .filter(
+      (line) =>
+        (line.final || finishedAtPause(line)) &&
+        (line.speaker === 'them' || isUserTurn(line, spoken)),
+    )
     .at(-1);
   if (!newest || newest.speaker !== 'them') return null;
   const text = window.map((line) => line.text.trim()).join(' ');
   if (!isAutoQuestion(text)) return null;
-  const end = window.at(-1)!.tEnd;
-  if (now - end < pauseNeeded(window, now) || now - end > AUTO_MAX_AGE_MS) return null;
+  const end = endOf(window.at(-1)!);
+  if (now - end < pauseNeeded(window, now)) return null;
+  // Too old to answer by itself, unless it came due while another answer was streaming (1.5.2): then it
+  // is answered as soon as that one finishes.
+  const cameDueWhileStreaming =
+    state.idleSince != null &&
+    now - state.idleSince <= AFTER_STREAM_GRACE_MS &&
+    end + AUTO_PAUSE_MS >= (last?.askedAt ?? 0);
+  if (now - end > AUTO_MAX_AGE_MS && !cameDueWhileStreaming) return null;
   return { kind: 'answer', lineIds: window.map((line) => line.id), tEnd: end };
 }

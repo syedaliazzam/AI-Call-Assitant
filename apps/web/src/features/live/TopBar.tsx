@@ -21,6 +21,7 @@ import { Menu, type MenuItem } from '@/ui/Menu';
 import { callClock } from './callClock';
 import { KeyChip } from './overlay/parts';
 import { RecordPopover, RecPill } from './overlay/RecordControls';
+import { usePrivateOffWhileRecording } from './PrivateOffWarning';
 import type { CallDictation } from './useCallDictation';
 
 /** Props for TopBar. */
@@ -88,6 +89,8 @@ function TopBarRecord({
   disabled: boolean;
 }) {
   const [open, setOpen] = useState<'question' | 'notice' | null>(null);
+  // 1.5.2 (ADR-0070): the Rec pill says "Visible in recording" while Private is off.
+  const privateOff = usePrivateOffWhileRecording(recording);
   const [seenPrompts, setSeenPrompts] = useState(recording.promptCount);
   if (recording.promptCount !== seenPrompts) {
     setSeenPrompts(recording.promptCount);
@@ -108,6 +111,7 @@ function TopBarRecord({
         disabled={disabled}
         mac={mac}
         keyAt="inline-flex"
+        visibleInRecording={privateOff.visible}
       />
       {open && (
         <RecordPopover

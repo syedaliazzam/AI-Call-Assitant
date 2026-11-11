@@ -79,13 +79,15 @@ describe('createRepeatGuard: the same speech (v1.0.2)', () => {
     ).toEqual({ kind: 'show', answerId: 'a1' });
   });
 
-  it('a manual press for answered speech after 10 s is a deliberate new answer', () => {
+  it('1.5.2: a manual press for answered speech shows its card however long after', () => {
     const guard = createRepeatGuard();
     guard.decide({ question: QUESTION, streaming: false, now: 0, span });
     guard.remember(span, 'a1', 0);
-    expect(
-      guard.decide({ question: QUESTION, streaming: false, now: SHOW_EXISTING_MS + 1, span }),
-    ).toEqual({ kind: 'answer' });
+    expect(SHOW_EXISTING_MS).toBe(Number.POSITIVE_INFINITY);
+    expect(guard.decide({ question: QUESTION, streaming: false, now: 20_000, span })).toEqual({
+      kind: 'show',
+      answerId: 'a1',
+    });
   });
 
   it('new speech from Them after the answered speech is a new question', () => {
@@ -122,9 +124,11 @@ describe('createRepeatGuard: looking back (v1.1.0, ADR-0043)', () => {
     );
     guard.remember(span, 'a1', 5_000);
     const later = 5_000 + 60 * 60_000;
-    expect(guard.decide({ question: QUESTION, streaming: false, now: later, span }).kind).toBe(
-      'answer',
-    );
+    // 1.5.2 (ADR-0070): a plain press on the same speech shows the card too, however long after.
+    expect(guard.decide({ question: QUESTION, streaming: false, now: later, span })).toEqual({
+      kind: 'show',
+      answerId: 'a1',
+    });
     expect(
       guard.decide({ question: QUESTION, streaming: false, now: later, span, lookedBack: true }),
     ).toEqual({ kind: 'show', answerId: 'a1' });

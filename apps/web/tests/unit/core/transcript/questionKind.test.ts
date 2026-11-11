@@ -3,6 +3,9 @@
  * in the recogniser's style and with punctuation, each with the kind it must get; garbled words; and
  * pickQuestion(), which skips greetings and instructions to the last real question and reports garbled
  * words or nothing to answer. The worse mistake is refusing a real question, so the table leans there.
+ * 1.5.2 (ADR-0070): requests to repeat a part, sound checks, screen sharing, greetings and goodbyes in the
+ * forms the developer listed after the real call of 11 Nov 2026, with and without the punctuation the
+ * Accurate or punctuation pass adds; a named repeat ("the price for forty seats") stays a question.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -261,5 +264,46 @@ describe('1.5.1 (ADR-0069): fillers left over from a greeting', () => {
     ['Hello, and how was your weekend?', 'question'],
   ])('%s → %s', (text, kind) => {
     expect(lineKind(text)).toBe(kind);
+  });
+});
+
+describe('1.5.2: talk about the call and small talk, with and without punctuation (ADR-0070)', () => {
+  const META: readonly string[] = [
+    'Sorry, can you repeat that last part?',
+    'SORRY CAN YOU REPEAT THAT LAST PART',
+    'Could you say that again?',
+    'Can you say the last bit again',
+    'Could you repeat the second point?',
+    'Sorry, I missed that, can you go over it again?',
+    'Come again?',
+    'Pardon?',
+    'Sorry, what was that?',
+    'Can you hear me okay?',
+    "You're breaking up a bit",
+    'Let me share my screen',
+  ];
+  const GREETINGS: readonly string[] = [
+    'Hi, thanks for making time.',
+    'Good morning everyone, how is everyone doing today?',
+    'Okay bye, talk soon',
+    'Good to see you',
+  ];
+
+  it('reads each request to repeat or sound check as talk about the call', () => {
+    for (const text of META) expect([text, lineKind(text)]).toEqual([text, 'meta']);
+  });
+
+  it('reads greetings and goodbyes as greetings', () => {
+    for (const text of GREETINGS) expect([text, lineKind(text)]).toEqual([text, 'greeting']);
+  });
+
+  it('keeps a real question after the request, and a named repeat, as questions', () => {
+    expect(
+      lineKind(
+        'Sorry, can you repeat that last part? Next question, our analysts turn emails into records by hand. Have you automated that?',
+      ),
+    ).toBe('question');
+    expect(lineKind('Can you hear me? What does the annual plan cost?')).toBe('question');
+    expect(lineKind('Could you repeat the price for forty seats?')).toBe('question');
   });
 });

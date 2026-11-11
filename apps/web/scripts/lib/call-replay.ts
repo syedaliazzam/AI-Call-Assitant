@@ -19,9 +19,13 @@ import type { MeasuredAnswer, MeasuredLine } from './call-metrics';
 export interface CallEvent {
   /**
    * 'partial' (grey text), 'final' (a finished line), 'turn' (an end-of-turn judgment, ADR-0065) or
-   * 'refine' (the accurate engine's words for the final line with this tEnd, ADR-0066).
+   * 'refine' (the accurate engine's words for the final line with this tEnd, ADR-0066). 1.5.2 (ADR-0070):
+   * 'pause' (the worker heard the other side stop while their words show) and 'turn-early' (the
+   * end-of-turn judgment made at that pause, when it arrived).
    */
-  type: 'partial' | 'final' | 'turn' | 'refine';
+  type: 'partial' | 'final' | 'turn' | 'refine' | 'pause' | 'turn-early' | 'punct' | 'resume';
+  /** 1.5.2: for 'punct', the words that were punctuated (text is the result). */
+  words?: string;
   /** Which channel. */
   channel: 'you' | 'them';
   /** Its text. */
@@ -316,6 +320,15 @@ export function replayCall(
       index += 1;
       if (event.type === 'partial') {
         transcript.addPartial(event.channel, event.text, event.tStart);
+        continue;
+      }
+      // 1.5.2: pause messages and early judgments are read by the real-call replay only.
+      if (
+        event.type === 'pause' ||
+        event.type === 'turn-early' ||
+        event.type === 'punct' ||
+        event.type === 'resume'
+      ) {
         continue;
       }
       if (event.type === 'refine') {

@@ -30,12 +30,7 @@ import {
 } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAnswerRunner, type AnswerTimeline } from '@/core/answer/answerClient';
-import {
-  CONTINUE_WINDOW_MS,
-  continuationOf,
-  type AnsweredQuestion,
-  type AutoDecision,
-} from '@/core/answer/autoAnswer';
+import { type AnsweredQuestion, type AutoDecision, wordCount } from '@/core/answer/autoAnswer';
 import { settleAnswerType, type LabelledQuestion } from '@/core/answer/answerType';
 import { mergeAnswers, stoppedEmpty } from '@/core/answer/history';
 import { createRepeatGuard, themSpan, type SpeechSpan } from '@/core/answer/repeatGuard';
@@ -44,7 +39,8 @@ import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/con
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { warmSession } from '@/core/answer/warm';
 import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
-import { lineKind, pickQuestion, type PickedQuestion } from '@/core/transcript/questionKind';
+import { choosePress, PRESS_WAIT_MS } from '@/core/answer/pressQuestion';
+import { pickQuestion, type PickedQuestion } from '@/core/transcript/questionKind';
 import { isOnline } from '@/core/net/online';
 import { prepareScreenshot } from '@/core/screenshot/prepare';
 import { rateAnswer, reportAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
@@ -93,6 +89,12 @@ export const NOTHING_TO_ANSWER_NOTICE =
 function isNoAnswer(type: AnswerType | undefined): boolean {
   return type === 'garbled' || type === 'none';
 }
+
+/**
+ * 1.5.2 (ADR-0070): shown while a press waits for the question the other person is still asking
+ * (core/answer/pressQuestion.ts 'wait').
+ */
+export const WAITING_NOTICE = 'Listening for the question…';
 
 /** What to say when nothing so far is a question to answer (v1.1.0, ADR-0043). */
 export const NO_QUESTION_NOTICE =
@@ -392,6 +394,40 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const answeredLinesRef = useRef(new Set<string>());
   // v1.4 (ADR-0062): the latest answer to speech, which a rerun or a continuation replaces.
   const lastAnsweredRef = useRef<AnsweredQuestion | null>(null);
+  // 1.5.2 (ADR-0070): a press waiting for the question the other person is still asking.
+  const pendingPressRef = useRef<{
+    since: number;
+    pressedAt: number;
+    trigger: AnswerTrigger;
+  } | null>(null);
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Retries the waiting press (set after ask is made, below).
+  const retryPendingRef = useRef<() => void>(() => undefined);
+  // 1.5.2: when the last answer stopped streaming (auto-answer answers a question that came due meanwhile).
+  const idleSinceRef = useRef<number | null>(null);
+
+  /**
+   * What was answered, by the ids the lines have now (1.5.2, ADR-0070): a grey line's words may have
+   * joined an earlier line, which then counts as answered too.
+   *
+   * @returns The answered line ids and the latest answered question.
+   */
+  const resolvedAnswered = useCallback((): {
+    answeredLineIds: ReadonlySet<string>;
+    last: AnsweredQuestion | null;
+  } => {
+    const resolve = (id: string) => transcript.resolveId(id);
+    const answered = new Set<string>();
+    for (const id of answeredLinesRef.current) {
+      answered.add(id);
+      answered.add(resolve(id));
+    }
+    const last = lastAnsweredRef.current;
+    return {
+      answeredLineIds: answered,
+      last: last ? { ...last, lineIds: [...new Set(last.lineIds.map(resolve))] } : null,
+    };
+  }, [transcript]);
   // What the conversation has sent so far, and the finished answers (refs: read when asked).
   const logRef = useRef(emptyLog());
   const finishedRef = useRef<CallAnswer[]>([]);
@@ -504,6 +540,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
          * remembered by the repeat guard, so Answer does not ask the same speech again.
          */
         coveredLines?: readonly string[];
+        /** 1.5.2 (ADR-0070): when a press that is waiting for the question began waiting (Unix ms). */
+        waitingSince?: number;
       } = {},
     ): boolean => {
       const { typed, image, auto = false, answerType } = options;
@@ -515,6 +553,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       }
       // Lines Claude found to be noise are not part of any later question (ADR-0043).
       const lines = transcript.lines().filter((line) => !noiseLinesRef.current.has(line.id));
+      // 1.5.2 (ADR-0070): what was answered, by the ids the lines have now (a grey line's words may have
+      // joined an earlier line).
+      const { answeredLineIds, last: lastAnswered } = resolvedAnswered();
       if (
         mode === 'answer' &&
         !options.question &&
@@ -532,6 +573,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       let partOfLines = false;
       // v1.4: the answer this one replaces on the same card (a rerun or a continuation), if any.
       let replaces = options.replaces;
+      // 1.5.2: a press that answered words still grey (asked again on its card if the person goes on).
+      let greyPress = false;
       if (mode === 'answer' && options.lineIds && !options.question) {
         // Auto-answer chose the lines (core/answer/autoAnswer.ts): asked as they are.
         const chosen = lines.filter((line) => options.lineIds!.includes(line.id));
@@ -539,34 +582,51 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         picked = { kind: 'question', selected: asSelected(chosen), lookedBack: false };
         partOfLines = true;
       } else if (mode === 'answer' && !options.question) {
-        // v1.4 (ADR-0062): new words that only continue the question just answered (no reply from the
-        // user, not a new question) are joined to it, and it is asked again on its card.
-        const last = lastAnsweredRef.current;
-        const more = last ? continuationOf(lines, last, CONTINUE_WINDOW_MS, last.end) : [];
-        if (last && more.length > 0 && lineKind(asSelected(more).text) === 'statement') {
-          const whole = lines.filter(
-            (line) => last.lineIds.includes(line.id) || more.includes(line),
-          );
-          picked = { kind: 'question', selected: asSelected(whole), lookedBack: false };
-          partOfLines = true;
-          replaces = last.answerId;
-        } else {
-          // A question already answered is not part of the next one, even with no reply in between:
-          // "how did you test it" answered, then "why Go" is asked, is "why Go". With nothing new,
-          // Answer goes back to what is there. v1.4: a lone remark among the new lines is not answered
-          // when an earlier question exists (allowStatement: false here, then all the lines).
-          const fresh = lines.filter((line) => !answeredLinesRef.current.has(line.id));
-          partOfLines = fresh.length !== lines.length;
-          // A lone fragment among the new lines (the tail of a question the live engine split, or the
-          // rest of one auto-answer already took) still looks back to the question it belongs to. 1.5.1
-          // (ADR-0069): measured on the after-fix runs, answering the new lines as they stood sent 1–3-word
-          // fragments; the newest question now stays in the window through the user's grey words instead
-          // (question.ts selectQuestion).
-          picked = pickQuestion(fresh, { allowStatement: !partOfLines });
-          if (picked.kind === 'none' && partOfLines) {
-            picked = pickQuestion(lines);
-            partOfLines = false;
+        // 1.5.2 (ADR-0070): the press rules live in core/answer/pressQuestion.ts (the newest question,
+        // grey words included; a continuation on its card; talk about the call looks back).
+        const choice = choosePress({
+          lines,
+          answeredLineIds,
+          last: lastAnswered,
+          now: Date.now(),
+          waitingSince: options.waitingSince ?? null,
+        });
+        if (choice.kind === 'wait') {
+          // The other person is still asking: answer it as soon as it is a question (or after
+          // PRESS_WAIT_MS with what there is). Tried again on each transcript change (the effect below).
+          const since = options.waitingSince ?? Date.now();
+          pendingPressRef.current = {
+            since,
+            pressedAt: keyPressAt,
+            trigger: options.trigger ?? 'hotkey',
+          };
+          if (!pendingTimerRef.current) {
+            pendingTimerRef.current = setTimeout(
+              () => {
+                pendingTimerRef.current = null;
+                retryPendingRef.current();
+              },
+              Math.max(0, since + PRESS_WAIT_MS - Date.now()) + 50,
+            );
           }
+          setNotice(WAITING_NOTICE);
+          return false;
+        }
+        pendingPressRef.current = null;
+        picked =
+          choice.kind === 'answer'
+            ? {
+                kind: 'question',
+                selected: { text: choice.text, lineIds: choice.lineIds },
+                lookedBack: choice.lookedBack,
+              }
+            : choice.kind === 'garbled'
+              ? { kind: 'garbled', selected: { text: choice.text, lineIds: choice.lineIds } }
+              : { kind: 'none' };
+        if (choice.kind === 'answer') {
+          partOfLines = choice.partOfLines;
+          replaces = choice.replaces;
+          greyPress = choice.grey;
         }
         if (picked.kind === 'none') {
           setNotice(NO_QUESTION_NOTICE);
@@ -687,6 +747,13 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           end: span.end,
           askedAt: Date.now(),
           auto,
+          ...(greyPress && !auto ? { grey: true } : {}),
+          words: wordCount(
+            lines
+              .filter((line) => pickedLines.includes(line.id))
+              .map((line) => line.text)
+              .join(' '),
+          ),
         };
       }
       // Kept here as well as in state: the answer's end needs them in the same tick.
@@ -696,10 +763,19 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       // auto-answer never puts a card up for "how are you doing?" (a press still gets its answer).
       const dropped = (type: AnswerType | undefined) =>
         isNoAnswer(type) || (auto && type === 'smalltalk');
-      // 1.5.1: the call timing log (ids and times only).
+      // 1.5.1: the call timing log (ids and times only). 1.5.2 (ADR-0070): a rerun gets an entry of its own
+      // (the card's first request keeps its times), and the log says whether the words were still grey and
+      // whether auto-answer asked at the pause.
       const sentWall = Date.now();
+      const timingId = replaces ? `${entry.id}~${sentWall}` : entry.id;
+      const greyWords = lines.some(
+        (line) => !line.final && (pickedLines ?? built.selected?.lineIds ?? []).includes(line.id),
+      );
       callTimings.noteAnswer({
-        answerId: entry.id,
+        answerId: timingId,
+        ...(greyWords ? { grey: true } : {}),
+        ...(greyWords && auto ? { early: true } : {}),
+        ...(replaces ? { rerunOf: replaces } : {}),
         trigger:
           options.trigger ??
           (auto ? 'auto' : options.span ? 'answer-this' : mode === 'chat' ? 'chat' : 'hotkey'),
@@ -715,7 +791,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       runner.run(built.request, keyPressAt, {
         onRetry: () => {
           retries += 1;
-          callTimings.noteAnswer({ answerId: entry.id, retries });
+          callTimings.noteAnswer({ answerId: timingId, retries });
         },
         onQuestion: (received) => {
           cleanQuestion = received;
@@ -731,7 +807,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
               ? received.type
               : settleAnswerType(entry.question, received.type, labelsRef.current);
           meta = { ...received, type };
-          if (dropped(type)) callTimings.noteAnswer({ answerId: entry.id, status: 'none' });
+          if (dropped(type)) callTimings.noteAnswer({ answerId: timingId, status: 'none' });
           // Claude could not make sense of the words either (ADR-0043): no answer to show. The
           // entry goes, and the user gets the same notice as when the rules catch it first.
           // v1.4 (ADR-0065): or the words ask nothing ("can you repeat that?", a remark). The entry goes
@@ -759,13 +835,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         onText: (text) => {
           if (!firstWordLogged) {
             firstWordLogged = true;
-            callTimings.noteAnswer({ answerId: entry.id, firstWordAt: Date.now() });
+            callTimings.noteAnswer({ answerId: timingId, firstWordAt: Date.now() });
           }
           if (!dropped(meta?.type)) update(entry.id, { text });
         },
         onDone: (text, done, timeline) => {
+          idleSinceRef.current = Date.now();
           if (!dropped(meta?.type)) {
-            callTimings.noteAnswer({ answerId: entry.id, status: 'done', doneAt: Date.now() });
+            callTimings.noteAnswer({ answerId: timingId, status: 'done', doneAt: Date.now() });
           }
           // Not an answer: nothing to keep, send later or save.
           if (dropped(meta?.type)) return;
@@ -816,7 +893,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             .catch(() => setSaveFailed(true));
         },
         onError: (failure) => {
-          callTimings.noteAnswer({ answerId: entry.id, status: 'error', doneAt: Date.now() });
+          idleSinceRef.current = Date.now();
+          callTimings.noteAnswer({ answerId: timingId, status: 'error', doneAt: Date.now() });
           const shown = answerFailureText(failure);
           update(entry.id, {
             status: 'error',
@@ -833,7 +911,48 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       });
       return true;
     },
-    [session, documents, lessons, transcript, callStartedAt, runner, repeatGuard, update],
+    [
+      session,
+      documents,
+      lessons,
+      transcript,
+      callStartedAt,
+      runner,
+      repeatGuard,
+      update,
+      resolvedAnswered,
+    ],
+  );
+
+  // 1.5.2 (ADR-0070): a press waiting for the question is tried again whenever the transcript changes (the
+  // grey line grows into a question, or ends), and once more when PRESS_WAIT_MS is up (the timer in ask).
+  useEffect(() => {
+    retryPendingRef.current = () => {
+      const pending = pendingPressRef.current;
+      if (!pending) return;
+      pendingPressRef.current = null;
+      ask('answer', {
+        waitingSince: pending.since,
+        pressedAt: pending.pressedAt,
+        trigger: pending.trigger,
+      });
+    };
+  });
+  useEffect(
+    () =>
+      transcript.subscribe(() => {
+        if (pendingPressRef.current) retryPendingRef.current();
+      }),
+    [transcript],
+  );
+  // A new call, or End: nothing waits any more.
+  useEffect(
+    () => () => {
+      pendingPressRef.current = null;
+      if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    },
+    [callStartedAt, sessionId],
   );
 
   const clear = useCallback(() => {
@@ -992,17 +1111,21 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       [ask],
     ),
     autoAnswer: useCallback(
-      (decision?: AutoDecision) =>
+      (decision?: AutoDecision) => {
+        // 1.5.2 (ADR-0070): a rerun of a press on grey words stays a press (no "Auto" mark).
+        const pressRerun = decision?.kind === 'rerun' && lastAnsweredRef.current?.auto === false;
         void ask('answer', {
-          auto: true,
+          ...(pressRerun ? { trigger: 'rerun' as const } : { auto: true }),
           ...(decision ? { lineIds: decision.lineIds } : {}),
           ...(decision?.kind === 'rerun' ? { replaces: decision.replaces } : {}),
-        }),
+        });
+      },
       [ask],
     ),
+    // 1.5.2 (ADR-0070): by the ids the lines have now, and when the last answer stopped streaming.
     answeredState: useCallback(
-      () => ({ answeredLineIds: answeredLinesRef.current, last: lastAnsweredRef.current }),
-      [],
+      () => ({ ...resolvedAnswered(), idleSince: idleSinceRef.current }),
+      [resolvedAnswered],
     ),
     chat: useCallback((question: string) => ask('chat', { typed: question }), [ask]),
     answerThis: useCallback(

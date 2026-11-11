@@ -21,8 +21,12 @@
 /** How long the same question text is not answered again, in milliseconds. */
 export const REPEAT_WINDOW_MS = 3_000;
 
-/** How long a manual press for already-answered speech shows that answer instead, in ms. */
-export const SHOW_EXISTING_MS = 10_000;
+/**
+ * How long a manual press for already-answered speech shows that answer instead, in ms. 1.5.2 (ADR-0070):
+ * always (it was 10 s): a press later on the same words made a second card on the real call of 11 Nov
+ * 2026; the card's own re-answer button asks again on purpose.
+ */
+export const SHOW_EXISTING_MS = Number.POSITIVE_INFINITY;
 
 /**
  * Slack when comparing speech times, in ms: a grey line's end is "when it last changed", so the

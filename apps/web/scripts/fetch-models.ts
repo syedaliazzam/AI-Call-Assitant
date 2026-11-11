@@ -24,6 +24,8 @@
  * Where files go:
  * - runtime → apps/web/public/stt-runtime/v1.13.7/ (served from our origin in every environment);
  * - punctuation (v1.1.0, ADR-0044) → apps/web/public/punct/ (the same, always installed);
+ * - the echo canceller (1.5.2, ADR-0070) → apps/web/public/aec/, copied from the pinned npm package
+ *   @ennuicastr/webrtcaec3.js (no download) and checked like the rest;
  * - model and test recordings → apps/web/public/models/stt/ (used when the source is `local`, as
  *   in `pnpm dev`; production loads model files from Hugging Face). Both folders are git-ignored.
  */
@@ -31,6 +33,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +47,8 @@ import {
   TEST_RECORDINGS,
   TEST_RECORDINGS_DIR,
   type PinnedFile,
+  AEC_FILES,
+  AEC_PUBLIC_PATH,
 } from '../src/core/stt/models';
 import { sentencePieceVocab } from '../src/core/stt/sentencepiece';
 import {
@@ -404,6 +409,33 @@ async function installPunctuation(): Promise<void> {
   }
 }
 
+/** 1.5.2 (ADR-0070): apps/web/public/aec, the echo canceller's folder. */
+export const AEC_DIR = path.join(PUBLIC_DIR, ...AEC_PUBLIC_PATH.split('/').filter(Boolean));
+
+/**
+ * 1.5.2 (ADR-0070): copies the echo canceller (WebRTC AEC3 in WebAssembly) from its npm package into
+ * public/aec and checks each file against its pinned SHA-256 (models.ts AEC_FILES).
+ *
+ * @throws Error when the package is missing or a file does not match its checksum.
+ * Called from: main()
+ */
+async function installEchoCanceller(): Promise<void> {
+  mkdirSync(AEC_DIR, { recursive: true });
+  const require = createRequire(import.meta.url);
+  const packageDir = path.dirname(require.resolve('@ennuicastr/webrtcaec3.js/package.json'));
+  for (const file of Object.values(AEC_FILES)) {
+    const target = path.join(AEC_DIR, file.name);
+    if (await isInstalled(target, file)) continue;
+    await copyFile(path.join(packageDir, 'dist', file.name), target);
+    const digest = await sha256Of(target);
+    if (digest !== file.sha256) {
+      rmSync(target, { force: true });
+      throw new Error(`${file.name}: SHA-256 ${digest} is not the pinned ${file.sha256}`);
+    }
+  }
+  console.log('  echo canceller: ok');
+}
+
 /**
  * Entry point: the runtime always; the models and test recordings unless --runtime-only.
  * With --pins it only prints pinList().
@@ -419,6 +451,7 @@ async function main(): Promise<void> {
   await installPunctuation();
   // v1.4 (ADR-0065): the end-of-turn model, served from our own origin like the punctuation model.
   await installFiles('end-of-turn model', TURN_DIR, [TURN_MODEL_FILE]);
+  await installEchoCanceller();
   if (!runtimeOnly) {
     for (const model of STT_MODELS) {
       const dir = path.join(MODELS_DIR, model.id);

@@ -63,6 +63,8 @@ export default defineConfig([
     // The official sherpa-onnx runtime (downloaded, used unmodified; never linted or reformatted).
     'apps/web/public/stt-runtime/**',
     'apps/web/public/punct/**',
+    // 1.5.2 (ADR-0070): the echo canceller, copied from npm (compiled code).
+    'apps/web/public/aec/**',
     // Build output: the staged sherpa-onnx runtime (v1.0.1, used unmodified) and the installers.
     'apps/desktop/native/**',
     'apps/desktop/release/**',

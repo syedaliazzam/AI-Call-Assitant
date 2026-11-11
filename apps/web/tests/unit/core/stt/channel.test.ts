@@ -418,8 +418,8 @@ describe('ChannelDecoder: end-of-turn audio (v1.4, ADR-0065)', () => {
     expect(final?.type === 'final' && final.recent?.length).toBeGreaterThan(0);
   });
 
-  it('posts nothing for words that look finished (the model may only shorten a cut-off wait)', () => {
-    const { recognizer } = fakeRecognizer(['HOW BIG IS THE TEAM'], [], 'HOW BIG IS THE TEAM');
+  it('posts nothing for a line of two words or fewer that looks finished', () => {
+    const { recognizer } = fakeRecognizer(['SOUNDS GREAT'], [], 'SOUNDS GREAT');
     const events: ChannelEvent[] = [];
     const decoder = new ChannelDecoder('them', recognizer, (e) => events.push(e), {
       clock: fakeClock(),
@@ -431,6 +431,36 @@ describe('ChannelDecoder: end-of-turn audio (v1.4, ADR-0065)', () => {
     expect(events.some((e) => e.type === 'pause')).toBe(false);
     const final = events.find((e) => e.type === 'final');
     expect(final?.type === 'final' && final.recent).toBeUndefined();
+  });
+
+  it('1.5.2 (ADR-0070): posts a pause for a question that looks finished, so it can be answered at once', () => {
+    const { recognizer } = fakeRecognizer(['HOW BIG IS THE TEAM'], [], 'HOW BIG IS THE TEAM');
+    const events: ChannelEvent[] = [];
+    const decoder = new ChannelDecoder('them', recognizer, (e) => events.push(e), {
+      clock: fakeClock(),
+      gate: null,
+      keepRecent: true,
+    });
+    for (let i = 0; i < 5; i += 1) decoder.accept(loud(), i * 0.1 + 0.1);
+    for (let i = 5; i < 5 + PAUSE_END_MS / 100 + 1; i += 1) decoder.accept(quiet(), i * 0.1 + 0.1);
+    expect(events.filter((e) => e.type === 'pause')).toHaveLength(1);
+  });
+
+  it('1.5.2 (ADR-0070): says "resume" when the voice comes back after a pause, once', () => {
+    const { recognizer } = fakeRecognizer(['HOW BIG IS THE TEAM'], [], 'HOW BIG IS THE TEAM');
+    const events: ChannelEvent[] = [];
+    const decoder = new ChannelDecoder('them', recognizer, (e) => events.push(e), {
+      clock: fakeClock(),
+      gate: null,
+      keepRecent: true,
+    });
+    for (let i = 0; i < 5; i += 1) decoder.accept(loud(), i * 0.1 + 0.1);
+    for (let i = 5; i < 9; i += 1) decoder.accept(quiet(), i * 0.1 + 0.1);
+    expect(events.filter((e) => e.type === 'pause')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'resume')).toHaveLength(0);
+    decoder.accept(loud(), 1.0);
+    decoder.accept(loud(), 1.1);
+    expect(events.filter((e) => e.type === 'resume')).toHaveLength(1);
   });
 
   it('posts nothing of the kind without keepRecent', () => {

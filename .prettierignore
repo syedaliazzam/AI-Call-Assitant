@@ -18,6 +18,7 @@ apps/web/drizzle
 apps/web/public/models
 apps/web/public/stt-runtime
 apps/web/public/punct
+apps/web/public/aec
 # Hand-written planning documents (architecture, ADRs, day plans, CLAUDE.md). They are kept
 # exactly as approved; reformatting them would realign every table and hide real edits in diffs.
 docs
