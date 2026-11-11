@@ -5,7 +5,7 @@
  *          use it. So each such script says "production" and refuses to run unless --prod was
  *          given on purpose. Never prints the connection string.
  * Used by: scripts/create-admin.ts, create-e2e-user.ts, e2e-admin.ts, rotate-e2e-password.ts,
- *          db-migrate.ts
+ *          db-migrate.ts, drive-mark-reconnect.ts (PROD_FLAG, productionRefusal)
  * Depends on: nothing
  * Architecture: ADR-0050
  */
