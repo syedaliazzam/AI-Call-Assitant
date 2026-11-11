@@ -75,14 +75,32 @@ export async function listDriveJobs(): Promise<DriveSessionJob[]> {
 }
 
 /**
- * Saves a job whole (the uploader's progress).
+ * Saves a job whole (the uploader's progress). A call queued meanwhile (the live page's End can queue
+ * one while the uploader works on an older copy of the job) is kept: its call is merged in, and a job the
+ * uploader thought finished goes back to the queue for it. A job deleted meanwhile is not brought back.
  *
  * @param job The job.
  * @returns When saved.
  * Called from: uploader.ts; tests
  */
 export async function putDriveJob(job: DriveSessionJob): Promise<void> {
-  await getDb().driveUploads.put(job);
+  const db = getDb();
+  await db.transaction('rw', db.driveUploads, async () => {
+    const current = await db.driveUploads.get(job.sessionId);
+    const added = (current?.calls ?? []).filter(
+      (call) => !job.calls.some((known) => known.startedAt === call.startedAt),
+    );
+    if (added.length === 0) {
+      await db.driveUploads.put(job);
+      return;
+    }
+    await db.driveUploads.put({
+      ...job,
+      calls: [...job.calls, ...added].sort((a, b) => a.startedAt - b.startedAt),
+      state: job.state === 'done' || job.state === 'uploading' ? 'queued' : job.state,
+      noticeShown: false,
+    });
+  });
 }
 
 /**

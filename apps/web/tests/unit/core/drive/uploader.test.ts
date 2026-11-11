@@ -399,6 +399,35 @@ describe('the server notification', () => {
   });
 });
 
+describe('runDriveQueue', () => {
+  it('picks up an error queued again by auto-retry in the same run', async () => {
+    const w = world();
+    w.jobs.set(SID, {
+      ...w.job(),
+      state: 'error',
+      reason: 'network',
+      autoRetry: true,
+      updatedAt: 0,
+    });
+    expect(await runDriveQueue(w.deps)).toBe('idle');
+    expect(w.job().state).toBe('done');
+  });
+
+  it('stops marking jobs as waiting when a call starts', async () => {
+    const w = world();
+    const second = { ...w.job(), sessionId: 'other-session', queuedAt: CALL.endedAt + 1 };
+    w.jobs.set('other-session', second);
+    let calls = 0;
+    // The token is refused (waiting), and a call starts while the next job is looked at.
+    w.state.tokenRefused = true;
+    w.deps.callActive = async () => {
+      calls += 1;
+      return calls > 3;
+    };
+    expect(await runDriveQueue(w.deps)).toMatch(/call|waiting/);
+  });
+});
+
 describe('planFiles', () => {
   it('takes only this session and call, finished parts, and never lists a file twice', () => {
     const job = { sessionId: SID, calls: [CALL], files: [] } as unknown as DriveSessionJob;

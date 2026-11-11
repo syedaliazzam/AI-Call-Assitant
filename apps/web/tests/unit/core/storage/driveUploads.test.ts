@@ -77,6 +77,17 @@ describe('the queue', () => {
     expect(await getDriveJob('early')).toBeNull();
   });
 
+  it('keeps a call queued while the uploader worked on an older copy of the job', async () => {
+    const old = await queueDriveCall('s1', { startedAt: 1_000, endedAt: 2_000 }, 3_000);
+    // The live page queues the next call...
+    await queueDriveCall('s1', { startedAt: 5_000, endedAt: 6_000 }, 7_000);
+    // ...then the uploader saves its older copy as finished.
+    await putDriveJob({ ...old, state: 'done', folderId: 'F', noticeShown: true });
+    const saved = (await getDriveJob('s1'))!;
+    expect(saved.calls.map((call) => call.startedAt)).toEqual([1_000, 5_000]);
+    expect(saved).toMatchObject({ state: 'queued', folderId: 'F', noticeShown: false });
+  });
+
   it('is never synced to the account', () => {
     expect(SYNCED_STORES as readonly string[]).not.toContain('driveUploads');
   });

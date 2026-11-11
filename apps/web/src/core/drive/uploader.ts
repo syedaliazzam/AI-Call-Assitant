@@ -586,8 +586,7 @@ export const AUTO_RETRY_MS = 2 * 60_000;
  */
 export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
   if (await deps.callActive()) return 'call';
-  const all = await deps.jobs.list();
-  for (const job of all) {
+  for (const job of await deps.jobs.list()) {
     if (job.state === 'error' && job.autoRetry && deps.now() - job.updatedAt >= AUTO_RETRY_MS) {
       await deps.jobs.put({
         ...job,
@@ -598,6 +597,8 @@ export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
       });
     }
   }
+  // Read again: the errors just queued again count as moving.
+  const all = await deps.jobs.list();
   // Only jobs that can move need the server: queued or cut off, waiting for the person (they may
   // have fixed it), or finished without the server's notification.
   const moving = all.filter(
@@ -650,9 +651,10 @@ export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
     const outcome = await processDriveJob(deps, job, status);
     if (outcome === 'paused') return 'call';
     if (outcome === 'waiting') {
-      // Every other queued job waits for the same reason; mark them so the cards say so.
+      // Every other queued job waits for the same reason; mark them so the cards say so. A job that
+      // pauses (a call started) stays active, so the marking stops there.
       for (let next = await deps.jobs.next(); next; next = await deps.jobs.next()) {
-        await processDriveJob(deps, next, status);
+        if ((await processDriveJob(deps, next, status)) === 'paused') return 'call';
       }
       return 'waiting';
     }
