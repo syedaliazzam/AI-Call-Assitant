@@ -4,7 +4,8 @@
  *          only), then the folder picked in Google Picker; "Connected · <folder> ↗", Change folder,
  *          Disconnect (revokes access); the "Save calls to Google Drive" switch; Reconnect when Google
  *          refused the connection; and the "saved" email: its switch, the "Also notify" team list, and
- *          the latest notifications (sent or failed, with Retry), or "Email not set up". In the desktop app,
+ *          the latest notifications (sent or failed, with Retry), "Send test email" (to the person only),
+ *          or "Email not set up". In the desktop app,
  *          Connect, Reconnect and Change folder open this page in the system browser (Google's pages
  *          cannot open in the app); the rest works in place. After Google sends the person back
  *          (?drive=pick) the Picker opens by itself; an error (?drive=error&reason=…) is explained.
@@ -79,6 +80,7 @@ export function GoogleDriveSetting() {
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [alsoText, setAlsoText] = useState<string | null>(null);
   const [alsoMessage, setAlsoMessage] = useState<string | null>(null);
+  const [testMessage, setTestMessage] = useState<string | null>(null);
   const handled = useRef(false);
 
   /**
@@ -314,6 +316,29 @@ export function GoogleDriveSetting() {
               </p>
             )}
             {alsoMessage && <p className="text-[13px] text-ui-muted">{alsoMessage}</p>}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() =>
+                  void act(async () => {
+                    setTestMessage(null);
+                    const out = await driveApi().sendTestEmail();
+                    setTestMessage(
+                      out.status === 'sent'
+                        ? 'Test email sent to your address. Check your inbox (and spam).'
+                        : out.reason === 'rejected'
+                          ? 'The mail server refused it: check SMTP_USER, SMTP_PASS and NOTIFY_FROM_EMAIL.'
+                          : 'The mail server could not be reached: check SMTP_HOST and SMTP_PORT.',
+                    );
+                  })
+                }
+              >
+                Send test email
+              </Button>
+              {testMessage && <p className="text-[13px] text-ui-muted">{testMessage}</p>}
+            </div>
             <div>
               <Button
                 size="sm"

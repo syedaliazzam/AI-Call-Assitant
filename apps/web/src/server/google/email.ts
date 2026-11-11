@@ -2,24 +2,25 @@
  * File: apps/web/src/server/google/email.ts
  * Purpose: The "saved to Google Drive" email (ADR-0072): its subject, plain text and HTML, built only
  *          from the session title, date, length, the saved files' names and the Drive folder link
- *          (never transcript, notes, answer or document text: those are not inputs), and sending it
- *          through Resend with an idempotency key so one attempt is never delivered twice.
- * Used by: src/server/google/api.ts (notify, retry)
- * Depends on: @kite/shared (savedHeadline), src/server/google/{config,oauth}.ts (types)
- * Architecture: ADR-0072; docs/deploy/google-drive.md (Resend setup)
+ *          (never transcript, notes, answer or document text: those are not inputs), the test email,
+ *          and sending through SMTP (nodemailer): port 465 with TLS from the start, any other port with
+ *          STARTTLS required (never plain text), 10-second timeouts. Each attempt has a fixed Message-ID.
+ * Used by: src/server/google/api.ts (notify, retry, test email)
+ * Depends on: nodemailer, @kite/shared (savedHeadline), src/server/google/{config,store}.ts (types)
+ * Architecture: ADR-0072; docs/deploy/google-drive.md (SMTP setup)
  *
- * Nothing here logs addresses, titles or file names. The HTML has no colours: email clients ignore the
+ * Nothing here logs: not the password, addresses, titles, file names, or the server's reply text. The HTML has no colours: email clients ignore the
  * theme's CSS variables, and the app keeps every colour in src/ui/tokens/theme.css.
  */
 import 'server-only';
 import { createHash } from 'node:crypto';
 import { savedHeadline } from '@kite/shared';
+import { createTransport } from 'nodemailer';
 import type { EmailConfig } from './config';
-import type { FetchLike } from './oauth';
 import type { NotificationContent } from './store';
 
-/** Resend's send endpoint. */
-export const RESEND_URL = 'https://api.resend.com/emails';
+/** Connect, greeting and socket timeouts for the SMTP server, ms. */
+export const SMTP_TIMEOUT_MS = 10_000;
 
 /** A built email. */
 export interface SavedEmail {
@@ -136,60 +137,178 @@ export function buildSavedEmail(
   return { subject: `${headline} — ${content.title}`, text, html };
 }
 
+/** One message to send. */
+export interface OutgoingEmail {
+  /** The recipients. */
+  to: string[];
+  /** The subject line. */
+  subject: string;
+  /** The plain-text body. */
+  text: string;
+  /** The HTML body, when there is one. */
+  html?: string;
+  /** The Message-ID header (fixed per attempt). */
+  messageId: string;
+}
+
 /**
- * The idempotency key for one sending attempt: the same account, session and attempt always give the
- * same key, so Resend delivers one email even if the request is repeated (a timeout, a retry).
- * Hashed, so neither id appears in Resend's records.
+ * Sends one message (nodemailer over SMTP; tests pass a fake).
+ * @param config  The server, account and sender.
+ * @param message The message.
+ * @returns When the server accepted it.
+ * @throws The transport's error (its code says why) when it did not.
+ */
+export type Mailer = (config: EmailConfig, message: OutgoingEmail) => Promise<void>;
+
+/**
+ * The nodemailer settings for a server: port 465 is TLS from the start; any other port (587) must
+ * upgrade with STARTTLS or the message is not sent, so the password never crosses in plain text.
+ *
+ * @param config The server, account and sender.
+ * @returns The SMTP transport options.
+ * Called from: smtpMailer(); tests
+ */
+export function smtpTransportOptions(config: EmailConfig) {
+  const secure = config.port === 465;
+  return {
+    host: config.host,
+    port: config.port,
+    secure,
+    requireTLS: !secure,
+    auth: { user: config.user, pass: config.pass },
+    connectionTimeout: SMTP_TIMEOUT_MS,
+    greetingTimeout: SMTP_TIMEOUT_MS,
+    socketTimeout: SMTP_TIMEOUT_MS,
+    tls: { minVersion: 'TLSv1.2' as const },
+    // nodemailer's own logging stays off: it could print addresses or the server's replies.
+    logger: false,
+    debug: false,
+  };
+}
+
+/**
+ * The real mailer: one SMTP connection per message (a few emails a day; nothing to pool).
+ * @param config  The server, account and sender.
+ * @param message The message.
+ * @returns When the server accepted it.
+ * Called from: api.ts (realGoogleDeps)
+ */
+export const smtpMailer: Mailer = async (config, message) => {
+  const transport = createTransport(smtpTransportOptions(config));
+  try {
+    await transport.sendMail({
+      from: config.from,
+      to: message.to,
+      subject: message.subject,
+      text: message.text,
+      ...(message.html ? { html: message.html } : {}),
+      messageId: message.messageId,
+    });
+  } finally {
+    transport.close();
+  }
+};
+
+/** Error codes nodemailer gives when the server refused (not a network problem). */
+const REFUSED_CODES = new Set(['EAUTH', 'EENVELOPE', 'EMESSAGE', 'ENOAUTH']);
+
+/**
+ * Sorts a send failure: refused by the server (account, password, sender or address) or not reached
+ * (host, port, network, a temporary 4xx). Only the error's code and reply number are read, never its
+ * text.
+ *
+ * @param error What the mailer threw.
+ * @returns 'rejected' or 'unreachable'.
+ * Called from: sendSavedEmail(), sendTestEmail(); tests
+ */
+export function smtpFailure(error: unknown): 'rejected' | 'unreachable' {
+  const failure = error as { code?: unknown; responseCode?: unknown } | null;
+  if (typeof failure?.code === 'string' && REFUSED_CODES.has(failure.code)) return 'rejected';
+  if (typeof failure?.responseCode === 'number' && failure.responseCode >= 500) return 'rejected';
+  return 'unreachable';
+}
+
+/**
+ * The Message-ID of one sending attempt: the same account, session and attempt always give the same
+ * id, so a repeated attempt is recognisably the same message. Hashed, so neither id appears in mail
+ * headers; the domain is the sender's.
  *
  * @param userId    The account.
  * @param sessionId The session.
  * @param attempt   The attempt number (1 for the first; a Settings Retry is the next).
- * @returns The key.
+ * @param from      The sender (its domain ends the id).
+ * @returns For example "<kite-drive-saved.3f2a….1@paramountintelligence.co>".
  * Called from: api.ts; tests
  */
-export function emailIdempotencyKey(userId: string, sessionId: string, attempt: number): string {
+export function emailMessageId(
+  userId: string,
+  sessionId: string,
+  attempt: number,
+  from: string,
+): string {
   const hash = createHash('sha256').update(`${userId}\n${sessionId}`).digest('hex').slice(0, 40);
-  return `kite-drive-saved/${hash}/${attempt}`;
+  const domain = /@([A-Za-z0-9.-]+)/.exec(from)?.[1] ?? 'paramount.invalid';
+  return `<kite-drive-saved.${hash}.${attempt}@${domain}>`;
 }
 
 /**
- * Sends the email through Resend.
+ * Sends the "saved" email.
  *
- * @param fetchFn The fetch.
- * @param config  The Resend key and sender.
- * @param content The stored notification (recipients included).
- * @param key     The idempotency key (emailIdempotencyKey()).
- * @returns 'sent', or a short failure code: 'rejected' (Resend refused it: a sender or address
- *          problem) or 'unreachable' (network or Resend's server error).
+ * @param mailer    The mailer.
+ * @param config    The server, account and sender.
+ * @param content   The stored notification (recipients included).
+ * @param messageId The attempt's Message-ID (emailMessageId()).
+ * @returns 'sent', 'rejected' or 'unreachable' (smtpFailure()).
  * Called from: api.ts (notify, retry); tests
  */
 export async function sendSavedEmail(
-  fetchFn: FetchLike,
+  mailer: Mailer,
   config: EmailConfig,
   content: NotificationContent,
-  key: string,
+  messageId: string,
 ): Promise<'sent' | 'rejected' | 'unreachable'> {
   const email = buildSavedEmail(content);
   try {
-    const response = await fetchFn(RESEND_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-        'Idempotency-Key': key,
-      },
-      body: JSON.stringify({
-        from: config.from,
-        to: content.recipients,
-        subject: email.subject,
-        text: email.text,
-        html: email.html,
-      }),
-      cache: 'no-store',
+    await mailer(config, { to: content.recipients, ...email, messageId });
+    return 'sent';
+  } catch (error) {
+    return smtpFailure(error);
+  }
+}
+
+/**
+ * Sends a test email to one address (the signed-in person), saying where "saved" emails will come
+ * from. No call data of any kind.
+ *
+ * @param mailer The mailer.
+ * @param config The server, account and sender.
+ * @param to     The person's own address.
+ * @param now    The clock (the Message-ID).
+ * @returns 'sent', 'rejected' or 'unreachable'.
+ * Called from: handleTestEmail() in api.ts; tests
+ */
+export async function sendTestEmail(
+  mailer: Mailer,
+  config: EmailConfig,
+  to: string,
+  now: number,
+): Promise<'sent' | 'rejected' | 'unreachable'> {
+  const domain = /@([A-Za-z0-9.-]+)/.exec(config.from)?.[1] ?? 'paramount.invalid';
+  try {
+    await mailer(config, {
+      to: [to],
+      subject: 'Paramount AI test email',
+      text: [
+        'This is a test email from Paramount AI.',
+        '',
+        'Emails saying a call was saved to Google Drive will come from this address.',
+        'Sent because you pressed "Send test email" in Settings.',
+        '',
+      ].join('\n'),
+      messageId: `<kite-test.${now}@${domain}>`,
     });
-    if (response.ok) return 'sent';
-    return response.status >= 500 || response.status === 429 ? 'unreachable' : 'rejected';
-  } catch {
-    return 'unreachable';
+    return 'sent';
+  } catch (error) {
+    return smtpFailure(error);
   }
 }

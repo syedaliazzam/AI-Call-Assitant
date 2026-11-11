@@ -2,10 +2,11 @@
  * File: apps/web/src/server/google/config.ts
  * Purpose: Reads the Google Drive and email settings from the environment (ADR-0072). Each part is
  *          optional: without the Google client the feature says "not set up" instead of failing, and
- *          without RESEND_API_KEY and NOTIFY_FROM_EMAIL the "saved" email stays off ("Email not set
- *          up") while uploads still work. Values are never logged or sent to a browser, except the
- *          Picker key and project number, which Google Picker needs in the page.
- * Used by: src/server/google/api.ts, src/server/google/notify.ts
+ *          until all five of SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and NOTIFY_FROM_EMAIL are set
+ *          the "saved" email stays off ("Email not set up") while uploads still work. Values are never
+ *          logged or sent to a browser (SMTP_PASS above all), except the Picker key and project number,
+ *          which Google Picker needs in the page.
+ * Used by: src/server/google/api.ts, src/server/google/email.ts (types)
  * Depends on: nothing
  * Architecture: ADR-0072; docs/deploy/google-drive.md (the variables, and switching projects)
  *
@@ -28,10 +29,16 @@ export interface GoogleConfig {
   appId: string | null;
 }
 
-/** The email sender settings (Resend). */
+/** The email sender settings: an SMTP server (Google Workspace, Microsoft 365, …) and its account. */
 export interface EmailConfig {
-  /** The Resend API key. Server only. */
-  apiKey: string;
+  /** The SMTP server's host name, for example smtp.gmail.com. */
+  host: string;
+  /** Its port: 465 (TLS from the start) or 587 (STARTTLS, required). */
+  port: number;
+  /** The account that signs in to send. */
+  user: string;
+  /** Its password (an app password). Server only; never logged. */
+  pass: string;
   /** The sender, for example "Paramount AI <notify@paramountintelligence.co>". */
   from: string;
 }
@@ -71,11 +78,18 @@ export function googleConfig(env: GoogleEnvSource = process.env): GoogleConfig |
  * The email settings.
  *
  * @param env The variables (default process.env).
- * @returns The settings, or null unless RESEND_API_KEY and NOTIFY_FROM_EMAIL are both set.
- * Called from: api.ts (status, notify, retry), tests
+ * @returns The settings, or null unless SMTP_HOST, SMTP_PORT (a whole number 1–65535), SMTP_USER,
+ *          SMTP_PASS and NOTIFY_FROM_EMAIL are all set.
+ * Called from: api.ts (status, notify, retry, test email), tests
  */
 export function emailConfig(env: GoogleEnvSource = process.env): EmailConfig | null {
-  const apiKey = value(env, 'RESEND_API_KEY');
+  const host = value(env, 'SMTP_HOST');
+  const portText = value(env, 'SMTP_PORT');
+  const user = value(env, 'SMTP_USER');
+  // Trimmed like the rest: a value pasted into `vercel env add` can carry a trailing new line.
+  const pass = value(env, 'SMTP_PASS');
   const from = value(env, 'NOTIFY_FROM_EMAIL');
-  return apiKey && from ? { apiKey, from } : null;
+  const port = portText && /^\d{1,5}$/.test(portText) ? Number(portText) : NaN;
+  if (!host || !user || !pass || !from || !(port >= 1 && port <= 65_535)) return null;
+  return { host, port, user, pass, from };
 }

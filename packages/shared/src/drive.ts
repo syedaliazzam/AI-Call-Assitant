@@ -79,7 +79,7 @@ export interface DriveStatusResponse {
   saveEnabled: boolean;
   /** The "saved" email. */
   email: {
-    /** False until RESEND_API_KEY and NOTIFY_FROM_EMAIL are both set ("Email not set up"). */
+    /** False until SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and NOTIFY_FROM_EMAIL are set ("Email not set up"). */
     configured: boolean;
     /** The person's switch (on by default). */
     enabled: boolean;
@@ -156,10 +156,10 @@ export interface DriveNotifyRequest {
 
 /**
  * What became of a session's "saved" email:
- * - sent: Resend accepted it;
- * - failed: Resend refused it or could not be reached (Retry in Settings);
+ * - sent: the mail server accepted it;
+ * - failed: the mail server refused it or could not be reached (Retry in Settings);
  * - off: the person's email switch was off;
- * - not-set-up: Resend is not configured on this deployment;
+ * - not-set-up: email (SMTP) is not configured on this deployment;
  * - pending: being sent now.
  */
 export type DriveNotificationStatus = 'sent' | 'failed' | 'off' | 'not-set-up' | 'pending';
@@ -343,4 +343,15 @@ export function savedHeadline(files: readonly DriveSavedFile[]): string {
   if (recording) return 'Recording saved';
   if (transcript) return 'Transcript saved';
   return 'Files saved';
+}
+
+/** POST /api/drive/test-email: a test email to the signed-in person only. */
+export interface DriveTestEmailResponse {
+  /** 'sent' (the server accepted it) or 'failed'. */
+  status: 'sent' | 'failed';
+  /**
+   * Why it failed: 'rejected' (the server refused it: the account, password or sender) or 'unreachable'
+   * (host, port or network). Absent when sent.
+   */
+  reason?: 'rejected' | 'unreachable';
 }

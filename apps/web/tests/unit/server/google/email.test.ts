@@ -2,13 +2,19 @@
  * Tests for apps/web/src/server/google/email.ts and rateLimit.ts (ADR-0072): the "saved" email carries
  * only the title, date, length, file names and the Drive link, never transcript, notes, answer or
  * document text (the builder has no such input, and extra fields given to it are ignored); HTML is
- * escaped; the idempotency key is stable per attempt and hides the ids; Resend's replies map to sent,
- * rejected and unreachable; the rate limiter allows N per window.
+ * escaped; the SMTP settings use TLS (465 secure, 587 STARTTLS required) with 10 s timeouts; the
+ * Message-ID is stable per attempt and hides the ids; the mailer's failures map to rejected and
+ * unreachable (by code only); the test email has no call data; the rate limiter allows N per window.
  */
 import { describe, expect, it } from 'vitest';
 import {
   buildSavedEmail,
-  emailIdempotencyKey,
+  emailMessageId,
+  sendTestEmail,
+  smtpFailure,
+  smtpTransportOptions,
+  type Mailer,
+  type OutgoingEmail,
   formatLength,
   formatWhen,
   sendSavedEmail,
@@ -67,39 +73,81 @@ describe('buildSavedEmail', () => {
   });
 });
 
-describe('emailIdempotencyKey', () => {
-  it('is the same for the same attempt, different for the next, and hides the ids', () => {
-    const one = emailIdempotencyKey('user-1', 'session-1', 1);
-    expect(emailIdempotencyKey('user-1', 'session-1', 1)).toBe(one);
-    expect(emailIdempotencyKey('user-1', 'session-1', 2)).not.toBe(one);
-    expect(one).not.toContain('user-1');
-    expect(one).not.toContain('session-1');
+/** Invented SMTP settings (never a real server or password). */
+const SMTP = {
+  host: 'smtp.example.test',
+  port: 587,
+  user: 'notify@example.test',
+  pass: 'not-a-real-password',
+  from: 'Paramount AI <notify@example.test>',
+};
+
+describe('smtpTransportOptions', () => {
+  it('uses TLS from the start on 465, requires STARTTLS on 587, and times out after 10 s', () => {
+    expect(smtpTransportOptions({ ...SMTP, port: 465 })).toMatchObject({
+      secure: true,
+      requireTLS: false,
+    });
+    expect(smtpTransportOptions(SMTP)).toMatchObject({
+      host: 'smtp.example.test',
+      port: 587,
+      secure: false,
+      requireTLS: true,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 10_000,
+      logger: false,
+      auth: { user: 'notify@example.test', pass: 'not-a-real-password' },
+    });
   });
 });
 
-describe('sendSavedEmail', () => {
-  it('posts to Resend with the key and maps the replies', async () => {
-    const seen: RequestInit[] = [];
-    const reply = (status: number) => async (_url: string, init?: RequestInit) => {
-      seen.push(init!);
-      return new Response('{}', { status });
-    };
-    const config = { apiKey: 'test-key', from: 'Paramount AI <n@example.test>' };
-    expect(await sendSavedEmail(reply(200), config, CONTENT, 'k1')).toBe('sent');
-    expect((seen[0]!.headers as Record<string, string>)['Idempotency-Key']).toBe('k1');
-    expect(JSON.parse(String(seen[0]!.body)).to).toEqual(CONTENT.recipients);
-    expect(await sendSavedEmail(reply(422), config, CONTENT, 'k1')).toBe('rejected');
-    expect(await sendSavedEmail(reply(500), config, CONTENT, 'k1')).toBe('unreachable');
-    expect(
-      await sendSavedEmail(
-        async () => {
-          throw new TypeError('offline');
-        },
-        config,
-        CONTENT,
-        'k1',
-      ),
-    ).toBe('unreachable');
+describe('emailMessageId', () => {
+  it('is the same for the same attempt, different for the next, hides the ids, and uses the sender domain', () => {
+    const one = emailMessageId('user-1', 'session-1', 1, SMTP.from);
+    expect(emailMessageId('user-1', 'session-1', 1, SMTP.from)).toBe(one);
+    expect(emailMessageId('user-1', 'session-1', 2, SMTP.from)).not.toBe(one);
+    expect(one).not.toContain('user-1');
+    expect(one).not.toContain('session-1');
+    expect(one).toMatch(/@example\.test>$/);
+  });
+});
+
+describe('sending', () => {
+  it('sends the built email to every recipient, and sorts failures by code', async () => {
+    const seen: OutgoingEmail[] = [];
+    const ok: Mailer = async (_config, message) => void seen.push(message);
+    expect(await sendSavedEmail(ok, SMTP, CONTENT, '<m1@example.test>')).toBe('sent');
+    expect(seen[0]).toMatchObject({ to: CONTENT.recipients, messageId: '<m1@example.test>' });
+    expect(seen[0]!.subject).toContain('Recording and transcript saved');
+    const failing =
+      (error: object): Mailer =>
+      async () => {
+        throw Object.assign(new Error('x'), error);
+      };
+    expect(await sendSavedEmail(failing({ code: 'EAUTH' }), SMTP, CONTENT, 'm')).toBe('rejected');
+    expect(await sendSavedEmail(failing({ code: 'EENVELOPE' }), SMTP, CONTENT, 'm')).toBe(
+      'rejected',
+    );
+    expect(await sendSavedEmail(failing({ responseCode: 550 }), SMTP, CONTENT, 'm')).toBe(
+      'rejected',
+    );
+    expect(await sendSavedEmail(failing({ responseCode: 421 }), SMTP, CONTENT, 'm')).toBe(
+      'unreachable',
+    );
+    expect(await sendSavedEmail(failing({ code: 'ETIMEDOUT' }), SMTP, CONTENT, 'm')).toBe(
+      'unreachable',
+    );
+    expect(smtpFailure(null)).toBe('unreachable');
+  });
+
+  it('sends the test email to one address, with no call data', async () => {
+    const seen: OutgoingEmail[] = [];
+    const ok: Mailer = async (_config, message) => void seen.push(message);
+    expect(await sendTestEmail(ok, SMTP, 'me@example.test', 5)).toBe('sent');
+    expect(seen[0]!.to).toEqual(['me@example.test']);
+    expect(seen[0]!.text).not.toMatch(/transcript|notes/i);
+    expect(seen[0]!.messageId).toBe('<kite-test.5@example.test>');
   });
 });
 

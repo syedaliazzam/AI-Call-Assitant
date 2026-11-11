@@ -2,7 +2,7 @@
  * File: apps/web/src/core/drive/api.ts
  * Purpose: The page's calls to Kite's own Google Drive routes (ADR-0072): status, a short-lived access
  *          token, the Picker's settings, the picked folder, the person's switches, disconnect, the
- *          "saved" notification, its list and Retry. The refresh token never reaches the page; only an
+ *          "saved" notification, its list and Retry, and the test email. The refresh token never reaches the page; only an
  *          access token does, kept in memory until a minute before it expires.
  * Used by: src/core/drive/uploader.ts, src/core/drive/picker.ts, src/features/drive/*
  * Depends on: @kite/shared (the request and reply shapes)
@@ -17,6 +17,7 @@ import type {
   DrivePickerConfig,
   DriveSettingsRequest,
   DriveStatusResponse,
+  DriveTestEmailResponse,
 } from '@kite/shared';
 
 /** A refused or failed route call: code is the route's machine-readable code. */
@@ -118,6 +119,8 @@ export interface DriveApi {
    * @param sessionId The session whose email failed.
    */
   retryNotification(sessionId: string): Promise<DriveNotifyResponse>;
+  /** POST /api/drive/test-email (to the signed-in person only). */
+  sendTestEmail(): Promise<DriveTestEmailResponse>;
 }
 
 /**
@@ -162,6 +165,7 @@ export function createDriveApi(
     notify: (request) => call(fetchFn, '/api/drive/notify', request),
     notifications: () => call(fetchFn, '/api/drive/notifications'),
     retryNotification: (sessionId) => call(fetchFn, '/api/drive/notifications', { sessionId }),
+    sendTestEmail: () => call(fetchFn, '/api/drive/test-email', {}),
   };
 }
 

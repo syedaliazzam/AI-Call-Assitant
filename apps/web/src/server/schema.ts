@@ -311,7 +311,7 @@ export const googleDrive = pgTable('google_drive', {
   driveId: text('drive_id'),
   /** "Save calls to Google Drive" (on by default after connecting). */
   saveEnabled: boolean('save_enabled').default(true).notNull(),
-  /** "Email me when a call is saved" (on by default; inert until Resend is configured). */
+  /** "Email me when a call is saved" (on by default; inert until SMTP is configured). */
   emailEnabled: boolean('email_enabled').default(true).notNull(),
   /** The team list for the "saved" email ("Also notify"), lower-case addresses. */
   alsoNotify: text('also_notify')
@@ -342,7 +342,7 @@ export const driveNotification = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     /** The session (the device's UUID for it). */
     sessionId: text('session_id').notNull(),
-    /** 'pending', 'sent', 'failed', 'off' (switched off) or 'not-set-up' (no Resend). */
+    /** 'pending', 'sent', 'failed', 'off' (switched off) or 'not-set-up' (no SMTP settings). */
     status: text('status').notNull(),
     /** Which data key encrypted `content`. */
     keyVersion: smallint('key_version').notNull(),
@@ -354,7 +354,7 @@ export const driveNotification = pgTable(
     error: text('error'),
     /** When the session's uploads finished. */
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    /** When Resend accepted the email; null until then. */
+    /** When the mail server accepted the email; null until then. */
     sentAt: timestamp('sent_at', { withTimezone: true }),
     /** When the row last changed. */
     updatedAt: timestamp('updated_at', { withTimezone: true })

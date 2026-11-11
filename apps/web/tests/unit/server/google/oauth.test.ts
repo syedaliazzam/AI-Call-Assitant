@@ -214,7 +214,7 @@ describe('revokeToken and readDriveFolder', () => {
 });
 
 describe('config', () => {
-  it('needs both client values; the email needs both Resend values', () => {
+  it('needs both client values; the email needs all five SMTP values and a real port', () => {
     expect(googleConfig({ GOOGLE_CLIENT_ID: 'a' })).toBeNull();
     expect(googleConfig({ GOOGLE_CLIENT_ID: 'a', GOOGLE_CLIENT_SECRET: 'b' })).toEqual({
       clientId: 'a',
@@ -222,11 +222,24 @@ describe('config', () => {
       pickerApiKey: null,
       appId: null,
     });
-    expect(emailConfig({ RESEND_API_KEY: 'k' })).toBeNull();
-    expect(emailConfig({ RESEND_API_KEY: 'k', NOTIFY_FROM_EMAIL: ' ' })).toBeNull();
-    expect(emailConfig({ RESEND_API_KEY: 'k', NOTIFY_FROM_EMAIL: 'a@b.c' })).toEqual({
-      apiKey: 'k',
-      from: 'a@b.c',
+    const smtp = {
+      SMTP_HOST: 'smtp.example.test',
+      SMTP_PORT: '587',
+      SMTP_USER: 'notify@example.test',
+      SMTP_PASS: 'app-password\n',
+      NOTIFY_FROM_EMAIL: 'Paramount AI <notify@example.test>',
+    };
+    expect(emailConfig(smtp)).toEqual({
+      host: 'smtp.example.test',
+      port: 587,
+      user: 'notify@example.test',
+      pass: 'app-password',
+      from: 'Paramount AI <notify@example.test>',
     });
+    for (const name of Object.keys(smtp)) {
+      expect(emailConfig({ ...smtp, [name]: '' })).toBeNull();
+    }
+    expect(emailConfig({ ...smtp, SMTP_PORT: 'abc' })).toBeNull();
+    expect(emailConfig({ ...smtp, SMTP_PORT: '70000' })).toBeNull();
   });
 });

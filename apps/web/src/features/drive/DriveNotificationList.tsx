@@ -31,7 +31,7 @@ const WHEN = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle
 /**
  * The list.
  *
- * @param props.emailConfigured Whether Retry can work (Resend is set up).
+ * @param props.emailConfigured Whether Retry can work (SMTP is set up).
  * @returns The list, or nothing when there is none.
  * Rendered by: GoogleDriveSetting.tsx
  */

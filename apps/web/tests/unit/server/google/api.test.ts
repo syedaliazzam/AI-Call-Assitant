@@ -1,13 +1,14 @@
 /**
  * Tests for apps/web/src/server/google/api.ts, store.ts and tokens.ts (ADR-0072), with a real Postgres
- * in memory (PGlite), invented accounts, fresh test data keys and a fake Google and Resend:
+ * in memory (PGlite), invented accounts, fresh test data keys, a fake Google and a fake SMTP mailer:
  * - connect → callback stores the refresh token ENCRYPTED (never readable in the row) and goes to the
  *   Picker; a callback for another account or without the state cookie stores nothing;
  * - access tokens: refreshed once and cached; a refused refresh (invalid_grant) marks the connection
  *   "reconnect" (409) and later calls do not reach Google; connecting again clears it and keeps the folder;
  * - POSTs from another site are refused; signed-out is 401; the token route is rate-limited;
- * - one email per session: a repeated notify sends nothing; without Resend it is "not-set-up" and
- *   nothing is sent; switched off it is "off"; a failed email can be retried once per Retry;
+ * - one email per session: a repeated notify sends nothing; without SMTP settings it is "not-set-up" and
+ *   nothing is sent; switched off it is "off"; a failed email can be retried once per Retry, with a new
+ *   Message-ID; the test email goes to the signed-in person only and is rate-limited;
  * - disconnect revokes at Google and deletes the row; settings validate the team list.
  */
 import { DRIVE_SCOPE, type DriveNotifyRequest } from '@kite/shared';
@@ -23,8 +24,10 @@ import {
   handleRetry,
   handleSettings,
   handleStatus,
+  handleTestEmail,
   type GoogleDeps,
 } from '@/server/google/api';
+import type { OutgoingEmail } from '@/server/google/email';
 import { createRateLimiter } from '@/server/google/rateLimit';
 import { forgetAccessToken } from '@/server/google/tokens';
 import { ALICE, BOB, createTestDb, type TestDb } from '../calldata/pgliteDb';
@@ -71,21 +74,23 @@ interface FakeReply {
   body: unknown;
 }
 
-/** What the fake Google and Resend answer, and what they were asked. */
+/** What the fake Google and mail server answer, and what they were asked. */
 interface Fakes {
   /** Every request made, by URL. */
   calls: FakeCall[];
   /** The token endpoint's reply for a refresh. */
   refresh: FakeReply;
-  /** Resend's reply status. */
-  resend: number;
+  /** The fake mail server: refuse (throw with this code), or null to accept. */
+  smtpError: string | null;
+  /** Every message the fake mail server was given. */
+  mail: OutgoingEmail[];
 }
 
 /**
  * Dependencies for one signed-in account.
  * @param user    Who is signed in.
  * @param fakes   The fake replies.
- * @param options email: Resend configured; tokenLimit: the token rate limit.
+ * @param options email: SMTP configured; tokenLimit: the token rate limit.
  * @returns The dependencies.
  */
 function deps(
@@ -98,7 +103,10 @@ function deps(
     db: () => t.db,
     keys: () => t.keys,
     google: () => ({ clientId: 'cid', clientSecret: 'csec', pickerApiKey: 'pk', appId: '123' }),
-    email: () => (options.email ? { apiKey: 'rk', from: 'n@example.test' } : null),
+    email: () =>
+      options.email
+        ? { host: 'smtp.example.test', port: 587, user: 'u', pass: 'p', from: 'n@example.test' }
+        : null,
     site: () => ({ secret: 's'.repeat(40), baseUrl: SITE, trustedOrigins: [SITE] }),
     fetch: async (url, init) => {
       fakes.calls.push({ url, init });
@@ -122,14 +130,17 @@ function deps(
           mimeType: 'application/vnd.google-apps.folder',
         });
       }
-      if (url.startsWith('https://api.resend.com/'))
-        return new Response('{}', { status: fakes.resend });
       throw new Error(`unexpected request to ${url}`);
+    },
+    mailer: async (_config, message) => {
+      fakes.mail.push(message);
+      if (fakes.smtpError) throw Object.assign(new Error('refused'), { code: fakes.smtpError });
     },
     now: () => Date.now(),
     limits: {
       token: createRateLimiter(options.tokenLimit ?? 100, 60_000),
       other: createRateLimiter(100, 60_000),
+      test: createRateLimiter(1, 60_000),
     },
   };
 }
@@ -142,7 +153,8 @@ function fakes(): Fakes {
   return {
     calls: [],
     refresh: { status: 200, body: { access_token: 'at-2', expires_in: 3600 } },
-    resend: 200,
+    smtpError: null,
+    mail: [],
   };
 }
 
@@ -348,26 +360,23 @@ describe('one email per session', () => {
     const f = fakes();
     const d = deps(ALICE, f, { email: true });
     await connect(d);
-    const resendCalls = () =>
-      f.calls.filter((c) => c.url.startsWith('https://api.resend.com/')).length;
-    f.resend = 500;
+    const mailCount = () => f.mail.length;
+    f.smtpError = 'ETIMEDOUT';
     const first = await handleNotify(post('/api/drive/notify', NOTIFY), d);
     expect(await first.json()).toEqual({ status: 'failed' });
     const again = await handleNotify(post('/api/drive/notify', { ...NOTIFY, title: 'Changed' }), d);
     expect(await again.json()).toEqual({ status: 'failed' });
-    expect(resendCalls()).toBe(1);
+    expect(mailCount()).toBe(1);
 
-    f.resend = 200;
+    f.smtpError = null;
     const retried = await handleRetry(post('/api/drive/notifications', { sessionId: S1 }), d);
     expect(await retried.json()).toEqual({ status: 'sent' });
     expect((await handleRetry(post('/api/drive/notifications', { sessionId: S1 }), d)).status).toBe(
       404,
     );
-    expect(resendCalls()).toBe(2);
-    const keys = f.calls
-      .filter((c) => c.url.startsWith('https://api.resend.com/'))
-      .map((c) => (c.init!.headers as Record<string, string>)['Idempotency-Key']);
-    expect(new Set(keys).size).toBe(2);
+    expect(mailCount()).toBe(2);
+    expect(new Set(f.mail.map((m) => m.messageId)).size).toBe(2);
+    expect(f.mail[0]!.messageId).toMatch(/^<kite-drive-saved\.[0-9a-f]{40}\.1@example\.test>$/);
 
     const list = await (await handleNotifications(get('/api/drive/notifications'), d)).json();
     expect(list.items).toHaveLength(1);
@@ -382,7 +391,7 @@ describe('one email per session', () => {
     expect(stored.content).not.toContain('Acme');
   });
 
-  it('stays inert without Resend, and is "off" when switched off', async () => {
+  it('stays inert without SMTP settings, and is "off" when switched off', async () => {
     const f = fakes();
     await connect(deps(ALICE, f));
     const inert = await handleNotify(post('/api/drive/notify', NOTIFY), deps(ALICE, f));
@@ -394,7 +403,7 @@ describe('one email per session', () => {
       deps(BOB, f, { email: true }),
     );
     expect(await off.json()).toEqual({ status: 'off' });
-    expect(f.calls.some((c) => c.url.startsWith('https://api.resend.com/'))).toBe(false);
+    expect(f.mail).toHaveLength(0);
     const status = await (await handleStatus(get('/api/google/status'), deps(ALICE, f))).json();
     expect(status.email.configured).toBe(false);
   });
@@ -408,11 +417,7 @@ describe('one email per session', () => {
       post('/api/drive/notify', { ...NOTIFY, alsoNotify: ['lead@example.test'] }),
       d,
     );
-    const sent = f.calls.find((c) => c.url.startsWith('https://api.resend.com/'))!;
-    expect(JSON.parse(String(sent.init!.body)).to).toEqual([
-      `${ALICE}@example.test`,
-      'lead@example.test',
-    ]);
+    expect(f.mail[0]!.to).toEqual([`${ALICE}@example.test`, 'lead@example.test']);
   });
 
   it('refuses a notification that is not the structured shape', async () => {
@@ -429,5 +434,40 @@ describe('one email per session', () => {
       d,
     );
     expect(badLink.status).toBe(400);
+  });
+});
+
+describe('test email', () => {
+  it('goes to the signed-in person only, says nothing about calls, and is rate-limited', async () => {
+    const f = fakes();
+    const d = deps(ALICE, f, { email: true });
+    const sent = await handleTestEmail(post('/api/drive/test-email', {}), d);
+    expect(await sent.json()).toEqual({ status: 'sent' });
+    expect(f.mail).toHaveLength(1);
+    expect(f.mail[0]!.to).toEqual([`${ALICE}@example.test`]);
+    expect(f.mail[0]!.subject).toBe('Paramount AI test email');
+    expect((await handleTestEmail(post('/api/drive/test-email', {}), d)).status).toBe(429);
+    expect(f.mail).toHaveLength(1);
+  });
+
+  it('says why it failed, refuses other sites, and needs SMTP settings', async () => {
+    const f = fakes();
+    f.smtpError = 'EAUTH';
+    expect(
+      await (
+        await handleTestEmail(post('/api/drive/test-email', {}), deps(ALICE, f, { email: true }))
+      ).json(),
+    ).toEqual({ status: 'failed', reason: 'rejected' });
+    expect(
+      (
+        await handleTestEmail(
+          post('/api/drive/test-email', {}, 'https://evil.example'),
+          deps(BOB, f, { email: true }),
+        )
+      ).status,
+    ).toBe(403);
+    expect((await handleTestEmail(post('/api/drive/test-email', {}), deps(BOB, f))).status).toBe(
+      409,
+    );
   });
 });

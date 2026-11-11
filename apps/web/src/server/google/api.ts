@@ -8,7 +8,7 @@
  *          comes from the signed-in session, read from the database, never from the request. POSTs must
  *          come from a Kite address (Origin check) on top of the SameSite session cookie.
  * Used by: app/api/google/{connect,callback,status,access-token,picker-config,folder,settings,disconnect}/route.ts,
- *          app/api/drive/{notify,notifications}/route.ts
+ *          app/api/drive/{notify,notifications,test-email}/route.ts
  * Depends on: zod, @kite/shared, src/server/auth.ts, src/server/db.ts, src/server/env.ts,
  *             src/server/calldata/crypto.ts, src/server/google/{config,oauth,store,tokens,email,rateLimit}.ts
  * Architecture: ADR-0072; architecture §7.2, §8.1, §8.2
@@ -31,6 +31,7 @@ import {
   type DriveNotifyResponse,
   type DrivePickerConfig,
   type DriveStatusResponse,
+  type DriveTestEmailResponse,
 } from '@kite/shared';
 import { auth } from '../auth';
 import { DataKeyError, dataKeys, type DataKeys } from '../calldata/crypto';
@@ -38,7 +39,7 @@ import type { CallDataDb } from '../calldata/store';
 import { db } from '../db';
 import { getAuthEnv } from '../env';
 import { emailConfig, googleConfig, type EmailConfig, type GoogleConfig } from './config';
-import { emailIdempotencyKey, sendSavedEmail } from './email';
+import { emailMessageId, sendSavedEmail, sendTestEmail, smtpMailer, type Mailer } from './email';
 import {
   GoogleRefusedError,
   GoogleUnavailableError,
@@ -92,8 +93,10 @@ export interface GoogleDeps {
   email(): EmailConfig | null;
   /** BETTER_AUTH_SECRET (signs the OAuth state), the public address and every trusted address. */
   site(): { secret: string; baseUrl: string; trustedOrigins: string[] };
-  /** The fetch for Google and Resend. */
+  /** The fetch for Google. */
   fetch: FetchLike;
+  /** Sends email over SMTP (nodemailer; tests pass a fake). */
+  mailer: Mailer;
   /** The clock (Unix ms). */
   now(): number;
   /** Rate limits. */
@@ -102,6 +105,8 @@ export interface GoogleDeps {
     token: RateLimiter;
     /** Every other route. */
     other: RateLimiter;
+    /** The test email (a few an hour: it reaches a real mailbox). */
+    test: RateLimiter;
   };
 }
 
@@ -124,9 +129,15 @@ export const realGoogleDeps: GoogleDeps = {
     return { secret: env.secret, baseUrl: env.baseUrl, trustedOrigins: env.trustedOrigins };
   },
   fetch: (input, init) => fetch(input, init),
+  mailer: smtpMailer,
   now: () => Date.now(),
-  // 30 tokens a minute is far above what uploads need (one per file, cached an hour).
-  limits: { token: createRateLimiter(30, 60_000), other: createRateLimiter(60, 60_000) },
+  // 30 tokens a minute is far above what uploads need (one per file, cached an hour). Test emails:
+  // 3 in 10 minutes per account.
+  limits: {
+    token: createRateLimiter(30, 60_000),
+    other: createRateLimiter(60, 60_000),
+    test: createRateLimiter(3, 10 * 60_000),
+  },
 };
 
 /**
@@ -251,7 +262,7 @@ async function withUser(
   request: Request,
   deps: GoogleDeps,
   route: string,
-  options: { post: boolean; limit: 'token' | 'other' },
+  options: { post: boolean; limit: 'token' | 'other' | 'test' },
   run: (ctx: Context) => Promise<Response>,
 ): Promise<Response> {
   if (options.post && !fromKite(request, deps.site())) {
@@ -679,10 +690,10 @@ export function handleNotify(
       return reply({ status: first } satisfies DriveNotifyResponse);
     }
     const outcome = await sendSavedEmail(
-      deps.fetch,
+      deps.mailer,
       sender,
       content,
-      emailIdempotencyKey(user.id, body.sessionId, 1),
+      emailMessageId(user.id, body.sessionId, 1, sender.from),
     );
     await finishNotification(
       deps.db(),
@@ -756,10 +767,10 @@ export function handleRetry(
     const taken = await claimRetry(deps.db(), deps.keys(), user.id, body.sessionId);
     if (!taken) return failure(404, 'not_found', 'There is no failed email to send again.');
     const outcome = await sendSavedEmail(
-      deps.fetch,
+      deps.mailer,
       sender,
       taken.content,
-      emailIdempotencyKey(user.id, body.sessionId, taken.attempt),
+      emailMessageId(user.id, body.sessionId, taken.attempt, sender.from),
     );
     await finishNotification(
       deps.db(),
@@ -770,5 +781,30 @@ export function handleRetry(
     );
     console.info('drive: notify retried', { outcome });
     return reply({ status: outcome === 'sent' ? 'sent' : 'failed' } satisfies DriveNotifyResponse);
+  });
+}
+
+/**
+ * POST /api/drive/test-email: sends a test email to the signed-in person's own address (never anyone
+ * else), 3 in 10 minutes per account, so the SMTP settings can be checked from Settings.
+ * @param request The request.
+ * @param deps    The dependencies (tests pass fakes).
+ * @returns 200 DriveTestEmailResponse; 409 email not set up; 429.
+ * Called from: app/api/drive/test-email/route.ts
+ */
+export function handleTestEmail(
+  request: Request,
+  deps: GoogleDeps = realGoogleDeps,
+): Promise<Response> {
+  return withUser(request, deps, 'test-email', { post: true, limit: 'test' }, async ({ user }) => {
+    const sender = deps.email();
+    if (!sender) return failure(409, 'email_not_set_up', 'Email is not set up.');
+    const outcome = await sendTestEmail(deps.mailer, sender, user.email, deps.now());
+    console.info('drive: test email', { outcome });
+    return reply(
+      (outcome === 'sent'
+        ? { status: 'sent' }
+        : { status: 'failed', reason: outcome }) satisfies DriveTestEmailResponse,
+    );
   });
 }
