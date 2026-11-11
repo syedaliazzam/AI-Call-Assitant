@@ -8,15 +8,16 @@
  *          highlighted. The acceptable-use notice, the accurate-transcription offer and the one-time
  *          upload of this computer's own data keep their places. Desktop 1.5.0 (ADR-0068): "Recording saved ·
  *          Open in Meetings" after a call that recorded, and this computer's recordings brought up to date
- *          in the account (core/recording/reconcile.ts).
+ *          in the account (core/recording/reconcile.ts). ADR-0071: Buy credits in the header on every card,
+ *          and each session card's answer count and Delete.
  * Used by: src/features/home/HomePanel.tsx (accounts with account sync)
- * Depends on: next/navigation, src/core/storage/sessions.ts, src/core/stt/prefetch.ts,
+ * Depends on: next/navigation, src/core/storage (sessions.ts, answers.ts), src/core/stt/prefetch.ts,
  *             src/core/sync/client.ts,
  *             src/features/appearance/useAppearance, src/features/notices/AcceptableUseNotice.tsx,
  *             src/features/sync/LegacyUploadCard.tsx, src/platform, ./AccurateDownload.tsx,
  *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx, ./LauncherStart.tsx,
  *             ./RecordingSavedNotice.tsx, src/core/recording (handoff.ts, reconcile.ts)
- * Architecture: ADR-0051, ADR-0052, ADR-0055, ADR-0068
+ * Architecture: ADR-0051, ADR-0052, ADR-0055, ADR-0068, ADR-0071
  *
  * Session text is shown on screen only; it is never logged.
  */
@@ -24,7 +25,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { shownStatus, watchSessions } from '@/core/storage/sessions';
+import { countAnswersBySession } from '@/core/storage/answers';
+import { deleteSession, shownStatus, watchSessions } from '@/core/storage/sessions';
 import { speechModelPrefetch } from '@/core/stt/prefetch';
 import type { Session } from '@/core/storage/types';
 import { pullAccountSync } from '@/core/sync/client';
@@ -114,6 +116,8 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
   const { theme, resolved, zoom } = useAppearance('dashboard');
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [failed, setFailed] = useState(false);
+  // ADR-0071: each card's "12 answers"; read again whenever the list changes.
+  const [answerCounts, setAnswerCounts] = useState<ReadonlyMap<string, number>>(new Map());
   // Fixed per list, so every row judges "live for over 12 hours" the same way.
   const [now, setNow] = useState(0);
   const [view, setView] = useState<LauncherView>({ kind: 'sessions' });
@@ -176,6 +180,20 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
     };
   }, [missing, pulled]);
 
+  useEffect(() => {
+    if (sessions === null) return;
+    let active = true;
+    countAnswersBySession()
+      .then((counts) => {
+        if (active) setAnswerCounts(counts);
+      })
+      // The count is extra: without it the cards show the call length, or "No answers yet".
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [sessions]);
+
   const lastCall = useMemo(
     () => (sessions === null ? null : lastEndedCall(sessions, now)),
     [sessions, now],
@@ -194,7 +212,8 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
       theme={theme}
       resolved={resolved}
       zoom={zoom}
-      buyCredits={view.kind !== 'sessions'}
+      // ADR-0071: on every card, the sessions card too.
+      buyCredits
     >
       <AcceptableUseNotice />
       {view.kind === 'sessions' ? (
@@ -205,6 +224,11 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
           fromBrowserId={fromBrowserId ?? null}
           fromBrowserMissing={missing && pulled}
           lastCall={lastCall}
+          answers={answerCounts}
+          // Through account sync the delete reaches the account; the list updates by itself.
+          onDelete={async (session) => {
+            await deleteSession(session.id);
+          }}
           onOpen={(session) => setView({ kind: 'start', sessionId: session.id })}
           notices={
             <>

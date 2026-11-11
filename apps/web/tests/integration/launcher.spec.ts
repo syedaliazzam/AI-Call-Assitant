@@ -2,7 +2,8 @@
  * File: apps/web/tests/integration/launcher.spec.ts
  * Purpose: Harness test of the desktop launcher (ADR-0055) in Chromium, acting as desktop 1.3.0 with a
  *          fake window.kiteDesktop, for an invented account with account sync: the sessions card (all
- *          sessions, the browser's first and highlighted, Call ended · View notes, Open dashboard), the
+ *          dashboard's session cards, the browser's first and highlighted, search and sort, ⋮ View in
+ *          dashboard and Delete, Buy credits' toast, the bottom bar (ADR-0071), Call ended · View notes), the
  *          Start card (two tiles, Team, Buy credits only shows a toast, Back) and the Connect card
  *          (tips and their links, no meter or status text, the speech model dialog, Connect asks the main
  *          window for the call and follows its answer). With KITE_SCREENSHOT_DIR it saves the cards at
@@ -240,36 +241,111 @@ async function seedAndShow(fromBrowser?: number): Promise<string[]> {
   return ids;
 }
 
-test('the sessions card: every session, the browser’s first, and Open dashboard', async () => {
+test('the sessions card: search and sort, the dashboard’s cards, the browser’s first, and the bottom bar', async () => {
   await open();
-  await seedAndShow(0);
+  const ids = await seedAndShow(0);
   const card = page.getByRole('region', { name: 'Your sessions' });
   await expect(card).toBeVisible();
-  const rows = card.getByRole('list', { name: 'Sessions' }).getByRole('button');
-  await expect(rows).toHaveCount(3);
+  const cards = card.getByRole('list', { name: 'Sessions' }).getByRole('listitem');
+  await expect(cards).toHaveCount(3);
   // The browser's session first, highlighted; then newest first.
-  await expect(rows.nth(0)).toContainText('From your browser');
-  await expect(rows.nth(0)).toContainText('Lantern Freight (invented)');
-  await expect(rows.nth(1)).toContainText('Copperfield Labs (invented)');
-  await expect(rows.nth(2)).toContainText('Harbor Lane (invented)');
-  await expect(rows.nth(1)).toContainText('Ready to start');
-  // The frame: logo, compact, move, menu, close; no Buy credits on this card; no dashboard parts.
+  await expect(cards.nth(0)).toContainText('From your browser');
+  await expect(cards.nth(0)).toContainText('Lantern Freight (invented)');
+  await expect(cards.nth(1)).toContainText('Copperfield Labs (invented)');
+  await expect(cards.nth(2)).toContainText('Harbor Lane (invented)');
+  // The dashboard's card: status, the usage line, the chips and Start session.
+  await expect(cards.nth(1)).toContainText('Ready to start');
+  await expect(cards.nth(1)).toContainText('Not started yet');
+  await expect(cards.nth(1)).toContainText('Interview');
+  await expect(cards.nth(1).getByRole('button', { name: /^Start session/ })).toBeVisible();
+  // The frame: logo, Buy credits (ADR-0071: on this card too), compact, move, menu, close.
   const header = page.getByRole('banner');
   await expect(header).toContainText('Paramount AI');
-  await expect(header.getByRole('button', { name: 'Buy credits' })).toHaveCount(0);
-  for (const name of ['Compact', 'Menu', 'Close']) {
+  for (const name of ['Buy credits', 'Compact', 'Menu', 'Close']) {
     await expect(header.getByRole('button', { name })).toBeVisible();
   }
-  await expect(page.getByRole('searchbox')).toHaveCount(0);
-  await expect(page.getByRole('textbox', { name: 'Search sessions' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: /Create session/ })).toHaveCount(0);
   await expect(page.getByRole('tab')).toHaveCount(0);
   // The window asks for its size.
   expect(await page.evaluate(() => window.launcherDesktop.sizes)).toContainEqual(WINDOW);
   await shot('launcher-sessions-560');
 
-  await page.getByRole('button', { name: /Open dashboard/ }).click();
-  expect(await page.evaluate(() => window.windowOpened)).toEqual([`${origin}/`]);
+  // Buy credits only shows the toast: nothing opens.
+  await header.getByRole('button', { name: 'Buy credits' }).click();
+  await expect(page.getByRole('status')).toHaveText('Not needed, your team account is unlimited.');
+  expect(await page.evaluate(() => window.windowOpened)).toEqual([]);
+
+  // The search filters as you type; the browser's session is not kept when it does not match.
+  const search = page.getByRole('searchbox', { name: 'Search sessions' });
+  await expect(search).toHaveAttribute('placeholder', 'Search by title or description');
+  await search.fill('harbor');
+  await expect(cards).toHaveCount(1);
+  await expect(cards.nth(0)).toContainText('Harbor Lane (invented)');
+  await search.fill('nothing like this');
+  await expect(card).toContainText('No sessions match.');
+  await search.fill('');
+  await expect(cards).toHaveCount(3);
+
+  // Sort: A–Z (the browser's session stays first), then oldest first.
+  await page.getByRole('button', { name: 'Sort' }).click();
+  await page.getByRole('menuitemradio', { name: /A–Z/ }).click();
+  await expect(cards.nth(0)).toContainText('Lantern Freight (invented)');
+  await expect(cards.nth(1)).toContainText('Copperfield Labs (invented)');
+  await expect(cards.nth(2)).toContainText('Harbor Lane (invented)');
+  await page.getByRole('button', { name: 'Sort' }).click();
+  await page.getByRole('menuitemradio', { name: /Oldest first/ }).click();
+  await expect(cards.nth(1)).toContainText('Harbor Lane (invented)');
+  await expect(cards.nth(2)).toContainText('Copperfield Labs (invented)');
+
+  // ⋮ → View in dashboard opens the session's page in the browser.
+  await page.getByRole('button', { name: 'More for Harbor Lane (invented)' }).click();
+  await page.getByRole('menuitem', { name: /View in dashboard/ }).click();
+  expect(await page.evaluate(() => window.windowOpened)).toEqual([`${origin}/sessions/${ids[1]}`]);
+
+  // The bottom bar: View in Dashboard and + Create session open the browser.
+  await page.getByRole('button', { name: /View in Dashboard/ }).click();
+  await page.getByRole('button', { name: /Create session/ }).click();
+  expect(await page.evaluate(() => window.windowOpened)).toEqual([
+    `${origin}/sessions/${ids[1]}`,
+    `${origin}/`,
+    `${origin}/dashboard?create=1`,
+  ]);
+
+  // ⋮ → Delete asks first; Cancel keeps it, Delete removes it.
+  await page.getByRole('button', { name: 'More for Harbor Lane (invented)' }).click();
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Delete this session?' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(cards).toHaveCount(3);
+  await page.getByRole('button', { name: 'More for Harbor Lane (invented)' }).click();
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
+  await dialog.getByRole('button', { name: 'Delete' }).click();
+  await expect(cards).toHaveCount(2);
+  await expect(card).not.toContainText('Harbor Lane (invented)');
+});
+
+test('the sessions card: an ended session’s View transcript opens its page in the browser', async () => {
+  await open();
+  const ids = await seedAndShow();
+  await page.evaluate((id) => window.kiteLauncherHarness.endNow(id), ids[2]!);
+  const ended = page
+    .getByRole('list', { name: 'Sessions' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Copperfield Labs (invented)' });
+  await expect(ended).toContainText('Ended');
+  await ended.getByRole('button', { name: /View transcript/ }).click();
+  expect(await page.evaluate(() => window.windowOpened)).toEqual([`${origin}/sessions/${ids[2]}`]);
+});
+
+test('the sessions card: no sessions yet, with the bottom bar', async () => {
+  await open();
+  await page.evaluate(() => window.kiteLauncherHarness.show(undefined));
+  const card = page.getByRole('region', { name: 'Your sessions' });
+  await expect(card).toContainText('No sessions yet');
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /View in Dashboard/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Create session/ })).toBeVisible();
+  await shot('launcher-sessions-empty-560');
 });
 
 test('after a call: Call ended · View notes on top, opening the notes in the browser', async () => {
@@ -285,7 +361,10 @@ test('after a call: Call ended · View notes on top, opening the notes in the br
 test('the Start card: two tiles, Team, Buy credits only shows a toast, Back', async () => {
   await open();
   await seedAndShow();
-  await page.getByRole('list', { name: 'Sessions' }).getByRole('button').first().click();
+  await page
+    .getByRole('button', { name: /^Start session/ })
+    .first()
+    .click();
   await expect(page.getByRole('heading', { name: 'Start your session' })).toBeVisible();
   await expect(page.getByText('Signed in as sam.lee@example.com')).toBeVisible();
   const free = page.getByRole('region', { name: 'Free session' });
@@ -313,7 +392,10 @@ test('the Connect card: tips, no meter or status, no model dialog (background lo
   await open();
   const ids = await seedAndShow();
   const newest = ids[2]!;
-  await page.getByRole('list', { name: 'Sessions' }).getByRole('button').first().click();
+  await page
+    .getByRole('button', { name: /^Start session/ })
+    .first()
+    .click();
   await page.getByRole('button', { name: 'Start free' }).click();
   await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
   await expect(
