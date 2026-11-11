@@ -7,7 +7,7 @@
  * Architecture: docs/design/paramount-ai-ui-spec.md §1; docs/architecture/kite-architecture-v3.1.md §9.1
  * Theme: tokens from src/ui/tokens/theme.css
  */
-import { useId, type InputHTMLAttributes } from 'react';
+import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
 
 /** Props for Input. Every normal <input> attribute (name, type, value, onChange, …) also works. */
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -19,6 +19,11 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   hint?: string;
   /** Optional error text under the field; when set, the field is marked invalid and turns red. */
   error?: string;
+  /**
+   * Optional control drawn inside the field at its right edge (the sign-in form's show/hide password
+   * button). The text keeps clear of it.
+   */
+  end?: ReactNode;
 }
 
 /**
@@ -36,6 +41,7 @@ export function Input({
   error,
   id,
   className = '',
+  end,
   ...rest
 }: InputProps) {
   const generatedId = useId();
@@ -49,17 +55,23 @@ export function Input({
       <label htmlFor={inputId} className={hideLabel ? 'sr-only' : 'text-label text-ui-heading'}>
         {label}
       </label>
-      <input
-        id={inputId}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={describedBy}
-        className={[
-          'h-10 pointer-coarse:min-h-11 border bg-ui-input px-3 text-base md:text-input text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60',
-          error ? 'border-ui-danger' : 'border-ui-border',
-          className,
-        ].join(' ')}
-        {...rest}
-      />
+      {/* The wrapper places the optional end control over the field's right edge. */}
+      <div className="relative flex">
+        <input
+          id={inputId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          className={[
+            'h-10 w-full min-w-0 pointer-coarse:min-h-11 border bg-ui-input px-3 text-base md:text-input text-ui-text placeholder:text-ui-muted transition-colors focus:border-ui-link focus:outline-none focus:[box-shadow:var(--k-focus)] disabled:cursor-not-allowed disabled:opacity-60',
+            error ? 'border-ui-danger' : 'border-ui-border',
+            // Room for the end control, so typed text never runs under it.
+            end ? 'pr-11' : '',
+            className,
+          ].join(' ')}
+          {...rest}
+        />
+        {end && <div className="absolute inset-y-0 right-1 flex items-center">{end}</div>}
+      </div>
       {hint && (
         <p id={hintId} className="text-helper text-ui-muted">
           {hint}

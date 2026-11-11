@@ -7,22 +7,14 @@
  * Used by: app/(app)/page.tsx
  * Depends on: lucide-react, src/core/storage (sessions.ts, answers.ts, dashboardPrefs.ts),
  *             src/features/sync/LegacyUploadCard.tsx and src/core/sync/events.ts (ADR-0049), src/platform
- *             (offersPlatformChoice), ./SessionCard.tsx, src/features/shell/CreateSessionButton.tsx,
- *             src/features/session-setup/ChoosePlatformDialog.tsx, src/ui (Menu, Tabs)
+ *             (offersPlatformChoice), ./SessionCard.tsx, ./SessionSearch.tsx,
+ *             src/features/shell/CreateSessionButton.tsx,
+ *             src/features/session-setup/ChoosePlatformDialog.tsx, src/ui/Tabs.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S3); docs/architecture/kite-architecture-v3.1.md §5
  */
 'use client';
 
-import {
-  ArrowUpDown,
-  Bot,
-  Briefcase,
-  ChevronDown,
-  LayoutGrid,
-  List,
-  Phone,
-  Search,
-} from 'lucide-react';
+import { Bot, Briefcase, ChevronDown, LayoutGrid, List, Phone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { saveHandoffFile } from '@/core/session/handoff';
@@ -49,9 +41,9 @@ import { ChoosePlatformDialog } from '@/features/session-setup/ChoosePlatformDia
 import { SESSION_TYPE_LABELS } from '@/features/session-setup/labels';
 import { CreateSessionButton } from '@/features/shell/CreateSessionButton';
 import { getPlatform } from '@/platform';
-import { Menu } from '@/ui/Menu';
 import { Tabs } from '@/ui/Tabs';
 import { SessionCard } from './SessionCard';
+import { SessionSearch } from './SessionSearch';
 import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
 import { onSyncApplied } from '@/core/sync/events';
 import { useSyncAccount } from '@/features/sync/SyncScope';
@@ -68,13 +60,6 @@ const TABS: readonly { value: TypeFilter; label: string; icon?: ReactNode }[] = 
   { value: 'interview', label: SESSION_TYPE_LABELS.interview, icon: <Briefcase {...TAB_ICON} /> },
   { value: 'regular', label: SESSION_TYPE_LABELS.regular, icon: <Phone {...TAB_ICON} /> },
   { value: 'mock', label: SESSION_TYPE_LABELS.mock, icon: <Bot {...TAB_ICON} /> },
-];
-
-/** The sort choices. */
-const SORT_OPTIONS: readonly { value: SessionSort; label: string }[] = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'company', label: 'A–Z' },
 ];
 
 /**
@@ -289,41 +274,18 @@ export function Dashboard() {
         {/* ADR-0049: with account sync, offers once to add this computer's own data. */}
         <LegacyUploadCard />
         <div className="flex items-center justify-between gap-3">
-          {/* The search box and the sort button read as one control. */}
-          {/* v1.3.0 (ADR-0057): 39 tall, 14 px text, the words 32 px in, after the icon. */}
-          <div className="relative flex h-[39px] w-full min-w-0 max-w-xs items-center rounded-control border border-ui-border bg-ui-input shadow-raised focus-within:border-ui-link pointer-coarse:min-h-11">
-            <Search
-              aria-hidden="true"
-              size={16}
-              className="pointer-events-none absolute left-2.5 shrink-0 text-ui-muted"
-            />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search by company or role"
-              aria-label="Search sessions"
-              className="h-full min-w-0 flex-1 bg-transparent pl-8 pr-2 text-base text-ui-text placeholder:text-ui-muted focus:outline-none md:text-[14px]"
-            />
-            <div className="h-full border-l border-ui-border">
-              <Menu
-                label={<ArrowUpDown aria-hidden="true" size={18} strokeWidth={1.75} />}
-                ariaLabel="Sort"
-                variant="plain"
-                size="md"
-                fillHeight
-                buttonClassName="h-full rounded-l-none px-3"
-                items={SORT_OPTIONS.map((option) => ({
-                  label: option.label,
-                  selected: option.value === sort,
-                  onSelect: () => {
-                    setChosenSort(option.value);
-                    setDashboardSort(option.value);
-                  },
-                }))}
-              />
-            </div>
-          </div>
+          {/* The search box and the sort button read as one control (shared with the desktop app). */}
+          <SessionSearch
+            search={search}
+            onSearch={setSearch}
+            placeholder="Search by company or role"
+            sort={sort}
+            onSort={(next) => {
+              setChosenSort(next);
+              setDashboardSort(next);
+            }}
+            className="w-full max-w-xs"
+          />
           <div
             role="radiogroup"
             aria-label="Layout"

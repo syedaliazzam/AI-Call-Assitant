@@ -7,7 +7,7 @@
  * Used by: src/features/home/Launcher.tsx
  * Depends on: lucide-react, src/features/home/HomeMenu.tsx, src/features/appearance/useAppearance,
  *             src/platform, src/ui (BrandLockup, icons)
- * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S10, S12); ADR-0055
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S10, S12); ADR-0055, ADR-0071
  *
  * The header is the frameless window's drag handle; its buttons opt out.
  */
@@ -81,7 +81,7 @@ export interface DesktopFrameProps {
   resolved: ResolvedTheme;
   /** The UI scale (the ⋮ menu). */
   zoom: number;
-  /** Show the dark "Buy credits" button (the Start and Connect cards, as in the reference). */
+  /** Show the dark "Buy credits" button (ADR-0071: on every card of the launcher). */
   buyCredits?: boolean;
   /** The card(s) under the header. */
   children: ReactNode;

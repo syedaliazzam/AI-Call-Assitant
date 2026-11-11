@@ -8,6 +8,7 @@
  */
 import { redirect } from 'next/navigation';
 import { ChangePasswordForm } from '@/features/auth/ChangePasswordForm';
+import { SignInHero } from '@/features/auth/SignInHero';
 import { SignOutButton } from '@/features/auth/SignOutButton';
 import { getSession } from '@/server/auth';
 import { decideRedirect } from '@/server/guard';
@@ -34,6 +35,8 @@ export default async function ChangePasswordPage() {
           : 'Enter your current password and a new one.'
       }
       footer={<SignOutButton />}
+      // ADR-0071: the same left panel as sign-in.
+      hero={<SignInHero />}
     >
       <ChangePasswordForm action={changePasswordAction} />
     </AuthCard>

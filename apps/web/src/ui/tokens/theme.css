@@ -502,6 +502,43 @@ html[data-theme='dark'] .k-card-texture {
   --k-card-dot: rgba(161, 161, 170, 0.1);
 }
 
+/* ADR-0071: the sign-in page's left panel. The session cards' texture over a whole panel: the inner
+   grey (#F6F6F7), the faint #71717A dot grid, and a soft white glow from the top left instead of a
+   56 px band (a band that thin is lost on a full-height panel). Dark: the dark surface, fainter. */
+.k-auth-hero {
+  background-color: var(--ui-panel);
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% 0%, var(--k-card-glow), transparent 70%),
+    radial-gradient(var(--k-card-dot) 0.75px, transparent 1px);
+  background-size:
+    100% 100%,
+    var(--k-card-dot-gap) var(--k-card-dot-gap);
+}
+
+.k-dark .k-auth-hero,
+html[data-theme='dark'] .k-auth-hero {
+  --k-card-glow: rgba(255, 255, 255, 0.05);
+  --k-card-dot: rgba(161, 161, 170, 0.1);
+}
+
+/* ADR-0071: Chrome paints autofilled fields pale blue, which no token can reach. An inset shadow as
+   big as the field covers it with the field's own colour, and the text keeps the theme's colour.
+   Unlayered, so it beats the field's focus ring utility: the ring is added back for :focus. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover {
+  -webkit-text-fill-color: var(--ui-text);
+  caret-color: var(--ui-text);
+  box-shadow: 0 0 0 1000px var(--ui-input) inset;
+}
+
+input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ui-text);
+  caret-color: var(--ui-text);
+  box-shadow:
+    0 0 0 1000px var(--ui-input) inset,
+    var(--k-focus);
+}
+
 /* ---- Motion (v1.3.1, ADR-0058). Every value comes from the motion tokens in :root, so the
    reduce-motion block there switches all of it off. ---- */
 
