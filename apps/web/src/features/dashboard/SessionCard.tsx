@@ -16,6 +16,7 @@
  */
 'use client';
 
+import { DriveSessionStatus } from '@/features/drive/DriveSessionStatus';
 import { Bot, Briefcase, MessagesSquare, Phone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
@@ -233,6 +234,8 @@ export function SessionCardFrame({
             </Chip>
           )}
         </div>
+        {/* 1.6.0 (ADR-0072): this device's Google Drive upload, when it saves this session. */}
+        <DriveSessionStatus sessionId={session.id} />
       </div>
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <SessionStatusLines session={session} status={status} answers={answers} />

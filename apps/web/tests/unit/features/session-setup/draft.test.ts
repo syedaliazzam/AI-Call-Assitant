@@ -1,11 +1,13 @@
 /**
  * Tests: apps/web/src/features/session-setup/draft.ts and labels.ts (parity Phase 2). A session has
  * one resume; a library item is copied in; a removed stored document is deleted on save; the type
- * chosen on the dashboard is used; and the words for summaries.
+ * chosen on the dashboard is used; and the words for summaries. 1.6.0 (ADR-0072): the session's own
+ * "Also notify" list is stored cleaned (an empty list means the Settings list) and shown again on edit.
  */
 import { describe, expect, it } from 'vitest';
-import type { LibraryItem } from '@/core/storage/types';
+import type { LibraryItem, Session } from '@/core/storage/types';
 import {
+  draftFromSession,
   draftToInput,
   emptyDraft,
   newDocuments,
@@ -142,5 +144,27 @@ describe('styleSummary', () => {
     expect(styleSummary({ format: 'headline+bullets', length: 'medium', tone: 'technical' })).toBe(
       'Opening line + bullets · Balanced · Technical',
     );
+  });
+});
+
+describe('driveAlsoNotify (1.6.0)', () => {
+  it('stores the cleaned list, always, and shows it again when editing', () => {
+    const draft = emptyDraft({ ...DEFAULTS, style: { ...DEFAULTS.style } });
+    expect(draftToInput({ ...draft, company: 'A', role: 'B' }).driveAlsoNotify).toEqual([]);
+    const input = draftToInput({
+      ...draft,
+      company: 'A',
+      role: 'B',
+      driveAlsoNotify: 'Lead@Example.test, lead@example.test nope',
+    });
+    expect(input.driveAlsoNotify).toEqual(['lead@example.test']);
+    const session = {
+      ...input,
+      id: 's',
+      createdAt: 1,
+      status: 'ended',
+      lastActiveAt: null,
+    } as Session;
+    expect(draftFromSession(session, []).driveAlsoNotify).toBe('lead@example.test');
   });
 });

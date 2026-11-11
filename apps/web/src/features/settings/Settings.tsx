@@ -4,8 +4,8 @@
  *          (read-only; the shortcuts themselves arrive on Day 4), the screen-share protection
  *          switch (Day 5), "What Kite has learned" (Day 5 Stage 7: LearnedLessons.tsx), and
  *          "Export my data" and "Import data" (Day 6, DataTransfer.tsx), "Delete all local
- *          data" (asks first, then shows what was deleted), and Recording (desktop 1.5.0, ADR-0068:
- *          RecordingSetting.tsx).
+ *          data" (asks first, then shows what was deleted), Recording (desktop 1.5.0, ADR-0068:
+ *          RecordingSetting.tsx), and Google Drive (1.6.0, ADR-0072: features/drive/GoogleDriveSetting.tsx).
  * Used by: app/(app)/settings/page.tsx
  * Depends on: src/core/storage (settings, wipe, db), src/core/sync/client.ts (Delete all my data,
  *             ADR-0049), src/platform (share protection),
@@ -49,17 +49,20 @@ import { LearnedLessons } from './LearnedLessons';
 import { OverlaySetting } from './OverlaySetting';
 import { TranscriptionSetting } from './TranscriptionSetting';
 import { RecordingSetting } from './RecordingSetting';
+import { GoogleDriveSetting } from '@/features/drive/GoogleDriveSetting';
 
 /**
  * A titled section of the page.
  *
  * @param props.title    Section heading.
  * @param props.children Section content.
+ * @param props.id       The section's anchor (for example "google-drive" for /settings#google-drive).
  * @returns The section.
  */
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children, id }: { title: string; children: ReactNode; id?: string }) {
   return (
     <section
+      id={id}
       aria-label={title}
       className="border border-ui-border rounded-card bg-ui-surface shadow-card p-6"
     >
@@ -260,6 +263,10 @@ export function Settings({ isAdmin }: SettingsProps) {
       {/* Desktop 1.5.0 (ADR-0068): meeting recording. */}
       <Section title="Recording">
         <RecordingSetting />
+      </Section>
+
+      <Section title="Google Drive" id="google-drive">
+        <GoogleDriveSetting />
       </Section>
 
       <Section title="Answers">

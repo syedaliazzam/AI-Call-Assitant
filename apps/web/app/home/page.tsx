@@ -9,6 +9,8 @@
  *             src/features/sync/SyncScope.tsx and src/server/calldata/flag.ts (ADR-0049)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §9.2 (thin routes); ADR-0041
  */
+import { DriveNotices } from '@/features/drive/DriveNotices';
+import { DriveUploader } from '@/features/drive/DriveUploader';
 import { HomePanel } from '@/features/home/HomePanel';
 import { AccountNameProvider } from '@/features/shell/AccountName';
 import { SyncScope } from '@/features/sync/SyncScope';
@@ -39,6 +41,9 @@ export default async function HomeRoute({
           email={user.email}
           {...(typeof session === 'string' ? { startSessionId: session } : {})}
         />
+        {/* 1.6.0 (ADR-0072): the desktop app's first window keeps uploading after a call. */}
+        <DriveUploader />
+        <DriveNotices />
       </AccountNameProvider>
     </SyncScope>
   );

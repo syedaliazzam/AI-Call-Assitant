@@ -12,7 +12,7 @@
 import type { DriveStatusResponse } from '@kite/shared';
 import { CALL_LOCK_NAME } from '../live/callLock';
 import type { DriveCall } from '../storage/types';
-import { queueDriveCall } from '../storage/driveUploads';
+import { queueDriveCall, requeueDriveJobs } from '../storage/driveUploads';
 import { driveApi } from './api';
 
 /** The BroadcastChannel this profile's Kite windows use for Drive news. */
@@ -129,4 +129,16 @@ export async function callIsLive(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Queues a session's upload again (Retry on a card, Meetings or a notice) and wakes the uploader.
+ *
+ * @param sessionId The session.
+ * @returns When queued.
+ * Called from: features/drive/DriveSessionStatus.tsx, features/drive/DriveNotices.tsx
+ */
+export async function retryDriveUpload(sessionId: string): Promise<void> {
+  await requeueDriveJobs(sessionId);
+  announceDrive('queued');
 }

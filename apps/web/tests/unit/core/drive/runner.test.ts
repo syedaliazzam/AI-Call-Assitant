@@ -1,0 +1,202 @@
+/**
+ * Tests for apps/web/src/core/drive/runner.ts, addresses.ts and picker.ts (ADR-0072):
+ * - the uploader runs only in the window that gets the Web Lock (another window's run is "busy"), and in
+ *   a browser it has no shell host (no recordings, no native notifications);
+ * - an "Also notify" list is lower-cased, de-duplicated, capped at 20, and names what is not an address;
+ * - the Picker shows folders only (My Drive and Shared Drives), with setSelectFolderEnabled, the project
+ *   number (setAppId) and the access token, and answers the picked folder's id or null on Cancel.
+ * Google's script is a fake; no real Google call is made. All values are invented.
+ */
+import { DRIVE_FOLDER_MIME } from '@kite/shared';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseAddressList } from '@/core/drive/addresses';
+import { pickDriveFolder } from '@/core/drive/picker';
+import { UPLOADER_LOCK, createUploaderDeps, runUploaderOnce } from '@/core/drive/runner';
+import type { UploaderDeps } from '@/core/drive/uploader';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('runUploaderOnce', () => {
+  it('runs only with the lock, and says "busy" when another window holds it', async () => {
+    const deps = {
+      callActive: async () => true,
+    } as unknown as UploaderDeps;
+    const asked: string[] = [];
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: async (name: string, _options: unknown, callback: (lock: unknown) => unknown) => {
+          asked.push(name);
+          return callback(null);
+        },
+      },
+    });
+    expect(await runUploaderOnce(deps)).toBe('busy');
+    expect(asked).toEqual([UPLOADER_LOCK]);
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: async (_name: string, _options: unknown, callback: (lock: unknown) => unknown) =>
+          callback({ name: UPLOADER_LOCK }),
+      },
+    });
+    // With the lock it runs (and stops at once: a call is live).
+    expect(await runUploaderOnce(deps)).toBe('call');
+  });
+
+  it('has no shell host in a browser', () => {
+    const deps = createUploaderDeps({ drive: null, recording: null }, null);
+    expect(deps.host).toBeNull();
+    expect(() => deps.notice({ title: 't', body: 'b' })).not.toThrow();
+  });
+});
+
+describe('parseAddressList', () => {
+  it('cleans the list and names what is not an address', () => {
+    expect(parseAddressList('A@x.io, a@x.io; b@y.io\nnot-an-address')).toEqual({
+      valid: ['a@x.io', 'b@y.io'],
+      invalid: ['not-an-address'],
+      tooMany: false,
+    });
+    const many = Array.from({ length: 25 }, (_, i) => `p${i}@x.io`).join(' ');
+    const parsed = parseAddressList(many);
+    expect(parsed.valid).toHaveLength(20);
+    expect(parsed.tooMany).toBe(true);
+    expect(parseAddressList('')).toEqual({ valid: [], invalid: [], tooMany: false });
+  });
+});
+
+describe('pickDriveFolder', () => {
+  it('opens a folders-only Picker with Shared Drives and the project number', async () => {
+    const calls: string[] = [];
+    let callback: ((data: { action: string; docs?: { id: string }[] }) => void) | null = null;
+    /** A fake view that records its settings. */
+    class View {
+      /**
+       * @param id The view id.
+       */
+      constructor(id: string) {
+        calls.push(`view:${id}`);
+      }
+      /**
+       * @param on Recorded.
+       * @returns this
+       */
+      setIncludeFolders(on: boolean) {
+        calls.push(`includeFolders:${on}`);
+        return this;
+      }
+      /**
+       * @param on Recorded.
+       * @returns this
+       */
+      setSelectFolderEnabled(on: boolean) {
+        calls.push(`selectFolder:${on}`);
+        return this;
+      }
+      /**
+       * @param types Recorded.
+       * @returns this
+       */
+      setMimeTypes(types: string) {
+        calls.push(`mime:${types}`);
+        return this;
+      }
+      /**
+       * @param on Recorded.
+       * @returns this
+       */
+      setEnableDrives(on: boolean) {
+        calls.push(`drives:${on}`);
+        return this;
+      }
+    }
+    /** A fake builder that records its settings. */
+    class Builder {
+      /** @returns this */
+      addView() {
+        return this;
+      }
+      /**
+       * @param feature Recorded.
+       * @returns this
+       */
+      enableFeature(feature: string) {
+        calls.push(`feature:${feature}`);
+        return this;
+      }
+      /**
+       * @param token Recorded.
+       * @returns this
+       */
+      setOAuthToken(token: string) {
+        calls.push(`token:${token}`);
+        return this;
+      }
+      /**
+       * @param key Recorded.
+       * @returns this
+       */
+      setDeveloperKey(key: string) {
+        calls.push(`key:${key}`);
+        return this;
+      }
+      /**
+       * @param id Recorded.
+       * @returns this
+       */
+      setAppId(id: string) {
+        calls.push(`app:${id}`);
+        return this;
+      }
+      /** @returns this */
+      setTitle() {
+        return this;
+      }
+      /**
+       * @param cb Recorded.
+       * @returns this
+       */
+      setCallback(cb: typeof callback) {
+        callback = cb;
+        return this;
+      }
+      /** @returns The picker. */
+      build() {
+        return { setVisible: () => calls.push('visible') };
+      }
+    }
+    vi.stubGlobal('window', {
+      gapi: { load: (_name: string, done: () => void) => done() },
+      google: {
+        picker: {
+          DocsView: View,
+          PickerBuilder: Builder,
+          ViewId: { FOLDERS: 'folders' },
+          Feature: { SUPPORT_DRIVES: 'sdr' },
+          Action: { PICKED: 'picked', CANCEL: 'cancel' },
+        },
+      },
+    });
+    const api = {
+      pickerConfig: async () => ({ apiKey: 'picker-key', appId: '1234' }),
+      token: async () => ({ accessToken: 'at', expiresAt: 0 }),
+    };
+    const picked = pickDriveFolder(api);
+    await vi.waitFor(() => expect(callback).not.toBeNull());
+    callback!({ action: 'picked', docs: [{ id: 'FOLDER-9' }] });
+    expect(await picked).toBe('FOLDER-9');
+    expect(calls).toContain(`mime:${DRIVE_FOLDER_MIME}`);
+    expect(calls).toContain('selectFolder:true');
+    expect(calls).toContain('drives:true');
+    expect(calls).toContain('feature:sdr');
+    expect(calls).toContain('app:1234');
+    expect(calls).toContain('token:at');
+    expect(calls).toContain('key:picker-key');
+
+    const cancelled = pickDriveFolder(api);
+    await vi.waitFor(() => expect(calls.filter((c) => c === 'visible')).toHaveLength(2));
+    callback!({ action: 'cancel' });
+    expect(await cancelled).toBeNull();
+  });
+});

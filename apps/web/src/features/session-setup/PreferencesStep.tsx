@@ -15,6 +15,7 @@
 import {
   Cpu,
   Languages,
+  Mail,
   MessagesSquare,
   MessageSquareText,
   Plus,
@@ -26,7 +27,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { DEEP_MODEL_WARNING, documentWarnings } from '@/core/documents/limits';
 import { deepModelEnabled } from '@/core/session/modelAccess';
 import { ANSWER_LANGUAGES, type AnswerModel } from '@/core/storage/types';
+import { parseAddressList } from '@/core/drive/addresses';
 import { Button } from '@/ui/Button';
+import { Input } from '@/ui/Input';
 import { Select } from '@/ui/Select';
 import { Switch } from '@/ui/Toggle';
 import { AiInstructionsDialog } from './AiInstructionsDialog';
@@ -221,6 +224,10 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
             />
           }
         />
+        <AlsoNotifyRow
+          value={draft.driveAlsoNotify}
+          onChange={(driveAlsoNotify) => onChange({ driveAlsoNotify })}
+        />
       </section>
 
       <AnswerPreferencesDialog
@@ -234,6 +241,59 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
         onClose={() => setWindow(null)}
         value={draft.instructions}
         onSave={(next) => onChange({ instructions: next })}
+      />
+    </div>
+  );
+}
+
+/**
+ * 1.6.0 (ADR-0072): who else gets this session's "saved to Google Drive" email. Empty: the list in
+ * Settings. Entries that are not email addresses are named under the field and not saved.
+ *
+ * @param props.value    The typed list.
+ * @param props.onChange Called with the new text.
+ * @returns The row.
+ * Rendered by: PreferencesStep
+ */
+function AlsoNotifyRow({
+  value,
+  onChange,
+}: {
+  /** The typed list. */
+  value: string;
+  /** Called with the new text. */
+  onChange: (value: string) => void;
+}) {
+  const parsed = parseAddressList(value);
+  return (
+    <div className="flex flex-col gap-1 py-2">
+      <div className="flex items-center gap-3">
+        <span className="shrink-0 text-ui-muted">
+          <Mail {...ICON} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-label text-ui-heading">Also notify</p>
+          <p className="text-helper text-ui-muted">
+            Who else gets the email when this session is saved to Google Drive. Empty: the list in
+            Settings.
+          </p>
+        </div>
+      </div>
+      <Input
+        label="Also notify for this session"
+        hideLabel
+        type="text"
+        inputMode="email"
+        placeholder="name@company.com, teammate@company.com"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        error={
+          parsed.invalid.length > 0
+            ? `Not an email address (not saved): ${parsed.invalid.join(', ')}`
+            : parsed.tooMany
+              ? 'At most 20 addresses; the rest are not saved.'
+              : undefined
+        }
       />
     </div>
   );
