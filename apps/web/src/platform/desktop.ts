@@ -26,6 +26,7 @@ import { LINK_CODE_PATTERN } from '@kite/shared';
 import { installDesktopDocument } from './desktopDocument';
 import { CaptureError } from './errors';
 import { listenForAskKite, listenForHotkeys } from './keymap';
+import { desktopDriveHost } from './drive';
 import { desktopRecordingHost } from './recording';
 import {
   defaultOutputKind,
@@ -601,6 +602,26 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
 
     // 1.5.0 (ADR-0068): meeting recording, when this shell has every recording method.
     recording: desktopRecordingHost(bridge),
+
+    // 1.6.0 (ADR-0072): Drive uploads of recordings and native notifications, when this shell has them.
+    drive: desktopDriveHost(bridge),
+
+    /**
+     * Google's pages cannot open in the shell (it loads only the Kite address).
+     *
+     * @returns False.
+     */
+    driveSetupHere: () => false,
+
+    /**
+     * Opens the web app's page in the system browser: the shell sends every window.open of an http(s)
+     * address there (security.ts), where the person is signed in to Kite and Google.
+     *
+     * @param path The web app's path.
+     */
+    openDriveSetup(path: string) {
+      window.open(new URL(path, window.location.origin).toString(), '_blank', 'noopener');
+    },
 
     /**
      * The hotkeys: the shell's global shortcuts (work from any app, Stage 8) and the in-page

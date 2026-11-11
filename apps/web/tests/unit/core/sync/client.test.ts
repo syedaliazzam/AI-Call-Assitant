@@ -69,10 +69,11 @@ function fakeWindow() {
 
 /**
  * Lets the fake database work: it schedules with the real setImmediate, which fake timers leave alone
- * but advancing them does not wait for.
+ * but advancing them does not wait for. 20 turns (1.6.0): opening a new database runs every schema
+ * version's upgrade, and version 11 (ADR-0072) made 10 turns too few for the first pull.
  */
 async function letDatabaseRun(): Promise<void> {
-  for (let turn = 0; turn < 10; turn += 1) await new Promise((done) => setImmediate(done));
+  for (let turn = 0; turn < 20; turn += 1) await new Promise((done) => setImmediate(done));
 }
 
 /**

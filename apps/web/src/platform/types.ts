@@ -4,13 +4,18 @@
  *          between the desktop app (Electron) and a normal browser (Chrome / Edge).
  * Used by: src/platform/browser.ts, src/platform/desktop.ts, src/platform/index.ts, and any code
  *          that calls getPlatform()
- * Depends on: @kite/shared (HotkeyAction, the overlay and window types, the recording contract)
+ * Depends on: @kite/shared (HotkeyAction, the overlay and window types, the recording contract, the
+ *             Drive upload contract)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 (the platform adapter); ADR-0035
  */
 import type {
   AccurateResult,
   AccurateStatus,
+  DesktopNotice,
   DeviceIdentity,
+  DriveUploadProgress,
+  DriveUploadRequest,
+  DriveUploadResult,
   HandoffPick,
   LocalRecording,
   RecordingCloseResult,
@@ -445,6 +450,29 @@ export interface Platform {
   readonly recording: RecordingHost | null;
 
   /**
+   * Desktop 1.6.0 (ADR-0072): uploading this computer's recordings to Google Drive straight from disk,
+   * and native notifications; null in the browser and in a desktop app before 1.6.0.
+   */
+  readonly drive: DriveHost | null;
+
+  /**
+   * ADR-0072: whether Google's consent page and the Drive Picker open in this window. True in a browser;
+   * false in the desktop app, which opens the web app's Settings in the system browser instead (the
+   * shell loads only the Kite address, so Google's pages cannot open inside it).
+   *
+   * @returns True in a browser.
+   */
+  driveSetupHere(): boolean;
+
+  /**
+   * ADR-0072: opens a page of the web app where Google Drive is set up: here (browser) or in the system
+   * browser (desktop).
+   *
+   * @param path A path of the web app, for example '/settings?drive=connect#google-drive'.
+   */
+  openDriveSetup(path: string): void;
+
+  /**
    * Listens for hotkey actions (answer, screenshot, chat, clear, prev, next). Call it for the length
    * of a live call only: in the desktop app it takes the shortcuts from every other app.
    * - Desktop: Electron global shortcuts, which work from any app, forwarded to the page (turned
@@ -624,4 +652,31 @@ export interface RecordingHost {
    * @returns The identity afterwards.
    */
   renameDevice(name: string): Promise<DeviceIdentity>;
+}
+
+/**
+ * Desktop 1.6.0 (ADR-0072): the shell's part of saving to Google Drive. The page decides what goes where
+ * (folders, names, upload sessions); the shell sends a recording's bytes from its Recordings index to
+ * Google's upload address only, and shows native notifications.
+ */
+export interface DriveHost {
+  /**
+   * Uploads one recording file to a resumable upload session, from where Google says it got to.
+   *
+   * @param request    The recording, its file, the upload address and an access token.
+   * @param onProgress Called after each chunk.
+   * @returns How it ended ('paused' when a call started).
+   */
+  upload(
+    request: DriveUploadRequest,
+    onProgress: (progress: DriveUploadProgress) => void,
+  ): Promise<DriveUploadResult>;
+
+  /**
+   * Shows a native notification; a click opens its Drive link in the system browser.
+   *
+   * @param notice The lines and the link.
+   * @returns False when the system cannot show one.
+   */
+  notify(notice: DesktopNotice): Promise<boolean>;
 }
