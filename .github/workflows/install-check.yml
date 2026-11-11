@@ -1,0 +1,207 @@
+# File: .github/workflows/install-check.yml
+# Purpose: Windows installer and update check for a desktop release (1.5.1, ADR-0069): builds this
+#          branch's installer on a clean Windows runner and records, after every step, the Start Menu and
+#          desktop shortcuts (target), what Windows lists as a startable app (Get-StartApps: what Start
+#          search finds, with its AppUserModelID), and the install registry values. Scenarios:
+#          A. a fresh install of this build;
+#          B. the published 1.5.0 with its shortcut deleted (as on the developer's laptop, 11 Nov 2026),
+#             then this build as the updater runs it (/S --updated), then by hand (/S);
+#          C. the published chain Kite 1.1.0 → 1.2.0 → 1.4.0 → 1.5.0 by the updater, then this build.
+#          Finally the installed app is opened directly with a temporary profile and the runner's screen is
+#          captured (an artifact, with the report).
+# Used by: the developer before each desktop release (Actions → install-check → Run workflow), and pushes
+#          to desktop-* branches.
+# Architecture: docs/decisions/ADR-0028 (installer), ADR-0045 (rename), ADR-0069 (shortcut repair)
+# Uses no secrets; the older installers come from the public releases repository.
+
+name: install-check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['desktop-*']
+    paths: ['apps/desktop/**', '.github/workflows/install-check.yml']
+
+jobs:
+  install:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # This branch's installer (unsigned, like every release so far; publish never).
+      - name: Build the installer
+        run: pnpm --filter @kite/desktop dist:win
+
+      - name: Collect the installers
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\installers"; New-Item -ItemType Directory -Force $dir | Out-Null
+          $built = Get-ChildItem apps/desktop/release -Filter 'Paramount-AI-Setup-*.exe' | Select-Object -First 1
+          Copy-Item $built.FullName "$dir\built.exe"
+          "built: {0} {1} bytes" -f $built.Name, $built.Length
+          $assets = @{ '1.1.0' = 'Kite-Setup-1.1.0.exe'; '1.2.0' = 'Paramount-AI-Setup-1.2.0.exe'; '1.4.0' = 'Paramount-AI-Setup-1.4.0.exe'; '1.5.0' = 'Paramount-AI-Setup-1.5.0.exe' }
+          foreach ($v in $assets.Keys) {
+            Invoke-WebRequest -Uri "https://github.com/Zainpak123/kite-releases/releases/download/v$v/$($assets[$v])" -OutFile "$dir\$v.exe"
+          }
+
+      - name: Write helper script
+        shell: pwsh
+        run: |
+          @'
+          $ErrorActionPreference = 'Continue'
+          $Installers = "$env:RUNNER_TEMP\installers"
+          $Report = "$env:RUNNER_TEMP\report.txt"
+          $Failures = "$env:RUNNER_TEMP\failures.txt"
+
+          # Writes one line to the job log and the report.
+          function Say([string]$text) { $text; Add-Content -Path $Report -Value $text }
+
+          # Records a failed expectation (the job fails at the end when there is any).
+          function Expect([bool]$ok, [string]$what) {
+            if ($ok) { Say "PASS $what" } else { Say "FAIL $what"; Add-Content -Path $Failures -Value $what }
+          }
+
+          # The Start Menu shortcuts of the app.
+          function Links { Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter *.lnk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Kite|Paramount' } }
+
+          # Records what Windows and the installer know about the app right now.
+          function Snapshot([string]$label) {
+            Say ""
+            Say "===== $label ====="
+            $shell = New-Object -ComObject WScript.Shell
+            $links = @(Links) + @(Get-ChildItem ([Environment]::GetFolderPath('Desktop')) -Filter *.lnk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Kite|Paramount' })
+            if (-not $links) { Say "shortcuts: NONE" }
+            foreach ($l in $links) { Say ("shortcut: {0} -> {1}" -f $l.FullName.Replace($env:USERPROFILE, '~'), $shell.CreateShortcut($l.FullName).TargetPath.Replace($env:USERPROFILE, '~')) }
+            $apps = Get-StartApps | Where-Object { $_.Name -match 'Kite|Paramount' }
+            if (-not $apps) { Say "Get-StartApps: NONE" }
+            foreach ($a in $apps) { Say ("Get-StartApps: name='{0}' AppID='{1}'" -f $a.Name, $a.AppID) }
+            Get-ChildItem HKCU:\Software -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^[0-9a-f]{8}-' } | ForEach-Object {
+              $v = Get-ItemProperty $_.PSPath
+              if ($v.InstallLocation -match 'kite|Paramount') { Say ("install key: ShortcutName='{0}' KeepShortcuts='{1}'" -f $v.ShortcutName, $v.KeepShortcuts) }
+            }
+          }
+
+          # The app is findable in Start: one "Paramount AI" shortcut and a Start app with the appId.
+          function ExpectFindable([string]$label) {
+            $links = @(Links)
+            Expect ($links.Count -eq 1 -and $links[0].Name -eq 'Paramount AI.lnk') "$label : one 'Paramount AI' Start Menu shortcut"
+            $apps = @(Get-StartApps | Where-Object { $_.Name -eq 'Paramount AI' })
+            Expect ($apps.Count -eq 1 -and $apps[0].AppID -eq 'co.paramountintelligence.kite') "$label : Start lists 'Paramount AI' with AppID co.paramountintelligence.kite"
+          }
+
+          # Runs one installer silently and waits for it.
+          function Install([string]$name, [string[]]$extra) {
+            $args = @('/S') + $extra
+            Say ("--- install {0} {1}" -f $name, ($args -join ' '))
+            $p = Start-Process -FilePath "$Installers\$name.exe" -ArgumentList $args -PassThru -Wait
+            Say ("exit code {0}" -f $p.ExitCode)
+            for ($i = 0; $i -lt 120; $i++) {
+              $busy = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -like "$Installers*" -or $_.Name -match '^(Un_A|Uninstall|un_)') }
+              if (-not $busy) { break }
+              Start-Sleep -Seconds 1
+            }
+            Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(Kite|Paramount AI)$' } | Stop-Process -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+          }
+
+          # Removes every install and shortcut, so the next scenario starts clean.
+          function CleanUninstall {
+            Get-ChildItem HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall -ErrorAction SilentlyContinue | ForEach-Object {
+              $v = Get-ItemProperty $_.PSPath
+              if ($v.DisplayName -match 'Kite|Paramount' -and $v.QuietUninstallString) {
+                $cmd = $v.QuietUninstallString
+                $exe = ($cmd -split '" ')[0].Trim('"'); $rest = ($cmd.Substring($cmd.IndexOf('"', 1) + 1)).Trim()
+                Start-Process -FilePath $exe -ArgumentList $rest -Wait
+                Start-Sleep -Seconds 5
+              }
+            }
+            Links | Remove-Item -Force -ErrorAction SilentlyContinue
+            Get-ChildItem HKCU:\Software -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^[0-9a-f]{8}-' } | ForEach-Object {
+              $v = Get-ItemProperty $_.PSPath; if ($v.InstallLocation -match 'kite|Paramount') { Remove-Item $_.PSPath -Recurse -Force }
+            }
+          }
+          '@ | Set-Content -Path "$env:RUNNER_TEMP\helpers.ps1" -Encoding utf8
+
+      - name: "A: fresh install of this build"
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP\helpers.ps1"
+          Install 'built' @()
+          Snapshot 'A fresh install'
+          ExpectFindable 'A fresh install'
+          CleanUninstall
+
+      - name: "B: 1.5.0 with its shortcut deleted, then this build"
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP\helpers.ps1"
+          Install '1.5.0' @()
+          Links | Remove-Item -Force
+          Snapshot 'B 1.5.0, shortcut deleted'
+          Install 'built' @('--updated')
+          Snapshot 'B after the update to this build'
+          ExpectFindable 'B update'
+          Links | Remove-Item -Force
+          Install 'built' @()
+          Snapshot 'B after this build by hand'
+          ExpectFindable 'B by hand'
+          CleanUninstall
+
+      - name: "C: Kite 1.1.0 to 1.5.0 by the updater, then this build"
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP\helpers.ps1"
+          Install '1.1.0' @()
+          foreach ($v in '1.2.0', '1.4.0', '1.5.0') { Install $v @('--updated') }
+          Snapshot 'C 1.5.0 after the chain'
+          Install 'built' @('--updated')
+          Snapshot 'C after the update to this build'
+          ExpectFindable 'C chain'
+
+      - name: "Open the app directly (temporary profile, runner screen captured)"
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP\helpers.ps1"
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs\kite" -Filter 'Paramount AI.exe' | Select-Object -First 1
+          $env:KITE_NO_UPDATE_CHECK = '1'
+          Start-Process -FilePath $exe.FullName -ArgumentList "--user-data-dir=$env:RUNNER_TEMP\profile" | Out-Null
+          Start-Sleep -Seconds 25
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\shots" | Out-Null
+          $bmp.Save("$env:RUNNER_TEMP\shots\direct-launch.png")
+          $window = Get-Process | Where-Object { $_.Name -eq 'Paramount AI' -and $_.MainWindowTitle }
+          Expect ($null -ne $window) 'opened directly: a Paramount AI window'
+          Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'Paramount AI' } | Stop-Process -Force
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2 (as ci.yml)
+        with:
+          name: install-check
+          path: |
+            ${{ runner.temp }}/report.txt
+            ${{ runner.temp }}/shots
+          retention-days: 14
+
+      - name: Fail on any failed expectation
+        shell: pwsh
+        run: |
+          if (Test-Path "$env:RUNNER_TEMP\failures.txt") { Get-Content "$env:RUNNER_TEMP\failures.txt"; exit 1 }
+          'all expectations passed'
