@@ -29,7 +29,8 @@ Root causes:
 7. **The user's lines during the call**: Accurate rewrites a "You" line when it has nothing else to do (`refineQueue.offerIdle`); otherwise after the call as before.
 8. **Recordings**: each side at −6 dB, a limiter (−6 dB threshold, ratio 20) on the mix and on each side of the stereo file.
 9. **Private warning**: a screen recording with Private off shows "Private is off: Paramount AI will appear in your recording" with **Turn Private back on**, in the overlay and the call window, and "Visible in recording" on the Rec pill.
-10. **Call timing log**: a per-card table in the download (trigger, grey / early / rerun, question end → sent → first word → done, in seconds and ms); a rerun is an entry of its own; the echo canceller's state.
+10. **The overlay opens its answer panel for any new answer** (`CompactView.tsx`), not only one first seen streaming: since 1.5.1 its state comes at most every 200 ms, so a quick answer could arrive already finished and its panel stayed closed.
+11. **Call timing log**: a per-card table in the download (trigger, grey / early / rerun, question end → sent → first word → done, in seconds and ms); a rerun is an entry of its own; the echo canceller's state.
 
 Desktop 1.5.2 has no functional change: everything above is in the web app, which the desktop app loads.
 

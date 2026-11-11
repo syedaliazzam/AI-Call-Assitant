@@ -396,14 +396,16 @@ export function CompactView(props: CompactViewProps) {
     });
   }, [panels.transcript, panels.answer, neededHeight, zoom, contentHeight, noPanels]);
 
-  // An answer starting opens its panel, without taking focus from the meeting.
+  // An answer starting opens its panel, without taking focus from the meeting. 1.5.2 (ADR-0070): any new
+  // answer, not only one first seen while streaming: since 1.5.1 the live page sends its state at most every
+  // 200 ms, so a quick answer can arrive already finished, and its panel then stayed closed. An answer that
+  // was there when this window opened (the initial value) opens nothing.
   const answerId = state?.answer?.id;
-  const answerStreaming = state?.answer?.status === 'streaming';
   const [seenAnswer, setSeenAnswer] = useState(answerId);
   if (answerId !== seenAnswer) {
     // While rendering, as React advises for state that follows a changed value.
     setSeenAnswer(answerId);
-    if (answerStreaming) {
+    if (answerId) {
       setCollapsed(false);
       setIcon(false);
     }
@@ -413,8 +415,8 @@ export function CompactView(props: CompactViewProps) {
   useEffect(() => {
     if (answerId === panelSeenAnswer.current) return;
     panelSeenAnswer.current = answerId;
-    if (answerStreaming && !panels.answer) onPanels({ ...panels, answer: true });
-  }, [answerId, answerStreaming, panels, onPanels]);
+    if (answerId && !panels.answer) onPanels({ ...panels, answer: true });
+  }, [answerId, panels, onPanels]);
 
   // A press anywhere else closes a menu.
   useEffect(() => {
