@@ -56,6 +56,9 @@ import {
   WINDOW_CONTROL_CHANNEL,
 } from './channels';
 import { APP_NAME, loadConfig, pinnedDataFolder, type DesktopConfig } from './config';
+
+/** 1.5.1 (ADR-0069): electron-builder.yml's appId, which the installer gives the Start Menu shortcut. */
+const APP_USER_MODEL_ID = 'co.paramountintelligence.kite';
 import { linkFromArgv, shouldRegisterProtocol } from './links';
 import { createHomeWindow, isPanelSize, type HomeWindow } from './home';
 import { startUpdater } from './updater';
@@ -205,6 +208,9 @@ function openPlayer(page: string): void {
  * Called from: start()
  */
 function ensureSingleInstance(): boolean {
+  // 1.5.1 (ADR-0069): the same AppUserModelID as the installer's Start Menu shortcut (electron-builder's
+  // appId), so Windows treats the running app and the shortcut as one app (Start, search, taskbar pins).
+  if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
   if (!app.requestSingleInstanceLock()) {
     app.quit();
     return false;
@@ -601,12 +607,23 @@ function start(): void {
         ? path.join(process.resourcesPath, 'sherpa-onnx')
         : path.join(__dirname, '..', 'native', 'sherpa-onnx'),
       workerPath: path.join(__dirname, 'accurate-worker.js'),
-      fork: (modulePath, env) =>
-        utilityProcess.fork(modulePath, [], {
+      fork: (modulePath, env) => {
+        const child = utilityProcess.fork(modulePath, [], {
           env,
           serviceName: `${APP_NAME} accurate transcription`,
           stdio: 'ignore',
-        }) as unknown as WorkerProcess,
+        });
+        // 1.5.1 (ADR-0069): below-normal priority, so the live speech engine (in the page) always comes
+        // first on a busy computer. A failure only leaves the normal priority.
+        child.once('spawn', () => {
+          try {
+            if (child.pid) os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
+          } catch {
+            console.warn('desktop: accurate priority not lowered');
+          }
+        });
+        return child as unknown as WorkerProcess;
+      },
     });
     // ADR-0042: one toggle, one state, every window.
     installProtection(ipcMain, shield, () => BrowserWindow.getAllWindows(), config.allowedOrigin);

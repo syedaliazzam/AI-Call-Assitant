@@ -576,8 +576,11 @@ export type AccurateResult =
   | {
       /** Not transcribed: the page keeps the live line. */
       ok: false;
-      /** Why: the model is missing, the audio was refused, or the engine failed. */
-      code: 'not-ready' | 'bad-audio' | 'engine';
+      /**
+       * Why: the model is missing, the audio was refused, the engine failed, or (1.5.1, ADR-0069) a newer
+       * line took this one's place in the engine's queue ('busy').
+       */
+      code: 'not-ready' | 'bad-audio' | 'engine' | 'busy';
     };
 
 /** Screen-share protection (Day 5; every Kite window from v1.1.0, ADR-0042). */
