@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { getDb } from './db';
 import { currentSessionType, currentTone } from './migrate';
 import type {
+  DocumentPart,
   LibraryItem,
   LibraryKind,
   StoredQuestionBank,
@@ -60,6 +61,8 @@ export interface ExportedDocument {
   kind?: LibraryKind;
   /** The library item it was copied from, if any. */
   sourceId?: string;
+  /** 1.5.1 (ADR-0069): this row is one part of a long document (core/documents/parts.ts). */
+  part?: DocumentPart;
 }
 
 /** The export file. */
@@ -272,16 +275,19 @@ export async function exportData(now = Date.now()): Promise<ExportFile> {
     version: EXPORT_VERSION,
     exportedAt: now,
     sessions: await db.sessions.toArray(),
-    documents: documents.map(({ id, sessionId, name, chars, addedAt, text, kind, sourceId }) => ({
-      id,
-      sessionId,
-      name,
-      chars,
-      addedAt,
-      text,
-      ...(kind ? { kind } : {}),
-      ...(sourceId ? { sourceId } : {}),
-    })),
+    documents: documents.map(
+      ({ id, sessionId, name, chars, addedAt, text, kind, sourceId, part }) => ({
+        id,
+        sessionId,
+        name,
+        chars,
+        addedAt,
+        text,
+        ...(kind ? { kind } : {}),
+        ...(sourceId ? { sourceId } : {}),
+        ...(part ? { part } : {}),
+      }),
+    ),
     utterances: await db.utterances.toArray(),
     answers: await db.answers.toArray(),
     notes: await db.notes.toArray(),
@@ -491,16 +497,20 @@ export async function importData(file: ExportFile): Promise<ImportSummary> {
       await db.chats.bulkAdd(chats.toAdd);
       await db.questionBanks.bulkAdd(questionBanks.toAdd);
       await db.documents.bulkAdd(
-        documents.toAdd.map(({ id, sessionId, name, chars, addedAt, text, kind, sourceId }) => ({
-          id,
-          sessionId,
-          name,
-          chars,
-          addedAt,
-          text: text ?? '',
-          ...(kind ? { kind } : {}),
-          ...(sourceId ? { sourceId } : {}),
-        })),
+        documents.toAdd.map(
+          ({ id, sessionId, name, chars, addedAt, text, kind, sourceId, part }) => ({
+            id,
+            sessionId,
+            name,
+            chars,
+            addedAt,
+            text: text ?? '',
+            ...(kind ? { kind } : {}),
+            ...(sourceId ? { sourceId } : {}),
+            // 1.5.1 (ADR-0069): a long document's part keeps its place.
+            ...(part ? { part } : {}),
+          }),
+        ),
       );
       await db.library.bulkAdd(library.toAdd);
       await db.utterances.bulkAdd(utterances.toAdd);

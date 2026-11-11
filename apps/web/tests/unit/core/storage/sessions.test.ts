@@ -345,3 +345,23 @@ describe("a company's domain (ADR-0048)", () => {
     expect((await duplicateSession(session.id)).companyDomain).toBe('alder.example');
   });
 });
+
+describe('1.5.1 (ADR-0069): a document longer than one row holds', () => {
+  beforeEach(resetDb);
+
+  it('is stored as parts of at most 250k, listed as one, and removed whole', async () => {
+    const paragraph = 'Invented handbook paragraph about depot routing. '.repeat(20) + '\n\n';
+    const text = paragraph.repeat(Math.ceil(480_000 / paragraph.length)).slice(0, 480_000);
+    const session = await createSessionWithDocuments(sessionInput(), [
+      { name: 'handbook.txt', text },
+    ]);
+    const rows = await getDb().documents.where('sessionId').equals(session.id).toArray();
+    expect(rows.length).toBe(2);
+    for (const row of rows) expect(row.chars).toBeLessThanOrEqual(250_000);
+    const [listed] = await listDocuments(session.id);
+    expect(listed).toMatchObject({ name: 'handbook.txt', chars: 480_000 });
+    expect(listed!.text).toBe(text);
+    await updateSessionWithDocuments(session.id, {}, [], [listed!.id]);
+    expect(await getDb().documents.where('sessionId').equals(session.id).count()).toBe(0);
+  });
+});

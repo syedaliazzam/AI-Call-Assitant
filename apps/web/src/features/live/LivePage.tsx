@@ -66,10 +66,16 @@ import { createPunctuator, punctuateLine } from '@/core/punctuation/punctuator';
 import { createTurnDetector } from '@/core/turn/turnDetector';
 import { createYouAudio, rewriteAfterCall, type AfterCallLine } from '@/core/transcript/afterCall';
 import { refineLine } from '@/core/transcript/refine';
+import { createRefineQueue, type RefineJob } from '@/core/transcript/refineQueue';
+import type { BacklogInfo } from '@/core/stt/protocol';
+import { callTimings } from '@/core/live/callTimings';
 import { looksNonEnglish } from '@/core/stt/language';
 import { displayTerms } from '@/core/transcript/display';
-import { isSound, themSilent } from '@/core/audio/silence';
-import { ThemSilentNotice } from './ThemSilentNotice';
+import { isSound } from '@/core/audio/silence';
+import { ChannelSilence, type CallChannel } from '@/core/audio/channelSilence';
+import { watchDeviceChanges } from '@/core/audio/deviceWatch';
+import { callNoticeFor, type CallNotice } from '@/core/live/callNotice';
+import { SilentChannelNotice } from './ThemSilentNotice';
 import { endCall } from '@/core/transcript/endCall';
 import { reportCallStart, takeCallStart, watchCallStart } from '@/core/live/callStart';
 import { announceRecordingSaved, takeRecordStart } from '@/core/recording/handoff';
@@ -266,11 +272,16 @@ export function LivePage({
     return () => platformApi.setCallActive(false);
   }, [connection]);
   const themSoundAt = useRef(0);
-  const [themQuiet, setThemQuiet] = useState(false);
+  // 1.5.1 (ADR-0069): a channel that hears nothing for 15 s while the other one talks (channelSilence.ts).
+  const silence = useRef<ChannelSilence | null>(null);
+  const [silentChannel, setSilentChannel] = useState<CallChannel | null>(null);
   useEffect(() => {
-    if (connection !== 'connected') return;
+    if (connection !== 'connected') {
+      setSilentChannel(null);
+      return;
+    }
     const timer = setInterval(
-      () => setThemQuiet(themSilent(themSoundAt.current, Date.now())),
+      () => setSilentChannel(silence.current?.silent(Date.now()) ?? null),
       1_000,
     );
     return () => clearInterval(timer);
@@ -301,6 +312,19 @@ export function LivePage({
   // v1.4 (ADR-0065): the end-of-turn model, which tells auto-answer whether the other person finished.
   const [turnDetector] = useState(() => createTurnDetector());
   useEffect(() => () => turnDetector.stop(), [turnDetector]);
+  // 1.5.1 (ADR-0069): the speech worker's backlog. A ref for the per-line decisions (no Accurate while
+  // behind), a state for the notes ("Your lines will be filled in after the call", catching up).
+  const backlogRef = useRef<BacklogInfo['state']>('ok');
+  const [backlogState, setBacklogState] = useState<BacklogInfo['state']>('ok');
+  // 1.5.1 (ADR-0069): which finished "Them" lines Accurate rewrites (refineQueue.ts): one at a time, at
+  // most one waiting, never an old line, never while the live engine is behind.
+  const [refineQueue] = useState(() =>
+    createRefineQueue<RefineJob & { run: () => Promise<void>; skip: (why: string) => void }>({
+      run: (job) => job.run(),
+      onSkip: (job, why) => job.skip(why),
+      canRun: () => backlogRef.current === 'ok',
+    }),
+  );
   // The judgment started at the other side's latest pause, used when its line becomes final.
   const earlyTurn = useRef<{ speechEnd: number; probability: Promise<number | null> } | null>(null);
   // The saved microphone (v1.1.0). This page only renders in the browser (LiveSession loads the
@@ -383,6 +407,17 @@ export function LivePage({
     enabled: !launcherCall && view === 'connect' && connection === 'idle' && !ending,
   });
 
+  /**
+   * 1.5.1 (ADR-0069): records the speech worker's backlog (from its 'backlog' and 'stats' messages).
+   *
+   * @param info The worker's numbers.
+   */
+  const noteBacklog = useCallback((info: BacklogInfo) => {
+    backlogRef.current = info.state;
+    setBacklogState(info.state);
+    callTimings.noteBacklog(info);
+  }, []);
+
   // Builds the speech engine with the standard callbacks. The initial effect and a watchdog
   // restart share this, so a restarted engine behaves exactly like the first one. isActive() lets
   // a replaced or torn-down engine's late messages be ignored (dev double-mount; restart).
@@ -410,6 +445,7 @@ export function LivePage({
             return;
           }
           transcript.addPartial(channel, text, tStart);
+          if (text !== '') callTimings.notePartial(channel);
           watchdog.current.noteProgress(performance.now());
         },
         onPause: ({ channel, speechEnd, recent }) => {
@@ -435,6 +471,7 @@ export function LivePage({
             ...(nonEnglish ? { nonEnglish: true } : {}),
           });
           watchdog.current.noteProgress(performance.now());
+          callTimings.noteFinal({ id: line.id, speaker: channel, tStart, tEnd });
           if (nonEnglish) return;
           // v1.4 (ADR-0065): did the other person finish, or only pause? Auto-answer waits for this.
           if (channel === 'them' && recent && recent.length > 0) {
@@ -459,21 +496,54 @@ export function LivePage({
             youAudio.current.add(line.id, accurateOn.current ? (audio ?? null) : null);
           }
           if (accurate && audio && accurateOn.current && channel === 'them') {
-            transcript.setRefining(line.id, true);
-            void refineLine(accurate, transcript, line.id, text, audio, plainTerms).then((done) => {
-              transcript.setRefining(line.id, false);
-              if (!done) void punctuateLine(punctuator, transcript, line.id, text);
+            // 1.5.1 (ADR-0069): through the refine queue; the line is marked as being rewritten only
+            // while its rewrite really runs, so auto-answer never waits for a queued one.
+            refineQueue.push({
+              lineId: line.id,
+              finalAt: Date.now(),
+              run: async () => {
+                transcript.setRefining(line.id, true);
+                const done = await refineLine(
+                  accurate,
+                  transcript,
+                  line.id,
+                  text,
+                  audio,
+                  plainTerms,
+                );
+                transcript.setRefining(line.id, false);
+                callTimings.noteRefine(line.id, done ? 'done' : 'kept');
+                if (!done) void punctuateLine(punctuator, transcript, line.id, text);
+              },
+              skip: (why) => {
+                callTimings.noteRefine(line.id, why);
+                void punctuateLine(punctuator, transcript, line.id, text);
+              },
             });
           } else {
             void punctuateLine(punctuator, transcript, line.id, text);
           }
         },
         onStats: (stats) => {
-          if (isActive()) monitor.current.push(stats, performance.now());
+          if (!isActive()) return;
+          monitor.current.push(stats, performance.now());
+          if (stats.backlog) noteBacklog(stats.backlog);
+        },
+        onBacklog: (info) => {
+          if (isActive()) noteBacklog(info);
         },
       });
     },
-    [hotwords, transcript, dictationRoute, plainTerms, punctuator, turnDetector],
+    [
+      hotwords,
+      transcript,
+      dictationRoute,
+      plainTerms,
+      punctuator,
+      turnDetector,
+      refineQueue,
+      noteBacklog,
+    ],
   );
 
   // v1.1.0 (ADR-0044): Accurate transcription follows the setting and the power source, and only uses
@@ -651,6 +721,7 @@ export function LivePage({
         ...(chosenMic ? { micDeviceId: chosenMic } : {}),
         onLevels: (next) => {
           setLevels(next);
+          silence.current?.levels(next, Date.now());
           if (isSound(next.them)) {
             themSoundAt.current = Date.now();
             lastActivityAt.current = Date.now();
@@ -671,12 +742,24 @@ export function LivePage({
       // The shared-tab video for the browser split-view preview (no video on desktop system audio).
       setPreviewStream(capture.otherSideStream());
       themSoundAt.current = Date.now();
+      silence.current = new ChannelSilence(Date.now());
       lastActivityAt.current = Date.now();
       setHygiene('ok');
       // Start the stuck-engine watchdog for this connection (Day 6 Stage 4).
       watchdog.current.start(performance.now());
       setConnection('connected');
       setCallStartedAt((current) => current ?? Date.now());
+      // 1.5.1 (ADR-0069): the device-side timing log (ids and times only); a reconnect keeps the call's.
+      if (!callTimings.current()) {
+        callTimings.start({
+          sessionId: session.id,
+          startedAt: Date.now(),
+          platform,
+          accurate: accurateOn.current,
+          recording: 'off',
+          documentChars: documents.reduce((total, document) => total + document.chars, 0),
+        });
+      }
       // Warm Claude's prompt cache again: the warm-up from when the page opened may have
       // expired (5 minutes) while the user read the instructions. If it is still warm this is
       // a cheap cache read. Not awaited; it never throws.
@@ -738,6 +821,8 @@ export function LivePage({
     if (ending) return;
     setEnding(true);
     watchdog.current.stop();
+    // 1.5.1: no rewrite starts after End; the waiting line keeps its live words.
+    refineQueue.clear();
     setRestartedAt(null);
     const saver = saverRef.current;
     saverRef.current = null;
@@ -794,6 +879,10 @@ export function LivePage({
     setChannelErrors({});
     setView('connect');
     setCallStartedAt(null);
+    // 1.5.1 (ADR-0069): the call's timing log is kept on this device (Settings → Call timing log).
+    callTimings.end();
+    setBacklogState('ok');
+    backlogRef.current = 'ok';
     setPreviewStream(null);
     setTranscriptClearedAt(0);
     setEnding(false);
@@ -885,6 +974,7 @@ export function LivePage({
       setPreviewStream(capture.otherSideStream());
       recording.replaceSource('them', capture.otherSideStream());
       themSoundAt.current = Date.now();
+      silence.current?.reset('them', Date.now());
     } catch {
       // The picker was cancelled or denied: the current share stays.
     }
@@ -910,6 +1000,7 @@ export function LivePage({
   const changeMic = useCallback((deviceId: string) => {
     setMicDevice(deviceId);
     setMicDeviceId(deviceId);
+    silence.current?.reset('you', Date.now());
     const capture = captureRef.current;
     capture
       ?.changeMic(deviceId)
@@ -921,6 +1012,14 @@ export function LivePage({
         }
       });
   }, []);
+
+  useEffect(() => {
+    if (connection !== 'connected') return;
+    return watchDeviceChanges(async (mics) => {
+      const chosen = getMicDevice();
+      if (chosen === '' || !mics.some((mic) => mic.id === chosen)) changeMic('');
+    });
+  }, [connection, changeMic]);
 
   /** Yes, still in a call: the quiet time starts again (ADR-0044). */
   const stillHere = useCallback(() => {
@@ -1018,6 +1117,28 @@ export function LivePage({
     [session, language],
   );
 
+  const callNotice: CallNotice | null =
+    connection === 'connected'
+      ? callNoticeFor({
+          silent: silentChannel && !channelErrors[silentChannel] ? silentChannel : null,
+          backlog: backlogState,
+          platform,
+        })
+      : null;
+  const silentShown = callNotice?.kind === 'mic-silent' || callNotice?.kind === 'them-silent';
+  // 1.5.1: each notice that appears goes into the call's timing log (its kind only).
+  const noticeKind = callNotice?.kind ?? null;
+  useEffect(() => {
+    if (noticeKind) callTimings.noteNotice(noticeKind);
+  }, [noticeKind]);
+  // 1.5.1: the timing log notes when the meeting is recorded, and how.
+  const recordingState = recording.compact?.state;
+  const recordingKind = recording.compact?.kind;
+  useEffect(() => {
+    const log = callTimings.current();
+    if (log && recordingState === 'on' && recordingKind) log.recording = recordingKind;
+  }, [recordingState, recordingKind]);
+
   if (view === 'connect' && launcherCall) {
     return (
       <BackgroundCallStatus
@@ -1080,7 +1201,6 @@ export function LivePage({
         ? { tone: 'warning', label: 'Connecting' }
         : { tone: 'neutral', label: 'Not connected' };
 
-  const themQuietShown = connection === 'connected' && themQuiet && !channelErrors.them;
   // The transcript hides lines from before a "Clear" on the control strip; new lines still show.
   const shownLines =
     transcriptClearedAt > 0 ? lines.filter((line) => line.tStart >= transcriptClearedAt) : lines;
@@ -1136,6 +1256,7 @@ export function LivePage({
         onLanguage={changeLanguage}
         onMic={changeMic}
         micDeviceId={micDeviceId}
+        callNotice={callNotice}
         themSourceLabel={themSource ? THEM_SOURCE_LABEL[themSource] : null}
         hygiene={hygiene}
         onStillHere={stillHere}
@@ -1152,7 +1273,7 @@ export function LivePage({
       </div>
     );
   const notices =
-    lostChannel || saveFailed || echoNoteVisible || themQuietShown || restartNoteVisible ? (
+    lostChannel || saveFailed || echoNoteVisible || callNotice || restartNoteVisible ? (
       <>
         {restartNoteVisible && (
           <p
@@ -1182,7 +1303,7 @@ export function LivePage({
               </div>
             ),
         )}
-        {themQuietShown && <ThemSilentNotice />}
+        {callNotice && <SilentChannelNotice notice={callNotice} alert={silentShown} />}
         {saveFailed && (
           <p
             role="alert"

@@ -218,3 +218,30 @@ describe('the recording commands (desktop 1.5.0, ADR-0068)', () => {
     }
   });
 });
+
+describe('1.5.1 (ADR-0069): state messages at most every 200 ms', () => {
+  it('sends the first state at once, the latest of a burst once, and the end at once', () => {
+    vi.useFakeTimers();
+    try {
+      const network = fakeNetwork();
+      const page = openLiveChannel('s1', network.open, 200);
+      const overlay = openLiveChannel('s1', network.open, 200);
+      const seen: number[] = [];
+      overlay.onState((state) => seen.push(state.index));
+      page.publish({ ...STATE, index: 1 });
+      page.publish({ ...STATE, index: 2 });
+      page.publish({ ...STATE, index: 3 });
+      expect(seen).toEqual([1]);
+      vi.advanceTimersByTime(200);
+      expect(seen).toEqual([1, 3]);
+      page.publish({ ...STATE, index: 4, ended: true });
+      expect(seen).toEqual([1, 3, 4]);
+      // A held state still goes out when the link closes.
+      page.publish({ ...STATE, index: 5 });
+      page.close();
+      expect(seen).toEqual([1, 3, 4, 5]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

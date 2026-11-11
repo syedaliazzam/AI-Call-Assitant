@@ -27,6 +27,7 @@ import {
 } from './models';
 import {
   DEFAULT_BEAM_WIDTH,
+  type BacklogInfo,
   type BeamWidth,
   type ChannelId,
   type EndpointReason,
@@ -123,6 +124,8 @@ export interface SttEngineOptions {
   onPause?: (event: PauseEvent) => void;
   /** Statistics, about once a second. */
   onStats?: (stats: EngineStats) => void;
+  /** 1.5.1 (ADR-0069): the worker's backlog state changed (behind: "You" set aside, or catching up). */
+  onBacklog?: (backlog: BacklogInfo) => void;
   /** Failures (loading, decoding). */
   onError?: (error: EngineError) => void;
 }
@@ -294,6 +297,9 @@ export function createSttEngine(
           speechEnd: message.speechEnd,
           recent: message.recent,
         });
+        break;
+      case 'backlog':
+        options.onBacklog?.(message.backlog);
         break;
       case 'stats':
         options.onStats?.(message.stats);

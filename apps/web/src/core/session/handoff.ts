@@ -159,7 +159,7 @@ export async function importHandoff(text: string, expected?: string): Promise<Ha
       file.documents
         .filter((document) => document.sessionId === incoming.id && document.text !== undefined)
         .map(
-          ({ id, sessionId, name, chars, addedAt, text: documentText, kind, sourceId }) =>
+          ({ id, sessionId, name, chars, addedAt, text: documentText, kind, sourceId, part }) =>
             ({
               id,
               sessionId,
@@ -169,6 +169,8 @@ export async function importHandoff(text: string, expected?: string): Promise<Ha
               text: documentText ?? '',
               ...(kind ? { kind } : {}),
               ...(sourceId ? { sourceId } : {}),
+              // 1.5.1 (ADR-0069): a long document's part keeps its place.
+              ...(part ? { part } : {}),
             }) satisfies StoredDocument,
         ),
     );

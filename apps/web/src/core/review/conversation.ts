@@ -123,10 +123,15 @@ export type ConversationEntry =
       answer: StoredAnswer;
     }
   | {
-      /** The start of a call, when the session has more than one (v1.1.0). */
+      /**
+       * The start of a call, when the session has more than one (v1.1.0), or (1.5.1) when the call heard
+       * nothing from the other side.
+       */
       kind: 'call';
-      /** When it started (Unix ms). */
+      /** When it started (Unix ms): 1.5.1, the call's own start (its reference), not its first line. */
       at: number;
+      /** 1.5.1 (ADR-0069): true when the call has lines but none from the other side. */
+      noOtherSide?: boolean;
     };
 
 /**
@@ -212,9 +217,13 @@ export function conversationEntries(
   }
   const entries: ConversationEntry[] = [];
   for (const call of calls) {
-    if (starts.length > 1) entries.push({ kind: 'call', at: call[0]!.at });
     const reference = callReference(call);
     const lines = call.flatMap((item) => (item.kind === 'line' ? [item.line] : []));
+    // 1.5.1 (ADR-0069): a call that never heard the other side says so (its sound was not captured).
+    const noOtherSide = lines.length > 0 && !lines.some((line) => line.speaker === 'them');
+    if (starts.length > 1 || noOtherSide) {
+      entries.push({ kind: 'call', at: reference, ...(noOtherSide ? { noOtherSide: true } : {}) });
+    }
     const turns = lineTurns(lines, terms);
     // The answers after each turn (index -1: before the first), in the order they were asked.
     const after = new Map<number, StoredAnswer[]>();
@@ -289,6 +298,10 @@ export function transcriptFileName(session: Pick<Session, 'company'>, extension:
   return `paramount-ai-transcript${name ? `-${name}` : ''}.${extension}`;
 }
 
+/** 1.5.1 (ADR-0069): under the divider of a call that heard nothing from the other side. */
+export const NO_OTHER_SIDE_TEXT =
+  'Nothing was heard from the other side in this call (their sound was not captured).';
+
 /** The date and time on a call's divider in downloads. */
 const CLOCK = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' });
 
@@ -340,9 +353,12 @@ function paragraphs(
   ];
   for (const entry of conversationEntries(items, terms)) {
     if (entry.kind === 'call') {
-      // Between calls only: the first call needs no divider under the title.
-      if (blocks.length === 1) continue;
-      blocks.push([{ text: `--- Call of ${CLOCK.format(entry.at)} ---`, bold: true }]);
+      // 1.5.1 (ADR-0069): every call, the first too, with its real start; and a call that heard nothing
+      // from the other side says so (a short first call looked like noise before the second one).
+      blocks.push([
+        { text: `--- Call of ${CLOCK.format(entry.at)} ---`, bold: true },
+        ...(entry.noOtherSide ? [{ text: NO_OTHER_SIDE_TEXT }] : []),
+      ]);
       continue;
     }
     if (entry.kind === 'turn') {

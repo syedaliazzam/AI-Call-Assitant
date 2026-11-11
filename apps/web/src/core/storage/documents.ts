@@ -10,6 +10,7 @@
  * Document text is the user's content and is never logged. The character cap itself is checked
  * by core/documents/limits.ts (Stage 2) before a document is added.
  */
+import { joinDocumentParts } from '../documents/parts';
 import { getDb } from './db';
 import type { StoredDocument } from './types';
 
@@ -62,7 +63,10 @@ export async function addDocument(
  * Called from: the wizard, the live screen and the warm-up (Day 3 Stages 3–5); tests
  */
 export async function listDocuments(sessionId: string): Promise<StoredDocument[]> {
-  return getDb().documents.where('sessionId').equals(sessionId).sortBy('addedAt');
+  // 1.5.1 (ADR-0069): the parts of a long document come back as one document.
+  return joinDocumentParts(
+    await getDb().documents.where('sessionId').equals(sessionId).sortBy('addedAt'),
+  );
 }
 
 /**

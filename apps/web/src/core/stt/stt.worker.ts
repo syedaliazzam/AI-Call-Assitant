@@ -21,6 +21,7 @@
  * Only verified code runs: the runtime scripts are executed from their verified bytes (through
  * Blob URLs), not fetched a second time by importScripts.
  */
+import { BacklogController, DeferredAudio } from './backlog';
 import { ChannelDecoder, type RecognizerLike } from './channel';
 import { CouplingGate } from './coupling';
 import {
@@ -33,6 +34,7 @@ import {
 import { BPE_VOCAB_NAME, BPE_VOCAB_SHA256, type DownloadFile } from './models';
 import {
   DEFAULT_BEAM_WIDTH,
+  type BacklogInfo,
   type BeamWidth,
   type ChannelId,
   type EngineStats,
@@ -352,16 +354,85 @@ function channelDecoder(
  * @param endTime Capture time on the sender's audio clock (s).
  */
 function decodeChunk(channel: ChannelId, samples: Float32Array, endTime: number): void {
+  // 1.5.1 (ADR-0069): how long this chunk waited in the queue. Both channels come from one audio
+  // clock, so the smallest (arrival − capture) seen is the transit time; anything above it is backlog.
+  const now = performance.now();
+  const offset = now - endTime * 1000;
+  clockOffsetMs = clockOffsetMs === null ? offset : Math.min(clockOffsetMs, offset);
+  const lagMs = offset - clockOffsetMs;
+  lastLagMs = lagMs;
+  secondMaxLagMs = Math.max(secondMaxLagMs, lagMs);
+  const before = backlog.state;
+  const state = backlog.observe(lagMs, now);
+  if (state !== before) {
+    // The words heard so far become a line before the other side's audio is skipped.
+    if (state === 'dropping') channels.get('them')?.flush();
+    send({ type: 'backlog', backlog: backlogInfo() });
+  }
   // v1.4 (ADR-0064): the coupling gate sees both channels. "Them" is its reference; a "You" chunk
   // waits (at most one step) for the "Them" sound up to its end, then may be silenced as echo.
   if (channel === 'them') {
+    if (state === 'dropping') {
+      droppedMs += (samples.length / 16_000) * 1000;
+      return;
+    }
     coupling.pushThem(samples, endTime);
     decodeNow('them', samples, endTime);
     releaseHeldYou(false);
     return;
   }
+  // 1.5.1: while behind, or while set-aside audio is still waiting, "You" audio goes to the back of the
+  // set-aside store (the stream must get its audio in order) and the oldest is decoded as time allows.
+  if (state !== 'ok' || deferredYou.length > 0) {
+    while (heldYou.length > 0) deferredYou.push(heldYou.shift()!);
+    deferredYou.push({ samples, endTime });
+    drainDeferredYou(backlog.catchUp(lagMs));
+    return;
+  }
   heldYou.push({ samples, endTime });
   releaseHeldYou(false);
+}
+
+/** 1.5.1 (ADR-0069): the backlog rules (backlog.ts). */
+const backlog = new BacklogController();
+/** 1.5.1: the "You" audio set aside while the worker is behind. */
+const deferredYou = new DeferredAudio();
+/** 1.5.1: the smallest (arrival − capture) seen, ms: the transit time without queueing. */
+let clockOffsetMs: number | null = null;
+/** 1.5.1: the latest chunk's backlog, and the worst in the current second, ms. */
+let lastLagMs = 0;
+let secondMaxLagMs = 0;
+/** 1.5.1: the other side's audio skipped to catch up, ms. */
+let droppedMs = 0;
+
+/**
+ * The backlog as the page sees it.
+ *
+ * @returns The numbers (no audio).
+ */
+function backlogInfo(): BacklogInfo {
+  return {
+    state: backlog.state,
+    lagMs: Math.round(lastLagMs),
+    maxLagMs: Math.round(secondMaxLagMs),
+    deferredMs: Math.round(deferredYou.ms),
+    deferredDroppedMs: Math.round(deferredYou.droppedMs),
+    droppedMs: Math.round(droppedMs),
+  };
+}
+
+/**
+ * Decodes up to `count` set-aside "You" chunks, oldest first. They skip the coupling gate: the "Them"
+ * sound they would be compared with has gone; the text echo rules still apply on the page.
+ *
+ * @param count How many chunks (Infinity for all).
+ */
+function drainDeferredYou(count: number): void {
+  for (let i = 0; i < count; i += 1) {
+    const chunk = deferredYou.shift();
+    if (!chunk) return;
+    decodeNow('you', chunk.samples, chunk.endTime);
+  }
 }
 
 /**
@@ -428,6 +499,9 @@ function sendStats(): void {
     stats.totalAudioMs = Math.max(stats.totalAudioMs, snapshot.audioMs);
   }
   stats.combinedRtf = stats.totalAudioMs > 0 ? stats.totalDecodeMs / stats.totalAudioMs : 0;
+  // 1.5.1: the backlog, and a fresh "worst in this second".
+  stats.backlog = backlogInfo();
+  secondMaxLagMs = 0;
   send({ type: 'stats', stats });
 }
 
@@ -438,7 +512,13 @@ function sendStats(): void {
  */
 function detachChannel(channel: ChannelId): void {
   // Waiting "You" chunks are decoded first: no more reference is coming, or the channel is ending.
-  releaseHeldYou(true);
+  // 1.5.1 (ADR-0069): set-aside "You" audio goes after them, so the user's lines are filled in at End.
+  if (deferredYou.length > 0) {
+    while (heldYou.length > 0) deferredYou.push(heldYou.shift()!);
+    if (channel === 'you') drainDeferredYou(Infinity);
+  } else {
+    releaseHeldYou(true);
+  }
   // A new "Them" stream (a new share) is a new path: the coupling is learnt again.
   if (channel === 'them') coupling = new CouplingGate();
   const decoder = channels.get(channel);

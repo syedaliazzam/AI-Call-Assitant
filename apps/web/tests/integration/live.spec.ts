@@ -650,11 +650,11 @@ test('error states: no connection pauses answers; signed out offers sign-in in p
   }
 });
 
-test('error states: Them silent for 20 s', async () => {
+test('error states: the other side silent (1.5.1: 15 s while the user talks)', async () => {
   for (const size of ERROR_SIZES) {
     const watched = await open('live-errors', size);
     await expect(
-      watched.page.getByRole('alert').filter({ hasText: 'Nothing heard from Them' }),
+      watched.page.getByRole('alert').filter({ hasText: "We can't hear the other side" }),
     ).toBeVisible();
     // Day 6 Stage 4: the stuck-engine watchdog's note (shown here alongside the silent notice).
     await expect(

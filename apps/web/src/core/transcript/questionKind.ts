@@ -73,6 +73,64 @@ const NO_VOWEL = /^[bcdfghjklmnpqrstvwxz]{3,}$/i;
  * @returns The words.
  * Called from: looksGarbled(), lineKind()
  */
+/**
+ * 1.5.1 (ADR-0069): words that carry nothing when they are all that is left of a greeting: fillers,
+ * agreement sounds and forms of address. A call on 11 Nov 2026 got a card for "Alright, uh How are you
+ * doing?" because two of them and the "?" were left.
+ */
+const LEFTOVER_FILLERS = new Set([
+  'uh',
+  'um',
+  'er',
+  'erm',
+  'ah',
+  'oh',
+  'so',
+  'well',
+  'okay',
+  'ok',
+  'alright',
+  'right',
+  'yeah',
+  'yes',
+  'hey',
+  'hi',
+  'hello',
+  'and',
+  'then',
+  'now',
+  'great',
+  'good',
+  'cool',
+  'man',
+  'guys',
+  'everyone',
+  'there',
+  'sir',
+  'madam',
+  'buddy',
+  'mate',
+  'bro',
+  'dude',
+  'friend',
+]);
+
+/**
+ * 1.5.1 (ADR-0069): what is left of a greeting once fillers, commas and the gaps of the removed phrase
+ * are gone, so a lone "?", stray commas and fillers do not make the three words a question needs
+ * (question.ts questionSpan counts every space-separated piece, the "?" left alone included).
+ *
+ * @param rest The text left once greetings and instructions are removed.
+ * @returns The words that carry something, with a question mark attached to the word before it.
+ */
+function contentOnly(rest: string): string {
+  return rest
+    .replace(/[\p{L}\p{N}']+/gu, (word) => (LEFTOVER_FILLERS.has(word.toLowerCase()) ? '' : word))
+    .replace(/[,;:]+/g, ' ')
+    .replace(/\s+([?.!])/g, '$1')
+    .trim();
+}
+
 function wordsOf(text: string): string[] {
   return text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
 }
@@ -115,7 +173,9 @@ export function lineKind(text: string): LineKind {
       .replace(META_PHRASES, ' ')
       .replace(GREETING_PHRASES, ' ')
       .replace(INSTRUCTION_PHRASES, ' ');
-    return questionSpan(rest) !== null || REQUEST_PHRASES.test(rest) ? 'question' : 'meta';
+    return questionSpan(contentOnly(rest)) !== null || REQUEST_PHRASES.test(rest)
+      ? 'question'
+      : 'meta';
   }
   // A greeting or an instruction with a real question in it is the question.
   const rest = trimmed.replace(GREETING_PHRASES, ' ').replace(INSTRUCTION_PHRASES, ' ');
@@ -123,7 +183,10 @@ export function lineKind(text: string): LineKind {
   const hadGreeting = trimmed.search(GREETING_PHRASES) !== -1;
   if (hadGreeting || hadInstruction) {
     // A "?" alone says nothing: "How are you doing today?" has only its mark left, or a name with it.
-    if (questionSpan(rest) !== null || (rest.includes('?') && wordsOf(rest).length >= 2)) {
+    // 1.5.1 (ADR-0069): fillers and forms of address left over ("Alright, uh How are you doing?",
+    // "Man, can you hear me, man?") do not make the leftover "?" a question.
+    const content = wordsOf(rest).filter((word) => !LEFTOVER_FILLERS.has(word));
+    if (questionSpan(contentOnly(rest)) !== null || (rest.includes('?') && content.length >= 2)) {
       return 'question';
     }
     // A few words left over ("so", "okay then", a name) do not make it anything else.

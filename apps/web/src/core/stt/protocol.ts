@@ -116,6 +116,24 @@ export interface EngineStats {
   totalAudioMs: number;
   /** Size of the worker's WebAssembly memory, in bytes (the bulk of its memory use). */
   wasmMemoryBytes: number;
+  /** 1.5.1 (ADR-0069): the worker's backlog now (absent from a worker older than 1.5.1). */
+  backlog?: BacklogInfo;
+}
+
+/** 1.5.1 (ADR-0069): how far behind the speech worker is, and what it does about it (backlog.ts). */
+export interface BacklogInfo {
+  /** 'ok', 'you-paused' (the user's audio set aside) or 'dropping' (the other side's audio skipped). */
+  state: 'ok' | 'you-paused' | 'dropping';
+  /** How long the latest chunk waited in the worker's queue, ms. */
+  lagMs: number;
+  /** The worst wait in the last second, ms. */
+  maxLagMs: number;
+  /** "You" audio set aside and not yet decoded, ms. */
+  deferredMs: number;
+  /** "You" audio dropped because too much was set aside, ms (cumulative). */
+  deferredDroppedMs: number;
+  /** The other side's audio skipped to catch up, ms (cumulative). */
+  droppedMs: number;
 }
 
 /** Page → worker messages. */
@@ -292,6 +310,12 @@ export type FromWorker =
       speechEnd: number;
       /** The last 8 s of audio up to just after that end. Never stored or logged. */
       recent: Float32Array;
+    }
+  | {
+      /** 1.5.1 (ADR-0069): the backlog state changed (also in every 'stats'). */
+      type: 'backlog';
+      /** The backlog now. */
+      backlog: BacklogInfo;
     }
   | {
       /** Updated statistics (about once a second while loaded). */

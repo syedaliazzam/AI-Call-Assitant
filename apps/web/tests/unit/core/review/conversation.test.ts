@@ -14,6 +14,7 @@ import {
   transcriptFileName,
   transcriptPdf,
   transcriptText,
+  NO_OTHER_SIDE_TEXT,
 } from '@/core/review/conversation';
 import { wrapText, writePdf } from '@/core/review/pdf';
 import type { StoredAnswer, StoredUtterance } from '@/core/storage/types';
@@ -361,14 +362,25 @@ describe('calls (v1.1.0, item 24)', () => {
     expect(orderEntries(entries, false).map(nameOf)).toEqual(['b', 'a', 'x']);
   });
 
-  it('the download has a divider between calls, and the contact name on each turn', () => {
+  it('the download has a divider before each call (1.5.1: the first too), and the contact name on each turn', () => {
     const text = transcriptText(
       { company: 'Harbor Lane', role: '', contactName: 'Dana' },
       conversationItems([savedLine('a', 0), savedLine('b', GAP)], []),
     );
-    expect(text.match(/--- Call of /g)).toHaveLength(1);
+    expect(text.match(/--- Call of /g)).toHaveLength(2);
     expect(text).toContain('Dana  00:00\nInvented words.');
     expect(text).not.toContain('Them  ');
     expect(text).not.toContain('()');
+  });
+});
+
+describe('1.5.1 (ADR-0069): a call that heard nothing from the other side', () => {
+  it('is flagged under its divider, even when it is the only call', () => {
+    const youOnly = conversationItems([line('a', 'you', 'Invented words.', 0)], []);
+    const entries = conversationEntries(youOnly);
+    expect(entries[0]).toMatchObject({ kind: 'call', noOtherSide: true });
+    const text = transcriptText({ company: 'Harbor Lane', role: '', contactName: '' }, youOnly);
+    expect(text).toContain('--- Call of ');
+    expect(text).toContain(NO_OTHER_SIDE_TEXT);
   });
 });

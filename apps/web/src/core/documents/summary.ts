@@ -24,6 +24,7 @@ import type {
 import { sortDocuments, toSessionContext } from '../answer/warm';
 import { getSession, updateSession } from '../storage/sessions';
 import type { Session, StoredDocument, StoredDocumentsSummary } from '../storage/types';
+import { requestBody } from '../answer/answerClient';
 
 /**
  * The documents the summary covers: every document but the CV, in prompt order.
@@ -152,10 +153,15 @@ async function writeSummary(
   const startedAt = performance.now();
   let reply: DocumentsSummaryResponse;
   try {
+    // 1.5.1 (ADR-0069): gzipped when large (the documents are about 0.5–1.9 MB as JSON).
+    const sent = await requestBody(JSON.stringify(body));
     const response = await (deps.fetchImpl ?? fetch)('/api/summary', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: {
+        'content-type': 'application/json',
+        ...(sent.gzip ? { 'content-encoding': 'gzip' } : {}),
+      },
+      body: sent.data,
     });
     if (!response.ok) {
       console.warn('summary: failed', { sessionId, status: response.status });

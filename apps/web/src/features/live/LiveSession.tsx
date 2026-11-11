@@ -113,10 +113,14 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
         // Loaded once: the whole call sends the same lessons, so the rules block stays cached.
         loadActiveLessons(session.type),
       ]);
-      // Not awaited: warmSession() never throws, and the screen does not wait for Claude.
-      if (!cancelled) void warmSession(session, documents, { lessons });
-      // Not awaited either (never throws): the summary the notes and Ask AI read, kept on the session.
-      if (!cancelled) void ensureDocumentsSummary(session, documents);
+      // Not awaited: warmSession() never throws, and the screen does not wait for Claude. 1.5.1
+      // (ADR-0069): the summary the notes and Ask AI read (kept on the session) is asked for after the
+      // warm-up, so the two large uploads do not compete with each other at the start of a call.
+      if (!cancelled) {
+        void warmSession(session, documents, { lessons }).then(() =>
+          ensureDocumentsSummary(session, documents),
+        );
+      }
       const hotwords = buildHotwords(session, documents);
       return {
         state: 'ready',

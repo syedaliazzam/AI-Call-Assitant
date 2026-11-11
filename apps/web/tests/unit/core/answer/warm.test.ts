@@ -9,7 +9,12 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AnswerDone, AnswerHandlers, streamAnswer } from '@/core/answer/answerClient';
-import { sortDocuments, toSessionContext, warmSession } from '@/core/answer/warm';
+import {
+  forgetRecentWarmUps,
+  sortDocuments,
+  toSessionContext,
+  warmSession,
+} from '@/core/answer/warm';
 import type { Session, StoredDocument } from '@/core/storage/types';
 
 /** An invented session. */
@@ -122,6 +127,9 @@ describe('toSessionContext', () => {
 });
 
 describe('warmSession', () => {
+  // 1.5.1: each test starts with no recent warm-up to reuse.
+  afterEach(() => forgetRecentWarmUps());
+
   it('sends mode warm with the session tier and resolves with the usage', async () => {
     vi.spyOn(console, 'info').mockImplementation(() => undefined);
     const send = fakeSend((handlers) => handlers.onDone(DONE));
@@ -201,5 +209,31 @@ describe('the CV first (ADR-0067)', () => {
     const one = [doc('b', 1), doc('a', 1), { ...doc('cv', 5), kind: 'resume' as const }];
     expect(sortDocuments(one).map((document) => document.id)).toEqual(['cv', 'a', 'b']);
     expect(sortDocuments([...one].reverse())).toEqual(sortDocuments(one));
+  });
+});
+
+describe('1.5.1 (ADR-0069): one warm-up per open', () => {
+  afterEach(() => forgetRecentWarmUps());
+
+  it('reuses a warm-up for the same session within a minute, and sends again after a failure', async () => {
+    const ok = vi.fn(fakeSend((h) => h.onDone(DONE)));
+    await warmSession(SESSION, [doc('a', 1)], { send: ok });
+    await warmSession(SESSION, [doc('a', 1)], { send: ok });
+    expect(ok).toHaveBeenCalledTimes(1);
+    // Other documents are a different warm-up.
+    await warmSession(SESSION, [doc('b', 1)], { send: ok });
+    expect(ok).toHaveBeenCalledTimes(2);
+    // The idle re-warm (with the conversation) always runs.
+    await warmSession(SESSION, [doc('a', 1)], { send: ok, conversation: [] });
+    await warmSession(SESSION, [doc('a', 1)], {
+      send: ok,
+      conversation: [{ lines: [], answers: [] } as never],
+    });
+    expect(ok).toHaveBeenCalledTimes(3);
+    forgetRecentWarmUps();
+    const failing = vi.fn(fakeSend((h) => h.onError({ code: 'internal', message: 'x' })));
+    await warmSession(SESSION, [doc('c', 1)], { send: failing });
+    await warmSession(SESSION, [doc('c', 1)], { send: failing });
+    expect(failing).toHaveBeenCalledTimes(2);
   });
 });

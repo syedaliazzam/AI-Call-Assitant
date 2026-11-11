@@ -706,6 +706,33 @@ export function CompactView(props: CompactViewProps) {
         )}
       </div>
 
+      {/* 1.5.1 (ADR-0069): what the call hears: a silent channel (with its device list one click
+          away), or the speech worker catching up. A bar of its own, so it shows whatever panels are open. */}
+      {state?.callNotice && !state.ended && !icon && (
+        <div
+          className={`${piece} flex shrink-0 items-center gap-2 px-3 py-1.5 text-[13px] ${BARS_WIDTH}`}
+          {...{ [BARS_ATTRIBUTE]: '' }}
+        >
+          <span
+            role={state.callNotice.action ? 'alert' : 'status'}
+            className={`min-w-0 flex-1 truncate ${state.callNotice.action ? 'text-ui-warning' : 'text-ui-muted'}`}
+            title={state.callNotice.detail}
+          >
+            {state.callNotice.text}
+          </span>
+          {state.callNotice.action && (
+            <button
+              type="button"
+              data-popup-button=""
+              className="h-7 shrink-0 rounded-control bg-ui-overlay-button px-2 text-[13px] font-medium hover:bg-ui-overlay-button-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]"
+              onClick={() => setPopup(state.callNotice!.action!.list)}
+            >
+              {state.callNotice.action.label}
+            </button>
+          )}
+        </div>
+      )}
+
       {props.chatOpen && !collapsed && (
         // v1.3.2: a bar (takes clicks in Click-through mode) that keeps the keyboard: it is for typing.
         <div

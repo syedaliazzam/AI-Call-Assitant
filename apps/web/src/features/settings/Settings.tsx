@@ -41,6 +41,7 @@ import { PageShell } from '@/ui/PageShell';
 import { Toggle } from '@/ui/Toggle';
 import { AnswerPrefsSetting } from './AnswerPrefsSetting';
 import { AutoAnswerSetting } from './AutoAnswerSetting';
+import { CallTimingLog } from './CallTimingLog';
 import { CompanySuggestionsSetting } from './CompanySuggestionsSetting';
 import { DataTransfer } from './DataTransfer';
 import { HotkeyList } from './HotkeyList';
@@ -249,7 +250,11 @@ export function Settings({ isAdmin }: SettingsProps) {
 
       {/* v1.0.1 (ADR-0034): the opt-in accurate engine (desktop app only). */}
       <Section title="Transcription">
-        <TranscriptionSetting />
+        <div className="flex flex-col gap-5">
+          <TranscriptionSetting />
+          {/* 1.5.1 (ADR-0069): the device-side call timing log, for the re-test. */}
+          <CallTimingLog />
+        </div>
       </Section>
 
       {/* Desktop 1.5.0 (ADR-0068): meeting recording. */}

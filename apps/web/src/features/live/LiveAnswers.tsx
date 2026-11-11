@@ -70,6 +70,7 @@ import { openDashboard } from '@/features/sync/dashboardLink';
 import { useSyncAccount } from '@/features/sync/SyncScope';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
 import type { CallRecording } from './useCallRecording';
+import type { CallNotice } from '@/core/live/callNotice';
 
 /** Props for LiveAnswers. */
 export interface LiveAnswersProps {
@@ -133,6 +134,8 @@ export interface LiveAnswersProps {
   onMic?: (deviceId: string) => void;
   /** v1.1.0: the microphone in use ('' for the system's default). */
   micDeviceId?: string;
+  /** 1.5.1 (ADR-0069): the call's notice about what it hears (LivePage.tsx), shown in the overlay. */
+  callNotice?: CallNotice | null;
   /** v1.1.0: where "Them" comes from, in words. */
   themSourceLabel?: string | null;
   /** v1.1.0: "Still in a call?" or paused (ADR-0044). */
@@ -158,8 +161,11 @@ const OVERLAY_GROUPS = 150;
 /** How many hidden echo lines in a call before the one-time "Use headphones" hint shows. */
 const HEADPHONES_HINT_AFTER = 3;
 
-/** How often the overlay's level bars get new levels, in ms: they change every 50 ms. */
-const LEVELS_EVERY_MS = 120;
+/**
+ * How often the overlay's level bars get new levels, in ms: they change every 50 ms. 1.5.1 (ADR-0069):
+ * 250 (was 120): each message re-renders the overlay, which competed with the live speech engine.
+ */
+const LEVELS_EVERY_MS = 250;
 
 /** What the transcript's "Answer this" buttons need from the answers (v1.0.2). */
 export interface AnswerThisBridge {
@@ -369,6 +375,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       screenshotSendCount,
       hygiene: props.hygiene ?? 'ok',
       headphonesHint,
+      ...(props.callNotice ? { callNotice: props.callNotice } : {}),
       sessionId: props.session.id,
       micDeviceId: props.micDeviceId ?? '',
       ...(props.themSourceLabel ? { themSourceLabel: props.themSourceLabel } : {}),
@@ -421,6 +428,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     screenshotSendCount,
     props.hygiene,
     headphonesHint,
+    props.callNotice,
     props.session.id,
     props.session.contactName,
     props.micDeviceId,
@@ -507,8 +515,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
     channel.current = link;
     link.onCommand((command) => {
       if (command.type === 'hello') link.publish(compactStateRef.current);
-      else if (command.type === 'answer') actions.current.answer();
-      else if (command.type === 'screenshot') actions.current.screenshot();
+      // 1.5.1: the overlay's buttons (the call timing log records what asked).
+      else if (command.type === 'answer') actions.current.answer('button');
+      else if (command.type === 'screenshot')
+        actions.current.screenshot(undefined, 'screenshot-button');
       else if (command.type === 'clear') clearView.current();
       else if (command.type === 'stop') actions.current.stop();
       else if (command.type === 'clear-transcript') clearTranscript.current();
@@ -548,7 +558,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       } else if (command.type === 'end') onEnd.current();
       else if (command.type.startsWith('record-')) recordCommand(command);
       else if (command.type === 'chat') actions.current.chat(command.question);
-      else if (command.type === 'chat-screenshot') actions.current.screenshot(command.question);
+      else if (command.type === 'chat-screenshot')
+        actions.current.screenshot(command.question, 'screenshot-chat');
       else if (command.type === 'style') {
         setStyle(command.style);
         // Kept with the session, so a reconnect and the review show what was used last.
@@ -604,7 +615,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
   useEffect(
     () =>
       getPlatform().onHotkey((action) => {
-        if (action === 'answer') actions.current.answer();
+        if (action === 'answer') actions.current.answer('hotkey');
         else if (action === 'chat') {
           setFocusSignal((count) => count + 1);
           setChatCount((count) => count + 1);
@@ -621,7 +632,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
         else if (action === 'clear-transcript') clearTranscript.current();
         else if (action === 'prev') actions.current.prev();
         else if (action === 'next') actions.current.next();
-        else if (action === 'screenshot') actions.current.screenshot();
+        else if (action === 'screenshot')
+          actions.current.screenshot(undefined, 'screenshot-hotkey');
         else if (action === 'script-bar') {
           // Ctrl+Alt+S (v1.0.2): the overlay becomes the script bar, or full again. The overlay
           // must be open for it to show.
@@ -776,9 +788,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
       onEnd={props.onEnd}
       ending={props.ending}
       mac={mac}
-      onAnswer={answers.answer}
+      onAnswer={() => answers.answer('button')}
       answering={answering}
-      onScreenshot={() => answers.screenshot()}
+      onScreenshot={() => answers.screenshot(undefined, 'screenshot-button')}
       capturing={answers.capturing}
       onChat={() => setFocusSignal((count) => count + 1)}
       onBack={backToCompact}
@@ -845,7 +857,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       <ChatBox
         ref={chatBox}
         onSend={answers.chat}
-        onAskScreen={answers.screenshot}
+        onAskScreen={(question) => answers.screenshot(question, 'screenshot-chat')}
         target={chatTarget}
         focusSignal={focusSignal}
         onTarget={(target) => {
@@ -868,7 +880,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         <button
           type="button"
           className={`${BIG_BUTTON} bg-ui-primary text-ui-on-primary hover:bg-ui-primary-hover`}
-          onClick={answers.answer}
+          onClick={() => answers.answer('button')}
           disabled={answering || props.ending}
           title="Answer the latest question"
         >
@@ -878,7 +890,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
         <button
           type="button"
           className={`${BIG_BUTTON} border border-ui-border bg-ui-surface text-ui-text hover:bg-ui-hover`}
-          onClick={() => answers.screenshot()}
+          onClick={() => answers.screenshot(undefined, 'screenshot-button')}
           disabled={answers.capturing || props.ending}
           title="Answer from a screenshot of your screen"
         >

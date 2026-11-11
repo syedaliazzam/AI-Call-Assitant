@@ -14,6 +14,7 @@
 import { liveQuery } from 'dexie';
 import { getDb } from './db';
 import type { LibraryKind, Session, SessionStatus, SessionType, StoredDocument } from './types';
+import { joinDocumentParts, rowIdsOf, splitDocumentText } from '../documents/parts';
 
 /**
  * How long a 'live' session may go without activity before the dashboard shows it as 'ended':
@@ -223,17 +224,25 @@ export interface DocumentText {
  * @returns The row.
  * Called from: createSessionWithDocuments(), updateSessionWithDocuments()
  */
-function documentRow(document: DocumentText, sessionId: string, addedAt: number): StoredDocument {
-  return {
-    id: crypto.randomUUID(),
+function documentRows(
+  document: DocumentText,
+  sessionId: string,
+  addedAt: number,
+): StoredDocument[] {
+  // 1.5.1 (ADR-0069): a document longer than one row holds is stored as parts (core/documents/parts.ts).
+  const texts = splitDocumentText(document.text);
+  const group = crypto.randomUUID();
+  return texts.map((text, index) => ({
+    id: index === 0 ? group : crypto.randomUUID(),
     sessionId,
     name: document.name,
-    text: document.text,
-    chars: document.text.length,
+    text,
+    chars: text.length,
     addedAt,
     ...(document.kind ? { kind: document.kind } : {}),
     ...(document.sourceId ? { sourceId: document.sourceId } : {}),
-  };
+    ...(texts.length > 1 ? { part: { group, index, count: texts.length } } : {}),
+  }));
 }
 
 /**
@@ -257,7 +266,7 @@ export async function createSessionWithDocuments(
     const session = await createSession(input, now);
     // One millisecond apart, so the documents keep the order they were added in.
     await db.documents.bulkAdd(
-      documents.map((document, i) => documentRow(document, session.id, now + i)),
+      documents.flatMap((document, i) => documentRows(document, session.id, now + i)),
     );
     return session;
   });
@@ -286,14 +295,12 @@ export async function updateSessionWithDocuments(
   const db = getDb();
   return db.transaction('rw', db.sessions, db.documents, async () => {
     const session = await updateSession(id, changes);
-    // Only this session's documents can be removed, whatever ids are passed in.
-    const removable = await db.documents
-      .where('id')
-      .anyOf([...removeIds])
-      .filter((document) => document.sessionId === id)
-      .primaryKeys();
+    // Only this session's documents can be removed, whatever ids are passed in; a long document goes
+    // with all its parts (1.5.1).
+    const rows = await db.documents.where('sessionId').equals(id).toArray();
+    const removable = removeIds.flatMap((removeId) => rowIdsOf(rows, removeId));
     await db.documents.bulkDelete(removable);
-    await db.documents.bulkAdd(add.map((document, i) => documentRow(document, id, now + i)));
+    await db.documents.bulkAdd(add.flatMap((document, i) => documentRows(document, id, now + i)));
     return session;
   });
 }
@@ -313,7 +320,9 @@ export async function duplicateSession(id: string, now = Date.now()): Promise<Se
   return db.transaction('rw', db.sessions, db.documents, async () => {
     const source = await db.sessions.get(id);
     if (!source) throw new Error('SESSION_NOT_FOUND');
-    const documents = await db.documents.where('sessionId').equals(id).sortBy('addedAt');
+    const documents = joinDocumentParts(
+      await db.documents.where('sessionId').equals(id).sortBy('addedAt'),
+    );
     const {
       id: _id,
       createdAt: _createdAt,
@@ -323,7 +332,7 @@ export async function duplicateSession(id: string, now = Date.now()): Promise<Se
     } = source;
     const copy = await createSession(input, now);
     await db.documents.bulkAdd(
-      documents.map((document, i) => documentRow(document, copy.id, now + i)),
+      documents.flatMap((document, i) => documentRows(document, copy.id, now + i)),
     );
     return copy;
   });
