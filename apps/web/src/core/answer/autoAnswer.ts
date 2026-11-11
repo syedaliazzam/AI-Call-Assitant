@@ -41,10 +41,11 @@ export const TURN_WAIT_MS = 500;
 export const TURN_FINISHED_AT = 0.8;
 
 /**
- * v1.4: the longest extra wait for the accurate engine's words, ms. 1.5.1 (ADR-0069): 1 s (was 1.5 s), and
- * only for a rewrite already running (refineQueue.ts marks a line only while its rewrite runs).
+ * v1.4: the longest extra wait for the accurate engine's words, ms. 1.5.1 (ADR-0069): 0.5 s (was 1.5 s, then
+ * 1 s), and only for a rewrite already running (refineQueue.ts marks a line only while its rewrite runs).
+ * At 1 s, auto-answer's first word came 3.7 s after a question (target 3.5 s).
  */
-export const ACCURATE_WAIT_MS = 1_000;
+export const ACCURATE_WAIT_MS = 500;
 
 /** v1.4: new words starting within this long after an auto-answer started continue its question, ms. */
 export const RERUN_WINDOW_MS = 4_000;

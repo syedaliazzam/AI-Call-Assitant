@@ -140,9 +140,11 @@ describe('autoAnswerDue: when', () => {
     expect(autoAnswerDue(state(lines), T + UNFINISHED_PAUSE_MS)?.kind).toBe('answer');
   });
 
-  it('waits up to 1.5 s more while the accurate engine rewrites a line', () => {
+  it('waits up to 0.5 s more while the accurate engine rewrites a line (1.5.1)', () => {
+    expect(ACCURATE_WAIT_MS).toBe(500);
     const lines = [line('a', 'them', QUESTION, T, { refining: true })];
     expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS)).toBeNull();
+    expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS + ACCURATE_WAIT_MS - 1)).toBeNull();
     expect(autoAnswerDue(state(lines), T + AUTO_PAUSE_MS + ACCURATE_WAIT_MS)?.kind).toBe('answer');
     // Done earlier: no wait beyond the pause.
     expect(autoAnswerDue(state([line('a', 'them', QUESTION, T)]), T + AUTO_PAUSE_MS)?.kind).toBe(
