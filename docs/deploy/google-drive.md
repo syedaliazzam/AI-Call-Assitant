@@ -121,6 +121,7 @@ pnpm --filter web db:migrate --prod
 
 | Settings / card says | Cause | Fix |
 |---|---|---|
+| The sign-in page appears after Connect (desktop app) | Connect opens in the system browser, which is not signed in to Paramount AI | Sign in there, then press Connect Google Drive again (in the app or in the browser's Settings) |
 | Google Drive is not set up on this server yet | `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` missing in this deployment | Add them, deploy |
 | Google refused the connection / redirect_uri_mismatch on Google's page | The redirect URI for this address is not registered | Add it exactly (step 4) |
 | Google Picker could not be loaded / Picker shows an error | Picker key missing, restricted to other sites, or Picker API not enabled; or `NEXT_PUBLIC_GOOGLE_APP_ID` is the project id instead of the number | Steps 2, 5, 6 |
