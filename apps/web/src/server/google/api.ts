@@ -8,7 +8,7 @@
  *          comes from the signed-in session, read from the database, never from the request. POSTs must
  *          come from a Kite address (Origin check) on top of the SameSite session cookie.
  * Used by: app/api/google/{connect,callback,status,access-token,picker-config,folder,settings,disconnect}/route.ts,
- *          app/api/drive/{notify,notifications,test-email}/route.ts
+ *          app/api/drive/{notify,notifications,test-email}/route.ts, app/api/cron/drive-flush/route.ts
  * Depends on: zod, @kite/shared, src/server/auth.ts, src/server/db.ts, src/server/env.ts,
  *             src/server/calldata/crypto.ts, src/server/google/{config,oauth,store,tokens,email,rateLimit}.ts
  * Architecture: ADR-0072; architecture §7.2, §8.1, §8.2
@@ -16,6 +16,7 @@
  * Logs carry the route and a status or code only: never tokens, ids, addresses, titles or file names.
  */
 import 'server-only';
+import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import {
   DRIVE_NOTIFICATIONS_SHOWN,
@@ -27,6 +28,7 @@ import {
   isDriveLink,
   type DriveAccessTokenResponse,
   type DriveNotificationItem,
+  type DriveNotificationStatus,
   type DriveNotificationsResponse,
   type DriveNotifyResponse,
   type DrivePickerConfig,
@@ -54,18 +56,23 @@ import {
 } from './oauth';
 import { createRateLimiter, type RateLimiter } from './rateLimit';
 import {
-  claimNotification,
+  claimCollecting,
   claimRetry,
   deleteConnection,
   finishNotification,
   getConnection,
   listNotifications,
+  listOverdue,
+  readRecord,
   readRefreshToken,
   saveConnection,
   setFolder,
   updateSettings,
+  writeRecord,
   type NotificationContent,
+  type NotificationRecord,
 } from './store';
+import { REPORT_WAIT_MS, emailDue, isComplete, mergeReport, recipientsFor } from './report';
 import { accessTokenFor, forgetAccessToken } from './tokens';
 
 /** Where Settings shows the Google Drive section. */
@@ -97,6 +104,8 @@ export interface GoogleDeps {
   fetch: FetchLike;
   /** Sends email over SMTP (nodemailer; tests pass a fake). */
   mailer: Mailer;
+  /** CRON_SECRET (Vercel sends it to the daily job), or null when not set. */
+  cronSecret(): string | null;
   /** The clock (Unix ms). */
   now(): number;
   /** Rate limits. */
@@ -130,6 +139,11 @@ export const realGoogleDeps: GoogleDeps = {
   },
   fetch: (input, init) => fetch(input, init),
   mailer: smtpMailer,
+  // At least 16 characters, so a placeholder value never opens the job.
+  cronSecret: () => {
+    const secret = process.env.CRON_SECRET?.trim();
+    return secret && secret.length >= 16 ? secret : null;
+  },
   now: () => Date.now(),
   // 30 tokens a minute is far above what uploads need (one per file, cached an hour). Test emails:
   // 3 in 10 minutes per account.
@@ -330,6 +344,8 @@ export function handleStatus(
   deps: GoogleDeps = realGoogleDeps,
 ): Promise<Response> {
   return withUser(request, deps, 'status', { post: false, limit: 'other' }, async ({ user }) => {
+    // Sessions that waited 24 hours for a recording get their email now (cheap: an indexed query).
+    if (deps.google()) await flushOverdue(deps, user.id).catch(() => 0);
     const row = deps.google() ? await getConnection(deps.db(), user.id) : null;
     const body: DriveStatusResponse = {
       configured: deps.google() !== null,
@@ -613,6 +629,9 @@ export function handleDisconnect(
   });
 }
 
+/** A Drive file id. */
+const driveId = z.string().regex(/^[A-Za-z0-9_-]{5,200}$/);
+
 /** POST /api/drive/notify's body: structured fields only, each bounded. */
 const notifySchema = z
   .object({
@@ -630,21 +649,153 @@ const notifySchema = z
           .object({
             name: z.string().min(1).max(MAX_SAVED_NAME_CHARS),
             folder: z.enum(['Recordings', 'Transcripts']),
+            key: z
+              .string()
+              .regex(/^(rec|call):[A-Za-z0-9:-]{1,120}$/)
+              .optional(),
+            fileId: driveId.optional(),
+            kind: z
+              .enum(['recording', 'stereo', 'transcript-txt', 'transcript-pdf', 'notes-pdf'])
+              .optional(),
+            part: z.number().int().min(1).max(999).optional(),
           })
           .strict(),
       )
-      .min(1)
       .max(MAX_SAVED_FILES),
     folderUrl: z.string().max(400).refine(isDriveLink),
     timeZone: z.string().max(64),
     alsoNotify: addressList.nullable(),
+    expectedRecordings: z
+      .array(
+        z
+          .object({
+            id: z.uuid(),
+            part: z.number().int().min(1).max(999),
+            stereo: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(MAX_SAVED_FILES),
+    goneRecordings: z.array(z.uuid()).max(MAX_SAVED_FILES),
+    manualOnly: z.boolean(),
   })
   .strict();
 
 /**
- * POST /api/drive/notify: a session's uploads all finished. Records it once per session and, when the
- * email is set up and switched on, sends one email to the person and the team list. A repeat (a
- * retried upload, a second call, another device) sends nothing and answers the first one's state.
+ * Sends a session's one email now: works out the recipients (the person, then the session's own list or
+ * the Settings list), notes on the record whether the recording is still missing, sends it, and records
+ * the outcome.
+ * @param deps      The dependencies.
+ * @param userId    The account.
+ * @param email     The person's address.
+ * @param sessionId The session.
+ * @param content   The session's record.
+ * @param attempt   The attempt number (the Message-ID).
+ * @param sender    The SMTP settings.
+ * @returns 'sent' or 'failed'.
+ */
+async function deliver(
+  deps: GoogleDeps,
+  userId: string,
+  email: string,
+  sessionId: string,
+  content: NotificationContent,
+  attempt: number,
+  sender: EmailConfig,
+): Promise<'sent' | 'failed'> {
+  const connection = await getConnection(deps.db(), userId);
+  const recipients = recipientsFor(email, content, connection?.alsoNotify ?? []);
+  const recordingPending = !isComplete(content);
+  const marks = { recipients, ...(recordingPending ? { recordingPending: true } : {}) };
+  await writeRecord(deps.db(), deps.keys(), userId, sessionId, (current) => ({
+    ...(current ?? content),
+    ...marks,
+  }));
+  const outcome = await sendSavedEmail(
+    deps.mailer,
+    sender,
+    { ...content, ...marks },
+    emailMessageId(userId, sessionId, attempt, sender.from),
+  );
+  await finishNotification(
+    deps.db(),
+    userId,
+    sessionId,
+    outcome === 'sent' ? { status: 'sent' } : { status: 'failed', error: outcome },
+    new Date(deps.now()),
+  );
+  console.info('drive: email', { outcome, recipients: recipients.length, recordingPending });
+  return outcome === 'sent' ? 'sent' : 'failed';
+}
+
+/**
+ * Sends a session's email if it is due: the record is still collecting and either complete or 24 hours
+ * old. Only one request can take a record (store.claimCollecting), so restarts and devices reporting
+ * together never send twice. Without SMTP settings it becomes "not-set-up" (sent by hand from Settings);
+ * with the email switched off, "off".
+ * @param deps      The dependencies.
+ * @param userId    The account.
+ * @param email     The person's address.
+ * @param sessionId The session.
+ * @param record    The record as just read or written.
+ * @returns Its state afterwards.
+ */
+async function sendIfDue(
+  deps: GoogleDeps,
+  userId: string,
+  email: string,
+  sessionId: string,
+  record: NotificationRecord,
+): Promise<DriveNotificationStatus> {
+  if (record.status !== 'collecting') return record.status;
+  const due = emailDue(record.content, record.createdAt.getTime(), deps.now());
+  if (!due) return 'collecting';
+  const connection = await getConnection(deps.db(), userId);
+  const sender = deps.email();
+  const target = !sender
+    ? 'not-set-up'
+    : connection && !connection.emailEnabled
+      ? 'off'
+      : 'pending';
+  const attempt = await claimCollecting(deps.db(), userId, sessionId, target);
+  if (attempt === null) {
+    return (await readRecord(deps.db(), deps.keys(), userId, sessionId))?.status ?? 'pending';
+  }
+  if (target !== 'pending' || !sender) {
+    console.info('drive: email not sent', { status: target });
+    return target;
+  }
+  return deliver(deps, userId, email, sessionId, record.content, attempt, sender);
+}
+
+/**
+ * Sends the emails of sessions that have waited 24 hours for a recording, without it. Failures are
+ * logged by name and skipped, so one bad record never blocks the others.
+ * @param deps   The dependencies.
+ * @param userId One account (on its requests), or null for every account (the daily job).
+ * @returns How many were looked at.
+ * Called from: handleStatus(), handleNotifications(), handleFlushCron()
+ */
+export async function flushOverdue(deps: GoogleDeps, userId: string | null): Promise<number> {
+  const due = await listOverdue(deps.db(), new Date(deps.now() - REPORT_WAIT_MS), userId);
+  for (const item of due) {
+    try {
+      const record = await readRecord(deps.db(), deps.keys(), item.userId, item.sessionId);
+      if (record) await sendIfDue(deps, item.userId, item.email, item.sessionId, record);
+    } catch (error) {
+      console.error('drive: overdue email failed', {
+        error: error instanceof Error ? error.name : 'unknown',
+      });
+    }
+  }
+  return due.length;
+}
+
+/**
+ * POST /api/drive/notify: a device's report of what it saved for a session. Merged with the session's
+ * other reports (other devices, retries, a later recording backfill); the session's one email goes
+ * when every expected file is in, or 24 hours after the first report with "Recording upload pending".
+ * A record already sent, switched off or waiting for "Send email" only gains the new files.
  * @param request The request (body: DriveNotifyRequest).
  * @param deps    The dependencies (tests pass fakes).
  * @returns 200 DriveNotifyResponse; 400; 404 not connected.
@@ -657,58 +808,27 @@ export function handleNotify(
   return withUser(request, deps, 'notify', { post: true, limit: 'other' }, async ({ user }) => {
     const body = await readBody(request, notifySchema);
     if (!body) return failure(400, 'invalid_request', 'The notification is not valid.');
-    const row = await getConnection(deps.db(), user.id);
-    if (!row) return failure(404, 'not_connected', 'Connect Google Drive first.');
-    const sender = deps.email();
-    const recipients = [
-      ...new Set([user.email.toLowerCase(), ...(body.alsoNotify ?? row.alsoNotify)]),
-    ];
-    const content: NotificationContent = {
-      title: body.title,
-      callStartedAt: body.callStartedAt,
-      durationMs: body.durationMs,
-      files: body.files,
-      folderUrl: body.folderUrl,
-      timeZone: body.timeZone,
-      recipients,
-    };
-    const first = !sender ? 'not-set-up' : row.emailEnabled ? 'pending' : 'off';
-    const claim = await claimNotification(
+    if (!(await getConnection(deps.db(), user.id))) {
+      return failure(404, 'not_connected', 'Connect Google Drive first.');
+    }
+    // A session saved before the combined email (or with "Upload to Drive") is never emailed by
+    // itself: its new record waits for "Send email".
+    const record = await writeRecord(
       deps.db(),
       deps.keys(),
       user.id,
       body.sessionId,
-      content,
-      first,
+      (current) => mergeReport(current, body),
+      body.manualOnly ? 'not-set-up' : 'collecting',
     );
-    if (!claim.claimed) {
-      console.info('drive: notify repeated', { status: claim.status });
-      return reply({ status: claim.status } satisfies DriveNotifyResponse);
-    }
-    if (first !== 'pending' || !sender) {
-      console.info('drive: notify recorded', { status: first });
-      return reply({ status: first } satisfies DriveNotifyResponse);
-    }
-    const outcome = await sendSavedEmail(
-      deps.mailer,
-      sender,
-      content,
-      emailMessageId(user.id, body.sessionId, 1, sender.from),
-    );
-    await finishNotification(
-      deps.db(),
-      user.id,
-      body.sessionId,
-      outcome === 'sent' ? { status: 'sent' } : { status: 'failed', error: outcome },
-      new Date(deps.now()),
-    );
-    console.info('drive: notify sent', { outcome, recipients: recipients.length });
-    return reply({ status: outcome === 'sent' ? 'sent' : 'failed' } satisfies DriveNotifyResponse);
+    const status = await sendIfDue(deps, user.id, user.email, body.sessionId, record);
+    console.info('drive: report', { status, files: record.content.files.length });
+    return reply({ status } satisfies DriveNotifyResponse);
   });
 }
 
 /**
- * GET /api/drive/notifications: the latest notifications, for Settings.
+ * GET /api/drive/notifications: the latest notifications, for Settings (overdue emails go first).
  * @param request The request.
  * @param deps    The dependencies (tests pass fakes).
  * @returns 200 DriveNotificationsResponse.
@@ -724,6 +844,7 @@ export function handleNotifications(
     'notifications',
     { post: false, limit: 'other' },
     async ({ user }) => {
+      await flushOverdue(deps, user.id).catch(() => 0);
       const rows = await listNotifications(
         deps.db(),
         deps.keys(),
@@ -738,6 +859,8 @@ export function handleNotifications(
         sentAt: row.sentAt?.getTime() ?? null,
         folderUrl: row.content.folderUrl,
         recipients: row.content.recipients.length,
+        files: row.content.files.length,
+        recordingPending: row.content.recordingPending === true,
       }));
       return reply({ items } satisfies DriveNotificationsResponse);
     },
@@ -748,11 +871,12 @@ export function handleNotifications(
 const retrySchema = z.object({ sessionId: z.uuid() }).strict();
 
 /**
- * POST /api/drive/notifications: sends a failed (or then-unconfigured) email again, with a new
- * attempt's idempotency key. Only one request can take a failed email (store.claimRetry).
+ * POST /api/drive/notifications: sends a failed email again, or by hand one that was complete before
+ * email was set up ("Send email"), with every file saved so far and a new attempt's Message-ID. Only
+ * one request can take it (store.claimRetry).
  * @param request The request (body: DriveRetryRequest).
  * @param deps    The dependencies (tests pass fakes).
- * @returns 200 DriveNotifyResponse; 400; 404 nothing to retry; 409 email not set up.
+ * @returns 200 DriveNotifyResponse; 400; 404 nothing to send; 409 email not set up.
  * Called from: app/api/drive/notifications/route.ts
  */
 export function handleRetry(
@@ -765,23 +889,50 @@ export function handleRetry(
     const sender = deps.email();
     if (!sender) return failure(409, 'email_not_set_up', 'Email is not set up.');
     const taken = await claimRetry(deps.db(), deps.keys(), user.id, body.sessionId);
-    if (!taken) return failure(404, 'not_found', 'There is no failed email to send again.');
-    const outcome = await sendSavedEmail(
-      deps.mailer,
-      sender,
-      taken.content,
-      emailMessageId(user.id, body.sessionId, taken.attempt, sender.from),
-    );
-    await finishNotification(
-      deps.db(),
+    if (!taken) return failure(404, 'not_found', 'There is no email to send for this session.');
+    const status = await deliver(
+      deps,
       user.id,
+      user.email,
       body.sessionId,
-      outcome === 'sent' ? { status: 'sent' } : { status: 'failed', error: outcome },
-      new Date(deps.now()),
+      taken.content,
+      taken.attempt,
+      sender,
     );
-    console.info('drive: notify retried', { outcome });
-    return reply({ status: outcome === 'sent' ? 'sent' : 'failed' } satisfies DriveNotifyResponse);
+    return reply({ status } satisfies DriveNotifyResponse);
   });
+}
+
+/**
+ * GET /api/cron/drive-flush: Vercel's daily job sends the emails of sessions that have waited 24 hours
+ * for a recording (accounts that did not open Paramount AI since). Only with the CRON_SECRET Vercel
+ * sends as a Bearer token; without CRON_SECRET set it answers 404 and does nothing.
+ * @param request The request.
+ * @param deps    The dependencies (tests pass fakes).
+ * @returns 200 { checked }; 401 wrong secret; 404 not set up.
+ * Called from: app/api/cron/drive-flush/route.ts (vercel.json crons)
+ */
+export async function handleFlushCron(
+  request: Request,
+  deps: GoogleDeps = realGoogleDeps,
+): Promise<Response> {
+  const secret = deps.cronSecret();
+  if (!secret) return failure(404, 'not_found', 'Not found');
+  const given = Buffer.from(request.headers.get('authorization') ?? '');
+  const wanted = Buffer.from(`Bearer ${secret}`);
+  if (given.length !== wanted.length || !timingSafeEqual(given, wanted)) {
+    return failure(401, 'unauthorized', 'Not allowed');
+  }
+  try {
+    const checked = await flushOverdue(deps, null);
+    console.info('drive: daily overdue check', { checked });
+    return reply({ checked });
+  } catch (error) {
+    console.error('drive: daily overdue check failed', {
+      error: error instanceof Error ? error.name : 'unknown',
+    });
+    return failure(500, 'failed', 'Failed');
+  }
 }
 
 /**

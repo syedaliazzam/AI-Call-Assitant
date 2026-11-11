@@ -38,6 +38,7 @@ export async function queueDriveCall(
       sessionId,
       files: [],
       notified: false,
+      reportedFiles: 0,
       queuedAt: now,
       ...existing,
       calls: calls.some((known) => known.startedAt === call.startedAt)

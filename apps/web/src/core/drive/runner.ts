@@ -10,12 +10,13 @@
  */
 import type { Platform } from '@/platform/types';
 import { deleteDriveJob, listDriveJobs, nextDriveJob, putDriveJob } from '../storage/driveUploads';
+import { listRecordings } from '../storage/recordings';
 import { getSession } from '../storage/sessions';
 import { driveApi } from './api';
 import { buildCallFiles } from './callFiles';
 import { createDriveClient } from './google';
 import { callIsLive } from './queue';
-import { runDriveQueue, type RunOutcome, type UploaderDeps } from './uploader';
+import { runDriveQueue, type KnownRecording, type RunOutcome, type UploaderDeps } from './uploader';
 
 /** The Web Lock that lets one window of the profile upload at a time. */
 export const UPLOADER_LOCK = 'kite.drive-uploader';
@@ -63,6 +64,25 @@ export function createUploaderDeps(
     },
     now: () => Date.now(),
     timeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    expectedRecordings: async (sessionId) => {
+      // This computer's index and the account's synced records (other computers), finished ones only.
+      const [local, synced] = await Promise.all([
+        recording ? recording.list().catch(() => []) : Promise.resolve([]),
+        listRecordings().catch(() => []),
+      ]);
+      const found = new Map<string, KnownRecording>();
+      for (const item of [...synced, ...local]) {
+        if (item.sessionId !== sessionId) continue;
+        if (item.status !== 'complete' && item.status !== 'recovered') continue;
+        found.set(item.id, {
+          id: item.id,
+          part: item.part,
+          stereo: item.hasStereo,
+          startedAt: item.startedAt,
+        });
+      }
+      return [...found.values()];
+    },
   };
 }
 

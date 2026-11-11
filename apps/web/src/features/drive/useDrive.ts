@@ -2,7 +2,8 @@
  * File: apps/web/src/features/drive/useDrive.ts
  * Purpose: React hooks for Google Drive (ADR-0072): the connection's status (read again when another
  *          window changes it, and when this window comes back to the front, for example after
- *          connecting in the system browser), and this device's uploads (live, from IndexedDB).
+ *          connecting in the system browser), this device's uploads (live, from IndexedDB), and whether
+ *          the account saves to Drive as last seen (for "Upload to Drive").
  * Used by: src/features/drive/*, src/features/settings/Settings.tsx, src/features/dashboard/SessionCard.tsx,
  *          src/features/meetings/MeetingsPage.tsx
  * Depends on: src/core/drive/{api,queue}.ts, src/core/storage/driveUploads.ts
@@ -13,7 +14,7 @@
 import type { DriveStatusResponse } from '@kite/shared';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { driveApi, DriveApiError } from '@/core/drive/api';
-import { onDriveMessage, rememberDriveStatus } from '@/core/drive/queue';
+import { onDriveMessage, rememberDriveStatus, rememberedSaves } from '@/core/drive/queue';
 import { watchDriveJobs } from '@/core/storage/driveUploads';
 import type { DriveSessionJob } from '@/core/storage/types';
 
@@ -129,4 +130,29 @@ export function useDriveJobs(): ReadonlyMap<string, DriveSessionJob> {
     () => currentJobs,
     () => NO_JOBS,
   );
+}
+
+/**
+ * Subscribes to changes of the remembered "saves to Drive" answer: Drive news from any window of this
+ * profile, and storage changes from another tab.
+ * @param listener Called after a change.
+ * @returns A function that stops listening.
+ */
+function subscribeSaves(listener: () => void): () => void {
+  const stop = onDriveMessage(listener);
+  window.addEventListener('storage', listener);
+  return () => {
+    stop();
+    window.removeEventListener('storage', listener);
+  };
+}
+
+/**
+ * Whether the account saves to Drive, as this device last saw it (no request).
+ *
+ * @returns True when connected (or waiting to reconnect) with "Save calls" on.
+ * Called from: DriveSessionStatus.tsx ("Upload to Drive")
+ */
+export function useDriveSaves(): boolean {
+  return useSyncExternalStore(subscribeSaves, rememberedSaves, () => false);
 }

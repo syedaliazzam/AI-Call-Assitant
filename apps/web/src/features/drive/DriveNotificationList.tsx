@@ -23,6 +23,7 @@ const STATES: Readonly<Record<DriveNotificationStatus, { label: string; tone: Ba
   off: { label: 'Email off', tone: 'neutral' },
   'not-set-up': { label: 'No email', tone: 'neutral' },
   pending: { label: 'Sending', tone: 'warning' },
+  collecting: { label: 'Waiting for files', tone: 'neutral' },
 };
 
 /** The date and time shown. */
@@ -93,12 +94,14 @@ export function DriveNotificationList({
                 </a>
                 <p className="text-[12px] text-ui-muted">
                   {WHEN.format(item.createdAt)}
+                  {` · ${item.files} ${item.files === 1 ? 'file' : 'files'}`}
                   {item.recipients > 0 && item.status === 'sent'
                     ? ` · ${item.recipients} ${item.recipients === 1 ? 'person' : 'people'}`
                     : ''}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                {item.recordingPending && <Badge tone="warning">Recording pending</Badge>}
                 <Badge tone={state.tone}>{state.label}</Badge>
                 {emailConfigured && (item.status === 'failed' || item.status === 'not-set-up') && (
                   <Button
@@ -124,7 +127,7 @@ export function DriveNotificationList({
                       }
                     }}
                   >
-                    {item.status === 'failed' ? 'Retry' : 'Send'}
+                    {item.status === 'failed' ? 'Retry' : 'Send email'}
                   </Button>
                 )}
               </div>

@@ -514,6 +514,8 @@ export interface DriveFileJob {
   recordingId?: string;
   /** The recording's main file or its stereo sound file (recording files only). */
   track?: 'main' | 'stereo';
+  /** The recording's part (recording files only; 1.6.0 email labels). */
+  part?: number;
   /** The call it belongs to (call files only). */
   callStartedAt?: number;
   /** Its size in bytes (0 until known). */
@@ -583,6 +585,16 @@ export interface DriveSessionJob {
   notified: boolean;
   /** True once the "saved" notice was shown on this device for the latest finish. */
   noticeShown: boolean;
+  /**
+   * How many saved files the server has been told about (1.6.0): more saved files than this means a
+   * report is due. Absent on jobs made before the combined email.
+   */
+  reportedFiles?: number;
+  /**
+   * True for a job whose session must never be emailed automatically (1.6.0): sessions saved before the
+   * combined email, and sessions uploaded with "Upload to Drive". Their email is sent from Settings.
+   */
+  manualEmail?: boolean;
   /** When the first call was queued (Unix ms). */
   queuedAt: number;
   /** When this record last changed (Unix ms). */

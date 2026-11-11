@@ -1,7 +1,9 @@
 /**
  * File: apps/web/src/server/google/email.ts
  * Purpose: The "saved to Google Drive" email (ADR-0072): its subject, plain text and HTML, built only
- *          from the session title, date, length, the saved files' names and the Drive folder link
+ *          from the session title, date, duration, the saved files' names and Drive links (an "Open
+ *          folder in Drive" button and a direct link per file), and "Recording upload pending" when sent
+ *          without the recording
  *          (never transcript, notes, answer or document text: those are not inputs), the test email,
  *          and sending through SMTP (nodemailer): port 465 with TLS from the start, any other port with
  *          STARTTLS required (never plain text), 10-second timeouts. Each attempt has a fixed Message-ID.
@@ -14,9 +16,10 @@
  */
 import 'server-only';
 import { createHash } from 'node:crypto';
-import { savedHeadline } from '@kite/shared';
+import { savedHeadline, type DriveFileKind, type DriveSavedFile } from '@kite/shared';
 import { createTransport } from 'nodemailer';
 import type { EmailConfig } from './config';
+import { fileKindOf } from './report';
 import type { NotificationContent } from './store';
 
 /** Connect, greeting and socket timeouts for the SMTP server, ms. */
@@ -85,35 +88,124 @@ export function formatWhen(at: number, timeZone: string): string {
   }
 }
 
+/** The order files are listed in. */
+const KIND_ORDER: Readonly<Record<DriveFileKind, number>> = {
+  recording: 0,
+  stereo: 1,
+  'transcript-txt': 2,
+  'transcript-pdf': 3,
+  'notes-pdf': 4,
+};
+
+/**
+ * A file's label in the email: "Recording Part 1", "Stereo audio", "Transcript (PDF)", "Transcript (text)",
+ * "Notes (PDF)"; the part is named only for a recording in several parts.
+ *
+ * @param kind  What the file is.
+ * @param part  Its part.
+ * @param parts How many recording parts the session has.
+ * @returns The label.
+ * Called from: emailFiles(); tests
+ */
+export function fileLabel(kind: DriveFileKind, part: number, parts: number): string {
+  if (kind === 'recording') return `Recording Part ${part}`;
+  if (kind === 'stereo') return parts > 1 ? `Stereo audio (Part ${part})` : 'Stereo audio';
+  if (kind === 'transcript-pdf') return 'Transcript (PDF)';
+  if (kind === 'transcript-txt') return 'Transcript (text)';
+  return 'Notes (PDF)';
+}
+
+/**
+ * A Drive file's own address.
+ * @param fileId Its id.
+ * @returns https://drive.google.com/file/d/<id>/view.
+ * Called from: emailFiles(); tests
+ */
+export function driveFileUrl(fileId: string): string {
+  return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view`;
+}
+
+/** One file as the email shows it. */
+export interface EmailFile {
+  /** Its label. */
+  label: string;
+  /** Its name in Drive. */
+  name: string;
+  /** Its direct link, or null (records made before file ids were kept). */
+  url: string | null;
+}
+
+/**
+ * The files in the order the email lists them (recordings by part, stereo, transcript, notes), labelled,
+ * with their links.
+ *
+ * @param files The saved files.
+ * @returns The list.
+ * Called from: buildSavedEmail(); tests
+ */
+export function emailFiles(files: readonly DriveSavedFile[]): EmailFile[] {
+  const known = files.map((file) => ({ file, what: fileKindOf(file) }));
+  const parts = new Set(
+    known.filter((item) => item.what?.kind === 'recording').map((item) => item.what!.part),
+  ).size;
+  return known
+    .sort(
+      (a, b) =>
+        (a.what ? KIND_ORDER[a.what.kind] : 9) - (b.what ? KIND_ORDER[b.what.kind] : 9) ||
+        (a.what?.part ?? 0) - (b.what?.part ?? 0) ||
+        a.file.name.localeCompare(b.file.name),
+    )
+    .map(({ file, what }) => ({
+      label: what ? fileLabel(what.kind, what.part, parts) : file.name,
+      name: file.name,
+      url: file.fileId ? driveFileUrl(file.fileId) : null,
+    }));
+}
+
+/** The note in an email sent without the recording. */
+export const RECORDING_PENDING_TEXT =
+  'Recording upload pending: the recording will appear in the folder when its upload finishes.';
+
 /**
  * Builds the email. Its only inputs are the fields below, so no call content can appear in it.
  *
- * @param content The stored notification: title, start, length, files, folder link, time zone.
+ * @param content The stored record: title, start, length, files (names and Drive ids), folder link,
+ *                time zone, and whether the recording is still being uploaded.
  * @returns Subject, text and HTML.
  * Called from: sendSavedEmail(); tests
  */
 export function buildSavedEmail(
   content: Pick<
     NotificationContent,
-    'title' | 'callStartedAt' | 'durationMs' | 'files' | 'folderUrl' | 'timeZone'
+    | 'title'
+    | 'callStartedAt'
+    | 'durationMs'
+    | 'files'
+    | 'folderUrl'
+    | 'timeZone'
+    | 'recordingPending'
   >,
 ): SavedEmail {
   const headline = savedHeadline(content.files);
   const when = formatWhen(content.callStartedAt, content.timeZone);
   const length = formatLength(content.durationMs);
-  const files = content.files.map((file) => `${file.folder}/${file.name}`);
-  const note = 'People need access to the Drive folder to open the link.';
+  const files = emailFiles(content.files);
+  const pending = content.recordingPending === true;
+  const note = 'People need access to the Drive folder to open the links.';
   const footer = 'Sent by Paramount AI when a call is saved to Google Drive.';
   const text = [
     `${headline} — ${content.title}`,
     '',
     `Date: ${when}`,
-    ...(length ? [`Length: ${length}`] : []),
+    ...(length ? [`Duration: ${length}`] : []),
+    ...(pending ? ['', RECORDING_PENDING_TEXT] : []),
+    '',
+    `Open folder in Drive: ${content.folderUrl}`,
     '',
     'Files:',
-    ...files.map((file) => `- ${file}`),
-    '',
-    `Open in Drive: ${content.folderUrl}`,
+    ...files.map((item) =>
+      item.url ? `- ${item.label}: ${item.url}  (${item.name})` : `- ${item.label} (${item.name})`,
+    ),
     '',
     note,
     footer,
@@ -121,16 +213,27 @@ export function buildSavedEmail(
   ].join('\n');
   const row = (label: string, value: string) =>
     `<tr><td style="padding:2px 12px 2px 0">${escapeHtml(label)}</td><td style="padding:2px 0">${escapeHtml(value)}</td></tr>`;
+  const fileItem = (item: EmailFile) =>
+    `<li style="margin:0 0 4px">${
+      item.url
+        ? `<a href="${escapeHtml(item.url)}" style="font-weight:bold">${escapeHtml(item.label)}</a>`
+        : `<strong>${escapeHtml(item.label)}</strong>`
+    } <span style="font-size:12px">${escapeHtml(item.name)}</span></li>`;
+  // A bordered button: no colours (email clients ignore the theme's CSS variables).
+  const button = `<a href="${escapeHtml(content.folderUrl)}" style="display:inline-block;padding:10px 18px;border:2px solid;border-radius:6px;font-weight:bold;text-decoration:none">Open folder in Drive</a>`;
   const html = [
     '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5">',
     `<p style="font-size:16px;font-weight:bold;margin:0 0 12px">${escapeHtml(headline)} — ${escapeHtml(content.title)}</p>`,
     '<table style="border-collapse:collapse;margin:0 0 12px">',
     row('Date', when),
-    ...(length ? [row('Length', length)] : []),
+    ...(length ? [row('Duration', length)] : []),
     '</table>',
+    ...(pending
+      ? [`<p style="margin:0 0 12px;font-weight:bold">${escapeHtml(RECORDING_PENDING_TEXT)}</p>`]
+      : []),
+    `<p style="margin:0 0 16px">${button}</p>`,
     '<p style="margin:0 0 4px;font-weight:bold">Files</p>',
-    `<ul style="margin:0 0 16px;padding-left:20px">${files.map((file) => `<li>${escapeHtml(file)}</li>`).join('')}</ul>`,
-    `<p style="margin:0 0 16px"><a href="${escapeHtml(content.folderUrl)}" style="font-weight:bold">Open in Drive ↗</a></p>`,
+    `<ul style="margin:0 0 16px;padding-left:20px">${files.map(fileItem).join('')}</ul>`,
     `<p style="margin:0;font-size:12px">${escapeHtml(note)}<br>${escapeHtml(footer)}</p>`,
     '</div>',
   ].join('');

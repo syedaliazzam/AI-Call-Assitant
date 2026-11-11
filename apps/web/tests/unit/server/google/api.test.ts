@@ -24,6 +24,7 @@ import {
   handleRetry,
   handleSettings,
   handleStatus,
+  handleFlushCron,
   handleTestEmail,
   type GoogleDeps,
 } from '@/server/google/api';
@@ -96,7 +97,7 @@ interface Fakes {
 function deps(
   user: string | 'signed-out',
   fakes: Fakes,
-  options: { email?: boolean; tokenLimit?: number } = {},
+  options: { email?: boolean; tokenLimit?: number; now?: number; cron?: string } = {},
 ): GoogleDeps {
   return {
     user: async () => (user === 'signed-out' ? user : { id: user, email: `${user}@example.test` }),
@@ -136,7 +137,8 @@ function deps(
       fakes.mail.push(message);
       if (fakes.smtpError) throw Object.assign(new Error('refused'), { code: fakes.smtpError });
     },
-    now: () => Date.now(),
+    cronSecret: () => options.cron ?? null,
+    now: () => options.now ?? Date.now(),
     limits: {
       token: createRateLimiter(options.tokenLimit ?? 100, 60_000),
       other: createRateLimiter(100, 60_000),
@@ -208,6 +210,9 @@ const NOTIFY: DriveNotifyRequest = {
   folderUrl: 'https://drive.google.com/drive/folders/SESSIONF',
   timeZone: 'UTC',
   alsoNotify: null,
+  expectedRecordings: [],
+  goneRecordings: [],
+  manualOnly: false,
 };
 
 describe('connect and callback', () => {
@@ -382,7 +387,8 @@ describe('one email per session', () => {
     expect(list.items).toHaveLength(1);
     expect(list.items[0]).toMatchObject({
       sessionId: S1,
-      title: 'Acme – Backend Engineer',
+      // The latest report's title (the repeat above renamed it); still one email.
+      title: 'Changed',
       status: 'sent',
       recipients: 1,
     });
@@ -469,5 +475,124 @@ describe('test email', () => {
     expect((await handleTestEmail(post('/api/drive/test-email', {}), deps(BOB, f))).status).toBe(
       409,
     );
+  });
+});
+
+/** A recording the desktop app makes: one part with a stereo file. */
+const REC = '22222222-2222-4222-8222-222222222222';
+
+/** The browser's report: the transcript, and the recording the account knows the session has. */
+const FROM_BROWSER: DriveNotifyRequest = {
+  ...NOTIFY,
+  files: [
+    {
+      name: '2026-11-11 14.30 Transcript.txt',
+      folder: 'Transcripts',
+      key: 'call:1:transcript-txt',
+      fileId: 'TXT0000001',
+      kind: 'transcript-txt',
+    },
+  ],
+  expectedRecordings: [{ id: REC, part: 1, stereo: true }],
+};
+
+/** The desktop app's report: the recording part and its stereo file. */
+const FROM_DESKTOP: DriveNotifyRequest = {
+  ...NOTIFY,
+  files: [
+    {
+      name: 'p1.mkv',
+      folder: 'Recordings',
+      key: `rec:${REC}:main`,
+      fileId: 'REC0000001',
+      kind: 'recording',
+      part: 1,
+    },
+    {
+      name: 'p1 stereo.webm',
+      folder: 'Recordings',
+      key: `rec:${REC}:stereo`,
+      fileId: 'STE0000001',
+      kind: 'stereo',
+      part: 1,
+    },
+  ],
+  expectedRecordings: [{ id: REC, part: 1, stereo: true }],
+};
+
+describe('one complete email per session (1.6.0)', () => {
+  it('waits for the recording, then sends ONE email with every file linked', async () => {
+    const f = fakes();
+    const d = deps(ALICE, f, { email: true });
+    await connect(d);
+    const first = await handleNotify(post('/api/drive/notify', FROM_BROWSER), d);
+    expect(await first.json()).toEqual({ status: 'collecting' });
+    expect(f.mail).toHaveLength(0);
+    // Only the main file: still waiting for the stereo file.
+    const half = { ...FROM_DESKTOP, files: [FROM_DESKTOP.files[0]!] };
+    expect(await (await handleNotify(post('/api/drive/notify', half), d)).json()).toEqual({
+      status: 'collecting',
+    });
+    const done = await handleNotify(post('/api/drive/notify', FROM_DESKTOP), d);
+    expect(await done.json()).toEqual({ status: 'sent' });
+    expect(f.mail).toHaveLength(1);
+    for (const link of ['REC0000001', 'STE0000001', 'TXT0000001']) {
+      expect(f.mail[0]!.text).toContain(`https://drive.google.com/file/d/${link}/view`);
+    }
+    expect(f.mail[0]!.text).not.toContain('Recording upload pending');
+    // A restart reporting everything again sends nothing.
+    await handleNotify(post('/api/drive/notify', FROM_DESKTOP), d);
+    await handleNotify(post('/api/drive/notify', FROM_BROWSER), d);
+    expect(f.mail).toHaveLength(1);
+  });
+
+  it('sends after 24 hours without the recording, saying it is pending', async () => {
+    const f = fakes();
+    await connect(deps(ALICE, f));
+    await handleNotify(post('/api/drive/notify', FROM_BROWSER), deps(ALICE, f, { email: true }));
+    expect(f.mail).toHaveLength(0);
+    const later = deps(ALICE, f, { email: true, now: Date.now() + 25 * 3_600_000 });
+    const list = await (await handleNotifications(get('/api/drive/notifications'), later)).json();
+    expect(f.mail).toHaveLength(1);
+    expect(f.mail[0]!.text).toContain('Recording upload pending');
+    expect(list.items[0]).toMatchObject({ status: 'sent', recordingPending: true });
+    // The recording arriving later is recorded, but no second email.
+    await handleNotify(post('/api/drive/notify', FROM_DESKTOP), later);
+    expect(f.mail).toHaveLength(1);
+  });
+
+  it('never emails a "manual only" session by itself; Send email sends it with every link', async () => {
+    const f = fakes();
+    const d = deps(ALICE, f, { email: true });
+    await connect(d);
+    const out = await handleNotify(
+      post('/api/drive/notify', { ...FROM_DESKTOP, manualOnly: true }),
+      d,
+    );
+    expect(await out.json()).toEqual({ status: 'not-set-up' });
+    expect(f.mail).toHaveLength(0);
+    const sent = await handleRetry(post('/api/drive/notifications', { sessionId: S1 }), d);
+    expect(await sent.json()).toEqual({ status: 'sent' });
+    expect(f.mail[0]!.text).toContain('https://drive.google.com/file/d/REC0000001/view');
+  });
+
+  it('runs the daily job only with CRON_SECRET, for every account', async () => {
+    const f = fakes();
+    await connect(deps(ALICE, f));
+    await handleNotify(post('/api/drive/notify', FROM_BROWSER), deps(ALICE, f, { email: true }));
+    const cron = (secret: string | undefined, header?: string) =>
+      handleFlushCron(
+        new Request(`${SITE}/api/cron/drive-flush`, {
+          headers: header ? { authorization: header } : {},
+        }),
+        deps('signed-out', f, { email: true, cron: secret, now: Date.now() + 25 * 3_600_000 }),
+      );
+    expect((await cron(undefined, 'Bearer x')).status).toBe(404);
+    expect((await cron('s'.repeat(20), 'Bearer wrong')).status).toBe(401);
+    expect(f.mail).toHaveLength(0);
+    const ok = await cron('s'.repeat(20), `Bearer ${'s'.repeat(20)}`);
+    expect(await ok.json()).toEqual({ checked: 1 });
+    expect(f.mail).toHaveLength(1);
+    expect(f.mail[0]!.to).toEqual([`${ALICE}@example.test`]);
   });
 });

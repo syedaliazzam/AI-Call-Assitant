@@ -2,9 +2,10 @@
  * File: apps/web/src/server/google/store.ts
  * Purpose: The google_drive and drive_notification rows (ADR-0072): saving the encrypted refresh
  *          token, the picked folder and the person's switches; marking a connection "reconnect";
- *          deleting it; and the one-email-per-session record (claimed by an INSERT that only one
- *          request can win, so a retried upload never sends a second email). Every statement is
- *          limited to one account.
+ *          deleting it; and the one-email-per-session record: the devices' reports merged into it
+ *          (compare-and-swap, as the driver has no transactions), "collecting" until every file is in,
+ *          then taken for its one email by an update only one request can win. Every statement is
+ *          limited to one account, except the daily overdue list.
  * Used by: src/server/google/api.ts, src/server/google/tokens.ts
  * Depends on: drizzle-orm, src/server/schema.ts, src/server/calldata/crypto.ts (seal, open),
  *             src/server/calldata/store.ts (CallDataDb type)
@@ -13,11 +14,11 @@
  * Nothing here logs. Tokens, addresses, titles and file names are only ever held encrypted or in memory.
  */
 import 'server-only';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import type { DriveNotificationStatus, DriveSavedFile } from '@kite/shared';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import type { DriveExpectedRecording, DriveNotificationStatus, DriveSavedFile } from '@kite/shared';
 import { open, seal, type DataKeys } from '../calldata/crypto';
 import type { CallDataDb } from '../calldata/store';
-import { driveNotification, googleDrive } from '../schema';
+import { driveNotification, googleDrive, user } from '../schema';
 
 /** The GCM binding kind of a refresh token (never a call_record kind). */
 const TOKEN_KIND = 'google-refresh-token';
@@ -196,8 +197,16 @@ export interface NotificationContent {
   folderUrl: string;
   /** The person's time zone, for the date. */
   timeZone: string;
-  /** Every address the email goes to (the person first). */
+  /** Every address the email goes (or went) to, the person first; worked out when it is sent. */
   recipients: string[];
+  /** The session's own Also notify list (null: the Settings list). Absent in older records. */
+  alsoNotify?: string[] | null;
+  /** The recording parts the account knows the session has (the email waits for them). */
+  expected?: DriveExpectedRecording[];
+  /** Recordings whose files were deleted: not waited for. */
+  gone?: string[];
+  /** True when the email went without the recording, whose upload had not finished (24 hours). */
+  recordingPending?: boolean;
 }
 
 /**
@@ -210,48 +219,192 @@ function notificationBinding(userId: string, sessionId: string) {
   return { userId, kind: NOTIFICATION_KIND, id: sessionId };
 }
 
+/** A session's record as read: its state, when its first report came, and its content. */
+export interface NotificationRecord {
+  /** Its state. */
+  status: DriveNotificationStatus;
+  /** When the first report came. */
+  createdAt: Date;
+  /** The content, decrypted. */
+  content: NotificationContent;
+  /** The stored ciphertext, as the compare-and-swap "version" (a new IV every write). */
+  version: string;
+}
+
 /**
- * Records that a session's uploads finished, once: the first request inserts the row and may send;
- * any later one (a retried upload, a second call, another device) finds it and sends nothing.
+ * Reads one session's record.
  *
  * @param db        The database.
  * @param keys      The data keys.
  * @param userId    The account.
  * @param sessionId The session.
- * @param content   What the email says.
- * @param status    The row's first state: 'pending' (about to send), 'off' or 'not-set-up'.
- * @returns claimed: true when this request inserted the row; otherwise the existing state.
- * Called from: handleNotify() in api.ts; tests
+ * @returns The record, or null.
+ * @throws DataKeyError or a decryption error when the content cannot be read.
+ * Called from: writeRecord(), api.ts; tests
  */
-export async function claimNotification(
+export async function readRecord(
   db: CallDataDb,
   keys: DataKeys,
   userId: string,
   sessionId: string,
-  content: NotificationContent,
-  status: Extract<DriveNotificationStatus, 'pending' | 'off' | 'not-set-up'>,
-): Promise<{ claimed: true } | { claimed: false; status: DriveNotificationStatus }> {
-  const sealed = seal(keys, notificationBinding(userId, sessionId), JSON.stringify(content));
-  const inserted = await db
-    .insert(driveNotification)
-    .values({
-      userId,
-      sessionId,
-      status,
-      keyVersion: sealed.keyVersion,
-      content: sealed.content,
-      attempts: status === 'pending' ? 1 : 0,
-    })
-    // The primary key (account, session) makes this the one-email-per-session guarantee.
-    .onConflictDoNothing()
-    .returning({ sessionId: driveNotification.sessionId });
-  if (inserted.length > 0) return { claimed: true };
-  const existing = await db
-    .select({ status: driveNotification.status })
+): Promise<NotificationRecord | null> {
+  const rows = await db
+    .select()
     .from(driveNotification)
     .where(and(eq(driveNotification.userId, userId), eq(driveNotification.sessionId, sessionId)))
     .limit(1);
-  return { claimed: false, status: (existing[0]?.status ?? 'pending') as DriveNotificationStatus };
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    status: row.status as DriveNotificationStatus,
+    createdAt: row.createdAt,
+    content: JSON.parse(
+      open(keys, notificationBinding(userId, sessionId), row.keyVersion, row.content),
+    ) as NotificationContent,
+    version: row.content,
+  };
+}
+
+/**
+ * Changes one session's record safely when several devices report at once (the database driver has no
+ * transactions): the change is computed from what was read and written only if nobody wrote in
+ * between (the ciphertext, new on every write, is the version); otherwise it is read and computed again.
+ * A missing record is created with state 'collecting' (the primary key lets only one creation win).
+ *
+ * @param db        The database.
+ * @param keys      The data keys.
+ * @param userId    The account.
+ * @param sessionId The session.
+ * @param change    Makes the new content from the current one (null when there is no record yet).
+ * @param createAs  A new record's state: 'collecting' (emailed when complete), or 'not-set-up' (a session
+ *                  that is only emailed by hand, with "Send email" in Settings).
+ * @returns The record as written.
+ * @throws Error('BUSY') after five lost races (practically never).
+ * Called from: api.ts (reports, the pending flag); tests
+ */
+export async function writeRecord(
+  db: CallDataDb,
+  keys: DataKeys,
+  userId: string,
+  sessionId: string,
+  change: (current: NotificationContent | null) => NotificationContent,
+  createAs: 'collecting' | 'not-set-up' = 'collecting',
+): Promise<NotificationRecord> {
+  for (let tries = 0; tries < 5; tries += 1) {
+    const current = await readRecord(db, keys, userId, sessionId);
+    const content = change(current?.content ?? null);
+    const sealed = seal(keys, notificationBinding(userId, sessionId), JSON.stringify(content));
+    if (!current) {
+      const inserted = await db
+        .insert(driveNotification)
+        .values({
+          userId,
+          sessionId,
+          status: createAs,
+          keyVersion: sealed.keyVersion,
+          content: sealed.content,
+        })
+        // The primary key (account, session): one record, so one email, per session.
+        .onConflictDoNothing()
+        .returning({ createdAt: driveNotification.createdAt });
+      if (inserted[0]) {
+        return {
+          status: createAs,
+          createdAt: inserted[0].createdAt,
+          content,
+          version: sealed.content,
+        };
+      }
+      continue;
+    }
+    const updated = await db
+      .update(driveNotification)
+      .set({ keyVersion: sealed.keyVersion, content: sealed.content })
+      .where(
+        and(
+          eq(driveNotification.userId, userId),
+          eq(driveNotification.sessionId, sessionId),
+          eq(driveNotification.content, current.version),
+        ),
+      )
+      .returning({ status: driveNotification.status });
+    if (updated[0]) {
+      return {
+        status: updated[0].status as DriveNotificationStatus,
+        createdAt: current.createdAt,
+        content,
+        version: sealed.content,
+      };
+    }
+  }
+  throw new Error('BUSY');
+}
+
+/**
+ * Takes a collecting record for its one email: only one request can, because the update only matches
+ * while it is still 'collecting'.
+ *
+ * @param db        The database.
+ * @param userId    The account.
+ * @param sessionId The session.
+ * @param status    What it becomes: 'pending' (sending now), 'off' or 'not-set-up'.
+ * @returns The attempt number (1) when taken, or null when another request took it.
+ * Called from: api.ts (sendIfDue); tests
+ */
+export async function claimCollecting(
+  db: CallDataDb,
+  userId: string,
+  sessionId: string,
+  status: Extract<DriveNotificationStatus, 'pending' | 'off' | 'not-set-up'>,
+): Promise<number | null> {
+  const rows = await db
+    .update(driveNotification)
+    .set({
+      status,
+      ...(status === 'pending' ? { attempts: sql`${driveNotification.attempts} + 1` } : {}),
+    })
+    .where(
+      and(
+        eq(driveNotification.userId, userId),
+        eq(driveNotification.sessionId, sessionId),
+        eq(driveNotification.status, 'collecting'),
+      ),
+    )
+    .returning({ attempts: driveNotification.attempts });
+  return rows[0] ? Math.max(1, rows[0].attempts) : null;
+}
+
+/**
+ * The sessions still collecting files whose first report is older than a time: their email is due
+ * without the recording. For one account, or (the daily job) for every account, with the address.
+ *
+ * @param db     The database.
+ * @param before Reports older than this.
+ * @param userId Only this account, or null for all.
+ * @returns Each session's account, address and id.
+ * Called from: api.ts (flushOverdue); tests
+ */
+export async function listOverdue(
+  db: CallDataDb,
+  before: Date,
+  userId: string | null,
+): Promise<{ userId: string; email: string; sessionId: string }[]> {
+  return db
+    .select({
+      userId: driveNotification.userId,
+      email: user.email,
+      sessionId: driveNotification.sessionId,
+    })
+    .from(driveNotification)
+    .innerJoin(user, eq(user.id, driveNotification.userId))
+    .where(
+      and(
+        eq(driveNotification.status, 'collecting'),
+        lt(driveNotification.createdAt, before),
+        ...(userId ? [eq(driveNotification.userId, userId)] : []),
+      ),
+    )
+    .limit(100);
 }
 
 /**

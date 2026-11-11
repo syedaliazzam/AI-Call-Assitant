@@ -156,6 +156,7 @@ function world(options: WorldOptions = {}) {
     files: [],
     state: 'queued',
     notified: false,
+    reportedFiles: 0,
     noticeShown: false,
     queuedAt: CALL.endedAt,
     updatedAt: CALL.endedAt,
@@ -224,6 +225,13 @@ function world(options: WorldOptions = {}) {
     notice: (notice) => notices.push(notice),
     now: () => Date.now(),
     timeZone: () => 'UTC',
+    expectedRecordings: async () =>
+      (options.recordings ?? [RECORDING]).map((r) => ({
+        id: r.id,
+        part: r.part,
+        stereo: r.hasStereo,
+        startedAt: r.startedAt,
+      })),
   };
   return { deps, google, jobs, notified, notices, hostCalls, state, job: () => jobs.get(SID)! };
 }
@@ -443,5 +451,88 @@ describe('planFiles', () => {
     ]);
     const twice = planFiles({ ...job, files: once }, [RECORDING], new Map());
     expect(twice).toHaveLength(2);
+  });
+});
+
+describe('the report (1.6.0)', () => {
+  it('carries each file with its key, Drive id, kind and part, and the expected recordings', async () => {
+    const w = world();
+    await runDriveQueue(w.deps);
+    const report = w.notified[0] as {
+      files: { key: string; fileId?: string; kind?: string; part?: number }[];
+      expectedRecordings: unknown[];
+      manualOnly: boolean;
+    };
+    expect(report.manualOnly).toBe(false);
+    expect(report.expectedRecordings).toEqual([{ id: RECORDING.id, part: 1, stereo: true }]);
+    expect(report.files.map((f) => [f.key, f.kind, f.part ?? null])).toEqual([
+      [`rec:${RECORDING.id}:main`, 'recording', 1],
+      [`rec:${RECORDING.id}:stereo`, 'stereo', 1],
+      [`call:${CALL.startedAt}:transcript-txt`, 'transcript-txt', null],
+      [`call:${CALL.startedAt}:transcript-pdf`, 'transcript-pdf', null],
+      [`call:${CALL.startedAt}:notes-pdf`, 'notes-pdf', null],
+    ]);
+    expect(report.files.every((f) => f.fileId)).toBe(true);
+    expect(w.job()).toMatchObject({ notified: true, reportedFiles: 5 });
+  });
+
+  it('reports the files saved before an error, so the session can be emailed without them', async () => {
+    const w = world({
+      hostScript: [
+        // The main file uploads; the stereo file is refused.
+        (request) => ({ status: 'done', fileId: w.google.finish(request.uploadUrl), bytes: 500 }),
+        () => ({ status: 'failed', retryable: false, reason: 'http-403' }),
+      ],
+    });
+    await runDriveQueue(w.deps);
+    expect(w.job().state).toBe('error');
+    expect(w.notified).toHaveLength(0);
+    // The next run tells the server what is in Drive (the server sends after 24 hours if nothing more).
+    await runDriveQueue(w.deps);
+    const report = w.notified[0] as { files: { key: string }[] };
+    expect(report.files.map((f) => f.key)).toEqual([`rec:${RECORDING.id}:main`]);
+    expect(w.job()).toMatchObject({ state: 'error', reportedFiles: 1, notified: false });
+    await runDriveQueue(w.deps);
+    expect(w.notified).toHaveLength(1);
+  });
+});
+
+describe('backfill (1.6.0)', () => {
+  it('queues a finished session again for a recording on this computer, and uploads only it', async () => {
+    // The session was saved by a 1.5.2 app: transcripts only, no recording.
+    const w = world({ recordings: [] });
+    await runDriveQueue(w.deps);
+    expect(w.job().state).toBe('done');
+    const before = w.google.counts.sessions;
+    // 1.6.0 starts: the recording is in this computer's index.
+    w.deps.host!.recordings = async () => [RECORDING];
+    w.deps.expectedRecordings = async () => [
+      { id: RECORDING.id, part: 1, stereo: true, startedAt: RECORDING.startedAt },
+      // An older call's recording, never part of this upload: not waited for.
+      { id: 'older', part: 1, stereo: false, startedAt: CALL.startedAt - 86_400_000 },
+    ];
+    expect(await runDriveQueue(w.deps)).toBe('idle');
+    expect(w.google.counts.sessions - before).toBe(2);
+    expect(w.job().state).toBe('done');
+    const last = w.notified.at(-1) as {
+      files: { key: string }[];
+      expectedRecordings: { id: string }[];
+    };
+    expect(last.files.map((f) => f.key)).toContain(`rec:${RECORDING.id}:stereo`);
+    expect(last.expectedRecordings.map((r) => r.id)).toEqual([RECORDING.id]);
+  });
+
+  it('marks a job from before the combined email as "manual email only" and reports it once', async () => {
+    const w = world({ recordings: [] });
+    await runDriveQueue(w.deps);
+    const reports = w.notified.length;
+    // As a 1.5.2-era job: no report count, already notified.
+    const { reportedFiles: _old, ...legacy } = w.job();
+    w.jobs.set(SID, { ...legacy, notified: true });
+    await runDriveQueue(w.deps);
+    expect(w.job().manualEmail).toBe(true);
+    await runDriveQueue(w.deps);
+    expect(w.notified.length).toBe(reports + 1);
+    expect((w.notified.at(-1) as { manualOnly: boolean }).manualOnly).toBe(true);
   });
 });

@@ -109,6 +109,18 @@ vercel env add NOTIFY_FROM_EMAIL production  # Paramount AI <notify@paramountint
 
 The email holds the session title, date, length, the saved files' names and the Drive folder link. Never transcript, notes, answer or document text.
 
+### The 24-hour fallback (optional CRON_SECRET)
+
+A session's email waits until its recording is in Drive. If the recording upload has not finished 24 hours after the first file was saved, the email goes with what is there and says "Recording upload pending". That check runs whenever the person's app talks to the server, and once a day (06:00 UTC) in a Vercel cron job, which needs a secret:
+
+```sh
+# 32+ random characters, for example: openssl rand -hex 32
+vercel env add CRON_SECRET production
+vercel deploy --prod
+```
+
+Without `CRON_SECRET` the daily job does nothing (the route answers 404); emails still go when the app is next opened.
+
 ## Database
 
 The feature adds two tables (migration `apps/web/drizzle/0003_drive_connection.sql`, additive only). Apply once, after reading it:
