@@ -127,6 +127,60 @@ test.afterAll(async () => {
   if (bundleDir) rmSync(bundleDir, { recursive: true, force: true });
 });
 
+// ADR-0071: the sign-in form's messages and its show/hide password button. The account server is
+// faked: it refuses the invented email and password the way Better Auth does.
+test('sign-in: field messages, show password, and a refused sign-in', async () => {
+  const context = await browser!.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  let signInCalls = 0;
+  await page.route('**/api/auth/sign-in/email', async (route) => {
+    signInCalls += 1;
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'INVALID_EMAIL_OR_PASSWORD',
+        message: 'Invalid email or password',
+      }),
+    });
+  });
+  await page.goto(`${origin}/?screen=login&theme=light`);
+  const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+  await expect(signIn).toBeEnabled();
+
+  // Empty fields: a message under each, the keyboard on the email, nothing sent.
+  await signIn.click();
+  await expect(page.getByText('Enter your email.')).toBeVisible();
+  await expect(page.getByText('Enter your password.')).toBeVisible();
+  await expect(page.getByLabel('Email')).toBeFocused();
+  await expect(page.getByLabel('Email')).toHaveAttribute('aria-invalid', 'true');
+  expect(signInCalls).toBe(0);
+
+  // Typing clears a field's message; an email without a domain gets its own.
+  await page.getByLabel('Email').fill('dana.okafor');
+  await expect(page.getByText('Enter your email.')).toHaveCount(0);
+  await signIn.click();
+  await expect(page.getByText('Enter a valid email address.')).toBeVisible();
+
+  // Show and hide the password: the field's type follows, the button never submits.
+  const password = page.getByLabel('Password', { exact: true });
+  await password.fill('not-the-password');
+  await expect(password).toHaveAttribute('type', 'password');
+  await page.getByRole('button', { name: 'Show password' }).click();
+  await expect(password).toHaveAttribute('type', 'text');
+  await page.getByRole('button', { name: 'Hide password' }).click();
+  await expect(password).toHaveAttribute('type', 'password');
+  expect(signInCalls).toBe(0);
+
+  // A refused sign-in: one message at the top, the same for a wrong email or password.
+  await page.getByLabel('Email').fill('dana.okafor@example.com');
+  await signIn.click();
+  await expect(page.getByRole('alert')).toHaveText('Email or password is incorrect.');
+  expect(signInCalls).toBe(1);
+  await expect(signIn).toBeEnabled();
+  await context.close();
+});
+
 for (const theme of ['light', 'dark'] as const) {
   test(`review's Conversation and Answers tabs, ${theme}`, async () => {
     for (const size of WIDTHS) {

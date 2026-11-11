@@ -3,11 +3,14 @@
  * Purpose: The /login route. Shows the sign-in form; visitors who are already signed in are
  *          sent on (dashboard, or /change-password if they still have a temporary password).
  * Used by: Next.js App Router; proxy.ts and src/server/guard.ts redirect here
- * Depends on: src/server/auth.ts, src/server/guard.ts, src/features/auth/LoginForm.tsx
- * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Sign in), §8.2
+ * Depends on: src/server/auth.ts, src/server/guard.ts, src/features/auth (LoginForm, SignInHero,
+ *             DesktopAppLink), src/ui/AuthCard.tsx
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Sign in), §8.2; ADR-0071
  */
 import { redirect } from 'next/navigation';
+import { DesktopAppLink } from '@/features/auth/DesktopAppLink';
 import { LoginForm } from '@/features/auth/LoginForm';
+import { SignInHero } from '@/features/auth/SignInHero';
 import { getSession } from '@/server/auth';
 import { decideRedirect } from '@/server/guard';
 import { AuthCard } from '@/ui/AuthCard';
@@ -25,6 +28,8 @@ export default async function LoginPage() {
     <AuthCard
       title="Sign in to Paramount AI"
       subtitle="Use the email and password your admin gave you."
+      hero={<SignInHero />}
+      footer={<DesktopAppLink />}
     >
       <LoginForm />
     </AuthCard>

@@ -23,7 +23,9 @@ import { CreateUserForm } from '@/features/admin/CreateUserForm';
 import { UsersTable } from '@/features/admin/UsersTable';
 import { AskKitePage } from '@/features/ask-kite/AskKitePage';
 import { ChangePasswordForm } from '@/features/auth/ChangePasswordForm';
+import { DesktopAppLink } from '@/features/auth/DesktopAppLink';
 import { LoginForm } from '@/features/auth/LoginForm';
+import { SignInHero } from '@/features/auth/SignInHero';
 import { LibraryPage } from '@/features/library/LibraryPage';
 import { LiveCallsUnsupported } from '@/features/live/LiveCallsUnsupported';
 import { AcceptableUseNotice } from '@/features/notices/AcceptableUseNotice';
@@ -247,6 +249,8 @@ async function start(): Promise<void> {
       <AuthCard
         title="Sign in to Paramount AI"
         subtitle="Use the email and password your admin gave you."
+        hero={<SignInHero />}
+        footer={<DesktopAppLink />}
       >
         <LoginForm />
       </AuthCard>
@@ -255,6 +259,7 @@ async function start(): Promise<void> {
       <AuthCard
         title="Choose a new password"
         subtitle="You are using a temporary password. Choose your own to continue."
+        hero={<SignInHero />}
       >
         <ChangePasswordForm action={async () => ({})} />
       </AuthCard>
