@@ -152,6 +152,11 @@ export interface Session {
    * until first needed; replaced when the documents change (the fingerprint no longer matches).
    */
   documentsSummary?: StoredDocumentsSummary;
+  /**
+   * 1.6.0 (ADR-0072): who else gets this session's "saved to Google Drive" email, instead of the list
+   * in Settings. Absent or empty: the Settings list. Lower-case addresses; synced with the session.
+   */
+  driveAlsoNotify?: string[];
 }
 
 /** A session's documents summary (ADR-0067), as kept on the device. */
@@ -486,6 +491,100 @@ export interface StoredRecording {
   deviceName: string;
   /** Recording, complete, or recovered after the app stopped during it. */
   status: RecordingStatus;
+  /** When this record last changed (Unix ms). */
+  updatedAt: number;
+}
+
+/**
+ * One file a session's Google Drive upload saves (ADR-0072). Kept on this device only (never synced):
+ * where it goes, how far it got, the resumable upload's address (so a restart or a lost connection
+ * resumes instead of starting again) and, once saved, its Drive id (so a retry never makes a copy).
+ */
+export interface DriveFileJob {
+  /**
+   * Stable key: 'rec:<recordingId>:main' or ':stereo' for a recording's files, or
+   * 'call:<callStartedAt>:transcript-txt' / ':transcript-pdf' / ':notes-pdf' for a call's files.
+   */
+  key: string;
+  /** The session subfolder it goes into. */
+  folder: 'Recordings' | 'Transcripts';
+  /** Its name in Drive (names.ts). */
+  name: string;
+  /** The recording it comes from (recording files only). */
+  recordingId?: string;
+  /** The recording's main file or its stereo sound file (recording files only). */
+  track?: 'main' | 'stereo';
+  /** The call it belongs to (call files only). */
+  callStartedAt?: number;
+  /** Its size in bytes (0 until known). */
+  bytes: number;
+  /** Bytes Google has so far. */
+  sent: number;
+  /** The resumable upload session's address while uploading (valid about a week). */
+  uploadUrl?: string;
+  /** The file's Drive id once saved. */
+  driveFileId?: string;
+  /** True once saved, or once it can never be (the local file was deleted: see missing). */
+  done: boolean;
+  /** True when the local file was gone, so it was not saved. */
+  missing?: boolean;
+}
+
+/**
+ * Where a session's Drive upload stands:
+ * - queued: waiting its turn (or to be retried);
+ * - uploading: being saved now;
+ * - paused: a call started; it carries on after the call;
+ * - waiting: Google Drive needs the person (reason: 'reconnect', 'not-connected', 'no-folder',
+ *   'save-off');
+ * - done: every file is saved;
+ * - error: it stopped (reason says why, for the person); Retry queues it again.
+ */
+export type DriveJobState = 'queued' | 'uploading' | 'paused' | 'waiting' | 'done' | 'error';
+
+/** One call of a session that is saved to Drive. */
+export interface DriveCall {
+  /** When the call started (Unix ms). */
+  startedAt: number;
+  /** When it ended (Unix ms). */
+  endedAt: number;
+}
+
+/**
+ * A session's Google Drive upload (ADR-0072), on this device only (the `driveUploads` store, version
+ * 11). Calls are added as they end; the session folder and its subfolders are made once and their Drive
+ * ids kept, so nothing is ever made twice.
+ */
+export interface DriveSessionJob {
+  /** The session (the key). */
+  sessionId: string;
+  /** The calls to save, oldest first. */
+  calls: DriveCall[];
+  /** The Drive folder the session folder was made in (a changed folder starts a new session folder). */
+  parentId?: string;
+  /** The session folder's Drive id. */
+  folderId?: string;
+  /** Its "Recordings" subfolder's Drive id. */
+  recordingsId?: string;
+  /** Its "Transcripts" subfolder's Drive id. */
+  transcriptsId?: string;
+  /** The files, in the order they are saved. */
+  files: DriveFileJob[];
+  /** Where it stands. */
+  state: DriveJobState;
+  /**
+   * Why it waits or stopped, as a code (core/drive/reasons.ts has the words): 'reconnect',
+   * 'not-connected', 'no-folder', 'save-off', 'folder-gone', 'network', 'refused', 'failed'.
+   */
+  reason?: string;
+  /** True when the error may clear by itself (a lost connection): it is queued again after a while. */
+  autoRetry?: boolean;
+  /** True once the server has the "saved" notification for the latest finish (one email per session). */
+  notified: boolean;
+  /** True once the "saved" notice was shown on this device for the latest finish. */
+  noticeShown: boolean;
+  /** When the first call was queued (Unix ms). */
+  queuedAt: number;
   /** When this record last changed (Unix ms). */
   updatedAt: number;
 }

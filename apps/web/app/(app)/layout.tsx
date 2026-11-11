@@ -16,6 +16,8 @@ import { AskKiteHotkey } from '@/features/ask-kite/AskKiteHotkey';
 import { AcceptableUseNotice } from '@/features/notices/AcceptableUseNotice';
 import { AccountNameProvider } from '@/features/shell/AccountName';
 import { AppShell } from '@/features/shell/AppShell';
+import { DriveNotices } from '@/features/drive/DriveNotices';
+import { DriveUploader } from '@/features/drive/DriveUploader';
 import { SyncScope } from '@/features/sync/SyncScope';
 import { syncEnabledFor } from '@/server/calldata/flag';
 import { requireUser } from '@/server/guard';
@@ -45,6 +47,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         >
           {children}
         </AppShell>
+        {/* 1.6.0 (ADR-0072): calls are saved to Google Drive in the background, after the call. */}
+        <DriveUploader />
+        <DriveNotices />
       </AccountNameProvider>
     </SyncScope>
   );

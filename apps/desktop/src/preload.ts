@@ -10,7 +10,8 @@
  *          the keyboard back to the app behind (v1.3.2: releaseOverlayFocus; ADR-0061),
  *          accurateStatus / accurateDownload / accurateRemove / accurateTranscribe (v1.0.1, ADR-0034),
  *          and meeting recording (1.5.0, ADR-0068: recordingOpen / Write / Close / List / Play / SaveAs /
- *          ShowInFolder / Delete, listDisplays, setRecordingDisplay, deviceIdentity, renameDevice) }
+ *          ShowInFolder / Delete, listDisplays, setRecordingDisplay, deviceIdentity, renameDevice),
+ *          and Google Drive (1.6.0, ADR-0072: driveUpload, onDriveUploadProgress, showNotice) }
  *          (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
@@ -31,6 +32,9 @@ import {
   type OverlayMode,
   type OverlayPreset,
   type OverlayResizeStep,
+  type DesktopNotice,
+  type DriveUploadProgress,
+  type DriveUploadRequest,
   type RecordingOpenRequest,
   type RecordingTrack,
   type WindowControlAction,
@@ -83,6 +87,9 @@ import {
   RECORDING_SHOW_CHANNEL,
   RECORDING_WRITE_CHANNEL,
   RENAME_DEVICE_CHANNEL,
+  DRIVE_PROGRESS_EVENT,
+  DRIVE_UPLOAD_CHANNEL,
+  SHOW_NOTICE_CHANNEL,
 } from './channels';
 
 /** Prefix of the argument main.ts passes with the app version. */
@@ -173,6 +180,34 @@ export function onOverlayPosition(handler: (preset: OverlayPreset) => void): () 
   ipcRenderer.on(OVERLAY_POSITION_EVENT, listener);
   return () => {
     ipcRenderer.removeListener(OVERLAY_POSITION_EVENT, listener);
+  };
+}
+
+/**
+ * 1.6.0 (ADR-0072): listens for the progress of this page's Drive uploads.
+ *
+ * @param handler The page's handler; it receives only well-formed progress, never the IPC event.
+ * @returns A function that removes the listener.
+ * Called from: the page, as window.kiteDesktop.onDriveUploadProgress(); tests
+ */
+export function onDriveUploadProgress(
+  handler: (progress: DriveUploadProgress) => void,
+): () => void {
+  const listener = (_event: IpcRendererEvent, progress: unknown) => {
+    const p = progress as Partial<DriveUploadProgress> | null;
+    if (
+      p &&
+      typeof p.recordingId === 'string' &&
+      (p.track === 'main' || p.track === 'stereo') &&
+      typeof p.sent === 'number' &&
+      typeof p.total === 'number'
+    ) {
+      handler({ recordingId: p.recordingId, track: p.track, sent: p.sent, total: p.total });
+    }
+  };
+  ipcRenderer.on(DRIVE_PROGRESS_EVENT, listener);
+  return () => {
+    ipcRenderer.removeListener(DRIVE_PROGRESS_EVENT, listener);
   };
 }
 
@@ -301,6 +336,22 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
     ipcRenderer.invoke(RECORDING_DISPLAY_CHANNEL, displayId === null ? null : String(displayId)),
   deviceIdentity: () => ipcRenderer.invoke(DEVICE_IDENTITY_CHANNEL),
   renameDevice: (name: string) => ipcRenderer.invoke(RENAME_DEVICE_CHANNEL, String(name)),
+  // 1.6.0 (ADR-0072): Google Drive. Only plain fields cross (copied here); the shell checks the
+  // recording against its own index and sends the file only to a Google Drive upload address.
+  driveUpload: (request: DriveUploadRequest) =>
+    ipcRenderer.invoke(DRIVE_UPLOAD_CHANNEL, {
+      recordingId: String(request?.recordingId),
+      track: String(request?.track),
+      uploadUrl: String(request?.uploadUrl),
+      accessToken: String(request?.accessToken),
+    }),
+  onDriveUploadProgress,
+  showNotice: (notice: DesktopNotice) =>
+    ipcRenderer.invoke(SHOW_NOTICE_CHANNEL, {
+      title: String(notice?.title ?? ''),
+      body: String(notice?.body ?? ''),
+      ...(notice?.url !== undefined ? { url: String(notice.url) } : {}),
+    }),
 });
 
 contextBridge.exposeInMainWorld('kiteDesktop', kiteDesktop);

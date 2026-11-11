@@ -14,6 +14,7 @@
  */
 'use client';
 
+import { DriveSessionStatus } from '@/features/drive/DriveSessionStatus';
 import { desktopRecordingLink, type DeviceIdentity } from '@kite/shared';
 import { MonitorDown, Play } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -108,6 +109,8 @@ function MeetingRow({
           Saved on {meeting.deviceName}
           {status ? <span className="text-ui-muted"> · {status}</span> : null}
         </p>
+        {/* 1.6.0 (ADR-0072): the session's Google Drive upload from this computer. */}
+        <DriveSessionStatus sessionId={meeting.sessionId} />
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {here === true && (

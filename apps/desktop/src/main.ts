@@ -8,7 +8,8 @@
  * Depends on: electron, src/config.ts, src/security.ts, src/media.ts, src/hotkeys.ts,
  *             src/screenshot.ts, src/windows.ts, src/snapZones.ts, src/home.ts, src/protection.ts,
  *             src/store.ts, src/icon.ts, src/accurate/host.ts (accurate transcription, ADR-0034),
- *             src/recordings/host.ts (meeting recording and the player, 1.5.0, ADR-0068)
+ *             src/recordings/host.ts (meeting recording and the player, 1.5.0, ADR-0068),
+ *             src/drive/host.ts (Google Drive uploads and the saved notification, 1.6.0, ADR-0072)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * The windows (v1.1.0): the home panel between calls; the main window for the dashboard, the wizard,
@@ -38,6 +39,7 @@ import {
   globalShortcut,
   ipcMain,
   net,
+  Notification,
   protocol,
   screen,
   session,
@@ -74,6 +76,7 @@ import {
   VERIFIED_FILE,
 } from './speechModel';
 import { installRecordings, type FinaliseProcess, type RecordingsHost } from './recordings/host';
+import { installDrive, type DriveHost } from './drive/host';
 import { createStore } from './store';
 import {
   createCompactWindows,
@@ -82,7 +85,12 @@ import {
   type CompactWindows,
 } from './windows';
 import { allowSystemAudioLoopback } from './media';
-import { allowOnlyOurPermissions, lockNavigation, secureWebPreferences } from './security';
+import {
+  allowOnlyOurPermissions,
+  lockNavigation,
+  openInSystemBrowser,
+  secureWebPreferences,
+} from './security';
 
 /** The main window, or null before it is first needed and after it closes. */
 let mainWindow: BrowserWindow | null = null;
@@ -95,6 +103,9 @@ let playerWindow: BrowserWindow | null = null;
 
 /** 1.5.0 (ADR-0068): meeting recording (created when the app is ready). */
 let recordings: RecordingsHost | null = null;
+
+/** 1.6.0 (ADR-0072): Google Drive uploads of recordings and the "saved" notification. */
+let drive: DriveHost | null = null;
 
 /** The Kite URL, once loaded (the player opens on it). */
 let kiteConfig: DesktopConfig | null = null;
@@ -651,6 +662,22 @@ function start(): void {
     });
     // Recordings a crash or a quit left open are finalised now, in the background process.
     void recordings.manager.recover();
+    // 1.6.0 (ADR-0072): Google Drive. The page decides what goes where; the shell sends recording files
+    // from its index to Google's upload address only (net.fetch: the system's proxy applies), and
+    // stops while a call is live.
+    drive = installDrive({
+      ipcMain,
+      allowedOrigin: config.allowedOrigin,
+      recordings: recordings.manager,
+      fetch: (url, init) => net.fetch(url, init),
+      notices: {
+        supported: () => Notification.isSupported(),
+        create: (options) => new Notification({ ...options, icon: appIconPath(__dirname) }),
+        openExternal: (url) => {
+          openInSystemBrowser(url);
+        },
+      },
+    });
 
     // v1.1.0 (ADR-0041): the panel's own buttons, and the pages it opens. Each value is checked.
     ipcMain.handle(OPEN_PAGES_CHANNEL, (event, page: unknown) => {
@@ -701,6 +728,8 @@ function start(): void {
       const next = active === true;
       if (next === callActive) return;
       callActive = next;
+      // 1.6.0 (ADR-0072): a call stops every Drive upload at once; the page resumes them afterwards.
+      drive?.setCallActive(next);
       if (next) home?.hide();
       else home?.showInactive();
     });

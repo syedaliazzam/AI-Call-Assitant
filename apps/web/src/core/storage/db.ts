@@ -27,6 +27,7 @@ import {
   findCalls,
 } from './migrate';
 import type {
+  DriveSessionJob,
   Session,
   LibraryItem,
   StoredAnswer,
@@ -76,6 +77,8 @@ export class KiteDb extends Dexie {
   declare syncMeta: EntityTable<SyncMetaRow, 'id'>;
   /** Recording parts (version 10, ADR-0068): small records; the files stay on the computer that made them. */
   declare recordings: EntityTable<StoredRecording, 'id'>;
+  /** Google Drive uploads, one per session (version 11, ADR-0072); this device only. */
+  declare driveUploads: EntityTable<DriveSessionJob, 'sessionId'>;
 
   /**
    * Declares the schema. Only indexed fields are listed (Dexie stores every field of a row);
@@ -211,6 +214,11 @@ export class KiteDb extends Dexie {
     // meeting. Nothing existing changes.
     this.version(10).stores({
       recordings: 'id, sessionId, meetingId, startedAt',
+    });
+    // Version 11 (desktop 1.6.0, ADR-0072): each session's Google Drive upload, on this device only
+    // (not in SYNCED_STORES, so never in the outbox). Nothing existing changes.
+    this.version(11).stores({
+      driveUploads: 'sessionId, state, updatedAt',
     });
   }
 }

@@ -4,7 +4,9 @@
  *          sign-in sessions, (v1.0.2, ADR-0036) per-user daily request COUNTS and app settings, and
  *          (ADR-0049) each account's synced call data in call_record, ENCRYPTED: sessions,
  *          documents, transcript lines, answers, notes and the rest are stored only as AES-256-GCM
- *          ciphertext, never as readable text. Audio is never stored anywhere.
+ *          ciphertext, never as readable text. Audio is never stored anywhere. (ADR-0072) Each
+ *          account's Google Drive connection (refresh token encrypted) and one "saved" email record
+ *          per session.
  *          Generated with the Better Auth CLI (`auth generate --adapter drizzle --dialect
  *          postgresql`, better-auth 1.7.13) for email + password, the admin plugin and our
  *          `mustChangePassword` field; comments added by hand. If the Better Auth config gains
@@ -14,7 +16,8 @@
  * Depends on: drizzle-orm
  * Architecture: docs/architecture/kite-architecture-v3.1.md §8.1, §8.2 (ADR-0022); ADR-0036
  *               (usage_day and app_setting are written by hand, not by the Better Auth CLI);
- *               ADR-0049 (call_record, written by hand; migrations are additive only, ADR-0050)
+ *               ADR-0049 (call_record, written by hand; migrations are additive only, ADR-0050);
+ *               ADR-0072 (google_drive and drive_notification, written by hand)
  */
 import { relations, sql } from 'drizzle-orm';
 import {
@@ -277,5 +280,92 @@ export const callRecord = pgTable(
     index('call_record_user_updated_idx').on(table.userId, table.updatedAt, table.kind, table.id),
     // Deleting a session finds its documents, lines, answers, notes and question bank.
     index('call_record_user_session_idx').on(table.userId, table.sessionId),
+  ],
+);
+
+/**
+ * Each account's Google Drive connection (ADR-0072): one row while connected. The refresh token is
+ * stored only as AES-256-GCM ciphertext (the call_record pattern: KITE_DATA_KEY_V<n>, bound to this
+ * account), never sent to a browser or logged. Disconnecting revokes the token at Google and deletes
+ * the row; deleting the account deletes it too.
+ */
+export const googleDrive = pgTable('google_drive', {
+  /** The account. One connection per account. */
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  /** Which data key encrypted the refresh token (KITE_DATA_KEY_V<n>). */
+  keyVersion: smallint('key_version').notNull(),
+  /** The Google refresh token, encrypted (base64 of IV + tag + ciphertext). */
+  refreshToken: text('refresh_token').notNull(),
+  /**
+   * 'connected', or 'reconnect' once Google refused the token (revoked, expired after a testing
+   * project's 7 days, or another OAuth client); uploads wait until the person connects again.
+   */
+  status: text('status').notNull().default('connected'),
+  /** The Drive folder sessions are saved in (picked with Google Picker); null until picked. */
+  folderId: text('folder_id'),
+  /** That folder's name as Drive had it when picked, for Settings. Not call data. */
+  folderName: text('folder_name'),
+  /** The Shared Drive the folder is in; null for My Drive. */
+  driveId: text('drive_id'),
+  /** "Save calls to Google Drive" (on by default after connecting). */
+  saveEnabled: boolean('save_enabled').default(true).notNull(),
+  /** "Email me when a call is saved" (on by default; inert until SMTP is configured). */
+  emailEnabled: boolean('email_enabled').default(true).notNull(),
+  /** The team list for the "saved" email ("Also notify"), lower-case addresses. */
+  alsoNotify: text('also_notify')
+    .array()
+    .default(sql`'{}'::text[]`)
+    .notNull(),
+  /** When the person last connected (a reconnect updates it). */
+  connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow().notNull(),
+  /** When the row last changed. */
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});
+
+/**
+ * One row per session whose Drive uploads finished (ADR-0072): the "saved" email's state, so each
+ * session gets at most one email (the primary key) and Settings can list and retry them. What the
+ * email says (title, date, length, file names, folder link, addresses) is stored only encrypted, like
+ * call data; never transcript, notes, answer or document text, which the request cannot even carry.
+ */
+export const driveNotification = pgTable(
+  'drive_notification',
+  {
+    /** The account. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** The session (the device's UUID for it). */
+    sessionId: text('session_id').notNull(),
+    /** 'pending', 'sent', 'failed', 'off' (switched off) or 'not-set-up' (no SMTP settings). */
+    status: text('status').notNull(),
+    /** Which data key encrypted `content`. */
+    keyVersion: smallint('key_version').notNull(),
+    /** The email's details as JSON, encrypted with AES-256-GCM, bound to this account and session. */
+    content: text('content').notNull(),
+    /** How many times sending was tried. */
+    attempts: integer('attempts').default(0).notNull(),
+    /** Why the last try failed, as a short code ('rejected', 'unreachable'); never a message. */
+    error: text('error'),
+    /** When the session's uploads finished. */
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    /** When the mail server accepted the email; null until then. */
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    /** When the row last changed. */
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    // One email per session, ever: a second request finds the row and sends nothing.
+    primaryKey({ columns: [table.userId, table.sessionId] }),
+    // Settings lists one account's latest notifications.
+    index('drive_notification_user_created_idx').on(table.userId, table.createdAt),
   ],
 );

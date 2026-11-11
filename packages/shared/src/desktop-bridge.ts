@@ -4,13 +4,20 @@
  *          `window.kiteDesktop`, which exists only when Kite runs inside the desktop app.
  * Used by: apps/desktop/src/preload.ts (Stage 5, implements it),
  *          apps/web/src/platform/desktop.ts and apps/web/src/platform/index.ts (read it)
- * Depends on: ./hotkeys.ts, ./screenshot.ts (types only)
+ * Depends on: ./hotkeys.ts, ./screenshot.ts, ./recording.ts, ./drive.ts (types only)
  * Also: the accurate-transcription contract (v1.0.1, ADR-0034): status, download, remove, transcribe;
  *       the overlay's presets, page-driven resizing and modes (v1.0.2, ADR-0035); opening pages from
  *       the home panel, window controls and the stacked overlay's layout (v1.1.0, ADR-0041); meeting
- *       recording, the player, displays and this computer's name (desktop 1.5.0, ADR-0068).
+ *       recording, the player, displays and this computer's name (desktop 1.5.0, ADR-0068); Drive
+ *       uploads of recordings and native notifications (desktop 1.6.0, ADR-0072).
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 and §7.3 (preload.ts)
  */
+import type {
+  DesktopNotice,
+  DriveUploadProgress,
+  DriveUploadRequest,
+  DriveUploadResult,
+} from './drive';
 import type { HotkeyAction, HotkeyStatus } from './hotkeys';
 import type {
   DeviceIdentity,
@@ -418,6 +425,27 @@ export interface KiteDesktopApi {
    * @returns The identity afterwards.
    */
   renameDevice?: (name: string) => Promise<DeviceIdentity>;
+  /**
+   * Desktop 1.6.0 (ADR-0072): uploads one of this computer's recording files to a Drive resumable
+   * upload session the page opened, in DRIVE_CHUNK_BYTES chunks, from where Google says it got to.
+   * Stops between chunks while a call is live ('paused'), so the call keeps the computer's bandwidth.
+   * @param request The recording, its file, the upload address and a short-lived access token.
+   * @returns How it ended.
+   */
+  driveUpload?: (request: DriveUploadRequest) => Promise<DriveUploadResult>;
+  /**
+   * Desktop 1.6.0: listens for the progress of this page's Drive uploads.
+   * @param handler Called after each chunk.
+   * @returns A function that stops listening.
+   */
+  onDriveUploadProgress?: (handler: (progress: DriveUploadProgress) => void) => () => void;
+  /**
+   * Desktop 1.6.0: shows a native notification; a click opens its Google Drive link in the system
+   * browser (no other link is opened).
+   * @param notice The two lines and the link.
+   * @returns False when the system cannot show notifications.
+   */
+  showNotice?: (notice: DesktopNotice) => Promise<boolean>;
 }
 
 /** A size the home panel can ask for (v1.3.0, ADR-0055). */

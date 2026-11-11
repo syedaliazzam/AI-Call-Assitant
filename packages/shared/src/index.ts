@@ -4,12 +4,14 @@
  *          limits from api.ts, the hotkey defaults from hotkeys.ts and the screenshot size rule.
  * Used by: apps/web and apps/desktop (`import type { ... } from '@kite/shared'`)
  * Depends on: ./api.ts, ./answer-meta.ts, ./desktop-bridge.ts, ./hotkeys.ts, ./screenshot.ts,
- *             ./notes.ts, ./prepare.ts, ./sync.ts (ADR-0049), ./recording.ts (ADR-0068)
+ *             ./notes.ts, ./prepare.ts, ./sync.ts (ADR-0049), ./recording.ts (ADR-0068),
+ *             ./drive.ts (ADR-0072)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (packages/shared)
  */
 export * from './answer-meta';
 export * from './api';
 export * from './desktop-bridge';
+export * from './drive';
 export * from './hotkeys';
 export * from './screenshot';
 export * from './notes';

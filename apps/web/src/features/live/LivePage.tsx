@@ -10,9 +10,10 @@
  *             src/core/transcript (transcript, saver, endCall), src/core/answer/warm.ts,
  *             src/core/storage (sessions, utterances),
  *             src/platform (kind, for the instructions only),
- *             src/features/live/* (ConnectPanel, TranscriptStrip, AudioMeter, LiveAnswers)
+ *             src/features/live/* (ConnectPanel, TranscriptStrip, AudioMeter, LiveAnswers),
+ *             src/core/drive/queue.ts (1.6.0: End queues the call for Google Drive, ADR-0072)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §6.1,
- *               §7.4 (save-transcript toggle); day-03-sessions.md Stage 4
+ *               §7.4 (save-transcript toggle); day-03-sessions.md Stage 4; ADR-0072
  *
  * v1.1.0: one call at a time on a device (core/live/callLock.ts); Accurate transcription follows the
  * power source on Auto (ADR-0044); listening pauses when a call was left running (core/live/hygiene.ts).
@@ -54,6 +55,7 @@ import { clearTranscript, listUtterances, saveUtterance } from '@/core/storage/u
 import { flushAccountSync } from '@/core/sync/client';
 import { listAnswers } from '@/core/storage/answers';
 import { notesFailureText, type UnavailableReason } from '@/core/answer/unavailable';
+import { queueCallForDrive } from '@/core/drive/queue';
 import { generateNotes, type NotesLine } from '@/core/notes/generate';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
@@ -1015,12 +1017,19 @@ export function LivePage({
     }
     // ADR-0055: a call started from the Connect card: the small window comes back (the shell shows it
     // when the call ends), and this window closes once the call's data and notes are saved.
+    // 1.6.0 (ADR-0072): once the call's lines, notes and recording are saved, the call is queued for
+    // Google Drive (when the account saves there); the uploader starts now that the call is over.
+    const endedAt = Date.now();
+    const queued = Promise.allSettled([saving, notesDone, rewriting, recordingDone]).then(() =>
+      startedAt === null
+        ? false
+        : queueCallForDrive(session.id, { startedAt, endedAt }).catch(() => false),
+    );
     if (launcherCall) {
       setLauncherState('ended');
       reportCallStart(session.id, 'ended');
-      void Promise.allSettled([saving, notesDone, rewriting, recordingDone]).then(() =>
-        getPlatform().windowControl('close'),
-      );
+      // The window closes after the call is queued, so the queue entry is never lost.
+      void queued.then(() => getPlatform().windowControl('close'));
     }
     // Show the lines just saved under "Saved transcript".
     if (saver) {

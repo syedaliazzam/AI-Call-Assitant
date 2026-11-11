@@ -283,6 +283,25 @@ export const browserPlatform: Platform = {
   /** No meeting recording in the browser yet (ADR-0068: Phase 1 records in the desktop app only). */
   recording: null,
 
+  /** No recordings to upload and no native notifications (ADR-0072); transcripts upload from the page. */
+  drive: null,
+
+  /**
+   * Google's consent page and the Picker open in this tab (ADR-0072).
+   *
+   * @returns True.
+   */
+  driveSetupHere: () => true,
+
+  /**
+   * Goes to the page in this tab.
+   *
+   * @param path The web app's path.
+   */
+  openDriveSetup(path: string) {
+    window.location.assign(path);
+  },
+
   /**
    * A picture-in-picture window cannot change its opacity or be resized by the page.
    *

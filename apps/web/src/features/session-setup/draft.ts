@@ -4,11 +4,12 @@
  *          the Details step is validated, and how a draft becomes the input the storage layer
  *          saves. No React; kept apart so the wizard's components stay small.
  * Used by: SessionWizard.tsx, DetailsStep.tsx, PreferencesStep.tsx
- * Depends on: src/core/storage (types, NewSessionInput, DocumentText)
+ * Depends on: src/core/storage (types, NewSessionInput, DocumentText), src/core/drive/addresses.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F2, F3), §7.4;
  *               day-03-sessions.md Stage 3
  */
 import { normaliseKeyTerms } from '@kite/shared';
+import { parseAddressList } from '@/core/drive/addresses';
 import type { DocumentText, NewSessionInput } from '@/core/storage/sessions';
 import type {
   LibraryItem,
@@ -64,6 +65,11 @@ export interface SessionDraft {
   saveTranscript: boolean;
   /** Auto-answer (beta) for this session. */
   autoAnswer: boolean;
+  /**
+   * 1.6.0 (ADR-0072): who else gets this session's "saved to Google Drive" email, as typed (addresses
+   * separated by commas or spaces). Empty: the list in Settings.
+   */
+  driveAlsoNotify: string;
 }
 
 /** Problems with the Details step, by field (absent = fine). */
@@ -104,6 +110,7 @@ export function emptyDraft(
     instructions: defaults.instructions,
     saveTranscript: defaults.saveTranscript,
     autoAnswer: false,
+    driveAlsoNotify: '',
   };
 }
 
@@ -137,6 +144,7 @@ export function draftFromSession(session: Session, documents: StoredDocument[]):
     instructions: session.instructions,
     saveTranscript: session.saveTranscript,
     autoAnswer: session.autoAnswer,
+    driveAlsoNotify: (session.driveAlsoNotify ?? []).join(', '),
   };
 }
 
@@ -182,6 +190,9 @@ export function draftToInput(draft: SessionDraft): NewSessionInput {
     instructions: draft.instructions.trim(),
     saveTranscript: draft.saveTranscript,
     autoAnswer: draft.autoAnswer,
+    // Always stored (an empty list means "the list in Settings"), so clearing the field takes effect.
+    // Entries that are not addresses are left out; the field says which they are.
+    driveAlsoNotify: parseAddressList(draft.driveAlsoNotify).valid,
   };
 }
 
