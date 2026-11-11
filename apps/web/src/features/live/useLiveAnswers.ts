@@ -557,10 +557,12 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           // when an earlier question exists (allowStatement: false here, then all the lines).
           const fresh = lines.filter((line) => !answeredLinesRef.current.has(line.id));
           partOfLines = fresh.length !== lines.length;
-          // 1.5.1 (ADR-0069): the newest unanswered speech is what the press is for, even when it does
-          // not read like a question (a grey line has no "?" yet): it is no longer passed over for an
-          // older question. Claude says when it asks nothing (the "none" reply).
-          picked = pickQuestion(fresh);
+          // A lone fragment among the new lines (the tail of a question the live engine split, or the
+          // rest of one auto-answer already took) still looks back to the question it belongs to. 1.5.1
+          // (ADR-0069): measured on the after-fix runs, answering the new lines as they stood sent 1–3-word
+          // fragments; the newest question now stays in the window through the user's grey words instead
+          // (question.ts selectQuestion).
+          picked = pickQuestion(fresh, { allowStatement: !partOfLines });
           if (picked.kind === 'none' && partOfLines) {
             picked = pickQuestion(lines);
             partOfLines = false;
