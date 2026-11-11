@@ -671,3 +671,38 @@ Same laptop (i5-8350U, Windows 11 Pro 10.0.26200), plugged in. Every recording w
 | Overlay layout with the Rec pill | bar 1 fits at 980 wide | At 900 (the 1.4.0 width) ⋮ and Exit were cut off (page screenshots of the overlay only); 1.5.0 opens the overlay 980 wide and widens a saved 900 place once; the pill's key-cap gives way to the time while recording. |
 | Upgrade 1.4.0 → 1.5.0 (`upgrade.spec.ts`, the released 1.4.0 program extracted from its installer, never installed) | 1 of 1 | Sessions, settings, sign-in and the Private setting kept. |
 | `Paramount-AI-Setup-1.5.0.exe` | 288,801,386 bytes; SHA-256 `3da2965f1930715475f39b908e58894fea87b73f705d4950d6e669ae8f0a7f85` | 1.4.0 was 288,617,707 bytes (+0.18 MB: Mediabunny in the finalising worker). The Windows install step itself is not run on this computer. |
+
+## Calls under load: the 1.5.0 regression and 1.5.1 (11 Nov 2026, ADR-0069)
+
+i5-8350U laptop (4 cores / 8 threads), Windows 11 Pro 10.0.26200, plugged in, Balanced. A real-time harness (investigation only, not in the repository) drove the real desktop shell with a temporary profile against production, under the synthetic cover: the synthetic headphones call (195 s, 7 questions) was the call's audio (Web Audio in the page, both channels started together); Answer was pressed (the shell's own hotkey message) 0.3 s after q1, q3, q5 and q7; q2, q4 and q6 were left to auto-answer. Times are from the page's own messages (worker messages, requests, logs); the speech worker's backlog is the round trip of a ping every 500 ms. CPU: Electron's per-process numbers × 8 (checked against Windows' counters); "rest of the laptop" = the whole machine minus the app (and minus the load threads, where used). One run per column; numbers only.
+
+**What the real call showed (Vercel logs, 11 Nov 2026 01:12):** 10 answer requests, all 200, Claude's first text 0.44–1.09 s with a cache hit on every one; each question's request left the device 34–54 s after the question ended.
+
+| p50 / p95, ms | 1.5.0 quiet, Accurate on | 1.5.0 quiet, + Screen 720p | 1.5.0 busy (4.3 cores else), Accurate on | 1.5.0 busy (4.4 cores else), + Screen 720p | **1.5.1** quiet, Accurate on | **1.5.1** quiet, + Screen 720p | **1.5.1** busy (4 load threads), + Screen 720p | **1.5.1** busy (6 load threads), + Screen 720p |
+|---|---|---|---|---|---|---|---|---|
+| Machine busy (of 8 logical) | 4.65 | 5.34 | 7.42 | 7.86 | 4.97 | 4.85 | 7.20 | 6.91 |
+| Paramount AI (cores) / overlay window | 3.30 / 0.84 | 3.95 / 0.87 | 3.08 / 0.66 | 3.41 / 0.60 | **2.05 / 0.06** | 2.63 / 0.10 | 2.52 / 0.13 | 2.36 / 0.10 |
+| Speech worker backlog | 86 / 437 | 146 / 1,447 | 12,692 / 20,359 | 26,284 / 49,809 (max 55,610) | 4 / 146 | 6 / 214 | 59 / 738 | 110 / 728 |
+| Them speech → first grey words | 929 / 1,207 | 1,220 / 2,517 | 15,606 / 22,347 | 38,978 / 61,030 | 823 / 1,118 | 880 / 1,177 | 1,343 / 1,951 | 1,281 / 2,018 |
+| Them speech end → final line | 1,793 / 5,022 | 2,054 / 6,056 | 18,127 / 30,305 | 40,414 / 62,973 | 1,606 / 4,649 | 1,630 / 4,674 | 1,743 / 5,849 | 1,694 / 4,772 |
+| Final line → Accurate rewrite (lines rewritten) | 1,648 / 2,675 (20/21) | 1,954 / 4,528 (20/21) | 2,656 / 4,744 | 2,986 / 11,718 | 2,365 / 4,586 (17/20) | 2,101 / 4,588 (17/20) | 2,736 / 3,779 (2/21) | — (mock run) |
+| Ctrl+Enter → request sent | 12 / 16 | 12 / 20 | 16 / 39 | 15 / 80 | 7 / 24 | 6 / 18 | 11 / 51 | 18 / — |
+| Ctrl+Enter → first streamed byte | (mock) | (mock) | 1,131 / 1,433 | 1,113 / 1,151 | **1,118 / 1,651** | (mock) | **1,203 / 1,652** | (mock) |
+| Presses that answered the right question | 3/4 | 4/4 | 1/4 | 1/4 | 4/4 (after #51) | 3/4 (before #51) | 3/4 (before #51) | 4/4 (after #51) |
+| Question end → auto-answer sent | 3,114 / 3,312 | 3,048 / 3,243 | 24,829 / 29,585 | 29,589 (2 of 3 never sent) | 2,694 / 3,004 | 2,703 / 3,008 | 2,498 / 2,668 | 1,418 / 1,931 |
+| Question end → auto first streamed byte | (mock) | (mock) | 25,943 / 31,007 | 30,688 | **3,691 / 4,220** | (mock) | **3,600 / 3,928** | (mock) |
+| Worker's own backlog state | — | — | — | — | ok | ok | 15 short "you set aside" spells; 2.0 s of "You" dropped | 14 short spells; nothing dropped |
+
+**Large documents (~471k characters, 164k tokens cached), quiet, Accurate on:** Ctrl+Enter → first streamed byte **2,312 / 3,657 ms in 1.5.0 → 1,929 / 3,334 in 1.5.1** (request bodies gzipped: 476 KB of JSON per answer before); backlog 183 / 3,503 → 3 / 67 ms; Claude's own time to first text with the cache was 0.77–2.85 s (server logs). Rate limits are not a factor: 10M input tokens a minute on Haiku 5.5.
+
+**v1.3.2 on the same laptop (local build of its web app):** app 1.07 cores (overlay 0.09), backlog 44 / 259 (Accurate off) and 0 / 61 ms (on), first grey words 973 / 1,217 and 795 / 962 ms.
+
+**Notes.** The "busy" 1.5.0 runs had about 4.3–4.4 cores of other work (background Windows work after a build), which reproduced the real call; a controlled load of 4 busy threads (about 2.2–2.6 cores) did not (1.5.0 backlog 38 / 577 ms with Screen 720p), so 1.5.1 was checked with 4 and with 6 threads. #51: the after-fix runs found presses sending 1–3-word fragments of a split question (q3, q5); fixed and re-measured (4/4 on both runs). Under heavy load, while "You" is set aside, auto-answer can join two questions into one card (the user's reply between them is not decoded yet): seen once (q3 + q4). Paid: $0.1854 (26 answers, 3 warm-ups; $0.18 of it the large-document run); the investigation's runs before: about $0.27.
+
+| Release check | Result | Notes |
+|---|---|---|
+| Lint, typecheck, unit tests | web 1,860 of 1,860; desktop 223 of 223 | New: backlog, refine queue, call timing log, call notice, channel silence, device watch, document parts, request body, decode queue; repeat guard, question window, greeting fillers, overlay throttle, warm-up reuse, export dividers. |
+| CI on main (8611aff, cbc41f8) | all jobs pass | The recordings index test that failed on Linux since 1.5.0 now passes (plain file names on every platform). |
+| Windows install check (`install-check.yml`, a clean runner) | all expectations pass | Fresh 1.5.1; 1.5.0 with its Start Menu shortcut deleted then 1.5.1 by the updater (/S --updated) and by hand: shortcut back, Start lists "Paramount AI" with AppID `co.paramountintelligence.kite`; Kite 1.1.0 → 1.2.0 → 1.4.0 → 1.5.0 → 1.5.1: one shortcut; opened directly: its window. (1.5.0 checked the same way: a deleted shortcut was never recreated.) |
+| `Paramount-AI-Setup-1.5.1.exe` | 288,801,673 bytes; SHA-256 `91a9966f1b339542d6b722f75db678f597c8ecfdc35444fb0bb2757a6ca08118` | Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.5.1. |
+| Real-feed update check (`update-check.ts`, 1.5.0 extracted from its installer, never installed) | PASS | 1.5.0 found, downloaded and verified 1.5.1 from the real releases repository, into its own cache (removed after). |
