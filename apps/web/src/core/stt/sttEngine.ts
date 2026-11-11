@@ -20,6 +20,7 @@ import { formatHotwords } from './hotwords';
 import {
   DEFAULT_STT_MODEL,
   getSttModel,
+  aecDownloads,
   pickModelSource,
   resolveDownloads,
   type ModelSource,
@@ -120,8 +121,15 @@ export interface SttEngineOptions {
   keepAudio?: boolean;
   /** v1.4 (ADR-0065): "them" final lines carry their recent audio, for the end-of-turn model. */
   turnAudio?: boolean;
+  /**
+   * 1.5.2 (ADR-0070): remove the other side's voice from the microphone in the worker (WebRTC AEC3 with
+   * "Them" as its reference). Live calls turn it on.
+   */
+  echoCancel?: boolean;
   /** v1.4 (ADR-0065): the other side paused while talking (with turnAudio): their recent audio. */
   onPause?: (event: PauseEvent) => void;
+  /** 1.5.2 (ADR-0070): the voice came back after a pause (the speaker went on). */
+  onResume?: (event: { channel: ChannelId }) => void;
   /** Statistics, about once a second. */
   onStats?: (stats: EngineStats) => void;
   /** 1.5.1 (ADR-0069): the worker's backlog state changed (behind: "You" set aside, or catching up). */
@@ -298,6 +306,9 @@ export function createSttEngine(
           recent: message.recent,
         });
         break;
+      case 'resume':
+        options.onResume?.({ channel: message.channel });
+        break;
       case 'backlog':
         options.onBacklog?.(message.backlog);
         break;
@@ -329,6 +340,8 @@ export function createSttEngine(
     hotwords: formatHotwords(options.hotwords ?? '').buffer,
     beamWidth: options.beamWidth ?? DEFAULT_BEAM_WIDTH,
     ...(options.turnAudio ? { turnAudio: true } : {}),
+    // 1.5.2 (ADR-0070): the echo canceller runs in the worker, with the other side as its reference.
+    ...(options.echoCancel ? { aec: aecDownloads(deps.origin) } : {}),
   });
 
   /**

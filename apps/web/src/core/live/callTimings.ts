@@ -34,7 +34,9 @@ export type AnswerTrigger =
   | 'screenshot-hotkey'
   | 'screenshot-button'
   | 'screenshot-chat'
-  | 'reanswer';
+  | 'reanswer'
+  // 1.5.2 (ADR-0070): a press's card asked again because the person went on.
+  | 'rerun';
 
 /** One line of the other side (times are Unix ms). */
 export interface LineTiming {
@@ -76,6 +78,12 @@ export interface AnswerTiming {
   retries: number;
   /** Request size, bytes as sent. */
   bytes: number;
+  /** 1.5.2 (ADR-0070): the question's words were still grey when it was asked. */
+  grey?: boolean;
+  /** 1.5.2: auto-answer asked at the pause, before the line was final (the end-of-turn model). */
+  early?: boolean;
+  /** 1.5.2: the card this request asked again (a rerun or a continuation), by its answer id. */
+  rerunOf?: string;
 }
 
 /** One Accurate decision (times are Unix ms). */
@@ -118,6 +126,11 @@ export interface CallTimingLog {
   deferredDroppedMs: number;
   /** Call notices shown: [Unix ms, kind]. */
   notices: [number, string][];
+  /**
+   * 1.5.2 (ADR-0070): the speech worker's echo canceller as it last reported: 'on', 'off' or 'failed'
+   * (absent from logs before 1.5.2, or when the worker never reported it).
+   */
+  echoCancel?: string;
 }
 
 /** Where saved calls are kept (tests pass a fake). */
@@ -176,6 +189,8 @@ export interface CallTimings {
   noteFinal: (line: Omit<LineTiming, 'partialAt' | 'finalAt'>, at?: number) => void;
   /** Notes the worker's backlog (kept once a second). */
   noteBacklog: (info: BacklogInfo, at?: number) => void;
+  /** 1.5.2 (ADR-0070): notes the echo canceller's state ('on', 'off' or 'failed'). */
+  noteEchoCancel: (state: string) => void;
   /** Notes what Accurate did with a line. */
   noteRefine: (lineId: string, outcome: string, at?: number) => void;
   /** Notes an answer being sent; later calls with the same id update it. */
@@ -240,6 +255,9 @@ export function createCallTimings(
       if (!log) return;
       capped(log.lines, { ...line, partialAt: partialAt[line.speaker], finalAt: at });
       partialAt[line.speaker] = null;
+    },
+    noteEchoCancel(state) {
+      if (log) log.echoCancel = state;
     },
     noteBacklog(info, at = clock()) {
       if (!log) return;
@@ -337,6 +355,77 @@ export interface CallSummary {
   triggers: Record<string, number>;
   /** Notices shown, by kind. */
   notices: Record<string, number>;
+  /** 1.5.2 (ADR-0070): every card, in order, with its moments and intervals. */
+  cards: CardTiming[];
+}
+
+/**
+ * 1.5.2 (ADR-0070): one card's timings as the download shows them: moments in seconds since the call
+ * started, intervals in ms (null when a moment is missing).
+ */
+export interface CardTiming {
+  /** 1, 2, … in the order they were asked. */
+  n: number;
+  /** What asked: the key, a button, auto-answer, chat, a screenshot, a rerun… */
+  trigger: string;
+  /** 'grey' (asked on words still grey), 'early' (auto at the pause), 'rerun' (asked again on its card). */
+  flags: string[];
+  /** 'done', 'error', 'cancelled', 'none' (nothing to answer), or 'streaming' when the call ended first. */
+  status: string;
+  /** The end of the question's speech, s. */
+  questionEnd: number | null;
+  /** The key press or the decision, s. */
+  asked: number;
+  /** The request left the device, s. */
+  sent: number;
+  /** The first words arrived, s. */
+  firstWord: number | null;
+  /** The card was complete, s. */
+  done: number | null;
+  /** Question end → request sent. */
+  endToSentMs: number | null;
+  /** Question end → first word. */
+  endToFirstWordMs: number | null;
+  /** Key press (or decision) → first word. */
+  askedToFirstWordMs: number | null;
+  /** Request sent → first word (the network and Claude). */
+  sentToFirstWordMs: number | null;
+  /** First word → card complete. */
+  firstWordToDoneMs: number | null;
+}
+
+/**
+ * 1.5.2 (ADR-0070): the per-card table of a call.
+ *
+ * @param log The call's log.
+ * @returns One row per request, in order.
+ * Called from: summarizeCall(); tests
+ */
+export function cardTimings(log: CallTimingLog): CardTiming[] {
+  const seconds = (at: number | null) =>
+    at === null ? null : Math.round((at - log.startedAt) / 100) / 10;
+  const between = (from: number | null, to: number | null) =>
+    from === null || to === null ? null : Math.round(to - from);
+  return log.answers.map((answer, index) => ({
+    n: index + 1,
+    trigger: answer.trigger,
+    flags: [
+      ...(answer.grey ? ['grey'] : []),
+      ...(answer.early ? ['early'] : []),
+      ...(answer.rerunOf ? ['rerun'] : []),
+    ],
+    status: answer.status,
+    questionEnd: seconds(answer.speechEnd),
+    asked: seconds(answer.askedAt)!,
+    sent: seconds(answer.sentAt)!,
+    firstWord: seconds(answer.firstWordAt),
+    done: seconds(answer.doneAt),
+    endToSentMs: between(answer.speechEnd, answer.sentAt),
+    endToFirstWordMs: between(answer.speechEnd, answer.firstWordAt),
+    askedToFirstWordMs: between(answer.askedAt, answer.firstWordAt),
+    sentToFirstWordMs: between(answer.sentAt, answer.firstWordAt),
+    firstWordToDoneMs: between(answer.firstWordAt, answer.doneAt),
+  }));
 }
 
 /**
@@ -367,5 +456,6 @@ export function summarizeCall(log: CallTimingLog): CallSummary {
     backlog: percentiles(log.backlog.map(([, lag]) => lag)),
     triggers: count(log.answers.map((a) => a.trigger)),
     notices: count(log.notices.map(([, kind]) => kind)),
+    cards: cardTimings(log),
   };
 }

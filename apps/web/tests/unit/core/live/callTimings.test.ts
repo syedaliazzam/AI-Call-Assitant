@@ -2,9 +2,12 @@
  * Tests apps/web/src/core/live/callTimings.ts (1.5.1, ADR-0069): the device-side call timing log records
  * lines (first grey words and final), the backlog once a second, Accurate outcomes, answers (updated by
  * id) and notices; End saves the call, newest first, keeping five; the summary gives p50 / p95. Never text.
+ * 1.5.2 (ADR-0070): the per-card table: moments in seconds since the call started, intervals in ms, the
+ * trigger and the grey / early / rerun flags, nulls where a moment is missing.
  */
 import { describe, expect, it } from 'vitest';
 import {
+  cardTimings,
   createCallTimings,
   MAX_CALLS,
   percentiles,
@@ -116,5 +119,63 @@ describe('summarizeCall', () => {
   it('percentiles of nothing are null', () => {
     expect(percentiles([])).toEqual({ n: 0, p50: null, p95: null });
     expect(percentiles([3, 1, 2])).toEqual({ n: 3, p50: 2, p95: 3 });
+  });
+});
+
+describe('cardTimings (1.5.2, ADR-0070)', () => {
+  it('lists each card with its moments and intervals', () => {
+    const start = 1_700_000_000_000;
+    const t = createCallTimings({ read: () => null, write: () => undefined }, () => start);
+    t.start({
+      sessionId: 's',
+      startedAt: start,
+      platform: 'desktop',
+      accurate: true,
+      recording: 'off',
+      documentChars: 0,
+    });
+    t.noteAnswer({
+      answerId: 'a',
+      trigger: 'auto',
+      askedAt: start + 10_900,
+      speechEnd: start + 10_000,
+      sentAt: start + 10_950,
+      early: true,
+      grey: true,
+    });
+    t.noteAnswer({ answerId: 'a', firstWordAt: start + 12_000 });
+    t.noteAnswer({ answerId: 'a', status: 'done', doneAt: start + 13_000 });
+    t.noteAnswer({
+      answerId: 'a~1',
+      trigger: 'auto',
+      askedAt: start + 15_000,
+      speechEnd: start + 14_000,
+      sentAt: start + 15_000,
+      rerunOf: 'a',
+    });
+    const cards = cardTimings(t.current()!);
+    expect(cards[0]).toMatchObject({
+      n: 1,
+      trigger: 'auto',
+      flags: ['grey', 'early'],
+      status: 'done',
+      questionEnd: 10,
+      sent: 11,
+      firstWord: 12,
+      done: 13,
+      endToSentMs: 950,
+      endToFirstWordMs: 2_000,
+      askedToFirstWordMs: 1_100,
+      sentToFirstWordMs: 1_050,
+      firstWordToDoneMs: 1_000,
+    });
+    expect(cards[1]).toMatchObject({
+      n: 2,
+      flags: ['rerun'],
+      firstWord: null,
+      endToFirstWordMs: null,
+    });
+    t.noteEchoCancel('on');
+    expect(t.current()!.echoCancel).toBe('on');
   });
 });

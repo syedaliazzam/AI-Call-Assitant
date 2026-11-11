@@ -25,6 +25,7 @@ import { TARGET_SAMPLE_RATE } from '../audio/resample';
 import { chunkRms, lastLoudSampleEnd, SilenceGate, type GateChunk } from './gate';
 import { isNoiseLine } from './noiseLine';
 import { looksUnfinished } from '../transcript/complete';
+import { isQuestionLike } from '../transcript/question';
 import { ACCURATE_MAX_SECONDS } from '@kite/shared';
 import { OnsetDetector, realTimeFactor } from './metrics';
 import {
@@ -86,7 +87,7 @@ export interface RecognizerLike {
 /** Messages a channel produces (a subset of the worker's FromWorker). */
 export type ChannelEvent = Extract<
   FromWorker,
-  { type: 'partial' } | { type: 'final' } | { type: 'pause' }
+  { type: 'partial' } | { type: 'final' } | { type: 'pause' } | { type: 'resume' }
 >;
 
 /** Clocks the channel uses (injectable for tests). */
@@ -302,6 +303,8 @@ export class ChannelDecoder {
         capturedEndAt - ((chunk.samples.length - loudEnd) / TARGET_SAMPLE_RATE) * 1000;
       // v1.4: audio time since the last loud frame (for the pause message), and a new pause may come.
       this.quietMs = ((chunk.samples.length - loudEnd) / TARGET_SAMPLE_RATE) * 1000;
+      // 1.5.2 (ADR-0070): the voice is back after a posted pause: the speaker went on.
+      if (this.pausePosted) this.emit({ type: 'resume', channel: this.id });
       this.pausePosted = false;
     } else {
       this.quietMs += chunkAudioMs;
@@ -313,8 +316,14 @@ export class ChannelDecoder {
       this.lastText !== '' &&
       // Only words that look cut off are judged (ADR-0065: the model may only shorten that wait), so
       // the model runs a few times a call, not at every pause (measured: at every pause it slowed
-      // the speech worker on the test laptop).
-      looksUnfinished(this.lastText) &&
+      // the speech worker on the test laptop). 1.5.2 (ADR-0070): and words that read as a question, so
+      // auto-answer can answer at the pause instead of a second later at the final line (the real call of
+      // 11 Nov 2026 had 3 pauses judged in 8 minutes; questions are a few a minute).
+      // Then (the same day): every grey line of three words or more, because live words without marks
+      // rarely look like a question ("next question have you done anything with fraud detection").
+      (looksUnfinished(this.lastText) ||
+        isQuestionLike(this.lastText) ||
+        this.lastText.split(/\s+/).filter(Boolean).length >= 3) &&
       this.lastLoudAt !== null &&
       !this.pausePosted &&
       this.quietMs >= PAUSE_JUDGE_MS

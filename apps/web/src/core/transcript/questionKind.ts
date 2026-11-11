@@ -30,9 +30,22 @@ export type LineKind = 'question' | 'greeting' | 'instruction' | 'meta' | 'garbl
  * sound or the connection, and sharing screens. Unlike a greeting, such a phrase is the whole point of
  * the line, so it is not looked for again once removed ("Can you hear me okay? I think my connection
  * dropped" is about the call, not a question about hearing).
+ * 1.5.2 (ADR-0070): asking to repeat a part ("can you repeat that last part?", "say the last bit again",
+ * "go over it again", "I missed that"), which the real call of 11 Nov 2026 answered with a card twice.
  */
 const META_PHRASES =
-  /\b(?:(?:can|could|would) you (?:please )?(?:repeat|say) (?:that|it|this|the question|your question|the last part)(?: again| please| one more time| for me)*|(?:can|could) you (?:please )?repeat|say (?:that|it) again|come again|repeat (?:that|the question)|one more time|what was (?:the|your) question|i (?:did ?n['o]?t|didn't|couldn't|could not) (?:quite )?(?:catch|get|hear) (?:that|it|the question|you|what you said|the last part)|(?:can|could|do) you (?:guys |all |both )?(?:hear|see) me(?: (?:okay|ok|alright|clearly|now|properly|well|fine))*|(?:is|are) (?:my|the) (?:audio|voice|mic|microphone|sound|video|camera|connection|internet|screen)(?: (?:okay|ok|fine|working|clear|good|visible|coming through|better|now))*|am i audible|is (?:this|that) better|you(?:'re| are) (?:breaking up|cutting out|frozen|on mute|muted|lagging)|you (?:broke|froze|cut out)(?: up)?|(?:i|we) (?:lost|can't hear|cannot hear|couldn't hear|can not hear) you|(?:my|the|your) (?:connection|internet|audio|network|video) (?:dropped|is bad|is poor|froze|cut out|went|is lagging|is slow|is unstable)|(?:can|could) you see my screen|(?:let me|i'll|i will|i'm going to) (?:share|stop sharing) my screen|stop (?:sharing|presenting)(?: (?:your|the|my) screen)?|is my screen visible|sorry,? (?:what|pardon)|pardon(?: me)?)\b/gi;
+  /\b(?:(?:can|could|would) you (?:please )?(?:repeat|say) (?:that|it|this|the question|your question|the last part)(?: (?:the )?(?:last|first|second|third|final|other) (?:part|bit|point|sentence|thing|one))?(?: again| please| one more time| for me)*|(?:can|could|would) you (?:please )?(?:repeat|say) (?:the |that |your )?(?:last|first|second|third|final|other) (?:part|bit|point|sentence|thing|one)(?: again| please| one more time| for me)*|(?:can|could|would) you (?:please )?(?:go over|run through|run me through) (?:that|it|this)(?: (?:part|bit|point))? (?:again|one more time)|(?:the|that) (?:last|first|second|final) (?:part|bit) again|(?:i|we) (?:missed|lost) (?:that|it|the last part|the last bit|what you said)|say again|(?:can|could) you (?:please )?repeat|say (?:that|it) again|come again|repeat (?:that|the question)|one more time|what was (?:the|your) question|i (?:did ?n['o]?t|didn't|couldn't|could not) (?:quite )?(?:catch|get|hear) (?:that|it|the question|you|what you said|the last part)|(?:can|could|do) you (?:guys |all |both )?(?:hear|see) me(?: (?:okay|ok|alright|clearly|now|properly|well|fine))*|(?:is|are) (?:my|the) (?:audio|voice|mic|microphone|sound|video|camera|connection|internet|screen)(?: (?:okay|ok|fine|working|clear|good|visible|coming through|better|now))*|am i audible|is (?:this|that) better|you(?:'re| are) (?:breaking up|cutting out|frozen|on mute|muted|lagging)|you (?:broke|froze|cut out)(?: up)?|(?:i|we) (?:lost|can't hear|cannot hear|couldn't hear|can not hear) you|(?:my|the|your) (?:connection|internet|audio|network|video) (?:dropped|is bad|is poor|froze|cut out|went|is lagging|is slow|is unstable)|(?:can|could) you see my screen|(?:let me|i'll|i will|i'm going to) (?:share|stop sharing) my screen|stop (?:sharing|presenting)(?: (?:your|the|my) screen)?|is my screen visible|sorry,? (?:what|pardon)|pardon(?: me)?)\b/gi;
+
+/**
+ * 1.5.2 (ADR-0070): words that name nothing when they are what is left of a request to repeat ("sorry,
+ * that last part again please"), so they never make it a question.
+ */
+const META_LEFTOVERS = new Set(
+  (
+    'sorry so um uh okay ok please that it this the a last part bit point one more time again for me ' +
+    'first second third final other quick just quickly real really'
+  ).split(' '),
+);
 
 /**
  * v1.4: a request for an answer worded as a statement ("I'd like to hear about your Kubernetes work").
@@ -46,7 +59,7 @@ const REQUEST_PHRASES =
  * what is left says whether anything else was said.
  */
 const GREETING_PHRASES =
-  /\b(?:hi|hello|hey|good (?:morning|afternoon|evening|day)|nice to (?:meet|see) you|pleasure to meet you|thanks?(?: you)?(?: so much| very much| a lot)?(?: for (?:joining|coming|your time|having me|taking the time))?|welcome|how are you(?: doing)?(?: today)?|how(?:'s| is)(?: it going| everything| your day(?: going)?)|how have you been|what(?:'s| is) up|can you (?:hear|see) me(?: okay| ok| alright| clearly| now)?|can you hear me|are you (?:there|with me)|do you hear me|bye|goodbye|see you|take care|have a (?:good|great|nice) (?:one|day|evening|weekend))\b/gi;
+  /\b(?:hi|hello|hey|good (?:morning|afternoon|evening|day)|nice to (?:meet|see) you|pleasure to meet you|thanks?(?: you)?(?: so much| very much| a lot)?(?: for (?:joining|coming|your time|having me|taking the time))?|welcome|how are you(?: doing)?(?: today)?|how(?:'s| is)(?: it going| everything| your day(?: going)?)|how (?:are|is|'s) (?:everyone|everybody|you all|you guys)(?: doing)?(?: today)?|good to (?:meet|see) you|talk (?:to you )?(?:soon|later)|bye-bye|see you (?:soon|later|next week|then)|how have you been|what(?:'s| is) up|can you (?:hear|see) me(?: okay| ok| alright| clearly| now)?|can you hear me|are you (?:there|with me)|do you hear me|bye|goodbye|see you|take care|have a (?:good|great|nice) (?:one|day|evening|weekend))\b/gi;
 
 /** Telling the user to do something on the call, which is not a question to answer. */
 const INSTRUCTION_PHRASES =
@@ -173,7 +186,13 @@ export function lineKind(text: string): LineKind {
       .replace(META_PHRASES, ' ')
       .replace(GREETING_PHRASES, ' ')
       .replace(INSTRUCTION_PHRASES, ' ');
-    return questionSpan(contentOnly(rest)) !== null || REQUEST_PHRASES.test(rest)
+    // 1.5.2 (ADR-0070): the "?" left behind is the removed phrase's ("Sorry, can you repeat that last
+    // part?" leaves "Sorry, last part?"); question words left over make it a question, and so does a
+    // repeat of something named ("could you repeat the price for forty seats?": three words that say what).
+    const named = wordsOf(contentOnly(rest)).filter((word) => !META_LEFTOVERS.has(word));
+    return questionSpan(contentOnly(rest.replace(/\?/g, ' '))) !== null ||
+      REQUEST_PHRASES.test(rest) ||
+      named.length >= 3
       ? 'question'
       : 'meta';
   }

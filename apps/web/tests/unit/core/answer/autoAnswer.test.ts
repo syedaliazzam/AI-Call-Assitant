@@ -7,10 +7,18 @@
  * not stopped by the user's blips but is by a real reply, never fires while someone is speaking, when off,
  * while streaming, or for lines already answered, ignores another language, and asks again on the same
  * card when the other person goes on within 4 s (a rerun); continuationOf() finds those words.
+ * 1.5.2 (ADR-0070), cases built from the real call of 11 Nov 2026 (its times, invented words): speech of the
+ * user's that began over the question (the speakers' echo, reading the last answer aloud) is not a reply;
+ * a grey question judged finished at its pause is answered at once (and not when the words changed since,
+ * the judgment is low, or the words look cut off); a question that came due while another answer streamed
+ * is answered just after; a press on grey words is asked again on its card when the person goes on, with
+ * auto-answer off.
  */
 import { describe, expect, it } from 'vitest';
 import {
   ACCURATE_WAIT_MS,
+  AFTER_STREAM_GRACE_MS,
+  EARLY_TURN_AT,
   AUTO_MAX_AGE_MS,
   AUTO_PAUSE_MS,
   autoAnswerDue,
@@ -224,7 +232,7 @@ describe('autoAnswerDue: what', () => {
       autoAnswerDue(
         state([
           line('a', 'them', QUESTION, T),
-          line('b', 'you', 'IT COSTS ABOUT FORTY A SEAT', T + 900),
+          line('b', 'you', 'IT COSTS ABOUT FORTY A SEAT', T + 2_900, { tStart: T + 300 }),
         ]),
         later,
       ),
@@ -393,5 +401,168 @@ describe('continuationOf', () => {
       line('b', 'them', 'CAN YOU HEAR ME', T + 3_000, { tStart: T + 1_500 }),
     ];
     expect(continuationOf(meta, last, 8_000, T)).toEqual([]);
+  });
+});
+
+describe('1.5.2: the real call of 11 Nov 2026 (ADR-0070)', () => {
+  /**
+   * The call's clock.
+   *
+   * @param seconds Seconds of the recording.
+   * @returns Unix ms.
+   */
+  const at = (seconds: number) => T + seconds * 1_000;
+  const CHURN =
+    'NEXT QUESTION CHURN ON OUR FOUR G CUSTOMERS IS A BIG PROBLEM HAVE YOU BUILT ANYTHING TO PREDICT IT';
+
+  it('answers a question whose misheard echo on "You" began during it (round 2, churn: 340.7 s in 336.8–343.5 s)', () => {
+    const lines = [
+      line('them1', 'them', CHURN, at(343.5), { tStart: at(336.8) }),
+      line('echo', 'you', 'HAVE YOU SHOWN', at(342.9), { tStart: at(340.7) }),
+    ];
+    expect(questionWindow(lines, new Set()).map((l) => l.id)).toEqual(['them1']);
+    expect(autoAnswerDue(state(lines), at(345))).toMatchObject({
+      kind: 'answer',
+      lineIds: ['them1'],
+    });
+  });
+
+  it('answers a question the user read an answer over (round 2, support: reading from 413.1 s in 412.5–420.1 s)', () => {
+    const lines = [
+      line(
+        'them1',
+        'them',
+        'NEXT QUESTION HAVE YOU BUILT A SUPPORT COPILOT AND HOW DID YOU KEEP HUMANS IN THE LOOP',
+        at(420.1),
+        { tStart: at(412.5) },
+      ),
+      line(
+        'read',
+        'you',
+        'YES WE MADE A SUPPORT COPILOT THAT DRAFTS REPLIES FROM TICKET HISTORY',
+        at(419.9),
+        { tStart: at(413.1) },
+      ),
+    ];
+    expect(autoAnswerDue(state(lines), at(421.5))?.kind).toBe('answer');
+  });
+
+  it('still stops for a reply that began after the question ended', () => {
+    const lines = [
+      line('them1', 'them', CHURN, at(343.5), { tStart: at(336.8) }),
+      line(
+        'reply',
+        'you',
+        'WE BUILT A CHURN MODEL WITH ABOUT SEVENTY ONE PERCENT ACCURACY',
+        at(346),
+        { tStart: at(343.8) },
+      ),
+    ];
+    expect(autoAnswerDue(state(lines), at(347))).toBeNull();
+  });
+
+  describe('answering at the pause', () => {
+    const grey = (turnEnd: number | 'pending', text = CHURN, pauseText = text) =>
+      line('g', 'them', text, at(343.7), {
+        tStart: at(336.8),
+        final: false,
+        pause: { speechEnd: at(343.5), turnEnd, text: pauseText },
+      });
+
+    it('answers a grey question the end-of-turn model heard finish, at once', () => {
+      expect(autoAnswerDue(state([grey(0.85)]), at(344.3))).toEqual({
+        kind: 'answer',
+        lineIds: ['g'],
+        tEnd: at(343.5),
+      });
+    });
+
+    it('waits while the judgment runs or when it is low; late words of the same speech do not matter', () => {
+      expect(autoAnswerDue(state([grey('pending')]), at(344.3))).toBeNull();
+      expect(autoAnswerDue(state([grey(EARLY_TURN_AT - 0.2)]), at(344.3))).toBeNull();
+      // The model wrote the last word 0.3 s after the pause (the real call: 0.1–0.5 s): still answered.
+      expect(autoAnswerDue(state([grey(0.9, `${CHURN} NOW`, CHURN)]), at(344.3))?.kind).toBe(
+        'answer',
+      );
+    });
+
+    it('needs the clearer judgment when the words look cut off', () => {
+      const cut = 'HAVE YOU BUILT ANYTHING TO PREDICT CHURN AND';
+      expect(autoAnswerDue(state([grey(0.75, cut)]), at(344.3))).toBeNull();
+      expect(autoAnswerDue(state([grey(0.85, cut)]), at(344.3))?.kind).toBe('answer');
+    });
+
+    it('does not ask again for a line that only got its last word late', () => {
+      const last: AnsweredQuestion = {
+        answerId: 'card',
+        lineIds: ['g'],
+        end: at(343.5),
+        askedAt: at(344.3),
+        auto: true,
+        words: CHURN.split(' ').length,
+      };
+      const late = line('g', 'them', `${CHURN} NOW`, at(345.5), { tStart: at(336.8) });
+      expect(
+        autoAnswerDue(state([late], { last, answeredLineIds: new Set(['g']) }), at(348)),
+      ).toBeNull();
+    });
+
+    it('asks again on the same card when they go on after an early answer', () => {
+      const last: AnsweredQuestion = {
+        answerId: 'card',
+        lineIds: ['g'],
+        end: at(343.5),
+        askedAt: at(344.3),
+        auto: true,
+      };
+      const grown = line('g', 'them', `${CHURN} AND HOW ACCURATE WAS IT`, at(346.5), {
+        tStart: at(336.8),
+      });
+      expect(
+        autoAnswerDue(state([grown], { last, answeredLineIds: new Set(['g']) }), at(348)),
+      ).toMatchObject({ kind: 'rerun', replaces: 'card', lineIds: ['g'] });
+    });
+  });
+
+  it('answers a question that came due while another answer streamed, once that one finishes', () => {
+    const lines = [line('them1', 'them', CHURN, at(343.5), { tStart: at(336.8) })];
+    const last: AnsweredQuestion = {
+      answerId: 'prev',
+      lineIds: ['old'],
+      end: at(325),
+      askedAt: at(327),
+      auto: true,
+    };
+    const later = at(343.5) + AUTO_MAX_AGE_MS + 2_000;
+    expect(autoAnswerDue(state(lines, { last }), later)).toBeNull();
+    expect(
+      autoAnswerDue(state(lines, { last, idleSince: later - AFTER_STREAM_GRACE_MS / 2 }), later)
+        ?.kind,
+    ).toBe('answer');
+  });
+
+  it('asks a press on grey words again on its card with auto-answer off; does nothing else then', () => {
+    const last: AnsweredQuestion = {
+      answerId: 'card',
+      lineIds: ['g'],
+      end: at(343.5),
+      askedAt: at(343.6),
+      auto: false,
+      grey: true,
+    };
+    const grown = line('g', 'them', `${CHURN} AND HOW ACCURATE WAS IT`, at(346.5), {
+      tStart: at(336.8),
+    });
+    const off = { enabled: false, last, answeredLineIds: new Set(['g']) };
+    expect(autoAnswerDue(state([grown], off), at(348))).toMatchObject({
+      kind: 'rerun',
+      replaces: 'card',
+    });
+    expect(
+      autoAnswerDue(
+        state([line('n', 'them', CHURN, at(400), { tStart: at(395) })], { enabled: false }),
+        at(402),
+      ),
+    ).toBeNull();
   });
 });

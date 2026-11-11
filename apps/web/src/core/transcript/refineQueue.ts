@@ -7,6 +7,10 @@
  *          waiting one, which keeps its live words); a line whose rewrite would start more than
  *          MAX_REFINE_AGE_MS after it became final is skipped; and nothing starts while the live engine
  *          is behind (canRun false). A skipped line keeps the live engine's words (and gets punctuation).
+ *          1.5.2 (ADR-0070): the user's own lines are rewritten during the call too, but only when the engine
+ *          has nothing else to do (offerIdle): on the real call of 11 Nov 2026 the live words of the user's
+ *          lines were 56% wrong and the accurate engine's 33%. Under load they wait for the pass after the
+ *          call, as before.
  * Used by: src/features/live/LivePage.tsx (onFinal)
  * Depends on: nothing (the caller passes the work and the clock)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1; ADR-0034, ADR-0066, ADR-0069
@@ -48,6 +52,14 @@ export interface RefineQueue<J extends RefineJob> {
    * @param job The line.
    */
   push: (job: J) => void;
+  /**
+   * 1.5.2: starts a low-priority rewrite (a "You" line) only when nothing runs or waits and the live engine
+   * keeps up; otherwise does nothing (the line keeps its live words until the pass after the call).
+   *
+   * @param job The line.
+   * @returns True when its rewrite started.
+   */
+  offerIdle: (job: J) => boolean;
   /** Skips the waiting line (End). */
   clear: () => void;
   /** Whether a rewrite is running. */
@@ -103,6 +115,11 @@ export function createRefineQueue<J extends RefineJob>(
       }
       if (waiting) options.onSkip(waiting, 'replaced');
       waiting = job;
+    },
+    offerIdle(job) {
+      if (running || waiting || !options.canRun() || now() - job.finalAt > maxAgeMs) return false;
+      start(job);
+      return true;
     },
     clear() {
       if (waiting) options.onSkip(waiting, 'replaced');

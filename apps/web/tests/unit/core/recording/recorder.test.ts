@@ -5,10 +5,14 @@
  * the last pieces, stops the screen and has the shell finalise; no stereo file when the transcript is not
  * saved; a sound-only recording opens no screen; failures to start say why and release the screen; a full
  * drive and a failed write stop it by themselves; low space is reported; a new microphone joins the mix.
+ * 1.5.2 (ADR-0070): each side goes through its own −6 dB gain into the mix, which has a limiter, and
+ * through a limiter of its own to its side of the stereo file.
  */
 import type { LocalRecording, RecordingTrack } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  LIMITER,
+  RECORDING_HEADROOM_GAIN,
   RecordingStartError,
   startRecording,
   type RecorderDeps,
@@ -85,7 +89,31 @@ function setup(hostChanges: Partial<RecordingHost> = {}) {
   const written: { track: RecordingTrack; text: string }[] = [];
   const screenVideo = track('video');
   const connections: string[] = [];
+  // 1.5.2: the wiring between the mix's nodes, and the nodes by name.
+  const graph: string[] = [];
+  const nodes = new Map<string, Record<string, { value: number }>>();
   let sourceCount = 0;
+  let gainCount = 0;
+  let limiterCount = 0;
+  let destCount = 0;
+  /**
+   * A fake audio node that records what it is connected to.
+   *
+   * @param name   Its name in the graph.
+   * @param params Its parameters.
+   * @returns The node.
+   */
+  const node = (name: string, params: Record<string, { value: number }> = {}) => {
+    nodes.set(name, params);
+    return {
+      name,
+      ...params,
+      connect: (target: { name?: string }, _out?: number, input?: number) =>
+        graph.push(`${name}->${target.name ?? '?'}${input === undefined ? '' : `:${input}`}`),
+      disconnect: () => undefined,
+    };
+  };
+  const param = () => ({ value: 0 });
   const deps: RecorderDeps = {
     isTypeSupported: () => true,
     hardwareH264: async () => true,
@@ -96,13 +124,24 @@ function setup(hostChanges: Partial<RecordingHost> = {}) {
         state: 'running',
         resume: async () => undefined,
         close: async () => undefined,
-        createMediaStreamDestination: () => ({ stream: stream([track('audio')]) }),
-        createChannelMerger: () => ({ connect: () => undefined }),
+        createMediaStreamDestination: () => ({
+          name: `dest${(destCount += 1)}`,
+          stream: stream([track('audio')]),
+        }),
+        createChannelMerger: () => node('merger'),
+        createGain: () => node(`gain${(gainCount += 1)}`, { gain: { value: 1 } }),
+        createDynamicsCompressor: () =>
+          node(`limiter${(limiterCount += 1)}`, {
+            threshold: param(),
+            knee: param(),
+            ratio: param(),
+            attack: param(),
+            release: param(),
+          }),
         createMediaStreamSource: () => {
           const id = `source${(sourceCount += 1)}`;
           return {
-            connect: (_target: unknown, _out?: number, input?: number) =>
-              connections.push(`${id}->${input ?? 'mix'}`),
+            connect: (target: { name?: string }) => connections.push(`${id}->${target.name}`),
             disconnect: () => connections.push(`${id} off`),
           };
         },
@@ -154,7 +193,7 @@ function setup(hostChanges: Partial<RecordingHost> = {}) {
     close: vi.fn(async () => ({ ok: true, recording: closed })),
     ...hostChanges,
   } as unknown as RecordingHost;
-  return { deps, host, recorders, written, screenVideo, connections };
+  return { deps, host, recorders, written, screenVideo, connections, graph, nodes };
 }
 
 /** The start of an invented screen recording. */
@@ -191,8 +230,27 @@ describe('startRecording', () => {
     expect(f.recorders).toHaveLength(2);
     expect(f.recorders[0]!.timeslice).toBe(1_000);
     expect(f.recorders[0]!.options.videoBitsPerSecond).toBe(1_500_000);
-    // You on the stereo file's left (0), Them on the right (1), both in the mix.
-    expect(f.connections).toEqual(['source1->mix', 'source1->0', 'source2->mix', 'source2->1']);
+    // 1.5.2: You into its side's gain (gain2), Them into its own (gain3).
+    expect(f.connections).toEqual(['source1->gain2', 'source2->gain3']);
+    // Each side −6 dB into the mix bus (gain1), which is limited (limiter1) into the mix (dest1); each side
+    // also through its own limiter to its side of the stereo file: You left (0), Them right (1).
+    expect(f.graph).toEqual([
+      'gain1->limiter1',
+      'limiter1->dest1',
+      'merger->dest2',
+      'gain2->gain1',
+      'gain2->limiter2',
+      'limiter2->merger:0',
+      'gain3->gain1',
+      'gain3->limiter3',
+      'limiter3->merger:1',
+    ]);
+    expect(f.nodes.get('gain2')!.gain!.value).toBe(RECORDING_HEADROOM_GAIN);
+    expect(f.nodes.get('gain3')!.gain!.value).toBe(RECORDING_HEADROOM_GAIN);
+    for (const name of ['limiter1', 'limiter2', 'limiter3']) {
+      expect(f.nodes.get(name)!.threshold!.value).toBe(LIMITER.threshold);
+      expect(f.nodes.get(name)!.ratio!.value).toBe(LIMITER.ratio);
+    }
     f.recorders[0]!.piece('one');
     f.recorders[1]!.piece('s-one');
     f.recorders[0]!.piece('two');
@@ -269,7 +327,7 @@ describe('startRecording', () => {
     const onStopped = vi.fn();
     const recording = await startRecording(f.host, START, { onStopped }, f.deps);
     recording.replaceSource('you', stream([track('audio')]));
-    expect(f.connections.slice(-3)).toEqual(['source1 off', 'source3->mix', 'source3->0']);
+    expect(f.connections.slice(-2)).toEqual(['source1 off', 'source3->gain2']);
     for (const listener of f.screenVideo.listeners) listener();
     expect(onStopped).toHaveBeenCalledWith('screen-ended');
   });

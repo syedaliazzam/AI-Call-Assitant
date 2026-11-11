@@ -69,6 +69,7 @@ import { ChatBar, type ChatBarHandle } from './overlay/ChatBar';
 import { ControlBar, type DeviceList } from './overlay/ControlBar';
 import { DevicePicker } from './overlay/DevicePicker';
 import { RecordPopover } from './overlay/RecordControls';
+import { PrivateOffWarning, usePrivateOffWhileRecording } from './PrivateOffWarning';
 import { IconMode } from './overlay/IconMode';
 import { LiveMenu } from './overlay/LiveMenu';
 import { LiveStrip } from './overlay/LiveStrip';
@@ -250,6 +251,8 @@ const RELEASING = 'button, a, [role="switch"], [role="menuitem"]';
  */
 export function CompactView(props: CompactViewProps) {
   const { state, onCommand, mac = false, panels, onPanels, onMove } = props;
+  // 1.5.2 (ADR-0070): a screen recording with Private off: a warning bar, and a hint on the Rec pill.
+  const privateOff = usePrivateOffWhileRecording(state?.recording);
   const { levels, onResize, copy, chatBar } = props;
   const glass = props.glass ?? false;
   const referenceLook = props.referenceLook ?? false;
@@ -731,6 +734,16 @@ export function CompactView(props: CompactViewProps) {
             </button>
           )}
         </div>
+      )}
+
+      {/* 1.5.2 (ADR-0070): a screen recording with Private off: Paramount AI is in the video. */}
+      {privateOff.visible && !state?.ended && !icon && (
+        <PrivateOffWarning
+          look="overlay"
+          onTurnOn={privateOff.turnOn}
+          className={`${piece} ${BARS_WIDTH}`}
+          barsAttribute={BARS_ATTRIBUTE}
+        />
       )}
 
       {props.chatOpen && !collapsed && (

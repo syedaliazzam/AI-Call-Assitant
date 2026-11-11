@@ -2,6 +2,8 @@
  * Tests apps/web/src/core/transcript/refineQueue.ts (1.5.1, ADR-0069): Accurate rewrites one line at a
  * time with at most one waiting (a newer line replaces it), never a line older than 3 s when its rewrite
  * would start, and nothing while the live engine is behind; every skipped line is reported.
+ * 1.5.2 (ADR-0070): offerIdle() starts a "You" line only when nothing runs or waits and the live engine
+ * keeps up, and never queues it.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -86,5 +88,39 @@ describe('createRefineQueue', () => {
     t.queue.push({ lineId: 'u2', finalAt: 0 });
     t.queue.clear();
     expect(t.skipped).toEqual([['u2', 'replaced']]);
+  });
+});
+
+describe('offerIdle (1.5.2, ADR-0070)', () => {
+  it('starts only when idle, and never queues', async () => {
+    let release: () => void = () => undefined;
+    const ran: string[] = [];
+    const skipped: string[] = [];
+    let canRun = true;
+    const queue = createRefineQueue<RefineJob>({
+      run: (job) => {
+        ran.push(job.lineId);
+        return new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      },
+      onSkip: (job) => skipped.push(job.lineId),
+      canRun: () => canRun,
+      now: () => 1_000,
+    });
+    expect(queue.offerIdle({ lineId: 'you1', finalAt: 1_000 })).toBe(true);
+    expect(queue.offerIdle({ lineId: 'you2', finalAt: 1_000 })).toBe(false);
+    queue.push({ lineId: 'them1', finalAt: 1_000 });
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(ran).toEqual(['you1', 'them1']);
+    expect(skipped).toEqual([]);
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+    canRun = false;
+    expect(queue.offerIdle({ lineId: 'you3', finalAt: 1_000 })).toBe(false);
+    expect(ran).toEqual(['you1', 'them1']);
   });
 });

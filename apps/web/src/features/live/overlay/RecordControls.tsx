@@ -19,6 +19,7 @@ import { forwardRef, useEffect, useState, type CSSProperties, type Ref } from 'r
 import type { CompactCommand, CompactRecording } from '@/core/live/liveChannel';
 import { callClock } from '@/features/live/callClock';
 import { KeyChip, PILL } from './parts';
+import { VISIBLE_IN_RECORDING_TEXT } from '../PrivateOffWarning';
 
 /** What the popover shows: the Start or Stop question, or the notice. */
 export type RecordPopoverMode = 'question' | 'notice';
@@ -61,6 +62,11 @@ export interface RecPillProps {
   keyAt?: string;
   /** The button (the popover sits under it). */
   buttonRef?: Ref<HTMLButtonElement>;
+  /**
+   * 1.5.2 (ADR-0070): a screen recording runs with Private off, so Paramount AI is in the video: the pill
+   * says "Visible in recording".
+   */
+  visibleInRecording?: boolean;
 }
 
 /**
@@ -77,6 +83,7 @@ export function RecPill({
   mac,
   keyAt,
   buttonRef,
+  visibleInRecording = false,
 }: RecPillProps) {
   const elapsed = useElapsed(recording.state === 'on' ? recording.startedAt : null);
   const on = recording.state === 'on';
@@ -98,7 +105,11 @@ export function RecPill({
       onClick={onToggle}
       disabled={disabled || busy}
       aria-expanded={open}
-      aria-label={on ? `Recording, ${elapsed}. Stop recording` : 'Start recording'}
+      aria-label={
+        on
+          ? `Recording, ${elapsed}${visibleInRecording ? `, ${VISIBLE_IN_RECORDING_TEXT}` : ''}. Stop recording`
+          : 'Start recording'
+      }
       aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.record, mac)}
       title={`${on ? 'Stop recording' : 'Start recording'} (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.record, mac)})`}
     >
@@ -111,6 +122,12 @@ export function RecPill({
         }
       />
       {label}
+      {on && visibleInRecording && (
+        // 1.5.2 (ADR-0070): small, in the warning colour; the full warning has a bar of its own.
+        <span className="text-[11px] font-medium text-ui-warning" title={VISIBLE_IN_RECORDING_TEXT}>
+          {VISIBLE_IN_RECORDING_TEXT}
+        </span>
+      )}
       {/* While recording the pill shows the time instead: bar 1 has no room for both (measured). */}
       {!on && <KeyChip hotkey="record" visibleAt={keyAt ?? '@min-[960px]:inline-flex'} />}
     </button>

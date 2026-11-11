@@ -26,8 +26,15 @@ export interface AutoAnswerInput {
   streaming: boolean;
   /** Starts an answer marked "Auto", or a rerun (useLiveAnswers().autoAnswer). */
   autoAnswer: (decision: AutoDecision) => void;
-  /** The lines answered so far and the latest answered question (useLiveAnswers().answeredState). */
-  answeredState: () => { answeredLineIds: ReadonlySet<string>; last: AnsweredQuestion | null };
+  /**
+   * The lines answered so far, the latest answered question and (1.5.2) when the last answer stopped
+   * streaming (useLiveAnswers().answeredState).
+   */
+  answeredState: () => {
+    answeredLineIds: ReadonlySet<string>;
+    last: AnsweredQuestion | null;
+    idleSince?: number | null;
+  };
   /** Overrides the saved setting (the harness turns it on); default: the saved setting. */
   enabled?: boolean;
 }
@@ -61,9 +68,11 @@ export function useAutoAnswer(input: AutoAnswerInput): boolean {
     latest.current = input;
   });
 
+  // 1.5.2 (ADR-0070): the check runs with auto-answer off too: a press that answered grey words is asked
+  // again on its card when the person goes on (autoAnswerDue does nothing else then).
   useEffect(() => {
-    if (!enabled) return;
-    const timer = setInterval(() => {
+    /** One check: starts an answer (or a rerun) when one is due and was not acted on. */
+    const check = () => {
       const { transcript, streaming, autoAnswer, answeredState } = latest.current;
       const due = autoAnswerDue(
         { enabled, streaming, lines: transcript.lines(), ...answeredState() },
@@ -74,8 +83,15 @@ export function useAutoAnswer(input: AutoAnswerInput): boolean {
       if (acted.current.has(key)) return;
       acted.current.add(key);
       autoAnswer(due);
-    }, AUTO_TICK_MS);
-    return () => clearInterval(timer);
+    };
+    const timer = setInterval(check, AUTO_TICK_MS);
+    // 1.5.2 (ADR-0070): also at once when the transcript changes (the end-of-turn judgment of a pause lands
+    // on the grey line), not up to a tick later. The waits themselves still need the timer.
+    const unsubscribe = latest.current.transcript.subscribe(check);
+    return () => {
+      clearInterval(timer);
+      unsubscribe();
+    };
   }, [enabled]);
 
   return enabled;

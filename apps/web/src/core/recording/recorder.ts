@@ -145,6 +145,36 @@ export const START_FAILURE_TEXT: Readonly<Record<RecordingStartFailure, string>>
 };
 
 /**
+ * 1.5.2 (ADR-0070): each side's level in the recordings (0.5 = −6 dB), so two loud voices at once do not
+ * pass full scale.
+ */
+export const RECORDING_HEADROOM_GAIN = 0.5;
+
+/**
+ * 1.5.2 (ADR-0070): the limiter's settings. A hard knee at −6 dBFS with ratio 20; Chromium adds its own
+ * make-up gain to a DynamicsCompressorNode, which with these settings brings the ceiling to about
+ * −2.3 dBFS (still under full scale). Fast attack, quarter-second release: speech, not music.
+ */
+export const LIMITER = { threshold: -6, knee: 0, ratio: 20, attack: 0.003, release: 0.25 } as const;
+
+/**
+ * 1.5.2: a limiter node with LIMITER's settings.
+ *
+ * @param context The audio context.
+ * @returns The node.
+ * Called from: startRecording()
+ */
+function createLimiter(context: AudioContext): DynamicsCompressorNode {
+  const limiter = context.createDynamicsCompressor();
+  limiter.threshold.value = LIMITER.threshold;
+  limiter.knee.value = LIMITER.knee;
+  limiter.ratio.value = LIMITER.ratio;
+  limiter.attack.value = LIMITER.attack;
+  limiter.release.value = LIMITER.release;
+  return limiter;
+}
+
+/**
  * Starts recording.
  *
  * @param host   The desktop app's recording host.
@@ -197,11 +227,29 @@ export async function startRecording(
   }
 
   // 3. The sound: both sides mixed for the main file, and You left / Them right for the stereo file.
+  // 1.5.2 (ADR-0070): each side at −6 dB (the real call of 11 Nov 2026 peaked at +1.1 dBFS in the video
+  // and +1.9 dBFS on the stereo file's left), then a limiter on the mix and on each side of the stereo file.
   const context = deps.createAudioContext();
   const mix = context.createMediaStreamDestination();
+  const mixBus = context.createGain();
+  const mixLimiter = createLimiter(context);
+  mixBus.connect(mixLimiter);
+  mixLimiter.connect(mix);
   const merger = start.stereo ? context.createChannelMerger(2) : null;
   const stereoOut = merger ? context.createMediaStreamDestination() : null;
   if (merger && stereoOut) merger.connect(stereoOut);
+  const sides = {} as Record<'you' | 'them', GainNode>;
+  for (const channel of ['you', 'them'] as const) {
+    const side = context.createGain();
+    side.gain.value = RECORDING_HEADROOM_GAIN;
+    side.connect(mixBus);
+    if (merger) {
+      const limiter = createLimiter(context);
+      side.connect(limiter);
+      limiter.connect(merger, 0, channel === 'you' ? 0 : 1);
+    }
+    sides[channel] = side;
+  }
   const sources: Partial<Record<'you' | 'them', MediaStreamAudioSourceNode>> = {};
   /**
    * Connects one side's stream to the mix (and its stereo channel), replacing any earlier one.
@@ -214,8 +262,7 @@ export async function startRecording(
     const audio = stream.getAudioTracks();
     if (audio.length === 0) return;
     const source = context.createMediaStreamSource(deps.createStream(audio));
-    source.connect(mix);
-    if (merger) source.connect(merger, 0, channel === 'you' ? 0 : 1);
+    source.connect(sides[channel]);
     sources[channel] = source;
   };
   connect('you', start.you);

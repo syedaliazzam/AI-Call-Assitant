@@ -118,6 +118,11 @@ export interface EngineStats {
   wasmMemoryBytes: number;
   /** 1.5.1 (ADR-0069): the worker's backlog now (absent from a worker older than 1.5.1). */
   backlog?: BacklogInfo;
+  /**
+   * 1.5.2 (ADR-0070): the echo canceller: 'on', 'off' (not asked for) or 'failed' (it could not load or
+   * stopped working; decoding goes on without it). Absent from a worker older than 1.5.2.
+   */
+  echoCancel?: 'on' | 'off' | 'failed';
 }
 
 /** 1.5.1 (ADR-0069): how far behind the speech worker is, and what it does about it (backlog.ts). */
@@ -171,6 +176,19 @@ export type ToWorker =
       beamWidth: BeamWidth;
       /** v1.4 (ADR-0065): "them" final lines carry their recent audio (for the end-of-turn model). */
       turnAudio?: boolean;
+      /**
+       * 1.5.2 (ADR-0070): the echo canceller's files (models.ts aecDownloads): the other side's voice is
+       * removed from the microphone before decoding. Absent: no echo cancelling (as before).
+       */
+      aec?: {
+        /**
+         *
+         */
+        loader: DownloadFile; /**
+         *
+         */
+        wasm: DownloadFile;
+      };
     }
   | {
       /** Start decoding a channel from a worklet's MessagePort (audio skips the main thread). */
@@ -310,6 +328,15 @@ export type FromWorker =
       speechEnd: number;
       /** The last 8 s of audio up to just after that end. Never stored or logged. */
       recent: Float32Array;
+    }
+  | {
+      /**
+       * 1.5.2 (ADR-0070): the voice came back after a 'pause' (the speaker went on). Words the model writes a
+       * moment after a pause, from audio before it, do not send this.
+       */
+      type: 'resume';
+      /** Which channel. */
+      channel: ChannelId;
     }
   | {
       /** 1.5.1 (ADR-0069): the backlog state changed (also in every 'stats'). */
