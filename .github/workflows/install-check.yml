@@ -136,7 +136,7 @@ jobs:
           }
           '@ | Set-Content -Path "$env:RUNNER_TEMP\helpers.ps1" -Encoding utf8
 
-      - name: "A: fresh install of this build"
+      - name: 'A: fresh install of this build'
         shell: pwsh
         run: |
           . "$env:RUNNER_TEMP\helpers.ps1"
@@ -145,7 +145,7 @@ jobs:
           ExpectFindable 'A fresh install'
           CleanUninstall
 
-      - name: "B: 1.5.0 with its shortcut deleted, then this build"
+      - name: 'B: 1.5.0 with its shortcut deleted, then this build'
         shell: pwsh
         run: |
           . "$env:RUNNER_TEMP\helpers.ps1"
@@ -161,7 +161,7 @@ jobs:
           ExpectFindable 'B by hand'
           CleanUninstall
 
-      - name: "C: Kite 1.1.0 to 1.5.0 by the updater, then this build"
+      - name: 'C: Kite 1.1.0 to 1.5.0 by the updater, then this build'
         shell: pwsh
         run: |
           . "$env:RUNNER_TEMP\helpers.ps1"
@@ -172,7 +172,7 @@ jobs:
           Snapshot 'C after the update to this build'
           ExpectFindable 'C chain'
 
-      - name: "Open the app directly (temporary profile, runner screen captured)"
+      - name: 'Open the app directly (temporary profile, runner screen captured)'
         shell: pwsh
         run: |
           . "$env:RUNNER_TEMP\helpers.ps1"
