@@ -35,6 +35,25 @@ export const DISK_CHECK_MS = 5_000;
 /** A UUID, as the page makes them (crypto.randomUUID()). */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Whether a file name from the index is a plain name in the Recordings folder (1.5.1): no "/" or "\" on
+ * any platform, not "." or "..", and nothing else basename would change. The names this manager makes
+ * never contain separators, so anything else is a damaged or edited index.
+ *
+ * @param name The file name.
+ * @returns True for a plain name.
+ * Called from: readIndex()
+ */
+function isPlainName(name: string): boolean {
+  return (
+    name !== '' &&
+    name !== '.' &&
+    name !== '..' &&
+    !/[\\/]/.test(name) &&
+    path.basename(name) === name
+  );
+}
+
 /** One entry of the index file: the recording, plus the stereo file's name. */
 interface IndexEntry extends LocalRecording {
   /** The stereo sound file's name, or null. */
@@ -516,11 +535,11 @@ function readIndex(file: string): IndexEntry[] {
         typeof entry.id === 'string' &&
         UUID.test(entry.id) &&
         typeof entry.fileName === 'string' &&
-        // Only a plain name: never a path that leaves the Recordings folder.
-        path.basename(entry.fileName) === entry.fileName &&
+        // Only a plain name: never a path that leaves the Recordings folder. 1.5.1: on every platform
+        // (a "\" is no separator on macOS, so basename alone let "..\..\x" through there).
+        isPlainName(entry.fileName) &&
         (entry.stereoFileName === null ||
-          (typeof entry.stereoFileName === 'string' &&
-            path.basename(entry.stereoFileName) === entry.stereoFileName)) &&
+          (typeof entry.stereoFileName === 'string' && isPlainName(entry.stereoFileName))) &&
         typeof entry.startedAt === 'number'
       );
     });
