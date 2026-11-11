@@ -44,7 +44,10 @@ export interface ChatBarProps {
 
 /** What the overlay can ask of the open bar. */
 export interface ChatBarHandle {
-  /** Sends what is typed with a screenshot, or just takes a screenshot when nothing is typed. */
+  /**
+   * The shortcut (Ctrl+Alt+Enter): sends what is typed with a screenshot. 1.5.1 (ADR-0069): nothing when
+   * nothing is typed (the bar's button can still take a screenshot alone).
+   */
   screenshotSend: () => void;
 }
 
@@ -75,16 +78,21 @@ export const ChatBar = forwardRef<ChatBarHandle, ChatBarProps>(function ChatBar(
   };
 
   /**
-   * Sends what is typed with a screenshot, and closes the bar. 1.5.1 (ADR-0069): only with something typed;
-   * an empty bar used to take a bare screenshot answer, which a call on 11 Nov 2026 got by mistake.
+   * Sends what is typed with a screenshot (the button: alone when nothing is typed), and closes the bar.
    */
   const screenshotSend = () => {
-    if (!typed) return;
-    onCommand({ type: 'chat-screenshot', question: typed });
+    onCommand(typed ? { type: 'chat-screenshot', question: typed } : { type: 'screenshot' });
     setQuestion('');
     onClose();
   };
-  useImperativeHandle(ref, () => ({ screenshotSend }));
+  // 1.5.1 (ADR-0069): the shortcut (Ctrl+Alt+Enter, easy to press by mistake next to Ctrl+Enter) sends only
+  // with something typed; an empty bar's shortcut used to take a bare screenshot answer, which a call on
+  // 11 Nov 2026 got by mistake. The button, a deliberate click, still can.
+  useImperativeHandle(ref, () => ({
+    screenshotSend: () => {
+      if (typed) screenshotSend();
+    },
+  }));
 
   // Closing the bar, whichever way, cancels a dictation: nothing is sent after it has gone.
   const latest = useRef({ listening, onCommand });
