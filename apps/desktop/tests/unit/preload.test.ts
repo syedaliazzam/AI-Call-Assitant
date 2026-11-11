@@ -76,6 +76,8 @@ describe('the exposed bridge', () => {
       'consumeLinkCode',
       // 1.5.0 (ADR-0068): meeting recording, the player, displays and this computer's name.
       'deviceIdentity',
+      // 1.6.0 (ADR-0072): Google Drive uploads of recordings.
+      'driveUpload',
       // v1.3.0 (ADR-0056): the six positions.
       'getOverlayPosition',
       'getOverlayPreset',
@@ -84,6 +86,8 @@ describe('the exposed bridge', () => {
       'minimizeMainWindow',
       // v1.2.0 (spec S13): dragging the icon.
       'moveOverlay',
+      // 1.6.0 (ADR-0072): the progress of this page's Drive uploads.
+      'onDriveUploadProgress',
       'onHotkey',
       'onOverlayPosition',
       'onSnapZone',
@@ -119,6 +123,8 @@ describe('the exposed bridge', () => {
       'setRecordingDisplay',
       'setShareProtection',
       'showCallWindow',
+      // 1.6.0 (ADR-0072): the native "saved to Google Drive" notification.
+      'showNotice',
       // v1.3.0 (ADR-0055): the launcher's window size.
       'sizePanel',
       'version',

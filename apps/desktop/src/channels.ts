@@ -161,3 +161,12 @@ export const DEVICE_IDENTITY_CHANNEL = 'kite:device-identity';
 
 /** 1.5.0: rename this computer for recordings (invoke; a string; answers DeviceIdentity). */
 export const RENAME_DEVICE_CHANNEL = 'kite:rename-device';
+
+/** 1.6.0 (ADR-0072): upload a recording file to Google Drive (invoke; a DriveUploadRequest). */
+export const DRIVE_UPLOAD_CHANNEL = 'kite:drive-upload';
+
+/** 1.6.0: a Drive upload's progress, to the page that started it (send; a DriveUploadProgress). */
+export const DRIVE_PROGRESS_EVENT = 'kite:drive-progress';
+
+/** 1.6.0: show the native "saved to Google Drive" notification (invoke; a DesktopNotice). */
+export const SHOW_NOTICE_CHANNEL = 'kite:show-notice';

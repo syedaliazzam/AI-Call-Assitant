@@ -122,6 +122,14 @@ export interface RecordingManager {
    */
   fileOf(id: unknown): { file: string; recording: LocalRecording } | null;
   /**
+   * 1.6.0 (ADR-0072): one of a recording's files for a Drive upload, when it is on this computer and
+   * not being written.
+   * @param id    The recording.
+   * @param track Its main file or its stereo sound file.
+   * @returns The file's path, or null.
+   */
+  trackFileOf(id: unknown, track: RecordingTrack): string | null;
+  /**
    * Moves a recording's files to the Recycle Bin and forgets it (not while it is being written).
    * @param id The recording.
    * @returns False when it could not be deleted.
@@ -455,6 +463,16 @@ export function createRecordingManager(deps: ManagerDeps): RecordingManager {
       if (!entry) return null;
       const file = path.join(deps.folder(), entry.fileName);
       return existsSync(file) ? { file, recording: publicEntry(entry) } : null;
+    },
+
+    trackFileOf(id, track) {
+      if (typeof id !== 'string' || opened.has(id)) return null;
+      const entry = index.find((e) => e.id === id);
+      // Only names from the index (checked plain when it was read), never one from the page.
+      const name = entry ? (track === 'main' ? entry.fileName : entry.stereoFileName) : null;
+      if (!name) return null;
+      const file = path.join(deps.folder(), name);
+      return existsSync(file) ? file : null;
     },
 
     async remove(id) {

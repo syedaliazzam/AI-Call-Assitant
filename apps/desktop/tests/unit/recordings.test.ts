@@ -128,6 +128,21 @@ describe('createRecordingManager', () => {
     expect(manager.fileOf(ID)?.file).toBe(main);
   });
 
+  it('1.6.0: gives the main or stereo file of a recording for a Drive upload, never while it records', async () => {
+    const { manager } = setup();
+    await manager.open(REQUEST, 7);
+    expect(manager.trackFileOf(ID, 'main')).toBeNull();
+    await manager.close(ID);
+    expect(manager.trackFileOf(ID, 'main')).toBe(
+      path.join(folder, 'Paramount AI 2026-11-10 14-30-05.mkv'),
+    );
+    expect(manager.trackFileOf(ID, 'stereo')).toBe(
+      path.join(folder, 'Paramount AI 2026-11-10 14-30-05.stereo.webm'),
+    );
+    expect(manager.trackFileOf('55555555-2222-4333-8444-555555555555', 'main')).toBeNull();
+    expect(manager.trackFileOf(42, 'main')).toBeNull();
+  });
+
   it('never overwrites a file, and refuses a busy id', async () => {
     const { manager } = setup();
     await manager.open(REQUEST, 7);
