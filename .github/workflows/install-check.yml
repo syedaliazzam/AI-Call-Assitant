@@ -6,7 +6,8 @@
 #          A. a fresh install of this build;
 #          B. the published 1.5.0 with its shortcut deleted (as on the developer's laptop, 11 Nov 2026),
 #             then this build as the updater runs it (/S --updated), then by hand (/S);
-#          C. the published chain Kite 1.1.0 → 1.2.0 → 1.4.0 → 1.5.0 by the updater, then this build.
+#          C. the published chain Kite 1.1.0 → 1.2.0 → 1.4.0 → 1.5.0 by the updater, then this build;
+#          D. (1.5.2, ADR-0070) the published 1.5.1, what people have now, then this build by the updater.
 #          Finally the installed app is opened directly with a temporary profile and the runner's screen is
 #          captured (an artifact, with the report).
 # Used by: the developer before each desktop release (Actions → install-check → Run workflow), and pushes
@@ -53,7 +54,7 @@ jobs:
           $built = Get-ChildItem apps/desktop/release -Filter 'Paramount-AI-Setup-*.exe' | Select-Object -First 1
           Copy-Item $built.FullName "$dir\built.exe"
           "built: {0} {1} bytes" -f $built.Name, $built.Length
-          $assets = @{ '1.1.0' = 'Kite-Setup-1.1.0.exe'; '1.2.0' = 'Paramount-AI-Setup-1.2.0.exe'; '1.4.0' = 'Paramount-AI-Setup-1.4.0.exe'; '1.5.0' = 'Paramount-AI-Setup-1.5.0.exe' }
+          $assets = @{ '1.1.0' = 'Kite-Setup-1.1.0.exe'; '1.2.0' = 'Paramount-AI-Setup-1.2.0.exe'; '1.4.0' = 'Paramount-AI-Setup-1.4.0.exe'; '1.5.0' = 'Paramount-AI-Setup-1.5.0.exe'; '1.5.1' = 'Paramount-AI-Setup-1.5.1.exe' }
           foreach ($v in $assets.Keys) {
             Invoke-WebRequest -Uri "https://github.com/Zainpak123/kite-releases/releases/download/v$v/$($assets[$v])" -OutFile "$dir\$v.exe"
           }
@@ -171,6 +172,17 @@ jobs:
           Install 'built' @('--updated')
           Snapshot 'C after the update to this build'
           ExpectFindable 'C chain'
+          CleanUninstall
+
+      - name: 'D: 1.5.1 by the updater to this build'
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP\helpers.ps1"
+          Install '1.5.1' @()
+          Snapshot 'D 1.5.1'
+          Install 'built' @('--updated')
+          Snapshot 'D after the update to this build'
+          ExpectFindable 'D update from 1.5.1'
 
       - name: 'Open the app directly (temporary profile, runner screen captured)'
         shell: pwsh
