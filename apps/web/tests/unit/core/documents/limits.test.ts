@@ -20,9 +20,9 @@ import {
 } from '@/core/documents/limits';
 
 describe('the caps (ADR-0067)', () => {
-  it('are 500k per session and 250k per document, the same session cap as the server', () => {
+  it('are 500k per session and (1.5.1, ADR-0069) 500k for one document, the same cap as the server', () => {
     expect(MAX_SESSION_CHARS).toBe(500_000);
-    expect(MAX_DOCUMENT_CHARS).toBe(250_000);
+    expect(MAX_DOCUMENT_CHARS).toBe(500_000);
     expect(MAX_SESSION_CHARS).toBe(MAX_SESSION_DOCUMENT_CHARS);
   });
 
@@ -71,7 +71,7 @@ describe('fitsInSession', () => {
   it('refuses one document over the per-document cap', () => {
     const result = fitsInSession(MAX_DOCUMENT_CHARS + 1, 0);
     expect(result).toMatchObject({ ok: false, reason: 'document-too-long' });
-    expect(!result.ok && result.message).toContain('250,000');
+    expect(!result.ok && result.message).toContain('500,000');
   });
 
   it('refuses a document that would overfill the session, saying how much room is left', () => {

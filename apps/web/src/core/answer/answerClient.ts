@@ -124,6 +124,30 @@ async function failureFrom(response: Response): Promise<AnswerFailure> {
   return { code: 'internal', message: `Request failed (HTTP ${response.status})` };
 }
 
+/** 1.5.1 (ADR-0069): request bodies at least this large (characters of JSON) are sent gzipped. */
+export const GZIP_FROM_CHARS = 64_000;
+
+/**
+ * The body to send: gzipped when it is large and the browser can compress, as it is otherwise.
+ *
+ * @param json The request as JSON.
+ * @returns The body and whether it is gzipped.
+ * Called from: streamAnswer(), core/documents/summary.ts; tests
+ */
+export async function requestBody(
+  json: string,
+): Promise<{ data: string | Uint8Array<ArrayBuffer>; gzip: boolean }> {
+  if (json.length < GZIP_FROM_CHARS || typeof CompressionStream === 'undefined') {
+    return { data: json, gzip: false };
+  }
+  try {
+    const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+    return { data: new Uint8Array(await new Response(stream).arrayBuffer()), gzip: true };
+  } catch {
+    return { data: json, gzip: false };
+  }
+}
+
 /**
  * Asks the server for an answer and streams it.
  * Timings use performance.now(): msToFirstText is measured when the first `delta` event is
@@ -201,10 +225,17 @@ export function streamAnswer(
   const releaseSync = holdSyncForAnswer();
   void (async () => {
     try {
+      // 1.5.1 (ADR-0069): a large body (big documents) is sent gzipped: about 4× smaller, so less time
+      // uploading before Claude can start. The server unpacks it (server/requestBody.ts).
+      const body = await requestBody(JSON.stringify(request));
       const response = await fetchImpl(options.endpoint ?? '/api/answer', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-        body: JSON.stringify(request),
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          ...(body.gzip ? { 'Content-Encoding': 'gzip' } : {}),
+        },
+        body: body.data,
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
@@ -268,7 +299,15 @@ export interface RunHandlers {
   onDone: (text: string, done: AnswerDone, timeline: AnswerTimeline) => void;
   /** The answer failed (the text so far is kept by the caller). */
   onError: (failure: AnswerFailure) => void;
+  /** 1.5.1 (ADR-0069): nothing came back in time, and the request was sent again. */
+  onRetry?: () => void;
 }
+
+/** 1.5.1 (ADR-0069): no reply at all this long after sending (ms): the request is sent again, once. */
+export const FIRST_REPLY_TIMEOUT_MS = 8_000;
+
+/** 1.5.1: shown when the second try also got no reply in time. */
+export const SLOW_REPLY_MESSAGE = 'Claude is slow to start. Press Answer again.';
 
 /** Runs answers one at a time: a new one cancels the one still streaming. */
 export interface AnswerRunner {
@@ -292,6 +331,8 @@ export interface AnswerRunnerOptions {
   send?: typeof streamAnswer;
   /** Clock in ms, the same one keyPressAt uses. Default performance.now(). */
   now?: () => number;
+  /** 1.5.1: how long to wait for the first reply before sending again, ms (default FIRST_REPLY_TIMEOUT_MS). */
+  firstReplyTimeoutMs?: number;
 }
 
 /**
@@ -304,6 +345,13 @@ export interface AnswerRunnerOptions {
 export function createAnswerRunner(options: AnswerRunnerOptions = {}): AnswerRunner {
   const send = options.send ?? streamAnswer;
   const now = options.now ?? (() => performance.now());
+  const firstReplyTimeoutMs = options.firstReplyTimeoutMs ?? FIRST_REPLY_TIMEOUT_MS;
+  // The first-reply timer of the running answer.
+  let replyTimer: ReturnType<typeof setTimeout> | null = null;
+  const stopReplyTimer = () => {
+    if (replyTimer) clearTimeout(replyTimer);
+    replyTimer = null;
+  };
   let current: { cancel: () => void } | null = null;
   /** Increases with every run, so a cancelled run's late callbacks are ignored. */
   let generation = 0;
@@ -318,41 +366,73 @@ export function createAnswerRunner(options: AnswerRunnerOptions = {}): AnswerRun
       let firstWordAt: number | null = null;
       let headlineAt: number | null = null;
       const sentAt = now();
-      current = send(request, {
-        onMeta: (meta) => {
-          if (live()) handlers.onMeta?.(meta);
-        },
-        onQuestion: (question) => {
-          if (live()) handlers.onQuestion?.(question);
-        },
-        onDelta: (piece) => {
-          if (!live()) return;
-          firstWordAt ??= now();
-          text += piece;
-          // The headline is the first line: complete at the first line break after some text.
-          if (headlineAt === null && /\S[^\n]*\n/.test(text)) headlineAt = now();
-          handlers.onText(text);
-        },
-        onDone: (done) => {
-          if (!live()) return;
-          const doneAt = now();
+      // 1.5.1 (ADR-0069): any reply (its type, its question or a word) stops the first-reply timer.
+      let replied = false;
+      const gotReply = () => {
+        replied = true;
+        stopReplyTimer();
+      };
+      let attempt = 0;
+      const start = () => {
+        attempt += 1;
+        stopReplyTimer();
+        replyTimer = setTimeout(() => {
+          if (!live() || replied) return;
+          current?.cancel();
+          if (attempt < 2) {
+            handlers.onRetry?.();
+            start();
+            return;
+          }
           current = null;
-          handlers.onDone(text, done, {
-            toSent: Math.round(sentAt - keyPressAt),
-            toFirstWord: Math.round((firstWordAt ?? doneAt) - keyPressAt),
-            toHeadline: Math.round((headlineAt ?? doneAt) - keyPressAt),
-            toDone: Math.round(doneAt - keyPressAt),
-          });
-        },
-        onError: (failure) => {
-          if (!live()) return;
-          current = null;
-          handlers.onError(failure);
-        },
-      });
+          replyTimer = null;
+          handlers.onError({ code: 'timeout', message: SLOW_REPLY_MESSAGE });
+        }, firstReplyTimeoutMs);
+        current = send(request, {
+          onMeta: (meta) => {
+            if (!live()) return;
+            gotReply();
+            handlers.onMeta?.(meta);
+          },
+          onQuestion: (question) => {
+            if (!live()) return;
+            gotReply();
+            handlers.onQuestion?.(question);
+          },
+          onDelta: (piece) => {
+            if (!live()) return;
+            gotReply();
+            firstWordAt ??= now();
+            text += piece;
+            // The headline is the first line: complete at the first line break after some text.
+            if (headlineAt === null && /\S[^\n]*\n/.test(text)) headlineAt = now();
+            handlers.onText(text);
+          },
+          onDone: (done) => {
+            if (!live()) return;
+            stopReplyTimer();
+            const doneAt = now();
+            current = null;
+            handlers.onDone(text, done, {
+              toSent: Math.round(sentAt - keyPressAt),
+              toFirstWord: Math.round((firstWordAt ?? doneAt) - keyPressAt),
+              toHeadline: Math.round((headlineAt ?? doneAt) - keyPressAt),
+              toDone: Math.round(doneAt - keyPressAt),
+            });
+          },
+          onError: (failure) => {
+            if (!live()) return;
+            stopReplyTimer();
+            current = null;
+            handlers.onError(failure);
+          },
+        });
+      };
+      start();
     },
     cancel() {
       generation += 1;
+      stopReplyTimer();
       current?.cancel();
       current = null;
     },

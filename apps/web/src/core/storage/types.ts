@@ -185,6 +185,21 @@ export interface StoredDocument {
   kind?: LibraryKind;
   /** The library item it was copied from, if any (the copy stays when that item is deleted). */
   sourceId?: string;
+  /**
+   * 1.5.1 (ADR-0069): set on the rows of a document longer than one row holds (core/documents/parts.ts):
+   * which document, and where in it. listDocuments() joins them; absent on ordinary rows.
+   */
+  part?: DocumentPart;
+}
+
+/** 1.5.1 (ADR-0069): one stored part of a long document. */
+export interface DocumentPart {
+  /** The document's id (the first part's id). */
+  group: string;
+  /** This part's place, from 0. */
+  index: number;
+  /** How many parts the document has. */
+  count: number;
 }
 
 /** Which library an item is in. */

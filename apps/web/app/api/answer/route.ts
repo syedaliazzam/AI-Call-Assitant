@@ -47,6 +47,7 @@ import { SSE_HEADERS, toEventStream } from '@/server/sse';
 import { allowedTier, getDeepModelEnabled } from '@/server/modelAccess';
 import { countRequest } from '@/server/usage';
 import { MAX_REQUEST_BYTES, parseAnswerRequest } from '@/server/validate';
+import { readRequestText } from '@/server/requestBody';
 
 /**
  * Modes that count towards the daily limit: what the user asked for. Warm-ups and the Day 1 hello
@@ -171,15 +172,17 @@ async function respond(
     return jsonError(401, 'unauthorized', 'Change your temporary password first');
   }
 
-  // Size check before parsing (architecture §7.2: request ≤ 4 MB).
-  const declaredLength = Number(request.headers.get('content-length') ?? 0);
-  if (declaredLength > MAX_REQUEST_BYTES) {
-    return jsonError(400, 'bad_request', 'Request is larger than 4 MB');
+  // Size check before parsing (architecture §7.2: request ≤ 4 MB, as sent and unpacked). 1.5.1
+  // (ADR-0069): large bodies arrive gzipped (server/requestBody.ts).
+  const received = await readRequestText(request, MAX_REQUEST_BYTES);
+  if (!received.ok) {
+    return jsonError(
+      400,
+      'bad_request',
+      received.reason === 'too-large' ? 'Request is larger than 4 MB' : 'Body is not valid gzip',
+    );
   }
-  const raw = await request.text();
-  if (Buffer.byteLength(raw, 'utf8') > MAX_REQUEST_BYTES) {
-    return jsonError(400, 'bad_request', 'Request is larger than 4 MB');
-  }
+  const raw = received.text;
   let json: unknown;
   try {
     json = JSON.parse(raw);

@@ -99,6 +99,42 @@ export function toSessionContext(
   };
 }
 
+/**
+ * 1.5.1 (ADR-0069): a warm-up for the same session, documents and lessons started this recently (ms) is
+ * reused instead of sent again. Opening a session and pressing Connect a few seconds later sent two
+ * (measured 11 Nov 2026), and with large documents each one uploads about 0.5–1.9 MB.
+ */
+export const WARM_REUSE_MS = 60_000;
+
+/** Warm-ups started recently, by what they warm (dropped when one fails). */
+const recentWarmUps = new Map<string, { at: number; result: Promise<AnswerDone | null> }>();
+
+/**
+ * What a warm-up warms, as a key: the session, its model, its documents (ids and sizes) and lessons.
+ *
+ * @param session   The session.
+ * @param documents Its documents.
+ * @param lessons   The lessons sent.
+ * @returns The key.
+ */
+function warmKey(
+  session: Session,
+  documents: readonly StoredDocument[],
+  lessons: readonly string[] | undefined,
+): string {
+  const docs = documents.map((document) => `${document.id}:${document.chars}`).join(',');
+  return `${session.id}|${session.preferences.model}|${docs}|${lessons?.length ?? 0}`;
+}
+
+/**
+ * Forgets the recent warm-ups, so the next one is sent (tests).
+ *
+ * Called from: tests
+ */
+export function forgetRecentWarmUps(): void {
+  recentWarmUps.clear();
+}
+
 /** Options for warmSession() (tests replace the request). */
 export interface WarmOptions {
   /** Sends the request. Default streamAnswer() from answerClient.ts. */
@@ -130,6 +166,38 @@ export function warmSession(
   session: Session,
   documents: readonly StoredDocument[],
   options: WarmOptions = {},
+): Promise<AnswerDone | null> {
+  // 1.5.1 (ADR-0069): the page-open and Connect warm-ups are one. The idle re-warm (with the
+  // conversation) always runs: it comes minutes later, to keep the cache alive.
+  const key = options.conversation?.length ? null : warmKey(session, documents, options.lessons);
+  const now = Date.now();
+  if (key) {
+    const recent = recentWarmUps.get(key);
+    if (recent && now - recent.at < WARM_REUSE_MS) return recent.result;
+  }
+  const result = sendWarmUp(session, documents, options);
+  if (key) {
+    recentWarmUps.set(key, { at: now, result });
+    void result.then((done) => {
+      if (!done && recentWarmUps.get(key)?.result === result) recentWarmUps.delete(key);
+    });
+  }
+  return result;
+}
+
+/**
+ * Sends one warm-up request.
+ *
+ * @param session   The stored session.
+ * @param documents Its documents.
+ * @param options   See WarmOptions.
+ * @returns The warm-up's usage and timings, or null when it failed.
+ * Called from: warmSession()
+ */
+function sendWarmUp(
+  session: Session,
+  documents: readonly StoredDocument[],
+  options: WarmOptions,
 ): Promise<AnswerDone | null> {
   const send = options.send ?? streamAnswer;
   return new Promise((resolve) => {

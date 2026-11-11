@@ -130,3 +130,38 @@ describe('createRepeatGuard: looking back (v1.1.0, ADR-0043)', () => {
     ).toEqual({ kind: 'show', answerId: 'a1' });
   });
 });
+
+describe('1.5.1 (ADR-0069): a press while an answer streams', () => {
+  it('answers newer speech at once, but not the same speech, and auto-answer waits', () => {
+    const guard = createRepeatGuard();
+    const first = { start: 0, end: 2_000 };
+    expect(
+      guard.decide({ question: 'What is the price', streaming: false, now: 0, span: first }).kind,
+    ).toBe('answer');
+    guard.remember(first, 'a1', 0);
+    // The same press seen again (the shortcut and the page's own key handler).
+    expect(
+      guard.decide({ question: 'What is the price', streaming: true, now: 100, span: first }).kind,
+    ).toBe('ignore');
+    // Newer speech: answered at once (the runner cancels the streaming answer).
+    const newer = { start: 5_000, end: 7_000 };
+    expect(
+      guard.decide({
+        question: 'How long is the contract',
+        streaming: true,
+        now: 7_300,
+        span: newer,
+      }).kind,
+    ).toBe('answer');
+    // Auto-answer never interrupts.
+    expect(
+      guard.decide({
+        question: 'And the renewal',
+        streaming: true,
+        now: 9_000,
+        span: { start: 8_000, end: 8_800 },
+        auto: true,
+      }).kind,
+    ).toBe('ignore');
+  });
+});

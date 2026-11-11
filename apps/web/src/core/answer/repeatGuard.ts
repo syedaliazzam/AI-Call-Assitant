@@ -189,8 +189,14 @@ export function createRepeatGuard(windowMs: number = REPEAT_WINDOW_MS): RepeatGu
     auto,
     lookedBack,
   }: AnswerTrigger): TriggerDecision => {
-    // One answer at a time: a second trigger while one streams is the same press seen again.
-    if (streaming) return { kind: 'ignore' };
+    // While an answer streams: auto-answer waits; a press for the speech being answered is the same
+    // press seen again. 1.5.1 (ADR-0069): a press for newer speech is answered at once (the runner
+    // cancels the streaming answer). Before, every press during an answer was dropped without a word.
+    if (streaming) {
+      if (auto || !span) return { kind: 'ignore' };
+      const newest = answered.at(-1);
+      if (newest && sameSpeech(span, newest.span)) return { kind: 'ignore' };
+    }
     if (span) {
       const earlier = answered.findLast((entry) => sameSpeech(span, entry.span));
       if (earlier) {

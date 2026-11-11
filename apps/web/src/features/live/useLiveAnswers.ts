@@ -51,6 +51,7 @@ import { rateAnswer, reportAnswer, saveAnswer, setAnswerNote } from '@/core/stor
 import type { AnswerRating, Session, StoredAnswer, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
+import { callTimings, type AnswerTrigger } from '@/core/live/callTimings';
 import { CaptureError } from '@/platform/errors';
 
 /** Where answers are saved on this device (core/storage/answers.ts; tests may replace it). */
@@ -297,8 +298,12 @@ export interface LiveAnswers {
   index: number;
   /** A short notice for the user (for example "nothing to answer yet"), or null. */
   notice: string | null;
-  /** Answers the latest question from the transcript. */
-  answer: () => void;
+  /**
+   * Answers the latest question from the transcript.
+   *
+   * @param trigger 1.5.1: what asked (the call timing log): the key (default) or a button.
+   */
+  answer: (trigger?: AnswerTrigger) => void;
   /**
    * Answers by itself (auto-answer, Day 6 Stage 4f; marked "Auto"). v1.4: with the lines the rule chose,
    * or asks again with the whole question on the card it replaces (a rerun).
@@ -350,8 +355,9 @@ export interface LiveAnswers {
    *
    * @param question A typed question about the screen (default: what is on screen and how to
    *                 respond).
+   * @param trigger  1.5.1: what asked (the call timing log); default the key.
    */
-  screenshot: (question?: string) => void;
+  screenshot: (question?: string, trigger?: AnswerTrigger) => void;
   /** True while a screenshot is being taken and prepared. */
   capturing: boolean;
 }
@@ -491,6 +497,13 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         lineIds?: readonly string[];
         /** v1.4: the answer this one replaces, on the same card (a rerun or a continuation). */
         replaces?: string;
+        /** 1.5.1: what asked, for the call timing log (default: the key, or auto). */
+        trigger?: AnswerTrigger;
+        /**
+         * 1.5.1 (ADR-0069): the transcript lines a screenshot's question came from: marked answered and
+         * remembered by the repeat guard, so Answer does not ask the same speech again.
+         */
+        coveredLines?: readonly string[];
       } = {},
     ): boolean => {
       const { typed, image, auto = false, answerType } = options;
@@ -544,7 +557,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           // when an earlier question exists (allowStatement: false here, then all the lines).
           const fresh = lines.filter((line) => !answeredLinesRef.current.has(line.id));
           partOfLines = fresh.length !== lines.length;
-          picked = pickQuestion(fresh, { allowStatement: !partOfLines });
+          // 1.5.1 (ADR-0069): the newest unanswered speech is what the press is for, even when it does
+          // not read like a question (a grey line has no "?" yet): it is no longer passed over for an
+          // older question. Claude says when it asks nothing (the "none" reply).
+          picked = pickQuestion(fresh);
           if (picked.kind === 'none' && partOfLines) {
             picked = pickQuestion(lines);
             partOfLines = false;
@@ -654,14 +670,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         entry,
       ]);
       setShownId(entry.id);
-      if (span && (guarded || replaces)) {
+      if (span && (guarded || replaces || (mode === 'screenshot' && options.coveredLines))) {
         repeatGuard.remember(span, entry.id, Date.now());
         setAnsweredSpans((current) => [
           ...current.filter((item) => item.answerId !== entry.id),
           { span, answerId: entry.id },
         ]);
       }
-      for (const id of pickedLines ?? []) answeredLinesRef.current.add(id);
+      for (const id of pickedLines ?? options.coveredLines ?? []) answeredLinesRef.current.add(id);
       if (mode === 'answer' && span && pickedLines) {
         lastAnsweredRef.current = {
           answerId: entry.id,
@@ -674,7 +690,31 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       // Kept here as well as in state: the answer's end needs them in the same tick.
       let meta: AnswerMeta | undefined;
       let cleanQuestion: string | undefined;
+      // 1.5.1 (ADR-0069): Claude's "nothing to answer" types, and small talk that Kite found by itself:
+      // auto-answer never puts a card up for "how are you doing?" (a press still gets its answer).
+      const dropped = (type: AnswerType | undefined) =>
+        isNoAnswer(type) || (auto && type === 'smalltalk');
+      // 1.5.1: the call timing log (ids and times only).
+      const sentWall = Date.now();
+      callTimings.noteAnswer({
+        answerId: entry.id,
+        trigger:
+          options.trigger ??
+          (auto ? 'auto' : options.span ? 'answer-this' : mode === 'chat' ? 'chat' : 'hotkey'),
+        mode,
+        askedAt: Math.round(sentWall - (performance.now() - keyPressAt)),
+        speechEnd: span?.end ?? null,
+        sentAt: sentWall,
+        status: 'streaming',
+        bytes: JSON.stringify(built.request).length,
+      });
+      let retries = 0;
+      let firstWordLogged = false;
       runner.run(built.request, keyPressAt, {
+        onRetry: () => {
+          retries += 1;
+          callTimings.noteAnswer({ answerId: entry.id, retries });
+        },
         onQuestion: (received) => {
           cleanQuestion = received;
           update(entry.id, { cleanQuestion });
@@ -689,12 +729,13 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
               ? received.type
               : settleAnswerType(entry.question, received.type, labelsRef.current);
           meta = { ...received, type };
+          if (dropped(type)) callTimings.noteAnswer({ answerId: entry.id, status: 'none' });
           // Claude could not make sense of the words either (ADR-0043): no answer to show. The
           // entry goes, and the user gets the same notice as when the rules catch it first.
           // v1.4 (ADR-0065): or the words ask nothing ("can you repeat that?", a remark). The entry goes
           // the same way; a press of Answer gets a short notice, auto-answer stays silent, and the lines
           // stay answered (they are not noise, but there is nothing to answer in them).
-          if (isNoAnswer(type)) {
+          if (dropped(type)) {
             setEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
             setAnsweredSpans((current) => current.filter((item) => item.answerId !== entry.id));
             setShownId(null);
@@ -714,11 +755,18 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           update(entry.id, { meta });
         },
         onText: (text) => {
-          if (!isNoAnswer(meta?.type)) update(entry.id, { text });
+          if (!firstWordLogged) {
+            firstWordLogged = true;
+            callTimings.noteAnswer({ answerId: entry.id, firstWordAt: Date.now() });
+          }
+          if (!dropped(meta?.type)) update(entry.id, { text });
         },
         onDone: (text, done, timeline) => {
+          if (!dropped(meta?.type)) {
+            callTimings.noteAnswer({ answerId: entry.id, status: 'done', doneAt: Date.now() });
+          }
           // Not an answer: nothing to keep, send later or save.
-          if (isNoAnswer(meta?.type)) return;
+          if (dropped(meta?.type)) return;
           // No model call: plain text matching (ADR-0030).
           const claims = needsClaimCheck(meta, mode)
             ? checkClaims(
@@ -766,6 +814,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             .catch(() => setSaveFailed(true));
         },
         onError: (failure) => {
+          callTimings.noteAnswer({ answerId: entry.id, status: 'error', doneAt: Date.now() });
           const shown = answerFailureText(failure);
           update(entry.id, {
             status: 'error',
@@ -849,7 +898,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   }, [list, index]);
 
   const screenshot = useCallback(
-    (question?: string) => {
+    (question?: string, trigger: AnswerTrigger = 'screenshot-hotkey') => {
       if (capturing) return;
       const pressedAt = performance.now();
       setCapturing(true);
@@ -881,6 +930,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             ...(about ? { typed: about } : {}),
             image: prepared.dataUrl,
             pressedAt,
+            trigger,
+            // 1.5.1 (ADR-0069): a screenshot about what they just asked answers that speech too.
+            ...(!question && recent && span && picked?.kind === 'question'
+              ? { span, coveredLines: picked.selected.lineIds }
+              : {}),
           });
         } catch (error) {
           setNotice(
@@ -908,11 +962,20 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       if (!entry) return;
       // A screenshot is kept in memory only: from an earlier page it can only go by its question.
       if (entry.mode === 'screenshot' && entry.thumbnail) {
-        ask('screenshot', { typed: entry.question, image: entry.thumbnail, answerType });
+        ask('screenshot', {
+          typed: entry.question,
+          image: entry.thumbnail,
+          answerType,
+          trigger: 'reanswer',
+        });
       } else if (entry.mode === 'answer') {
-        ask('answer', { answerType, ...(entry.question ? { question: entry.question } : {}) });
+        ask('answer', {
+          answerType,
+          trigger: 'reanswer',
+          ...(entry.question ? { question: entry.question } : {}),
+        });
       } else {
-        ask('chat', { typed: entry.question, answerType });
+        ask('chat', { typed: entry.question, answerType, trigger: 'reanswer' });
       }
     },
     [ask, entries],
@@ -922,7 +985,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     entries: list,
     index,
     notice,
-    answer: useCallback(() => void ask('answer'), [ask]),
+    answer: useCallback(
+      (trigger?: AnswerTrigger) => void ask('answer', { ...(trigger ? { trigger } : {}) }),
+      [ask],
+    ),
     autoAnswer: useCallback(
       (decision?: AutoDecision) =>
         void ask('answer', {

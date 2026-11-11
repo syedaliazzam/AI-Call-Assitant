@@ -163,7 +163,11 @@ export function selectQuestion(lines: readonly Utterance[]): SelectedQuestion | 
   // The user's last real turn (a backchannel does not count).
   let lastYou = -1;
   spoken.forEach((line, index) => {
-    if (line.speaker === 'you' && wordCount(line.text) > BACKCHANNEL_MAX_WORDS) lastYou = index;
+    // 1.5.1 (ADR-0069): only a finished reply counts. People start "So, um…" over the end of a question
+    // and press Answer: their grey words must not push the newest question out of the window.
+    if (line.speaker === 'you' && line.final && wordCount(line.text) > BACKCHANNEL_MAX_WORDS) {
+      lastYou = index;
+    }
   });
   let span = spoken.slice(lastYou + 1).filter((line) => line.speaker === 'them');
   if (span.length === 0) {

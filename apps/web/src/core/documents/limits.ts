@@ -29,10 +29,11 @@ export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_SESSION_CHARS = 500_000;
 
 /**
- * Most text one document may add, in characters. Half the session cap, so one long document cannot
- * take all of it and a second one (for example a price list) still fits.
+ * Most text one document may add, in characters. 1.5.1 (ADR-0069): the whole session cap (was half),
+ * so one long handbook fits; it is stored as parts of at most 250,000 characters (core/documents/parts.ts),
+ * each small enough to sync as one record.
  */
-export const MAX_DOCUMENT_CHARS = 250_000;
+export const MAX_DOCUMENT_CHARS = 500_000;
 
 /**
  * Above this many characters the wizard warns about cost and speed (ADR-0067). About 280k

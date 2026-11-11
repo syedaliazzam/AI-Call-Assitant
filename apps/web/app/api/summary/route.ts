@@ -19,6 +19,7 @@ import { describeClaudeError, errorLogDetails } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { writeDocumentsSummary } from '@/server/summary';
 import { MAX_REQUEST_BYTES, parseSummaryRequest } from '@/server/validate';
+import { readRequestText } from '@/server/requestBody';
 
 /** Next.js route setting: the Anthropic SDK needs Node.js (not Edge). */
 export const runtime = 'nodejs';
@@ -73,10 +74,16 @@ async function respond(
   if (user.mustChangePassword) {
     return jsonError(401, 'unauthorized', 'Change your temporary password first');
   }
-  const raw = await request.text();
-  if (Buffer.byteLength(raw, 'utf8') > MAX_REQUEST_BYTES) {
-    return jsonError(400, 'bad_request', 'Request is larger than 4 MB');
+  // 1.5.1 (ADR-0069): large bodies arrive gzipped (server/requestBody.ts); 4 MB as sent and unpacked.
+  const body = await readRequestText(request, MAX_REQUEST_BYTES);
+  if (!body.ok) {
+    return jsonError(
+      400,
+      'bad_request',
+      body.reason === 'too-large' ? 'Request is larger than 4 MB' : 'Body is not valid gzip',
+    );
   }
+  const raw = body.text;
   let json: unknown;
   try {
     json = JSON.parse(raw);

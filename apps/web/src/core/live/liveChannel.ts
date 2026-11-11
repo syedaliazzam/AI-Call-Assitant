@@ -26,6 +26,7 @@ import {
   type RecordingKind,
   type TargetChoice,
 } from '@kite/shared';
+import type { CallNotice } from './callNotice';
 import type { AnswerStyle } from '@/core/storage/types';
 
 /** A few of the latest words, as one chip in the overlay's transcript bar. */
@@ -202,6 +203,11 @@ export interface CompactState {
   hygiene?: 'ok' | 'ask' | 'paused';
   /** v1.1.0: true to show the one-time "Use headphones" hint (ADR-0044). */
   headphonesHint?: boolean;
+  /**
+   * 1.5.1 (ADR-0069): a notice about what the call hears (core/live/callNotice.ts): a silent channel, with
+   * its device list's button, or the speech worker catching up; absent when there is none.
+   */
+  callNotice?: CallNotice;
   /** v1.1.0: the session's id, for Edit session. */
   sessionId?: string;
   /** v1.1.0: the microphone in use ('' for the system's default). */
@@ -608,16 +614,27 @@ export function isState(value: unknown): value is CompactState {
 }
 
 /**
+ * 1.5.1 (ADR-0069): the overlay gets the call's state at most this often, ms. Before 1.5.1 every grey word
+ * and every streamed piece of an answer was sent at once, and the overlay re-rendered for each: it used
+ * 0.6–0.9 of a CPU core on the test laptop (0.09 in v1.3.2), taken from the live speech engine. The
+ * latest state is always delivered, at most this much later.
+ */
+export const PUBLISH_EVERY_MS = 200;
+
+/**
  * Opens the link for a session.
  *
- * @param sessionId The session id.
- * @param open      Creates the channel (default: a BroadcastChannel).
+ * @param sessionId       The session id.
+ * @param open            Creates the channel (default: a BroadcastChannel).
+ * @param publishEveryMs  The shortest time between two state messages, ms (default PUBLISH_EVERY_MS;
+ *                        0 sends every one at once).
  * @returns The link.
  * Called from: LiveAnswers.tsx, CompactLive.tsx; tests
  */
 export function openLiveChannel(
   sessionId: string,
   open: (name: string) => ChannelPort = (name) => new BroadcastChannel(name),
+  publishEveryMs = PUBLISH_EVERY_MS,
 ): LiveChannel {
   const port = open(channelName(sessionId));
   const stateListeners: ((state: CompactState) => void)[] = [];
@@ -637,14 +654,44 @@ export function openLiveChannel(
       for (const listener of levelListeners) listener(message.levels);
     }
   };
+  // The state waiting to be sent, when the last one went out less than publishEveryMs ago.
+  let pending: CompactState | null = null;
+  let lastSentAt = -Infinity;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const sendState = (state: CompactState) => {
+    lastSentAt = Date.now();
+    port.postMessage({ kind: 'state', state } satisfies Message);
+  };
+  const flush = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (pending) {
+      const state = pending;
+      pending = null;
+      sendState(state);
+    }
+  };
   return {
-    publish: (state) => port.postMessage({ kind: 'state', state } satisfies Message),
+    publish: (state) => {
+      const wait = lastSentAt + publishEveryMs - Date.now();
+      // The end of a call is never held back.
+      if (wait <= 0 || state.ended) {
+        pending = null;
+        if (timer) clearTimeout(timer);
+        timer = null;
+        sendState(state);
+        return;
+      }
+      pending = state;
+      timer ??= setTimeout(flush, wait);
+    },
     publishLevels: (levels) => port.postMessage({ kind: 'levels', levels } satisfies Message),
     send: (command) => port.postMessage({ kind: 'command', command } satisfies Message),
     onState: (listener) => stateListeners.push(listener),
     onLevels: (listener) => levelListeners.push(listener),
     onCommand: (listener) => commandListeners.push(listener),
     close: () => {
+      flush();
       port.onmessage = null;
       port.close();
     },

@@ -133,3 +133,24 @@ describe('selectQuestion', () => {
     expect(selectQuestion(statement)!.text.split(' ')).toHaveLength(MAX_QUESTION_WORDS);
   });
 });
+
+describe('1.5.1 (ADR-0069): the user talking over the end of a question', () => {
+  it('keeps the newest question when the user has only started (grey words)', () => {
+    const lines = [
+      say('them', 'What was your biggest project last year?'),
+      say('you', 'It was the payments rewrite for the shop.'),
+      say('them', 'And how did you test the new checkout flow'),
+      say('you', 'So um the way we did it was', false),
+    ];
+    expect(selectQuestion(lines)?.text).toBe('And how did you test the new checkout flow');
+  });
+
+  it('still counts a finished reply', () => {
+    const lines = [
+      say('them', 'What was your biggest project last year?'),
+      say('you', 'It was the payments rewrite for the whole shop.'),
+    ];
+    // Nothing from Them since the reply: their last line is answered.
+    expect(selectQuestion(lines)?.text).toBe('What was your biggest project last year?');
+  });
+});

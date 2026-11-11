@@ -249,3 +249,17 @@ describe('pickQuestion v1.4 (ADR-0062): remarks and another language', () => {
     expect(pickQuestion(lines)).toMatchObject({ kind: 'question', lookedBack: true });
   });
 });
+
+describe('1.5.1 (ADR-0069): fillers left over from a greeting', () => {
+  it.each([
+    ['Alright, uh How are you doing?', 'greeting'],
+    ['Okay, so how are you doing?', 'greeting'],
+    ['Hi John, how are you?', 'greeting'],
+    ['Man, can you hear me, man?', 'meta'],
+    ['Hello, uh, how did you scale the system?', 'question'],
+    ['Great, how are you? What is your experience with Kubernetes?', 'question'],
+    ['Hello, and how was your weekend?', 'question'],
+  ])('%s → %s', (text, kind) => {
+    expect(lineKind(text)).toBe(kind);
+  });
+});

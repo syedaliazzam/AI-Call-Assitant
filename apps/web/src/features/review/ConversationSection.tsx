@@ -32,6 +32,7 @@ import {
   transcriptFileName,
   transcriptPdf,
   transcriptText,
+  NO_OTHER_SIDE_TEXT,
 } from '@/core/review/conversation';
 import { downloadFile } from '@/core/review/downloadTranscript';
 import { rateAnswer, reportAnswer } from '@/core/storage/answers';
@@ -326,20 +327,26 @@ function ThemName({
  */
 function CallDivider({
   at,
+  noOtherSide = false,
 }: {
   /** When the call started (Unix ms). */
   at: number;
+  /** 1.5.1 (ADR-0069): the call heard nothing from the other side. */
+  noOtherSide?: boolean;
 }) {
   return (
-    <li
-      role="separator"
-      aria-label={`Call of ${CALL_CLOCK.format(at)}`}
-      className="my-2 flex items-center gap-2 text-[13px] font-medium text-ui-muted"
-    >
-      <span aria-hidden="true" className="h-px flex-1 bg-ui-border" />
-      Call of {CALL_CLOCK.format(at)}
-      <span aria-hidden="true" className="h-px flex-1 bg-ui-border" />
-    </li>
+    <>
+      <li
+        role="separator"
+        aria-label={`Call of ${CALL_CLOCK.format(at)}`}
+        className="my-2 flex items-center gap-2 text-[13px] font-medium text-ui-muted"
+      >
+        <span aria-hidden="true" className="h-px flex-1 bg-ui-border" />
+        Call of {CALL_CLOCK.format(at)}
+        <span aria-hidden="true" className="h-px flex-1 bg-ui-border" />
+      </li>
+      {noOtherSide && <li className="text-[13px] text-ui-warning">{NO_OTHER_SIDE_TEXT}</li>}
+    </>
   );
 }
 
@@ -474,7 +481,13 @@ export function ConversationSection({
         <ol aria-label="Conversation" className="mt-3 flex flex-col gap-4">
           {shown.map((entry) => {
             if (entry.kind === 'call')
-              return <CallDivider key={`call-${entry.at}`} at={entry.at} />;
+              return (
+                <CallDivider
+                  key={`call-${entry.at}`}
+                  at={entry.at}
+                  noOtherSide={entry.noOtherSide ?? false}
+                />
+              );
             if (entry.kind === 'answer') {
               return (
                 <AnswerChip
@@ -512,7 +525,13 @@ export function ConversationSection({
         <ol aria-label="Answers" className="mt-3 flex flex-col gap-1.5">
           {shown.flatMap((entry) => {
             if (entry.kind === 'call')
-              return [<CallDivider key={`call-${entry.at}`} at={entry.at} />];
+              return [
+                <CallDivider
+                  key={`call-${entry.at}`}
+                  at={entry.at}
+                  noOtherSide={entry.noOtherSide ?? false}
+                />,
+              ];
             return entry.kind === 'answer' ? [card(entry.answer)] : [];
           })}
           {!shown.some((entry) => entry.kind === 'answer') && (

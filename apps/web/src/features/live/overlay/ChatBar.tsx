@@ -74,9 +74,13 @@ export const ChatBar = forwardRef<ChatBarHandle, ChatBarProps>(function ChatBar(
     onClose();
   };
 
-  /** Sends what is typed with a screenshot, and closes the bar. */
+  /**
+   * Sends what is typed with a screenshot, and closes the bar. 1.5.1 (ADR-0069): only with something typed;
+   * an empty bar used to take a bare screenshot answer, which a call on 11 Nov 2026 got by mistake.
+   */
   const screenshotSend = () => {
-    onCommand(typed ? { type: 'chat-screenshot', question: typed } : { type: 'screenshot' });
+    if (!typed) return;
+    onCommand({ type: 'chat-screenshot', question: typed });
     setQuestion('');
     onClose();
   };

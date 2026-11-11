@@ -40,8 +40,11 @@ export const TURN_WAIT_MS = 500;
 /** v1.4 (ADR-0065): the end-of-turn probability at which the voice counts as clearly finished. */
 export const TURN_FINISHED_AT = 0.8;
 
-/** v1.4: the longest extra wait for the accurate engine's words, ms. */
-export const ACCURATE_WAIT_MS = 1_500;
+/**
+ * v1.4: the longest extra wait for the accurate engine's words, ms. 1.5.1 (ADR-0069): 1 s (was 1.5 s), and
+ * only for a rewrite already running (refineQueue.ts marks a line only while its rewrite runs).
+ */
+export const ACCURATE_WAIT_MS = 1_000;
 
 /** v1.4: new words starting within this long after an auto-answer started continue its question, ms. */
 export const RERUN_WINDOW_MS = 4_000;
