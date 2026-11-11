@@ -729,3 +729,14 @@ i5-8350U laptop, Windows 11, plugged in. **Evidence:** the real call of 11 Nov 2
 - **Recordings** (the call's stereo file through the 1.5.2 graph in Chromium's Web Audio): main mix peak **+5.2 dBFS (4,388 samples over full scale) → −1.0 dBFS (0 over)**; stereo file You +1.9 → −2.0 dBFS, Them +0.3 → −2.5 dBFS.
 - **Not measured here:** getUserMedia's processing options (the recording was made with them on; they cannot be applied again to a file); this laptop has one microphone.
 - **Overlay answer panel (found on the way):** since 1.5.1 the overlay opened its answer panel only when it first saw an answer _streaming_; with its state sent at most every 200 ms, a quick answer could arrive already finished and the panel stayed shut (the compact-view harness test failing in CI on `main`, and three `sim-calls.spec.ts` tests). Any new answer now opens it: `sim-calls.spec.ts` 9 of 9.
+
+| Release check (1.5.2) | Result | Notes |
+|---|---|---|
+| Lint, typecheck, unit tests | web 1,906 of 1,906; desktop 223 of 223 | New: press decision, reply rule, echo canceller, pauses and punctuated readings, the idle rewrite, recording graph, Private warning, per-card timings, the real-call scoring. |
+| Harness (local) | answers 13/13, screenshot 1/1, review 12/12, live UI 25/25, speech-to-text 2/2, punctuation 1/1, `sim-calls` 9/9 | |
+| CI (#52, #53) | all jobs pass | |
+| Windows install check (`install-check.yml`) | all expectations pass | A fresh 1.5.2; B 1.5.0 with its shortcut deleted, then 1.5.2; C Kite 1.1.0 → … → 1.5.0 → 1.5.2; **D (new) the published 1.5.1 → 1.5.2 by the updater**; opened directly. |
+| Web deployed | `call.paramountintelligence.co` | `/aec/webrtcaec3-0.3.0.{js,wasm}` served, SHA-256 equal to the pins. |
+| `Paramount-AI-Setup-1.5.2.exe` | 288,801,711 bytes; SHA-256 `a4b55c4dc944795616277884b719139573cd80e5a45e853f627425c538c82e9a` | Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.5.2. Desktop 1.5.2 has no functional change (the fixes are in the web app). |
+| Real-feed update check (`update-check.ts`, 1.5.1 extracted from its installer, never installed) | PASS | 1.5.1 found, downloaded and verified 1.5.2 from the real releases repository. |
+| Production latency (`latency.spec.ts`) | not run | The test admin account is disabled ("This account is disabled"); no request was sent, nothing spent. |
