@@ -27,8 +27,12 @@ import { bytesOnDisk, downloadModel, isModelReady, removeModel } from './downloa
 import { MODEL_BYTES, MODEL_FILES } from './model';
 import type { FromWorker, ToWorker } from './worker';
 
-/** Decoding threads: 2, measured against 4 during a call on the test laptop (ADR-0066): a third less CPU, which leaves the live engine room. */
-const THREADS = 2;
+/**
+ * Decoding threads. 2 from ADR-0066 (a third less CPU than 4); 1.5.1 (ADR-0069): 1, and the process runs
+ * at below-normal priority (main.ts), because on a busy laptop Accurate's CPU made the live engine fall
+ * 20–56 s behind. A rewrite takes longer; it never delays a line or an answer.
+ */
+const THREADS = 1;
 
 /** Longest a decode may take before the page keeps the live line, in ms. */
 export const DECODE_TIMEOUT_MS = 15_000;
@@ -116,8 +120,8 @@ export function createAccurateHost(
   let loaded: Promise<boolean> | null = null;
   let nextId = 1;
   const pending = new Map<number, (result: AccurateResult) => void>();
-  // One decode at a time: the engine uses 2 threads, and the live engine needs the rest.
-  let queue: Promise<unknown> = Promise.resolve();
+  // One decode at a time, at most one waiting (1.5.1, ADR-0069): the live engine needs the rest.
+  const enqueue = createDecodeQueue();
 
   const status = async (): Promise<AccurateStatus> => {
     const base = { totalBytes: MODEL_BYTES };
@@ -235,7 +239,7 @@ export function createAccurateHost(
       return { ok: false, code: 'bad-audio' };
     }
     if ((await status()).state !== 'ready') return { ok: false, code: 'not-ready' };
-    const run = queue.then(async (): Promise<AccurateResult> => {
+    const result = await enqueue(async (): Promise<AccurateResult> => {
       if (!(await ensureLoaded()) || !worker) return { ok: false, code: 'engine' };
       const id = nextId++;
       return new Promise<AccurateResult>((resolve) => {
@@ -250,8 +254,6 @@ export function createAccurateHost(
         worker!.postMessage({ type: 'decode', id, samples });
       });
     });
-    queue = run.catch(() => undefined);
-    const result = await run;
     console.info('desktop: accurate transcription', {
       seconds: Math.round(samples.length / 1_600) / 10,
       ok: result.ok,
@@ -261,6 +263,52 @@ export function createAccurateHost(
   };
 
   return { status, download, remove, transcribe };
+}
+
+/**
+ * 1.5.1 (ADR-0069): runs decodes one at a time with at most one waiting. A newer line takes the waiting
+ * one's place, and the older one is answered 'busy' at once (the page keeps its live words). Before 1.5.1
+ * every line waited, and on a busy laptop rewrites came 11–22 s late (p95) while taking CPU.
+ *
+ * @returns enqueue(decode): resolves with the decode's result, or 'busy' when a newer line replaced it.
+ * Called from: createAccurateHost(); tests
+ */
+export function createDecodeQueue(): (
+  decode: () => Promise<AccurateResult>,
+) => Promise<AccurateResult> {
+  let queue: Promise<unknown> = Promise.resolve();
+  let waiting: (() => void) | null = null;
+  // Decodes running or about to run (enqueued, not yet started). The first in an idle queue runs next
+  // and is never replaced; only a line behind it waits.
+  let ahead = 0;
+  return (decode) =>
+    new Promise<AccurateResult>((resolve) => {
+      let replaced = false;
+      const giveWay = () => {
+        replaced = true;
+        resolve({ ok: false, code: 'busy' });
+      };
+      if (ahead > 0) {
+        waiting?.();
+        waiting = giveWay;
+      }
+      ahead += 1;
+      const run = queue.then(async () => {
+        if (waiting === giveWay) waiting = null;
+        if (replaced) {
+          ahead -= 1;
+          return;
+        }
+        try {
+          resolve(await decode());
+        } catch {
+          resolve({ ok: false, code: 'engine' });
+        } finally {
+          ahead -= 1;
+        }
+      });
+      queue = run.catch(() => undefined);
+    });
 }
 
 /**
