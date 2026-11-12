@@ -740,3 +740,13 @@ i5-8350U laptop, Windows 11, plugged in. **Evidence:** the real call of 11 Nov 2
 | `Paramount-AI-Setup-1.5.2.exe` | 288,801,711 bytes; SHA-256 `a4b55c4dc944795616277884b719139573cd80e5a45e853f627425c538c82e9a` | Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.5.2. Desktop 1.5.2 has no functional change (the fixes are in the web app). |
 | Real-feed update check (`update-check.ts`, 1.5.1 extracted from its installer, never installed) | PASS | 1.5.1 found, downloaded and verified 1.5.2 from the real releases repository. |
 | Production latency (`latency.spec.ts`) | not run | The test admin account is disabled ("This account is disabled"); no request was sent, nothing spent. |
+
+| Release check (1.6.1, 12 Nov 2026) | Result | Notes |
+|---|---|---|
+| Lint, typecheck, unit tests, web build | web 2,020 of 2,020; desktop 238 of 238 | New: the launcher's first card and its fallback, the reconnect notice's memory, the shell's link routing at a cold start, in a running (minimised or hidden) app and during a call. |
+| Harness (local) | launcher 7/7, handoff 9/9, `sim-calls` 9/9 | New launcher test: the browser's Start opens the Start card; Drive's reconnect notice sits above the list, the bottom bar stays clickable, and a closed notice stays closed across a reload. |
+| CI (#57) | all jobs pass | Web, Windows desktop smoke, speech-to-text. |
+| Windows install check (`install-check.yml`) | all expectations pass | A–E as before; **F (new) the published 1.6.0 → 1.6.1 by the updater**; opened directly. |
+| Web deployed | `call.paramountintelligence.co`, `kite-call-assistant.vercel.app` | The fixes are in the web app, so 1.6.0 gets them too. |
+| `Paramount-AI-Setup-1.6.1.exe` | 288,803,721 bytes; SHA-256 `97e6bb6cf468d4496194e36132c544154971fc8623bab1a6dc38aa28222a864b` | Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.6.1. Shell change: link routing only (one decision for a first start and a running app). |
+| Real-feed update check (`update-check.ts`, 1.6.0 extracted from its installer, never installed) | PASS | 1.6.0 found, downloaded and verified 1.6.1 from the real releases repository. |
