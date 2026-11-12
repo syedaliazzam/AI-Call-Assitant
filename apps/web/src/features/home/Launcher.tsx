@@ -4,8 +4,9 @@
  *          frame and one card at a time: "Your sessions" → the session's Start card → its Connect card.
  *          Connect starts the call in the main window (core/live/callStart.ts), and the shell then
  *          hides this window until the call ends. Opened from the Start menu it shows the sessions; opened
- *          by the browser's "Desktop app" link (/home?session=<id>) that session comes first,
- *          highlighted. The acceptable-use notice, the accurate-transcription offer and the one-time
+ *          by the browser's Start (a paramountai://session link, /home?session=<id>) it goes straight to
+ *          that session's Start card (1.6.1), and Back shows the sessions with it first, highlighted.
+ *          Google Drive's notices sit above "Your sessions" (1.6.1). The acceptable-use notice, the accurate-transcription offer and the one-time
  *          upload of this computer's own data keep their places. Desktop 1.5.0 (ADR-0068): "Recording saved ·
  *          Open in Meetings" after a call that recorded, and this computer's recordings brought up to date
  *          in the account (core/recording/reconcile.ts). ADR-0071: Buy credits in the header on every card,
@@ -13,7 +14,8 @@
  * Used by: src/features/home/HomePanel.tsx (accounts with account sync)
  * Depends on: next/navigation, src/core/storage (sessions.ts, answers.ts), src/core/stt/prefetch.ts,
  *             src/core/sync/client.ts,
- *             src/features/appearance/useAppearance, src/features/notices/AcceptableUseNotice.tsx,
+ *             src/features/appearance/useAppearance, src/features/drive/DriveNotices.tsx,
+ *             src/features/notices/AcceptableUseNotice.tsx,
  *             src/features/sync/LegacyUploadCard.tsx, src/platform, ./AccurateDownload.tsx,
  *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx, ./LauncherStart.tsx,
  *             ./RecordingSavedNotice.tsx, src/core/recording (handoff.ts, reconcile.ts)
@@ -31,6 +33,7 @@ import { speechModelPrefetch } from '@/core/stt/prefetch';
 import type { Session } from '@/core/storage/types';
 import { pullAccountSync } from '@/core/sync/client';
 import { useAppearance } from '@/features/appearance/useAppearance';
+import { DriveNotices } from '@/features/drive/DriveNotices';
 import { AcceptableUseNotice } from '@/features/notices/AcceptableUseNotice';
 import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
 import { getPlatform } from '@/platform';
@@ -63,6 +66,40 @@ export type LauncherView =
       /** The session. */
       sessionId: string;
     };
+
+/**
+ * The card the launcher opens on (1.6.1): the browser's Start button (a paramountai://session link, which
+ * the shell turns into /home?session=<id>) goes straight to that session's Start card, Free or Paid;
+ * otherwise "Your sessions".
+ *
+ * @param fromBrowserId The session the link named, if any.
+ * @returns The first card.
+ * Called from: Launcher; tests
+ */
+export function initialLauncherView(fromBrowserId: string | undefined): LauncherView {
+  return fromBrowserId ? { kind: 'start', sessionId: fromBrowserId } : { kind: 'sessions' };
+}
+
+/**
+ * The card to show (1.6.1): the chosen one, except that the link's session goes back to "Your sessions"
+ * when it cannot be started here: the account does not have it (after asking it once), or its call has
+ * ended. The sessions card then says so, or offers View transcript.
+ *
+ * @param view           The chosen card.
+ * @param fromBrowserId  The session the link named, if any.
+ * @param linkStatus     That session's status here: 'missing' (looked for and not found), 'ended',
+ *                       or 'ok' (also while the list is still loading).
+ * @returns The card to show.
+ * Called from: Launcher; tests
+ */
+export function shownLauncherView(
+  view: LauncherView,
+  fromBrowserId: string | undefined,
+  linkStatus: 'ok' | 'missing' | 'ended',
+): LauncherView {
+  if (view.kind === 'sessions' || view.sessionId !== fromBrowserId) return view;
+  return linkStatus === 'ok' ? view : { kind: 'sessions' };
+}
 
 /** The window size the cards are drawn for (reference: about 560 × 720 CSS px). */
 export const LAUNCHER_SIZE = { width: 560, height: 720 };
@@ -120,7 +157,8 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
   const [answerCounts, setAnswerCounts] = useState<ReadonlyMap<string, number>>(new Map());
   // Fixed per list, so every row judges "live for over 12 hours" the same way.
   const [now, setNow] = useState(0);
-  const [view, setView] = useState<LauncherView>({ kind: 'sessions' });
+  // 1.6.1: a link from the browser's Start opens on that session's Start card.
+  const [chosenView, setView] = useState<LauncherView>(() => initialLauncherView(fromBrowserId));
   // The link's session is looked for in the account once when this computer does not have it yet.
   const [pulled, setPulled] = useState(false);
   // Desktop 1.5.0 (ADR-0068): a call just ended with a recording saved ("Recording saved · Open in
@@ -194,6 +232,12 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
     };
   }, [sessions]);
 
+  // The link's session cannot be started here: not in the account, or its call has ended.
+  const linked = sessions?.find((session) => session.id === fromBrowserId);
+  const linkStatus =
+    missing && pulled ? 'missing' : linked && shownStatus(linked, now) === 'ended' ? 'ended' : 'ok';
+  const view = shownLauncherView(chosenView, fromBrowserId, linkStatus);
+
   const lastCall = useMemo(
     () => (sessions === null ? null : lastEndedCall(sessions, now)),
     [sessions, now],
@@ -232,6 +276,8 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
           onOpen={(session) => setView({ kind: 'start', sessionId: session.id })}
           notices={
             <>
+              {/* 1.6.1: Drive's notices in the card's flow, never over the bottom bar. */}
+              <DriveNotices placement="inline" />
               {recordingSaved && <RecordingSavedNotice onClose={() => setRecordingSaved(false)} />}
               <AccurateDownload />
               {/* ADR-0049: offers once to add this computer's own data to the account. */}

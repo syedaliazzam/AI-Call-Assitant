@@ -2,11 +2,18 @@
  * Tests for apps/web/src/features/home/LauncherSessions.tsx (launcherOrder, launcherSearch) and Launcher.tsx
  * (lastEndedCall): the desktop sessions card lists every session newest first with the browser's
  * session on top, and offers the notes of a call that ended in the last 2 hours (ADR-0055); ADR-0071:
- * the search (title, role or topic, description) and the sort.
+ * the search (title, role or topic, description) and the sort. 1.6.1 (initialLauncherView,
+ * shownLauncherView): the browser's Start opens that session's Start card, and falls back to the
+ * sessions when the session is not in the account or has ended.
  */
 import { describe, expect, it } from 'vitest';
 import type { Session } from '@/core/storage/types';
-import { LAST_CALL_MS, lastEndedCall } from '@/features/home/Launcher';
+import {
+  initialLauncherView,
+  LAST_CALL_MS,
+  lastEndedCall,
+  shownLauncherView,
+} from '@/features/home/Launcher';
 import { launcherOrder, launcherSearch } from '@/features/home/LauncherSessions';
 
 /**
@@ -103,5 +110,26 @@ describe('lastEndedCall', () => {
 
   it('offers nothing when no call ended recently', () => {
     expect(lastEndedCall([session('ready', 1, { createdAt: now })], now)).toBeNull();
+  });
+});
+
+describe('the first card (1.6.1)', () => {
+  it('opens on the Start card of the session the browser’s Start named, else on the sessions', () => {
+    expect(initialLauncherView('abc')).toEqual({ kind: 'start', sessionId: 'abc' });
+    expect(initialLauncherView(undefined)).toEqual({ kind: 'sessions' });
+  });
+
+  it('keeps the chosen card while the link’s session can be started (also while the list loads)', () => {
+    const start = { kind: 'start', sessionId: 'abc' } as const;
+    expect(shownLauncherView(start, 'abc', 'ok')).toEqual(start);
+    // Another session's card is never affected by the link's session.
+    const other = { kind: 'connect', sessionId: 'xyz' } as const;
+    expect(shownLauncherView(other, 'abc', 'missing')).toEqual(other);
+  });
+
+  it('goes back to the sessions when the link’s session is not in the account or has ended', () => {
+    const start = { kind: 'start', sessionId: 'abc' } as const;
+    expect(shownLauncherView(start, 'abc', 'missing')).toEqual({ kind: 'sessions' });
+    expect(shownLauncherView(start, 'abc', 'ended')).toEqual({ kind: 'sessions' });
   });
 });

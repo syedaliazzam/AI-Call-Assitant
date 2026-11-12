@@ -3,7 +3,8 @@
  * and size; a saved place still on a screen is kept; the window is frameless, in the taskbar, and has the
  * secure web preferences; it keeps to its own pages, and a web app with no /home (rolled back) makes the
  * app open the main window instead; it remembers its place; a call hides it and its end shows it without
- * taking focus.
+ * taking focus. 1.6.1: the browser's Start link, routed as main.ts does (links.ts routeDesktopLink),
+ * reaches the session both at a cold start and in a running (minimised or hidden) app.
  */
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +21,8 @@ import {
   isPanelSize,
   panelSizeBounds,
 } from '../../src/home';
+import { linkFromArgv, routeDesktopLink } from '../../src/links';
+import { desktopSessionLink } from '@kite/shared';
 
 /** A primary display's work area. */
 const AREA = { x: 0, y: 0, width: 1920, height: 1040 };
@@ -278,6 +281,91 @@ describe('a link with a one-time code (ADR-0052)', () => {
   it('has no code for a link without one', () => {
     const { home } = setup();
     home.openSession(ID);
+    expect(home.takeLinkCode()).toBeNull();
+  });
+});
+
+describe('1.6.1: the browser’s Start link (paramountai://session/<id>/<code>) reaches the session', () => {
+  /** Two sessions' ids. */
+  const ID = '86495cda-fbd1-4cea-8387-cd29f5c1381b';
+  const ID2 = '5f0c2b1e-7a3d-4e8f-9b6a-0c1d2e3f4a5b';
+  /** An invented code (43 base64url characters). */
+  const CODE = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE';
+
+  /**
+   * Routes a link from a command line into the panel, as main.ts does.
+   * @param home       The panel.
+   * @param argv       The command line (a first start's, or a second launch's).
+   * @param callActive True during a call.
+   * @returns The spies for the other routes.
+   */
+  function route(home: ReturnType<typeof setup>['home'], argv: string[], callActive = false) {
+    const routes = {
+      openSession: (sessionId: string, code?: string) => home.openSession(sessionId, code),
+      openPlayer: vi.fn(),
+      showFront: vi.fn(),
+    };
+    routeDesktopLink(linkFromArgv(argv), callActive, routes);
+    return routes;
+  }
+
+  it('app closed (cold start): the panel opens on the link page, which signs in and goes to the card', () => {
+    const { home, windows } = setup();
+    route(home, [
+      'C:\\Program Files\\Paramount AI\\Paramount AI.exe',
+      desktopSessionLink(ID, CODE),
+    ]);
+    expect(windows).toHaveLength(1);
+    const window = windows[0]!;
+    expect(window.loadURL).toHaveBeenCalledExactlyOnceWith(
+      `https://kite.example/desktop/link?session=${ID}`,
+    );
+    expect(home.takeLinkCode()).toBe(CODE);
+    // The link page then goes to /home?session=<id>, which the web app opens on the Start card; the
+    // panel lets it stay there.
+    window.navigate('did-navigate', `https://kite.example/desktop/link?session=${ID}`, 200);
+    window.navigate('did-navigate', `https://kite.example/home?session=${ID}`, 200);
+    expect(window.loadURL).toHaveBeenCalledTimes(1);
+  });
+
+  it('app already open, minimised or hidden (second launch): the same window goes to the new session', () => {
+    const { home, windows } = setup();
+    home.open();
+    const window = windows[0]!;
+    // Minimised.
+    window.minimized = true;
+    // Windows gives a second launch's arguments with Chromium switches before the link.
+    route(home, [
+      'Paramount AI.exe',
+      '--allow-file-access-from-files',
+      desktopSessionLink(ID, CODE),
+    ]);
+    expect(windows).toHaveLength(1);
+    expect(window.loadURL).toHaveBeenLastCalledWith(
+      `https://kite.example/desktop/link?session=${ID}`,
+    );
+    expect(window.restore).toHaveBeenCalled();
+    expect(window.show).toHaveBeenCalled();
+    expect(window.focus).toHaveBeenCalled();
+    expect(home.takeLinkCode()).toBe(CODE);
+    // Hidden (the main window was open when the panel was closed): shown again on the next session.
+    window.minimized = false;
+    home.hide();
+    window.show.mockClear();
+    route(home, ['Paramount AI.exe', desktopSessionLink(ID2, CODE)]);
+    expect(windows).toHaveLength(1);
+    expect(window.loadURL).toHaveBeenLastCalledWith(
+      `https://kite.example/desktop/link?session=${ID2}`,
+    );
+    expect(window.show).toHaveBeenCalled();
+  });
+
+  it('during a call only brings the call forward: the link never interrupts it', () => {
+    const { home, windows } = setup();
+    home.open();
+    const routes = route(home, ['Paramount AI.exe', desktopSessionLink(ID, CODE)], true);
+    expect(routes.showFront).toHaveBeenCalledOnce();
+    expect(windows[0]!.loadURL).toHaveBeenCalledTimes(1);
     expect(home.takeLinkCode()).toBeNull();
   });
 });
