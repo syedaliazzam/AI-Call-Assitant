@@ -1,0 +1,92 @@
+/**
+ * File: apps/web/src/features/legal/PrivacyPolicy.tsx
+ * Purpose: The public privacy policy (/privacy), in short plain words: what Paramount AI stores, what
+ *          Google Drive saving can see and do (drive.file only), what the "call saved" email holds, who
+ *          else handles data, and whom to contact. Google's OAuth consent screen links here. Keep it in
+ *          step with how the app works (ADR-0049 encryption, ADR-0072 Drive and email).
+ * Used by: app/privacy/page.tsx
+ * Depends on: ./LegalPage.tsx
+ * Architecture: ADR-0049 (encrypted call records), ADR-0072 (Google Drive saving, the saved email)
+ */
+import { ContactLink, LegalPage, LegalSection } from './LegalPage';
+
+/**
+ * The privacy policy page.
+ *
+ * @returns The page.
+ * Rendered by: app/privacy/page.tsx
+ */
+export function PrivacyPolicy() {
+  return (
+    <LegalPage title="Privacy policy">
+      <LegalSection title="About Paramount AI">
+        <p>
+          Paramount AI is an internal call assistant of Paramount Intelligence, for its staff and
+          authorised users. This page explains what it stores and why.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="What we store">
+        <ul>
+          <li>
+            <strong>Your account:</strong> your name, email address, sign-in sessions and a daily
+            count of requests (numbers only, never text).
+          </li>
+          <li>
+            <strong>Your call records and settings:</strong> sessions, transcripts, answers and
+            notes, and your preferences. Call records kept in your account are encrypted.
+          </li>
+          <li>
+            <strong>Recordings</strong> stay on your computer. They leave it only if you turn on
+            Google Drive saving, which uploads them to the Drive folder you choose.
+          </li>
+        </ul>
+      </LegalSection>
+
+      <LegalSection title="Answers and notes">
+        <p>
+          To write answers and notes, the relevant transcript and document text (and any screenshot
+          you ask about) is sent to Anthropic&apos;s Claude API. Call audio is never sent.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Google Drive">
+        <ul>
+          <li>
+            Paramount AI asks Google only for the <code>drive.file</code> permission. It can see
+            only the files it creates and the folder you pick, not the rest of your Drive.
+          </li>
+          <li>It uploads only your own recordings, transcripts and notes, to that folder.</li>
+          <li>The Google token that lets it upload for you is stored encrypted.</li>
+          <li>
+            You can disconnect at any time in Settings → Google Drive. Disconnecting revokes the
+            access at Google and deletes the token. You can also remove it in your Google Account
+            under Security → Third-party connections.
+          </li>
+        </ul>
+      </LegalSection>
+
+      <LegalSection title="Email">
+        <p>
+          The &ldquo;call saved&rdquo; email holds only the session&apos;s title, date and length,
+          the saved files&apos; names and links to them in Drive. It never contains transcript,
+          notes, answer or document text. It goes to you and to anyone you add to its list.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Sharing">
+        <p>
+          We don&apos;t sell your data or share it with anyone. The only other services that handle
+          it are the ones that do the work described above: our hosting and database providers,
+          Anthropic&apos;s Claude API, and Google Drive when you turn it on.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Contact">
+        <p>
+          Questions, or a request to see or delete your data: <ContactLink />.
+        </p>
+      </LegalSection>
+    </LegalPage>
+  );
+}
