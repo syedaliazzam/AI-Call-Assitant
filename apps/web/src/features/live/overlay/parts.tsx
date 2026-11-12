@@ -13,7 +13,7 @@
  */
 'use client';
 
-import type { KeycapHotkey } from '@kite/shared';
+import { hotkeyLabel, type KeycapHotkey } from '@kite/shared';
 import { useSyncExternalStore, type ReactNode, type RefObject } from 'react';
 import type { CompactCommand, CompactLevels, CompactState } from '@/core/live/liveChannel';
 import { ANSWER_LANGUAGES } from '@/core/storage/types';
@@ -25,7 +25,7 @@ import { KeyCap } from '@/ui/KeyCap';
  * "px-0" would not beat a "px-2" in the same class list (the order in the stylesheet decides).
  */
 const BUTTON_SHAPE =
-  'inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-control text-[13px] font-medium disabled:opacity-60 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]';
+  'inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-control text-[13px] font-medium disabled:opacity-50 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]';
 
 /** A button in a bar: not part of the drag handle, always a clear focus ring. */
 export const BUTTON_BASE = `${BUTTON_SHAPE} px-2`;
@@ -44,6 +44,19 @@ export const CHEVRON_BUTTON = `${BUTTON_SHAPE} w-5 text-ui-text hover:bg-ui-over
 
 /** A quiet icon button for an answer's footer; the caller adds its colour. */
 export const FOOTER_BUTTON = `${BUTTON_SHAPE} w-8 hover:bg-ui-overlay-button pointer-coarse:min-w-11`;
+
+/**
+ * A shortcut as a tooltip names it (1.6.3, ADR-0075): "Ctrl+Shift+Enter" in words on Windows and Linux,
+ * the usual symbols on macOS ("⌘ ⇧ ↵").
+ *
+ * @param accelerator The shortcut, as Electron writes it ("CommandOrControl+Shift+Enter").
+ * @param mac         True on macOS.
+ * @returns Its name.
+ * Called from: ControlBar.tsx, RecordControls.tsx
+ */
+export function tipShortcut(accelerator: string, mac: boolean): string {
+  return mac ? hotkeyLabel(accelerator, true) : accelerator.replace('CommandOrControl', 'Ctrl');
+}
 
 /**
  * One piece of the stacked overlay: its own rounded panel, see-through in the desktop app.
@@ -169,10 +182,13 @@ export function StatusIcon({
   icon: ReactNode;
 }) {
   return (
+    // 1.6.3 (ADR-0075): not part of the window's drag handle, so the pointer over it reaches the page and
+    // its tooltip shows (BarTooltip.tsx).
     <span
       role="img"
       aria-label={`${label}: ${on ? 'capturing' : 'not connected'}`}
-      className={`relative inline-flex h-8 w-7 shrink-0 items-center justify-center ${on ? 'text-ui-text' : 'text-ui-muted'}`}
+      data-tip={`${label}: ${on ? 'capturing' : 'not connected'}`}
+      className={`relative inline-flex h-8 w-7 shrink-0 items-center justify-center [-webkit-app-region:no-drag] ${on ? 'text-ui-text' : 'text-ui-muted'}`}
     >
       {icon}
       {on && (

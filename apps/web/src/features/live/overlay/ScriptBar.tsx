@@ -15,7 +15,7 @@
 import { useState, type CSSProperties } from 'react';
 import { splitAnswer } from '@/core/answer/format';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
-import { OVERLAY_OPACITY, paintedPanelAlpha } from '@/core/storage/overlayPrefs';
+import { OVERLAY_OPACITY } from '@/core/storage/overlayPrefs';
 import { TARGET_OPTIONS } from '@/features/live/ChatBox';
 import { ExpandIcon, MicIcon } from '@/ui/icons';
 import { BUTTON, BUTTON_BASE, ICON_BUTTON } from './parts';
@@ -66,10 +66,7 @@ export function ScriptBar({
       className={`k-overlay ${glass ? 'k-glass' : ''} flex h-screen flex-col overflow-hidden rounded-card border border-ui-border text-ui-text`}
       style={
         glass
-          ? // 1.6.3 (ADR-0075): nearly solid whatever the setting, as the overlay's panels.
-            ({
-              '--k-overlay-alpha': paintedPanelAlpha(panelAlpha ?? OVERLAY_OPACITY.default),
-            } as CSSProperties)
+          ? ({ '--k-overlay-alpha': panelAlpha ?? OVERLAY_OPACITY.default } as CSSProperties)
           : undefined
       }
     >

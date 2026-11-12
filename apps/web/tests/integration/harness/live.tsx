@@ -392,7 +392,12 @@ function CompactHarness({
   // ?alpha=0.4|0.7: the panel-background opacity, so the overlay look test can render the slider's
   // settings (ADR-0033). The desktop window's settings are only present with the glass panel.
   const alphaParam = params.get('alpha');
-  const alpha = alphaParam === null ? null : Number(alphaParam);
+  // 1.6.3: kept in state, so the menu's Opacity stepper changes the panels as in the app.
+  const [alpha, setAlpha] = useState<number | null>(() =>
+    alphaParam === null ? null : Number(alphaParam),
+  );
+  // 1.6.3: ?ct=on: Click-through mode on (v1.3.2), as a desktop shell from 1.3.0 has it.
+  const clickThrough = params.get('ct') === 'on';
   // What the view asks for, so a test can read it. ?shell=1: a shell from 1.2.0, with the icon.
   const log = (window as unknown as { overlayLog: unknown[] }).overlayLog;
   // ?position=bottom-left: a shell from 1.3.0 with the six positions (ADR-0056), at that one.
@@ -401,7 +406,8 @@ function CompactHarness({
   );
   return (
     <CompactView
-      state={state}
+      state={clickThrough ? { ...state, clickThrough: true } : state}
+      {...(clickThrough ? { onClickThrough: () => undefined } : {})}
       protection={{ supported: true, on: true }}
       onCommand={(command) => log.push(command)}
       onProtection={() => undefined}
@@ -442,7 +448,7 @@ function CompactHarness({
             windowSettings: {
               opacity: alpha,
               panelAlpha: alpha,
-              onOpacity: () => undefined,
+              onOpacity: setAlpha,
             },
           }
         : {})}

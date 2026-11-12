@@ -11,15 +11,16 @@
  *          has too little room, the left side gives way one step at a time, measured rather than guessed
  *          (the Rec pill, Auto answer and Click-through change its width): first the key-caps (Rec's,
  *          then Screenshot's and Chat's, then Answer's), then the words "Transcript" and "Click-through
- *          on" and the timer's clock, then Answer, Screenshot and Chat become icons, then the word
- *          "Auto"; only then do things go: the Transcript pill (the live words and Ctrl+Alt+T open the
+ *          on" and the timer's clock, then the word "Auto", and only then do Answer, Screenshot and
+ *          Chat become icons (so the default 980 px window keeps their words, at any UI zoom up to
+ *          130 %); after that things go: the Transcript pill (the live words and Ctrl+Alt+T open the
  *          transcript too), the move icon (the whole bar drags), and the timer last (only a
- *          picture-in-picture window is that narrow). A button shown as an icon names itself
- *          and its shortcut in a tooltip drawn in the page (a browser's title tooltip is a separate window
- *          that Private may not hide, ADR-0042).
+ *          picture-in-picture window is that narrow). Every control names itself and its shortcut in
+ *          BarTooltip.tsx ("Answer · Ctrl+Enter").
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys), lucide-react, react-dom (flushSync), src/core/live/liveChannel.ts,
- *             ./parts.tsx, ./RecordControls.tsx, src/features/live/callClock.ts, src/ui/icons.tsx
+ *             ./parts.tsx, ./RecordControls.tsx, ./BarTooltip.tsx, src/features/live/callClock.ts,
+ *             src/ui/icons.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S13); ADR-0041, ADR-0045, ADR-0075
  */
 'use client';
@@ -31,8 +32,6 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type FocusEvent,
-  type PointerEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
@@ -51,7 +50,16 @@ import {
   MoveIcon,
   SparkIcon,
 } from '@/ui/icons';
-import { BUTTON_BASE, CHEVRON_BUTTON, ICON_BUTTON, KeyChip, PILL, StatusIcon } from './parts';
+import { BarTooltip } from './BarTooltip';
+import {
+  BUTTON_BASE,
+  CHEVRON_BUTTON,
+  ICON_BUTTON,
+  KeyChip,
+  PILL,
+  StatusIcon,
+  tipShortcut,
+} from './parts';
 import { RecPill } from './RecordControls';
 import { usePrivateOffWhileRecording } from '../PrivateOffWarning';
 
@@ -123,10 +131,10 @@ const FIT = {
   noKeys: 3,
   /** From here: the Transcript pill's word and "Click-through on" give way to icons; no clock icon. */
   noWords: 4,
-  /** From here: Answer, Screenshot and Chat are icons. */
-  iconPills: 5,
   /** From here: Auto answer is its bolt only. */
-  iconAuto: 6,
+  iconAuto: 5,
+  /** From here: Answer, Screenshot and Chat are icons. */
+  iconPills: 6,
   /** From here: no Transcript pill (the live words' level button and Ctrl+Alt+T open the transcript). */
   noTranscript: 7,
   /** From here: no move icon (the whole bar still drags the window). */
@@ -139,17 +147,23 @@ const FIT = {
 const FIT_MOST = FIT.noTimer;
 
 /**
- * A button's name with its shortcut, for its tooltip: "Answer (Ctrl+↵)".
+ * A control's name with its shortcut, for its tooltip: "Answer · Ctrl+Enter" (1.6.3, ADR-0075).
  *
- * @param name   The button's name.
+ * @param name   The control's name.
  * @param hotkey The shortcut's accelerator, if it has one.
  * @param mac    True on macOS.
  * @returns The tooltip's words.
- * Called from: ControlBar
+ * Called from: ControlBar, TranscriptPill
  */
 function tipText(name: string, hotkey: string | undefined, mac: boolean): string {
-  return hotkey ? `${name} (${hotkeyLabel(hotkey, mac)})` : name;
+  return hotkey ? `${name} · ${tipShortcut(hotkey, mac)}` : name;
 }
+
+/** Ctrl+Alt+T: the transcript on or off while the bars have focus (ADR-0056; platform/keymap.ts). */
+const TRANSCRIPT_ACCELERATOR = 'CommandOrControl+Alt+T';
+
+/** Ctrl+Alt+Arrows: the six positions (ADR-0056). */
+const POSITION_ACCELERATOR = 'CommandOrControl+Alt+Arrows';
 
 /**
  * The Transcript pill (ADR-0055): the word and a small switch inside; on opens the transcript panel,
@@ -158,6 +172,7 @@ function tipText(name: string, hotkey: string | undefined, mac: boolean): string
  * @param props.open     True while the transcript panel is open.
  * @param props.disabled True before the live page answers, or once the call ended.
  * @param props.word     False to show the icon instead of the word.
+ * @param props.mac      True on macOS.
  * @param props.onToggle Opens or closes the panel.
  * @returns The pill.
  * Rendered by: ControlBar
@@ -166,6 +181,7 @@ function TranscriptPill({
   open,
   disabled,
   word,
+  mac,
   onToggle,
 }: {
   /** True while the transcript panel is open. */
@@ -174,6 +190,8 @@ function TranscriptPill({
   disabled: boolean;
   /** False to show the icon instead of the word. */
   word: boolean;
+  /** True on macOS (the shortcut's name). */
+  mac: boolean;
   /** Opens or closes the panel. */
   onToggle: (open: boolean) => void;
 }) {
@@ -183,7 +201,7 @@ function TranscriptPill({
       role="switch"
       aria-checked={open}
       aria-label="Transcript"
-      data-tip={`Transcript: ${open ? 'On' : 'Off'}`}
+      data-tip={tipText(`Transcript: ${open ? 'On' : 'Off'}`, TRANSCRIPT_ACCELERATOR, mac)}
       className={`${PILL} gap-2`}
       onClick={() => onToggle(!open)}
       disabled={disabled}
@@ -310,7 +328,7 @@ function ExitButton({
     <button
       type="button"
       aria-label="Exit: end call"
-      data-tip="End the call"
+      data-tip="Exit: end the call"
       className={`${BUTTON_BASE} bg-ui-end text-ui-on-end hover:opacity-90`}
       disabled={disabled}
       onClick={onEnd}
@@ -370,17 +388,6 @@ function DeviceButton({
     </span>
   );
 }
-
-/** A tooltip: its words, and the middle of the button it names (px from the bar's left edge). */
-interface Tip {
-  /** The words. */
-  text: string;
-  /** The button's middle, from the bar's left edge. */
-  x: number;
-}
-
-/** How long the pointer rests on a button before its tooltip shows, in ms. */
-const TIP_DELAY_MS = 300;
 
 /**
  * 1.6.3 (ADR-0075): how far bar 1 gives way, measured. Steps up while the left side's content is wider
@@ -491,51 +498,6 @@ export function ControlBar(props: ControlBarProps) {
   const words = step < FIT.noWords;
   const pillWords = step < FIT.iconPills;
 
-  // The tooltip (drawn in the page; ADR-0042). One for the whole bar: the button under the pointer or
-  // with the keyboard focus names itself.
-  const [tip, setTip] = useState<Tip | null>(null);
-  const tipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const tipElement = useRef<HTMLSpanElement>(null);
-  const [tipLeft, setTipLeft] = useState(0);
-  useEffect(
-    () => () => {
-      if (tipTimer.current) clearTimeout(tipTimer.current);
-    },
-    [],
-  );
-  /**
-   * Shows the tooltip of the button an event is on, now or after the pointer rests.
-   *
-   * @param target What the event is on.
-   * @param delay  How long to wait first, in ms.
-   */
-  const showTip = (target: EventTarget, delay: number) => {
-    if (tipTimer.current) clearTimeout(tipTimer.current);
-    const named = target instanceof Element ? target.closest<HTMLElement>('[data-tip]') : null;
-    const barBox = bar.current;
-    if (!named || !barBox || !barBox.contains(named)) {
-      setTip(null);
-      return;
-    }
-    tipTimer.current = setTimeout(() => {
-      const box = named.getBoundingClientRect();
-      const barLeft = barBox.getBoundingClientRect().left;
-      setTip({ text: named.dataset.tip ?? '', x: box.left + box.width / 2 - barLeft });
-    }, delay);
-  };
-  /** Hides the tooltip. */
-  const hideTip = () => {
-    if (tipTimer.current) clearTimeout(tipTimer.current);
-    setTip(null);
-  };
-  // Centred under (or above) its button, but inside the bar.
-  useLayoutEffect(() => {
-    if (!tip || !tipElement.current || !bar.current) return;
-    const width = tipElement.current.offsetWidth;
-    const barWidth = bar.current.clientWidth;
-    setTipLeft(Math.max(4, Math.min(tip.x - width / 2, barWidth - width - 4)));
-  }, [tip]);
-
   const answerKey = DEFAULT_GLOBAL_HOTKEYS.answer;
   const shotKey = DEFAULT_GLOBAL_HOTKEYS.screenshot;
   const chatKey = DEFAULT_GLOBAL_HOTKEYS.chat;
@@ -547,16 +509,6 @@ export function ControlBar(props: ControlBarProps) {
       role="toolbar"
       aria-label="Overlay controls"
       className="relative flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]"
-      onPointerOver={(event: PointerEvent) => showTip(event.target, TIP_DELAY_MS)}
-      onPointerLeave={hideTip}
-      onPointerDown={hideTip}
-      onFocus={(event: FocusEvent) => {
-        // Only for the keyboard: a click focuses its button too, and the pointer has its own delay.
-        if (event.target instanceof Element && event.target.matches(':focus-visible')) {
-          showTip(event.target, 0);
-        }
-      }}
-      onBlur={hideTip}
     >
       {/* 1.6.3: the left side may give way; it never pushes ⋮ and Exit out of the window. Full height,
           so the focus rings are not clipped. */}
@@ -632,6 +584,7 @@ export function ControlBar(props: ControlBarProps) {
               open={props.transcriptOpen ?? false}
               disabled={ended}
               word={words}
+              mac={mac}
               onToggle={(open) => {
                 if (collapsed) props.onCollapse(false);
                 props.onTranscript?.(open);
@@ -668,7 +621,7 @@ export function ControlBar(props: ControlBarProps) {
           <span
             role="img"
             aria-label="Drag here to move"
-            data-tip="Drag to move"
+            data-tip={tipText('Drag to move', POSITION_ACCELERATOR, mac)}
             className="inline-flex h-8 w-8 shrink-0 cursor-move items-center justify-center rounded-control bg-ui-overlay-button"
           >
             <MoveIcon />
@@ -744,21 +697,8 @@ export function ControlBar(props: ControlBarProps) {
         <ExitButton disabled={ended} onEnd={() => onCommand({ type: 'end' })} />
       </div>
 
-      {tip && (
-        <span
-          ref={tipElement}
-          role="tooltip"
-          data-bar-tip=""
-          className="k-overlay-menu pointer-events-none absolute z-40 whitespace-nowrap rounded-control border border-ui-border px-2 py-1 text-[12px] font-medium text-ui-text shadow-modal"
-          style={
-            props.up
-              ? { left: tipLeft, bottom: 'calc(100% + 4px)' }
-              : { left: tipLeft, top: 'calc(100% + 4px)' }
-          }
-        >
-          {tip.text}
-        </span>
-      )}
+      {/* 1.6.3: one tooltip for the bar, above everything, inside the window. */}
+      <BarTooltip bar={bar} up={props.up ?? false} />
     </div>
   );
 }

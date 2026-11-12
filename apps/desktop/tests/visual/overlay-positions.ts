@@ -7,15 +7,22 @@
  *          checks that the panels sit next to the bars with the same 6 px gap as on the top row, that the
  *          window is fitted to them (no empty band between the bars and a panel, on either row), and that
  *          bar 1's ⋮ and Exit are whole; it saves a picture of the overlay's page (page.screenshot: the
- *          page only, never the real screen). Prints PASS or FAIL per check.
+ *          page only, never the real screen). At every position it also hovers bar 1's controls and checks
+ *          the tooltip: on top of everything, whole inside the window, on the expected side. Prints PASS or
+ *          FAIL per check.
+ *          With KITE_REAL_POINTER=1 it also moves the real mouse pointer (then puts it back) onto Answer,
+ *          the microphone icon and the move icon: Playwright's own hover goes around the window's drag
+ *          handle, the real pointer does not.
  *          Usage: start the rig, `pnpm --filter @kite/desktop build`, then
  *                 `pnpm --filter web exec tsx ../desktop/tests/visual/overlay-positions.ts <out dir>`
  * Used by: the developer before a release (it needs a screen: the shell's windows appear on it)
  * Depends on: @playwright/test (_electron), the overlay rig (apps/web/tests/visual/overlay-rig.ts)
  * Architecture: ADR-0056 (positions), ADR-0075 (1.6.3 overlay fixes)
  *
- * Temporary profile; update checks off; no real keyboard input. All text is invented.
+ * Temporary profile; update checks off; no real keyboard input (the real pointer only with
+ * KITE_REAL_POINTER=1, from this process with its console hidden). All text is invented.
  */
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -141,6 +148,160 @@ async function windowPlace(app: ElectronApplication) {
   });
 }
 
+/** Bar 1's controls the tooltip check hovers, by accessible name. */
+const TIP_CONTROLS = [
+  'Choose audio source',
+  'Choose microphone',
+  'Answer',
+  'Screenshot',
+  'Chat',
+  'Transcript',
+  'Auto answer',
+  'Shrink to an icon',
+  'Overlay menu',
+  'Exit: end call',
+] as const;
+
+/**
+ * Hovers bar 1's controls (Playwright's pointer) and checks each tooltip: shown, on top at its middle,
+ * whole inside the window, below bar 1 on the top row and above it on the bottom row.
+ *
+ * @param overlay The overlay's page.
+ * @param label   For the messages and the picture.
+ * @returns When done (failures are counted).
+ */
+async function checkTips(overlay: Page, label: string): Promise<void> {
+  const bar = overlay.getByLabel('Overlay controls');
+  const up = (await overlay.locator('.k-overlay-root').getAttribute('data-row')) === 'bottom';
+  let bad: string[] = [];
+  for (const name of TIP_CONTROLS) {
+    const tip = overlay.getByRole('tooltip');
+    let shown = false;
+    // Twice at most: right after a jump the window may still be sliding into place.
+    for (let attempt = 0; attempt < 2 && !shown; attempt += 1) {
+      if (attempt > 0) await overlay.mouse.move(2, up ? 2 : 300);
+      await bar.getByLabel(name, { exact: true }).first().hover();
+      shown = await tip
+        .waitFor({ timeout: 3_000 })
+        .then(() => true)
+        .catch(() => false);
+    }
+    if (!shown) {
+      bad.push(`${name}: none`);
+      continue;
+    }
+    const seen = await tip.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      (element as HTMLElement).style.pointerEvents = 'auto';
+      const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      (element as HTMLElement).style.pointerEvents = '';
+      const barBox = document
+        .querySelector('[aria-label="Overlay controls"]')!
+        .getBoundingClientRect();
+      return {
+        onTop: top === element || element.contains(top),
+        inside:
+          box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+        below: box.top >= barBox.bottom,
+        above: box.bottom <= barBox.top,
+      };
+    });
+    if (!seen.onTop || !seen.inside || !(up ? seen.above : seen.below)) {
+      bad.push(`${name}: ${JSON.stringify(seen)}`);
+    }
+  }
+  check(
+    `${label}: tooltips on top, inside, ${up ? 'above' : 'below'} bar 1`,
+    bad.length === 0,
+    bad.join('; ') || `${TIP_CONTROLS.length} controls`,
+  );
+  // A picture with one tooltip showing.
+  await bar.getByLabel('Answer', { exact: true }).hover();
+  await overlay
+    .getByRole('tooltip')
+    .filter({ hasText: 'Answer' })
+    .waitFor({ timeout: 3_000 })
+    .catch(() => undefined);
+  await overlay.screenshot({ path: path.join(OUT, `tooltip-${label}.png`) });
+  bad = [];
+  await overlay.mouse.move(2, up ? 2 : 300);
+}
+
+/** The overlay page while the real pointer is checked. */
+interface ProbeWindow {
+  /** What the page saw. */
+  realPointer: {
+    /** How many pointer moves reached the page. */
+    moves: number;
+    /** The tooltips it showed. */
+    tips: string[];
+  };
+}
+
+/**
+ * KITE_REAL_POINTER=1: moves the real mouse pointer onto a control (from this process, console hidden;
+ * a pointer moved from Electron's main process would block it) and says whether its tooltip showed.
+ * Puts the pointer back where it was.
+ *
+ * @param app     The shell.
+ * @param overlay The overlay's page.
+ * @param name    The control's accessible name (a pattern for the microphone icon, whose state varies).
+ * @returns True when its tooltip showed.
+ */
+async function realPointerTip(
+  app: ElectronApplication,
+  overlay: Page,
+  name: string | RegExp,
+): Promise<boolean> {
+  const box = await overlay
+    .getByLabel(name, typeof name === 'string' ? { exact: true } : {})
+    .first()
+    .boundingBox({ timeout: 3_000 })
+    .catch(() => null);
+  if (!box) return false;
+  // The control's middle in screen pixels (the window's place in DIPs, converted by the shell).
+  const point = await app.evaluate(
+    ({ BrowserWindow, screen }, middle) => {
+      const win = BrowserWindow.getAllWindows().find((w) =>
+        w.webContents.getURL().includes('/compact/'),
+      )!;
+      const bounds = win.getContentBounds();
+      return screen.dipToScreenPoint({
+        x: Math.round(bounds.x + middle.x),
+        y: Math.round(bounds.y + middle.y),
+      });
+    },
+    { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+  );
+  const script = [
+    'Add-Type -Namespace K -Name U -MemberDefinition \'[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); [DllImport("user32.dll")] public static extern bool SetProcessDPIAware(); [DllImport("user32.dll")] public static extern bool GetCursorPos(out System.Drawing.Point p);\' -ReferencedAssemblies System.Drawing',
+    '[K.U]::SetProcessDPIAware() | Out-Null',
+    '$p = New-Object System.Drawing.Point; [K.U]::GetCursorPos([ref]$p) | Out-Null',
+    `[K.U]::SetCursorPos(${point.x - 3}, ${point.y}) | Out-Null; Start-Sleep -Milliseconds 80`,
+    `[K.U]::SetCursorPos(${point.x}, ${point.y}) | Out-Null; Start-Sleep -Milliseconds 900`,
+    '[K.U]::SetCursorPos($p.X, $p.Y) | Out-Null',
+  ].join('; ');
+  // The page notes what the real pointer did (this process is blocked while PowerShell runs).
+  await overlay.evaluate(() => {
+    const probe = { moves: 0, tips: [] as string[] };
+    (window as unknown as ProbeWindow).realPointer = probe;
+    document.addEventListener('pointermove', () => {
+      probe.moves += 1;
+    });
+    new MutationObserver(() => {
+      const tip = document.querySelector('[role="tooltip"][data-bar-tip]');
+      const words = tip?.getAttribute('data-bar-tip') ? (tip.textContent ?? '') : '';
+      if (words && !probe.tips.includes(words)) probe.tips.push(words);
+    }).observe(document.body, { subtree: true, childList: true, attributes: true });
+  });
+  spawnSync('powershell', ['-NoProfile', '-Command', script], { windowsHide: true });
+  const probe = await overlay.evaluate(() => (window as unknown as ProbeWindow).realPointer);
+  console.info(
+    `INFO  real pointer at ${point.x},${point.y}: ${probe.moves} moves seen by the page, tooltips ${JSON.stringify(probe.tips)}`,
+  );
+  return probe.tips.length > 0;
+}
+
 /**
  * Puts the overlay at each position, then nudges it on the bottom row, checking each.
  *
@@ -170,6 +331,7 @@ async function checkPositions(app: ElectronApplication, overlay: Page, name: str
       );
     }
     await overlay.screenshot({ path: path.join(OUT, `${name}-${position}.png`) });
+    await checkTips(overlay, `${name}-${position}`);
   }
   // Nudges on the bottom row: the window moves, keeps its position, and the panels stay on the bars.
   await overlay.evaluate(() => window.kiteDesktop!.setOverlayPosition!('bottom-center'));
@@ -244,6 +406,16 @@ async function main(): Promise<void> {
       .waitFor({ timeout: 15_000 });
     await wait(1_000);
     await checkPositions(app, overlay, 'answer');
+    if (process.env.KITE_REAL_POINTER === '1' && process.platform === 'win32') {
+      await overlay.evaluate(() => window.kiteDesktop!.setOverlayPosition!('top-center'));
+      await wait(900);
+      for (const name of ['Answer', /^Microphone:/, 'Drag here to move']) {
+        const shown = await realPointerTip(app, overlay, name);
+        console.info(
+          `INFO  real pointer on "${String(name)}": tooltip ${shown ? 'shown' : 'not shown'}`,
+        );
+      }
+    }
     // Both panels (the shell widens the window for them).
     await overlay.getByRole('switch', { name: 'Transcript' }).click();
     await wait(1_000);

@@ -19,7 +19,7 @@ import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
 import { forwardRef, useEffect, useState, type CSSProperties, type Ref } from 'react';
 import type { CompactCommand, CompactRecording } from '@/core/live/liveChannel';
 import { callClock } from '@/features/live/callClock';
-import { KeyChip, PILL } from './parts';
+import { KeyChip, PILL, tipShortcut } from './parts';
 import { VISIBLE_IN_RECORDING_TEXT } from '../PrivateOffWarning';
 
 /** What the popover shows: the Start or Stop question, or the notice. */
@@ -122,10 +122,14 @@ export function RecPill({
           : 'Start recording'
       }
       aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.record, mac)}
-      {...{
-        [pageTip ? 'data-tip' : 'title']:
-          `${on ? 'Stop recording' : 'Start recording'} (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.record, mac)})${on && visibleInRecording ? `. ${VISIBLE_IN_RECORDING_TEXT}` : ''}`,
-      }}
+      {...(pageTip
+        ? // 1.6.3 (ADR-0075): bar 1's tooltip, "Stop recording · Ctrl+Alt+R".
+          {
+            'data-tip': `${on ? 'Stop recording' : 'Start recording'} · ${tipShortcut(DEFAULT_GLOBAL_HOTKEYS.record, mac)}`,
+          }
+        : {
+            title: `${on ? 'Stop recording' : 'Start recording'} (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.record, mac)})`,
+          })}
     >
       <span
         aria-hidden="true"

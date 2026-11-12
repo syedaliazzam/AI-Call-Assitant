@@ -98,14 +98,12 @@
   /* ---- The overlay ---- */
   /* The see-through panel of the desktop overlay; --k-dark-bg is its solid form (picture-in-
      picture, where nothing behind a window can show through). */
-  /* 1.6.3 (ADR-0075): darker and nearly solid (the 82 % setting paints at 97.6 %), so no app behind
-     shows through the words. */
-  --k-overlay-glass: rgba(17, 17, 20, 0.976);
+  --k-overlay-glass: rgba(24, 24, 27, 0.82);
   --k-overlay-solid: #18181b;
   --k-overlay-pill: rgba(39, 39, 42, 0.95); /* pill buttons on the call bars */
   --k-overlay-pill-hover: rgba(63, 63, 70, 0.95);
   --k-overlay-field: rgba(9, 9, 11, 0.88); /* the chat bar's dark input (ADR-0055 reference) */
-  --k-overlay-keycap: rgba(255, 255, 255, 0.16); /* the key-cap chip on a pill (1.6.3: was 0.12) */
+  --k-overlay-keycap: rgba(255, 255, 255, 0.12); /* the key-cap chip on a pill */
   --k-overlay-border: rgba(255, 255, 255, 0.08);
   --k-overlay-button: rgba(255, 255, 255, 0.08);
   --k-overlay-button-hover: rgba(255, 255, 255, 0.14);
@@ -120,9 +118,7 @@
   /* v1.3.1 (ADR-0058): the compact view's muted grey is #A1A1AA (was #B4B4BB), with white text and
      green #22C55E indicators (level bars, toggles, dots). Green text over the glass ("You") is the
      paler #86EFAC so it stays readable when the panel is see-through. */
-  /* 1.6.3 (ADR-0075): the secondary words ("Listening…", "Press Answer…", the footer) a step lighter
-     (was #a1a1aa): about 11:1 on the nearly solid panel. */
-  --k-glass-muted: #c4c4cc;
+  --k-glass-muted: #a1a1aa;
   --k-glass-accent: #86efac;
   --k-overlay-text: #ffffff;
   --k-overlay-indicator: #22c55e;
@@ -352,9 +348,7 @@ html[data-theme='dark'] {
      dimming the panel does not fade the text with it (the problem ADR-0031 avoided by pinning the
      old window-opacity default to 1). A text shadow keeps the text readable as more of the
      background shows through at lower settings. */
-  /* 1.6.3 (ADR-0075): --k-overlay-alpha is now paintedPanelAlpha() of the setting (92–100 %), on a
-     darker base than the solid panel's #18181b, so text stays readable over any app, light or dark. */
-  background: rgba(17, 17, 20, var(--k-overlay-alpha, 0.976));
+  background: rgba(24, 24, 27, var(--k-overlay-alpha, 0.82));
   -webkit-backdrop-filter: blur(var(--k-overlay-blur));
   backdrop-filter: blur(var(--k-overlay-blur));
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
@@ -402,7 +396,7 @@ html[data-theme='dark'] {
 }
 
 .k-light .k-overlay.k-glass {
-  background: rgba(247, 247, 248, var(--k-overlay-alpha, 0.976));
+  background: rgba(247, 247, 248, var(--k-overlay-alpha, 0.82));
   text-shadow: 0 1px 1px rgba(255, 255, 255, 0.6);
   --ui-muted: var(--k-glass-light-muted);
   --ui-provisional: var(--k-glass-light-muted);
@@ -415,6 +409,16 @@ html[data-theme='dark'] {
   --ui-danger: var(--k-glass-light-danger);
   --ui-focus: var(--k-glass-light-accent);
   --k-focus: 0 0 0 2px var(--ui-focus);
+}
+
+/* 1.6.3 (ADR-0075): bar 1's tooltip (overlay/BarTooltip.tsx): solid dark with white text in every
+   theme and at any panel opacity, so it reads over any page behind the overlay. */
+.k-bar-tip {
+  background: var(--k-dark-bg);
+  color: var(--k-overlay-text);
+  border: 1px solid var(--k-dark-border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  text-shadow: none;
 }
 
 /* The overlay's menu floats over the answer, so it is always solid. */

@@ -37,8 +37,8 @@
  * 1.6.3 (ADR-0075): on the bottom row the panels sit on the bars, as they hang from them on the top row
  * (they were at the top of the window, with empty space between them and the bars, which also kept the
  * window from shrinking to them); stacked panels are mirrored too, the transcript nearest the bars.
- * Auto answer moved to bar 1, so there is no floating Auto answer pill; the panels' backgrounds are
- * nearly solid (overlayPrefs.ts paintedPanelAlpha()).
+ * Auto answer moved to bar 1, so there is no floating Auto answer pill. The panels' look and the
+ * opacity setting are unchanged (ADR-0033).
  *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
@@ -68,11 +68,7 @@ import {
   type ResolvedTheme,
   type ThemeChoice,
 } from '@/core/storage/appearancePrefs';
-import {
-  OVERLAY_OPACITY,
-  paintedPanelAlpha,
-  type OverlayPanels,
-} from '@/core/storage/overlayPrefs';
+import { OVERLAY_OPACITY, type OverlayPanels } from '@/core/storage/overlayPrefs';
 import { isTranscriptKey } from '@/platform/keymap';
 import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
 import { ChatBar, type ChatBarHandle } from './overlay/ChatBar';
@@ -563,13 +559,10 @@ export function CompactView(props: CompactViewProps) {
   // A solid picture-in-picture window stays dark: nothing shows through it.
   const themeClass = glass && props.resolvedTheme === 'light' ? 'k-light' : 'k-dark';
   // ADR-0033: the see-through panels' background opacity (never the text). The solid
-  // picture-in-picture panels ignore it. 1.6.3 (ADR-0075): painted nearly solid whatever the setting, so
-  // no app behind shows through the words.
+  // picture-in-picture panels ignore it.
   const rootStyle = glass
     ? ({
-        '--k-overlay-alpha': paintedPanelAlpha(
-          props.windowSettings?.panelAlpha ?? OVERLAY_OPACITY.default,
-        ),
+        '--k-overlay-alpha': props.windowSettings?.panelAlpha ?? OVERLAY_OPACITY.default,
       } as CSSProperties)
     : undefined;
 

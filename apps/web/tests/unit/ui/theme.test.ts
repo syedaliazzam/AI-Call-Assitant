@@ -13,7 +13,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { OVERLAY_OPACITY, paintedPanelAlpha } from '@/core/storage/overlayPrefs';
+import { OVERLAY_OPACITY } from '@/core/storage/overlayPrefs';
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -246,10 +246,9 @@ describe('the values in the brief', () => {
 
   it('has the overlay values that were asked for', () => {
     const expected: Record<string, string> = {
-      // 1.6.3 (ADR-0075): darker and nearly solid.
-      '--k-overlay-glass': 'rgba(17, 17, 20, 0.976)',
+      '--k-overlay-glass': 'rgba(24, 24, 27, 0.82)',
       '--k-overlay-pill': 'rgba(39, 39, 42, 0.95)',
-      '--k-overlay-keycap': 'rgba(255, 255, 255, 0.16)',
+      '--k-overlay-keycap': 'rgba(255, 255, 255, 0.12)',
       '--k-overlay-border': 'rgba(255, 255, 255, 0.08)',
       '--k-overlay-button': 'rgba(255, 255, 255, 0.08)',
       '--k-overlay-button-hover': 'rgba(255, 255, 255, 0.14)',
@@ -283,8 +282,7 @@ describe('v1.3.1 colours and motion (ADR-0058)', () => {
       '--k-overlay-indicator': '#22c55e',
       '--k-overlay-text': '#ffffff',
       '--k-overlay-solid': '#18181b',
-      // 1.6.3 (ADR-0075): a step lighter (was #a1a1aa).
-      '--k-glass-muted': '#c4c4cc',
+      '--k-glass-muted': '#a1a1aa',
     };
     for (const [token, value] of Object.entries(expected)) {
       expect(ROOT.get(token), token).toBe(value);
@@ -454,9 +452,7 @@ describe('overlay panel background opacity (ADR-0033)', () => {
    * @param bg    The solid colour behind the window.
    * @returns The panel's resulting solid colour.
    */
-  // 1.6.3 (ADR-0075): the darker base, painted at paintedPanelAlpha() of the setting.
-  const panelAt = (alpha: number, bg: Rgba): Rgba =>
-    over([17, 17, 20, paintedPanelAlpha(alpha)], bg);
+  const panelAt = (alpha: number, bg: Rgba): Rgba => over([24, 24, 27, alpha], bg);
   const glassScope = new Map([...DARK, ...GLASS]);
   const text = resolve('--ui-text', glassScope);
   const them = resolve('--ui-them', glassScope);
@@ -468,7 +464,7 @@ describe('overlay panel background opacity (ADR-0033)', () => {
   });
 
   it('dims the panel background (a variable alpha), never the text, and adds a text shadow', () => {
-    expect(THEME).toContain('background: rgba(17, 17, 20, var(--k-overlay-alpha, 0.976))');
+    expect(THEME).toContain('background: rgba(24, 24, 27, var(--k-overlay-alpha, 0.82))');
     expect(THEME).toContain('text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6)');
   });
 
@@ -499,20 +495,12 @@ describe('overlay panel background opacity (ADR-0033)', () => {
     expect(contrast(text, panelAt(0.4, BUSY))).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('1.6.3 (ADR-0075): at any setting, over pure white, every text token passes (nearly solid)', () => {
-    // ADR-0033 had the body text at ~2.4:1 at the 40 % minimum over white; the developer found the
-    // panels too see-through, so the setting now paints 92–100 % on a darker base.
-    for (const alpha of [OVERLAY_OPACITY.min, OVERLAY_OPACITY.default, OVERLAY_OPACITY.max]) {
-      for (const token of TEXT_TOKENS) {
-        const colour = resolve(token, glassScope);
-        expect(
-          contrast(colour, panelAt(alpha, WHITE)),
-          `${token} @${alpha}`,
-        ).toBeGreaterThanOrEqual(4.5);
-      }
-    }
-    // The secondary words ("Listening…", "Press Answer…") at 7:1 or more at the default.
-    expect(contrast(resolve('--ui-muted', glassScope), panelAt(0.82, WHITE))).toBeGreaterThan(7);
+  it('at the minimum (40%) over a bright background the nominal contrast is low (shadow-aided)', () => {
+    // ADR-0033 reports this honestly rather than raising the minimum. Pinned so a token or alpha
+    // change is caught; the text shadow carries legibility here.
+    const bright = contrast(text, panelAt(0.4, WHITE));
+    expect(bright).toBeLessThan(4.5);
+    expect(bright).toBeGreaterThan(2.0); // ~2.43
   });
 
   it('the solid buttons and the solid picture-in-picture panel do not depend on the background', () => {
