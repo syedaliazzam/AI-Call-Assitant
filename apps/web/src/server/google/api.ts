@@ -72,7 +72,16 @@ import {
   type NotificationContent,
   type NotificationRecord,
 } from './store';
-import { REPORT_WAIT_MS, emailDue, isComplete, mergeReport, recipientsFor } from './report';
+import {
+  REPORT_WAIT_MS,
+  emailDue,
+  isComplete,
+  mergeReport,
+  notificationKey,
+  recipientsFor,
+  reportKey,
+  splitNotificationKey,
+} from './report';
 import { accessTokenFor, forgetAccessToken } from './tokens';
 
 /** Where Settings shows the Google Drive section. */
@@ -792,10 +801,12 @@ export async function flushOverdue(deps: GoogleDeps, userId: string | null): Pro
 }
 
 /**
- * POST /api/drive/notify: a device's report of what it saved for a session. Merged with the session's
- * other reports (other devices, retries, a later recording backfill); the session's one email goes
- * when every expected file is in, or 24 hours after the first report with "Recording upload pending".
- * A record already sent, switched off or waiting for "Send email" only gains the new files.
+ * POST /api/drive/notify: a device's report of what it saved for one call of a session. ADR-0073: each
+ * call has its own record and email (a session can be started again after it ended); the session's
+ * first record keeps the session id, later calls get their own key (report.ts reportKey). Merged with
+ * the call's other reports (other devices, retries, a later recording backfill); the call's one email
+ * goes when every expected file is in, or 24 hours after the first report with "Recording upload
+ * pending". A record already sent, switched off or waiting for "Send email" only gains the new files.
  * @param request The request (body: DriveNotifyRequest).
  * @param deps    The dependencies (tests pass fakes).
  * @returns 200 DriveNotifyResponse; 400; 404 not connected.
@@ -811,17 +822,20 @@ export function handleNotify(
     if (!(await getConnection(deps.db(), user.id))) {
       return failure(404, 'not_connected', 'Connect Google Drive first.');
     }
+    // ADR-0073: the session's first record, or this call's own.
+    const first = await readRecord(deps.db(), deps.keys(), user.id, body.sessionId);
+    const key = reportKey(body.sessionId, body.callStartedAt, first?.content ?? null);
     // A session saved before the combined email (or with "Upload to Drive") is never emailed by
     // itself: its new record waits for "Send email".
     const record = await writeRecord(
       deps.db(),
       deps.keys(),
       user.id,
-      body.sessionId,
+      key,
       (current) => mergeReport(current, body),
       body.manualOnly ? 'not-set-up' : 'collecting',
     );
-    const status = await sendIfDue(deps, user.id, user.email, body.sessionId, record);
+    const status = await sendIfDue(deps, user.id, user.email, key, record);
     console.info('drive: report', { status, files: record.content.files.length });
     return reply({ status } satisfies DriveNotifyResponse);
   });
@@ -852,7 +866,8 @@ export function handleNotifications(
         DRIVE_NOTIFICATIONS_SHOWN,
       );
       const items: DriveNotificationItem[] = rows.map((row) => ({
-        sessionId: row.sessionId,
+        // The record key names the session and, for a later call, the call (ADR-0073).
+        ...splitNotificationKey(row.sessionId),
         title: row.content.title,
         status: row.status,
         createdAt: row.createdAt.getTime(),
@@ -868,7 +883,9 @@ export function handleNotifications(
 }
 
 /** POST /api/drive/notifications' body. */
-const retrySchema = z.object({ sessionId: z.uuid() }).strict();
+const retrySchema = z
+  .object({ sessionId: z.uuid(), call: z.number().int().positive().nullable().optional() })
+  .strict();
 
 /**
  * POST /api/drive/notifications: sends a failed email again, or by hand one that was complete before
@@ -888,13 +905,15 @@ export function handleRetry(
     if (!body) return failure(400, 'invalid_request', 'sessionId: invalid');
     const sender = deps.email();
     if (!sender) return failure(409, 'email_not_set_up', 'Email is not set up.');
-    const taken = await claimRetry(deps.db(), deps.keys(), user.id, body.sessionId);
+    // ADR-0073: which of the session's emails (its first, or a later call's).
+    const key = notificationKey(body.sessionId, body.call ?? null);
+    const taken = await claimRetry(deps.db(), deps.keys(), user.id, key);
     if (!taken) return failure(404, 'not_found', 'There is no email to send for this session.');
     const status = await deliver(
       deps,
       user.id,
       user.email,
-      body.sessionId,
+      key,
       taken.content,
       taken.attempt,
       sender,

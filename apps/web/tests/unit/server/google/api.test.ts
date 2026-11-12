@@ -9,7 +9,8 @@
  * - one email per session: a repeated notify sends nothing; without SMTP settings it is "not-set-up" and
  *   nothing is sent; switched off it is "off"; a failed email can be retried once per Retry, with a new
  *   Message-ID; the test email goes to the signed-in person only and is rate-limited;
- * - disconnect revokes at Google and deletes the row; settings validate the team list.
+ * - disconnect revokes at Google and deletes the row; settings validate the team list;
+ * - ADR-0073: each call of a session (one started again) has its own email, listed and retried by call.
  */
 import { DRIVE_SCOPE, type DriveNotifyRequest } from '@kite/shared';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -594,5 +595,71 @@ describe('one complete email per session (1.6.0)', () => {
     expect(await ok.json()).toEqual({ checked: 1 });
     expect(f.mail).toHaveLength(1);
     expect(f.mail[0]!.to).toEqual([`${ALICE}@example.test`]);
+  });
+});
+
+describe('one email per call (ADR-0073: a session started again)', () => {
+  /** The same session's second call, an hour later, with its own transcript. */
+  const SECOND_CALL: DriveNotifyRequest = {
+    ...NOTIFY,
+    callStartedAt: NOTIFY.callStartedAt + 3_600_000,
+    durationMs: 20 * 60_000,
+    files: [{ name: '2026-11-11 15.30 Transcript.txt', folder: 'Transcripts' }],
+  };
+
+  it('sends each call its own email, once; the first call reported again sends nothing', async () => {
+    const f = fakes();
+    const d = deps(ALICE, f, { email: true });
+    await connect(d);
+    expect(await (await handleNotify(post('/api/drive/notify', NOTIFY), d)).json()).toEqual({
+      status: 'sent',
+    });
+    expect(await (await handleNotify(post('/api/drive/notify', SECOND_CALL), d)).json()).toEqual({
+      status: 'sent',
+    });
+    expect(f.mail).toHaveLength(2);
+    // Each email holds only its own call's files.
+    expect(f.mail[0]!.text).toContain('14.30 Transcript.txt');
+    expect(f.mail[0]!.text).not.toContain('15.30 Transcript.txt');
+    expect(f.mail[1]!.text).toContain('15.30 Transcript.txt');
+    expect(f.mail[1]!.text).not.toContain('14.30 Transcript.txt');
+    // Two different messages.
+    expect(new Set(f.mail.map((m) => m.messageId)).size).toBe(2);
+    // Reports repeated after a restart send nothing more.
+    await handleNotify(post('/api/drive/notify', NOTIFY), d);
+    await handleNotify(post('/api/drive/notify', SECOND_CALL), d);
+    expect(f.mail).toHaveLength(2);
+
+    const list = await (await handleNotifications(get('/api/drive/notifications'), d)).json();
+    expect(
+      (list.items as { sessionId: string; call: number | null }[])
+        .map((item) => [item.sessionId, item.call])
+        .sort(),
+    ).toEqual([
+      [S1, null],
+      [S1, SECOND_CALL.callStartedAt],
+    ]);
+  });
+
+  it('retries a later call’s failed email by its call, leaving the first call’s alone', async () => {
+    const f = fakes();
+    const d = deps(ALICE, f, { email: true });
+    await connect(d);
+    await handleNotify(post('/api/drive/notify', NOTIFY), d);
+    f.smtpError = 'ETIMEDOUT';
+    expect(await (await handleNotify(post('/api/drive/notify', SECOND_CALL), d)).json()).toEqual({
+      status: 'failed',
+    });
+    f.smtpError = null;
+    // The first call's email was sent: nothing to retry there.
+    expect((await handleRetry(post('/api/drive/notifications', { sessionId: S1 }), d)).status).toBe(
+      404,
+    );
+    const retried = await handleRetry(
+      post('/api/drive/notifications', { sessionId: S1, call: SECOND_CALL.callStartedAt }),
+      d,
+    );
+    expect(await retried.json()).toEqual({ status: 'sent' });
+    expect(f.mail.at(-1)!.text).toContain('15.30 Transcript.txt');
   });
 });

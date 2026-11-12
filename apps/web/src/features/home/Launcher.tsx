@@ -5,7 +5,8 @@
  *          Connect starts the call in the main window (core/live/callStart.ts), and the shell then
  *          hides this window until the call ends. Opened from the Start menu it shows the sessions; opened
  *          by the browser's Start (a paramountai://session link, /home?session=<id>) it goes straight to
- *          that session's Start card (1.6.1), and Back shows the sessions with it first, highlighted.
+ *          that session's Start card (1.6.1; also an ended one, ADR-0073), and Back shows the sessions
+ *          with it first, highlighted.
  *          Google Drive's notices sit above "Your sessions" (1.6.1). The acceptable-use notice, the accurate-transcription offer and the one-time
  *          upload of this computer's own data keep their places. Desktop 1.5.0 (ADR-0068): "Recording saved ·
  *          Open in Meetings" after a call that recorded, and this computer's recordings brought up to date
@@ -82,20 +83,21 @@ export function initialLauncherView(fromBrowserId: string | undefined): Launcher
 
 /**
  * The card to show (1.6.1): the chosen one, except that the link's session goes back to "Your sessions"
- * when it cannot be started here: the account does not have it (after asking it once), or its call has
- * ended. The sessions card then says so, or offers View transcript.
+ * when it cannot be started here: it no longer exists, or the account does not have it (after asking it
+ * once). The sessions card then says so. An ended session is started again like any other (ADR-0073:
+ * each start is a new call in the same session).
  *
  * @param view           The chosen card.
  * @param fromBrowserId  The session the link named, if any.
- * @param linkStatus     That session's status here: 'missing' (looked for and not found), 'ended',
- *                       or 'ok' (also while the list is still loading).
+ * @param linkStatus     That session's status here: 'missing' (looked for and not found), or 'ok'
+ *                       (also while the list is still loading).
  * @returns The card to show.
  * Called from: Launcher; tests
  */
 export function shownLauncherView(
   view: LauncherView,
   fromBrowserId: string | undefined,
-  linkStatus: 'ok' | 'missing' | 'ended',
+  linkStatus: 'ok' | 'missing',
 ): LauncherView {
   if (view.kind === 'sessions' || view.sessionId !== fromBrowserId) return view;
   return linkStatus === 'ok' ? view : { kind: 'sessions' };
@@ -232,11 +234,9 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
     };
   }, [sessions]);
 
-  // The link's session cannot be started here: not in the account, or its call has ended.
-  const linked = sessions?.find((session) => session.id === fromBrowserId);
-  const linkStatus =
-    missing && pulled ? 'missing' : linked && shownStatus(linked, now) === 'ended' ? 'ended' : 'ok';
-  const view = shownLauncherView(chosenView, fromBrowserId, linkStatus);
+  // The link's session cannot be started here only when it is gone or not in the account (an ended
+  // one starts again: ADR-0073).
+  const view = shownLauncherView(chosenView, fromBrowserId, missing && pulled ? 'missing' : 'ok');
 
   const lastCall = useMemo(
     () => (sessions === null ? null : lastEndedCall(sessions, now)),

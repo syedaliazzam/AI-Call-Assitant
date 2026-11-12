@@ -12,7 +12,7 @@
  * Used by: src/features/drive/DriveUploader.tsx (runs it), tests
  * Depends on: @kite/shared (contract types, savedHeadline), src/core/drive/{names,google,callFiles,api}.ts,
  *             src/core/storage/types.ts
- * Architecture: ADR-0072; architecture §7.1
+ * Architecture: ADR-0072, ADR-0073 (each call reported on its own, for its own email); architecture §7.1
  *
  * Never logs: ids, names, titles and file contents stay out of the console.
  */
@@ -29,6 +29,7 @@ import {
   type DriveUploadResult,
   type LocalRecording,
 } from '@kite/shared';
+import { withCallFlags } from '../storage/driveUploads';
 import type { DriveCall, DriveFileJob, DriveSessionJob, Session } from '../storage/types';
 import { DriveApiError, type DriveApi } from './api';
 import type { CallFile } from './callFiles';
@@ -64,15 +65,28 @@ export interface KnownRecording extends DriveExpectedRecording {
 }
 
 /**
- * Whether a recording belongs to one of a job's calls (the window planFiles() uses).
- * @param job       The job.
+ * Whether a recording was made during one call (the window planFiles() uses).
+ * @param call      The call.
  * @param startedAt When the recording started.
- * @returns True when it was made during one of the job's calls.
+ * @returns True when it belongs to that call.
  */
-function inJobCalls(job: Pick<DriveSessionJob, 'calls'>, startedAt: number): boolean {
-  return job.calls.some(
-    (call) => startedAt >= call.startedAt - RECORDING_SLACK_MS && startedAt <= call.endedAt,
-  );
+function inCall(call: DriveCall, startedAt: number): boolean {
+  return startedAt >= call.startedAt - RECORDING_SLACK_MS && startedAt <= call.endedAt;
+}
+
+/**
+ * The call a file belongs to (ADR-0073). A recording file listed before recording files knew their call
+ * counts as the first call's.
+ * @param job  The job.
+ * @param file The file.
+ * @returns The call's start (Unix ms), or undefined for a job with no calls.
+ * Called from: savedFiles(); tests
+ */
+export function fileCall(
+  job: Pick<DriveSessionJob, 'calls'>,
+  file: Pick<DriveFileJob, 'callStartedAt'>,
+): number | undefined {
+  return file.callStartedAt ?? job.calls[0]?.startedAt;
 }
 
 /** The job store (core/storage/driveUploads.ts; tests use a Map). */
@@ -191,7 +205,15 @@ export function planFiles(
   const files = [...job.files];
   const have = new Set(files.map((file) => file.key));
   const add = (file: DriveFileJob) => {
-    if (have.has(file.key)) return;
+    if (have.has(file.key)) {
+      // ADR-0073: a recording file listed before files knew their call learns it now.
+      const at = files.findIndex((known) => known.key === file.key);
+      const known = files[at];
+      if (known && known.callStartedAt === undefined && file.callStartedAt !== undefined) {
+        files[at] = { ...known, callStartedAt: file.callStartedAt };
+      }
+      return;
+    }
     have.add(file.key);
     files.push(file);
   };
@@ -218,6 +240,7 @@ export function planFiles(
         recordingId: recording.id,
         track: 'main',
         part: recording.part,
+        callStartedAt: call.startedAt,
         bytes: recording.bytes,
         sent: 0,
         done: false,
@@ -230,6 +253,7 @@ export function planFiles(
           recordingId: recording.id,
           track: 'stereo',
           part: recording.part,
+          callStartedAt: call.startedAt,
           bytes: 0,
           sent: 0,
           done: false,
@@ -323,6 +347,11 @@ export async function processDriveJob(
     job.folderId = undefined;
     job.recordingsId = undefined;
     job.transcriptsId = undefined;
+    // ADR-0073: each call tells the server its new files once more (an email already sent is not sent
+    // again; its record gains the new links). A closed call stays closed.
+    job.calls = withCallFlags(job).calls.map((call) =>
+      call.closed ? call : { ...call, reportedFiles: 0, notified: false },
+    );
   }
   await save({ state: 'uploading', reason: undefined, autoRetry: undefined, parentId: folder.id });
 
@@ -386,17 +415,19 @@ export async function processDriveJob(
           continue;
         }
       }
-      const blob =
-        file.callStartedAt !== undefined
-          ? made
-              .get(file.callStartedAt)
-              ?.find((made) => `call:${file.callStartedAt}:${made.kind}` === file.key)?.blob
-          : undefined;
+      // A file the page makes (transcript, notes): no recording id. Recording files also know their
+      // call since ADR-0073, so the call alone does not say which kind a file is.
+      const pageMade = !file.recordingId && file.callStartedAt !== undefined;
+      const blob = pageMade
+        ? made
+            .get(file.callStartedAt!)
+            ?.find((made) => `call:${file.callStartedAt}:${made.kind}` === file.key)?.blob
+        : undefined;
       if (file.recordingId && !deps.host) {
         // A recording on another computer: that computer's app saves it.
         continue;
       }
-      if (file.callStartedAt !== undefined && !blob) {
+      if (pageMade && !blob) {
         // The call's data is no longer here (cleared): nothing to save for this file.
         Object.assign(file, { done: true, missing: true });
         await save();
@@ -453,13 +484,18 @@ export async function processDriveJob(
  * The files a job has in Drive, as the server's report lists them: name, subfolder, stable key, Drive
  * id, what it is and its part. Never content.
  *
- * @param job The job.
+ * @param job  The job.
+ * @param call Only this call's files (ADR-0073), by its start; omit for all.
  * @returns The saved files.
- * Called from: processDriveJob(), reportToServer(); tests
+ * Called from: processDriveJob(), reportToServer(), callReportDue(); tests
  */
-export function savedFiles(job: Pick<DriveSessionJob, 'files'>): DriveSavedFile[] {
+export function savedFiles(
+  job: Pick<DriveSessionJob, 'files' | 'calls'>,
+  call?: number,
+): DriveSavedFile[] {
   return job.files
     .filter((file) => file.done && !file.missing)
+    .filter((file) => call === undefined || fileCall(job, file) === call)
     .map((file) => {
       const kind = /:(transcript-txt|transcript-pdf|notes-pdf)$/.exec(file.key)?.[1] as
         DriveFileKind | undefined;
@@ -479,25 +515,42 @@ export function savedFiles(job: Pick<DriveSessionJob, 'files'>): DriveSavedFile[
 }
 
 /**
- * Whether the server should be told about this job now: it has saved files the server has not heard
- * of, or it finished since its last report.
+ * Whether the server should be told about one call now (ADR-0073: each call has its own email): it has
+ * saved files the server has not heard of, or the job finished since the call's last report. A call
+ * closed under its session's single email (before ADR-0073) never is.
+ *
+ * @param job  The job (its calls' flags settled, withCallFlags).
+ * @param call The call.
+ * @returns True when a report is due.
+ * Called from: reportDue(), reportToServer(); tests
+ */
+export function callReportDue(job: DriveSessionJob, call: DriveCall): boolean {
+  if (!job.folderId || (job.state !== 'done' && job.state !== 'error') || call.closed) return false;
+  const saved = savedFiles(job, call.startedAt).length;
+  return (
+    saved > 0 && (saved > (call.reportedFiles ?? 0) || (job.state === 'done' && !call.notified))
+  );
+}
+
+/**
+ * Whether the server should be told about any of this job's calls now.
  *
  * @param job The job.
  * @returns True when a report is due.
  * Called from: runDriveQueue(); tests
  */
 export function reportDue(job: DriveSessionJob): boolean {
-  if (!job.folderId || (job.state !== 'done' && job.state !== 'error')) return false;
-  const saved = savedFiles(job).length;
-  return saved > 0 && (saved > (job.reportedFiles ?? 0) || (job.state === 'done' && !job.notified));
+  const settled = withCallFlags(job);
+  return settled.calls.some((call) => callReportDue(settled, call));
 }
 
 /**
- * Reports what this device saved for a session to the server, which merges every device's reports and
- * sends the session's one email when everything expected is in (or after 24 hours). Sent with the
- * recordings the account knows the session has, so the email waits for a recording another computer is
- * still uploading. A refusal is not retried (the record is there, or the request is wrong); a lost
- * connection is, at the next run.
+ * Reports what this device saved to the server, one report per call that is due (ADR-0073: each call of
+ * a session, also one started again after the session ended, has its own email). The server merges
+ * every device's reports for that call and sends its one email when everything expected is in (or after
+ * 24 hours). Each report holds only that call's files and the recordings the account knows the call has,
+ * so its email waits for a recording another computer is still uploading. A refusal is not retried (the
+ * record is there, or the request is wrong); a lost connection is, at the next run.
  *
  * @param deps    The dependencies.
  * @param job     The job.
@@ -514,45 +567,70 @@ async function reportToServer(
   title: string,
   save: (changes: Partial<DriveSessionJob>) => Promise<void>,
 ): Promise<void> {
-  const files = savedFiles(job);
-  if (files.length === 0 || !job.folderId) return;
-  const first = job.calls[0];
-  const reported = { reportedFiles: files.length, notified: job.state === 'done' };
-  try {
-    await deps.api.notify({
-      sessionId: job.sessionId,
-      title: title.slice(0, 200),
-      callStartedAt: first?.startedAt ?? job.queuedAt,
-      durationMs: job.calls.reduce(
-        (sum, call) => sum + Math.max(0, call.endedAt - call.startedAt),
-        0,
-      ),
-      files: files.slice(0, MAX_SAVED_FILES),
-      folderUrl: `https://drive.google.com/drive/folders/${encodeURIComponent(job.folderId)}`,
-      timeZone: deps.timeZone(),
-      alsoNotify: session.driveAlsoNotify?.length ? session.driveAlsoNotify : null,
-      // Only the recordings of the calls this upload covers: an older call's recording that was never
-      // part of an upload is not waited for.
-      expectedRecordings: (await deps.expectedRecordings(job.sessionId))
-        .filter((recording) => inJobCalls(job, recording.startedAt))
-        .map(({ id, part, stereo }) => ({ id, part, stereo }))
-        .slice(0, MAX_SAVED_FILES),
-      goneRecordings: [
-        ...new Set(
-          job.files.filter((file) => file.missing && file.recordingId).map((f) => f.recordingId!),
-        ),
-      ],
-      manualOnly: job.manualEmail === true,
-    });
-    await save(reported);
-  } catch (error) {
-    if (
-      error instanceof DriveApiError &&
-      error.status >= 400 &&
-      error.status < 500 &&
-      error.status !== 429
-    ) {
-      await save(reported);
+  const folderId = job.folderId;
+  if (!folderId) return;
+  const settled = withCallFlags(job);
+  const calls = settled.calls.map((call) => ({ ...call }));
+  const due = calls.filter((call) => callReportDue(settled, call));
+  if (due.length === 0) {
+    // Only the flags changed (calls settled): keep them, so they are never worked out again.
+    if (settled !== job) await save({ calls });
+    return;
+  }
+  const known = await deps.expectedRecordings(job.sessionId);
+  // In call order: the session's first record is its earliest reported call (the server keys it so).
+  for (const call of due) {
+    const files = savedFiles(settled, call.startedAt);
+    const mark = async () => {
+      call.reportedFiles = files.length;
+      call.notified = job.state === 'done';
+      // The job's own totals stay up to date for anything that still reads them.
+      await save({
+        calls,
+        reportedFiles: savedFiles(settled).length,
+        notified: calls.every((one) => one.closed || one.notified),
+      });
+    };
+    try {
+      await deps.api.notify({
+        sessionId: job.sessionId,
+        title: title.slice(0, 200),
+        callStartedAt: call.startedAt,
+        durationMs: Math.max(0, call.endedAt - call.startedAt),
+        files: files.slice(0, MAX_SAVED_FILES),
+        folderUrl: `https://drive.google.com/drive/folders/${encodeURIComponent(folderId)}`,
+        timeZone: deps.timeZone(),
+        alsoNotify: session.driveAlsoNotify?.length ? session.driveAlsoNotify : null,
+        // Only this call's recordings: another call's, or one never part of an upload, is not waited for.
+        expectedRecordings: known
+          .filter((recording) => inCall(call, recording.startedAt))
+          .map(({ id, part, stereo }) => ({ id, part, stereo }))
+          .slice(0, MAX_SAVED_FILES),
+        goneRecordings: [
+          ...new Set(
+            job.files
+              .filter(
+                (file) =>
+                  file.missing && file.recordingId && fileCall(job, file) === call.startedAt,
+              )
+              .map((file) => file.recordingId!),
+          ),
+        ],
+        manualOnly: job.manualEmail === true,
+      });
+      await mark();
+    } catch (error) {
+      if (
+        error instanceof DriveApiError &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        error.status !== 429
+      ) {
+        await mark();
+        continue;
+      }
+      // A lost connection: the rest are tried at the next run.
+      return;
     }
   }
 }
@@ -675,12 +753,22 @@ export const AUTO_RETRY_MS = 2 * 60_000;
 export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
   if (await deps.callActive()) return 'call';
   const local = deps.host ? await deps.host.recordings().catch(() => []) : [];
-  for (const job of await deps.jobs.list()) {
+  for (const listed of await deps.jobs.list()) {
+    let job = listed;
     // A job from before the combined email (1.6.0): told once more, with Drive ids, but never emailed
     // automatically ("Send email" in Settings).
     if (job.reportedFiles === undefined) {
-      await deps.jobs.put({ ...job, reportedFiles: 0, manualEmail: job.notified || undefined });
+      await deps.jobs.put(
+        withCallFlags({ ...job, reportedFiles: 0, manualEmail: job.notified || undefined }),
+      );
       continue;
+    }
+    // ADR-0073: calls queued before each call had its own email get their flags now, before any new
+    // file of theirs is saved, so a call already emailed is never emailed again.
+    const settled = withCallFlags(job);
+    if (settled !== job) {
+      await deps.jobs.put(settled);
+      job = settled;
     }
     // A finished session with a recording on this computer it has not saved (recorded before this
     // app could upload, or finalised after the job finished): queued again for it. Nothing saved is

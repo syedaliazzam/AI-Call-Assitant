@@ -157,22 +157,24 @@ export interface DriveExpectedRecording {
 }
 
 /**
- * POST /api/drive/notify: a device's report of what it saved for a session (when its uploads finish, or
- * stop with some files saved). The server merges every device's reports per session and sends ONE email
- * when every expected file is in (or after 24 hours, saying the recording upload is pending). Only these
+ * POST /api/drive/notify: a device's report of what it saved for ONE CALL of a session (when its uploads
+ * finish, or stop with some files saved). ADR-0073: each call of a session has its own email (a session
+ * can be started again after it ended, each start a new call). The server merges every device's reports
+ * per call and sends that call's ONE email when every expected file is in (or after 24 hours, saying the
+ * recording upload is pending). Only these
  * fields exist, so an email can
  * never carry transcript, notes, answer or document text.
  */
 export interface DriveNotifyRequest {
-  /** The session (a UUID); one email per session, ever. */
+  /** The session (a UUID). */
   sessionId: string;
   /** The session's title, as on its card. */
   title: string;
-  /** When the call started (Unix ms). */
+  /** When this call started (Unix ms): with the session, it names the call's one email (ADR-0073). */
   callStartedAt: number;
-  /** How long the call lasted, ms (0 when unknown). */
+  /** How long this call lasted, ms (0 when unknown). */
   durationMs: number;
-  /** Which files were saved. */
+  /** Which of this call's files were saved. */
   files: DriveSavedFile[];
   /** The session folder in Drive. */
   folderUrl: string;
@@ -180,7 +182,7 @@ export interface DriveNotifyRequest {
   timeZone: string;
   /** This session's own "Also notify" list, replacing the Settings list; null to use Settings. */
   alsoNotify: string[] | null;
-  /** Every recording part the account knows this session has (this computer's and other computers'). */
+  /** Every recording part the account knows this call has (this computer's and other computers'). */
   expectedRecordings: DriveExpectedRecording[];
   /** Recordings that can never be uploaded (their files were deleted): no longer waited for. */
   goneRecordings: string[];
@@ -209,10 +211,15 @@ export interface DriveNotifyResponse {
   status: DriveNotificationStatus;
 }
 
-/** One row of Settings → "Recent notifications". */
+/** One row of Settings → "Recent notifications": one call's email (ADR-0073). */
 export interface DriveNotificationItem {
   /** The session. */
   sessionId: string;
+  /**
+   * Which of the session's emails (ADR-0073): null for the session's first record (its first call, or a
+   * whole session saved before ADR-0073), else the start (Unix ms) of the later call it is about.
+   */
+  call: number | null;
   /** The session's title. */
   title: string;
   /** The email's state. */
@@ -241,6 +248,8 @@ export interface DriveNotificationsResponse {
 export interface DriveRetryRequest {
   /** The session whose email failed. */
   sessionId: string;
+  /** Which of its emails (DriveNotificationItem.call); absent or null for the first. */
+  call?: number | null;
 }
 
 /**

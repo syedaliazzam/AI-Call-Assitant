@@ -8,7 +8,9 @@
  *   gone session gets a new one; a lost local file is skipped;
  * - reconnect: a refused token or a "reconnect" status makes jobs wait with their files untouched, and
  *   they finish once Drive works again; nothing runs while a call is live;
- * - a notification that could not reach the server is sent at the next run without uploading again.
+ * - a notification that could not reach the server is sent at the next run without uploading again;
+ * - ADR-0073: a session started again reports each call on its own (its own email), and a call already
+ *   emailed under its session's single email is never reported again.
  * All values are invented; no real Google, shell or server is used.
  */
 import type {
@@ -526,13 +528,114 @@ describe('backfill (1.6.0)', () => {
     const w = world({ recordings: [] });
     await runDriveQueue(w.deps);
     const reports = w.notified.length;
-    // As a 1.5.2-era job: no report count, already notified.
+    // As a 1.5.2-era job: no report count, already notified, and calls without their own flags (they
+    // came with ADR-0073).
     const { reportedFiles: _old, ...legacy } = w.job();
-    w.jobs.set(SID, { ...legacy, notified: true });
+    w.jobs.set(SID, {
+      ...legacy,
+      notified: true,
+      calls: legacy.calls.map(({ startedAt, endedAt }) => ({ startedAt, endedAt })),
+    });
     await runDriveQueue(w.deps);
     expect(w.job().manualEmail).toBe(true);
     await runDriveQueue(w.deps);
     expect(w.notified.length).toBe(reports + 1);
     expect((w.notified.at(-1) as { manualOnly: boolean }).manualOnly).toBe(true);
+  });
+});
+
+describe('a session started again (ADR-0073: each call has its own email)', () => {
+  /** The second call: the same day, 17:00–17:20. */
+  const CALL2 = {
+    startedAt: new Date(2026, 10, 11, 17, 0).getTime(),
+    endedAt: new Date(2026, 10, 11, 17, 20).getTime(),
+  };
+  /** Its recording. */
+  const RECORDING2: LocalRecording = {
+    ...RECORDING,
+    id: '44444444-4444-4444-8444-444444444444',
+    startedAt: CALL2.startedAt + 5_000,
+    fileName: 'Paramount AI 2026-11-11 17-00-05.mkv',
+  };
+  /** A report as the server receives it. */
+  type Report = {
+    /** The call's start. */
+    callStartedAt: number;
+    /** The call's length, ms. */
+    durationMs: number;
+    /** Its saved files. */
+    files: { key?: string }[];
+    /** The recordings it waits for. */
+    expectedRecordings: { id: string }[];
+  };
+
+  /**
+   * Queues the second call, as the live page's End does.
+   * @param w The world.
+   */
+  function startAgain(w: ReturnType<typeof world>) {
+    const job = w.job();
+    w.jobs.set(SID, {
+      ...job,
+      state: 'queued',
+      calls: [...job.calls, { ...CALL2, reportedFiles: 0, notified: false }],
+    });
+  }
+
+  it('reports the second call on its own, with only its files; the first is not reported again', async () => {
+    const w = world({ recordings: [RECORDING, RECORDING2] });
+    await runDriveQueue(w.deps);
+    expect(w.notified).toHaveLength(1);
+    expect((w.notified[0] as Report).callStartedAt).toBe(CALL.startedAt);
+    // The first call's report holds only the first call's recording.
+    expect((w.notified[0] as Report).expectedRecordings.map((r) => r.id)).toEqual([RECORDING.id]);
+
+    startAgain(w);
+    expect(await runDriveQueue(w.deps)).toBe('idle');
+    expect(w.notified).toHaveLength(2);
+    const second = w.notified[1] as Report;
+    expect(second).toMatchObject({ sessionId: SID, callStartedAt: CALL2.startedAt });
+    expect(second.durationMs).toBe(20 * 60_000);
+    expect(second.files.map((file) => file.key).sort()).toEqual(
+      [
+        `call:${CALL2.startedAt}:notes-pdf`,
+        `call:${CALL2.startedAt}:transcript-pdf`,
+        `call:${CALL2.startedAt}:transcript-txt`,
+        `rec:${RECORDING2.id}:main`,
+        `rec:${RECORDING2.id}:stereo`,
+      ].sort(),
+    );
+    expect(second.expectedRecordings.map((r) => r.id)).toEqual([RECORDING2.id]);
+    // Each call keeps its own files, in the same session folder.
+    const folder = w.google.items.find((item) => item.parent === 'ROOT')!;
+    expect(w.google.items.filter((item) => item.parent === 'ROOT')).toHaveLength(1);
+    const names = w.google.items
+      .filter((item) => item.parent !== 'ROOT' && item.parent !== folder.id)
+      .map((item) => item.name);
+    expect(names).toEqual(
+      expect.arrayContaining(['2026-11-11 14.30 Part 1.mkv', '2026-11-11 17.00 Part 1.mkv']),
+    );
+    // Nothing more to tell.
+    await runDriveQueue(w.deps);
+    expect(w.notified).toHaveLength(2);
+  });
+
+  it('never reports again a call its session was emailed for before the change', async () => {
+    const w = world({ recordings: [RECORDING, RECORDING2] });
+    await runDriveQueue(w.deps);
+    const done = w.job();
+    // As 1.6.0 and 1.6.1 left it: emailed for the session, its calls without their own flags.
+    w.jobs.set(SID, {
+      ...done,
+      calls: done.calls.map(({ startedAt, endedAt }) => ({ startedAt, endedAt })),
+    });
+    await runDriveQueue(w.deps);
+    expect(w.job().calls[0]).toMatchObject({ closed: true, notified: true });
+    expect(w.notified).toHaveLength(1);
+    // Started again: only the new call is reported.
+    startAgain(w);
+    await runDriveQueue(w.deps);
+    expect(w.notified).toHaveLength(2);
+    expect((w.notified[1] as Report).callStartedAt).toBe(CALL2.startedAt);
   });
 });

@@ -2,14 +2,15 @@
  * File: apps/web/src/server/google/store.ts
  * Purpose: The google_drive and drive_notification rows (ADR-0072): saving the encrypted refresh
  *          token, the picked folder and the person's switches; marking a connection "reconnect";
- *          deleting it; and the one-email-per-session record: the devices' reports merged into it
+ *          deleting it; and the one-email-per-call record (ADR-0073: per call, keyed by report.ts
+ *          notificationKey, which the functions below take as `sessionId`): the devices' reports merged into it
  *          (compare-and-swap, as the driver has no transactions), "collecting" until every file is in,
  *          then taken for its one email by an update only one request can win. Every statement is
  *          limited to one account, except the daily overdue list.
  * Used by: src/server/google/api.ts, src/server/google/tokens.ts
  * Depends on: drizzle-orm, src/server/schema.ts, src/server/calldata/crypto.ts (seal, open),
  *             src/server/calldata/store.ts (CallDataDb type)
- * Architecture: ADR-0072 (encryption as ADR-0049; migrations additive only, ADR-0050)
+ * Architecture: ADR-0072, ADR-0073 (encryption as ADR-0049; migrations additive only, ADR-0050)
  *
  * Nothing here logs. Tokens, addresses, titles and file names are only ever held encrypted or in memory.
  */

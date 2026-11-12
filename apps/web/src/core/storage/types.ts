@@ -516,7 +516,10 @@ export interface DriveFileJob {
   track?: 'main' | 'stereo';
   /** The recording's part (recording files only; 1.6.0 email labels). */
   part?: number;
-  /** The call it belongs to (call files only). */
+  /**
+   * The call it belongs to (call files; and, from ADR-0073, recording files, for each call's own
+   * email). A recording file without it counts as the first call's.
+   */
   callStartedAt?: number;
   /** Its size in bytes (0 until known). */
   bytes: number;
@@ -550,6 +553,19 @@ export interface DriveCall {
   startedAt: number;
   /** When it ended (Unix ms). */
   endedAt: number;
+  /**
+   * ADR-0073 (each call has its own email): how many of this call's saved files the server has heard
+   * of. Absent on calls queued before the change (core/storage/driveUploads.ts withCallFlags settles
+   * them).
+   */
+  reportedFiles?: number;
+  /** ADR-0073: true once the server was told this call's uploads finished. */
+  notified?: boolean;
+  /**
+   * ADR-0073: true for a call already covered by its session's single email (before the change): it is
+   * never reported again, so it can never send a second, unexpected email.
+   */
+  closed?: boolean;
 }
 
 /**
