@@ -12,7 +12,7 @@
  * Depends on: src/core/storage (sessions.ts, hintPrefs.ts, types), src/features/sync/SyncScope.tsx,
  *             ./Launcher.tsx, src/features/appearance/useAppearance,
  *             src/features/home (HomeCard, HomeMenu, StartSessionCard),
- *             src/features/notices/AcceptableUseNotice.tsx,
+ *             src/features/notices/AcceptableUseNotice.tsx, src/features/drive/DriveNotices.tsx,
  *             src/platform, src/ui (BrandLockup, Button, Input styles, icons)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §7.3; ADR-0041
  *
@@ -33,6 +33,7 @@ import {
 } from '@/core/storage/sessions';
 import type { Session } from '@/core/storage/types';
 import { useAppearance } from '@/features/appearance/useAppearance';
+import { DriveNotices } from '@/features/drive/DriveNotices';
 import { AcceptableUseNotice } from '@/features/notices/AcceptableUseNotice';
 import { getPlatform } from '@/platform';
 import { BrandLockup } from '@/ui/BrandLockup';
@@ -194,6 +195,8 @@ function ClassicHomePanel({ email, startSessionId }: HomePanelProps) {
       className={`${resolved === 'dark' ? 'k-dark' : 'k-light'} relative flex h-screen flex-col overflow-hidden bg-ui-bg text-ui-text`}
     >
       <AcceptableUseNotice />
+      {/* 1.6.0 (ADR-0072): Drive's notices (the launcher shows them in its own card instead, 1.6.1). */}
+      <DriveNotices />
       <header className="flex shrink-0 items-center gap-1.5 px-3 py-2 [-webkit-app-region:drag]">
         <span className="min-w-0 flex-1">
           <BrandLockup tone={resolved === 'dark' ? 'dark' : 'light'} size="sm" byline={false} />

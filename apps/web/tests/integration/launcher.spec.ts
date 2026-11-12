@@ -7,7 +7,9 @@
  *          Start card (two tiles, Team, Buy credits only shows a toast, Back) and the Connect card
  *          (tips and their links, no meter or status text, the speech model dialog, Connect asks the main
  *          window for the call and follows its answer). With KITE_SCREENSHOT_DIR it saves the cards at
- *          560 × 720, the window size, for the visual pairs (tests/visual/v12-pairs.ts).
+ *          560 × 720, the window size, for the visual pairs (tests/visual/v12-pairs.ts). 1.6.1: the
+ *          browser's Start opens the session's Start card (cold start and a running app's reload), and
+ *          Drive's reconnect notice sits above the list, never over the bottom bar, closed for the run.
  * Used by: `pnpm --filter web test:launcher`
  * Depends on: @playwright/test, esbuild, @tailwindcss/postcss, tests/integration/harness/launcher.tsx
  * Architecture: ADR-0051, ADR-0055
@@ -244,6 +246,9 @@ async function seedAndShow(fromBrowser?: number): Promise<string[]> {
 test('the sessions card: search and sort, the dashboard’s cards, the browser’s first, and the bottom bar', async () => {
   await open();
   const ids = await seedAndShow(0);
+  // 1.6.1: the browser's Start opens the session's Start card first; Back shows the sessions.
+  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back' }).click();
   const card = page.getByRole('region', { name: 'Your sessions' });
   await expect(card).toBeVisible();
   const cards = card.getByRole('list', { name: 'Sessions' }).getByRole('listitem');
@@ -476,4 +481,47 @@ test('the Connect card: tips, no meter or status, no model dialog (background lo
     channel.close();
   }, newest);
   await expect(page.getByRole('region', { name: 'Your sessions' })).toBeVisible();
+});
+
+test('1.6.1: the browser’s Start opens the Start card, with Drive’s reconnect notice never over the bottom bar', async () => {
+  await open();
+  const ids = await seedAndShow();
+  // An upload waits for Google Drive to be reconnected (as after the switch to the team's project).
+  await page.evaluate((id) => window.kiteLauncherHarness.waitForReconnect(id), ids[1]!);
+  const notice = page
+    .getByRole('status')
+    .filter({ hasText: 'Your calls are kept and will upload afterwards' });
+  await expect(notice).toBeVisible();
+
+  // App closed (cold start): the panel loads /home?session=<id>; the Start card comes first, not
+  // blocked by the notice or the sessions card.
+  await page.evaluate((id) => window.kiteLauncherHarness.show(id), ids[0]);
+  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Paid session' })).toBeVisible();
+
+  // Back: the notice sits above "Your sessions", and the bottom bar's buttons stay clickable.
+  await page.getByRole('button', { name: 'Back' }).click();
+  await expect(notice).toBeVisible();
+  for (const name of [/View in Dashboard/, /Create session/]) {
+    // A trial click fails when something covers the button.
+    await page.getByRole('button', { name }).click({ trial: true, timeout: 2_000 });
+  }
+  const noticeBox = (await notice.boundingBox())!;
+  const listBox = (await page.getByRole('region', { name: 'Your sessions' }).boundingBox())!;
+  expect(noticeBox.y + noticeBox.height).toBeLessThanOrEqual(listBox.y);
+  await shot('launcher-drive-notice-560');
+
+  // Closed: it stays closed for the app run, also when a link from a running app reloads the panel.
+  await notice.getByRole('button', { name: 'Close' }).click();
+  await expect(notice).toHaveCount(0);
+  await page.reload();
+  await page.waitForFunction(() => 'kiteLauncherHarness' in window);
+  // App already open (second launch): the reloaded panel goes to the other session's Start card.
+  await page.evaluate((id) => window.kiteLauncherHarness.show(id), ids[2]);
+  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back' }).click();
+  const cards = page.getByRole('list', { name: 'Sessions' }).getByRole('listitem');
+  await expect(cards.nth(0)).toContainText('From your browser');
+  await expect(cards.nth(0)).toContainText('Copperfield Labs (invented)');
+  await expect(notice).toHaveCount(0);
 });

@@ -61,7 +61,7 @@ import { APP_NAME, loadConfig, pinnedDataFolder, type DesktopConfig } from './co
 
 /** 1.5.1 (ADR-0069): electron-builder.yml's appId, which the installer gives the Start Menu shortcut. */
 const APP_USER_MODEL_ID = 'co.paramountintelligence.kite';
-import { linkFromArgv, shouldRegisterProtocol } from './links';
+import { linkFromArgv, routeDesktopLink, shouldRegisterProtocol } from './links';
 import { createHomeWindow, isPanelSize, type HomeWindow } from './home';
 import { startUpdater } from './updater';
 import { installHotkeys, isKiteSender, type HotkeyController } from './hotkeys';
@@ -177,14 +177,16 @@ function showFront(): void {
  * Called from: a second launch, macOS's open-url, the first start
  */
 function followLink(link: DesktopLink | null): void {
-  if (!home) {
+  const panel = home;
+  if (!panel) {
     earlyLink = link;
     return;
   }
-  // 1.5.0 (ADR-0068): a recording link opens the player; the page says when the file is not here.
-  if (link?.kind === 'recording') openPlayer(`/player/${link.recordingId}`);
-  else if (link?.kind === 'session' && !callActive) home.openSession(link.sessionId, link.code);
-  else showFront();
+  routeDesktopLink(link, callActive, {
+    openSession: (sessionId, code) => panel.openSession(sessionId, code),
+    openPlayer,
+    showFront,
+  });
 }
 
 /**
@@ -753,10 +755,17 @@ function start(): void {
     // A first start may come from a paramountai:// link (on Windows, an argument).
     const firstLink = earlyLink ?? linkFromArgv(process.argv);
     earlyLink = null;
-    if (firstLink?.kind === 'session') home.openSession(firstLink.sessionId, firstLink.code);
-    else home.open();
-    // 1.5.0 (ADR-0068): a first start from a recording link also opens the player, beside the panel.
-    if (firstLink?.kind === 'recording') openPlayer(`/player/${firstLink.recordingId}`);
+    const panel = home;
+    // The same decision as a running app's (no call yet). 1.5.0 (ADR-0068): a recording link also opens
+    // the panel, beside the player.
+    routeDesktopLink(firstLink, false, {
+      openSession: (sessionId, code) => panel.openSession(sessionId, code),
+      openPlayer: (page) => {
+        panel.open();
+        openPlayer(page);
+      },
+      showFront: () => panel.open(),
+    });
 
     // v1.3.0 (ADR-0052): a link's one-time sign-in code goes to the Kite page once, and only from the
     // shell's memory: it is never put in an address. (1.2.0's session file hand-off is gone.)

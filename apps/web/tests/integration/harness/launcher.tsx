@@ -5,12 +5,14 @@
  *          card, the Start card and the Connect card. The test's init script adds a fake
  *          window.kiteDesktop (desktop 1.3.0) and records window.open.
  * Used by: apps/web/tests/integration/launcher.spec.ts
- * Depends on: src/features/home/HomePanel.tsx, src/features/sync/SyncScope.tsx, src/core/storage,
+ * Depends on: src/features/home/HomePanel.tsx, src/features/sync/SyncScope.tsx, src/core/storage
+ *             (db, sessions, driveUploads),
  *             src/core/stt (modelCache, download)
  * Architecture: ADR-0051, ADR-0055
  */
 import { createRoot } from 'react-dom/client';
 import { selectAccountDatabase } from '@/core/storage/db';
+import { putDriveJob } from '@/core/storage/driveUploads';
 import { createSessionWithDocuments, updateSession } from '@/core/storage/sessions';
 import { cacheKey, STT_CACHE_NAME } from '@/core/stt/download';
 import { speechModelFiles } from '@/core/stt/modelCache';
@@ -33,6 +35,8 @@ export interface LauncherHarness {
   show: (fromBrowserId?: string) => void;
   /** Puts placeholder entries for every speech model file in Cache Storage ("already downloaded"). */
   fakeModelCached: () => Promise<void>;
+  /** 1.6.1: stores a session's Drive upload waiting for Google Drive to be reconnected. */
+  waitForReconnect: (id: string) => Promise<void>;
 }
 
 declare global {
@@ -102,5 +106,20 @@ window.kiteLauncherHarness = {
     for (const file of speechModelFiles(location.origin)) {
       await cache.put(cacheKey(location.origin, file), new Response('placeholder'));
     }
+  },
+  waitForReconnect: async (id) => {
+    const now = Date.now();
+    await putDriveJob({
+      sessionId: id,
+      calls: [{ startedAt: now - 60_000, endedAt: now }],
+      files: [],
+      state: 'waiting',
+      reason: 'reconnect',
+      notified: false,
+      noticeShown: false,
+      reportedFiles: 0,
+      queuedAt: now,
+      updatedAt: now,
+    });
   },
 };
