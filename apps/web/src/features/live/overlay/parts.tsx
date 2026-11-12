@@ -1,8 +1,8 @@
 /**
  * File: apps/web/src/features/live/overlay/parts.tsx
  * Purpose: The small pieces the call bars and panels share (spec S13–S15, ADR-0041): button looks,
- *          key-caps, the level bars and their button, the language list, the Auto answer pill and the
- *          status icons.
+ *          key-caps, the level bars and their button, the language list and the status icons. (1.6.3,
+ *          ADR-0075: the Auto answer pill became a toggle on bar 1, ControlBar.tsx.)
  * Used by: src/features/live/CompactView.tsx, src/features/live/overlay/*, src/features/live/TopBar.tsx
  * Depends on: @kite/shared (KeycapHotkey), src/core/live/liveChannel.ts, src/core/storage/types.ts
  *             (languages), src/ui (KeyCap, icons), React
@@ -13,7 +13,7 @@
  */
 'use client';
 
-import type { KeycapHotkey } from '@kite/shared';
+import { hotkeyLabel, type KeycapHotkey } from '@kite/shared';
 import { useSyncExternalStore, type ReactNode, type RefObject } from 'react';
 import type { CompactCommand, CompactLevels, CompactState } from '@/core/live/liveChannel';
 import { ANSWER_LANGUAGES } from '@/core/storage/types';
@@ -44,6 +44,19 @@ export const CHEVRON_BUTTON = `${BUTTON_SHAPE} w-5 text-ui-text hover:bg-ui-over
 
 /** A quiet icon button for an answer's footer; the caller adds its colour. */
 export const FOOTER_BUTTON = `${BUTTON_SHAPE} w-8 hover:bg-ui-overlay-button pointer-coarse:min-w-11`;
+
+/**
+ * A shortcut as a tooltip names it (1.6.3, ADR-0075): "Ctrl+Shift+Enter" in words on Windows and Linux,
+ * the usual symbols on macOS ("⌘ ⇧ ↵").
+ *
+ * @param accelerator The shortcut, as Electron writes it ("CommandOrControl+Shift+Enter").
+ * @param mac         True on macOS.
+ * @returns Its name.
+ * Called from: ControlBar.tsx, RecordControls.tsx
+ */
+export function tipShortcut(accelerator: string, mac: boolean): string {
+  return mac ? hotkeyLabel(accelerator, true) : accelerator.replace('CommandOrControl', 'Ctrl');
+}
 
 /**
  * One piece of the stacked overlay: its own rounded panel, see-through in the desktop app.
@@ -169,10 +182,13 @@ export function StatusIcon({
   icon: ReactNode;
 }) {
   return (
+    // 1.6.3 (ADR-0075): not part of the window's drag handle, so the pointer over it reaches the page and
+    // its tooltip shows (BarTooltip.tsx).
     <span
       role="img"
       aria-label={`${label}: ${on ? 'capturing' : 'not connected'}`}
-      className={`relative inline-flex h-8 w-7 shrink-0 items-center justify-center ${on ? 'text-ui-text' : 'text-ui-muted'}`}
+      data-tip={`${label}: ${on ? 'capturing' : 'not connected'}`}
+      className={`relative inline-flex h-8 w-7 shrink-0 items-center justify-center [-webkit-app-region:no-drag] ${on ? 'text-ui-text' : 'text-ui-muted'}`}
     >
       {icon}
       {on && (
@@ -295,40 +311,5 @@ export function LanguageControl({
         </ul>
       )}
     </>
-  );
-}
-
-/**
- * The Auto answer pill: a toggle with a dot that says whether it is on.
- *
- * @param props.state     What the live page shows.
- * @param props.onCommand Sends a command to the live page.
- * @returns The pill.
- * Rendered by: CompactView.tsx, OverlayAnswer.tsx
- */
-export function AutoAnswerPill({
-  state,
-  onCommand,
-}: {
-  /** What the live page shows. */
-  state: CompactState | null;
-  /** Sends a command to the live page. */
-  onCommand: (command: CompactCommand) => void;
-}) {
-  const on = state?.autoAnswer ?? false;
-  return (
-    <button
-      type="button"
-      className={PILL}
-      aria-pressed={on}
-      disabled={!state}
-      onClick={() => onCommand({ type: 'auto-answer', on: !on })}
-    >
-      <span
-        aria-hidden="true"
-        className={`size-2 rounded-full ${on ? 'bg-ui-indicator' : 'bg-ui-muted'}`}
-      />
-      Auto answer {on ? 'On' : 'Off'}
-    </button>
   );
 }

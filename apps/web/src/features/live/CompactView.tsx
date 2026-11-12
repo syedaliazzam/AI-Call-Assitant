@@ -2,8 +2,8 @@
  * File: apps/web/src/features/live/CompactView.tsx
  * Purpose: The overlay (the compact live view; spec S13–S16, ADR-0029, ADR-0041): separate pieces rather
  *          than one window-sized panel. Bar 1 (status, Answer, Screenshot, Chat, move, compact, timer, ⋮
- *          and Exit), the chat bar under it while open, then bar 2 with the live strip and the Auto answer
- *          pill, or the transcript panel in bar 2's place. The answer panel opens by itself when an
+ *          and Exit; 1.6.3: and the Auto answer toggle), the chat bar under it while open, then bar 2 with
+ *          the live strip, or the transcript panel in bar 2's place. The answer panel opens by itself when an
  *          answer starts; with both panels open they sit side by side when the window is wide enough, and
  *          stack when it is not. Compact shrinks everything to an icon. The panels are see-through with
  *          the opacity setting, and are remembered. The script bar (v1.0.2) replaces all of it with one
@@ -33,6 +33,12 @@
  * mirrored: bar 1 at the bottom edge, the chat bar and bar 2 above it, the panels above them, and the
  * menus open upward (theme.css .k-overlay-up); the window grows upward to fit them. The ⋮ menu has the
  * Position grid, and Ctrl+Alt+T turns the transcript on or off while the bars have focus.
+ *
+ * 1.6.3 (ADR-0075): on the bottom row the panels sit on the bars, as they hang from them on the top row
+ * (they were at the top of the window, with empty space between them and the bars, which also kept the
+ * window from shrinking to them); stacked panels are mirrored too, the transcript nearest the bars.
+ * Auto answer moved to bar 1, so there is no floating Auto answer pill. The panels' look and the
+ * opacity setting are unchanged (ADR-0033).
  *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
@@ -74,7 +80,7 @@ import { IconMode } from './overlay/IconMode';
 import { LiveMenu } from './overlay/LiveMenu';
 import { LiveStrip } from './overlay/LiveStrip';
 import { OverlayAnswer } from './overlay/OverlayAnswer';
-import { AutoAnswerPill, pieceClass, type LevelStore } from './overlay/parts';
+import { pieceClass, type LevelStore } from './overlay/parts';
 import { ResizeGrips } from './overlay/ResizeGrips';
 import { ScriptBar } from './overlay/ScriptBar';
 import { TranscriptPanel } from './overlay/TranscriptPanel';
@@ -234,6 +240,23 @@ function naturalExtentOf(panel: HTMLElement, up: boolean, height: number): numbe
   );
   const extent = up ? height - topOf(panel) : topOf(panel) + panel.offsetHeight;
   return extent + hidden;
+}
+
+/**
+ * How the panels' area lays out its panels (1.6.3, ADR-0075). Top row: they hang from the bars, side by
+ * side from 900 px or stacked below that (the transcript first). Bottom row: mirrored, so they sit on
+ * the bars: side by side along the bottom, or stacked upward with the transcript nearest the bars.
+ *
+ * @param both True when both panels are open.
+ * @param up   True on the bottom row (ADR-0056).
+ * @returns The area's flex classes.
+ * Called from: CompactView
+ */
+export function panelsLayout(both: boolean, up: boolean): string {
+  if (!both) return up ? 'items-end' : 'items-start';
+  return up
+    ? 'flex-col-reverse @min-[900px]:flex-row @min-[900px]:items-end'
+    : 'flex-col @min-[900px]:flex-row @min-[900px]:items-start';
 }
 
 /** v1.3.2: the window's height follows the content in steps of this many pixels (fewer resizes). */
@@ -610,6 +633,7 @@ export function CompactView(props: CompactViewProps) {
             recordOpen={popup === 'record'}
             onRecord={() => setPopup(popup === 'record' ? null : 'record')}
             recButton={recButton}
+            up={up}
             {...(clickThrough && glass
               ? { onClickThroughOff: () => onCommand({ type: 'click-through', on: false }) }
               : {})}
@@ -770,10 +794,11 @@ export function CompactView(props: CompactViewProps) {
       ) : (
         <>
           {!panels.transcript && (
+            // 1.6.3 (ADR-0075): bar 2 alone; Auto answer is on bar 1.
             <div
               ref={barsEnd}
               {...{ [GAP_ATTRIBUTE]: '' }}
-              className={`flex shrink-0 items-start gap-1.5 ${BARS_WIDTH}`}
+              className={`flex shrink-0 gap-1.5 ${up ? 'items-end' : 'items-start'} ${BARS_WIDTH}`}
             >
               <div
                 className={`${piece} min-w-0 max-w-[540px] flex-1`}
@@ -794,18 +819,18 @@ export function CompactView(props: CompactViewProps) {
                   languagesRef={languagesElement}
                 />
               </div>
-              <div className={`${piece} shrink-0 p-1`} {...{ [BARS_ATTRIBUTE]: '' }}>
-                <AutoAnswerPill state={state} onCommand={onCommand} />
-              </div>
             </div>
           )}
           {(panels.transcript || panels.answer) && (
             // v1.3.2: side by side the panels are as tall as their content (items-start), so the space
             // under a shorter one is a gap; the window is fitted to the taller one (contentHeight).
+            // 1.6.3 (ADR-0075): on the bottom row they sit on the bars (items-end), and stacked panels
+            // are mirrored (flex-col-reverse: the transcript nearest the bars, the answer above it).
             <div
               ref={panelsArea}
               {...{ [GAP_ATTRIBUTE]: '' }}
-              className={`flex min-h-0 flex-1 gap-1.5 ${both ? 'flex-col @min-[900px]:flex-row @min-[900px]:items-start' : 'items-start'}`}
+              data-panels-area=""
+              className={`flex min-h-0 flex-1 gap-1.5 ${panelsLayout(both, up)}`}
             >
               {panels.transcript && (
                 <div
@@ -826,11 +851,6 @@ export function CompactView(props: CompactViewProps) {
                   />
                 </div>
               )}
-              {panels.transcript && !panels.answer && (
-                <div className={`${piece} shrink-0 self-start p-1`}>
-                  <AutoAnswerPill state={state} onCommand={onCommand} />
-                </div>
-              )}
               {panels.answer && (
                 <div
                   data-panel=""
@@ -842,7 +862,6 @@ export function CompactView(props: CompactViewProps) {
                     onCollapse={() => onPanels({ ...panels, answer: false })}
                     mac={mac}
                     fontScale={fontScale}
-                    showAutoAnswer={both}
                     onResize={onResize}
                     copy={copy}
                   />

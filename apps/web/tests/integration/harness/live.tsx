@@ -392,7 +392,12 @@ function CompactHarness({
   // ?alpha=0.4|0.7: the panel-background opacity, so the overlay look test can render the slider's
   // settings (ADR-0033). The desktop window's settings are only present with the glass panel.
   const alphaParam = params.get('alpha');
-  const alpha = alphaParam === null ? null : Number(alphaParam);
+  // 1.6.3: kept in state, so the menu's Opacity stepper changes the panels as in the app.
+  const [alpha, setAlpha] = useState<number | null>(() =>
+    alphaParam === null ? null : Number(alphaParam),
+  );
+  // 1.6.3: ?ct=on: Click-through mode on (v1.3.2), as a desktop shell from 1.3.0 has it.
+  const clickThrough = params.get('ct') === 'on';
   // What the view asks for, so a test can read it. ?shell=1: a shell from 1.2.0, with the icon.
   const log = (window as unknown as { overlayLog: unknown[] }).overlayLog;
   // ?position=bottom-left: a shell from 1.3.0 with the six positions (ADR-0056), at that one.
@@ -401,7 +406,8 @@ function CompactHarness({
   );
   return (
     <CompactView
-      state={state}
+      state={clickThrough ? { ...state, clickThrough: true } : state}
+      {...(clickThrough ? { onClickThrough: () => undefined } : {})}
       protection={{ supported: true, on: true }}
       onCommand={(command) => log.push(command)}
       onProtection={() => undefined}
@@ -442,7 +448,7 @@ function CompactHarness({
             windowSettings: {
               opacity: alpha,
               panelAlpha: alpha,
-              onOpacity: () => undefined,
+              onOpacity: setAlpha,
             },
           }
         : {})}
@@ -518,6 +524,56 @@ const UNAVAILABLE_STATE: CompactState = {
 
 const view = new URLSearchParams(window.location.search).get('view') ?? 'live';
 const root = createRoot(document.getElementById('root')!);
+
+/**
+ * 1.6.3 overlay checks: the compact state with what the address asks for. ?rec=on: a screen recording
+ * that started 33 seconds ago (desktop 1.5.0, ADR-0068); ?rec=off: the Rec pill, not recording;
+ * ?auto=on: auto answer on.
+ *
+ * @param base The state to start from.
+ * @returns The state to show.
+ * Called from: the compact views below
+ */
+function withOverlayParams(base: CompactState): CompactState {
+  const params = new URLSearchParams(window.location.search);
+  const rec = params.get('rec');
+  return {
+    ...base,
+    ...(params.get('auto') === 'on' ? { autoAnswer: true } : {}),
+    ...(rec === 'on' || rec === 'off'
+      ? {
+          recording: {
+            state: rec,
+            startedAt: rec === 'on' ? Date.now() - 33_000 : null,
+            kind: 'screen',
+            displays: [],
+            displayId: null,
+            stereo: true,
+            promptCount: 0,
+            parts: rec === 'on' ? 1 : 0,
+            notice: null,
+          },
+        }
+      : {}),
+  };
+}
+
+// ?private=off|on: a desktop shell whose Private setting is off or on (ADR-0070's warning reads it). Only the
+// two methods the warning uses; nothing else here asks the shell.
+const privateParam = new URLSearchParams(window.location.search).get('private');
+if (privateParam === 'off' || privateParam === 'on') {
+  let privateOn = privateParam === 'on';
+  (window as unknown as { kiteDesktop: unknown }).kiteDesktop = {
+    version: '1.6.2',
+    os: 'windows',
+    getShareProtection: async () => ({ supported: true, on: privateOn, scope: 'all' }),
+    setShareProtection: async (on: boolean) => {
+      privateOn = on;
+      return { supported: true, on, scope: 'all' };
+    },
+  };
+}
+
 if (view === 'connect' || view === 'connect-mic' || view === 'connect-errors') {
   root.render(<ConnectView />);
 } else if (view === 'gate') {
@@ -537,15 +593,15 @@ if (view === 'connect' || view === 'connect-mic' || view === 'connect-errors') {
 ) {
   root.render(
     <CompactHarness
-      state={
+      state={withOverlayParams(
         view === 'compact'
           ? COMPACT_STATE
           : view === 'compact-coding'
             ? CODING_STATE
             : view === 'compact-private'
               ? PRIVATE_STATE
-              : UNAVAILABLE_STATE
-      }
+              : UNAVAILABLE_STATE,
+      )}
     />,
   );
 } else if (view === 'split') {

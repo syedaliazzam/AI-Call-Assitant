@@ -411,6 +411,16 @@ html[data-theme='dark'] {
   --k-focus: 0 0 0 2px var(--ui-focus);
 }
 
+/* 1.6.3 (ADR-0075): bar 1's tooltip (overlay/BarTooltip.tsx): solid dark with white text in every
+   theme and at any panel opacity, so it reads over any page behind the overlay. */
+.k-bar-tip {
+  background: var(--k-dark-bg);
+  color: var(--k-overlay-text);
+  border: 1px solid var(--k-dark-border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  text-shadow: none;
+}
+
 /* The overlay's menu floats over the answer, so it is always solid. */
 .k-overlay-menu {
   --ui-muted: var(--k-dark-muted);

@@ -2,7 +2,8 @@
  * File: apps/web/src/features/live/overlay/RecordControls.tsx
  * Purpose: The meeting recording's controls on the call bars (desktop 1.5.0, ADR-0068): the Rec pill
  *          (after the Transcript pill, same style, with its key-cap Ctrl Alt R): grey "○ Rec" when off,
- *          a red pulsing "● Rec mm:ss" while recording (the time takes the key-cap's place); and its popover: "Everyone has agreed to be
+ *          a red pulsing "● Rec mm:ss" while recording (the time takes the key-cap's place; 1.6.3, ADR-0075:
+ *          with Private off only a small amber dot, the words are on the warning bar); and its popover: "Everyone has agreed to be
  *          recorded?" with Start recording (and a display picker when there are several), or "Stop
  *          recording?" with Stop; or a short notice (Private turned on, low space, a stop). The same
  *          parts serve the overlay and the full call window's top bar.
@@ -18,7 +19,7 @@ import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
 import { forwardRef, useEffect, useState, type CSSProperties, type Ref } from 'react';
 import type { CompactCommand, CompactRecording } from '@/core/live/liveChannel';
 import { callClock } from '@/features/live/callClock';
-import { KeyChip, PILL } from './parts';
+import { KeyChip, PILL, tipShortcut } from './parts';
 import { VISIBLE_IN_RECORDING_TEXT } from '../PrivateOffWarning';
 
 /** What the popover shows: the Start or Stop question, or the notice. */
@@ -60,11 +61,19 @@ export interface RecPillProps {
   mac: boolean;
   /** The container width from which the key-cap shows, as a Tailwind class. */
   keyAt?: string;
+  /** 1.6.3 (ADR-0075): false to leave out the key-cap (bar 1 measures its room); default true. */
+  showKey?: boolean;
+  /**
+   * 1.6.3: true on bar 1, which draws its own tooltips in the page (data-tip, ADR-0042); otherwise the
+   * browser's title tooltip.
+   */
+  pageTip?: boolean;
   /** The button (the popover sits under it). */
   buttonRef?: Ref<HTMLButtonElement>;
   /**
-   * 1.5.2 (ADR-0070): a screen recording runs with Private off, so Paramount AI is in the video: the pill
-   * says "Visible in recording".
+   * 1.5.2 (ADR-0070): a screen recording runs with Private off, so Paramount AI is in the video. 1.6.3
+   * (ADR-0075): the pill shows a small amber dot and says it to screen readers; the warning bar has the
+   * words and the fix.
    */
   visibleInRecording?: boolean;
 }
@@ -84,6 +93,8 @@ export function RecPill({
   keyAt,
   buttonRef,
   visibleInRecording = false,
+  showKey = true,
+  pageTip = false,
 }: RecPillProps) {
   const elapsed = useElapsed(recording.state === 'on' ? recording.startedAt : null);
   const on = recording.state === 'on';
@@ -111,7 +122,14 @@ export function RecPill({
           : 'Start recording'
       }
       aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.record, mac)}
-      title={`${on ? 'Stop recording' : 'Start recording'} (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.record, mac)})`}
+      {...(pageTip
+        ? // 1.6.3 (ADR-0075): bar 1's tooltip, "Stop recording · Ctrl+Alt+R".
+          {
+            'data-tip': `${on ? 'Stop recording' : 'Start recording'} · ${tipShortcut(DEFAULT_GLOBAL_HOTKEYS.record, mac)}`,
+          }
+        : {
+            title: `${on ? 'Stop recording' : 'Start recording'} (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.record, mac)})`,
+          })}
     >
       <span
         aria-hidden="true"
@@ -123,13 +141,16 @@ export function RecPill({
       />
       {label}
       {on && visibleInRecording && (
-        // 1.5.2 (ADR-0070): small, in the warning colour; the full warning has a bar of its own.
-        <span className="text-[11px] font-medium text-ui-warning" title={VISIBLE_IN_RECORDING_TEXT}>
-          {VISIBLE_IN_RECORDING_TEXT}
-        </span>
+        // 1.6.3 (ADR-0075): one warning only. The bar under bar 1 says it (with "Turn Private back on");
+        // here a small amber dot, no words.
+        <span
+          aria-hidden="true"
+          data-visible-in-recording=""
+          className="size-1.5 shrink-0 rounded-full bg-ui-warning"
+        />
       )}
       {/* While recording the pill shows the time instead: bar 1 has no room for both (measured). */}
-      {!on && <KeyChip hotkey="record" visibleAt={keyAt ?? '@min-[960px]:inline-flex'} />}
+      {!on && showKey && <KeyChip hotkey="record" {...(keyAt ? { visibleAt: keyAt } : {})} />}
     </button>
   );
 }

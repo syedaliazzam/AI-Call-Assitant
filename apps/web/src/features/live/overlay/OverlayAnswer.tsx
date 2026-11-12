@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/features/live/overlay/OverlayAnswer.tsx
  * Purpose: The answer panel (spec S15): ← and → between this call's questions, Stop while an answer
- *          streams, Auto answer, Clear and collapse; then the question as a title with an accent bar,
+ *          streams, Clear and collapse (1.6.3, ADR-0075: Auto answer is on bar 1); then the question as a title with an accent bar,
  *          "Thinking…" until the first word, the answer (AnswerBody, shared with the call window), and a
  *          footer: copy, thumbs and report on the left; type, how and when on the right. A grip at the
  *          bottom right resizes the window.
@@ -28,7 +28,7 @@ import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { CollapseIcon, CopyIcon, FlagIcon, StopIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
-import { AutoAnswerPill, BUTTON, FOOTER_BUTTON, ICON_BUTTON, KeyChip, PILL } from './parts';
+import { BUTTON, FOOTER_BUTTON, ICON_BUTTON, KeyChip, PILL } from './parts';
 import { ResizeCorner } from './ResizeGrips';
 
 /** Props for OverlayAnswer. */
@@ -43,8 +43,6 @@ export interface OverlayAnswerProps {
   mac: boolean;
   /** The text size chosen in the menu. */
   fontScale: number;
-  /** True to show Auto answer here: the panel is beside the transcript, so bar 2 has gone. */
-  showAutoAnswer?: boolean;
   /** Resizes the window, where the shell can (the see-through window has no frame). */
   onResize?: ((step: OverlayResizeStep) => void) | undefined;
   /** Puts text on the clipboard (tests pass a fake). */
@@ -117,7 +115,6 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
             <StopIcon /> Stop
           </button>
         )}
-        {props.showAutoAnswer && <AutoAnswerPill state={state} onCommand={onCommand} />}
         <button
           type="button"
           className={PILL}
