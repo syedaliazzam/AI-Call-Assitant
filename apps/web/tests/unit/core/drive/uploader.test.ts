@@ -1,6 +1,8 @@
 /**
- * Tests for apps/web/src/core/drive/uploader.ts (ADR-0072), with a fake Drive, a fake desktop shell and
- * an in-memory job store:
+ * Tests for apps/web/src/core/drive/uploader.ts (ADR-0072; ADR-0074: over a fake of Kite's server-side
+ * Drive routes, never a Google token), with a fake desktop shell and an in-memory job store:
+ * - ADR-0074: the page never sends a token; a recording that does not verify is uploaded again; a desktop
+ *   app older than 1.6.2 keeps its recordings waiting ("update") while transcripts and notes save;
  * - a desktop call saves its recording part (and stereo file), transcript TXT and PDF and notes PDF into
  *   "<date> <title>/Recordings" and "/Transcripts", then tells the server once and shows one notice;
  * - idempotency: running again, or after this device lost its ids, never makes a folder or file twice;
@@ -22,7 +24,6 @@ import type {
 import { describe, expect, it } from 'vitest';
 import { DriveApiError } from '@/core/drive/api';
 import type { CallFile } from '@/core/drive/callFiles';
-import type { DriveClient, DriveTag } from '@/core/drive/google';
 import { jobPercent, planFiles, runDriveQueue, type UploaderDeps } from '@/core/drive/uploader';
 import type { DriveSessionJob, Session } from '@/core/storage/types';
 
@@ -45,11 +46,13 @@ const CONNECTED: DriveStatusResponse = {
     driveId: null,
     url: 'https://drive.google.com/drive/folders/ROOT',
   },
+  admin: false,
+  account: null,
   saveEnabled: true,
   email: { configured: false, enabled: true, alsoNotify: [] },
 };
 
-/** One item in the fake Drive. */
+/** One item in the fake company Drive. */
 interface Item {
   /** Its id. */
   id: string;
@@ -57,21 +60,42 @@ interface Item {
   parent: string;
   /** Its name. */
   name: string;
-  /** Its tags. */
-  tags: DriveTag[];
+  /** Its tags (appProperties). */
+  tags: Record<string, string>;
 }
 
 /**
- * A fake Drive that keeps folders and files, with upload sessions that become files when finished.
- * @returns The client and its state.
+ * A fake of Kite's server-side Drive routes (ADR-0074) over a fake company Drive: session folders,
+ * recording uploads started by the server (session address and ticket only), offsets, verification, and
+ * the page's small files uploaded by the server. Never a token.
+ * @param state The world's switches (the company connection refused).
+ * @returns The routes and the Drive's state.
  */
-function fakeDrive() {
+function fakeServer(state: { tokenRefused: boolean }) {
   const items: Item[] = [];
-  const sessions = new Map<string, { name: string; parentId: string; tags: DriveTag[] }>();
+  const sessions = new Map<string, { name: string; parentId: string; tag: string; got: number }>();
   let n = 0;
-  const counts = { folders: 0, sessions: 0, blobs: 0 };
-  const has = (item: Item, tags: DriveTag[]) =>
-    tags.every((tag) => item.tags.some((t) => t.key === tag.key && t.value === tag.value));
+  const counts = { folders: 0, sessions: 0, small: 0, offsets: 0, completes: 0 };
+  const find = (parent: string, tags: Record<string, string>) =>
+    items.find(
+      (item) =>
+        item.parent === parent && Object.entries(tags).every(([k, v]) => item.tags[k] === v),
+    )?.id ?? null;
+  const folder = (parent: string, name: string, tags: Record<string, string>) => {
+    const found = find(parent, tags);
+    if (found) return found;
+    counts.folders += 1;
+    const id = `folder-${++n}`;
+    items.push({ id, parent, name, tags });
+    return id;
+  };
+  const refuse = () => {
+    if (state.tokenRefused) throw new DriveApiError(409, 'reconnect', 'Reconnect');
+  };
+  const sub = (sessionId: string, which: string) => {
+    const session = find('ROOT', { kiteSession: sessionId, kiteFolder: 'session' });
+    return session ? find(session, { kiteSession: sessionId, kiteFolder: which }) : null;
+  };
   /**
    * Turns an upload session into a file.
    * @param url The session.
@@ -80,34 +104,67 @@ function fakeDrive() {
   const finish = (url: string): string => {
     const meta = sessions.get(url)!;
     const id = `file-${++n}`;
-    items.push({ id, parent: meta.parentId, name: meta.name, tags: meta.tags });
+    items.push({ id, parent: meta.parentId, name: meta.name, tags: { kiteFile: meta.tag } });
     sessions.delete(url);
     return id;
   };
-  const drive: DriveClient = {
-    async find(parentId, tags) {
-      return items.find((item) => item.parent === parentId && has(item, tags))?.id ?? null;
+  const api: Pick<
+    UploaderDeps['api'],
+    'sessionFolder' | 'startUpload' | 'uploadOffset' | 'completeUpload' | 'uploadFile'
+  > = {
+    async sessionFolder({ sessionId, name }) {
+      refuse();
+      const session = folder('ROOT', name, { kiteSession: sessionId, kiteFolder: 'session' });
+      return {
+        folderId: session,
+        recordingsId: folder(session, 'Recordings', {
+          kiteSession: sessionId,
+          kiteFolder: 'Recordings',
+        }),
+        transcriptsId: folder(session, 'Transcripts', {
+          kiteSession: sessionId,
+          kiteFolder: 'Transcripts',
+        }),
+      };
     },
-    async createFolder(name, parentId, tags) {
-      counts.folders += 1;
-      const id = `folder-${++n}`;
-      items.push({ id, parent: parentId, name, tags });
-      return id;
-    },
-    async startUpload(meta) {
+    async startUpload({ sessionId, key, name }) {
+      refuse();
+      const parent = sub(sessionId, 'Recordings');
+      if (!parent) throw new DriveApiError(409, 'no_session_folder', 'No folder');
+      const tag = `${sessionId}\n${key}`;
+      const existing = find(parent, { kiteFile: tag });
+      if (existing) return { status: 'exists', fileId: existing };
       counts.sessions += 1;
       const url = `https://www.googleapis.com/upload/drive/v3/files?upload_id=${++n}`;
-      sessions.set(url, { name: meta.name, parentId: meta.parentId, tags: meta.tags });
-      return url;
+      sessions.set(url, { name, parentId: parent, tag, got: 0 });
+      return { status: 'started', uploadUrl: url, ticket: `ticket-${n}` };
     },
-    async uploadBlob(url, blob, onProgress) {
-      counts.blobs += 1;
-      if (!sessions.has(url)) return { status: 'expired' };
-      onProgress(blob.size);
-      return { status: 'done', fileId: finish(url), bytes: blob.size };
+    async uploadOffset({ uploadUrl }) {
+      counts.offsets += 1;
+      const session = sessions.get(uploadUrl);
+      return session ? { state: 'partial', offset: session.got } : { state: 'expired' };
+    },
+    async completeUpload({ fileId }) {
+      counts.completes += 1;
+      if (!items.some((item) => item.id === fileId)) {
+        throw new DriveApiError(409, 'verify_failed', 'Did not match');
+      }
+      return { fileId };
+    },
+    async uploadFile({ sessionId, key, name }) {
+      refuse();
+      counts.small += 1;
+      const parent = sub(sessionId, 'Transcripts');
+      if (!parent) throw new DriveApiError(409, 'no_session_folder', 'No folder');
+      const tag = `${sessionId}\n${key}`;
+      const existing = find(parent, { kiteFile: tag });
+      if (existing) return { fileId: existing };
+      const id = `file-${++n}`;
+      items.push({ id, parent, name, tags: { kiteFile: tag } });
+      return { fileId: id };
     },
   };
-  return { drive, items, sessions, counts, finish };
+  return { api, items, sessions, counts, finish };
 }
 
 /** A recording part on this computer. */
@@ -142,6 +199,8 @@ interface WorldOptions {
   hostScript?: ((request: DriveUploadRequest) => DriveUploadResult)[];
   /** Recordings on this computer. */
   recordings?: LocalRecording[];
+  /** A desktop app older than 1.6.2 (no fileSize: it cannot upload without a token). */
+  oldShell?: boolean;
 }
 
 /**
@@ -150,7 +209,13 @@ interface WorldOptions {
  * @returns The deps and the parts to inspect.
  */
 function world(options: WorldOptions = {}) {
-  const google = fakeDrive();
+  const state = {
+    status: options.status ?? CONNECTED,
+    callLive: false,
+    notifyFails: false,
+    tokenRefused: false,
+  };
+  const google = fakeServer(state);
   const jobs = new Map<string, DriveSessionJob>();
   jobs.set(SID, {
     sessionId: SID,
@@ -167,47 +232,40 @@ function world(options: WorldOptions = {}) {
   const notices: unknown[] = [];
   const hostCalls: DriveUploadRequest[] = [];
   const script = [...(options.hostScript ?? [])];
-  const state = {
-    status: options.status ?? CONNECTED,
-    callLive: false,
-    notifyFails: false,
-    tokenRefused: false,
-  };
   const callFiles: CallFile[] = [
     { kind: 'transcript-txt', blob: new Blob(['lines']) },
     { kind: 'transcript-pdf', blob: new Blob(['%PDF']) },
     { kind: 'notes-pdf', blob: new Blob(['%PDF notes']) },
   ];
+  const host: NonNullable<UploaderDeps['host']> = {
+    recordings: async () => options.recordings ?? [RECORDING],
+    async upload(request, onProgress) {
+      hostCalls.push(request);
+      const next = script.shift();
+      if (next) return next(request);
+      if (!google.sessions.has(request.uploadUrl)) return { status: 'expired' };
+      onProgress({
+        recordingId: request.recordingId,
+        track: request.track,
+        sent: 500,
+        total: 500,
+      });
+      return { status: 'done', fileId: google.finish(request.uploadUrl), bytes: 500 };
+    },
+  };
+  // Desktop 1.6.2: the file's size (and uploads without a token); 1.6.0 and 1.6.1 do not have it.
+  if (!options.oldShell) host.fileSize = async () => 500;
   const deps: UploaderDeps = {
     api: {
       status: async () => state.status,
-      token: async () => {
-        if (state.tokenRefused) throw new DriveApiError(409, 'reconnect', 'Reconnect');
-        return { accessToken: 'at', expiresAt: Date.now() + 3_600_000 };
-      },
       notify: async (request) => {
         if (state.notifyFails) throw new DriveApiError(0, 'network', 'offline');
         notified.push(request);
         return { status: 'not-set-up' };
       },
+      ...google.api,
     },
-    drive: google.drive,
-    host: {
-      recordings: async () => options.recordings ?? [RECORDING],
-      async upload(request, onProgress) {
-        hostCalls.push(request);
-        const next = script.shift();
-        if (next) return next(request);
-        if (!google.sessions.has(request.uploadUrl)) return { status: 'expired' };
-        onProgress({
-          recordingId: request.recordingId,
-          track: request.track,
-          sent: 500,
-          total: 500,
-        });
-        return { status: 'done', fileId: google.finish(request.uploadUrl), bytes: 500 };
-      },
-    },
+    host,
     jobs: {
       next: async () =>
         [...jobs.values()]
@@ -309,8 +367,10 @@ describe('resume', () => {
   it('pauses for a call and continues the same upload session afterwards', async () => {
     const w = world({
       hostScript: [
-        () => {
+        (request) => {
           w.state.callLive = true;
+          // Google kept 256 KiB of it.
+          w.google.sessions.get(request.uploadUrl)!.got = 256 * 1024;
           return { status: 'paused', offset: 256 * 1024, bytes: 1_000_000 };
         },
       ],
@@ -328,28 +388,23 @@ describe('resume', () => {
     const sessionsBefore = w.google.counts.sessions;
     expect(await runDriveQueue(w.deps)).toBe('idle');
     expect(w.hostCalls[1]!.uploadUrl).toBe(recording.uploadUrl);
-    // Only the stereo file and the three Transcripts files needed new sessions.
-    expect(w.google.counts.sessions - sessionsBefore).toBe(4);
+    // ADR-0074: the server said where Google got to; the shell starts there.
+    expect(w.hostCalls[1]!.startOffset).toBe(256 * 1024);
+    // Only the stereo file needed a new session (Transcripts files go through the server).
+    expect(w.google.counts.sessions - sessionsBefore).toBe(1);
     expect(w.job().state).toBe('done');
   });
 
-  it('opens a new session when the old one is gone, and gets a new token after "auth"', async () => {
-    let tokens = 0;
+  it('opens a new session when the old one is gone (also after a 401: no token is involved)', async () => {
     const w = world({
       hostScript: [
         () => ({ status: 'expired' }),
         () => ({ status: 'auth', offset: 0, bytes: 1_000 }),
       ],
     });
-    const token = w.deps.api.token;
-    w.deps.api.token = async (fresh) => {
-      if (fresh) tokens += 1;
-      return token(fresh);
-    };
     await runDriveQueue(w.deps);
     expect(w.job().state).toBe('done');
-    expect(new Set(w.hostCalls.slice(0, 2).map((c) => c.uploadUrl)).size).toBe(2);
-    expect(tokens).toBe(1);
+    expect(new Set(w.hostCalls.slice(0, 3).map((c) => c.uploadUrl)).size).toBe(3);
   });
 
   it('skips a recording whose file was deleted from this computer', async () => {
@@ -637,5 +692,50 @@ describe('a session started again (ADR-0073: each call has its own email)', () =
     await runDriveQueue(w.deps);
     expect(w.notified).toHaveLength(2);
     expect((w.notified[1] as Report).callStartedAt).toBe(CALL2.startedAt);
+  });
+});
+
+describe('no Google token in the page (ADR-0074)', () => {
+  it('never asks for or sends a token: the server makes folders and starts uploads', async () => {
+    const w = world();
+    await runDriveQueue(w.deps);
+    expect(w.job().state).toBe('done');
+    expect('token' in w.deps.api).toBe(false);
+    expect(w.hostCalls.every((call) => call.accessToken === undefined)).toBe(true);
+    // Recordings through the shell, verified by the server; the three Transcripts files by the server.
+    expect(w.google.counts.completes).toBe(2);
+    expect(w.google.counts.small).toBe(3);
+  });
+
+  it('uploads a recording again when the server cannot verify it', async () => {
+    const w = world({
+      hostScript: [
+        // Google answers with an id the server cannot find with this upload's tag.
+        () => ({ status: 'done', fileId: 'not-ours', bytes: 500, md5: '0'.repeat(32) }),
+      ],
+    });
+    await runDriveQueue(w.deps);
+    expect(w.job().state).toBe('done');
+    const main = w.job().files.find((file) => file.key.endsWith(':main'))!;
+    expect(main.driveFileId).not.toBe('not-ours');
+    expect(new Set(w.hostCalls.slice(0, 2).map((c) => c.uploadUrl)).size).toBe(2);
+  });
+
+  it('keeps recordings waiting on a desktop app older than 1.6.2, and saves the rest', async () => {
+    const w = world({ oldShell: true });
+    expect(await runDriveQueue(w.deps)).toBe('waiting');
+    expect(w.job()).toMatchObject({ state: 'waiting', reason: 'update-desktop' });
+    expect(w.hostCalls).toHaveLength(0);
+    const transcripts = w.job().files.filter((file) => !file.recordingId);
+    expect(transcripts.every((file) => file.done && file.driveFileId)).toBe(true);
+    // Later runs on the same old app leave it alone (no server calls).
+    const before = { ...w.google.counts };
+    await runDriveQueue(w.deps);
+    expect(w.google.counts).toEqual(before);
+    // Updated to 1.6.2: the recordings upload.
+    w.deps.host!.fileSize = async () => 500;
+    expect(await runDriveQueue(w.deps)).toBe('idle');
+    expect(w.job().state).toBe('done');
+    expect(w.job().files.every((file) => file.done)).toBe(true);
   });
 });

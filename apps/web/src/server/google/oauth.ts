@@ -398,3 +398,39 @@ export async function readDriveFolder(
     driveId: typeof file.driveId === 'string' ? file.driveId : null,
   };
 }
+
+/**
+ * The address of the Google account a token belongs to (Drive's about.user), shown to admins and used
+ * to preselect that account in the Picker's sign-in popup (ADR-0074). Best effort: null when Drive does
+ * not say.
+ *
+ * @param fetchFn     The fetch.
+ * @param accessToken An access token (server memory only).
+ * @returns The lower-case address, or null.
+ * Called from: handleCallback() in api.ts; tests
+ */
+export async function readDriveAccount(
+  fetchFn: FetchLike,
+  accessToken: string,
+): Promise<string | null> {
+  try {
+    const response = await fetchFn(
+      'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)',
+      { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' },
+    );
+    if (!response.ok) return null;
+    const about = (await response.json()) as {
+      /** The account the token belongs to. */
+      user?: {
+        /** Its address. */
+        emailAddress?: unknown;
+      };
+    };
+    const address = about.user?.emailAddress;
+    return typeof address === 'string' && address.includes('@') && address.length <= 320
+      ? address.toLowerCase()
+      : null;
+  } catch {
+    return null;
+  }
+}

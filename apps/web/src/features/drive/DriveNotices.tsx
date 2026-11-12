@@ -99,14 +99,15 @@ export function DriveNotices({ placement = 'overlay' }: DriveNoticesProps) {
     >
       {needsReconnect && !reconnectClosed && (
         <Notice
-          text="Google Drive needs to be reconnected. Your calls are kept and will upload afterwards."
+          // ADR-0074: an admin reconnects the company account in Settings.
+          text="Google Drive needs an admin to reconnect it. Your calls are kept and will upload afterwards."
           action={
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => getPlatform().openDriveSetup('/api/google/connect')}
+              onClick={() => getPlatform().openDriveSetup('/settings#google-drive')}
             >
-              Reconnect Google Drive
+              Settings
             </Button>
           }
           onClose={() => {

@@ -7,10 +7,14 @@
  * - a call stops it between chunks, and a call starting mid-chunk cuts the chunk off ('paused');
  * - 401 is 'auth', 404 is 'expired', a lost connection is retried then reported as retryable;
  * - the notification opens only a Drive link; the IPC calls refuse another origin and send progress to
- *   the page that asked.
+ *   the page that asked;
+ * - 1.6.2 (ADR-0074): without a token no Authorization header is sent, the upload starts at the offset the
+ *   server gave without asking, a finished one reports the file's MD5, a 401 is a gone session, and the
+ *   page can ask a file's size (from the index only).
  * Never the real profile, real Recordings folder or real Google.
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -145,6 +149,54 @@ describe('isUploadRequest', () => {
     expect(isUploadRequest({ ...REQUEST, track: 'other' })).toBe(false);
     expect(isUploadRequest({ ...REQUEST, accessToken: '' })).toBe(false);
   });
+
+  it('1.6.2: accepts a request without a token, with a whole, non-negative start offset', () => {
+    const { accessToken: _none, ...tokenless } = REQUEST;
+    expect(isUploadRequest(tokenless)).toBe(true);
+    expect(isUploadRequest({ ...tokenless, startOffset: UNIT })).toBe(true);
+    expect(isUploadRequest({ ...tokenless, startOffset: -1 })).toBe(false);
+    expect(isUploadRequest({ ...tokenless, startOffset: 1.5 })).toBe(false);
+  });
+});
+
+describe('1.6.2: uploads with the session address only (ADR-0074)', () => {
+  const { accessToken: _none, ...TOKENLESS } = REQUEST;
+
+  it('sends no Authorization header, starts at the server’s offset, and reports the MD5', async () => {
+    const total = UNIT * 3 + UNIT / 2;
+    const google = fakeGoogle(UNIT * 2, total);
+    const result = await uploader(google.fetch).upload(
+      { ...TOKENLESS, startOffset: UNIT * 2 },
+      () => undefined,
+    );
+    expect(result).toMatchObject({ status: 'done', fileId: 'DRIVE-FILE', bytes: total });
+    expect((result as { md5?: string }).md5).toBe(
+      createHash('md5').update(readFileSync(file)).digest('hex'),
+    );
+    // No "where did it get to?" question: the first request sends bytes from the server's offset.
+    expect(google.seen.map((one) => one.range)).toEqual([
+      `bytes ${UNIT * 2}-${UNIT * 3 - 1}/${total}`,
+      `bytes ${UNIT * 3}-${total - 1}/${total}`,
+    ]);
+    expect(google.seen.every((one) => one.auth === undefined)).toBe(true);
+  });
+
+  it('treats a 401 without a token as a gone session (the page starts a new one)', async () => {
+    const google = fakeGoogle(0, 1, [() => new Response(null, { status: 401 })]);
+    expect(await uploader(google.fetch).upload(TOKENLESS, () => undefined)).toEqual({
+      status: 'expired',
+    });
+  });
+
+  it('gives a file’s size from the index only, and null for a bad request or a missing file', async () => {
+    const up = uploader(fakeGoogle(0, 1).fetch);
+    expect(await up.fileSize({ recordingId: REC, track: 'main' })).toBe(UNIT * 3 + UNIT / 2);
+    expect(await up.fileSize({ recordingId: '../x', track: 'main' })).toBeNull();
+    expect(await up.fileSize({ recordingId: REC, track: 'other' })).toBeNull();
+    expect(
+      await up.fileSize({ recordingId: '33333333-3333-4333-8333-333333333333', track: 'main' }),
+    ).toBeNull();
+  });
 });
 
 describe('upload', () => {
@@ -153,7 +205,12 @@ describe('upload', () => {
     const google = fakeGoogle(UNIT, total);
     const progress: number[] = [];
     const result = await uploader(google.fetch).upload(REQUEST, (p) => progress.push(p.sent));
-    expect(result).toEqual({ status: 'done', fileId: 'DRIVE-FILE', bytes: total });
+    expect(result).toEqual({
+      status: 'done',
+      fileId: 'DRIVE-FILE',
+      bytes: total,
+      md5: createHash('md5').update(readFileSync(file)).digest('hex'),
+    });
     expect(google.seen.map((s) => s.range)).toEqual([
       `bytes */${total}`,
       `bytes ${UNIT}-${UNIT * 2 - 1}/${total}`,

@@ -56,7 +56,7 @@ Today's project is the developer's own test project (External, testing mode). To
 
 **7. Replace the four values in Vercel** (`vercel env rm NAME production`, then `vercel env add NAME production`), then `vercel deploy --prod`.
 
-**8. Everyone reconnects.** A refresh token belongs to the OAuth client that issued it. After the switch each person's next upload fails with `invalid_client` and their Settings shows **Reconnect Google Drive**; queued uploads are kept. Each person: Settings → Google Drive → **Reconnect Google Drive** → allow → in the Picker choose the **team folder** (Change folder if a folder from the old project is still shown). Uploads then continue by themselves.
+**8. (Before ADR-0074.) Everyone reconnects.** *Replaced by the company account below: people no longer connect.* A refresh token belongs to the OAuth client that issued it. After the switch each person's next upload fails with `invalid_client` and their Settings shows **Reconnect Google Drive**; queued uploads are kept. Each person: Settings → Google Drive → **Reconnect Google Drive** → allow → in the Picker choose the **team folder** (Change folder if a folder from the old project is still shown). Uploads then continue by themselves.
 
 ### Switched to team project (12 November 2026)
 
@@ -71,6 +71,23 @@ Done on 12 November 2026 (deployment live 2026-11-11 19:49 UTC):
 - **Sessions already saved to the old Drive stay there.** A session marked "Saved" is not uploaded again after the reconnect or the folder change; to have it in the Shared Drive, copy its files there by hand (download and upload them if the old Drive belongs to a personal Google account). Unfinished uploads (waiting or failed) start again in the newly picked folder.
 
 The **Google Workspace** route for SMTP below applies (with the notifications mailbox in place of the `notify@` examples).
+
+## One company Google account (ADR-0074, web and desktop 1.6.2)
+
+Paramount AI now saves everyone's calls with **one company Google account**, connected once by an admin. **No Google token is ever sent to a page or the desktop app**: Kite's server makes each session's folders, starts each recording upload and gives the app only that upload's address (good for that one file), checks every finished file, and uploads the transcript and notes itself.
+
+**Set it up (an admin, once, in a web browser):**
+
+1. In Google Workspace, use (or create) the company account that will own the saving, for example the notifications mailbox. Add it to the Shared Drive **Paramount AI Calls** as **Content manager** (or Contributor).
+2. Sign in to Paramount AI as an admin → Settings → Google Drive → **Company Google Drive** → **Connect company Google account**. On Google's page choose the **company account** and allow access (`drive.file` only).
+3. Back in Settings, press **Choose folder**. Google asks which account (choose the **company account** again), then the Picker opens: **Shared drives → Paramount AI Calls →** the folder → **Select**. A folder picked while signed in to another account is refused ("The company account cannot open that folder").
+4. Settings shows "Company Drive · <folder> ↗" for everyone. Each person keeps their own **Save calls**, **Email me** and **Also notify** settings (copied from before).
+
+**People:** nothing to connect. A recording made in desktop 1.6.0 or 1.6.1 waits with "Update Paramount AI to upload recordings" until the app updates to 1.6.2; its transcript and notes are saved at once.
+
+**Reconnect:** if Google refuses the company token (access removed), Settings shows "Google Drive needs an admin to reconnect it" for everyone; an admin presses **Reconnect company Google account**. Waiting uploads continue afterwards; the folder is kept.
+
+The OAuth client's **Authorised JavaScript origins** (step 4) must include both addresses: the Picker's sign-in popup (Google Identity Services) runs on them.
 
 ### Shared Drives
 
@@ -137,7 +154,7 @@ Without `CRON_SECRET` the daily job does nothing (the route answers 404); emails
 
 ## Database
 
-The feature adds two tables (migration `apps/web/drizzle/0003_drive_connection.sql`, additive only). Apply once, after reading it:
+The feature adds two tables (migration `apps/web/drizzle/0003_drive_connection.sql`, additive only), and ADR-0074 two more (`0004_company_drive.sql`: `drive_company`, `drive_member`, and each person's switches copied from `google_drive`). Apply once, after reading them:
 
 ```sh
 pnpm --filter web db:migrate --prod
@@ -147,11 +164,14 @@ pnpm --filter web db:migrate --prod
 
 | Settings / card says | Cause | Fix |
 |---|---|---|
-| The sign-in page appears after Connect (desktop app) | Connect opens in the system browser, which is not signed in to Paramount AI | Sign in there, then press Connect Google Drive again (in the app or in the browser's Settings) |
+| The sign-in page appears after Connect (desktop app) | Connect opens in the system browser, which is not signed in to Paramount AI | Sign in there, then press Connect again (in the browser's Settings) |
+| Only an admin connects the company Google account | Connect was pressed by someone who is not an admin | An admin connects it (ADR-0074) |
+| The company account cannot open that folder | The folder was picked while signed in to another Google account, or the company account is not a member of the Shared Drive | Add the company account to the Shared Drive; Choose folder again, signed in as the company account |
+| Update Paramount AI to upload recordings | Desktop 1.6.0 or 1.6.1 (they need a token, which is never given) | Update to 1.6.2 (Menu → Check for updates); the recordings then upload |
 | Google Drive is not set up on this server yet | `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` missing in this deployment | Add them, deploy |
 | Google refused the connection / redirect_uri_mismatch on Google's page | The redirect URI for this address is not registered | Add it exactly (step 4) |
 | Google Picker could not be loaded / Picker shows an error | Picker key missing, restricted to other sites, or Picker API not enabled; or `NEXT_PUBLIC_GOOGLE_APP_ID` is the project id instead of the number | Steps 2, 5, 6 |
-| Reconnect Google Drive | Testing-mode 7-day expiry, access removed, or the project changed | Reconnect; publish the app (step 3) to stop weekly expiry |
-| The Drive folder could not be opened | The folder was deleted or access to it removed | Settings → Change folder, then Retry |
+| Google Drive needs an admin to reconnect it | The company account's access was removed or expired, or the project changed | An admin: Reconnect company Google account |
+| The company Drive folder could not be opened | The folder was deleted, or the company account lost access to it | An admin: Change folder; then Retry on the cards |
 | Email not set up | One of the five SMTP values is missing (or SMTP_PORT is not a number) | Add it, deploy |
 | Email failed (Recent notifications) | Wrong password or sender, SMTP AUTH off, or the server unreachable | Send test email to see which; fix; Retry |

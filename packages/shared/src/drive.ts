@@ -49,9 +49,10 @@ export const DRIVE_NOTIFICATIONS_SHOWN = 20;
 /**
  * The account's Google Drive connection:
  * - not-connected: never connected, or disconnected;
+ * (ADR-0074: the COMPANY account's connection, made by an admin; people no longer connect.)
  * - connected: a refresh token is stored and worked last time;
  * - reconnect: Google refused the stored token (revoked, expired, or the project changed); uploads
- *   wait, queued, until the person connects again.
+ *   wait, queued, until an admin reconnects.
  */
 export type DriveConnectionStatus = 'not-connected' | 'connected' | 'reconnect';
 
@@ -71,11 +72,15 @@ export interface DriveFolder {
 export interface DriveStatusResponse {
   /** False when the deployment has no Google client (GOOGLE_CLIENT_ID / _SECRET not set). */
   configured: boolean;
-  /** The connection. */
+  /** The company connection (ADR-0074). */
   status: DriveConnectionStatus;
-  /** The chosen folder, or null until one is picked. */
+  /** The company folder, or null until an admin picks one. */
   folder: DriveFolder | null;
-  /** "Save calls to Google Drive" (on by default after connecting). */
+  /** True for an admin (who connects the company account and picks the folder). */
+  admin: boolean;
+  /** The company Google account's address: admins only (null for everyone else, or unknown). */
+  account: string | null;
+  /** The person's "Save calls to Google Drive" (on by default). */
   saveEnabled: boolean;
   /** The "saved" email. */
   email: {
@@ -88,20 +93,117 @@ export interface DriveStatusResponse {
   };
 }
 
-/** GET /api/google/access-token: a short-lived token for Drive calls from this device. */
-export interface DriveAccessTokenResponse {
-  /** The OAuth access token (about an hour). Never stored by the page beyond its expiry. */
-  accessToken: string;
-  /** When it stops working (Unix ms), with a minute's margin taken off. */
-  expiresAt: number;
-}
-
-/** GET /api/google/picker-config: what Google Picker needs besides the access token. */
+/**
+ * GET /api/google/picker-config (admins only): what Google Picker needs. ADR-0074: the Picker's token is
+ * NOT Kite's: the admin's page asks Google Identity Services for its own short-lived one (clientId,
+ * hint = account), holds it in memory for the Picker only, and never sends it anywhere.
+ */
 export interface DrivePickerConfig {
   /** The Picker API key (restricted to the Picker API and Kite's addresses). */
   apiKey: string;
   /** The Google Cloud project number (setAppId), so the picked folder is shared with Kite. */
   appId: string;
+  /** The OAuth client id (public), for Google Identity Services' token popup. */
+  clientId: string;
+  /** The company account's address, to preselect it in Google's popup; null when unknown. */
+  account: string | null;
+}
+
+/** POST /api/drive/session-folder (ADR-0074): the server finds or makes a session's folders. */
+export interface DriveSessionFolderRequest {
+  /** The session (a UUID). */
+  sessionId: string;
+  /** The session folder's name, used only when it is made ("<date> <Company> – <title>"). */
+  name: string;
+}
+
+/** The session's folders. */
+export interface DriveSessionFolderResponse {
+  /** The session folder. */
+  folderId: string;
+  /** Its Recordings subfolder. */
+  recordingsId: string;
+  /** Its Transcripts subfolder. */
+  transcriptsId: string;
+}
+
+/** POST /api/drive/uploads (ADR-0074): one recording file to upload. */
+export interface DriveUploadStartRequest {
+  /** The session. */
+  sessionId: string;
+  /** The file's stable key ('rec:<recording id>:main' or ':stereo'). */
+  key: string;
+  /** Its name in Drive. */
+  name: string;
+  /** Its type ('video/x-matroska', 'video/webm' or 'audio/webm'). */
+  mimeType: string;
+  /** Its size in bytes. */
+  bytes: number;
+}
+
+/**
+ * The reply: the file is already in Drive, or an upload was started. The client gets ONLY that upload's
+ * session address (valid for that one file) and a ticket the server signed for it; never a token.
+ */
+export type DriveUploadStartResponse =
+  | {
+      /** Already in Drive (saved before this device lost track of it). */
+      status: 'exists';
+      /** Its Drive id. */
+      fileId: string;
+    }
+  | {
+      /** Started. */
+      status: 'started';
+      /** The resumable session's address. */
+      uploadUrl: string;
+      /** The server's ticket for this upload (for offset and complete). */
+      ticket: string;
+    };
+
+/** POST /api/drive/uploads/offset: where an upload got to (a restart or a resume). */
+export interface DriveUploadOffsetRequest {
+  /** The session address. */
+  uploadUrl: string;
+  /** Its ticket. */
+  ticket: string;
+}
+
+/** The reply: how far, finished (with the file), or gone (start again). */
+export type DriveUploadOffsetResponse =
+  | {
+      /** Partly sent. */
+      state: 'partial';
+      /** Bytes Google has. */
+      offset: number;
+    }
+  | {
+      /** Finished. */
+      state: 'done';
+      /** The file. */
+      fileId: string;
+    }
+  | {
+      /** The session is gone (a week old, or cancelled). */
+      state: 'expired';
+    };
+
+/** POST /api/drive/uploads/complete: the client says it finished; the server verifies the file. */
+export interface DriveUploadCompleteRequest {
+  /** The session address. */
+  uploadUrl: string;
+  /** Its ticket. */
+  ticket: string;
+  /** The Drive id Google answered with. */
+  fileId: string;
+  /** The whole file's MD5 (hex), when the client computed it (desktop 1.6.2). */
+  md5?: string;
+}
+
+/** The reply (and the reply of POST /api/drive/files): the verified file. */
+export interface DriveVerifiedFile {
+  /** Its Drive id, checked by the server with the company token (tag, size, MD5). */
+  fileId: string;
 }
 
 /** POST /api/google/folder: the folder picked in Google Picker. */
@@ -264,8 +366,14 @@ export interface DriveUploadRequest {
   track: RecordingTrack;
   /** The resumable session's address (https://www.googleapis.com/upload/drive/v3/files?…upload_id=…). */
   uploadUrl: string;
-  /** A short-lived access token for the requests. */
-  accessToken: string;
+  /**
+   * 1.6.0 and 1.6.1 required a token here. ADR-0074: never sent any more; a 1.6.2 shell uploads with the
+   * session address alone (no Authorization header). Older shells refuse a request without it, so the
+   * page does not send them recordings (they wait for the update).
+   */
+  accessToken?: string;
+  /** 1.6.2: the offset Google already has, from the server (the shell starts there without asking). */
+  startOffset?: number;
 }
 
 /**
@@ -285,9 +393,11 @@ export type DriveUploadResult =
       fileId: string;
       /** Its size. */
       bytes: number;
+      /** 1.6.2: the whole file's MD5 (hex), for the server's check. */
+      md5?: string;
     }
   | {
-      /** Stopped for a call ('paused') or for a new token ('auth'). */
+      /** Stopped for a call ('paused') or for a new token ('auth', 1.6.0 and 1.6.1 only). */
       status: 'paused' | 'auth';
       /** Bytes Google has. */
       offset: number;

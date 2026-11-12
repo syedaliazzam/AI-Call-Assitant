@@ -525,6 +525,11 @@ export interface DriveFileJob {
   bytes: number;
   /** Bytes Google has so far. */
   sent: number;
+  /**
+   * ADR-0074: the server's signed ticket for this upload (recording files), sent back with the address to
+   * ask where it got to and to have the finished file verified. Not a Google token.
+   */
+  ticket?: string;
   /** The resumable upload session's address while uploading (valid about a week). */
   uploadUrl?: string;
   /** The file's Drive id once saved. */

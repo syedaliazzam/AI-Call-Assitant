@@ -76,6 +76,8 @@ describe('the exposed bridge', () => {
       'consumeLinkCode',
       // 1.5.0 (ADR-0068): meeting recording, the player, displays and this computer's name.
       'deviceIdentity',
+      // 1.6.2 (ADR-0074): a recording file's size (and uploads without a token).
+      'driveFileSize',
       // 1.6.0 (ADR-0072): Google Drive uploads of recordings.
       'driveUpload',
       // v1.3.0 (ADR-0056): the six positions.

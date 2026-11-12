@@ -4,9 +4,9 @@
  *          the profile at a time (a Web Lock), so two windows never upload the same file. The page's
  *          platform supplies the desktop shell's recording uploads and notifications (none in a browser).
  * Used by: src/features/drive/DriveUploader.tsx
- * Depends on: src/core/drive/{api,google,callFiles,queue,uploader}.ts, src/core/storage (sessions,
+ * Depends on: src/core/drive/{api,callFiles,queue,uploader}.ts, src/core/storage (sessions,
  *             driveUploads), src/platform/types.ts (types only)
- * Architecture: ADR-0072
+ * Architecture: ADR-0072, ADR-0074 (no Google client or token in the page)
  */
 import type { Platform } from '@/platform/types';
 import { deleteDriveJob, listDriveJobs, nextDriveJob, putDriveJob } from '../storage/driveUploads';
@@ -14,7 +14,6 @@ import { listRecordings } from '../storage/recordings';
 import { getSession } from '../storage/sessions';
 import { driveApi } from './api';
 import { buildCallFiles } from './callFiles';
-import { createDriveClient } from './google';
 import { callIsLive } from './queue';
 import { runDriveQueue, type KnownRecording, type RunOutcome, type UploaderDeps } from './uploader';
 
@@ -37,16 +36,17 @@ export function createUploaderDeps(
   const drive = platform.drive;
   const recording = platform.recording;
   return {
+    // ADR-0074: no Google client and no token in the page; the server does the Drive work.
     api,
-    drive: createDriveClient({
-      fetch: (input, init) => fetch(input, init),
-      token: async (fresh) => (await api.token(fresh)).accessToken,
-    }),
     host:
       drive && recording
         ? {
             recordings: () => recording.list(),
             upload: (request, onProgress) => drive.upload(request, onProgress),
+            // 1.6.2: only a shell that uploads without a token has it.
+            ...(drive.fileSize
+              ? { fileSize: (recordingId, track) => drive.fileSize!(recordingId, track) }
+              : {}),
           }
         : null,
     jobs: {

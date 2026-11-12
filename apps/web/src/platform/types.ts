@@ -663,7 +663,7 @@ export interface DriveHost {
   /**
    * Uploads one recording file to a resumable upload session, from where Google says it got to.
    *
-   * @param request    The recording, its file, the upload address and an access token.
+   * @param request    The recording, its file, the upload address (ADR-0074: no token from 1.6.2).
    * @param onProgress Called after each chunk.
    * @returns How it ended ('paused' when a call started).
    */
@@ -671,6 +671,16 @@ export interface DriveHost {
     request: DriveUploadRequest,
     onProgress: (progress: DriveUploadProgress) => void,
   ): Promise<DriveUploadResult>;
+
+  /**
+   * Desktop 1.6.2 (ADR-0074): a recording file's size; absent on 1.6.0 and 1.6.1, which cannot upload
+   * without a token (their recordings wait for the update).
+   *
+   * @param recordingId The recording.
+   * @param track       Its main file or its stereo sound file.
+   * @returns The size, or null when the file is not on this computer.
+   */
+  fileSize?(recordingId: string, track: RecordingTrack): Promise<number | null>;
 
   /**
    * Shows a native notification; a click opens its Drive link in the system browser.

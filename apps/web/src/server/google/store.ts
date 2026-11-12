@@ -1,13 +1,12 @@
 /**
  * File: apps/web/src/server/google/store.ts
- * Purpose: The google_drive and drive_notification rows (ADR-0072): saving the encrypted refresh
- *          token, the picked folder and the person's switches; marking a connection "reconnect";
- *          deleting it; and the one-email-per-call record (ADR-0073: per call, keyed by report.ts
+ * Purpose: The drive_notification rows (ADR-0072; the company connection and each person's choices are
+ *          in company.ts since ADR-0074): the one-email-per-call record (ADR-0073: per call, keyed by report.ts
  *          notificationKey, which the functions below take as `sessionId`): the devices' reports merged into it
  *          (compare-and-swap, as the driver has no transactions), "collecting" until every file is in,
  *          then taken for its one email by an update only one request can win. Every statement is
  *          limited to one account, except the daily overdue list.
- * Used by: src/server/google/api.ts, src/server/google/tokens.ts
+ * Used by: src/server/google/api.ts
  * Depends on: drizzle-orm, src/server/schema.ts, src/server/calldata/crypto.ts (seal, open),
  *             src/server/calldata/store.ts (CallDataDb type)
  * Architecture: ADR-0072, ADR-0073 (encryption as ADR-0049; migrations additive only, ADR-0050)
@@ -19,170 +18,10 @@ import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { DriveExpectedRecording, DriveNotificationStatus, DriveSavedFile } from '@kite/shared';
 import { open, seal, type DataKeys } from '../calldata/crypto';
 import type { CallDataDb } from '../calldata/store';
-import { driveNotification, googleDrive, user } from '../schema';
-
-/** The GCM binding kind of a refresh token (never a call_record kind). */
-const TOKEN_KIND = 'google-refresh-token';
+import { driveNotification, user } from '../schema';
 
 /** The GCM binding kind of a notification's content. */
 const NOTIFICATION_KIND = 'drive-notification';
-
-/** A connection as the handlers use it (the token still encrypted). */
-export type DriveConnectionRow = typeof googleDrive.$inferSelect;
-
-/**
- * The account's connection.
- *
- * @param db     The database.
- * @param userId The account.
- * @returns The row, or null when not connected.
- * Called from: api.ts, tokens.ts; tests
- */
-export async function getConnection(
-  db: CallDataDb,
-  userId: string,
-): Promise<DriveConnectionRow | null> {
-  const rows = await db.select().from(googleDrive).where(eq(googleDrive.userId, userId)).limit(1);
-  return rows[0] ?? null;
-}
-
-/**
- * Stores a new refresh token (connect or reconnect). A reconnect keeps the folder, the switches and
- * the team list, so queued uploads carry on where they were.
- *
- * @param db           The database.
- * @param keys         The data keys.
- * @param userId       The account.
- * @param refreshToken The token from Google (encrypted here, never stored readable).
- * @returns When stored.
- * Called from: handleCallback() in api.ts; tests
- */
-export async function saveConnection(
-  db: CallDataDb,
-  keys: DataKeys,
-  userId: string,
-  refreshToken: string,
-): Promise<void> {
-  const sealed = seal(keys, { userId, kind: TOKEN_KIND, id: userId }, refreshToken);
-  const now = new Date();
-  await db
-    .insert(googleDrive)
-    .values({
-      userId,
-      keyVersion: sealed.keyVersion,
-      refreshToken: sealed.content,
-      status: 'connected',
-      connectedAt: now,
-    })
-    .onConflictDoUpdate({
-      target: googleDrive.userId,
-      set: {
-        keyVersion: sealed.keyVersion,
-        refreshToken: sealed.content,
-        status: 'connected',
-        connectedAt: now,
-        updatedAt: now,
-      },
-    });
-}
-
-/**
- * Decrypts a connection's refresh token (in memory only, for one refresh or the revoke).
- *
- * @param keys The data keys.
- * @param row  The connection.
- * @returns The token.
- * @throws DataKeyError when its key version is not set; Error when the ciphertext does not belong to
- *         this account.
- * Called from: tokens.ts, api.ts (disconnect); tests
- */
-export function readRefreshToken(keys: DataKeys, row: DriveConnectionRow): string {
-  return open(
-    keys,
-    { userId: row.userId, kind: TOKEN_KIND, id: row.userId },
-    row.keyVersion,
-    row.refreshToken,
-  );
-}
-
-/**
- * Stores the picked folder.
- *
- * @param db     The database.
- * @param userId The account.
- * @param folder The folder as Drive describes it.
- * @returns False when the account is not connected.
- * Called from: handleFolder() in api.ts; tests
- */
-export async function setFolder(
-  db: CallDataDb,
-  userId: string,
-  folder: { id: string; name: string; driveId: string | null },
-): Promise<boolean> {
-  const rows = await db
-    .update(googleDrive)
-    .set({ folderId: folder.id, folderName: folder.name, driveId: folder.driveId })
-    .where(eq(googleDrive.userId, userId))
-    .returning({ userId: googleDrive.userId });
-  return rows.length > 0;
-}
-
-/** The switches and team list Settings changes. */
-export interface DriveSettingsPatch {
-  /** "Save calls to Google Drive". */
-  saveEnabled?: boolean;
-  /** "Email me when a call is saved". */
-  emailEnabled?: boolean;
-  /** The team list, already checked and lower-cased. */
-  alsoNotify?: string[];
-}
-
-/**
- * Changes the person's switches or team list.
- *
- * @param db     The database.
- * @param userId The account.
- * @param patch  What changes.
- * @returns False when the account is not connected.
- * Called from: handleSettings() in api.ts; tests
- */
-export async function updateSettings(
-  db: CallDataDb,
-  userId: string,
-  patch: DriveSettingsPatch,
-): Promise<boolean> {
-  if (Object.keys(patch).length === 0) return (await getConnection(db, userId)) !== null;
-  const rows = await db
-    .update(googleDrive)
-    .set(patch)
-    .where(eq(googleDrive.userId, userId))
-    .returning({ userId: googleDrive.userId });
-  return rows.length > 0;
-}
-
-/**
- * Marks a connection "reconnect": Google refused its token. The row (folder, switches) stays.
- *
- * @param db     The database.
- * @param userId The account.
- * @returns When done.
- * Called from: tokens.ts; tests
- */
-export async function markReconnect(db: CallDataDb, userId: string): Promise<void> {
-  await db.update(googleDrive).set({ status: 'reconnect' }).where(eq(googleDrive.userId, userId));
-}
-
-/**
- * Deletes the connection (Disconnect, after the token was revoked).
- *
- * @param db     The database.
- * @param userId The account.
- * @returns When done.
- * Called from: handleDisconnect() in api.ts; tests
- */
-export async function deleteConnection(db: CallDataDb, userId: string): Promise<void> {
-  await db.delete(googleDrive).where(eq(googleDrive.userId, userId));
-}
 
 /** What a "saved" email says, stored encrypted so a failed one can be sent again. */
 export interface NotificationContent {
