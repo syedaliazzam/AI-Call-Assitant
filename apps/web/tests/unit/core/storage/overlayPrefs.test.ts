@@ -4,7 +4,8 @@
  * 82% default when unset or out of range; an old stored value (the window-opacity key, default 1)
  * is migrated once to the panel key, 1 becoming the default; fading away from the pointer is off by default
  * and never makes the panel more solid than the chosen value (the v1.0.2 bug: solid under the
- * pointer); blocked storage leaves the defaults.
+ * pointer); blocked storage leaves the defaults. 1.6.3 (ADR-0075): any setting paints the panel 92–100 %
+ * opaque (paintedPanelAlpha).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -16,7 +17,9 @@ import {
   OVERLAY_OPACITY,
   OVERLAY_OPACITY_KEY,
   OVERLAY_PANEL_ALPHA_KEY,
+  PANEL_ALPHA_FLOOR,
   paintedOpacity,
+  paintedPanelAlpha,
   setOverlayFadePref,
   setOverlayOpacityPref,
   setStartInOverlay,
@@ -111,5 +114,22 @@ describe('overlayPrefs', () => {
     expect(getOverlayOpacity()).toBe(OVERLAY_OPACITY.default);
     expect(getOverlayFade()).toBe(false);
     expect(() => setStartInOverlay(false)).not.toThrow();
+  });
+});
+
+describe('paintedPanelAlpha (1.6.3, ADR-0075)', () => {
+  it('maps the slider onto 92–100 %, the default 82 % to 97.6 %', () => {
+    expect(PANEL_ALPHA_FLOOR).toBe(0.92);
+    expect(paintedPanelAlpha(OVERLAY_OPACITY.min)).toBe(0.92);
+    expect(paintedPanelAlpha(OVERLAY_OPACITY.default)).toBe(0.976);
+    expect(paintedPanelAlpha(OVERLAY_OPACITY.max)).toBe(1);
+    expect(paintedPanelAlpha(0.7)).toBe(0.96);
+  });
+
+  it('never goes below the floor, even while fading away from the pointer', () => {
+    expect(paintedPanelAlpha(OVERLAY_OPACITY.min * FADE_AWAY_FACTOR)).toBe(0.92);
+    expect(paintedPanelAlpha(0)).toBe(0.92);
+    expect(paintedPanelAlpha(Number.NaN)).toBe(1);
+    expect(paintedPanelAlpha(5)).toBe(1);
   });
 });

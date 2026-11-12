@@ -9,7 +9,8 @@
  *          src/features/settings/OverlaySetting.tsx
  * Depends on: nothing (localStorage)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (compact view); ADR-0029, ADR-0033,
- *               ADR-0039 (v1.0.3: the panel opacity setting and its migration)
+ *               ADR-0039 (v1.0.3: the panel opacity setting and its migration), ADR-0075 (1.6.3: the
+ *               panel is painted nearly solid whatever the setting)
  *
  * v1.0.3 (ADR-0039): the panel was solid in v1.0.2 because "fade" was on by default and painted the
  * panel at 100% whenever the pointer was over it (and the overlay started as "hovered"), and an old
@@ -52,6 +53,31 @@ export const FADE_AWAY_FACTOR = 0.6;
 // nominal text contrast is low (~2.4:1) and the text shadow carries legibility; the developer chose
 // not to raise it.
 export const OVERLAY_OPACITY = { min: 0.4, max: 1, default: 0.82 };
+
+/**
+ * 1.6.3 (ADR-0075): the least background opacity a panel is painted with. The developer found the
+ * panels too see-through: apps behind showed through the answer and transcript. The desktop window
+ * cannot blur what is behind it (its page's backdrop-filter only sees the page), so the background
+ * itself must be nearly solid.
+ */
+export const PANEL_ALPHA_FLOOR = 0.92;
+
+/**
+ * The background opacity a panel is painted with for an opacity setting (1.6.3, ADR-0075): the slider's
+ * whole range (40–100 %, or lower while fading away from the pointer) maps onto 92–100 %, so the
+ * setting still changes something but no setting lets the app behind show through the words.
+ *
+ * @param setting The opacity setting or the faded opacity (CompactLive.tsx paintedOpacity()), 0–1.
+ * @returns The panel's background alpha, PANEL_ALPHA_FLOOR–1, to three places.
+ * Called from: CompactView.tsx, ScriptBar.tsx
+ */
+export function paintedPanelAlpha(setting: number): number {
+  const span = OVERLAY_OPACITY.max - OVERLAY_OPACITY.min;
+  const share = Number.isFinite(setting)
+    ? Math.min(1, Math.max(0, (setting - OVERLAY_OPACITY.min) / span))
+    : 1;
+  return Math.round((PANEL_ALPHA_FLOOR + (1 - PANEL_ALPHA_FLOOR) * share) * 1000) / 1000;
+}
 
 /**
  * Reads a stored value.

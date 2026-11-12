@@ -752,9 +752,15 @@ test('ADR-0055: accounts without sync keep the classic bar 1 and chat bar', asyn
   const { page } = watched;
   const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
   await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveCount(0);
-  // Every key-cap still shows at 780, as before.
-  await expect(bar.getByRole('button', { name: 'Screenshot' }).locator('kbd')).toBeVisible();
-  expect(await bar.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  // 1.6.3 (ADR-0075): with Auto answer on the 780 bar, Screenshot's and Chat's key-caps give way
+  // first; Answer keeps its own, and the bar fits with ⋮ and Exit whole.
+  await expect(
+    bar.getByRole('button', { name: 'Answer', exact: true }).locator('kbd'),
+  ).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'Screenshot' }).locator('kbd')).toHaveCount(0);
+  await expect
+    .poll(() => barFit(page))
+    .toMatchObject({ barFits: true, leftFits: true, exitInside: true, menuInside: true });
   await bar.getByRole('button', { name: 'Chat' }).click();
   const chat = page.getByRole('group', { name: 'Chat' });
   await expect(chat.getByLabel('Type a question')).toHaveAttribute(
@@ -766,7 +772,12 @@ test('ADR-0055: accounts without sync keep the classic bar 1 and chat bar', asyn
 });
 
 test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothing cut off', async () => {
-  const watched = await openOverlayView(BARS_SIZE, '&panels=none&shell=1');
+  // 1.6.3 (ADR-0075): at the desktop overlay's default width, which every key-cap fits with Auto answer
+  // on the bar (a narrower window drops them first, measured).
+  const watched = await openOverlayView(
+    { width: 980, height: 480, touch: false },
+    '&panels=none&shell=1',
+  );
   const { page } = watched;
   const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
   expect((await bar.boundingBox())!.height).toBeCloseTo(44, 0);
@@ -785,6 +796,8 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
     expect.stringMatching(/^Chat/),
     // ADR-0055: the Transcript pill with its switch.
     'Transcript',
+    // 1.6.3 (ADR-0075): Auto answer moved here from its floating pill.
+    'Auto answer',
     'Drag here to move',
     'Shrink to an icon',
     'Call time',
@@ -798,17 +811,13 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
   await expect(bar.getByRole('button', { name: 'Chat' }).locator('kbd')).toContainText('␣');
   await shot(watched, BARS_SIZE, 'call-bars');
   // At the width a 1.1.0 window keeps, at its smallest, and in a narrow picture-in-picture window,
-  // everything still fits.
+  // everything still fits: nothing on the left is cut off, and ⋮ and Exit are whole.
   const exit = bar.getByRole('button', { name: 'Exit: end call' });
   for (const width of [900, 780, 680, 560, 460]) {
     await page.setViewportSize({ width, height: 400 });
-    /**
-     * Whether nothing on the bar is cut off.
-     *
-     * @returns True when it fits.
-     */
-    const fits = () => bar.evaluate((element) => element.scrollWidth <= element.clientWidth);
-    expect(await fits(), `bar 1 fits ${width}`).toBe(true);
+    await expect
+      .poll(() => barFit(page), { message: `bar 1 fits ${width}` })
+      .toMatchObject({ barFits: true, leftFits: true, exitInside: true, menuInside: true });
   }
   // Exit is red, and one press ends the call (9 Nov 2026: no "End call?" step).
   await page.setViewportSize({ width: 780, height: 400 });
@@ -819,7 +828,7 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
   await watched.context.close();
 });
 
-test('S13: bar 2 is narrower and left-aligned, the level button opens the transcript, Auto answer sits apart', async () => {
+test('S13: bar 2 is narrower and left-aligned, the level button opens the transcript; Auto answer is on bar 1 (1.6.3)', async () => {
   const watched = await openOverlayView(BARS_SIZE, '&panels=none');
   const { page } = watched;
   const bar1 = (await page.getByRole('toolbar', { name: 'Overlay controls' }).boundingBox())!;
@@ -829,10 +838,13 @@ test('S13: bar 2 is narrower and left-aligned, the level button opens the transc
   expect(bar2.width).toBeLessThan(bar1.width - 100);
   await expect(region.getByRole('button', { name: /^Answer language: / })).toBeVisible();
   await expect(region.getByRole('button', { name: 'Clear' }).locator('kbd')).toContainText('⌫');
-  // The pill is to its right, and toggles.
-  const pill = page.getByRole('button', { name: /^Auto answer / });
-  expect((await pill.boundingBox())!.x).toBeGreaterThan(bar2.x + bar2.width);
-  await pill.click();
+  // 1.6.3 (ADR-0075): no floating Auto answer pill beside it; the toggle is on bar 1, and toggles.
+  await expect(page.getByRole('button', { name: /^Auto answer / })).toHaveCount(0);
+  const toggle = page
+    .getByRole('toolbar', { name: 'Overlay controls' })
+    .getByRole('switch', { name: 'Auto answer' });
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await toggle.click();
   expect(await watched.log()).toContainEqual({ type: 'auto-answer', on: true });
   // The page says how tall the bars are, so any shell from 1.1.0 fits them.
   const heights = (await watched.log())
@@ -973,14 +985,15 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   await expect(you.locator(':scope > span').last()).toHaveCSS('font-weight', '600');
   await expect(you.locator(':scope > span').first()).toHaveCSS('font-size', '14px');
 
-  // The header: nav chips, Auto answer, Clear and collapse, in one line.
+  // The header: nav chips, Clear and collapse, in one line (1.6.3: Auto answer is on bar 1).
   await expect(
     answer.getByRole('button', { name: 'Previous question' }).locator('kbd'),
   ).toContainText('←');
   await expect(answer.getByRole('button', { name: 'Next question' }).locator('kbd')).toContainText(
     '→',
   );
-  await expect(answer.getByRole('button', { name: /^Auto answer / })).toBeVisible();
+  await expect(answer.getByRole('button', { name: /^Auto answer / })).toHaveCount(0);
+  await expect(answer.getByRole('switch', { name: 'Auto answer' })).toHaveCount(0);
   await expect(answer.getByRole('button', { name: 'Clear' }).locator('kbd')).toContainText('⌫');
   // The card: the question with a 2 px accent bar, then the bold line.
   const question = answer.getByLabel('Question', { exact: true });
@@ -1118,6 +1131,9 @@ test('ADR-0056: the bottom row mirrors the overlay; the ⋮ Position grid; Ctrl+
   await shot(watched, OVERLAY_SIZES.default, 'overlay-position-grid');
 });
 
+/** 1.6.3 (ADR-0075): what overlayPrefs.ts paintedPanelAlpha() paints for the two settings tested. */
+const PAINTED_ALPHA: Readonly<Record<number, number>> = { 0.4: 0.92, 0.82: 0.976 };
+
 test('overlay look: panel background at 40% and 82% over light and dark busy backgrounds (ADR-0033)', async () => {
   // The opacity slider dims the panel background only; the text stays opaque with a shadow. Render
   // the minimum (0.4) and the default (0.82, spec §1) over each backdrop and size.
@@ -1157,7 +1173,8 @@ test('overlay look: panel background at 40% and 82% over light and dark busy bac
           };
         });
         expect(look).toEqual({
-          background: `rgba(24, 24, 27, ${alpha})`,
+          // 1.6.3 (ADR-0075): the setting maps onto 92–100 %, on a darker base (paintedPanelAlpha()).
+          background: `rgba(17, 17, 20, ${PAINTED_ALPHA[alpha]})`,
           textShadow: 'rgba(0, 0, 0, 0.6) 0px 1px 2px',
           radius: '12px',
           blur: 'blur(16px)',
@@ -1273,5 +1290,322 @@ test('browser split view: the shared screen is big, with nothing laid over most 
   await expect(watched.page.getByRole('button', { name: 'End', exact: true })).toBeVisible();
   await watched.page.getByRole('button', { name: 'Show answers' }).click();
   await expect(watched.page.getByRole('button', { name: /^Answer/ })).toBeVisible();
+  await watched.context.close();
+});
+
+/** 1.6.3: the desktop overlay window's real sizes (apps/desktop/src/windows.ts COMPACT_DEFAULT_SIZE, COMPACT_MIN_SIZE). */
+const DESKTOP_OVERLAY = {
+  default: { width: 980, height: 480, touch: false },
+  narrowest: { width: 560, height: 260, touch: false },
+} as const;
+
+/**
+ * 1.6.3: opens the overlay as desktop 1.6.2 has it (positions, the icon, click-through), at a size,
+ * over a busy light page (what shows through the panels).
+ *
+ * @param size  The window.
+ * @param extra More of the address: position, panels, rec, private, auto.
+ * @returns The page, with a way to read what it asked for.
+ */
+async function openDesktopOverlay(size: Width, extra: string) {
+  const watched = await openOverlayView(size, `&shell=1${extra}`);
+  await watched.page.evaluate((image) => {
+    document.documentElement.style.backgroundImage = image;
+    document.documentElement.style.backgroundAttachment = 'fixed';
+  }, BACKDROPS.light);
+  return watched;
+}
+
+test('1.6.3 overlay pictures: top and bottom rows, recording with Private off, the narrowest window', async () => {
+  test.skip(!SHOT_DIR, 'pictures only (KITE_SCREENSHOT_DIR)');
+  const CASES: readonly { name: string; size: Width; extra: string }[] = [
+    { name: 'top-answer', size: DESKTOP_OVERLAY.default, extra: '&position=top-center&rec=off' },
+    {
+      name: 'top-both',
+      size: DESKTOP_OVERLAY.default,
+      extra: '&position=top-center&rec=off&panels=transcript,answer',
+    },
+    {
+      name: 'bottom-answer',
+      size: DESKTOP_OVERLAY.default,
+      extra: '&position=bottom-center&rec=off',
+    },
+    {
+      name: 'bottom-transcript',
+      size: DESKTOP_OVERLAY.default,
+      extra: '&position=bottom-left&rec=off&panels=transcript',
+    },
+    {
+      name: 'bottom-both',
+      size: DESKTOP_OVERLAY.default,
+      extra: '&position=bottom-right&rec=off&panels=transcript,answer',
+    },
+    {
+      name: 'recording-private-off',
+      size: DESKTOP_OVERLAY.default,
+      extra: '&position=top-center&rec=on&private=off',
+    },
+    {
+      name: 'bottom-recording-private-off',
+      size: DESKTOP_OVERLAY.default,
+      extra: '&position=bottom-center&rec=on&private=off',
+    },
+    {
+      name: 'narrowest-recording-private-off-auto',
+      size: DESKTOP_OVERLAY.narrowest,
+      extra: '&position=top-center&rec=on&private=off&auto=on',
+    },
+    {
+      name: 'narrowest-bars',
+      size: DESKTOP_OVERLAY.narrowest,
+      extra: '&position=top-center&rec=off&panels=none',
+    },
+  ];
+  for (const { name, size, extra } of CASES) {
+    const watched = await openDesktopOverlay(size, extra);
+    await watched.page.evaluate(() => document.fonts.ready);
+    await watched.page.waitForTimeout(300);
+    await watched.page.screenshot({ path: path.join(SHOT_DIR, `overlay-163-${name}.png`) });
+    await watched.context.close();
+  }
+});
+
+/**
+ * 1.6.3 (ADR-0075): whether bar 1 fits its window: nothing scrolls sideways, the left side's content fits
+ * its room (nothing there is cut off), and ⋮ and Exit are whole inside the bar and the window.
+ *
+ * @param page The overlay's page.
+ * @returns What was measured, and the fit step the bar chose.
+ */
+async function barFit(page: Page) {
+  return page.evaluate(() => {
+    const bar = document.querySelector<HTMLElement>(
+      '[role="toolbar"][aria-label="Overlay controls"]',
+    )!;
+    const content = bar.querySelector<HTMLElement>('[data-fit-step]')!;
+    const room = content.parentElement!;
+    const barBox = bar.getBoundingClientRect();
+    const exit = bar.querySelector('button[aria-label="Exit: end call"]')!.getBoundingClientRect();
+    const menu = bar.querySelector('button[aria-label="Overlay menu"]')!.getBoundingClientRect();
+    const width = document.documentElement.clientWidth;
+    return {
+      barFits: bar.scrollWidth <= bar.clientWidth,
+      leftFits: content.offsetWidth <= room.clientWidth,
+      exitInside:
+        exit.width > 30 && exit.left >= barBox.left && exit.right <= Math.min(barBox.right, width),
+      menuInside: menu.width >= 30 && menu.left >= barBox.left && menu.right <= exit.left,
+      step: Number(content.dataset.fitStep),
+    };
+  });
+}
+
+/**
+ * 1.6.3: the overlay's address for a set of switches (see harness/live.tsx withOverlayParams()).
+ *
+ * @param extra The switches: position, panels, rec, private, auto.
+ * @returns The address.
+ */
+const overlayUrl = (extra: string) => `${origin}/?view=compact&glass=1&alpha=0.82&shell=1${extra}`;
+
+test('1.6.3: ⋮ and Exit are always whole; bar 1 gives way in order at the default and narrowest sizes', async () => {
+  for (const [sizeName, size] of Object.entries(DESKTOP_OVERLAY)) {
+    const watched = await openDesktopOverlay(size, '&position=top-center');
+    const { page } = watched;
+    for (const rec of ['off', 'on']) {
+      for (const privateSetting of ['on', 'off']) {
+        for (const auto of ['off', 'on']) {
+          const name = `${sizeName} rec ${rec}, Private ${privateSetting}, auto ${auto}`;
+          await page.goto(
+            overlayUrl(`&position=top-center&rec=${rec}&private=${privateSetting}&auto=${auto}`),
+          );
+          const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+          await expect(bar.getByRole('switch', { name: 'Auto answer' })).toHaveAttribute(
+            'aria-checked',
+            auto === 'on' ? 'true' : 'false',
+          );
+          if (rec === 'on' && privateSetting === 'off') {
+            await expect(page.locator('[data-private-off-warning]')).toBeVisible();
+          }
+          await expect
+            .poll(() => barFit(page), { message: name })
+            .toMatchObject({
+              barFits: true,
+              leftFits: true,
+              exitInside: true,
+              menuInside: true,
+            });
+          // Every control is still there (as an icon when short of room); the timer stays, short; so
+          // do move and compact.
+          for (const control of ['Answer', 'Chat', 'Overlay menu', 'Exit: end call']) {
+            await expect(bar.getByRole('button', { name: control, exact: true })).toBeVisible();
+          }
+          await expect(bar.getByRole('button', { name: /^Screenshot/ })).toBeVisible();
+          await expect(bar.getByRole('button', { name: 'Shrink to an icon' })).toBeVisible();
+          await expect(bar.getByRole('img', { name: 'Drag here to move' })).toBeVisible();
+          await expect(bar.getByRole('timer', { name: 'Call time' })).toHaveText(/^\d+:\d\d$/);
+          if (sizeName === 'default') {
+            // The default window keeps the words on Answer, Screenshot and Chat.
+            await expect(bar.getByRole('button', { name: 'Answer', exact: true })).toHaveText(
+              /^Answer/,
+            );
+          }
+        }
+      }
+    }
+    await watched.context.close();
+  }
+});
+
+test('1.6.3: an icon-only button names itself and its shortcut in a tooltip drawn in the page', async () => {
+  const watched = await openDesktopOverlay(
+    DESKTOP_OVERLAY.narrowest,
+    '&position=top-center&rec=on&private=off&auto=on',
+  );
+  const { page } = watched;
+  const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+  const answer = bar.getByRole('button', { name: 'Answer', exact: true });
+  // Icons only at the narrowest width with recording, Private off and auto answer on.
+  await expect(answer).toHaveText('');
+  await answer.hover();
+  const tip = page.getByRole('tooltip');
+  await expect(tip).toHaveText('Answer (Ctrl+↵)');
+  const tipBox = (await tip.boundingBox())!;
+  expect(tipBox.x).toBeGreaterThanOrEqual(0);
+  expect(tipBox.x + tipBox.width).toBeLessThanOrEqual(DESKTOP_OVERLAY.narrowest.width);
+  // Under the bar on the top row; no title attribute, so no tooltip window outside Private (ADR-0042).
+  expect(tipBox.y).toBeGreaterThanOrEqual((await bar.boundingBox())!.height);
+  await expect(answer).not.toHaveAttribute('title');
+  await bar.getByRole('switch', { name: 'Auto answer' }).hover();
+  await expect(tip).toHaveText('Auto answer: On');
+  await bar.getByRole('button', { name: /^Recording/ }).hover();
+  await expect(tip).toHaveText('Stop recording (Ctrl+Alt+R). Visible in recording');
+  await page.mouse.move(5, 200);
+  await expect(tip).toHaveCount(0);
+  // On the bottom row it opens above the bar.
+  await page.goto(overlayUrl('&position=bottom-center&rec=on&private=off&auto=on'));
+  const lowBar = (await bar.boundingBox())!;
+  await bar.getByRole('button', { name: 'Chat', exact: true }).hover();
+  await expect(tip).toHaveText('Chat (Ctrl+Shift+␣)');
+  const lowTip = (await tip.boundingBox())!;
+  expect(lowTip.y + lowTip.height).toBeLessThanOrEqual(lowBar.y);
+  await watched.context.close();
+});
+
+/** 1.6.3: a layout the view gave the shell, with the content height it asked for. */
+interface LoggedContentLayout {
+  /** The layout. */
+  layout: {
+    /** How tall the bars and panels are (v1.3.2), when a panel is open. */
+    contentHeight?: number;
+  };
+}
+
+test('1.6.3: on the bottom row the panels sit on the bars, mirrored from the top row with the same spacing', async () => {
+  /**
+   * The gap between the bars and the panels nearest them, and how much of the window the page asks for.
+   *
+   * @param page The overlay's page.
+   * @param up   True on the bottom row.
+   * @returns The gap (px) and the page's last reported content height.
+   */
+  const measure = (page: Page, up: boolean) =>
+    page.evaluate((bottomRow) => {
+      const bars = [...document.querySelectorAll('[data-bars]')].map((element) =>
+        element.getBoundingClientRect(),
+      );
+      const panels = [...document.querySelectorAll('[data-panel]')].map((element) =>
+        element.getBoundingClientRect(),
+      );
+      const log = (window as unknown as { overlayLog: unknown[] }).overlayLog;
+      const layouts = log.filter(
+        (entry) => typeof entry === 'object' && !!entry && 'layout' in entry,
+      ) as LoggedContentLayout[];
+      return {
+        gap: bottomRow
+          ? Math.min(...bars.map((box) => box.top)) - Math.max(...panels.map((box) => box.bottom))
+          : Math.min(...panels.map((box) => box.top)) - Math.max(...bars.map((box) => box.bottom)),
+        contentHeight: layouts.at(-1)?.layout.contentHeight ?? null,
+      };
+    }, up);
+  const CASES = [
+    { panels: 'answer', size: DESKTOP_OVERLAY.default },
+    { panels: 'transcript', size: DESKTOP_OVERLAY.default },
+    // Side by side (the shell widens the window to 1080 for both), and stacked in a narrow window.
+    { panels: 'transcript,answer', size: { width: 1080, height: 540, touch: false } },
+    { panels: 'transcript,answer', size: { width: 560, height: 440, touch: false } },
+  ] as const;
+  for (const { panels, size } of CASES) {
+    const watched = await openDesktopOverlay(size, `&position=top-left&panels=${panels}`);
+    const { page } = watched;
+    for (const column of ['left', 'center', 'right']) {
+      await page.goto(overlayUrl(`&panels=${panels}&position=top-${column}`));
+      await page.getByRole('toolbar', { name: 'Overlay controls' }).waitFor();
+      const above = await measure(page, false);
+      await page.goto(overlayUrl(`&panels=${panels}&position=bottom-${column}`));
+      await expect(page.locator('.k-overlay-root')).toHaveAttribute('data-row', 'bottom');
+      const below = await measure(page, true);
+      const name = `${panels} at ${size.width} px, ${column}`;
+      // The same 6 px gap as on the top row (gap-1.5), not the window's empty space.
+      expect(above.gap, `top: ${name}`).toBe(6);
+      expect(below.gap, `bottom: ${name}`).toBe(6);
+      // The page asks for no more of the window than the top row does, so the window shrinks to them.
+      expect(below.contentHeight, name).toBe(above.contentHeight);
+      if (panels === 'transcript,answer' && size.width < 900) {
+        // Stacked and mirrored: the transcript nearest the bars, the answer above it.
+        const transcript = (await page
+          .getByRole('region', { name: 'Transcript panel' })
+          .boundingBox())!;
+        const answer = (await page.getByRole('region', { name: 'Latest answer' }).boundingBox())!;
+        expect(answer.y + answer.height).toBeLessThanOrEqual(transcript.y);
+      }
+    }
+    await watched.context.close();
+  }
+});
+
+test('1.6.3: Auto answer is a toggle on bar 1; the recording warning shows once; the panels are nearly solid', async () => {
+  const watched = await openDesktopOverlay(
+    DESKTOP_OVERLAY.default,
+    '&position=top-center&rec=on&private=off',
+  );
+  const { page } = watched;
+  const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+  // No floating "Auto answer Off" box anywhere: one toggle, on bar 1, muted while off.
+  await expect(page.getByRole('button', { name: /^Auto answer / })).toHaveCount(0);
+  await expect(page.getByRole('switch', { name: 'Auto answer' })).toHaveCount(1);
+  const auto = bar.getByRole('switch', { name: 'Auto answer' });
+  await expect(auto).toHaveText('Auto');
+  await expect(auto).toHaveAttribute('aria-checked', 'false');
+  await auto.click();
+  expect(await watched.log()).toContainEqual({ type: 'auto-answer', on: true });
+
+  // The warning once: the bar with its fix; the Rec pill only "● Rec m:ss" and an amber dot.
+  await expect(
+    page.getByText('Private is off: Paramount AI will appear in your recording'),
+  ).toHaveCount(1);
+  await expect(page.getByText('Visible in recording')).toHaveCount(0);
+  const rec = bar.getByRole('button', { name: /^Recording, / });
+  await expect(rec).toHaveText(/^Rec \d+:\d\d$/);
+  await expect(rec.locator('[data-visible-in-recording]')).toBeVisible();
+  // Screen readers still hear it.
+  await expect(rec).toHaveAttribute('aria-label', /Visible in recording/);
+  await page.getByRole('button', { name: 'Turn Private back on' }).click();
+  await expect(page.locator('[data-private-off-warning]')).toHaveCount(0);
+  await expect(rec.locator('[data-visible-in-recording]')).toHaveCount(0);
+
+  // Nearly solid, darker panels; the secondary words a step lighter (#c4c4cc).
+  const looks = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('.k-overlay.k-glass')].map((element) => {
+      const style = getComputedStyle(element);
+      return {
+        background: style.backgroundColor,
+        muted: style.getPropertyValue('--ui-muted').trim(),
+      };
+    }),
+  );
+  expect(looks.length).toBeGreaterThan(2);
+  for (const look of looks) {
+    expect(look).toEqual({ background: 'rgba(17, 17, 20, 0.976)', muted: '#c4c4cc' });
+  }
   await watched.context.close();
 });

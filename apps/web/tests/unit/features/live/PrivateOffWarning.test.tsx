@@ -3,7 +3,8 @@
  * a screen recording runs with Private off (not for a sound-only recording, not while starting or off, not
  * when Private's state is unknown); it says "Private is off: Paramount AI will appear in your recording"
  * with the one-click "Turn Private back on", in the overlay's bar (with its bars attribute) and in the call
- * window; the Rec pill reads "Visible in recording".
+ * window; 1.6.3 (ADR-0075): the Rec pill shows only an amber dot for it (the words stay in its accessible
+ * name), so the warning is on screen once.
  */
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -50,7 +51,7 @@ describe('PrivateOffWarning', () => {
     expect(PRIVATE_BACK_ON_TEXT).toBe('Turn Private back on');
   });
 
-  it('puts "Visible in recording" on the Rec pill while recording', () => {
+  it('1.6.3: marks the Rec pill with an amber dot, not words, while recording with Private off', () => {
     const recording = {
       state: 'on' as const,
       startedAt: Date.now(),
@@ -73,7 +74,19 @@ describe('PrivateOffWarning', () => {
           visibleInRecording={visible}
         />,
       );
-    expect(pill(true)).toContain(VISIBLE_IN_RECORDING_TEXT);
+    /**
+     * The words a pill shows (its markup without tags and attributes).
+     *
+     * @param html The pill's markup.
+     * @returns Its visible text.
+     */
+    const shown = (html: string) => html.replace(/<[^>]*>/g, '').replace(/<!-- -->/g, '');
+    expect(shown(pill(true))).not.toContain(VISIBLE_IN_RECORDING_TEXT);
+    expect(shown(pill(true))).toMatch(/^Rec \d+:\d\d$/);
+    expect(pill(true)).toContain('data-visible-in-recording');
+    // Screen readers still hear it.
+    expect(pill(true)).toContain(`, ${VISIBLE_IN_RECORDING_TEXT}. Stop recording`);
+    expect(pill(false)).not.toContain('data-visible-in-recording');
     expect(pill(false)).not.toContain(VISIBLE_IN_RECORDING_TEXT);
   });
 });

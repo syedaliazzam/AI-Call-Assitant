@@ -1,8 +1,8 @@
 /**
  * File: apps/web/src/features/live/overlay/parts.tsx
  * Purpose: The small pieces the call bars and panels share (spec S13–S15, ADR-0041): button looks,
- *          key-caps, the level bars and their button, the language list, the Auto answer pill and the
- *          status icons.
+ *          key-caps, the level bars and their button, the language list and the status icons. (1.6.3,
+ *          ADR-0075: the Auto answer pill became a toggle on bar 1, ControlBar.tsx.)
  * Used by: src/features/live/CompactView.tsx, src/features/live/overlay/*, src/features/live/TopBar.tsx
  * Depends on: @kite/shared (KeycapHotkey), src/core/live/liveChannel.ts, src/core/storage/types.ts
  *             (languages), src/ui (KeyCap, icons), React
@@ -25,7 +25,7 @@ import { KeyCap } from '@/ui/KeyCap';
  * "px-0" would not beat a "px-2" in the same class list (the order in the stylesheet decides).
  */
 const BUTTON_SHAPE =
-  'inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-control text-[13px] font-medium disabled:opacity-50 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]';
+  'inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-control text-[13px] font-medium disabled:opacity-60 focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11 [-webkit-app-region:no-drag]';
 
 /** A button in a bar: not part of the drag handle, always a clear focus ring. */
 export const BUTTON_BASE = `${BUTTON_SHAPE} px-2`;
@@ -295,40 +295,5 @@ export function LanguageControl({
         </ul>
       )}
     </>
-  );
-}
-
-/**
- * The Auto answer pill: a toggle with a dot that says whether it is on.
- *
- * @param props.state     What the live page shows.
- * @param props.onCommand Sends a command to the live page.
- * @returns The pill.
- * Rendered by: CompactView.tsx, OverlayAnswer.tsx
- */
-export function AutoAnswerPill({
-  state,
-  onCommand,
-}: {
-  /** What the live page shows. */
-  state: CompactState | null;
-  /** Sends a command to the live page. */
-  onCommand: (command: CompactCommand) => void;
-}) {
-  const on = state?.autoAnswer ?? false;
-  return (
-    <button
-      type="button"
-      className={PILL}
-      aria-pressed={on}
-      disabled={!state}
-      onClick={() => onCommand({ type: 'auto-answer', on: !on })}
-    >
-      <span
-        aria-hidden="true"
-        className={`size-2 rounded-full ${on ? 'bg-ui-indicator' : 'bg-ui-muted'}`}
-      />
-      Auto answer {on ? 'On' : 'Off'}
-    </button>
   );
 }
