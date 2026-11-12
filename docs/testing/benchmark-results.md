@@ -750,3 +750,14 @@ i5-8350U laptop, Windows 11, plugged in. **Evidence:** the real call of 11 Nov 2
 | Web deployed | `call.paramountintelligence.co`, `kite-call-assistant.vercel.app` | The fixes are in the web app, so 1.6.0 gets them too. |
 | `Paramount-AI-Setup-1.6.1.exe` | 288,803,721 bytes; SHA-256 `97e6bb6cf468d4496194e36132c544154971fc8623bab1a6dc38aa28222a864b` | Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.6.1. Shell change: link routing only (one decision for a first start and a running app). |
 | Real-feed update check (`update-check.ts`, 1.6.0 extracted from its installer, never installed) | PASS | 1.6.0 found, downloaded and verified 1.6.1 from the real releases repository. |
+
+| Release check (1.6.2, ADR-0074, 12 Nov 2026) | Result | Notes |
+|---|---|---|
+| Lint, typecheck, unit tests, web build | web 2,031 of 2,031; desktop 242 of 242 | New: admin-only company connect, folder and disconnect; upload routes (tags per account, tickets bound to account and address, offset, verification by tag, size and MD5, mismatches binned); server-side small files (MD5, 4 MB cap); notify links only verified Drive ids; the page never asks for a token; 1.6.0/1.6.1 recordings wait; the shell uploads without an Authorization header from the server's offset and returns the MD5. |
+| Harness (local) | launcher 8/8, handoff 9/9, `sim-calls` 9/9 | |
+| CI (#58) | all jobs pass | Web, Windows desktop smoke, speech-to-text. |
+| Windows install check (`install-check.yml`, run by hand on the branch) | all expectations pass | A–F as before; **G (new) the published 1.6.1 → 1.6.2 by the updater**; opened directly. |
+| Migration 0004 (`db:migrate --prod`, approved) | applied | `drive_company` 0 rows (no admin has connected yet); `drive_member` 1 row copied from `google_drive` (1 row, no longer read). |
+| Web deployed, production smoke (signed in, codes only) | as designed | `/api/google/access-token` 404; status carries `admin` and `account` (null for a member); a member gets 403 on picker-config and folder and "admin-only" on connect; upload routes answer "not connected" until an admin connects. The test admin account is disabled, so the admin's picker-config was not checked in production (unit-tested). |
+| `Paramount-AI-Setup-1.6.2.exe` | 288,804,104 bytes; SHA-256 `b3e672587a62fcc39f93010036c2affc664f12858c24181804df664815581992` | Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.6.2. |
+| Real-feed update check (`update-check.ts`, 1.6.1 extracted from its installer, never installed) | PASS | 1.6.1 found, downloaded and verified 1.6.2 from the real releases repository. |
