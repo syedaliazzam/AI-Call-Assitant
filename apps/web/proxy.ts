@@ -4,6 +4,7 @@
  *          there is no session cookie, pages redirect to /login and API routes answer 401. The
  *          Google Drive connect and callback addresses (ADR-0072) are visited like pages (a link, which
  *          the desktop app opens in the system browser, and Google's redirect back), so they redirect.
+ *          The public /privacy and /terms pages (PUBLIC_PAGE_PATHS) open signed out.
  *          It only checks that the cookie EXISTS; the real checks (valid session, password
  *          changed, admin role) run on the server in requireUser() / requireAdmin().
  * Used by: Next.js (runs before matching routes)
@@ -24,18 +25,24 @@ export const PAGE_LIKE_API_PATHS: readonly string[] = [
 ];
 
 /**
+ * Public pages anyone may open signed out: the privacy policy and terms of use, which Google's OAuth
+ * consent screen links to (ADR-0072). They show no account data.
+ */
+export const PUBLIC_PAGE_PATHS: readonly string[] = ['/privacy', '/terms'];
+
+/**
  * Redirects or rejects requests that have no session cookie.
  *
  * @param request The incoming request.
  * @returns A redirect to /login (pages and PAGE_LIKE_API_PATHS), a 401 JSON response (other API
- *          routes), or "continue".
+ *          routes), or "continue" (signed in, or a PUBLIC_PAGE_PATHS page).
  * Called from: Next.js, before routing, for every request that config.matcher selects
  */
 export function proxy(request: NextRequest) {
-  if (getSessionCookie(request)) {
+  const path = request.nextUrl.pathname;
+  if (getSessionCookie(request) || PUBLIC_PAGE_PATHS.includes(path)) {
     return NextResponse.next();
   }
-  const path = request.nextUrl.pathname;
   if (path.startsWith('/api/') && !PAGE_LIKE_API_PATHS.includes(path)) {
     return NextResponse.json(
       { code: 'unauthorized', message: 'Sign in required' },
