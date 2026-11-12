@@ -28,12 +28,12 @@ import {
   type DriveUploadRequest,
   type DriveUploadResult,
   type LocalRecording,
+  type RecordingTrack,
 } from '@kite/shared';
 import { withCallFlags } from '../storage/driveUploads';
 import type { DriveCall, DriveFileJob, DriveSessionJob, Session } from '../storage/types';
 import { DriveApiError, type DriveApi } from './api';
 import type { CallFile } from './callFiles';
-import { DriveRequestError, tagValue, type DriveClient, type DriveTag } from './google';
 import { callFileDriveName, recordingDriveName, sessionFolderName, sessionTitle } from './names';
 import type { DriveReason } from './reasons';
 
@@ -48,14 +48,21 @@ export interface DriveRecordingHost {
   /** This computer's recordings (the shell's index). */
   recordings(): Promise<LocalRecording[]>;
   /**
-   * Uploads one recording file to an upload session.
-   * @param request    The recording, file, address and token.
+   * Uploads one recording file to an upload session (ADR-0074: its address only, no token).
+   * @param request    The recording, file, address and the offset to start at.
    * @param onProgress Called after each chunk.
    */
   upload(
     request: DriveUploadRequest,
     onProgress: (progress: DriveUploadProgress) => void,
   ): Promise<DriveUploadResult>;
+  /**
+   * Desktop 1.6.2 (ADR-0074): one recording file's size on this computer, or null when it is gone.
+   * Absent in 1.6.0 and 1.6.1, which cannot upload without a token: their recordings wait for the update.
+   * @param recordingId The recording.
+   * @param track       Its main file or its stereo sound file.
+   */
+  fileSize?(recordingId: string, track: RecordingTrack): Promise<number | null>;
 }
 
 /** A recording part the account knows of, with its start (to match it to a call). */
@@ -109,10 +116,20 @@ export interface DriveJobStore {
 
 /** What the uploader needs. */
 export interface UploaderDeps {
-  /** Kite's routes: status, tokens, the notification. */
-  api: Pick<DriveApi, 'status' | 'token' | 'notify'>;
-  /** Drive. */
-  drive: DriveClient;
+  /**
+   * Kite's routes: status, the notification, and (ADR-0074) the server-side folders and uploads. No
+   * Google token is ever asked for.
+   */
+  api: Pick<
+    DriveApi,
+    | 'status'
+    | 'notify'
+    | 'sessionFolder'
+    | 'startUpload'
+    | 'uploadOffset'
+    | 'completeUpload'
+    | 'uploadFile'
+  >;
   /** The desktop shell's recording uploads, or null (a browser). */
   host: DriveRecordingHost | null;
   /** The jobs. */
@@ -356,20 +373,16 @@ export async function processDriveJob(
   await save({ state: 'uploading', reason: undefined, autoRetry: undefined, parentId: folder.id });
 
   try {
-    const sessionTag = await tagValue(job.sessionId);
-    // The session folder: kept id, else Kite's tagged folder in the chosen folder, else a new one.
-    if (!job.folderId) {
-      const tags: DriveTag[] = [
-        { key: 'kiteSession', value: sessionTag },
-        { key: 'kiteFolder', value: 'session' },
-      ];
-      job.folderId =
-        (await deps.drive.find(folder.id, tags, folder.driveId)) ??
-        (await deps.drive.createFolder(
-          sessionFolderName(session, job.calls[0]?.startedAt ?? job.queuedAt),
-          folder.id,
-          tags,
-        ));
+    // ADR-0074: the session's folders, found or made by the server with the company account (the page
+    // never holds a Google token).
+    if (!job.folderId || !job.recordingsId || !job.transcriptsId) {
+      const folders = await deps.api.sessionFolder({
+        sessionId: job.sessionId,
+        name: sessionFolderName(session, job.calls[0]?.startedAt ?? job.queuedAt),
+      });
+      job.folderId = folders.folderId;
+      job.recordingsId = folders.recordingsId;
+      job.transcriptsId = folders.transcriptsId;
       await save();
     }
 
@@ -381,80 +394,74 @@ export async function processDriveJob(
     job.files = planFiles(job, recordings, made);
     await save();
 
-    for (const sub of ['Recordings', 'Transcripts'] as const) {
-      const idField = sub === 'Recordings' ? 'recordingsId' : 'transcriptsId';
-      if (job[idField] || !job.files.some((file) => file.folder === sub && !file.done)) continue;
-      const tags: DriveTag[] = [
-        { key: 'kiteSession', value: sessionTag },
-        { key: 'kiteFolder', value: sub },
-      ];
-      job[idField] =
-        (await deps.drive.find(job.folderId, tags, folder.driveId)) ??
-        (await deps.drive.createFolder(sub, job.folderId, tags));
-      await save();
-    }
-
+    // Recording files a desktop app older than 1.6.2 cannot upload (it needs a token, never given).
+    let needsUpdate = false;
     for (const file of job.files) {
       if (file.done) continue;
       if (await deps.callActive()) return stopWith('paused');
-      const parentId = file.folder === 'Recordings' ? job.recordingsId! : job.transcriptsId!;
-      const fileTag: DriveTag = {
-        key: 'kiteFile',
-        value: await tagValue(`${job.sessionId}\n${file.key}`),
-      };
-      // Already in Drive (saved before this device lost track of it): never uploaded twice.
-      if (!file.uploadUrl) {
-        const existing = await deps.drive.find(parentId, [fileTag], folder.driveId);
-        if (existing) {
-          Object.assign(file, {
-            done: true,
-            driveFileId: existing,
-            sent: Math.max(file.bytes, file.sent),
-          });
-          await save();
+      if (file.recordingId) {
+        // A recording on another computer: that computer's app saves it.
+        if (!deps.host) continue;
+        if (!deps.host.fileSize) {
+          needsUpdate = true;
           continue;
         }
-      }
-      // A file the page makes (transcript, notes): no recording id. Recording files also know their
-      // call since ADR-0073, so the call alone does not say which kind a file is.
-      const pageMade = !file.recordingId && file.callStartedAt !== undefined;
-      const blob = pageMade
-        ? made
-            .get(file.callStartedAt!)
-            ?.find((made) => `call:${file.callStartedAt}:${made.kind}` === file.key)?.blob
-        : undefined;
-      if (file.recordingId && !deps.host) {
-        // A recording on another computer: that computer's app saves it.
+        const outcome = await uploadRecording(deps, job.sessionId, file, save);
+        if (outcome !== 'done') return outcome;
         continue;
       }
-      if (pageMade && !blob) {
+      // A file the page makes (transcript, notes): sent to the server, which uploads it.
+      const blob = made
+        .get(file.callStartedAt!)
+        ?.find((one) => `call:${file.callStartedAt}:${one.kind}` === file.key)?.blob;
+      if (!blob) {
         // The call's data is no longer here (cleared): nothing to save for this file.
         Object.assign(file, { done: true, missing: true });
         await save();
         continue;
       }
-      const outcome = await uploadOne(deps, file, parentId, fileTag, blob ?? null, save);
-      if (outcome !== 'done') return outcome;
+      try {
+        const saved = await deps.api.uploadFile({
+          sessionId: job.sessionId,
+          key: file.key,
+          name: file.name,
+          blob,
+        });
+        Object.assign(file, {
+          done: true,
+          driveFileId: saved.fileId,
+          bytes: blob.size,
+          sent: blob.size,
+        });
+      } catch (error) {
+        // Too large to go through the server: skipped, so the rest of the session still saves.
+        if (!(error instanceof DriveApiError) || error.code !== 'too_large') throw error;
+        Object.assign(file, { done: true, missing: true });
+      }
+      await save();
     }
+    if (needsUpdate) return stopWith('waiting', 'update-desktop');
   } catch (error) {
     if (error instanceof DriveApiError) {
       if (error.code === 'reconnect') return stopWith('waiting', 'reconnect');
       if (error.code === 'not_connected' || error.code === 'not_configured') {
         return stopWith('waiting', 'not-connected');
       }
+      if (error.code === 'no_folder') return stopWith('waiting', 'no-folder');
+      // The company folder is gone: an admin chooses it again; Retry continues.
+      if (error.code === 'folder_gone') return stopWith('error', 'folder-gone');
+      if (error.code === 'no_session_folder') {
+        // The session folder was lost (moved to the bin): made again at the next try.
+        job.folderId = undefined;
+        job.recordingsId = undefined;
+        job.transcriptsId = undefined;
+        return stopWith('error', 'network', true);
+      }
       return stopWith(
         'error',
         error.status === 0 ? 'network' : 'failed',
-        error.status === 0 || error.status >= 500,
+        error.status === 0 || error.status >= 500 || error.status === 429,
       );
-    }
-    if (error instanceof DriveRequestError) {
-      if (error.status === 0 || error.status >= 500 || error.status === 429) {
-        return stopWith('error', 'network', true);
-      }
-      // The chosen folder is gone or no longer shared with Kite.
-      if (error.status === 404) return stopWith('error', 'folder-gone');
-      return stopWith('error', 'refused');
     }
     return stopWith('error', 'failed');
   }
@@ -636,90 +643,94 @@ async function reportToServer(
 }
 
 /**
- * Uploads one file: opens an upload session when there is none (kept on the file, so a restart resumes),
- * then sends the bytes (the shell for a recording, the page for a file it made). A refused token is
- * fetched again, and a gone session is opened again, a few times at most.
+ * Uploads one recording file (ADR-0074): the server starts the upload with the company account and gives
+ * back only its session address and a ticket; the desktop shell (1.6.2) sends the bytes to that address,
+ * starting where the server says Google got to; the server then verifies the finished file (tag, size,
+ * MD5) before its Drive id is kept. A gone session, or a file that does not verify, is started again a
+ * few times at most.
  *
- * @param deps     The dependencies.
- * @param file     The file (changed in place; it is one of the job's files).
- * @param parentId Its subfolder.
- * @param tag      Its tag.
- * @param blob     The bytes for a page-made file; null for a recording.
- * @param save     Saves the job.
+ * @param deps      The dependencies.
+ * @param sessionId The session.
+ * @param file      The file (changed in place; it is one of the job's files).
+ * @param save      Saves the job.
  * @returns 'done' to carry on with the next file, or how the job's turn ends.
+ * Called from: processDriveJob()
  */
-async function uploadOne(
+async function uploadRecording(
   deps: UploaderDeps,
+  sessionId: string,
   file: DriveFileJob,
-  parentId: string,
-  tag: DriveTag,
-  blob: Blob | null,
   save: (changes?: Partial<DriveSessionJob>) => Promise<void>,
 ): Promise<JobOutcome> {
-  let fresh = false;
+  const host = deps.host!;
+  const size = await host.fileSize!(file.recordingId!, file.track!);
+  if (size === null) {
+    Object.assign(file, { done: true, missing: true, uploadUrl: undefined, ticket: undefined });
+    await save();
+    return 'done';
+  }
+  file.bytes = size;
   for (let attempt = 0; attempt <= MAX_RESTARTS; attempt += 1) {
-    if (!file.uploadUrl) {
-      file.uploadUrl = await deps.drive.startUpload({
+    let startOffset = 0;
+    if (!file.uploadUrl || !file.ticket) {
+      const started = await deps.api.startUpload({
+        sessionId,
+        key: file.key,
         name: file.name,
-        parentId,
         mimeType: mimeOf(file.name),
-        bytes: blob ? blob.size : file.bytes,
-        tags: [tag],
+        bytes: size,
       });
-      file.sent = 0;
-      await save();
-    }
-    const onProgress = (sent: number, total?: number) => {
-      file.sent = sent;
-      if (total) file.bytes = total;
-      void save();
-    };
-    let result: DriveUploadResult;
-    if (blob) {
-      result = await deps.drive.uploadBlob(
-        file.uploadUrl,
-        blob,
-        (sent) => onProgress(sent),
-        deps.callActive,
-      );
-    } else {
-      const token = await deps.api.token(fresh);
-      result = await deps.host!.upload(
-        {
-          recordingId: file.recordingId!,
-          track: file.track!,
-          uploadUrl: file.uploadUrl,
-          accessToken: token.accessToken,
-        },
-        (progress) => onProgress(progress.sent, progress.total),
-      );
-    }
-    fresh = false;
-    switch (result.status) {
-      case 'done':
-        Object.assign(file, {
-          done: true,
-          driveFileId: result.fileId,
-          sent: result.bytes,
-          bytes: result.bytes,
-        });
-        file.uploadUrl = undefined;
+      if (started.status === 'exists') {
+        // Already in Drive (saved before this device lost track of it): never uploaded twice.
+        Object.assign(file, { done: true, driveFileId: started.fileId, sent: size });
         await save();
         return 'done';
+      }
+      Object.assign(file, { uploadUrl: started.uploadUrl, ticket: started.ticket, sent: 0 });
+      await save();
+    } else {
+      // A restart or a resume: the server asks Google where this upload got to.
+      const where = await deps.api.uploadOffset({ uploadUrl: file.uploadUrl, ticket: file.ticket });
+      if (where.state === 'expired') {
+        Object.assign(file, { uploadUrl: undefined, ticket: undefined, sent: 0 });
+        continue;
+      }
+      if (where.state === 'done') {
+        const verified = await verifyUpload(deps, file, where.fileId, undefined, save);
+        if (verified) return 'done';
+        continue;
+      }
+      startOffset = where.offset;
+      file.sent = startOffset;
+    }
+    const result = await host.upload(
+      {
+        recordingId: file.recordingId!,
+        track: file.track!,
+        uploadUrl: file.uploadUrl!,
+        startOffset,
+      },
+      (progress) => {
+        file.sent = progress.sent;
+        if (progress.total) file.bytes = progress.total;
+        void save();
+      },
+    );
+    switch (result.status) {
+      case 'done':
+        if (await verifyUpload(deps, file, result.fileId, result.md5, save)) return 'done';
+        continue;
       case 'paused':
         file.sent = result.offset;
         await save({ state: 'paused' });
         return 'paused';
       case 'auth':
-        file.sent = result.offset;
-        fresh = true;
-        continue;
       case 'expired':
-        // The session is gone; nothing of it became a file, so a new one cannot make a copy.
-        file.uploadUrl = undefined;
+        // The session is gone (no token is involved any more): a new one is started.
+        Object.assign(file, { uploadUrl: undefined, ticket: undefined, sent: 0 });
         continue;
       case 'missing':
-        Object.assign(file, { done: true, missing: true, uploadUrl: undefined });
+        Object.assign(file, { done: true, missing: true, uploadUrl: undefined, ticket: undefined });
         await save();
         return 'done';
       case 'failed':
@@ -733,6 +744,50 @@ async function uploadOne(
   }
   await save({ state: 'error', reason: 'failed' });
   return 'error';
+}
+
+/**
+ * Has the server verify a finished upload (ADR-0074) and keeps the file only when it does; a file that
+ * does not verify was put in the bin by the server and is uploaded again.
+ *
+ * @param deps   The dependencies.
+ * @param file   The file (changed in place).
+ * @param fileId The Drive id Google answered with.
+ * @param md5    The whole file's MD5 from the shell, when it has one.
+ * @param save   Saves the job.
+ * @returns True when verified (the file is done), false to upload again.
+ * @throws DriveApiError for anything but a failed verification.
+ */
+async function verifyUpload(
+  deps: UploaderDeps,
+  file: DriveFileJob,
+  fileId: string,
+  md5: string | undefined,
+  save: (changes?: Partial<DriveSessionJob>) => Promise<void>,
+): Promise<boolean> {
+  try {
+    const verified = await deps.api.completeUpload({
+      uploadUrl: file.uploadUrl!,
+      ticket: file.ticket!,
+      fileId,
+      ...(md5 ? { md5 } : {}),
+    });
+    Object.assign(file, {
+      done: true,
+      driveFileId: verified.fileId,
+      sent: file.bytes,
+      uploadUrl: undefined,
+      ticket: undefined,
+    });
+    await save();
+    return true;
+  } catch (error) {
+    if (error instanceof DriveApiError && error.code === 'verify_failed') {
+      Object.assign(file, { uploadUrl: undefined, ticket: undefined, sent: 0 });
+      return false;
+    }
+    throw error;
+  }
 }
 
 /** How a run ended. */
@@ -810,7 +865,10 @@ export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
   }
   // Drive works again (reconnected, folder picked, switched on): the waiting jobs carry on.
   if (!waitingReason(status)) {
-    for (const job of moving.filter((j) => j.state === 'waiting')) {
+    // A job waiting for desktop 1.6.2 stays put until this app can upload recordings (ADR-0074).
+    const canUpload = (job: DriveSessionJob) =>
+      job.reason !== 'update-desktop' || Boolean(deps.host?.fileSize);
+    for (const job of moving.filter((j) => j.state === 'waiting' && canUpload(j))) {
       await deps.jobs.put({ ...job, state: 'queued', reason: undefined, updatedAt: deps.now() });
     }
   }

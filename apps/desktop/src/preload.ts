@@ -11,7 +11,8 @@
  *          accurateStatus / accurateDownload / accurateRemove / accurateTranscribe (v1.0.1, ADR-0034),
  *          and meeting recording (1.5.0, ADR-0068: recordingOpen / Write / Close / List / Play / SaveAs /
  *          ShowInFolder / Delete, listDisplays, setRecordingDisplay, deviceIdentity, renameDevice),
- *          and Google Drive (1.6.0, ADR-0072: driveUpload, onDriveUploadProgress, showNotice) }
+ *          and Google Drive (1.6.0, ADR-0072: driveUpload, onDriveUploadProgress, showNotice; 1.6.2,
+ *          ADR-0074: driveFileSize) }
  *          (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
@@ -88,6 +89,7 @@ import {
   RECORDING_WRITE_CHANNEL,
   RENAME_DEVICE_CHANNEL,
   DRIVE_PROGRESS_EVENT,
+  DRIVE_FILE_SIZE_CHANNEL,
   DRIVE_UPLOAD_CHANNEL,
   SHOW_NOTICE_CHANNEL,
 } from './channels';
@@ -338,12 +340,20 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
   renameDevice: (name: string) => ipcRenderer.invoke(RENAME_DEVICE_CHANNEL, String(name)),
   // 1.6.0 (ADR-0072): Google Drive. Only plain fields cross (copied here); the shell checks the
   // recording against its own index and sends the file only to a Google Drive upload address.
+  // 1.6.2 (ADR-0074): no token (only passed on if an older page still gives one), and the offset the
+  // server says Google has.
   driveUpload: (request: DriveUploadRequest) =>
     ipcRenderer.invoke(DRIVE_UPLOAD_CHANNEL, {
       recordingId: String(request?.recordingId),
       track: String(request?.track),
       uploadUrl: String(request?.uploadUrl),
-      accessToken: String(request?.accessToken),
+      ...(typeof request?.accessToken === 'string' ? { accessToken: request.accessToken } : {}),
+      ...(typeof request?.startOffset === 'number' ? { startOffset: request.startOffset } : {}),
+    }),
+  driveFileSize: (recordingId: string, track: RecordingTrack) =>
+    ipcRenderer.invoke(DRIVE_FILE_SIZE_CHANNEL, {
+      recordingId: String(recordingId),
+      track: String(track),
     }),
   onDriveUploadProgress,
   showNotice: (notice: DesktopNotice) =>

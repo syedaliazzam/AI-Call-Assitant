@@ -429,10 +429,20 @@ export interface KiteDesktopApi {
    * Desktop 1.6.0 (ADR-0072): uploads one of this computer's recording files to a Drive resumable
    * upload session the page opened, in DRIVE_CHUNK_BYTES chunks, from where Google says it got to.
    * Stops between chunks while a call is live ('paused'), so the call keeps the computer's bandwidth.
-   * @param request The recording, its file, the upload address and a short-lived access token.
-   * @returns How it ended.
+   * @param request The recording, its file, the upload address (1.6.0/1.6.1: and an access token; from
+   *                1.6.2, ADR-0074: no token, and the offset the server says Google has).
+   * @returns How it ended (1.6.2: with the whole file's MD5 when done).
    */
   driveUpload?: (request: DriveUploadRequest) => Promise<DriveUploadResult>;
+  /**
+   * Desktop 1.6.2 (ADR-0074): the size of one of this computer's recording files (from its Recordings
+   * index only), for the server to start the upload and verify it. Its presence also says the shell
+   * uploads without a token; 1.6.0 and 1.6.1 do not have it, and their recordings wait for the update.
+   * @param recordingId The recording.
+   * @param track       Its main file or its stereo sound file.
+   * @returns The size in bytes, or null when the file is not on this computer.
+   */
+  driveFileSize?: (recordingId: string, track: RecordingTrack) => Promise<number | null>;
   /**
    * Desktop 1.6.0: listens for the progress of this page's Drive uploads.
    * @param handler Called after each chunk.

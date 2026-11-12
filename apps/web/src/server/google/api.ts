@@ -1,17 +1,24 @@
 /**
  * File: apps/web/src/server/google/api.ts
- * Purpose: The /api/google/* and /api/drive/* handlers (ADR-0072): connect (OAuth with a signed,
- *          account-bound state and PKCE), the callback (stores the refresh token encrypted), status,
- *          a short-lived access token (rate-limited), the Picker's key and project number, the picked
- *          folder (checked with Drive), the person's switches and team list, disconnect (revoke, then
- *          delete), and the "saved" email (one per session) with its list and Retry. The account always
- *          comes from the signed-in session, read from the database, never from the request. POSTs must
- *          come from a Kite address (Origin check) on top of the SameSite session cookie.
- * Used by: app/api/google/{connect,callback,status,access-token,picker-config,folder,settings,disconnect}/route.ts,
- *          app/api/drive/{notify,notifications,test-email}/route.ts, app/api/cron/drive-flush/route.ts
+ * Purpose: The /api/google/* and /api/drive/* handlers. ADR-0074: ONE company Google account, connected
+ *          by an admin (OAuth with a signed, account-bound state and PKCE; the callback stores its refresh
+ *          token encrypted); its folder picked by an admin in Google Picker (the Picker's token comes from
+ *          Google to the admin's browser, never from here) and checked with Drive; disconnect (revoke,
+ *          then delete). NO ROUTE EVER RETURNS A GOOGLE TOKEN: the server makes each session's folders,
+ *          starts each recording upload and gives the client only that upload's session address with a
+ *          signed ticket, answers where an upload got to, verifies a finished one (tag, size, MD5), and
+ *          uploads the page's own small files itself. Also status, each person's switches and team list,
+ *          and the "saved" email (one per call, ADR-0073; only Drive ids the company token can verify are
+ *          linked) with its list and Retry. The account always comes from the signed-in session, read from
+ *          the database, never from the request. POSTs must come from a Kite address (Origin check) on
+ *          top of the SameSite session cookie.
+ * Used by: app/api/google/{connect,callback,status,picker-config,folder,settings,disconnect}/route.ts,
+ *          app/api/drive/{session-folder,uploads,uploads/offset,uploads/complete,files,notify,
+ *          notifications,test-email}/route.ts, app/api/cron/drive-flush/route.ts
  * Depends on: zod, @kite/shared, src/server/auth.ts, src/server/db.ts, src/server/env.ts,
- *             src/server/calldata/crypto.ts, src/server/google/{config,oauth,store,tokens,email,rateLimit}.ts
- * Architecture: ADR-0072; architecture §7.2, §8.1, §8.2
+ *             src/server/calldata/crypto.ts,
+ *             src/server/google/{company,config,oauth,store,tokens,uploads,email,rateLimit,report}.ts
+ * Architecture: ADR-0074 (ADR-0072, ADR-0073); architecture §7.2, §8.1, §8.2
  *
  * Logs carry the route and a status or code only: never tokens, ids, addresses, titles or file names.
  */
@@ -26,19 +33,32 @@ import {
   MAX_SAVED_NAME_CHARS,
   driveFolderUrl,
   isDriveLink,
-  type DriveAccessTokenResponse,
   type DriveNotificationItem,
   type DriveNotificationStatus,
   type DriveNotificationsResponse,
   type DriveNotifyResponse,
   type DrivePickerConfig,
+  type DriveSessionFolderResponse,
   type DriveStatusResponse,
   type DriveTestEmailResponse,
+  type DriveUploadOffsetResponse,
+  type DriveUploadStartResponse,
+  type DriveVerifiedFile,
 } from '@kite/shared';
 import { auth } from '../auth';
 import { DataKeyError, dataKeys, type DataKeys } from '../calldata/crypto';
 import type { CallDataDb } from '../calldata/store';
 import { db } from '../db';
+import {
+  deleteCompany,
+  getCompany,
+  type CompanyConnectionRow,
+  getMember,
+  readCompanyToken,
+  saveCompany,
+  setCompanyFolder,
+  updateMember,
+} from './company';
 import { getAuthEnv } from '../env';
 import { emailConfig, googleConfig, type EmailConfig, type GoogleConfig } from './config';
 import { emailMessageId, sendSavedEmail, sendTestEmail, smtpMailer, type Mailer } from './email';
@@ -48,6 +68,7 @@ import {
   STATE_COOKIE,
   checkOAuthState,
   exchangeCode,
+  readDriveAccount,
   readDriveFolder,
   revokeToken,
   startOAuth,
@@ -58,16 +79,10 @@ import { createRateLimiter, type RateLimiter } from './rateLimit';
 import {
   claimCollecting,
   claimRetry,
-  deleteConnection,
   finishNotification,
-  getConnection,
   listNotifications,
   listOverdue,
   readRecord,
-  readRefreshToken,
-  saveConnection,
-  setFolder,
-  updateSettings,
   writeRecord,
   type NotificationContent,
   type NotificationRecord,
@@ -82,7 +97,20 @@ import {
   reportKey,
   splitNotificationKey,
 } from './report';
-import { accessTokenFor, forgetAccessToken } from './tokens';
+import { companyAccessToken, forgetCompanyToken } from './tokens';
+import {
+  MAX_SMALL_UPLOAD_BYTES,
+  TICKET_TTL_MS,
+  driveServer,
+  ensureSessionFolders,
+  fileMatches,
+  fileTag,
+  findSubfolder,
+  md5Hex,
+  readTicket,
+  signTicket,
+  type DriveServer,
+} from './uploads';
 
 /** Where Settings shows the Google Drive section. */
 const SETTINGS_PATH = '/settings';
@@ -93,6 +121,8 @@ export interface DriveUser {
   id: string;
   /** Its login email (the "saved" email's first recipient). */
   email: string;
+  /** True for an admin (connects the company account, picks the folder; ADR-0074). */
+  admin: boolean;
 }
 
 /** What the handlers need from outside (tests replace them). */
@@ -119,8 +149,8 @@ export interface GoogleDeps {
   now(): number;
   /** Rate limits. */
   limits: {
-    /** The access-token route. */
-    token: RateLimiter;
+    /** The upload routes (folders, start, offset, complete, small files): several per file. */
+    upload: RateLimiter;
     /** Every other route. */
     other: RateLimiter;
     /** The test email (a few an hour: it reaches a real mailbox). */
@@ -135,7 +165,7 @@ export const realGoogleDeps: GoogleDeps = {
     const session = await auth.api.getSession({ headers, query: { disableCookieCache: true } });
     if (!session) return 'signed-out';
     if (session.user.mustChangePassword) return 'password';
-    return { id: session.user.id, email: session.user.email };
+    return { id: session.user.id, email: session.user.email, admin: session.user.role === 'admin' };
   },
   // The app's Neon client has the common Drizzle Postgres shape the store needs.
   db: () => db as unknown as CallDataDb,
@@ -154,10 +184,10 @@ export const realGoogleDeps: GoogleDeps = {
     return secret && secret.length >= 16 ? secret : null;
   },
   now: () => Date.now(),
-  // 30 tokens a minute is far above what uploads need (one per file, cached an hour). Test emails:
-  // 3 in 10 minutes per account.
+  // Uploads: a few requests per file, so 240 a minute covers a backlog of sessions. Test emails: 3 in
+  // 10 minutes per account.
   limits: {
-    token: createRateLimiter(30, 60_000),
+    upload: createRateLimiter(240, 60_000),
     other: createRateLimiter(60, 60_000),
     test: createRateLimiter(3, 10 * 60_000),
   },
@@ -285,7 +315,7 @@ async function withUser(
   request: Request,
   deps: GoogleDeps,
   route: string,
-  options: { post: boolean; limit: 'token' | 'other' | 'test' },
+  options: { post: boolean; limit: 'upload' | 'other' | 'test' },
   run: (ctx: Context) => Promise<Response>,
 ): Promise<Response> {
   if (options.post && !fromKite(request, deps.site())) {
@@ -304,6 +334,16 @@ async function withUser(
     if (error instanceof DataKeyError) {
       console.error('drive: data key unavailable', { route });
       return failure(503, 'unavailable', 'Google Drive is not available right now.');
+    }
+    // ADR-0074: the company folder is gone or the company account lost access to it.
+    if (error instanceof GoogleUnavailableError && error.status === 404) {
+      console.warn('drive: company folder gone', { route });
+      return failure(409, 'folder_gone', 'The company Drive folder could not be opened.');
+    }
+    // A fresh company token refused: try later (a revoked token is marked at the next refresh).
+    if (error instanceof GoogleRefusedError) {
+      console.warn('drive: google refused', { route, code: error.code });
+      return failure(503, 'google_unavailable', 'Google did not answer. Try again shortly.');
     }
     if (error instanceof GoogleUnavailableError) {
       console.warn('drive: google unavailable', { route, status: error.status });
@@ -342,7 +382,70 @@ const addressList = z
   .transform((list) => [...new Set(list.map((address) => address.trim().toLowerCase()))]);
 
 /**
- * GET /api/google/status.
+ * Drive calls with the company token, server-side only (ADR-0074), or the reply saying why not.
+ * @param deps The dependencies.
+ * @returns The calls and the company connection, or an error response.
+ */
+async function companyToken(
+  deps: GoogleDeps,
+): Promise<{ drive: DriveServer; company: CompanyConnectionRow } | Response> {
+  const config = deps.google();
+  if (!config) return failure(404, 'not_configured', 'Google Drive is not set up.');
+  const company = await getCompany(deps.db());
+  if (!company) {
+    return failure(
+      404,
+      'not_connected',
+      'Google Drive is not connected yet. An admin connects it.',
+    );
+  }
+  const token = await companyAccessToken({
+    db: deps.db(),
+    keys: deps.keys(),
+    config,
+    fetch: deps.fetch,
+    now: deps.now,
+  });
+  if (token === 'not-connected') {
+    return failure(
+      404,
+      'not_connected',
+      'Google Drive is not connected yet. An admin connects it.',
+    );
+  }
+  if (token === 'reconnect') {
+    return failure(409, 'reconnect', 'Google Drive needs an admin to reconnect it.');
+  }
+  return { drive: driveServer(deps.fetch, token), company };
+}
+
+/** The company folder the upload routes work in. */
+interface CompanyFolder {
+  /** Its Drive id. */
+  folderId: string;
+  /** Its Shared Drive, or null for My Drive. */
+  driveId: string | null;
+}
+
+/**
+ * The company Drive with a usable token AND its folder (the upload routes), or the reply saying why not.
+ * @param deps The dependencies.
+ * @returns Drive calls with the company token and the company folder, or an error response.
+ */
+async function companyDrive(
+  deps: GoogleDeps,
+): Promise<{ drive: DriveServer; folder: CompanyFolder } | Response> {
+  const connected = await companyToken(deps);
+  if (connected instanceof Response) return connected;
+  const { folderId, driveId } = connected.company;
+  if (!folderId) {
+    return failure(409, 'no_folder', 'An admin needs to choose the company Drive folder.');
+  }
+  return { drive: connected.drive, folder: { folderId, driveId } };
+}
+
+/**
+ * GET /api/google/status (ADR-0074): the company connection and folder, and the person's own switches.
  * @param request The request.
  * @param deps    The dependencies (tests pass fakes).
  * @returns 200 DriveStatusResponse.
@@ -353,26 +456,34 @@ export function handleStatus(
   deps: GoogleDeps = realGoogleDeps,
 ): Promise<Response> {
   return withUser(request, deps, 'status', { post: false, limit: 'other' }, async ({ user }) => {
-    // Sessions that waited 24 hours for a recording get their email now (cheap: an indexed query).
+    // Calls that waited 24 hours for a recording get their email now (cheap: an indexed query).
     if (deps.google()) await flushOverdue(deps, user.id).catch(() => 0);
-    const row = deps.google() ? await getConnection(deps.db(), user.id) : null;
+    const company = deps.google() ? await getCompany(deps.db()) : null;
+    const member = await getMember(deps.db(), user.id);
     const body: DriveStatusResponse = {
       configured: deps.google() !== null,
-      status: row ? (row.status === 'reconnect' ? 'reconnect' : 'connected') : 'not-connected',
+      status: company
+        ? company.status === 'reconnect'
+          ? 'reconnect'
+          : 'connected'
+        : 'not-connected',
       folder:
-        row?.folderId && row.folderName
+        company?.folderId && company.folderName
           ? {
-              id: row.folderId,
-              name: row.folderName,
-              driveId: row.driveId,
-              url: driveFolderUrl(row.folderId),
+              id: company.folderId,
+              name: company.folderName,
+              driveId: company.driveId,
+              url: driveFolderUrl(company.folderId),
             }
           : null,
-      saveEnabled: row?.saveEnabled ?? true,
+      admin: user.admin,
+      // The company account's address: admins only.
+      account: user.admin ? (company?.accountEmail ?? null) : null,
+      saveEnabled: member.saveEnabled,
       email: {
         configured: deps.email() !== null,
-        enabled: row?.emailEnabled ?? true,
-        alsoNotify: row?.alsoNotify ?? [],
+        enabled: member.emailEnabled,
+        alsoNotify: member.alsoNotify,
       },
     };
     return reply(body);
@@ -380,7 +491,8 @@ export function handleStatus(
 }
 
 /**
- * GET /api/google/connect: sends the signed-in person to Google's consent page.
+ * GET /api/google/connect (admins only, ADR-0074): sends the admin to Google's consent page to connect
+ * the company Google account.
  * @param request The request.
  * @param deps    The dependencies (tests pass fakes).
  * @returns 302 to Google with the state cookie set; 303 to Settings with a reason when it cannot start;
@@ -400,6 +512,7 @@ export async function handleConnect(
       headers: { Location: new URL('/login', origin).toString() },
     });
   }
+  if (!user.admin) return toSettings(origin, 'error', 'admin-only', null);
   const config = deps.google();
   if (!config) return toSettings(origin, 'error', 'not-configured', null);
   if (!deps.limits.other.allow(`connect:${user.id}`))
@@ -411,7 +524,7 @@ export async function handleConnect(
     redirectUri: `${origin}/api/google/callback`,
     now: deps.now(),
   });
-  console.info('drive: connect started');
+  console.info('drive: company connect started');
   return new Response(null, {
     status: 302,
     headers: {
@@ -423,9 +536,9 @@ export async function handleConnect(
 }
 
 /**
- * GET /api/google/callback: Google sends the person back here. Checks the state (signature, expiry,
- * this account, the cookie's nonce), exchanges the code, stores the refresh token encrypted, and goes
- * to Settings to pick the folder.
+ * GET /api/google/callback (admins only, ADR-0074): Google sends the admin back here. Checks the state
+ * (signature, expiry, this account, the cookie's nonce), exchanges the code, stores the company account's
+ * refresh token encrypted with its address, and goes to Settings to pick the folder.
  * @param request The request.
  * @param deps    The dependencies (tests pass fakes).
  * @returns 303 to Settings (?drive=pick, or ?drive=error&reason=…).
@@ -443,6 +556,7 @@ export async function handleCallback(
   if (user === 'signed-out' || user === 'password') {
     return toSettings(origin, 'error', 'signed-out', clear);
   }
+  if (!user.admin) return toSettings(origin, 'error', 'admin-only', clear);
   const config = deps.google();
   if (!config) return toSettings(origin, 'error', 'not-configured', clear);
   const checked = checkOAuthState({
@@ -456,7 +570,7 @@ export async function handleCallback(
     console.warn('drive: callback refused', { reason: checked.reason });
     return toSettings(origin, 'error', `state-${checked.reason}`, clear);
   }
-  // The person pressed Cancel on Google's page (or Google refused): nothing is stored.
+  // The admin pressed Cancel on Google's page (or Google refused): nothing is stored.
   if (params.get('error') || !params.get('code')) {
     return toSettings(origin, 'error', 'denied', clear);
   }
@@ -468,9 +582,10 @@ export async function handleCallback(
       checked.verifier,
       `${origin}/api/google/callback`,
     );
-    await saveConnection(deps.db(), deps.keys(), user.id, tokens.refreshToken);
-    forgetAccessToken(user.id);
-    console.info('drive: connected');
+    const account = await readDriveAccount(deps.fetch, tokens.accessToken);
+    await saveCompany(deps.db(), deps.keys(), tokens.refreshToken, account, user.id);
+    forgetCompanyToken();
+    console.info('drive: company connected');
     return toSettings(origin, 'pick', null, clear);
   } catch (error) {
     const reason =
@@ -487,47 +602,30 @@ export async function handleCallback(
 }
 
 /**
- * GET /api/google/access-token: a short-lived access token for Drive calls from this device.
+ * GET /api/google/picker-config (admins only): the Picker's API key, project number, OAuth client id and
+ * the company account's address. ADR-0074: no token: the admin's page gets its own from Google.
  * @param request The request.
  * @param deps    The dependencies (tests pass fakes).
- * @returns 200 DriveAccessTokenResponse; 404 not_connected or not_configured; 409 reconnect; 429; 503.
- * Called from: app/api/google/access-token/route.ts
- */
-export function handleAccessToken(
-  request: Request,
-  deps: GoogleDeps = realGoogleDeps,
-): Promise<Response> {
-  return withUser(request, deps, 'token', { post: false, limit: 'token' }, async ({ user }) => {
-    const config = deps.google();
-    if (!config) return failure(404, 'not_configured', 'Google Drive is not set up.');
-    const token = await accessTokenFor(
-      { db: deps.db(), keys: deps.keys(), config, fetch: deps.fetch, now: deps.now },
-      user.id,
-    );
-    if (token === 'not-connected')
-      return failure(404, 'not_connected', 'Connect Google Drive first.');
-    if (token === 'reconnect') return failure(409, 'reconnect', 'Reconnect Google Drive.');
-    return reply(token satisfies DriveAccessTokenResponse);
-  });
-}
-
-/**
- * GET /api/google/picker-config: the Picker's API key and project number (signed-in people only).
- * @param request The request.
- * @param deps    The dependencies (tests pass fakes).
- * @returns 200 DrivePickerConfig; 404 when the Picker is not set up.
+ * @returns 200 DrivePickerConfig; 403 not an admin; 404 when the Picker is not set up.
  * Called from: app/api/google/picker-config/route.ts
  */
 export function handlePickerConfig(
   request: Request,
   deps: GoogleDeps = realGoogleDeps,
 ): Promise<Response> {
-  return withUser(request, deps, 'picker', { post: false, limit: 'other' }, async () => {
+  return withUser(request, deps, 'picker', { post: false, limit: 'other' }, async ({ user }) => {
+    if (!user.admin) return failure(403, 'admin_only', 'Only an admin chooses the folder.');
     const config = deps.google();
     if (!config?.pickerApiKey || !config.appId) {
       return failure(404, 'not_configured', 'Google Picker is not set up.');
     }
-    return reply({ apiKey: config.pickerApiKey, appId: config.appId } satisfies DrivePickerConfig);
+    const company = await getCompany(deps.db());
+    return reply({
+      apiKey: config.pickerApiKey,
+      appId: config.appId,
+      clientId: config.clientId,
+      account: company?.accountEmail ?? null,
+    } satisfies DrivePickerConfig);
   });
 }
 
@@ -535,10 +633,12 @@ export function handlePickerConfig(
 const folderSchema = z.object({ folderId: z.string().regex(/^[A-Za-z0-9_-]{5,200}$/) }).strict();
 
 /**
- * POST /api/google/folder: stores the folder picked in Google Picker, as Drive describes it.
+ * POST /api/google/folder (admins only): stores the company folder picked in Google Picker, as Drive
+ * describes it to the company account (so a folder picked while signed in to another account, which the
+ * company account cannot open, is refused).
  * @param request The request (body: DriveFolderRequest).
  * @param deps    The dependencies (tests pass fakes).
- * @returns 200 { folder }; 400; 404 not connected or folder not found; 409 reconnect.
+ * @returns 200 { folder }; 400; 403 not an admin; 404 not connected or folder not found; 409 reconnect.
  * Called from: app/api/google/folder/route.ts
  */
 export function handleFolder(
@@ -546,27 +646,34 @@ export function handleFolder(
   deps: GoogleDeps = realGoogleDeps,
 ): Promise<Response> {
   return withUser(request, deps, 'folder', { post: true, limit: 'other' }, async ({ user }) => {
+    if (!user.admin) return failure(403, 'admin_only', 'Only an admin chooses the folder.');
     const config = deps.google();
     if (!config) return failure(404, 'not_configured', 'Google Drive is not set up.');
     const body = await readBody(request, folderSchema);
     if (!body) return failure(400, 'invalid_request', 'folderId: invalid');
-    const token = await accessTokenFor(
-      { db: deps.db(), keys: deps.keys(), config, fetch: deps.fetch, now: deps.now },
-      user.id,
-    );
-    if (token === 'not-connected')
-      return failure(404, 'not_connected', 'Connect Google Drive first.');
-    if (token === 'reconnect') return failure(409, 'reconnect', 'Reconnect Google Drive.');
-    const folder = await readDriveFolder(deps.fetch, token.accessToken, body.folderId);
+    const token = await companyAccessToken({
+      db: deps.db(),
+      keys: deps.keys(),
+      config,
+      fetch: deps.fetch,
+      now: deps.now,
+    });
+    if (token === 'not-connected') {
+      return failure(404, 'not_connected', 'Connect the company Google account first.');
+    }
+    if (token === 'reconnect') {
+      return failure(409, 'reconnect', 'Reconnect the company Google account.');
+    }
+    const folder = await readDriveFolder(deps.fetch, token, body.folderId);
     if (!folder) {
       return failure(
         404,
         'folder_not_found',
-        'That folder could not be opened. Choose another one.',
+        'The company account cannot open that folder. Choose it while signed in to the company account.',
       );
     }
-    await setFolder(deps.db(), user.id, folder);
-    console.info('drive: folder chosen', { sharedDrive: folder.driveId !== null });
+    await setCompanyFolder(deps.db(), folder);
+    console.info('drive: company folder chosen', { sharedDrive: folder.driveId !== null });
     return reply({ folder: { ...folder, url: driveFolderUrl(folder.id) } });
   });
 }
@@ -581,10 +688,10 @@ const settingsSchema = z
   .strict();
 
 /**
- * POST /api/google/settings: the person's switches and team list.
+ * POST /api/google/settings: the person's own switches and team list (ADR-0074: no connection needed).
  * @param request The request (body: DriveSettingsRequest).
  * @param deps    The dependencies (tests pass fakes).
- * @returns 200 { ok: true }; 400 (an invalid address, too many); 404 not connected.
+ * @returns 200 { ok: true }; 400 (an invalid address, too many).
  * Called from: app/api/google/settings/route.ts
  */
 export function handleSettings(
@@ -600,18 +707,17 @@ export function handleSettings(
         `Check the addresses (at most ${MAX_ALSO_NOTIFY}, each a valid email).`,
       );
     }
-    const saved = await updateSettings(deps.db(), user.id, body);
-    if (!saved) return failure(404, 'not_connected', 'Connect Google Drive first.');
+    await updateMember(deps.db(), user.id, body);
     return reply({ ok: true });
   });
 }
 
 /**
- * POST /api/google/disconnect: revokes the refresh token at Google and deletes the connection. The row
- * goes even when Google cannot be reached (the token then expires unused); the reply says so.
+ * POST /api/google/disconnect (admins only): revokes the company refresh token at Google and deletes the
+ * connection. The row goes even when Google cannot be reached (the token then expires unused).
  * @param request The request.
  * @param deps    The dependencies (tests pass fakes).
- * @returns 200 { revoked }.
+ * @returns 200 { revoked }; 403 not an admin.
  * Called from: app/api/google/disconnect/route.ts
  */
 export function handleDisconnect(
@@ -619,22 +725,299 @@ export function handleDisconnect(
   deps: GoogleDeps = realGoogleDeps,
 ): Promise<Response> {
   return withUser(request, deps, 'disconnect', { post: true, limit: 'other' }, async ({ user }) => {
-    const row = await getConnection(deps.db(), user.id);
+    if (!user.admin) return failure(403, 'admin_only', 'Only an admin disconnects Google Drive.');
+    const row = await getCompany(deps.db());
     let revoked = true;
     if (row) {
       let token: string | null = null;
       try {
-        token = readRefreshToken(deps.keys(), row);
+        token = readCompanyToken(deps.keys(), row);
       } catch {
         // Unreadable (a removed key): nothing to revoke from here; the row still goes.
         revoked = false;
       }
       if (token) revoked = await revokeToken(deps.fetch, token);
-      await deleteConnection(deps.db(), user.id);
+      await deleteCompany(deps.db());
     }
-    forgetAccessToken(user.id);
-    console.info('drive: disconnected', { revoked });
+    forgetCompanyToken();
+    console.info('drive: company disconnected', { revoked });
     return reply({ revoked });
+  });
+}
+
+/** A file or folder name: no control characters, bounded. */
+const driveName = z
+  .string()
+  .min(1)
+  .max(MAX_SAVED_NAME_CHARS)
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
+  .refine((name) => !/[\u0000-\u001f\u007f]/.test(name));
+
+/** POST /api/drive/session-folder's body. */
+const sessionFolderSchema = z.object({ sessionId: z.uuid(), name: driveName }).strict();
+
+/**
+ * POST /api/drive/session-folder (ADR-0074): finds or makes the session's folder and its Recordings and
+ * Transcripts in the company folder, with the company token (server-side only). The folders' tags bind
+ * them to this account and session.
+ * @param request The request (body: DriveSessionFolderRequest).
+ * @param deps    The dependencies (tests pass fakes).
+ * @returns 200 DriveSessionFolderResponse; 400; 404 not connected; 409 no folder, reconnect, folder gone.
+ * Called from: app/api/drive/session-folder/route.ts
+ */
+export function handleSessionFolder(
+  request: Request,
+  deps: GoogleDeps = realGoogleDeps,
+): Promise<Response> {
+  return withUser(request, deps, 'folders', { post: true, limit: 'upload' }, async ({ user }) => {
+    const body = await readBody(request, sessionFolderSchema);
+    if (!body) return failure(400, 'invalid_request', 'The session folder request is not valid.');
+    const company = await companyDrive(deps);
+    if (company instanceof Response) return company;
+    const ids = await ensureSessionFolders(
+      company.drive,
+      company.folder,
+      user.id,
+      body.sessionId,
+      body.name,
+    );
+    return reply(ids satisfies DriveSessionFolderResponse);
+  });
+}
+
+/** The recording types a session folder takes. */
+const RECORDING_TYPES = ['video/x-matroska', 'video/webm', 'audio/webm'] as const;
+
+/** POST /api/drive/uploads' body. */
+const uploadStartSchema = z
+  .object({
+    sessionId: z.uuid(),
+    key: z.string().regex(/^rec:[0-9a-f-]{36}:(main|stereo)$/),
+    name: driveName,
+    mimeType: z.enum(RECORDING_TYPES),
+    // Up to 50 GB (a long screen recording); Drive's own limit is far higher.
+    bytes: z
+      .number()
+      .int()
+      .min(0)
+      .max(50 * 1024 ** 3),
+  })
+  .strict();
+
+/**
+ * POST /api/drive/uploads (ADR-0074): one recording file. Returns the file when it is already in the
+ * session's Recordings (by its tag, and the right size), else starts a resumable upload with the company
+ * token and returns ONLY that upload's session address and a signed ticket for it. A file with the tag but
+ * the wrong size (an earlier mismatch) goes to the bin first.
+ * @param request The request (body: DriveUploadStartRequest).
+ * @param deps    The dependencies (tests pass fakes).
+ * @returns 200 DriveUploadStartResponse; 400; 404 not connected; 409 no session folder, reconnect.
+ * Called from: app/api/drive/uploads/route.ts
+ */
+export function handleUploadStart(
+  request: Request,
+  deps: GoogleDeps = realGoogleDeps,
+): Promise<Response> {
+  return withUser(request, deps, 'upload', { post: true, limit: 'upload' }, async ({ user }) => {
+    const body = await readBody(request, uploadStartSchema);
+    if (!body) return failure(400, 'invalid_request', 'The upload request is not valid.');
+    const company = await companyDrive(deps);
+    if (company instanceof Response) return company;
+    const parentId = await findSubfolder(
+      company.drive,
+      company.folder,
+      user.id,
+      body.sessionId,
+      'Recordings',
+    );
+    if (!parentId) return failure(409, 'no_session_folder', 'The session folder is not made yet.');
+    const tag = fileTag(user.id, body.sessionId, body.key);
+    const existing = await company.drive.find(parentId, [tag], company.folder.driveId);
+    if (existing) {
+      const facts = await company.drive.file(existing);
+      if (facts && fileMatches(facts, { tag: tag.value, bytes: body.bytes })) {
+        return reply({ status: 'exists', fileId: existing } satisfies DriveUploadStartResponse);
+      }
+      await company.drive.trash(existing);
+    }
+    const uploadUrl = await company.drive.startUpload({
+      name: body.name,
+      parentId,
+      mimeType: body.mimeType,
+      bytes: body.bytes,
+      tags: [tag],
+    });
+    const ticket = signTicket(deps.site().secret, user.id, uploadUrl, {
+      sessionId: body.sessionId,
+      key: body.key,
+      bytes: body.bytes,
+      tag: tag.value,
+      expiresAt: deps.now() + TICKET_TTL_MS,
+    });
+    return reply({ status: 'started', uploadUrl, ticket } satisfies DriveUploadStartResponse);
+  });
+}
+
+/** A resumable session's address, as Google gives it. */
+const uploadUrlSchema = z
+  .string()
+  .max(2000)
+  .refine((url) => url.startsWith('https://www.googleapis.com/upload/drive/v3/files?'));
+
+/** POST /api/drive/uploads/offset's body. */
+const offsetSchema = z
+  .object({ uploadUrl: uploadUrlSchema, ticket: z.string().max(2000) })
+  .strict();
+
+/**
+ * POST /api/drive/uploads/offset (ADR-0074): where an upload this account was given got to (a restart
+ * or a resume). Only for a ticket the server signed for this account and address.
+ * @param request The request (body: DriveUploadOffsetRequest).
+ * @param deps    The dependencies (tests pass fakes).
+ * @returns 200 DriveUploadOffsetResponse; 400; 403 a ticket that is not this account's.
+ * Called from: app/api/drive/uploads/offset/route.ts
+ */
+export function handleUploadOffset(
+  request: Request,
+  deps: GoogleDeps = realGoogleDeps,
+): Promise<Response> {
+  return withUser(request, deps, 'offset', { post: true, limit: 'upload' }, async ({ user }) => {
+    const body = await readBody(request, offsetSchema);
+    if (!body) return failure(400, 'invalid_request', 'The upload request is not valid.');
+    const ticket = readTicket(deps.site().secret, user.id, body.uploadUrl, body.ticket, deps.now());
+    if (!ticket) return failure(403, 'bad_ticket', 'This upload is not yours, or it expired.');
+    const company = await companyDrive(deps);
+    if (company instanceof Response) return company;
+    const where = await company.drive.offset(body.uploadUrl, ticket.bytes);
+    return reply(where satisfies DriveUploadOffsetResponse);
+  });
+}
+
+/** POST /api/drive/uploads/complete's body. */
+const completeSchema = z
+  .object({
+    uploadUrl: uploadUrlSchema,
+    ticket: z.string().max(2000),
+    fileId: z.string().regex(/^[A-Za-z0-9_-]{5,200}$/),
+    md5: z
+      .string()
+      .regex(/^[0-9a-fA-F]{32}$/)
+      .optional(),
+  })
+  .strict();
+
+/**
+ * POST /api/drive/uploads/complete (ADR-0074): the client says an upload finished. The server reads the
+ * file with the company token and accepts its id only when it carries this upload's tag, has the ticket's
+ * size and (when the client sent one) the same MD5; a mismatch goes to the bin, so it is uploaded again.
+ * @param request The request (body: DriveUploadCompleteRequest).
+ * @param deps    The dependencies (tests pass fakes).
+ * @returns 200 DriveVerifiedFile; 400; 403 a ticket that is not this account's; 409 verify_failed.
+ * Called from: app/api/drive/uploads/complete/route.ts
+ */
+export function handleUploadComplete(
+  request: Request,
+  deps: GoogleDeps = realGoogleDeps,
+): Promise<Response> {
+  return withUser(request, deps, 'complete', { post: true, limit: 'upload' }, async ({ user }) => {
+    const body = await readBody(request, completeSchema);
+    if (!body) return failure(400, 'invalid_request', 'The upload request is not valid.');
+    const ticket = readTicket(deps.site().secret, user.id, body.uploadUrl, body.ticket, deps.now());
+    if (!ticket) return failure(403, 'bad_ticket', 'This upload is not yours, or it expired.');
+    const company = await companyDrive(deps);
+    if (company instanceof Response) return company;
+    const facts = await company.drive.file(body.fileId);
+    const expected = {
+      tag: ticket.tag,
+      bytes: ticket.bytes,
+      ...(body.md5 ? { md5: body.md5 } : {}),
+    };
+    if (!facts || !fileMatches(facts, expected)) {
+      // Our own file with the wrong bytes: binned, so the next upload starts clean.
+      if (facts && facts.appProperties.kiteFile === ticket.tag) await company.drive.trash(facts.id);
+      console.warn('drive: upload did not verify');
+      return failure(
+        409,
+        'verify_failed',
+        'The uploaded file did not match. It is uploaded again.',
+      );
+    }
+    return reply({ fileId: facts.id } satisfies DriveVerifiedFile);
+  });
+}
+
+/** The page's own files' keys (ADR-0074: uploaded through the server). */
+const SMALL_KEY = /^call:\d{1,15}:(transcript-txt|transcript-pdf|notes-pdf)$/;
+
+/**
+ * POST /api/drive/files (ADR-0074): one of the page's own files (a call's transcript TXT or PDF, or its
+ * notes PDF), sent as multipart/form-data (sessionId, key, name, file), at most 4 MB. Uploaded to the
+ * session's Transcripts with the company token; held in memory for this request only, never stored or
+ * logged. Returns the file when it is already there. The upload is checked against the bytes sent (MD5).
+ * @param request The request (multipart form).
+ * @param deps    The dependencies (tests pass fakes).
+ * @returns 200 DriveVerifiedFile; 400; 404 not connected; 409 no session folder, reconnect; 413 too large.
+ * Called from: app/api/drive/files/route.ts
+ */
+export function handleSmallUpload(
+  request: Request,
+  deps: GoogleDeps = realGoogleDeps,
+): Promise<Response> {
+  return withUser(request, deps, 'file', { post: true, limit: 'upload' }, async ({ user }) => {
+    let form: FormData;
+    try {
+      form = await request.formData();
+    } catch {
+      return failure(400, 'invalid_request', 'The file was not sent as a form.');
+    }
+    const sessionId = form.get('sessionId');
+    const key = form.get('key');
+    const name = form.get('name');
+    const file = form.get('file');
+    if (
+      typeof sessionId !== 'string' ||
+      !z.uuid().safeParse(sessionId).success ||
+      typeof key !== 'string' ||
+      !SMALL_KEY.test(key) ||
+      typeof name !== 'string' ||
+      !driveName.safeParse(name).success ||
+      !(file instanceof Blob)
+    ) {
+      return failure(400, 'invalid_request', 'The file request is not valid.');
+    }
+    if (file.size > MAX_SMALL_UPLOAD_BYTES) {
+      return failure(413, 'too_large', 'This file is too large to save to Drive.');
+    }
+    const company = await companyDrive(deps);
+    if (company instanceof Response) return company;
+    const parentId = await findSubfolder(
+      company.drive,
+      company.folder,
+      user.id,
+      sessionId,
+      'Transcripts',
+    );
+    if (!parentId) return failure(409, 'no_session_folder', 'The session folder is not made yet.');
+    const tag = fileTag(user.id, sessionId, key);
+    // Already there (saved before this device lost track of it): never uploaded twice.
+    const existing = await company.drive.find(parentId, [tag], company.folder.driveId);
+    if (existing) return reply({ fileId: existing } satisfies DriveVerifiedFile);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const facts = await company.drive.uploadSmall(
+      {
+        name,
+        parentId,
+        mimeType: key.endsWith('-pdf') ? 'application/pdf' : 'text/plain',
+        tags: [tag],
+      },
+      bytes,
+    );
+    if (!fileMatches(facts, { tag: tag.value, bytes: bytes.byteLength, md5: md5Hex(bytes) })) {
+      await company.drive.trash(facts.id);
+      console.warn('drive: small upload did not verify');
+      return failure(502, 'verify_failed', 'Google Drive did not keep the file. Try again.');
+    }
+    return reply({ fileId: facts.id } satisfies DriveVerifiedFile);
   });
 }
 
@@ -712,8 +1095,8 @@ async function deliver(
   attempt: number,
   sender: EmailConfig,
 ): Promise<'sent' | 'failed'> {
-  const connection = await getConnection(deps.db(), userId);
-  const recipients = recipientsFor(email, content, connection?.alsoNotify ?? []);
+  const member = await getMember(deps.db(), userId);
+  const recipients = recipientsFor(email, content, member.alsoNotify);
   const recordingPending = !isComplete(content);
   const marks = { recipients, ...(recordingPending ? { recordingPending: true } : {}) };
   await writeRecord(deps.db(), deps.keys(), userId, sessionId, (current) => ({
@@ -759,13 +1142,9 @@ async function sendIfDue(
   if (record.status !== 'collecting') return record.status;
   const due = emailDue(record.content, record.createdAt.getTime(), deps.now());
   if (!due) return 'collecting';
-  const connection = await getConnection(deps.db(), userId);
+  const member = await getMember(deps.db(), userId);
   const sender = deps.email();
-  const target = !sender
-    ? 'not-set-up'
-    : connection && !connection.emailEnabled
-      ? 'off'
-      : 'pending';
+  const target = !sender ? 'not-set-up' : !member.emailEnabled ? 'off' : 'pending';
   const attempt = await claimCollecting(deps.db(), userId, sessionId, target);
   if (attempt === null) {
     return (await readRecord(deps.db(), deps.keys(), userId, sessionId))?.status ?? 'pending';
@@ -819,9 +1198,26 @@ export function handleNotify(
   return withUser(request, deps, 'notify', { post: true, limit: 'other' }, async ({ user }) => {
     const body = await readBody(request, notifySchema);
     if (!body) return failure(400, 'invalid_request', 'The notification is not valid.');
-    if (!(await getConnection(deps.db(), user.id))) {
-      return failure(404, 'not_connected', 'Connect Google Drive first.');
-    }
+    const company = await companyToken(deps);
+    if (company instanceof Response) return company;
+    // ADR-0074: a Drive id is linked in the email only when the company token finds that file with the
+    // tag this account and session give it; anything else keeps its name without a link.
+    const files = await Promise.all(
+      body.files.map(async (file) => {
+        if (!file.fileId) return file;
+        const facts = file.key ? await company.drive.file(file.fileId) : null;
+        if (
+          facts &&
+          file.key &&
+          fileMatches(facts, { tag: fileTag(user.id, body.sessionId, file.key).value })
+        ) {
+          return file;
+        }
+        const { fileId: _unverified, ...rest } = file;
+        return rest;
+      }),
+    );
+    const report = { ...body, files };
     // ADR-0073: the session's first record, or this call's own.
     const first = await readRecord(deps.db(), deps.keys(), user.id, body.sessionId);
     const key = reportKey(body.sessionId, body.callStartedAt, first?.content ?? null);
@@ -832,7 +1228,7 @@ export function handleNotify(
       deps.keys(),
       user.id,
       key,
-      (current) => mergeReport(current, body),
+      (current) => mergeReport(current, report),
       body.manualOnly ? 'not-set-up' : 'collecting',
     );
     const status = await sendIfDue(deps, user.id, user.email, key, record);

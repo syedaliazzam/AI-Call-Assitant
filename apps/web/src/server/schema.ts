@@ -327,6 +327,70 @@ export const googleDrive = pgTable('google_drive', {
     .notNull(),
 });
 
+/** The one row of drive_company (ADR-0074). */
+export const DRIVE_COMPANY_ID = 'company';
+
+/**
+ * The company's Google Drive connection (ADR-0074): ONE row (id 'company'), connected by an admin. Every
+ * upload uses its token, server-side only: no Google token is ever sent to a page or the desktop app.
+ * The refresh token is stored only as AES-256-GCM ciphertext (KITE_DATA_KEY_V<n>), never logged.
+ * Disconnecting revokes it at Google and deletes the row. Replaces the per-person google_drive rows,
+ * which are no longer read.
+ */
+export const driveCompany = pgTable('drive_company', {
+  /** Always 'company' (DRIVE_COMPANY_ID): there is one connection. */
+  id: text('id').primaryKey(),
+  /** Which data key encrypted the refresh token (KITE_DATA_KEY_V<n>). */
+  keyVersion: smallint('key_version').notNull(),
+  /** The company account's Google refresh token, encrypted (base64 of IV + tag + ciphertext). */
+  refreshToken: text('refresh_token').notNull(),
+  /** The company Google account's address (Drive's about.user), shown to admins; null if unknown. */
+  accountEmail: text('account_email'),
+  /** 'connected', or 'reconnect' once Google refused the token; uploads wait until an admin reconnects. */
+  status: text('status').notNull().default('connected'),
+  /** The company folder every session folder is made in (picked with Google Picker); null until picked. */
+  folderId: text('folder_id'),
+  /** That folder's name as Drive had it when picked, for Settings. */
+  folderName: text('folder_name'),
+  /** The Shared Drive the folder is in; null for My Drive. */
+  driveId: text('drive_id'),
+  /** The admin who connected it (null once that account is deleted). */
+  connectedBy: text('connected_by').references(() => user.id, { onDelete: 'set null' }),
+  /** When it was (re)connected. */
+  connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow().notNull(),
+  /** When the row last changed. */
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});
+
+/**
+ * Each person's own Google Drive choices (ADR-0074), with no token: saving on or off, the "saved" email
+ * on or off, and the "Also notify" team list. Copied from google_drive by migration 0004; a person with
+ * no row has the defaults (both on, no list). Deleted with the account.
+ */
+export const driveMember = pgTable('drive_member', {
+  /** The account. */
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  /** "Save calls to Google Drive". */
+  saveEnabled: boolean('save_enabled').default(true).notNull(),
+  /** "Email me when a call is saved" (inert until SMTP is configured). */
+  emailEnabled: boolean('email_enabled').default(true).notNull(),
+  /** The team list for the "saved" email ("Also notify"), lower-case addresses. */
+  alsoNotify: text('also_notify')
+    .array()
+    .default(sql`'{}'::text[]`)
+    .notNull(),
+  /** When the row last changed. */
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull(),
+});
+
 /**
  * One row per call whose Drive uploads finished (ADR-0072; per call from ADR-0073, as a session can be
  * started again after it ended): the "saved" email's state, so each call gets at most one email (the

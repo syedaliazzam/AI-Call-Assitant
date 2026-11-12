@@ -3,7 +3,7 @@
  * Purpose: Wires Google Drive saving into the shell (desktop 1.6.0, ADR-0072): the IPC calls for
  *          uploading a recording file (its progress goes back to the page that asked) and for the native
  *          "saved" notification, for Kite origin main frames only; and the call state, which pauses every
- *          upload the moment a call starts.
+ *          upload the moment a call starts. 1.6.2 (ADR-0074): a recording file's size.
  * Used by: src/main.ts
  * Depends on: electron (types), src/drive/{upload,notice}.ts, src/channels.ts, src/hotkeys.ts
  *             (isKiteSender), src/recordings/manager.ts (types)
@@ -12,7 +12,12 @@
  * Logs statuses only: never a token, an address or a title.
  */
 import type { IpcMain, IpcMainInvokeEvent } from 'electron';
-import { DRIVE_PROGRESS_EVENT, DRIVE_UPLOAD_CHANNEL, SHOW_NOTICE_CHANNEL } from '../channels';
+import {
+  DRIVE_FILE_SIZE_CHANNEL,
+  DRIVE_PROGRESS_EVENT,
+  DRIVE_UPLOAD_CHANNEL,
+  SHOW_NOTICE_CHANNEL,
+} from '../channels';
 import { isKiteSender } from '../hotkeys';
 import type { RecordingManager } from '../recordings/manager';
 import { showNotice, type NoticeDeps } from './notice';
@@ -91,6 +96,8 @@ export function installDrive(deps: DriveHostDeps): DriveHost {
     return result;
   });
   handle(SHOW_NOTICE_CHANNEL, (_event, notice) => showNotice(deps.notices, notice));
+  // 1.6.2 (ADR-0074): a recording file's size, for the server to start and verify its upload.
+  handle(DRIVE_FILE_SIZE_CHANNEL, (_event, request) => uploader.fileSize(request));
 
   return {
     uploader,

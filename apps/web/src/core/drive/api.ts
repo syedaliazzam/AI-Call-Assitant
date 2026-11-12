@@ -1,23 +1,33 @@
 /**
  * File: apps/web/src/core/drive/api.ts
- * Purpose: The page's calls to Kite's own Google Drive routes (ADR-0072): status, a short-lived access
- *          token, the Picker's settings, the picked folder, the person's switches, disconnect, the
- *          "saved" notification, its list and Retry, and the test email. The refresh token never reaches the page; only an
- *          access token does, kept in memory until a minute before it expires.
- * Used by: src/core/drive/uploader.ts, src/core/drive/picker.ts, src/features/drive/*
+ * Purpose: The page's calls to Kite's own Google Drive routes: status, the Picker's settings (admins),
+ *          the company folder (admins), the person's switches, disconnect (admins), the "saved"
+ *          notification, its list and Retry, and the test email. ADR-0074: the page never holds a Google
+ *          token from Kite: the server makes a session's folders, starts each recording upload and gives
+ *          back only that upload's session address and ticket, says where an upload got to, verifies a
+ *          finished one, and uploads the page's own small files (transcript, notes) itself.
+ * Used by: src/core/drive/uploader.ts, src/core/drive/runner.ts, src/core/drive/picker.ts,
+ *          src/features/drive/*
  * Depends on: @kite/shared (the request and reply shapes)
- * Architecture: ADR-0072
+ * Architecture: ADR-0074 (ADR-0072 before it)
  */
 import type {
-  DriveAccessTokenResponse,
   DriveFolder,
   DriveNotificationsResponse,
   DriveNotifyRequest,
   DriveNotifyResponse,
   DrivePickerConfig,
+  DriveSessionFolderRequest,
+  DriveSessionFolderResponse,
   DriveSettingsRequest,
   DriveStatusResponse,
   DriveTestEmailResponse,
+  DriveUploadCompleteRequest,
+  DriveUploadOffsetRequest,
+  DriveUploadOffsetResponse,
+  DriveUploadStartRequest,
+  DriveUploadStartResponse,
+  DriveVerifiedFile,
 } from '@kite/shared';
 
 /** A refused or failed route call: code is the route's machine-readable code. */
@@ -44,7 +54,7 @@ export type DriveFetch = (input: string, init?: RequestInit) => Promise<Response
  * Calls a route and reads its JSON.
  * @param fetchFn The fetch.
  * @param path    The route.
- * @param body    A JSON body for a POST, or undefined for a GET.
+ * @param body    A JSON body (or a form) for a POST, or undefined for a GET.
  * @returns The reply.
  * @throws DriveApiError.
  */
@@ -55,12 +65,15 @@ async function call<T>(fetchFn: DriveFetch, path: string, body?: unknown): Promi
       path,
       body === undefined
         ? { cache: 'no-store' }
-        : {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            cache: 'no-store',
-          },
+        : body instanceof FormData
+          ? // The browser sets the multipart boundary itself.
+            { method: 'POST', body, cache: 'no-store' }
+          : {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+              cache: 'no-store',
+            },
     );
   } catch {
     throw new DriveApiError(
@@ -84,19 +97,26 @@ async function call<T>(fetchFn: DriveFetch, path: string, body?: unknown): Promi
   return (await response.json()) as T;
 }
 
+/** One of the page's own files, uploaded through the server. */
+export interface DriveSmallFile {
+  /** The session. */
+  sessionId: string;
+  /** The file's stable key ('call:<start>:transcript-txt', …). */
+  key: string;
+  /** Its name in Drive. */
+  name: string;
+  /** Its bytes. */
+  blob: Blob;
+}
+
 /** The calls, over one fetch. */
 export interface DriveApi {
   /** GET /api/google/status. */
   status(): Promise<DriveStatusResponse>;
-  /**
-   * An access token, from memory while it is still good.
-   * @param fresh True to ask the server again (Google refused the one held).
-   */
-  token(fresh?: boolean): Promise<DriveAccessTokenResponse>;
-  /** GET /api/google/picker-config. */
+  /** GET /api/google/picker-config (admins). */
   pickerConfig(): Promise<DrivePickerConfig>;
   /**
-   * POST /api/google/folder.
+   * POST /api/google/folder (admins).
    * @param folderId The picked folder.
    */
   setFolder(folderId: string): Promise<DriveFolder>;
@@ -105,11 +125,36 @@ export interface DriveApi {
    * @param changes What changes.
    */
   saveSettings(changes: DriveSettingsRequest): Promise<void>;
-  /** POST /api/google/disconnect. */
+  /** POST /api/google/disconnect (admins). */
   disconnect(): Promise<{ revoked: boolean }>;
   /**
+   * POST /api/drive/session-folder: the session's folders (made by the server).
+   * @param request The session and its folder's name.
+   */
+  sessionFolder(request: DriveSessionFolderRequest): Promise<DriveSessionFolderResponse>;
+  /**
+   * POST /api/drive/uploads: one recording file: already there, or an upload's session address.
+   * @param request The file.
+   */
+  startUpload(request: DriveUploadStartRequest): Promise<DriveUploadStartResponse>;
+  /**
+   * POST /api/drive/uploads/offset: where an upload got to.
+   * @param request The upload's address and ticket.
+   */
+  uploadOffset(request: DriveUploadOffsetRequest): Promise<DriveUploadOffsetResponse>;
+  /**
+   * POST /api/drive/uploads/complete: the server verifies a finished upload.
+   * @param request The upload, its Drive id and MD5.
+   */
+  completeUpload(request: DriveUploadCompleteRequest): Promise<DriveVerifiedFile>;
+  /**
+   * POST /api/drive/files: one of the page's own small files, uploaded by the server.
+   * @param file The file.
+   */
+  uploadFile(file: DriveSmallFile): Promise<DriveVerifiedFile>;
+  /**
    * POST /api/drive/notify.
-   * @param request The session's saved files.
+   * @param request The call's saved files.
    */
   notify(request: DriveNotifyRequest): Promise<DriveNotifyResponse>;
   /** GET /api/drive/notifications. */
@@ -128,29 +173,14 @@ export interface DriveApi {
  * Creates the API client.
  *
  * @param fetchFn The fetch (default the page's).
- * @param now     The clock (tests pass their own).
  * @returns The client.
  * Called from: driveApi() below; tests
  */
 export function createDriveApi(
   fetchFn: DriveFetch = (input, init) => fetch(input, init),
-  now: () => number = Date.now,
 ): DriveApi {
-  let held: DriveAccessTokenResponse | null = null;
   return {
     status: () => call(fetchFn, '/api/google/status'),
-    async token(fresh = false) {
-      // The server already took a margin off; one more minute here covers a slow upload's start.
-      if (!fresh && held && held.expiresAt - 60_000 > now()) return held;
-      held = null;
-      try {
-        held = await call<DriveAccessTokenResponse>(fetchFn, '/api/google/access-token');
-      } catch (error) {
-        held = null;
-        throw error;
-      }
-      return held;
-    },
     pickerConfig: () => call(fetchFn, '/api/google/picker-config'),
     async setFolder(folderId) {
       const out = await call<{ folder: DriveFolder }>(fetchFn, '/api/google/folder', { folderId });
@@ -159,9 +189,18 @@ export function createDriveApi(
     async saveSettings(changes) {
       await call(fetchFn, '/api/google/settings', changes);
     },
-    async disconnect() {
-      held = null;
-      return call(fetchFn, '/api/google/disconnect', {});
+    disconnect: () => call(fetchFn, '/api/google/disconnect', {}),
+    sessionFolder: (request) => call(fetchFn, '/api/drive/session-folder', request),
+    startUpload: (request) => call(fetchFn, '/api/drive/uploads', request),
+    uploadOffset: (request) => call(fetchFn, '/api/drive/uploads/offset', request),
+    completeUpload: (request) => call(fetchFn, '/api/drive/uploads/complete', request),
+    uploadFile(file) {
+      const form = new FormData();
+      form.set('sessionId', file.sessionId);
+      form.set('key', file.key);
+      form.set('name', file.name);
+      form.set('file', file.blob, file.name);
+      return call(fetchFn, '/api/drive/files', form);
     },
     notify: (request) => call(fetchFn, '/api/drive/notify', request),
     notifications: () => call(fetchFn, '/api/drive/notifications'),
@@ -174,14 +213,14 @@ export function createDriveApi(
   };
 }
 
-/** The page's one client (so the access token is shared by the uploader and the Picker). */
+/** The page's one client. */
 let shared: DriveApi | null = null;
 
 /**
  * The page's API client.
  *
  * @returns The client.
- * Called from: features/drive/*, core/drive/picker.ts
+ * Called from: features/drive/*, core/drive/picker.ts, core/drive/runner.ts
  */
 export function driveApi(): DriveApi {
   shared ??= createDriveApi();

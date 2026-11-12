@@ -165,6 +165,9 @@ export const RENAME_DEVICE_CHANNEL = 'kite:rename-device';
 /** 1.6.0 (ADR-0072): upload a recording file to Google Drive (invoke; a DriveUploadRequest). */
 export const DRIVE_UPLOAD_CHANNEL = 'kite:drive-upload';
 
+/** 1.6.2 (ADR-0074): one recording file's size (invoke; { recordingId, track }; a number or null). */
+export const DRIVE_FILE_SIZE_CHANNEL = 'kite:drive-file-size';
+
 /** 1.6.0: a Drive upload's progress, to the page that started it (send; a DriveUploadProgress). */
 export const DRIVE_PROGRESS_EVENT = 'kite:drive-progress';
 

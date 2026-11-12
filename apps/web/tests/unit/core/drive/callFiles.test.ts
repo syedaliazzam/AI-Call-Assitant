@@ -74,6 +74,8 @@ describe('queueCallForDrive', () => {
     configured: true,
     status: 'connected',
     folder: null,
+    admin: false,
+    account: null,
     saveEnabled: true,
     email: { configured: false, enabled: true, alsoNotify: [] },
     ...changes,
@@ -108,7 +110,10 @@ describe('callIsLive', () => {
 
 describe('reasons', () => {
   it('has words for every code and says which need Settings', () => {
-    expect(driveReasonText('reconnect')).toMatch(/Reconnect/);
+    // ADR-0074: an admin reconnects the company account.
+    expect(driveReasonText('reconnect')).toMatch(/admin to reconnect/);
+    expect(driveReasonText('update-desktop')).toMatch(/Update Paramount AI/);
+    expect(driveReasonNeedsSettings('update-desktop')).toBe(false);
     expect(driveReasonText('unknown-code')).toMatch(/Retry/);
     expect(driveReasonNeedsSettings('no-folder')).toBe(true);
     expect(driveReasonNeedsSettings('network')).toBe(false);

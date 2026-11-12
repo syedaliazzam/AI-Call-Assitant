@@ -4,13 +4,15 @@
  *   a browser it has no shell host (no recordings, no native notifications);
  * - an "Also notify" list is lower-cased, de-duplicated, capped at 20, and names what is not an address;
  * - the Picker shows folders only (My Drive and Shared Drives), with setSelectFolderEnabled, the project
- *   number (setAppId) and the access token, and answers the picked folder's id or null on Cancel.
+ *   number (setAppId) and a token Google Identity Services gives this browser (ADR-0074: never Kite's; the
+ *   popup is asked for inside the click, with the company account as the hint), and answers the picked
+ *   folder's id, or null on Cancel or when Google's popup is refused.
  * Google's script is a fake; no real Google call is made. All values are invented.
  */
 import { DRIVE_FOLDER_MIME } from '@kite/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseAddressList } from '@/core/drive/addresses';
-import { pickDriveFolder } from '@/core/drive/picker';
+import { preparePicker } from '@/core/drive/picker';
 import { UPLOADER_LOCK, createUploaderDeps, runUploaderOnce } from '@/core/drive/runner';
 import type { UploaderDeps } from '@/core/drive/uploader';
 
@@ -66,7 +68,7 @@ describe('parseAddressList', () => {
   });
 });
 
-describe('pickDriveFolder', () => {
+describe('preparePicker (ADR-0074: the Picker token comes from Google to this browser)', () => {
   it('opens a folders-only Picker with Shared Drives and the project number', async () => {
     const calls: string[] = [];
     let callback: ((data: { action: string; docs?: { id: string }[] }) => void) | null = null;
@@ -166,9 +168,27 @@ describe('pickDriveFolder', () => {
         return { setVisible: () => calls.push('visible') };
       }
     }
+    /** What Google Identity Services was asked. */
+    const identity: { config?: Record<string, unknown>; requests: number; answer: object } = {
+      requests: 0,
+      answer: { access_token: 'browser-token' },
+    };
     vi.stubGlobal('window', {
       gapi: { load: (_name: string, done: () => void) => done() },
       google: {
+        accounts: {
+          oauth2: {
+            initTokenClient: (config: Record<string, unknown>) => {
+              identity.config = config;
+              return {
+                requestAccessToken: () => {
+                  identity.requests += 1;
+                  (config.callback as (r: object) => void)(identity.answer);
+                },
+              };
+            },
+          },
+        },
         picker: {
           DocsView: View,
           PickerBuilder: Builder,
@@ -179,10 +199,22 @@ describe('pickDriveFolder', () => {
       },
     });
     const api = {
-      pickerConfig: async () => ({ apiKey: 'picker-key', appId: '1234' }),
-      token: async () => ({ accessToken: 'at', expiresAt: 0 }),
+      pickerConfig: async () => ({
+        apiKey: 'picker-key',
+        appId: '1234',
+        clientId: 'client.apps.googleusercontent.com',
+        account: 'company@example.com',
+      }),
     };
-    const picked = pickDriveFolder(api);
+    const ready = await preparePicker(api);
+    const picked = ready.pick();
+    // Google's popup is asked for at once, inside the click (no await before it).
+    expect(identity.requests).toBe(1);
+    expect(identity.config).toMatchObject({
+      client_id: 'client.apps.googleusercontent.com',
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      hint: 'company@example.com',
+    });
     await vi.waitFor(() => expect(callback).not.toBeNull());
     callback!({ action: 'picked', docs: [{ id: 'FOLDER-9' }] });
     expect(await picked).toBe('FOLDER-9');
@@ -191,12 +223,17 @@ describe('pickDriveFolder', () => {
     expect(calls).toContain('drives:true');
     expect(calls).toContain('feature:sdr');
     expect(calls).toContain('app:1234');
-    expect(calls).toContain('token:at');
+    expect(calls).toContain('token:browser-token');
     expect(calls).toContain('key:picker-key');
 
-    const cancelled = pickDriveFolder(api);
+    const cancelled = ready.pick();
     await vi.waitFor(() => expect(calls.filter((c) => c === 'visible')).toHaveLength(2));
     callback!({ action: 'cancel' });
     expect(await cancelled).toBeNull();
+
+    // Google's popup closed or refused: no Picker, nothing picked.
+    identity.answer = { error: 'access_denied' };
+    expect(await ready.pick()).toBeNull();
+    expect(calls.filter((c) => c === 'visible')).toHaveLength(2);
   });
 });
