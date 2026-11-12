@@ -2,7 +2,7 @@
  * File: apps/web/src/features/home/HomeCard.tsx
  * Purpose: One session on the home panel (v1.1.0, ADR-0041): date, title, description and ⋮; the type
  *          and Transcript chips; the status dot and word, the latest call's length, and "View
- *          transcript" for an ended session or "Start" for one that is ready.
+ *          transcript" and "Start again" (ADR-0073) for an ended session, or "Start" for one that is ready.
  * Used by: src/features/home/HomePanel.tsx
  * Depends on: src/core/session/callLength.ts, src/core/storage (sessions.ts, types.ts),
  *             src/features/dashboard/SessionMenu.tsx, src/features/session-setup/labels.ts, src/ui
@@ -127,9 +127,15 @@ export function HomeCard(props: HomeCardProps) {
           {length && <p className="text-[12px] text-ui-muted">{length}</p>}
         </div>
         {status === 'ended' ? (
-          <Button size="sm" variant="secondary" onClick={() => props.onView(session)}>
-            View transcript
-          </Button>
+          // ADR-0073: an ended session starts again too, each start a new call in the same session.
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            <Button size="sm" variant="secondary" onClick={() => props.onView(session)}>
+              View transcript
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => props.onStart(session)}>
+              Start again
+            </Button>
+          </div>
         ) : (
           <Button size="sm" onClick={() => props.onStart(session)}>
             Start

@@ -3,7 +3,8 @@
  * recording id (a repeated report changes nothing); the session is complete only when every expected
  * recording part and its stereo file are in Drive (a deleted recording is not waited for); the email is
  * due when complete or 24 hours after the first report; recipients are the person and the session's own
- * list or the Settings list; older records' files are recognised by name. All values are invented.
+ * list or the Settings list; older records' files are recognised by name. ADR-0073: each call has its own
+ * record key (the session's first record keeps the session id). All values are invented.
  */
 import type { DriveNotifyRequest } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
@@ -14,7 +15,10 @@ import {
   isComplete,
   mergeReport,
   missingRecordingFiles,
+  notificationKey,
   recipientsFor,
+  reportKey,
+  splitNotificationKey,
 } from '@/server/google/report';
 
 /** An invented report. */
@@ -92,5 +96,25 @@ describe('recipients and older files', () => {
       part: 1,
     });
     expect(fileKindOf({ name: 'x Notes.pdf', folder: 'Transcripts' })?.kind).toBe('notes-pdf');
+  });
+});
+
+describe('record keys (ADR-0073: one email per call)', () => {
+  const SESSION = '11111111-1111-4111-8111-111111111111';
+
+  it('keeps the session id for the first record and adds the call for later ones, both ways', () => {
+    expect(notificationKey(SESSION, null)).toBe(SESSION);
+    expect(notificationKey(SESSION, 1_794_389_400_000)).toBe(`${SESSION}~1794389400000`);
+    expect(splitNotificationKey(SESSION)).toEqual({ sessionId: SESSION, call: null });
+    expect(splitNotificationKey(`${SESSION}~1794389400000`)).toEqual({
+      sessionId: SESSION,
+      call: 1_794_389_400_000,
+    });
+  });
+
+  it('sends a report to the first record when there is none or it is the same call, else its own', () => {
+    expect(reportKey(SESSION, 100, null)).toBe(SESSION);
+    expect(reportKey(SESSION, 100, { callStartedAt: 100 })).toBe(SESSION);
+    expect(reportKey(SESSION, 200, { callStartedAt: 100 })).toBe(`${SESSION}~200`);
   });
 });

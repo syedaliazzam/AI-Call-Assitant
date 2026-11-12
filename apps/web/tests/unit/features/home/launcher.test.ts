@@ -4,7 +4,7 @@
  * session on top, and offers the notes of a call that ended in the last 2 hours (ADR-0055); ADR-0071:
  * the search (title, role or topic, description) and the sort. 1.6.1 (initialLauncherView,
  * shownLauncherView): the browser's Start opens that session's Start card, and falls back to the
- * sessions when the session is not in the account or has ended.
+ * sessions only when the session is gone or not in the account (ADR-0073: an ended one starts again).
  */
 import { describe, expect, it } from 'vitest';
 import type { Session } from '@/core/storage/types';
@@ -127,9 +127,9 @@ describe('the first card (1.6.1)', () => {
     expect(shownLauncherView(other, 'abc', 'missing')).toEqual(other);
   });
 
-  it('goes back to the sessions when the link’s session is not in the account or has ended', () => {
+  it('goes back to the sessions only when the link’s session is gone or not in the account', () => {
     const start = { kind: 'start', sessionId: 'abc' } as const;
     expect(shownLauncherView(start, 'abc', 'missing')).toEqual({ kind: 'sessions' });
-    expect(shownLauncherView(start, 'abc', 'ended')).toEqual({ kind: 'sessions' });
+    // ADR-0073: an ended session starts again, so its link keeps the Start card ('ok').
   });
 });

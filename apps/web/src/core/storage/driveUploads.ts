@@ -3,9 +3,10 @@
  * Purpose: Each session's Google Drive upload on this device (ADR-0072; the `driveUploads` store,
  *          version 11, never synced): queue a call when it ends, read and change a job, pick the next
  *          one to work on, Retry, and watch them for the progress shown on session cards and Meetings.
+ *          ADR-0073: each call keeps its own report flags (withCallFlags), for its own email.
  * Used by: src/core/drive/uploader.ts, src/core/drive/queue.ts, src/features/drive/*
  * Depends on: dexie (liveQuery), src/core/storage/db.ts, src/core/storage/types.ts
- * Architecture: ADR-0072; architecture §7.4
+ * Architecture: ADR-0072, ADR-0073; architecture §7.4
  */
 import { liveQuery } from 'dexie';
 import { getDb } from './db';
@@ -13,6 +14,31 @@ import type { DriveCall, DriveSessionJob } from './types';
 
 /** The states a job is worked on in (an 'uploading' one was cut off by a closed window or a crash). */
 const ACTIVE_STATES: readonly DriveSessionJob['state'][] = ['queued', 'uploading', 'paused'];
+
+/**
+ * ADR-0073 (each call has its own email): gives every call of a job its own report flags. A call queued
+ * before the change has none: when its job was already reported under the session's single email
+ * (notified, with files the server heard of) it is closed, never reported again, so it can never send a
+ * second email; otherwise (a job still uploading, or one from before the combined email, which is
+ * reported once more for "Send email") it starts unreported, as a new call does.
+ *
+ * @param job The job.
+ * @returns The job with every call's flags (the same object when nothing changed).
+ * Called from: queueDriveCall(); src/core/drive/uploader.ts (runDriveQueue, reportDue); tests
+ */
+export function withCallFlags(job: DriveSessionJob): DriveSessionJob {
+  if (job.calls.every((call) => call.notified !== undefined)) return job;
+  const reportedBefore = job.notified && (job.reportedFiles ?? 0) > 0;
+  return {
+    ...job,
+    calls: job.calls.map((call) => {
+      if (call.notified !== undefined) return call;
+      return reportedBefore
+        ? { ...call, reportedFiles: 0, notified: true, closed: true }
+        : { ...call, reportedFiles: 0, notified: false };
+    }),
+  };
+}
 
 /**
  * Adds a finished call to its session's upload (making the job when it is the first), and queues it.
@@ -41,9 +67,15 @@ export async function queueDriveCall(
       reportedFiles: 0,
       queuedAt: now,
       ...existing,
+      // ADR-0073: a new call (also a session started again after it ended) gets its own email, so it
+      // starts unreported; the calls already there are settled first, so none of them is mistaken for
+      // a new one.
       calls: calls.some((known) => known.startedAt === call.startedAt)
         ? calls
-        : [...calls, call].sort((a, b) => a.startedAt - b.startedAt),
+        : [
+            ...(existing ? withCallFlags(existing).calls : []),
+            { ...call, reportedFiles: 0, notified: false },
+          ].sort((a, b) => a.startedAt - b.startedAt),
       state: 'queued',
       reason: undefined,
       noticeShown: false,

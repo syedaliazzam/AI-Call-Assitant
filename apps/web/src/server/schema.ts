@@ -328,8 +328,9 @@ export const googleDrive = pgTable('google_drive', {
 });
 
 /**
- * One row per session whose Drive uploads finished (ADR-0072): the "saved" email's state, so each
- * session gets at most one email (the primary key) and Settings can list and retry them. What the
+ * One row per call whose Drive uploads finished (ADR-0072; per call from ADR-0073, as a session can be
+ * started again after it ended): the "saved" email's state, so each call gets at most one email (the
+ * primary key) and Settings can list and retry them. What the
  * email says (title, date, length, file names, folder link, addresses) is stored only encrypted, like
  * call data; never transcript, notes, answer or document text, which the request cannot even carry.
  */
@@ -340,19 +341,24 @@ export const driveNotification = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    /** The session (the device's UUID for it). */
+    /**
+     * The record's key (ADR-0073, server/google/report.ts notificationKey): the session's UUID for its
+     * first record (its first call, or a whole session saved before ADR-0073), or
+     * "<session UUID>~<call start, Unix ms>" for each later call. No migration: the column was already
+     * text.
+     */
     sessionId: text('session_id').notNull(),
     /** 'pending', 'sent', 'failed', 'off' (switched off) or 'not-set-up' (no SMTP settings). */
     status: text('status').notNull(),
     /** Which data key encrypted `content`. */
     keyVersion: smallint('key_version').notNull(),
-    /** The email's details as JSON, encrypted with AES-256-GCM, bound to this account and session. */
+    /** The email's details as JSON, encrypted with AES-256-GCM, bound to this account and record key. */
     content: text('content').notNull(),
     /** How many times sending was tried. */
     attempts: integer('attempts').default(0).notNull(),
     /** Why the last try failed, as a short code ('rejected', 'unreachable'); never a message. */
     error: text('error'),
-    /** When the session's uploads finished. */
+    /** When the call's first report came. */
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     /** When the mail server accepted the email; null until then. */
     sentAt: timestamp('sent_at', { withTimezone: true }),
@@ -363,7 +369,7 @@ export const driveNotification = pgTable(
       .notNull(),
   },
   (table) => [
-    // One email per session, ever: a second request finds the row and sends nothing.
+    // One email per call, ever: a second request finds the row and sends nothing.
     primaryKey({ columns: [table.userId, table.sessionId] }),
     // Settings lists one account's latest notifications.
     index('drive_notification_user_created_idx').on(table.userId, table.createdAt),

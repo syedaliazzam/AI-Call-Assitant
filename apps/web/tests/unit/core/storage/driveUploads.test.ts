@@ -2,7 +2,8 @@
  * Tests for apps/web/src/core/storage/driveUploads.ts (ADR-0072), on an in-memory IndexedDB: queuing a
  * call makes a job, the same call twice is kept once, a second call goes back to the queue keeping the
  * saved files and folder; the next job is the oldest active one; Retry queues waiting and failed jobs;
- * the store is never synced (it is not in SYNCED_STORES). All values are invented.
+ * the store is never synced (it is not in SYNCED_STORES). ADR-0073: each call has its own report flags;
+ * calls already emailed under their session's single email are closed. All values are invented.
  */
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -14,7 +15,9 @@ import {
   putDriveJob,
   queueDriveCall,
   requeueDriveJobs,
+  withCallFlags,
 } from '@/core/storage/driveUploads';
+import type { DriveSessionJob } from '@/core/storage/types';
 import { SYNCED_STORES } from '@/core/sync/mapping';
 import { resetDb } from './helpers';
 
@@ -90,5 +93,68 @@ describe('the queue', () => {
 
   it('is never synced to the account', () => {
     expect(SYNCED_STORES as readonly string[]).not.toContain('driveUploads');
+  });
+});
+
+describe('each call’s own flags (ADR-0073)', () => {
+  /**
+   * A job as 1.6.0 and 1.6.1 kept it: calls without their own flags.
+   * @param changes What differs.
+   * @returns The job.
+   */
+  const legacy = (changes: Partial<DriveSessionJob>): DriveSessionJob => ({
+    sessionId: 's1',
+    calls: [
+      { startedAt: 1_000, endedAt: 2_000 },
+      { startedAt: 5_000, endedAt: 6_000 },
+    ],
+    files: [],
+    state: 'done',
+    notified: true,
+    reportedFiles: 4,
+    noticeShown: true,
+    queuedAt: 2_000,
+    updatedAt: 6_000,
+    ...changes,
+  });
+
+  it('closes the calls of a job already emailed for its session, so they never email again', () => {
+    expect(withCallFlags(legacy({})).calls).toEqual([
+      { startedAt: 1_000, endedAt: 2_000, reportedFiles: 0, notified: true, closed: true },
+      { startedAt: 5_000, endedAt: 6_000, reportedFiles: 0, notified: true, closed: true },
+    ]);
+  });
+
+  it('leaves the calls of a job not yet reported to be reported, each on its own', () => {
+    for (const job of [legacy({ notified: false }), legacy({ reportedFiles: 0 })]) {
+      expect(withCallFlags(job).calls.every((call) => !call.closed && !call.notified)).toBe(true);
+    }
+  });
+
+  it('changes nothing when every call has its flags', () => {
+    const job = legacy({
+      calls: [{ startedAt: 1_000, endedAt: 2_000, reportedFiles: 3, notified: true }],
+    });
+    expect(withCallFlags(job)).toBe(job);
+  });
+
+  it('queues a new call (a session started again) unreported, and settles the calls before it', async () => {
+    await queueDriveCall('s1', { startedAt: 1_000, endedAt: 2_000 }, 3_000);
+    const job = (await getDriveJob('s1'))!;
+    expect(job.calls[0]).toMatchObject({ reportedFiles: 0, notified: false });
+    // As 1.6.1 left it after its email: done, notified, the call without flags.
+    await putDriveJob({
+      ...job,
+      state: 'done',
+      notified: true,
+      reportedFiles: 3,
+      calls: [{ startedAt: 1_000, endedAt: 2_000 }],
+    });
+    const again = await queueDriveCall('s1', { startedAt: 5_000, endedAt: 6_000 }, 7_000);
+    expect(again.state).toBe('queued');
+    expect(again.calls).toEqual([
+      { startedAt: 1_000, endedAt: 2_000, reportedFiles: 0, notified: true, closed: true },
+      { startedAt: 5_000, endedAt: 6_000, reportedFiles: 0, notified: false },
+    ]);
   });
 });

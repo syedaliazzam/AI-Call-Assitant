@@ -3,7 +3,8 @@
  * Purpose: The desktop app's first card (ADR-0055), "Your sessions", redesigned in ADR-0071: a search
  *          box ("Search by title or description") joined to a sort button (newest, oldest, A–Z), then
  *          the account's sessions as the dashboard's own session cards, one column. Each card's button
- *          opens the Start card (Start session) or the session's page in the browser (View transcript);
+ *          opens the Start card (Start session) or the session's page in the browser (View transcript; an
+ *          ended session also has Start again, ADR-0073);
  *          its ⋮ has View in dashboard ↗ and Delete. A session the browser's "Desktop app" link opened
  *          stays first, edged in green, "From your browser". After a call, "Call ended · View notes"
  *          sits on top. A bar stuck to the bottom holds "View in Dashboard ↗" and "+ Create session",
@@ -295,14 +296,25 @@ function LauncherCard({
       menu={<LauncherSessionMenu session={session} title={title} onDelete={onDelete} />}
       action={
         status === 'ended' ? (
-          // The transcript is read in the browser (the session's Review page).
-          <Button
-            variant="secondary"
-            className="shrink-0"
-            onClick={() => openDashboard(`/sessions/${session.id}`)}
-          >
-            View transcript <OutIcon />
-          </Button>
+          // The transcript is read in the browser (the session's Review page). ADR-0073: an ended
+          // session starts again too, each start a new call in the same session (same documents).
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            <Button
+              variant="secondary"
+              className="shrink-0"
+              onClick={() => openDashboard(`/sessions/${session.id}`)}
+            >
+              View transcript <OutIcon />
+            </Button>
+            <Button
+              variant="secondary"
+              className="shrink-0"
+              aria-label={`Start again: ${title}`}
+              onClick={() => onOpen(session)}
+            >
+              Start again
+            </Button>
+          </div>
         ) : (
           <Button
             variant="secondary"

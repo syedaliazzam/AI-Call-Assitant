@@ -10,6 +10,7 @@
  *          560 × 720, the window size, for the visual pairs (tests/visual/v12-pairs.ts). 1.6.1: the
  *          browser's Start opens the session's Start card (cold start and a running app's reload), and
  *          Drive's reconnect notice sits above the list, never over the bottom bar, closed for the run.
+ *          ADR-0073: an ended session starts again from the link (cold start and reload) and its card.
  * Used by: `pnpm --filter web test:launcher`
  * Depends on: @playwright/test, esbuild, @tailwindcss/postcss, tests/integration/harness/launcher.tsx
  * Architecture: ADR-0051, ADR-0055
@@ -524,4 +525,36 @@ test('1.6.1: the browser’s Start opens the Start card, with Drive’s reconnec
   await expect(cards.nth(0)).toContainText('From your browser');
   await expect(cards.nth(0)).toContainText('Copperfield Labs (invented)');
   await expect(notice).toHaveCount(0);
+});
+
+test('ADR-0073: an ended session starts again, from the browser’s link and from its desktop card', async () => {
+  await open();
+  const ids = await seedAndShow();
+  await page.evaluate((id) => window.kiteLauncherHarness.endNow(id), ids[0]!);
+
+  // App closed (cold start): the browser's Start for the ended session opens its Start card.
+  await page.evaluate((id) => window.kiteLauncherHarness.show(id), ids[0]);
+  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Paid session' })).toBeVisible();
+  // Free goes on to Connect, as for a new session.
+  await page.getByRole('button', { name: 'Start free' }).click();
+  await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
+
+  // App already open (a second launch reloads the panel): the same again.
+  await page.reload();
+  await page.waitForFunction(() => 'kiteLauncherHarness' in window);
+  await page.evaluate((id) => window.kiteLauncherHarness.show(id), ids[0]);
+  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
+
+  // The desktop card: an ended session has View transcript and Start again.
+  await page.getByRole('button', { name: 'Back' }).click();
+  const ended = page
+    .getByRole('list', { name: 'Sessions' })
+    .getByRole('listitem')
+    .filter({ hasText: 'Lantern Freight (invented)' });
+  await expect(ended).toContainText('Ended');
+  await expect(ended.getByRole('button', { name: /View transcript/ })).toBeVisible();
+  await shot('launcher-ended-card-560');
+  await ended.getByRole('button', { name: /^Start again/ }).click();
+  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
 });

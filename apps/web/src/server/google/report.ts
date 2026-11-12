@@ -1,28 +1,81 @@
 /**
  * File: apps/web/src/server/google/report.ts
- * Purpose: One complete "saved" email per session (ADR-0072, 1.6.0): merges the reports that devices send
- *          for a session (the browser's transcript and notes, the desktop app's recording parts, retries,
- *          a later backfill) into one record, says whether everything expected is in Drive (every recording
+ * Purpose: One complete "saved" email per call (ADR-0072, 1.6.0; per call from ADR-0073, as a session can
+ *          be started again after it ended): names each call's record (notificationKey), merges the
+ *          reports that devices send for a call (the browser's transcript and notes, the desktop app's
+ *          recording parts, retries, a later backfill) into one record, says whether everything expected is in Drive (every recording
  *          part the account knows of, and its stereo file), and when the email may go: as soon as it is
  *          complete, or 24 hours after the first report with "Recording upload pending". Pure functions.
  * Used by: src/server/google/api.ts; tests
  * Depends on: @kite/shared (report types), src/server/google/store.ts (NotificationContent type)
- * Architecture: ADR-0072
+ * Architecture: ADR-0072, ADR-0073
  */
 import 'server-only';
 import type { DriveExpectedRecording, DriveFileKind, DriveSavedFile } from '@kite/shared';
 import type { NotificationContent } from './store';
 
-/** How long after a session's first report the email goes even without the recording, ms. */
+/** How long after a call's first report the email goes even without the recording, ms. */
 export const REPORT_WAIT_MS = 24 * 60 * 60_000;
+
+/** Joins a later call's start to its session id in a record key (never part of a UUID). */
+const CALL_KEY_SEPARATOR = '~';
+
+/**
+ * The key of one call's record in drive_notification.session_id (ADR-0073). The session's first record
+ * (its first reported call, or a whole session saved before ADR-0073) keeps the plain session id, so
+ * records from before the change stay valid with no migration; each later call is
+ * "<session id>~<call start>".
+ *
+ * @param sessionId The session.
+ * @param call      null for the session's first record, else the later call's start (Unix ms).
+ * @returns The key.
+ * Called from: api.ts (notify, retry); tests
+ */
+export function notificationKey(sessionId: string, call: number | null): string {
+  return call === null ? sessionId : `${sessionId}${CALL_KEY_SEPARATOR}${call}`;
+}
+
+/**
+ * Splits a record key back into its session and call (notificationKey's reverse).
+ *
+ * @param key The key.
+ * @returns The session id, and the later call's start or null for the session's first record.
+ * Called from: api.ts (notifications list); tests
+ */
+export function splitNotificationKey(key: string): { sessionId: string; call: number | null } {
+  const at = key.indexOf(CALL_KEY_SEPARATOR);
+  if (at < 0) return { sessionId: key, call: null };
+  const call = Number(key.slice(at + 1));
+  return { sessionId: key.slice(0, at), call: Number.isSafeInteger(call) ? call : null };
+}
+
+/**
+ * Which record a call's report goes to (ADR-0073): the session's first record when there is none yet or
+ * it is about the same call (the same start), else the call's own.
+ *
+ * @param sessionId The session.
+ * @param callStartedAt The reported call's start.
+ * @param first     The session's first record's content, or null when it has none.
+ * @returns The record key.
+ * Called from: api.ts (handleNotify); tests
+ */
+export function reportKey(
+  sessionId: string,
+  callStartedAt: number,
+  first: Pick<NotificationContent, 'callStartedAt'> | null,
+): string {
+  return !first || first.callStartedAt === callStartedAt
+    ? notificationKey(sessionId, null)
+    : notificationKey(sessionId, callStartedAt);
+}
 
 /** One device's report, as the route checked it. */
 export interface SessionReport {
   /** The session's title. */
   title: string;
-  /** When its (first) call started. */
+  /** When the call started. */
   callStartedAt: number;
-  /** Its calls' length, ms. */
+  /** The call's length, ms. */
   durationMs: number;
   /** The files this device saved. */
   files: DriveSavedFile[];
@@ -32,7 +85,7 @@ export interface SessionReport {
   timeZone: string;
   /** The session's own Also notify list, or null. */
   alsoNotify: string[] | null;
-  /** The recordings the account knows this session has. */
+  /** The recordings the account knows this call has. */
   expectedRecordings: DriveExpectedRecording[];
   /** Recordings whose files were deleted (never coming). */
   goneRecordings: string[];

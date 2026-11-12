@@ -78,9 +78,11 @@ export function DriveNotificationList({
       <ul className="flex flex-col divide-y divide-ui-border rounded-control border border-ui-border">
         {items.map((item) => {
           const state = STATES[item.status];
+          // ADR-0073: one row per call's email; a session started again has several.
+          const rowKey = `${item.sessionId}~${item.call ?? ''}`;
           return (
             <li
-              key={item.sessionId}
+              key={rowKey}
               className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
             >
               <div className="min-w-0">
@@ -109,10 +111,10 @@ export function DriveNotificationList({
                     variant="secondary"
                     disabled={retrying !== null}
                     onClick={async () => {
-                      setRetrying(item.sessionId);
+                      setRetrying(rowKey);
                       setMessage(null);
                       try {
-                        const out = await driveApi().retryNotification(item.sessionId);
+                        const out = await driveApi().retryNotification(item.sessionId, item.call);
                         if (out.status === 'failed')
                           setMessage('The email failed again. Try later.');
                       } catch (error) {
