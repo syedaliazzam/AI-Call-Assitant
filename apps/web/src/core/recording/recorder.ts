@@ -29,11 +29,26 @@ import {
 import type { RecordingHost } from '@/platform';
 import { chooseFormat, hasHardwareH264, STEREO_MIME, type FormatDeps } from './format';
 
+/** Batch C (P1-6): a video track with Chromium's frame counters (not in TypeScript's DOM types yet). */
+interface TrackWithStats {
+  /** The counters, where the browser has them. */
+  stats?: {
+    /** Frames handed on to the recorder so far. */
+    deliveredFrames?: number;
+    /** Frames dropped so far. */
+    discardedFrames?: number;
+  };
+}
+
 /** Why a recording stopped by itself. */
 export type RecordingStopReason = 'disk-full' | 'write-failed' | 'screen-ended';
 
-/** Why a recording could not start. */
-export type RecordingStartFailure = RecordingOpenFailure | 'no-format' | 'no-screen';
+/**
+ * Why a recording could not start. Batch C (P1-6): 'no-hardware-video' is a screen recording on a computer
+ * without a hardware H.264 encoder (the caller records sound only instead).
+ */
+export type RecordingStartFailure =
+  RecordingOpenFailure | 'no-format' | 'no-screen' | 'no-hardware-video';
 
 /** A start that failed, with a sentence for the person. */
 export class RecordingStartError extends Error {
@@ -93,6 +108,21 @@ export interface ActiveRecording {
   readonly fileName: string;
   /** The quality used (null for sound only). */
   readonly quality: RecordingQuality | null;
+  /** Batch C (P1-6): the main file's MediaRecorder type (for the timing trace). */
+  readonly mimeType: string;
+  /** Batch C (P1-6): the quality's own frame rate (null for sound only). */
+  readonly frameRate: number | null;
+  /**
+   * Batch C (P1-6): caps the screen's frame rate (the yield under load, and back). Size and sound stay as
+   * they are. Does nothing for a sound-only recording.
+   * @param fps Frames a second at most.
+   */
+  capFrameRate(fps: number): Promise<void>;
+  /**
+   * Batch C (P1-6): the screen track's frame counters so far (Chromium's MediaStreamTrack stats), or null
+   * where the browser has none or it is a sound-only recording.
+   */
+  frameStats(): { delivered: number; discarded: number } | null;
   /**
    * Feeds a new microphone or other-side stream into the mix (the call changed device or share).
    * @param channel Which side.
@@ -142,6 +172,8 @@ export const START_FAILURE_TEXT: Readonly<Record<RecordingStartFailure, string>>
   failed: 'Paramount AI could not create the recording files. Try again.',
   'no-format': 'This computer cannot record video here.',
   'no-screen': 'Paramount AI could not capture the screen to record it. Try again.',
+  'no-hardware-video':
+    'This computer has no hardware video encoder, so Paramount AI records the sound only (screen video would slow down the call).',
 };
 
 /**
@@ -192,7 +224,11 @@ export async function startRecording(
   deps: RecorderDeps = defaultRecorderDeps(),
 ): Promise<ActiveRecording> {
   const format = await chooseFormat(start.kind, start.quality, deps);
-  if (!format) throw new RecordingStartError('no-format', START_FAILURE_TEXT['no-format']);
+  if (!format) {
+    // Batch C (P1-6): a screen recording needs a hardware encoder (never software video in a call).
+    const reason = start.kind === 'screen' ? 'no-hardware-video' : 'no-format';
+    throw new RecordingStartError(reason, START_FAILURE_TEXT[reason]);
+  }
 
   // 1. The screen's video (screen recordings only).
   let screen: MediaStream | null = null;
@@ -344,11 +380,31 @@ export async function startRecording(
       recorder.stop();
     });
 
+  const videoTrack = screen?.getVideoTracks()[0] ?? null;
   return {
     id: start.id,
     startedAt,
     fileName: opened.fileName,
     quality: format.quality,
+    mimeType: format.mimeType,
+    frameRate: format.spec?.frameRate ?? null,
+    async capFrameRate(fps) {
+      if (!videoTrack || !format.spec || videoTrack.readyState !== 'live') return;
+      // The size limits are given again: applyConstraints replaces the track's constraints as a whole.
+      await videoTrack
+        .applyConstraints({
+          width: { max: format.spec.width },
+          height: { max: format.spec.height },
+          frameRate: { max: fps },
+        })
+        .catch(() => undefined);
+    },
+    frameStats() {
+      // Chromium's MediaStreamTrack.stats (video): frames handed to the recorder and frames dropped.
+      const stats = (videoTrack as TrackWithStats | null)?.stats;
+      if (typeof stats?.deliveredFrames !== 'number') return null;
+      return { delivered: stats.deliveredFrames, discarded: stats.discardedFrames ?? 0 };
+    },
     replaceSource: connect,
     async stop() {
       if (stopping) return null;

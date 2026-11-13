@@ -332,3 +332,58 @@ describe('startRecording', () => {
     expect(onStopped).toHaveBeenCalledWith('screen-ended');
   });
 });
+
+/** Batch C: the fake screen track with what the cap and the counters use. */
+interface VideoWithStats {
+  /** 'live' while capturing. */
+  readyState: string;
+  /** Records the constraints applied. */
+  applyConstraints: (constraints: MediaTrackConstraints) => Promise<void>;
+  /** Chromium's counters. */
+  stats?: {
+    /** Frames delivered. */
+    deliveredFrames: number;
+    /** Frames dropped. */
+    discardedFrames: number;
+  };
+}
+
+describe('Batch C (P1-6): no software video, the frame-rate cap, the frame counters', () => {
+  it('refuses a screen recording without a hardware encoder (the caller records sound only)', async () => {
+    const f = setup();
+    const deps = { ...f.deps, hardwareH264: async () => false };
+    await expect(startRecording(f.host, START, {}, deps)).rejects.toMatchObject({
+      reason: 'no-hardware-video',
+    });
+    expect(f.host.openScreen).not.toHaveBeenCalled();
+    expect(f.host.open).not.toHaveBeenCalled();
+  });
+
+  it('caps the screen frame rate keeping the size, and reads its frame counters', async () => {
+    const f = setup();
+    const applied: MediaTrackConstraints[] = [];
+    const video = f.screenVideo as unknown as VideoWithStats;
+    video.readyState = 'live';
+    video.applyConstraints = async (constraints) => {
+      applied.push(constraints);
+    };
+    const recording = await startRecording(f.host, START, {}, f.deps);
+    expect(recording.frameRate).toBe(15);
+    expect(recording.mimeType).toContain('avc1');
+    expect(recording.frameStats()).toBeNull();
+    video.stats = { deliveredFrames: 150, discardedFrames: 2 };
+    expect(recording.frameStats()).toEqual({ delivered: 150, discarded: 2 });
+    await recording.capFrameRate(5);
+    expect(applied).toEqual([
+      { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 5 } },
+    ]);
+  });
+
+  it('has no frame rate or counters for a sound-only recording', async () => {
+    const f = setup();
+    const recording = await startRecording(f.host, { ...START, kind: 'audio' }, {}, f.deps);
+    expect(recording.frameRate).toBeNull();
+    expect(recording.frameStats()).toBeNull();
+    await expect(recording.capFrameRate(5)).resolves.toBeUndefined();
+  });
+});

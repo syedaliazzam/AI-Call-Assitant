@@ -468,3 +468,47 @@ describe('DeepgramChannel', () => {
     expect(closes).toEqual([{ code: 1006, wasOpen: true, expected: false }]);
   });
 });
+
+describe('Batch C (P1-3): keyterms mid-call with Flux Configure', () => {
+  it('sends a Configure message with the new keyterms on an open Flux socket', () => {
+    const { channel, socket } = makeChannel('flux');
+    expect(channel.configure(['Kafka'])).toBe(false);
+    socket.open();
+    expect(channel.configure(['Kafka', 'Northwind'])).toBe(true);
+    expect(socket.sent.at(-1)).toBe(
+      JSON.stringify({ type: 'Configure', keyterms: ['Kafka', 'Northwind'] }),
+    );
+  });
+
+  it('leaves Nova-3 sockets alone (their next connection uses the new list)', () => {
+    const { channel, socket } = makeChannel('nova');
+    socket.open();
+    expect(channel.configure(['Kafka'])).toBe(false);
+    expect(socket.sent).toHaveLength(0);
+  });
+
+  it('reports ConfigureSuccess and ConfigureFailure, and turns them into no transcript event', () => {
+    const replies: [boolean, string | null][] = [];
+    let socket!: FakeSocket;
+    const events: CloudEvent[] = [];
+    new DeepgramChannel({
+      channel: 'them',
+      url: 'wss://h.example.com/v2/listen?model=x',
+      kind: 'flux',
+      token: 't',
+      clockOffsetMs: () => 0,
+      onEvent: (event) => events.push(event),
+      onClose: () => undefined,
+      onConfigured: (ok, code) => replies.push([ok, code]),
+      createSocket: (url, protocols) => (socket = new FakeSocket(url, protocols)),
+    });
+    socket.open();
+    socket.receive({ type: 'ConfigureSuccess', keyterms: ['Kafka'] });
+    socket.receive({ type: 'ConfigureFailure', code: 'CONFIGURE_INVALID' });
+    expect(replies).toEqual([
+      [true, null],
+      [false, 'CONFIGURE_INVALID'],
+    ]);
+    expect(events).toEqual([]);
+  });
+});

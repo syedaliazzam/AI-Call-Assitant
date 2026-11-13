@@ -40,7 +40,9 @@ import { mergeAnswers, stoppedEmpty } from '@/core/answer/history';
 import { createRepeatGuard, themSpan, type SpeechSpan } from '@/core/answer/repeatGuard';
 import { buildClaimCorpus, checkClaims, needsClaimCheck } from '@/core/answer/claimCheck';
 import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/context';
+import { buildChunkIndex } from '@/core/documents/chunks';
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
+import { startKeepAlive } from '@/core/answer/keepAlive';
 import { warmSession } from '@/core/answer/warm';
 import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
 import { choosePress, PRESS_WAIT_MS } from '@/core/answer/pressQuestion';
@@ -49,6 +51,7 @@ import {
   FINISHING_NOTICE_AFTER_MS,
   type NewestAutoDecision,
 } from '@/core/answer/newestQuestion';
+import { createSpeculativeHold, themWentOn, type AskedSpeech } from '@/core/answer/speculative';
 import { pickQuestion, type PickedQuestion } from '@/core/transcript/questionKind';
 import { isOnline } from '@/core/net/online';
 import { prepareScreenshot } from '@/core/screenshot/prepare';
@@ -189,6 +192,11 @@ export interface AnswerEntry {
    * be incomplete (the card says so). In memory only.
    */
   incomplete?: boolean;
+  /**
+   * Batch C (P1-1): a speculative auto-answer still held hidden (core/answer/speculative.ts): it streams,
+   * but no list, card or overlay shows it until the hold ends. In memory only.
+   */
+  held?: boolean;
 }
 
 /**
@@ -342,6 +350,14 @@ export interface LiveAnswersInput {
    * @returns How long it waited and whether it gave up.
    */
   catchUp?: (atUnix: number) => Promise<{ waitedMs: number; timedOut: boolean }>;
+  /**
+   * Batch C (P1-1): listens for the other side's turn events (Flux), so a held speculative answer is
+   * cancelled when their turn resumes.
+   *
+   * @param listener Called with each turn event of "Them".
+   * @returns Stops listening.
+   */
+  themTurns?: (listener: (event: 'start' | 'eager' | 'end' | 'resumed') => void) => () => void;
 }
 
 /** What useLiveAnswers() returns. */
@@ -374,6 +390,11 @@ export interface LiveAnswers {
     last: AnsweredQuestion | null;
     idleSince: number | null;
     answeredEnd: number | null;
+    /**
+     * Batch C (P1-1): how many speculative answers were cancelled in this call, so auto-answer may act
+     * again on a decision it already acted on (its speech is unanswered again).
+     */
+    epoch: number;
   };
   /**
    * ADR-0076: auto-answer under the 'newest' rules (rule 9) and the re-ask (rule 6): exactly the chosen
@@ -481,6 +502,27 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   // ADR-0076: the latest catch-up function and rules (read when a key is pressed).
   const catchUpRef = useRef(input.catchUp);
   const rules = input.rules ?? 'legacy';
+  // Batch C (P2-1): the documents' parts, made once per document (not per question), for each request.
+  const chunkIndex = useMemo(() => buildChunkIndex(documents), [documents]);
+  // Batch C (P1-1): the speculative answer held hidden now: what it asked, and how to show or cancel it.
+  const heldRef = useRef<{
+    answerId: string;
+    asked: AskedSpeech;
+    show: () => void;
+    cancel: () => void;
+  } | null>(null);
+  // Batch C (P1-1): an answer's finishing work (save, history) when it finished while still held, by id;
+  // run when it is shown, dropped when it is cancelled.
+  const heldFinish = useRef(new Map<string, () => void>());
+  // Batch C (P1-1): grows with each cancelled speculative answer (auto-answer's decision keys use it).
+  const cancelEpochRef = useRef(0);
+  const [hold] = useState(() =>
+    createSpeculativeHold({
+      // Ids and times only.
+      onTrace: (state, answerId, ms) =>
+        callTimings.noteTrace('speculative', { state, answerId, ms: Math.round(ms) }),
+    }),
+  );
 
   /**
    * What was answered, by the ids the lines have now (1.5.2, ADR-0070): a grey line's words may have
@@ -534,6 +576,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     answeredEndRef.current = null;
     speechCardRef.current = null;
     return () => {
+      // Batch C (P1-1): a held answer goes with the call (the runner's cancel below stops its request).
+      hold.drop();
+      heldRef.current = null;
       runner.cancel();
       // Fail safe: an answer stopped here must not stay "streaming" (its card would show "…" for
       // ever, as when a re-render cancelled every answer before the v1.0.0 fix in LivePage).
@@ -543,7 +588,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ),
       );
     };
-  }, [callStartedAt, sessionId, runner]);
+  }, [callStartedAt, sessionId, runner, hold]);
 
   // The idle re-warm, for as long as listening is not paused (ADR-0044: nobody is on the call, so
   // keeping Claude's cache warm would only spend money).
@@ -560,9 +605,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       },
     });
     keepWarmRef.current = keepWarm;
+    // Batch C (P1-2): the connection keep-alive (an authenticated ping every 25 s; never Claude).
+    const stopKeepAlive = startKeepAlive({
+      onFailed: (status) => callTimings.noteTrace('ping-failed', { status }),
+    });
     return () => {
       keepWarm.stop();
       keepWarmRef.current = null;
+      stopKeepAlive();
     };
   }, [callStartedAt, sessionId, paused]);
 
@@ -639,6 +689,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           /** The press gave up waiting for the other side (rule 2). */
           incomplete?: boolean;
         };
+        /**
+         * Batch C (P1-1): a speculative auto-answer: streamed into a card held hidden for
+         * SPECULATIVE_HOLD_MS, cancelled silently when the other person goes on within it.
+         */
+        speculative?: boolean;
       } = {},
     ): boolean => {
       const { typed, image, auto = false, answerType } = options;
@@ -648,6 +703,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         setNotice(OFFLINE_TEXT);
         return false;
       }
+      // Batch C (P1-1): any other request replaces a held speculative answer: it is cancelled and its
+      // speech counts as unanswered again (first, so this request is built on the restored state).
+      if (heldRef.current) hold.activity();
       // Lines Claude found to be noise are not part of any later question (ADR-0043).
       const lines = transcript.lines().filter((line) => !noiseLinesRef.current.has(line.id));
       // 1.5.2 (ADR-0070): what was answered, by the ids the lines have now (a grey line's words may have
@@ -766,6 +824,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(choice !== 'auto' ? { target: choice } : {}),
         ...(answerType ? { answerType } : {}),
         ...(options.question ? { question: options.question } : {}),
+        chunks: chunkIndex,
         // Found by looking back past a greeting or an instruction: asked as it is.
         ...(picked?.kind === 'question' && (picked.lookedBack || partOfLines)
           ? { question: picked.selected.text }
@@ -802,6 +861,21 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         if (decision.kind === 'show') setShownId(decision.answerId);
         if (decision.kind !== 'answer') return false;
       }
+      // Batch C (P1-1): a speculative answer (a new auto-answer, never a re-ask on a shown card) can be taken
+      // back. What it changes below is noted first, so a cancel puts everything back as it was.
+      const speculative = options.speculative === true && mode === 'answer' && !replaces;
+      const before = speculative
+        ? {
+            log: logRef.current,
+            answeredEnd: answeredEndRef.current,
+            speechCard: speechCardRef.current,
+            last: lastAnsweredRef.current,
+            lines: new Set(answeredLinesRef.current),
+            finished: finishedRef.current,
+            labels: labelsRef.current,
+            idleSince: idleSinceRef.current,
+          }
+        : null;
       logRef.current = built.log;
       keepWarmRef.current?.noteActivity();
       const entry: AnswerEntry = {
@@ -832,6 +906,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         rating: null,
         note: '',
         ...(options.exact?.incomplete ? { incomplete: true } : {}),
+        ...(speculative ? { held: true } : {}),
       };
       // A new answer cancels the one still streaming (the runner does; mark it here). A rerun takes
       // the place of the answer it replaces.
@@ -843,7 +918,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           ),
         entry,
       ]);
-      setShownId(entry.id);
+      // Batch C (P1-1): a held answer is shown when its hold ends (the hold's show below).
+      if (!speculative) setShownId(entry.id);
       if (
         span &&
         (guarded || replaces || options.exact || (mode === 'screenshot' && options.coveredLines))
@@ -906,12 +982,80 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         sentAt: sentWall,
         status: 'streaming',
         bytes: JSON.stringify(built.request).length,
+        // Batch C (P2-1): how many document parts went with it (a count only).
+        documentChunks: built.request.documentChunks?.length ?? 0,
         // ADR-0076 (timing trace): which lines and how many words were asked (ids and counts only).
         ...(pickedLines ? { lineIds: [...pickedLines] } : {}),
         ...(span ? { span: { start: span.start, end: span.end } } : {}),
         ...(options.exact ? { askedWords: options.exact.words } : {}),
         ...(options.exact?.incomplete ? { incomplete: true } : {}),
+        ...(speculative ? { speculative: true } : {}),
       });
+      if (speculative && before) {
+        const askedIds = pickedLines ?? [];
+        heldRef.current = {
+          answerId: entry.id,
+          asked: {
+            lineIds: askedIds,
+            end: span?.end ?? sentWall,
+            lineWords: wordCount(
+              lines
+                .filter((line) => askedIds.includes(line.id))
+                .map((line) => line.text)
+                .join(' '),
+            ),
+          },
+          show: () => {
+            update(entry.id, { held: false });
+            setShownId(entry.id);
+            const finish = heldFinish.current.get(entry.id);
+            heldFinish.current.delete(entry.id);
+            finish?.();
+          },
+          cancel: () => {
+            // Silently: the request stops, the card never existed, the speech is unanswered again.
+            runner.cancel();
+            heldFinish.current.delete(entry.id);
+            logRef.current = before.log;
+            answeredEndRef.current = before.answeredEnd;
+            speechCardRef.current = before.speechCard;
+            lastAnsweredRef.current = before.last;
+            answeredLinesRef.current = before.lines;
+            finishedRef.current = before.finished;
+            labelsRef.current = before.labels;
+            idleSinceRef.current = before.idleSince;
+            repeatGuard.forget(entry.id);
+            setAnsweredSpans((current) => current.filter((item) => item.answerId !== entry.id));
+            setEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
+            callTimings.noteAnswer({ answerId: timingId, status: 'cancelled', doneAt: Date.now() });
+            cancelEpochRef.current += 1;
+          },
+        };
+        callTimings.noteTrace('speculative', { state: 'sent', answerId: entry.id });
+        hold.start(entry.id, {
+          onShow: () => {
+            const held = heldRef.current;
+            if (held?.answerId !== entry.id) return;
+            heldRef.current = null;
+            held.show();
+          },
+          onCancel: () => {
+            const held = heldRef.current;
+            if (held?.answerId !== entry.id) return;
+            heldRef.current = null;
+            held.cancel();
+          },
+        });
+      }
+      /**
+       * Runs an answer's finishing work now, or (Batch C, P1-1) when its card is shown, while it is held.
+       *
+       * @param finish The work.
+       */
+      const whenShown = (finish: () => void) => {
+        if (hold.holding(entry.id)) heldFinish.current.set(entry.id, finish);
+        else finish();
+      };
       let retries = 0;
       let firstWordLogged = false;
       runner.run(built.request, keyPressAt, {
@@ -953,6 +1097,12 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           // the same way; a press of Answer gets a short notice, auto-answer stays silent, and the lines
           // stay answered (they are not noise, but there is nothing to answer in them).
           if (dropped(type)) {
+            // Batch C (P1-1): nothing to show, so nothing to hold either.
+            if (hold.holding(entry.id)) {
+              hold.drop();
+              heldRef.current = null;
+              heldFinish.current.delete(entry.id);
+            }
             setEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
             setAnsweredSpans((current) => current.filter((item) => item.answerId !== entry.id));
             setShownId(null);
@@ -995,51 +1145,57 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           });
           // Not an answer: nothing to keep, send later or save.
           if (dropped(meta?.type)) return;
-          // No model call: plain text matching (ADR-0030).
-          const claims = needsClaimCheck(meta, mode)
-            ? checkClaims(
-                text,
-                buildClaimCorpus(
-                  claimSources(session, documents, transcript.lines(), entry.question),
-                ),
-              ).map((claim) => claim.text)
-            : [];
-          const finished: AnswerEntry = {
-            ...entry,
-            text,
-            status: 'done',
-            timeline,
-            usage: done.usage,
-            ...(meta ? { meta } : {}),
-            ...(cleanQuestion ? { cleanQuestion } : {}),
-            ...(claims.length > 0 ? { claims } : {}),
-          };
-          update(entry.id, finished);
-          finishedRef.current = [
-            ...finishedRef.current,
-            {
-              id: entry.id,
-              mode,
-              question: entry.question,
+          // Batch C (P1-1): an answer that finished while still held is kept and saved once it is shown
+          // (never when it is cancelled).
+          whenShown(() => {
+            // No model call: plain text matching (ADR-0030).
+            const claims = needsClaimCheck(meta, mode)
+              ? checkClaims(
+                  text,
+                  buildClaimCorpus(
+                    claimSources(session, documents, transcript.lines(), entry.question),
+                  ),
+                ).map((claim) => claim.text)
+              : [];
+            const finished: AnswerEntry = {
+              ...entry,
+              // Finishing runs only once the card shows.
+              held: false,
               text,
-              askedAt: entry.askedAt,
-              ...(meta?.target === 'kite' ? { target: 'kite' as const } : {}),
-            },
-          ];
-          console.info('answer: done', {
-            sessionId: session.id,
-            answerId: entry.id,
-            mode,
-            ...timeline,
-            cacheRead: done.usage.cache_read_input_tokens,
-            cacheWrite: done.usage.cache_creation_input_tokens,
-            input: done.usage.input_tokens,
-            output: done.usage.output_tokens,
+              status: 'done',
+              timeline,
+              usage: done.usage,
+              ...(meta ? { meta } : {}),
+              ...(cleanQuestion ? { cleanQuestion } : {}),
+              ...(claims.length > 0 ? { claims } : {}),
+            };
+            update(entry.id, finished);
+            finishedRef.current = [
+              ...finishedRef.current,
+              {
+                id: entry.id,
+                mode,
+                question: entry.question,
+                text,
+                askedAt: entry.askedAt,
+                ...(meta?.target === 'kite' ? { target: 'kite' as const } : {}),
+              },
+            ];
+            console.info('answer: done', {
+              sessionId: session.id,
+              answerId: entry.id,
+              mode,
+              ...timeline,
+              cacheRead: done.usage.cache_read_input_tokens,
+              cacheWrite: done.usage.cache_creation_input_tokens,
+              input: done.usage.input_tokens,
+              output: done.usage.output_tokens,
+            });
+            // Saved even when "Save transcript" is off (StoredAnswer in core/storage/types.ts).
+            storeRef.current
+              .save(toStored(finished, session.id, callStartedAt, callId))
+              .catch(() => setSaveFailed(true));
           });
-          // Saved even when "Save transcript" is off (StoredAnswer in core/storage/types.ts).
-          storeRef.current
-            .save(toStored(finished, session.id, callStartedAt, callId))
-            .catch(() => setSaveFailed(true));
         },
         onError: (failure) => {
           idleSinceRef.current = Date.now();
@@ -1071,6 +1227,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       repeatGuard,
       update,
       resolvedAnswered,
+      hold,
+      chunkIndex,
     ],
   );
 
@@ -1148,6 +1306,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         callTimings.noteTrace('press-decision', { decision: 'offline', trigger });
         return;
       }
+      // Batch C (P1-1): the user wants the answer being held: it shows at once (its speech is answered, so
+      // the press below says "Already answering" unless something newer was said).
+      if (hold.release())
+        callTimings.noteTrace('press-decision', { decision: 'released', trigger });
       const waiting = pendingCatchUpRef.current;
       if (waiting) {
         callTimings.noteTrace('press-again', { trigger });
@@ -1177,8 +1339,26 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         () => settle(Date.now() - receivedAt, true, false),
       );
     },
-    [decideNewest],
+    [decideNewest, hold],
   );
+
+  // Batch C (P1-1): a held speculative answer is cancelled when the other person goes on: new words in the
+  // transcript, or (Flux) their turn resumed.
+  useEffect(
+    () =>
+      transcript.subscribe(() => {
+        const held = heldRef.current;
+        if (held && themWentOn(transcript.lines(), held.asked)) hold.activity();
+      }),
+    [transcript, hold],
+  );
+  const themTurns = input.themTurns;
+  useEffect(() => {
+    if (!themTurns) return;
+    return themTurns((event) => {
+      if (event === 'resumed' && heldRef.current) hold.activity();
+    });
+  }, [themTurns, hold]);
 
   // 1.5.2 (ADR-0070): a press waiting for the question is tried again whenever the transcript changes (the
   // grey line grows into a question, or ends), and once more when PRESS_WAIT_MS is up (the timer in ask).
@@ -1263,7 +1443,15 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
 
   // One entry per question (v1.0.4, ADR-0040); the state keeps every answer, this is what shows.
   // Every entry here is of this call, so none carries a call to tell apart.
-  const history = useMemo(() => mergeAnswers(entries, (entry) => entry.askedAt), [entries]);
+  // Batch C (P1-1): a held speculative answer is in no list until its hold ends.
+  const history = useMemo(
+    () =>
+      mergeAnswers(
+        entries.filter((entry) => !entry.held),
+        (entry) => entry.askedAt,
+      ),
+    [entries],
+  );
   const list = history.list;
   const selectedId = shownId === null ? null : (history.winnerOf.get(shownId) ?? shownId);
   // With nothing chosen, the newest answer that has something to show.
@@ -1383,6 +1571,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         void ask('answer', {
           ...(pressRerun ? { trigger: 'rerun' as const } : { auto: true }),
           ...(decision.kind === 'rerun' ? { replaces: decision.replaces } : {}),
+          // Batch C (P1-1): a new auto-answer, sent at the end of turn, is held hidden for 400 ms first.
+          ...(decision.kind === 'answer' ? { speculative: true } : {}),
           exact: {
             text: decision.text,
             lineIds: decision.lineIds,
@@ -1412,6 +1602,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...resolvedAnswered(),
         idleSince: idleSinceRef.current,
         answeredEnd: answeredEndRef.current,
+        epoch: cancelEpochRef.current,
       }),
       [resolvedAnswered],
     ),

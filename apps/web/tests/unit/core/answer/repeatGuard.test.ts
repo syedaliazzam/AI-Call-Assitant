@@ -169,3 +169,19 @@ describe('1.5.1 (ADR-0069): a press while an answer streams', () => {
     ).toBe('ignore');
   });
 });
+
+describe('Batch C (P1-1): forget', () => {
+  it('forgets a cancelled speculative answer, so its speech is unanswered again', () => {
+    const guard = createRepeatGuard();
+    const span = { start: 1_000, end: 5_000 };
+    guard.remember(span, 'held', 10_000);
+    expect(guard.decide({ question: 'Why Go?', streaming: false, now: 11_000, span })).toEqual({
+      kind: 'show',
+      answerId: 'held',
+    });
+    guard.forget('held');
+    expect(guard.decide({ question: 'Why Go?', streaming: false, now: 12_000, span }).kind).toBe(
+      'answer',
+    );
+  });
+});

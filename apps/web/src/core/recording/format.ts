@@ -1,9 +1,11 @@
 /**
  * File: apps/web/src/core/recording/format.ts
  * Purpose: Chooses how a recording is encoded (desktop 1.5.0, ADR-0068): hardware H.264 in Matroska when
- *          this computer has an H.264 encoder (measured: 0.15 of a core at 720p15 or 1080p30), otherwise
- *          VP8 in WebM at 720p15 only ("High" is hidden: VP8 at 1080p30 took 1.2 cores); a sound-only
+ *          this computer has an H.264 encoder (measured: 0.15 of a core at 720p15 or 1080p30); a sound-only
  *          recording is Opus in WebM. All are written piece by piece, so a crash keeps what was recorded.
+ *          Batch C (P1-6; investigation H2): never software video during a call. Without a hardware H.264
+ *          encoder there is no screen format (VP8 in the call's page cost +0.2 of a core, measured, taken
+ *          from the call); the recording offers sound only instead (useCallRecording.ts).
  * Used by: src/core/recording/recorder.ts, src/features/settings/RecordingSetting.tsx
  * Depends on: @kite/shared (RECORDING_QUALITIES, the recording types), the browser's MediaRecorder and
  *             VideoEncoder (injectable)
@@ -86,7 +88,8 @@ export function defaultFormatDeps(): FormatDeps {
  * @param kind    Screen and sound, or sound only.
  * @param wanted  The quality the person chose.
  * @param deps    The checks (tests pass fakes).
- * @returns The encoding, or null when this browser can record none of them.
+ * @returns The encoding, or null when this browser cannot record it (Batch C: a screen recording without a
+ *          hardware H.264 encoder is null too: no software video).
  * Called from: recorder.ts startRecording(); tests
  */
 export async function chooseFormat(
@@ -109,13 +112,6 @@ export async function chooseFormat(
       return { mimeType, container: 'mkv', quality: wanted, spec: RECORDING_QUALITIES[wanted] };
     }
   }
-  const vp8 = 'video/webm;codecs=vp8,opus';
-  return deps.isTypeSupported(vp8)
-    ? {
-        mimeType: vp8,
-        container: 'webm',
-        quality: 'standard',
-        spec: RECORDING_QUALITIES.standard,
-      }
-    : null;
+  // Batch C (P1-6): no software (VP8) video during a call.
+  return null;
 }

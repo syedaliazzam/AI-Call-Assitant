@@ -11,7 +11,8 @@
  *               day-03-sessions.md Stage 5
  *
  * The session details built here must be the same, byte for byte, as the ones the Day 4 answers
- * send, or the answers miss the cache: both use toSessionContext().
+ * send, or the answers miss the cache: both use toLiveSessionContext() (Batch C, P2-1: the CV in full and
+ * the documents summary; the other documents' matching parts go with each question instead).
  *
  * Logs only the session id, timings and token counts; never session or document text.
  */
@@ -100,6 +101,31 @@ export function toSessionContext(
 }
 
 /**
+ * The session details of the live answers and their warm-ups (Batch C, P2-1; investigation D3): the CV in
+ * full and the documents summary (ADR-0067) in the cached prefix, instead of every document in full. The
+ * other documents' parts that match each question go in the uncached tail (core/documents/chunks.ts), so a
+ * request stays about the size of a CV-only one, whatever the documents' size. The summary is the one kept
+ * on the session (LiveSession.tsx writes it when the session opens); '' when there is none yet.
+ *
+ * @param session   The stored session.
+ * @param documents Its documents (any order).
+ * @returns The session details for /api/answer.
+ * Called from: sendWarmUp(); core/answer/context.ts buildAnswerRequest()
+ */
+export function toLiveSessionContext(
+  session: Session,
+  documents: readonly StoredDocument[],
+): SessionContext {
+  const context = toSessionContext(session, documents);
+  const others = context.documents.some((document) => document.kind !== 'resume');
+  return {
+    ...context,
+    documents: context.documents.filter((document) => document.kind === 'resume'),
+    documentsSummary: others ? (session.documentsSummary?.text ?? '') : '',
+  };
+}
+
+/**
  * 1.5.1 (ADR-0069): a warm-up for the same session, documents and lessons started this recently (ms) is
  * reused instead of sent again. Opening a session and pressing Connect a few seconds later sent two
  * (measured 11 Nov 2026), and with large documents each one uploads about 0.5–1.9 MB.
@@ -123,7 +149,9 @@ function warmKey(
   lessons: readonly string[] | undefined,
 ): string {
   const docs = documents.map((document) => `${document.id}:${document.chars}`).join(',');
-  return `${session.id}|${session.preferences.model}|${docs}|${lessons?.length ?? 0}`;
+  // Batch C (P2-1): the summary is part of the warmed prefix, so a new one is a new warm-up.
+  const summary = session.documentsSummary?.createdAt ?? 0;
+  return `${session.id}|${session.preferences.model}|${docs}|${lessons?.length ?? 0}|${summary}`;
 }
 
 /**
@@ -206,7 +234,7 @@ function sendWarmUp(
         {
           mode: 'warm',
           model: session.preferences.model,
-          session: toSessionContext(session, documents),
+          session: toLiveSessionContext(session, documents),
           ...(options.conversation?.length ? { conversation: options.conversation } : {}),
           ...(options.lessons?.length ? { lessons: [...options.lessons] } : {}),
           // The same rules version the answers send, so the warm-up writes what they read (ADR-0032).

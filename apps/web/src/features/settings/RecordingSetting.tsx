@@ -94,7 +94,7 @@ export function RecordingSetting() {
       </div>
       {hardware === false && (
         <p className="text-[13px] text-ui-muted">
-          This computer has no hardware video encoder, so recordings use Standard quality (High
+          This computer has no hardware video encoder, so recordings are sound only (screen video
           would slow the call down).
         </p>
       )}

@@ -8,6 +8,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import {
+  firstWords,
   channelName,
   isCommand,
   isState,
@@ -243,5 +244,48 @@ describe('1.5.1 (ADR-0069): state messages at most every 200 ms', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("Batch C (P1-2): an answer's first words reach the overlay at once", () => {
+  it('sends the first words of an answer without waiting, later pieces at most every 200 ms', () => {
+    vi.useFakeTimers();
+    try {
+      const network = fakeNetwork();
+      const page = openLiveChannel('s1', network.open, 200);
+      const overlay = openLiveChannel('s1', network.open, 200);
+      const texts: string[] = [];
+      overlay.onState((state) => texts.push(state.answer?.text ?? '-'));
+      const answer = (text: string, id = 'a2') => ({
+        ...STATE,
+        answer: { ...STATE.answer!, id, text, headline: text, status: 'streaming' as const },
+      });
+      page.publish(answer(''));
+      // 50 ms later the first words arrive: sent at once, not 150 ms later.
+      vi.advanceTimersByTime(50);
+      page.publish(answer('Hello'));
+      expect(texts).toEqual(['', 'Hello']);
+      // The next piece waits for the 200 ms.
+      page.publish(answer('Hello there'));
+      expect(texts).toEqual(['', 'Hello']);
+      vi.advanceTimersByTime(200);
+      expect(texts).toEqual(['', 'Hello', 'Hello there']);
+      // A new answer's first words go at once too.
+      page.publish(answer('', 'a3'));
+      vi.advanceTimersByTime(10);
+      page.publish(answer('Next', 'a3'));
+      expect(texts.at(-1)).toBe('Next');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('firstWords() is true only for words the last state sent did not have', () => {
+    const withText = { ...STATE, answer: { ...STATE.answer!, text: 'Hi' } };
+    expect(firstWords(withText, null)).toBe(true);
+    expect(firstWords(withText, { id: 'a1', hasText: false })).toBe(true);
+    expect(firstWords(withText, { id: 'a1', hasText: true })).toBe(false);
+    expect(firstWords({ ...STATE, answer: { ...STATE.answer!, text: ' ' } }, null)).toBe(false);
+    expect(firstWords({ ...STATE, answer: null }, null)).toBe(false);
   });
 });

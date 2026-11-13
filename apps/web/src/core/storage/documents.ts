@@ -12,7 +12,8 @@
  */
 import { joinDocumentParts } from '../documents/parts';
 import { getDb } from './db';
-import type { StoredDocument } from './types';
+import { liveQuery } from 'dexie';
+import type { Session, StoredDocument } from './types';
 
 /** What addDocument() needs. */
 export interface NewDocumentInput {
@@ -67,6 +68,34 @@ export async function listDocuments(sessionId: string): Promise<StoredDocument[]
   return joinDocumentParts(
     await getDb().documents.where('sessionId').equals(sessionId).sortBy('addedAt'),
   );
+}
+
+/**
+ * Batch C (P1-3): keeps a session and its documents up to date while its live screen is open. Dexie reports
+ * a change made in any window of this browser profile (the session edited, a document added) and by account
+ * sync, so the call can update its keyterms and document parts without reconnecting.
+ *
+ * @param sessionId The session id.
+ * @param onChange  Called with the session (null once deleted) and its documents, now and after every change.
+ * @returns A function that stops watching.
+ * Called from: LiveSession.tsx; tests
+ */
+export function watchSessionDocuments(
+  sessionId: string,
+  onChange: (session: Session | null, documents: StoredDocument[]) => void,
+): () => void {
+  const subscription = liveQuery(async () => {
+    const [session, documents] = await Promise.all([
+      getDb().sessions.get(sessionId),
+      listDocuments(sessionId),
+    ]);
+    return { session: session ?? null, documents };
+  }).subscribe({
+    next: ({ session, documents }) => onChange(session, documents),
+    // A read that fails leaves the call with what it loaded: nothing to do.
+    error: () => undefined,
+  });
+  return () => subscription.unsubscribe();
 }
 
 /**

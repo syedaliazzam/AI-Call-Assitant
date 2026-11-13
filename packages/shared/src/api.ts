@@ -78,6 +78,29 @@ export const MAX_SESSION_DOCUMENT_CHARS = 500_000;
 /** Most characters of the documents summary the smart-model routes accept (ADR-0067). */
 export const MAX_DOCUMENTS_SUMMARY_CHARS = 20_000;
 
+/**
+ * Batch C (P2-1): one part of a session document that matches the question, sent in the uncached tail of a
+ * live answer (the documents themselves are summarised in the cached prefix).
+ */
+export interface DocumentChunk {
+  /** The document's name. */
+  name: string;
+  /** The part's text. Never logged. */
+  text: string;
+}
+
+/** Batch C (P2-1): most document parts sent with one question. */
+export const MAX_DOCUMENT_CHUNKS = 5;
+
+/** Batch C (P2-1): most characters in one document part. */
+export const MAX_DOCUMENT_CHUNK_CHARS = 1_600;
+
+/**
+ * Batch C (P2-1): the most input tokens one live answer request may hold, whatever the documents' size. The
+ * server keeps every answer under it (server/budget.ts), counting conservatively (3 characters a token).
+ */
+export const MAX_ANSWER_INPUT_TOKENS = 100_000;
+
 /** The session details sent with every answer request; forms the cached part of the prompt. */
 export interface SessionContext {
   /** Kind of call, for example 'sales' or 'interview'. */
@@ -340,6 +363,11 @@ export interface AnswerRequest {
   answerType?: AnswerType;
   /** An earlier answer to a similar question, to reuse its facts and wording. Uncached. */
   similar?: SimilarAnswer;
+  /**
+   * Batch C (P2-1): the parts of the session's documents that match this question best (at most
+   * MAX_DOCUMENT_CHUNKS). Uncached. Absent: none matched, or an older page (whose documents are in full).
+   */
+  documentChunks?: DocumentChunk[];
   /**
    * Which version of the answer rules to use (ADR-0032). Absent means 'current'. It decides the
    * cached rules block, so the warm-up and every answer of a call must send the same value. The

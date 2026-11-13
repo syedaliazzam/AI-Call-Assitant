@@ -39,6 +39,8 @@ export interface AutoAnswerInput {
     idleSince?: number | null;
     /** ADR-0076: the end of the newest answered speech (capture clock), or null. */
     answeredEnd?: number | null;
+    /** Batch C (P1-1): how many speculative answers were cancelled (their decisions may be acted on again). */
+    epoch?: number;
   };
   /** Overrides the saved setting (the harness turns it on); default: the saved setting. */
   enabled?: boolean;
@@ -100,7 +102,8 @@ export function useAutoAnswer(input: AutoAnswerInput): boolean {
           Date.now(),
         );
         if (next === null) return;
-        const newestKey = decisionKey(next);
+        // Batch C (P1-1): after a held answer was cancelled, the same decision is a new one.
+        const newestKey = `${decisionKey(next)}:e${state.epoch ?? 0}`;
         if (acted.current.has(newestKey)) return;
         acted.current.add(newestKey);
         autoNewest?.(next);

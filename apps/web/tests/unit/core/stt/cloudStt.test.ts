@@ -434,3 +434,32 @@ describe('cloud transcription', () => {
     t.cloud.stop();
   });
 });
+
+describe('Batch C (P1-3): keyterms changed during the call', () => {
+  it('sends Configure on the Flux socket at once, and opens later sockets with the new list', async () => {
+    const t = setup();
+    await t.cloud.attach('them', stream);
+    await t.cloud.attach('you', stream);
+    await flush();
+    const them = t.sockets[0]!;
+    const you = t.sockets[1]!;
+    t.cloud.setKeyterms(['Northwind', 'Kafka']);
+    expect(them.sent.at(-1)).toBe(
+      JSON.stringify({ type: 'Configure', keyterms: ['Northwind', 'Kafka'] }),
+    );
+    // Nova-3 ("You") is not reconnected: nothing is sent to it.
+    expect(you.sent.filter((data) => typeof data === 'string')).toEqual([]);
+    // The same list again sends nothing more.
+    const count = them.sent.length;
+    t.cloud.setKeyterms(['Northwind', 'Kafka']);
+    expect(them.sent).toHaveLength(count);
+    // A reconnect (after a lost socket) opens with the new list.
+    you.close(1006);
+    t.advance(1_500);
+    vi.advanceTimersByTime(1_500);
+    await flush();
+    const reopened = t.sockets.at(-1)!;
+    expect(reopened).not.toBe(you);
+    expect(new URL(reopened.url).searchParams.getAll('keyterm')).toEqual(['Northwind', 'Kafka']);
+  });
+});

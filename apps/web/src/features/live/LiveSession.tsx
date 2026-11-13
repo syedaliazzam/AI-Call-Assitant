@@ -21,14 +21,19 @@
  * It is not awaited: the screen never waits for it. The documents summary (ADR-0067) is written
  * the same way, if it is missing or the documents changed, so the notes at the end of the call do
  * not have to wait for it.
+ *
+ * Batch C (P1-3, P2-1): while the screen is open, the session and its documents are watched. A change made
+ * elsewhere (key terms edited, a document added) updates the call's keyterms (cloud transcription sends
+ * them to Deepgram without reconnecting) and its documents (the parts that go with each question); a new
+ * documents summary (the live answers' cached prefix since Batch C) is warmed at once.
  */
 'use client';
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { warmSession } from '@/core/answer/warm';
 import { ensureDocumentsSummary } from '@/core/documents/summary';
 import { loadActiveLessons } from '@/core/lessons/active';
-import { listDocuments } from '@/core/storage/documents';
+import { listDocuments, watchSessionDocuments } from '@/core/storage/documents';
 import { getSession } from '@/core/storage/sessions';
 import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
 import { listUtterances } from '@/core/storage/utterances';
@@ -104,6 +109,11 @@ export function LiveSession({ sessionId, cloudStt = false }: LiveSessionProps) {
     () => true,
   );
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' });
+  // Batch C: the latest loaded state, for the watcher below (it compares against it).
+  const loadedRef = useRef<Loaded>(loaded);
+  useEffect(() => {
+    loadedRef.current = loaded;
+  });
 
   useEffect(() => {
     // Nothing to load, and no warm-up, where a call cannot run.
@@ -148,6 +158,46 @@ export function LiveSession({ sessionId, cloudStt = false }: LiveSessionProps) {
       cancelled = true;
     };
   }, [sessionId]);
+
+  // Batch C (P1-3, P2-1): follow changes to the session and its documents while the screen is open.
+  const ready = loaded.state === 'ready';
+  useEffect(() => {
+    if (!ready) return;
+    return watchSessionDocuments(sessionId, (session, documents) => {
+      const current = loadedRef.current;
+      if (!session || current.state !== 'ready') return;
+      const keyterms = buildKeyterms(session, documents);
+      const sameTerms =
+        keyterms.length === current.keyterms.length &&
+        keyterms.every((term, index) => term === current.keyterms[index]);
+      const docKey = (list: readonly StoredDocument[]) =>
+        list.map((document) => `${document.id}:${document.chars}:${document.name}`).join('|');
+      const sameDocuments = docKey(documents) === docKey(current.documents);
+      const summaryAt = session.documentsSummary?.createdAt ?? 0;
+      const sameSummary = summaryAt === (current.session.documentsSummary?.createdAt ?? 0);
+      if (sameTerms && sameDocuments && sameSummary) return;
+      // Only what the call follows changes: the summary on the session, the documents, the keyterms.
+      const next = {
+        ...current,
+        ...(sameTerms ? {} : { keyterms }),
+        ...(sameDocuments ? {} : { documents }),
+        ...(sameSummary
+          ? {}
+          : {
+              session: {
+                ...current.session,
+                ...(session.documentsSummary ? { documentsSummary: session.documentsSummary } : {}),
+              },
+            }),
+      };
+      // New documents get their summary written (nothing happens when it already matches); a new summary
+      // is the answers' cached prefix, so it is warmed now. Neither is awaited or ever throws.
+      if (!sameDocuments) void ensureDocumentsSummary(next.session, documents);
+      if (!sameSummary) void warmSession(next.session, next.documents, { lessons: next.lessons });
+      loadedRef.current = next;
+      setLoaded(next);
+    });
+  }, [ready, sessionId]);
 
   if (!supported) return <LiveCallsUnsupported />;
   if (loaded.state === 'ready') {

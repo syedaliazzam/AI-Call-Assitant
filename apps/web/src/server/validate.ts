@@ -49,6 +49,8 @@ import {
   type AskRequest,
   type JobImportRequest,
   MAX_DOCUMENTS_SUMMARY_CHARS,
+  MAX_DOCUMENT_CHUNK_CHARS,
+  MAX_DOCUMENT_CHUNKS,
   MAX_SESSION_DOCUMENT_CHARS,
   type DocumentsSummaryRequest,
 } from '@kite/shared';
@@ -211,6 +213,18 @@ export const answerRequestSchema = z
         at: atSchema,
       })
       .strict()
+      .optional(),
+    // Batch C (P2-1): the document parts that match the question (live answers; uncached).
+    documentChunks: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1).max(200),
+            text: z.string().min(1).max(MAX_DOCUMENT_CHUNK_CHARS),
+          })
+          .strict(),
+      )
+      .max(MAX_DOCUMENT_CHUNKS)
       .optional(),
     // The answer rules' version (ADR-0032); the route ignores it for anyone but an admin.
     styleVersion: z.enum(ANSWER_STYLE_VERSIONS).optional(),

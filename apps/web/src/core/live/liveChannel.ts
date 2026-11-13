@@ -112,6 +112,11 @@ export interface CompactAnswer {
   error: string | null;
   /** True when it failed because Claude is unavailable for everyone (usage limit or overload). */
   unavailable: boolean;
+  /**
+   * Batch C (P1-4, ADR-0076 E3 rule 2): the press gave up waiting for the other side's last words, so the
+   * question may be incomplete (the overlay card says so, as the call window's does). Absent otherwise.
+   */
+  incomplete?: boolean;
 }
 
 /**
@@ -630,6 +635,24 @@ export function isState(value: unknown): value is CompactState {
 export const PUBLISH_EVERY_MS = 200;
 
 /**
+ * Batch C (P1-2): whether a state carries the first words of the answer it shows (the last state sent had
+ * none for that answer).
+ *
+ * @param state The state to send.
+ * @param sent  The answer in the last state sent (its id, whether it had words), or null.
+ * @returns True for the first words.
+ * Called from: openLiveChannel() (publish); tests
+ */
+export function firstWords(
+  state: CompactState,
+  sent: { id: string; hasText: boolean } | null,
+): boolean {
+  const answer = state.answer;
+  if (!answer || answer.text.trim() === '') return false;
+  return sent === null || sent.id !== answer.id || !sent.hasText;
+}
+
+/**
  * Opens the link for a session.
  *
  * @param sessionId       The session id.
@@ -666,8 +689,13 @@ export function openLiveChannel(
   let pending: CompactState | null = null;
   let lastSentAt = -Infinity;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  // Batch C (P1-2): the answer last sent, and whether it had words yet (its first words go at once).
+  let sentAnswer: { id: string; hasText: boolean } | null = null;
   const sendState = (state: CompactState) => {
     lastSentAt = Date.now();
+    sentAnswer = state.answer
+      ? { id: state.answer.id, hasText: state.answer.text.trim() !== '' }
+      : null;
     port.postMessage({ kind: 'state', state } satisfies Message);
   };
   const flush = () => {
@@ -682,8 +710,9 @@ export function openLiveChannel(
   return {
     publish: (state) => {
       const wait = lastSentAt + publishEveryMs - Date.now();
-      // The end of a call is never held back.
-      if (wait <= 0 || state.ended) {
+      // The end of a call is never held back; nor (Batch C, P1-2) an answer's first words, the moment the
+      // user is waiting for (later pieces still go at most every publishEveryMs).
+      if (wait <= 0 || state.ended || firstWords(state, sentAnswer)) {
         pending = null;
         if (timer) clearTimeout(timer);
         timer = null;

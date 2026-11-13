@@ -163,6 +163,13 @@ export interface AnswerTiming {
   cacheWrite?: number;
   /** ADR-0076: input tokens not from the cache. */
   inputTokens?: number;
+  /**
+   * Batch C (P1-1): a speculative auto-answer, sent at the end of turn and held hidden first ('cancelled'
+   * status: the other person went on within the hold, and nothing was shown).
+   */
+  speculative?: boolean;
+  /** Batch C (P2-1): how many document parts went with the question. */
+  documentChunks?: number;
 }
 
 /** One Accurate decision (times are Unix ms). */
@@ -472,6 +479,10 @@ export interface CallSummary {
   pressDecisions: Record<string, number>;
   /** ADR-0076: key press → caught up, ms (from the trace). */
   pressWait: Percentiles;
+  /** Batch C (P1-1): speculative auto-answers by what happened: sent, held, shown, cancelled (the trace). */
+  speculative: Record<string, number>;
+  /** Batch C (P1-6): the recording's frames per second, per 10 s sample (the trace). */
+  recordingFps: Percentiles;
 }
 
 /**
@@ -528,6 +539,8 @@ export function cardTimings(log: CallTimingLog): CardTiming[] {
       ...(answer.grey ? ['grey'] : []),
       ...(answer.early ? ['early'] : []),
       ...(answer.rerunOf ? ['rerun'] : []),
+      // Batch C (P1-1): sent at the end of turn and held hidden first.
+      ...(answer.speculative ? ['speculative'] : []),
     ],
     status: answer.status,
     questionEnd: seconds(answer.speechEnd),
@@ -583,6 +596,16 @@ export function summarizeCall(log: CallTimingLog): CallSummary {
       (log.trace ?? [])
         .filter(([, kind, fields]) => kind === 'press-wait' && typeof fields.waitedMs === 'number')
         .map(([, , fields]) => fields.waitedMs as number),
+    ),
+    speculative: count(
+      (log.trace ?? [])
+        .filter(([, kind]) => kind === 'speculative')
+        .map(([, , fields]) => String(fields.state)),
+    ),
+    recordingFps: percentiles(
+      (log.trace ?? [])
+        .filter(([, kind, fields]) => kind === 'rec-frames' && typeof fields.fps === 'number')
+        .map(([, , fields]) => fields.fps as number),
     ),
   };
 }
