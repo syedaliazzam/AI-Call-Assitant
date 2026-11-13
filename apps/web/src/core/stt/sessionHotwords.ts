@@ -300,3 +300,69 @@ export function buildHotwords(
 export function hotwordsText(hotwords: readonly Hotword[]): string {
   return hotwords.map((hotword) => `${hotword.phrase} :${hotword.score}`).join('\n');
 }
+
+/** ADR-0076: the most keyterms sent to Deepgram (its documented limit for Flux and Nova-3 is 100; 50 keeps the URL short). */
+export const MAX_KEYTERMS = 50;
+
+/**
+ * ADR-0076: a document term (upper case, the on-device model's alphabet) written back the way people
+ * write it: an acronym stays upper case, other words get a capital first letter ("NORTHWIND LOGISTICS" →
+ * "Northwind Logistics").
+ *
+ * @param phrase A DocumentTerm phrase.
+ * @returns The phrase for Deepgram.
+ * Called from: buildKeyterms()
+ */
+function readableTerm(phrase: string): string {
+  return phrase
+    .split(' ')
+    .map((word) =>
+      ACRONYM.test(word) && word.length <= 4 ? word : word.charAt(0) + word.slice(1).toLowerCase(),
+    )
+    .join(' ');
+}
+
+/**
+ * ADR-0076: the session's keyterms for Deepgram (both channels get the same list): the same sources and
+ * order as buildHotwords() (key terms, company, role or topic, the Interview vocabulary, names that
+ * repeat in the documents), but as people write them: no scores, digits kept ("BM25"), original case,
+ * no duplicates (ignoring case), at most MAX_PHRASE_WORDS words and MAX_PHRASE_CHARS characters each,
+ * and at most MAX_KEYTERMS in all. Session text: never logged.
+ *
+ * @param session   The session.
+ * @param documents The session's documents.
+ * @returns The keyterms, highest priority first.
+ * Called from: LiveSession.tsx; tests
+ */
+export function buildKeyterms(
+  session: Pick<Session, 'company' | 'role' | 'preferences'> & Partial<Pick<Session, 'type'>>,
+  documents: readonly Pick<StoredDocument, 'text'>[],
+): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  /**
+   * Adds a term unless it is unusable, already present, or the list is full.
+   *
+   * @param raw The term as written.
+   */
+  const add = (raw: string) => {
+    const term = raw.replace(/\s+/g, ' ').trim();
+    const key = term.toLowerCase();
+    if (term === '' || result.length >= MAX_KEYTERMS || seen.has(key)) return;
+    if (term.length > MAX_PHRASE_CHARS || term.split(' ').length > MAX_PHRASE_WORDS) return;
+    // At least two letters: a lone number or initial is not worth biasing towards.
+    if ((term.match(/\p{L}/gu) ?? []).length < 2) return;
+    seen.add(key);
+    result.push(term);
+  };
+  for (const rawLine of parseKeyTerms(session.preferences.keyTerms)) {
+    // A " :score" typed for the on-device engine means nothing to Deepgram: dropped.
+    add(rawLine.replace(/\s:\s*\S+\s*$/, ''));
+  }
+  add(session.company);
+  add(session.role);
+  if (session.type === 'interview') for (const term of INTERVIEW_TECH_TERMS) add(term);
+  const documentTerms = extractDocumentTerms(documents.map((document) => document.text));
+  for (const term of documentTerms.slice(0, MAX_DOCUMENT_TERMS)) add(readableTerm(term.phrase));
+  return result;
+}

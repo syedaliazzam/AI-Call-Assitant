@@ -105,3 +105,37 @@ export class TranscriptWatchdog {
     this.lastSoundAt = null;
   }
 }
+
+/**
+ * ADR-0076 (P0-4): whether sound on a channel counts for the stuck-engine watchdog: only a channel the
+ * on-device engine really decodes. Not a channel on Deepgram (cloud transcription), not "You" while the
+ * worker sets it aside, and not "Them" while the worker skips it to catch up: the user speaking for 8 s
+ * while "You" was set aside looked like a stuck engine and restarted it in the 13 Nov 2026 call.
+ *
+ * @param channel  Which channel had sound.
+ * @param onDevice True when the on-device engine transcribes this channel now.
+ * @param backlog  The worker's backlog state.
+ * @returns True when the sound should have produced words.
+ * Called from: LivePage.tsx (the capture's meters); tests
+ */
+export function soundCountsForWatchdog(
+  channel: 'you' | 'them',
+  onDevice: boolean,
+  backlog: 'ok' | 'you-paused' | 'dropping',
+): boolean {
+  if (!onDevice) return false;
+  return channel === 'them' ? backlog !== 'dropping' : backlog === 'ok';
+}
+
+/**
+ * ADR-0076 (P0-4): whether a stuck-looking engine may be restarted now: never while the worker is behind.
+ * That is load, not a stuck engine, and a restart loads a second model on a busy computer and throws away
+ * the audio the worker was holding.
+ *
+ * @param backlog The worker's backlog state.
+ * @returns True only when the worker keeps up.
+ * Called from: LivePage.tsx (the once-a-second check); tests
+ */
+export function mayRestart(backlog: 'ok' | 'you-paused' | 'dropping'): boolean {
+  return backlog === 'ok';
+}

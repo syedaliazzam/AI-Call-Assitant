@@ -208,6 +208,11 @@ export interface CompactState {
    * its device list's button, or the speech worker catching up; absent when there is none.
    */
   callNotice?: CallNotice;
+  /**
+   * ADR-0076 (G4): the Answer shortcut's label when another app holds it (the overlay then warns for the
+   * whole call); absent otherwise.
+   */
+  answerKeyTaken?: string;
   /** v1.1.0: the session's id, for Edit session. */
   sessionId?: string;
   /** v1.1.0: the microphone in use ('' for the system's default). */
@@ -229,7 +234,8 @@ export interface SimpleCommand {
    * words on screen; 'still-here': yes, still in a call; 'resume': listen again after a pause;
    * 'headphones-seen': the hint was closed. Desktop 1.5.0 (ADR-0068): 'record-stop': stop recording
    * (after the Stop question); 'record-notice-seen': the recording notice was closed; 'record-prompt':
-   * Ctrl+Alt+R pressed while the overlay had focus (the bars then ask Start or Stop).
+   * Ctrl+Alt+R pressed while the overlay had focus (the bars then ask Start or Stop). ADR-0076 (G4):
+   * 'hotkey-settings': open Settings at Hotkeys (the Answer shortcut is held by another app).
    */
   type:
     | 'answer'
@@ -247,7 +253,8 @@ export interface SimpleCommand {
     | 'headphones-seen'
     | 'record-stop'
     | 'record-notice-seen'
-    | 'record-prompt';
+    | 'record-prompt'
+    | 'hotkey-settings';
 }
 
 /** Answers one transcript bubble, from the overlay's transcript panel (v1.1.0). */
@@ -591,6 +598,7 @@ export function isCommand(value: unknown): value is CompactCommand {
     'record-stop',
     'record-notice-seen',
     'record-prompt',
+    'hotkey-settings',
   ].includes(command.type);
 }
 

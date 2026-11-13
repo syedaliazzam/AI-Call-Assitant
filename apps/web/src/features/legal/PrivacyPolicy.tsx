@@ -43,10 +43,22 @@ export function PrivacyPolicy() {
         </ul>
       </LegalSection>
 
+      <LegalSection title="Speech to text">
+        <p>
+          During a call, both your microphone and the other side&apos;s audio are streamed to
+          Deepgram, Inc. to turn speech into text. Deepgram returns the text and does not keep the
+          audio (we opt out of Deepgram&apos;s model improvement program). Audio is never stored by
+          Paramount AI. If Deepgram cannot be reached, speech is turned into text on your computer.
+          Cloud transcription is being turned on account by account; until it is on for yours,
+          speech is turned into text on your computer only.
+        </p>
+      </LegalSection>
+
       <LegalSection title="Answers and notes">
         <p>
           To write answers and notes, the relevant transcript and document text (and any screenshot
-          you ask about) is sent to Anthropic&apos;s Claude API. Call audio is never sent.
+          you ask about) is sent to Anthropic&apos;s Claude API. Call audio is never sent to
+          Anthropic.
         </p>
       </LegalSection>
 
@@ -78,7 +90,8 @@ export function PrivacyPolicy() {
         <p>
           We don&apos;t sell your data or share it with anyone. The only other services that handle
           it are the ones that do the work described above: our hosting and database providers,
-          Anthropic&apos;s Claude API, and Google Drive when you turn it on.
+          Deepgram (speech to text), Anthropic&apos;s Claude API, and Google Drive when you turn it
+          on.
         </p>
       </LegalSection>
 

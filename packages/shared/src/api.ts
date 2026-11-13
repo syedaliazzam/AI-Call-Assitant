@@ -521,3 +521,27 @@ export interface JobImportResponse {
   /** The site the page came from, after any redirects. */
   host: string;
 }
+
+/**
+ * Response of POST /api/stt/token (ADR-0076): a short-lived Deepgram token for one call's two speech
+ * sockets, and where and with which models to open them. The server's Deepgram key is never in it.
+ */
+export interface SttTokenResponse {
+  /** A Deepgram token valid for `expiresIn` seconds; only needed for the WebSocket handshake. Never logged. */
+  token: string;
+  /** Seconds until the token expires (60). */
+  expiresIn: number;
+  /** The Deepgram host the sockets connect to (the one that minted the token), e.g. 'api.eu.deepgram.com'. */
+  host: string;
+  /** The model per channel: "them" (the other side) and "you" (the microphone). */
+  models: {
+    /** Model for the other side, for example 'flux-general-en'. */
+    them: string;
+    /** Model for the microphone, for example 'nova-3'. */
+    you: string;
+  };
+}
+
+/** Why POST /api/stt/token refused (ADR-0076). */
+export type SttTokenErrorCode =
+  'unauthorized' | 'not_enabled' | 'rate_limited' | 'not_configured' | 'upstream_error';

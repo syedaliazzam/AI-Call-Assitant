@@ -11,7 +11,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Live session); ADR-0033
  *
  * The video element is muted: the other side's sound already plays through the meeting; playing it
- * again here would echo. Audio never leaves the device — this only shows what is already shared.
+ * again here would echo. This only shows what is already shared; it sends nothing anywhere.
  */
 'use client';
 

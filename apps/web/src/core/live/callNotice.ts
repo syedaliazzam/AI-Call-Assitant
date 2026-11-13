@@ -11,7 +11,13 @@
  */
 
 /** Which notice. */
-export type CallNoticeKind = 'mic-silent' | 'them-silent' | 'catching-up' | 'you-deferred';
+export type CallNoticeKind =
+  | 'mic-silent'
+  | 'them-silent'
+  | 'catching-up'
+  | 'you-deferred'
+  // ADR-0076: cloud transcription could not be reached; the on-device engine writes the lines.
+  | 'cloud-fallback';
 
 /** A call notice. */
 export interface CallNotice {
@@ -41,6 +47,8 @@ export interface CallNoticeInput {
   backlog: 'ok' | 'you-paused' | 'dropping';
   /** 'desktop' or 'browser' (the advice differs). */
   platform: string;
+  /** ADR-0076: true while a channel of a cloud-transcribed call uses the on-device engine instead. */
+  cloudFallback?: boolean;
 }
 
 /**
@@ -70,6 +78,15 @@ export function callNoticeFor(input: CallNoticeInput): CallNotice | null {
         ? "Paramount AI hears your computer's default speaker. If the meeting plays through a headset or device that is not the default, make it the default in Windows sound settings."
         : 'Share the meeting tab with “Also share tab audio” on, and check that it is playing sound.',
       action: { list: 'audio', label: 'Choose audio source' },
+    };
+  }
+  // ADR-0076: after a silent channel (which needs the user), before the on-device engine's own backlog.
+  if (input.cloudFallback) {
+    return {
+      kind: 'cloud-fallback',
+      text: 'Cloud transcription unavailable — using on-device transcription.',
+      detail:
+        'Paramount AI keeps trying the cloud in the background and switches back by itself. On-device transcription is a little slower and less accurate.',
     };
   }
   if (input.backlog === 'dropping') {

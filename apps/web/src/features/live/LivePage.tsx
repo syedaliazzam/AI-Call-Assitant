@@ -33,6 +33,13 @@
  * Chrome 156: the picker still opens after picture-in-picture used the click). Then the capture,
  * then the live view. A capture that fails closes that overlay again and keeps the Connect card.
  *
+ * ADR-0076 (cloud transcription, for the accounts in KITE_STT_DEEPGRAM_USERS): Connect streams both channels
+ * to Deepgram (core/stt/cloudStt.ts); the on-device engine is still loaded as the page opens, but stays idle
+ * as the per-channel fallback, without Accurate, the end-of-turn model or echo cancelling of its own (the
+ * audio worker cleans the microphone before anything leaves). Presses and auto-answer use the newest-by-time
+ * rules (core/answer/newestQuestion.ts), and a press first waits (≤ 300 ms) until "Them" is transcribed up
+ * to it. Every other account keeps the on-device engine and today's rules.
+ *
  * The session's hotwords are given to the engine when it is created, as the page opens: before
  * Connect, and without the ~2 s recognizer rebuild a later setHotwords() would cost. With "save
  * transcript" on, final lines are saved as they arrive (core/transcript/saver.ts; never echo
@@ -59,7 +66,11 @@ import { queueCallForDrive } from '@/core/drive/queue';
 import { generateNotes, type NotesLine } from '@/core/notes/generate';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
-import { TranscriptWatchdog } from '@/core/stt/watchdog';
+import { createCloudStt, type CloudStt } from '@/core/stt/cloudStt';
+import type { CloudEvent } from '@/core/stt/deepgram';
+import type { ChannelEngine } from '@/core/stt/failover';
+import { CATCH_UP_CAP_MS } from '@/core/answer/newestQuestion';
+import { mayRestart, soundCountsForWatchdog, TranscriptWatchdog } from '@/core/stt/watchdog';
 import { accurateWanted, getTranscriptionMode } from '@/core/storage/transcriptionPrefs';
 import { takeCallLock } from '@/core/live/callLock';
 import { hygieneState, type HygieneState } from '@/core/live/hygiene';
@@ -145,6 +156,10 @@ export interface LivePageProps {
   hotwordCount: number;
   /** Transcript lines saved by earlier calls of this session (oldest first). */
   savedLines: readonly StoredUtterance[];
+  /** ADR-0076: this account uses cloud transcription (Deepgram) with the on-device engine as fallback. */
+  cloudStt?: boolean;
+  /** ADR-0076: the session's keyterms for Deepgram (buildKeyterms() in core/stt/sessionHotwords.ts). */
+  keyterms?: readonly string[];
 }
 
 /**
@@ -195,6 +210,59 @@ function channelEndedMessage(speaker: Speaker, platform: 'desktop' | 'browser'):
 /** Why a second call cannot start (shown on the Connect card, or sent to the desktop's card). */
 const LOCKED_OUT_TEXT = 'A call is already running in another Paramount AI window. End it first.';
 
+/** ADR-0076: no keyterms (one shared empty list, so hook dependencies stay stable). */
+const NO_KEYTERMS: readonly string[] = [];
+
+/**
+ * ADR-0076: the language cloud transcription listens for: English sessions get Flux and Nova-3 in English;
+ * any other language gets Nova-3 multilingual on both channels.
+ *
+ * @param code The session's language code (ANSWER_LANGUAGES).
+ * @returns 'en' or 'multi'.
+ * Called from: LivePage connect()
+ */
+function liveSessionLanguage(code: string): 'en' | 'multi' {
+  return code === 'en' || code.startsWith('en-') ? 'en' : 'multi';
+}
+
+/** ADR-0076 (timing trace): a channel quiet this long before sound counts as a new speech onset, ms. */
+const ONSET_QUIET_MS = 500;
+
+/**
+ * ADR-0076 (timing trace): how many words the speech an answer asked had by the end of the call: the words
+ * of the stretches of its lines that had started by the time the asked speech ended.
+ *
+ * @param lines   The call's final lines (echoes included; only "Them" is read).
+ * @param lineIds The asked lines' ids (as they are now).
+ * @param span    The asked speech's span.
+ * @returns The word count.
+ * Called from: LivePage end()
+ */
+function finalWordsOf(
+  lines: readonly {
+    id: string;
+    speaker: string;
+    text: string;
+    tStart: number;
+    tEnd: number;
+    segments?: { text: string; tStart: number }[];
+  }[],
+  lineIds: readonly string[],
+  span: { start: number; end: number },
+): number {
+  let words = 0;
+  for (const line of lines) {
+    if (line.speaker !== 'them' || !lineIds.includes(line.id)) continue;
+    const segments = line.segments ?? [{ text: line.text, tStart: line.tStart }];
+    for (const segment of segments) {
+      if (segment.tStart >= span.start - 100 && segment.tStart <= span.end) {
+        words += segment.text.trim().split(/\s+/).filter(Boolean).length;
+      }
+    }
+  }
+  return words;
+}
+
 /**
  * The live session screen: the Connect view first, then the live transcript of both channels.
  * It owns the speech-to-text engine and the call capture for the session.
@@ -210,6 +278,8 @@ export function LivePage({
   hotwords,
   hotwordCount,
   savedLines,
+  cloudStt = false,
+  keyterms = NO_KEYTERMS,
 }: LivePageProps) {
   // The session's own spellings for the transcript (sentence case, Day 6 Stage 4d), kept
   // stable so the memoised transcript strip does not re-render on every update.
@@ -378,6 +448,12 @@ export function LivePage({
   );
 
   const engineRef = useRef<SttEngine | null>(null);
+  // ADR-0076: the call's cloud transcription (accounts with cloud transcription only), or null.
+  const cloudRef = useRef<CloudStt | null>(null);
+  // ADR-0076: which channels use the on-device engine instead of Deepgram (for the notice and the watchdog).
+  const [localChannels, setLocalChannels] = useState<readonly Speaker[]>([]);
+  // ADR-0076 (timing trace): when each channel last had sound, for speech onsets.
+  const lastSoundAt = useRef<Record<Speaker, number>>({ you: 0, them: 0 });
   const captureRef = useRef<CallCapture | null>(null);
   const saverRef = useRef<TranscriptSaver | null>(null);
   // Desktop 1.5.0 (ADR-0068): the meeting recording, from the call's own streams.
@@ -429,19 +505,22 @@ export function LivePage({
       // Accurate transcription (v1.0.1, ADR-0034; Auto since v1.1.0, ADR-0044): only in a desktop app
       // that has the engine, and not when it is set to Off. Otherwise no audio leaves the speech
       // worker. Each line then asks whether it should run now, because Auto follows the power source.
-      const accurate = getTranscriptionMode() !== 'off' ? getPlatform().accurate : null;
+      // ADR-0076: with cloud transcription the on-device engine is only the fallback: no Accurate, no
+      // end-of-turn model, and no echo canceller of its own (the audio worker already cleaned "You").
+      const accurate =
+        !cloudStt && getTranscriptionMode() !== 'off' ? getPlatform().accurate : null;
       punctuator.warm();
-      turnDetector.warm();
+      if (!cloudStt) turnDetector.warm();
       return createSttEngine({
         hotwords,
         keepAudio: accurate !== null,
-        turnAudio: true,
+        turnAudio: !cloudStt,
         // 1.5.2 (ADR-0070): the other side's voice is removed from the microphone before decoding.
-        echoCancel: true,
+        echoCancel: !cloudStt,
         onProgress: (progress) => {
           if (isActive()) setModel((current) => ({ ...current, progress }));
         },
-        onPartial: ({ channel, text, tStart }) => {
+        onPartial: ({ channel, text, tStart, tEnd }) => {
           if (!isActive()) return;
           if (channel === 'you' && dictationRoute.partial(text)) {
             // Words for Kite, not the call: clear any grey "You" line and show nothing.
@@ -449,7 +528,8 @@ export function LivePage({
             watchdog.current.noteProgress(performance.now());
             return;
           }
-          transcript.addPartial(channel, text, tStart);
+          // ADR-0076 (one clock): in a cloud call the fallback's grey lines carry their capture time too.
+          transcript.addPartial(channel, text, tStart, cloudStt ? tEnd : undefined);
           if (text !== '') callTimings.notePartial(channel);
           // 1.5.2 (ADR-0070): words that settle after a pause get their punctuated reading too.
           const settling = transcript
@@ -508,7 +588,7 @@ export function LivePage({
             ...(nonEnglish ? { nonEnglish: true } : {}),
           });
           watchdog.current.noteProgress(performance.now());
-          callTimings.noteFinal({ id: line.id, speaker: channel, tStart, tEnd });
+          callTimings.noteFinal({ id: line.id, speaker: channel, tStart, tEnd, engine: 'local' });
           if (nonEnglish) return;
           // v1.4 (ADR-0065): did the other person finish, or only pause? Auto-answer waits for this.
           if (channel === 'them' && recent && recent.length > 0) {
@@ -613,8 +693,80 @@ export function LivePage({
       turnDetector,
       refineQueue,
       noteBacklog,
+      cloudStt,
     ],
   );
+
+  /**
+   * ADR-0076: one transcript event from Deepgram, into the transcript (with its capture times) and the
+   * call timing log. Dictation to Kite is kept out, as with the on-device engine.
+   *
+   * @param channel Which channel.
+   * @param event   The event.
+   */
+  const onCloudEvent = useCallback(
+    (channel: Speaker, event: CloudEvent) => {
+      if (event.type === 'partial') {
+        if (channel === 'you' && dictationRoute.partial(event.text)) {
+          transcript.addPartial(channel, '', null);
+          return;
+        }
+        if (event.text === '') {
+          transcript.addPartial(channel, '', null);
+          return;
+        }
+        transcript.addPartial(channel, event.text, event.tStart, event.tEnd);
+        callTimings.notePartial(channel);
+        return;
+      }
+      if (event.type === 'final') {
+        if (channel === 'you' && dictationRoute.final(event.text)) {
+          transcript.addPartial(channel, '', null);
+          return;
+        }
+        const line = transcript.addFinal({
+          speaker: channel,
+          text: event.text,
+          tStart: event.tStart,
+          tEnd: event.tEnd,
+          ...(event.endOfTurn ? { endOfTurn: true } : {}),
+        });
+        callTimings.noteFinal({
+          id: line.id,
+          speaker: channel,
+          tStart: event.tStart,
+          tEnd: event.tEnd,
+          engine: 'deepgram',
+        });
+        return;
+      }
+      if (event.type === 'turn') {
+        callTimings.noteTrace('turn', {
+          channel,
+          event: event.event,
+          confidence: event.confidence,
+          at: event.at,
+        });
+        return;
+      }
+      callTimings.noteTrace('speech-started', { channel, at: event.at });
+    },
+    [transcript, dictationRoute],
+  );
+
+  /**
+   * ADR-0076: a channel changed engine (the first socket opened, a failover, or the switch back).
+   *
+   * @param channel Which channel.
+   * @param engine  The engine it uses now.
+   */
+  const onCloudEngine = useCallback((channel: Speaker, engine: ChannelEngine) => {
+    callTimings.noteEngine(engine);
+    setLocalChannels((current) => {
+      const others = current.filter((item) => item !== channel);
+      return engine === 'local' ? [...others, channel] : others;
+    });
+  }, []);
 
   // v1.1.0 (ADR-0044): Accurate transcription follows the setting and the power source, and only uses
   // a model that is already on this computer: nothing here ever starts its download.
@@ -669,6 +821,9 @@ export function LivePage({
       saverRef.current = null;
       captureRef.current?.stop();
       captureRef.current = null;
+      // ADR-0076: the call's sockets and audio worker go with the page.
+      cloudRef.current?.stop();
+      cloudRef.current = null;
       engine.stop();
       engineRef.current = null;
     };
@@ -693,7 +848,9 @@ export function LivePage({
     setRestartedAt(Date.now());
     try {
       await next.ready;
-      await capture.reattach(next);
+      // ADR-0076: in a cloud call the capture feeds cloud transcription, which reads the on-device engine
+      // through engineRef: nothing to re-attach.
+      if (!cloudRef.current) await capture.reattach(next);
       monitor.current.reset();
       watchdog.current.start(performance.now());
       old?.stop();
@@ -730,7 +887,11 @@ export function LivePage({
         current === 'paused' ? 'paused' : hygieneState(lastActivityAt.current, Date.now()),
       );
       // Day 6 Stage 4: if speech has been arriving with no transcript for 8 s, restart the engine.
-      if (watchdog.current.isStuck(performance.now())) void restartEngine();
+      // ADR-0076 (P0-4): never while the worker is behind: that is load, not a stuck engine, and a restart
+      // would load a second model on a busy computer and throw away the audio it was holding.
+      if (mayRestart(backlogRef.current) && watchdog.current.isStuck(performance.now())) {
+        void restartEngine();
+      }
     }, 1_000);
     return () => clearInterval(timer);
   }, [connection, restartEngine]);
@@ -786,8 +947,31 @@ export function LivePage({
     try {
       const chosenMic = getMicDevice();
       setMicDeviceId(chosenMic);
+      // ADR-0076: a cloud call streams to Deepgram; the on-device engine is its idle fallback. One object
+      // per call: a Reconnect re-attaches the same one (its sockets open again).
+      if (cloudStt && !cloudRef.current) {
+        cloudRef.current = createCloudStt({
+          local: () => engineRef.current,
+          // Flux is English only: any other language uses Nova-3 multilingual on both channels.
+          language: liveSessionLanguage(session.preferences.language),
+          keyterms,
+          localIdle: (channel) =>
+            !transcript.lines().some((line) => line.speaker === channel && !line.final),
+          handlers: {
+            onEvent: onCloudEvent,
+            onEngine: onCloudEngine,
+            onGap: (channel, from, to) => {
+              transcript.noteGap(channel, from, to);
+              callTimings.noteTrace('gap', { channel, ms: to - from });
+            },
+            onEcho: (state) => callTimings.noteEchoCancel(state),
+            onTrace: (kind, fields) => callTimings.noteTrace(kind, fields),
+          },
+        });
+      }
+      const cloud = cloudRef.current;
       const capture = await startCallCapture({
-        engine,
+        engine: cloud ?? engine,
         ...(chosenMic ? { micDeviceId: chosenMic } : {}),
         onLevels: (next) => {
           setLevels(next);
@@ -796,10 +980,23 @@ export function LivePage({
             themSoundAt.current = Date.now();
             lastActivityAt.current = Date.now();
           }
-          // Speech on either channel is audio the engine should be turning into text; the
-          // watchdog uses it to notice a stuck engine (no transcript progress).
-          if (isSound(next.you) || isSound(next.them))
-            watchdog.current.noteSound(performance.now());
+          for (const channel of ['you', 'them'] as const) {
+            if (!isSound(next[channel])) continue;
+            const now = Date.now();
+            // ADR-0076 (timing trace): the first voiced moment after a quiet spell.
+            if (now - lastSoundAt.current[channel] > ONSET_QUIET_MS) {
+              callTimings.noteTrace('onset', { channel });
+            }
+            lastSoundAt.current[channel] = now;
+            // ADR-0076: Deepgram's stall rule needs to know the channel has speech.
+            cloudRef.current?.sound(channel);
+            // ADR-0076 (P0-4): only a channel the on-device engine really decodes counts for its stuck-engine
+            // watchdog: not one on Deepgram, and not "You" while the worker sets it aside.
+            const onDevice = !cloudRef.current || cloudRef.current.engineOf(channel) === 'local';
+            if (soundCountsForWatchdog(channel, onDevice, backlogRef.current)) {
+              watchdog.current.noteSound(performance.now());
+            }
+          }
         },
         onEvent: (event) =>
           setChannelErrors((current) => ({
@@ -825,10 +1022,11 @@ export function LivePage({
           sessionId: session.id,
           startedAt: Date.now(),
           platform,
-          accurate: accurateOn.current,
+          accurate: cloudStt ? false : accurateOn.current,
           recording: 'off',
           documentChars: documents.reduce((total, document) => total + document.chars, 0),
         });
+        if (!cloudStt) callTimings.noteEngine('local');
       }
       // Warm Claude's prompt cache again: the warm-up from when the page opened may have
       // expired (5 minutes) while the user read the instructions. If it is still warm this is
@@ -909,12 +1107,23 @@ export function LivePage({
     // ADR-0066: the user's saved lines and their audio, for the rewrite after the call.
     const kept = youAudio.current.take();
     const afterLines: AfterCallLine[] = [];
+    const cloud = cloudRef.current;
     await endCall({
       stopCapture: () => capture?.stop(),
-      engine: engineRef.current,
+      // ADR-0076: in a cloud call End waits for Deepgram's last words too.
+      engine: cloud ?? engineRef.current,
       saver,
       transcript: {
         clear: () => {
+          // ADR-0076 (timing trace): asked words vs the words the same speech had in the end.
+          for (const answer of callTimings.current()?.answers ?? []) {
+            if (!answer.lineIds || !answer.span) continue;
+            const ids = answer.lineIds.map((id) => transcript.resolveId(id));
+            callTimings.noteAnswer({
+              answerId: answer.answerId,
+              finalWords: finalWordsOf(transcript.allLines(), ids, answer.span),
+            });
+          }
           for (const line of transcript.allLines()) {
             const pieces = kept.get(line.id);
             if (!saver || !pieces || line.speaker !== 'you' || line.echo || line.nonEnglish)
@@ -940,6 +1149,10 @@ export function LivePage({
       },
     });
     const startedAt = callStartedAt;
+    // ADR-0076: the sockets have ended (endCall waited for them); the audio worker goes too.
+    cloud?.stop();
+    if (cloudRef.current === cloud) cloudRef.current = null;
+    setLocalChannels([]);
     releaseLock.current?.();
     releaseLock.current = null;
     setHygiene('ok');
@@ -1200,6 +1413,8 @@ export function LivePage({
           silent: silentChannel && !channelErrors[silentChannel] ? silentChannel : null,
           backlog: backlogState,
           platform,
+          // ADR-0076: a channel of a cloud call is on the on-device engine.
+          cloudFallback: cloudStt && localChannels.length > 0,
         })
       : null;
   const silentShown = callNotice?.kind === 'mic-silent' || callNotice?.kind === 'them-silent';
@@ -1343,6 +1558,15 @@ export function LivePage({
         onActivity={noteActivity}
         echoCount={echoStats.count}
         {...(recording.available ? { recording } : {})}
+        {...(cloudStt
+          ? {
+              rules: 'newest' as const,
+              catchUp: (atUnix: number) =>
+                cloudRef.current
+                  ? cloudRef.current.catchUp('them', atUnix, CATCH_UP_CAP_MS)
+                  : Promise.resolve({ waitedMs: 0, timedOut: false }),
+            }
+          : {})}
       />
     ) : (
       <div className="flex justify-end">

@@ -48,6 +48,8 @@ export interface PartialEvent {
   text: string;
   /** Utterance start (Unix ms), or null when cleared. */
   tStart: number | null;
+  /** ADR-0076 (one clock): when the words last changed (Unix ms, capture time); absent when cleared. */
+  tEnd?: number;
 }
 
 /** A finished utterance. */
@@ -154,6 +156,23 @@ export interface SttEngine {
   detach(channel: ChannelId): void;
   /** Replaces the hotwords (about 2 s; both channels restart their current utterance). */
   setHotwords(text: string): Promise<void>;
+  /**
+   * ADR-0076: decodes one chunk handed over by the page (the cloud path's on-device fallback), instead of
+   * a stream attached with attach().
+   *
+   * @param channel Which channel.
+   * @param samples 16 kHz mono samples (copied; the caller keeps its array).
+   * @param endTime Capture time of the last sample, audio clock seconds.
+   * @param replay  True for audio replayed from the 10 s store (not counted as backlog).
+   */
+  accept(channel: ChannelId, samples: Float32Array, endTime: number, replay?: boolean): void;
+  /**
+   * ADR-0076 (one clock): gives the worker the call's capture clock, so its lines' times match the cloud
+   * lines' times.
+   *
+   * @param unixMinusAudioMs Unix ms minus audio-clock ms (captureClock.ts).
+   */
+  setClock(unixMinusAudioMs: number): void;
   /**
    * Resolves once the worker has handled everything sent so far, so the final lines flushed by
    * an earlier detach() have reached onFinal (Day 4: End waits for the last line).
@@ -282,6 +301,7 @@ export function createSttEngine(
           channel: message.channel,
           text: message.text,
           tStart: message.tStart,
+          ...(message.tEnd !== undefined ? { tEnd: message.tEnd } : {}),
         });
         break;
       case 'final':
@@ -421,6 +441,19 @@ export function createSttEngine(
       });
       post({ type: 'set-hotwords', hotwords: formatHotwords(text).buffer });
       await done;
+    },
+
+    accept(channel, samples, endTime, replay = false) {
+      if (ending) return;
+      // A copy is moved to the worker: the caller's 10 s store keeps its own.
+      const copy = new Float32Array(samples);
+      post({ type: 'accept', channel, samples: copy, endTime, ...(replay ? { replay } : {}) }, [
+        copy.buffer,
+      ]);
+    },
+
+    setClock(unixMinusAudioMs) {
+      if (!ending) post({ type: 'clock', unixMinusAudioMs });
     },
 
     drain(timeoutMs = DRAIN_TIMEOUT_MS) {

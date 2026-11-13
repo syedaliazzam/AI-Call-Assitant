@@ -63,6 +63,11 @@ describe('mergeLines', () => {
       ...PREVIOUS,
       text: 'What would the rollout timeline be?',
       tEnd: 3_500,
+      // ADR-0076: each stretch keeps its own times.
+      segments: [
+        { text: PREVIOUS.text, tStart: PREVIOUS.tStart, tEnd: PREVIOUS.tEnd },
+        { text: 'timeline be?', tStart: 2_400, tEnd: 3_500 },
+      ],
     });
     expect(PREVIOUS.text).toBe('What would the rollout');
   });

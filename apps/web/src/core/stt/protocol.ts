@@ -214,6 +214,21 @@ export type ToWorker =
       samples: Float32Array;
       /** Capture time of the chunk's last sample, on the sender's audio clock, in seconds. */
       endTime: number;
+      /**
+       * ADR-0076: audio replayed from the cloud path's 10 s store after a failover. It is decoded, but its
+       * late arrival is not counted as backlog (it was never waiting in this worker's queue).
+       */
+      replay?: boolean;
+    }
+  | {
+      /**
+       * ADR-0076 (one clock): the call's capture clock, Unix ms minus audio-clock ms. From now on every
+       * channel's times use it instead of the worker's own estimate, so on-device lines and Deepgram's
+       * lines are on the same clock.
+       */
+      type: 'clock';
+      /** Unix ms − audio-clock ms (captureClock.ts). */
+      unixMinusAudioMs: number;
     }
   | {
       /** Drop a channel's current utterance without a final line, and start fresh. */
@@ -280,6 +295,10 @@ export type FromWorker =
       text: string;
       /** When the utterance started (Unix ms, capture time); null when the text was cleared. */
       tStart: number | null;
+      /**
+       * ADR-0076 (one clock): when the words last changed (Unix ms, capture time); absent when cleared.
+       */
+      tEnd?: number;
     }
   | {
       /** A finished utterance. */

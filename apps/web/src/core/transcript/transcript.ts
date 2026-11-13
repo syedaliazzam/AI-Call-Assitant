@@ -46,6 +46,23 @@ export const THEM_ACTIVE_MS = 2_000;
 /** Who spoke: "you" = microphone, "them" = the other side of the call. */
 export type Speaker = 'you' | 'them';
 
+/** ADR-0076: what the transcript shows where a channel's audio was lost (rule 8). */
+export const AUDIO_GAP_TEXT = '[audio gap]';
+
+/**
+ * ADR-0076 (E3 rule 3): one stretch of speech inside a line, with its own capture times. A line joined from
+ * several finals keeps each one, so "the speech after the last answered moment" can be told apart even when
+ * a new question joined an answered line.
+ */
+export interface Segment {
+  /** Its words. Never logged. */
+  text: string;
+  /** Start (Unix ms, capture time). */
+  tStart: number;
+  /** End (Unix ms, capture time). */
+  tEnd: number;
+}
+
 /** One line of the transcript. */
 export interface Utterance {
   /**
@@ -111,6 +128,18 @@ export interface Utterance {
    */
   punctuated?: string;
   /**
+   * ADR-0076 (E3 rule 3): the stretches this line was joined from, oldest first; absent for a line that
+   * was never joined (its only segment is the line itself).
+   */
+  segments?: Segment[];
+  /**
+   * ADR-0076: the speech engine itself said the speaker finished here (Deepgram Flux EndOfTurn), so
+   * auto-answer does not wait for a pause of its own.
+   */
+  engineTurnEnd?: boolean;
+  /** ADR-0076 (E3 rule 8): this line marks lost audio (its text is AUDIO_GAP_TEXT); never a question. */
+  gap?: boolean;
+  /**
    * Display only: until when (Unix ms, the transcript's clock) displayLines() holds this "You"
    * line back, because "Them" was speaking when it arrived. lines() and window() ignore it.
    */
@@ -142,8 +171,10 @@ export interface Transcript {
    * @param speaker Who is speaking.
    * @param text    Current text ('' when the engine cleared it).
    * @param tStart  Utterance start (Unix ms), or null when unknown (then: now).
+   * @param tEnd    ADR-0076 (one clock): when the words last changed (Unix ms, capture time); absent:
+   *                the transcript's clock now (the on-device engine before ADR-0076).
    */
-  addPartial(speaker: Speaker, text: string, tStart: number | null): void;
+  addPartial(speaker: Speaker, text: string, tStart: number | null, tEnd?: number): void;
   /**
    * Adds a finished line and removes that speaker's partial line. A "You" line is checked for
    * echo first; a "Them" line also re-checks the "You" lines of the last few seconds (the echo
@@ -158,7 +189,18 @@ export interface Transcript {
     tEnd: number;
     /** v1.4: the line is another language (core/stt/language.ts); it is stored as NON_ENGLISH_TEXT. */
     nonEnglish?: boolean;
+    /** ADR-0076: the speech engine's own end of turn ended this line (Flux EndOfTurn). */
+    endOfTurn?: boolean;
   }): Utterance;
+  /**
+   * ADR-0076 (E3 rule 8): a channel's audio was lost between two moments: a final line reading
+   * AUDIO_GAP_TEXT marks it (never joined to other lines, never a question).
+   *
+   * @param speaker Whose audio.
+   * @param tStart  Start of the loss (Unix ms, capture time).
+   * @param tEnd    End of the loss.
+   */
+  noteGap(speaker: Speaker, tStart: number, tEnd: number): void;
   /**
    * v1.4: marks a final line as being rewritten by the accurate engine, or done (refine.ts).
    *
@@ -565,12 +607,13 @@ export function createTranscript(
   };
 
   return {
-    addPartial(speaker, text, tStart) {
+    addPartial(speaker, text, tStart, tEnd) {
       if (text === '') {
         if (partials.delete(speaker)) changed();
         return;
       }
-      const now = clock();
+      // ADR-0076 (one clock): the capture time of the words when the engine gives it.
+      const now = tEnd ?? clock();
       const existing = partials.get(speaker);
       const start = tStart ?? existing?.tStart ?? now;
       partials.set(speaker, {
@@ -579,7 +622,7 @@ export function createTranscript(
         speaker,
         text,
         tStart: start,
-        tEnd: now,
+        tEnd: Math.max(start, now),
         final: false,
         // A grey "You" line that is only the speakers' echo is hidden too (not counted: it is
         // counted once, when it becomes final); v1.4: so is a grey "Them" line that is the
@@ -660,6 +703,7 @@ export function createTranscript(
         tStart: input.tStart,
         tEnd: input.tEnd,
         ...(input.nonEnglish ? { nonEnglish: true } : {}),
+        ...(input.endOfTurn ? { endOfTurn: true } : {}),
       };
       const hidden = input.nonEnglish ? null : hideReason(line);
       const index = insertionIndex(finals, line.tStart);
@@ -677,10 +721,12 @@ export function createTranscript(
         if (partial && partial.id !== stored.id) aliases.set(partial.id, stored.id);
       } else {
         const heldUntil = holdFor(line.speaker, partial?.heldUntil, partial !== undefined);
+        const { endOfTurn, ...fields } = line;
         const created: Utterance = {
           // 1.5.2 (ADR-0070): the id its grey words had, so an answer to them is an answer to this line.
           id: partial?.id ?? `u${nextId++}`,
-          ...line,
+          ...fields,
+          ...(endOfTurn ? { engineTurnEnd: true } : {}),
           final: true,
           ...(heldUntil !== undefined ? { heldUntil } : {}),
         };
@@ -732,6 +778,24 @@ export function createTranscript(
       }
       changed();
       return stored;
+    },
+
+    noteGap(speaker, tStart, tEnd) {
+      const gapLine: Utterance = {
+        id: `u${nextId++}`,
+        speaker,
+        text: AUDIO_GAP_TEXT,
+        tStart,
+        tEnd: Math.max(tStart, tEnd),
+        final: true,
+        gap: true,
+      };
+      finals = [
+        ...finals.slice(0, insertionIndex(finals, tStart)),
+        gapLine,
+        ...finals.slice(insertionIndex(finals, tStart)),
+      ];
+      changed();
     },
 
     setRefining(id, on) {

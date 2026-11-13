@@ -10,7 +10,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect); ADR-0053
  *
  * The preview is stopped before Connect opens the call's own capture, so the call never shares a
- * microphone stream with it. Audio never leaves the device.
+ * microphone stream with it. The preview's audio is only measured here; it is never sent anywhere.
  */
 import { getPlatform, type Platform } from '@/platform';
 import { LEVEL_INTERVAL_MS, micError, type CaptureDeps } from './capture';

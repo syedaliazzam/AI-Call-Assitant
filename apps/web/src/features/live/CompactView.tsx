@@ -762,6 +762,26 @@ export function CompactView(props: CompactViewProps) {
         </div>
       )}
 
+      {/* ADR-0076 (G4): another app holds the Answer shortcut, so it reaches Paramount AI only while it is in
+          front. Shown for the whole call, with the way to change it. */}
+      {state?.answerKeyTaken && !state.ended && !icon && (
+        <div
+          className={`${piece} flex shrink-0 items-center gap-2 px-3 py-1.5 text-[13px] ${BARS_WIDTH}`}
+          {...{ [BARS_ATTRIBUTE]: '' }}
+        >
+          <span role="alert" className="min-w-0 flex-1 truncate text-ui-warning">
+            {state.answerKeyTaken} is used by another app: press Answer, or pick another key.
+          </span>
+          <button
+            type="button"
+            className="h-7 shrink-0 rounded-control bg-ui-overlay-button px-2 text-[13px] font-medium hover:bg-ui-overlay-button-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]"
+            onClick={() => onCommand({ type: 'hotkey-settings' })}
+          >
+            Hotkeys
+          </button>
+        </div>
+      )}
+
       {/* 1.5.2 (ADR-0070): a screen recording with Private off: Paramount AI is in the video. */}
       {privateOff.visible && !state?.ended && !icon && (
         <PrivateOffWarning

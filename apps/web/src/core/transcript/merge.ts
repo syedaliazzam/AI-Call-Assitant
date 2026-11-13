@@ -36,6 +36,8 @@ export interface FinalLine {
   tEnd: number;
   /** v1.4: true when the line is speech in another language (its text is NON_ENGLISH_TEXT). */
   nonEnglish?: boolean;
+  /** ADR-0076: the speech engine's own end of turn ended it (Flux EndOfTurn). */
+  endOfTurn?: boolean;
 }
 
 /**
@@ -67,6 +69,8 @@ export function shouldMerge(
 ): boolean {
   if (!previous || !previous.final) return false;
   if (previous.speaker !== next.speaker) return false;
+  // ADR-0076: a mark of lost audio stays a line of its own.
+  if (previous.gap) return false;
   // Noise stays apart from speech, so it can collapse and a question stays clean (v1.1.0).
   if (looksGarbled(previous.text) !== looksGarbled(next.text)) return false;
   // Another language stays apart from English (v1.4), so a question next to it stays clean.
@@ -84,11 +88,23 @@ export function shouldMerge(
  * Called from: Transcript.addFinal(); tests
  */
 export function mergeLines(previous: Utterance, next: FinalLine): Utterance {
+  const { engineTurnEnd: _was, ...rest } = previous;
+  void _was;
   return {
-    ...previous,
+    ...rest,
     // Two stretches of another language read as one mark, not the mark twice.
     text: previous.nonEnglish ? NON_ENGLISH_TEXT : `${previous.text} ${next.text}`.trim(),
     tStart: Math.min(previous.tStart, next.tStart),
     tEnd: Math.max(previous.tEnd, next.tEnd),
+    // ADR-0076 (E3 rule 3): each stretch keeps its own times, so new words after an answered stretch can
+    // be found even inside one joined line.
+    segments: [
+      ...(previous.segments ?? [
+        { text: previous.text, tStart: previous.tStart, tEnd: previous.tEnd },
+      ]),
+      { text: next.text, tStart: next.tStart, tEnd: next.tEnd },
+    ],
+    // ADR-0076: whether the speaker finished is what the newest stretch says.
+    ...(next.endOfTurn ? { engineTurnEnd: true } : {}),
   };
 }

@@ -180,6 +180,12 @@ function AnswerCard(props: AnswerCardProps) {
       >
         {question}
       </p>
+      {/* ADR-0076 (E3 rule 2): the press gave up waiting for their last words. */}
+      {entry.incomplete && (
+        <p className="mt-0.5 text-[13px] text-ui-muted">
+          The question may be incomplete: their last words were still coming in.
+        </p>
+      )}
 
       <div className="mt-2">
         {entry.thumbnail && (
