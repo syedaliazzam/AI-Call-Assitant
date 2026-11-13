@@ -761,3 +761,13 @@ i5-8350U laptop, Windows 11, plugged in. **Evidence:** the real call of 11 Nov 2
 | Web deployed, production smoke (signed in, codes only) | as designed | `/api/google/access-token` 404; status carries `admin` and `account` (null for a member); a member gets 403 on picker-config and folder and "admin-only" on connect; upload routes answer "not connected" until an admin connects. The test admin account is disabled, so the admin's picker-config was not checked in production (unit-tested). |
 | `Paramount-AI-Setup-1.6.2.exe` | 288,804,104 bytes; SHA-256 `b3e672587a62fcc39f93010036c2affc664f12858c24181804df664815581992` | Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.6.2. |
 | Real-feed update check (`update-check.ts`, 1.6.1 extracted from its installer, never installed) | PASS | 1.6.1 found, downloaded and verified 1.6.2 from the real releases repository. |
+
+| Release check (1.6.3, ADR-0077, 13 Nov 2026) | Result | Notes |
+|---|---|---|
+| Lint, typecheck, unit tests, web build | web 2,171 of 2,171; desktop 246 of 246 | New: the call model (records, legacy calls worked out on read), the after-call runner, per-call Drive order and independent files, "Upload N earlier calls" on the 11–13 Nov session's shape (exactly the 22:25 and 00:49 calls, once), both email rules with PGlite (email 1, email 2, 24 h fallback, hourly retry of failed emails), desktop priority and window-close helpers. |
+| Integration (local) | review 13/13 (incl. db-upgrade), live + launcher + handoff 49 passed, 1 skipped as before; sim-calls + answers 22/22 | The db-upgrade spec's schema constant was still 10 (stale since 11); now 12. |
+| CI (#60) | all jobs pass | Web, Windows desktop smoke, speech-to-text. |
+| Windows install check (`install-check.yml`, run by hand on `desktop-1.6.3`) | all expectations pass | A–G as before; **H (new) the published 1.6.2 → 1.6.3 by the updater**; opened directly. |
+| Web deployed, production smoke (signed out, codes only) | as designed | `/` 307, `/login` 200; Google status, notifications, notify, sync push and the cron answer 401 without a session or secret. |
+| `Paramount-AI-Setup-1.6.3.exe` | 288,804,206 bytes; SHA-256 `f3a9497da374015200b585234e9f7ae399f928d3d162ece1b516401b40af3994` | Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.6.3. Shell changes: the call window's close ends the call for Drive; the recording finaliser at below-normal priority. |
+| Real-feed update check (`update-check.ts`, 1.6.2 extracted from its installer, never installed) | PASS | 1.6.2 found, downloaded and verified 1.6.3 from the real releases repository. |
