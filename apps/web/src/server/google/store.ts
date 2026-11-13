@@ -14,7 +14,7 @@
  * Nothing here logs. Tokens, addresses, titles and file names are only ever held encrypted or in memory.
  */
 import 'server-only';
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import type { DriveExpectedRecording, DriveNotificationStatus, DriveSavedFile } from '@kite/shared';
 import { open, seal, type DataKeys } from '../calldata/crypto';
 import type { CallDataDb } from '../calldata/store';
@@ -47,6 +47,21 @@ export interface NotificationContent {
   gone?: string[];
   /** True when the email went without the recording, whose upload had not finished (24 hours). */
   recordingPending?: boolean;
+  /**
+   * ADR-0077: 'two-step' for calls ended from 13 Nov 2026 on (email 1 "Call saved", email 2 "Recording
+   * saved"); absent for the older single email.
+   */
+  rule?: 'two-step';
+  /** ADR-0077: 'recording' for a call's "Recording saved" record (email 2); absent for email 1. */
+  kind?: 'recording';
+  /** ADR-0077: true once the call's transcript and notes are in Drive (email 1 may go). */
+  callFilesSaved?: boolean;
+  /** ADR-0077: the session's Recordings subfolder, linked in both emails. */
+  recordingsFolderUrl?: string;
+  /** ADR-0077: email 2 went after 24 hours without the recording ("Recording not uploaded"). */
+  recordingMissing?: boolean;
+  /** ADR-0077: when sending was last tried (Unix ms); a failed email is tried again an hour later. */
+  lastTriedAt?: number;
 }
 
 /**
@@ -241,6 +256,41 @@ export async function listOverdue(
       and(
         eq(driveNotification.status, 'collecting'),
         lt(driveNotification.createdAt, before),
+        ...(userId ? [eq(driveNotification.userId, userId)] : []),
+      ),
+    )
+    .limit(100);
+}
+
+/**
+ * ADR-0077: records whose email failed (or found email not set up) since a time, for trying again by
+ * itself: for one account, or (the scheduled job) for every account, with the address and the attempts so
+ * far. The caller reads each record and tries only two-step ones (never older calls by themselves).
+ *
+ * @param db     The database.
+ * @param since  Records first reported after this.
+ * @param userId Only this account, or null for all.
+ * @returns Each record's account, address, key and attempts (at most 100).
+ * Called from: api.ts (retryFailed); tests
+ */
+export async function listRetryCandidates(
+  db: CallDataDb,
+  since: Date,
+  userId: string | null,
+): Promise<{ userId: string; email: string; sessionId: string; attempts: number }[]> {
+  return db
+    .select({
+      userId: driveNotification.userId,
+      email: user.email,
+      sessionId: driveNotification.sessionId,
+      attempts: driveNotification.attempts,
+    })
+    .from(driveNotification)
+    .innerJoin(user, eq(user.id, driveNotification.userId))
+    .where(
+      and(
+        inArray(driveNotification.status, ['failed', 'not-set-up']),
+        gt(driveNotification.createdAt, since),
         ...(userId ? [eq(driveNotification.userId, userId)] : []),
       ),
     )

@@ -240,6 +240,11 @@ export interface StoredUtterance {
   tStart: number;
   /** When its last word changed (Unix ms, capture time). */
   tEnd: number;
+  /**
+   * ADR-0077: the call it was said in (StoredCall.id). Absent on lines saved before; their call is found
+   * from the id (`<session>:<call>:<line>`) when the session page is read (core/review/calls.ts).
+   */
+  callId?: string;
 }
 
 /** The user's rating of an answer: thumbs up, thumbs down, or not rated. */
@@ -310,6 +315,8 @@ export interface StoredAnswer {
    * answers saved earlier, which are placed by their time. No index uses it, so no new database version.
    */
   sourceLineId?: string;
+  /** ADR-0077: the call it belongs to (StoredCall.id). Absent on answers saved before (callStartedAt is used). */
+  callId?: string;
 }
 
 /**
@@ -538,6 +545,13 @@ export interface DriveFileJob {
   done: boolean;
   /** True when the local file was gone, so it was not saved. */
   missing?: boolean;
+  /**
+   * ADR-0077 (per-call jobs): why this file's last try failed (a reason code, core/drive/reasons.ts), while
+   * the job's other files carried on. Cleared when it is saved.
+   */
+  error?: string;
+  /** ADR-0077: how many tries of this file failed so far. */
+  failures?: number;
 }
 
 /**
@@ -617,6 +631,156 @@ export interface DriveSessionJob {
    */
   manualEmail?: boolean;
   /** When the first call was queued (Unix ms). */
+  queuedAt: number;
+  /** When this record last changed (Unix ms). */
+  updatedAt: number;
+}
+
+/**
+ * Where a call's AI notes stand (ADR-0077):
+ * - writing: not written yet (the after-call runner writes them, also after the call window closed);
+ * - saved: written (core/storage/callNotes.ts);
+ * - skipped: nothing was heard and nothing was answered, so there was nothing to write about;
+ * - failed: they could not be written (Regenerate on the session page tries again).
+ */
+export type CallNotesState = 'writing' | 'saved' | 'skipped' | 'failed';
+
+/**
+ * Where a call's Google Drive upload stands, as every device sees it (ADR-0077; the upload itself is the
+ * device's DriveCallJob):
+ * - waiting: the call ended; it is queued once its notes are settled;
+ * - off: the account did not save to Drive when the call ended ("Upload N earlier calls" in Settings);
+ * - queued / uploading / paused / done / error: as the job (DriveJobState).
+ */
+export type CallDriveState =
+  'waiting' | 'off' | 'queued' | 'uploading' | 'paused' | 'done' | 'error';
+
+/**
+ * One call (ADR-0077): every start of a session is its own call, with its own transcript lines, answers,
+ * recordings, notes, Drive upload and emails. Made when the call connects; written again at End before
+ * anything else, so the after-call work (core/live/afterCall.ts) can finish even when the call window
+ * closes. Synced (kind 'call'); goes with its session. Times and states only, never call content.
+ */
+export interface StoredCall {
+  /** Random id made at Connect (crypto.randomUUID()); lines, answers and recordings (meetingId) carry it. */
+  id: string;
+  /** The session it belongs to. */
+  sessionId: string;
+  /** When it connected (Unix ms); the same value answers keep as callStartedAt and Drive file keys use. */
+  startedAt: number;
+  /** When it ended (Unix ms), or null while it runs. */
+  endedAt: number | null;
+  /** How long it lasted, ms (0 while it runs). */
+  durationMs: number;
+  /**
+   * 'live' while it runs; 'ending' from the press of End until its last lines are saved; 'ended' after.
+   * A call left 'live' or 'ending' by a closed window or a crash is ended by the after-call runner.
+   */
+  phase: 'live' | 'ending' | 'ended';
+  /** The device that ran it (core/live/deviceId.ts): only that device writes its notes and uploads it. */
+  deviceId: string;
+  /** "Save transcript" when it started (its lines are kept on the device and synced only when on). */
+  saveTranscript: boolean;
+  /** Whether it was recorded: 'screen' (screen and sound), 'audio' (sound only) or 'off'. */
+  recording: 'off' | 'audio' | 'screen';
+  /**
+   * How many final lines were heard (a count, no text), set at End. 0 means nothing was heard, so the
+   * notes are skipped unless answers were given. Absent before End.
+   */
+  heardLines?: number;
+  /** Where its notes stand. */
+  notesState: CallNotesState;
+  /** ADR-0077: how many times writing the notes failed (the runner tries a few times). */
+  notesAttempts?: number;
+  /** Why the notes failed when Claude was unavailable ('usage-limit', 'overloaded', …), else absent. */
+  notesError?: string;
+  /** Its Google Drive upload, as every device sees it (the upload runs on deviceId). */
+  drive: {
+    /** Where it stands. */
+    state: CallDriveState;
+    /** Why it waits or stopped (core/drive/reasons.ts codes), when it does. */
+    reason?: string;
+    /** The session folder in Drive, once made (for "Saved to Drive ↗"). */
+    folderId?: string;
+  };
+  /**
+   * While the call window still improves the user's lines after End (on-device Accurate, ADR-0066), the
+   * Drive upload waits, at most until this time (Unix ms): a window closed meanwhile never holds it longer.
+   */
+  driveHoldUntil?: number;
+  /** Which speech-to-text engine heard it: Deepgram (ADR-0076), on-device, or both (a fallback). */
+  sttEngine?: 'deepgram' | 'local' | 'mixed';
+  /** When this record last changed (Unix ms). */
+  updatedAt: number;
+}
+
+/**
+ * One call's AI notes (ADR-0077; the `callNotes` store, synced as 'callNotes'). The older `notes` store
+ * (one per session) is kept read-only for calls made before. Text is never logged.
+ */
+export interface StoredCallNotes {
+  /** The call (the key): a StoredCall id, or a legacy call's derived id (core/review/calls.ts). */
+  callId: string;
+  /** The session. */
+  sessionId: string;
+  /** The notes. */
+  notes: CallNotes;
+  /** When the call connected (Unix ms): the notes' times count from it. */
+  callStartedAt: number;
+  /** When they were written (Unix ms). */
+  createdAt: number;
+  /** True when written from the answers only (no transcript lines were available). */
+  fromAnswersOnly?: boolean;
+}
+
+/**
+ * One call's Google Drive upload on this device (ADR-0077; the `driveCallJobs` store, version 12, never
+ * synced). Files go in this order: transcript TXT, transcript PDF, notes PDF, then the recording parts;
+ * each file is tried on its own, so one failure never stops another. File keys are the ones the older
+ * per-session job used ('call:<startedAt>:…', 'rec:<id>:…'), so a file already in Drive is never uploaded
+ * again.
+ */
+export interface DriveCallJob {
+  /** The call (the key). A legacy call (before call records) has its derived id. */
+  callId: string;
+  /** The session. */
+  sessionId: string;
+  /** When the call started (Unix ms): the Transcripts files' keys and names. */
+  startedAt: number;
+  /** When it ended (Unix ms). */
+  endedAt: number;
+  /**
+   * How its recordings are found: 'meeting' (their meetingId is the call's id), or 'window' (a call made
+   * before call records: recordings that started between a minute before it and its end).
+   */
+  recordingMatch: 'meeting' | 'window';
+  /** 'call' (queued when it ended) or 'earlier' ("Upload N earlier calls"; emailed by hand only). */
+  origin: 'call' | 'earlier';
+  /** The Drive folder the session folder was made in (a changed folder starts again in the new one). */
+  parentId?: string;
+  /** The session folder's Drive id. */
+  folderId?: string;
+  /** Its "Recordings" subfolder's Drive id. */
+  recordingsId?: string;
+  /** Its "Transcripts" subfolder's Drive id. */
+  transcriptsId?: string;
+  /** The files, in upload order. */
+  files: DriveFileJob[];
+  /** Where it stands (as DriveSessionJob). */
+  state: DriveJobState;
+  /** Why it waits or stopped (core/drive/reasons.ts). */
+  reason?: string;
+  /** True when the error may clear by itself: queued again after a while. */
+  autoRetry?: boolean;
+  /** True once the server heard that the Transcripts files are in (email 1 may go). */
+  callFilesReported: boolean;
+  /** How many saved files the server has heard of. */
+  reportedFiles: number;
+  /** True once the server heard of the finished job. */
+  notified: boolean;
+  /** True once the "saved" notice was shown on this device. */
+  noticeShown: boolean;
+  /** When it was queued (Unix ms). */
   queuedAt: number;
   /** When this record last changed (Unix ms). */
   updatedAt: number;

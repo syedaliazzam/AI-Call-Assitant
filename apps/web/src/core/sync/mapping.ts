@@ -23,6 +23,9 @@ export const SYNCED_STORES = [
   'settings',
   // Desktop 1.5.0 (ADR-0068): recording records (never the files).
   'recordings',
+  // ADR-0077: call records and each call's notes.
+  'calls',
+  'callNotes',
 ] as const;
 
 /** One synced store. */
@@ -41,6 +44,8 @@ export const STORE_KIND: Readonly<Record<SyncedStore, SyncKind>> = {
   chats: 'chat',
   settings: 'settings',
   recordings: 'recording',
+  calls: 'call',
+  callNotes: 'callNotes',
 };
 
 /**
@@ -74,6 +79,8 @@ const SESSION_CHILD_STORES: readonly SyncedStore[] = [
   'notes',
   'questionBanks',
   'recordings',
+  'calls',
+  'callNotes',
 ];
 
 /**

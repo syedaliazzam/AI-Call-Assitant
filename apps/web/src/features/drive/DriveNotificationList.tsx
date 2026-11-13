@@ -79,7 +79,8 @@ export function DriveNotificationList({
         {items.map((item) => {
           const state = STATES[item.status];
           // ADR-0073: one row per call's email; a session started again has several.
-          const rowKey = `${item.sessionId}~${item.call ?? ''}`;
+          // ADR-0077: and a call's "Recording saved" email has its own row.
+          const rowKey = `${item.sessionId}~${item.call ?? ''}~${item.kind ?? 'call'}`;
           return (
             <li
               key={rowKey}
@@ -103,6 +104,7 @@ export function DriveNotificationList({
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                {item.kind === 'recording' && <Badge tone="neutral">Recording</Badge>}
                 {item.recordingPending && <Badge tone="warning">Recording pending</Badge>}
                 <Badge tone={state.tone}>{state.label}</Badge>
                 {emailConfigured && (item.status === 'failed' || item.status === 'not-set-up') && (
@@ -114,7 +116,11 @@ export function DriveNotificationList({
                       setRetrying(rowKey);
                       setMessage(null);
                       try {
-                        const out = await driveApi().retryNotification(item.sessionId, item.call);
+                        const out = await driveApi().retryNotification(
+                          item.sessionId,
+                          item.call,
+                          item.kind === 'recording',
+                        );
                         if (out.status === 'failed')
                           setMessage('The email failed again. Try later.');
                       } catch (error) {

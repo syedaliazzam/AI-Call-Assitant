@@ -125,6 +125,8 @@ export function startTranscriptSaver(
         text: line.text,
         tStart: line.tStart,
         tEnd: line.tEnd,
+        // ADR-0077: the line carries its call when the caller gave the call record's id.
+        ...(options.callId ? { callId: options.callId } : {}),
       };
       enqueue(() => store.save(utterance));
     }

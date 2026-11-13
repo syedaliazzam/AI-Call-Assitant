@@ -361,7 +361,8 @@ export function sortSessions(sessions: readonly Session[], sort: SessionSort): S
 
 /**
  * Deletes a session and everything stored for it (documents, transcript lines, answers,
- * notes, its question bank, its recording records (1.5.0, ADR-0068: the records only; the files stay in
+ * notes, its question bank, its calls and their notes and Drive uploads (ADR-0077), its recording
+ * records (1.5.0, ADR-0068: the records only; the files stay in
  * the Recordings folder of the computer that made them) and its rejected lesson decisions) in one
  * transaction, so a failure part-way leaves nothing half-deleted. Approved lessons it proposed stay
  * (Settings manages them).
@@ -383,6 +384,10 @@ export async function deleteSession(id: string): Promise<DeletedSessionData> {
       db.lessons,
       db.questionBanks,
       db.recordings,
+      // ADR-0077: the session's calls, their notes and their Drive uploads on this device.
+      db.calls,
+      db.callNotes,
+      db.driveCallJobs,
     ],
     async () => {
       const documents = await db.documents.where('sessionId').equals(id).delete();
@@ -398,6 +403,9 @@ export async function deleteSession(id: string): Promise<DeletedSessionData> {
       const questionBanks = (await db.questionBanks.get(id)) ? 1 : 0;
       await db.questionBanks.delete(id);
       await db.recordings.where('sessionId').equals(id).delete();
+      await db.calls.where('sessionId').equals(id).delete();
+      await db.callNotes.where('sessionId').equals(id).delete();
+      await db.driveCallJobs.where('sessionId').equals(id).delete();
       await db.sessions.delete(id);
       return { documents, utterances, answers, notes, rejectedLessons, questionBanks };
     },

@@ -57,13 +57,20 @@ import {
 } from '@/core/audio/capture';
 import { warmSession } from '@/core/answer/warm';
 import { markSessionActive, updateSession } from '@/core/storage/sessions';
-import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
+import type { Session, StoredCall, StoredDocument, StoredUtterance } from '@/core/storage/types';
 import { clearTranscript, listUtterances, saveUtterance } from '@/core/storage/utterances';
 import { flushAccountSync } from '@/core/sync/client';
-import { listAnswers } from '@/core/storage/answers';
 import { notesFailureText, type UnavailableReason } from '@/core/answer/unavailable';
-import { queueCallForDrive } from '@/core/drive/queue';
-import { generateNotes, type NotesLine } from '@/core/notes/generate';
+import type { NotesLine } from '@/core/notes/generate';
+import {
+  announceAfterCall,
+  handOffCall,
+  markCallLiveHere,
+  notesUnavailableOf,
+  waitForNotes,
+} from '@/core/live/afterCall';
+import { thisDeviceId } from '@/core/live/deviceId';
+import { saveCall, updateCall, watchCall } from '@/core/storage/calls';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
 import { createCloudStt, type CloudStt } from '@/core/stt/cloudStt';
@@ -227,6 +234,12 @@ function liveSessionLanguage(code: string): 'en' | 'multi' {
 
 /** ADR-0076 (timing trace): a channel quiet this long before sound counts as a new speech onset, ms. */
 const ONSET_QUIET_MS = 500;
+
+/** ADR-0077: the longest the Drive upload waits for the after-call rewrite of the user's lines, ms. */
+const DRIVE_HOLD_MS = 3 * 60_000;
+
+/** ADR-0077: the longest a launcher call's window stays open for the call's notes after End, ms. */
+const NOTES_WAIT_MS = 90_000;
 
 /**
  * ADR-0076 (timing trace): how many words the speech an answer asked had by the end of the call: the words
@@ -425,6 +438,24 @@ export function LivePage({
   // When this call first connected (Unix ms); a reconnect keeps it. Answers time their lines
   // from here, and a new value starts a new conversation (core/answer/context.ts).
   const [callStartedAt, setCallStartedAt] = useState<number | null>(null);
+  // ADR-0077: the call's record id (made at the first Connect; a reconnect keeps it), and its start.
+  const [callId, setCallId] = useState<string | null>(null);
+  const callIdRef = useRef<string | null>(null);
+  const callStartRef = useRef<number | null>(null);
+  // ADR-0077: which engines heard this call (the record's sttEngine), and what it recorded.
+  const enginesUsed = useRef(new Set<'deepgram' | 'local'>());
+  const recordedKind = useRef<StoredCall['recording']>('off');
+  // ADR-0077: stops watching the last call's record (its notes line).
+  const stopNotesWatch = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      // ADR-0077: a call left running when this page goes is ended by the after-call runner once no
+      // call is live on this device.
+      if (callIdRef.current) markCallLiveHere(callIdRef.current, false);
+      stopNotesWatch.current?.();
+    },
+    [],
+  );
   // The notes written after the last call (Day 5).
   const [notesStatus, setNotesStatus] = useState<'idle' | 'writing' | 'saved' | 'failed'>('idle');
   // Why the notes failed when Claude was unavailable (usage limit or overload), else null.
@@ -459,6 +490,15 @@ export function LivePage({
   // Desktop 1.5.0 (ADR-0068): the meeting recording, from the call's own streams.
   const recording = useCallRecording({
     sessionId: session.id,
+    // ADR-0077: the recording's meeting is the call (read when a part starts).
+    callId: () => callIdRef.current,
+    onPartStarted: (kind) => {
+      // A screen part makes the call a screen recording; sound only never downgrades it.
+      const next = kind === 'screen' || recordedKind.current === 'screen' ? 'screen' : 'audio';
+      recordedKind.current = next;
+      if (callIdRef.current)
+        void updateCall(callIdRef.current, { recording: next }).catch(() => false);
+    },
     saveTranscript: session.saveTranscript,
     connected: connection === 'connected',
     streams: () => {
@@ -762,6 +802,7 @@ export function LivePage({
    */
   const onCloudEngine = useCallback((channel: Speaker, engine: ChannelEngine) => {
     callTimings.noteEngine(engine);
+    enginesUsed.current.add(engine === 'local' ? 'local' : 'deepgram');
     setLocalChannels((current) => {
       const others = current.filter((item) => item !== channel);
       return engine === 'local' ? [...others, channel] : others;
@@ -1015,7 +1056,37 @@ export function LivePage({
       // Start the stuck-engine watchdog for this connection (Day 6 Stage 4).
       watchdog.current.start(performance.now());
       setConnection('connected');
-      setCallStartedAt((current) => current ?? Date.now());
+      // A reconnect keeps the call's start and record.
+      const startedAtNow = callStartRef.current ?? Date.now();
+      callStartRef.current = startedAtNow;
+      setCallStartedAt(startedAtNow);
+      if (!callIdRef.current) {
+        // ADR-0077: every start of a session is its own call, with its own record.
+        const id = crypto.randomUUID();
+        callIdRef.current = id;
+        setCallId(id);
+        markCallLiveHere(id, true);
+        enginesUsed.current = new Set(cloudStt ? ['deepgram'] : ['local']);
+        recordedKind.current = 'off';
+        stopNotesWatch.current?.();
+        stopNotesWatch.current = null;
+        setNotesStatus('idle');
+        // Bookkeeping: a failure must not stop the call (the lines and answers still carry the id).
+        void saveCall({
+          id,
+          sessionId: session.id,
+          startedAt: startedAtNow,
+          endedAt: null,
+          durationMs: 0,
+          phase: 'live',
+          deviceId: thisDeviceId(),
+          saveTranscript: session.saveTranscript,
+          recording: 'off',
+          notesState: 'writing',
+          drive: { state: 'waiting' },
+          updatedAt: Date.now(),
+        }).catch(() => undefined);
+      }
       // 1.5.1 (ADR-0069): the device-side timing log (ids and times only); a reconnect keeps the call's.
       if (!callTimings.current()) {
         callTimings.start({
@@ -1038,6 +1109,8 @@ export function LivePage({
       // reconnect keeps the running one).
       if (session.saveTranscript && !saverRef.current) {
         saverRef.current = startTranscriptSaver(transcript, session.id, {
+          // ADR-0077: the saved lines carry the call.
+          ...(callIdRef.current ? { callId: callIdRef.current } : {}),
           onError: () => setSaveFailed(true),
         });
       }
@@ -1083,11 +1156,40 @@ export function LivePage({
    * Ends the call: stops both channels, waits for the line still being spoken to become final
    * and be saved (when on; core/transcript/endCall.ts), clears the in-memory transcript (with
    * saving off, this discards it, architecture §7.4), marks the session ended, goes back to the
-   * Connect view, and (Day 5) has the call's notes written in the background.
+   * Connect view, and (Day 5) has the call's notes written in the background. ADR-0077: the call record
+   * is written first, before anything else; the after-call runner (core/live/afterCall.ts) then writes the
+   * notes and queues the call for Drive, in this window or, if it closes, in another one.
    */
   const end = async () => {
     if (ending) return;
     setEnding(true);
+    // ADR-0077: the call's record first, so nothing about the call is lost if the window closes now.
+    const endingCallId = callIdRef.current;
+    const endedAt = Date.now();
+    const startedAtForRecord = callStartRef.current ?? endedAt;
+    if (endingCallId) {
+      const ending: Omit<StoredCall, 'id' | 'sessionId' | 'updatedAt'> = {
+        startedAt: startedAtForRecord,
+        endedAt,
+        durationMs: Math.max(0, endedAt - startedAtForRecord),
+        phase: 'ending',
+        deviceId: thisDeviceId(),
+        saveTranscript: session.saveTranscript,
+        recording: recordedKind.current,
+        notesState: 'writing',
+        drive: { state: 'waiting' },
+      };
+      const changed = await updateCall(endingCallId, ending).catch(() => false);
+      // The record written at Connect is missing (that write failed): written whole now.
+      if (!changed) {
+        await saveCall({
+          ...ending,
+          id: endingCallId,
+          sessionId: session.id,
+          updatedAt: endedAt,
+        }).catch(() => undefined);
+      }
+    }
     watchdog.current.stop();
     // 1.5.1: no rewrite starts after End; the waiting line keeps its live words.
     refineQueue.clear();
@@ -1136,6 +1238,7 @@ export function LivePage({
                 text: line.text,
                 tStart: line.tStart,
                 tEnd: line.tEnd,
+                ...(endingCallId ? { callId: endingCallId } : {}),
               },
               pieces,
             });
@@ -1153,6 +1256,38 @@ export function LivePage({
     cloud?.stop();
     if (cloudRef.current === cloud) cloudRef.current = null;
     setLocalChannels([]);
+    // ADR-0066: the user's own saved lines are transcribed again after the call (on-device Accurate);
+    // the Drive upload waits for that, three minutes at most.
+    const accurateEngine = getPlatform().accurate;
+    const willRewrite = afterLines.length > 0 && Boolean(accurateEngine);
+    if (endingCallId) {
+      // ADR-0077: the call's lines, as heard, go to this window's after-call runner (also with "Save
+      // transcript" off: they are never stored). Then the record says the call ended.
+      handOffCall(endingCallId, { lines: finalLines });
+      const used = enginesUsed.current;
+      await updateCall(endingCallId, {
+        phase: 'ended',
+        heardLines: finalLines.length,
+        sttEngine: used.size > 1 ? 'mixed' : used.has('deepgram') ? 'deepgram' : 'local',
+        ...(willRewrite ? { driveHoldUntil: Date.now() + DRIVE_HOLD_MS } : {}),
+      }).catch(() => false);
+      markCallLiveHere(endingCallId, false);
+      // The live page's notes line follows the record (the runner may finish in another window).
+      stopNotesWatch.current?.();
+      stopNotesWatch.current = watchCall(endingCallId, (call) => {
+        if (!call || call.notesState === 'skipped') {
+          setNotesStatus('idle');
+          return;
+        }
+        setNotesStatus(call.notesState === 'writing' ? 'writing' : call.notesState);
+        setNotesUnavailable(
+          call.notesState === 'failed' ? notesUnavailableOf(call.notesError) : null,
+        );
+      });
+    }
+    callIdRef.current = null;
+    callStartRef.current = null;
+    setCallId(null);
     releaseLock.current?.();
     releaseLock.current = null;
     setHygiene('ok');
@@ -1186,10 +1321,9 @@ export function LivePage({
       .then(() => flushAccountSync())
       .catch(() => undefined);
     // ADR-0066: the user's own saved lines, transcribed again now that the call is over, one at a
-    // time. Not awaited; the notes below use the words as heard. Only lines that are kept.
-    const accurateEngine = getPlatform().accurate;
+    // time. Not awaited; the notes use the words as heard. Only lines that are kept.
     const rewriting =
-      afterLines.length === 0 || !accurateEngine
+      !willRewrite || !accurateEngine
         ? Promise.resolve()
         : saving
             .then(async () => {
@@ -1206,43 +1340,29 @@ export function LivePage({
               if (pageOpen.current) setSaved(await listUtterances(session.id));
             })
             .catch(() => undefined);
-    // The call's notes (Day 5): written after the call by the server, saved here. Not awaited:
-    // End never waits for them.
-    let notesDone: Promise<unknown> = Promise.resolve();
-    if (startedAt !== null && finalLines.length > 0) {
-      setNotesStatus('writing');
-      setNotesUnavailable(null);
-      notesDone = listAnswers(session.id)
-        .catch(() => [])
-        .then((answers) =>
-          generateNotes({
-            session,
-            documents,
-            lines: finalLines,
-            answers,
-            callStartedAt: startedAt,
-          }),
-        )
-        .then((outcome) => {
-          setNotesStatus(outcome.status === 'saved' ? 'saved' : 'failed');
-          setNotesUnavailable(outcome.status === 'failed' ? outcome.unavailable : null);
-        });
+    // ADR-0077: the Drive hold ends with the rewrite (or its three minutes), and the after-call runner
+    // writes the notes and queues the call for Drive (here, or in another window once this one closes).
+    if (endingCallId && willRewrite) {
+      void rewriting
+        .then(() => updateCall(endingCallId, { driveHoldUntil: undefined }))
+        .catch(() => false)
+        .then(() => announceAfterCall());
     }
+    announceAfterCall();
     // ADR-0055: a call started from the Connect card: the small window comes back (the shell shows it
-    // when the call ends), and this window closes once the call's data and notes are saved.
-    // 1.6.0 (ADR-0072): once the call's lines, notes and recording are saved, the call is queued for
-    // Google Drive (when the account saves there); the uploader starts now that the call is over.
-    const endedAt = Date.now();
-    const queued = Promise.allSettled([saving, notesDone, rewriting, recordingDone]).then(() =>
-      startedAt === null
-        ? false
-        : queueCallForDrive(session.id, { startedAt, endedAt }).catch(() => false),
-    );
+    // when the call ends), and this window closes once the call's lines, recording and notes are saved
+    // (the notes, at most NOTES_WAIT_MS: if it closes before, another window's runner writes them).
+    const settled = Promise.allSettled([
+      saving,
+      rewriting,
+      recordingDone,
+      endingCallId ? waitForNotes(endingCallId, NOTES_WAIT_MS) : Promise.resolve(),
+    ]);
     if (launcherCall) {
       setLauncherState('ended');
       reportCallStart(session.id, 'ended');
-      // The window closes after the call is queued, so the queue entry is never lost.
-      void queued.then(() => getPlatform().windowControl('close'));
+      // The window closes after the call's data is saved (its record was written first).
+      void settled.then(() => getPlatform().windowControl('close'));
     }
     // Show the lines just saved under "Saved transcript".
     if (saver) {
@@ -1533,6 +1653,7 @@ export function LivePage({
         lessons={lessons}
         transcript={transcript}
         callStartedAt={callStartedAt}
+        {...(callId ? { callId } : {})}
         {...(overlayAtStart !== null ? { overlayAtStart } : {})}
         audio={{
           you: connection === 'connected' && !channelErrors.you,

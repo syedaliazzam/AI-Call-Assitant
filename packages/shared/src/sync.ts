@@ -27,6 +27,9 @@ export const SYNC_KINDS = [
   // Desktop 1.5.0 (ADR-0068): one small record per recording part (when, how long, how big, which
   // computer). The video and sound files stay on that computer; they never sync.
   'recording',
+  // ADR-0077: one record per call (every start of a session is a call), and each call's own AI notes.
+  'call',
+  'callNotes',
 ] as const;
 
 /** One kind of synced record. */
@@ -43,6 +46,8 @@ export const SESSION_CHILD_KINDS = [
   'notes',
   'questionBank',
   'recording',
+  'call',
+  'callNotes',
 ] as const satisfies readonly SyncKind[];
 
 /** Size limits for the sync routes (the server enforces them; the client stays under them). */

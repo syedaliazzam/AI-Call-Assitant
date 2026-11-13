@@ -5,7 +5,8 @@
  *          downloads, for this call only), and the call's AI notes as a PDF. A session with "Save
  *          transcript" off saves no transcript (the person chose not to keep one); its notes are still
  *          saved. Nothing here leaves the device except as those files, uploaded to the person's Drive.
- * Used by: src/core/drive/uploader.ts
+ *          ADR-0077: per call, from the call itself (buildCallViewFiles).
+ * Used by: src/core/drive/uploader.ts, src/core/drive/runner.ts
  * Depends on: src/core/review/conversation.ts (transcriptText, transcriptPdf), src/core/review/pdf.ts,
  *             src/core/review/load.ts (formatCallTime), src/core/storage (answers, utterances, notes),
  *             src/core/transcript/display.ts
@@ -13,6 +14,7 @@
  */
 import type { CallNotes } from '@kite/shared';
 import { conversationItems, transcriptPdf, transcriptText } from '../review/conversation';
+import type { CallView } from '../review/calls';
 import { formatCallTime } from '../review/load';
 import { writePdf, type PdfLine } from '../review/pdf';
 import { listAnswers } from '../storage/answers';
@@ -162,5 +164,44 @@ export async function buildCallFiles(
   if (notes && notes.callStartedAt === call.startedAt) {
     files.push({ kind: 'notes-pdf', blob: notesPdf(title, notes.notes) });
   }
+  return files;
+}
+
+/**
+ * ADR-0077: one call's Transcripts files, from the call itself (its own lines, answers and notes; a call
+ * made before call records as core/review/calls.ts works it out). A session with "Save transcript" off
+ * saves no transcript; the notes are still saved.
+ *
+ * @param session     The session.
+ * @param call        The call.
+ * @param title       The session's title (names.ts sessionTitle()).
+ * @param accountName The account's display name, on the user's turns.
+ * @returns The files there is something for, in upload order (TXT, PDF, notes PDF).
+ * Called from: core/drive/runner.ts (the per-call uploader's deps); tests
+ */
+export async function buildCallViewFiles(
+  session: Session,
+  call: Pick<CallView, 'lines' | 'answers' | 'notes'>,
+  title: string,
+  accountName: string | null,
+): Promise<CallFile[]> {
+  const files: CallFile[] = [];
+  if (session.saveTranscript && (call.lines.length > 0 || call.answers.length > 0)) {
+    const items = conversationItems(call.lines, call.answers);
+    const terms = displayTerms(session);
+    files.push({
+      kind: 'transcript-txt',
+      blob: new Blob([transcriptText(session, items, terms, accountName)], {
+        type: 'text/plain;charset=utf-8',
+      }),
+    });
+    files.push({
+      kind: 'transcript-pdf',
+      blob: new Blob([transcriptPdf(session, items, terms, accountName).bytes as BlobPart], {
+        type: 'application/pdf',
+      }),
+    });
+  }
+  if (call.notes) files.push({ kind: 'notes-pdf', blob: notesPdf(title, call.notes.notes) });
   return files;
 }

@@ -9,11 +9,14 @@
  * Architecture: ADR-0072, ADR-0074 (no Google client or token in the page)
  */
 import type { Platform } from '@/platform/types';
+import { loadSessionCalls } from '../review/calls';
+import { updateCall } from '../storage/calls';
+import { deleteCallJob, listCallJobs, nextCallJob, putCallJob } from '../storage/driveCallJobs';
 import { deleteDriveJob, listDriveJobs, nextDriveJob, putDriveJob } from '../storage/driveUploads';
 import { listRecordings } from '../storage/recordings';
 import { getSession } from '../storage/sessions';
 import { driveApi } from './api';
-import { buildCallFiles } from './callFiles';
+import { buildCallFiles, buildCallViewFiles } from './callFiles';
 import { callIsLive } from './queue';
 import { runDriveQueue, type KnownRecording, type RunOutcome, type UploaderDeps } from './uploader';
 
@@ -57,6 +60,17 @@ export function createUploaderDeps(
     },
     session: getSession,
     callFiles: (session, call, title) => buildCallFiles(session, call, title, accountName),
+    // ADR-0077: each call's own upload.
+    calls: {
+      jobs: { next: nextCallJob, list: listCallJobs, put: putCallJob, remove: deleteCallJob },
+      call: async (job) =>
+        (await loadSessionCalls(job.sessionId)).find((view) => view.id === job.callId) ?? null,
+      files: (session, call, title) => buildCallViewFiles(session, call, title, accountName),
+      callState: async (job, drive) => {
+        // A legacy call (made before call records) has no record: updateCall() changes nothing then.
+        await updateCall(job.callId, { drive });
+      },
+    },
     callActive: callIsLive,
     notice: (notice) => {
       // The desktop's native notification; a browser shows the in-app notice only.
@@ -74,11 +88,17 @@ export function createUploaderDeps(
       for (const item of [...synced, ...local]) {
         if (item.sessionId !== sessionId) continue;
         if (item.status !== 'complete' && item.status !== 'recovered') continue;
+        // ADR-0077: the computer holding it, for the "Recording not uploaded" email (only the synced
+        // record knows its name; this computer's index entry, read after it, keeps it).
+        const own: string | undefined = 'deviceName' in item ? String(item.deviceName) : undefined;
+        const deviceName = own || found.get(item.id)?.deviceName;
         found.set(item.id, {
           id: item.id,
           part: item.part,
           stereo: item.hasStereo,
           startedAt: item.startedAt,
+          meetingId: item.meetingId,
+          ...(deviceName ? { deviceName } : {}),
         });
       }
       return [...found.values()];

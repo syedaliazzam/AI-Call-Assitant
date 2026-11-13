@@ -17,6 +17,7 @@ import { uploadSessionToDrive } from '@/core/drive/backfill';
 import { retryDriveUpload } from '@/core/drive/queue';
 import { driveReasonNeedsSettings, driveReasonText } from '@/core/drive/reasons';
 import { jobPercent } from '@/core/drive/uploader';
+import { getPlatform } from '@/platform';
 import { useDriveJobs, useDriveSaves } from './useDrive';
 
 /** Short words for a waiting job, by reason (the full words are the tooltip). */
@@ -55,7 +56,9 @@ function UploadToDrive({
         onClick={(event) => {
           event.stopPropagation();
           setState('busy');
-          void uploadSessionToDrive(sessionId)
+          const recording = getPlatform().recording;
+          // ADR-0077: each of the session's calls this device never saved, as its own upload.
+          void uploadSessionToDrive(sessionId, recording ? () => recording.list() : undefined)
             .then((calls) => setState(calls > 0 ? 'idle' : 'empty'))
             .catch(() => setState('idle'));
         }}

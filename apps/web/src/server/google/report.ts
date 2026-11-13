@@ -5,7 +5,11 @@
  *          reports that devices send for a call (the browser's transcript and notes, the desktop app's
  *          recording parts, retries, a later backfill) into one record, says whether everything expected is in Drive (every recording
  *          part the account knows of, and its stereo file), and when the email may go: as soon as it is
- *          complete, or 24 hours after the first report with "Recording upload pending". Pure functions.
+ *          complete, or 24 hours after the first report with "Recording upload pending". ADR-0077 (calls ended
+ *          from 13 Nov 2026, the 'two-step' rule): email 1 "Call saved" as soon as the call's transcript
+ *          and notes are in Drive ("Recording: uploading…" when one is expected), and its own record for
+ *          email 2 "Recording saved" once every recording file is in ("Recording not uploaded" after 24
+ *          hours); a recording already in email 1 gets no second email. Pure functions.
  * Used by: src/server/google/api.ts; tests
  * Depends on: @kite/shared (report types), src/server/google/store.ts (NotificationContent type)
  * Architecture: ADR-0072, ADR-0073
@@ -19,6 +23,9 @@ export const REPORT_WAIT_MS = 24 * 60 * 60_000;
 
 /** Joins a later call's start to its session id in a record key (never part of a UUID). */
 const CALL_KEY_SEPARATOR = '~';
+
+/** ADR-0077: ends the key of a call's "Recording saved" record. */
+const RECORDING_KEY_SUFFIX = '~recording';
 
 /**
  * The key of one call's record in drive_notification.session_id (ADR-0073). The session's first record
@@ -42,11 +49,32 @@ export function notificationKey(sessionId: string, call: number | null): string 
  * @returns The session id, and the later call's start or null for the session's first record.
  * Called from: api.ts (notifications list); tests
  */
-export function splitNotificationKey(key: string): { sessionId: string; call: number | null } {
-  const at = key.indexOf(CALL_KEY_SEPARATOR);
-  if (at < 0) return { sessionId: key, call: null };
-  const call = Number(key.slice(at + 1));
-  return { sessionId: key.slice(0, at), call: Number.isSafeInteger(call) ? call : null };
+export function splitNotificationKey(key: string): {
+  sessionId: string;
+  call: number | null;
+  kind: 'call' | 'recording';
+} {
+  // ADR-0077: a call's "Recording saved" record ends with its own suffix.
+  const recording = key.endsWith(RECORDING_KEY_SUFFIX);
+  const base = recording ? key.slice(0, -RECORDING_KEY_SUFFIX.length) : key;
+  const kind = recording ? ('recording' as const) : ('call' as const);
+  const at = base.indexOf(CALL_KEY_SEPARATOR);
+  if (at < 0) return { sessionId: base, call: null, kind };
+  const call = Number(base.slice(at + 1));
+  return { sessionId: base.slice(0, at), call: Number.isSafeInteger(call) ? call : null, kind };
+}
+
+/**
+ * ADR-0077: the key of a call's "Recording saved" record (email 2): always by the call's start, also when
+ * its "Call saved" record is the session's first (plain) one.
+ *
+ * @param sessionId     The session.
+ * @param callStartedAt The call's start (Unix ms).
+ * @returns "<session id>~<call start>~recording".
+ * Called from: api.ts (notify, sending email 1, retry); tests
+ */
+export function recordingKey(sessionId: string, callStartedAt: number): string {
+  return `${notificationKey(sessionId, callStartedAt)}${RECORDING_KEY_SUFFIX}`;
 }
 
 /**
@@ -56,6 +84,9 @@ export function splitNotificationKey(key: string): { sessionId: string; call: nu
  * @param sessionId The session.
  * @param callStartedAt The reported call's start.
  * @param first     The session's first record's content, or null when it has none.
+ * @param twoStep   ADR-0077: true for a call reported with the two-step rule: it never makes a new plain
+ *                  record (the plain key stays for older records); it uses the session's first record only
+ *                  when that one is about the same call.
  * @returns The record key.
  * Called from: api.ts (handleNotify); tests
  */
@@ -63,7 +94,13 @@ export function reportKey(
   sessionId: string,
   callStartedAt: number,
   first: Pick<NotificationContent, 'callStartedAt'> | null,
+  twoStep = false,
 ): string {
+  if (twoStep) {
+    return first && first.callStartedAt === callStartedAt
+      ? notificationKey(sessionId, null)
+      : notificationKey(sessionId, callStartedAt);
+  }
   return !first || first.callStartedAt === callStartedAt
     ? notificationKey(sessionId, null)
     : notificationKey(sessionId, callStartedAt);
@@ -89,6 +126,12 @@ export interface SessionReport {
   expectedRecordings: DriveExpectedRecording[];
   /** Recordings whose files were deleted (never coming). */
   goneRecordings: string[];
+  /** ADR-0077: the email rule ('two-step'), or absent for the single email. */
+  emailRule?: 'two-step';
+  /** ADR-0077: true once the call's Transcripts files are all in Drive (or none to save). */
+  callFilesSaved?: boolean;
+  /** ADR-0077: the session's Recordings subfolder in Drive. */
+  recordingsFolderUrl?: string;
 }
 
 /**
@@ -134,7 +177,78 @@ export function mergeReport(
     expected: [...expected.values()],
     gone: [...new Set([...(current?.gone ?? []), ...report.goneRecordings])],
     ...(current?.recordingPending ? { recordingPending: true } : {}),
+    // ADR-0077: the rule, once set, stays; the Transcripts flag only ever turns on.
+    ...(current?.rule === 'two-step' || report.emailRule === 'two-step'
+      ? { rule: 'two-step' as const }
+      : {}),
+    ...(current?.callFilesSaved || report.callFilesSaved ? { callFilesSaved: true } : {}),
+    ...(report.recordingsFolderUrl || current?.recordingsFolderUrl
+      ? { recordingsFolderUrl: report.recordingsFolderUrl ?? current?.recordingsFolderUrl }
+      : {}),
+    ...(current?.kind ? { kind: current.kind } : {}),
+    ...(current?.lastTriedAt ? { lastTriedAt: current.lastTriedAt } : {}),
   };
+}
+
+/**
+ * ADR-0077: a call's "Recording saved" record, made from its "Call saved" one when email 1 goes without the
+ * recording: the same call, folder and expected recordings, only the Recordings files.
+ *
+ * @param content The call's record.
+ * @returns The recording record's content.
+ * Called from: api.ts (sending email 1); tests
+ */
+export function recordingContent(content: NotificationContent): NotificationContent {
+  return {
+    title: content.title,
+    callStartedAt: content.callStartedAt,
+    durationMs: content.durationMs,
+    files: content.files.filter((file) => file.folder === 'Recordings'),
+    folderUrl: content.folderUrl,
+    timeZone: content.timeZone,
+    recipients: [],
+    alsoNotify: content.alsoNotify ?? null,
+    expected: content.expected ?? [],
+    gone: content.gone ?? [],
+    rule: 'two-step',
+    kind: 'recording',
+    ...(content.recordingsFolderUrl ? { recordingsFolderUrl: content.recordingsFolderUrl } : {}),
+  };
+}
+
+/**
+ * ADR-0077: merges a report into a call's "Recording saved" record: only its recording files, and what the
+ * account knows of its recordings.
+ *
+ * @param current The record so far (null: made from the report alone).
+ * @param report  The report.
+ * @returns The merged record.
+ * Called from: api.ts (notify); tests
+ */
+export function mergeRecordingReport(
+  current: NotificationContent | null,
+  report: SessionReport,
+): NotificationContent {
+  const merged = mergeReport(current, {
+    ...report,
+    files: report.files.filter((file) => file.folder === 'Recordings'),
+  });
+  return { ...merged, kind: 'recording', rule: 'two-step' };
+}
+
+/**
+ * ADR-0077: whether email 1 goes without the call's recording, so email 2 must follow: a recording is
+ * expected (one not deleted) and not all of it is in Drive yet.
+ *
+ * @param content The call's record.
+ * @returns True when a "Recording saved" record is needed.
+ * Called from: api.ts (sending email 1); tests
+ */
+export function needsRecordingEmail(content: NotificationContent): boolean {
+  if (content.rule !== 'two-step' || content.kind === 'recording') return false;
+  const gone = new Set(content.gone ?? []);
+  const expected = (content.expected ?? []).filter((recording) => !gone.has(recording.id));
+  return expected.length > 0 && !isComplete(content);
 }
 
 /**
@@ -186,8 +300,14 @@ export function emailDue(
   firstSeen: number,
   now: number,
 ): 'complete' | 'overdue' | null {
+  const overdue = now - firstSeen >= REPORT_WAIT_MS ? ('overdue' as const) : null;
+  // ADR-0077, email 1: as soon as the transcript and notes are in (the recording does not wait).
+  if (content.rule === 'two-step' && content.kind !== 'recording') {
+    return content.callFilesSaved ? 'complete' : overdue;
+  }
+  // Email 2 (and the single email of older calls): when every recording file is in.
   if (isComplete(content)) return 'complete';
-  return now - firstSeen >= REPORT_WAIT_MS ? 'overdue' : null;
+  return overdue;
 }
 
 /**

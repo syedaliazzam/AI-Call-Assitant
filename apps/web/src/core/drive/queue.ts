@@ -1,18 +1,20 @@
 /**
  * File: apps/web/src/core/drive/queue.ts
- * Purpose: Puts a finished call in the Google Drive queue (ADR-0072) and tells this profile's other
- *          Kite windows (the uploader runs in one of them). A call is queued when the account saves to
- *          Drive (connected or waiting to reconnect, and "Save calls to Google Drive" on); when the
- *          server cannot be asked (offline), the last answer this device saw decides. Also: whether a
- *          call is live in any window (the call lock), which uploads wait for.
- * Used by: src/features/live/LivePage.tsx (End), src/features/drive/* (the uploader, Settings)
- * Depends on: src/core/drive/api.ts, src/core/storage/driveUploads.ts, src/core/live/callLock.ts
- * Architecture: ADR-0072
+ * Purpose: Whether a finished call goes to Google Drive (ADR-0072): it does when the account saves to
+ *          Drive (connected or waiting to reconnect, and "Save calls to Google Drive" on); when the server
+ *          cannot be asked (offline), the last answer this device saw decides. Tells this profile's other
+ *          Kite windows about Drive (the uploader runs in one of them), Retry, and whether a call is live
+ *          in any window (the call lock), which uploads wait for. ADR-0077: the after-call runner queues
+ *          each call's own upload (core/live/afterCall.ts).
+ * Used by: src/core/live/afterCall.ts, src/features/drive/* (the uploader, Settings)
+ * Depends on: src/core/drive/api.ts, src/core/storage/{driveUploads,driveCallJobs}.ts,
+ *             src/core/live/callLock.ts
+ * Architecture: ADR-0072, ADR-0077
  */
 import type { DriveStatusResponse } from '@kite/shared';
 import { CALL_LOCK_NAME } from '../live/callLock';
-import type { DriveCall } from '../storage/types';
-import { queueDriveCall, requeueDriveJobs } from '../storage/driveUploads';
+import { requeueCallJobs } from '../storage/driveCallJobs';
+import { requeueDriveJobs } from '../storage/driveUploads';
 import { driveApi } from './api';
 
 /** The BroadcastChannel this profile's Kite windows use for Drive news. */
@@ -92,26 +94,20 @@ export function onDriveMessage(handler: (message: DriveMessage) => void): () => 
 }
 
 /**
- * Queues a finished call for Drive when the account saves to Drive, and wakes the uploader.
+ * Whether the account saves to Drive now: asks the server, or (offline) uses the last answer this device
+ * saw. ADR-0077: a finished call is queued for Drive (its own job) by the after-call runner when it does.
  *
- * @param sessionId The session.
- * @param call      The call's start and end.
- * @returns True when queued.
- * Called from: LivePage.tsx (End, after the call's lines, notes and recording are saved)
+ * @returns True when calls should be queued.
+ * Called from: core/live/afterCall.ts
  */
-export async function queueCallForDrive(sessionId: string, call: DriveCall): Promise<boolean> {
-  let saves: boolean;
+export async function driveSavesNow(): Promise<boolean> {
   try {
     const status = await driveApi().status();
     rememberDriveStatus(status);
-    saves = savesToDrive(status);
+    return savesToDrive(status);
   } catch {
-    saves = rememberedSaves();
+    return rememberedSaves();
   }
-  if (!saves) return false;
-  await queueDriveCall(sessionId, call);
-  announceDrive('queued');
-  return true;
 }
 
 /**
@@ -141,5 +137,7 @@ export async function callIsLive(): Promise<boolean> {
  */
 export async function retryDriveUpload(sessionId: string): Promise<void> {
   await requeueDriveJobs(sessionId);
+  // ADR-0077: and the session's calls' own uploads.
+  await requeueCallJobs(sessionId);
   announceDrive('queued');
 }

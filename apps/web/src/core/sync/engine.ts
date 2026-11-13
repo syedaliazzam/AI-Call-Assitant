@@ -167,9 +167,16 @@ async function toOp(db: KiteDb, change: PendingChange): Promise<SyncOp | null> {
   if (!record) return { op: 'delete', kind, id: key };
   const sessionId = sessionIdOf(store as SyncedStore, record);
   if (sessionId !== undefined && !SYNC_ID_PATTERN.test(sessionId)) return null;
-  const childOfSession = ['documents', 'utterances', 'answers', 'notes', 'questionBanks'].includes(
-    store,
-  );
+  const childOfSession = [
+    'documents',
+    'utterances',
+    'answers',
+    'notes',
+    'questionBanks',
+    // ADR-0077: a call and its notes belong to their session.
+    'calls',
+    'callNotes',
+  ].includes(store);
   if (childOfSession && sessionId === undefined) return null;
   if (jsonBytes(record) > SYNC_LIMITS.recordBytes) return null;
   const baseRev = (await db.syncRevs.get(change.ref))?.rev ?? null;

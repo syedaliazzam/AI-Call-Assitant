@@ -96,6 +96,8 @@ export interface LiveAnswersProps {
   autoAnswer?: boolean;
   /** When this call connected (Unix ms). */
   callStartedAt: number;
+  /** ADR-0077: the call's record id, saved with each answer. */
+  callId?: string;
   /** True while End waits for the last line. */
   ending: boolean;
   /** Ends the call. */
@@ -262,6 +264,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     ...(props.lessons ? { lessons: props.lessons } : {}),
     transcript: props.transcript,
     callStartedAt: props.callStartedAt,
+    ...(props.callId ? { callId: props.callId } : {}),
     store: props.store,
     paused: props.hygiene === 'paused',
     ...(props.rules ? { rules: props.rules } : {}),

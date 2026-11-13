@@ -111,6 +111,7 @@ function review(changes: Partial<ReviewData> = {}): ReviewData {
     answers: [ANSWER],
     notes: null,
     lessonDecisions: [],
+    calls: [],
     ...changes,
   };
 }

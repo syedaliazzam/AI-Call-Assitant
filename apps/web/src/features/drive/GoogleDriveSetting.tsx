@@ -10,10 +10,11 @@
  *          Kite) and Disconnect. In the desktop app, Connect, Reconnect and Choose folder open this page
  *          in the system browser (Google's pages cannot open in the app). After Google sends the admin
  *          back, ?drive=pick asks them to choose the folder; ?drive=error&reason=… is explained.
+ *          ADR-0077: "Upload N earlier calls" (EarlierCallsUpload.tsx) under "Save calls to Google Drive".
  * Used by: src/features/settings/Settings.tsx
  * Depends on: src/core/drive/{api,picker,queue,addresses}.ts, src/platform, src/features/drive/*,
  *             src/ui (Button, Toggle, Textarea)
- * Architecture: ADR-0074, ADR-0072
+ * Architecture: ADR-0074, ADR-0072, ADR-0077
  */
 'use client';
 
@@ -21,12 +22,13 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { parseAddressList } from '@/core/drive/addresses';
 import { DriveApiError, driveApi } from '@/core/drive/api';
 import { preparePicker, type PreparedPicker } from '@/core/drive/picker';
-import { announceDrive } from '@/core/drive/queue';
+import { announceDrive, savesToDrive } from '@/core/drive/queue';
 import { getPlatform } from '@/platform';
 import { Button } from '@/ui/Button';
 import { Textarea } from '@/ui/Textarea';
 import { Toggle } from '@/ui/Toggle';
 import { DriveNotificationList } from './DriveNotificationList';
+import { EarlierCallsUpload } from './EarlierCallsUpload';
 import { useDriveStatus } from './useDrive';
 
 /** Words for the reasons the callback can send back. */
@@ -335,6 +337,8 @@ export function GoogleDriveSetting() {
         disabled={busy}
         onChange={(saveEnabled) => void act(() => driveApi().saveSettings({ saveEnabled }))}
       />
+      {/* ADR-0077: calls of this computer that never reached Drive. */}
+      <EarlierCallsUpload enabled={savesToDrive(status) && status.folder !== null} />
 
       <div className="flex flex-col gap-3 border-t border-ui-border pt-4">
         <p className="text-[14px] font-medium text-ui-heading">Email when a call is saved</p>
@@ -344,7 +348,7 @@ export function GoogleDriveSetting() {
           <>
             <Toggle
               label="Email me when a call is saved"
-              hint="One email per call, with its title, date, length, the saved files' names and the Drive link. Never the transcript or notes."
+              hint="Per call: one email once the transcript and notes are in Drive, and one more when its recording is. Title, date, length, the saved files' names and Drive links; never the transcript or notes."
               checked={status.email.enabled}
               disabled={busy}
               onChange={(emailEnabled) => void act(() => driveApi().saveSettings({ emailEnabled }))}

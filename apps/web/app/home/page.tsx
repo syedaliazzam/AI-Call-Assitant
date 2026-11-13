@@ -10,6 +10,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5, §9.2 (thin routes); ADR-0041
  */
 import { DriveUploader } from '@/features/drive/DriveUploader';
+import { AfterCallRunner } from '@/features/live/AfterCallRunner';
 import { HomePanel } from '@/features/home/HomePanel';
 import { AccountNameProvider } from '@/features/shell/AccountName';
 import { SyncScope } from '@/features/sync/SyncScope';
@@ -40,6 +41,8 @@ export default async function HomeRoute({
           email={user.email}
           {...(typeof session === 'string' ? { startSessionId: session } : {})}
         />
+        {/* ADR-0077: a call's notes and Drive queueing finish here, also after its window closed. */}
+        <AfterCallRunner />
         {/* 1.6.0 (ADR-0072): the desktop app's first window keeps uploading after a call. */}
         {/* Drive's notices are placed by the panel itself (1.6.1: never over the launcher's bar). */}
         <DriveUploader />

@@ -197,14 +197,21 @@ export interface AnswerEntry {
  * @param entry         The finished entry.
  * @param sessionId     Its session.
  * @param callStartedAt When its call connected (Unix ms).
+ * @param callId        ADR-0077: its call's record id, when known.
  * @returns The row.
  * Called from: useLiveAnswers() (when an answer finishes)
  */
-function toStored(entry: AnswerEntry, sessionId: string, callStartedAt: number): StoredAnswer {
+function toStored(
+  entry: AnswerEntry,
+  sessionId: string,
+  callStartedAt: number,
+  callId?: string,
+): StoredAnswer {
   return {
     id: entry.id,
     sessionId,
     callStartedAt,
+    ...(callId ? { callId } : {}),
     mode: entry.mode,
     question: entry.question,
     ...(entry.cleanQuestion ? { cleanQuestion: entry.cleanQuestion } : {}),
@@ -315,6 +322,8 @@ export interface LiveAnswersInput {
   transcript: Transcript;
   /** When this call connected (Unix ms); a new value starts a new conversation. */
   callStartedAt: number;
+  /** ADR-0077: the call's record id (saved with each answer), when known. */
+  callId?: string;
   /** Where answers are saved (default: this device's IndexedDB). */
   store?: AnswerStore;
   /** The chat box's switch: who typed and screenshot questions are for (ADR-0030). */
@@ -430,7 +439,7 @@ export interface LiveAnswers {
  * Called from: LiveAnswers.tsx
  */
 export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
-  const { session, documents, transcript, callStartedAt } = input;
+  const { session, documents, transcript, callStartedAt, callId } = input;
   const lessons = input.lessons ?? NO_LESSONS;
   const store = input.store ?? DEFAULT_STORE;
   const [entries, setEntries] = useState<AnswerEntry[]>([]);
@@ -1029,7 +1038,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           });
           // Saved even when "Save transcript" is off (StoredAnswer in core/storage/types.ts).
           storeRef.current
-            .save(toStored(finished, session.id, callStartedAt))
+            .save(toStored(finished, session.id, callStartedAt, callId))
             .catch(() => setSaveFailed(true));
         },
         onError: (failure) => {
@@ -1057,6 +1066,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       lessons,
       transcript,
       callStartedAt,
+      callId,
       runner,
       repeatGuard,
       update,

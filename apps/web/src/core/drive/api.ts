@@ -163,8 +163,13 @@ export interface DriveApi {
    * POST /api/drive/notifications (Retry).
    * @param sessionId The session whose email failed.
    * @param call      Which of its emails (ADR-0073: DriveNotificationItem.call); null for the first.
+   * @param recording ADR-0077: true for the call's "Recording saved" email.
    */
-  retryNotification(sessionId: string, call?: number | null): Promise<DriveNotifyResponse>;
+  retryNotification(
+    sessionId: string,
+    call?: number | null,
+    recording?: boolean,
+  ): Promise<DriveNotifyResponse>;
   /** POST /api/drive/test-email (to the signed-in person only). */
   sendTestEmail(): Promise<DriveTestEmailResponse>;
 }
@@ -204,10 +209,11 @@ export function createDriveApi(
     },
     notify: (request) => call(fetchFn, '/api/drive/notify', request),
     notifications: () => call(fetchFn, '/api/drive/notifications'),
-    retryNotification: (sessionId, callStart) =>
+    retryNotification: (sessionId, callStart, recording) =>
       call(fetchFn, '/api/drive/notifications', {
         sessionId,
         ...(callStart ? { call: callStart } : {}),
+        ...(recording ? { recording: true } : {}),
       }),
     sendTestEmail: () => call(fetchFn, '/api/drive/test-email', {}),
   };
