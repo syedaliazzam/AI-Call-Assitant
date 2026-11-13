@@ -6,6 +6,12 @@
  *          which computer), turns Private on when a screen recording starts (so Paramount AI's windows
  *          stay out of the video; the person can turn it off), says when the drive is getting full, and
  *          stops by itself when it is full. The streams it records are the call's own ("You" and "Them").
+ *          Batch C (P1-6; investigation H): a recording never costs the call its speech. Without a hardware
+ *          video encoder a screen recording becomes a sound-only one (never software video); while the
+ *          computer is under CPU pressure, or speech is being transcribed on it and needs the room, the
+ *          screen's frame rate drops to 5 a second, and comes back after 30 s of calm (frameYield.ts); the
+ *          sound is never touched. The timing trace gets the format, the yields, and the frames delivered and
+ *          dropped every 10 s.
  * Used by: src/features/live/LivePage.tsx
  * Depends on: src/core/recording/recorder.ts, src/core/storage/recordings.ts,
  *             src/core/storage/recordingPrefs.ts, src/features/privacy/usePrivate.ts, src/platform
@@ -17,6 +23,7 @@ import type { RecordingDisplay, RecordingKind } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   RecordingStartError,
+  START_FAILURE_TEXT,
   startRecording,
   type ActiveRecording,
   type RecordingStopReason,
@@ -29,6 +36,15 @@ import {
 import { saveRecording, updateRecording } from '@/core/storage/recordings';
 import type { CompactRecording } from '@/core/live/liveChannel';
 import { turnPrivateOnForRecording } from '@/features/privacy/usePrivate';
+import { callTimings } from '@/core/live/callTimings';
+import { FrameRateGovernor, type PressureState } from '@/core/recording/frameYield';
+import { watchCpuPressure } from '@/core/recording/pressure';
+
+/** Batch C (P1-6): how often the yield rule is checked while a screen recording runs, ms. */
+export const YIELD_CHECK_MS = 1_000;
+
+/** Batch C (P1-6): how often the frames delivered and dropped go into the timing trace, ms. */
+export const FRAME_SAMPLE_MS = 10_000;
 import { getPlatform } from '@/platform';
 
 /** The notice when Private was turned on for a screen recording. */
@@ -68,6 +84,12 @@ export interface CallRecordingOptions {
    * @param kind 'screen' or 'audio'.
    */
   onPartStarted?: (kind: RecordingKind) => void;
+  /**
+   * Batch C (P1-6): whether the call's speech is being transcribed on this computer and needs the room
+   * now (a cloud call's channel on the on-device fallback, or the on-device engine falling behind). The
+   * screen's frame rate gives way while it is true.
+   */
+  underLoad?: () => boolean;
 }
 
 /** What the hook gives the live page. */
@@ -168,10 +190,16 @@ export function useCallRecording(options: CallRecordingOptions): CallRecording {
   }, []);
 
   const start = useCallback(
-    async (choice?: { kind?: RecordingKind; displayId?: string | null }) => {
+    // Named, so the sound-only fallback below can start again with the same settings.
+    async function startPart(choice?: {
+      kind?: RecordingKind;
+      displayId?: string | null;
+    }): Promise<void> {
       const streams = optionsRef.current.streams();
       if (!host || !streams || active.current || busy.current) return;
       busy.current = true;
+      // Batch C (P1-6): set when this computer cannot record screen video without slowing the call.
+      let soundOnly = false;
       const partKind = choice?.kind ?? kind;
       const partDisplay = choice?.displayId !== undefined ? choice.displayId : displayId;
       setState('starting');
@@ -229,6 +257,12 @@ export function useCallRecording(options: CallRecordingOptions): CallRecording {
           updatedAt: Date.now(),
         }).catch(() => undefined);
         console.info('recording: started', { id, part, kind: partKind });
+        // Batch C (P1-6): the format chosen (a type name and numbers only).
+        callTimings.noteTrace('rec-format', {
+          kind: partKind,
+          mime: recording.mimeType,
+          fps: recording.frameRate,
+        });
         optionsRef.current.onPartStarted?.(partKind);
         // Decision 10 Nov 2026: Private comes on with a screen recording, with a short notice.
         if (partKind === 'screen' && (await turnPrivateOnForRecording())) {
@@ -236,17 +270,80 @@ export function useCallRecording(options: CallRecordingOptions): CallRecording {
         }
       } catch (error) {
         setState('off');
-        setNotice(
-          error instanceof RecordingStartError
-            ? error.message
-            : 'The recording could not start. Try again.',
-        );
+        if (error instanceof RecordingStartError && error.reason === 'no-hardware-video') {
+          soundOnly = true;
+        } else {
+          setNotice(
+            error instanceof RecordingStartError
+              ? error.message
+              : 'The recording could not start. Try again.',
+          );
+        }
       } finally {
         busy.current = false;
+      }
+      if (soundOnly) {
+        // Batch C (P1-6): sound only instead (everyone agreed to the recording; it just has no video), and
+        // later recordings on this computer start as sound only too. The notice says why.
+        setKindState('audio');
+        setRecordingKind('audio');
+        callTimings.noteTrace('rec-format', {
+          kind: 'screen',
+          mime: 'none',
+          reason: 'no-hardware',
+        });
+        await startPart({ kind: 'audio', displayId: null });
+        setNotice(START_FAILURE_TEXT['no-hardware-video']);
       }
     },
     [host, kind, displayId, stopPart],
   );
+
+  // Batch C (P1-6): while a screen recording runs, its frame rate gives way under load, and the trace gets
+  // its frames every 10 s. The sound is never touched.
+  useEffect(() => {
+    const running = active.current;
+    if (state !== 'on' || !running || running.frameRate === null) return;
+    const full = running.frameRate;
+    const governor = new FrameRateGovernor(full);
+    let pressure: PressureState | null = null;
+    const stopPressure = watchCpuPressure((next) => {
+      pressure = next;
+    });
+    let cap = full;
+    const check = setInterval(() => {
+      const change = governor.update(
+        { pressure, localLoad: optionsRef.current.underLoad?.() ?? false },
+        Date.now(),
+      );
+      if (!change) return;
+      cap = change.fps;
+      void running.capFrameRate(change.fps);
+      callTimings.noteTrace('rec-yield', { fps: change.fps, reason: change.reason, pressure });
+    }, YIELD_CHECK_MS);
+    let last = running.frameStats();
+    let lastAt = Date.now();
+    const sample = setInterval(() => {
+      const now = Date.now();
+      const stats = running.frameStats();
+      if (stats && last && now > lastAt) {
+        const delivered = stats.delivered - last.delivered;
+        callTimings.noteTrace('rec-frames', {
+          delivered,
+          discarded: stats.discarded - last.discarded,
+          fps: Math.round((delivered * 10_000) / (now - lastAt)) / 10,
+          cap,
+        });
+      }
+      last = stats;
+      lastAt = now;
+    }, FRAME_SAMPLE_MS);
+    return () => {
+      clearInterval(check);
+      clearInterval(sample);
+      stopPressure();
+    };
+  }, [state, parts]);
 
   const setKind = useCallback((next: RecordingKind) => {
     setKindState(next);

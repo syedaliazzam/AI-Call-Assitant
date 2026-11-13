@@ -189,6 +189,8 @@ export interface DeepgramMessage {
   last_word_end?: number;
   /** Nova-3 SpeechStarted: when, s. */
   timestamp?: number;
+  /** Flux ConfigureFailure / Error: a short code (for example UNPARSABLE_CLIENT_MESSAGE). */
+  code?: string;
 }
 
 /** Flux's messages turned into events (one per channel; pure apart from the clock it is given). */
@@ -444,6 +446,13 @@ export interface DeepgramChannelOptions {
   onMessage?: () => void;
   /** The socket ended. */
   onClose: (closed: ChannelClosed) => void;
+  /**
+   * Batch C (P1-3): Flux answered a Configure message (ConfigureSuccess or ConfigureFailure).
+   *
+   * @param ok   True when it was applied.
+   * @param code Deepgram's code when it was not.
+   */
+  onConfigured?: (ok: boolean, code: string | null) => void;
   /** Creates the socket (tests pass a fake). Default: new WebSocket(url, ['bearer', token]). */
   createSocket?: (url: string, protocols: string[]) => SocketLike;
   /** Unix ms (tests pass a fake). */
@@ -636,6 +645,26 @@ export class DeepgramChannel {
   }
 
   /**
+   * Batch C (P1-3; investigation C7): replaces the stream's keyterms without reconnecting, with Flux's
+   * Configure message (the list replaces the old one; Flux answers ConfigureSuccess or ConfigureFailure,
+   * and a failure keeps the old list). Nova-3 sockets are left alone: their next connection uses the new
+   * list.
+   *
+   * @param keyterms The new list (at most 50 plain terms; never logged).
+   * @returns True when the message was sent.
+   * Called from: cloudStt.ts setKeyterms()
+   */
+  configure(keyterms: readonly string[]): boolean {
+    if (this.kind !== 'flux' || !this.isOpen()) return false;
+    try {
+      this.socket.send(JSON.stringify({ type: 'Configure', keyterms: [...keyterms] }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Ends the stream gracefully: Deepgram sends its last words, then closes.
    *
    * @param timeoutMs Longest wait for the close, ms.
@@ -690,6 +719,11 @@ export class DeepgramChannel {
     }
     this.lastMessageAt = (this.options.now ?? Date.now)();
     this.options.onMessage?.();
+    // Batch C (P1-3): the reply to a Configure message (no transcript in it).
+    if (message.type === 'ConfigureSuccess' || message.type === 'ConfigureFailure') {
+      this.options.onConfigured?.(message.type === 'ConfigureSuccess', message.code ?? null);
+      return;
+    }
     const events = this.assembler.handle(message);
     if (!this.muted) for (const event of events) this.options.onEvent(event);
     for (const check of [...this.waiters]) check();

@@ -593,17 +593,45 @@ describe('POST /api/answer, mode screenshot (Day 5)', () => {
 });
 
 describe('POST /api/answer, daily limit (v1.0.2, ADR-0036)', () => {
-  it('returns 429 daily_limit with the friendly message and never calls Claude', async () => {
+  it('returns 429 daily_limit with the friendly message and stops the Claude request at once', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     countRequestMock.mockResolvedValueOnce({ allowed: false, count: 301, limit: 300, ms: 4 });
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
     const response = await POST(post(JSON.stringify(ANSWER_REQUEST)));
     expect(response.status).toBe(429);
     expect(await response.json()).toEqual({
       code: 'daily_limit',
       message: dailyLimitMessage(300),
     });
-    expect(streamMock).not.toHaveBeenCalled();
+    // Batch C (P1-2): Claude's request starts while the count is read, and is stopped when it says no.
+    expect(streamMock).toHaveBeenCalledTimes(1);
+    const [, options] = streamMock.mock.calls[0]! as [unknown, { signal: AbortSignal }];
+    expect(options.signal.aborted).toBe(true);
     expect(countRequestMock).toHaveBeenLastCalledWith('u1');
+  });
+
+  it('starts Claude before the daily-limit count has answered (Batch C, P1-2)', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    let answerCount: (value: {
+      allowed: boolean;
+      count: number;
+      limit: number;
+      ms: number;
+    }) => void = () => undefined;
+    countRequestMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answerCount = resolve;
+      }),
+    );
+    streamMock.mockReturnValue(
+      fakeMessageStream({ pieces: ['[[concept|call|general]] Hi there'] }),
+    );
+    const pending = POST(post(JSON.stringify(ANSWER_REQUEST)));
+    await vi.waitFor(() => expect(streamMock).toHaveBeenCalledTimes(1));
+    answerCount({ allowed: true, count: 1, limit: 300, ms: 40 });
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('Hi there');
   });
 
   it('counts answer, chat and screenshot requests, and logs the check time as msLimit', async () => {

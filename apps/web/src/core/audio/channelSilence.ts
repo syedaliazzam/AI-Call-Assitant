@@ -8,14 +8,26 @@
  *          setting give the same silence on "You". Uses meter levels only; never audio or words.
  *          Replaces the older "Them silent for 20 s" rule (silence.ts themSilent), which also fired when
  *          nobody was talking at all.
+ *          Batch C (P1-5; investigation A5): in an interview the other side is silent for as long as the user
+ *          answers, so "Them" silent for 15 s while the user talked fired 15 times in one real call, every one
+ *          of them meaningless. "Them" now counts as silent only after THEM_SILENT_FOR_MS (60 s) of no sound,
+ *          and only while the user is not speaking (no sound for USER_PAUSE_MS), with the user heard at some
+ *          point in that minute (so a call where nobody talks yet stays quiet). The microphone's rule is
+ *          unchanged.
  * Used by: src/features/live/LivePage.tsx (each meter update and once a second)
  * Depends on: src/core/audio/silence.ts (isSound: the meter's silent level)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (live session); ADR-0069
  */
 import { isSound } from './silence';
 
-/** How long a channel must hear nothing (while the other talks) before Kite says so, ms. */
+/** How long the microphone must hear nothing (while the other side talks) before Kite says so, ms. */
 export const SILENT_FOR_MS = 15_000;
+
+/** Batch C (P1-5): how long the other side must be silent before Kite says it hears nothing, ms. */
+export const THEM_SILENT_FOR_MS = 60_000;
+
+/** Batch C (P1-5): the user counts as speaking until their microphone has been quiet this long, ms. */
+export const USER_PAUSE_MS = 2_000;
 
 /** A call channel. */
 export type CallChannel = 'you' | 'them';
@@ -58,19 +70,24 @@ export class ChannelSilence {
   }
 
   /**
-   * The channel that has heard nothing for SILENT_FOR_MS while the other one talked in that time.
+   * The channel that hears nothing: "Them" silent for THEM_SILENT_FOR_MS while the user is not speaking now
+   * but was heard in that time (Batch C, P1-5); the microphone silent for SILENT_FOR_MS while the other side
+   * talked in that time.
    *
    * @param now The time, ms.
    * @returns 'you', 'them', or null when both are fine (or nobody is talking).
    * Called from: LivePage.tsx (once a second)
    */
   silent(now: number): CallChannel | null {
-    for (const channel of ['them', 'you'] as const) {
-      const other = channel === 'you' ? 'them' : 'you';
-      const quietFor = now - this.soundAt[channel];
-      const otherTalked = now - this.soundAt[other] < SILENT_FOR_MS;
-      if (quietFor >= SILENT_FOR_MS && otherTalked) return channel;
+    const youQuietFor = now - this.soundAt.you;
+    if (
+      now - this.soundAt.them >= THEM_SILENT_FOR_MS &&
+      youQuietFor >= USER_PAUSE_MS &&
+      youQuietFor < THEM_SILENT_FOR_MS
+    ) {
+      return 'them';
     }
+    if (youQuietFor >= SILENT_FOR_MS && now - this.soundAt.them < SILENT_FOR_MS) return 'you';
     return null;
   }
 }

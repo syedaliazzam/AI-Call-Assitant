@@ -92,6 +92,10 @@ describe('timing trace', () => {
     timings.noteTrace('press-decision', { decision: 'sent' });
     timings.noteTrace('press-decision', { decision: 'shown-existing' });
     timings.noteAnswer({ answerId: 'a1', cacheRead: 4_000, serverMs: { firstText: 420 } });
+    // Batch C: speculative answers and the recording's frames.
+    timings.noteTrace('speculative', { state: 'held', answerId: 'a2', ms: 0 });
+    timings.noteTrace('speculative', { state: 'cancelled', answerId: 'a2', ms: 180 });
+    timings.noteTrace('rec-frames', { delivered: 148, discarded: 0, fps: 14.8, cap: 15 });
     const log = timings.current()!;
     expect(log.engine).toBe('mixed');
     expect(log.trace?.map(([, kind]) => kind)).toEqual([
@@ -99,12 +103,17 @@ describe('timing trace', () => {
       'press-wait',
       'press-decision',
       'press-decision',
+      'speculative',
+      'speculative',
+      'rec-frames',
     ]);
     const summary = summarizeCall(log);
     expect(summary.lineEngines).toEqual({ deepgram: 1, local: 1 });
     expect(summary.failovers).toBe(1);
     expect(summary.pressDecisions).toEqual({ sent: 1, 'shown-existing': 1 });
     expect(summary.pressWait).toMatchObject({ n: 1, p50: 120 });
+    expect(summary.speculative).toEqual({ held: 1, cancelled: 1 });
+    expect(summary.recordingFps).toMatchObject({ n: 1, p50: 15 });
     expect(log.answers[0]).toMatchObject({ cacheRead: 4_000, serverMs: { firstText: 420 } });
   });
 });

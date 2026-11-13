@@ -152,6 +152,12 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
               >
                 {cardQuestion(answer.question, answer.cleanQuestion)}
               </p>
+              {/* Batch C (P1-4): the press answered before their last words arrived. */}
+              {answer.incomplete && (
+                <p className="mt-1 text-[13px] text-ui-muted">
+                  The question may be incomplete: their last words were still coming in.
+                </p>
+              )}
               {streaming && answer.text.trim() === '' ? (
                 <p role="status" className="mt-2 text-[15px] text-ui-muted">
                   Thinking…

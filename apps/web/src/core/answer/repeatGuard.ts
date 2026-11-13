@@ -97,6 +97,13 @@ export interface RepeatGuard {
    */
   remember: (span: SpeechSpan, answerId: string, now: number) => void;
   /**
+   * Batch C (P1-1): forgets an answer that was never shown (a speculative answer cancelled while held), so
+   * its speech counts as unanswered again.
+   *
+   * @param answerId The answer's id.
+   */
+  forget: (answerId: string) => void;
+  /**
    * decide() for callers that only need yes or no ('show' counts as no).
    *
    * @param trigger See decide().
@@ -222,6 +229,11 @@ export function createRepeatGuard(windowMs: number = REPEAT_WINDOW_MS): RepeatGu
     decide,
     remember(span, answerId, now) {
       answered.push({ span, answerId, at: now });
+    },
+    forget(answerId) {
+      for (let index = answered.length - 1; index >= 0; index -= 1) {
+        if (answered[index]!.answerId === answerId) answered.splice(index, 1);
+      }
     },
     accept: (trigger) => decide(trigger).kind === 'answer',
   };

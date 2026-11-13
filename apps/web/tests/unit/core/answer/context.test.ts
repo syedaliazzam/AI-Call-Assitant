@@ -21,6 +21,7 @@ import {
 import type { Session } from '@/core/storage/types';
 import type { Utterance } from '@/core/transcript/transcript';
 import { buildPrompt } from '@/server/prompt';
+import { buildChunkIndex } from '@/core/documents/chunks';
 
 /** When the invented call connected (Unix ms). */
 const START = 1_000_000;
@@ -248,5 +249,72 @@ describe('buildAnswerRequest, screenshot (Day 5)', () => {
     expect(plain.request.question).toBeUndefined();
     // No image on other modes.
     expect(build({ lines: FIRST }, 14).request).not.toHaveProperty('image');
+  });
+});
+
+describe('Batch C (P2-1): the CV and summary in the prefix, matching document parts with the question', () => {
+  const documents = [
+    {
+      id: 'cv',
+      sessionId: 's1',
+      name: 'cv.txt',
+      text: 'Ran logistics at Acme.',
+      chars: 22,
+      addedAt: 1,
+      kind: 'resume' as const,
+    },
+    {
+      id: 'p1',
+      sessionId: 's1',
+      name: 'pricing.txt',
+      text: 'Bluefin Route costs 52 dollars per seat.\n\nSupport is by email on weekdays.',
+      chars: 74,
+      addedAt: 2,
+    },
+  ];
+  const summarised: Session = {
+    ...SESSION,
+    documentsSummary: { fingerprint: 'f', text: 'Pricing and support terms.', createdAt: 5 },
+  };
+
+  it('sends the CV in full and the summary, not the other documents', () => {
+    const built = build({ session: summarised, documents, lines: FIRST }, 14);
+    expect(built.request.session?.documents).toEqual([
+      { name: 'cv.txt', text: 'Ran logistics at Acme.', kind: 'resume' },
+    ]);
+    expect(built.request.session?.documentsSummary).toBe('Pricing and support terms.');
+  });
+
+  it('sends the parts that match the question, and none without the index', () => {
+    const chunks = buildChunkIndex(documents);
+    const built = build(
+      {
+        session: summarised,
+        documents,
+        chunks,
+        mode: 'chat',
+        typedQuestion: 'What does a seat cost?',
+      },
+      14,
+    );
+    expect(built.request.documentChunks).toEqual([
+      {
+        name: 'pricing.txt',
+        text: 'Bluefin Route costs 52 dollars per seat.\n\nSupport is by email on weekdays.',
+      },
+    ]);
+    const without = build(
+      { session: summarised, documents, mode: 'chat', typedQuestion: 'seat cost' },
+      14,
+    );
+    expect(without.request.documentChunks).toBeUndefined();
+  });
+
+  it('sends an empty summary when there is none yet, and none at all with only a CV', () => {
+    expect(build({ documents, lines: FIRST }, 14).request.session?.documentsSummary).toBe('');
+    expect(
+      build({ session: summarised, documents: [documents[0]!], lines: FIRST }, 14).request.session
+        ?.documentsSummary,
+    ).toBe('');
   });
 });

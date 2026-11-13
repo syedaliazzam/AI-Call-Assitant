@@ -46,6 +46,7 @@ import {
   type ConversationItem,
   type SessionContext,
 } from '@kite/shared';
+import { capSessionDocuments, fitToBudget } from './budget';
 import { cachedBlock } from './claude';
 import { CALL_REMINDER_PREVIOUS, CORE_RULES_PREVIOUS } from './prompts/rules-previous';
 
@@ -503,6 +504,36 @@ function similarLines(request: AnswerRequest): string[] {
 }
 
 /**
+ * The heading over the document parts that match the question (Batch C, P2-1). It says they are parts of
+ * the documents summarised above, chosen for this question, so Claude reads them as the full wording.
+ */
+export const DOCUMENT_PARTS_HEADING =
+  'Parts of the documents that match this question (exact wording from the documents summarised above):';
+
+/**
+ * The document parts that match the question (Batch C, P2-1), in the uncached tail.
+ *
+ * @param request The request.
+ * @returns The lines ([] when there are none).
+ * Called from: tailText()
+ */
+function chunkLines(request: AnswerRequest): string[] {
+  const chunks = request.documentChunks ?? [];
+  if (chunks.length === 0) return [];
+  return [
+    DOCUMENT_PARTS_HEADING,
+    '<document_parts>',
+    ...chunks.flatMap((chunk) => [
+      `<part document="${escapeTags(chunk.name).replaceAll('"', '&quot;')}">`,
+      escapeTags(chunk.text),
+      '</part>',
+    ]),
+    '</document_parts>',
+    '',
+  ];
+}
+
+/**
  * What the user chose for this answer: who it is for (the switch next to the chat box) and the
  * question type (the answer card's menu). In the tail, so a choice never changes the cached parts.
  *
@@ -545,7 +576,7 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
     ...(tail.length > 0 ? tail.map(lineText) : ['(nothing new)']),
     '</latest>',
   );
-  parts.push('', ...similarLines(request));
+  parts.push('', ...similarLines(request), ...chunkLines(request));
   if (request.mode === 'screenshot') {
     parts.push(
       request.styleVersion === 'previous' ? SCREENSHOT_RULES_PREVIOUS : SCREENSHOT_RULES,
@@ -610,6 +641,23 @@ export interface BuiltPrompt {
  */
 export function buildPrompt(request: AnswerRequest): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
+  // Batch C (P2-1): under MAX_ANSWER_INPUT_TOKENS whatever the documents' size (server/budget.ts): the
+  // session block has a fixed ceiling (the same bytes for every request of a session), and only in an
+  // extreme case do the uncached and oldest parts go.
+  const capped = { ...request, session: capSessionDocuments(request.session) };
+  return fitToBudget(capped, buildPromptParts).prompt;
+}
+
+/**
+ * Builds the prompt's parts for a request, as it is (buildPrompt() keeps it within the budget).
+ *
+ * @param request A validated request with `session` set.
+ * @returns The system blocks and the user turn.
+ * @throws Error('SESSION_REQUIRED') when the request has no session.
+ * Called from: buildPrompt() (through fitToBudget())
+ */
+function buildPromptParts(request: AnswerRequest): BuiltPrompt {
+  if (!request.session) throw new Error('SESSION_REQUIRED');
   const conversation = conversationBlocks(capConversation(request.conversation ?? []));
   const last: Anthropic.TextBlockParam = {
     type: 'text',
@@ -621,7 +669,9 @@ export function buildPrompt(request: AnswerRequest): BuiltPrompt {
   return {
     system: [
       cachedBlock(rulesBlock(request.lessons, request.styleVersion)),
-      cachedBlock(sessionBlock(request.session)),
+      // Batch C (P2-1): the CV and the documents summary when the page sends one (live answers since
+      // ADR-0078); every document in full from an older page (smartSessionBlock() falls back to it).
+      cachedBlock(smartSessionBlock(request.session)),
     ],
     messages: [{ role: 'user', content: [...conversation, ...image, last] }],
   };

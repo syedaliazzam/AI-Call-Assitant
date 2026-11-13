@@ -187,6 +187,14 @@ export interface CloudStt {
   engineOf(channel: ChannelId): ChannelEngine;
   /** A channel's level showed speech (from the capture's meters). */
   sound(channel: ChannelId): void;
+  /**
+   * Batch C (P1-3): the session's keyterms changed during the call (a document added, the key terms
+   * edited). Flux sockets get them at once with a Configure message (no reconnect); every later connection
+   * (a Nova-3 channel's next socket, a reconnect, a retry) opens with them.
+   *
+   * @param keyterms The new list (never logged).
+   */
+  setKeyterms(keyterms: readonly string[]): void;
   /** Stops everything. Cannot be used afterwards. */
   stop(): void;
 }
@@ -255,6 +263,8 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
   let token: { value: Promise<SttTokenResponse>; at: number } | null = null;
   /** Sockets ending gracefully (End waits for them). */
   const finishing = new Set<Promise<void>>();
+  /** Batch C (P1-3): the keyterms new sockets open with (setKeyterms() replaces them during a call). */
+  let keyterms: readonly string[] = options.keyterms;
 
   /**
    * A fresh channel state.
@@ -334,7 +344,7 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
         host: reply.host,
         model,
         language: kind === 'flux' ? 'en' : options.language,
-        keyterms: options.keyterms,
+        keyterms,
         optional,
       });
       const socket: DeepgramChannel = new DeepgramChannel({
@@ -352,6 +362,9 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
           }
         },
         onClose: (closed) => onSocketClose(channel, socket, closed),
+        // Batch C (P1-3): codes only, never the terms.
+        onConfigured: (ok, code) =>
+          trace('configure-reply', { channel, ok, ...(code ? { code } : {}) }),
       });
       try {
         await socket.open(OPEN_TIMEOUT_MS);
@@ -696,6 +709,19 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
 
     engineOf(channel) {
       return channels[channel].failover.engine;
+    },
+
+    setKeyterms(next) {
+      if (stopped) return;
+      const same = next.length === keyterms.length && next.every((term, i) => term === keyterms[i]);
+      if (same) return;
+      keyterms = [...next];
+      for (const channel of ['them', 'you'] as const) {
+        const state = channels[channel];
+        // Not when this channel's first handshake refused the optional parameters (keyterms among them).
+        const sent = !state.noOptional && state.socket?.configure(keyterms) === true;
+        trace('configure', { channel, terms: keyterms.length, sent });
+      }
     },
 
     sound(channel) {

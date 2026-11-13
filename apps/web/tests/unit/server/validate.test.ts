@@ -358,3 +358,30 @@ describe('parseSummaryRequest (ADR-0067)', () => {
     expect(parseSummaryRequest({ documents: [{ name: 'a', text: 'b' }], extra: 1 }).ok).toBe(false);
   });
 });
+
+describe('Batch C (P2-1): documentChunks', () => {
+  it('accepts up to 5 parts of at most 1,600 characters, and nothing else', () => {
+    const part = { name: 'job.pdf', text: 'Token bucket.' };
+    expect(
+      parseAnswerRequest({ mode: 'answer', session: SESSION, documentChunks: [part, part] }).ok,
+    ).toBe(true);
+    expect(
+      parseAnswerRequest({ mode: 'answer', session: SESSION, documentChunks: Array(6).fill(part) })
+        .ok,
+    ).toBe(false);
+    expect(
+      parseAnswerRequest({
+        mode: 'answer',
+        session: SESSION,
+        documentChunks: [{ name: 'a', text: 'x'.repeat(1_601) }],
+      }).ok,
+    ).toBe(false);
+    expect(
+      parseAnswerRequest({
+        mode: 'answer',
+        session: SESSION,
+        documentChunks: [{ ...part, extra: true }],
+      }).ok,
+    ).toBe(false);
+  });
+});

@@ -48,6 +48,7 @@ import { allowedTier, getDeepModelEnabled } from '@/server/modelAccess';
 import { countRequest } from '@/server/usage';
 import { MAX_REQUEST_BYTES, parseAnswerRequest } from '@/server/validate';
 import { readRequestText } from '@/server/requestBody';
+import { prime } from '@/server/prime';
 
 /**
  * Modes that count towards the daily limit: what the user asked for. Warm-ups and the Day 1 hello
@@ -219,25 +220,21 @@ async function respond(
     return jsonError(500, 'internal', 'Claude is not configured on the server');
   }
 
-  // The per-user daily limit (ADR-0036): counted before Claude is called; over it, nothing is
-  // sent. One database round trip; its time is logged as msLimit.
-  let msLimit: number | null = null;
-  if (COUNTED_MODES.has(mode)) {
-    const counted = await countRequest(session.user.id);
-    msLimit = counted.ms;
-    if (!counted.allowed) {
-      console.info('answer: daily limit reached', {
-        requestId,
-        userId: session.user.id,
-        mode,
-        limit: counted.limit,
-      });
-      return jsonError(429, 'daily_limit', dailyLimitMessage(counted.limit));
-    }
-  }
+  // The per-user daily limit (ADR-0036). Batch C (P1-2): counted at the same time as Claude is called
+  // (one database round trip, 30–100 ms, no longer in front of Claude's first token). Over the limit, the
+  // Claude request is stopped at once and the reply is the same 429 as before: no text is ever sent. Its
+  // time is logged as msLimit.
+  const counting = COUNTED_MODES.has(mode) ? countRequest(session.user.id) : null;
+  // Stops Claude when the request is over the daily limit.
+  const overLimit = new AbortController();
 
-  // Stop Claude when the browser disconnects or the 60 s limit passes, whichever comes first.
-  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(CLAUDE_TIMEOUT_MS)]);
+  // Stop Claude when the browser disconnects, the 60 s limit passes or the request is over the daily limit,
+  // whichever comes first.
+  const signal = AbortSignal.any([
+    request.signal,
+    AbortSignal.timeout(CLAUDE_TIMEOUT_MS),
+    overLimit.signal,
+  ]);
   let streamOpenAt: number | null = null;
   const markOpen = () => {
     streamOpenAt ??= performance.now();
@@ -250,14 +247,16 @@ async function respond(
     imageChars: data.image?.length ?? 0,
     // How many approved lessons were sent (Day 5 Stage 7), never their text.
     lessons: data.lessons?.length ?? 0,
+    // Batch C (P2-1): how many document parts went with the question, never their text.
+    documentChunks: data.documentChunks?.length ?? 0,
     // Counts only for the Ask Kite page (ADR-0030), never their text.
     historyTurns: data.history?.length ?? 0,
     attachments: data.attachments?.length ?? 0,
     images: data.images?.length ?? 0,
     // Which answer rules were used: 'previous' only after an admin's rollback (ADR-0032).
     styleVersion: data.styleVersion ?? 'current',
-    // How long the daily-limit check took (ADR-0036); null for modes that do not count.
-    msLimit,
+    // How long the daily-limit check took (ADR-0036); null for modes that do not count (set below).
+    msLimit: null as number | null,
   };
   let source: AsyncGenerator<ReplyItem, ReplyResult, undefined>;
   if (mode === 'warm') {
@@ -289,6 +288,25 @@ async function respond(
         onStreamOpen: markOpen,
       }),
     );
+  }
+
+  if (counting) {
+    // Batch C (P1-2): Claude's request starts now (the source's first read), while the count is checked.
+    const primed = prime(source);
+    const counted = await counting;
+    context.msLimit = counted.ms;
+    if (!counted.allowed) {
+      overLimit.abort();
+      primed.discard();
+      console.info('answer: daily limit reached', {
+        requestId,
+        userId: session.user.id,
+        mode,
+        limit: counted.limit,
+      });
+      return jsonError(429, 'daily_limit', dailyLimitMessage(counted.limit));
+    }
+    source = primed.source;
   }
 
   const body = toEventStream(source, {

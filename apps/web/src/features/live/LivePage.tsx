@@ -93,7 +93,7 @@ import { looksNonEnglish } from '@/core/stt/language';
 import { displayTerms } from '@/core/transcript/display';
 import { isSound } from '@/core/audio/silence';
 import { ChannelSilence, type CallChannel } from '@/core/audio/channelSilence';
-import { watchDeviceChanges } from '@/core/audio/deviceWatch';
+import { defaultOutputKey, watchDeviceChanges } from '@/core/audio/deviceWatch';
 import { callNoticeFor, type CallNotice } from '@/core/live/callNotice';
 import { SilentChannelNotice } from './ThemSilentNotice';
 import { PrivateOffWarning, usePrivateOffWhileRecording } from './PrivateOffWarning';
@@ -216,6 +216,9 @@ function channelEndedMessage(speaker: Speaker, platform: 'desktop' | 'browser'):
 
 /** Why a second call cannot start (shown on the Connect card, or sent to the desktop's card). */
 const LOCKED_OUT_TEXT = 'A call is already running in another Paramount AI window. End it first.';
+
+/** Batch C (P1-1): a Flux turn event of the other side. */
+type CloudTurnEvent = Extract<CloudEvent, { type: 'turn' }>['event'];
 
 /** ADR-0076: no keyterms (one shared empty list, so hook dependencies stay stable). */
 const NO_KEYTERMS: readonly string[] = [];
@@ -483,6 +486,26 @@ export function LivePage({
   const cloudRef = useRef<CloudStt | null>(null);
   // ADR-0076: which channels use the on-device engine instead of Deepgram (for the notice and the watchdog).
   const [localChannels, setLocalChannels] = useState<readonly Speaker[]>([]);
+  // Batch C (P1-1): the other side's Flux turn events, for the speculative answer's hold (useLiveAnswers).
+  const [themTurns] = useState(() => {
+    const listeners = new Set<(event: CloudTurnEvent) => void>();
+    return {
+      emit: (event: CloudTurnEvent) => {
+        for (const listener of [...listeners]) listener(event);
+      },
+      subscribe: (listener: (event: CloudTurnEvent) => void) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    };
+  });
+  // Batch C (P1-3): the session's keyterms changed during the call (LiveSession.tsx watches the session and
+  // its documents): Deepgram's Flux socket gets them at once, without reconnecting.
+  useEffect(() => {
+    cloudRef.current?.setKeyterms(keyterms);
+  }, [keyterms]);
   // ADR-0076 (timing trace): when each channel last had sound, for speech onsets.
   const lastSoundAt = useRef<Record<Speaker, number>>({ you: 0, them: 0 });
   const captureRef = useRef<CallCapture | null>(null);
@@ -501,6 +524,13 @@ export function LivePage({
     },
     saveTranscript: session.saveTranscript,
     connected: connection === 'connected',
+    // Batch C (P1-6): speech is transcribed on this computer and needs the room: a cloud call's channel on
+    // the on-device fallback, or the on-device engine falling behind. The screen's frame rate gives way.
+    underLoad: () =>
+      backlogRef.current !== 'ok' ||
+      (cloudRef.current !== null &&
+        (cloudRef.current.engineOf('them') === 'local' ||
+          cloudRef.current.engineOf('you') === 'local')),
     streams: () => {
       const capture = captureRef.current;
       return capture ? { you: capture.micStream(), them: capture.otherSideStream() } : null;
@@ -787,11 +817,13 @@ export function LivePage({
           confidence: event.confidence,
           at: event.at,
         });
+        // Batch C (P1-1): a held speculative answer listens for the other side's turn resuming.
+        if (channel === 'them') themTurns.emit(event.event);
         return;
       }
       callTimings.noteTrace('speech-started', { channel, at: event.at });
     },
-    [transcript, dictationRoute],
+    [transcript, dictationRoute, themTurns],
   );
 
   /**
@@ -1423,13 +1455,48 @@ export function LivePage({
       });
   }, []);
 
+  /**
+   * Batch C (P1-5; investigation A5): re-opens the system audio ("Them") on the new default output. Windows'
+   * loopback hears only the default output device, and before this a call kept listening to the old one
+   * (only the microphone was re-opened). Only for system audio: a shared tab follows its tab, not a device.
+   */
+  const reopenSystemAudio = useCallback(async () => {
+    const capture = captureRef.current;
+    if (!capture || capture.themSource !== 'system-loopback') return;
+    try {
+      await capture.changeOtherSide();
+      recordingRef.current.replaceSource('them', capture.otherSideStream());
+      themSoundAt.current = Date.now();
+      silence.current?.reset('them', Date.now());
+      callTimings.noteTrace('them-reopened', { reason: 'output-changed' });
+    } catch {
+      // The old capture stays; the silence notice says so if it hears nothing.
+      callTimings.noteTrace('them-reopen-failed', { reason: 'output-changed' });
+    }
+  }, []);
+
   useEffect(() => {
     if (connection !== 'connected') return;
-    return watchDeviceChanges(async (mics) => {
+    // Batch C (P1-5): the default output when the watch starts, to tell a change of it.
+    let output: string | null = null;
+    let active = true;
+    void defaultOutputKey().then((key) => {
+      if (active) output = key;
+    });
+    const stop = watchDeviceChanges(async (mics, nextOutput) => {
       const chosen = getMicDevice();
       if (chosen === '' || !mics.some((mic) => mic.id === chosen)) changeMic('');
+      const previous = output;
+      output = nextOutput;
+      if (previous !== null && nextOutput !== null && nextOutput !== previous) {
+        await reopenSystemAudio();
+      }
     });
-  }, [connection, changeMic]);
+    return () => {
+      active = false;
+      stop();
+    };
+  }, [connection, changeMic, reopenSystemAudio]);
 
   /** Yes, still in a call: the quiet time starts again (ADR-0044). */
   const stillHere = useCallback(() => {
@@ -1682,6 +1749,7 @@ export function LivePage({
         {...(cloudStt
           ? {
               rules: 'newest' as const,
+              themTurns: themTurns.subscribe,
               catchUp: (atUnix: number) =>
                 cloudRef.current
                   ? cloudRef.current.catchUp('them', atUnix, CATCH_UP_CAP_MS)

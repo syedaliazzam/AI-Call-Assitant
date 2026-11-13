@@ -1,6 +1,6 @@
 /**
  * Tests for apps/web/src/core/recording/format.ts (desktop 1.5.0, ADR-0068): hardware H.264 in Matroska
- * at the chosen quality; VP8 in WebM at Standard without a hardware encoder (High is never used then);
+ * at the chosen quality; Batch C (P1-6): no screen format without a hardware encoder (never VP8 in a call);
  * Opus in WebM for sound only; null when nothing can be recorded; the WebCodecs check answers false
  * without VideoEncoder.
  */
@@ -30,12 +30,17 @@ describe('chooseFormat', () => {
     expect(high?.spec).toMatchObject({ width: 1920, height: 1080, frameRate: 30 });
   });
 
-  it('falls back to VP8 at Standard without a hardware encoder', async () => {
-    const format = await chooseFormat('screen', 'high', deps(false));
+  it('never records software (VP8) video: no screen format without a hardware encoder (Batch C, P1-6)', async () => {
+    expect(await chooseFormat('screen', 'high', deps(false))).toBeNull();
+    expect(await chooseFormat('screen', 'standard', deps(false))).toBeNull();
+  });
+
+  it('still records sound only without a hardware encoder', async () => {
+    const format = await chooseFormat('audio', 'standard', deps(false));
     expect(format).toMatchObject({
-      mimeType: 'video/webm;codecs=vp8,opus',
+      mimeType: 'audio/webm;codecs=opus',
       container: 'webm',
-      quality: 'standard',
+      quality: null,
     });
   });
 

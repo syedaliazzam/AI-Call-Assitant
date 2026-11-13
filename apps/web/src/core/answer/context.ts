@@ -41,7 +41,8 @@ import { splitStable } from '../transcript/stability';
 import type { Utterance } from '../transcript/transcript';
 import { getAnswerStyleVersion } from '../storage/answerPrefs';
 import { findSimilarAnswer } from './similar';
-import { toSessionContext } from './warm';
+import { rankChunks, type ChunkIndex } from '../documents/chunks';
+import { toLiveSessionContext } from './warm';
 
 /** An answer given earlier in this call, as the live page keeps it in memory. */
 export interface CallAnswer {
@@ -102,6 +103,11 @@ export interface AnswerContextInput {
   answerType?: AnswerType;
   /** A re-answer's question: used instead of picking one from the transcript. */
   question?: string;
+  /**
+   * Batch C (P2-1): the session documents' parts (core/documents/chunks.ts), ranked against the question;
+   * the best ones go with it. Absent: none are sent.
+   */
+  chunks?: ChunkIndex;
 }
 
 /** What buildAnswerRequest() returns. */
@@ -235,15 +241,25 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
   // No model call: the words of the questions are compared here. A re-answer asks for a different
   // shape on purpose, so it does not reuse the earlier wording.
   const similar = question && !input.answerType ? findSimilarAnswer(question, input.answers) : null;
+  // Batch C (P2-1): the documents' parts that match the question (or, with no question picked, what the
+  // other person said last).
+  const query =
+    question ||
+    tailLines
+      .filter((line) => line.speaker === 'them')
+      .map((line) => line.text)
+      .join(' ');
+  const documentChunks = input.chunks && query ? rankChunks(input.chunks, query) : [];
 
   const request: AnswerRequest = {
     mode: input.mode,
     model: input.session.preferences.model,
-    session: toSessionContext(input.session, input.documents),
+    session: toLiveSessionContext(input.session, input.documents),
     ...(chunks.length > 0 ? { conversation: chunks } : {}),
     ...(tailLines.length > 0 ? { tail: tailLines } : {}),
     ...(question ? { question: question.slice(0, MAX_LINE_CHARS) } : {}),
     ...(input.mode === 'screenshot' && input.image ? { image: input.image } : {}),
+    ...(documentChunks.length > 0 ? { documentChunks } : {}),
     ...(input.lessons?.length ? { lessons: [...input.lessons] } : {}),
     ...(input.target ? { target: input.target } : {}),
     ...(input.answerType ? { answerType: input.answerType } : {}),

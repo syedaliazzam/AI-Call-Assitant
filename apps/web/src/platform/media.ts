@@ -129,6 +129,28 @@ export async function defaultOutputKind(): Promise<OutputKind> {
 }
 
 /**
+ * Batch C (P1-5): which device is the computer's default sound output now, as a key that changes when the
+ * default changes (Windows' loopback capture hears only the default output, so the call re-opens it then).
+ * Group id and name only; never shown or logged.
+ *
+ * @returns The key, or null when outputs cannot be listed.
+ * Called from: core/audio/deviceWatch.ts; tests
+ */
+export async function defaultOutputKey(): Promise<string | null> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) return null;
+  try {
+    const outputs = (await navigator.mediaDevices.enumerateDevices()).filter(
+      (device) => device.kind === 'audiooutput',
+    );
+    // Chromium lists the default output with the id 'default' (its name and group follow the default).
+    const output = outputs.find((device) => device.deviceId === 'default') ?? outputs[0];
+    return output ? `${output.groupId}|${output.label}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Watches whether the computer is on battery (v1.1.0, ADR-0044: Accurate transcription on Auto). The
  * page's own Battery API, so it also works in a desktop app before 1.1.0.
  *
