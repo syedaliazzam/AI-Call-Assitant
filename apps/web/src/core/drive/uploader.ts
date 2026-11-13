@@ -34,6 +34,7 @@ import { withCallFlags } from '../storage/driveUploads';
 import type { DriveCall, DriveFileJob, DriveSessionJob, Session } from '../storage/types';
 import { DriveApiError, type DriveApi } from './api';
 import type { CallFile } from './callFiles';
+import { callJobsMoving, runCallJobs, type CallJobDeps } from './callUploader';
 import { callFileDriveName, recordingDriveName, sessionFolderName, sessionTitle } from './names';
 import type { DriveReason } from './reasons';
 
@@ -69,6 +70,8 @@ export interface DriveRecordingHost {
 export interface KnownRecording extends DriveExpectedRecording {
   /** When it started (Unix ms). */
   startedAt: number;
+  /** ADR-0077: its meeting (the call's id for calls with a record), to match it to a call's job. */
+  meetingId?: string;
 }
 
 /**
@@ -163,6 +166,11 @@ export interface UploaderDeps {
    * @param sessionId The session.
    */
   expectedRecordings(sessionId: string): Promise<KnownRecording[]>;
+  /**
+   * ADR-0077: each call's own upload (core/drive/callUploader.ts). Absent in tests of the older
+   * per-session jobs only.
+   */
+  calls?: CallJobDeps;
 }
 
 /** How one job's turn ended. */
@@ -406,8 +414,19 @@ export async function processDriveJob(
           needsUpdate = true;
           continue;
         }
-        const outcome = await uploadRecording(deps, job.sessionId, file, save);
-        if (outcome !== 'done') return outcome;
+        const outcome = await uploadRecordingFile(deps, job.sessionId, file, () => save());
+        if (outcome.status === 'paused') {
+          await save({ state: 'paused' });
+          return 'paused';
+        }
+        if (outcome.status === 'failed') {
+          await save({
+            state: 'error',
+            reason: outcome.reason,
+            autoRetry: outcome.retryable || undefined,
+          });
+          return 'error';
+        }
         continue;
       }
       // A file the page makes (transcript, notes): sent to the server, which uploads it.
@@ -642,32 +661,54 @@ async function reportToServer(
   }
 }
 
+/** How one recording file's upload ended. */
+export type RecordingFileOutcome =
+  | {
+      /** Saved (or found already in Drive, or its local file is gone: then it is marked missing). */
+      status: 'done';
+    }
+  | {
+      /** A call started: the shell stopped; it resumes after the call. */
+      status: 'paused';
+    }
+  | {
+      /** It failed; the reason code, and whether it may clear by itself. */
+      status: 'failed';
+      /** Why (core/drive/reasons.ts). */
+      reason: DriveReason;
+      /** True when trying again later may work (a lost connection). */
+      retryable: boolean;
+    };
+
 /**
  * Uploads one recording file (ADR-0074): the server starts the upload with the company account and gives
  * back only its session address and a ticket; the desktop shell (1.6.2) sends the bytes to that address,
  * starting where the server says Google got to; the server then verifies the finished file (tag, size,
  * MD5) before its Drive id is kept. A gone session, or a file that does not verify, is started again a
- * few times at most.
+ * few times at most. ADR-0077: says how it ended instead of stopping the job, so a per-call job carries on
+ * with its other files.
  *
- * @param deps      The dependencies.
+ * @param deps      The dependencies (Kite's routes and the shell).
  * @param sessionId The session.
  * @param file      The file (changed in place; it is one of the job's files).
- * @param save      Saves the job.
- * @returns 'done' to carry on with the next file, or how the job's turn ends.
- * Called from: processDriveJob()
+ * @param persist   Saves the job with the file as it is now.
+ * @returns How it ended.
+ * @throws DriveApiError from Kite's routes (the caller sorts them).
+ * Called from: processDriveJob(); core/drive/callUploader.ts
  */
-async function uploadRecording(
-  deps: UploaderDeps,
+export async function uploadRecordingFile(
+  deps: Pick<UploaderDeps, 'api' | 'host'>,
   sessionId: string,
   file: DriveFileJob,
-  save: (changes?: Partial<DriveSessionJob>) => Promise<void>,
-): Promise<JobOutcome> {
+  persist: () => Promise<void>,
+): Promise<RecordingFileOutcome> {
+  const save = () => persist();
   const host = deps.host!;
   const size = await host.fileSize!(file.recordingId!, file.track!);
   if (size === null) {
     Object.assign(file, { done: true, missing: true, uploadUrl: undefined, ticket: undefined });
     await save();
-    return 'done';
+    return { status: 'done' };
   }
   file.bytes = size;
   for (let attempt = 0; attempt <= MAX_RESTARTS; attempt += 1) {
@@ -684,7 +725,7 @@ async function uploadRecording(
         // Already in Drive (saved before this device lost track of it): never uploaded twice.
         Object.assign(file, { done: true, driveFileId: started.fileId, sent: size });
         await save();
-        return 'done';
+        return { status: 'done' };
       }
       Object.assign(file, { uploadUrl: started.uploadUrl, ticket: started.ticket, sent: 0 });
       await save();
@@ -697,7 +738,7 @@ async function uploadRecording(
       }
       if (where.state === 'done') {
         const verified = await verifyUpload(deps, file, where.fileId, undefined, save);
-        if (verified) return 'done';
+        if (verified) return { status: 'done' };
         continue;
       }
       startOffset = where.offset;
@@ -718,12 +759,13 @@ async function uploadRecording(
     );
     switch (result.status) {
       case 'done':
-        if (await verifyUpload(deps, file, result.fileId, result.md5, save)) return 'done';
+        if (await verifyUpload(deps, file, result.fileId, result.md5, save))
+          return { status: 'done' };
         continue;
       case 'paused':
         file.sent = result.offset;
-        await save({ state: 'paused' });
-        return 'paused';
+        await save();
+        return { status: 'paused' };
       case 'auth':
       case 'expired':
         // The session is gone (no token is involved any more): a new one is started.
@@ -732,18 +774,18 @@ async function uploadRecording(
       case 'missing':
         Object.assign(file, { done: true, missing: true, uploadUrl: undefined, ticket: undefined });
         await save();
-        return 'done';
+        return { status: 'done' };
       case 'failed':
-        await save({
-          state: 'error',
+        await save();
+        return {
+          status: 'failed',
           reason: result.retryable ? 'network' : 'refused',
-          autoRetry: result.retryable || undefined,
-        });
-        return 'error';
+          retryable: result.retryable,
+        };
     }
   }
-  await save({ state: 'error', reason: 'failed' });
-  return 'error';
+  await save();
+  return { status: 'failed', reason: 'failed', retryable: false };
 }
 
 /**
@@ -759,11 +801,11 @@ async function uploadRecording(
  * @throws DriveApiError for anything but a failed verification.
  */
 async function verifyUpload(
-  deps: UploaderDeps,
+  deps: Pick<UploaderDeps, 'api'>,
   file: DriveFileJob,
   fileId: string,
   md5: string | undefined,
-  save: (changes?: Partial<DriveSessionJob>) => Promise<void>,
+  save: () => Promise<void>,
 ): Promise<boolean> {
   try {
     const verified = await deps.api.completeUpload({
@@ -856,7 +898,10 @@ export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
       job.state === 'waiting' ||
       reportDue(job),
   );
-  if (moving.length === 0) return 'idle';
+  // ADR-0077: and each call's own upload.
+  const callDeps = deps.calls ? { ...deps, calls: deps.calls } : null;
+  const callsMoving = callDeps ? callJobsMoving(await callDeps.calls.jobs.list()) : false;
+  if (moving.length === 0 && !callsMoving) return 'idle';
   let status: DriveStatusResponse;
   try {
     status = await deps.api.status();
@@ -871,6 +916,12 @@ export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
     for (const job of moving.filter((j) => j.state === 'waiting' && canUpload(j))) {
       await deps.jobs.put({ ...job, state: 'queued', reason: undefined, updatedAt: deps.now() });
     }
+  }
+  // ADR-0077: calls first (each call's transcript and notes before any recording, and before the older
+  // per-session jobs finish their files).
+  if (callDeps) {
+    const outcome = await runCallJobs(callDeps, status);
+    if (outcome !== 'idle') return outcome;
   }
   // Reports still due: a finish the server did not hear of (offline at the time), or files saved before
   // an error (so a session that waits 24 hours for its recording has a record to send from).

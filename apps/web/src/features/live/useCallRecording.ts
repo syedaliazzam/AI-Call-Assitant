@@ -57,6 +57,17 @@ export interface CallRecordingOptions {
   connected: boolean;
   /** The call's streams now ("You", "Them"), or null when it is not connected. */
   streams: () => { you: MediaStream; them: MediaStream } | null;
+  /**
+   * ADR-0077: the call's record id: the recording's meeting is the call (its parts carry it as meetingId).
+   * Read when a part starts (a function, so a recording started in the same moment as Connect gets it);
+   * without one, a random meeting id is made as before.
+   */
+  callId?: () => string | null;
+  /**
+   * ADR-0077: called when a part starts recording, with its type (the call record says what was recorded).
+   * @param kind 'screen' or 'audio'.
+   */
+  onPartStarted?: (kind: RecordingKind) => void;
 }
 
 /** What the hook gives the live page. */
@@ -167,7 +178,7 @@ export function useCallRecording(options: CallRecordingOptions): CallRecording {
       setNotice(null);
       try {
         const device = await host.device();
-        meetingId.current ??= crypto.randomUUID();
+        meetingId.current ??= optionsRef.current.callId?.() ?? crypto.randomUUID();
         const part = partCount.current + 1;
         const id = crypto.randomUUID();
         const quality = getRecordingQuality();
@@ -218,6 +229,7 @@ export function useCallRecording(options: CallRecordingOptions): CallRecording {
           updatedAt: Date.now(),
         }).catch(() => undefined);
         console.info('recording: started', { id, part, kind: partKind });
+        optionsRef.current.onPartStarted?.(partKind);
         // Decision 10 Nov 2026: Private comes on with a screen recording, with a short notice.
         if (partKind === 'screen' && (await turnPrivateOnForRecording())) {
           setNotice(PRIVATE_ON_NOTICE);

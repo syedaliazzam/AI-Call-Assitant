@@ -5,9 +5,14 @@
  * escaped; the SMTP settings use TLS (465 secure, 587 STARTTLS required) with 10 s timeouts; the
  * Message-ID is stable per attempt and hides the ids; the mailer's failures map to rejected and
  * unreachable (by code only); the test email has no call data; the rate limiter allows N per window.
+ * ADR-0077: the two emails of a call ("Call saved" with "Recording: uploading…"; "Recording saved" or
+ * "Recording not uploaded" naming the computer), each escaped, and the right one sent for each record.
  */
 import { describe, expect, it } from 'vitest';
 import {
+  RECORDING_UPLOADING_TEXT,
+  buildCallSavedEmail,
+  buildRecordingEmail,
   buildSavedEmail,
   emailMessageId,
   sendTestEmail,
@@ -215,5 +220,85 @@ describe('file links (1.6.0)', () => {
     expect(buildSavedEmail({ ...CONTENT, files: [...files] }).text).not.toContain(
       RECORDING_PENDING_TEXT,
     );
+  });
+});
+
+describe('the two emails of a call (ADR-0077)', () => {
+  /** A two-step call's record: the transcript and notes are in; the recording is uploading. */
+  const CALL: NotificationContent = {
+    ...CONTENT,
+    files: [
+      {
+        name: '2026-11-11 14.30 Transcript.txt',
+        folder: 'Transcripts',
+        fileId: 'TXT1',
+        kind: 'transcript-txt',
+      },
+      {
+        name: '2026-11-11 14.30 Notes.pdf',
+        folder: 'Transcripts',
+        fileId: 'NOTES1',
+        kind: 'notes-pdf',
+      },
+    ],
+    rule: 'two-step',
+    recordingsFolderUrl: 'https://drive.google.com/drive/folders/REC1',
+    recordingPending: true,
+    expected: [{ id: 'r1', part: 1, stereo: true, deviceName: 'Office <laptop>' }],
+  };
+
+  it('email 1 "Call saved": links, the Recordings folder and "Recording: uploading…"', () => {
+    const email = buildCallSavedEmail(CALL);
+    expect(email.subject).toBe('Call saved — Acme – Backend <Engineer>');
+    expect(email.text).toContain('Date: Wed, 11 Nov 2026, 14:30');
+    expect(email.text).toContain('Duration: 42 min');
+    expect(email.text).toContain(RECORDING_UPLOADING_TEXT);
+    expect(email.text).toContain('Recordings folder: https://drive.google.com/drive/folders/REC1');
+    expect(email.text).toContain('- Notes (PDF): https://drive.google.com/file/d/NOTES1/view');
+    expect(email.html).toContain('Backend &lt;Engineer&gt;');
+    expect(email.html).not.toContain('<Engineer>');
+    // With the recording already in: no "uploading" line.
+    expect(buildCallSavedEmail({ ...CALL, recordingPending: false }).text).not.toContain(
+      'uploading',
+    );
+  });
+
+  it('email 1 for a call that saved no transcript still goes, with the Recordings folder', () => {
+    const email = buildCallSavedEmail({ ...CALL, files: [] });
+    expect(email.text).toContain('No transcript or notes were saved for this call.');
+    expect(email.text).toContain('Recordings folder: https://drive.google.com/drive/folders/REC1');
+  });
+
+  it('email 2 "Recording saved", or "Recording not uploaded" naming the computer', () => {
+    const recording: NotificationContent = {
+      ...CALL,
+      kind: 'recording',
+      files: [
+        { name: 'p1.mkv', folder: 'Recordings', fileId: 'REC1F', kind: 'recording', part: 1 },
+      ],
+    };
+    const saved = buildRecordingEmail(recording);
+    expect(saved.subject).toBe('Recording saved — Acme – Backend <Engineer>');
+    expect(saved.text).toContain('https://drive.google.com/file/d/REC1F/view');
+    const missing = buildRecordingEmail({ ...recording, files: [], recordingMissing: true });
+    expect(missing.subject).toBe('Recording not uploaded — Acme – Backend <Engineer>');
+    expect(missing.text).toContain('Open Paramount AI on Office <laptop> to finish the upload.');
+    expect(missing.html).toContain('Office &lt;laptop&gt;');
+  });
+
+  it('sends the right one for each record', async () => {
+    const sent: OutgoingEmail[] = [];
+    const mailer: Mailer = async (_config, message) => {
+      sent.push(message);
+    };
+    const config = { host: 'h', port: 465, user: 'u', pass: 'p', from: 'n@example.test' };
+    await sendSavedEmail(mailer, config, CALL, '<a@b>');
+    await sendSavedEmail(mailer, config, { ...CALL, kind: 'recording' }, '<c@d>');
+    await sendSavedEmail(mailer, config, CONTENT, '<e@f>');
+    expect(sent.map((m) => m.subject.split(' — ')[0])).toEqual([
+      'Call saved',
+      'Recording saved',
+      'Recording and transcript saved',
+    ]);
   });
 });

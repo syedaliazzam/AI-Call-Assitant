@@ -4,13 +4,16 @@
  *          version 11, never synced): queue a call when it ends, read and change a job, pick the next
  *          one to work on, Retry, and watch them for the progress shown on session cards and Meetings.
  *          ADR-0073: each call keeps its own report flags (withCallFlags), for its own email.
+ *          ADR-0077: new calls get their own job (driveCallJobs.ts); these older per-session jobs only
+ *          finish their unfinished files. The cards and notices read one summary per session of both.
  * Used by: src/core/drive/uploader.ts, src/core/drive/queue.ts, src/features/drive/*
  * Depends on: dexie (liveQuery), src/core/storage/db.ts, src/core/storage/types.ts
  * Architecture: ADR-0072, ADR-0073; architecture §7.4
  */
 import { liveQuery } from 'dexie';
 import { getDb } from './db';
-import type { DriveCall, DriveSessionJob } from './types';
+import { listCallJobs, markCallNoticesShown } from './driveCallJobs';
+import type { DriveCall, DriveCallJob, DriveSessionJob } from './types';
 
 /** The states a job is worked on in (an 'uploading' one was cut off by a closed window or a crash). */
 const ACTIVE_STATES: readonly DriveSessionJob['state'][] = ['queued', 'uploading', 'paused'];
@@ -49,7 +52,8 @@ export function withCallFlags(job: DriveSessionJob): DriveSessionJob {
  * @param call      The call's start and end.
  * @param now       The clock.
  * @returns The job.
- * Called from: src/core/drive/queue.ts (the live page's End); tests
+ * Called from: tests (ADR-0077: calls are no longer added to these jobs; they get their own,
+ *              driveCallJobs.ts)
  */
 export async function queueDriveCall(
   sessionId: string,
@@ -178,7 +182,8 @@ export async function requeueDriveJobs(
 }
 
 /**
- * Marks a finished job's notice as shown on this device.
+ * Marks a session's finished uploads' notice as shown on this device: its older per-session job and
+ * (ADR-0077) its calls' jobs.
  *
  * @param sessionId The session.
  * @returns When saved.
@@ -186,6 +191,74 @@ export async function requeueDriveJobs(
  */
 export async function markDriveNoticeShown(sessionId: string): Promise<void> {
   await getDb().driveUploads.update(sessionId, { noticeShown: true });
+  await markCallNoticesShown(sessionId);
+}
+
+/** Which state wins when a session's jobs are shown as one line (the first that any job is in). */
+const SUMMARY_ORDER: readonly DriveSessionJob['state'][] = [
+  'uploading',
+  'queued',
+  'paused',
+  'waiting',
+  'error',
+  'done',
+];
+
+/**
+ * ADR-0077: a session's uploads as one job, for the session cards, Meetings and the notices, which show one
+ * line per session: its older per-session job (if any) and its calls' jobs. The line says what the busiest
+ * job does (uploading before waiting before an error before done); its files are every job's files, its
+ * folder the first one known, and its notice is shown until every finished job's notice was.
+ *
+ * @param legacy The session's older job, or undefined.
+ * @param calls  Its calls' jobs.
+ * @returns The summary, or undefined when the session has no upload on this device.
+ * Called from: listSessionDriveSummaries(); tests
+ */
+export function summariseSessionJobs(
+  legacy: DriveSessionJob | undefined,
+  calls: readonly DriveCallJob[],
+): DriveSessionJob | undefined {
+  if (calls.length === 0) return legacy;
+  const all: (DriveSessionJob | DriveCallJob)[] = [...(legacy ? [legacy] : []), ...calls];
+  const state = SUMMARY_ORDER.find((one) => all.some((job) => job.state === one)) ?? 'done';
+  const decider = all.find((job) => job.state === state);
+  return {
+    sessionId: calls[0]!.sessionId,
+    calls: legacy?.calls ?? [],
+    files: all.flatMap((job) => job.files),
+    folderId: legacy?.folderId ?? calls.find((job) => job.folderId)?.folderId,
+    state,
+    ...(decider?.reason ? { reason: decider.reason } : {}),
+    notified: all.every((job) => job.notified),
+    noticeShown: all.every((job) => job.state !== 'done' || job.noticeShown),
+    queuedAt: Math.min(...all.map((job) => job.queuedAt)),
+    updatedAt: Math.max(...all.map((job) => job.updatedAt)),
+  };
+}
+
+/**
+ * Every session's uploads on this device, one summary each (summariseSessionJobs), newest change first.
+ *
+ * @returns The summaries.
+ * Called from: watchDriveJobs(); tests
+ */
+export async function listSessionDriveSummaries(): Promise<DriveSessionJob[]> {
+  const [legacy, calls] = await Promise.all([listDriveJobs(), listCallJobs()]);
+  const bySession = new Map<string, DriveCallJob[]>();
+  for (const job of calls)
+    bySession.set(job.sessionId, [...(bySession.get(job.sessionId) ?? []), job]);
+  const out: DriveSessionJob[] = [];
+  for (const job of legacy) {
+    const summary = summariseSessionJobs(job, bySession.get(job.sessionId) ?? []);
+    if (summary) out.push(summary);
+    bySession.delete(job.sessionId);
+  }
+  for (const jobs of bySession.values()) {
+    const summary = summariseSessionJobs(undefined, jobs);
+    if (summary) out.push(summary);
+  }
+  return out.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 /**
@@ -201,17 +274,20 @@ export async function deleteDriveJob(sessionId: string): Promise<void> {
 
 /**
  * Keeps the list of uploads up to date (session cards, Meetings, notices): Dexie reports a change made
- * in any window of this profile.
+ * in any window of this profile. ADR-0077: one summary per session, its calls' jobs included.
  *
- * @param onJobs  Called with the jobs now and after every change.
+ * @param onJobs  Called with the summaries now and after every change.
  * @param onError Called when they cannot be read.
  * @returns A function that stops watching.
- * Called from: features/drive/useDriveJobs.ts; tests
+ * Called from: features/drive/useDrive.ts; tests
  */
 export function watchDriveJobs(
   onJobs: (jobs: DriveSessionJob[]) => void,
   onError: () => void,
 ): () => void {
-  const subscription = liveQuery(() => listDriveJobs()).subscribe({ next: onJobs, error: onError });
+  const subscription = liveQuery(() => listSessionDriveSummaries()).subscribe({
+    next: onJobs,
+    error: onError,
+  });
   return () => subscription.unsubscribe();
 }

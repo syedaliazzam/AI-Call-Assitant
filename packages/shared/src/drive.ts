@@ -256,7 +256,19 @@ export interface DriveExpectedRecording {
   part: number;
   /** True when it has a stereo sound file too (also waited for). */
   stereo: boolean;
+  /**
+   * ADR-0077: the name of the computer that holds its files ("Saved on <name>"), for the "Recording not
+   * uploaded: open Paramount AI on <name>" email. Absent from older apps.
+   */
+  deviceName?: string;
 }
+
+/**
+ * ADR-0077: the email rule a report asks for. 'two-step' (calls ended from 13 Nov 2026 on): email 1
+ * "Call saved" once the call's transcript and notes are in Drive, then email 2 "Recording saved" when its
+ * recording is (or "Recording not uploaded" after 24 hours). Absent: the older one email per call.
+ */
+export type DriveEmailRule = 'two-step';
 
 /**
  * POST /api/drive/notify: a device's report of what it saved for ONE CALL of a session (when its uploads
@@ -290,9 +302,18 @@ export interface DriveNotifyRequest {
   goneRecordings: string[];
   /**
    * True for a session that must not be emailed automatically (saved before the combined email, or with
-   * "Upload to Drive"): a new record waits for "Send email" in Settings.
+   * "Upload to Drive"): a new record waits for "Send email" in Settings. Ignored with emailRule.
    */
   manualOnly: boolean;
+  /** ADR-0077: the email rule (see DriveEmailRule); absent for the older single email. */
+  emailRule?: DriveEmailRule;
+  /**
+   * ADR-0077 (two-step rule): true once every Transcripts file of the call (transcript TXT and PDF, notes
+   * PDF) is in Drive, or there is none to save. Email 1 goes when it is true.
+   */
+  callFilesSaved?: boolean;
+  /** ADR-0077: the session's Recordings subfolder in Drive, linked in email 1 while a recording uploads. */
+  recordingsFolderUrl?: string;
 }
 
 /**
@@ -338,6 +359,11 @@ export interface DriveNotificationItem {
   files: number;
   /** True when the email was (or will be) sent without the recording, whose upload had not finished. */
   recordingPending: boolean;
+  /**
+   * ADR-0077: which email of the call: 'call' ("Call saved", or the older single email) or 'recording'
+   * ("Recording saved", or "Recording not uploaded" after 24 hours). Absent means 'call'.
+   */
+  kind?: 'call' | 'recording';
 }
 
 /** GET /api/drive/notifications. */
@@ -352,6 +378,8 @@ export interface DriveRetryRequest {
   sessionId: string;
   /** Which of its emails (DriveNotificationItem.call); absent or null for the first. */
   call?: number | null;
+  /** ADR-0077: true for the call's "Recording saved" email (DriveNotificationItem.kind 'recording'). */
+  recording?: boolean;
 }
 
 /**

@@ -31,9 +31,10 @@ const V104_SCHEMA = 7;
 
 /**
  * The schema version today's code upgrades it to (9 adds only the sync bookkeeping stores, ADR-0049;
- * 10 only the recording records, ADR-0068).
+ * 10 only the recording records, ADR-0068; 11 only the Drive uploads, ADR-0072; 12 only the calls, their
+ * notes and their Drive uploads, ADR-0077).
  */
-const CURRENT_SCHEMA = 10;
+const CURRENT_SCHEMA = 12;
 
 let work = '';
 let oldCode = '';

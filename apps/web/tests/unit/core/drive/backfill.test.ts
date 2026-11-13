@@ -1,19 +1,30 @@
 /**
  * Tests for apps/web/src/core/drive/backfill.ts (1.6.0, ADR-0072): a session's calls are worked out
  * from what it kept, split at 30 minutes of nothing, starting at the exact time the answers or notes
- * recorded (so the notes PDF matches its call); "Upload to Drive" queues them as "manual email only".
+ * recorded (so the notes PDF matches its call); "Upload to Drive" queues each call as its own upload,
+ * emailed by hand only (ADR-0077).
  * All values are invented.
  */
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { inferCalls, uploadSessionToDrive } from '@/core/drive/backfill';
 import { saveAnswer } from '@/core/storage/answers';
+import { listCallJobs } from '@/core/storage/driveCallJobs';
 import { getDriveJob } from '@/core/storage/driveUploads';
-import type { StoredAnswer, StoredNotes, StoredUtterance } from '@/core/storage/types';
+import { getDb } from '@/core/storage/db';
+import type { Session, StoredAnswer, StoredNotes, StoredUtterance } from '@/core/storage/types';
 import { saveUtterance } from '@/core/storage/utterances';
 import { resetDb } from '../storage/helpers';
 
 beforeEach(resetDb);
+
+/**
+ * Stores a session as is (only the fields the code reads).
+ * @param session The session.
+ */
+const saveSession = async (session: Session) => {
+  await getDb().sessions.put(session);
+};
 
 /** Thirty minutes and a bit, ms. */
 const GAP = 31 * 60_000;
@@ -52,20 +63,31 @@ describe('inferCalls', () => {
 });
 
 describe('uploadSessionToDrive', () => {
-  it('queues the calls and marks the session "manual email only"', async () => {
+  it('queues each call this device never saved as its own upload, emailed by hand only (ADR-0077)', async () => {
+    await saveSession({ id: 's1', saveTranscript: true } as Session);
     await saveUtterance(line(50_000));
     await saveAnswer({
       id: 'a',
       sessionId: 's1',
       createdAt: 51_000,
       callStartedAt: 49_000,
+      msTotal: 0,
     } as StoredAnswer);
     expect(await uploadSessionToDrive('s1')).toBe(1);
-    expect(await getDriveJob('s1')).toMatchObject({
+    const jobs = await listCallJobs();
+    expect(jobs).toHaveLength(1);
+    // The call's exact start (its answer's), so the files keep the keys any earlier upload used.
+    expect(jobs[0]).toMatchObject({
+      sessionId: 's1',
+      startedAt: 49_000,
       state: 'queued',
-      manualEmail: true,
-      calls: [{ startedAt: 49_000, endedAt: 51_000 }],
+      origin: 'earlier',
+      recordingMatch: 'window',
     });
+    // The older per-session job is never made again.
+    expect(await getDriveJob('s1')).toBeNull();
+    // Asked again: the call is already queued, so nothing is added.
+    expect(await uploadSessionToDrive('s1')).toBe(0);
     expect(await uploadSessionToDrive('nothing-here')).toBe(0);
   });
 });

@@ -16,7 +16,11 @@
  * - one email per call: a repeated notify sends nothing; without SMTP settings it is "not-set-up"; switched
  *   off it is "off"; a failed email can be retried, with a new Message-ID; the test email goes to the
  *   signed-in person only and is rate-limited;
- * - ADR-0073: each call of a session (one started again) has its own email, listed and retried by call.
+ * - ADR-0073: each call of a session (one started again) has its own email, listed and retried by call;
+ * - ADR-0077 (two-step rule): email 1 "Call saved" as soon as the transcript and notes are in ("Recording:
+ *   uploading…"), email 2 "Recording saved" when the recording is (never when it was in email 1),
+ *   "Recording not uploaded" after 24 hours, "manual only" ignored; a failed email is listed with Retry and
+ *   tried again by itself an hour later (never an older call's).
  */
 import { createHash } from 'node:crypto';
 import { DRIVE_SCOPE, type DriveNotifyRequest } from '@kite/shared';
@@ -1105,5 +1109,146 @@ describe('one email per call (ADR-0073: a session started again)', () => {
     );
     expect(await retried.json()).toEqual({ status: 'sent' });
     expect(f.mail.at(-1)!.text).toContain('15.30 Transcript.txt');
+  });
+});
+
+describe('two emails per call (ADR-0077)', () => {
+  /** The call's Transcripts files are in; a recording is expected on the office laptop. */
+  const CALL_FILES: DriveNotifyRequest = {
+    ...FROM_BROWSER,
+    emailRule: 'two-step',
+    callFilesSaved: true,
+    recordingsFolderUrl: 'https://drive.google.com/drive/folders/RECFOLDER1',
+    expectedRecordings: [{ id: REC, part: 1, stereo: true, deviceName: 'Office laptop' }],
+  };
+  /** Later: the recording's files are in too. */
+  const ALL_FILES: DriveNotifyRequest = {
+    ...CALL_FILES,
+    files: [...FROM_BROWSER.files, ...FROM_DESKTOP.files],
+  };
+
+  it('sends "Call saved" once the transcript is in, then "Recording saved" once, and never a third', async () => {
+    const f = fakes();
+    const d = deps(ALICE, f, { email: true });
+    await connect(d);
+    // The Transcripts files not all in yet: nothing goes.
+    const early = await handleNotify(
+      post('/api/drive/notify', { ...CALL_FILES, callFilesSaved: false }),
+      d,
+    );
+    expect(await early.json()).toEqual({ status: 'collecting' });
+    expect(f.mail).toHaveLength(0);
+    expect(await (await handleNotify(post('/api/drive/notify', CALL_FILES), d)).json()).toEqual({
+      status: 'sent',
+    });
+    expect(f.mail).toHaveLength(1);
+    expect(f.mail[0]!.subject).toBe('Call saved — Acme – Backend Engineer');
+    expect(f.mail[0]!.text).toContain('Recording: uploading…');
+    expect(f.mail[0]!.text).toContain(
+      'Recordings folder: https://drive.google.com/drive/folders/RECFOLDER1',
+    );
+    expect(f.mail[0]!.text).toContain('https://drive.google.com/file/d/TXT0000001/view');
+    // Part of the recording: still waiting.
+    const half = { ...ALL_FILES, files: [...FROM_BROWSER.files, FROM_DESKTOP.files[0]!] };
+    await handleNotify(post('/api/drive/notify', half), d);
+    expect(f.mail).toHaveLength(1);
+    await handleNotify(post('/api/drive/notify', ALL_FILES), d);
+    expect(f.mail).toHaveLength(2);
+    expect(f.mail[1]!.subject).toBe('Recording saved — Acme – Backend Engineer');
+    expect(f.mail[1]!.text).toContain('https://drive.google.com/file/d/REC0000001/view');
+    expect(f.mail[1]!.text).toContain('https://drive.google.com/file/d/STE0000001/view');
+    expect(f.mail[1]!.text).not.toContain('TXT0000001');
+    expect(f.mail[0]!.messageId).not.toBe(f.mail[1]!.messageId);
+    // Reports repeated after a restart send nothing more.
+    await handleNotify(post('/api/drive/notify', ALL_FILES), d);
+    await handleNotify(post('/api/drive/notify', CALL_FILES), d);
+    expect(f.mail).toHaveLength(2);
+    const list = await (await handleNotifications(get('/api/drive/notifications'), d)).json();
+    expect(
+      (list.items as { kind: string; status: string; call: number | null }[])
+        .map((item) => [item.kind, item.status, item.call])
+        .sort(),
+    ).toEqual([
+      ['call', 'sent', CALL_FILES.callStartedAt],
+      ['recording', 'sent', CALL_FILES.callStartedAt],
+    ]);
+  });
+
+  it('sends one email when the recording is already in, and ignores "manual only"', async () => {
+    const f = fakes();
+    const d = deps(ALICE, f, { email: true });
+    await connect(d);
+    const out = await handleNotify(
+      post('/api/drive/notify', { ...ALL_FILES, manualOnly: true }),
+      d,
+    );
+    expect(await out.json()).toEqual({ status: 'sent' });
+    expect(f.mail).toHaveLength(1);
+    expect(f.mail[0]!.subject.startsWith('Call saved')).toBe(true);
+    expect(f.mail[0]!.text).not.toContain('Recording: uploading');
+    expect(f.mail[0]!.text).toContain('https://drive.google.com/file/d/REC0000001/view');
+    const list = await (await handleNotifications(get('/api/drive/notifications'), d)).json();
+    expect(list.items).toHaveLength(1);
+  });
+
+  it('says "Recording not uploaded" on the named computer after 24 hours', async () => {
+    const f = fakes();
+    const d = deps(ALICE, f, { email: true });
+    await connect(d);
+    await handleNotify(post('/api/drive/notify', CALL_FILES), d);
+    expect(f.mail).toHaveLength(1);
+    const later = deps(ALICE, f, { email: true, now: Date.now() + 25 * 3_600_000 });
+    await handleNotifications(get('/api/drive/notifications'), later);
+    expect(f.mail).toHaveLength(2);
+    expect(f.mail[1]!.subject).toBe('Recording not uploaded — Acme – Backend Engineer');
+    expect(f.mail[1]!.text).toContain('Open Paramount AI on Office laptop');
+    // The recording arriving afterwards sends nothing more.
+    await handleNotify(post('/api/drive/notify', ALL_FILES), later);
+    expect(f.mail).toHaveLength(2);
+  });
+
+  it('records a failed email with Retry, and tries it again by itself an hour later; older calls never', async () => {
+    const f = fakes();
+    const d = deps(ALICE, f, { email: true });
+    await connect(d);
+    f.smtpError = 'EAUTH';
+    expect(await (await handleNotify(post('/api/drive/notify', CALL_FILES), d)).json()).toEqual({
+      status: 'failed',
+    });
+    // An older call (the single email) fails too.
+    const older: DriveNotifyRequest = {
+      ...NOTIFY,
+      callStartedAt: NOTIFY.callStartedAt - 86_400_000,
+    };
+    await handleNotify(post('/api/drive/notify', older), d);
+    expect(f.mail).toHaveLength(2);
+    let list = await (await handleNotifications(get('/api/drive/notifications'), d)).json();
+    const failed = (items: { status: string }[]) => items.filter((i) => i.status === 'failed');
+    expect(failed(list.items)).toHaveLength(2);
+    f.smtpError = null;
+    // Half an hour later: not yet.
+    const soon = deps(ALICE, f, { email: true, now: Date.now() + 30 * 60_000 });
+    await handleNotifications(get('/api/drive/notifications'), soon);
+    expect(f.mail).toHaveLength(2);
+    // An hour later: the new call's email goes by itself; the older call's waits for Retry.
+    const hour = deps(ALICE, f, { email: true, now: Date.now() + 61 * 60_000 });
+    list = await (await handleNotifications(get('/api/drive/notifications'), hour)).json();
+    expect(f.mail).toHaveLength(3);
+    expect(f.mail[2]!.subject.startsWith('Call saved')).toBe(true);
+    expect(failed(list.items)).toHaveLength(1);
+    // Email 2 waits for the recording; failed, it is retried by its kind.
+    f.smtpError = 'ETIMEDOUT';
+    await handleNotify(post('/api/drive/notify', ALL_FILES), hour);
+    f.smtpError = null;
+    const retried = await handleRetry(
+      post('/api/drive/notifications', {
+        sessionId: S1,
+        call: CALL_FILES.callStartedAt,
+        recording: true,
+      }),
+      hour,
+    );
+    expect(await retried.json()).toEqual({ status: 'sent' });
+    expect(f.mail.at(-1)!.subject.startsWith('Recording saved')).toBe(true);
   });
 });

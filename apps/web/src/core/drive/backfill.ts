@@ -4,17 +4,15 @@
  *          calls from what it kept (transcript lines, answers, notes and recording records; a call is
  *          split where nothing happened for 30 minutes, and starts at the exact time an answer or the
  *          notes recorded, so the notes PDF matches its call), queues them, and marks the session as
- *          emailed by hand only (an old call never emails the team by itself).
+ *          emailed by hand only (an old call never emails the team by itself). ADR-0077: the button now
+ *          queues each of the session's calls as its own upload (earlierCalls.ts); inferCalls() stays for
+ *          its tests and readers.
  * Used by: src/features/drive/DriveSessionStatus.tsx
- * Depends on: src/core/storage (utterances, answers, notes, recordings, driveUploads, migrate),
- *             src/core/drive/queue.ts
- * Architecture: ADR-0072
+ * Depends on: src/core/storage/migrate.ts, src/core/drive/earlierCalls.ts
+ * Architecture: ADR-0072, ADR-0077
  */
-import { listAnswers } from '../storage/answers';
-import { getDriveJob, putDriveJob, queueDriveCall } from '../storage/driveUploads';
+import type { LocalRecording } from '@kite/shared';
 import { findCalls } from '../storage/migrate';
-import { getNotes } from '../storage/notes';
-import { listRecordings } from '../storage/recordings';
 import type {
   DriveCall,
   StoredAnswer,
@@ -22,8 +20,7 @@ import type {
   StoredRecording,
   StoredUtterance,
 } from '../storage/types';
-import { listUtterances } from '../storage/utterances';
-import { announceDrive } from './queue';
+import { loadEarlierCalls, uploadEarlierCalls } from './earlierCalls';
 
 /** A known call start may sit this long before the first thing it holds (connecting), ms. */
 const START_SLACK_MS = 5_000;
@@ -76,29 +73,20 @@ export function inferCalls(data: {
 }
 
 /**
- * Queues a session this device never saved, for Drive, and wakes the uploader. Its email is sent by
- * hand ("Send email" in Settings), never by itself.
+ * "Upload to Drive" on a session card: queues the session's calls that this device never saved, each as its
+ * own upload (ADR-0077, core/drive/earlierCalls.ts), and wakes the uploader. Their email is sent by hand
+ * ("Send email" in Settings), never by itself.
  *
- * @param sessionId The session.
+ * @param sessionId  The session.
+ * @param recordings This computer's recordings (the platform's; omit in a browser).
  * @returns How many calls were queued (0: nothing was kept to upload).
  * Called from: features/drive/DriveSessionStatus.tsx ("Upload to Drive")
  */
-export async function uploadSessionToDrive(sessionId: string): Promise<number> {
-  const [lines, answers, notes, recordings] = await Promise.all([
-    listUtterances(sessionId),
-    listAnswers(sessionId),
-    getNotes(sessionId),
-    listRecordings(),
-  ]);
-  const calls = inferCalls({
-    lines,
-    answers,
-    notes,
-    recordings: recordings.filter((recording) => recording.sessionId === sessionId),
-  });
-  for (const call of calls) await queueDriveCall(sessionId, call);
-  const job = await getDriveJob(sessionId);
-  if (job) await putDriveJob({ ...job, manualEmail: true });
-  if (calls.length > 0) announceDrive('queued');
-  return calls.length;
+export async function uploadSessionToDrive(
+  sessionId: string,
+  recordings?: () => Promise<LocalRecording[]>,
+): Promise<number> {
+  return uploadEarlierCalls(
+    await loadEarlierCalls({ sessionId, ...(recordings ? { recordings } : {}) }),
+  );
 }

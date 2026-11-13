@@ -9,7 +9,9 @@
  *          signed ticket, answers where an upload got to, verifies a finished one (tag, size, MD5), and
  *          uploads the page's own small files itself. Also status, each person's switches and team list,
  *          and the "saved" email (one per call, ADR-0073; only Drive ids the company token can verify are
- *          linked) with its list and Retry. The account always comes from the signed-in session, read from
+ *          linked) with its list and Retry. ADR-0077: calls ended from 13 Nov 2026 get two emails ("Call
+ *          saved" once the transcript and notes are in, "Recording saved" once the recording is), and a
+ *          failed email of theirs is tried again by itself, an hour apart, for three days. The account always comes from the signed-in session, read from
  *          the database, never from the request. POSTs must come from a Kite address (Origin check) on
  *          top of the SameSite session cookie.
  * Used by: app/api/google/{connect,callback,status,picker-config,folder,settings,disconnect}/route.ts,
@@ -82,6 +84,7 @@ import {
   finishNotification,
   listNotifications,
   listOverdue,
+  listRetryCandidates,
   readRecord,
   writeRecord,
   type NotificationContent,
@@ -91,9 +94,13 @@ import {
   REPORT_WAIT_MS,
   emailDue,
   isComplete,
+  mergeRecordingReport,
   mergeReport,
+  needsRecordingEmail,
   notificationKey,
   recipientsFor,
+  recordingContent,
+  recordingKey,
   reportKey,
   splitNotificationKey,
 } from './report';
@@ -1064,14 +1071,29 @@ const notifySchema = z
             id: z.uuid(),
             part: z.number().int().min(1).max(999),
             stereo: z.boolean(),
+            // ADR-0077: the computer holding it (its name as the person set it), for email 2's fallback.
+            deviceName: z.string().trim().min(1).max(80).optional(),
           })
           .strict(),
       )
       .max(MAX_SAVED_FILES),
     goneRecordings: z.array(z.uuid()).max(MAX_SAVED_FILES),
     manualOnly: z.boolean(),
+    // ADR-0077: the two-step email rule, whether the Transcripts files are in, the Recordings folder.
+    emailRule: z.literal('two-step').optional(),
+    callFilesSaved: z.boolean().optional(),
+    recordingsFolderUrl: z.string().max(400).refine(isDriveLink).optional(),
   })
   .strict();
+
+/** ADR-0077: a failed two-step email is tried again by itself at most this often, ms. */
+export const AUTO_RETRY_EVERY_MS = 60 * 60_000;
+
+/** ADR-0077: and only for records this young, ms (three days). */
+export const AUTO_RETRY_FOR_MS = 3 * 24 * 60 * 60_000;
+
+/** ADR-0077: and at most this many attempts in all. */
+export const AUTO_RETRY_MAX_ATTEMPTS = 24;
 
 /**
  * Sends a session's one email now: works out the recipients (the person, then the session's own list or
@@ -1097,8 +1119,15 @@ async function deliver(
 ): Promise<'sent' | 'failed'> {
   const member = await getMember(deps.db(), userId);
   const recipients = recipientsFor(email, content, member.alsoNotify);
-  const recordingPending = !isComplete(content);
-  const marks = { recipients, ...(recordingPending ? { recordingPending: true } : {}) };
+  // ADR-0077: email 2 says "Recording not uploaded" when its recording is still missing (24 hours).
+  const recordingMissing = content.kind === 'recording' && !isComplete(content);
+  const recordingPending = content.kind !== 'recording' && !isComplete(content);
+  const marks = {
+    recipients,
+    ...(recordingPending ? { recordingPending: true } : {}),
+    ...(recordingMissing ? { recordingMissing: true } : {}),
+    lastTriedAt: deps.now(),
+  };
   await writeRecord(deps.db(), deps.keys(), userId, sessionId, (current) => ({
     ...(current ?? content),
     ...marks,
@@ -1153,7 +1182,68 @@ async function sendIfDue(
     console.info('drive: email not sent', { status: target });
     return target;
   }
+  // ADR-0077: email 1 goes without the recording, so its "Recording saved" record starts collecting now
+  // (made first: if sending fails, email 2 still follows the recording).
+  if (needsRecordingEmail(record.content)) {
+    const call = splitNotificationKey(sessionId).sessionId;
+    await writeRecord(
+      deps.db(),
+      deps.keys(),
+      userId,
+      recordingKey(call, record.content.callStartedAt),
+      (current) => current ?? recordingContent(record.content),
+    );
+  }
   return deliver(deps, userId, email, sessionId, record.content, attempt, sender);
+}
+
+/**
+ * ADR-0077: tries again, by itself, the failed emails of calls with the two-step rule (never an older
+ * call's): each at most once an hour, for three days and AUTO_RETRY_MAX_ATTEMPTS attempts, so a mail
+ * server that was refusing (a password being replaced) loses nothing once it works again. Only one
+ * request can take each (store.claimRetry).
+ * @param deps   The dependencies.
+ * @param userId One account (on its requests), or null for every account (the scheduled job).
+ * @returns How many were tried.
+ */
+async function retryFailed(deps: GoogleDeps, userId: string | null): Promise<number> {
+  const sender = deps.email();
+  if (!sender) return 0;
+  const now = deps.now();
+  const candidates = await listRetryCandidates(
+    deps.db(),
+    new Date(now - AUTO_RETRY_FOR_MS),
+    userId,
+  );
+  let tried = 0;
+  for (const item of candidates) {
+    if (item.attempts >= AUTO_RETRY_MAX_ATTEMPTS) continue;
+    try {
+      const record = await readRecord(deps.db(), deps.keys(), item.userId, item.sessionId);
+      if (!record || record.content.rule !== 'two-step') continue;
+      const last = record.content.lastTriedAt ?? record.createdAt.getTime();
+      if (now - last < AUTO_RETRY_EVERY_MS) continue;
+      const member = await getMember(deps.db(), item.userId);
+      if (!member.emailEnabled) continue;
+      const taken = await claimRetry(deps.db(), deps.keys(), item.userId, item.sessionId);
+      if (!taken) continue;
+      await deliver(
+        deps,
+        item.userId,
+        item.email,
+        item.sessionId,
+        taken.content,
+        taken.attempt,
+        sender,
+      );
+      tried += 1;
+    } catch (error) {
+      console.error('drive: email retry failed', {
+        error: error instanceof Error ? error.name : 'unknown',
+      });
+    }
+  }
+  return tried;
 }
 
 /**
@@ -1165,6 +1255,8 @@ async function sendIfDue(
  * Called from: handleStatus(), handleNotifications(), handleFlushCron()
  */
 export async function flushOverdue(deps: GoogleDeps, userId: string | null): Promise<number> {
+  // ADR-0077: failed emails of new calls are tried again first (an hour apart).
+  await retryFailed(deps, userId).catch(() => 0);
   const due = await listOverdue(deps.db(), new Date(deps.now() - REPORT_WAIT_MS), userId);
   for (const item of due) {
     try {
@@ -1218,9 +1310,11 @@ export function handleNotify(
       }),
     );
     const report = { ...body, files };
+    // ADR-0077: calls ended from 13 Nov 2026 use the two-step rule ("manual only" does not apply).
+    const twoStep = body.emailRule === 'two-step';
     // ADR-0073: the session's first record, or this call's own.
     const first = await readRecord(deps.db(), deps.keys(), user.id, body.sessionId);
-    const key = reportKey(body.sessionId, body.callStartedAt, first?.content ?? null);
+    const key = reportKey(body.sessionId, body.callStartedAt, first?.content ?? null, twoStep);
     // A session saved before the combined email (or with "Upload to Drive") is never emailed by
     // itself: its new record waits for "Send email".
     const record = await writeRecord(
@@ -1229,10 +1323,22 @@ export function handleNotify(
       user.id,
       key,
       (current) => mergeReport(current, report),
-      body.manualOnly ? 'not-set-up' : 'collecting',
+      body.manualOnly && !twoStep ? 'not-set-up' : 'collecting',
     );
     const status = await sendIfDue(deps, user.id, user.email, key, record);
-    console.info('drive: report', { status, files: record.content.files.length });
+    if (twoStep) {
+      // Email 2: once email 1 went without the recording, this call's recording record collects the
+      // recording files, and goes when they are all in.
+      const recording = recordingKey(body.sessionId, body.callStartedAt);
+      const waiting = await readRecord(deps.db(), deps.keys(), user.id, recording);
+      if (waiting && waiting.status === 'collecting') {
+        const merged = await writeRecord(deps.db(), deps.keys(), user.id, recording, (current) =>
+          mergeRecordingReport(current, report),
+        );
+        await sendIfDue(deps, user.id, user.email, recording, merged);
+      }
+    }
+    console.info('drive: report', { status, files: record.content.files.length, twoStep });
     return reply({ status } satisfies DriveNotifyResponse);
   });
 }
@@ -1280,7 +1386,12 @@ export function handleNotifications(
 
 /** POST /api/drive/notifications' body. */
 const retrySchema = z
-  .object({ sessionId: z.uuid(), call: z.number().int().positive().nullable().optional() })
+  .object({
+    sessionId: z.uuid(),
+    call: z.number().int().positive().nullable().optional(),
+    // ADR-0077: the call's "Recording saved" email (needs the call).
+    recording: z.boolean().optional(),
+  })
   .strict();
 
 /**
@@ -1301,8 +1412,13 @@ export function handleRetry(
     if (!body) return failure(400, 'invalid_request', 'sessionId: invalid');
     const sender = deps.email();
     if (!sender) return failure(409, 'email_not_set_up', 'Email is not set up.');
-    // ADR-0073: which of the session's emails (its first, or a later call's).
-    const key = notificationKey(body.sessionId, body.call ?? null);
+    // ADR-0073: which of the session's emails (its first, or a later call's); ADR-0077: or a call's
+    // "Recording saved" email.
+    if (body.recording && !body.call) return failure(400, 'invalid_request', 'call: required');
+    const key =
+      body.recording && body.call
+        ? recordingKey(body.sessionId, body.call)
+        : notificationKey(body.sessionId, body.call ?? null);
     const taken = await claimRetry(deps.db(), deps.keys(), user.id, key);
     if (!taken) return failure(404, 'not_found', 'There is no email to send for this session.');
     const status = await deliver(
@@ -1340,7 +1456,7 @@ export async function handleFlushCron(
   }
   try {
     const checked = await flushOverdue(deps, null);
-    console.info('drive: daily overdue check', { checked });
+    console.info('drive: overdue check', { checked });
     return reply({ checked });
   } catch (error) {
     console.error('drive: daily overdue check failed', {

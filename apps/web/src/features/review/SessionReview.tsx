@@ -3,7 +3,10 @@
  * Purpose: The session window (Day 5 Stage 6, parity Phase 3): a side menu of four sections, AI
  *          notes with Regenerate, the Transcript with Kite's answers inline, Ask AI, and Call
  *          details; and Delete session (confirmed in an in-app dialog). Everything is read from
- *          this device.
+ *          this device. ADR-0077: the session's calls are listed first, newest first; the notes,
+ *          transcript and details are the picked call's own (the newest by default). With account sync
+ *          it waits for the first pull ("Syncing…") and reads again after every pull, and while a call's
+ *          notes are being written it pulls every few seconds, so a call finished elsewhere shows up.
  * Used by: src/features/review/ReviewPage.tsx; tests/integration/harness/review.tsx
  * Depends on: next/link, src/core/review/load.ts, src/core/notes/regenerate.ts,
  *             src/core/answer/unavailable.ts (notesFailureText), src/core/storage/sessions.ts
@@ -20,9 +23,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { notesFailureText } from '@/core/answer/unavailable';
-import { regenerateNotes } from '@/core/notes/regenerate';
+import { notesUnavailableOf } from '@/core/live/afterCall';
+import { regenerateCallNotes } from '@/core/notes/regenerate';
+import type { CallView } from '@/core/review/calls';
 import { loadReview, type ReviewData } from '@/core/review/load';
+import { usingAccountDatabase } from '@/core/storage/db';
 import { deleteSession } from '@/core/storage/sessions';
+import { pullAccountSync } from '@/core/sync/client';
+import { onSyncApplied } from '@/core/sync/events';
 import { displayTerms } from '@/core/transcript/display';
 import {
   FORMAT_OPTIONS,
@@ -36,6 +44,7 @@ import { Dialog } from '@/ui/Dialog';
 import { LinkButton } from '@/ui/LinkButton';
 import { PageShell } from '@/ui/PageShell';
 import { AskSection } from './AskSection';
+import { CallsList, callDriveText, callLengthText, callNotesText } from './CallsList';
 import { ConversationSection } from './ConversationSection';
 import { NotesSection } from './ReviewSections';
 
@@ -60,6 +69,48 @@ export interface SessionReviewProps {
 
 /** Date and time format, in the user's locale (for example "28 Oct 2026, 14:05"). */
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+/** ADR-0077: while a call's notes are being written, how often the page looks again, ms. */
+const PENDING_REFRESH_MS = 10_000;
+
+/** ADR-0077: how a call was transcribed, in words. */
+const ENGINE_LABELS: Readonly<Record<'deepgram' | 'local' | 'mixed', string>> = {
+  deepgram: 'Cloud (Deepgram)',
+  local: 'On this computer',
+  mixed: 'Cloud, with on-device fallback',
+};
+
+/**
+ * ADR-0077: what the notes section says for a call without notes.
+ *
+ * @param call           The call (null: the session has none).
+ * @param saveTranscript Whether the session saves its transcript.
+ * @returns The words, or undefined for the section's own.
+ * Called from: SessionReview
+ */
+function notesEmptyText(call: CallView | null, saveTranscript: boolean): string | undefined {
+  if (!call || call.notes) return undefined;
+  if (call.notesState === 'skipped') return 'No notes — nothing was heard.';
+  if (call.notesState === 'writing') return 'Writing the notes…';
+  if (call.notesState === 'failed') {
+    if (call.record?.notesError === 'lines-lost') {
+      return 'The notes could not be written: the call window closed before they were done, and the transcript was not saved.';
+    }
+    return notesFailureText(notesUnavailableOf(call.record?.notesError), saveTranscript);
+  }
+  return undefined;
+}
+
+/**
+ * ADR-0077: whether a call is still being finished (running, or its notes not written yet), so the page
+ * keeps looking for it.
+ *
+ * @param call The call.
+ * @returns True while it is.
+ */
+function stillFinishing(call: CallView): boolean {
+  return call.record !== null && (call.record.phase !== 'ended' || call.notesState === 'writing');
+}
 
 /**
  * The label of a choice.
@@ -102,6 +153,9 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
     failed: false,
   });
   const [section, setSection] = useState<SectionName>('notes');
+  // ADR-0077: the call shown (null: the newest), and whether the first sync pull is still running.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
@@ -113,21 +167,50 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
 
   useEffect(() => {
     let cancelled = false;
-    loadReview(sessionId)
-      .catch(() => null)
-      .then((data) => {
-        if (!cancelled) setReview(data);
-      });
+    const load = () =>
+      loadReview(sessionId)
+        .catch(() => null)
+        .then((data) => {
+          if (!cancelled) setReview(data);
+        });
+    // ADR-0077: with account sync, the account's newest data first (a call ended on another device),
+    // then this device's copy; and again after every pull.
+    void (async () => {
+      if (usingAccountDatabase()) {
+        setSyncing(true);
+        await pullAccountSync().catch(() => undefined);
+        if (cancelled) return;
+        setSyncing(false);
+      }
+      await load();
+    })();
+    const stop = onSyncApplied(() => void load());
     return () => {
       cancelled = true;
+      stop();
     };
   }, [sessionId]);
 
-  /** Writes the notes again from what was saved; replaces the notes only. */
+  // ADR-0077: while a call is still being finished (here or on another device), look again every few
+  // seconds, so its notes appear without a reload.
+  const finishing = review?.calls.some(stillFinishing) ?? false;
+  useEffect(() => {
+    if (!finishing) return;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        if (usingAccountDatabase()) await pullAccountSync().catch(() => undefined);
+        setReview(await loadReview(sessionId).catch(() => null));
+      })();
+    }, PENDING_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [finishing, sessionId]);
+
+  /** Writes the shown call's notes again from what was saved; replaces that call's notes only. */
   async function regenerate() {
-    if (!review) return;
+    const call = review?.calls.find((one) => one.id === selectedId) ?? review?.calls[0];
+    if (!review || !call) return;
     setNotesState({ writing: true, status: 'Writing the notes…', failed: false });
-    const outcome = await regenerateNotes(review);
+    const outcome = await regenerateCallNotes(review, call);
     if (outcome.status === 'saved') {
       setNotesState({ writing: false, status: 'The new notes are saved.', failed: false });
       await reload();
@@ -163,7 +246,11 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
   }
 
   if (review === undefined) {
-    return <p className="px-4 py-8 text-[15px] text-ui-muted sm:px-8">Loading the session…</p>;
+    return (
+      <p className="px-4 py-8 text-[15px] text-ui-muted sm:px-8">
+        {syncing ? 'Syncing…' : 'Loading the session…'}
+      </p>
+    );
   }
   if (review === null) {
     return (
@@ -180,9 +267,15 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
     );
   }
 
-  const { session, notes, lines, answers } = review;
+  const { session } = review;
   const title = session.company || 'Untitled session';
   const style = session.preferences.style;
+  // ADR-0077: the shown call (the newest unless another was picked), and its own data.
+  const call = review.calls.find((one) => one.id === selectedId) ?? review.calls[0] ?? null;
+  const lines = call?.lines ?? [];
+  const answers = call?.answers ?? [];
+  const notes = call?.notes ?? null;
+  const drive = call ? callDriveText(call) : null;
 
   return (
     <PageShell
@@ -201,6 +294,16 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
         </>
       }
     >
+      <div className="mb-4">
+        <CallsList
+          calls={review.calls}
+          selectedId={call?.id ?? null}
+          onSelect={(id) => {
+            setSelectedId(id);
+            setNotesState({ writing: false, status: '', failed: false });
+          }}
+        />
+      </div>
       <div className="flex flex-col gap-4 md:flex-row md:items-start">
         <nav
           aria-label="Session sections"
@@ -240,11 +343,55 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
                   <dd>{DATE_FORMAT.format(session.createdAt)}</dd>
                 </div>
                 <div>
-                  <dt className="text-[13px] text-ui-muted">Last call started</dt>
+                  <dt className="text-[13px] text-ui-muted">This call</dt>
                   <dd>
-                    {notes ? DATE_FORMAT.format(notes.callStartedAt) : 'Not known (no notes yet)'}
+                    {call
+                      ? `${DATE_FORMAT.format(call.startedAt)} · ${
+                          call.record?.phase === 'live'
+                            ? 'in progress'
+                            : callLengthText(call.durationMs)
+                        }`
+                      : 'No call yet'}
                   </dd>
                 </div>
+                {call && (
+                  <div>
+                    <dt className="text-[13px] text-ui-muted">Notes</dt>
+                    <dd>{callNotesText(call)}</dd>
+                  </div>
+                )}
+                {call?.record?.sttEngine && (
+                  <div>
+                    <dt className="text-[13px] text-ui-muted">Transcription</dt>
+                    <dd>{ENGINE_LABELS[call.record.sttEngine]}</dd>
+                  </div>
+                )}
+                {drive && (
+                  <div>
+                    <dt className="text-[13px] text-ui-muted">Google Drive</dt>
+                    <dd>{drive}</dd>
+                  </div>
+                )}
+                {call && (
+                  <div>
+                    <dt className="text-[13px] text-ui-muted">Recordings</dt>
+                    <dd>
+                      {call.recordings.length === 0 ? (
+                        'None'
+                      ) : (
+                        <ul aria-label="Recordings of this call">
+                          {call.recordings.map((part) => (
+                            <li key={part.id}>
+                              Part {part.part} (
+                              {part.kind === 'screen' ? 'screen and sound' : 'sound'},{' '}
+                              {callLengthText(part.durationMs)}) · Saved on {part.deviceName}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-[13px] text-ui-muted">Answers</dt>
                   <dd>
@@ -277,6 +424,9 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
             <NotesSection
               notes={notes}
               canWrite={lines.length > 0 || answers.length > 0}
+              {...(notesEmptyText(call, session.saveTranscript)
+                ? { emptyText: notesEmptyText(call, session.saveTranscript) }
+                : {})}
               writing={notesState.writing}
               status={notesState.status}
               failed={notesState.failed}

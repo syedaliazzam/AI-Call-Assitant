@@ -11,10 +11,9 @@ import 'fake-indexeddb/auto';
 import type { CallNotes, DriveStatusResponse } from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildCallFiles, callSlice, notesParagraphs } from '@/core/drive/callFiles';
-import { callIsLive, queueCallForDrive, savesToDrive } from '@/core/drive/queue';
+import { callIsLive, driveSavesNow, savesToDrive } from '@/core/drive/queue';
 import { driveReasonNeedsSettings, driveReasonText } from '@/core/drive/reasons';
 import { CALL_LOCK_NAME } from '@/core/live/callLock';
-import { getDriveJob } from '@/core/storage/driveUploads';
 import { saveNotes } from '@/core/storage/notes';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
 import { resetDb } from '../storage/helpers';
@@ -69,7 +68,7 @@ describe('call files', () => {
   });
 });
 
-describe('queueCallForDrive', () => {
+describe('driveSavesNow', () => {
   const status = (changes: Partial<DriveStatusResponse>): DriveStatusResponse => ({
     configured: true,
     status: 'connected',
@@ -81,7 +80,7 @@ describe('queueCallForDrive', () => {
     ...changes,
   });
 
-  it('queues only when the account saves to Drive', async () => {
+  it('says yes only when the account saves to Drive; offline, the last answer decides', async () => {
     expect(savesToDrive(status({}))).toBe(true);
     expect(savesToDrive(status({ status: 'reconnect' }))).toBe(true);
     expect(savesToDrive(status({ saveEnabled: false }))).toBe(false);
@@ -92,8 +91,14 @@ describe('queueCallForDrive', () => {
       setItem: (k: string, v: string) => storage.set(k, v),
     });
     vi.stubGlobal('fetch', async () => Response.json(status({ status: 'not-connected' })));
-    expect(await queueCallForDrive('a', { startedAt: 1, endedAt: 2 })).toBe(false);
-    expect(await getDriveJob('a')).toBeNull();
+    expect(await driveSavesNow()).toBe(false);
+    vi.stubGlobal('fetch', async () => Response.json(status({})));
+    expect(await driveSavesNow()).toBe(true);
+    // Offline: the answer remembered last time.
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('offline');
+    });
+    expect(await driveSavesNow()).toBe(true);
   });
 });
 

@@ -3,6 +3,8 @@
  * Purpose: Loads everything the session review page shows, from this device's IndexedDB, in
  *          one call: the session, its documents, the saved transcript lines, the answers (with
  *          ratings and notes), the AI notes and the lesson decisions. Also formats call times.
+ *          ADR-0077: and the session's calls, newest first, each with its own lines, answers, notes and
+ *          recordings (core/review/calls.ts).
  * Used by: src/features/review/SessionReview.tsx; src/core/notes/regenerate.ts (types)
  * Depends on: src/core/storage (sessions, documents, utterances, answers, notes, lessons)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review), §7.4;
@@ -11,6 +13,10 @@
  * Nothing here is logged: the page's content stays on this device.
  */
 import { listAnswers } from '../storage/answers';
+import { listCallNotes } from '../storage/callNotes';
+import { listCalls } from '../storage/calls';
+import { listRecordings } from '../storage/recordings';
+import { buildCallViews, type CallNotesView, type CallView } from './calls';
 import { listDocuments } from '../storage/documents';
 import { listLessonsForSession } from '../storage/lessons';
 import { getNotes } from '../storage/notes';
@@ -20,7 +26,6 @@ import type {
   StoredAnswer,
   StoredDocument,
   StoredLesson,
-  StoredNotes,
   StoredUtterance,
 } from '../storage/types';
 import { listUtterances } from '../storage/utterances';
@@ -35,13 +40,15 @@ export interface ReviewData {
   lines: StoredUtterance[];
   /** The saved answers, oldest first (kept even when "Save transcript" was off). */
   answers: StoredAnswer[];
-  /** The AI notes of the latest call, or null when none were written. */
-  notes: StoredNotes | null;
+  /** The AI notes of the newest call that has notes, or null when none were written (Ask AI reads them). */
+  notes: CallNotesView | null;
   /**
    * The user's decisions on lessons this session's notes proposed (Day 5 Stage 7), stored
    * apart from the notes so Regenerate never loses them.
    */
   lessonDecisions: StoredLesson[];
+  /** ADR-0077: the session's calls, newest first, each with its own lines, answers, notes and recordings. */
+  calls: CallView[];
 }
 
 /**
@@ -49,19 +56,34 @@ export interface ReviewData {
  *
  * @param sessionId The session id (from the URL).
  * @returns The data, or null when this device has no such session.
- * Called from: SessionReview.tsx (on open, after Regenerate); tests
+ * Called from: SessionReview.tsx (on open, after Regenerate, after a sync); tests
  */
 export async function loadReview(sessionId: string): Promise<ReviewData | null> {
   const session = await getSession(sessionId);
   if (!session) return null;
-  const [documents, lines, answers, notes, lessonDecisions] = await Promise.all([
-    listDocuments(sessionId),
-    listUtterances(sessionId),
-    listAnswers(sessionId),
-    getNotes(sessionId),
-    listLessonsForSession(sessionId),
-  ]);
-  return { session, documents, lines, answers, notes, lessonDecisions };
+  const [documents, lines, answers, legacyNotes, lessonDecisions, records, callNotes, recordings] =
+    await Promise.all([
+      listDocuments(sessionId),
+      listUtterances(sessionId),
+      listAnswers(sessionId),
+      getNotes(sessionId),
+      listLessonsForSession(sessionId),
+      listCalls(sessionId),
+      listCallNotes(sessionId),
+      listRecordings(),
+    ]);
+  const calls = buildCallViews({
+    sessionId,
+    calls: records,
+    lines,
+    answers,
+    callNotes,
+    legacyNotes,
+    recordings,
+    now: Date.now(),
+  });
+  const notes = calls.find((call) => call.notes)?.notes ?? null;
+  return { session, documents, lines, answers, notes, lessonDecisions, calls };
 }
 
 /**

@@ -11,7 +11,8 @@
 'use client';
 
 import { formatCallTime } from '@/core/review/load';
-import type { SessionType, StoredLesson, StoredNotes } from '@/core/storage/types';
+import type { CallNotesView } from '@/core/review/calls';
+import type { SessionType, StoredLesson } from '@/core/storage/types';
 import { Button } from '@/ui/Button';
 import { ProposedLessons } from './ProposedLessons';
 
@@ -43,8 +44,13 @@ function ratingLabel(rating: 'up' | 'down' | null | undefined): string {
 
 /** Props for NotesSection. */
 export interface NotesSectionProps {
-  /** The saved notes, or null. */
-  notes: StoredNotes | null;
+  /** The saved notes (ADR-0077: the shown call's), or null. */
+  notes: CallNotesView | null;
+  /**
+   * ADR-0077: what to say when there are no notes ("No notes — nothing was heard", "Writing the notes…");
+   * absent: the words for a session with nothing written yet.
+   */
+  emptyText?: string;
   /** True when there is something saved to write notes from (lines or answers). */
   canWrite: boolean;
   /** True while notes are being written. */
@@ -105,7 +111,7 @@ export function NotesSection(props: NotesSectionProps) {
       )}
       {!props.canWrite && !notes && (
         <p className="mt-2 text-[13px] text-ui-muted">
-          Nothing was saved from this session to write notes from.
+          {props.emptyText ?? 'Nothing was saved from this session to write notes from.'}
         </p>
       )}
 
@@ -181,7 +187,7 @@ export function NotesSection(props: NotesSectionProps) {
       ) : (
         props.canWrite && (
           <p className="mt-2 text-[13px] text-ui-muted">
-            No notes have been written for this session.
+            {props.emptyText ?? 'No notes have been written for this session.'}
           </p>
         )
       )}

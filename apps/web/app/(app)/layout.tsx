@@ -18,6 +18,7 @@ import { AccountNameProvider } from '@/features/shell/AccountName';
 import { AppShell } from '@/features/shell/AppShell';
 import { DriveNotices } from '@/features/drive/DriveNotices';
 import { DriveUploader } from '@/features/drive/DriveUploader';
+import { AfterCallRunner } from '@/features/live/AfterCallRunner';
 import { SyncScope } from '@/features/sync/SyncScope';
 import { syncEnabledFor } from '@/server/calldata/flag';
 import { requireUser } from '@/server/guard';
@@ -47,6 +48,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
         >
           {children}
         </AppShell>
+        {/* ADR-0077: a call's notes and Drive queueing finish here, also after its window closed. */}
+        <AfterCallRunner />
         {/* 1.6.0 (ADR-0072): calls are saved to Google Drive in the background, after the call. */}
         <DriveUploader />
         <DriveNotices />

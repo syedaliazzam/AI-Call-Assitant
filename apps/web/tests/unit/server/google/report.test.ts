@@ -5,6 +5,7 @@
  * due when complete or 24 hours after the first report; recipients are the person and the session's own
  * list or the Settings list; older records' files are recognised by name. ADR-0073: each call has its own
  * record key (the session's first record keeps the session id). All values are invented.
+ * ADR-0077: the two-step rule (email 1 at the transcript and notes; email 2 for the recording).
  */
 import type { DriveNotifyRequest } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
@@ -13,12 +14,17 @@ import {
   emailDue,
   fileKindOf,
   isComplete,
+  mergeRecordingReport,
   mergeReport,
   missingRecordingFiles,
+  needsRecordingEmail,
   notificationKey,
   recipientsFor,
+  recordingContent,
+  recordingKey,
   reportKey,
   splitNotificationKey,
+  type SessionReport,
 } from '@/server/google/report';
 
 /** An invented report. */
@@ -105,10 +111,11 @@ describe('record keys (ADR-0073: one email per call)', () => {
   it('keeps the session id for the first record and adds the call for later ones, both ways', () => {
     expect(notificationKey(SESSION, null)).toBe(SESSION);
     expect(notificationKey(SESSION, 1_794_389_400_000)).toBe(`${SESSION}~1794389400000`);
-    expect(splitNotificationKey(SESSION)).toEqual({ sessionId: SESSION, call: null });
+    expect(splitNotificationKey(SESSION)).toEqual({ sessionId: SESSION, call: null, kind: 'call' });
     expect(splitNotificationKey(`${SESSION}~1794389400000`)).toEqual({
       sessionId: SESSION,
       call: 1_794_389_400_000,
+      kind: 'call',
     });
   });
 
@@ -116,5 +123,73 @@ describe('record keys (ADR-0073: one email per call)', () => {
     expect(reportKey(SESSION, 100, null)).toBe(SESSION);
     expect(reportKey(SESSION, 100, { callStartedAt: 100 })).toBe(SESSION);
     expect(reportKey(SESSION, 200, { callStartedAt: 100 })).toBe(`${SESSION}~200`);
+  });
+});
+
+describe('the two-step rule (ADR-0077)', () => {
+  /** A two-step report. */
+  const TWO: SessionReport = {
+    title: 'Acme',
+    callStartedAt: 5_000,
+    durationMs: 60_000,
+    files: [
+      { name: 't.txt', folder: 'Transcripts', key: 'call:5000:transcript-txt', fileId: 'T1' },
+    ],
+    folderUrl: 'https://drive.google.com/drive/folders/F',
+    timeZone: 'UTC',
+    alsoNotify: null,
+    expectedRecordings: [{ id: 'r1', part: 1, stereo: false }],
+    goneRecordings: [],
+    emailRule: 'two-step',
+    callFilesSaved: true,
+    recordingsFolderUrl: 'https://drive.google.com/drive/folders/R',
+  };
+
+  it('names the recording record by the call, and reads it back', () => {
+    expect(recordingKey('s1', 5_000)).toBe('s1~5000~recording');
+    expect(splitNotificationKey('s1~5000~recording')).toEqual({
+      sessionId: 's1',
+      call: 5_000,
+      kind: 'recording',
+    });
+    // A two-step call never makes a new plain record; it uses the first only for the same call.
+    expect(reportKey('s1', 5_000, null, true)).toBe('s1~5000');
+    expect(reportKey('s1', 5_000, { callStartedAt: 5_000 }, true)).toBe('s1');
+    expect(reportKey('s1', 5_000, null)).toBe('s1');
+  });
+
+  it('email 1 is due once the transcript and notes are in, without waiting for the recording', () => {
+    const merged = mergeReport(null, TWO);
+    expect(merged).toMatchObject({ rule: 'two-step', callFilesSaved: true });
+    expect(emailDue(merged, 0, 1)).toBe('complete');
+    expect(emailDue({ ...merged, callFilesSaved: false }, 0, 1)).toBeNull();
+    expect(emailDue({ ...merged, callFilesSaved: false }, 0, REPORT_WAIT_MS)).toBe('overdue');
+    // The flag only turns on, and the rule stays.
+    const later = mergeReport(merged, { ...TWO, callFilesSaved: false, emailRule: undefined });
+    expect(later).toMatchObject({ rule: 'two-step', callFilesSaved: true });
+  });
+
+  it('needs email 2 only when a recording is expected and not all in; email 2 waits for it', () => {
+    const merged = mergeReport(null, TWO);
+    expect(needsRecordingEmail(merged)).toBe(true);
+    expect(needsRecordingEmail({ ...merged, gone: ['r1'] })).toBe(false);
+    expect(needsRecordingEmail({ ...merged, expected: [] })).toBe(false);
+    const recording = recordingContent(merged);
+    expect(recording).toMatchObject({
+      kind: 'recording',
+      files: [],
+      recordingsFolderUrl: 'https://drive.google.com/drive/folders/R',
+    });
+    expect(emailDue(recording, 0, 1)).toBeNull();
+    const withFile = mergeRecordingReport(recording, {
+      ...TWO,
+      files: [
+        ...TWO.files,
+        { name: 'p1.mkv', folder: 'Recordings', key: 'rec:r1:main', fileId: 'R1' },
+      ],
+    });
+    expect(withFile.files.map((file) => file.key)).toEqual(['rec:r1:main']);
+    expect(emailDue(withFile, 0, 1)).toBe('complete');
+    expect(needsRecordingEmail(withFile)).toBe(false);
   });
 });

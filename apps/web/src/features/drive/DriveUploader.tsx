@@ -4,7 +4,9 @@
  *          shortly after the page opens, when a call is queued or Drive settings change in any window,
  *          when the computer comes back online, and every minute (which also picks up the end of a call
  *          in another window). One window of the profile uploads at a time (core/drive/runner.ts); while a
- *          call is live nothing is uploaded. Renders nothing.
+ *          call is live nothing is uploaded. ADR-0077: also asks for the Drive status once an hour, which
+ *          has the server send any "saved" email that is due (24-hour fallbacks, failed emails tried again):
+ *          the scheduled job runs only daily on the Vercel plan in use. Renders nothing.
  * Used by: app/(app)/layout.tsx, app/home/page.tsx
  * Depends on: src/core/drive/{runner,queue}.ts, src/platform, src/features/shell/AccountName.tsx
  * Architecture: ADR-0072
@@ -12,6 +14,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { driveApi } from '@/core/drive/api';
 import { onDriveMessage } from '@/core/drive/queue';
 import { createUploaderDeps, runUploaderOnce } from '@/core/drive/runner';
 import { useAccountName } from '@/features/shell/AccountName';
@@ -22,6 +25,9 @@ const FIRST_RUN_MS = 4_000;
 
 /** How often the queue is looked at, ms. */
 const EVERY_MS = 60_000;
+
+/** ADR-0077: how often the server is asked to send emails that are due (the status route does it), ms. */
+const EMAIL_CHECK_MS = 60 * 60_000;
 
 /**
  * The background uploader.
@@ -61,6 +67,12 @@ export function DriveUploader() {
     };
     const first = window.setTimeout(() => void run(), FIRST_RUN_MS);
     const timer = window.setInterval(() => void run(), EVERY_MS);
+    // The answer is not needed: asking is what has the server look (failures are tried next hour).
+    const emails = window.setInterval(() => {
+      void driveApi()
+        .status()
+        .catch(() => undefined);
+    }, EMAIL_CHECK_MS);
     const stop = onDriveMessage(() => void run());
     const online = () => void run();
     window.addEventListener('online', online);
@@ -68,6 +80,7 @@ export function DriveUploader() {
       stopped = true;
       window.clearTimeout(first);
       window.clearInterval(timer);
+      window.clearInterval(emails);
       stop();
       window.removeEventListener('online', online);
     };

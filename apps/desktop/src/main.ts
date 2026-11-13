@@ -9,7 +9,8 @@
  *             src/screenshot.ts, src/windows.ts, src/snapZones.ts, src/home.ts, src/protection.ts,
  *             src/store.ts, src/icon.ts, src/accurate/host.ts (accurate transcription, ADR-0034),
  *             src/recordings/host.ts (meeting recording and the player, 1.5.0, ADR-0068),
- *             src/drive/host.ts (Google Drive uploads and the saved notification, 1.6.0, ADR-0072)
+ *             src/drive/host.ts (Google Drive uploads and the saved notification, 1.6.0, ADR-0072),
+ *             src/priority.ts (background priority and the call state on a closed window, 1.6.3, ADR-0077)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * The windows (v1.1.0): the home panel between calls; the main window for the dashboard, the wizard,
@@ -66,6 +67,7 @@ import { createHomeWindow, isPanelSize, type HomeWindow } from './home';
 import { startUpdater } from './updater';
 import { installHotkeys, isKiteSender, type HotkeyController } from './hotkeys';
 import { appIconPath } from './icon';
+import { endCallOnClose, runBelowNormal } from './priority';
 import { createProtection, installProtection, type Protection } from './protection';
 import { installScreenshot } from './screenshot';
 import { createSnapZones } from './snapZones';
@@ -307,7 +309,8 @@ function createMainWindow(config: DesktopConfig, page = '/', minimized = false):
     compact?.close();
     // No page left to receive them: give the keys back to other apps.
     hotkeys?.disable();
-    callActive = false;
+    // 1.6.3 (ADR-0077): a call the window took with it has ended for Drive too (uploads resume).
+    callActive = endCallOnClose(callActive, drive);
     // v1.1.0: back to the panel. It has nothing to come back to only when the app is quitting.
     if (!quitting) home?.open();
   });
@@ -628,13 +631,7 @@ function start(): void {
         });
         // 1.5.1 (ADR-0069): below-normal priority, so the live speech engine (in the page) always comes
         // first on a busy computer. A failure only leaves the normal priority.
-        child.once('spawn', () => {
-          try {
-            if (child.pid) os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
-          } catch {
-            console.warn('desktop: accurate priority not lowered');
-          }
-        });
+        runBelowNormal(child, 'accurate');
         return child as unknown as WorkerProcess;
       },
     });
@@ -651,11 +648,15 @@ function start(): void {
         path.join(app.getPath('documents'), APP_NAME, 'Recordings'),
       dataFolder: app.getPath('userData'),
       store,
-      forkWorker: () =>
-        utilityProcess.fork(path.join(__dirname, 'recording-worker.js'), [], {
+      forkWorker: () => {
+        const child = utilityProcess.fork(path.join(__dirname, 'recording-worker.js'), [], {
           serviceName: `${APP_NAME} recording finaliser`,
           stdio: 'ignore',
-        }) as unknown as FinaliseProcess,
+        });
+        // 1.6.3 (ADR-0077): below-normal priority too, so finalising a recording never slows a call.
+        runBelowNormal(child, 'recording finaliser');
+        return child as unknown as FinaliseProcess;
+      },
       openPlayer,
       dialog,
       shell,

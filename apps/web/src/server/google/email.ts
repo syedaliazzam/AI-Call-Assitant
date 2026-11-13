@@ -7,6 +7,8 @@
  *          (never transcript, notes, answer or document text: those are not inputs), the test email,
  *          and sending through SMTP (nodemailer): port 465 with TLS from the start, any other port with
  *          STARTTLS required (never plain text), 10-second timeouts. Each attempt has a fixed Message-ID.
+ *          ADR-0077: calls ended from 13 Nov 2026 get two emails instead: "Call saved" (transcript and
+ *          notes in Drive) and "Recording saved" (or "Recording not uploaded" after 24 hours).
  * Used by: src/server/google/api.ts (notify, retry, test email)
  * Depends on: nodemailer, @kite/shared (savedHeadline), src/server/google/{config,store}.ts (types)
  * Architecture: ADR-0072; docs/deploy/google-drive.md (SMTP setup)
@@ -240,6 +242,189 @@ export function buildSavedEmail(
   return { subject: `${headline} — ${content.title}`, text, html };
 }
 
+/** ADR-0077: email 1's line while the call's recording is still uploading. */
+export const RECORDING_UPLOADING_TEXT =
+  'Recording: uploading… A second email follows when it is in Google Drive.';
+
+/** The fields the ADR-0077 emails read (and nothing else, so no call content can appear in them). */
+type CallEmailContent = Pick<
+  NotificationContent,
+  | 'title'
+  | 'callStartedAt'
+  | 'durationMs'
+  | 'files'
+  | 'folderUrl'
+  | 'timeZone'
+  | 'recordingPending'
+  | 'recordingsFolderUrl'
+  | 'expected'
+  | 'recordingMissing'
+>;
+
+/**
+ * Puts an email's parts together, as text and HTML: a headline, the date and length, notes in bold, a
+ * button to the session folder, the files with their links, and extra links.
+ *
+ * @param parts The parts.
+ * @returns Subject, text and HTML.
+ */
+function composeEmail(parts: {
+  /** The headline (also the subject, with the title). */
+  headline: string;
+  /** The session's title. */
+  title: string;
+  /** "Date" and "Duration" rows. */
+  rows: [string, string][];
+  /** Lines shown in bold under them. */
+  notes: string[];
+  /** The session folder. */
+  folderUrl: string;
+  /** The files listed. */
+  files: EmailFile[];
+  /** Extra links, as label and address. */
+  links: [string, string][];
+  /** The footer's first line. */
+  footer: string;
+}): SavedEmail {
+  const access = 'People need access to the Drive folder to open the links.';
+  const subject = `${parts.headline} — ${parts.title}`;
+  const text = [
+    subject,
+    '',
+    ...parts.rows.map(([label, value]) => `${label}: ${value}`),
+    ...(parts.notes.length > 0 ? ['', ...parts.notes] : []),
+    '',
+    `Open folder in Drive: ${parts.folderUrl}`,
+    ...parts.links.map(([label, url]) => `${label}: ${url}`),
+    ...(parts.files.length > 0
+      ? [
+          '',
+          'Files:',
+          ...parts.files.map((item) =>
+            item.url
+              ? `- ${item.label}: ${item.url}  (${item.name})`
+              : `- ${item.label} (${item.name})`,
+          ),
+        ]
+      : []),
+    '',
+    access,
+    parts.footer,
+    '',
+  ].join('\n');
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:2px 12px 2px 0">${escapeHtml(label)}</td><td style="padding:2px 0">${escapeHtml(value)}</td></tr>`;
+  const fileItem = (item: EmailFile) =>
+    `<li style="margin:0 0 4px">${
+      item.url
+        ? `<a href="${escapeHtml(item.url)}" style="font-weight:bold">${escapeHtml(item.label)}</a>`
+        : `<strong>${escapeHtml(item.label)}</strong>`
+    } <span style="font-size:12px">${escapeHtml(item.name)}</span></li>`;
+  const button = `<a href="${escapeHtml(parts.folderUrl)}" style="display:inline-block;padding:10px 18px;border:2px solid;border-radius:6px;font-weight:bold;text-decoration:none">Open folder in Drive</a>`;
+  const html = [
+    '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5">',
+    `<p style="font-size:16px;font-weight:bold;margin:0 0 12px">${escapeHtml(parts.headline)} — ${escapeHtml(parts.title)}</p>`,
+    '<table style="border-collapse:collapse;margin:0 0 12px">',
+    ...parts.rows.map(([label, value]) => row(label, value)),
+    '</table>',
+    ...parts.notes.map(
+      (note) => `<p style="margin:0 0 12px;font-weight:bold">${escapeHtml(note)}</p>`,
+    ),
+    `<p style="margin:0 0 16px">${button}</p>`,
+    ...parts.links.map(
+      ([label, url]) =>
+        `<p style="margin:0 0 12px"><a href="${escapeHtml(url)}">${escapeHtml(label)}</a></p>`,
+    ),
+    ...(parts.files.length > 0
+      ? [
+          '<p style="margin:0 0 4px;font-weight:bold">Files</p>',
+          `<ul style="margin:0 0 16px;padding-left:20px">${parts.files.map(fileItem).join('')}</ul>`,
+        ]
+      : []),
+    `<p style="margin:0;font-size:12px">${escapeHtml(access)}<br>${escapeHtml(parts.footer)}</p>`,
+    '</div>',
+  ].join('');
+  return { subject, text, html };
+}
+
+/**
+ * ADR-0077, email 1 "Call saved": sent as soon as the call's transcript and notes are in Drive. Links to
+ * them (and to any recording already in), the Recordings folder, and "Recording: uploading…" while a
+ * recording is expected but not in yet. A call that saved no transcript still gets it.
+ *
+ * @param content The call's record (only the fields listed in CallEmailContent are read).
+ * @returns Subject, text and HTML.
+ * Called from: sendSavedEmail(); tests
+ */
+export function buildCallSavedEmail(content: CallEmailContent): SavedEmail {
+  const length = formatLength(content.durationMs);
+  const files = emailFiles(content.files);
+  const hasTranscript = content.files.some((file) => file.folder === 'Transcripts');
+  return composeEmail({
+    headline: 'Call saved',
+    title: content.title,
+    rows: [
+      ['Date', formatWhen(content.callStartedAt, content.timeZone)],
+      ...(length ? [['Duration', length] as [string, string]] : []),
+    ],
+    notes: [
+      ...(hasTranscript ? [] : ['No transcript or notes were saved for this call.']),
+      ...(content.recordingPending ? [RECORDING_UPLOADING_TEXT] : []),
+    ],
+    folderUrl: content.folderUrl,
+    files,
+    links: content.recordingsFolderUrl ? [['Recordings folder', content.recordingsFolderUrl]] : [],
+    footer: 'Sent by Paramount AI when a call is saved to Google Drive.',
+  });
+}
+
+/**
+ * ADR-0077, email 2: "Recording saved" with links to the recording's parts once all of them are in Drive,
+ * or, 24 hours after email 1 without them, "Recording not uploaded: open Paramount AI on <computer>".
+ *
+ * @param content The call's "Recording saved" record.
+ * @returns Subject, text and HTML.
+ * Called from: sendSavedEmail(); tests
+ */
+export function buildRecordingEmail(content: CallEmailContent): SavedEmail {
+  const when = formatWhen(content.callStartedAt, content.timeZone);
+  const links: [string, string][] = content.recordingsFolderUrl
+    ? [['Recordings folder', content.recordingsFolderUrl]]
+    : [];
+  if (content.recordingMissing) {
+    const computers = [
+      ...new Set(
+        (content.expected ?? []).flatMap((one) => (one.deviceName ? [one.deviceName] : [])),
+      ),
+    ];
+    const where =
+      computers.length > 0 ? computers.join(' or ') : 'the computer that recorded the call';
+    return composeEmail({
+      headline: 'Recording not uploaded',
+      title: content.title,
+      rows: [['Date', when]],
+      notes: [
+        `The recording of this call is not in Google Drive yet. Open Paramount AI on ${where} to finish the upload.`,
+      ],
+      folderUrl: content.folderUrl,
+      files: emailFiles(content.files),
+      links,
+      footer:
+        'Sent by Paramount AI 24 hours after a call when its recording has not reached Google Drive.',
+    });
+  }
+  return composeEmail({
+    headline: 'Recording saved',
+    title: content.title,
+    rows: [['Date', when]],
+    notes: [],
+    folderUrl: content.folderUrl,
+    files: emailFiles(content.files),
+    links,
+    footer: 'Sent by Paramount AI when a call recording is saved to Google Drive.',
+  });
+}
+
 /** One message to send. */
 export interface OutgoingEmail {
   /** The recipients. */
@@ -370,7 +555,13 @@ export async function sendSavedEmail(
   content: NotificationContent,
   messageId: string,
 ): Promise<'sent' | 'rejected' | 'unreachable'> {
-  const email = buildSavedEmail(content);
+  // ADR-0077: the two emails of the two-step rule; older calls keep their single email.
+  const email =
+    content.kind === 'recording'
+      ? buildRecordingEmail(content)
+      : content.rule === 'two-step'
+        ? buildCallSavedEmail(content)
+        : buildSavedEmail(content);
   try {
     await mailer(config, { to: content.recipients, ...email, messageId });
     return 'sent';
