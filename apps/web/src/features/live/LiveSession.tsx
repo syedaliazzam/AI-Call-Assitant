@@ -5,7 +5,8 @@
  *          prompt cache for the session (Day 3 Stage 5), then shows LivePage.
  *          A session that does not exist here gets a message and a link to the dashboard.
  * Used by: app/(app)/live/[id]/page.tsx
- * Depends on: src/core/storage (sessions, documents, utterances),
+ * Depends on: src/core/storage (sessions, documents, utterances), (ADR-0076) the cloud-transcription flag
+ *             from the route and buildKeyterms(),
  *             src/core/stt/sessionHotwords.ts, src/core/answer/warm.ts,
  *             src/core/documents/summary.ts (ADR-0067), ./LivePage.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §8.1
@@ -31,7 +32,7 @@ import { listDocuments } from '@/core/storage/documents';
 import { getSession } from '@/core/storage/sessions';
 import type { Session, StoredDocument, StoredUtterance } from '@/core/storage/types';
 import { listUtterances } from '@/core/storage/utterances';
-import { buildHotwords, hotwordsText } from '@/core/stt/sessionHotwords';
+import { buildHotwords, buildKeyterms, hotwordsText } from '@/core/stt/sessionHotwords';
 import { getPlatform } from '@/platform';
 import { ErrorScreen } from '@/ui/ErrorScreen';
 import { LinkButton } from '@/ui/LinkButton';
@@ -42,6 +43,8 @@ import { LivePage } from './LivePage';
 export interface LiveSessionProps {
   /** The session id from the URL. */
   sessionId: string;
+  /** ADR-0076: this account uses cloud transcription (decided on the server; default false). */
+  cloudStt?: boolean;
 }
 
 /** What the loader produced. */
@@ -69,6 +72,8 @@ type Loaded =
       hotwords: string;
       /** How many hotwords. */
       hotwordCount: number;
+      /** ADR-0076: the session's keyterms for cloud transcription. */
+      keyterms: string[];
       /** Lines saved by earlier calls. */
       savedLines: StoredUtterance[];
       /** The approved lessons for this session type (Day 5 Stage 7), oldest approval first. */
@@ -90,7 +95,7 @@ const subscribeNever = () => () => {};
  * @returns The live screen, the phone message, or a loading / not-found message.
  * Rendered by: app/(app)/live/[id]/page.tsx
  */
-export function LiveSession({ sessionId }: LiveSessionProps) {
+export function LiveSession({ sessionId, cloudStt = false }: LiveSessionProps) {
   // Phones and tablets cannot run a call (platform/). The server renders as if they could and
   // the browser corrects it after hydration, so the two renders match.
   const supported = useSyncExternalStore(
@@ -128,6 +133,7 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
         documents,
         hotwords: hotwordsText(hotwords),
         hotwordCount: hotwords.length,
+        keyterms: buildKeyterms(session, documents),
         savedLines,
         lessons,
       } as const;
@@ -151,6 +157,8 @@ export function LiveSession({ sessionId }: LiveSessionProps) {
         documents={loaded.documents}
         hotwords={loaded.hotwords}
         hotwordCount={loaded.hotwordCount}
+        keyterms={loaded.keyterms}
+        cloudStt={cloudStt}
         savedLines={loaded.savedLines}
         lessons={loaded.lessons}
       />

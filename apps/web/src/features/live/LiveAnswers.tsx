@@ -153,6 +153,13 @@ export interface LiveAnswersProps {
    * the ⋮ menu's type). Absent where the app cannot record, and in harnesses.
    */
   recording?: CallRecording;
+  /**
+   * ADR-0076: the question rules ('newest' in calls with cloud transcription; default 'legacy'), for
+   * presses and auto-answer.
+   */
+  rules?: 'newest' | 'legacy';
+  /** ADR-0076 (E3 rule 2): waits until the other side is transcribed up to a press (capped). */
+  catchUp?: (atUnix: number) => Promise<{ waitedMs: number; timedOut: boolean }>;
 }
 
 /** How many of the latest bubbles the overlay gets: the call window and Review have them all. */
@@ -257,6 +264,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     callStartedAt: props.callStartedAt,
     store: props.store,
     paused: props.hygiene === 'paused',
+    ...(props.rules ? { rules: props.rules } : {}),
+    ...(props.catchUp ? { catchUp: props.catchUp } : {}),
   });
   // Grows with each Chat or Ask Kite shortcut: the message box (always shown) takes the typing.
   const [focusSignal, setFocusSignal] = useState(0);
@@ -278,6 +287,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
   );
   // Desktop app: global shortcuts another app already uses (they work only while Kite has focus).
   const [taken, setTaken] = useState<string[]>([]);
+  // ADR-0076 (G4): the Answer shortcut's label when another app holds it (a lasting overlay warning).
+  const [answerTaken, setAnswerTaken] = useState<string | null>(null);
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
   const entry = answers.index >= 0 ? (answers.entries[answers.index] ?? null) : null;
   const answering = answers.entries.some((candidate) => candidate.status === 'streaming');
@@ -290,6 +301,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     autoAnswer: answers.autoAnswer,
     answeredState: answers.answeredState,
     enabled: autoOn,
+    ...(props.rules ? { rules: props.rules } : {}),
+    autoNewest: answers.autoNewest,
   });
   const [compactNotice, setCompactNotice] = useState<string | null>(null);
   // Day 6 Stage 4e: no connection pauses answers (banner); a signed-out answer offers to sign
@@ -376,6 +389,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       hygiene: props.hygiene ?? 'ok',
       headphonesHint,
       ...(props.callNotice ? { callNotice: props.callNotice } : {}),
+      ...(answerTaken ? { answerKeyTaken: answerTaken } : {}),
       sessionId: props.session.id,
       micDeviceId: props.micDeviceId ?? '',
       ...(props.themSourceLabel ? { themSourceLabel: props.themSourceLabel } : {}),
@@ -429,6 +443,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     props.hygiene,
     headphonesHint,
     props.callNotice,
+    answerTaken,
     props.session.id,
     props.session.contactName,
     props.micDeviceId,
@@ -531,6 +546,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'auto-answer') setAutoChoice(command.on);
       else if (command.type === 'mic') overlayProps.current.onMic?.(command.deviceId);
       else if (command.type === 'still-here') overlayProps.current.onStillHere?.();
+      // ADR-0076 (G4): Settings at Hotkeys, in the pages window (never this window: the call stays).
+      else if (command.type === 'hotkey-settings')
+        getPlatform().openPagesWindow('/settings#hotkeys');
       else if (command.type === 'resume') overlayProps.current.onResume?.();
       else if (command.type === 'headphones-seen') {
         markHintSeen('headphones');
@@ -614,47 +632,53 @@ export function LiveAnswers(props: LiveAnswersProps) {
   // Mounted only during a call, so the desktop app's global shortcuts are on only then.
   useEffect(
     () =>
-      getPlatform().onHotkey((action) => {
-        if (action === 'answer') actions.current.answer('hotkey');
-        else if (action === 'chat') {
-          setFocusSignal((count) => count + 1);
-          setChatCount((count) => count + 1);
-          // Pressed twice (spec S14): the microphone comes on too.
-          const now = Date.now();
-          if (isDoublePress(lastChatPress.current, now)) {
-            dictationRef.current?.start(chatTargetRef.current);
+      getPlatform().onHotkey(
+        (action) => {
+          if (action === 'answer') actions.current.answer('hotkey');
+          else if (action === 'chat') {
+            setFocusSignal((count) => count + 1);
+            setChatCount((count) => count + 1);
+            // Pressed twice (spec S14): the microphone comes on too.
+            const now = Date.now();
+            if (isDoublePress(lastChatPress.current, now)) {
+              dictationRef.current?.start(chatTargetRef.current);
+            }
+            lastChatPress.current = now;
+          } else if (action === 'screenshot-send') {
+            setScreenshotSendCount((count) => count + 1);
+            chatBox.current?.sendWithScreenshot();
+          } else if (action === 'clear') clearView.current();
+          else if (action === 'clear-transcript') clearTranscript.current();
+          else if (action === 'prev') actions.current.prev();
+          else if (action === 'next') actions.current.next();
+          else if (action === 'screenshot')
+            actions.current.screenshot(undefined, 'screenshot-hotkey');
+          else if (action === 'script-bar') {
+            // Ctrl+Alt+S (v1.0.2): the overlay becomes the script bar, or full again. The overlay
+            // must be open for it to show.
+            setScriptBar((on) => !on);
+            openOverlay(sessionIdRef.current).catch(() => undefined);
+          } else if (action === 'click-through') {
+            // v1.3.2: Ctrl+Alt+X from any app turns Click-through on or off.
+            setClickThrough((on) => !on);
+          } else if (action === 'record') {
+            // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R from any app: the bars ask Start or Stop (consent
+            // is a click, never the shortcut alone).
+            overlayProps.current.recording?.prompt();
+          } else if (action === 'ask-kite') {
+            // Leaving this page would end the call, so during a call the shortcut opens the chat
+            // box, here and in the overlay, set to a private answer (ADR-0030).
+            setFocusSignal((count) => count + 1);
+            setTarget('kite');
+            setChatTarget(sessionIdRef.current, 'kite');
+            setAskKiteCount((count) => count + 1);
           }
-          lastChatPress.current = now;
-        } else if (action === 'screenshot-send') {
-          setScreenshotSendCount((count) => count + 1);
-          chatBox.current?.sendWithScreenshot();
-        } else if (action === 'clear') clearView.current();
-        else if (action === 'clear-transcript') clearTranscript.current();
-        else if (action === 'prev') actions.current.prev();
-        else if (action === 'next') actions.current.next();
-        else if (action === 'screenshot')
-          actions.current.screenshot(undefined, 'screenshot-hotkey');
-        else if (action === 'script-bar') {
-          // Ctrl+Alt+S (v1.0.2): the overlay becomes the script bar, or full again. The overlay
-          // must be open for it to show.
-          setScriptBar((on) => !on);
-          openOverlay(sessionIdRef.current).catch(() => undefined);
-        } else if (action === 'click-through') {
-          // v1.3.2: Ctrl+Alt+X from any app turns Click-through on or off.
-          setClickThrough((on) => !on);
-        } else if (action === 'record') {
-          // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R from any app: the bars ask Start or Stop (consent
-          // is a click, never the shortcut alone).
-          overlayProps.current.recording?.prompt();
-        } else if (action === 'ask-kite') {
-          // Leaving this page would end the call, so during a call the shortcut opens the chat
-          // box, here and in the overlay, set to a private answer (ADR-0030).
-          setFocusSignal((count) => count + 1);
-          setTarget('kite');
-          setChatTarget(sessionIdRef.current, 'kite');
-          setAskKiteCount((count) => count + 1);
-        }
-      }, setTaken),
+        },
+        (labels, answer) => {
+          setTaken(labels);
+          setAnswerTaken(answer ?? null);
+        },
+      ),
     [],
   );
 

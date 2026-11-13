@@ -13,7 +13,8 @@
  * Order matters: the other side is requested FIRST, straight from the user's click, then the
  * microphone. Since ADR-0053 the live page may open the overlay (picture-in-picture) just before
  * this in the same click; Chrome 156 still opens the share picker after that window used the
- * click (measured 8 Nov 2026). Audio never leaves the device.
+ * click (measured 8 Nov 2026). ADR-0076: with cloud transcription the engine streams the audio to
+ * Deepgram (core/stt/cloudStt.ts); this file only opens the streams.
  */
 import {
   CaptureError,

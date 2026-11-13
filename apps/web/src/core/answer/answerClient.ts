@@ -55,7 +55,15 @@ export interface AnswerHandlers {
   onDone: (done: AnswerDone) => void;
   /** Called once when the answer fails. */
   onError: (failure: AnswerFailure) => void;
+  /**
+   * ADR-0076 (timing trace): the request reached a phase: its body was ready (after any gzip), fetch was
+   * called, or the response headers arrived. `at` is Unix ms.
+   */
+  onPhase?: (phase: RequestPhase, at: number) => void;
 }
+
+/** ADR-0076: the phases of one answer request, for the timing trace. */
+export type RequestPhase = 'body-ready' | 'fetch' | 'headers';
 
 /** Options for streamAnswer() (tests replace fetch; the endpoint is fixed in the app). */
 export interface StreamAnswerOptions {
@@ -228,6 +236,8 @@ export function streamAnswer(
       // 1.5.1 (ADR-0069): a large body (big documents) is sent gzipped: about 4× smaller, so less time
       // uploading before Claude can start. The server unpacks it (server/requestBody.ts).
       const body = await requestBody(JSON.stringify(request));
+      handlers.onPhase?.('body-ready', Date.now());
+      handlers.onPhase?.('fetch', Date.now());
       const response = await fetchImpl(options.endpoint ?? '/api/answer', {
         method: 'POST',
         headers: {
@@ -238,6 +248,7 @@ export function streamAnswer(
         body: body.data,
         signal: controller.signal,
       });
+      handlers.onPhase?.('headers', Date.now());
       if (!response.ok || !response.body) {
         const failure = await failureFrom(response);
         finish(() => handlers.onError(failure));
@@ -301,6 +312,8 @@ export interface RunHandlers {
   onError: (failure: AnswerFailure) => void;
   /** 1.5.1 (ADR-0069): nothing came back in time, and the request was sent again. */
   onRetry?: () => void;
+  /** ADR-0076 (timing trace): a request phase (see AnswerHandlers.onPhase). */
+  onPhase?: (phase: RequestPhase, at: number) => void;
 }
 
 /** 1.5.1 (ADR-0069): no reply at all this long after sending (ms): the request is sent again, once. */
@@ -389,6 +402,9 @@ export function createAnswerRunner(options: AnswerRunnerOptions = {}): AnswerRun
           handlers.onError({ code: 'timeout', message: SLOW_REPLY_MESSAGE });
         }, firstReplyTimeoutMs);
         current = send(request, {
+          onPhase: (phase, at) => {
+            if (live()) handlers.onPhase?.(phase, at);
+          },
           onMeta: (meta) => {
             if (!live()) return;
             gotReply();

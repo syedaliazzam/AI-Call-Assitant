@@ -423,6 +423,8 @@ function channelDecoder(
       keepAudio,
       keepRecent,
     });
+    // ADR-0076: a decoder made after the call's clock arrived uses it too.
+    if (pinnedOffsetMs !== null) decoder.pinClock(pinnedOffsetMs);
     channels.set(channel, decoder);
   }
   return decoder;
@@ -434,14 +436,21 @@ function channelDecoder(
  * @param channel Which channel.
  * @param samples 16 kHz samples.
  * @param endTime Capture time on the sender's audio clock (s).
+ * @param replay  ADR-0076: audio replayed after a failover (never counted as backlog).
  */
-function decodeChunk(channel: ChannelId, samples: Float32Array, endTime: number): void {
+function decodeChunk(
+  channel: ChannelId,
+  samples: Float32Array,
+  endTime: number,
+  replay = false,
+): void {
   // 1.5.1 (ADR-0069): how long this chunk waited in the queue. Both channels come from one audio
   // clock, so the smallest (arrival − capture) seen is the transit time; anything above it is backlog.
+  // ADR-0076: audio replayed after a failover arrives late by design; it never counts as backlog.
   const now = performance.now();
   const offset = now - endTime * 1000;
-  clockOffsetMs = clockOffsetMs === null ? offset : Math.min(clockOffsetMs, offset);
-  const lagMs = offset - clockOffsetMs;
+  if (!replay) clockOffsetMs = clockOffsetMs === null ? offset : Math.min(clockOffsetMs, offset);
+  const lagMs = replay ? 0 : offset - (clockOffsetMs ?? offset);
   lastLagMs = lagMs;
   secondMaxLagMs = Math.max(secondMaxLagMs, lagMs);
   const before = backlog.state;
@@ -490,6 +499,8 @@ let lastLagMs = 0;
 let secondMaxLagMs = 0;
 /** 1.5.1: the other side's audio skipped to catch up, ms. */
 let droppedMs = 0;
+/** ADR-0076: the call's capture clock as worker ms minus audio-clock ms, once given ('clock'), or null. */
+let pinnedOffsetMs: number | null = null;
 
 /**
  * The backlog as the page sees it.
@@ -653,7 +664,12 @@ scope.onmessage = (event: MessageEvent<ToWorker>) => {
       break;
     }
     case 'accept':
-      decodeChunk(message.channel, message.samples, message.endTime);
+      decodeChunk(message.channel, message.samples, message.endTime, message.replay === true);
+      break;
+    case 'clock':
+      // ADR-0076: Unix ms − audio ms becomes this worker's ms − audio ms.
+      pinnedOffsetMs = message.unixMinusAudioMs - performance.timeOrigin;
+      for (const decoder of channels.values()) decoder.pinClock(pinnedOffsetMs);
       break;
     case 'reset':
       channels.get(message.channel)?.reset();

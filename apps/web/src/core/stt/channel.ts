@@ -197,6 +197,8 @@ export class ChannelDecoder {
   private quietMs = 0;
   /** v1.4: whether this pause was already posted (one message per pause). */
   private pausePosted = false;
+  /** ADR-0076: true once the call's capture clock was given (pinClock): the offset no longer changes. */
+  private clockPinned = false;
 
   /**
    * @param id         Which channel.
@@ -251,8 +253,11 @@ export class ChannelDecoder {
   accept(samples: Float32Array, endTime: number): void {
     const arrivedAt = this.clock.now();
     const offset = arrivedAt - endTime * 1000;
-    this.clockOffsetMs =
-      this.clockOffsetMs === null ? offset : Math.min(this.clockOffsetMs, offset);
+    // ADR-0076: a pinned clock (the call's capture clock) is never replaced by this channel's estimate.
+    if (!this.clockPinned) {
+      this.clockOffsetMs =
+        this.clockOffsetMs === null ? offset : Math.min(this.clockOffsetMs, offset);
+    }
     const chunkAudioMs = (samples.length / TARGET_SAMPLE_RATE) * 1000;
     const onsetIndex = this.onsets.push(samples);
     if (onsetIndex >= 0 && this.lastText === '') {
@@ -361,6 +366,8 @@ export class ChannelDecoder {
         channel: this.id,
         text,
         tStart: text === '' ? null : this.toUnix(this.utteranceStartAt ?? capturedEndAt),
+        // ADR-0076 (one clock): when the words changed, as a capture time.
+        ...(text === '' ? {} : { tEnd: this.toUnix(capturedEndAt) }),
       });
     }
     if (this.recognizer.isEndpoint(this.stream)) this.endUtterance('model');
@@ -438,6 +445,18 @@ export class ChannelDecoder {
     }
     this.clearUtterance();
     this.emit({ type: 'partial', channel: this.id, text: '', tStart: null });
+  }
+
+  /**
+   * ADR-0076 (one clock): uses the call's capture clock from now on. The offset is between the sender's
+   * audio clock and this worker's performance clock, so it is the same for every channel.
+   *
+   * @param offsetMs Worker ms minus audio-clock ms.
+   * Called from: stt.worker.ts ('clock', and new decoders after it)
+   */
+  pinClock(offsetMs: number): void {
+    this.clockOffsetMs = offsetMs;
+    this.clockPinned = true;
   }
 
   /**

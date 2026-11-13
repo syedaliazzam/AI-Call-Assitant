@@ -197,7 +197,7 @@ describe('desktop onHotkey with the Day 4 shell', () => {
     const onTaken = vi.fn();
     const stop = platform.onHotkey(handler, onTaken);
     expect(setHotkeysEnabled).toHaveBeenCalledWith(true);
-    await vi.waitFor(() => expect(onTaken).toHaveBeenCalledWith(['Ctrl+Alt+←']));
+    await vi.waitFor(() => expect(onTaken).toHaveBeenCalledWith(['Ctrl+Alt+←'], null));
     forward!('answer');
     // The same key press also reaching the page counts once.
     (window as unknown as EventTarget).dispatchEvent(

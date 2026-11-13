@@ -1,0 +1,341 @@
+/**
+ * Tests for apps/web/src/core/answer/newestQuestion.ts (ADR-0076, investigation E3) and the transcript
+ * changes it relies on (apps/web/src/core/transcript/transcript.ts, merge.ts): every rule.
+ * 1. One clock: grey lines carry the capture time they are given, not the page's arrival time.
+ * 3. Newest by time: only speech after the newest answered speech, kept per segment even when lines join.
+ * 4. No look-back: new speech is sent even when it reads as a statement; an old card is shown only when
+ *    nothing new was said.
+ * 5. A reply (a finished "You" line of more than two words that did not start over them) ends the window.
+ * 6. Completeness: any new word within 2 s re-asks on the same card (once the turn is over).
+ * 7. Feedback is the caller's (useLiveAnswers.ts); here: the choice that drives it ('show-existing', 'none').
+ * 8. Gaps: only lost audio since the last answer gives 'gap'.
+ * 9. Auto-answer at the engine's own end of turn, once per question.
+ */
+import { describe, expect, it } from 'vitest';
+import {
+  autoNewestDue,
+  chooseNewest,
+  REASK_WINDOW_MS,
+  unansweredSpeech,
+} from '@/core/answer/newestQuestion';
+import type { AnsweredQuestion } from '@/core/answer/autoAnswer';
+import { createTranscript, type Utterance } from '@/core/transcript/transcript';
+
+/**
+ * A transcript whose clock is far from the capture times, so arrival time and capture time differ.
+ *
+ * @returns The transcript.
+ */
+function transcriptAt() {
+  // The page's clock: 9 s after the capture times below (a late message must not move a line's times).
+  return createTranscript(() => 109_000, { schedule: () => () => undefined });
+}
+
+/**
+ * A final line.
+ *
+ * @param id      Its id.
+ * @param speaker Who.
+ * @param text    Words.
+ * @param tStart  Start.
+ * @param tEnd    End.
+ * @param extra   More fields.
+ * @returns The line.
+ */
+function line(
+  id: string,
+  speaker: 'you' | 'them',
+  text: string,
+  tStart: number,
+  tEnd: number,
+  extra: Partial<Utterance> = {},
+): Utterance {
+  return { id, speaker, text, tStart, tEnd, final: true, ...extra };
+}
+
+describe('rule 1: one clock', () => {
+  it('a grey line keeps the capture time it is given, whatever the page clock says', () => {
+    const transcript = transcriptAt();
+    transcript.addPartial('them', 'How would you', 100_000, 100_640);
+    const grey = transcript.lines()[0]!;
+    expect(grey.tStart).toBe(100_000);
+    expect(grey.tEnd).toBe(100_640);
+    // Without one (the on-device engine before ADR-0076) it is the page's clock, as before.
+    transcript.addPartial('you', 'Sure', 100_100);
+    expect(transcript.lines().find((item) => item.speaker === 'you')!.tEnd).toBe(109_000);
+  });
+
+  it('a final line ended by the engine is marked, and joined lines keep each segment', () => {
+    const transcript = transcriptAt();
+    transcript.addFinal({
+      speaker: 'them',
+      text: 'Tell me about yourself.',
+      tStart: 100_000,
+      tEnd: 102_000,
+      endOfTurn: true,
+    });
+    expect(transcript.lines()[0]!.engineTurnEnd).toBe(true);
+    transcript.addFinal({ speaker: 'them', text: 'And why us?', tStart: 102_800, tEnd: 104_000 });
+    const joined = transcript.lines()[0]!;
+    expect(joined.text).toBe('Tell me about yourself. And why us?');
+    expect(joined.segments).toEqual([
+      { text: 'Tell me about yourself.', tStart: 100_000, tEnd: 102_000 },
+      { text: 'And why us?', tStart: 102_800, tEnd: 104_000 },
+    ]);
+    // The newest stretch did not end the turn.
+    expect(joined.engineTurnEnd).toBeUndefined();
+  });
+
+  it('rule 8: a gap is a line of its own, never joined', () => {
+    const transcript = transcriptAt();
+    transcript.addFinal({ speaker: 'them', text: 'First part.', tStart: 100_000, tEnd: 101_000 });
+    transcript.noteGap('them', 101_200, 104_000);
+    transcript.addFinal({ speaker: 'them', text: 'second part', tStart: 104_100, tEnd: 105_000 });
+    const lines = transcript.lines();
+    expect(lines.map((item) => item.text)).toEqual(['First part.', '[audio gap]', 'second part']);
+    expect(lines[1]!.gap).toBe(true);
+  });
+});
+
+describe('chooseNewest (a press, after catching up)', () => {
+  it('rule 3: answers only the speech after the newest answered speech', () => {
+    const lines = [
+      line('u1', 'them', 'What is your notice period?', 1_000, 3_000),
+      line('u2', 'them', 'And how do you handle conflict?', 3_500, 6_000),
+    ];
+    const choice = chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' });
+    expect(choice).toMatchObject({
+      kind: 'answer',
+      text: 'And how do you handle conflict?',
+      lineIds: ['u2'],
+      span: { start: 3_500, end: 6_000 },
+      grey: false,
+      words: 6,
+    });
+  });
+
+  it('rule 3: finds the new question inside a line joined to an answered one', () => {
+    const lines = [
+      line('u1', 'them', 'What is your notice period? Why do you want to leave?', 1_000, 7_000, {
+        segments: [
+          { text: 'What is your notice period?', tStart: 1_000, tEnd: 3_000 },
+          { text: 'Why do you want to leave?', tStart: 4_000, tEnd: 7_000 },
+        ],
+      }),
+    ];
+    const choice = chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' });
+    expect(choice).toMatchObject({
+      kind: 'answer',
+      text: 'Why do you want to leave?',
+      lineIds: ['u1'],
+    });
+  });
+
+  it('rule 3: grey words of the newest question count, and are marked grey', () => {
+    const lines = [
+      {
+        ...line('u3', 'them', 'How would you design a rate limiter', 10_000, 12_000),
+        final: false,
+      },
+    ];
+    expect(chooseNewest({ lines, answeredEnd: null, lastAnswerId: null })).toMatchObject({
+      kind: 'answer',
+      grey: true,
+    });
+  });
+
+  it('rule 4: no look-back when newer speech exists, even if it reads as a statement', () => {
+    const lines = [
+      line('u1', 'them', 'How do you test your code?', 1_000, 3_000),
+      line('u2', 'them', 'Our team ships every week.', 8_000, 10_000),
+    ];
+    const choice = chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' });
+    expect(choice).toMatchObject({ kind: 'answer', text: 'Our team ships every week.' });
+  });
+
+  it('rule 4: nothing new since the last card shows that card; nothing at all is "none"', () => {
+    const lines = [line('u1', 'them', 'How do you test your code?', 1_000, 3_000)];
+    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' })).toEqual({
+      kind: 'show-existing',
+      answerId: 'a1',
+    });
+    expect(chooseNewest({ lines: [], answeredEnd: null, lastAnswerId: null })).toEqual({
+      kind: 'none',
+    });
+  });
+
+  it('rule 4: listening sounds after the answer are not new speech, but a short question is', () => {
+    const okay = [
+      line('u1', 'them', 'How do you test your code?', 1_000, 3_000),
+      line('u2', 'them', 'Okay.', 9_000, 9_400),
+    ];
+    expect(chooseNewest({ lines: okay, answeredEnd: 3_000, lastAnswerId: 'a1' }).kind).toBe(
+      'show-existing',
+    );
+    const why = [...okay.slice(0, 1), line('u2', 'them', 'Why Go?', 9_000, 9_600)];
+    expect(chooseNewest({ lines: why, answeredEnd: 3_000, lastAnswerId: 'a1' })).toMatchObject({
+      kind: 'answer',
+      text: 'Why Go?',
+    });
+  });
+
+  it('rule 5: a real reply ends the window; a short one or one begun over them does not', () => {
+    const replied = [
+      line('u1', 'them', 'Tell me about your last project.', 1_000, 3_000),
+      line('u2', 'you', 'I built a payments service for a bank.', 4_000, 8_000),
+      line('u3', 'them', 'What was the hardest part?', 9_000, 11_000),
+    ];
+    expect(chooseNewest({ lines: replied, answeredEnd: null, lastAnswerId: null })).toMatchObject({
+      kind: 'answer',
+      text: 'What was the hardest part?',
+    });
+    const backchannel = [replied[0]!, line('u2', 'you', 'Mm-hm.', 3_200, 3_500), replied[2]!];
+    expect(
+      chooseNewest({ lines: backchannel, answeredEnd: null, lastAnswerId: null }),
+    ).toMatchObject({
+      text: 'Tell me about your last project. What was the hardest part?',
+    });
+    const over = [
+      line(
+        'u1',
+        'them',
+        'Tell me about your last project and the team you led there.',
+        1_000,
+        6_000,
+      ),
+      line('u2', 'you', 'So the project was big', 2_000, 4_000),
+    ];
+    expect(chooseNewest({ lines: over, answeredEnd: null, lastAnswerId: null })).toMatchObject({
+      kind: 'answer',
+      lineIds: ['u1'],
+    });
+  });
+
+  it('rule 8: only lost audio since the last answer says so', () => {
+    const lines = [
+      line('u1', 'them', 'How do you test your code?', 1_000, 3_000),
+      line('g1', 'them', '[audio gap]', 5_000, 9_000, { gap: true }),
+    ];
+    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' })).toEqual({
+      kind: 'gap',
+    });
+  });
+
+  it('leaves out another language and the gap mark itself', () => {
+    const lines = [
+      line('u1', 'them', '[non-English speech]', 1_000, 3_000, { nonEnglish: true }),
+      line('g1', 'them', '[audio gap]', 3_000, 4_000, { gap: true }),
+    ];
+    expect(unansweredSpeech(lines, null)).toEqual([]);
+  });
+});
+
+describe('autoNewestDue', () => {
+  const base = { enabled: true, streaming: false, answeredEnd: null, last: null } as const;
+
+  it("rule 9: answers at the engine's own end of turn, at once", () => {
+    const lines = [
+      line('u1', 'them', 'How would you scale the service?', 1_000, 3_000, { engineTurnEnd: true }),
+    ];
+    expect(autoNewestDue({ ...base, lines }, 3_050)).toMatchObject({
+      kind: 'answer',
+      text: 'How would you scale the service?',
+      span: { start: 1_000, end: 3_000 },
+    });
+  });
+
+  it("rule 9: without the engine's end of turn, waits for the pause; never while they still speak", () => {
+    const lines = [line('u1', 'them', 'How would you scale the service?', 1_000, 3_000)];
+    expect(autoNewestDue({ ...base, lines }, 3_500)).toBeNull();
+    expect(autoNewestDue({ ...base, lines }, 4_300)).toMatchObject({ kind: 'answer' });
+    const talking = [...lines, { ...line('u2', 'them', 'and also', 4_000, 4_200), final: false }];
+    expect(autoNewestDue({ ...base, lines: talking }, 4_300)).toBeNull();
+  });
+
+  it('rule 9: answers questions only, once (after it is answered nothing is due)', () => {
+    const statement = [
+      line('u1', 'them', 'We ship every week.', 1_000, 3_000, { engineTurnEnd: true }),
+    ];
+    expect(autoNewestDue({ ...base, lines: statement }, 3_100)).toBeNull();
+    const question = [
+      line('u1', 'them', 'How would you scale it?', 1_000, 3_000, { engineTurnEnd: true }),
+    ];
+    expect(autoNewestDue({ ...base, lines: question, answeredEnd: 3_000 }, 3_100)).toBeNull();
+    expect(autoNewestDue({ ...base, lines: question, enabled: false }, 3_100)).toBeNull();
+    expect(autoNewestDue({ ...base, lines: question, streaming: true }, 3_100)).toBeNull();
+  });
+
+  /** The card asked for "How would you scale it?" (u1, 1.0–3.0 s, 5 words). */
+  const asked: AnsweredQuestion = {
+    answerId: 'card-1',
+    lineIds: ['u1'],
+    start: 1_000,
+    end: 3_000,
+    askedAt: 3_100,
+    auto: true,
+    words: 5,
+  };
+
+  it('rule 6: one new word in the same line re-asks on the same card, once the turn is over', () => {
+    const grown = [
+      line('u1', 'them', 'How would you scale it globally?', 1_000, 3_600, { engineTurnEnd: true }),
+    ];
+    expect(
+      autoNewestDue(
+        { ...base, enabled: false, lines: grown, answeredEnd: 3_000, last: asked },
+        3_700,
+      ),
+    ).toMatchObject({
+      kind: 'rerun',
+      replaces: 'card-1',
+      text: 'How would you scale it globally?',
+      words: 6,
+    });
+  });
+
+  it('rule 6: speech that goes on within 2 s (a new turn after an early end) re-asks with the whole question', () => {
+    const lines = [
+      line('u1', 'them', 'How would you scale it?', 1_000, 3_000, { engineTurnEnd: true }),
+      line('u2', 'them', 'Say to ten million users?', 3_000 + REASK_WINDOW_MS - 500, 6_000, {
+        engineTurnEnd: true,
+      }),
+    ];
+    expect(autoNewestDue({ ...base, lines, answeredEnd: 3_000, last: asked }, 6_100)).toMatchObject(
+      {
+        kind: 'rerun',
+        replaces: 'card-1',
+        text: 'How would you scale it? Say to ten million users?',
+        lineIds: ['u1', 'u2'],
+      },
+    );
+    // While the continuation is still grey nothing is sent.
+    const grey = [lines[0]!, { ...lines[1]!, final: false }];
+    expect(
+      autoNewestDue({ ...base, lines: grey, answeredEnd: 3_000, last: asked }, 6_100),
+    ).toBeNull();
+  });
+
+  it('rule 6: a new question long after is its own card, and a reply in between ends the re-ask', () => {
+    const later = [
+      line('u1', 'them', 'How would you scale it?', 1_000, 3_000, { engineTurnEnd: true }),
+      line('u2', 'them', 'What about caching?', 9_000, 10_500, { engineTurnEnd: true }),
+    ];
+    expect(
+      autoNewestDue({ ...base, lines: later, answeredEnd: 3_000, last: asked }, 10_600),
+    ).toMatchObject({
+      kind: 'answer',
+      text: 'What about caching?',
+    });
+    const replied = [
+      later[0]!,
+      line('u5', 'you', 'I would shard the database first.', 3_600, 5_000),
+      line('u2', 'them', 'Okay and caching?', 5_200, 6_000, { engineTurnEnd: true }),
+    ];
+    expect(
+      autoNewestDue(
+        { ...base, enabled: false, lines: replied, answeredEnd: 3_000, last: asked },
+        6_100,
+      ),
+    ).toBeNull();
+  });
+});

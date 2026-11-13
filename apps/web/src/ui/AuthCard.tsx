@@ -12,8 +12,12 @@
 import type { ReactNode } from 'react';
 import { BrandLockup } from './BrandLockup';
 
-/** The privacy line at the bottom of the left panel (ADR-0071: sessions sync to the account). */
-export const AUTH_PRIVACY_LINE = 'Sessions sync to your account · Audio never leaves your computer';
+/**
+ * The privacy line at the bottom of the left panel (ADR-0071: sessions sync to the account; ADR-0076: call
+ * audio is transcribed by Deepgram and never stored).
+ */
+export const AUTH_PRIVACY_LINE =
+  'Sessions sync to your account · Audio is transcribed by Deepgram and never stored';
 
 /** Props for AuthCard. */
 export interface AuthCardProps {

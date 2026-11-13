@@ -4,14 +4,17 @@
  *          every AUTO_TICK_MS it asks core/answer/autoAnswer.ts whether "Them" has just finished a
  *          question, or went on with the question just answered, and starts an answer marked "Auto"
  *          (or asks again on the same card). The rules (the question window, the waits, the rerun)
- *          live in that core module.
+ *          live in that core module. ADR-0076: in calls with cloud transcription (rules 'newest') the rules of
+ *          core/answer/newestQuestion.ts apply instead (answer at the engine's end of turn; re-ask on the
+ *          same card when the asked speech goes on).
  * Used by: src/features/live/LiveAnswers.tsx
- * Depends on: src/core/answer/autoAnswer.ts, src/core/storage/autoAnswer.ts,
- *             src/core/transcript/transcript.ts
+ * Depends on: src/core/answer/autoAnswer.ts, src/core/answer/newestQuestion.ts,
+ *             src/core/storage/autoAnswer.ts, src/core/transcript/transcript.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 (Trigger), §7.5; ADR-0062
  */
 import { useEffect, useRef, useState } from 'react';
 import { autoAnswerDue, type AnsweredQuestion, type AutoDecision } from '@/core/answer/autoAnswer';
+import { autoNewestDue, type NewestAutoDecision } from '@/core/answer/newestQuestion';
 import { getAutoAnswer } from '@/core/storage/autoAnswer';
 import type { Transcript } from '@/core/transcript/transcript';
 
@@ -34,9 +37,15 @@ export interface AutoAnswerInput {
     answeredLineIds: ReadonlySet<string>;
     last: AnsweredQuestion | null;
     idleSince?: number | null;
+    /** ADR-0076: the end of the newest answered speech (capture clock), or null. */
+    answeredEnd?: number | null;
   };
   /** Overrides the saved setting (the harness turns it on); default: the saved setting. */
   enabled?: boolean;
+  /** ADR-0076: 'newest' uses newestQuestion.ts (calls with cloud transcription); default 'legacy'. */
+  rules?: 'newest' | 'legacy';
+  /** ADR-0076: starts what newestQuestion.ts decided (useLiveAnswers().autoNewest). */
+  autoNewest?: (decision: NewestAutoDecision) => void;
 }
 
 /**
@@ -46,8 +55,10 @@ export interface AutoAnswerInput {
  * @param decision The decision.
  * @returns The key.
  */
-function decisionKey(decision: AutoDecision): string {
-  return `${decision.kind}:${decision.lineIds.join(',')}:${decision.tEnd}`;
+function decisionKey(decision: AutoDecision | NewestAutoDecision): string {
+  // ADR-0076: the word count too, so a re-ask with more words is a new decision.
+  const words = 'words' in decision ? `:${decision.words}` : '';
+  return `${decision.kind}:${decision.lineIds.join(',')}:${decision.tEnd}${words}`;
 }
 
 /**
@@ -61,6 +72,7 @@ export function useAutoAnswer(input: AutoAnswerInput): boolean {
   // v1.1.0: the overlay's ⋮ can change it during a call, so the choice is read on every render.
   const [fallback] = useState(getAutoAnswer);
   const enabled = input.enabled ?? fallback;
+  const rules = input.rules ?? 'legacy';
   const latest = useRef(input);
   const acted = useRef(new Set<string>());
 
@@ -73,7 +85,27 @@ export function useAutoAnswer(input: AutoAnswerInput): boolean {
   useEffect(() => {
     /** One check: starts an answer (or a rerun) when one is due and was not acted on. */
     const check = () => {
-      const { transcript, streaming, autoAnswer, answeredState } = latest.current;
+      const { transcript, streaming, autoAnswer, answeredState, autoNewest } = latest.current;
+      if (rules === 'newest') {
+        const state = answeredState();
+        const next = autoNewestDue(
+          {
+            enabled,
+            streaming,
+            lines: transcript.lines(),
+            answeredEnd: state.answeredEnd ?? null,
+            last: state.last,
+            idleSince: state.idleSince ?? null,
+          },
+          Date.now(),
+        );
+        if (next === null) return;
+        const newestKey = decisionKey(next);
+        if (acted.current.has(newestKey)) return;
+        acted.current.add(newestKey);
+        autoNewest?.(next);
+        return;
+      }
       const due = autoAnswerDue(
         { enabled, streaming, lines: transcript.lines(), ...answeredState() },
         Date.now(),
@@ -92,7 +124,7 @@ export function useAutoAnswer(input: AutoAnswerInput): boolean {
       clearInterval(timer);
       unsubscribe();
     };
-  }, [enabled]);
+  }, [enabled, rules]);
 
   return enabled;
 }

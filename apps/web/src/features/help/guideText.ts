@@ -39,7 +39,7 @@ The desktop app has no dashboard of its own: creating, editing and reviewing ses
 2. **Details:** the call type, the company (after two letters it suggests companies from your past sessions, then others with their logos; pick one, or keep typing any name), the topic, your role, a short description or a job link, and the documents Paramount AI should use (a CV, a price list, a runbook). Under **Advanced** at the bottom, add **key terms** (names, product words) so the transcript spells them right; it also recognises spoken numbers, such as "BM twenty five" for BM25.
 3. **Preferences:** the answer language, the model, your own AI instructions, and **Answer preferences**: format, length (Short ≈ 10–20 s of speech, Balanced ≈ 20–40 s, Detailed ≈ 40–60 s) and tone, with a sample that changes as you choose. **STAR structure** shapes behavioural answers as Situation, Task, Action and Result, from what your CV says. You can change your defaults for new sessions in **Settings**.
 
-Your sessions, documents, answers and notes are kept in your account, so they appear on every device you sign in on. A transcript is kept only when **Save transcript** is on. Audio never leaves your computer.
+Your sessions, documents, answers and notes are kept in your account, so they appear on every device you sign in on. A transcript is kept only when **Save transcript** is on. Call audio is streamed to Deepgram to turn speech into text and is never stored; if Deepgram cannot be reached, speech is turned into text on your computer.
 
 ### Starting from the browser
 

@@ -650,7 +650,12 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
         .then((statuses) => {
           const taken = statuses.filter((status) => !status.registered);
           if (active && taken.length > 0) {
-            onTaken?.(taken.map((status) => acceleratorLabel(status.accelerator, bridge.os)));
+            // ADR-0076 (G4): the Answer shortcut is named apart, for the overlay's lasting warning.
+            const answer = taken.find((status) => status.action === 'answer');
+            onTaken?.(
+              taken.map((status) => acceleratorLabel(status.accelerator, bridge.os)),
+              answer ? acceleratorLabel(answer.accelerator, bridge.os) : null,
+            );
           }
         })
         .catch(() => undefined);

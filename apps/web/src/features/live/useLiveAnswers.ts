@@ -9,6 +9,10 @@
  *          call runs, the idle re-warm keeps Claude's cache warm (core/answer/keepWarm.ts). v1.1.0
  *          (ADR-0043): Answer answers only real questions (core/transcript/questionKind.ts); this call's
  *          answers only (a session's earlier calls are in Review).
+ *          ADR-0076: in calls with cloud transcription (rules 'newest') a press first waits until the other
+ *          side is transcribed up to the press (at most 300 ms; a second press answers at once), then answers
+ *          the newest unanswered speech by time (core/answer/newestQuestion.ts), and every press shows what
+ *          it did: a new card, "Showing the earlier answer", "Already answering" or "Nothing new to answer".
  * Used by: src/features/live/LiveAnswers.tsx
  * Depends on: src/core/answer (context.ts, answerClient.ts, history.ts, warm.ts, keepWarm.ts,
  *             unavailable.ts),
@@ -40,6 +44,11 @@ import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { warmSession } from '@/core/answer/warm';
 import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
 import { choosePress, PRESS_WAIT_MS } from '@/core/answer/pressQuestion';
+import {
+  chooseNewest,
+  FINISHING_NOTICE_AFTER_MS,
+  type NewestAutoDecision,
+} from '@/core/answer/newestQuestion';
 import { pickQuestion, type PickedQuestion } from '@/core/transcript/questionKind';
 import { isOnline } from '@/core/net/online';
 import { prepareScreenshot } from '@/core/screenshot/prepare';
@@ -95,6 +104,23 @@ function isNoAnswer(type: AnswerType | undefined): boolean {
  * (core/answer/pressQuestion.ts 'wait').
  */
 export const WAITING_NOTICE = 'Listening for the question…';
+
+/** ADR-0076 (G2): shown while a press waits for the other side's last words, after 150 ms. */
+export const FINISHING_NOTICE = 'Finishing the question…';
+
+/** ADR-0076 (G3, E3 rule 4): a press with nothing new said since the last card shows that card. */
+export const SHOWING_EARLIER_NOTICE = 'Showing the earlier answer — nothing new was asked since.';
+
+/** ADR-0076 (G3, E3 rule 7): a press while the answer to the same speech is still coming. */
+export const ALREADY_ANSWERING_NOTICE = 'Already answering — the answer is on its way.';
+
+/** ADR-0076 (G3): a press with nothing at all to answer. */
+export const NOTHING_NEW_NOTICE =
+  'Nothing new to answer. Press Answer when they ask something, or type the question.';
+
+/** ADR-0076 (E3 rule 8): only lost audio follows the last answer. */
+export const GAP_NOTICE =
+  'Part of their audio was lost, so the question may be missing. Type it, or use Answer this on their words.';
 
 /** What to say when nothing so far is a question to answer (v1.1.0, ADR-0043). */
 export const NO_QUESTION_NOTICE =
@@ -158,6 +184,11 @@ export interface AnswerEntry {
   meta?: AnswerMeta;
   /** Words the claim check could not find in the documents or the call (ADR-0030). */
   claims?: string[];
+  /**
+   * ADR-0076 (E3 rule 2): the press gave up waiting for the other side's last words, so the question may
+   * be incomplete (the card says so). In memory only.
+   */
+  incomplete?: boolean;
 }
 
 /**
@@ -290,6 +321,18 @@ export interface LiveAnswersInput {
   chatTarget?: TargetChoice;
   /** True while listening is paused (ADR-0044): nothing is being said, so no paid warm-ups. */
   paused?: boolean;
+  /**
+   * ADR-0076: which question rules a press and auto-answer use: 'newest' (E3, calls with cloud
+   * transcription) or 'legacy' (today's rules; the default).
+   */
+  rules?: 'newest' | 'legacy';
+  /**
+   * ADR-0076 (E3 rule 2): waits until the other side is transcribed up to a press (capped by the caller).
+   *
+   * @param atUnix The press (Unix ms).
+   * @returns How long it waited and whether it gave up.
+   */
+  catchUp?: (atUnix: number) => Promise<{ waitedMs: number; timedOut: boolean }>;
 }
 
 /** What useLiveAnswers() returns. */
@@ -313,8 +356,23 @@ export interface LiveAnswers {
    * @param decision What core/answer/autoAnswer.ts decided (absent: pick the question as Answer does).
    */
   autoAnswer: (decision?: AutoDecision) => void;
-  /** v1.4: what auto-answer needs to know: the lines answered so far and the latest answered question. */
-  answeredState: () => { answeredLineIds: ReadonlySet<string>; last: AnsweredQuestion | null };
+  /**
+   * v1.4: what auto-answer needs to know: the lines answered so far and the latest answered question;
+   * ADR-0076: and the end of the newest answered speech (capture clock), or null.
+   */
+  answeredState: () => {
+    answeredLineIds: ReadonlySet<string>;
+    last: AnsweredQuestion | null;
+    idleSince: number | null;
+    answeredEnd: number | null;
+  };
+  /**
+   * ADR-0076: auto-answer under the 'newest' rules (rule 9) and the re-ask (rule 6): exactly the chosen
+   * words, or the whole question again on the card it replaces.
+   *
+   * @param decision What core/answer/newestQuestion.ts decided.
+   */
+  autoNewest: (decision: NewestAutoDecision) => void;
   /** Answers a typed question. */
   chat: (question: string) => void;
   /**
@@ -405,6 +463,15 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const retryPendingRef = useRef<() => void>(() => undefined);
   // 1.5.2: when the last answer stopped streaming (auto-answer answers a question that came due meanwhile).
   const idleSinceRef = useRef<number | null>(null);
+  // ADR-0076 (E3 rule 3): the end of the newest speech any answer covered (capture clock), or null.
+  const answeredEndRef = useRef<number | null>(null);
+  // ADR-0076: the newest card for speech that is still shown (null once Claude found nothing to answer).
+  const speechCardRef = useRef<string | null>(null);
+  // ADR-0076 (G1): a press waiting for the other side; a second press calls force() and answers at once.
+  const pendingCatchUpRef = useRef<{ force: () => void } | null>(null);
+  // ADR-0076: the latest catch-up function and rules (read when a key is pressed).
+  const catchUpRef = useRef(input.catchUp);
+  const rules = input.rules ?? 'legacy';
 
   /**
    * What was answered, by the ids the lines have now (1.5.2, ADR-0070): a grey line's words may have
@@ -445,6 +512,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     storeRef.current = store;
     chatTargetRef.current = input.chatTarget ?? 'auto';
     warmInputRef.current = { session, documents, lessons };
+    catchUpRef.current = input.catchUp;
   });
 
   // A new call: a new conversation; End (unmount) stops any answer still streaming.
@@ -454,6 +522,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     finishedRef.current = [];
     labelsRef.current = [];
     lastAnsweredRef.current = null;
+    answeredEndRef.current = null;
+    speechCardRef.current = null;
     return () => {
       runner.cancel();
       // Fail safe: an answer stopped here must not stay "streaming" (its card would show "…" for
@@ -542,6 +612,24 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         coveredLines?: readonly string[];
         /** 1.5.2 (ADR-0070): when a press that is waiting for the question began waiting (Unix ms). */
         waitingSince?: number;
+        /**
+         * ADR-0076 (E3 rule 3): exactly these words of the other person, chosen by newestQuestion.ts (a
+         * press, an auto-answer or a re-ask). Sent as they are; not re-picked, not repeat-guarded.
+         */
+        exact?: {
+          /** The words. Never logged. */
+          text: string;
+          /** Their lines. */
+          lineIds: readonly string[];
+          /** Their span (capture clock). */
+          span: SpeechSpan;
+          /** Whether some are still grey. */
+          grey: boolean;
+          /** How many words. */
+          words: number;
+          /** The press gave up waiting for the other side (rule 2). */
+          incomplete?: boolean;
+        };
       } = {},
     ): boolean => {
       const { typed, image, auto = false, answerType } = options;
@@ -575,7 +663,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       let replaces = options.replaces;
       // 1.5.2: a press that answered words still grey (asked again on its card if the person goes on).
       let greyPress = false;
-      if (mode === 'answer' && options.lineIds && !options.question) {
+      if (mode === 'answer' && options.exact) {
+        // ADR-0076: the words newestQuestion.ts chose, exactly.
+        picked = {
+          kind: 'question',
+          selected: { text: options.exact.text, lineIds: [...options.exact.lineIds] },
+          lookedBack: false,
+        };
+        partOfLines = true;
+        greyPress = options.exact.grey;
+      } else if (mode === 'answer' && options.lineIds && !options.question) {
         // Auto-answer chose the lines (core/answer/autoAnswer.ts): asked as they are.
         const chosen = lines.filter((line) => options.lineIds!.includes(line.id));
         if (chosen.length === 0) return false;
@@ -671,13 +768,18 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       // new request and is not guarded.
       const pickedLines = picked ? picked.selected.lineIds : null;
       const span =
+        options.exact?.span ??
         options.span ??
         ((pickedLines ?? built.selected?.lineIds)
           ? themSpan(lines, pickedLines ?? built.selected?.lineIds ?? [])
           : null);
       // v1.4: a rerun or a continuation is a deliberate new request for a longer question: not guarded.
+      // ADR-0076: words chosen by newestQuestion.ts are new by construction (after the newest answered speech).
       const guarded =
-        mode === 'answer' && !replaces && (!options.question || options.span !== undefined);
+        mode === 'answer' &&
+        !replaces &&
+        !options.exact &&
+        (!options.question || options.span !== undefined);
       const lookedBack = picked?.kind === 'question' && picked.lookedBack;
       if (guarded) {
         const decision = repeatGuard.decide({
@@ -720,6 +822,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         model: session.preferences.model,
         rating: null,
         note: '',
+        ...(options.exact?.incomplete ? { incomplete: true } : {}),
       };
       // A new answer cancels the one still streaming (the runner does; mark it here). A rerun takes
       // the place of the answer it replaces.
@@ -732,7 +835,13 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         entry,
       ]);
       setShownId(entry.id);
-      if (span && (guarded || replaces || (mode === 'screenshot' && options.coveredLines))) {
+      if (
+        span &&
+        (guarded || replaces || options.exact || (mode === 'screenshot' && options.coveredLines))
+      ) {
+        // ADR-0076 (E3 rule 3): the newest answered speech ends here (or later).
+        answeredEndRef.current = Math.max(answeredEndRef.current ?? span.end, span.end);
+        if (mode === 'answer') speechCardRef.current = entry.id;
         repeatGuard.remember(span, entry.id, Date.now());
         setAnsweredSpans((current) => [
           ...current.filter((item) => item.answerId !== entry.id),
@@ -745,15 +854,18 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           answerId: entry.id,
           lineIds: pickedLines,
           end: span.end,
+          start: span.start,
           askedAt: Date.now(),
           auto,
           ...(greyPress && !auto ? { grey: true } : {}),
-          words: wordCount(
-            lines
-              .filter((line) => pickedLines.includes(line.id))
-              .map((line) => line.text)
-              .join(' '),
-          ),
+          words:
+            options.exact?.words ??
+            wordCount(
+              lines
+                .filter((line) => pickedLines.includes(line.id))
+                .map((line) => line.text)
+                .join(' '),
+            ),
         };
       }
       // Kept here as well as in state: the answer's end needs them in the same tick.
@@ -785,10 +897,25 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         sentAt: sentWall,
         status: 'streaming',
         bytes: JSON.stringify(built.request).length,
+        // ADR-0076 (timing trace): which lines and how many words were asked (ids and counts only).
+        ...(pickedLines ? { lineIds: [...pickedLines] } : {}),
+        ...(span ? { span: { start: span.start, end: span.end } } : {}),
+        ...(options.exact ? { askedWords: options.exact.words } : {}),
+        ...(options.exact?.incomplete ? { incomplete: true } : {}),
       });
       let retries = 0;
       let firstWordLogged = false;
       runner.run(built.request, keyPressAt, {
+        // ADR-0076 (timing trace): the request's phases.
+        onPhase: (phase, at) =>
+          callTimings.noteAnswer({
+            answerId: timingId,
+            ...(phase === 'body-ready'
+              ? { bodyReadyAt: at }
+              : phase === 'fetch'
+                ? { fetchAt: at }
+                : { headersAt: at }),
+          }),
         onRetry: () => {
           retries += 1;
           callTimings.noteAnswer({ answerId: timingId, retries });
@@ -807,7 +934,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
               ? received.type
               : settleAnswerType(entry.question, received.type, labelsRef.current);
           meta = { ...received, type };
+          callTimings.noteAnswer({ answerId: timingId, metaAt: Date.now() });
           if (dropped(type)) callTimings.noteAnswer({ answerId: timingId, status: 'none' });
+          // ADR-0076: no card is left for this speech, so a later press has none to show.
+          if (dropped(type) && speechCardRef.current === entry.id) speechCardRef.current = null;
           // Claude could not make sense of the words either (ADR-0043): no answer to show. The
           // entry goes, and the user gets the same notice as when the rules catch it first.
           // v1.4 (ADR-0065): or the words ask nothing ("can you repeat that?", a remark). The entry goes
@@ -844,6 +974,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           if (!dropped(meta?.type)) {
             callTimings.noteAnswer({ answerId: timingId, status: 'done', doneAt: Date.now() });
           }
+          // ADR-0076 (timing trace): the server's timings and the cache token counts (numbers only).
+          callTimings.noteAnswer({
+            answerId: timingId,
+            ...(done.serverMs
+              ? { serverMs: { ...(done.serverMs as unknown as Record<string, number>) } }
+              : {}),
+            cacheRead: done.usage?.cache_read_input_tokens ?? 0,
+            cacheWrite: done.usage?.cache_creation_input_tokens ?? 0,
+            inputTokens: done.usage?.input_tokens ?? 0,
+          });
           // Not an answer: nothing to keep, send later or save.
           if (dropped(meta?.type)) return;
           // No model call: plain text matching (ADR-0030).
@@ -924,6 +1064,112 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     ],
   );
 
+  /**
+   * ADR-0076 (E3 rules 3, 4, 7, 8): what a press does once the other side is caught up: a new card for the
+   * newest unanswered speech, or a notice saying what happened. Every decision goes to the timing trace.
+   *
+   * @param trigger    What asked (the key or a button).
+   * @param keyPressAt When the key was pressed (performance.now()).
+   * @param incomplete True when the press gave up waiting (rule 2).
+   */
+  const decideNewest = useCallback(
+    (trigger: AnswerTrigger, keyPressAt: number, incomplete: boolean) => {
+      const decided = (decision: string, extra: Record<string, number | boolean> = {}) =>
+        callTimings.noteTrace('press-decision', { decision, trigger, ...extra });
+      const lines = transcript.lines().filter((line) => !noiseLinesRef.current.has(line.id));
+      if (!lines.some((line) => line.speaker === 'them' && !line.gap)) {
+        setNotice('Nothing from the other person yet. Type a question in Chat instead.');
+        decided('nothing-new');
+        return;
+      }
+      const choice = chooseNewest({
+        lines,
+        answeredEnd: answeredEndRef.current,
+        lastAnswerId: speechCardRef.current,
+      });
+      if (choice.kind === 'answer') {
+        const sent = ask('answer', {
+          pressedAt: keyPressAt,
+          trigger,
+          exact: {
+            text: choice.text,
+            lineIds: choice.lineIds,
+            span: choice.span,
+            grey: choice.grey,
+            words: choice.words,
+            ...(incomplete ? { incomplete: true } : {}),
+          },
+        });
+        decided(sent ? 'sent' : 'not-sent', {
+          words: choice.words,
+          segments: choice.segments,
+          grey: choice.grey,
+          incomplete,
+        });
+        return;
+      }
+      if (choice.kind === 'show-existing') {
+        const streaming = runner.busy() && lastAnsweredRef.current?.answerId === choice.answerId;
+        setShownId(choice.answerId);
+        setNotice(streaming ? ALREADY_ANSWERING_NOTICE : SHOWING_EARLIER_NOTICE);
+        decided(streaming ? 'ignored-streaming' : 'shown-existing');
+        return;
+      }
+      setNotice(choice.kind === 'gap' ? GAP_NOTICE : NOTHING_NEW_NOTICE);
+      decided(choice.kind === 'gap' ? 'gap' : 'nothing-new');
+    },
+    [ask, runner, transcript],
+  );
+
+  /**
+   * ADR-0076 (E3 rule 2, G1–G3): a press under the 'newest' rules. It waits until the other side is
+   * transcribed up to the press (at most the caller's cap); "Finishing the question…" shows only after
+   * FINISHING_NOTICE_AFTER_MS; a second press while waiting answers at once.
+   *
+   * @param trigger What asked.
+   */
+  const pressNewest = useCallback(
+    (trigger: AnswerTrigger) => {
+      const keyPressAt = performance.now();
+      const receivedAt = Date.now();
+      callTimings.noteTrace('press', { trigger });
+      if (!isOnline()) {
+        setNotice(OFFLINE_TEXT);
+        callTimings.noteTrace('press-decision', { decision: 'offline', trigger });
+        return;
+      }
+      const waiting = pendingCatchUpRef.current;
+      if (waiting) {
+        callTimings.noteTrace('press-again', { trigger });
+        waiting.force();
+        return;
+      }
+      let settled = false;
+      const noticeTimer = setTimeout(() => {
+        if (!settled) setNotice(FINISHING_NOTICE);
+      }, FINISHING_NOTICE_AFTER_MS);
+      const settle = (waitedMs: number, timedOut: boolean, forced: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(noticeTimer);
+        pendingCatchUpRef.current = null;
+        callTimings.noteTrace('press-wait', { waitedMs, timedOut, forced });
+        setNotice((current) => (current === FINISHING_NOTICE ? null : current));
+        decideNewest(trigger, keyPressAt, timedOut || forced);
+      };
+      pendingCatchUpRef.current = {
+        force: () => settle(Date.now() - receivedAt, false, true),
+      };
+      const wait =
+        catchUpRef.current?.(receivedAt) ?? Promise.resolve({ waitedMs: 0, timedOut: false });
+      wait.then(
+        (outcome) => settle(outcome.waitedMs, outcome.timedOut, false),
+        () => settle(Date.now() - receivedAt, true, false),
+      );
+    },
+    [decideNewest],
+  );
+
   // 1.5.2 (ADR-0070): a press waiting for the question is tried again whenever the transcript changes (the
   // grey line grows into a question, or ends), and once more when PRESS_WAIT_MS is up (the timer in ask).
   useEffect(() => {
@@ -949,6 +1195,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   useEffect(
     () => () => {
       pendingPressRef.current = null;
+      pendingCatchUpRef.current = null;
       if (pendingTimerRef.current) clearTimeout(pendingTimerRef.current);
       pendingTimerRef.current = null;
     },
@@ -1107,7 +1354,34 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     index,
     notice,
     answer: useCallback(
-      (trigger?: AnswerTrigger) => void ask('answer', { ...(trigger ? { trigger } : {}) }),
+      (trigger?: AnswerTrigger) => {
+        // ADR-0076: the E3 rules in calls with cloud transcription.
+        if (rules === 'newest') pressNewest(trigger ?? 'hotkey');
+        else void ask('answer', { ...(trigger ? { trigger } : {}) });
+      },
+      [ask, pressNewest, rules],
+    ),
+    autoNewest: useCallback(
+      (decision: NewestAutoDecision) => {
+        // A re-ask of a press's card stays a press (no "Auto" mark).
+        const pressRerun = decision.kind === 'rerun' && lastAnsweredRef.current?.auto === false;
+        callTimings.noteTrace('auto', {
+          kind: decision.kind,
+          words: decision.words,
+          sinceEndMs: Date.now() - decision.tEnd,
+        });
+        void ask('answer', {
+          ...(pressRerun ? { trigger: 'rerun' as const } : { auto: true }),
+          ...(decision.kind === 'rerun' ? { replaces: decision.replaces } : {}),
+          exact: {
+            text: decision.text,
+            lineIds: decision.lineIds,
+            span: decision.span,
+            grey: false,
+            words: decision.words,
+          },
+        });
+      },
       [ask],
     ),
     autoAnswer: useCallback(
@@ -1124,7 +1398,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     ),
     // 1.5.2 (ADR-0070): by the ids the lines have now, and when the last answer stopped streaming.
     answeredState: useCallback(
-      () => ({ ...resolvedAnswered(), idleSince: idleSinceRef.current }),
+      () => ({
+        ...resolvedAnswered(),
+        idleSince: idleSinceRef.current,
+        answeredEnd: answeredEndRef.current,
+      }),
       [resolvedAnswered],
     ),
     chat: useCallback((question: string) => ask('chat', { typed: question }), [ask]),

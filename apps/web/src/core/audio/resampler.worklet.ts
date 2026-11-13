@@ -3,7 +3,8 @@
  * Purpose: The AudioWorklet that turns microphone audio into 16 kHz mono Float32Array chunks of
  *          ~100 ms and posts them straight to the speech-to-text worker (through a MessagePort,
  *          so the main thread is not in the audio path).
- * Used by: src/core/stt/sttEngine.ts (loads it with audioWorklet.addModule, one node per channel)
+ * Used by: src/core/stt/sttEngine.ts (loads it with audioWorklet.addModule, one node per channel);
+ *          src/core/stt/cloudStt.ts (ADR-0076: the 80 ms variant for the cloud speech sockets)
  * Depends on: src/core/audio/resample.ts (StreamingResampler, Chunker; their source is embedded)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1, §7.1 (core/audio)
  *
@@ -18,6 +19,12 @@ export const WORKLET_NAME = 'kite-resampler';
 /** Samples per chunk posted to the worker: 100 ms at 16 kHz. */
 export const CHUNK_SAMPLES = TARGET_SAMPLE_RATE / 10;
 
+/** ADR-0076: the name of the 80 ms variant (cloud transcription sends 80 ms chunks, Deepgram's recommendation). */
+export const CLOUD_WORKLET_NAME = 'kite-resampler-80';
+
+/** ADR-0076: samples per chunk for cloud transcription: 80 ms at 16 kHz (1,280 samples, 2,560 bytes as Int16). */
+export const CLOUD_CHUNK_SAMPLES = (TARGET_SAMPLE_RATE * 80) / 1000;
+
 /**
  * Builds the worklet's JavaScript source.
  * The classes are inserted as class expressions under fixed names, so it still works when the
@@ -28,10 +35,15 @@ export const CHUNK_SAMPLES = TARGET_SAMPLE_RATE / 10;
  * - uses channel 0 only (the microphone stream is mono; "You" and "Them" are separate streams);
  * - transfers each chunk's buffer (no copy).
  *
+ * @param chunkSamples Samples per chunk (default CHUNK_SAMPLES; ADR-0076: CLOUD_CHUNK_SAMPLES for the cloud path).
+ * @param name         The processor's name (default WORKLET_NAME; CLOUD_WORKLET_NAME for the cloud path).
  * @returns JavaScript source for audioWorklet.addModule (via a Blob URL).
  * Called from: workletModuleUrl(); tests
  */
-export function buildWorkletSource(): string {
+export function buildWorkletSource(
+  chunkSamples: number = CHUNK_SAMPLES,
+  name: string = WORKLET_NAME,
+): string {
   return `
 const KiteResampler = (${StreamingResampler.toString()});
 const KiteChunker = (${Chunker.toString()});
@@ -39,7 +51,7 @@ class KiteResamplerProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this.resampler = new KiteResampler(sampleRate, ${TARGET_SAMPLE_RATE});
-    this.chunker = new KiteChunker(${CHUNK_SAMPLES});
+    this.chunker = new KiteChunker(${chunkSamples});
     this.target = null;
     this.port.onmessage = (event) => {
       if (event.data && event.data.type === 'connect') this.target = event.data.port;
@@ -58,16 +70,23 @@ class KiteResamplerProcessor extends AudioWorkletProcessor {
     return true;
   }
 }
-registerProcessor(${JSON.stringify(WORKLET_NAME)}, KiteResamplerProcessor);
+registerProcessor(${JSON.stringify(name)}, KiteResamplerProcessor);
 `;
 }
 
 /**
  * Creates a Blob URL for the worklet source. Revoke it after addModule().
  *
+ * @param chunkSamples Samples per chunk (see buildWorkletSource()).
+ * @param name         The processor's name (see buildWorkletSource()).
  * @returns An object URL for audioWorklet.addModule.
- * Called from: ensureAudio() in src/core/stt/sttEngine.ts
+ * Called from: ensureAudio() in src/core/stt/sttEngine.ts; src/core/stt/cloudStt.ts (ADR-0076)
  */
-export function workletModuleUrl(): string {
-  return URL.createObjectURL(new Blob([buildWorkletSource()], { type: 'text/javascript' }));
+export function workletModuleUrl(
+  chunkSamples: number = CHUNK_SAMPLES,
+  name: string = WORKLET_NAME,
+): string {
+  return URL.createObjectURL(
+    new Blob([buildWorkletSource(chunkSamples, name)], { type: 'text/javascript' }),
+  );
 }

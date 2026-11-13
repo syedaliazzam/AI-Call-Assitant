@@ -126,6 +126,8 @@ export interface AnsweredQuestion {
   lineIds: readonly string[];
   /** The end of the speech it answered (Unix ms, the lines' time base). */
   end: number;
+  /** ADR-0076: the start of the speech it answered (capture clock), for the rule-6 re-ask. */
+  start?: number;
   /** When it was asked (Unix ms, the lines' time base). */
   askedAt: number;
   /** True when Kite asked it by itself. */

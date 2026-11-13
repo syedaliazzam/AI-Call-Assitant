@@ -235,7 +235,7 @@ export function Settings({ isAdmin }: SettingsProps) {
         )}
       </Section>
 
-      <Section title="Hotkeys">
+      <Section title="Hotkeys" id="hotkeys">
         <HotkeyList />
       </Section>
 

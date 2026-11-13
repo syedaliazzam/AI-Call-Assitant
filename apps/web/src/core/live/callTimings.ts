@@ -8,6 +8,11 @@
  *          call is kept in this browser profile's localStorage (the last MAX_CALLS calls) and can be
  *          downloaded from Settings as JSON with a summary (p50 / p95).
  *          Never any text: no words, no questions, no answers, no audio, no device names.
+ *          ADR-0076 (investigation T0.1): with Settings → Transcription → "Timing trace" on (this device only,
+ *          off by default), each call also keeps a list of timed events (trace): the capture clock, the
+ *          speech engine of each line, Deepgram's sockets and turn events, failovers, every key press and
+ *          what it decided, the request's phases with the server's timings and cache token counts, and the
+ *          page's load. Codes, counts and times only.
  * Used by: src/features/live/LivePage.tsx, src/features/live/useLiveAnswers.ts,
  *          src/features/settings/CallTimingLog.tsx
  * Depends on: localStorage (missing or blocked: the log stays in memory for this page only)
@@ -20,6 +25,47 @@ export const CALL_TIMINGS_KEY = 'kite.callTimings';
 
 /** How many calls are kept. */
 export const MAX_CALLS = 5;
+
+/** ADR-0076: localStorage key of the "Timing trace" switch ('1' = on). */
+export const TRACE_KEY = 'kite.trace';
+
+/** ADR-0076: the most trace events kept per call. */
+export const MAX_TRACE_EVENTS = 6_000;
+
+/** ADR-0076: one trace value: a number, a short code or a flag (never words). */
+export type TraceField = number | string | boolean | null;
+
+/** ADR-0076: one trace event: [Unix ms, kind, fields]. */
+export type TraceEvent = [number, string, Record<string, TraceField>];
+
+/**
+ * ADR-0076: whether "Timing trace" is on for this device.
+ *
+ * @returns True when switched on.
+ * Called from: createCallTimings() (start), CallTimingLog.tsx
+ */
+export function traceEnabled(): boolean {
+  try {
+    return localStorage.getItem(TRACE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * ADR-0076: switches "Timing trace" on or off for this device (from the next call).
+ *
+ * @param on True to record the trace.
+ * Called from: CallTimingLog.tsx
+ */
+export function setTraceEnabled(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(TRACE_KEY, '1');
+    else localStorage.removeItem(TRACE_KEY);
+  } catch {
+    // Storage blocked: the switch cannot be kept; calls go on without the trace.
+  }
+}
 
 /** The most entries of each kind kept per call (a long call stays small). */
 const MAX_ENTRIES = 2_000;
@@ -52,6 +98,8 @@ export interface LineTiming {
   partialAt: number | null;
   /** When the final line reached the page. */
   finalAt: number;
+  /** ADR-0076: which engine wrote it: 'deepgram' or 'local' (absent before ADR-0076). */
+  engine?: string;
 }
 
 /** One answer (times are Unix ms). */
@@ -84,6 +132,37 @@ export interface AnswerTiming {
   early?: boolean;
   /** 1.5.2: the card this request asked again (a rerun or a continuation), by its answer id. */
   rerunOf?: string;
+  /** ADR-0076: the ids of the transcript lines asked (ids only). */
+  lineIds?: string[];
+  /** ADR-0076: the asked speech's span (capture clock), for the asked-vs-final word count. */
+  span?: {
+    /** Start (Unix ms). */
+    start: number;
+    /** End (Unix ms). */
+    end: number;
+  };
+  /** ADR-0076: how many words were asked. */
+  askedWords?: number;
+  /** ADR-0076: how many words the same speech had by the end of the call. */
+  finalWords?: number;
+  /** ADR-0076: the press gave up waiting for the other side (the card says "may be incomplete"). */
+  incomplete?: boolean;
+  /** ADR-0076: the body was ready (after any gzip), Unix ms. */
+  bodyReadyAt?: number;
+  /** ADR-0076: fetch was called, Unix ms. */
+  fetchAt?: number;
+  /** ADR-0076: the response headers arrived, Unix ms. */
+  headersAt?: number;
+  /** ADR-0076: the hidden meta line arrived, Unix ms. */
+  metaAt?: number;
+  /** ADR-0076: the server's own timings (ms from receiving the request). */
+  serverMs?: Record<string, number>;
+  /** ADR-0076: prompt cache tokens read. */
+  cacheRead?: number;
+  /** ADR-0076: prompt cache tokens written. */
+  cacheWrite?: number;
+  /** ADR-0076: input tokens not from the cache. */
+  inputTokens?: number;
 }
 
 /** One Accurate decision (times are Unix ms). */
@@ -131,6 +210,10 @@ export interface CallTimingLog {
    * (absent from logs before 1.5.2, or when the worker never reported it).
    */
   echoCancel?: string;
+  /** ADR-0076: the speech engine of the call: 'local', 'deepgram' or 'mixed' (absent before ADR-0076). */
+  engine?: string;
+  /** ADR-0076: the timing trace (only with "Timing trace" on). */
+  trace?: TraceEvent[];
 }
 
 /** Where saved calls are kept (tests pass a fake). */
@@ -164,10 +247,11 @@ const LOCAL_STORE: TimingStore = {
  *
  * @param list The list.
  * @param item The new entry.
+ * @param max  The most entries kept (default MAX_ENTRIES).
  */
-function capped<T>(list: T[], item: T): void {
+function capped<T>(list: T[], item: T, max: number = MAX_ENTRIES): void {
   list.push(item);
-  if (list.length > MAX_ENTRIES) list.shift();
+  if (list.length > max) list.shift();
 }
 
 /** The recorder (one per page; one call at a time). */
@@ -197,6 +281,18 @@ export interface CallTimings {
   noteAnswer: (answer: Partial<AnswerTiming> & { answerId: string }) => void;
   /** Notes a call notice. */
   noteNotice: (kind: string, at?: number) => void;
+  /**
+   * ADR-0076: adds a trace event (only while a call runs with "Timing trace" on).
+   *
+   * @param kind   What happened ('socket-open', 'press', 'failover', …).
+   * @param fields Numbers, codes and flags only.
+   * @param at     When (default now).
+   */
+  noteTrace: (kind: string, fields?: Record<string, TraceField>, at?: number) => void;
+  /** ADR-0076: whether this call records the trace. */
+  tracing: () => boolean;
+  /** ADR-0076: notes the call's speech engine ('local', 'deepgram'; a second kind makes it 'mixed'). */
+  noteEngine: (engine: 'local' | 'deepgram') => void;
   /** Ends the call and saves it; nothing happens without a started call. */
   end: (at?: number) => void;
   /** The current call's log, or null. */
@@ -242,6 +338,8 @@ export function createCallTimings(
         droppedMs: 0,
         deferredDroppedMs: 0,
         notices: [],
+        // ADR-0076: the trace only when switched on for this device.
+        ...(traceEnabled() ? { trace: [] } : {}),
       };
       partialAt.you = null;
       partialAt.them = null;
@@ -294,6 +392,15 @@ export function createCallTimings(
     },
     noteNotice(kind, at = clock()) {
       if (log) capped(log.notices, [at, kind]);
+      if (log?.trace) capped(log.trace, [at, 'notice', { kind }], MAX_TRACE_EVENTS);
+    },
+    noteTrace(kind, fields = {}, at = clock()) {
+      if (log?.trace) capped(log.trace, [at, kind, fields], MAX_TRACE_EVENTS);
+    },
+    tracing: () => log?.trace !== undefined,
+    noteEngine(engine) {
+      if (!log) return;
+      log.engine = log.engine === undefined || log.engine === engine ? engine : 'mixed';
     },
     end(at = clock()) {
       if (!log) return;
@@ -357,6 +464,14 @@ export interface CallSummary {
   notices: Record<string, number>;
   /** 1.5.2 (ADR-0070): every card, in order, with its moments and intervals. */
   cards: CardTiming[];
+  /** ADR-0076: lines by engine ('deepgram', 'local'; 'unknown' before ADR-0076). */
+  lineEngines: Record<string, number>;
+  /** ADR-0076: channel switches in the trace (to the on-device engine and back). */
+  failovers: number;
+  /** ADR-0076: key presses by what they decided (from the trace). */
+  pressDecisions: Record<string, number>;
+  /** ADR-0076: key press → caught up, ms (from the trace). */
+  pressWait: Percentiles;
 }
 
 /**
@@ -457,5 +572,17 @@ export function summarizeCall(log: CallTimingLog): CallSummary {
     triggers: count(log.answers.map((a) => a.trigger)),
     notices: count(log.notices.map(([, kind]) => kind)),
     cards: cardTimings(log),
+    lineEngines: count(log.lines.map((line) => line.engine ?? 'unknown')),
+    failovers: (log.trace ?? []).filter(([, kind]) => kind === 'failover').length,
+    pressDecisions: count(
+      (log.trace ?? [])
+        .filter(([, kind]) => kind === 'press-decision')
+        .map(([, , fields]) => String(fields.decision)),
+    ),
+    pressWait: percentiles(
+      (log.trace ?? [])
+        .filter(([, kind, fields]) => kind === 'press-wait' && typeof fields.waitedMs === 'number')
+        .map(([, , fields]) => fields.waitedMs as number),
+    ),
   };
 }
