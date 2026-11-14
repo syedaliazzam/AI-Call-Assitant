@@ -218,7 +218,7 @@ function AnswerCard({
  * @param props.label    "Paramount AI answered", with its type for chat and screenshot answers.
  * @param props.time     Its mm:ss since the call started.
  * @param props.children The card.
- * @returns The label and, once opened, the card.
+ * @returns The label and, while open (the default since Batch D), the card.
  * Rendered by: ConversationSection
  */
 function AnswerChip({
@@ -233,7 +233,9 @@ function AnswerChip({
   /** The card. */
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  // Batch D (P2, decision D4): open by default, so every answer's Question and Answer show on the page; a
+  // click still folds one away.
+  const [open, setOpen] = useState(true);
   return (
     <li className="flex flex-col">
       <button

@@ -1,19 +1,20 @@
 /**
  * File: apps/web/src/core/drive/callFiles.ts
  * Purpose: The files a call saves to Drive's "Transcripts" folder (ADR-0072), made on this device from
- *          its saved data: the call's transcript as TXT and PDF (the same text as the review page's
- *          downloads, for this call only), and the call's AI notes as a PDF. A session with "Save
+ *          its saved data: the call's transcript as a PDF (the same text as the review page's PDF
+ *          download, for this call only), and the call's AI notes as a PDF. ADR-0080: the transcript TXT
+ *          is no longer made for Drive (the review page still offers it as a download). A session with "Save
  *          transcript" off saves no transcript (the person chose not to keep one); its notes are still
  *          saved. Nothing here leaves the device except as those files, uploaded to the person's Drive.
  *          ADR-0077: per call, from the call itself (buildCallViewFiles).
  * Used by: src/core/drive/uploader.ts, src/core/drive/runner.ts
- * Depends on: src/core/review/conversation.ts (transcriptText, transcriptPdf), src/core/review/pdf.ts,
+ * Depends on: src/core/review/conversation.ts (transcriptPdf), src/core/review/pdf.ts,
  *             src/core/review/load.ts (formatCallTime), src/core/storage (answers, utterances, notes),
  *             src/core/transcript/display.ts
- * Architecture: ADR-0072; architecture §5 (Session review)
+ * Architecture: ADR-0072, ADR-0080; architecture §5 (Session review)
  */
 import type { CallNotes } from '@kite/shared';
-import { conversationItems, transcriptPdf, transcriptText } from '../review/conversation';
+import { conversationItems, transcriptPdf } from '../review/conversation';
 import type { CallView } from '../review/calls';
 import { formatCallTime } from '../review/load';
 import { writePdf, type PdfLine } from '../review/pdf';
@@ -126,7 +127,7 @@ export function notesPdf(title: string, notes: CallNotes): Blob {
  * @param call        The call.
  * @param title       The session's title (names.ts sessionTitle()).
  * @param accountName The account's display name, on the user's turns (as in the review downloads).
- * @returns The files there is something for (none when nothing was saved).
+ * @returns The files there is something for (none when nothing was saved): transcript PDF, notes PDF.
  * Called from: uploader.ts (through its deps); tests
  */
 export async function buildCallFiles(
@@ -145,12 +146,7 @@ export async function buildCallFiles(
     if (slice.lines.length > 0 || slice.answers.length > 0) {
       const items = conversationItems(slice.lines, slice.answers);
       const terms = displayTerms(session);
-      files.push({
-        kind: 'transcript-txt',
-        blob: new Blob([transcriptText(session, items, terms, accountName)], {
-          type: 'text/plain;charset=utf-8',
-        }),
-      });
+      // ADR-0080: the transcript PDF only (no TXT).
       files.push({
         kind: 'transcript-pdf',
         blob: new Blob([transcriptPdf(session, items, terms, accountName).bytes as BlobPart], {
@@ -176,7 +172,7 @@ export async function buildCallFiles(
  * @param call        The call.
  * @param title       The session's title (names.ts sessionTitle()).
  * @param accountName The account's display name, on the user's turns.
- * @returns The files there is something for, in upload order (TXT, PDF, notes PDF).
+ * @returns The files there is something for, in upload order (transcript PDF, notes PDF; ADR-0080: no TXT).
  * Called from: core/drive/runner.ts (the per-call uploader's deps); tests
  */
 export async function buildCallViewFiles(
@@ -189,12 +185,7 @@ export async function buildCallViewFiles(
   if (session.saveTranscript && (call.lines.length > 0 || call.answers.length > 0)) {
     const items = conversationItems(call.lines, call.answers);
     const terms = displayTerms(session);
-    files.push({
-      kind: 'transcript-txt',
-      blob: new Blob([transcriptText(session, items, terms, accountName)], {
-        type: 'text/plain;charset=utf-8',
-      }),
-    });
+    // ADR-0080: the transcript PDF only (no TXT).
     files.push({
       kind: 'transcript-pdf',
       blob: new Blob([transcriptPdf(session, items, terms, accountName).bytes as BlobPart], {

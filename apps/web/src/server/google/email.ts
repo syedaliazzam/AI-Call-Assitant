@@ -90,7 +90,10 @@ export function formatWhen(at: number, timeZone: string): string {
   }
 }
 
-/** The order files are listed in. */
+/**
+ * The order files are listed in. ADR-0080: calls now save only the recording, the transcript PDF and the
+ * notes PDF; the stereo and transcript-txt kinds stay for emails about older calls that saved them.
+ */
 const KIND_ORDER: Readonly<Record<DriveFileKind, number>> = {
   recording: 0,
   stereo: 1,
@@ -101,7 +104,8 @@ const KIND_ORDER: Readonly<Record<DriveFileKind, number>> = {
 
 /**
  * A file's label in the email: "Recording Part 1", "Stereo audio", "Transcript (PDF)", "Transcript (text)",
- * "Notes (PDF)"; the part is named only for a recording in several parts.
+ * "Notes (PDF)"; the part is named only for a recording in several parts. "Stereo audio" and "Transcript
+ * (text)" appear only for older calls (ADR-0080: new calls no longer save those files).
  *
  * @param kind  What the file is.
  * @param part  Its part.

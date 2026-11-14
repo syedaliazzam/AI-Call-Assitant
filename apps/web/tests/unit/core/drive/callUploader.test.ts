@@ -2,7 +2,10 @@
  * Tests for apps/web/src/core/drive/callUploader.ts (ADR-0077: one Google Drive job per call), through
  * runDriveQueue() in uploader.ts, over a fake of Kite's server-side Drive routes (never a Google token), a
  * fake desktop shell and in-memory job stores:
- * - order: transcript TXT, transcript PDF, notes PDF, then the recording (main, then stereo);
+ * - ADR-0080: the file set is exactly the transcript PDF, the notes PDF and the recording's main file, in
+ *   that order (a TXT from a builder and the recording's stereo file are never uploaded);
+ * - ADR-0080: a job queued before keeps its done TXT and stereo entries and drops the not-yet-sent ones;
+ *   a failed job that only waited on them is queued again and finishes;
  * - email 1's report goes once the Transcripts files are in, before any recording uploads; a later report
  *   when the recording is in; a call from "Upload earlier calls" is reported "manual only", no rule;
  * - each file on its own: a failing transcript PDF or recording file never stops the others; the next run
@@ -21,10 +24,15 @@ import type {
 import { describe, expect, it } from 'vitest';
 import { DriveApiError } from '@/core/drive/api';
 import type { CallFile } from '@/core/drive/callFiles';
-import { planCallFiles, recordingOfCall, type CallJobDeps } from '@/core/drive/callUploader';
+import {
+  callSavedFiles,
+  planCallFiles,
+  recordingOfCall,
+  type CallJobDeps,
+} from '@/core/drive/callUploader';
 import { runDriveQueue, type UploaderDeps } from '@/core/drive/uploader';
 import type { CallView } from '@/core/review/calls';
-import type { CallDriveState, DriveCallJob, Session } from '@/core/storage/types';
+import type { CallDriveState, DriveCallJob, DriveFileJob, Session } from '@/core/storage/types';
 
 /** The session. */
 const SID = '11111111-1111-4111-8111-111111111111';
@@ -94,7 +102,7 @@ const JOB: DriveCallJob = {
   updatedAt: END,
 };
 
-/** The call's Transcripts files. */
+/** The call's Transcripts files (with a TXT, as an older builder made: it must be left out). */
 const CALL_FILES: CallFile[] = [
   { kind: 'transcript-txt', blob: new Blob(['lines']) },
   { kind: 'transcript-pdf', blob: new Blob(['%PDF']) },
@@ -240,17 +248,16 @@ function world(options: WorldOptions = {}) {
 }
 
 describe('per-call Drive upload (ADR-0077)', () => {
-  it('uploads transcript TXT, PDF, notes PDF, then the recording; email 1 is reported first', async () => {
+  it('uploads exactly the transcript PDF, notes PDF, then the main video; email 1 is reported first', async () => {
     const w = world();
     expect(await runDriveQueue(w.deps)).toBe('idle');
+    // ADR-0080: no TXT and no stereo file, though the builder gave a TXT and the recording has stereo.
     expect(w.order).toEqual([
-      `call:${START}:transcript-txt`,
       `call:${START}:transcript-pdf`,
       `call:${START}:notes-pdf`,
       `rec:${RECORDING.id}:main`,
-      `rec:${RECORDING.id}:stereo`,
     ]);
-    // Email 1's report: the three Transcripts files, before any recording file existed.
+    // Email 1's report: the two Transcripts files, before any recording file existed.
     expect(w.reports[0]).toMatchObject({
       emailRule: 'two-step',
       callFilesSaved: true,
@@ -260,13 +267,13 @@ describe('per-call Drive upload (ADR-0077)', () => {
         { id: RECORDING.id, part: 1, stereo: true, deviceName: 'Office laptop' },
       ],
     });
-    expect(w.reports[0]!.files.map((file) => file.kind)).toEqual([
-      'transcript-txt',
+    expect(w.reports[0]!.files.map((file) => file.kind)).toEqual(['transcript-pdf', 'notes-pdf']);
+    // The finish: everything, once more.
+    expect(w.reports.at(-1)!.files.map((file) => file.kind)).toEqual([
       'transcript-pdf',
       'notes-pdf',
+      'recording',
     ]);
-    // The finish: everything, once more.
-    expect(w.reports.at(-1)!.files).toHaveLength(5);
     expect(w.jobs.get(CALL_ID)).toMatchObject({
       state: 'done',
       notified: true,
@@ -276,7 +283,7 @@ describe('per-call Drive upload (ADR-0077)', () => {
     // Run again: nothing is uploaded or reported twice.
     const reports = w.reports.length;
     await runDriveQueue(w.deps);
-    expect(w.counts).toEqual({ small: 3, started: 2 });
+    expect(w.counts).toEqual({ small: 2, started: 1 });
     expect(w.reports).toHaveLength(reports);
   });
 
@@ -286,12 +293,8 @@ describe('per-call Drive upload (ADR-0077)', () => {
       hostScript: [() => ({ status: 'failed', retryable: true, reason: 'network' })],
     });
     await runDriveQueue(w.deps);
-    // Everything else went in, in order.
-    expect(w.order).toEqual([
-      `call:${START}:transcript-txt`,
-      `call:${START}:notes-pdf`,
-      `rec:${RECORDING.id}:stereo`,
-    ]);
+    // Everything else went in.
+    expect(w.order).toEqual([`call:${START}:notes-pdf`]);
     const job = w.jobs.get(CALL_ID)!;
     expect(job).toMatchObject({ state: 'error', autoRetry: true });
     expect(job.files.filter((file) => !file.done).map((file) => file.key)).toEqual([
@@ -303,21 +306,113 @@ describe('per-call Drive upload (ADR-0077)', () => {
     // Retried later (the automatic retry): only the two failed files go.
     w.jobs.set(CALL_ID, { ...job, updatedAt: 0 });
     await runDriveQueue(w.deps);
-    expect(w.order.slice(3)).toEqual([`call:${START}:transcript-pdf`, `rec:${RECORDING.id}:main`]);
+    expect(w.order.slice(1)).toEqual([`call:${START}:transcript-pdf`, `rec:${RECORDING.id}:main`]);
     expect(w.jobs.get(CALL_ID)!.state).toBe('done');
     expect(w.reports.some((report) => report.callFilesSaved === true)).toBe(true);
-    expect(w.counts.small).toBe(3);
+    expect(w.counts.small).toBe(2);
   });
 
   it('never uploads a file already in Drive (same keys as the older per-session upload)', async () => {
-    const w = world({ existing: [`call:${START}:transcript-txt`, `rec:${RECORDING.id}:main`] });
+    const w = world({ existing: [`call:${START}:transcript-pdf`, `rec:${RECORDING.id}:main`] });
+    await runDriveQueue(w.deps);
+    expect(w.order).toEqual([`call:${START}:notes-pdf`]);
+    expect(w.jobs.get(CALL_ID)!.files.every((file) => file.done)).toBe(true);
+  });
+
+  it('a job queued before ADR-0080 keeps its done TXT and stereo, drops the unsent ones, and finishes', async () => {
+    const file = (key: string, done: boolean, more: Partial<DriveFileJob> = {}): DriveFileJob => ({
+      key,
+      folder: key.startsWith('rec:') ? 'Recordings' : 'Transcripts',
+      name: key,
+      callStartedAt: START,
+      bytes: 10,
+      sent: done ? 10 : 0,
+      done,
+      ...(done ? { driveFileId: `id-${key}` } : {}),
+      ...more,
+    });
+    const track = (id: string, which: 'main' | 'stereo', done: boolean) =>
+      file(`rec:${id}:${which}`, done, { recordingId: id, track: which, part: 1 });
+    const second: LocalRecording = { ...RECORDING, id: '33333333-3333-4333-8333-333333333333' };
+    // It failed five times on the second part's stereo file (waiting for Retry); the TXT, the first stereo
+    // file and every other file were already in Drive.
+    const queued: DriveCallJob = {
+      ...JOB,
+      state: 'error',
+      reason: 'failed',
+      folderId: 'SESSIONF',
+      recordingsId: 'RECF',
+      transcriptsId: 'TRANSF',
+      parentId: 'ROOT',
+      callFilesReported: true,
+      files: [
+        file(`call:${START}:transcript-txt`, true),
+        file(`call:${START}:transcript-pdf`, true),
+        file(`call:${START}:notes-pdf`, true),
+        track(RECORDING.id, 'main', true),
+        track(RECORDING.id, 'stereo', true),
+        track(second.id, 'main', true),
+        { ...track(second.id, 'stereo', false), failures: 5, error: 'failed' },
+      ],
+    };
+    const w = world({ job: queued, recordings: [RECORDING, second] });
+    await runDriveQueue(w.deps);
+    const job = w.jobs.get(CALL_ID)!;
+    // The unsent stereo file is gone; the TXT and the stereo file already in Drive stay.
+    expect(job.files.map((one) => one.key).sort()).toEqual(
+      [
+        `call:${START}:transcript-txt`,
+        `call:${START}:transcript-pdf`,
+        `call:${START}:notes-pdf`,
+        `rec:${RECORDING.id}:main`,
+        `rec:${RECORDING.id}:stereo`,
+        `rec:${second.id}:main`,
+      ].sort(),
+    );
+    // Nothing was uploaded again, and the job finished (it no longer waits for Retry).
+    expect(w.order).toEqual([]);
+    expect(job.state).toBe('done');
+    // The email about this older call still lists its TXT and stereo file.
+    const kinds = callSavedFiles(job).map((one) => one.kind);
+    expect(kinds).toContain('transcript-txt');
+    expect(kinds).toContain('stereo');
+  });
+
+  it('a queued job that never sent its TXT or stereo file drops them before uploading', async () => {
+    const queued: DriveCallJob = {
+      ...JOB,
+      files: [
+        {
+          key: `call:${START}:transcript-txt`,
+          folder: 'Transcripts',
+          name: 'old.txt',
+          callStartedAt: START,
+          bytes: 5,
+          sent: 0,
+          done: false,
+        },
+        {
+          key: `rec:${RECORDING.id}:stereo`,
+          folder: 'Recordings',
+          name: 'old stereo.webm',
+          recordingId: RECORDING.id,
+          track: 'stereo',
+          part: 1,
+          callStartedAt: START,
+          bytes: 0,
+          sent: 0,
+          done: false,
+        },
+      ],
+    };
+    const w = world({ job: queued });
     await runDriveQueue(w.deps);
     expect(w.order).toEqual([
       `call:${START}:transcript-pdf`,
       `call:${START}:notes-pdf`,
-      `rec:${RECORDING.id}:stereo`,
+      `rec:${RECORDING.id}:main`,
     ]);
-    expect(w.jobs.get(CALL_ID)!.files.every((file) => file.done)).toBe(true);
+    expect(w.jobs.get(CALL_ID)!.files.map((one) => one.key)).toEqual(w.order);
   });
 
   it('reports an earlier call "manual only", with no email rule', async () => {
@@ -335,12 +430,11 @@ describe('planCallFiles and recordingOfCall', () => {
   it('orders the files and matches recordings by meeting, or by time for an older call', () => {
     const other: LocalRecording = { ...RECORDING, id: 'r2', meetingId: 'another', part: 2 };
     const planned = planCallFiles(JOB, [other, RECORDING], CALL_FILES);
+    // ADR-0080: exactly the two PDFs and the main video (no TXT, no stereo file).
     expect(planned.map((file) => file.key)).toEqual([
-      `call:${START}:transcript-txt`,
       `call:${START}:transcript-pdf`,
       `call:${START}:notes-pdf`,
       `rec:${RECORDING.id}:main`,
-      `rec:${RECORDING.id}:stereo`,
     ]);
     const legacy = { ...JOB, recordingMatch: 'window' as const };
     expect(recordingOfCall(legacy, { sessionId: SID, startedAt: START - 30_000 })).toBe(true);

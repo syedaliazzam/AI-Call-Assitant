@@ -142,6 +142,20 @@ export interface AnsweredQuestion {
    * with GROWN_WORDS more (the model often writes the last word a moment after the pause).
    */
   words?: number;
+  /**
+   * Batch D (P0-B, ADR-0079): the start of the speech the card's ORIGINAL request answered (capture clock).
+   * A re-ask never moves it, so the rule-6 window cannot walk forward from re-ask to re-ask.
+   */
+  anchorStart?: number;
+  /** Batch D (P0-B): the end of the speech the card's original request answered. A re-ask never moves it. */
+  anchorEnd?: number;
+  /** Batch D (P0-B): how many times this question was asked again (at most MAX_REASKS). */
+  reasks?: number;
+  /**
+   * Batch D (P0-C): the words the original request sent, to tell "the same sentence, finished" from a new
+   * question. In memory only; never saved or logged.
+   */
+  askedText?: string;
 }
 
 /** 1.5.2 (ADR-0070): new words a line that only grew needs before its card is asked again. */

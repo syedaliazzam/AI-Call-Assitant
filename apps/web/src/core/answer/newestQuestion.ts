@@ -12,10 +12,18 @@
  *          5. A reply is a finished "You" line of more than two words that did not start over the other
  *             person (question.ts lastReplyIndex, unchanged).
  *          6. Completeness: when the asked speech goes on within REASK_WINDOW_MS (any new word), it is asked
- *             again on the same card: presses, auto-answers and finals alike.
+ *             again. Batch D (P0-B, ADR-0079): measured from the card's ORIGINAL answer (a re-ask never moves
+ *             the anchor), at most MAX_REASKS times per card, never past a question of its own after a
+ *             NEW_QUESTION_GAP_MS pause, and with auto-answer off only for a press on grey words (D1). P0-C:
+ *             the decision says whether the added words only finish the same sentence (then the same card)
+ *             or not (then a new card; useLiveAnswers.ts).
  *          7. Feedback: every press ends in a card, "Showing the earlier answer", "Already answering", or
- *             "Nothing new to answer" (useLiveAnswers.ts).
- *          8. Gaps: when only lost audio follows the last answer, the press says so.
+ *             "Nothing new to answer" (useLiveAnswers.ts). Batch D (P1-G): the caller passes the end of the
+ *             speech answered on cards of their own (re-asks excluded), so speech a re-ask took in is
+ *             answered on its own card when pressed for.
+ *          8. Gaps: Batch D (P1-G): lost audio never stops a press: the newest words are answered (around the
+ *             gap when nothing came after it) and the card notes that part of their audio was lost. Only with
+ *             no words of theirs at all does the press say so instead.
  *          9. Auto-answer uses the same window, at the engine's own end of turn (Flux EndOfTurn), and answers
  *             a question once (plus the rule-6 re-ask).
  * Used by: src/features/live/useLiveAnswers.ts, src/features/live/useAutoAnswer.ts
@@ -35,6 +43,7 @@ import {
   AUTO_MAX_AGE_MS,
   AUTO_PAUSE_MS,
   isAutoQuestion,
+  NEW_QUESTION_GAP_MS,
   STALE_PARTIAL_MS,
   UNFINISHED_PAUSE_MS,
   type AnsweredQuestion,
@@ -55,6 +64,20 @@ export const REASK_WORDS = 1;
 /** At most this many words are sent (the newest), so a long monologue stays a reasonable request. */
 export const MAX_NEWEST_WORDS = 200;
 
+/**
+ * Batch D (P0-B, ADR-0079): how many times one card's question is asked again. The 14 Nov call re-asked
+ * one card ten times in two minutes (each re-ask moved the window forward); one is enough to complete a
+ * question the engine ended early.
+ */
+export const MAX_REASKS = 1;
+
+/**
+ * Batch D (P1-G): with nothing new after lost audio, a press answers the other person's words that ended
+ * at most this long before the gap started (the newest words around it), ms. Matches the 10 s ring buffer
+ * the cloud engine keeps per channel.
+ */
+export const GAP_CONTEXT_MS = 10_000;
+
 /** The speech one answer covered (capture clock, Unix ms). */
 export interface AnsweredSpeech {
   /** Start of its first segment. */
@@ -64,7 +87,7 @@ export interface AnsweredSpeech {
 }
 
 /** A stretch of the other person's speech with the line it is in. */
-interface Candidate {
+export interface Candidate {
   /** The line's id. */
   lineId: string;
   /** Whether the line is still grey. */
@@ -108,6 +131,18 @@ function onlyListening(text: string): boolean {
 }
 
 /**
+ * Rule 5: when the user's last real reply started, or -Infinity when there is none.
+ *
+ * @param spoken The spoken lines (spokenLines()).
+ * @returns The reply's start (capture clock).
+ * Called from: unansweredSpeech(), chooseNewest()
+ */
+function replyStartOf(spoken: readonly Utterance[]): number {
+  const reply = lastReplyIndex(spoken);
+  return reply === -1 ? Number.NEGATIVE_INFINITY : spoken[reply]!.tStart;
+}
+
+/**
  * Rules 3 and 5: the other person's unanswered speech, by time.
  *
  * @param lines       The visible lines (noise left out by the caller).
@@ -120,9 +155,7 @@ export function unansweredSpeech(
   answeredEnd: number | null,
 ): Candidate[] {
   const spoken = spokenLines(lines);
-  const reply = lastReplyIndex(spoken);
-  const replyStart = reply === -1 ? Number.NEGATIVE_INFINITY : spoken[reply]!.tStart;
-  const from = Math.max(answeredEnd ?? Number.NEGATIVE_INFINITY, replyStart);
+  const from = Math.max(answeredEnd ?? Number.NEGATIVE_INFINITY, replyStartOf(spoken));
   const result: Candidate[] = [];
   for (const line of spoken) {
     if (line.speaker !== 'them') continue;
@@ -184,6 +217,11 @@ export type NewestChoice =
       words: number;
       /** How many separate stretches it joins (for the trace). */
       segments: number;
+      /**
+       * Batch D (P1-G): part of their audio was lost around these words (the card says so in a small line).
+       * The span then reaches the end of the gap, so the next press does not answer the same gap again.
+       */
+      audioLost?: boolean;
     }
   | {
       /** Nothing new since the last card: show it ("Showing the earlier answer" / "Already answering"). */
@@ -192,7 +230,7 @@ export type NewestChoice =
       answerId: string;
     }
   | {
-      /** Only lost audio since the last answer: say so instead of answering the question before it. */
+      /** Batch D (P1-G): lost audio and no words of theirs near it to answer: say so. */
       kind: 'gap';
     }
   | {
@@ -204,10 +242,29 @@ export type NewestChoice =
 export interface NewestInput {
   /** The visible lines (finals and grey), noise left out, in order. */
   lines: readonly Utterance[];
-  /** The end of the newest answered speech (capture clock), or null before any answer. */
+  /**
+   * The end of the newest answered speech (capture clock), or null before any answer. Batch D (P1-G): for a
+   * press, the speech answered on cards of their own (presses, auto-answers, re-asks on a new card): speech
+   * a re-ask took into an earlier card's question counts as unanswered, so a press answers it.
+   */
   answeredEnd: number | null;
   /** The newest card for speech in this call, or null. */
   lastAnswerId: string | null;
+}
+
+/**
+ * Batch D (P1-G): with only lost audio since the boundary, the other person's newest words around it: their
+ * stretches since the user's last reply that ended at most GAP_CONTEXT_MS before the gap began, or after.
+ *
+ * @param lines The visible lines.
+ * @param gap   The newest gap mark of theirs.
+ * @returns The stretches, oldest first ([] when they said nothing near it).
+ * Called from: chooseNewest()
+ */
+function aroundGap(lines: readonly Utterance[], gap: Utterance): Candidate[] {
+  return unansweredSpeech(lines, null).filter(
+    (candidate) => candidate.segment.tEnd >= gap.tStart - GAP_CONTEXT_MS,
+  );
 }
 
 /**
@@ -219,14 +276,29 @@ export interface NewestInput {
  */
 export function chooseNewest(input: NewestInput): NewestChoice {
   const candidates = unansweredSpeech(input.lines, input.answeredEnd);
-  if (candidates.length > 0) {
-    return { kind: 'answer', ...asQuestion(candidates), segments: candidates.length };
+  // Rule 8 (Batch D, P1-G): their audio lost since the last answer (and since the user's last reply).
+  const from = Math.max(
+    input.answeredEnd ?? Number.NEGATIVE_INFINITY,
+    replyStartOf(spokenLines(input.lines)),
+  );
+  const gap = input.lines.findLast(
+    (line) => line.gap === true && line.speaker === 'them' && line.tEnd > from,
+  );
+  // The words to answer: the new ones, or with nothing new, the newest around the gap.
+  const words = candidates.length > 0 ? candidates : gap ? aroundGap(input.lines, gap) : [];
+  if (words.length > 0) {
+    const question = asQuestion(words);
+    if (!gap) return { kind: 'answer', ...question, segments: words.length };
+    return {
+      kind: 'answer',
+      ...question,
+      // Reaches the gap's end, so a second press does not answer the same gap again.
+      span: { start: question.span.start, end: Math.max(question.span.end, gap.tEnd) },
+      segments: words.length,
+      audioLost: true,
+    };
   }
-  // Rule 8: their audio was lost after the last answer: the question may be in the gap.
-  const from = input.answeredEnd ?? Number.NEGATIVE_INFINITY;
-  if (input.lines.some((line) => line.gap && line.speaker === 'them' && line.tEnd > from)) {
-    return { kind: 'gap' };
-  }
+  if (gap) return { kind: 'gap' };
   if (input.lastAnswerId) return { kind: 'show-existing', answerId: input.lastAnswerId };
   return { kind: 'none' };
 }
@@ -264,10 +336,20 @@ export type NewestAutoDecision =
       words: number;
     }
   | {
-      /** Ask again on the same card with the whole question (rule 6). */
+      /**
+       * Ask again with the whole question (rule 6): on the same card when sameSentence (or while the first
+       * answer still streams; the caller knows), otherwise on a new card linked to the first (P0-C).
+       */
       kind: 'rerun';
-      /** The card it replaces. */
+      /** The card it asks again (replaced in place, or the new card's rerunOf). */
       replaces: string;
+      /** Batch D (P0-C): the added words only finish the sentence the first request ended in. */
+      sameSentence: boolean;
+      /**
+       * Batch D (trace): why it is asked again: 'grew' (the asked stretches got more words) or 'went-on' (a
+       * new stretch started within REASK_WINDOW_MS of the original answer's end).
+       */
+      reason: 'grew' | 'went-on';
       /** Exactly these words. Never logged. */
       text: string;
       /** Its lines. */
@@ -293,24 +375,83 @@ function pauseAfter(line: Utterance): number {
 }
 
 /**
- * Rule 6: the asked speech as it is now: the other person's stretches from the asked span's start that
- * started no later than REASK_WINDOW_MS after its end (later ones are the next question), when the user has
- * not replied since. A joined line's earlier stretch, answered on another card, is left out. With one clock
- * no slack is needed: any new word counts.
+ * Rule 6: the asked speech as it is now: the other person's stretches from the ORIGINAL answer's start
+ * that started no later than REASK_WINDOW_MS after the original answer's end (later ones are the next
+ * question), when the user has not replied since. A joined line's earlier stretch, answered on another
+ * card, is left out. With one clock no slack is needed: any new word counts.
  *
- * @param lines The visible lines.
- * @param last  The latest answer to speech.
+ * Batch D (P0-B, ADR-0079): the window is anchored on the card's original answer (anchorStart/anchorEnd),
+ * never on the latest re-ask, so it cannot walk forward through a whole call (the 14 Nov call's card B was
+ * re-asked ten times). And, as the legacy rules do (autoAnswer.ts continuationOf), a new stretch that is a
+ * question of its own and starts more than NEW_QUESTION_GAP_MS after the speech before it is the next
+ * question: it and everything after it are left out. (With the 2 s window this second guard only acts if
+ * the window is widened or the anchor is missing; it is kept so the two rules cannot drift apart.)
+ *
+ * @param lines    The visible lines.
+ * @param last     The latest answer to speech.
+ * @param windowMs How long after the original answer's end new speech may start (default REASK_WINDOW_MS;
+ *                 tests pass a wider one to check the new-question rule on its own).
  * @returns The stretches (empty when the user replied since, or nothing is there).
- * Called from: autoNewestDue()
+ * Called from: autoNewestDue(); tests
  */
-function reaskSpeech(lines: readonly Utterance[], last: AnsweredQuestion): Candidate[] {
-  const start = last.start ?? last.end;
+export function reaskSpeech(
+  lines: readonly Utterance[],
+  last: AnsweredQuestion,
+  windowMs: number = REASK_WINDOW_MS,
+): Candidate[] {
+  const anchorStart = last.anchorStart ?? last.start ?? last.end;
+  const anchorEnd = last.anchorEnd ?? last.end;
   const spoken = spokenLines(lines);
   const reply = lastReplyIndex(spoken);
-  if (reply !== -1 && spoken[reply]!.tStart >= start) return [];
-  return unansweredSpeech(lines, start - 1).filter(
-    (candidate) => candidate.segment.tStart <= last.end + REASK_WINDOW_MS,
+  if (reply !== -1 && spoken[reply]!.tStart >= anchorStart) return [];
+  const within = unansweredSpeech(lines, anchorStart - 1).filter(
+    (candidate) => candidate.segment.tStart <= anchorEnd + windowMs,
   );
+  const kept: Candidate[] = [];
+  let before = anchorEnd;
+  for (const candidate of within) {
+    const { segment } = candidate;
+    const fresh = segment.tStart > anchorEnd;
+    if (
+      fresh &&
+      segment.tStart - before > NEW_QUESTION_GAP_MS &&
+      lineKind(segment.text) === 'question'
+    ) {
+      break;
+    }
+    kept.push(candidate);
+    before = Math.max(before, segment.tEnd);
+  }
+  return kept;
+}
+
+/** Batch D (P0-C): a sentence end, with any closing quote or bracket after it. */
+const SENTENCE_END = /[.?!]["'”’)\]]*$/;
+
+/**
+ * Batch D (P0-C, ADR-0079): whether the words added since the first request only finish the sentence it
+ * ended in (a premature end of turn, or a press on grey words cut mid-sentence), so the same card may be
+ * replaced. Anything else (the first request ended a sentence, or the added words hold another sentence)
+ * gets a new card, so a finished answer is never overwritten by an answer to a different question.
+ *
+ * @param askedText  The words the first request sent (undefined when unknown: never the same sentence).
+ * @param fullText   The words the re-ask sends (the first request's words, then the added ones).
+ * @param askedWords How many words the first request sent.
+ * @returns True when the added words only finish that sentence.
+ * Called from: autoNewestDue(); tests
+ */
+export function finishesSameSentence(
+  askedText: string | undefined,
+  fullText: string,
+  askedWords: number,
+): boolean {
+  if (!askedText) return false;
+  // The first request ended a sentence: whatever follows is more than its end.
+  if (SENTENCE_END.test(askedText.trim())) return false;
+  const added = fullText.trim().split(/\s+/).filter(Boolean).slice(askedWords).join(' ');
+  if (added === '') return true;
+  // At most one sentence end, and only at the very end of the added words.
+  return !/[.?!]/.test(added.replace(SENTENCE_END, ''));
 }
 
 /**
@@ -332,10 +473,16 @@ export function autoNewestDue(input: NewestAutoState, now: number): NewestAutoDe
     return null;
   }
 
-  // Rule 6: the asked speech went on (grew, or more speech started within REASK_WINDOW_MS of its end,
-  // with no reply in between): ask again on the same card once that turn is over.
+  // Rule 6: the asked speech went on (grew, or more speech started within REASK_WINDOW_MS of the original
+  // answer's end, with no reply in between): ask again once that turn is over.
+  // Batch D (P0-B): at most MAX_REASKS per card; with auto-answer off (decision D1), only a press that
+  // answered words still being spoken (grey) is asked again.
   const last = input.last;
-  const again = last ? reaskSpeech(input.lines, last) : [];
+  const mayReask =
+    last !== null &&
+    (last.reasks ?? 0) < MAX_REASKS &&
+    (input.enabled || (last.grey === true && !last.auto));
+  const again = last && mayReask ? reaskSpeech(input.lines, last) : [];
   if (last && again.length > 0) {
     const question = asQuestion(again);
     if (question.words >= (last.words ?? 0) + REASK_WORDS) {
@@ -343,9 +490,14 @@ export function autoNewestDue(input: NewestAutoState, now: number): NewestAutoDe
       const newest = lines.reduce((latest, line) => (line.tEnd > latest.tEnd ? line : latest));
       // It is still going on (or the turn is not over yet): nothing else is started meanwhile.
       if (question.grey || now - newest.tEnd < pauseAfter(newest)) return null;
+      const anchorEnd = last.anchorEnd ?? last.end;
       return {
         kind: 'rerun',
         replaces: last.answerId,
+        sameSentence: finishesSameSentence(last.askedText, question.text, last.words ?? 0),
+        reason: again.some((candidate) => candidate.segment.tStart > anchorEnd)
+          ? 'went-on'
+          : 'grew',
         text: question.text,
         lineIds: question.lineIds,
         span: question.span,

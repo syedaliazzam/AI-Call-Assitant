@@ -6,7 +6,8 @@
  *          question asked again later in a call gets its own entry. Display only: every answer stays
  *          saved on this device, and the conversation sent to Claude is unchanged. Failed answers and
  *          screenshots are never merged (a failure must stay visible, and two screenshots show
- *          different screens).
+ *          different screens). Batch D (P0-C, ADR-0079): nor is a re-ask on a new card merged with the
+ *          card it came from (rerunOf), even when the two questions share most of their words.
  * Used by: src/features/live/useLiveAnswers.ts, src/core/review/conversation.ts
  * Depends on: src/core/answer/similar.ts (meaningful words), src/core/transcript/display.ts (fillers)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (answers); ADR-0040
@@ -44,6 +45,11 @@ export interface HistoryAnswer {
   status?: 'streaming' | 'done' | 'error' | 'cancelled';
   /** When its call connected (Unix ms; v1.1.0). Answers of different calls never merge. */
   callStartedAt?: number | undefined;
+  /**
+   * Batch D (P0-C, ADR-0079): the card this answer asked again on a card of its own (the question went on
+   * into a new one). Linked answers never merge: each answers a different question.
+   */
+  rerunOf?: string | undefined;
 }
 
 /** The result of merging. */
@@ -155,6 +161,21 @@ function pickWinner<T extends HistoryAnswer>(members: readonly T[]): T {
 }
 
 /**
+ * Batch D (P0-C): whether two answers are a card and the re-ask of it on a new card (either way round), or
+ * two re-asks of one card. Such answers are for different questions and stay apart.
+ *
+ * @param a One answer.
+ * @param b The other.
+ * @returns True when they are linked by rerunOf.
+ * Called from: mergeAnswers()
+ */
+function linked(a: HistoryAnswer, b: HistoryAnswer): boolean {
+  return (
+    a.rerunOf === b.id || b.rerunOf === a.id || (a.rerunOf !== undefined && a.rerunOf === b.rerunOf)
+  );
+}
+
+/**
  * Merges a call's answers into one entry per question.
  *
  * @param answers The answers, oldest first.
@@ -172,13 +193,16 @@ export function mergeAnswers<T extends HistoryAnswer>(
     const mergeable = answer.mode !== 'screenshot' && answer.status !== 'error';
     // The newest matching entry: a question asked a third time joins the latest time it was asked.
     const entry = mergeable
-      ? entries.findLast((members) =>
-          members.some(
-            (member) =>
-              member.mode !== 'screenshot' &&
-              member.status !== 'error' &&
-              oneQuestion(answer, timeOf(answer), member, timeOf(member)),
-          ),
+      ? entries.findLast(
+          (members) =>
+            // Batch D (P0-C): never into the entry of the card it was asked again from (or vice versa).
+            !members.some((member) => linked(answer, member)) &&
+            members.some(
+              (member) =>
+                member.mode !== 'screenshot' &&
+                member.status !== 'error' &&
+                oneQuestion(answer, timeOf(answer), member, timeOf(member)),
+            ),
         )
       : undefined;
     if (entry) entry.push(answer);

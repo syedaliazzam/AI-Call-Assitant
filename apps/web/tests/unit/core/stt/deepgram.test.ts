@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildListenUrl,
   DeepgramChannel,
+  FLUX_FIRST_WORDS_LEAD_S,
   FluxAssembler,
   kindOf,
   NovaAssembler,
@@ -155,9 +156,23 @@ describe('FluxAssembler (one clock)', () => {
       end_of_turn_confidence: 0.82,
     });
     const partials = events.filter((event) => event.type === 'partial');
+    // Batch D (P0-A): StartOfTurn at 1.2 s minus the 0.4 s lead is 0.8 s, before the window's start (1.0 s),
+    // so the line starts at the window's start here.
     expect(partials).toEqual([
-      { type: 'partial', text: 'How would', tStart: 1_001_000, tEnd: 1_001_440 },
-      { type: 'partial', text: 'How would you scale it?', tStart: 1_001_000, tEnd: 1_001_680 },
+      {
+        type: 'partial',
+        text: 'How would',
+        tStart: 1_001_000,
+        tEnd: 1_001_440,
+        audioFrom: 1_001_000,
+      },
+      {
+        type: 'partial',
+        text: 'How would you scale it?',
+        tStart: 1_001_000,
+        tEnd: 1_001_680,
+        audioFrom: 1_001_000,
+      },
     ]);
     expect(events.find((event) => event.type === 'final')).toEqual({
       type: 'final',
@@ -165,6 +180,7 @@ describe('FluxAssembler (one clock)', () => {
       tStart: 1_001_000,
       tEnd: 1_001_680,
       endOfTurn: true,
+      startSource: 'start-of-turn',
     });
     expect(events.at(-1)).toEqual({ type: 'turn', event: 'end', confidence: 0.82, at: 1_002_200 });
     expect(flux.processedTo).toBe(2.2);
@@ -206,6 +222,112 @@ describe('FluxAssembler (one clock)', () => {
 
   it('ignores other messages', () => {
     expect(new FluxAssembler(clock).handle({ type: 'Connected' })).toEqual([]);
+  });
+});
+
+describe('Batch D (P0-A): a Flux line starts when the speaker started, not at the previous turn end', () => {
+  /**
+   * One Flux turn whose audio window opens at `windowStart` (where the previous turn ended) and whose first
+   * words arrive with the window ending at `firstWordsAt`; the turn ends at `end`.
+   *
+   * @param flux          The assembler.
+   * @param index         The turn index.
+   * @param windowStart   audio_window_start, s.
+   * @param firstWordsAt  audio_window_end of the first message with words, s.
+   * @param end           Where the words last changed, s.
+   * @param words         Optional per-word times for the first message.
+   * @returns The final event.
+   */
+  function turn(
+    flux: FluxAssembler,
+    index: number,
+    windowStart: number,
+    firstWordsAt: number,
+    end: number,
+    words?: { word: string; start: number | string; end: number | string }[],
+  ): CloudEvent | undefined {
+    const events: CloudEvent[] = [];
+    const message = (event: string, windowEnd: number, transcript: string, extra = {}) =>
+      events.push(
+        ...flux.handle({
+          type: 'TurnInfo',
+          event,
+          turn_index: index,
+          audio_window_start: windowStart,
+          audio_window_end: windowEnd,
+          transcript,
+          ...extra,
+        }),
+      );
+    // Silence while the other side talks: Updates with no words.
+    message('Update', windowStart + 0.24, '');
+    message('Update', firstWordsAt - 0.24, '');
+    message('Update', firstWordsAt, 'Next', words ? { words } : {});
+    message('Update', end, 'Next question please');
+    message('EndOfTurn', end + 0.4, 'Next question please');
+    return events.find((event) => event.type === 'final');
+  }
+
+  it('without word times: the first words minus the lead; the end stays where the words last changed', () => {
+    const flux = new FluxAssembler(clock);
+    const final = turn(flux, 1, 26.2, 35.6, 39.6);
+    expect(final).toEqual({
+      type: 'final',
+      text: 'Next question please',
+      tStart: clock(35.6 - FLUX_FIRST_WORDS_LEAD_S),
+      tEnd: clock(39.6),
+      endOfTurn: true,
+      startSource: 'first-words',
+    });
+  });
+
+  it('a StartOfTurn before the words is the earlier signal', () => {
+    const flux = new FluxAssembler(clock);
+    flux.handle({
+      type: 'TurnInfo',
+      event: 'StartOfTurn',
+      turn_index: 2,
+      audio_window_start: 10,
+      audio_window_end: 20.0,
+      transcript: '',
+    });
+    const events = flux.handle({
+      type: 'TurnInfo',
+      event: 'Update',
+      turn_index: 2,
+      audio_window_start: 10,
+      audio_window_end: 20.48,
+      transcript: 'So',
+    });
+    expect(events[0]).toMatchObject({
+      type: 'partial',
+      tStart: clock(20 - FLUX_FIRST_WORDS_LEAD_S),
+    });
+  });
+
+  it('uses the first word’s own start when Flux sends word times (numbers or numeric strings)', () => {
+    const flux = new FluxAssembler(clock);
+    const final = turn(flux, 1, 26.2, '35.6' as unknown as number, 39.6, [
+      { word: 'Next', start: '35.05', end: '35.4' },
+    ]);
+    expect(final).toMatchObject({
+      tStart: clock(35.05),
+      startSource: 'words',
+      // The lead estimate (35.2 s) was 150 ms later than the word: recorded for the trace.
+      wordLeadMs: 150,
+    });
+  });
+
+  it('ignores word times outside the turn’s window (another time base)', () => {
+    const flux = new FluxAssembler(clock);
+    const final = turn(flux, 1, 26.2, 35.6, 39.6, [{ word: 'Next', start: 0.1, end: 0.4 }]);
+    expect(final).toMatchObject({ startSource: 'first-words' });
+  });
+
+  it('never starts before the window', () => {
+    const flux = new FluxAssembler(clock);
+    const final = turn(flux, 0, 5.0, 5.1, 6.0);
+    expect(final).toMatchObject({ tStart: clock(5.0) });
   });
 });
 
@@ -359,11 +481,13 @@ describe('DeepgramChannel', () => {
       audio_window_end: 1,
       transcript: 'Hello there',
     });
+    // Batch D (P0-A): the first words came with the window ending at 1.0 s: the line starts 0.4 s before.
     expect(events[0]).toEqual({
       type: 'partial',
       text: 'Hello there',
-      tStart: 5_100_500,
+      tStart: 5_100_600,
       tEnd: 5_101_000,
+      audioFrom: 5_100_500,
     });
     expect(channel.processedToUnix()).toBe(5_101_000);
   });

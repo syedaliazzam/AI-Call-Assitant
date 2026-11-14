@@ -6,7 +6,7 @@
  * Used by: src/features/drive/DriveUploader.tsx
  * Depends on: src/core/drive/{api,callFiles,queue,uploader}.ts, src/core/storage (sessions,
  *             driveUploads), src/platform/types.ts (types only)
- * Architecture: ADR-0072, ADR-0074 (no Google client or token in the page)
+ * Architecture: ADR-0072, ADR-0074 (no Google client or token in the page), ADR-0080 (main video only)
  */
 import type { Platform } from '@/platform/types';
 import { loadSessionCalls } from '../review/calls';
@@ -95,7 +95,9 @@ export function createUploaderDeps(
         found.set(item.id, {
           id: item.id,
           part: item.part,
-          stereo: item.hasStereo,
+          // ADR-0080: the stereo sound file stays on this computer and is never uploaded, so the
+          // server is never told to wait for one (the file itself is still recorded, decision D3).
+          stereo: false,
           startedAt: item.startedAt,
           meetingId: item.meetingId,
           ...(deviceName ? { deviceName } : {}),

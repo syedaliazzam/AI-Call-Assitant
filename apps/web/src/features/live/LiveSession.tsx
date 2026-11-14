@@ -50,6 +50,8 @@ export interface LiveSessionProps {
   sessionId: string;
   /** ADR-0076: this account uses cloud transcription (decided on the server; default false). */
   cloudStt?: boolean;
+  /** Batch D (P1-F): the signed-in user's first name, added to the keyterms ('' or absent: none). Never logged. */
+  accountFirstName?: string;
 }
 
 /** What the loader produced. */
@@ -100,7 +102,11 @@ const subscribeNever = () => () => {};
  * @returns The live screen, the phone message, or a loading / not-found message.
  * Rendered by: app/(app)/live/[id]/page.tsx
  */
-export function LiveSession({ sessionId, cloudStt = false }: LiveSessionProps) {
+export function LiveSession({
+  sessionId,
+  cloudStt = false,
+  accountFirstName = '',
+}: LiveSessionProps) {
   // Phones and tablets cannot run a call (platform/). The server renders as if they could and
   // the browser corrects it after hydration, so the two renders match.
   const supported = useSyncExternalStore(
@@ -143,7 +149,7 @@ export function LiveSession({ sessionId, cloudStt = false }: LiveSessionProps) {
         documents,
         hotwords: hotwordsText(hotwords),
         hotwordCount: hotwords.length,
-        keyterms: buildKeyterms(session, documents),
+        keyterms: buildKeyterms(session, documents, { accountFirstName }),
         savedLines,
         lessons,
       } as const;
@@ -157,7 +163,7 @@ export function LiveSession({ sessionId, cloudStt = false }: LiveSessionProps) {
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, accountFirstName]);
 
   // Batch C (P1-3, P2-1): follow changes to the session and its documents while the screen is open.
   const ready = loaded.state === 'ready';
@@ -166,7 +172,7 @@ export function LiveSession({ sessionId, cloudStt = false }: LiveSessionProps) {
     return watchSessionDocuments(sessionId, (session, documents) => {
       const current = loadedRef.current;
       if (!session || current.state !== 'ready') return;
-      const keyterms = buildKeyterms(session, documents);
+      const keyterms = buildKeyterms(session, documents, { accountFirstName });
       const sameTerms =
         keyterms.length === current.keyterms.length &&
         keyterms.every((term, index) => term === current.keyterms[index]);
@@ -197,7 +203,7 @@ export function LiveSession({ sessionId, cloudStt = false }: LiveSessionProps) {
       loadedRef.current = next;
       setLoaded(next);
     });
-  }, [ready, sessionId]);
+  }, [ready, sessionId, accountFirstName]);
 
   if (!supported) return <LiveCallsUnsupported />;
   if (loaded.state === 'ready') {

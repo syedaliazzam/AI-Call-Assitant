@@ -116,4 +116,30 @@ describe('timing trace', () => {
     expect(summary.recordingFps).toMatchObject({ n: 1, p50: 15 });
     expect(log.answers[0]).toMatchObject({ cacheRead: 4_000, serverMs: { firstText: 420 } });
   });
+
+  it('Batch D: counts re-asks by reason and card, Flux starts by source, and the new press outcomes', () => {
+    stubStorage();
+    setTraceEnabled(true);
+    const timings = createCallTimings(memory(), () => 2_000);
+    timings.start(START);
+    timings.noteTrace('socket-open', { channel: 'them', optional: true, kind: 'flux', terms: 42 });
+    timings.noteTrace('configure', { channel: 'them', terms: 43, sent: true });
+    timings.noteTrace('flux-start', { channel: 'them', source: 'first-words' });
+    timings.noteTrace('flux-start', { channel: 'them', source: 'words', wordLeadMs: 150 });
+    timings.noteTrace('reask', { reason: 'grew', card: 'same', sameSentence: true, of: 'a1' });
+    timings.noteTrace('reask', { reason: 'went-on', card: 'new', sameSentence: false, of: 'a2' });
+    timings.noteTrace('press-decision', { decision: 'shown-answer' });
+    timings.noteTrace('press-decision', { decision: 'sent', audioLost: true, afterReask: true });
+    const summary = summarizeCall(timings.current()!);
+    expect(summary.reasks).toEqual({ 'grew/same': 1, 'went-on/new': 1 });
+    expect(summary.fluxStarts).toEqual({ 'first-words': 1, words: 1 });
+    expect(summary.pressDecisions).toEqual({ 'shown-answer': 1, sent: 1 });
+    // Codes and counts only: socket-open says whether the optional parameters (keyterms) went, and how many.
+    expect(timings.current()!.trace!.find(([, kind]) => kind === 'socket-open')![2]).toEqual({
+      channel: 'them',
+      optional: true,
+      kind: 'flux',
+      terms: 42,
+    });
+  });
 });

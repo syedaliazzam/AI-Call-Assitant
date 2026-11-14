@@ -7,7 +7,10 @@
  * unreachable (by code only); the test email has no call data; the rate limiter allows N per window.
  * ADR-0077: the two emails of a call ("Call saved" with "Recording: uploading…"; "Recording saved" or
  * "Recording not uploaded" naming the computer), each escaped, and the right one sent for each record.
+ * ADR-0080: a new call's email lists only the recording, transcript PDF and notes PDF; an older call's
+ * TXT and stereo files keep their labels.
  */
+import type { DriveSavedFile } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
 import {
   RECORDING_UPLOADING_TEXT,
@@ -220,6 +223,52 @@ describe('file links (1.6.0)', () => {
     expect(buildSavedEmail({ ...CONTENT, files: [...files] }).text).not.toContain(
       RECORDING_PENDING_TEXT,
     );
+  });
+
+  it('ADR-0080: lists only what was saved (recording, transcript PDF, notes PDF); older calls keep their TXT and stereo labels', () => {
+    const now: DriveSavedFile[] = [
+      {
+        name: 'n.pdf',
+        folder: 'Transcripts',
+        key: 'call:1:notes-pdf',
+        fileId: 'N1',
+        kind: 'notes-pdf',
+      },
+      {
+        name: 'p.mkv',
+        folder: 'Recordings',
+        key: 'rec:r:main',
+        fileId: 'R1',
+        kind: 'recording',
+        part: 1,
+      },
+      {
+        name: 't.pdf',
+        folder: 'Transcripts',
+        key: 'call:1:transcript-pdf',
+        fileId: 'P1',
+        kind: 'transcript-pdf',
+      },
+    ];
+    expect(emailFiles(now).map((f) => f.label)).toEqual([
+      'Recording Part 1',
+      'Transcript (PDF)',
+      'Notes (PDF)',
+    ]);
+    const text = buildSavedEmail({ ...CONTENT, files: now }).text;
+    expect(text).not.toContain('Stereo audio');
+    expect(text).not.toContain('Transcript (text)');
+    // An older call's record (named files only, from before kinds were kept) still reads as before.
+    const older: DriveSavedFile[] = [
+      { name: '2026-11-11 14.30 Transcript.txt', folder: 'Transcripts', fileId: 'T1' },
+      { name: '2026-11-11 14.30 Part 1 stereo.webm', folder: 'Recordings', fileId: 'S1' },
+      { name: '2026-11-11 14.30 Part 1.mkv', folder: 'Recordings', fileId: 'R1' },
+    ];
+    expect(emailFiles(older).map((f) => f.label)).toEqual([
+      'Recording Part 1',
+      'Stereo audio',
+      'Transcript (text)',
+    ]);
   });
 });
 

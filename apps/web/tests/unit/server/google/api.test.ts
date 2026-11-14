@@ -977,19 +977,17 @@ describe('one complete email per session (1.6.0)', () => {
     const first = await handleNotify(post('/api/drive/notify', FROM_BROWSER), d);
     expect(await first.json()).toEqual({ status: 'collecting' });
     expect(f.mail).toHaveLength(0);
-    // Only the main file: still waiting for the stereo file.
-    const half = { ...FROM_DESKTOP, files: [FROM_DESKTOP.files[0]!] };
-    expect(await (await handleNotify(post('/api/drive/notify', half), d)).json()).toEqual({
-      status: 'collecting',
-    });
-    const done = await handleNotify(post('/api/drive/notify', FROM_DESKTOP), d);
+    // ADR-0080: the main file is all it waits for, though this (older) page says the part has a stereo
+    // file: the email goes.
+    const main = { ...FROM_DESKTOP, files: [FROM_DESKTOP.files[0]!] };
+    const done = await handleNotify(post('/api/drive/notify', main), d);
     expect(await done.json()).toEqual({ status: 'sent' });
     expect(f.mail).toHaveLength(1);
-    for (const link of ['REC0000001', 'STE0000001', 'TXT0000001']) {
+    for (const link of ['REC0000001', 'TXT0000001']) {
       expect(f.mail[0]!.text).toContain(`https://drive.google.com/file/d/${link}/view`);
     }
     expect(f.mail[0]!.text).not.toContain('Recording upload pending');
-    // A restart reporting everything again sends nothing.
+    // A restart reporting everything again (an older page with its stereo file too) sends nothing.
     await handleNotify(post('/api/drive/notify', FROM_DESKTOP), d);
     await handleNotify(post('/api/drive/notify', FROM_BROWSER), d);
     expect(f.mail).toHaveLength(1);
@@ -1148,18 +1146,17 @@ describe('two emails per call (ADR-0077)', () => {
       'Recordings folder: https://drive.google.com/drive/folders/RECFOLDER1',
     );
     expect(f.mail[0]!.text).toContain('https://drive.google.com/file/d/TXT0000001/view');
-    // Part of the recording: still waiting.
-    const half = { ...ALL_FILES, files: [...FROM_BROWSER.files, FROM_DESKTOP.files[0]!] };
-    await handleNotify(post('/api/drive/notify', half), d);
-    expect(f.mail).toHaveLength(1);
-    await handleNotify(post('/api/drive/notify', ALL_FILES), d);
+    // ADR-0080: the main video is in: "Recording saved" goes, though this (older) page says the part has
+    // a stereo file (it is never waited for).
+    const main = { ...ALL_FILES, files: [...FROM_BROWSER.files, FROM_DESKTOP.files[0]!] };
+    await handleNotify(post('/api/drive/notify', main), d);
     expect(f.mail).toHaveLength(2);
     expect(f.mail[1]!.subject).toBe('Recording saved — Acme – Backend Engineer');
     expect(f.mail[1]!.text).toContain('https://drive.google.com/file/d/REC0000001/view');
-    expect(f.mail[1]!.text).toContain('https://drive.google.com/file/d/STE0000001/view');
+    expect(f.mail[1]!.text).not.toContain('STE0000001');
     expect(f.mail[1]!.text).not.toContain('TXT0000001');
     expect(f.mail[0]!.messageId).not.toBe(f.mail[1]!.messageId);
-    // Reports repeated after a restart send nothing more.
+    // Reports repeated after a restart (one with the older page's stereo file too) send nothing more.
     await handleNotify(post('/api/drive/notify', ALL_FILES), d);
     await handleNotify(post('/api/drive/notify', CALL_FILES), d);
     expect(f.mail).toHaveLength(2);

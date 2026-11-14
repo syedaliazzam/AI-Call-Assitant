@@ -158,6 +158,10 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                   The question may be incomplete: their last words were still coming in.
                 </p>
               )}
+              {/* Batch D (P1-G): their audio was lost around this question; the answer still came. */}
+              {answer.audioLost && (
+                <p className="mt-1 text-[13px] text-ui-muted">Part of their audio was lost.</p>
+              )}
               {streaming && answer.text.trim() === '' ? (
                 <p role="status" className="mt-2 text-[15px] text-ui-muted">
                   Thinking…

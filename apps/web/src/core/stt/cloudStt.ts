@@ -368,7 +368,15 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
       });
       try {
         await socket.open(OPEN_TIMEOUT_MS);
-        trace('socket-open', { channel, ms: deps.now() - startedAt, optional, kind });
+        // Batch D: with the keyterm count the socket opened with (0 when the optional parameters were
+        // dropped), so a traced call shows whether the session's terms reached Deepgram. Counts only.
+        trace('socket-open', {
+          channel,
+          ms: deps.now() - startedAt,
+          optional,
+          kind,
+          terms: optional ? keyterms.length : 0,
+        });
         if (!optional && attempts.length > 1) state.noOptional = true;
         return socket;
       } catch {
@@ -388,8 +396,21 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
   function onSocketEvent(channel: ChannelId, socket: DeepgramChannel, event: CloudEvent): void {
     const state = channels[channel];
     if (stopped || state.socket !== socket || state.failover.engine !== 'deepgram') return;
-    if (event.type === 'partial') state.openSince = event.text === '' ? null : event.tStart;
-    else if (event.type === 'final') state.openSince = null;
+    // Batch D (P0-A): a failover replays from where the line's audio may begin (Flux's window start), not
+    // from the estimated first word, so no first word is lost.
+    if (event.type === 'partial') {
+      state.openSince =
+        event.text === '' ? null : Math.min(event.tStart, event.audioFrom ?? event.tStart);
+    } else if (event.type === 'final') state.openSince = null;
+    // Batch D (P0-A): what a Flux line's start came from, and (when words carry times) how far the lead
+    // estimate was from them. Codes and ms only, never words.
+    if (event.type === 'final' && event.startSource) {
+      trace('flux-start', {
+        channel,
+        source: event.startSource,
+        ...(event.wordLeadMs !== undefined ? { wordLeadMs: event.wordLeadMs } : {}),
+      });
+    }
     handlers.onEvent(channel, event);
   }
 

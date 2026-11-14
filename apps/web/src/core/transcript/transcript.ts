@@ -30,7 +30,7 @@ import {
   REVERSE_ECHO_MIN_DELAY_MS,
   type ThemAround,
 } from './echo';
-import { mergeLines, shouldMerge } from './merge';
+import { mergeLines, otherSpeakerBetween, shouldMerge } from './merge';
 
 /**
  * How long a new "You" line is held back from displayLines() when "Them" is speaking, in ms.
@@ -714,7 +714,8 @@ export function createTranscript(
       // start, so its place holds.
       const previousIndex = joinableIndex(index, line.speaker);
       const previous = previousIndex === -1 ? undefined : finals[previousIndex];
-      if (!hidden && shouldMerge(previous, line)) {
+      // Batch D (P1-D): never across the other speaker's real line that ended between the two.
+      if (!hidden && shouldMerge(previous, line) && !otherSpeakerBetween(finals, previous!, line)) {
         stored = mergeLines(previous!, line);
         finals = [...finals.slice(0, previousIndex), stored, ...finals.slice(previousIndex + 1)];
         // 1.5.2: the grey line's words are now in the earlier line.

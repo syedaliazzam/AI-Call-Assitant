@@ -185,7 +185,13 @@ If sound arrives but no words appear for 8 seconds, speech recognition restarts 
 
 Choose **Exit** (**End** in the browser). The transcript is saved (if **Save transcript** is on for the session), and call notes can be written. Open the session to read them.
 
-The **Transcript** section has two tabs. **Conversation** reads like an Otter export: each turn has the speaker's name and the time since the call started, then the words. Each answer sits right after the turn it answered, as **Paramount AI answered** with its time; click it to see the question and the answer. Click the other person's name to rename them: the name is kept with the session and used in the panel and the downloads. **Answers** lists every answer as a card. A session with several calls shows a divider between them. **Download** gives the conversation as TXT or PDF in the same layout, with every answer written out in full. When **Save transcript** was off, the file has the answers only.
+The **Transcript** section has two tabs. **Conversation** reads like an Otter export: each turn has the speaker's name and the time since the call started, then the words. Each answer sits right after the turn it answered, as **Paramount AI answered** with its time, with the question and the answer shown below it; click it to fold them away. Click the other person's name to rename them: the name is kept with the session and used in the panel and the downloads. **Answers** lists every answer as a card. A session with several calls shows a divider between them. **Download** gives the conversation as TXT or PDF in the same layout, with every answer written out in full. When **Save transcript** was off, the file has the answers only.
+
+**Call details** lists the **Words Paramount AI listens for**: the names and terms transcription is told to expect. Your **Key terms** come first, then your first name and the other person's name, the company, the role and names from your documents. If a name keeps coming out wrong, add it with **Edit key terms**.
+
+### Saving to Google Drive
+
+With Google Drive connected (**Settings → Google Drive**), each call's folder gets three files: **Transcript.pdf** (not when **Save transcript** is off), **Notes.pdf**, and the recording (**Part 1.mkv**, one file per part) when you recorded the call. An email tells you when they are saved. The stereo sound file is still kept on this computer, but it is not uploaded. Calls saved before this change keep the files they already have in Drive, and **Upload to Drive** for an older call never uploads a file twice.
 
 ## Ask AI
 

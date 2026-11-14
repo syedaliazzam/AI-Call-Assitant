@@ -317,6 +317,12 @@ export interface StoredAnswer {
   sourceLineId?: string;
   /** ADR-0077: the call it belongs to (StoredCall.id). Absent on answers saved before (callStartedAt is used). */
   callId?: string;
+  /**
+   * Batch D (P0-C, ADR-0079): when this answer is a re-ask of another card on a card of its own (the other
+   * person's question went on into a new one), that card's answer id. Review keeps the two apart. Absent
+   * otherwise and on older answers. No index uses it, so no new database version.
+   */
+  rerunOf?: string;
 }
 
 /**

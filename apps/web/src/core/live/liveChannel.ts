@@ -117,6 +117,11 @@ export interface CompactAnswer {
    * question may be incomplete (the overlay card says so, as the call window's does). Absent otherwise.
    */
   incomplete?: boolean;
+  /**
+   * Batch D (P1-G): part of the other person's audio was lost around the question (the overlay card says so,
+   * as the call window's does). Absent otherwise.
+   */
+  audioLost?: boolean;
 }
 
 /**

@@ -419,6 +419,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
               unavailable: entry.unavailable ?? false,
               // Batch C (P1-4): the press gave up waiting for their last words.
               ...(entry.incomplete ? { incomplete: true } : {}),
+              // Batch D (P1-G): their audio was lost around the question.
+              ...(entry.audioLost ? { audioLost: true } : {}),
             }
           : null,
       chatTarget,

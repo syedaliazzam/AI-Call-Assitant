@@ -197,6 +197,16 @@ export interface AnswerEntry {
    * but no list, card or overlay shows it until the hold ends. In memory only.
    */
   held?: boolean;
+  /**
+   * Batch D (P0-C, ADR-0079): this card asks again the question of another card (its id), because the other
+   * person went on into a new question. Saved, so Review keeps the two answers apart.
+   */
+  rerunOf?: string;
+  /**
+   * Batch D (P1-G): part of the other person's audio was lost around the words this card answered; the card
+   * says so in a small line. In memory only.
+   */
+  audioLost?: boolean;
 }
 
 /**
@@ -234,6 +244,7 @@ function toStored(
     ...(entry.meta ? { meta: entry.meta } : {}),
     ...(entry.claims?.length ? { claims: entry.claims } : {}),
     ...(entry.sourceLineId ? { sourceLineId: entry.sourceLineId } : {}),
+    ...(entry.rerunOf ? { rerunOf: entry.rerunOf } : {}),
   };
 }
 
@@ -497,6 +508,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const answeredEndRef = useRef<number | null>(null);
   // ADR-0076: the newest card for speech that is still shown (null once Claude found nothing to answer).
   const speechCardRef = useRef<string | null>(null);
+  // Batch D (P1-G): the end of the newest speech answered on a card of its own (a press, an auto-answer, a
+  // re-ask on a new card), not by a re-ask that replaced a card in place. A press answers anything after it,
+  // so speech a re-ask took into an earlier card's question still gets its own card when pressed for.
+  const ownEndRef = useRef<number | null>(null);
+  // Batch D (P1-G): the end of the speech the user's last press answered (null before any press).
+  const lastPressEndRef = useRef<number | null>(null);
+  // Batch D (P0-C): the card whose answer is streaming now, or null.
+  const streamingIdRef = useRef<string | null>(null);
   // ADR-0076 (G1): a press waiting for the other side; a second press calls force() and answers at once.
   const pendingCatchUpRef = useRef<{ force: () => void } | null>(null);
   // ADR-0076: the latest catch-up function and rules (read when a key is pressed).
@@ -575,6 +594,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     lastAnsweredRef.current = null;
     answeredEndRef.current = null;
     speechCardRef.current = null;
+    ownEndRef.current = null;
+    lastPressEndRef.current = null;
+    streamingIdRef.current = null;
     return () => {
       // Batch C (P1-1): a held answer goes with the call (the runner's cancel below stops its request).
       hold.drop();
@@ -662,6 +684,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         lineIds?: readonly string[];
         /** v1.4: the answer this one replaces, on the same card (a rerun or a continuation). */
         replaces?: string;
+        /**
+         * Batch D (P0-C, ADR-0079): a re-ask on a NEW card: the card whose question it asks again (the other
+         * person went on into a new question, so that card's finished answer is kept).
+         */
+        rerunOf?: string;
+        /**
+         * Batch D (P1-G): an in-place re-ask that only finishes the same sentence: its card now answers that
+         * whole sentence, so a later press does not answer the sentence's end again on a card of its own.
+         */
+        finishesSentence?: boolean;
         /** 1.5.1: what asked, for the call timing log (default: the key, or auto). */
         trigger?: AnswerTrigger;
         /**
@@ -688,6 +720,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           words: number;
           /** The press gave up waiting for the other side (rule 2). */
           incomplete?: boolean;
+          /** Batch D (P1-G): part of their audio was lost around these words (a note on the card). */
+          audioLost?: boolean;
         };
         /**
          * Batch C (P1-1): a speculative auto-answer: streamed into a card held hidden for
@@ -864,10 +898,13 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       // Batch C (P1-1): a speculative answer (a new auto-answer, never a re-ask on a shown card) can be taken
       // back. What it changes below is noted first, so a cancel puts everything back as it was.
       const speculative = options.speculative === true && mode === 'answer' && !replaces;
+      // Batch D (P0-B, P0-C): a re-ask, in place (replaces) or on a new card (rerunOf).
+      const reaskOf = replaces ?? options.rerunOf;
       const before = speculative
         ? {
             log: logRef.current,
             answeredEnd: answeredEndRef.current,
+            ownEnd: ownEndRef.current,
             speechCard: speechCardRef.current,
             last: lastAnsweredRef.current,
             lines: new Set(answeredLinesRef.current),
@@ -906,7 +943,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         rating: null,
         note: '',
         ...(options.exact?.incomplete ? { incomplete: true } : {}),
+        ...(options.exact?.audioLost ? { audioLost: true } : {}),
         ...(speculative ? { held: true } : {}),
+        // Batch D (P0-C): a new card that asks another card's question again.
+        ...(!replaces && options.rerunOf ? { rerunOf: options.rerunOf } : {}),
       };
       // A new answer cancels the one still streaming (the runner does; mark it here). A rerun takes
       // the place of the answer it replaces.
@@ -920,12 +960,22 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       ]);
       // Batch C (P1-1): a held answer is shown when its hold ends (the hold's show below).
       if (!speculative) setShownId(entry.id);
+      // Batch D (P0-C): the answer streaming now (an "in place" re-ask is allowed while it still streams).
+      streamingIdRef.current = entry.id;
+      // Batch D (P1-G): restored if Claude finds nothing to answer in an auto-answer's words (below), so a
+      // press on those words still answers them.
+      const ownEndBefore = ownEndRef.current;
       if (
         span &&
         (guarded || replaces || options.exact || (mode === 'screenshot' && options.coveredLines))
       ) {
         // ADR-0076 (E3 rule 3): the newest answered speech ends here (or later).
         answeredEndRef.current = Math.max(answeredEndRef.current ?? span.end, span.end);
+        // Batch D (P1-G): speech answered on a card of its own (not by replacing a card in place, unless the
+        // re-ask only finished the same sentence).
+        if (mode === 'answer' && (!replaces || options.finishesSentence === true)) {
+          ownEndRef.current = Math.max(ownEndRef.current ?? span.end, span.end);
+        }
         if (mode === 'answer') speechCardRef.current = entry.id;
         repeatGuard.remember(span, entry.id, Date.now());
         setAnsweredSpans((current) => [
@@ -935,22 +985,39 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       }
       for (const id of pickedLines ?? options.coveredLines ?? []) answeredLinesRef.current.add(id);
       if (mode === 'answer' && span && pickedLines) {
+        // Batch D (P0-B): a re-ask keeps the ORIGINAL answer's anchor, words and grey/auto kind, and counts
+        // itself, so the rule-6 window never moves forward and a card is asked again at most MAX_REASKS times.
+        const previous = lastAnsweredRef.current;
+        const original = reaskOf && previous?.answerId === reaskOf ? previous : null;
+        const words =
+          options.exact?.words ??
+          wordCount(
+            lines
+              .filter((line) => pickedLines.includes(line.id))
+              .map((line) => line.text)
+              .join(' '),
+          );
         lastAnsweredRef.current = {
           answerId: entry.id,
           lineIds: pickedLines,
           end: span.end,
           start: span.start,
           askedAt: Date.now(),
-          auto,
-          ...(greyPress && !auto ? { grey: true } : {}),
-          words:
-            options.exact?.words ??
-            wordCount(
-              lines
-                .filter((line) => pickedLines.includes(line.id))
-                .map((line) => line.text)
-                .join(' '),
-            ),
+          auto: original ? original.auto : auto,
+          ...((original ? original.grey : greyPress && !auto) ? { grey: true } : {}),
+          words,
+          anchorStart: original
+            ? (original.anchorStart ?? original.start ?? span.start)
+            : span.start,
+          anchorEnd: original ? (original.anchorEnd ?? original.end) : span.end,
+          reasks: original ? (original.reasks ?? 0) + 1 : 0,
+          ...(original
+            ? original.askedText !== undefined
+              ? { askedText: original.askedText }
+              : {}
+            : options.exact
+              ? { askedText: options.exact.text }
+              : {}),
         };
       }
       // Kept here as well as in state: the answer's end needs them in the same tick.
@@ -972,7 +1039,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         answerId: timingId,
         ...(greyWords ? { grey: true } : {}),
         ...(greyWords && auto ? { early: true } : {}),
-        ...(replaces ? { rerunOf: replaces } : {}),
+        // Batch D (P0-C): a re-ask on a new card is linked to the card it asks again, too.
+        ...(reaskOf ? { rerunOf: reaskOf } : {}),
         trigger:
           options.trigger ??
           (auto ? 'auto' : options.span ? 'answer-this' : mode === 'chat' ? 'chat' : 'hotkey'),
@@ -1018,6 +1086,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             heldFinish.current.delete(entry.id);
             logRef.current = before.log;
             answeredEndRef.current = before.answeredEnd;
+            ownEndRef.current = before.ownEnd;
+            if (streamingIdRef.current === entry.id) streamingIdRef.current = null;
             speechCardRef.current = before.speechCard;
             lastAnsweredRef.current = before.last;
             answeredLinesRef.current = before.lines;
@@ -1091,6 +1161,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           if (dropped(type)) callTimings.noteAnswer({ answerId: timingId, status: 'none' });
           // ADR-0076: no card is left for this speech, so a later press has none to show.
           if (dropped(type) && speechCardRef.current === entry.id) speechCardRef.current = null;
+          // Batch D (P1-G): auto-answer put no card up for these words, so a press must still answer them.
+          if (dropped(type) && auto && lastAnsweredRef.current?.answerId === entry.id) {
+            ownEndRef.current = ownEndBefore;
+          }
           // Claude could not make sense of the words either (ADR-0043): no answer to show. The
           // entry goes, and the user gets the same notice as when the rules catch it first.
           // v1.4 (ADR-0065): or the words ask nothing ("can you repeat that?", a remark). The entry goes
@@ -1130,6 +1204,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         },
         onDone: (text, done, timeline) => {
           idleSinceRef.current = Date.now();
+          if (streamingIdRef.current === entry.id) streamingIdRef.current = null;
           if (!dropped(meta?.type)) {
             callTimings.noteAnswer({ answerId: timingId, status: 'done', doneAt: Date.now() });
           }
@@ -1199,6 +1274,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         },
         onError: (failure) => {
           idleSinceRef.current = Date.now();
+          if (streamingIdRef.current === entry.id) streamingIdRef.current = null;
           callTimings.noteAnswer({ answerId: timingId, status: 'error', doneAt: Date.now() });
           const shown = answerFailureText(failure);
           update(entry.id, {
@@ -1250,12 +1326,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         decided('nothing-new');
         return;
       }
+      // Batch D (P1-G): a press answers everything after the speech answered on cards of their own, so words
+      // a re-ask took into an earlier card's question get a card of their own now.
       const choice = chooseNewest({
         lines,
-        answeredEnd: answeredEndRef.current,
+        answeredEnd: ownEndRef.current,
         lastAnswerId: speechCardRef.current,
       });
       if (choice.kind === 'answer') {
+        // Covered by a re-ask (in place) but not by a card of its own: answered again, on its own card.
+        const afterReask = (answeredEndRef.current ?? Number.NEGATIVE_INFINITY) > choice.span.start;
         const sent = ask('answer', {
           pressedAt: keyPressAt,
           trigger,
@@ -1266,21 +1346,36 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             grey: choice.grey,
             words: choice.words,
             ...(incomplete ? { incomplete: true } : {}),
+            ...(choice.audioLost ? { audioLost: true } : {}),
           },
         });
+        if (sent) lastPressEndRef.current = choice.span.end;
         decided(sent ? 'sent' : 'not-sent', {
           words: choice.words,
           segments: choice.segments,
           grey: choice.grey,
           incomplete,
+          ...(choice.audioLost ? { audioLost: true } : {}),
+          ...(afterReask ? { afterReask: true } : {}),
         });
         return;
       }
       if (choice.kind === 'show-existing') {
         const streaming = runner.busy() && lastAnsweredRef.current?.answerId === choice.answerId;
         setShownId(choice.answerId);
-        setNotice(streaming ? ALREADY_ANSWERING_NOTICE : SHOWING_EARLIER_NOTICE);
-        decided(streaming ? 'ignored-streaming' : 'shown-existing');
+        // Batch D (P1-G): when that card answered their words since the user's last press (auto-answer did),
+        // it IS the answer to this press: shown with no notice. "Nothing new" only when nothing was said
+        // since the last press.
+        const answersNewWords =
+          (ownEndRef.current ?? Number.NEGATIVE_INFINITY) >
+          (lastPressEndRef.current ?? Number.NEGATIVE_INFINITY);
+        setNotice(
+          streaming ? ALREADY_ANSWERING_NOTICE : answersNewWords ? null : SHOWING_EARLIER_NOTICE,
+        );
+        lastPressEndRef.current = ownEndRef.current;
+        decided(
+          streaming ? 'ignored-streaming' : answersNewWords ? 'shown-answer' : 'shown-existing',
+        );
         return;
       }
       setNotice(choice.kind === 'gap' ? GAP_NOTICE : NOTHING_NEW_NOTICE);
@@ -1563,14 +1658,39 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       (decision: NewestAutoDecision) => {
         // A re-ask of a press's card stays a press (no "Auto" mark).
         const pressRerun = decision.kind === 'rerun' && lastAnsweredRef.current?.auto === false;
+        // Batch D (P0-C, decision D2): a re-ask replaces its card only while the first answer still streams,
+        // or when the added words just finish the same sentence; otherwise it gets a new card linked to the
+        // first, so a finished answer to a different question is never overwritten.
+        const inPlace =
+          decision.kind === 'rerun' &&
+          (decision.sameSentence ||
+            (runner.busy() && streamingIdRef.current === decision.replaces));
         callTimings.noteTrace('auto', {
           kind: decision.kind,
           words: decision.words,
           sinceEndMs: Date.now() - decision.tEnd,
         });
+        if (decision.kind === 'rerun') {
+          // Batch D (trace): every re-ask with why it happened and where it went. Ids and codes only.
+          callTimings.noteTrace('reask', {
+            reason: decision.reason,
+            card: inPlace ? 'same' : 'new',
+            sameSentence: decision.sameSentence,
+            of: decision.replaces,
+            press: pressRerun,
+            words: decision.words,
+          });
+        }
         void ask('answer', {
           ...(pressRerun ? { trigger: 'rerun' as const } : { auto: true }),
-          ...(decision.kind === 'rerun' ? { replaces: decision.replaces } : {}),
+          ...(decision.kind === 'rerun'
+            ? inPlace
+              ? {
+                  replaces: decision.replaces,
+                  ...(decision.sameSentence ? { finishesSentence: true } : {}),
+                }
+              : { rerunOf: decision.replaces }
+            : {}),
           // Batch C (P1-1): a new auto-answer, sent at the end of turn, is held hidden for 400 ms first.
           ...(decision.kind === 'answer' ? { speculative: true } : {}),
           exact: {
@@ -1582,7 +1702,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           },
         });
       },
-      [ask],
+      [ask, runner],
     ),
     autoAnswer: useCallback(
       (decision?: AutoDecision) => {
