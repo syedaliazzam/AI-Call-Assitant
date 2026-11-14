@@ -30,6 +30,10 @@ describe('pageTitleFor', () => {
 
   it('covers the admin pages and every Dev Tools page', () => {
     expect(pageTitleFor('/admin/users').title).toBe('Users');
+    // ADR-0081: Users has "Add user" in the header instead of Create session; other pages keep it.
+    expect(pageTitleFor('/admin/users').action).toBe('add-user');
+    expect(pageTitleFor('/admin/usage').action).toBeUndefined();
+    expect(pageTitleFor('/').action).toBeUndefined();
     expect(pageTitleFor('/dev').title).toBe('Dev Tools');
     expect(pageTitleFor('/dev/ui').title).toBe('Dev Tools');
     expect(pageTitleFor('/developer').title).toBe('Paramount AI');

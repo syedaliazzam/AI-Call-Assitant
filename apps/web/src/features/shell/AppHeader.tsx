@@ -2,16 +2,18 @@
  * File: apps/web/src/features/shell/AppHeader.tsx
  * Purpose: The bar across the top of every signed-in page (spec S1). Left, at the sidebar's width: the
  *          logo, the wordmark and the sidebar's button. Then the page's title and line, and the "Create
- *          session" split button at the far right. On a phone the title takes a second row.
+ *          session" split button at the far right (on Admin → Users: Usage and "Add user" instead).
+ *          On a phone the title takes a second row.
  * Used by: src/features/shell/AppShell.tsx
  * Depends on: next/navigation, lucide-react, src/ui/BrandLockup.tsx, ./CreateSessionButton.tsx,
- *             ./pageTitles.ts
+ *             src/features/admin/AddUserButton.tsx, ./pageTitles.ts
  * Architecture: docs/design/paramount-ai-ui-spec.md §1, §3 (S1)
  */
 'use client';
 
 import { PanelLeft } from 'lucide-react';
 import { usePathname } from 'next/navigation';
+import { AddUserButton } from '@/features/admin/AddUserButton';
 import { BrandLockup } from '@/ui/BrandLockup';
 import { CreateSessionButton } from './CreateSessionButton';
 import { pageTitleFor } from './pageTitles';
@@ -35,7 +37,7 @@ export interface AppHeaderProps {
  */
 export function AppHeader({ collapsed, onToggleCollapsed, onOpenDrawer }: AppHeaderProps) {
   const pathname = usePathname();
-  const { title, subtitle } = pageTitleFor(pathname);
+  const { title, subtitle, action } = pageTitleFor(pathname);
   return (
     <header className="flex shrink-0 flex-wrap items-center border-b border-ui-border bg-ui-sidebar md:h-[76px] md:flex-nowrap">
       <div
@@ -74,7 +76,8 @@ export function AppHeader({ collapsed, onToggleCollapsed, onOpenDrawer }: AppHea
         {subtitle && <p className="truncate text-page-subtitle text-ui-muted">{subtitle}</p>}
       </div>
       <div className="ml-auto shrink-0 pr-4 md:pr-6">
-        <CreateSessionButton />
+        {/* Admin → Users has its own buttons; every other page offers Create session. */}
+        {action === 'add-user' ? <AddUserButton /> : <CreateSessionButton />}
       </div>
     </header>
   );

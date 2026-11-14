@@ -26,7 +26,7 @@ export interface TemporaryPasswordBoxProps {
  *
  * @param props See TemporaryPasswordBoxProps.
  * @returns The box element.
- * Rendered by: CreateUserForm.tsx (new account), UsersTable.tsx (password reset)
+ * Rendered by: AddUserDialog.tsx (new account), UsersPage.tsx (password reset)
  */
 export function TemporaryPasswordBox({ email, password, onDismiss }: TemporaryPasswordBoxProps) {
   const [copied, setCopied] = useState(false);
@@ -46,7 +46,7 @@ export function TemporaryPasswordBox({ email, password, onDismiss }: TemporaryPa
   return (
     <div
       role="status"
-      className="border border-ui-warning rounded-control bg-ui-warning-bg p-4 text-[13px]"
+      className="rounded-control border border-ui-warning bg-ui-warning-bg p-4 text-[13px]"
     >
       <p className="font-semibold text-ui-warning">Temporary password for {email}</p>
       <p className="mt-1 text-ui-warning">
@@ -54,7 +54,7 @@ export function TemporaryPasswordBox({ email, password, onDismiss }: TemporaryPa
         first sign in.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <code className="border border-ui-warning bg-ui-surface px-3 py-1.5 text-base tracking-wider text-ui-heading select-all">
+        <code className="rounded-control border border-ui-warning bg-ui-surface px-3 py-1.5 text-base tracking-wider text-ui-heading select-all">
           {password}
         </code>
         <Button variant="secondary" size="sm" onClick={copy}>

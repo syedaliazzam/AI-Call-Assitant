@@ -1,207 +1,214 @@
 /**
  * File: apps/web/src/features/admin/UsersTable.tsx
- * Purpose: Table of all accounts with their status and row actions: reset password,
- *          disable/enable, make admin/user. A new temporary password is shown once above the table.
- * Used by: app/(app)/admin/users/page.tsx
- * Depends on: src/features/admin/types.ts, TemporaryPasswordBox.tsx, src/ui/Button.tsx
- * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Admin: users), §8.2
+ * Purpose: The accounts on the Users page (spec S17): a table from 1024 px (avatar with initials, the
+ *          name with a "You" tag on your own row and the email under it, a Role badge, a Status badge,
+ *          Created, Last active and a "⋯" menu), and cards below 1024 px with the same facts. Cells
+ *          never wrap: long names and emails are cut with "…" and shown whole on hover.
+ * Used by: src/features/admin/UsersPage.tsx
+ * Depends on: src/features/shell/UserMenu.tsx (initials), ./UserActionsMenu.tsx, ./userList.ts,
+ *             ./types.ts
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Admin: users);
+ *               docs/design/paramount-ai-ui-spec.md §1, S17
+ * Theme: tokens from src/ui/tokens/theme.css
  */
 'use client';
 
-import { useState, useTransition } from 'react';
-import { Button } from '@/ui/Button';
-import { TemporaryPasswordBox } from './TemporaryPasswordBox';
-import type { AdminActionResult, AdminUserActions, UserRow } from './types';
+import { initials } from '@/features/shell/UserMenu';
+import type { UserRow } from './types';
+import { UserActionsMenu } from './UserActionsMenu';
+import { formatDay, guardsFor, type UserAction } from './userList';
 
 /** Props for UsersTable. */
 export interface UsersTableProps {
-  /** Every account, newest first. */
-  users: UserRow[];
-  /** The signed-in admin's id; their own row has no action buttons (no self-lockout). */
+  /** The accounts to show (already searched and filtered). */
+  users: readonly UserRow[];
+  /** The signed-in admin's id: their row gets "You", and its actions are greyed out. */
   currentUserId: string;
-  /** Server actions for the row buttons. */
-  actions: Pick<AdminUserActions, 'resetPassword' | 'setDisabled' | 'setRole'>;
+  /** activeAdminCount() of every account (not only the shown ones), for the last-admin guard. */
+  activeAdmins: number;
+  /** Called with a row's chosen action. */
+  onAction: (action: UserAction, user: UserRow) => void;
+  /** True while an action runs. */
+  busy: boolean;
 }
 
 /**
- * A coloured badge with the account's status.
+ * The round avatar with up to two initials.
  *
- * @param props.user The row to describe.
- * @returns The badge element.
+ * @param props.name The display name.
+ * @returns The avatar.
+ * Rendered by: Identity
+ */
+function Avatar({ name }: { name: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex size-9 shrink-0 items-center justify-center rounded-full bg-ui-subtle text-[13px] font-medium text-ui-heading"
+    >
+      {initials(name)}
+    </span>
+  );
+}
+
+/**
+ * The avatar, the name (with "You" on your own row) and the email under it.
+ *
+ * @param props.user The row.
+ * @param props.self True for the signed-in admin's own row.
+ * @returns The identity block.
+ * Rendered by: the table's first cell and each card
+ */
+function Identity({ user, self }: { user: UserRow; self: boolean }) {
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <Avatar name={user.name} />
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <span title={user.name} className="truncate text-[14px] font-medium text-ui-heading">
+            {user.name}
+          </span>
+          {self && (
+            <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-ui-accent-tint px-2 text-chip text-ui-link">
+              You
+            </span>
+          )}
+        </div>
+        <p title={user.email} className="truncate text-[13px] text-ui-muted">
+          {user.email}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The role as a small pill.
+ *
+ * @param props.role 'admin' or 'user'.
+ * @returns The badge.
+ */
+function RoleBadge({ role }: { role: UserRow['role'] }) {
+  return (
+    <span className="inline-flex h-6 shrink-0 items-center whitespace-nowrap rounded-full border border-ui-border bg-ui-bg px-2.5 text-chip text-ui-text">
+      {role === 'admin' ? 'Admin' : 'User'}
+    </span>
+  );
+}
+
+/**
+ * The status as a pill: Active (green) or Disabled (muted). An active account that still has its
+ * temporary password says so in its tooltip.
+ *
+ * @param props.user The row.
+ * @returns The badge.
  */
 function StatusBadge({ user }: { user: UserRow }) {
   if (user.disabled) {
     return (
-      <span className="rounded-control bg-ui-danger-bg px-2 py-0.5 text-[13px] text-ui-danger">
+      <span className="inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-ui-subtle px-2.5 text-chip text-ui-muted">
+        <span aria-hidden="true" className="size-1.5 rounded-full bg-ui-dot-ended" />
         Disabled
       </span>
     );
   }
-  if (user.mustChangePassword) {
-    return (
-      <span className="rounded-control bg-ui-warning-bg px-2 py-0.5 text-[13px] text-ui-warning">
-        Must change password
-      </span>
-    );
-  }
   return (
-    <span className="rounded-control bg-ui-success-bg px-2 py-0.5 text-[13px] text-ui-success">
+    <span
+      title={user.mustChangePassword ? 'Still has the temporary password' : undefined}
+      className="inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-ui-success-bg px-2.5 text-chip text-ui-success"
+    >
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-ui-dot-success" />
       Active
     </span>
   );
 }
 
 /**
- * Formats a date as YYYY-MM-DD (UTC). A fixed format avoids differences between the server's
- * and the browser's locale, which would cause React hydration warnings.
+ * The Last active words.
  *
- * @param date The date to format.
- * @returns For example '2026-10-26'.
+ * @param at The last activity, or null.
+ * @returns "13 Nov 2026", or "—" when nothing is recorded.
  */
-function formatDate(date: Date): string {
-  return new Date(date).toISOString().slice(0, 10);
+function lastActive(at: Date | null): string {
+  return at ? formatDay(at) : '—';
 }
 
+/** A header cell's classes. */
+const TH = 'whitespace-nowrap px-4 py-3 text-left text-[13px] font-medium text-ui-muted';
+
+/** A body cell's classes. */
+const TD = 'whitespace-nowrap px-4 py-3 align-middle';
+
 /**
- * Table of all accounts with row actions: reset the password, disable or enable, make admin
- * or user. Actions that sign the person out ask for confirmation first.
+ * The accounts as a table (from 1024 px) and as cards (below).
  *
  * @param props See UsersTableProps.
- * @returns The table section.
- * Rendered by: app/(app)/admin/users/page.tsx
+ * @returns Both layouts; CSS shows the one that fits.
+ * Rendered by: UsersPage.tsx
  */
-export function UsersTable({ users, currentUserId, actions }: UsersTableProps) {
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState<{ email: string; password: string } | null>(null);
-
-  /**
-   * Runs one row action, then shows its error or (for resets) the new password.
-   * The server action refreshes the page data itself (revalidatePath).
-   *
-   * @param user The row the action is for.
-   * @param run  Calls the server action.
-   */
-  function runAction(user: UserRow, run: () => Promise<AdminActionResult>) {
-    setError(null);
-    startTransition(async () => {
-      const result = await run();
-      if (!result.ok) {
-        setError(result.error);
-      } else if (result.temporaryPassword) {
-        setRevealed({ email: user.email, password: result.temporaryPassword });
-      }
-    });
-  }
-
-  /**
-   * Asks for confirmation, then resets the user's password (it signs them out).
-   *
-   * @param user The table row.
-   */
-  function handleReset(user: UserRow) {
-    if (!window.confirm(`Reset the password for ${user.email}? They will be signed out.`)) return;
-    runAction(user, () => actions.resetPassword(user.id));
-  }
-
-  /**
-   * Asks for confirmation when disabling (it signs them out), then disables or enables.
-   *
-   * @param user The table row.
-   */
-  function handleToggleDisabled(user: UserRow) {
-    if (!user.disabled && !window.confirm(`Disable ${user.email}? They will be signed out.`)) {
-      return;
-    }
-    runAction(user, () => actions.setDisabled(user.id, !user.disabled));
-  }
-
-  /**
-   * Switches the account between admin and user.
-   *
-   * @param user The table row.
-   */
-  function handleToggleRole(user: UserRow) {
-    runAction(user, () => actions.setRole(user.id, user.role === 'admin' ? 'user' : 'admin'));
-  }
-
+export function UsersTable({
+  users,
+  currentUserId,
+  activeAdmins,
+  onAction,
+  busy,
+}: UsersTableProps) {
   return (
-    <section className="flex flex-col gap-4">
-      {revealed && (
-        <TemporaryPasswordBox
-          email={revealed.email}
-          password={revealed.password}
-          onDismiss={() => setRevealed(null)}
-        />
-      )}
-      {error && (
-        <p
-          role="alert"
-          className="rounded-control bg-ui-danger-bg px-3 py-2 text-[13px] text-ui-danger"
-        >
-          {error}
-        </p>
-      )}
-      <div className="overflow-x-auto rounded-card border border-ui-border bg-ui-surface shadow-card">
-        <table className="w-full text-left text-[13px]">
-          <thead className="border-b border-ui-border bg-ui-band text-[13px] text-ui-muted">
+    <>
+      <div className="hidden overflow-hidden rounded-card border border-ui-border bg-ui-surface lg:block">
+        <table className="w-full table-fixed text-[14px]">
+          <colgroup>
+            <col />
+            <col className="w-[96px]" />
+            <col className="w-[120px]" />
+            <col className="w-[128px]" />
+            <col className="w-[128px]" />
+            <col className="w-[64px]" />
+          </colgroup>
+          <thead className="border-b border-ui-border bg-ui-band">
             <tr>
-              <th className="px-4 py-3 font-semibold">Name</th>
-              <th className="px-4 py-3 font-semibold">Email</th>
-              <th className="px-4 py-3 font-semibold">Role</th>
-              <th className="px-4 py-3 font-semibold">Status</th>
-              <th className="px-4 py-3 font-semibold">Created</th>
-              <th className="px-4 py-3 font-semibold">
+              <th scope="col" className={TH}>
+                User
+              </th>
+              <th scope="col" className={TH}>
+                Role
+              </th>
+              <th scope="col" className={TH}>
+                Status
+              </th>
+              <th scope="col" className={TH}>
+                Created
+              </th>
+              <th scope="col" className={TH}>
+                Last active
+              </th>
+              <th scope="col" className={TH}>
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-ui-border">
             {users.map((user) => {
-              const isSelf = user.id === currentUserId;
+              const self = user.id === currentUserId;
               return (
-                <tr key={user.id}>
-                  <td className="px-4 py-3 font-semibold text-ui-heading">
-                    {user.name}
-                    {isSelf && <span className="ml-2 text-[13px] text-ui-muted">(you)</span>}
+                <tr key={user.id} className="transition-colors hover:bg-ui-hover">
+                  <td className={`${TD} max-w-0`}>
+                    <Identity user={user} self={self} />
                   </td>
-                  <td className="px-4 py-3 text-ui-muted">{user.email}</td>
-                  <td className="px-4 py-3 text-ui-muted capitalize">{user.role}</td>
-                  <td className="px-4 py-3">
+                  <td className={TD}>
+                    <RoleBadge role={user.role} />
+                  </td>
+                  <td className={TD}>
                     <StatusBadge user={user} />
                   </td>
-                  <td className="px-4 py-3 text-ui-muted">{formatDate(user.createdAt)}</td>
-                  <td className="px-4 py-3">
-                    {/* No actions on your own row: resetting, disabling or demoting yourself
-                        would sign you out or lock you out. Use /change-password instead. */}
-                    {!isSelf && (
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={pending}
-                          onClick={() => handleReset(user)}
-                        >
-                          Reset password
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={pending}
-                          onClick={() => handleToggleDisabled(user)}
-                        >
-                          {user.disabled ? 'Enable' : 'Disable'}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={pending}
-                          onClick={() => handleToggleRole(user)}
-                        >
-                          {user.role === 'admin' ? 'Make user' : 'Make admin'}
-                        </Button>
-                      </div>
-                    )}
+                  <td className={`${TD} text-ui-muted`}>{formatDay(user.createdAt)}</td>
+                  <td className={`${TD} text-ui-muted`}>{lastActive(user.lastActiveAt)}</td>
+                  <td className={`${TD} text-right`}>
+                    <UserActionsMenu
+                      user={user}
+                      guards={guardsFor(user, currentUserId, activeAdmins)}
+                      onAction={onAction}
+                      busy={busy}
+                    />
                   </td>
                 </tr>
               );
@@ -209,6 +216,44 @@ export function UsersTable({ users, currentUserId, actions }: UsersTableProps) {
           </tbody>
         </table>
       </div>
-    </section>
+
+      <ul aria-label="Users" className="flex flex-col gap-3 lg:hidden">
+        {users.map((user) => {
+          const self = user.id === currentUserId;
+          return (
+            <li
+              key={user.id}
+              className="flex flex-col gap-3 rounded-card border border-ui-border bg-ui-surface p-4"
+            >
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <Identity user={user} self={self} />
+                </div>
+                <UserActionsMenu
+                  user={user}
+                  guards={guardsFor(user, currentUserId, activeAdmins)}
+                  onAction={onAction}
+                  busy={busy}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <RoleBadge role={user.role} />
+                <StatusBadge user={user} />
+              </div>
+              <dl className="grid grid-cols-2 gap-2 text-[13px]">
+                <div className="min-w-0">
+                  <dt className="text-ui-muted">Created</dt>
+                  <dd className="truncate text-ui-text">{formatDay(user.createdAt)}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-ui-muted">Last active</dt>
+                  <dd className="truncate text-ui-text">{lastActive(user.lastActiveAt)}</dd>
+                </div>
+              </dl>
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }

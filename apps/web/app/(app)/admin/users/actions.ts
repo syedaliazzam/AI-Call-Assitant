@@ -3,7 +3,7 @@
  * Purpose: Server actions behind the admin users screen. Each one checks the caller is an
  *          admin (requireAdmin), validates its input with zod, calls src/server/users.ts and
  *          returns a result object; errors are returned, never thrown to the UI.
- * Used by: app/(app)/admin/users/page.tsx (passed to CreateUserForm and UsersTable)
+ * Used by: app/(app)/admin/users/page.tsx (passed to UsersPage: AddUserDialog and the row menus)
  * Depends on: src/server/guard.ts, src/server/users.ts, zod
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Admin: users), §8.2
  */
@@ -56,7 +56,7 @@ function failure(action: string, userId: string, error: unknown): AdminActionRes
  * @param _previous Previous form state (required by useActionState; not used).
  * @param formData  The submitted form: name, email, role.
  * @returns 'created' with the one-time password, or 'error' with messages.
- * Called from: CreateUserForm (src/features/admin/CreateUserForm.tsx) via useActionState
+ * Called from: AddUserDialog (src/features/admin/AddUserDialog.tsx) via useActionState
  */
 export async function createUserAction(
   _previous: CreateUserState,
@@ -114,7 +114,7 @@ function checkTarget(adminId: string, userId: string): AdminActionResult | null 
  *
  * @param userId The account to reset.
  * @returns ok with the one-time temporary password, or an error message.
- * Called from: UsersTable "Reset password" button
+ * Called from: UsersPage.tsx (row menu "Reset password", after its confirmation)
  */
 export async function resetPasswordAction(userId: string): Promise<AdminActionResult> {
   const session = await requireAdmin();
@@ -135,7 +135,7 @@ export async function resetPasswordAction(userId: string): Promise<AdminActionRe
  * @param userId   The account to change.
  * @param disabled True to disable, false to enable.
  * @returns ok, or an error message.
- * Called from: UsersTable "Disable" / "Enable" button
+ * Called from: UsersPage.tsx (row menu "Disable", after its confirmation, / "Enable")
  */
 export async function toggleDisabledAction(
   userId: string,
@@ -160,7 +160,7 @@ export async function toggleDisabledAction(
  * @param userId The account to change.
  * @param role   'admin' or 'user'.
  * @returns ok, or an error message.
- * Called from: UsersTable "Make admin" / "Make user" button
+ * Called from: UsersPage.tsx (row menu "Make admin" / "Make user", after its confirmation)
  */
 export async function setRoleAction(userId: string, role: Role): Promise<AdminActionResult> {
   const session = await requireAdmin();

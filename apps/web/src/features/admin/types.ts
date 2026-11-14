@@ -25,6 +25,11 @@ export interface UserRow {
   mustChangePassword: boolean;
   /** When the account was created. */
   createdAt: Date;
+  /**
+   * The latest day the person used Paramount AI (a sign-in session's last refresh, or a Claude
+   * request), or null when nothing is recorded (for example a new account, or one signed out).
+   */
+  lastActiveAt: Date | null;
 }
 
 /** Result of a row action (reset password, disable/enable, change role). Never thrown. */
