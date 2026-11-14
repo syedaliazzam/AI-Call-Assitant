@@ -689,6 +689,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
          * person went on into a new question, so that card's finished answer is kept).
          */
         rerunOf?: string;
+        /**
+         * Batch D (P1-G): an in-place re-ask that only finishes the same sentence: its card now answers that
+         * whole sentence, so a later press does not answer the sentence's end again on a card of its own.
+         */
+        finishesSentence?: boolean;
         /** 1.5.1: what asked, for the call timing log (default: the key, or auto). */
         trigger?: AnswerTrigger;
         /**
@@ -966,8 +971,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       ) {
         // ADR-0076 (E3 rule 3): the newest answered speech ends here (or later).
         answeredEndRef.current = Math.max(answeredEndRef.current ?? span.end, span.end);
-        // Batch D (P1-G): speech answered on a card of its own (not by replacing a card in place).
-        if (mode === 'answer' && !replaces) {
+        // Batch D (P1-G): speech answered on a card of its own (not by replacing a card in place, unless the
+        // re-ask only finished the same sentence).
+        if (mode === 'answer' && (!replaces || options.finishesSentence === true)) {
           ownEndRef.current = Math.max(ownEndRef.current ?? span.end, span.end);
         }
         if (mode === 'answer') speechCardRef.current = entry.id;
@@ -1679,7 +1685,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           ...(pressRerun ? { trigger: 'rerun' as const } : { auto: true }),
           ...(decision.kind === 'rerun'
             ? inPlace
-              ? { replaces: decision.replaces }
+              ? {
+                  replaces: decision.replaces,
+                  ...(decision.sameSentence ? { finishesSentence: true } : {}),
+                }
               : { rerunOf: decision.replaces }
             : {}),
           // Batch C (P1-1): a new auto-answer, sent at the end of turn, is held hidden for 400 ms first.

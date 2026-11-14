@@ -727,6 +727,12 @@ test('f) Batch D, auto-answer off: no re-ask of a finished press, a press always
   await call.turn('them', 'WHAT WAS THE HARDEST PART?', { startAfterThemMs: 500, endOfTurn: true });
   await pause(1_500);
   expect(since()).toHaveLength(2);
+  // P1-G: a press answers it, on its own card, without the finished sentence again.
+  await page.keyboard.press('Control+Enter');
+  await expect.poll(() => since().length, { timeout: 5_000 }).toBe(3);
+  expect(since()[2]).toContain('HARDEST PART');
+  expect(since()[2]).not.toContain('MIGRATION');
+  await expect(cards()).toHaveCount(4);
 });
 
 test('g) Batch D, auto-answer on: a re-ask that adds a new question gets a new card; the first is kept and saved', async () => {
