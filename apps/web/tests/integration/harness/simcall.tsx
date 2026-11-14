@@ -3,7 +3,8 @@
  * Purpose: The browser side of the simulated calls (v1.1.0, item 27): the real answer panel, transcript,
  *          overlay link and home panel on invented sessions, with no sign-in. Lines come from the test
  *          instead of a microphone, and answers from the test server's mocked /api/answer. Screenshots
- *          come from a small drawn image, through the desktop bridge's method.
+ *          come from a small drawn image, through the desktop bridge's method. Batch D: ?rules=newest runs
+ *          the cloud-transcription question rules, with turn() for grey lines and engine end-of-turn lines.
  * Used by: tests/integration/sim-calls.spec.ts (bundled with esbuild and served on a test page)
  * Depends on: src/features/live/LiveAnswers.tsx, TranscriptStrip.tsx, src/features/home/HomePanel.tsx,
  *             src/core/live/hygiene.ts, src/core/transcript/transcript.ts, src/core/storage, react-dom
@@ -15,6 +16,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { hygieneState, type HygieneState } from '@/core/live/hygiene';
+import { listAnswers } from '@/core/storage/answers';
 import { createSession } from '@/core/storage/sessions';
 import type { Session } from '@/core/storage/types';
 import { createTranscript } from '@/core/transcript/transcript';
@@ -50,6 +52,22 @@ export interface KiteSimHarness {
    * @param nonEnglish True to add it as another language (core/stt/language.ts decided so).
    */
   speak: (speaker: 'you' | 'them', text: string, durationMs: number, nonEnglish?: boolean) => void;
+  /**
+   * Batch D: a line as cloud transcription gives it (for ?rules=newest), ending now.
+   *
+   * @param speaker Who spoke.
+   * @param text    What they said.
+   * @param options.startAfterThemMs Start this long after the last "Them" line ended (default: now − 1.5 s).
+   * @param options.grey             Add it as grey words still being spoken (a partial line).
+   * @param options.endOfTurn        The engine's own end of turn ended it (Flux EndOfTurn).
+   */
+  turn: (
+    speaker: 'you' | 'them',
+    text: string,
+    options?: { startAfterThemMs?: number; grey?: boolean; endOfTurn?: boolean },
+  ) => void;
+  /** Batch D: the saved answers of this session: whether each is a re-ask on a card of its own. */
+  saved: () => Promise<{ rerunOf: boolean }[]>;
 }
 
 declare global {
@@ -96,6 +114,12 @@ const VIEW = new URLSearchParams(window.location.search).get('view') ?? 'call';
 
 /** v1.4: auto-answer on for this page (?auto=1), for the timed checks. */
 const AUTO = new URLSearchParams(window.location.search).get('auto') === '1';
+
+/** Batch D: the question rules of calls with cloud transcription (?rules=newest). */
+const NEWEST = new URLSearchParams(window.location.search).get('rules') === 'newest';
+
+/** Batch D: when the last "Them" line ended (Unix ms), for turn()'s startAfterThemMs. */
+let lastThemEnd = Date.now();
 
 // Screenshots go through the desktop bridge's method, which a browser cannot be scripted to answer.
 // The same small image each time: the mocked server replies by what the test told it to expect.
@@ -145,6 +169,26 @@ window.kiteSim = {
       ...(nonEnglish ? { nonEnglish: true } : {}),
     });
   },
+  turn: (speaker, text, options = {}) => {
+    const end = Date.now();
+    const start =
+      options.startAfterThemMs !== undefined ? lastThemEnd + options.startAfterThemMs : end - 1_500;
+    if (speaker === 'them') lastThemAt = end;
+    if (options.grey) {
+      transcript.addPartial(speaker, text, start, end);
+      return;
+    }
+    if (speaker === 'them') lastThemEnd = end;
+    transcript.addFinal({
+      speaker,
+      text,
+      tStart: start,
+      tEnd: end,
+      ...(options.endOfTurn ? { endOfTurn: true } : {}),
+    });
+  },
+  saved: async () =>
+    (await listAnswers(SESSION.id)).map((answer) => ({ rerunOf: answer.rerunOf !== undefined })),
 };
 
 /**
@@ -207,6 +251,7 @@ function SimCall() {
         hygiene={hygiene}
         echoCount={transcript.echoStats().count}
         {...(AUTO ? { autoAnswer: true } : {})}
+        {...(NEWEST ? { rules: 'newest' as const } : {})}
         transcriptClearedAt={clearedAt}
         onClearTranscript={() => setClearedAt(Date.now())}
         onStillHere={stillHere}

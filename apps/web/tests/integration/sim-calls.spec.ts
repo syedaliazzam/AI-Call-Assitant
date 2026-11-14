@@ -663,6 +663,98 @@ test('e) v1.4 timelines: whole questions, one answer each, no answers to talk ab
   expect(call.since(mark)).toHaveLength(1);
 });
 
+/**
+ * Batch D (ADR-0079): opens a call on the cloud-transcription question rules.
+ *
+ * @param auto True to turn auto-answer on.
+ * @returns turn(), which adds a line as cloud transcription gives it, and the saved answers' links.
+ */
+async function openNewestCall(auto: boolean) {
+  await page.goto(`${origin}/?view=call&rules=newest${auto ? '&auto=1' : ''}`);
+  await expect(page.getByRole('button', { name: 'Answer', exact: true }).first()).toBeVisible();
+  await page.locator('body').click();
+  return {
+    turn: async (
+      speaker: 'you' | 'them',
+      text: string,
+      options: { startAfterThemMs?: number; grey?: boolean; endOfTurn?: boolean } = {},
+    ) => {
+      await page.evaluate(
+        ([who, words, extra]) =>
+          window.kiteSim.turn(
+            who as 'you' | 'them',
+            words as string,
+            extra as { startAfterThemMs?: number; grey?: boolean; endOfTurn?: boolean },
+          ),
+        [speaker, text, options] as const,
+      );
+    },
+    saved: () => page.evaluate(() => window.kiteSim.saved()),
+  };
+}
+
+test('f) Batch D, auto-answer off: no re-ask of a finished press, a press always answers, grey re-asked once in place', async () => {
+  const call = await openNewestCall(false);
+  let mark = received.length;
+  const since = () => received.slice(mark).map((request) => request.question ?? '');
+
+  // P0-B (D1): a press on finished words is not asked again when they go on into a new question.
+  await call.turn('them', 'HOW WOULD YOU SCALE THE SERVICE?', { endOfTurn: true });
+  await page.keyboard.press('Control+Enter');
+  await expect.poll(() => since().length, { timeout: 5_000 }).toBe(1);
+  await call.turn('them', 'AND WHAT ABOUT CACHING?', { startAfterThemMs: 800, endOfTurn: true });
+  await pause(1_500);
+  expect(since()).toHaveLength(1);
+  // P1-G: the press answers the new question, on its own card.
+  await page.keyboard.press('Control+Enter');
+  await expect.poll(() => since().length, { timeout: 5_000 }).toBe(2);
+  expect(since()[1]).toContain('CACHING');
+  expect(since()[1]).not.toContain('SCALE');
+  await expect(cards()).toHaveCount(2);
+
+  // P0-B/P0-C: a press on grey words is asked again once, on the same card, when they finish the sentence.
+  await call.turn('you', 'I WOULD ADD A READ THROUGH CACHE IN FRONT OF THE DATABASE');
+  await pause(300);
+  mark = received.length;
+  await call.turn('them', 'TELL ME ABOUT THE TIME YOU', { grey: true });
+  await page.keyboard.press('Control+Enter');
+  await expect.poll(() => since().length, { timeout: 5_000 }).toBe(1);
+  await call.turn('them', 'TELL ME ABOUT THE TIME YOU LED A MIGRATION.', { endOfTurn: true });
+  await expect.poll(() => since().length, { timeout: 5_000 }).toBe(2);
+  expect(since()[1]).toContain('LED A MIGRATION');
+  await expect(cards()).toHaveCount(3);
+  // Never a second re-ask of the same card.
+  await call.turn('them', 'WHAT WAS THE HARDEST PART?', { startAfterThemMs: 500, endOfTurn: true });
+  await pause(1_500);
+  expect(since()).toHaveLength(2);
+});
+
+test('g) Batch D, auto-answer on: a re-ask that adds a new question gets a new card; the first is kept and saved', async () => {
+  const call = await openNewestCall(true);
+  const mark = received.length;
+  const since = () => received.slice(mark).map((request) => request.question ?? '');
+  const savedBefore = (await call.saved()).length;
+
+  await call.turn('them', 'HOW WOULD YOU SCALE THE SERVICE?', { endOfTurn: true });
+  await expect.poll(() => since().length, { timeout: 5_000 }).toBe(1);
+  await expect(cards()).toHaveCount(1);
+  await expect(cards().first()).toContainText('comes first');
+  // The question goes on within 2 s of the first answer's speech: asked again, on a NEW card.
+  await call.turn('them', 'AND WHAT ABOUT CACHING?', { startAfterThemMs: 1_000, endOfTurn: true });
+  await expect.poll(() => since().length, { timeout: 5_000 }).toBe(2);
+  expect(since()[1]).toContain('SCALE');
+  expect(since()[1]).toContain('CACHING');
+  await expect(cards()).toHaveCount(2);
+  // Both answers are saved; the second is linked to the first (Review keeps them apart).
+  await expect
+    .poll(async () => (await call.saved()).slice(savedBefore), { timeout: 5_000 })
+    .toEqual([{ rerunOf: false }, { rerunOf: true }]);
+  // At most one re-ask per card.
+  await call.turn('them', 'AND MONITORING?', { startAfterThemMs: 300, endOfTurn: true });
+  await pause(1_500);
+  expect(since().filter((question) => question.includes('SCALE'))).toHaveLength(2);
+});
+
 test('home panel: cards, search, sort, the menu and its buttons', async () => {
   await page.goto(`${origin}/?view=home`);
   // The acceptable-use notice, word for word, once on this device.

@@ -6,16 +6,21 @@
  * 4. No look-back: new speech is sent even when it reads as a statement; an old card is shown only when
  *    nothing new was said.
  * 5. A reply (a finished "You" line of more than two words that did not start over them) ends the window.
- * 6. Completeness: any new word within 2 s re-asks on the same card (once the turn is over).
+ * 6. Completeness: any new word within 2 s re-asks (once the turn is over). Batch D (P0-B): anchored on
+ *    the original answer, at most once per card, the 2.5 s new-question rule, and with auto-answer off only
+ *    a press on grey words (D1). P0-C: whether the re-ask only finishes the same sentence.
  * 7. Feedback is the caller's (useLiveAnswers.ts); here: the choice that drives it ('show-existing', 'none').
- * 8. Gaps: only lost audio since the last answer gives 'gap'.
+ *    Batch D (P1-G): speech a re-ask took in is answered when the caller passes the own-card end.
+ * 8. Gaps: Batch D (P1-G): the newest words are answered with an audio-lost note; 'gap' only with no words.
  * 9. Auto-answer at the engine's own end of turn, once per question.
  */
 import { describe, expect, it } from 'vitest';
 import {
   autoNewestDue,
   chooseNewest,
+  finishesSameSentence,
   REASK_WINDOW_MS,
+  reaskSpeech,
   unansweredSpeech,
 } from '@/core/answer/newestQuestion';
 import type { AnsweredQuestion } from '@/core/answer/autoAnswer';
@@ -211,13 +216,73 @@ describe('chooseNewest (a press, after catching up)', () => {
     });
   });
 
-  it('rule 8: only lost audio since the last answer says so', () => {
+  it('rule 8 (Batch D, P1-G): only lost audio since the last answer answers the newest words around it', () => {
     const lines = [
       line('u1', 'them', 'How do you test your code?', 1_000, 3_000),
       line('g1', 'them', '[audio gap]', 5_000, 9_000, { gap: true }),
     ];
+    // Never notice-only: the words before the gap are answered, the card notes the lost audio, and the
+    // span reaches the gap's end so a second press does not answer the same gap again.
     expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' })).toEqual({
+      kind: 'answer',
+      text: 'How do you test your code?',
+      lineIds: ['u1'],
+      span: { start: 1_000, end: 9_000 },
+      grey: false,
+      words: 6,
+      segments: 1,
+      audioLost: true,
+    });
+    expect(chooseNewest({ lines, answeredEnd: 9_000, lastAnswerId: 'a2' })).toEqual({
+      kind: 'show-existing',
+      answerId: 'a2',
+    });
+  });
+
+  it('rule 8 (Batch D, P1-G): new words after a gap are answered with the note; no words at all says so', () => {
+    const lines = [
+      line('u1', 'them', 'How do you test your code?', 1_000, 3_000),
+      line('g1', 'them', '[audio gap]', 5_000, 9_000, { gap: true }),
+      line('u2', 'them', 'and in production', 9_000, 10_000),
+    ];
+    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'a1' })).toMatchObject({
+      kind: 'answer',
+      text: 'and in production',
+      audioLost: true,
+    });
+    // Their words ended long before the gap (more than GAP_CONTEXT_MS): nothing to answer around it.
+    const old = [
+      line('u1', 'them', 'How do you test your code?', 1_000, 3_000),
+      line('g1', 'them', '[audio gap]', 20_000, 24_000, { gap: true }),
+    ];
+    expect(chooseNewest({ lines: old, answeredEnd: 3_000, lastAnswerId: 'a1' })).toEqual({
       kind: 'gap',
+    });
+    // A gap before the user's reply is old news: the reply ended that exchange.
+    const replied = [
+      line('u1', 'them', 'How do you test your code?', 1_000, 3_000),
+      line('g1', 'them', '[audio gap]', 3_000, 4_000, { gap: true }),
+      line('y1', 'you', 'I write unit tests first.', 5_000, 7_000),
+    ];
+    expect(chooseNewest({ lines: replied, answeredEnd: 3_000, lastAnswerId: 'a1' })).toEqual({
+      kind: 'show-existing',
+      answerId: 'a1',
+    });
+  });
+
+  it('Batch D (P1-G): speech a re-ask took in is answered on its own card when the press passes the own-card end', () => {
+    const lines = [
+      line('u1', 'them', 'How would you scale it?', 1_000, 3_000),
+      line('u2', 'them', 'And what about caching?', 3_800, 5_000),
+    ];
+    // The re-ask moved the answered end to 5.0 s; the cards of their own end at 3.0 s.
+    expect(chooseNewest({ lines, answeredEnd: 5_000, lastAnswerId: 'card-1' })).toMatchObject({
+      kind: 'show-existing',
+    });
+    expect(chooseNewest({ lines, answeredEnd: 3_000, lastAnswerId: 'card-1' })).toMatchObject({
+      kind: 'answer',
+      text: 'And what about caching?',
+      lineIds: ['u2'],
     });
   });
 
@@ -276,20 +341,18 @@ describe('autoNewestDue', () => {
     words: 5,
   };
 
-  it('rule 6: one new word in the same line re-asks on the same card, once the turn is over', () => {
+  it('rule 6: one new word in the same line re-asks, once the turn is over (auto-answer on)', () => {
     const grown = [
       line('u1', 'them', 'How would you scale it globally?', 1_000, 3_600, { engineTurnEnd: true }),
     ];
     expect(
-      autoNewestDue(
-        { ...base, enabled: false, lines: grown, answeredEnd: 3_000, last: asked },
-        3_700,
-      ),
+      autoNewestDue({ ...base, lines: grown, answeredEnd: 3_000, last: asked }, 3_700),
     ).toMatchObject({
       kind: 'rerun',
       replaces: 'card-1',
       text: 'How would you scale it globally?',
       words: 6,
+      reason: 'grew',
     });
   });
 
@@ -337,5 +400,147 @@ describe('autoNewestDue', () => {
         6_100,
       ),
     ).toBeNull();
+  });
+});
+
+describe('Batch D (P0-B): the re-ask is bounded', () => {
+  const base = { streaming: false } as const;
+  /** "How would you scale it?" grew by a word, its turn over. */
+  const grown = [
+    line('u1', 'them', 'How would you scale it globally?', 1_000, 3_600, { engineTurnEnd: true }),
+  ];
+  /** A press on "How would you scale it?" (final words), 1.0–3.0 s. */
+  const press: AnsweredQuestion = {
+    answerId: 'card-1',
+    lineIds: ['u1'],
+    start: 1_000,
+    end: 3_000,
+    askedAt: 3_100,
+    auto: false,
+    words: 5,
+    anchorStart: 1_000,
+    anchorEnd: 3_000,
+    reasks: 0,
+    askedText: 'How would you scale it?',
+  };
+
+  it('auto-answer OFF (D1 a): only a press on grey words is asked again', () => {
+    const state = { ...base, enabled: false, lines: grown, answeredEnd: 3_000 };
+    // A press on final words, or an auto-answer's card: never re-asked with auto-answer off.
+    expect(autoNewestDue({ ...state, last: press }, 3_700)).toBeNull();
+    expect(autoNewestDue({ ...state, last: { ...press, auto: true } }, 3_700)).toBeNull();
+    // A press on words still being spoken (grey): asked again.
+    expect(
+      autoNewestDue(
+        { ...state, last: { ...press, grey: true, askedText: 'How would you scale', words: 4 } },
+        3_700,
+      ),
+    ).toMatchObject({ kind: 'rerun', replaces: 'card-1' });
+  });
+
+  it('auto-answer ON: presses and auto-answers alike are asked again', () => {
+    const state = { ...base, enabled: true, lines: grown, answeredEnd: 3_000 };
+    expect(autoNewestDue({ ...state, last: press }, 3_700)).toMatchObject({ kind: 'rerun' });
+    expect(autoNewestDue({ ...state, last: { ...press, auto: true } }, 3_700)).toMatchObject({
+      kind: 'rerun',
+    });
+  });
+
+  it('at most once per card, with auto-answer on or off', () => {
+    for (const enabled of [true, false]) {
+      const last = { ...press, grey: true, reasks: 1 };
+      expect(
+        autoNewestDue({ ...base, enabled, lines: grown, answeredEnd: 3_600, last }, 3_700),
+      ).toBeNull();
+    }
+  });
+
+  it('the window is anchored on the original answer: a re-ask never moves it forward', () => {
+    // The 14 Nov chain: the latest re-ask ended at 6.0 s, but the card's original answer ended at 3.0 s.
+    const lines = [
+      line('u1', 'them', 'How would you scale it?', 1_000, 3_000, { engineTurnEnd: true }),
+      line('u2', 'them', 'Say to ten million users?', 4_000, 6_000, { engineTurnEnd: true }),
+      line('u3', 'them', 'Next question, what about caching?', 6_500, 8_000, {
+        engineTurnEnd: true,
+      }),
+    ];
+    const reasked: AnsweredQuestion = { ...press, end: 6_000, words: 10, reasks: 0 };
+    // u3 starts within 2 s of the re-ask's end (6.0 s) but not of the original's (3.0 s): not a re-ask.
+    const due = autoNewestDue(
+      { ...base, enabled: true, lines, answeredEnd: 6_000, last: reasked },
+      8_100,
+    );
+    expect(due?.kind).not.toBe('rerun');
+  });
+
+  it('a question of its own after a 2.5 s pause is the next question (the legacy rule)', () => {
+    const lines = [
+      line('u1', 'them', 'How would you scale it?', 1_000, 3_000, { engineTurnEnd: true }),
+      line('u2', 'them', 'What about caching?', 5_600, 7_000, { engineTurnEnd: true }),
+    ];
+    // A wider window would take u2 in; the 2.5 s rule still keeps it out.
+    expect(reaskSpeech(lines, press, 5_000).map((item) => item.lineId)).toEqual(['u1']);
+    // Not a question of its own (it finishes the sentence): kept.
+    const finishing = [lines[0]!, line('u2', 'them', 'for ten million users.', 5_600, 7_000)];
+    expect(reaskSpeech(finishing, press, 5_000).map((item) => item.lineId)).toEqual(['u1', 'u2']);
+  });
+});
+
+describe('Batch D (P0-C): a new question gets a new card', () => {
+  it('finishesSameSentence: only the end of a sentence left open', () => {
+    expect(finishesSameSentence('How would you', 'How would you scale it?', 3)).toBe(true);
+    expect(finishesSameSentence('How would you', 'How would you scale it', 3)).toBe(true);
+    // The first request ended a sentence.
+    expect(finishesSameSentence('How would you scale it?', 'How would you scale it? Why?', 5)).toBe(
+      false,
+    );
+    // The added words hold a second sentence.
+    expect(
+      finishesSameSentence('How would you', 'How would you scale it? And what about caching?', 3),
+    ).toBe(false);
+    // Unknown first words: never the same sentence.
+    expect(finishesSameSentence(undefined, 'anything', 0)).toBe(false);
+  });
+
+  it('autoNewestDue says whether the re-ask only finishes the sentence', () => {
+    const asked: AnsweredQuestion = {
+      answerId: 'card-1',
+      lineIds: ['u1'],
+      start: 1_000,
+      end: 2_000,
+      askedAt: 2_100,
+      auto: false,
+      grey: true,
+      words: 3,
+      anchorStart: 1_000,
+      anchorEnd: 2_000,
+      reasks: 0,
+      askedText: 'How would you',
+    };
+    const finished = [
+      line('u1', 'them', 'How would you scale it?', 1_000, 3_000, { engineTurnEnd: true }),
+    ];
+    expect(
+      autoNewestDue(
+        { enabled: false, streaming: false, lines: finished, answeredEnd: 2_000, last: asked },
+        3_100,
+      ),
+    ).toMatchObject({ kind: 'rerun', sameSentence: true, reason: 'grew' });
+    const newQuestion = [
+      line('u1', 'them', 'How would you scale it?', 1_000, 2_000, { engineTurnEnd: true }),
+      line('u2', 'them', 'And what about caching?', 2_800, 4_000, { engineTurnEnd: true }),
+    ];
+    expect(
+      autoNewestDue(
+        {
+          enabled: true,
+          streaming: false,
+          lines: newQuestion,
+          answeredEnd: 2_000,
+          last: { ...asked, askedText: 'How would you scale it?', words: 5 },
+        },
+        4_100,
+      ),
+    ).toMatchObject({ kind: 'rerun', sameSentence: false, reason: 'went-on' });
   });
 });
