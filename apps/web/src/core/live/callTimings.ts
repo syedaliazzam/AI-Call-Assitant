@@ -483,6 +483,13 @@ export interface CallSummary {
   speculative: Record<string, number>;
   /** Batch C (P1-6): the recording's frames per second, per 10 s sample (the trace). */
   recordingFps: Percentiles;
+  /**
+   * Batch D (ADR-0079): re-asks by why and where they went, as "reason/card" ("grew/same", "went-on/new")
+   * (the trace).
+   */
+  reasks: Record<string, number>;
+  /** Batch D (P0-A): Flux lines by what their start came from ('words', 'start-of-turn', 'first-words'). */
+  fluxStarts: Record<string, number>;
 }
 
 /**
@@ -606,6 +613,16 @@ export function summarizeCall(log: CallTimingLog): CallSummary {
       (log.trace ?? [])
         .filter(([, kind, fields]) => kind === 'rec-frames' && typeof fields.fps === 'number')
         .map(([, , fields]) => fields.fps as number),
+    ),
+    reasks: count(
+      (log.trace ?? [])
+        .filter(([, kind]) => kind === 'reask')
+        .map(([, , fields]) => `${String(fields.reason)}/${String(fields.card)}`),
+    ),
+    fluxStarts: count(
+      (log.trace ?? [])
+        .filter(([, kind]) => kind === 'flux-start')
+        .map(([, , fields]) => String(fields.source)),
     ),
   };
 }
