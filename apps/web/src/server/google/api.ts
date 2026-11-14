@@ -799,6 +799,7 @@ const RECORDING_TYPES = ['video/x-matroska', 'video/webm', 'audio/webm'] as cons
 const uploadStartSchema = z
   .object({
     sessionId: z.uuid(),
+    // ADR-0080: pages no longer upload the stereo file, but an older open page still may; it stays valid.
     key: z.string().regex(/^rec:[0-9a-f-]{36}:(main|stereo)$/),
     name: driveName,
     mimeType: z.enum(RECORDING_TYPES),
@@ -953,7 +954,10 @@ export function handleUploadComplete(
   });
 }
 
-/** The page's own files' keys (ADR-0074: uploaded through the server). */
+/**
+ * The page's own files' keys (ADR-0074: uploaded through the server). ADR-0080: pages no longer make the
+ * transcript TXT, but an older open page still may, so its key stays valid.
+ */
 const SMALL_KEY = /^call:\d{1,15}:(transcript-txt|transcript-pdf|notes-pdf)$/;
 
 /**

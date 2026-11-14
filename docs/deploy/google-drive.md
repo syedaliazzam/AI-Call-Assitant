@@ -1,6 +1,6 @@
 # Google Drive saving and the "saved" email
 
-Paramount AI can save each call's recording, transcript and notes to a Google Drive folder the person picks, and email the team when a session is saved. How it works and why: [ADR-0072](../decisions/ADR-0072-google-drive-saving.md). This page is the setup: the Google project, Vercel's values, and the email's SMTP account.
+Paramount AI can save each call's recording, transcript and notes to a Google Drive folder the person picks, and email the team when a session is saved. How it works and why: [ADR-0072](../decisions/ADR-0072-google-drive-saving.md). Each call saves up to three files: the recording's main video ("Part N.mkv"), the transcript PDF and the notes PDF ([ADR-0080](../decisions/ADR-0080-drive-pdfs-and-main-video-only.md)); the stereo audio file stays on the computer, and the transcript TXT is still a download on the review page. This page is the setup: the Google project, Vercel's values, and the email's SMTP account.
 
 Everything below is configuration. **No code changes** are needed to move from the test Google project to the team's.
 

@@ -3,8 +3,11 @@
  * Drive routes, never a Google token), with a fake desktop shell and an in-memory job store:
  * - ADR-0074: the page never sends a token; a recording that does not verify is uploaded again; a desktop
  *   app older than 1.6.2 keeps its recordings waiting ("update") while transcripts and notes save;
- * - a desktop call saves its recording part (and stereo file), transcript TXT and PDF and notes PDF into
- *   "<date> <title>/Recordings" and "/Transcripts", then tells the server once and shows one notice;
+ * - a desktop call saves its recording part's main file, transcript PDF and notes PDF (ADR-0080: no
+ *   stereo file, no transcript TXT) into "<date> <title>/Recordings" and "/Transcripts", then tells the
+ *   server once and shows one notice;
+ * - ADR-0080: a job queued before drops its not-yet-sent TXT and stereo files and keeps the ones in Drive;
+ *   a job that failed is queued again and finishes;
  * - idempotency: running again, or after this device lost its ids, never makes a folder or file twice;
  * - resume: a call starting mid-upload pauses it, and the next run continues the SAME upload session; a
  *   gone session gets a new one; a lost local file is skipped;
@@ -24,8 +27,15 @@ import type {
 import { describe, expect, it } from 'vitest';
 import { DriveApiError } from '@/core/drive/api';
 import type { CallFile } from '@/core/drive/callFiles';
-import { jobPercent, planFiles, runDriveQueue, type UploaderDeps } from '@/core/drive/uploader';
-import type { DriveSessionJob, Session } from '@/core/storage/types';
+import {
+  isDroppedFile,
+  jobPercent,
+  planFiles,
+  runDriveQueue,
+  withoutDroppedFiles,
+  type UploaderDeps,
+} from '@/core/drive/uploader';
+import type { DriveFileJob, DriveSessionJob, Session } from '@/core/storage/types';
 
 /** The session. */
 const SID = '11111111-1111-4111-8111-111111111111';
@@ -232,6 +242,7 @@ function world(options: WorldOptions = {}) {
   const notices: unknown[] = [];
   const hostCalls: DriveUploadRequest[] = [];
   const script = [...(options.hostScript ?? [])];
+  // With a TXT, as an older builder made: ADR-0080 leaves it out.
   const callFiles: CallFile[] = [
     { kind: 'transcript-txt', blob: new Blob(['lines']) },
     { kind: 'transcript-pdf', blob: new Blob(['%PDF']) },
@@ -308,12 +319,9 @@ describe('a desktop call', () => {
       w.google.items.find((i) => i.parent === folder.id && i.name === name)!;
     const inFolder = (parent: Item) =>
       w.google.items.filter((i) => i.parent === parent.id).map((i) => i.name);
-    expect(inFolder(sub('Recordings'))).toEqual([
-      '2026-11-11 14.30 Part 1.mkv',
-      '2026-11-11 14.30 Part 1 stereo.webm',
-    ]);
+    // ADR-0080: the main video only (the recording has a stereo file), and the two PDFs only.
+    expect(inFolder(sub('Recordings'))).toEqual(['2026-11-11 14.30 Part 1.mkv']);
     expect(inFolder(sub('Transcripts'))).toEqual([
-      '2026-11-11 14.30 Transcript.txt',
       '2026-11-11 14.30 Transcript.pdf',
       '2026-11-11 14.30 Notes.pdf',
     ]);
@@ -390,8 +398,8 @@ describe('resume', () => {
     expect(w.hostCalls[1]!.uploadUrl).toBe(recording.uploadUrl);
     // ADR-0074: the server said where Google got to; the shell starts there.
     expect(w.hostCalls[1]!.startOffset).toBe(256 * 1024);
-    // Only the stereo file needed a new session (Transcripts files go through the server).
-    expect(w.google.counts.sessions - sessionsBefore).toBe(1);
+    // No new session was needed (Transcripts files go through the server; ADR-0080: no stereo file).
+    expect(w.google.counts.sessions - sessionsBefore).toBe(0);
     expect(w.job().state).toBe('done');
   });
 
@@ -502,12 +510,86 @@ describe('planFiles', () => {
       { ...RECORDING, id: 'earlier-call', startedAt: CALL.startedAt - 3_600_000 },
     ];
     const once = planFiles(job, [RECORDING, ...others], new Map());
-    expect(once.map((file) => file.key)).toEqual([
-      `rec:${RECORDING.id}:main`,
-      `rec:${RECORDING.id}:stereo`,
-    ]);
+    // ADR-0080: the main file only, though the recording has a stereo file.
+    expect(once.map((file) => file.key)).toEqual([`rec:${RECORDING.id}:main`]);
     const twice = planFiles({ ...job, files: once }, [RECORDING], new Map());
-    expect(twice).toHaveLength(2);
+    expect(twice).toHaveLength(1);
+  });
+});
+
+describe('ADR-0080: jobs queued before (TXT and stereo files)', () => {
+  /**
+   * A job's file.
+   * @param key  Its key.
+   * @param done Whether it is in Drive.
+   * @returns The file.
+   */
+  const file = (key: string, done: boolean): DriveFileJob => ({
+    key,
+    folder: key.startsWith('rec:') ? 'Recordings' : 'Transcripts',
+    name: key,
+    callStartedAt: CALL.startedAt,
+    bytes: 10,
+    sent: done ? 10 : 0,
+    done,
+    ...(done ? { driveFileId: `id-${key}` } : {}),
+    ...(key.startsWith('rec:')
+      ? {
+          recordingId: RECORDING.id,
+          track: key.endsWith(':stereo') ? ('stereo' as const) : ('main' as const),
+          part: 1,
+        }
+      : {}),
+  });
+
+  it('drops only the not-yet-sent TXT and stereo files; the ones in Drive stay', () => {
+    expect(isDroppedFile(file(`call:${CALL.startedAt}:transcript-txt`, false))).toBe(true);
+    expect(isDroppedFile(file(`rec:${RECORDING.id}:stereo`, false))).toBe(true);
+    expect(isDroppedFile(file(`call:${CALL.startedAt}:transcript-txt`, true))).toBe(false);
+    expect(isDroppedFile(file(`rec:${RECORDING.id}:stereo`, true))).toBe(false);
+    expect(isDroppedFile(file(`call:${CALL.startedAt}:transcript-pdf`, false))).toBe(false);
+    expect(isDroppedFile(file(`rec:${RECORDING.id}:main`, false))).toBe(false);
+    const job = {
+      sessionId: SID,
+      calls: [CALL],
+      state: 'queued',
+      updatedAt: 1,
+      files: [
+        file(`call:${CALL.startedAt}:transcript-txt`, true),
+        file(`rec:${RECORDING.id}:main`, true),
+      ],
+    } as DriveSessionJob;
+    // Nothing to drop: the very same object (nothing is saved).
+    expect(withoutDroppedFiles(job, 2)).toBe(job);
+    const withUnsent = { ...job, files: [...job.files, file(`rec:${RECORDING.id}:stereo`, false)] };
+    expect(withoutDroppedFiles(withUnsent, 2).files.map((one) => one.key)).toEqual([
+      `call:${CALL.startedAt}:transcript-txt`,
+      `rec:${RECORDING.id}:main`,
+    ]);
+    // planFiles drops them too, and never adds them again.
+    const planned = planFiles(withUnsent, [RECORDING], new Map());
+    expect(planned.map((one) => one.key)).toEqual([
+      `call:${CALL.startedAt}:transcript-txt`,
+      `rec:${RECORDING.id}:main`,
+    ]);
+  });
+
+  it('a session job that failed on its stereo file is queued again and finishes without it', async () => {
+    const w = world();
+    w.jobs.set(SID, {
+      ...w.job(),
+      state: 'error',
+      reason: 'refused',
+      files: [file(`rec:${RECORDING.id}:main`, false), file(`rec:${RECORDING.id}:stereo`, false)],
+    });
+    expect(await runDriveQueue(w.deps)).toBe('idle');
+    expect(w.job().state).toBe('done');
+    expect(w.job().files.map((one) => one.key)).toEqual([
+      `rec:${RECORDING.id}:main`,
+      `call:${CALL.startedAt}:transcript-pdf`,
+      `call:${CALL.startedAt}:notes-pdf`,
+    ]);
+    expect(w.hostCalls.map((call) => call.track)).toEqual(['main']);
   });
 });
 
@@ -522,21 +604,27 @@ describe('the report (1.6.0)', () => {
     };
     expect(report.manualOnly).toBe(false);
     expect(report.expectedRecordings).toEqual([{ id: RECORDING.id, part: 1, stereo: true }]);
+    // ADR-0080: the main video and the two PDFs only.
     expect(report.files.map((f) => [f.key, f.kind, f.part ?? null])).toEqual([
       [`rec:${RECORDING.id}:main`, 'recording', 1],
-      [`rec:${RECORDING.id}:stereo`, 'stereo', 1],
-      [`call:${CALL.startedAt}:transcript-txt`, 'transcript-txt', null],
       [`call:${CALL.startedAt}:transcript-pdf`, 'transcript-pdf', null],
       [`call:${CALL.startedAt}:notes-pdf`, 'notes-pdf', null],
     ]);
     expect(report.files.every((f) => f.fileId)).toBe(true);
-    expect(w.job()).toMatchObject({ notified: true, reportedFiles: 5 });
+    expect(w.job()).toMatchObject({ notified: true, reportedFiles: 3 });
   });
 
   it('reports the files saved before an error, so the session can be emailed without them', async () => {
+    const part2: LocalRecording = {
+      ...RECORDING,
+      id: '55555555-5555-4555-8555-555555555555',
+      part: 2,
+      startedAt: RECORDING.startedAt + 70_000,
+    };
     const w = world({
+      recordings: [RECORDING, part2],
       hostScript: [
-        // The main file uploads; the stereo file is refused.
+        // Part 1 uploads; part 2 is refused.
         (request) => ({ status: 'done', fileId: w.google.finish(request.uploadUrl), bytes: 500 }),
         () => ({ status: 'failed', retryable: false, reason: 'http-403' }),
       ],
@@ -569,13 +657,15 @@ describe('backfill (1.6.0)', () => {
       { id: 'older', part: 1, stereo: false, startedAt: CALL.startedAt - 86_400_000 },
     ];
     expect(await runDriveQueue(w.deps)).toBe('idle');
-    expect(w.google.counts.sessions - before).toBe(2);
+    // ADR-0080: the main file only.
+    expect(w.google.counts.sessions - before).toBe(1);
     expect(w.job().state).toBe('done');
     const last = w.notified.at(-1) as {
       files: { key: string }[];
       expectedRecordings: { id: string }[];
     };
-    expect(last.files.map((f) => f.key)).toContain(`rec:${RECORDING.id}:stereo`);
+    expect(last.files.map((f) => f.key)).toContain(`rec:${RECORDING.id}:main`);
+    expect(last.files.map((f) => f.key)).not.toContain(`rec:${RECORDING.id}:stereo`);
     expect(last.expectedRecordings.map((r) => r.id)).toEqual([RECORDING.id]);
   });
 
@@ -655,9 +745,7 @@ describe('a session started again (ADR-0073: each call has its own email)', () =
       [
         `call:${CALL2.startedAt}:notes-pdf`,
         `call:${CALL2.startedAt}:transcript-pdf`,
-        `call:${CALL2.startedAt}:transcript-txt`,
         `rec:${RECORDING2.id}:main`,
-        `rec:${RECORDING2.id}:stereo`,
       ].sort(),
     );
     expect(second.expectedRecordings.map((r) => r.id)).toEqual([RECORDING2.id]);
@@ -702,9 +790,9 @@ describe('no Google token in the page (ADR-0074)', () => {
     expect(w.job().state).toBe('done');
     expect('token' in w.deps.api).toBe(false);
     expect(w.hostCalls.every((call) => call.accessToken === undefined)).toBe(true);
-    // Recordings through the shell, verified by the server; the three Transcripts files by the server.
-    expect(w.google.counts.completes).toBe(2);
-    expect(w.google.counts.small).toBe(3);
+    // The recording through the shell, verified by the server; the two Transcripts files by the server.
+    expect(w.google.counts.completes).toBe(1);
+    expect(w.google.counts.small).toBe(2);
   });
 
   it('uploads a recording again when the server cannot verify it', async () => {

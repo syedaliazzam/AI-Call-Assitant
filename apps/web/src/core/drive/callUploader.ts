@@ -1,8 +1,8 @@
 /**
  * File: apps/web/src/core/drive/callUploader.ts
  * Purpose: Saves one call to Google Drive (ADR-0077: one job per call). Its files go in this order:
- *          transcript TXT, transcript PDF, notes PDF, then the recording parts (main file, then stereo
- *          file, by part). Each file is tried on its own: one failing never stops the others or another
+ *          transcript PDF, notes PDF, then the recording parts' main files, by part (ADR-0080: no
+ *          transcript TXT and no stereo file; a job queued before keeps what it already saved). Each file is tried on its own: one failing never stops the others or another
  *          call, and is tried again later. The files keep the keys the older per-session job used
  *          ('call:<start>:…', 'rec:<id>:…'), and the server finds a file already in Drive by its tag, so
  *          nothing is ever uploaded twice. The server is told (for the call's emails, ADR-0077 rule): once
@@ -11,7 +11,7 @@
  * Used by: src/core/drive/uploader.ts (runDriveQueue), tests
  * Depends on: @kite/shared, src/core/drive/{uploader,names,callFiles,api,reasons}.ts,
  *             src/core/review/calls.ts (CallView), src/core/storage/types.ts
- * Architecture: ADR-0077 (builds on ADR-0072, ADR-0073, ADR-0074)
+ * Architecture: ADR-0077 (builds on ADR-0072, ADR-0073, ADR-0074), ADR-0080 (the file set)
  *
  * Never logs: names, titles and file contents stay out of the console; ids and counts only.
  */
@@ -30,7 +30,14 @@ import { DriveApiError } from './api';
 import type { CallFile } from './callFiles';
 import { callFileDriveName, recordingDriveName, sessionFolderName, sessionTitle } from './names';
 import type { DriveReason } from './reasons';
-import { uploadRecordingFile, waitingReason, type JobOutcome, type UploaderDeps } from './uploader';
+import {
+  isDroppedFile,
+  uploadRecordingFile,
+  waitingReason,
+  withoutDroppedFiles,
+  type JobOutcome,
+  type UploaderDeps,
+} from './uploader';
 
 /** A recording counts as a legacy call's when it started this long before the call's start, ms. */
 const RECORDING_SLACK_MS = 60_000;
@@ -38,8 +45,12 @@ const RECORDING_SLACK_MS = 60_000;
 /** How many times one file may fail before it waits for Retry (it is skipped until then). */
 export const MAX_FILE_FAILURES = 5;
 
-/** The order of a call's Transcripts files. */
-const CALL_FILE_ORDER: readonly string[] = ['transcript-txt', 'transcript-pdf', 'notes-pdf'];
+/**
+ * The Transcripts files a call saves, in upload order (ADR-0080: the transcript PDF and the notes PDF; the
+ * transcript TXT is no longer saved, though its kind and key stay valid for older calls).
+ * Used by: planCallFiles() here, planFiles() in uploader.ts.
+ */
+export const CALL_FILE_ORDER: readonly string[] = ['transcript-pdf', 'notes-pdf'];
 
 /** What the per-call uploader needs, on top of the routes and the shell. */
 export interface CallJobDeps {
@@ -118,8 +129,8 @@ function extensionOf(fileName: string): string {
 }
 
 /**
- * A file's place in the upload order: Transcripts files first (TXT, PDF, notes), then recordings by part,
- * each main file before its stereo file.
+ * A file's place in the upload order: Transcripts files first (transcript PDF, notes PDF), then recordings
+ * by part. A stereo file or TXT already in Drive from before ADR-0080 keeps a place after its kind.
  *
  * @param file The file.
  * @returns A sort key.
@@ -136,6 +147,8 @@ function orderOf(file: DriveFileJob): number {
 /**
  * The files a call's job should hold now: what it had (with its progress), plus any Transcripts file or
  * recording part found since, in upload order. Keys are stable, so a file is never listed twice.
+ * ADR-0080: only the transcript PDF, the notes PDF and each recording part's main file; a not-yet-sent
+ * transcript TXT or stereo file the job listed before is dropped (one already in Drive is kept).
  *
  * @param job        The job.
  * @param recordings This computer's recordings (none in a browser).
@@ -148,7 +161,7 @@ export function planCallFiles(
   recordings: readonly LocalRecording[],
   callFiles: readonly Pick<CallFile, 'kind' | 'blob'>[],
 ): DriveFileJob[] {
-  const files = [...job.files];
+  const files = job.files.filter((file) => !isDroppedFile(file));
   const have = new Set(files.map((file) => file.key));
   const add = (file: DriveFileJob) => {
     if (have.has(file.key)) return;
@@ -156,6 +169,8 @@ export function planCallFiles(
     files.push(file);
   };
   for (const file of callFiles) {
+    // ADR-0080: only the PDFs (a TXT from an older builder is left out).
+    if (!CALL_FILE_ORDER.includes(file.kind)) continue;
     add({
       key: `call:${job.startedAt}:${file.kind}`,
       folder: 'Transcripts',
@@ -191,20 +206,7 @@ export function planCallFiles(
       sent: 0,
       done: false,
     });
-    if (recording.hasStereo) {
-      add({
-        key: `rec:${recording.id}:stereo`,
-        folder: 'Recordings',
-        name: recordingDriveName(job.startedAt, recording.part, 'webm', true),
-        recordingId: recording.id,
-        track: 'stereo',
-        part: recording.part,
-        callStartedAt: job.startedAt,
-        bytes: 0,
-        sent: 0,
-        done: false,
-      });
-    }
+    // ADR-0080: the stereo sound file stays on this computer (decision D3); it is not uploaded.
   }
   return files.sort((a, b) => orderOf(a) - orderOf(b));
 }
@@ -628,7 +630,15 @@ export async function runCallJobs(
   status: DriveStatusResponse,
 ): Promise<'idle' | 'call' | 'waiting'> {
   const local = deps.host ? await deps.host.recordings().catch(() => []) : [];
-  for (const job of await deps.calls.jobs.list()) {
+  for (const listed of await deps.calls.jobs.list()) {
+    let job = listed;
+    // ADR-0080: a job queued before the change drops its not-yet-sent transcript TXT and stereo files
+    // (a failed job is queued again so it can finish without them).
+    const trimmed = withoutDroppedFiles(job, deps.now());
+    if (trimmed !== job) {
+      await deps.calls.jobs.put(trimmed);
+      job = trimmed;
+    }
     if (job.state === 'done' && local.length > 0) {
       // A recording finalised after the job finished (or one this app could not upload before).
       if (planCallFiles(job, local, []).length > job.files.length) {
