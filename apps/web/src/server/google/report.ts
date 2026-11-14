@@ -4,7 +4,7 @@
  *          be started again after it ended): names each call's record (notificationKey), merges the
  *          reports that devices send for a call (the browser's transcript and notes, the desktop app's
  *          recording parts, retries, a later backfill) into one record, says whether everything expected is in Drive (every recording
- *          part the account knows of, and its stereo file), and when the email may go: as soon as it is
+ *          part the account knows of: its main file only, ADR-0080), and when the email may go: as soon as it is
  *          complete, or 24 hours after the first report with "Recording upload pending". ADR-0077 (calls ended
  *          from 13 Nov 2026, the 'two-step' rule): email 1 "Call saved" as soon as the call's transcript
  *          and notes are in Drive ("Recording: uploading…" when one is expected), and its own record for
@@ -12,7 +12,7 @@
  *          hours); a recording already in email 1 gets no second email. Pure functions.
  * Used by: src/server/google/api.ts; tests
  * Depends on: @kite/shared (report types), src/server/google/store.ts (NotificationContent type)
- * Architecture: ADR-0072, ADR-0073
+ * Architecture: ADR-0072, ADR-0073, ADR-0080 (only the main video is waited for)
  */
 import 'server-only';
 import type { DriveExpectedRecording, DriveFileKind, DriveSavedFile } from '@kite/shared';
@@ -252,8 +252,10 @@ export function needsRecordingEmail(content: NotificationContent): boolean {
 }
 
 /**
- * The recording files still missing from Drive: each expected part (not deleted) needs its main file
- * and, when it has one, its stereo file.
+ * The recording files still missing from Drive: each expected part (not deleted) needs its main file.
+ * ADR-0080: the stereo sound file is no longer uploaded, so it is never waited for, even when an older
+ * open page still reports the part with `stereo: true` (that page could otherwise hold the email back
+ * for a file that will never come).
  *
  * @param content The session's record.
  * @returns The missing files' keys (empty when nothing is missing).
@@ -267,10 +269,8 @@ export function missingRecordingFiles(content: NotificationContent): string[] {
   const missing: string[] = [];
   for (const recording of content.expected ?? []) {
     if (gone.has(recording.id)) continue;
-    for (const track of recording.stereo ? ['main', 'stereo'] : ['main']) {
-      const key = `rec:${recording.id}:${track}`;
-      if (!saved.has(key)) missing.push(key);
-    }
+    const key = `rec:${recording.id}:main`;
+    if (!saved.has(key)) missing.push(key);
   }
   return missing;
 }

@@ -2,6 +2,7 @@
  * Tests for apps/web/src/core/drive/callFiles.ts, queue.ts and reasons.ts (ADR-0072):
  * - a call's slice keeps only its own lines and answers; the notes PDF has the summary, questions, next
  *   steps and unclear parts but not the proposed lessons; with "Save transcript" off only notes are made;
+ * - ADR-0080: both builders make only the transcript PDF and the notes PDF (no transcript TXT);
  * - a call is queued only when the account saves to Drive (and, offline, when it did last time);
  * - a live call is seen through the call lock;
  * - the reason words, and which need Settings.
@@ -10,11 +11,17 @@
 import 'fake-indexeddb/auto';
 import type { CallNotes, DriveStatusResponse } from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildCallFiles, callSlice, notesParagraphs } from '@/core/drive/callFiles';
+import {
+  buildCallFiles,
+  buildCallViewFiles,
+  callSlice,
+  notesParagraphs,
+} from '@/core/drive/callFiles';
 import { callIsLive, driveSavesNow, savesToDrive } from '@/core/drive/queue';
 import { driveReasonNeedsSettings, driveReasonText } from '@/core/drive/reasons';
 import { CALL_LOCK_NAME } from '@/core/live/callLock';
 import { saveNotes } from '@/core/storage/notes';
+import { saveUtterance } from '@/core/storage/utterances';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
 import { resetDb } from '../storage/helpers';
 
@@ -65,6 +72,45 @@ describe('call files', () => {
     expect(
       await buildCallFiles(session, { startedAt: 9_000, endedAt: 9_500 }, 'Acme', null),
     ).toEqual([]);
+  });
+
+  it('ADR-0080: both builders make exactly the transcript PDF and the notes PDF (no TXT)', async () => {
+    const session = {
+      id: 's1',
+      saveTranscript: true,
+      company: 'Acme',
+      role: 'Analyst',
+      preferences: { keyTerms: '' },
+    } as unknown as Session;
+    const line: StoredUtterance = {
+      id: 'l1',
+      sessionId: 's1',
+      speaker: 'them',
+      text: 'Hello there',
+      tStart: 1_100,
+      tEnd: 1_200,
+    };
+    await saveUtterance(line);
+    await saveNotes({ sessionId: 's1', notes: NOTES, callStartedAt: 1_000, createdAt: 2_000 });
+    const perSession = await buildCallFiles(
+      session,
+      { startedAt: 1_000, endedAt: 1_500 },
+      'Acme',
+      null,
+    );
+    expect(perSession.map((file) => file.kind)).toEqual(['transcript-pdf', 'notes-pdf']);
+    const perCall = await buildCallViewFiles(
+      session,
+      {
+        lines: [line],
+        answers: [],
+        notes: { notes: NOTES, callStartedAt: 1_000, createdAt: 2_000 },
+      },
+      'Acme',
+      null,
+    );
+    expect(perCall.map((file) => file.kind)).toEqual(['transcript-pdf', 'notes-pdf']);
+    expect(perCall.every((file) => file.blob.type === 'application/pdf')).toBe(true);
   });
 });
 

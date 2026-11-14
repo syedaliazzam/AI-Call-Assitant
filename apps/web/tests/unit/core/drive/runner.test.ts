@@ -1,7 +1,8 @@
 /**
  * Tests for apps/web/src/core/drive/runner.ts, addresses.ts and picker.ts (ADR-0072):
  * - the uploader runs only in the window that gets the Web Lock (another window's run is "busy"), and in
- *   a browser it has no shell host (no recordings, no native notifications);
+ *   a browser it has no shell host (no recordings, no native notifications); ADR-0080: the recordings it
+ *   tells the server to expect never have a stereo file;
  * - an "Also notify" list is lower-cased, de-duplicated, capped at 20, and names what is not an address;
  * - the Picker shows folders only (My Drive and Shared Drives), with setSelectFolderEnabled, the project
  *   number (setAppId) and a token Google Identity Services gives this browser (ADR-0074: never Kite's; the
@@ -9,12 +10,13 @@
  *   folder's id, or null on Cancel or when Google's popup is refused.
  * Google's script is a fake; no real Google call is made. All values are invented.
  */
-import { DRIVE_FOLDER_MIME } from '@kite/shared';
+import { DRIVE_FOLDER_MIME, type LocalRecording } from '@kite/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseAddressList } from '@/core/drive/addresses';
 import { preparePicker } from '@/core/drive/picker';
 import { UPLOADER_LOCK, createUploaderDeps, runUploaderOnce } from '@/core/drive/runner';
 import type { UploaderDeps } from '@/core/drive/uploader';
+import type { Platform } from '@/platform/types';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -50,6 +52,30 @@ describe('runUploaderOnce', () => {
     const deps = createUploaderDeps({ drive: null, recording: null }, null);
     expect(deps.host).toBeNull();
     expect(() => deps.notice({ title: 't', body: 'b' })).not.toThrow();
+  });
+
+  it('ADR-0080: tells the server to expect each part without a stereo file (main video only)', async () => {
+    const part: LocalRecording = {
+      id: '22222222-2222-4222-8222-222222222222',
+      sessionId: 'session-1',
+      meetingId: 'meeting-1',
+      part: 1,
+      kind: 'screen',
+      startedAt: 1_000,
+      durationMs: 60_000,
+      bytes: 1_000,
+      fileName: 'x.mkv',
+      hasStereo: true,
+      status: 'complete',
+    };
+    const platform = {
+      drive: {} as NonNullable<Platform['drive']>,
+      recording: { list: async () => [part] } as unknown as NonNullable<Platform['recording']>,
+    };
+    const deps = createUploaderDeps(platform, null);
+    expect(await deps.expectedRecordings('session-1')).toEqual([
+      { id: part.id, part: 1, stereo: false, startedAt: 1_000, meetingId: 'meeting-1' },
+    ]);
   });
 });
 

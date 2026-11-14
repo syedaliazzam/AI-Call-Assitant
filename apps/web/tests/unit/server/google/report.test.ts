@@ -1,7 +1,8 @@
 /**
  * Tests for apps/web/src/server/google/report.ts (ADR-0072, 1.6.0): reports merge by file key and
  * recording id (a repeated report changes nothing); the session is complete only when every expected
- * recording part and its stereo file are in Drive (a deleted recording is not waited for); the email is
+ * recording part's main file is in Drive (ADR-0080: a stereo file is never waited for, even when an older
+ * page reports one; a deleted recording is not waited for either); the email is
  * due when complete or 24 hours after the first report; recipients are the person and the session's own
  * list or the Settings list; older records' files are recognised by name. ADR-0073: each call has its own
  * record key (the session's first record keeps the session id). All values are invented.
@@ -58,15 +59,25 @@ describe('mergeReport', () => {
 });
 
 describe('completeness', () => {
-  it('waits for every part and its stereo file, but not for a deleted recording', () => {
+  it('waits for every part main file only (ADR-0080), and not for a deleted recording', () => {
+    // An older open page still reports the part with a stereo file: the stereo file is not waited for.
     const transcriptOnly = mergeReport(null, BASE);
-    expect(missingRecordingFiles(transcriptOnly)).toEqual(['rec:r1:main', 'rec:r1:stereo']);
+    expect(missingRecordingFiles(transcriptOnly)).toEqual(['rec:r1:main']);
+    expect(isComplete(transcriptOnly)).toBe(false);
     const withMain = mergeReport(transcriptOnly, {
       ...BASE,
       files: [{ name: 'p.mkv', folder: 'Recordings', key: 'rec:r1:main', fileId: 'R1' }],
     });
-    expect(isComplete(withMain)).toBe(false);
-    expect(isComplete(mergeReport(withMain, { ...BASE, goneRecordings: ['r1'] }))).toBe(true);
+    expect(missingRecordingFiles(withMain)).toEqual([]);
+    expect(isComplete(withMain)).toBe(true);
+    expect(emailDue(withMain, 0, 1)).toBe('complete');
+    // A second part still holds it back until its main file is in.
+    const twoParts = mergeReport(withMain, {
+      ...BASE,
+      expectedRecordings: [{ id: 'r2', part: 2, stereo: false }],
+    });
+    expect(missingRecordingFiles(twoParts)).toEqual(['rec:r2:main']);
+    expect(isComplete(mergeReport(twoParts, { ...BASE, goneRecordings: ['r2'] }))).toBe(true);
     expect(isComplete(mergeReport(null, { ...BASE, expectedRecordings: [] }))).toBe(true);
   });
 

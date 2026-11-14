@@ -4,6 +4,8 @@
  *          time and safe on every system: the session folder "<YYYY-MM-DD> <Company or title> – <Session
  *          title>", its "Recordings" and "Transcripts" subfolders, and the files "<YYYY-MM-DD HH.mm> Part
  *          N.mkv", "… Part N stereo.webm", "… Transcript.txt", "… Transcript.pdf" and "… Notes.pdf".
+ *          ADR-0080: new calls save only "… Part N.mkv", "… Transcript.pdf" and "… Notes.pdf"; the stereo
+ *          and TXT names stay for older calls' files.
  * Used by: src/core/drive/uploader.ts; tests
  * Depends on: src/core/storage/types.ts (Session; core may not import features, so the type words
  *             are kept here in SESSION_TYPE_WORDS)
@@ -132,7 +134,10 @@ export function recordingDriveName(
   return `${date} ${time} Part ${part}${stereo ? ' stereo' : ''}.${ext}`;
 }
 
-/** The call files saved in Transcripts. */
+/**
+ * The call files saved in Transcripts. ADR-0080: 'transcript-txt' is no longer made; it stays so jobs and
+ * records from older calls (and older open pages) still validate.
+ */
 export type CallFileKind = 'transcript-txt' | 'transcript-pdf' | 'notes-pdf';
 
 /**

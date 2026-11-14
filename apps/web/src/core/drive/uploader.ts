@@ -3,16 +3,18 @@
  * Purpose: Saves finished calls to Google Drive (ADR-0072), one session at a time, after the call and
  *          never during one: finds or makes the session folder "<date> <company> – <title>" and its
  *          Recordings and Transcripts subfolders (tagged, and their ids kept, so they are never made
- *          twice), lists the call's files (this computer's recording parts and stereo files, the
- *          transcript TXT and PDF, the notes PDF), and uploads each one resumably: the upload session's
- *          address and progress are kept, so a restart or a lost connection resumes, and a file already
+ *          twice), lists the call's files (this computer's recording parts' main files, the transcript
+ *          PDF, the notes PDF; ADR-0080: no transcript TXT and no stereo file), and uploads each one
+ *          resumably: the upload session's address and progress are kept, so a restart or a lost
+ *          connection resumes, and a file already
  *          in Drive (by its id, or by its tag) is never uploaded again. Recordings are uploaded by the
  *          desktop shell straight from disk; the page uploads the files it makes. When every file is
  *          saved, the server is told once (one "saved" email per session) and a notice is shown.
  * Used by: src/features/drive/DriveUploader.tsx (runs it), tests
  * Depends on: @kite/shared (contract types, savedHeadline), src/core/drive/{names,google,callFiles,api}.ts,
  *             src/core/storage/types.ts
- * Architecture: ADR-0072, ADR-0073 (each call reported on its own, for its own email); architecture §7.1
+ * Architecture: ADR-0072, ADR-0073 (each call reported on its own, for its own email), ADR-0080 (the
+ *               file set: transcript PDF, notes PDF, main video); architecture §7.1
  *
  * Never logs: ids, names, titles and file contents stay out of the console.
  */
@@ -34,7 +36,7 @@ import { withCallFlags } from '../storage/driveUploads';
 import type { DriveCall, DriveFileJob, DriveSessionJob, Session } from '../storage/types';
 import { DriveApiError, type DriveApi } from './api';
 import type { CallFile } from './callFiles';
-import { callJobsMoving, runCallJobs, type CallJobDeps } from './callUploader';
+import { CALL_FILE_ORDER, callJobsMoving, runCallJobs, type CallJobDeps } from './callUploader';
 import { callFileDriveName, recordingDriveName, sessionFolderName, sessionTitle } from './names';
 import type { DriveReason } from './reasons';
 
@@ -213,8 +215,55 @@ function extensionOf(fileName: string): string {
 }
 
 /**
+ * ADR-0080: whether a job's file is one Kite no longer saves to Drive and has not sent yet: the
+ * transcript TXT, or a recording's stereo sound file. A job queued before the change may still list one;
+ * it is dropped. A file already in Drive (done) is kept as it is, so the call's reports still list it.
+ *
+ * @param file The file.
+ * @returns True when it should be dropped from the job.
+ * Called from: withoutDroppedFiles(), planFiles(); tests
+ */
+export function isDroppedFile(file: Pick<DriveFileJob, 'key' | 'track' | 'done'>): boolean {
+  if (file.done) return false;
+  return file.track === 'stereo' || /:(stereo|transcript-txt)$/.test(file.key);
+}
+
+/**
+ * ADR-0080: a job without its not-yet-sent transcript TXT and stereo files (isDroppedFile()). A job
+ * that had failed is queued again once, so it can finish now that those files are gone (a file that
+ * still fails simply fails again). Nothing in Drive or on this device is deleted.
+ *
+ * @param job The job as stored.
+ * @param now The clock (Unix ms), for updatedAt.
+ * @returns The same object when there is nothing to drop, else the changed copy (to be saved).
+ * Called from: runDriveQueue(); core/drive/callUploader.ts (runCallJobs); tests
+ */
+export function withoutDroppedFiles<
+  T extends {
+    files: DriveFileJob[];
+    state: DriveSessionJob['state'];
+    reason?: string;
+    autoRetry?: boolean;
+    updatedAt: number;
+  },
+>(job: T, now: number): T {
+  if (!job.files.some(isDroppedFile)) return job;
+  const files = job.files.filter((file) => !isDroppedFile(file));
+  if (job.state !== 'error') return { ...job, files, updatedAt: now };
+  return {
+    ...job,
+    files,
+    state: 'queued',
+    reason: undefined,
+    autoRetry: undefined,
+    updatedAt: now,
+  };
+}
+
+/**
  * The files a job should hold now: what it had, plus any new recording part or call file found. Keys
- * are stable, so a file is never listed twice.
+ * are stable, so a file is never listed twice. ADR-0080: only each recording's main file and the
+ * transcript and notes PDFs; a not-yet-sent transcript TXT or stereo file from before is dropped.
  *
  * @param job        The job.
  * @param recordings This computer's recordings (none in a browser).
@@ -227,7 +276,7 @@ export function planFiles(
   recordings: readonly LocalRecording[],
   callFiles: ReadonlyMap<number, readonly CallFile[]>,
 ): DriveFileJob[] {
-  const files = [...job.files];
+  const files = job.files.filter((file) => !isDroppedFile(file));
   const have = new Set(files.map((file) => file.key));
   const add = (file: DriveFileJob) => {
     if (have.has(file.key)) {
@@ -270,22 +319,11 @@ export function planFiles(
         sent: 0,
         done: false,
       });
-      if (recording.hasStereo) {
-        add({
-          key: `rec:${recording.id}:stereo`,
-          folder: 'Recordings',
-          name: recordingDriveName(call.startedAt, recording.part, 'webm', true),
-          recordingId: recording.id,
-          track: 'stereo',
-          part: recording.part,
-          callStartedAt: call.startedAt,
-          bytes: 0,
-          sent: 0,
-          done: false,
-        });
-      }
+      // ADR-0080: the stereo sound file stays on this computer; it is not uploaded.
     }
     for (const file of callFiles.get(call.startedAt) ?? []) {
+      // ADR-0080: only the transcript and notes PDFs (a TXT from an older builder is left out).
+      if (!CALL_FILE_ORDER.includes(file.kind)) continue;
       add({
         key: `call:${call.startedAt}:${file.kind}`,
         folder: 'Transcripts',
@@ -866,6 +904,12 @@ export async function runDriveQueue(deps: UploaderDeps): Promise<RunOutcome> {
     if (settled !== job) {
       await deps.jobs.put(settled);
       job = settled;
+    }
+    // ADR-0080: a job queued before the change drops its not-yet-sent transcript TXT and stereo files.
+    const trimmed = withoutDroppedFiles(job, deps.now());
+    if (trimmed !== job) {
+      await deps.jobs.put(trimmed);
+      job = trimmed;
     }
     // A finished session with a recording on this computer it has not saved (recorded before this
     // app could upload, or finalised after the job finished): queued again for it. Nothing saved is
