@@ -45,12 +45,12 @@ To check a desktop app on the old address, use a built program on a temporary pr
 KITE_E2E_URL=https://kite-call-assistant.vercel.app KITE_INSTALLED_EXE="<path to the program>" pnpm --filter web test:e2e-prod desktop.spec.ts
 ```
 
-To check the admin page, turn the admin test account on for that one run and off straight after:
+To check the admin page, create a disposable admin test account for that one run and delete it straight after:
 
 ```sh
-pnpm --filter web e2e-admin --prod --enable
+pnpm --filter web create-e2e-user --prod --admin
 KITE_E2E_ADMIN_ON=1 pnpm --filter web test:e2e-prod domain.spec.ts -g "admin page"
-pnpm --filter web e2e-admin --prod --disable
+pnpm --filter web delete-test-accounts --prod
 ```
 
 ## Roll back

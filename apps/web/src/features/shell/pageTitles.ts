@@ -12,6 +12,11 @@ export interface PageTitle {
   title: string;
   /** One line about it. */
   subtitle: string;
+  /**
+   * The header's buttons on the right: 'create-session' (the default split button) or 'add-user'
+   * (Admin → Users: Usage and Add user).
+   */
+  action?: 'create-session' | 'add-user';
 }
 
 /** The sessions page's words. */
@@ -31,7 +36,11 @@ const EXACT: Readonly<Record<string, PageTitle>> = {
   '/mock': { title: 'Mock Interview', subtitle: 'Practise out loud before the real call.' },
   '/question-bank': { title: 'Question bank', subtitle: 'Likely questions for a session.' },
   '/settings': { title: 'Settings', subtitle: 'Saved on this computer only.' },
-  '/admin/users': { title: 'Users', subtitle: 'Create and manage accounts.' },
+  '/admin/users': {
+    title: 'Users',
+    subtitle: 'Add people, reset passwords and manage access.',
+    action: 'add-user',
+  },
   '/admin/usage': { title: 'Usage', subtitle: 'Requests per person, per day.' },
   '/help': { title: 'Help', subtitle: 'How to use the app, from setup to review.' },
   '/profile': { title: 'Profile', subtitle: 'Your account.' },

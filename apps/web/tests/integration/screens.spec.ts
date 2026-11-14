@@ -181,6 +181,182 @@ test('sign-in: field messages, show password, and a refused sign-in', async () =
   await context.close();
 });
 
+// ADR-0081: Admin → Users. The header's Add user, the toolbar, the ⋯ menu with its confirmations,
+// the toasts, and the guard on your own row. The server actions are faked by the harness, which
+// records what was asked (window.kiteAdminCalls).
+test('users page: header, toolbar, ⋯ menu, confirmations, toasts and the self guard', async () => {
+  const context = await browser!.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  const problems: string[] = [];
+  page.on('pageerror', (error) => problems.push(error.message.slice(0, 300)));
+  await page.goto(`${origin}/admin/users?screen=admin&theme=light`);
+  /**
+   * What the page asked the fake server for.
+   *
+   * @returns The recorded calls, in order.
+   */
+  const calls = () =>
+    page.evaluate(() => (window as unknown as { kiteAdminCalls: string[] }).kiteAdminCalls);
+  /**
+   * Opens a row's ⋯ menu (the table's, at this width).
+   *
+   * @param name The person's name.
+   * @returns The open menu.
+   */
+  const openMenu = async (name: string) => {
+    await page
+      .getByRole('button', { name: `Actions for ${name}` })
+      .filter({ visible: true })
+      .click();
+    return page.getByRole('menu');
+  };
+  const count = page.getByTestId('users-count');
+  const toast = page.locator('.k-anim-toast');
+
+  // The header: Users, its line, Usage and Add user; no Create session on this page.
+  await expect(page.getByRole('button', { name: 'Add user' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Usage' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Create session/ })).toHaveCount(0);
+
+  // The toolbar: search by name or email, the Role and Status filters, the count.
+  await expect(count).toHaveText('4 users');
+  await page.getByLabel('Search users').fill('OKAFOR');
+  await expect(count).toHaveText('1 of 4 users');
+  await page.getByLabel('Search users').fill('ravi.menon@');
+  await expect(count).toHaveText('1 of 4 users');
+  await page.getByLabel('Search users').fill('');
+  await page.getByRole('combobox', { name: 'Role' }).click();
+  await page.getByRole('option', { name: 'Admin' }).click();
+  await expect(count).toHaveText('2 of 4 users');
+  await page.getByRole('combobox', { name: 'Status' }).click();
+  await page.getByRole('option', { name: 'Disabled' }).click();
+  await expect(count).toHaveText('0 of 4 users');
+  await page.getByRole('button', { name: 'Clear filters' }).click();
+  await expect(count).toHaveText('4 users');
+
+  // One line per cell: the dates, the badges and "You".
+  await expect(page.getByRole('cell', { name: '1 Oct 2026' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: '14 Nov 2026' })).toBeVisible();
+  await expect(page.getByRole('row', { name: /Sam Lee/ })).toContainText('You');
+  await expect(page.getByRole('row', { name: /Dana Okafor/ })).not.toContainText('You');
+  const nowrap = await page
+    .locator('table td, table th')
+    .evaluateAll((cells) => cells.every((cell) => getComputedStyle(cell).whiteSpace === 'nowrap'));
+  expect(nowrap, 'no cell wraps').toBe(true);
+
+  // Your own row: every action greyed out with the reason; Escape closes and returns to ⋯.
+  let menu = await openMenu('Sam Lee');
+  for (const label of ['Reset password', 'Make user', 'Disable']) {
+    await expect(menu.getByRole('menuitem', { name: new RegExp(label) })).toBeDisabled();
+  }
+  await expect(menu).toContainText('Your account');
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(
+    page.getByRole('button', { name: 'Actions for Sam Lee' }).filter({ visible: true }),
+  ).toBeFocused();
+
+  // Disable asks first; Cancel changes nothing.
+  menu = await openMenu('Dana Okafor');
+  await menu.getByRole('menuitem', { name: 'Disable' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Disable Dana Okafor?' })).toBeVisible();
+  await expect(dialog).toContainText('signed out on every device');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+  expect(await calls()).toEqual([]);
+
+  // Confirmed: the action runs once and a green toast says so.
+  menu = await openMenu('Dana Okafor');
+  await menu.getByRole('menuitem', { name: 'Disable' }).click();
+  await dialog.getByRole('button', { name: 'Disable', exact: true }).click();
+  await expect(toast).toHaveText('Dana Okafor is disabled');
+  expect(await calls()).toEqual(['disabled:u2:true']);
+
+  // A role change asks first too.
+  menu = await openMenu('Ana Ruiz');
+  await menu.getByRole('menuitem', { name: 'Make user' }).click();
+  await expect(dialog.getByRole('heading', { name: 'Make Ana Ruiz a user?' })).toBeVisible();
+  await dialog.getByRole('button', { name: 'Make user' }).click();
+  await expect(toast).toHaveText('Ana Ruiz is now a user');
+
+  // Reset password: confirmation, then the one-time password in its own dialog.
+  menu = await openMenu('Ana Ruiz');
+  await menu.getByRole('menuitem', { name: 'Reset password' }).click();
+  await expect(dialog).toContainText('new temporary password');
+  await dialog.getByRole('button', { name: 'Reset password' }).click();
+  await expect(dialog.getByRole('heading', { name: 'New temporary password' })).toBeVisible();
+  await expect(dialog).toContainText('Harness-Temp-1');
+  await expect(toast).toHaveText('Password reset for Ana Ruiz');
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(dialog).toBeHidden();
+
+  // Enable gives access back without asking.
+  menu = await openMenu('Ravi Menon');
+  await menu.getByRole('menuitem', { name: 'Enable' }).click();
+  await expect(toast).toHaveText('Ravi Menon is enabled');
+  expect(await calls()).toEqual([
+    'disabled:u2:true',
+    'role:u4:user',
+    'reset:u4',
+    'disabled:u3:false',
+  ]);
+
+  // Add user (header): the create form in a dialog, then the password once.
+  await page.getByRole('button', { name: 'Add user' }).click();
+  await expect(dialog.getByRole('heading', { name: 'Add user' })).toBeVisible();
+  await dialog.getByLabel('Name').fill('Lee Park');
+  await dialog.getByLabel('Email').fill('lee.park@example.com');
+  await dialog.getByRole('button', { name: 'Create account' }).click();
+  await expect(dialog.getByRole('heading', { name: 'Account created' })).toBeVisible();
+  await expect(dialog).toContainText('Harness-Temp-2');
+  await expect(toast).toHaveText('Account created for lee.park@example.com');
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  // Opened again, it starts empty.
+  await page.getByRole('button', { name: 'Add user' }).click();
+  await expect(dialog.getByLabel('Name')).toHaveValue('');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+  expect(problems).toEqual([]);
+  await context.close();
+});
+
+test('users page: a failed action shows a red toast', async () => {
+  const context = await browser!.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  await page.goto(`${origin}/admin/users?screen=admin&theme=dark&fail=1`);
+  await page
+    .getByRole('button', { name: 'Actions for Dana Okafor' })
+    .filter({ visible: true })
+    .click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Make admin' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Make admin' }).click();
+  await expect(page.getByRole('alert')).toHaveText('Something went wrong. Please try again.');
+  await context.close();
+});
+
+test('users page on a phone: cards with the same facts and a ⋯ menu', async () => {
+  const context = await browser!.newContext({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.goto(`${origin}/admin/users?screen=admin&theme=light`);
+  await expect(page.locator('table')).toBeHidden();
+  const cards = page.getByRole('list', { name: 'Users' }).getByRole('listitem');
+  await expect(cards).toHaveCount(4);
+  await expect(cards.first()).toContainText('Sam Lee');
+  await expect(cards.first()).toContainText('You');
+  await expect(cards.first()).toContainText('Last active');
+  await page
+    .getByRole('button', { name: 'Actions for Dana Okafor' })
+    .filter({ visible: true })
+    .tap();
+  await expect(page.getByRole('menuitem', { name: 'Disable' })).toBeVisible();
+  await context.close();
+});
+
 for (const theme of ['light', 'dark'] as const) {
   test(`review's Conversation and Answers tabs, ${theme}`, async () => {
     for (const size of WIDTHS) {

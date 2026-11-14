@@ -32,7 +32,7 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
  *
  * @param props See InputProps; `id` is generated when not given; `className` styles the <input>.
  * @returns The label, input and messages wrapped in a <div>.
- * Rendered by: CreateUserForm.tsx, LoginForm.tsx, the session wizard
+ * Rendered by: AddUserDialog.tsx, LoginForm.tsx, the session wizard
  */
 export function Input({
   label,

@@ -11,11 +11,11 @@
  */
 import 'server-only';
 import { APIError } from 'better-auth/api';
-import { eq } from 'drizzle-orm';
+import { eq, max } from 'drizzle-orm';
 import { auth } from './auth';
 import { db } from './db';
 import { generateTemporaryPassword } from './passwords';
-import { user } from './schema';
+import { session, usageDay, user } from './schema';
 
 /** A role a Kite account can have. */
 export type UserRole = 'admin' | 'user';
@@ -85,6 +85,44 @@ export async function listUserAccounts(headers: Headers): Promise<UserAccount[]>
     mustChangePassword: (row as { mustChangePassword?: boolean }).mustChangePassword !== false,
     createdAt: new Date(row.createdAt),
   }));
+}
+
+/**
+ * When each account was last active, for the Users page's "Last active" column: the later of its
+ * newest sign-in session's last refresh (Better Auth refreshes a session about once a day while it is
+ * used) and its last day with a Claude request (usage_day, ADR-0036). Read-only; ids and times only.
+ * An account with neither (new, or signed out with no requests) is missing from the map.
+ *
+ * @returns user id → the last activity (a usage day counts as midnight UTC of that day).
+ * Called from: app/(app)/admin/users/page.tsx
+ */
+export async function lastActiveByUser(): Promise<Map<string, Date>> {
+  const [sessions, usage] = await Promise.all([
+    db
+      .select({ userId: session.userId, at: max(session.updatedAt) })
+      .from(session)
+      .groupBy(session.userId),
+    db
+      .select({ userId: usageDay.userId, day: max(usageDay.day) })
+      .from(usageDay)
+      .groupBy(usageDay.userId),
+  ]);
+  const latest = new Map<string, Date>();
+  /**
+   * Keeps the later of the stored time and this one.
+   *
+   * @param userId The account.
+   * @param at     A time it was active, or null.
+   */
+  const keep = (userId: string, at: Date | null) => {
+    if (!at || Number.isNaN(at.getTime())) return;
+    const known = latest.get(userId);
+    if (!known || at > known) latest.set(userId, at);
+  };
+  for (const row of sessions) keep(row.userId, row.at ? new Date(row.at) : null);
+  // usage_day.day is 'YYYY-MM-DD' in UTC.
+  for (const row of usage) keep(row.userId, row.day ? new Date(`${row.day}T00:00:00Z`) : null);
+  return latest;
 }
 
 /**
@@ -164,58 +202,6 @@ export async function setUserDisabled(
   } else {
     await auth.api.unbanUser({ body: { userId }, headers });
   }
-}
-
-/**
- * Disables or re-enables an account by email from a developer script, where there is no
- * signed-in admin. Better Auth's banUser endpoint needs an admin session other than the
- * target's, so this makes the same changes that endpoint makes, through Better Auth's own
- * internal adapter: `banned`, `banReason` and `banExpires` on the user, and (when disabling)
- * deleting every session. The account then looks exactly as if an admin had pressed
- * "Disable" at /admin/users, and can be re-enabled there too.
- *
- * @param email    The account's email.
- * @param disabled True to disable, false to enable again.
- * @returns The account's id.
- * @throws Error('USER_NOT_FOUND') when no account has this email.
- * Called from: scripts/e2e-admin.ts (the latency test's admin account)
- */
-export async function setTestAccountDisabled(email: string, disabled: boolean): Promise<string> {
-  const context = await auth.$context;
-  const found = await context.internalAdapter.findUserByEmail(email.toLowerCase());
-  if (!found) throw new Error('USER_NOT_FOUND');
-  const id = found.user.id;
-  await context.internalAdapter.updateUser(id, {
-    banned: disabled,
-    banReason: disabled ? DISABLED_REASON : null,
-    banExpires: null,
-    updatedAt: new Date(),
-  });
-  // Signed out everywhere at once, as banUser does.
-  if (disabled) await context.internalAdapter.deleteUserSessions(id);
-  return id;
-}
-
-/**
- * Gives a test account a new password (developer script only), without enabling it or
- * signing in: the password is hashed by Better Auth's own hasher and stored on the account's
- * credential, exactly as a password change does, and every session is deleted.
- *
- * @param email    The test account's email.
- * @param password The new password (never logged).
- * @returns The account's id.
- * @throws Error('USER_NOT_FOUND') when no account has this email.
- * Called from: scripts/rotate-e2e-password.ts
- */
-export async function setTestAccountPassword(email: string, password: string): Promise<string> {
-  const context = await auth.$context;
-  const found = await context.internalAdapter.findUserByEmail(email.toLowerCase());
-  if (!found) throw new Error('USER_NOT_FOUND');
-  const id = found.user.id;
-  await context.internalAdapter.updatePassword(id, await context.password.hash(password));
-  // A session started with the old password must not outlive it.
-  await context.internalAdapter.deleteUserSessions(id);
-  return id;
 }
 
 /**

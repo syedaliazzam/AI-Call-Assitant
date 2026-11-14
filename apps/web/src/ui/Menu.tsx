@@ -157,9 +157,12 @@ export interface MenuPopupProps {
 export function MenuPopup({ items, popupRef, onClose, onEscape }: MenuPopupProps) {
   const [sub, setSub] = useState<MenuItem | null>(null);
 
-  // Keyboard users land on the first row, when it opens and when a sub-list replaces the rows.
+  // Keyboard users land on the first row, when it opens and when a sub-list replaces the rows. When
+  // every row is greyed out (Admin → Users, your own account), the list itself takes the focus, so
+  // Escape still closes it and returns to the button.
   useEffect(() => {
-    popupRef.current?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)')?.focus();
+    const popup = popupRef.current;
+    (popup?.querySelector<HTMLElement>('[role^="menuitem"]:not(:disabled)') ?? popup)?.focus();
   }, [sub, popupRef]);
 
   /**
@@ -193,8 +196,10 @@ export function MenuPopup({ items, popupRef, onClose, onEscape }: MenuPopupProps
       ref={popupRef}
       popover="manual"
       role="menu"
+      // Focusable from script only (see the effect above), never a Tab stop.
+      tabIndex={-1}
       onKeyDown={onKeyDown}
-      className="k-anim-menu fixed inset-auto m-0 flex min-w-52 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto rounded-menu border border-ui-border bg-ui-surface p-1.5 text-ui-text shadow-modal"
+      className="k-anim-menu fixed inset-auto m-0 flex min-w-52 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto rounded-menu border border-ui-border bg-ui-surface p-1.5 text-ui-text shadow-modal outline-none"
     >
       {sub && (
         <>

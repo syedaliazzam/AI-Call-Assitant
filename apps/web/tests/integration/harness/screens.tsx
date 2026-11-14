@@ -19,8 +19,8 @@ import { saveNotes } from '@/core/storage/notes';
 import { createSession } from '@/core/storage/sessions';
 import type { SessionType } from '@/core/storage/types';
 import { saveUtterance } from '@/core/storage/utterances';
-import { CreateUserForm } from '@/features/admin/CreateUserForm';
-import { UsersTable } from '@/features/admin/UsersTable';
+import type { AdminActionResult, AdminUserActions } from '@/features/admin/types';
+import { UsersPage } from '@/features/admin/UsersPage';
 import { AskKitePage } from '@/features/ask-kite/AskKitePage';
 import { ChangePasswordForm } from '@/features/auth/ChangePasswordForm';
 import { DesktopAppLink } from '@/features/auth/DesktopAppLink';
@@ -127,7 +127,8 @@ const USERS = [
     role: 'admin' as const,
     disabled: false,
     mustChangePassword: false,
-    createdAt: new Date(2026, 9, 1),
+    createdAt: new Date(Date.UTC(2026, 9, 1)),
+    lastActiveAt: new Date(Date.UTC(2026, 10, 14, 9)),
   },
   {
     id: 'u2',
@@ -136,7 +137,8 @@ const USERS = [
     role: 'user' as const,
     disabled: false,
     mustChangePassword: true,
-    createdAt: new Date(2026, 9, 20),
+    createdAt: new Date(Date.UTC(2026, 9, 20)),
+    lastActiveAt: null,
   },
   {
     id: 'u3',
@@ -145,9 +147,54 @@ const USERS = [
     role: 'user' as const,
     disabled: true,
     mustChangePassword: false,
-    createdAt: new Date(2026, 8, 3),
+    createdAt: new Date(Date.UTC(2026, 8, 3)),
+    lastActiveAt: new Date(Date.UTC(2026, 9, 2)),
+  },
+  {
+    id: 'u4',
+    name: 'Ana Ruiz',
+    email: 'ana.ruiz@example.com',
+    role: 'admin' as const,
+    disabled: false,
+    mustChangePassword: false,
+    createdAt: new Date(Date.UTC(2026, 10, 12)),
+    lastActiveAt: new Date(Date.UTC(2026, 10, 13)),
   },
 ];
+
+/** What the Users page asked the fake server for, read by screens.spec.ts. */
+const adminCalls: string[] = [];
+(window as unknown as { kiteAdminCalls: string[] }).kiteAdminCalls = adminCalls;
+
+/**
+ * A fake server action's answer: ?fail=1 makes every action fail, as the server does.
+ *
+ * @param call  What was asked, recorded for the test.
+ * @param extra More fields for a success.
+ * @returns The result.
+ */
+function fakeResult(call: string, extra: { temporaryPassword?: string } = {}): AdminActionResult {
+  adminCalls.push(call);
+  return params.get('fail') === '1'
+    ? { ok: false, error: 'Something went wrong. Please try again.' }
+    : { ok: true, ...extra };
+}
+
+/** Stand-ins for the server actions in app/(app)/admin/users/actions.ts. */
+const ADMIN_ACTIONS: AdminUserActions = {
+  createUser: async (_previous, formData) => {
+    adminCalls.push(`create:${String(formData.get('role'))}`);
+    return {
+      status: 'created',
+      email: String(formData.get('email')),
+      temporaryPassword: 'Harness-Temp-2',
+    };
+  },
+  resetPassword: async (userId) =>
+    fakeResult(`reset:${userId}`, { temporaryPassword: 'Harness-Temp-1' }),
+  setDisabled: async (userId, disabled) => fakeResult(`disabled:${userId}:${disabled}`),
+  setRole: async (userId, role) => fakeResult(`role:${userId}:${role}`),
+};
 
 /**
  * A screen inside the app's real shell.
@@ -222,26 +269,8 @@ async function start(): Promise<void> {
     ),
     admin: () => (
       <InShell>
-        <PageShell
-          title="Users"
-          width="lg"
-          description="Create accounts and share the temporary password with each person directly."
-          actions={
-            <LinkButton href="/admin/usage" variant="secondary">
-              Usage
-            </LinkButton>
-          }
-        >
-          <CreateUserForm action={async () => ({ status: 'idle' })} />
-          <UsersTable
-            users={USERS}
-            currentUserId="u1"
-            actions={{
-              resetPassword: async () => ({ ok: true }),
-              setDisabled: async () => ({ ok: true }),
-              setRole: async () => ({ ok: true }),
-            }}
-          />
+        <PageShell title="Users" width="lg">
+          <UsersPage users={USERS} currentUserId="u1" actions={ADMIN_ACTIONS} />
         </PageShell>
       </InShell>
     ),

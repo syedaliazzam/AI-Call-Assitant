@@ -2,10 +2,8 @@
  * Tests for apps/web/src/server/users.ts, with Better Auth and the database mocked:
  * accounts are created with a temporary password and mustChangePassword = true, a taken email
  * becomes Error('EMAIL_TAKEN'), a reset sets a new password, re-flags the account and signs the
- * user out, disabling uses ban/unban, markPasswordChanged() clears the flag, and
- * setTestAccountDisabled() makes the same changes as a ban (fields, then sessions deleted),
- * re-enables without deleting sessions, and throws USER_NOT_FOUND for an unknown email;
- * setTestAccountPassword() stores Better Auth's hash and deletes the sessions without enabling.
+ * user out, disabling uses ban/unban, markPasswordChanged() clears the flag, and lastActiveByUser()
+ * keeps the later of the newest session refresh and the last usage day per account (ADR-0081).
  */
 import { APIError } from 'better-auth/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,21 +24,14 @@ const where = vi.fn();
 const set = vi.fn(() => ({ where }));
 const update = vi.fn(() => ({ set }));
 
-/** Fake Better Auth internal adapter (setTestAccountDisabled, setTestAccountPassword). */
-const internalAdapter = {
-  findUserByEmail: vi.fn(),
-  updateUser: vi.fn(),
-  updatePassword: vi.fn(),
-  deleteUserSessions: vi.fn(),
-};
-
-/** Fake Better Auth password hasher (setTestAccountPassword). */
-const password = { hash: vi.fn(async (plain: string) => `hashed:${plain}`) };
+/** Fake Drizzle select chain: db.select(fields).from(table).groupBy(column) → rows. */
+const groupBy = vi.fn();
+const select = vi.fn(() => ({ from: () => ({ groupBy }) }));
 
 vi.mock('@/server/auth', () => ({
-  auth: { api, $context: Promise.resolve({ internalAdapter, password }) },
+  auth: { api },
 }));
-vi.mock('@/server/db', () => ({ db: { update } }));
+vi.mock('@/server/db', () => ({ db: { update, select } }));
 
 const users = await import('@/server/users');
 
@@ -184,55 +175,25 @@ describe('markPasswordChanged', () => {
   });
 });
 
-describe('setTestAccountDisabled', () => {
-  it('disables like a ban: sets the ban fields, then deletes the sessions', async () => {
-    internalAdapter.findUserByEmail.mockResolvedValue({ user: { id: 'u9' } });
-    expect(await users.setTestAccountDisabled('Kite-E2E-Admin@example.com', true)).toBe('u9');
-    expect(internalAdapter.findUserByEmail).toHaveBeenCalledWith('kite-e2e-admin@example.com');
-    expect(internalAdapter.updateUser).toHaveBeenCalledWith(
-      'u9',
-      expect.objectContaining({
-        banned: true,
-        banReason: 'Disabled by an admin',
-        banExpires: null,
-      }),
-    );
-    expect(internalAdapter.deleteUserSessions).toHaveBeenCalledWith('u9');
-  });
-
-  it('re-enables without deleting sessions, and rejects an unknown email', async () => {
-    internalAdapter.findUserByEmail.mockResolvedValue({ user: { id: 'u9' } });
-    internalAdapter.deleteUserSessions.mockClear();
-    await users.setTestAccountDisabled('kite-e2e-admin@example.com', false);
-    expect(internalAdapter.updateUser).toHaveBeenLastCalledWith(
-      'u9',
-      expect.objectContaining({ banned: false, banReason: null }),
-    );
-    expect(internalAdapter.deleteUserSessions).not.toHaveBeenCalled();
-    internalAdapter.findUserByEmail.mockResolvedValue(null);
-    await expect(users.setTestAccountDisabled('none@example.com', true)).rejects.toThrow(
-      'USER_NOT_FOUND',
-    );
-  });
-});
-
-describe('setTestAccountPassword', () => {
-  it('stores the hashed password, deletes the sessions, and does not enable the account', async () => {
-    internalAdapter.findUserByEmail.mockResolvedValue({ user: { id: 'u9' } });
-    internalAdapter.updateUser.mockClear();
-    expect(await users.setTestAccountPassword('Kite-E2E-Admin@example.com', 'new-secret')).toBe(
-      'u9',
-    );
-    expect(internalAdapter.findUserByEmail).toHaveBeenCalledWith('kite-e2e-admin@example.com');
-    expect(internalAdapter.updatePassword).toHaveBeenCalledWith('u9', 'hashed:new-secret');
-    expect(internalAdapter.deleteUserSessions).toHaveBeenCalledWith('u9');
-    expect(internalAdapter.updateUser).not.toHaveBeenCalled();
-  });
-
-  it('rejects an unknown email', async () => {
-    internalAdapter.findUserByEmail.mockResolvedValue(null);
-    await expect(users.setTestAccountPassword('none@example.com', 'x')).rejects.toThrow(
-      'USER_NOT_FOUND',
-    );
+describe('lastActiveByUser', () => {
+  it('keeps the later of the newest session refresh and the last usage day, per account', async () => {
+    // Promise.all starts the session query first, then the usage query.
+    groupBy
+      .mockResolvedValueOnce([
+        { userId: 'u1', at: new Date('2026-11-13T09:15:00Z') },
+        { userId: 'u2', at: new Date('2026-11-01T08:00:00Z') },
+        { userId: 'u4', at: null },
+      ])
+      .mockResolvedValueOnce([
+        { userId: 'u1', day: '2026-11-12' },
+        { userId: 'u2', day: '2026-11-14' },
+        { userId: 'u3', day: '2026-10-30' },
+      ]);
+    const latest = await users.lastActiveByUser();
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(latest.get('u1')).toEqual(new Date('2026-11-13T09:15:00Z'));
+    expect(latest.get('u2')).toEqual(new Date('2026-11-14T00:00:00Z'));
+    expect(latest.get('u3')).toEqual(new Date('2026-10-30T00:00:00Z'));
+    expect(latest.has('u4')).toBe(false);
   });
 });
