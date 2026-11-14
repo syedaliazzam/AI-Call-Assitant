@@ -2,13 +2,16 @@
  * Tests for apps/web/src/core/transcript/merge.ts:
  * shouldMerge() joins a final line onto the previous final line only for the same speaker and a
  * gap of at most 1.5 s, never onto a partial line or another speaker's line; mergeLines() keeps
- * the earlier id and start, joins the text and takes the later end.
+ * the earlier id and start, joins the text and takes the later end. Batch D (P1-D): otherSpeakerBetween()
+ * finds a real line of the other speaker ending between two lines (never the other speaker's blips, hidden
+ * echo or noise lines, or marks of lost audio).
  */
 import { describe, expect, it } from 'vitest';
 import {
   MERGE_GAP_MS,
   mergeGapFor,
   mergeLines,
+  otherSpeakerBetween,
   shouldMerge,
   UNFINISHED_MERGE_GAP_MS,
 } from '@/core/transcript/merge';
@@ -108,5 +111,63 @@ describe('v1.4 (ADR-0062): cut-off lines and another language', () => {
     const more = { ...next('them', 2_500), text: '[non-English speech]', nonEnglish: true };
     expect(shouldMerge(other, more)).toBe(true);
     expect(mergeLines(other, more).text).toBe('[non-English speech]');
+  });
+});
+
+describe('Batch D (P1-D): otherSpeakerBetween', () => {
+  /**
+   * A final "You" line.
+   *
+   * @param text   Its words.
+   * @param tStart Start (ms).
+   * @param tEnd   End (ms).
+   * @param extra  More fields (echo, gap).
+   * @returns The line.
+   */
+  const you = (text: string, tStart: number, tEnd: number, extra: Partial<Utterance> = {}) =>
+    ({ id: 'y', speaker: 'you', text, tStart, tEnd, final: true, ...extra }) as Utterance;
+  // The next "Them" stretch "starts" 0.1 s after the previous ends (the 14 Nov Flux start), ends at 9 s.
+  const later = { speaker: 'them' as const, tEnd: 9_000 };
+
+  it('finds a reply that ended between the two, whatever the next line says its start is', () => {
+    expect(
+      otherSpeakerBetween([you('I built the pipeline myself', 3_000, 6_000)], PREVIOUS, later),
+    ).toBe(true);
+  });
+
+  it('ignores blips, hidden echo or noise, marks of lost audio, grey lines and lines outside', () => {
+    expect(otherSpeakerBetween([you('okay', 3_000, 3_500)], PREVIOUS, later)).toBe(false);
+    expect(
+      otherSpeakerBetween(
+        [you('I built the pipeline', 3_000, 6_000, { echo: true })],
+        PREVIOUS,
+        later,
+      ),
+    ).toBe(false);
+    expect(
+      otherSpeakerBetween([you('[audio gap]', 3_000, 6_000, { gap: true })], PREVIOUS, later),
+    ).toBe(false);
+    expect(
+      otherSpeakerBetween(
+        [you('I built the pipeline', 3_000, 6_000, { final: false })],
+        PREVIOUS,
+        later,
+      ),
+    ).toBe(false);
+    // Ended before the earlier line ended, or after the new one ended.
+    expect(otherSpeakerBetween([you('I built the pipeline', 500, 1_900)], PREVIOUS, later)).toBe(
+      false,
+    );
+    expect(otherSpeakerBetween([you('I built the pipeline', 8_000, 9_500)], PREVIOUS, later)).toBe(
+      false,
+    );
+    // The same speaker's lines never count.
+    expect(
+      otherSpeakerBetween(
+        [{ ...you('more of the question here', 3_000, 6_000), speaker: 'them' }],
+        PREVIOUS,
+        later,
+      ),
+    ).toBe(false);
   });
 });

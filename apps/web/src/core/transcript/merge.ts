@@ -8,12 +8,16 @@
  *          v1.4 (ADR-0062): when the earlier line sounds cut off ("…and what you would change
  *          about"), the pause may be up to 4 s; and the other person's blips in between ("okay",
  *          "um") do not stop the join (transcript.ts skips them).
+ *          Batch D (P1-D, ADR-0079): never across a real line of the other speaker that ends between the
+ *          two (otherSpeakerBetween), whatever the start times say.
  * Used by: src/core/transcript/transcript.ts, stability.ts
  * Depends on: src/core/transcript/transcript.ts (Utterance type only), questionKind.ts (looksGarbled),
+ *             blip.ts (isBlip),
  *             complete.ts (looksUnfinished), src/core/stt/language.ts (NON_ENGLISH_TEXT)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1 step 2, §7.1 (core/transcript)
  */
 import { NON_ENGLISH_TEXT } from '../stt/language';
+import { isBlip } from './blip';
 import { looksUnfinished } from './complete';
 import { looksGarbled } from './questionKind';
 import type { Speaker, Utterance } from './transcript';
@@ -77,6 +81,37 @@ export function shouldMerge(
   if (Boolean(previous.nonEnglish) !== Boolean(next.nonEnglish)) return false;
   const gap = next.tStart - previous.tEnd;
   return gap <= (gapMs ?? mergeGapFor(previous));
+}
+
+/**
+ * Batch D (P1-D, investigation 2026-11-14 issue 4): whether a real line of the other speaker ends between
+ * two lines of one speaker, so they must not be joined. A reply always ends the same speaker's stretch,
+ * even when the engine's start times are coarse (the 14 Nov call joined "Them" questions across the
+ * user's answers because Flux lines started at the previous turn's end). The other speaker's blips
+ * ("okay", "mm-hm"), hidden echo or noise lines and marks of lost audio do not count.
+ *
+ * @param lines    The final lines so far (any order).
+ * @param previous The same speaker's earlier line that `next` would join.
+ * @param next     The new final line.
+ * @returns True when such a line ends after `previous` ends and no later than `next` ends.
+ * Called from: Transcript.addFinal(); tests
+ */
+export function otherSpeakerBetween(
+  lines: readonly Utterance[],
+  previous: Pick<Utterance, 'tEnd'>,
+  next: Pick<FinalLine, 'speaker' | 'tEnd'>,
+): boolean {
+  return lines.some(
+    (line) =>
+      line.final &&
+      line.speaker !== next.speaker &&
+      !line.echo &&
+      !line.gap &&
+      line.text.trim() !== '' &&
+      !isBlip(line.text) &&
+      line.tEnd > previous.tEnd &&
+      line.tEnd <= next.tEnd,
+  );
 }
 
 /**

@@ -81,7 +81,10 @@ function setup(options: { token?: () => Promise<SttTokenResponse>; autoOpen?: bo
   const events: [ChannelId, CloudEvent][] = [];
   const engines: [ChannelId, string, string][] = [];
   const gaps: [ChannelId, number, number][] = [];
+  // Batch D: the trace events (codes, counts and times only).
+  const traces: [string, Record<string, unknown>][] = [];
   const handlers: CloudSttHandlers = {
+    onTrace: (kind, fields) => traces.push([kind, fields]),
     onEvent: (channel, event) => events.push([channel, event]),
     onEngine: (channel, engine, reason) => engines.push([channel, engine, reason]),
     onGap: (channel, from, to) => gaps.push([channel, from, to]),
@@ -156,6 +159,7 @@ function setup(options: { token?: () => Promise<SttTokenResponse>; autoOpen?: bo
     events,
     engines,
     gaps,
+    traces,
     fetchToken,
     chunk,
     advance: (ms: number) => {
@@ -218,8 +222,38 @@ describe('cloud transcription', () => {
       audio_window_end: 0.5,
       transcript: 'Hi',
     });
+    // Batch D (P0-A): 0.5 s minus the 0.4 s lead is before the window (0.2 s): the line starts at 0.2 s.
     expect(t.events).toEqual([
-      ['them', { type: 'partial', text: 'Hi', tStart: 1_700_000_000_200, tEnd: 1_700_000_000_500 }],
+      [
+        'them',
+        {
+          type: 'partial',
+          text: 'Hi',
+          tStart: 1_700_000_000_200,
+          tEnd: 1_700_000_000_500,
+          audioFrom: 1_700_000_000_200,
+        },
+      ],
+    ]);
+    // Batch D: the trace says each socket opened with the optional parameters and how many keyterms.
+    expect(t.traces.filter(([kind]) => kind === 'socket-open').map(([, fields]) => fields)).toEqual(
+      [
+        expect.objectContaining({ channel: 'them', optional: true, kind: 'flux', terms: 1 }),
+        expect.objectContaining({ channel: 'you', optional: true, kind: 'nova', terms: 1 }),
+      ],
+    );
+    // Batch D (P0-A): a Flux final line records where its start came from (no words in the trace).
+    t.sockets[0]!.receive({
+      type: 'TurnInfo',
+      event: 'EndOfTurn',
+      turn_index: 0,
+      audio_window_start: 0.2,
+      audio_window_end: 0.9,
+      transcript: 'Hi there',
+    });
+    expect(t.traces.find(([kind]) => kind === 'flux-start')).toEqual([
+      'flux-start',
+      { channel: 'them', source: 'first-words' },
     ]);
     t.cloud.stop();
   });

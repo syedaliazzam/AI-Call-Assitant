@@ -3,12 +3,14 @@
  * Purpose: The Deepgram adapter of cloud transcription (ADR-0076): one WebSocket per channel, straight
  *          from the device to Deepgram (never through Kite's server). Builds the listen URL (Flux on
  *          /v2/listen, Nova-3 on /v1/listen, the parameters of investigation C3), turns Deepgram's messages
- *          into transcript events on the call's capture clock (FluxAssembler, NovaAssembler), and wraps the
+ *          into transcript events on the call's capture clock (FluxAssembler, NovaAssembler; Batch D P0-A: a
+ *          Flux line starts at its first spoken words, not at the previous turn's end), and wraps the
  *          socket: open with the 60-second token, send 80 ms PCM chunks, "processed up to" for a key press
  *          (Flux's audio_window_end; Nova-3's Finalize), and a graceful close. Text is never logged.
  * Used by: src/core/stt/cloudStt.ts; tests/unit/core/stt/deepgram.test.ts
  * Depends on: src/core/stt/protocol.ts (ChannelId)
- * Architecture: docs/investigations/2026-11-13-production-readiness.md C2, C3, C8; ADR-0076
+ * Architecture: docs/investigations/2026-11-13-production-readiness.md C2, C3, C8; ADR-0076;
+ *               docs/investigations/2026-11-14-test-call-issues.md R1 (ADR-0079)
  */
 import type { ChannelId } from './protocol';
 
@@ -36,6 +38,25 @@ export const UTTERANCE_END_MS = 1_000;
 /** How far behind the press a channel may still be and count as caught up, ms (investigation C8). */
 export const CAUGHT_UP_SLACK_MS = 100;
 
+/**
+ * Batch D (P0-A, investigation 2026-11-14 R1): when Flux's words carry no times of their own, a turn is
+ * taken to start this long before the first message that showed speech (StartOfTurn, or the first words),
+ * in seconds. Flux sends an update about every 0.24 s of audio and a first word lasts about 0.3 s, so the
+ * first words were spoken roughly 0.3–0.6 s before that message's audio_window_end. Not yet measured on a
+ * real stream: the 'flux-start' trace event records the source used and, when words do carry times, how
+ * far this estimate was from them (wordLeadMs), so the next traced call can confirm or correct it.
+ */
+export const FLUX_FIRST_WORDS_LEAD_S = 0.4;
+
+/**
+ * Batch D (P0-A): a first word's own start time is used only when it lies within this many seconds before
+ * the turn's audio window (or anywhere inside it); anything else is treated as a different time base.
+ */
+export const FLUX_WORD_TIME_SLACK_S = 1;
+
+/** Batch D (P0-A): what a Flux line's start time came from (for the trace). */
+export type FluxStartSource = 'words' | 'start-of-turn' | 'first-words';
+
 /** Which Deepgram API a model uses. */
 export type DeepgramKind = 'flux' | 'nova';
 
@@ -47,7 +68,7 @@ export interface ListenSettings {
   model: string;
   /** 'en' for English sessions; 'multi' (Nova-3 only) for any other language. */
   language: 'en' | 'multi';
-  /** Session keyterms (the same list on both channels; at most 50). Never logged. */
+  /** Session keyterms (the same list on both channels; at most 100, Batch D). Never logged. */
   keyterms: readonly string[];
   /**
    * False drops the parameters that are not essential (keyterms, redact_usage) after a handshake that
@@ -116,6 +137,12 @@ export type CloudEvent =
       tStart: number;
       /** When its words last changed. */
       tEnd: number;
+      /**
+       * Batch D (P0-A), Flux only: where the line's audio begins at the earliest (the turn's audio window
+       * start, Unix ms). tStart is an estimate of the first word; a failover replays from here so the
+       * on-device engine cannot miss a first word the estimate put too late.
+       */
+      audioFrom?: number;
     }
   | {
       /** A finished line. */
@@ -128,6 +155,14 @@ export type CloudEvent =
       tEnd: number;
       /** True when the model's own end of turn ended it (Flux EndOfTurn): the speaker finished. */
       endOfTurn: boolean;
+      /** Batch D (P0-A), Flux only: what tStart came from (for the trace). */
+      startSource?: FluxStartSource;
+      /**
+       * Batch D (P0-A), Flux only, when the words carried their own times: how much earlier (ms) the first
+       * word started than the lead-based estimate would have put it (positive: the estimate was late).
+       * Measures FLUX_FIRST_WORDS_LEAD_S on real calls.
+       */
+      wordLeadMs?: number;
     }
   | {
       /** A Flux turn event. */
@@ -157,14 +192,22 @@ export interface DeepgramMessage {
   event?: string;
   /** Flux: the turn's number. */
   turn_index?: number;
-  /** Flux: start of the audio this message covers, s. */
-  audio_window_start?: number;
-  /** Flux: how far the audio has been processed, s. */
-  audio_window_end?: number;
+  /**
+   * Flux: start of the audio this message covers, s. Deepgram's schema types it as a string holding a
+   * number; read through seconds() so either form works.
+   */
+  audio_window_start?: number | string;
+  /** Flux: how far the audio has been processed, s (number or numeric string, as above). */
+  audio_window_end?: number | string;
   /** Flux: the turn's words so far. */
   transcript?: string;
-  /** Flux: end-of-turn confidence. */
-  end_of_turn_confidence?: number;
+  /**
+   * Flux: the turn's words. Deepgram documents optional start/end times per word (stream seconds); when
+   * present, the first word's start is the line's start (Batch D, P0-A). Never logged.
+   */
+  words?: { word?: string; start?: number | string; end?: number | string }[];
+  /** Flux: end-of-turn confidence (a number, or a numeric string as the schema types it). */
+  end_of_turn_confidence?: number | string;
   /** Nova-3: start of this result's audio, s. */
   start?: number;
   /** Nova-3: length of this result's audio, s. */
@@ -193,12 +236,46 @@ export interface DeepgramMessage {
   code?: string;
 }
 
+/**
+ * A Deepgram time field as seconds: a number, or a string holding one (the Flux schema types several
+ * numeric fields as strings).
+ *
+ * @param value The field.
+ * @returns The seconds, or null when absent or not a number.
+ * Called from: FluxAssembler.handle()
+ */
+function seconds(value: number | string | undefined): number | null {
+  if (value === undefined || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** One open Flux turn. */
+interface FluxTurn {
+  /** Flux's turn_index. */
+  index: number;
+  /** Start of Flux's audio window for this turn (stream s): where the previous turn ended, not speech. */
+  windowStart: number;
+  /** When the speaker started (stream s), once known (the first words decide it); null before. */
+  start: number | null;
+  /** What `start` came from. */
+  source: FluxStartSource | null;
+  /** The audio_window_end of the StartOfTurn message, when one came before any words (stream s). */
+  startOfTurnAt: number | null;
+  /** The words so far. Never logged. */
+  text: string;
+  /** Where the words last changed (stream s). */
+  lastChange: number;
+}
+
 /** Flux's messages turned into events (one per channel; pure apart from the clock it is given). */
 export class FluxAssembler {
   /** The open turn, or null between turns. */
-  private turn: { index: number; start: number; text: string; lastChange: number } | null = null;
+  private turn: FluxTurn | null = null;
   /** How far the audio has been processed, stream seconds, or null. */
   processedTo: number | null = null;
+  /** Batch D (P0-A): how far the lead-based estimate was from the word times (ms), for the open turn. */
+  private wordLeadMs: number | null = null;
 
   /** @param toUnix Stream seconds → Unix ms. */
   constructor(private readonly toUnix: StreamClock) {}
@@ -213,6 +290,40 @@ export class FluxAssembler {
   }
 
   /**
+   * Batch D (P0-A, investigation 2026-11-14 R1): fixes when the speaker started, at the first message that
+   * shows speech. Flux opens a turn's audio window where the previous turn ended, so the window's start is
+   * the silence while the other person (often the user) talked, not this speaker's first word. Using it put
+   * every "Them" line before the user's reply to the previous one, which then merged the two "Them" turns,
+   * hid the reply from the question rules and sorted answers above earlier lines.
+   *
+   * Order of preference: the first word's own start time (when Flux sends one, within the window); else
+   * the StartOfTurn message (or, without one, the first message with words) minus FLUX_FIRST_WORDS_LEAD_S,
+   * never before the window's start.
+   *
+   * @param turn      The open turn (changed in place).
+   * @param message   The message that brought the first words.
+   * @param windowEnd Its audio_window_end, stream s.
+   */
+  private fixStart(turn: FluxTurn, message: DeepgramMessage, windowEnd: number): void {
+    const signal = turn.startOfTurnAt ?? windowEnd;
+    const estimate = Math.max(turn.windowStart, signal - FLUX_FIRST_WORDS_LEAD_S);
+    const wordStart = seconds(message.words?.[0]?.start);
+    if (
+      wordStart !== null &&
+      wordStart >= turn.windowStart - FLUX_WORD_TIME_SLACK_S &&
+      wordStart <= windowEnd
+    ) {
+      turn.start = wordStart;
+      turn.source = 'words';
+      this.wordLeadMs = Math.round((estimate - wordStart) * 1000);
+      return;
+    }
+    turn.start = estimate;
+    turn.source = turn.startOfTurnAt !== null ? 'start-of-turn' : 'first-words';
+    this.wordLeadMs = null;
+  }
+
+  /**
    * Takes one message.
    *
    * @param message The parsed message.
@@ -221,18 +332,35 @@ export class FluxAssembler {
    */
   handle(message: DeepgramMessage): CloudEvent[] {
     if (message.type !== 'TurnInfo') return [];
-    const windowEnd = message.audio_window_end ?? this.processedTo ?? 0;
-    const windowStart = message.audio_window_start ?? windowEnd;
+    const windowEnd = seconds(message.audio_window_end) ?? this.processedTo ?? 0;
+    const windowStart = seconds(message.audio_window_start) ?? windowEnd;
     this.processedTo = Math.max(this.processedTo ?? 0, windowEnd);
     const index = message.turn_index ?? 0;
     const text = (message.transcript ?? '').trim();
     const confidence =
-      typeof message.end_of_turn_confidence === 'number' ? message.end_of_turn_confidence : null;
+      typeof message.end_of_turn_confidence === 'number'
+        ? message.end_of_turn_confidence
+        : seconds(message.end_of_turn_confidence);
     const events: CloudEvent[] = [];
     if (!this.turn || this.turn.index !== index) {
-      this.turn = { index, start: windowStart, text: '', lastChange: windowEnd };
+      this.turn = {
+        index,
+        windowStart,
+        start: null,
+        source: null,
+        startOfTurnAt: null,
+        text: '',
+        lastChange: windowEnd,
+      };
+      this.wordLeadMs = null;
     }
     const turn = this.turn;
+    if (turn.start === null) {
+      if (text !== '') this.fixStart(turn, message, windowEnd);
+      else if (message.event === 'StartOfTurn') turn.startOfTurnAt ??= windowEnd;
+    }
+    // Before any words the turn has no start of its own yet; an empty partial is only a clear.
+    const startUnix = () => this.toUnix(turn.start ?? windowEnd);
     const at = this.toUnix(windowEnd);
     switch (message.event) {
       case 'StartOfTurn':
@@ -254,13 +382,17 @@ export class FluxAssembler {
         events.push({
           type: 'final',
           text: finalText,
-          tStart: this.toUnix(turn.start),
-          tEnd: this.toUnix(turn.lastChange),
+          tStart: startUnix(),
+          // Words that last changed before the (estimated) start still end no earlier than it.
+          tEnd: Math.max(startUnix(), this.toUnix(turn.lastChange)),
           endOfTurn: true,
+          ...(turn.source ? { startSource: turn.source } : {}),
+          ...(this.wordLeadMs !== null ? { wordLeadMs: this.wordLeadMs } : {}),
         });
       }
       events.push({ type: 'turn', event: 'end', confidence, at });
       this.turn = null;
+      this.wordLeadMs = null;
       return events;
     }
     if (text !== turn.text) {
@@ -268,12 +400,13 @@ export class FluxAssembler {
       turn.lastChange = windowEnd;
       events.push(
         text === ''
-          ? { type: 'partial', text: '', tStart: this.toUnix(turn.start), tEnd: at }
+          ? { type: 'partial', text: '', tStart: startUnix(), tEnd: at }
           : {
               type: 'partial',
               text,
-              tStart: this.toUnix(turn.start),
-              tEnd: this.toUnix(turn.lastChange),
+              tStart: startUnix(),
+              tEnd: Math.max(startUnix(), this.toUnix(turn.lastChange)),
+              audioFrom: this.toUnix(turn.windowStart),
             },
       );
     }
@@ -650,7 +783,7 @@ export class DeepgramChannel {
    * and a failure keeps the old list). Nova-3 sockets are left alone: their next connection uses the new
    * list.
    *
-   * @param keyterms The new list (at most 50 plain terms; never logged).
+   * @param keyterms The new list (at most 100 plain terms; never logged).
    * @returns True when the message was sent.
    * Called from: cloudStt.ts setKeyterms()
    */
