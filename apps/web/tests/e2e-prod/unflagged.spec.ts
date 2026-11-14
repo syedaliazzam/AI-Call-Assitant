@@ -1,12 +1,12 @@
 /**
  * Production check that accounts WITHOUT the accountSync switch see today's app (ADR-0049 rollout):
- * signed in as the ADMIN test account (not listed in KITE_SYNC_USERS; enabled for the run only), the
+ * signed in as a disposable ADMIN test account (not listed in KITE_SYNC_USERS; created for the run), the
  * sync routes say off and refuse, the dashboard has no one-time upload question, /help has no
  * account-data section, Settings still offers "Delete all local data", and the desktop link code route
  * refuses. No Claude request; nothing is written. Prints step names only.
- * Run: pnpm --filter web e2e-admin --prod --enable, then
+ * Run: pnpm --filter web create-e2e-user --prod --admin, then
  *      pnpm --filter web exec playwright test -c tests/e2e-prod/playwright.config.ts unflagged.spec.ts,
- *      then pnpm --filter web e2e-admin --prod --disable
+ *      then pnpm --filter web delete-test-accounts --prod
  */
 import { expect, test } from '@playwright/test';
 import { PRODUCTION_URL, report, signIn, testAccount } from './helpers';

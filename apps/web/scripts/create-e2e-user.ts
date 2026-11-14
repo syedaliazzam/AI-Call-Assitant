@@ -1,14 +1,16 @@
 /**
  * File: apps/web/scripts/create-e2e-user.ts
- * Purpose: Creates a dedicated test account the production end-to-end suites sign in with
+ * Purpose: Creates a disposable test account for one run of the production end-to-end suites
  *          (tests/e2e-prod/): role 'user' (KITE_E2E_EMAIL / KITE_E2E_PASSWORD), or with --admin
- *          role 'admin' for the admin-only /dev/latency page (Day 4; KITE_E2E_ADMIN_EMAIL /
- *          KITE_E2E_ADMIN_PASSWORD). It creates the account with a temporary password exactly
+ *          role 'admin' for the admin-only checks (/dev/latency, unflagged.spec.ts, the domain
+ *          suite's admin page; KITE_E2E_ADMIN_EMAIL / KITE_E2E_ADMIN_PASSWORD). Since 14 Nov 2026
+ *          production keeps no test accounts: delete it after the run (delete-test-accounts --prod).
+ *          It creates the account with a temporary password exactly
  *          like an admin would, completes the first password change the same way the
  *          /change-password page does, and appends the email and the new password to
  *          apps/web/.env.local. The password is never printed.
  *          Usage: pnpm --filter web create-e2e-user [--admin] [--email <address>]
- * Used by: the "create-e2e-user" script in apps/web/package.json (run by a developer, once)
+ * Used by: the "create-e2e-user" script in apps/web/package.json (run by a developer before a run)
  * Depends on: src/server/users.ts (createUserAccount, markPasswordChanged),
  *             src/server/auth.ts (Better Auth: signInEmail, changePassword)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §8.2 (accounts), §11 (testing);
@@ -18,9 +20,9 @@
  * and `--conditions=react-server`. DATABASE_URL is the same for Development and Production
  * (one Neon database), so the account exists in production.
  *
- * .env.local is git-ignored. `vercel env pull` rewrites that file, so after a pull the two lines
- * must be added again: reset the password at /admin/users and sign in once by hand, or disable
- * the account and run this script with a new --email.
+ * .env.local is git-ignored. `vercel env pull` rewrites that file and drops the two lines: delete
+ * the account (delete-test-accounts --prod) and create a new one. --email must be a
+ * kite-e2e…@example.com address, so that delete-test-accounts can remove it afterwards.
  */
 import { appendFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -28,6 +30,7 @@ import { parseArgs } from 'node:util';
 import { auth } from '@/server/auth';
 import { createUserAccount, markPasswordChanged } from '@/server/users';
 import { requireProduction } from './lib/require-prod';
+import { isTestAccountEmail } from './lib/test-accounts';
 
 /** The two kinds of test account. */
 const ACCOUNTS = {
@@ -36,16 +39,16 @@ const ACCOUNTS = {
     /** Default email (example.com is reserved for examples: no real mailbox). */
     email: 'kite-e2e@example.com',
     /** Display name. */
-    name: 'Kite E2E (automated tests)',
+    name: 'Kite E2E (disposable test account)',
     /** Prefix of the two .env.local lines. */
     prefix: 'KITE_E2E',
   },
-  /** The admin account for /dev/latency only (Day 4). */
+  /** The admin account, for the admin-only checks. */
   admin: {
     /** Default email. */
     email: 'kite-e2e-admin@example.com',
     /** Display name. */
-    name: 'Kite E2E admin (latency test)',
+    name: 'Kite E2E admin (disposable test account)',
     /** Prefix of the two .env.local lines. */
     prefix: 'KITE_E2E_ADMIN',
   },
@@ -88,6 +91,12 @@ async function main(): Promise<void> {
   const role = values.admin ? 'admin' : 'user';
   const account = ACCOUNTS[role];
   const email = (values.email ?? account.email).trim().toLowerCase();
+  // Only an address delete-test-accounts will remove: never a real person's address.
+  if (!isTestAccountEmail(email)) {
+    console.error('--email must be a kite-e2e…@example.com address. Nothing changed.');
+    process.exitCode = 1;
+    return;
+  }
 
   // Refuse to add a second set of lines: the suites read the first one. (The admin prefix
   // also starts with KITE_E2E_, so the user check names EMAIL/PASSWORD right after it.)
@@ -127,9 +136,10 @@ async function main(): Promise<void> {
   // 3. Store the credentials for the suites (never printed).
   appendFileSync(
     ENV_FILE,
-    `\n# Production end-to-end test account (tests/e2e-prod), role ${role}. Disable it at /admin/users.\n${account.prefix}_EMAIL=${email}\n${account.prefix}_PASSWORD=${password}\n`,
+    `\n# Production end-to-end test account (tests/e2e-prod), role ${role}. Delete it after the run: delete-test-accounts --prod.\n${account.prefix}_EMAIL=${email}\n${account.prefix}_PASSWORD=${password}\n`,
   );
-  console.log(`Test account ${email} created (id ${created.id}), role ${role}, password changed.`);
+  // No email or id in the output: the account is named by its role and the .env.local lines.
+  console.log(`Disposable test account created, role ${role}, password changed.`);
   console.log(
     `Credentials appended to apps/web/.env.local (${account.prefix}_EMAIL, ${account.prefix}_PASSWORD).`,
   );

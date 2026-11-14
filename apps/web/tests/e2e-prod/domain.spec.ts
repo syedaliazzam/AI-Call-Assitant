@@ -3,7 +3,7 @@
  * the old one every installed 1.1.0 and 1.2.0 desktop app loads and is locked to. Covers, on each:
  * opening it never leads to another address, sign-in and sign-out work, the sign-in cookie stays on
  * that address, and a sign-in form from an unknown site is refused while the other address is
- * trusted. With KITE_E2E_ADMIN_ON=1 (the admin test account enabled for the run) it also opens the
+ * trusted. With KITE_E2E_ADMIN_ON=1 (a disposable admin test account created for the run) it also opens the
  * admin page on the new address. Prints PASS or FAIL only; no Claude requests, so this costs nothing.
  * Manual run only (never in CI): pnpm --filter web test:e2e-prod domain.spec.ts
  */
@@ -121,8 +121,11 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
   });
 }
 
-test('admin page on the new address (only with the admin test account enabled)', async () => {
-  test.skip(process.env.KITE_E2E_ADMIN_ON !== '1', 'needs the admin test account enabled');
+test('admin page on the new address (only with a disposable admin test account)', async () => {
+  test.skip(
+    process.env.KITE_E2E_ADMIN_ON !== '1',
+    'needs a disposable admin test account (create-e2e-user --admin)',
+  );
   await waitOutRateLimit();
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   try {

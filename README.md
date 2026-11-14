@@ -159,34 +159,28 @@ pnpm --filter web test:answers   # answer UI harness test: mocked streaming answ
 
 Run a command in a single package with `--filter`, for example `pnpm --filter web test`.
 
-**Production end-to-end test account.** The manual production suites (below) sign in as a dedicated account, `kite-e2e@example.com` (role user), created once with:
+**Production end-to-end test accounts are disposable** (since 14 Nov 2026). Production has no standing test accounts: the two long-lived ones (`kite-e2e@example.com`, `kite-e2e-admin@example.com`) were deleted with their data. Create an account just before a run and delete it straight after:
 
 ```sh
-pnpm --filter web create-e2e-user --prod   # creates the account, completes its first password change,
-                                    # appends KITE_E2E_EMAIL / KITE_E2E_PASSWORD to apps/web/.env.local
+pnpm --filter web create-e2e-user --prod           # role user: KITE_E2E_EMAIL / KITE_E2E_PASSWORD in apps/web/.env.local
+pnpm --filter web create-e2e-user --prod --admin   # role admin (latency, unflagged, the domain "admin page" check): KITE_E2E_ADMIN_*
+#   ... run the suites ...
+pnpm --filter web delete-test-accounts             # dry run: the SQL it would run and the row counts per table
+pnpm --filter web delete-test-accounts --prod      # deletes the accounts and their data, and removes their lines from .env.local
 ```
 
-- The password is generated, never printed, and stored only in `apps/web/.env.local` (git-ignored).
-- **To disable the account:** sign in as an admin → **Admin** in the sidebar (`/admin/users`) → find `kite-e2e@example.com` → **Disable**. Its sign-in sessions end immediately, and the suites then fail at sign-in. **Enable** turns it back on.
-- `vercel env pull` rewrites `.env.local` and removes the two lines. To restore them, add them back by hand, or reset the password at `/admin/users` and then sign in once as the account to choose a new one.
+- `create-e2e-user` creates the account as an admin would, completes its first password change, and appends the email and a generated password to `apps/web/.env.local` (git-ignored, never printed). It refuses when those lines are already there.
+- `delete-test-accounts` acts only on `kite-e2e…@example.com` addresses (the default test addresses, and those named by `KITE_E2E_EMAIL` / `KITE_E2E_ADMIN_EMAIL` in `.env.local`), never on a real account. It deletes the sign-in sessions, the credential, daily request counts, synced call data, Google Drive rows and desktop link codes in one transaction, and prints counts only.
+- The account sync suites (`sync-devices.spec.ts`) need the account in `KITE_SYNC_USERS` unless it is `*`: `sync-user-ids` adds `KITE_E2E_EMAIL` to the ids it prints.
+- `vercel env pull` rewrites `.env.local` and removes the lines: delete the account and create a new one.
 
-**Admin test account (latency runs only).** `/dev/latency` is admin-only, so its production run uses a separate account, `kite-e2e-admin@example.com` (role admin). It was created with `pnpm --filter web create-e2e-user --prod --admin`, which appends `KITE_E2E_ADMIN_EMAIL` / `KITE_E2E_ADMIN_PASSWORD` to `apps/web/.env.local` (password never printed). **It stays disabled between runs:**
-
-```sh
-pnpm --filter web e2e-admin --prod --enable                    # turn the admin test account on
-pnpm --filter web test:e2e-prod latency.spec.ts         # 20 answers in Chrome and 20 in the desktop app
-pnpm --filter web e2e-admin --prod --disable                   # turn it off again straight away
-```
-
-`e2e-admin` disables the account the same way **Disable** at `/admin/users` does (the admin plugin's ban fields, and every sign-in session ended), so it can also be checked or re-enabled there.
-
-**Production end-to-end suites** (`apps/web/tests/e2e-prod/`, manual only, never in CI). They run against https://call.paramountintelligence.co (or `KITE_E2E_URL`) as the test account above, and print only PASS/FAIL with numbers:
+**Production end-to-end suites** (`apps/web/tests/e2e-prod/`, manual only, never in CI). They run against https://call.paramountintelligence.co (or `KITE_E2E_URL`) as a disposable test account (above), and print only PASS/FAIL with numbers:
 
 ```sh
 pnpm --filter web test:e2e-prod chrome.spec.ts desktop.spec.ts   # builds the desktop shell, then runs both suites (about 3 minutes)
 ```
 
-(Without file names it also runs `latency.spec.ts`, which needs the admin test account enabled.)
+(Without file names it also runs `latency.spec.ts`, which needs a disposable admin test account.)
 
 - **Chrome** (`chrome.spec.ts`), using Playwright's Chromium in headless mode:
   - sign in;
