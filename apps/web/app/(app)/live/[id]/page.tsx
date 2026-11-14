@@ -10,6 +10,7 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §8.1,
  *               §9.2 (thin routes); day-03-sessions.md Stage 4; ADR-0076
  */
+import { firstNameOf } from '@/core/stt/sessionHotwords';
 import { LiveSession } from '@/features/live/LiveSession';
 import { deepgramEnabledFor } from '@/server/deepgram';
 import { requireUser } from '@/server/guard';
@@ -33,5 +34,12 @@ export default async function LiveRoute({ params }: LiveRouteProps) {
   const { id } = await params;
   // The layout has already checked sign-in; this reads the same (cached) session for the rollout switch.
   const { user } = await requireUser();
-  return <LiveSession sessionId={id} cloudStt={deepgramEnabledFor(user.id)} />;
+  // Batch D (P1-F): the user's first name joins the session's keyterms (Deepgram hears names it is told).
+  return (
+    <LiveSession
+      sessionId={id}
+      cloudStt={deepgramEnabledFor(user.id)}
+      accountFirstName={firstNameOf(user.name)}
+    />
+  );
 }

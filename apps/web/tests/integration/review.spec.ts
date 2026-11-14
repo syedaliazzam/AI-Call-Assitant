@@ -245,12 +245,14 @@ test('shows the call details, notes, answers and transcript', async () => {
   const answers = page.getByRole('listitem', { name: 'Saved answer' });
   const chips = page.getByRole('button', { name: 'Paramount AI answered' });
   await expect(chips).toHaveCount(2);
-  await expect(answers).toHaveCount(0);
-  await chips.first().click();
+  // Batch D (P2, D4): every answer is open by default; a click folds one away and opens it again.
   await expect(chips.first()).toHaveAttribute('aria-expanded', 'true');
+  await expect(answers).toHaveCount(2);
+  await chips.first().click();
+  await expect(chips.first()).toHaveAttribute('aria-expanded', 'false');
   await expect(answers).toHaveCount(1);
   await chips.first().click();
-  await expect(answers).toHaveCount(0);
+  await expect(answers).toHaveCount(2);
 
   const transcript = page.getByRole('listitem', { name: /said$/ });
   await expect(transcript).toHaveCount(6);

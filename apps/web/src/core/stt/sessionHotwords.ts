@@ -4,9 +4,13 @@
  *          should prefer during this call. Sources, in priority order: the session's key terms
  *          (typed by the user), the company, the role or topic, for Interview sessions a
  *          built-in technical vocabulary (Day 6 Stage 4c), then names and acronyms that repeat
- *          in the session's documents (at most MAX_DOCUMENT_TERMS of them).
+ *          in the session's documents (at most MAX_DOCUMENT_TERMS of them). ADR-0076: the same sources
+ *          as Deepgram keyterms (buildKeyterms). Batch D (P1-F, ADR-0079): the keyterms also hold the
+ *          user's first name and the contact's name, and single capitalised words that repeat across
+ *          runs (extractSingleWordTerms), up to 100 terms; the on-device hotwords are unchanged.
  * Used by: src/features/live/LiveSession.tsx (before the engine starts), src/features/dev/SttTest.tsx
- *          ("Use session")
+ *          ("Use session"), src/features/review/SessionReview.tsx (the listened-for words),
+ *          app/(app)/live/[id]/page.tsx and app/(app)/sessions/[id]/page.tsx (firstNameOf)
  * Depends on: src/core/stt/hotwords.ts (cleaning to the model's alphabet), src/core/storage/types.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.1 (core/stt); ADR-0020 (hotwords,
  *               real-call result); day-03-sessions.md Stage 4
@@ -301,8 +305,91 @@ export function hotwordsText(hotwords: readonly Hotword[]): string {
   return hotwords.map((hotword) => `${hotword.phrase} :${hotword.score}`).join('\n');
 }
 
-/** ADR-0076: the most keyterms sent to Deepgram (its documented limit for Flux and Nova-3 is 100; 50 keeps the URL short). */
-export const MAX_KEYTERMS = 50;
+/**
+ * ADR-0076: the most keyterms sent to Deepgram. Batch D (P1-F, ADR-0079): raised from 50 to Deepgram's
+ * documented limit of 100, because the 14 Nov call's list was full of the built-in vocabulary while names
+ * in the CV were left out.
+ */
+export const MAX_KEYTERMS = 100;
+
+/**
+ * Batch D (P1-F): the most characters all keyterms may have together. Deepgram counts keyterms in tokens
+ * (a few hundred at most per request); 1,500 characters stays well inside that, so a session with long
+ * terms loses its last terms instead of failing the handshake (which would drop every keyterm).
+ */
+export const MAX_KEYTERM_CHARS = 1_500;
+
+/** Batch D (P1-F): the most single capitalised words from the documents (after the multi-word terms). */
+export const MAX_SINGLE_WORD_TERMS = 30;
+
+/**
+ * Batch D (P1-F): capitalised single words a CV or a brief uses for headings and roles, not names: never
+ * single-word keyterms (they stay usable inside a longer name). Upper case, as compared.
+ */
+const SINGLE_WORD_STOP = new Set(
+  (
+    'ENGINEER ENGINEERING DEVELOPER DEVELOPMENT SENIOR JUNIOR LEAD PRINCIPAL STAFF MANAGER HEAD ' +
+    'SOFTWARE EXPERIENCE EDUCATION SKILLS SKILL PROJECTS PROJECT WORK TEAM ROLE RESPONSIBILITIES ' +
+    'BUILT LED DEVELOPED DESIGNED IMPLEMENTED CREATED MANAGED WORKED USED REDUCED IMPROVED ' +
+    'UNIVERSITY COLLEGE SCHOOL BACHELOR MASTER DEGREE CERTIFICATE CERTIFICATION PRESENT CURRENT ' +
+    'CONTACT EMAIL PHONE PROFILE OBJECTIVE ABOUT OVERVIEW INTRODUCTION BACKGROUND REFERENCES'
+  ).split(' '),
+);
+
+/**
+ * Batch D (P1-F, ADR-0079): single capitalised words that repeat in the documents, counted across runs.
+ * extractDocumentTerms() counts exact runs, so "Freshdesk" alone, "Zendesk Freshdesk" and "Freshdesk" at a
+ * sentence start were three different runs and none reached two mentions (the 14 Nov call missed Freshdesk
+ * and Toptal this way). Here each capitalised word counts wherever it appears; it needs MIN_DOCUMENT_MENTIONS
+ * in all and at least one mention inside a sentence (a word only ever seen at a sentence start is grammar).
+ * Acronyms (extractDocumentTerms keeps them), common words and heading words are left out.
+ *
+ * @param texts The documents' texts.
+ * @returns The words as first written ("Freshdesk"), most mentioned first (ties alphabetical).
+ * Called from: buildKeyterms(); tests
+ */
+export function extractSingleWordTerms(texts: readonly string[]): string[] {
+  const counts = new Map<string, { word: string; mentions: number; inside: number }>();
+  for (const text of texts) {
+    for (const sentence of text.split(/[.!?:\n]+/)) {
+      sentence
+        .split(/\s+/)
+        .filter(Boolean)
+        .forEach((token, index) => {
+          const word = token.replace(/^[("“'[]+|[)"”'\],;]+$/g, '').replace(/['’]s$/, '');
+          if (!CAPITALISED.test(word) || ACRONYM.test(word) || word.length < 3) return;
+          const key = word.toUpperCase().replace(/[^A-Z]/g, '');
+          if (key.length < 3 || COMMON_WORDS.has(key) || SINGLE_WORD_STOP.has(key)) return;
+          const entry = counts.get(key) ?? { word, mentions: 0, inside: 0 };
+          entry.mentions += 1;
+          if (index > 0) entry.inside += 1;
+          counts.set(key, entry);
+        });
+    }
+  }
+  return [...counts.values()]
+    .filter((entry) => entry.mentions >= MIN_DOCUMENT_MENTIONS && entry.inside > 0)
+    .sort((a, b) => b.mentions - a.mentions || a.word.localeCompare(b.word))
+    .map((entry) => entry.word);
+}
+
+/**
+ * Batch D (P1-F): the first name in an account's display name ("Sam Rivera" → "Sam"), for the keyterms.
+ *
+ * @param name The account's name, if known.
+ * @returns The first word with at least two letters, or '' when there is none.
+ * Called from: LiveSession.tsx, SessionReview.tsx (through their props); tests
+ */
+export function firstNameOf(name: string | null | undefined): string {
+  const first = (name ?? '').trim().split(/\s+/)[0] ?? '';
+  return (first.match(/\p{L}/gu) ?? []).length >= 2 ? first : '';
+}
+
+/** Batch D (P1-F): people on the call whose names the keyterms add. Never logged. */
+export interface KeytermPeople {
+  /** The signed-in user's first name (firstNameOf() of the account name), or ''. */
+  accountFirstName?: string;
+}
 
 /**
  * ADR-0076: a document term (upper case, the on-device model's alphabet) written back the way people
@@ -323,46 +410,61 @@ function readableTerm(phrase: string): string {
 }
 
 /**
- * ADR-0076: the session's keyterms for Deepgram (both channels get the same list): the same sources and
- * order as buildHotwords() (key terms, company, role or topic, the Interview vocabulary, names that
- * repeat in the documents), but as people write them: no scores, digits kept ("BM25"), original case,
- * no duplicates (ignoring case), at most MAX_PHRASE_WORDS words and MAX_PHRASE_CHARS characters each,
- * and at most MAX_KEYTERMS in all. Session text: never logged.
+ * ADR-0076: the session's keyterms for Deepgram (both channels get the same list), as people write them:
+ * no scores, digits kept ("BM25"), original case, no duplicates (ignoring case), at most MAX_PHRASE_WORDS
+ * words and MAX_PHRASE_CHARS characters each, and at most MAX_KEYTERMS (and MAX_KEYTERM_CHARS) in all.
+ * Session text: never logged.
  *
- * @param session   The session.
+ * Priority (Batch D, P1-F, ADR-0079): 1. the session's Key terms field (the user's own list always comes
+ * first); 2. the signed-in user's first name; 3. the session's contact name (the 14 Nov call heard the
+ * user's name as "zone": no name was ever a keyterm); 4. company; 5. role or topic; 6. the Interview
+ * vocabulary; 7. names and acronyms that repeat in the documents; 8. single capitalised words that repeat
+ * in the documents (extractSingleWordTerms: "Freshdesk", "Toptal").
+ *
+ * @param session   The session (its key terms, contact name, company, role and type are used).
  * @param documents The session's documents.
+ * @param people    Batch D: the signed-in user's first name (optional; '' or absent adds nothing).
  * @returns The keyterms, highest priority first.
- * Called from: LiveSession.tsx; tests
+ * Called from: LiveSession.tsx (sent to Deepgram), SessionReview.tsx ("Words Paramount AI listens for"); tests
  */
 export function buildKeyterms(
-  session: Pick<Session, 'company' | 'role' | 'preferences'> & Partial<Pick<Session, 'type'>>,
+  session: Pick<Session, 'company' | 'role' | 'preferences'> &
+    Partial<Pick<Session, 'type' | 'contactName'>>,
   documents: readonly Pick<StoredDocument, 'text'>[],
+  people: KeytermPeople = {},
 ): string[] {
   const result: string[] = [];
   const seen = new Set<string>();
+  let chars = 0;
   /**
    * Adds a term unless it is unusable, already present, or the list is full.
    *
    * @param raw The term as written.
    */
-  const add = (raw: string) => {
-    const term = raw.replace(/\s+/g, ' ').trim();
+  const add = (raw: string | undefined) => {
+    const term = (raw ?? '').replace(/\s+/g, ' ').trim();
     const key = term.toLowerCase();
     if (term === '' || result.length >= MAX_KEYTERMS || seen.has(key)) return;
     if (term.length > MAX_PHRASE_CHARS || term.split(' ').length > MAX_PHRASE_WORDS) return;
     // At least two letters: a lone number or initial is not worth biasing towards.
     if ((term.match(/\p{L}/gu) ?? []).length < 2) return;
+    if (chars + term.length > MAX_KEYTERM_CHARS) return;
     seen.add(key);
+    chars += term.length;
     result.push(term);
   };
   for (const rawLine of parseKeyTerms(session.preferences.keyTerms)) {
     // A " :score" typed for the on-device engine means nothing to Deepgram: dropped.
     add(rawLine.replace(/\s:\s*\S+\s*$/, ''));
   }
+  add(people.accountFirstName);
+  add(session.contactName);
   add(session.company);
   add(session.role);
   if (session.type === 'interview') for (const term of INTERVIEW_TECH_TERMS) add(term);
-  const documentTerms = extractDocumentTerms(documents.map((document) => document.text));
+  const texts = documents.map((document) => document.text);
+  const documentTerms = extractDocumentTerms(texts);
   for (const term of documentTerms.slice(0, MAX_DOCUMENT_TERMS)) add(readableTerm(term.phrase));
+  for (const word of extractSingleWordTerms(texts).slice(0, MAX_SINGLE_WORD_TERMS)) add(word);
   return result;
 }

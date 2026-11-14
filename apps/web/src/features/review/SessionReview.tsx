@@ -7,6 +7,8 @@
  *          transcript and details are the picked call's own (the newest by default). With account sync
  *          it waits for the first pull ("Syncing…") and reads again after every pull, and while a call's
  *          notes are being written it pulls every few seconds, so a call finished elsewhere shows up.
+ *          Batch D (P1-F, ADR-0079): Call details lists "Words Paramount AI listens for" (the session's
+ *          keyterms, core/stt/sessionHotwords.ts buildKeyterms), with a link to edit the Key terms.
  * Used by: src/features/review/ReviewPage.tsx; tests/integration/harness/review.tsx
  * Depends on: next/link, src/core/review/load.ts, src/core/notes/regenerate.ts,
  *             src/core/answer/unavailable.ts (notesFailureText), src/core/storage/sessions.ts
@@ -30,6 +32,7 @@ import { loadReview, type ReviewData } from '@/core/review/load';
 import { usingAccountDatabase } from '@/core/storage/db';
 import { deleteSession } from '@/core/storage/sessions';
 import { pullAccountSync } from '@/core/sync/client';
+import { buildKeyterms } from '@/core/stt/sessionHotwords';
 import { onSyncApplied } from '@/core/sync/events';
 import { displayTerms } from '@/core/transcript/display';
 import {
@@ -65,6 +68,8 @@ export interface SessionReviewProps {
   sessionId: string;
   /** Called after the session was deleted (the page goes back to the dashboard). */
   onDeleted: () => void;
+  /** Batch D (P1-F): the signed-in user's first name (one of the words listened for); default none. */
+  accountFirstName?: string;
 }
 
 /** Date and time format, in the user's locale (for example "28 Oct 2026, 14:05"). */
@@ -144,7 +149,7 @@ interface NotesState {
  * @returns The page content: loading, "not found", or the review.
  * Rendered by: ReviewPage.tsx; the review harness
  */
-export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
+export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: SessionReviewProps) {
   // undefined while loading, null when this device has no such session.
   const [review, setReview] = useState<ReviewData | null | undefined>(undefined);
   const [notesState, setNotesState] = useState<NotesState>({
@@ -276,6 +281,9 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
   const answers = call?.answers ?? [];
   const notes = call?.notes ?? null;
   const drive = call ? callDriveText(call) : null;
+  // Batch D (P1-F): the words cloud transcription is told to listen for in this session's calls (the same
+  // list the call sends), so missing names can be added under Key terms.
+  const listensFor = buildKeyterms(session, review.documents, { accountFirstName });
 
   return (
     <PageShell
@@ -417,6 +425,40 @@ export function SessionReview({ sessionId, onDeleted }: SessionReviewProps) {
               {session.description && (
                 <p className="mt-3 text-[13px] text-ui-text">{session.description}</p>
               )}
+              {/* Batch D (P1-F): what cloud transcription listens for; edited through Key terms. */}
+              <div className="mt-4 border-t border-ui-border pt-3">
+                <h3 className="text-[15px] font-semibold text-ui-heading">
+                  Words Paramount AI listens for
+                </h3>
+                <p className="mt-1 text-[13px] text-ui-muted">
+                  Names and terms transcription is told to expect. Your Key terms come first; add
+                  any name it gets wrong there.
+                </p>
+                {listensFor.length === 0 ? (
+                  <p className="mt-2 text-[13px] text-ui-text">None yet.</p>
+                ) : (
+                  <ul
+                    aria-label="Words Paramount AI listens for"
+                    className="mt-2 flex flex-wrap gap-1.5"
+                  >
+                    {listensFor.map((term) => (
+                      <li
+                        key={term}
+                        className="rounded-full border border-ui-border px-2 py-0.5 text-[13px] text-ui-text"
+                      >
+                        {term}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <LinkButton
+                  href={`/sessions/${session.id}/edit`}
+                  variant="secondary"
+                  className="mt-3"
+                >
+                  Edit key terms
+                </LinkButton>
+              </div>
             </section>
           )}
 

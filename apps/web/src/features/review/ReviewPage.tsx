@@ -15,6 +15,8 @@ import { SessionReview } from './SessionReview';
 export interface ReviewPageProps {
   /** The session id (the [id] segment). */
   sessionId: string;
+  /** Batch D (P1-F): the signed-in user's first name, for "Words Paramount AI listens for". */
+  accountFirstName?: string;
 }
 
 /**
@@ -24,7 +26,13 @@ export interface ReviewPageProps {
  * @returns SessionReview, wired to the router.
  * Rendered by: app/(app)/sessions/[id]/page.tsx
  */
-export function ReviewPage({ sessionId }: ReviewPageProps) {
+export function ReviewPage({ sessionId, accountFirstName = '' }: ReviewPageProps) {
   const router = useRouter();
-  return <SessionReview sessionId={sessionId} onDeleted={() => router.push('/')} />;
+  return (
+    <SessionReview
+      sessionId={sessionId}
+      accountFirstName={accountFirstName}
+      onDeleted={() => router.push('/')}
+    />
+  );
 }
