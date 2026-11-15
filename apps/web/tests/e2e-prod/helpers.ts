@@ -171,7 +171,8 @@ export async function createSession(page: Page, session: NewSession): Promise<vo
   await page.getByRole('radio', { name: 'Regular' }).click();
   // The field's role and exact name: synced sessions' hidden edit forms are labelled "Company" too.
   await page.getByRole('combobox', { name: 'Company', exact: true }).fill(session.company);
-  await page.getByLabel('Topic').fill('Pilot review');
+  // Visible only: synced sessions' hidden forms have the same labels (account sync for everyone).
+  await page.getByLabel('Topic').filter({ visible: true }).fill('Pilot review');
   if (session.document) {
     // The wizard has two file inputs: the CV's and this one.
     await page
