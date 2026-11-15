@@ -163,3 +163,11 @@ describe('prompt caching within a call', () => {
     expect(companySection('live', '   ')).toBe('');
   });
 });
+
+describe('honesty under a shape instruction', () => {
+  it('tells the model a style such as STAR never allows an invented past event', () => {
+    // Found on production (15 Nov 2026): with no CV and "always use STAR", Haiku invented a story.
+    expect(COMPANY_HEADINGS.live).toMatch(/shape or style \(such as STAR\) never allows/);
+    expect(COMPANY_HEADINGS.live).toMatch(/the approach \("I would…"\)/);
+  });
+});
