@@ -34,6 +34,7 @@ Re-run only the groups a change touches. Run the full suite (`pnpm --filter web 
 | `cv-embellishment` | 4, in `tests/eval/groups/honesty.ts` (ADR-0032: bait an invented tool, number, team size or result on a real CV project) | `--only=cv-embellishment` | 4 × 2 × 2 = 16 | **Zero invented tools, numbers, team sizes or results** (the claim check and the grader's `invented` list). Score reported |
 | `answer-length` | 2, same file (ADR-0032: a full Balanced-length answer, not a one-liner or a ramble) | `--only=answer-length` | 2 × 2 × 2 = 8 | ≥ 8 (the grader's style score covers length) |
 | `question-detection` | 11, in `tests/eval/groups/detection.ts` (ADR-0043: garbled lines and remarks are not answered as questions; real questions in messy transcripts still are) | `--only=question-detection` | at most 11 × 2 × 2 = 44 (a reply with no answer in it needs no grade) | ≥ 8 |
+| `company-star` | 3, in `tests/eval/groups/company.ts` (ADR-0084: a company "always use STAR" instruction with no CV, a CV with no matching project, a CV with one) | `--only=company-star` | 3 × 2 × 2 = 12 (`--no-grade`: 6) | **Nothing invented** in every run (the grader's `invented` list and the claim check); the matching case keeps the CV's story and result |
 | `screenshot-types` | 7, same file (ADR-0043: a coding problem, a code error, a slide, a chart, a document, a web page, an unreadable screen; code is run) | `--only=screenshot-types` | 7 × 2 × 2 = 28 | ≥ 8, and the code runs |
 
 `--only=<id>` runs one scenario; `--runs=N` sets the runs (default 2 for answers, 3 for notes). Which group a change touches: the rules block or the conversation part of `server/prompt.ts` → `answers` and `screenshots`; the screenshot tail only → `screenshots`; the learned-preferences part of the rules block (`rulesBlock()` with lessons) → `lessons` (a session without lessons sends the Day 4 rules block byte for byte, pinned by a unit test, so `answers` and `screenshots` need no re-run); `server/notes.ts` → `notes`.
@@ -507,3 +508,17 @@ Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 run
 | `cv-embellishment` (4) | ≥ 7.10, at most 6 invented items | 6.50; 9 invented items in 6 of 8 runs | 6.75; 13 items in 6 of 8 runs | **fails, as at the last two releases**; within the group's spread (6.00–7.25) |
 
 **What these runs test.** The evaluation scenarios build their sessions directly, with no CV marker and small documents, so their answer prompts are byte for byte what they were before this change (`sessionBlock()` was split into helpers with the same output, pinned by `tests/unit/server/prompt-documents.test.ts`). They show the refactor changed nothing; they do not test answers over 500k characters of documents. That was measured for cost and caching only (`docs/testing/benchmark-results.md`, "Larger documents"), because one `answers` pass with 480k-character sessions would cost about $1.80 for the answers alone (15 cache writes of 164k tokens at the long-prompt price, then 30 cache reads), over the $1 cap for this change.
+
+## No invented experience stories (2026-11-15, ADR-0084)
+
+Same laptop; answers by `claude-haiku-5-5`, **not graded** (`--no-grade`), one run each, within the developer's cap of 6 paid requests (spend about $0.002). Answers read by hand; the code checks found no number outside the documents and call in any run.
+
+| Check | Before the core-rule change | After |
+|---|---|---|
+| Try it path, no company text, no CV (control) | made-up past event, source `example` | not re-run |
+| Try it path, "always use STAR", no CV | made-up STAR story, source `example` (production, ADR-0083) | **passes**: hypothetical "I would / I'd" throughout |
+| `star-no-cv` | not run | **passes** |
+| `star-cv-match` | not run | **passes**: the CV's story and result, nothing added (in STAR order, not labelled) |
+| `star-cv-no-match` | not run | first fix **fails** (STAR forced onto an unrelated project, details added, the missing result remarked on); with the "close means the same kind of situation" line, **better but fails**: the answer line still claims "I handled a difficult client…" and one bullet adds a detail |
+
+**Not run:** `answers` and `screenshots`, which a change to the rules block calls for (192 requests). Run them, and `company-star` graded with 2 runs (12 requests), before the next release.

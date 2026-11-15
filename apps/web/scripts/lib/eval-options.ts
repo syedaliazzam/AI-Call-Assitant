@@ -2,7 +2,7 @@
  * File: apps/web/scripts/lib/eval-options.ts
  * Purpose: Command-line options shared by the evaluations (eval-answers.ts, eval-notes.ts), so
  *          a change re-runs only the scenario groups it touches (CLAUDE.md "Evaluation cost"):
- *          --only=<group or scenario id>, --runs=N, --show, --dry-run and --without-lessons; and
+ *          --only=<group or scenario id>, --runs=N, --show, --dry-run, --no-grade and --without-lessons; and
  *          --style=previous (the ADR-0032 rollback prompt) and the estimated
  *          number of Claude requests, printed before anything is sent.
  *          Groups: 'answers' (the Day 4 scenarios 01–15, the baseline group), 'screenshots'
@@ -23,6 +23,11 @@ export interface EvalOptions {
   show: boolean;
   /** Print the estimate and stop (sends nothing; needs no key). */
   dryRun: boolean;
+  /**
+   * False with --no-grade: answers only, no grader requests (eval-answers.ts; ADR-0084). The other
+   * evaluations always grade.
+   */
+  grade: boolean;
   /** Send no lessons (the lesson group's comparison run, Day 5 Stage 7). */
   withoutLessons: boolean;
   /** The answer style version to evaluate (ADR-0032 rollback switch); null means v-current. */
@@ -58,6 +63,7 @@ export function parseEvalArgs(argv: readonly string[], defaultRuns: number): Eva
     only: value('--only'),
     show: argv.includes('--show'),
     dryRun: argv.includes('--dry-run'),
+    grade: !argv.includes('--no-grade'),
     withoutLessons: argv.includes('--without-lessons'),
     style: style === 'previous' ? 'previous' : null,
   };

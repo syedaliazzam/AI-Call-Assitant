@@ -18,6 +18,8 @@
  *            --only=ask-kite     ADR-0030: private answers, in a call and on the page
  *            --only=question-detection  ADR-0043: non-questions and garbled lines are not answered
  *            --only=screenshot-types    ADR-0043: coding, code error, slide, table, document, web page
+ *            --only=company-star        ADR-0084: a company "always use STAR" instruction with no CV,
+ *                                       a CV with no matching project, and a CV with one
  *            --without-lessons   send no lessons (the lesson group's comparison run)
  *            --style=previous    answer with the v-previous rules (ADR-0032 rollback switch)
  *            --only=<id>         one scenario (its file name without .json)
@@ -26,6 +28,8 @@
  *            --show     also print each answer and the grader's reason (local use only; the
  *                       scenarios are invented, but answers are never printed by default)
  *            --dry-run  print the estimated number of Claude requests and stop
+ *            --no-grade answers only, no grader requests (half the cost): the code checks are
+ *                       reported and the grader's columns show "–"; read the answers with --show
  *          Every paid run also saves per-scenario scores and grader reasons to a git-ignored
  *          file (scripts/lib/eval-results.ts), so a drop can be diagnosed without another run.
  *          Re-run only the groups a change touches; the full suite only as CLAUDE.md
@@ -48,7 +52,7 @@
  * (SessionContext); conversation (ConversationChunk[]) and tail (CallLine[]); mode ('answer'
  * or 'chat'); group (optional: its evaluation group, when not worked out from the rest); question;
  * mustInclude and mustNotInclude (what a good answer must and must not
- * contain, in plain words for the grader).
+ * contain, in plain words for the grader); company (optional: company AI instructions, ADR-0083).
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -68,6 +72,7 @@ import { getClaudeEnv } from '@/server/env';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
 import { ADAPTIVE_SCENARIOS } from '../tests/eval/groups/adaptive';
+import { COMPANY_SCENARIOS } from '../tests/eval/groups/company';
 import { HONESTY_SCENARIOS } from '../tests/eval/groups/honesty';
 import { DETECTION_SCENARIOS } from '../tests/eval/groups/detection';
 import { callAnswerLine } from './lib/answer-line';
@@ -172,6 +177,7 @@ function loadScenarios(only: string | null): Scenario[] {
       ...QUALITY_SCENARIOS,
       ...HONESTY_SCENARIOS,
       ...DETECTION_SCENARIOS,
+      ...COMPANY_SCENARIOS,
     ],
     answerGroup,
     only,
@@ -247,6 +253,19 @@ function noAnswerGrade(scenario: Scenario): Grade {
     invented: [],
   };
 }
+
+/**
+ * The placeholder grade of a --no-grade run: no grader request is sent, so the grader's scores are
+ * not known (the table shows "–"); the code checks still run.
+ */
+const UNGRADED: Grade = {
+  facts: 0,
+  grounded: 0,
+  consistent: 0,
+  style: 0,
+  reason: 'not graded (--no-grade)',
+  invented: [],
+};
 
 /**
  * Reads a scenario's invented image as a JPEG data URL.
@@ -330,7 +349,9 @@ async function answerScenario(
       : {}),
   };
   const page = scenario.mode === 'kite';
-  const prompt = page ? buildKiteChatPrompt(request) : buildPrompt(request);
+  // Company instructions (ADR-0083) go after the locked rules, as the live route sends them.
+  const company = scenario.company ?? '';
+  const prompt = page ? buildKiteChatPrompt(request, company) : buildPrompt(request, company);
   const model = page ? models.smart : models.fast;
   let raw = '';
   const reply = streamReply({
@@ -428,6 +449,13 @@ async function grade(
     'Session details and documents:',
     sessionBlock(scenario.session),
     '',
+    ...(scenario.company
+      ? [
+          "Company instructions (from the company's admin; Kite's honesty rules win over them):",
+          scenario.company,
+          '',
+        ]
+      : []),
     ...(scenario.expectTarget === 'kite'
       ? ['This is a private answer for the user to read, not words to say on a call.', '']
       : []),
@@ -585,14 +613,16 @@ async function main(): Promise<void> {
   console.log(
     estimateLine(scenarios, answerGroup, options.runs, [
       { label: 'answers', model: process.env.KITE_MODEL_FAST || 'the fast model' },
-      { label: 'grades', model: process.env.KITE_MODEL_SMART || 'the smart model' },
+      ...(options.grade
+        ? [{ label: 'grades', model: process.env.KITE_MODEL_SMART || 'the smart model' }]
+        : []),
     ]),
   );
   if (options.dryRun) return;
   requireKey('eval-answers');
   const env = getClaudeEnv();
   console.log(
-    `eval-answers: answers by ${env.modelFast}, graded by ${env.modelSmart}; ${scenarios.length} scenarios × ${options.runs} runs`,
+    `eval-answers: answers by ${env.modelFast}, ${options.grade ? `graded by ${env.modelSmart}` : 'not graded'}; ${scenarios.length} scenarios × ${options.runs} runs`,
   );
   const meter = createSpendMeter();
   const header =
@@ -625,7 +655,9 @@ async function main(): Promise<void> {
         (meta?.type === 'garbled' || meta?.type === 'none') && text.trim() === '';
       const graded = nothingToGrade
         ? noAnswerGrade(scenario)
-        : await grade(scenario, text, env.modelSmart, meter, first);
+        : options.grade
+          ? await grade(scenario, text, env.modelSmart, meter, first)
+          : UNGRADED;
       const shape = nothingToGrade
         ? { headline: 1, bullets: 1 }
         : shapeChecks(text, scenario.session.style.format, meta);
@@ -665,15 +697,19 @@ async function main(): Promise<void> {
     sum += total;
     results.push({ id: scenario.id, mean: total, runs });
     const cell = (n: number) => average(n).toFixed(1);
+    // Without the grader its four scores and the total are not known.
+    const graderCell = (n: number) => (options.grade ? cell(n) : '–');
     rows.push(
-      `| ${scenario.id} | ${cell(totals.facts)} | ${cell(totals.grounded)} | ${cell(totals.consistent)} | ${cell(totals.style)} | ${cell(totals.headline)} | ${cell(totals.bullets)} | ${total.toFixed(1)} |`,
+      `| ${scenario.id} | ${graderCell(totals.facts)} | ${graderCell(totals.grounded)} | ${graderCell(totals.consistent)} | ${graderCell(totals.style)} | ${cell(totals.headline)} | ${cell(totals.bullets)} | ${options.grade ? total.toFixed(1) : '–'} |`,
     );
   }
   console.log(`\n${header}\n|---|---|---|---|---|---|---|---|\n${rows.join('\n')}`);
   const checkLines = summariseChecks(results);
   if (checkLines.length > 0) console.log(`\n${checkLines.join('\n')}`);
   console.log(
-    `\nOverall: ${(sum / scenarios.length).toFixed(2)} / 10 (mean of ${scenarios.length} scenarios)`,
+    options.grade
+      ? `\nOverall: ${(sum / scenarios.length).toFixed(2)} / 10 (mean of ${scenarios.length} scenarios)`
+      : '\nOverall: not graded (--no-grade): read the checks above, and the answers with --show',
   );
   const saved = saveEvalResults({
     evaluation: 'answers',
@@ -682,7 +718,7 @@ async function main(): Promise<void> {
     style: options.style ?? 'current',
     finishedAt: new Date().toISOString(),
     model: env.modelFast,
-    grader: env.modelSmart,
+    grader: options.grade ? env.modelSmart : 'none (--no-grade)',
     overall: sum / scenarios.length,
     scenarios: results,
   });

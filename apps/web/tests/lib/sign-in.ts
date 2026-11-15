@@ -55,7 +55,7 @@ export async function clearPasswordOnFailure(
   } catch (error) {
     // Best effort: the page may have moved on or closed.
     await page
-      .getByLabel('Password')
+      .getByLabel('Password', { exact: true })
       .fill('', { timeout: 2_000 })
       .catch(() => undefined);
     const alert = await page
@@ -124,7 +124,9 @@ export async function signInOnce(page: Page, options: SignInOptions): Promise<vo
   if (!panel) await page.goto(`${baseUrl}/login`);
   await clearPasswordOnFailure(page, email, async () => {
     await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Password').fill(password);
+    // Exact: the show/hide button beside the field is labelled "Show password", which a loose
+    // match also finds, and Playwright then refuses to fill two elements.
+    await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(dashboard).toBeVisible({ timeout });
   });

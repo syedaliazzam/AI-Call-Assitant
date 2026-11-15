@@ -649,7 +649,7 @@ test('error states: no connection pauses answers; signed out offers sign-in in p
     await shot(watched, size, 'error-signed-out');
     await box.getByRole('button', { name: 'Sign in again' }).click();
     await expect(page.getByRole('dialog', { name: 'Sign in again' })).toBeVisible();
-    await expect(page.getByLabel('Password')).toBeVisible();
+    await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
     await shot(watched, size, 'error-sign-in-again');
     dropExpectedFailures(watched);
     await watched.context.close();

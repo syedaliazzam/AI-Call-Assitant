@@ -63,7 +63,7 @@ It uses the theme tokens and components of the Users and Usage pages (light and 
 - Each call start makes one more small request (the pin). The first answer request on a server instance for a new version does one extra database read (about 30–100 ms), and every request after that reads memory.
 - Notes written after a Regenerate, or from a page reloaded after the call, use the version in force, not the call's pin, because the pin lives only in the page's memory.
 - The company block can make answers worse if an admin writes something that fights the locked rules. The heading tells the model the locked rules win, and Try it shows the effect before saving.
-- The first production try (15 Nov 2026: a draft saying "always use STAR", no session and so no CV) got a made-up STAR story from Haiku (source "example"). The live heading now says that a shape or style instruction never allows a past event, project, employer, number or result the CV does not state, and that with nothing close in the CV the shape is used for the approach ("I would…"). Admins should still check behavioural questions with Try it, with and without a session that has a CV.
+- The first production try (15 Nov 2026: a draft saying "always use STAR", no session and so no CV) got a made-up STAR story from Haiku (source "example"). The live heading now says that a shape or style instruction never allows a past event, project, employer, number or result the CV does not state, and that with nothing close in the CV the shape is used for the approach ("I would…"). Admins should still check behavioural questions with Try it, with and without a session that has a CV. A control try showed the locked core itself allowed the story; ADR-0084 fixes it there.
 
 ## Alternatives considered
 

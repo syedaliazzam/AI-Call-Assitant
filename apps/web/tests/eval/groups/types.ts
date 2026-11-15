@@ -37,6 +37,11 @@ export interface Scenario {
   image?: string;
   /** Screenshot scenarios: what the image shows, in words, for the grader. */
   imageDescription?: string;
+  /**
+   * Company AI instructions for the live answers (Admin → AI settings, ADR-0083), sent after the
+   * locked rules as the page would; absent for none.
+   */
+  company?: string;
   /** Lesson scenarios: the approved lessons sent with the answer. */
   lessons?: string[];
   /** The question. */

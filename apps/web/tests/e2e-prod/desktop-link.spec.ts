@@ -203,7 +203,7 @@ test('2. desktop 1.3.0: a link with a code opens the Connect card, signed in', a
   try {
     const panel = await app.firstWindow();
     // A fresh profile: the panel shows the sign-in page.
-    await expect(panel.getByLabel('Password')).toBeVisible({ timeout: 30_000 });
+    await expect(panel.getByLabel('Password', { exact: true })).toBeVisible({ timeout: 30_000 });
     const code = await newCode();
     // As a second launch from the browser's link would (Windows passes the link as an argument).
     await app.evaluate(
