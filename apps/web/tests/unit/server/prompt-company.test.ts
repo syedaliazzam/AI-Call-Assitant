@@ -17,6 +17,10 @@ import { NOTES_RULES, notesPrompt } from '@/server/notes';
 import {
   CALL_REMINDER,
   CORE_RULES,
+  EXPERIENCE_REMINDER,
+  EXPERIENCE_RULES,
+  experienceApplies,
+  experienceReminder,
   LESSONS_HEADING,
   SYSTEM_RULES,
   SYSTEM_RULES_PREVIOUS,
@@ -172,36 +176,88 @@ describe('honesty under a shape instruction', () => {
     expect(COMPANY_HEADINGS.live).toMatch(/the approach \("I would…"\)/);
   });
 
-  it('locked core (ADR-0084): no CV or nothing close means a hypothetical approach, never a story', () => {
-    // The control try (no company text, no CV) also got a made-up story: the rule is in the core.
-    expect(CORE_RULES).toContain(
-      'If there is no CV or document, or nothing in them is close, follow the session\'s "Missing information" line; without one, answer with a clearly hypothetical approach',
+  it('locked experience rules (ADR-0084): no close CV project means "I would…", never a story', () => {
+    // The control try (no company text, no CV) also got a made-up story: the rule is locked code.
+    expect(EXPERIENCE_RULES).toMatch(
+      /With nothing close \(or no CV\), the answer is your approach/,
     );
-    expect(CORE_RULES).toMatch(/Never invent an employer, client, project, past event, story/);
-    expect(CORE_RULES).toMatch(/close means the CV states the same kind of situation/);
-    expect(CORE_RULES).toMatch(
-      /such as "always use STAR", from the company or the session, applies only to experience the CV or documents state/,
+    expect(EXPERIENCE_RULES).toMatch(
+      /the answer line starts "I would" or "I'd" and never claims past experience/,
     );
-    expect(CALL_REMINDER).toMatch(/never as a past story, whatever shape the instructions ask for/);
+    expect(EXPERIENCE_RULES).toMatch(/close means the CV states the same kind of situation/);
+    expect(EXPERIENCE_RULES).toMatch(
+      /A shape such as "always use STAR", from the company or the session, applies only to a close CV project/,
+    );
+    // Not in the shared rules block or the call reminder: there every wording moved regular calls.
+    expect(CORE_RULES).not.toContain('Questions about your own past');
+    expect(CALL_REMINDER).not.toMatch(/experience story|your own past/);
   });
 
-  it('keeps those locked lines ahead of a company "always use STAR" instruction', () => {
+  it('sends them in interview, mock and blank sessions, never in a regular call', () => {
     const star = 'Behavioural questions: always use the STAR shape.';
-    const rules = buildPrompt(REQUEST, star).system[0]!.text;
-    const rule = rules.indexOf('applies only to experience the CV or documents state');
-    expect(rules.startsWith(CORE_RULES)).toBe(true);
-    expect(rule).toBeGreaterThan(-1);
-    expect(rule).toBeLessThan(rules.indexOf(star));
+    const interview = buildPrompt({ ...REQUEST, session: { ...SESSION, type: 'interview' } }, star);
+    // Locked core first, the company text after it; the experience rules in the session block.
+    expect(interview.system[0]!.text.startsWith(CORE_RULES)).toBe(true);
+    expect(interview.system[0]!.text).toContain(star);
+    expect(interview.system[1]!.text).toContain(EXPERIENCE_RULES);
+    for (const type of ['interview', 'mock', '']) {
+      expect(experienceApplies({ ...SESSION, type })).toBe(true);
+    }
+    for (const type of ['regular', 'sales']) {
+      expect(experienceApplies({ ...SESSION, type })).toBe(false);
+      expect(
+        buildPrompt({ ...REQUEST, session: { ...SESSION, type } }).system[1]!.text,
+      ).not.toContain(EXPERIENCE_RULES);
+    }
   });
 
   it("leaves the user's own example-story setting in force (only that line may ask for a story)", () => {
     const story = buildPrompt({
       ...REQUEST,
-      session: { ...SESSION, missingInfo: 'story' },
+      session: { ...SESSION, type: 'interview', missingInfo: 'story' },
     }).system[1]!.text;
     expect(story).toContain('Missing information: when nothing in the CV is close, tell one');
-    expect(CALL_REMINDER).toContain(
-      'only the session\'s "Missing information" line may ask for an example story',
-    );
+    expect(story).not.toContain(EXPERIENCE_RULES);
+  });
+});
+
+describe('the experience reminder (ADR-0084)', () => {
+  /**
+   * The text after the conversation: the question and the reminders.
+   *
+   * @param request The answer request.
+   * @returns The last text block of the user turn.
+   */
+  const lastText = (request: AnswerRequest) => {
+    const content = buildPrompt(request).messages[0]!.content as { type: string; text?: string }[];
+    return content.at(-1)!.text ?? '';
+  };
+  const interview: AnswerRequest = { ...REQUEST, session: { ...SESSION, type: 'interview' } };
+
+  it('ends interview, mock and blank-session requests, after the call reminder', () => {
+    expect(
+      lastText(interview).endsWith(`${CALL_REMINDER}
+${EXPERIENCE_REMINDER}`),
+    ).toBe(true);
+    expect(experienceReminder({ ...REQUEST, session: { ...SESSION, type: 'mock' } })).toEqual([
+      EXPERIENCE_REMINDER,
+    ]);
+    expect(experienceReminder({ ...REQUEST, session: { ...SESSION, type: '' } })).toEqual([
+      EXPERIENCE_REMINDER,
+    ]);
+  });
+
+  it('leaves regular calls, screenshots, the rollback rules and the example-story setting unchanged', () => {
+    // A regular call's request ends exactly as before ADR-0084.
+    expect(lastText(REQUEST).endsWith(CALL_REMINDER)).toBe(true);
+    expect(lastText(REQUEST)).not.toContain(EXPERIENCE_REMINDER);
+    expect(experienceReminder({ ...interview, mode: 'screenshot' })).toEqual([]);
+    expect(experienceReminder({ ...interview, styleVersion: 'previous' })).toEqual([]);
+    expect(
+      experienceReminder({
+        ...interview,
+        session: { ...SESSION, type: 'interview', missingInfo: 'story' },
+      }),
+    ).toEqual([]);
   });
 });

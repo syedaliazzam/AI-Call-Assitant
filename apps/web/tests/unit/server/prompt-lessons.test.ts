@@ -37,11 +37,11 @@ import { parseAnswerRequest } from '@/server/validate';
  * v1.1.0 (ADR-0043): the screen types and garbled in the hidden line; the coding shape from item 7.
  * v1.4 (ADR-0065): the hidden type none (talk about the call, a remark needing no reply) and its rule;
  * evaluated with the full suite (answer-eval.md, 10 Nov 2026).
- * ADR-0084 (15 Nov 2026): with no CV, or nothing close to the question, an experience answer is a
- * hypothetical "I would…" approach, never a made-up story, whatever shape instructions ask; close
- * means the same kind of situation. Checked on the company-star group only (answer-eval.md).
+ * ADR-0084 (15 Nov 2026) left this block unchanged: its experience rules are a line of the session
+ * block in interview, mock and blank sessions instead (EXPERIENCE_RULES), because every wording tried
+ * here moved unrelated regular-call answers (answer-eval.md).
  */
-const RULES_SHA256 = '2d60d5fc8bc37102b8823ebea4cfb02d538234dc9587d601ce94397c083ac4f9';
+const RULES_SHA256 = '526e2c13f504bdc4dc618ff4edb4da6e23fe83bf8cbff388b4eba2801a89a31e';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte
