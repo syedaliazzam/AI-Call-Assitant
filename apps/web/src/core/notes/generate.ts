@@ -33,6 +33,7 @@ import {
   type SummaryDeps,
 } from '../documents/summary';
 import { saveNotes } from '../storage/notes';
+import { pinFor } from '../answer/instructionsPin';
 import type { Session, StoredAnswer, StoredDocument, StoredNotes } from '../storage/types';
 
 /** A final transcript line, as the live page has it. */
@@ -174,10 +175,16 @@ export async function generateNotes(
   const empty = notesRequest(input);
   if (empty.lines.length === 0 && empty.answers.length === 0) return { status: 'skipped' };
   // Written once per session and kept (usually already written when the call opened).
-  const request = notesRequest(
-    input,
-    await ensureDocumentsSummary(input.session, input.documents, deps.summary),
-  );
+  // ADR-0083: the notes instructions version the call started with, when this page pinned it (a
+  // Regenerate later, or another page, uses the version in force).
+  const pin = pinFor(input.callStartedAt);
+  const request: NotesRequest = {
+    ...notesRequest(
+      input,
+      await ensureDocumentsSummary(input.session, input.documents, deps.summary),
+    ),
+    ...(pin ? { instructionsVersion: pin.notes } : {}),
+  };
   const fetchImpl = deps.fetchImpl ?? fetch;
   const now = deps.now ?? Date.now;
   const startedAt = performance.now();

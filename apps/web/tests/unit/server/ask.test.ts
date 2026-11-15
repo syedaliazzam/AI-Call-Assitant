@@ -11,6 +11,13 @@ const countRequestMock = vi.hoisted(() =>
 );
 vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
 
+/**
+ * Spy standing in for companyInstructions() (ADR-0083): no company instructions by default, so every
+ * other test sees today's prompts byte for byte.
+ */
+const companyMock = vi.hoisted(() => vi.fn(async (_block: string, _pin?: string) => ''));
+vi.mock('@/server/aiInstructions', () => ({ companyInstructions: companyMock }));
+
 vi.mock('server-only', () => ({}));
 const mocks = vi.hoisted(() => ({ jsonReply: vi.fn(), getCachedSession: vi.fn() }));
 vi.mock('@/server/claude', async (original) => ({
@@ -106,6 +113,27 @@ describe('answerAboutCall', () => {
       (call) => (call[0] as { system: { text: string }[] }).system,
     );
     expect(blocks[0]).toEqual(blocks[1]);
+  });
+  it('puts the company Ask AI instructions after the locked rules, in the first cached block (ADR-0083)', async () => {
+    await answerAboutCall(REQUEST as never, 'smart-model', 'Answer in plain English.');
+    const input = mocks.jsonReply.mock.calls[0]![0] as {
+      system: { text: string; cache_control?: unknown }[];
+    };
+    expect(input.system[0]!.text.startsWith(ASK_RULES)).toBe(true);
+    expect(input.system[0]!.text.endsWith('Answer in plain English.')).toBe(true);
+    expect(input.system[0]!.cache_control).toBeTruthy();
+  });
+
+  it('the route reads the Ask AI block in force (no call pin)', async () => {
+    companyMock.mockClear();
+    mocks.getCachedSession.mockResolvedValue({
+      session: { user: { id: 'u1', role: 'user', mustChangePassword: false } },
+      setCookies: [],
+    });
+    await POST(
+      new Request('http://localhost/api/ask', { method: 'POST', body: JSON.stringify(REQUEST) }),
+    );
+    expect(companyMock).toHaveBeenCalledWith('ask');
   });
 });
 

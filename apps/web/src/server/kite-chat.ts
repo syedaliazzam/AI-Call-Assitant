@@ -5,7 +5,8 @@
  *          attachments are cached blocks, and the newest earlier turn carries a third breakpoint, so
  *          each message reads the cache the one before it wrote.
  * Used by: app/api/answer/route.ts; scripts/eval-answers.ts
- * Depends on: src/server/claude.ts (cachedBlock), @kite/shared (AnswerRequest)
+ * Depends on: src/server/claude.ts (cachedBlock), src/server/prompts/company.ts (ADR-0083),
+ *             @kite/shared (AnswerRequest)
  * Architecture: docs/decisions/ADR-0030-ask-kite-and-adaptive-answers.md
  *
  * The chat and its attachments are the user's content: they go into the prompt only, never a log.
@@ -15,6 +16,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import type { AnswerRequest } from '@kite/shared';
 import { cachedBlock } from './claude';
 import type { BuiltPrompt } from './prompt';
+import { withCompany } from './prompts/company';
 
 /** Most tokens an Ask Kite reply may use: long code and explanations fit; a runaway does not. */
 export const KITE_CHAT_MAX_TOKENS = 4_000;
@@ -72,10 +74,11 @@ export function attachmentsBlock(request: AnswerRequest): string {
  * Builds the prompt for one Ask Kite message.
  *
  * @param request A validated request with mode 'kite'.
+ * @param company The company instructions for Ask AI ('' for none; ADR-0083), after the locked rules.
  * @returns The system blocks and the chat so far, ending with this message.
  * Called from: POST handler in app/api/answer/route.ts; scripts/eval-answers.ts; tests
  */
-export function buildKiteChatPrompt(request: AnswerRequest): BuiltPrompt {
+export function buildKiteChatPrompt(request: AnswerRequest, company = ''): BuiltPrompt {
   const history = request.history ?? [];
   const messages: Anthropic.MessageParam[] = history.map((turn, index) => ({
     role: turn.role === 'you' ? 'user' : 'assistant',
@@ -97,7 +100,10 @@ export function buildKiteChatPrompt(request: AnswerRequest): BuiltPrompt {
   const question = request.question?.trim() || 'What is on this screenshot?';
   messages.push({ role: 'user', content: [...images, { type: 'text', text: question }] });
   return {
-    system: [cachedBlock(KITE_CHAT_RULES), cachedBlock(attachmentsBlock(request))],
+    system: [
+      cachedBlock(withCompany(KITE_CHAT_RULES, 'ask', company)),
+      cachedBlock(attachmentsBlock(request)),
+    ],
     messages,
   };
 }

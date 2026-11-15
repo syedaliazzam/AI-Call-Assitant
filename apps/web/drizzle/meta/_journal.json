@@ -36,6 +36,13 @@
       "when": 1794498325291,
       "tag": "0004_company_drive",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794727772847,
+      "tag": "0005_ai_instructions",
+      "breakpoints": true
     }
   ]
 }

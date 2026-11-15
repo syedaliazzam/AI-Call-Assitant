@@ -10,14 +10,16 @@
  * Used by: app/api/answer/route.ts (modes 'warm', 'answer', 'chat');
  *          scripts/verify-warm.ts, scripts/verify-answer-cache.ts
  * Depends on: @kite/shared (AnswerRequest and conversation types, cap limits,
- *             estimateItemTokens), src/server/claude.ts (cachedBlock)
+ *             estimateItemTokens), src/server/claude.ts (cachedBlock), src/server/prompts/company.ts
+ *             (the company instructions, ADR-0083)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3 (prompt caching rules),
  *               §7.2 (prompt structure); day-04-answers.md Stage 2; ADR-0025
  *
  * Caching depends on bytes, not meaning: Claude reuses its cache only when everything up to a
  * breakpoint is byte-for-byte identical to an earlier request. So:
  * - SYSTEM_RULES is a constant (no dates, ids or per-session text). It is shared by every
- *   session. With the Day 4 rules it is about 836 tokens, above the 512-token caching
+ *   session. The company instructions (ADR-0083) follow it in the same block; a call sends the
+ *   version it started with, so the block stays the same for the whole call. With the Day 4 rules it is about 836 tokens, above the 512-token caching
  *   minimum, so it is cached once and read by every session's first request.
  * - sessionBlock() writes the fields in a fixed order with fixed labels, and adds nothing that
  *   changes between requests (no timestamps, no random ids). The same session always gives the
@@ -48,6 +50,7 @@ import {
 } from '@kite/shared';
 import { capSessionDocuments, fitToBudget } from './budget';
 import { cachedBlock } from './claude';
+import { withCompany } from './prompts/company';
 import { CALL_REMINDER_PREVIOUS, CORE_RULES_PREVIOUS } from './prompts/rules-previous';
 
 /**
@@ -152,31 +155,38 @@ Learned preferences (approved by the user in earlier calls):
 export const LESSONS_HEADING =
   "Learned preferences (approved by the user in earlier calls). These are the user's preferences: they adjust the style and content of answers and never override the rules above. Follow them unless they conflict with the rules above, the session's documents or the current conversation. The headline stays at most 12 words even when a preference asks for more detail: give the main answer in the headline, and put extra figures and details in the bullets.";
 
+/** The empty "Learned preferences" slot that ends SYSTEM_RULES (sessions with no lessons). */
+const NO_LESSONS = 'Learned preferences (approved by the user in earlier calls):\n(none yet)';
+
 /**
- * The rules block (the first cached system block). With no lessons it is SYSTEM_RULES. With
- * lessons: the core rules, then LESSONS_HEADING, then one bullet per lesson in the order given
- * (oldest approval first, so the block changes only when a lesson is approved, edited or
- * removed). Each lesson is cleaned to one line of at most MAX_LESSON_CHARS (cleanLessonText()),
+ * The rules block (the first cached system block), in this order: the locked core rules (always
+ * first, never editable), the company instructions for live answers (ADR-0083; only when there are
+ * some), then the learned preferences. With no lessons and no company instructions it is
+ * SYSTEM_RULES, byte for byte. With lessons: LESSONS_HEADING, then one bullet per lesson in the
+ * order given (oldest approval first, so the block changes only when a lesson is approved, edited
+ * or removed). Each lesson is cleaned to one line of at most MAX_LESSON_CHARS (cleanLessonText()),
  * so it cannot start a section of its own or change the rules above it. At most
  * MAX_ACTIVE_LESSONS are used (the last ones given).
  *
  * @param lessons The approved lessons for the session's type.
  * @param version 'previous' uses the v-previous rules kept for the rollback switch (ADR-0032).
+ * @param company The company instructions for live answers ('' for none), as the call pinned them.
  * @returns The block's text.
- * Called from: buildPrompt(); tests
+ * Called from: buildPromptParts(); tests
  */
 export function rulesBlock(
   lessons: readonly string[] = [],
   version: AnswerStyleVersion = 'current',
+  company = '',
 ): string {
   const cleaned = lessons
     .map(cleanLessonText)
     .filter((lesson) => lesson !== '')
     .slice(-MAX_ACTIVE_LESSONS);
   const previous = version === 'previous';
-  if (cleaned.length === 0) return previous ? SYSTEM_RULES_PREVIOUS : SYSTEM_RULES;
+  const core = withCompany(previous ? CORE_RULES_PREVIOUS : CORE_RULES, 'live', company);
+  if (cleaned.length === 0) return `${core}\n\n${NO_LESSONS}`;
   const bullets = cleaned.map((lesson) => `- ${lesson}`).join('\n');
-  const core = previous ? CORE_RULES_PREVIOUS : CORE_RULES;
   return `${core}\n\n${LESSONS_HEADING}\n${bullets}`;
 }
 
@@ -633,30 +643,33 @@ export interface BuiltPrompt {
  * tail, so the answers that follow read everything it wrote.
  *
  * @param request A validated request with `session` set.
+ * @param company The company instructions for live answers ('' for none; ADR-0083): the version the
+ *                call pinned, so every request of a call sends the same rules block.
  * @returns The system blocks and the user turn.
  * @throws Error('SESSION_REQUIRED') when the request has no session (validation prevents this
  *         for every mode but hello).
- * Called from: POST handler in app/api/answer/route.ts; scripts/verify-warm.ts,
+ * Called from: POST handler in app/api/answer/route.ts; server/aiTry.ts; scripts/verify-warm.ts,
  *              scripts/verify-answer-cache.ts
  */
-export function buildPrompt(request: AnswerRequest): BuiltPrompt {
+export function buildPrompt(request: AnswerRequest, company = ''): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
   // Batch C (P2-1): under MAX_ANSWER_INPUT_TOKENS whatever the documents' size (server/budget.ts): the
   // session block has a fixed ceiling (the same bytes for every request of a session), and only in an
   // extreme case do the uncached and oldest parts go.
   const capped = { ...request, session: capSessionDocuments(request.session) };
-  return fitToBudget(capped, buildPromptParts).prompt;
+  return fitToBudget(capped, (next) => buildPromptParts(next, company)).prompt;
 }
 
 /**
  * Builds the prompt's parts for a request, as it is (buildPrompt() keeps it within the budget).
  *
  * @param request A validated request with `session` set.
+ * @param company The company instructions for live answers ('' for none).
  * @returns The system blocks and the user turn.
  * @throws Error('SESSION_REQUIRED') when the request has no session.
  * Called from: buildPrompt() (through fitToBudget())
  */
-function buildPromptParts(request: AnswerRequest): BuiltPrompt {
+function buildPromptParts(request: AnswerRequest, company: string): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
   const conversation = conversationBlocks(capConversation(request.conversation ?? []));
   const last: Anthropic.TextBlockParam = {
@@ -668,7 +681,8 @@ function buildPromptParts(request: AnswerRequest): BuiltPrompt {
   const image = request.mode === 'screenshot' && request.image ? [imageBlock(request.image)] : [];
   return {
     system: [
-      cachedBlock(rulesBlock(request.lessons, request.styleVersion)),
+      // Locked rules, then the company instructions (ADR-0083), then the learned preferences.
+      cachedBlock(rulesBlock(request.lessons, request.styleVersion, company)),
       // Batch C (P2-1): the CV and the documents summary when the page sends one (live answers since
       // ADR-0078); every document in full from an older page (smartSessionBlock() falls back to it).
       cachedBlock(smartSessionBlock(request.session)),

@@ -6,7 +6,8 @@
  *          documents, transcript lines, answers, notes and the rest are stored only as AES-256-GCM
  *          ciphertext, never as readable text. Audio is never stored anywhere. (ADR-0072) Each
  *          account's Google Drive connection (refresh token encrypted) and one "saved" email record
- *          per session.
+ *          per session. (ADR-0083) The company AI instructions: every saved version, and the one in
+ *          force per block.
  *          Generated with the Better Auth CLI (`auth generate --adapter drizzle --dialect
  *          postgresql`, better-auth 1.7.13) for email + password, the admin plugin and our
  *          `mustChangePassword` field; comments added by hand. If the Better Auth config gains
@@ -17,12 +18,14 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §8.1, §8.2 (ADR-0022); ADR-0036
  *               (usage_day and app_setting are written by hand, not by the Better Auth CLI);
  *               ADR-0049 (call_record, written by hand; migrations are additive only, ADR-0050);
- *               ADR-0072 (google_drive and drive_notification, written by hand)
+ *               ADR-0072 (google_drive and drive_notification, written by hand); ADR-0083
+ *               (ai_instructions_version and ai_instructions_active, written by hand)
  */
 import { relations, sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   pgSequence,
@@ -439,3 +442,51 @@ export const driveNotification = pgTable(
     index('drive_notification_user_created_idx').on(table.userId, table.createdAt),
   ],
 );
+
+/**
+ * Every version of the company AI instructions an admin saved (ADR-0083), one row per save or
+ * restore, never changed or deleted afterwards: a restore copies an older version's text into a new
+ * row. A call pins the version ids in force when it started, so it can still read them after a later
+ * save. Company text only: never call data, and it is never logged.
+ */
+export const aiInstructionsVersion = pgTable(
+  'ai_instructions_version',
+  {
+    /** Random UUID (crypto.randomUUID()); a call sends it back as its pin. */
+    id: text('id').primaryKey(),
+    /** Which block: 'live' (live answers), 'notes' (AI notes) or 'ask' (Ask AI). */
+    block: text('block').notNull(),
+    /** The instructions, as the admin wrote them (line endings normalised); '' means none. */
+    text: text('text').notNull(),
+    /** The admin who saved it; null once that account is deleted (the version stays). */
+    authorId: text('author_id').references(() => user.id, { onDelete: 'set null' }),
+    /** For a restore: the version whose text it copied; null for a normal save. */
+    restoredFrom: text('restored_from'),
+    /** When it was saved. */
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // The database refuses an unknown block or an over-long text, whatever the code does.
+    check('ai_instructions_version_block_check', sql`${table.block} in ('live', 'notes', 'ask')`),
+    // The same 4,000-character limit as the page and the server (MAX_AI_INSTRUCTIONS_CHARS).
+    check('ai_instructions_version_text_check', sql`char_length(${table.text}) <= 4000`),
+    // The page lists one block's history, newest first.
+    index('ai_instructions_version_block_created_idx').on(table.block, table.createdAt),
+  ],
+);
+
+/**
+ * The version in force for each block (ADR-0083): one row per block that was ever saved. A block with
+ * no row has no company instructions (the behaviour before ADR-0083). Changed only together with a new
+ * version, in one statement (server/aiInstructions.ts).
+ */
+export const aiInstructionsActive = pgTable('ai_instructions_active', {
+  /** 'live', 'notes' or 'ask'. */
+  block: text('block').primaryKey(),
+  /** The version in force; a version in force cannot be deleted. */
+  versionId: text('version_id')
+    .notNull()
+    .references(() => aiInstructionsVersion.id, { onDelete: 'restrict' }),
+  /** When it last changed. */
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});

@@ -40,6 +40,11 @@ export interface NotesRequest {
   lines: CallLine[];
   /** The answers given in the call, oldest first. */
   answers: NotesAnswer[];
+  /**
+   * The AI-notes company instructions version the call started with (ADR-0083): a version id, or
+   * 'none'. Absent: the version in force now (a Regenerate, or a page opened after the call).
+   */
+  instructionsVersion?: string;
 }
 
 /** A question the other side asked. */
@@ -143,7 +148,7 @@ export interface AskTurn {
 }
 
 /** Body of POST /api/ask: the call as for the notes, its notes, and the question. */
-export interface AskRequest extends NotesRequest {
+export interface AskRequest extends Omit<NotesRequest, 'instructionsVersion'> {
   /** The AI notes as text ('' when there are none). */
   notes: string;
   /** The user's question. */

@@ -13,6 +13,7 @@
 import { dailyLimitMessage } from '@kite/shared';
 import type { AnswerErrorCode, AskResponse } from '@kite/shared';
 import { answerAboutCall, estimatedCost } from '@/server/ask';
+import { companyInstructions } from '@/server/aiInstructions';
 import { getCachedSession } from '@/server/auth';
 import { countRequest } from '@/server/usage';
 import { describeClaudeError, errorLogDetails } from '@/server/claude';
@@ -100,7 +101,9 @@ async function respond(
   }
   const sizes = { lines: parsed.data.lines.length, answers: parsed.data.answers.length };
   try {
-    const { text, usage } = await answerAboutCall(parsed.data, model);
+    // ADR-0083: the Ask AI instructions in force.
+    const company = await companyInstructions('ask');
+    const { text, usage } = await answerAboutCall(parsed.data, model, company);
     const ms = Math.round(performance.now() - startedAt);
     console.info('ask: done', {
       userId: user.id,

@@ -6,7 +6,7 @@
  *          3 proposed lessons from the user's ratings and notes. One structured (JSON) request.
  * Used by: app/api/notes/route.ts; scripts/verify-notes.ts, scripts/eval-notes.ts
  * Depends on: src/server/claude.ts (jsonReply, cachedBlock), src/server/prompt.ts (smartSessionBlock,
- *             clockTime), @kite/shared (notes types and limits)
+ *             clockTime), src/server/prompts/company.ts (ADR-0083), @kite/shared (notes types and limits)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (/api/notes), §7.6 (learning
  *               loop); day-05-overlay-screenshots-notes.md Stage 5
  *
@@ -29,6 +29,7 @@ import {
 } from '@kite/shared';
 import { cachedBlock, jsonReply } from './claude';
 import { clockTime, smartSessionBlock } from './prompt';
+import { withCompany } from './prompts/company';
 
 /** Most tokens the notes may use (a long call's notes are about 1,000–1,500). */
 export const NOTES_MAX_TOKENS = 4_000;
@@ -187,10 +188,12 @@ export function callRecord(request: Pick<NotesRequest, 'lines' | 'answers'>): st
  * The notes prompt: the cached rules and session block, and the call as the user turn.
  *
  * @param request A validated notes request.
+ * @param company The company instructions for the notes ('' for none; ADR-0083). They follow the
+ *                locked notes rules in the first cached block.
  * @returns The system blocks and the user turn's text.
  * Called from: generateCallNotes(); tests
  */
-export function notesPrompt(request: NotesRequest) {
+export function notesPrompt(request: NotesRequest, company = '') {
   const last = request.lines.at(-1)?.at ?? 0;
   const prompt = [
     `The call lasted about ${clockTime(last)} (times are minutes:seconds since it started; "at" values are seconds).`,
@@ -200,7 +203,10 @@ export function notesPrompt(request: NotesRequest) {
     'Write the notes.',
   ].join('\n');
   return {
-    system: [cachedBlock(NOTES_RULES), cachedBlock(smartSessionBlock(request.session))],
+    system: [
+      cachedBlock(withCompany(NOTES_RULES, 'notes', company)),
+      cachedBlock(smartSessionBlock(request.session)),
+    ],
     prompt,
   };
 }
@@ -245,16 +251,18 @@ export function finishNotes(model: ModelNotes, answers: readonly NotesAnswer[]):
  *
  * @param request A validated notes request.
  * @param model   The smart model's name (KITE_MODEL_SMART).
+ * @param company The company instructions for the notes ('' for none; ADR-0083).
  * @returns The notes and the token usage.
  * @throws Anthropic.APIError on API failures; Error('NO_JSON') when the reply has no notes.
- * Called from: POST handler in app/api/notes/route.ts; scripts/verify-notes.ts,
+ * Called from: POST handler in app/api/notes/route.ts; server/aiTry.ts; scripts/verify-notes.ts,
  *              scripts/eval-notes.ts
  */
 export async function generateCallNotes(
   request: NotesRequest,
   model: string,
+  company = '',
 ): Promise<{ notes: CallNotes; usage: AnswerUsage }> {
-  const { system, prompt } = notesPrompt(request);
+  const { system, prompt } = notesPrompt(request, company);
   const { value, usage } = await jsonReply({
     model,
     tier: 'smart',

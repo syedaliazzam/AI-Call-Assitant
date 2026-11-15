@@ -374,6 +374,12 @@ export interface AnswerRequest {
    * server honours 'previous' only for an admin.
    */
   styleVersion?: AnswerStyleVersion;
+  /**
+   * The live-answers company instructions version this call started with (ADR-0083): a version id,
+   * or 'none' when the block was empty then. It decides the cached rules block, so the warm-up and
+   * every answer of a call send the same value. Absent: the version in force now.
+   */
+  instructionsVersion?: string;
   /** Mode `kite` only: the language for code, when it is not Python. */
   codingLanguage?: string;
   /** Mode `kite` only: the chat so far, oldest first. */
