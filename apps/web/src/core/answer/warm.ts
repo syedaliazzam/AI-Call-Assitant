@@ -29,6 +29,7 @@ import {
 } from '@/core/storage/answerPrefs';
 import { answerLanguageName, type Session, type StoredDocument } from '@/core/storage/types';
 import { streamAnswer, type AnswerDone } from './answerClient';
+import { pinFor } from './instructionsPin';
 
 /**
  * Puts a session's documents in the order the prompt uses: the CV first (ADR-0067), then the rest
@@ -141,17 +142,20 @@ const recentWarmUps = new Map<string, { at: number; result: Promise<AnswerDone |
  * @param session   The session.
  * @param documents Its documents.
  * @param lessons   The lessons sent.
+ * @param instructions The company instructions version the call pinned (ADR-0083), if any.
  * @returns The key.
  */
 function warmKey(
   session: Session,
   documents: readonly StoredDocument[],
   lessons: readonly string[] | undefined,
+  instructions: string | undefined,
 ): string {
   const docs = documents.map((document) => `${document.id}:${document.chars}`).join(',');
   // Batch C (P2-1): the summary is part of the warmed prefix, so a new one is a new warm-up.
   const summary = session.documentsSummary?.createdAt ?? 0;
-  return `${session.id}|${session.preferences.model}|${docs}|${lessons?.length ?? 0}|${summary}`;
+  // ADR-0083: the company instructions version is part of the warmed rules block too.
+  return `${session.id}|${session.preferences.model}|${docs}|${lessons?.length ?? 0}|${summary}|${instructions ?? ''}`;
 }
 
 /**
@@ -177,6 +181,12 @@ export interface WarmOptions {
    * the warm-up writes the rules block the answers read.
    */
   lessons?: readonly string[];
+  /**
+   * The call's start (Unix ms) when the warm-up belongs to a call (ADR-0083): it then sends the
+   * company instructions version the call pinned, so it writes the rules block the answers read.
+   * Omitted (the page-open warm-up, before any call): the version in force.
+   */
+  callStartedAt?: number;
 }
 
 /**
@@ -197,7 +207,10 @@ export function warmSession(
 ): Promise<AnswerDone | null> {
   // 1.5.1 (ADR-0069): the page-open and Connect warm-ups are one. The idle re-warm (with the
   // conversation) always runs: it comes minutes later, to keep the cache alive.
-  const key = options.conversation?.length ? null : warmKey(session, documents, options.lessons);
+  const instructions = pinFor(options.callStartedAt)?.live;
+  const key = options.conversation?.length
+    ? null
+    : warmKey(session, documents, options.lessons, instructions);
   const now = Date.now();
   if (key) {
     const recent = recentWarmUps.get(key);
@@ -239,6 +252,10 @@ function sendWarmUp(
           ...(options.lessons?.length ? { lessons: [...options.lessons] } : {}),
           // The same rules version the answers send, so the warm-up writes what they read (ADR-0032).
           ...(getAnswerStyleVersion() === 'previous' ? { styleVersion: 'previous' as const } : {}),
+          // ADR-0083: the call's company instructions version, as its answers send it.
+          ...(pinFor(options.callStartedAt)
+            ? { instructionsVersion: pinFor(options.callStartedAt)!.live }
+            : {}),
         },
         {
           // A warm-up produces no text.

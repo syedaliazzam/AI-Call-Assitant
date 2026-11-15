@@ -8,6 +8,8 @@
  * echoing submitted values. ADR-0067: keeps the CV's kind and the documents summary, keeps Ask
  * Kite attachments at 150k, and checks POST /api/summary's body (parseSummaryRequest()). All text is
  * invented.
+ * ADR-0083: the company instructions pin on answers and notes (a version id or none), none on Ask AI,
+ * and the "Try it" body.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -22,7 +24,10 @@ import {
   MAX_ATTACHMENT_CHARS,
   MAX_DOCUMENT_CHARS,
   MAX_KEY_TERMS,
+  parseAiTryRequest,
   parseAnswerRequest,
+  parseAskRequest,
+  parseNotesRequest,
   parseSummaryRequest,
 } from '@/server/validate';
 import { MAX_DOCUMENTS_SUMMARY_CHARS } from '@kite/shared';
@@ -383,5 +388,44 @@ describe('Batch C (P2-1): documentChunks', () => {
         documentChunks: [{ ...part, extra: true }],
       }).ok,
     ).toBe(false);
+  });
+});
+
+describe('company instructions fields (ADR-0083)', () => {
+  /** An invented version id. */
+  const PIN = '0b9c7a3e-5d1f-4c2a-9e8b-1a2b3c4d5e6f';
+  /** A valid notes request with no call. */
+  const NOTES = { session: SESSION, lines: [], answers: [] };
+
+  it('accepts a version id or none as the pin of answers and notes, and nothing else', () => {
+    for (const pin of [PIN, 'none']) {
+      expect(
+        parseAnswerRequest({ mode: 'warm', session: SESSION, instructionsVersion: pin }).ok,
+      ).toBe(true);
+      expect(parseNotesRequest({ ...NOTES, instructionsVersion: pin }).ok).toBe(true);
+    }
+    for (const pin of ['latest', '', PIN.toUpperCase(), `${PIN} `, 7]) {
+      expect(
+        parseAnswerRequest({ mode: 'warm', session: SESSION, instructionsVersion: pin }).ok,
+      ).toBe(false);
+      expect(parseNotesRequest({ ...NOTES, instructionsVersion: pin }).ok).toBe(false);
+    }
+  });
+
+  it('does not take a pin on Ask AI (it always uses the version in force)', () => {
+    const ask = { ...NOTES, notes: '', question: 'Who spoke?', history: [] };
+    expect(parseAskRequest(ask).ok).toBe(true);
+    expect(parseAskRequest({ ...ask, instructionsVersion: PIN }).ok).toBe(false);
+  });
+
+  it('checks a try: block, draft up to 4,000 characters, a sample, an optional session', () => {
+    const valid = { block: 'live', draft: '', sample: 'What does it cost?' };
+    expect(parseAiTryRequest(valid).ok).toBe(true);
+    expect(parseAiTryRequest({ ...valid, session: SESSION }).ok).toBe(true);
+    expect(parseAiTryRequest({ ...valid, draft: 'x'.repeat(4_000) }).ok).toBe(true);
+    expect(parseAiTryRequest({ ...valid, draft: 'x'.repeat(4_001) }).ok).toBe(false);
+    expect(parseAiTryRequest({ ...valid, block: 'other' }).ok).toBe(false);
+    expect(parseAiTryRequest({ ...valid, sample: '  ' }).ok).toBe(false);
+    expect(parseAiTryRequest({ ...valid, extra: 1 }).ok).toBe(false);
   });
 });

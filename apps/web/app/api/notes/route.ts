@@ -19,6 +19,7 @@ import { countRequest } from '@/server/usage';
 import { describeClaudeError, errorLogDetails } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { generateCallNotes } from '@/server/notes';
+import { companyInstructions } from '@/server/aiInstructions';
 import { MAX_REQUEST_BYTES, parseNotesRequest } from '@/server/validate';
 
 /** Next.js route setting: the Anthropic SDK needs Node.js (not Edge). */
@@ -122,7 +123,9 @@ async function respond(
     answers: parsed.data.answers.length,
   };
   try {
-    const { notes, usage } = await generateCallNotes(parsed.data, model);
+    // ADR-0083: the notes instructions the call started with (or, with no pin, the ones in force).
+    const company = await companyInstructions('notes', parsed.data.instructionsVersion);
+    const { notes, usage } = await generateCallNotes(parsed.data, model, company);
     const ms = Math.round(performance.now() - startedAt);
     console.info('notes: done', {
       requestId,

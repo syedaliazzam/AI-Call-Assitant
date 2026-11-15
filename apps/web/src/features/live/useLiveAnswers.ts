@@ -657,6 +657,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         return warmSession(latest.session, latest.documents, {
           conversation: logRef.current.chunks,
           lessons: latest.lessons,
+          // ADR-0083: the call's company instructions version, as its answers send it.
+          callStartedAt,
         });
       },
     });

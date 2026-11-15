@@ -43,6 +43,7 @@ import { getAnswerStyleVersion } from '../storage/answerPrefs';
 import { findSimilarAnswer } from './similar';
 import { rankChunks, type ChunkIndex } from '../documents/chunks';
 import { toLiveSessionContext } from './warm';
+import { pinFor } from './instructionsPin';
 
 /** An answer given earlier in this call, as the live page keeps it in memory. */
 export interface CallAnswer {
@@ -251,6 +252,8 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
       .join(' ');
   const documentChunks = input.chunks && query ? rankChunks(input.chunks, query) : [];
 
+  // ADR-0083: the company instructions version this call started with (absent until it is known).
+  const pin = pinFor(input.callStartedAt);
   const request: AnswerRequest = {
     mode: input.mode,
     model: input.session.preferences.model,
@@ -265,6 +268,7 @@ export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerReques
     ...(input.answerType ? { answerType: input.answerType } : {}),
     // Absent on the default, so a normal request keeps its cached bytes (ADR-0032).
     ...(getAnswerStyleVersion() === 'previous' ? { styleVersion: 'previous' as const } : {}),
+    ...(pin ? { instructionsVersion: pin.live } : {}),
     ...(similar
       ? {
           similar: {

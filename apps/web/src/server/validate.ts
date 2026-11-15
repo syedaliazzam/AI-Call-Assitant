@@ -3,7 +3,7 @@
  * Purpose: Checks the body of POST /api/answer against the AnswerRequest type from @kite/shared,
  *          with size limits so one request cannot send unbounded text to Claude: documents,
  *          key terms, and (Day 4) the conversation chunks, tail and question.
- * Used by: app/api/answer/route.ts, app/api/notes/route.ts (Day 5)
+ * Used by: app/api/answer/route.ts, app/api/notes/route.ts (Day 5), src/server/aiTry.ts (ADR-0083)
  * Depends on: zod, @kite/shared (AnswerRequest, request limits, estimateItemTokens)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (server rules: validate with zod,
  *               documents ≤ 500k characters per session (ADR-0067), request ≤ 4 MB);
@@ -13,6 +13,10 @@
  */
 import 'server-only';
 import {
+  AI_INSTRUCTION_BLOCKS,
+  AI_INSTRUCTIONS_PIN_PATTERN,
+  MAX_AI_INSTRUCTIONS_CHARS,
+  type AiTryRequest,
   ANSWER_STYLE_VERSIONS,
   parseKeyTerms,
   ANSWER_TYPES,
@@ -184,6 +188,12 @@ const imageSchema = z
   .refine(startsAsJpeg, 'must be a JPEG image');
 
 /**
+ * A call's company instructions pin (ADR-0083): a version id (UUID) or 'none'. Anything else is
+ * rejected, so a request cannot ask for text by any other key.
+ */
+const instructionsPinSchema = z.string().regex(AI_INSTRUCTIONS_PIN_PATTERN, 'must be a version id');
+
+/**
  * The whole request body. `.strict()` rejects unknown fields, so typos are reported instead of
  * silently ignored. `satisfies` makes the compiler check it matches AnswerRequest exactly.
  */
@@ -228,6 +238,8 @@ export const answerRequestSchema = z
       .optional(),
     // The answer rules' version (ADR-0032); the route ignores it for anyone but an admin.
     styleVersion: z.enum(ANSWER_STYLE_VERSIONS).optional(),
+    // ADR-0083: the live-answers company instructions version the call started with (an id or 'none').
+    instructionsVersion: instructionsPinSchema.optional(),
     // The Ask Kite page's chat: mode 'kite' only (checked below).
     codingLanguage: z.string().max(50).optional(),
     history: z
@@ -353,6 +365,8 @@ export const notesRequestSchema = z
         { message: `at most ${MAX_NOTES_CHARS} characters in all` },
       ),
     answers: z.array(notesAnswerSchema).max(MAX_NOTES_ANSWERS),
+    // ADR-0083: the AI-notes company instructions version the call started with.
+    instructionsVersion: instructionsPinSchema.optional(),
   })
   .strict() satisfies z.ZodType<NotesRequest>;
 
@@ -432,7 +446,8 @@ export function parseJobImportRequest(body: unknown): SmallParseResult<JobImport
 }
 
 /** The body of POST /api/ask: a notes request, plus its notes, the question and the chat so far. */
-const askRequestSchema = notesRequestSchema.extend({
+// Ask AI has no call pin (ADR-0083): it always uses the Ask AI instructions in force.
+const askRequestSchema = notesRequestSchema.omit({ instructionsVersion: true }).extend({
   notes: z.string().max(MAX_ASK_NOTES_CHARS),
   question: z.string().trim().min(1).max(MAX_ASK_QUESTION_CHARS),
   history: z
@@ -544,4 +559,32 @@ export function parseSummaryRequest(body: unknown): SmallParseResult<DocumentsSu
     summaryRequestSchema as unknown as z.ZodType<DocumentsSummaryRequest>,
     body,
   );
+}
+
+/**
+ * The body of POST /api/admin/ai-instructions/try (ADR-0083): a block, its draft (at most
+ * MAX_AI_INSTRUCTIONS_CHARS; '' tries "no instructions"), a sample question or call, and an optional
+ * session. Unknown fields are rejected.
+ */
+const aiTryRequestSchema = z
+  .object({
+    block: z.enum(AI_INSTRUCTION_BLOCKS),
+    draft: z
+      .string()
+      .max(MAX_AI_INSTRUCTIONS_CHARS, `at most ${MAX_AI_INSTRUCTIONS_CHARS} characters`),
+    // A sample call for the notes can hold several lines; a question is far shorter.
+    sample: z.string().trim().min(1, 'required').max(4_000),
+    session: sessionSchema.optional(),
+  })
+  .strict();
+
+/**
+ * Validates a "Try it" request.
+ *
+ * @param body The JSON value from the request.
+ * @returns The validated request, or a message (field paths only).
+ * Called from: handleTry() in src/server/aiTry.ts; tests
+ */
+export function parseAiTryRequest(body: unknown): SmallParseResult<AiTryRequest> {
+  return parseSmall<AiTryRequest>(aiTryRequestSchema as unknown as z.ZodType<AiTryRequest>, body);
 }

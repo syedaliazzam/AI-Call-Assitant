@@ -7,7 +7,7 @@
  *          core/ (it never calls media APIs itself).
  * Used by: src/features/live/LiveSession.tsx (which loads the session first)
  * Depends on: src/core/stt/sttEngine.ts, src/core/stt/health.ts, src/core/audio/capture.ts,
- *             src/core/transcript (transcript, saver, endCall), src/core/answer/warm.ts,
+ *             src/core/transcript (transcript, saver, endCall), src/core/answer/warm.ts, src/core/answer/instructionsPin.ts (ADR-0083),
  *             src/core/storage (sessions, utterances),
  *             src/platform (kind, for the instructions only),
  *             src/features/live/* (ConnectPanel, TranscriptStrip, AudioMeter, LiveAnswers),
@@ -56,6 +56,7 @@ import {
   type ChannelLevels,
 } from '@/core/audio/capture';
 import { warmSession } from '@/core/answer/warm';
+import { pinInstructions } from '@/core/answer/instructionsPin';
 import { markSessionActive, updateSession } from '@/core/storage/sessions';
 import type { Session, StoredCall, StoredDocument, StoredUtterance } from '@/core/storage/types';
 import { clearTranscript, listUtterances, saveUtterance } from '@/core/storage/utterances';
@@ -1141,8 +1142,12 @@ export function LivePage({
       }
       // Warm Claude's prompt cache again: the warm-up from when the page opened may have
       // expired (5 minutes) while the user read the instructions. If it is still warm this is
-      // a cheap cache read. Not awaited; it never throws.
-      void warmSession(session, documents, { lessons });
+      // a cheap cache read. Not awaited; it never throws. ADR-0083: first the call pins the company
+      // instructions in force (a reconnect keeps its pin), so the warm-up writes the rules block its
+      // answers will read; pinInstructions() never throws either.
+      void pinInstructions(startedAtNow).then(() =>
+        warmSession(session, documents, { lessons, callStartedAt: startedAtNow }),
+      );
       // The status and activity time are bookkeeping: a failure must not stop the call.
       markSessionActive(session.id).catch(() => undefined);
       // "Save transcript" on: save final lines as they arrive (one saver per call; a

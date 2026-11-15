@@ -14,7 +14,7 @@ export interface PageTitle {
   subtitle: string;
   /**
    * The header's buttons on the right: 'create-session' (the default split button) or 'add-user'
-   * (Admin → Users: Usage and Add user).
+   * (Admin → Users and AI settings: AI settings, Usage and Add user).
    */
   action?: 'create-session' | 'add-user';
 }
@@ -42,6 +42,12 @@ const EXACT: Readonly<Record<string, PageTitle>> = {
     action: 'add-user',
   },
   '/admin/usage': { title: 'Usage', subtitle: 'Requests per person, per day.' },
+  // ADR-0083: the company AI instructions.
+  '/admin/ai-settings': {
+    title: 'AI settings',
+    subtitle: 'Company instructions for how the AI answers.',
+    action: 'add-user',
+  },
   '/help': { title: 'Help', subtitle: 'How to use the app, from setup to review.' },
   '/profile': { title: 'Profile', subtitle: 'Your account.' },
 };

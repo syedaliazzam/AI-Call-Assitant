@@ -6,7 +6,7 @@
  *          read them from the cache.
  * Used by: app/api/ask/route.ts
  * Depends on: src/server/claude.ts (jsonReply, cachedBlock), src/server/prompt.ts (smartSessionBlock),
- *             src/server/notes.ts (callRecord), @kite/shared (types)
+ *             src/server/notes.ts (callRecord), src/server/prompts/company.ts (ADR-0083), @kite/shared (types)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (/api/ask); ADR-0029
  *
  * Nothing here logs the question, the reply or the call.
@@ -16,6 +16,7 @@ import type { AnswerUsage, AskRequest } from '@kite/shared';
 import { cachedBlock, jsonReply } from './claude';
 import { callRecord } from './notes';
 import { smartSessionBlock } from './prompt';
+import { withCompany } from './prompts/company';
 
 /** Most tokens a reply may write: replies are short by design. */
 const ASK_MAX_TOKENS = 800;
@@ -52,6 +53,7 @@ export function estimatedCost(usage: AnswerUsage): number {
  *
  * @param request A validated request.
  * @param model   The smart model's name.
+ * @param company The company instructions for Ask AI ('' for none; ADR-0083), after the locked rules.
  * @returns The reply and the token usage.
  * @throws What jsonReply() throws.
  * Called from: app/api/ask/route.ts; tests
@@ -59,6 +61,7 @@ export function estimatedCost(usage: AnswerUsage): number {
 export async function answerAboutCall(
   request: AskRequest,
   model: string,
+  company = '',
 ): Promise<{ text: string; usage: AnswerUsage }> {
   const record = [
     '<notes>',
@@ -74,7 +77,7 @@ export async function answerAboutCall(
     model,
     tier: 'smart',
     system: [
-      cachedBlock(ASK_RULES),
+      cachedBlock(withCompany(ASK_RULES, 'ask', company)),
       cachedBlock(smartSessionBlock(request.session)),
       cachedBlock(record),
     ],

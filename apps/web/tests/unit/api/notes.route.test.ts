@@ -25,6 +25,13 @@ const countRequestMock = vi.hoisted(() =>
 );
 vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
 
+/**
+ * Spy standing in for companyInstructions() (ADR-0083): no company instructions by default, so every
+ * other test sees today's prompts byte for byte.
+ */
+const companyMock = vi.hoisted(() => vi.fn(async (_block: string, _pin?: string) => ''));
+vi.mock('@/server/aiInstructions', () => ({ companyInstructions: companyMock }));
+
 /** Spy standing in for client.messages.create(). */
 const createMock = vi.fn();
 /** The fake session read. */
@@ -255,5 +262,34 @@ describe('POST /api/notes, daily limit (v1.0.2, ADR-0036)', () => {
     expect(response.status).toBe(429);
     expect(((await response.json()) as { code: string }).code).toBe('daily_limit');
     expect(createMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/notes, company instructions (ADR-0083)', () => {
+  /** An invented version id the call pinned. */
+  const PIN = '0b9c7a3e-5d1f-4c2a-9e8b-1a2b3c4d5e6f';
+
+  it('reads the notes block with the call pin and puts it after the locked notes rules', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    companyMock.mockReset();
+    companyMock.mockResolvedValue('Use British spelling.');
+    createMock.mockResolvedValue(modelReply());
+    const response = await POST(post(JSON.stringify({ ...BODY, instructionsVersion: PIN })));
+    expect(response.status).toBe(200);
+    expect(companyMock).toHaveBeenCalledWith('notes', PIN);
+    const [params] = createMock.mock.calls[0]!;
+    const rules: string = params.system[0].text;
+    expect(rules.startsWith('You are Kite. A call has just ended.')).toBe(true);
+    expect(rules.indexOf('Use British spelling.')).toBeGreaterThan(rules.indexOf('Write plainly.'));
+    expect(JSON.stringify(vi.mocked(console.info).mock.calls)).not.toContain('British');
+  });
+
+  it('uses the version in force when the request has no pin', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    companyMock.mockReset();
+    companyMock.mockResolvedValue('');
+    createMock.mockResolvedValue(modelReply());
+    await POST(post(JSON.stringify(BODY)));
+    expect(companyMock).toHaveBeenCalledWith('notes', undefined);
   });
 });

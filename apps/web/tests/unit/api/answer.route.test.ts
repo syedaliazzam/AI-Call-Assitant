@@ -14,6 +14,9 @@
  * limit and an overload (even mid-stream) end with claude_unavailable and the fixed message.
  * v1.0.2 (ADR-0036): over the daily limit, 429 daily_limit and Claude is never called; answer,
  * chat and screenshot count (msLimit logged), warm-ups and hello never do.
+ * ADR-0083: the company instructions: live answers and warm-ups read the version the call pinned and
+ * put it after the locked rules in the first cached block; Ask AI reads its own block; hello reads none;
+ * only their size is logged.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { CLAUDE_UNAVAILABLE_MESSAGES, dailyLimitMessage, type AnswerTimings } from '@kite/shared';
@@ -34,6 +37,13 @@ vi.mock('@/server/modelAccess', async (importOriginal) => ({
   getDeepModelEnabled: deepModelMock,
 }));
 import { fakeMessageStream } from '../../helpers/fakeClaude';
+
+/**
+ * Spy standing in for companyInstructions() (ADR-0083): no company instructions by default, so every
+ * other test sees today's prompts byte for byte.
+ */
+const companyMock = vi.hoisted(() => vi.fn(async (_block: string, _pin?: string) => ''));
+vi.mock('@/server/aiInstructions', () => ({ companyInstructions: companyMock }));
 
 /** Spy standing in for client.messages.stream(). */
 const streamMock = vi.fn();
@@ -656,5 +666,91 @@ describe('POST /api/answer, daily limit (v1.0.2, ADR-0036)', () => {
     streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Hi'] }));
     await (await POST(post('{"mode":"hello"}'))).text();
     expect(countRequestMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/answer, company instructions (ADR-0083)', () => {
+  /** An invented version id the call pinned. */
+  const PIN = '0b9c7a3e-5d1f-4c2a-9e8b-1a2b3c4d5e6f';
+
+  beforeEach(() => {
+    companyMock.mockReset();
+    companyMock.mockResolvedValue('');
+  });
+
+  it('reads the live block with the pin the call sent, and puts it after the locked rules', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    companyMock.mockResolvedValue('Say customers, never users.');
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
+    const body = { ...ANSWER_REQUEST, instructionsVersion: PIN };
+    await (await POST(post(JSON.stringify(body)))).text();
+    expect(companyMock).toHaveBeenCalledWith('live', PIN);
+    const [params] = streamMock.mock.calls[0]!;
+    const rules: string = params.system[0].text;
+    expect(rules.startsWith('You are Kite, a live call assistant.')).toBe(true);
+    expect(rules).toContain('Say customers, never users.');
+    expect(params.system[0].cache_control).toEqual({ type: 'ephemeral' });
+    // The session block (with the user's own instructions) comes after it.
+    expect(params.system[1].text).toContain('Instructions from the user:');
+  });
+
+  it('warms the cache with the same pinned instructions as the answers', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    companyMock.mockResolvedValue('Say customers, never users.');
+    createMock.mockResolvedValue({
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 1, output_tokens: 0 },
+      content: [],
+    });
+    const warm = { mode: 'warm', session: SESSION, instructionsVersion: PIN };
+    await (await POST(post(JSON.stringify(warm)))).text();
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
+    await (
+      await POST(post(JSON.stringify({ ...ANSWER_REQUEST, instructionsVersion: PIN })))
+    ).text();
+    expect(companyMock.mock.calls).toEqual([
+      ['live', PIN],
+      ['live', PIN],
+    ]);
+    expect(createMock.mock.calls[0]![0].system[0]).toEqual(streamMock.mock.calls[0]![0].system[0]);
+  });
+
+  it("sends exactly today's rules block when there are no company instructions", async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
+    await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    const { SYSTEM_RULES } = await import('@/server/prompt');
+    expect(streamMock.mock.calls[0]![0].system[0].text).toBe(SYSTEM_RULES);
+  });
+
+  it('uses the Ask AI block for the Ask AI page and no block for hello', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|kite|general]] Hi'] }));
+    await (await POST(post(JSON.stringify({ mode: 'kite', question: 'What is 2 + 2?' })))).text();
+    expect(companyMock).toHaveBeenCalledWith('ask', undefined);
+    companyMock.mockClear();
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Hi'] }));
+    await (await POST(post('{"mode":"hello"}'))).text();
+    expect(companyMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a pin that is not a version id', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    const body = { ...ANSWER_REQUEST, instructionsVersion: 'latest' };
+    expect((await POST(post(JSON.stringify(body)))).status).toBe(400);
+    expect(companyMock).not.toHaveBeenCalled();
+  });
+
+  it('logs the instructions size only, never their text or the pin', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    companyMock.mockResolvedValue('Say customers, never users.');
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
+    await (
+      await POST(post(JSON.stringify({ ...ANSWER_REQUEST, instructionsVersion: PIN })))
+    ).text();
+    const logs = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logs).toContain('"companyChars":27');
+    expect(logs).not.toContain('customers');
+    expect(logs).not.toContain(PIN);
   });
 });
