@@ -463,16 +463,26 @@ test('compact window: opens on top without focus at /compact/[id], and closes on
       skipTaskbar: false,
     };
   });
-  expect(state).toMatchObject({ onTop: true, focused: false, protected: false });
-  // The user turns protection on: applied to the open window at once.
-  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(true));
-  expect(
-    await app.evaluate(({ BrowserWindow }) =>
+  // 1.6.5 (ADR-0085): opening the overlay turns Private on first, even after it was left off, so the
+  // overlay is never shown unprotected.
+  expect(state).toMatchObject({ onTop: true, focused: false, protected: true });
+  expect((await page.evaluate(() => window.kiteDesktop!.getShareProtection!())).on).toBe(true);
+  /**
+   * Whether the overlay is protected now.
+   *
+   * @returns The shell's answer.
+   */
+  const overlayProtected = () =>
+    app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
         .find((x) => x.getTitle() === 'Kite compact (smoke)')!
         .isContentProtected(),
-    ),
-  ).toBe(true);
+    );
+  // The user can still turn it off for the call, and on again: applied to the open window at once.
+  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(false));
+  expect(await overlayProtected()).toBe(false);
+  await page.evaluate(() => window.kiteDesktop!.setShareProtection!(true));
+  expect(await overlayProtected()).toBe(true);
 
   // A bad id is refused by the shell.
   expect(
@@ -800,8 +810,8 @@ test('overlay: opacity, collapse, minimises the main window and brings it back (
     page.evaluate(() => window.kiteDesktop!.moveOverlay!(Number.NaN, 0)),
   ).rejects.toThrow();
 
-  // v1.2.0 (spec S15) widened it with both panels open; 1.6.4 (ADR-0082): by default it keeps its width
-  // (the panels stack in the third-of-the-screen window), and is in the same place after.
+  // v1.2.0 (spec S15) widened it with both panels open; 1.6.4 (ADR-0082): by default it kept its width; 1.6.5
+  // (ADR-0085): the panels never change it, and it is in the same place after.
   const place = await overlayBounds();
   await page.evaluate(() =>
     window.kiteDesktop!.setOverlayLayout!({ transcript: true, answer: true, popupHeight: 0 }),

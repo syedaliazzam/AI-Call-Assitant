@@ -8,7 +8,7 @@
  *            page (theme.css: appearance: base-select), and each title is moved to aria-description
  *            (screen readers still read it; no tooltip window opens).
  *          The browser is unchanged.
- * Used by: src/platform/desktop.ts (keepPopupsInWindow, from SyncScope for accounts with account sync);
+ * Used by: src/platform/desktop.ts (keepPopupsInWindow, from SyncScope for every account since ADR-0085);
  *          tests/unit/platform/desktopDocument.test.ts
  * Depends on: the DOM (MutationObserver)
  * Architecture: ADR-0042 (Private covers every window), ADR-0055

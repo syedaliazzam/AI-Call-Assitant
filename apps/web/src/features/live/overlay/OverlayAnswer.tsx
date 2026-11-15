@@ -93,7 +93,9 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           disabled={index <= 0}
           onClick={() => onCommand({ type: 'prev' })}
           aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS.prev, mac)}
-          title={`Previous answer (${tipShortcut(FOCUSED_HOTKEYS.prev, mac)})`}
+          // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
+          // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
+          {...{ 'aria-description': `Previous answer (${tipShortcut(FOCUSED_HOTKEYS.prev, mac)})` }}
         >
           {/* ADR-0082: the arrow only (no Ctrl on the chip). */}
           <span aria-hidden="true" className="px-0.5 text-[15px] leading-none">
@@ -107,7 +109,9 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           disabled={index < 0 || index >= total - 1}
           onClick={() => onCommand({ type: 'next' })}
           aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS.next, mac)}
-          title={`Next answer (${tipShortcut(FOCUSED_HOTKEYS.next, mac)})`}
+          // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
+          // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
+          {...{ 'aria-description': `Next answer (${tipShortcut(FOCUSED_HOTKEYS.next, mac)})` }}
         >
           <span aria-hidden="true" className="px-0.5 text-[15px] leading-none">
             →
@@ -131,7 +135,9 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           disabled={!state}
           aria-label="Clear answers"
           aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS.clear, mac)}
-          title={`Clear answers (${tipShortcut(FOCUSED_HOTKEYS.clear, mac)})`}
+          // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
+          // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
+          {...{ 'aria-description': `Clear answers (${tipShortcut(FOCUSED_HOTKEYS.clear, mac)})` }}
         >
           Clear <KeyChip hotkey="clear" visibleAt="@min-[620px]:inline-flex" />
         </button>
@@ -151,7 +157,10 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
         <div
           ref={scrollArea}
           data-scroll=""
-          className="min-h-0 flex-auto overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2.5"
+          // ADR-0085: room for the scrollbar is always kept, so the words wrap the same with or without it.
+          // Otherwise a scrollbar that appeared once (a smaller zoom) narrowed the text, which then wrapped
+          // onto one more line and kept the panel scrolling at its old height.
+          className="min-h-0 flex-auto overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2.5 [scrollbar-gutter:stable]"
           style={{ zoom: props.fontScale }}
         >
           {answer ? (

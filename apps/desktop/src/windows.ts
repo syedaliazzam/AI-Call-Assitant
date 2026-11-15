@@ -75,7 +75,14 @@ import {
 } from './channels';
 import { APP_NAME } from './config';
 import { isKiteSender } from './hotkeys';
-import { isOverlayJump, jumpPosition, nearestPosition, positionPlace } from './positions';
+import {
+  columnOf,
+  isOverlayJump,
+  jumpPosition,
+  nearestPosition,
+  POSITION_MARGIN,
+  positionPlace,
+} from './positions';
 import type { Protection } from './protection';
 import { secureWebPreferences } from './security';
 import type { Bounds, OverlayLayoutKey, ShellStore } from './store';
@@ -92,15 +99,24 @@ import type { Bounds, OverlayLayoutKey, ShellStore } from './store';
 export const COMPACT_DEFAULT_SIZE = { width: 980, height: 480 };
 
 /**
- * 1.6.4 (ADR-0082): the overlay's default size as a share of the work area of the display it opens on: a
- * third of its width, and up to half of its height with panels open (the height still follows what the
- * panels show). Bar 1 no longer has Answer, Screenshot and Chat, and gives way step by step when narrow,
- * with ⋮ and Exit always whole (ADR-0075).
+ * The overlay's default size as a share of the work area of the display it opens on, and up to half of its
+ * height with panels open (the height still follows what the panels show). 1.6.4 (ADR-0082): a third of
+ * the width. 1.6.5 (ADR-0085): 40 %, within OVERLAY_DEFAULT_WIDTH, so the transcript and the answer fit
+ * side by side (the page puts them side by side from 600 CSS px).
  */
-export const OVERLAY_DEFAULT_SHARE = { width: 1 / 3, height: 1 / 2 };
+export const OVERLAY_DEFAULT_SHARE = { width: 0.4, height: 1 / 2 };
 
-/** 1.6.4 (ADR-0082): the version of the default size; a store with a lower one takes it once. */
-export const OVERLAY_DEFAULT_SIZE_VERSION = 164;
+/**
+ * 1.6.5 (ADR-0085): the default width's limits, in DIPs: at least 640 (two readable panels side by side on
+ * a laptop screen) and at most 960 (on a large screen 40 % would cover too much of the meeting).
+ */
+export const OVERLAY_DEFAULT_WIDTH = { min: 640, max: 960 };
+
+/**
+ * The version of the default size; a store with a lower one takes it once. 1.6.4: 164 (a third of the
+ * width); 1.6.5: 165 (ADR-0085: 40 %, 640–960).
+ */
+export const OVERLAY_DEFAULT_SIZE_VERSION = 165;
 
 /** v1.2.0 (spec S15): the window's width with both panels open, side by side, in DIPs. */
 export const OVERLAY_BOTH_WIDTH = 1080;
@@ -186,8 +202,9 @@ export function compactUrl(kiteUrl: string, sessionId: unknown): string | null {
 }
 
 /**
- * 1.6.4 (ADR-0082): the overlay's default size on a display: a third of its work area's width and half of
- * its height, never below the smallest size and never beyond the work area.
+ * The overlay's default size on a display (1.6.5, ADR-0085): 40 % of its work area's width, at least 640 and
+ * at most 960 DIPs, and half of its height; never below the smallest size and never wider than the work
+ * area less the positions' margins (1.6.4: a third of the width).
  *
  * @param area The display's work area.
  * @returns Width and height, in whole DIPs.
@@ -197,9 +214,15 @@ export function overlayDefaultSize(area: Pick<Rectangle, 'width' | 'height'>): {
   width: number;
   height: number;
 } {
+  const share = Math.min(
+    OVERLAY_DEFAULT_WIDTH.max,
+    Math.max(OVERLAY_DEFAULT_WIDTH.min, area.width * OVERLAY_DEFAULT_SHARE.width),
+  );
+  // Never wider than the work area (a screen smaller than the smallest size gets the whole of it).
   const width = Math.min(
     area.width,
-    Math.max(COMPACT_MIN_SIZE.width, area.width * OVERLAY_DEFAULT_SHARE.width),
+    Math.max(COMPACT_MIN_SIZE.width, area.width - 2 * POSITION_MARGIN),
+    Math.max(COMPACT_MIN_SIZE.width, share),
   );
   const height = Math.min(
     area.height,
@@ -209,8 +232,8 @@ export function overlayDefaultSize(area: Pick<Rectangle, 'width' | 'height'>): {
 }
 
 /**
- * The overlay at a preset place in a work area, at the default size (1.6.4, ADR-0082: a third of the work
- * area's width and half its height), 16 DIPs from the work area's edges (v1.3.0; 24 before). The taskbar is
+ * The overlay at a preset place in a work area, at the default size (1.6.5, ADR-0085: 40 % of the work
+ * area's width within 640–960, and half its height), 16 DIPs from the work area's edges (v1.3.0; 24 before). The taskbar is
  * already outside the work area.
  *
  * @param preset Where.
@@ -310,6 +333,61 @@ export function fittedHeight(
   if (contentHeight === undefined || contentHeight <= 0) return height;
   const floor = Math.max(contentHeight, popupHeight, OVERLAY_LAYOUT_MIN_HEIGHTS.bars * scale);
   return Math.round(Math.min(height, floor));
+}
+
+/**
+ * 1.6.5 (ADR-0085): the overlay's smallest width at a UI zoom: 440 CSS px of page at every zoom, so bar 1's
+ * pinned controls always fit; never wider than the work area less the positions' margins.
+ *
+ * @param scale The page's UI zoom (0.8–1.3; 1 by default).
+ * @param area  The display's work area, if known.
+ * @returns The width, in whole DIPs.
+ * Called from: createCompactWindows() (minFor, applyLayout, the zoom); tests
+ */
+export function minWidthAt(scale: number, area?: Pick<Rectangle, 'width'>): number {
+  const wanted = Math.round(COMPACT_MIN_SIZE.width * scale);
+  return area
+    ? Math.min(wanted, Math.max(COMPACT_MIN_SIZE.width, area.width - 2 * POSITION_MARGIN))
+    : wanted;
+}
+
+/**
+ * 1.6.5 (ADR-0085): the window's width and left edge after the UI zoom changes from one value to another, so
+ * the page inside keeps the same layout, only bigger or smaller. It grows or shrinks about the anchor its
+ * position gives (left column: the left edge stays; centre: the centre; right column: the right edge), and
+ * stays inside the work area: never wider than the work area less the positions' margins (the page then
+ * reflows: the panels stack below 600 CSS px), and moved in where it would run past an edge.
+ *
+ * @param bounds The window's bounds now.
+ * @param from   The zoom the width was made for.
+ * @param to     The new zoom.
+ * @param area   The display's work area.
+ * @param anchor The overlay's position (its column is the anchor).
+ * @returns The new left edge and width, in whole DIPs.
+ * Called from: createCompactWindows() (setLayout); tests
+ */
+export function zoomedWidth(
+  bounds: Bounds,
+  from: number,
+  to: number,
+  area: Rectangle,
+  anchor: OverlayPreset,
+): { x: number; width: number } {
+  const most = Math.max(COMPACT_MIN_SIZE.width, area.width - 2 * POSITION_MARGIN);
+  const width = Math.min(
+    most,
+    Math.max(minWidthAt(to, area), Math.round((bounds.width * to) / (from > 0 ? from : 1))),
+  );
+  const column = columnOf(anchor);
+  const x =
+    column === 'start'
+      ? bounds.x
+      : column === 'end'
+        ? bounds.x + bounds.width - width
+        : Math.round(bounds.x + (bounds.width - width) / 2);
+  // Inside the work area (a window already beyond an edge is pulled in).
+  const inside = Math.min(Math.max(x, area.x), area.x + area.width - width);
+  return { x: inside, width };
 }
 
 /**
@@ -676,6 +754,11 @@ export interface CompactDeps {
   store: ShellStore;
   /** Screen-share protection. */
   protection: Protection;
+  /**
+   * 1.6.5 (ADR-0085): every open Kite window, so opening the overlay turns Private on for all of them.
+   * Optional in tests.
+   */
+  allWindows?: () => readonly Pick<BrowserWindow, 'setContentProtection'>[];
   /** Called when the overlay has closed (brings back the main window). Optional in tests. */
   onClosed?: () => void;
   /** Snap zones during a drag (v1.1.0, src/snapZones.ts). Optional in tests. */
@@ -904,6 +987,11 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
    * null with no overlay open. Its row says which edge the window grows from.
    */
   let position: OverlayPreset | null = null;
+  /**
+   * 1.6.5 (ADR-0085): the UI zoom the window's width is made for (the page's OverlayLayout.scale). Widths
+   * are stored at 100 % (save() divides by it), so a newly opened window is at 1 until the page says.
+   */
+  let scale = 1;
 
   /**
    * The row the window is anchored to: on the bottom row it grows and shrinks upward.
@@ -949,13 +1037,15 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
    * @returns Width and height in DIPs.
    */
   const minFor = (which: OverlayMode) => {
+    // 1.6.5 (ADR-0085): the smallest width follows the zoom (440 CSS px of page at every zoom).
+    const width = minWidthAt(scale, current ? areaFor(current.getBounds()) : undefined);
     if (which === 'full') {
       return layout
-        ? { width: COMPACT_MIN_SIZE.width, height: OVERLAY_LAYOUT_MIN_HEIGHTS[layoutKey(layout)] }
-        : COMPACT_MIN_SIZE;
+        ? { width, height: OVERLAY_LAYOUT_MIN_HEIGHTS[layoutKey(layout)] }
+        : { width, height: COMPACT_MIN_SIZE.height };
     }
     if (which === 'collapsed') {
-      return { width: COMPACT_MIN_SIZE.width, height: COMPACT_COLLAPSED_HEIGHT };
+      return { width, height: COMPACT_COLLAPSED_HEIGHT };
     }
     if (which === 'icon') return { width: OVERLAY_ICON_SIZE, height: OVERLAY_ICON_SIZE };
     return {
@@ -981,9 +1071,9 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
 
   /**
    * Sizes the window to the open panels (full mode only; the slim modes have their own height). Its top
-   * stays: it only ever grows downward, and with both panels open sideways about its centre.
+   * stays: it only ever grows downward (on the bottom row upward). 1.6.5 (ADR-0085): its width never changes.
    */
-  const applyLayout = () => {
+  const applyLayout = (): void => {
     if (!current || current.isDestroyed() || !layout || mode !== 'full') return;
     // v1.3.1: a panel opening mid-slide sizes the window at the slide's place.
     finishSlide();
@@ -1003,22 +1093,48 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     );
     // v1.3.2: no taller than the bars and panels the page shows.
     const fitted = fittedHeight(height, layout.contentHeight, layout.popupHeight, layout.scale);
-    let sideways = { x: bounds.x, width: bounds.width };
-    if (key === 'both') {
-      // 1.6.4 (ADR-0082): no widening by default (the panels stack in the third-of-the-screen window); a
-      // width the user gave with both panels open still applies.
-      const wanted = deps.store.read().overlayBothWidth ?? bounds.width;
-      sideways = widthAboutCentre(bounds, Math.max(wanted, narrow?.width ?? bounds.width), area);
-      narrow ??= { width: bounds.width, shift: bounds.x - sideways.x };
-    } else if (narrow !== null) {
-      sideways = narrowedBounds(bounds, narrow, area);
-      narrow = null;
-    }
-    if (fitted === bounds.height && sideways.width === bounds.width) return;
+    // 1.6.5 (ADR-0085): the panels never change the window's width: side by side, alone or stacked, they
+    // share the width the window has (only the zoom and the user change it). 1.2.0 to 1.6.4 widened it for
+    // both panels to a remembered width and narrowed it back, which also pushed a window the user had
+    // narrowed with both panels open back to its earlier width.
+    const sideways = { x: bounds.x, width: bounds.width };
+    if (fitted === bounds.height) return;
     // The minimum drops to the bars first: a tall layout may not fit a short screen.
-    current.setMinimumSize(COMPACT_MIN_SIZE.width, OVERLAY_LAYOUT_MIN_HEIGHTS.bars);
+    current.setMinimumSize(minWidthAt(scale, area), OVERLAY_LAYOUT_MIN_HEIGHTS.bars);
     const y = bottomRow ? Math.max(area.y, bounds.y + bounds.height - fitted) : bounds.y;
     current.setBounds({ ...bounds, ...sideways, y, height: fitted });
+  };
+
+  /**
+   * 1.6.5 (ADR-0085): the UI zoom changed: the window's width follows it about its position's anchor
+   * (zoomedWidth()), so the page keeps the same layout, only bigger or smaller; the height follows in
+   * applyLayout() (it already scaled). In the icon or the script bar the full overlay's width is scaled for
+   * when it opens again.
+   *
+   * @param from The zoom the width was made for.
+   * @param to   The new zoom.
+   */
+  const rescale = (from: number, to: number) => {
+    if (!current || current.isDestroyed()) return;
+    finishSlide();
+    const bounds = current.getBounds();
+    const area = areaFor(bounds);
+    const anchor = position ?? nearestPosition(bounds, area);
+    if (narrow !== null) narrow = { ...narrow, width: Math.round((narrow.width * to) / from) };
+    if (mode === 'full' || mode === 'collapsed') {
+      const sideways = zoomedWidth(bounds, from, to, area, anchor);
+      if (sideways.width === bounds.width && sideways.x === bounds.x) return;
+      // The minimum goes down first (a smaller zoom), and up last (a bigger one).
+      current.setMinimumSize(
+        Math.min(minWidthAt(from, area), minWidthAt(to, area)),
+        mode === 'collapsed' ? COMPACT_COLLAPSED_HEIGHT : OVERLAY_LAYOUT_MIN_HEIGHTS.bars,
+      );
+      current.setBounds({ ...bounds, ...sideways });
+      return;
+    }
+    if (fullBounds !== null) {
+      fullBounds = { ...fullBounds, ...zoomedWidth(fullBounds, from, to, area, anchor) };
+    }
   };
 
   /**
@@ -1084,7 +1200,10 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       if (snapped.x !== bounds.x || snapped.y !== bounds.y) current.setBounds(snapped);
     }
     movedSinceSave = false;
-    const remembered = rememberedBounds();
+    // 1.6.5 (ADR-0085): the width as it is at 100 % zoom, so a reset to 100 % (or the next call at another
+    // zoom) gets the size the user chose.
+    const zoomed = rememberedBounds();
+    const remembered = { ...zoomed, width: Math.round(zoomed.width / scale) };
     if (layout) {
       // Its height follows the panels. A rolled-back web app still reads compactBounds, and must get
       // a window it can use, not a 108 px strip.
@@ -1134,7 +1253,7 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
                   ? { ...bounds, y: bounds.y + bounds.height - full.height, height: full.height }
                   : { ...bounds, height: full.height }
                 : full;
-      apply(target, COMPACT_MIN_SIZE);
+      apply(target, { width: minWidthAt(scale, area), height: COMPACT_MIN_SIZE.height });
       applyLayout();
       return;
     }
@@ -1280,8 +1399,9 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       // v1.1.0: the place last used on this display, if any (its height follows the panels).
       const place = settings.overlayPlaces?.[String(deps.screen.getDisplayMatching(bounds)?.id)];
       if (place) Object.assign(bounds, place);
-      // 1.6.4 (ADR-0082): once, the overlay takes the new default size on the display it opens on: a third
-      // of the width, about its centre, and the panels' heights and the both-panels width chosen before are
+      // 1.6.5 (ADR-0085): once, the overlay takes the new default size on the display it opens on (40 % of
+      // the width within 640–960, OVERLAY_DEFAULT_SIZE_VERSION 165); 1.6.4 (ADR-0082) did the same with a
+      // third of the width, about its centre, and the panels' heights and the both-panels width chosen before are
       // forgotten (panels now default to half the display's height). (v1.2.0 to 1.6.3 widened a saved place
       // once per bar 1 change instead, up to 980.) A size chosen after this stays.
       if ((settings.overlayDefaultSized ?? 0) < OVERLAY_DEFAULT_SIZE_VERSION) {
@@ -1326,6 +1446,12 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       resizeStart = null;
       layout = null;
       narrow = null;
+      // 1.6.5 (ADR-0085): the stored width is the 100 % one; the page's first layout gives the zoom.
+      scale = 1;
+      // 1.6.5 (ADR-0085): Private (screen-share protection) on for every window BEFORE the overlay exists,
+      // so it is never shown unprotected, even when the last call ended with Private off (the page turns it
+      // on at call start too, but the overlay could be on screen first). The person can turn it off in ⋮.
+      deps.protection.set(true, deps.allWindows?.() ?? []);
       const window = deps.createWindow(
         compactWindowOptions(bounds, deps.preloadPath, deps.appVersion),
       );
@@ -1427,7 +1553,20 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       deps.store.write({ overlayPreset: preset });
       if (!current || current.isDestroyed()) return;
       finishSlide();
-      const target = presetBounds(preset, areaFor(fullBounds ?? current.getBounds()));
+      const placeArea = areaFor(fullBounds ?? current.getBounds());
+      const preset100 = presetBounds(preset, placeArea);
+      // 1.6.5 (ADR-0085): the default size at the zoom now.
+      const zoomedSize = {
+        width: Math.min(
+          Math.max(COMPACT_MIN_SIZE.width, placeArea.width - 2 * POSITION_MARGIN),
+          Math.round(preset100.width * scale),
+        ),
+        height: preset100.height,
+      };
+      const target = {
+        ...zoomedSize,
+        ...positionPlace(preset, placeArea, zoomedSize.width, zoomedSize.height),
+      };
       position = preset;
       rememberPosition(preset, target);
       announce();
@@ -1459,6 +1598,16 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
     position: () => (current && !current.isDestroyed() ? position : null),
     setLayout(next) {
       layout = next;
+      // 1.6.5 (ADR-0085): a new zoom resizes the window's width first; applyLayout() then fits its height.
+      const nextScale = next.scale ?? 1;
+      if (nextScale !== scale) {
+        const from = scale;
+        scale = nextScale;
+        rescale(from, nextScale);
+        // The width at 100 % is what is remembered: saved again at the new zoom.
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(save, SAVE_DELAY_MS);
+      }
       applyLayout();
     },
     snapTo(preset) {
@@ -1499,10 +1648,6 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
               ...deps.store.read().overlayHeights,
               [layoutKey(layout)]: current.getBounds().height,
             },
-            // With both panels open, the width the user gave them too.
-            ...(layoutKey(layout) === 'both'
-              ? { overlayBothWidth: current.getBounds().width }
-              : {}),
           });
         }
         save();

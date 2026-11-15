@@ -757,7 +757,8 @@ test('ADR-0055: accounts without sync keep the classic bar 1 (ADR-0082: no chat 
   const watched = await openOverlayView(classic, '&panels=none&shell=1&look=classic');
   const { page } = watched;
   const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
-  await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveCount(0);
+  // ADR-0085: the Transcript switch is on bar 1 for every account (it was only with account sync).
+  await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveCount(1);
   // ADR-0082: no Answer, Screenshot or Chat buttons (their shortcuts still work), and the bar fits with
   // ⋮ and Exit whole.
   for (const name of ['Answer', 'Screenshot', 'Chat']) {
@@ -864,18 +865,18 @@ test('S13: bar 2 is the one status bar, under bar 1; the level button opens the 
   expect(bar2.y).toBeGreaterThanOrEqual(bar1.y + bar1.height);
   expect(bar2.width).toBeLessThanOrEqual(bar1.width + 1);
   expect(bar2.height).toBeCloseTo(44, 0);
-  // In order: the level button, the language, the line (the live words), Clear and collapse.
+  // In order: the level button, the line (the live words), Clear and collapse. ADR-0085: no language
+  // control in the compact view (calls are in English; the session sets the language).
   const names = await region.evaluate((element) =>
     [...element.querySelectorAll('button')].map((button) => button.getAttribute('aria-label')),
   );
   expect(names).toEqual([
     'Show the transcript',
-    expect.stringMatching(/^Answer language: /),
     'Latest words: open the transcript',
     'Clear transcript',
     'Hide the status bar',
   ]);
-  await expect(region.getByRole('button', { name: /^Answer language: / })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Answer language/ })).toHaveCount(0);
   await expect(
     region.getByRole('button', { name: 'Clear transcript' }).locator('kbd'),
   ).toContainText('⌫');
@@ -893,10 +894,6 @@ test('S13: bar 2 is the one status bar, under bar 1; the level button opens the 
     .filter(isLoggedLayout)
     .map((entry) => entry.layout.popupHeight);
   expect(heights.at(-1)).toBeGreaterThanOrEqual(bar2.y + bar2.height);
-  // The language list stays in the page, and the window is asked to fit it.
-  await region.getByRole('button', { name: /^Answer language: / }).click();
-  await expect(page.getByRole('listbox', { name: 'Answer language' })).toBeVisible();
-  await page.keyboard.press('Escape');
   await region.getByRole('button', { name: 'Show the transcript' }).click();
   const panel = page.getByRole('region', { name: 'Transcript panel' });
   await expect(panel).toBeVisible();
@@ -1111,14 +1108,17 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   await expect(next).toHaveText('→');
   await expect(previous.locator('kbd')).toHaveCount(0);
   await expect(next.locator('kbd')).toHaveCount(0);
-  await expect(previous).toHaveAttribute('title', 'Previous answer (Ctrl+Left)');
-  await expect(next).toHaveAttribute('title', 'Next answer (Ctrl+Right)');
+  // ADR-0085: no title (a native tooltip is a separate window Private does not cover); the same words
+  // are the buttons' description.
+  await expect(previous).toHaveAttribute('aria-description', 'Previous answer (Ctrl+Left)');
+  await expect(next).toHaveAttribute('aria-description', 'Next answer (Ctrl+Right)');
+  await expect(previous).not.toHaveAttribute('title');
   await expect(answer.getByRole('button', { name: /^Auto answer / })).toHaveCount(0);
   await expect(answer.getByRole('switch', { name: 'Auto answer' })).toHaveCount(0);
   // ADR-0082: Clear clears the answers (Ctrl+Backspace); it sends 'clear' to the live page.
   const clear = answer.getByRole('button', { name: 'Clear answers' });
   await expect(clear.locator('kbd')).toContainText('⌫');
-  await expect(clear).toHaveAttribute('title', 'Clear answers (Ctrl+Backspace)');
+  await expect(clear).toHaveAttribute('aria-description', 'Clear answers (Ctrl+Backspace)');
   // The card: the question with a 2 px accent bar, then the bold line.
   const question = answer.getByLabel('Question', { exact: true });
   await expect(question).toHaveCSS('border-left-width', '2px');
@@ -1143,8 +1143,47 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   expect(gripBox.x + gripBox.width).toBeGreaterThan(right.x + right.width - 16);
   await shot(watched, WIDE_SIZE, 'call-panels');
 
+  // ADR-0085: the divider shares the width: a drag moves it (each panel keeps its minimum), a
+  // double-click puts it back to 40 %, and the split is remembered on this device.
+  const divider = page.getByRole('separator', { name: 'Resize the transcript and answer panels' });
+  const splitBox = (await divider.boundingBox())!;
+  const before = (await transcript.boundingBox())!.width;
+  await page.mouse.move(splitBox.x + splitBox.width / 2, splitBox.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(splitBox.x + splitBox.width / 2 + 120, splitBox.y + 40, { steps: 6 });
+  await page.mouse.up();
+  const dragged = (await transcript.boundingBox())!.width;
+  expect(dragged).toBeGreaterThan(before + 100);
+  expect(
+    Number(await page.evaluate(() => localStorage.getItem('kite.overlaySplit'))),
+  ).toBeGreaterThan(0.45);
+  // As far as it goes: the answer keeps 340 px.
+  await page.mouse.move(splitBox.x + 160, splitBox.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(WIDE_SIZE.width - 20, splitBox.y + 40, { steps: 6 });
+  await page.mouse.up();
+  expect((await answer.boundingBox())!.width).toBeGreaterThanOrEqual(338);
+  await divider.dblclick();
+  await expect
+    .poll(async () => Math.round((await transcript.boundingBox())!.width))
+    .toBe(Math.round(before));
+  // Arrow keys move it while it has focus.
+  await divider.focus();
+  await page.keyboard.press('ArrowLeft');
+  expect((await transcript.boundingBox())!.width).toBeLessThan(before);
+  await divider.dblclick();
+
+  // ADR-0085: side by side from 600 CSS px (900 before), with the divider between them.
+  await page.setViewportSize({ width: 640, height: 700 });
+  const leftAt640 = (await transcript.boundingBox())!;
+  const rightAt640 = (await answer.boundingBox())!;
+  expect(leftAt640.x + leftAt640.width).toBeLessThanOrEqual(rightAt640.x);
+  expect(Math.abs(leftAt640.y - rightAt640.y)).toBeLessThanOrEqual(2);
+  await expect(
+    page.getByRole('separator', { name: 'Resize the transcript and answer panels' }),
+  ).toBeVisible();
   // Too narrow for two: they stack, and nothing is cut off sideways.
-  await page.setViewportSize({ width: 780, height: 700 });
+  await page.setViewportSize({ width: 560, height: 700 });
   const top = (await transcript.boundingBox())!;
   const bottom = (await answer.boundingBox())!;
   expect(top.y + top.height).toBeLessThanOrEqual(bottom.y);
@@ -1177,7 +1216,7 @@ test('S16: the ⋮ menu in order; Answer preferences as a sheet that fits the ov
     'Theme',
     'Opacity',
     'Answer text size',
-    expect.stringMatching(/^Answer language: /),
+    // ADR-0085: no Answer language in the compact view.
     'Auto answer',
     'Answer preferences',
     'Edit session',

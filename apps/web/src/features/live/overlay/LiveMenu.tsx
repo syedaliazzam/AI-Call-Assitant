@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/features/live/overlay/LiveMenu.tsx
  * Purpose: The ⋮ menu during a call (spec S16): the email, Dashboard ↗, Get help ↗, Private, Zoom, Theme,
- *          Opacity, Answer text size, Language, Auto answer, Answer preferences and Edit session, then
+ *          Opacity, Answer text size, Auto answer, Answer preferences and Edit session, then
  *          Open call window and Reset position. An entry shows only where it can work: a browser's
  *          picture-in-picture window has no opacity, a shell before 1.1.0 no separate pages window.
  *          v1.3.0 (ADR-0056): in desktop 1.3.0 a Position row, a 2 × 3 grid of the overlay's six
@@ -36,9 +36,8 @@ import {
   type ThemeChoice,
 } from '@/core/storage/appearancePrefs';
 import { OVERLAY_OPACITY } from '@/core/storage/overlayPrefs';
-import { ANSWER_LANGUAGES } from '@/core/storage/types';
 import { PRIVATE_LABEL, privateHint } from '@/features/privacy/usePrivate';
-import { GlobeIcon, GridIcon, MonitorIcon, PenIcon } from '@/ui/icons';
+import { GridIcon, MonitorIcon, PenIcon } from '@/ui/icons';
 import {
   MenuAction,
   MenuBlock,
@@ -194,7 +193,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
       aria-label="Overlay settings"
       data-menu="overlay"
       // The window grows to fit it; it scrolls rather than being cut off on a short screen.
-      className="k-overlay-menu absolute right-1.5 top-[calc(100%+6px)] z-30 flex max-h-[calc(100vh-3.75rem)] w-[21.5rem] flex-col gap-1.5 overflow-y-auto rounded-menu border border-ui-border p-1.5 shadow-modal [-webkit-app-region:no-drag]"
+      className="k-overlay-menu absolute right-1.5 top-[calc(100%+6px)] z-30 flex max-h-[calc(100vh/var(--k-zoom,1)-3.75rem)] w-[21.5rem] flex-col gap-1.5 overflow-y-auto rounded-menu border border-ui-border p-1.5 shadow-modal [-webkit-app-region:no-drag]"
     >
       <MenuBlock>
         {props.email && (
@@ -261,13 +260,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           }
           onReset={() => setFontScale(FONT_SCALE_RANGE.default)}
         />
-        <MenuList
-          label="Answer language"
-          icon={<GlobeIcon />}
-          value={state?.language ?? 'en'}
-          options={ANSWER_LANGUAGES}
-          onChange={(code) => onCommand({ type: 'language', code })}
-        />
+        {/* ADR-0085: no Answer language here: calls are in English, and the session sets it. */}
         {state?.recording && (
           // Desktop 1.5.0 (ADR-0068): the type the Rec pill and Ctrl+Alt+R start (remembered here).
           <MenuList

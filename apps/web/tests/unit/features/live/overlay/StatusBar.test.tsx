@@ -1,6 +1,6 @@
 /**
  * Tests for apps/web/src/features/live/overlay/StatusBar.tsx and ControlBar.tsx (ADR-0082): the overlay's
- * status bar is one row (level button, language, one line, Clear, collapse) whose line shows the live words
+ * status bar is one row (level button, one line, Clear, collapse; ADR-0085: no language control) whose line shows the live words
  * or the current warning with its button, never both and never a second warning bar; in the transcript
  * panel's header it shows only messages. Bar 1 has no Answer, Screenshot or Chat buttons any more, and a
  * Click-through switch with its state and tooltip where clicks can pass (none where they cannot).
@@ -56,15 +56,18 @@ function bar(state: CompactState, words = true): string {
       privateOff={false}
       onPrivateOn={() => undefined}
       mac={false}
-      languagesOpen={false}
-      onLanguagesOpen={() => undefined}
     />,
   );
 }
 
 describe('StatusBar', () => {
-  it('is one row with the level button, language, the live words, Clear and collapse', () => {
+  it('is one row with the level button, the live words, Clear and collapse', () => {
     const html = bar(QUIET);
+    // ADR-0085: no answer-language control in the compact view.
+    expect(html).not.toContain('Answer language');
+    expect(bar(QUIET, false)).not.toContain('Answer language');
+    // ADR-0085: no title attributes (a native tooltip is a separate, unprotected window).
+    expect(html).not.toMatch(/ title="/);
     expect(html).toContain('aria-label="Status bar"');
     expect(html).toContain('aria-label="Show the transcript"');
     expect(html).toContain('tell me about');
@@ -107,9 +110,14 @@ describe('StatusBar', () => {
  *
  * @param state          The overlay state.
  * @param onClickThrough The Click-through toggle's handler, or undefined where clicks cannot pass.
+ * @param referenceLook  The look of accounts with account sync (default true); false for the classic one.
  * @returns The markup.
  */
-function bar1(state: CompactState, onClickThrough?: (on: boolean) => void): string {
+function bar1(
+  state: CompactState,
+  onClickThrough?: (on: boolean) => void,
+  referenceLook = true,
+): string {
   return renderToString(
     <ControlBar
       state={state}
@@ -122,7 +130,7 @@ function bar1(state: CompactState, onClickThrough?: (on: boolean) => void): stri
       deviceList={null}
       onDeviceList={() => undefined}
       menuButton={{ current: null }}
-      referenceLook
+      referenceLook={referenceLook}
       transcriptOpen={false}
       onTranscript={() => undefined}
       {...(onClickThrough ? { onClickThrough } : {})}
@@ -153,5 +161,22 @@ describe('ControlBar (bar 1)', () => {
 
   it('has no Click-through switch where clicks cannot pass (a browser window)', () => {
     expect(bar1(QUIET)).not.toContain('aria-label="Click-through"');
+  });
+
+  it('ADR-0085: pins the device icons and the Transcript switch, for every account, outside the part that gives way', () => {
+    for (const look of [true, false]) {
+      const html = bar1(QUIET, () => undefined, look);
+      const pinned = html.indexOf('data-bar-pinned');
+      const fitting = html.indexOf('data-fit-step');
+      expect(pinned).toBeGreaterThan(-1);
+      // The switch and the device lists come before the part that gives way, inside the pinned group.
+      const transcript = html.indexOf('aria-label="Transcript"');
+      expect(transcript).toBeGreaterThan(pinned);
+      expect(transcript).toBeLessThan(fitting);
+      expect(html.indexOf('aria-label="Choose microphone"')).toBeLessThan(fitting);
+      // Auto answer and Click-through are in the part that gives way.
+      expect(html.indexOf('aria-label="Auto answer"')).toBeGreaterThan(fitting);
+      expect(html.indexOf('aria-label="Click-through"')).toBeGreaterThan(fitting);
+    }
   });
 });

@@ -63,7 +63,7 @@ export function ScriptBar({
 
   return (
     <div
-      className={`k-overlay ${glass ? 'k-glass' : ''} flex h-screen flex-col overflow-hidden rounded-card border border-ui-border text-ui-text`}
+      className={`k-overlay ${glass ? 'k-glass' : ''} k-zoom-screen flex flex-col overflow-hidden rounded-card border border-ui-border text-ui-text`}
       style={
         glass
           ? ({ '--k-overlay-alpha': panelAlpha ?? OVERLAY_OPACITY.default } as CSSProperties)

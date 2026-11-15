@@ -17,7 +17,11 @@
  *   saves its position after a move, and closes; IPC answers the Kite page only;
  * - protection: supported on Windows 10 2004+ and macOS only; off by default; set() remembers
  *   and applies; the IPC accepts only a boolean, from the Kite page;
- * - the store ignores a broken file and invalid bounds.
+ * - the store ignores a broken file and invalid bounds;
+ * - 1.6.5 (ADR-0085): the default size is 40 % of the work area's width within 640–960; the window's width
+ *   follows the UI zoom about its position's anchor and stays on the work area (zoomedWidth, minWidthAt,
+ *   setLayout), the width is remembered at 100 %, and opening the overlay turns Private on for every
+ *   window before the overlay exists.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -68,6 +72,8 @@ import {
   slideFrames,
   snapBounds,
   JUMP_SLIDE_MS,
+  minWidthAt,
+  zoomedWidth,
 } from '../../src/windows';
 
 /** The Kite URL and origin used in these tests. */
@@ -78,9 +84,10 @@ const ORIGIN = 'https://kite-call-assistant.vercel.app';
 const PRIMARY = { x: 0, y: 0, width: 1920, height: 1040 };
 
 /**
- * 1.6.4 (ADR-0082): the overlay's default size on PRIMARY: a third of 1920 wide, half of 1040 tall.
+ * 1.6.5 (ADR-0085): the overlay's default size on PRIMARY: 40 % of 1920 wide (768, within 640–960), half of
+ * 1040 tall (1.6.4: a third of the width, 640).
  */
-const DEFAULT = { width: 640, height: 520 };
+const DEFAULT = { width: 768, height: 520 };
 
 /**
  * Stored settings of a shell that has already taken the 1.6.4 default size, so opening the overlay
@@ -431,7 +438,7 @@ describe('store', () => {
     try {
       const file = path.join(dir, 'kite-shell.json');
       writeFileSync(file, JSON.stringify({ overlayDefaultSized: OVERLAY_DEFAULT_SIZE_VERSION }));
-      expect(createStore(file).read()).toEqual({ overlayDefaultSized: 164 });
+      expect(createStore(file).read()).toEqual({ overlayDefaultSized: 165 });
       writeFileSync(file, JSON.stringify({ overlayDefaultSized: '164' }));
       expect(createStore(file).read()).toEqual({});
     } finally {
@@ -496,26 +503,26 @@ describe('the overlay window (ADR-0029)', () => {
 
 describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
   it('puts the overlay at each preset, at the default size for that display (1.6.4, ADR-0082)', () => {
-    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 640, y: 16, ...DEFAULT });
+    expect(presetBounds('top-center', PRIMARY)).toEqual({ x: 576, y: 16, ...DEFAULT });
     expect(presetBounds('top-left', PRIMARY)).toEqual({ x: 16, y: 16, ...DEFAULT });
-    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1920 - 640 - 16, y: 16, ...DEFAULT });
+    expect(presetBounds('top-right', PRIMARY)).toEqual({ x: 1920 - 768 - 16, y: 16, ...DEFAULT });
     expect(presetBounds('bottom-center', PRIMARY)).toEqual({
-      x: 640,
+      x: 576,
       y: 1040 - 520 - 16,
       ...DEFAULT,
     });
-    // A second display to the right (1280 × 720): a third of 1280 is below the smallest width (440).
+    // A second display to the right (1280 × 720): 40 % of 1280 (512) is below the default's least (640).
     expect(presetBounds('top-center', { x: 1920, y: 0, width: 1280, height: 720 })).toEqual({
-      x: 1920 + (1280 - 440) / 2,
+      x: 1920 + (1280 - 640) / 2,
       y: 16,
-      width: 440,
+      width: 640,
       height: 360,
     });
-    // A small screen: the smallest size, 16 from the edges where there is room.
+    // A small screen: as wide as the work area less the 16 DIP margins, 16 from the edges.
     expect(presetBounds('top-center', { x: 0, y: 0, width: 500, height: 400 })).toEqual({
-      x: 30,
+      x: 16,
       y: 16,
-      width: 440,
+      width: 468,
       height: OVERLAY_LAYOUT_MIN_HEIGHTS.answer,
     });
     // A screen smaller than the smallest size: the whole work area.
@@ -527,14 +534,18 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
     });
   });
 
-  it('overlayDefaultSize: a third of the width, half the height, within the smallest size and the area', () => {
-    // A 1920 × 1080 screen at 100 % (taskbar 40).
-    expect(overlayDefaultSize({ width: 1920, height: 1040 })).toEqual({ width: 640, height: 520 });
-    // A 1366 × 768 laptop: 455.3 wide (above the smallest, 440) and 364 tall, in whole DIPs.
-    expect(overlayDefaultSize({ width: 1366, height: 728 })).toEqual({ width: 455, height: 364 });
-    // The smallest size where a third or a half would be less.
+  it('overlayDefaultSize (1.6.5, ADR-0085): 40 % of the width within 640–960, half the height, within the area', () => {
+    // A 1920 × 1080 screen at 100 % (taskbar 40): 768.
+    expect(overlayDefaultSize({ width: 1920, height: 1040 })).toEqual({ width: 768, height: 520 });
+    // A 1366 × 768 laptop: 40 % is 546, below the least (640); 364 tall.
+    expect(overlayDefaultSize({ width: 1366, height: 728 })).toEqual({ width: 640, height: 364 });
+    // A 1920 laptop at 125 % (1536 × 824 DIPs): 614 → 640.
+    expect(overlayDefaultSize({ width: 1536, height: 824 })).toEqual({ width: 640, height: 412 });
+    // A 2560 × 1440 screen: 1024 → the most (960).
+    expect(overlayDefaultSize({ width: 2560, height: 1400 })).toEqual({ width: 960, height: 700 });
+    // The smallest height where half would be less.
     expect(overlayDefaultSize({ width: 1200, height: 500 })).toEqual({
-      width: COMPACT_MIN_SIZE.width,
+      width: 640,
       height: OVERLAY_LAYOUT_MIN_HEIGHTS.answer,
     });
     expect(COMPACT_MIN_SIZE.width).toBe(440);
@@ -644,11 +655,11 @@ describe('placement, snapping and resizing (v1.0.2, ADR-0035)', () => {
     expect(compact.preset()).toBe('top-right');
     compact.open('s1');
     const window = FakeWindow.created.at(-1)!;
-    // Opens at the remembered preset (nothing saved yet), at the default size (1.6.4, ADR-0082).
-    expect(window.options).toMatchObject({ x: 1920 - 640 - 16, y: 16, ...DEFAULT });
+    // Opens at the remembered preset (nothing saved yet), at the default size (1.6.5, ADR-0085).
+    expect(window.options).toMatchObject({ x: 1920 - 768 - 16, y: 16, ...DEFAULT });
     compact.place('bottom-center');
-    expect(window.bounds).toEqual({ x: 640, y: 1040 - 520 - 16, ...DEFAULT });
-    expect(store.read().compactBounds).toEqual({ x: 640, y: 1040 - 520 - 16, ...DEFAULT });
+    expect(window.bounds).toEqual({ x: 576, y: 1040 - 520 - 16, ...DEFAULT });
+    expect(store.read().compactBounds).toEqual({ x: 576, y: 1040 - 520 - 16, ...DEFAULT });
   });
 
   it('script bar: slim at the top centre, input row, and back to where the overlay was', () => {
@@ -799,7 +810,7 @@ describe('the icon (v1.2.0, spec S13)', () => {
   });
 });
 
-describe('both panels (v1.2.0, spec S15; 1.6.4, ADR-0082: no widening by default)', () => {
+describe('both panels (v1.2.0, spec S15; 1.6.4: no widening by default; 1.6.5, ADR-0085: never)', () => {
   /** The overlay as it opens in these tests. */
   const BOUNDS = { x: 570, y: 24, width: 780, height: 136 };
 
@@ -835,10 +846,10 @@ describe('both panels (v1.2.0, spec S15; 1.6.4, ADR-0082: no widening by default
     expect(window.bounds).toMatchObject({ x: 570, width: 780, y: 24 });
   });
 
-  it('widens about its centre to a width the user gave, and goes back to the width it had', () => {
+  it('1.6.5 (ADR-0085): ignores a both-panels width remembered by 1.2.0 to 1.6.4', () => {
     const { compact, window } = openPanels(WIDE);
     compact.setLayout(BOTH);
-    expect(window.bounds).toMatchObject({ x: 570 - 150, width: OVERLAY_BOTH_WIDTH, y: 24 });
+    expect(window.bounds).toMatchObject({ x: 570, width: 780, y: 24 });
     compact.setLayout(BARS);
     expect(window.bounds).toMatchObject({ x: 570, width: 780, y: 24 });
   });
@@ -854,20 +865,7 @@ describe('both panels (v1.2.0, spec S15; 1.6.4, ADR-0082: no widening by default
     });
   });
 
-  it('goes back exactly when the display limited the widening, and keeps a move made since', () => {
-    const { compact, window } = openPanels(WIDE);
-    // Near the left edge: it could not widen about its centre.
-    window.bounds = { ...BOUNDS, x: 40 };
-    compact.setLayout(BOTH);
-    expect(window.bounds.x).toBe(0);
-    compact.setLayout(BARS);
-    expect(window.bounds).toMatchObject({ x: 40, width: 780 });
-    // Moved while wide: it stays moved.
-    compact.setLayout(BOTH);
-    window.bounds = { ...window.bounds, x: 500 };
-    compact.setLayout(BARS);
-    expect(window.bounds).toMatchObject({ x: 540, width: 780 });
-    // And it never comes back off the display.
+  it('narrowedBounds never puts a window off the display', () => {
     expect(narrowedBounds({ x: 1900 }, { width: 780, shift: 150 }, PRIMARY)).toEqual({
       x: 1920 - 780,
       width: 780,
@@ -881,18 +879,19 @@ describe('both panels (v1.2.0, spec S15; 1.6.4, ADR-0082: no widening by default
     expect(store.read().compactBounds).toMatchObject({ x: 570, width: 780 });
   });
 
-  it('remembers a width the user dragged, widens to it next time, and narrows back', () => {
+  it('1.6.5 (ADR-0085): a width the user gives with both panels open stays, whatever opens or closes', () => {
     const { compact, store, window } = openPanels();
     compact.setLayout(BOTH);
+    // Narrower (1.6.4 pushed it back to the width it had when both panels opened).
     compact.resize({ phase: 'start', edge: 'e', dx: 0, dy: 0 });
-    compact.resize({ phase: 'end', edge: 'e', dx: 100, dy: 0 });
-    expect(store.read().overlayBothWidth).toBe(780 + 100);
+    compact.resize({ phase: 'end', edge: 'e', dx: -200, dy: 0 });
+    expect(window.bounds.width).toBe(580);
+    compact.setLayout({ ...BOTH, contentHeight: 300 });
+    expect(window.bounds.width).toBe(580);
     compact.setLayout(BARS);
-    expect(window.bounds.width).toBe(780);
-    compact.setLayout(BOTH);
-    expect(window.bounds.width).toBe(780 + 100);
-    compact.setLayout(BARS);
-    expect(window.bounds.width).toBe(780);
+    expect(window.bounds.width).toBe(580);
+    // No separate both-panels width is stored any more.
+    expect(store.read().overlayBothWidth).toBeUndefined();
   });
 
   it('does not change a window already wider than the width the user gave', () => {
@@ -902,7 +901,7 @@ describe('both panels (v1.2.0, spec S15; 1.6.4, ADR-0082: no widening by default
   });
 });
 
-describe('the one-time 1.6.4 default size (ADR-0082)', () => {
+describe('the one-time default size (1.6.4, ADR-0082; 1.6.5, ADR-0085)', () => {
   /** A second display, to the right of the primary. */
   const SECOND = { x: 1920, y: 0, width: 2560, height: 1400 };
 
@@ -948,17 +947,17 @@ describe('the one-time 1.6.4 default size (ADR-0082)', () => {
   it('takes the default size about its centre, and forgets the sizes chosen before', () => {
     const { compact, store } = upgraded(FROM_163);
     compact.open('s1');
-    // A third of 1920 wide, about the old centre (470 + 490 = 960), and half of 1040 tall.
-    const sized = { x: 960 - 320, y: 24, ...DEFAULT };
+    // 40 % of 1920 wide (768), about the old centre (470 + 490 = 960), and half of 1040 tall.
+    const sized = { x: 960 - 384, y: 24, ...DEFAULT };
     expect(FakeWindow.created.at(-1)!.options).toMatchObject(sized);
     expect(store.read()).toMatchObject({
       overlayDefaultSized: OVERLAY_DEFAULT_SIZE_VERSION,
       overlayBarsWidened: true,
-      overlayBarsWidth: 640,
+      overlayBarsWidth: 768,
       overlayHeights: {},
       compactBounds: sized,
       // Only this display's place; the other display's old width is dropped.
-      overlayPlaces: { '1': { x: 640, y: 24, width: 640 } },
+      overlayPlaces: { '1': { x: 576, y: 24, width: 768 } },
     });
     expect(store.read().overlayBothWidth).toBeUndefined();
   });
@@ -968,7 +967,7 @@ describe('the one-time 1.6.4 default size (ADR-0082)', () => {
     compact.open('s1');
     const window = FakeWindow.created.at(-1)!;
     // The fake window starts with its own bounds: put it where it opened.
-    window.bounds = { x: 640, y: 24, ...DEFAULT };
+    window.bounds = { x: 576, y: 24, ...DEFAULT };
     // The page reports its panels (bars only), as the live overlay always does; the place is then
     // remembered per display.
     compact.setLayout({ transcript: false, answer: false, popupHeight: 0 });
@@ -978,9 +977,10 @@ describe('the one-time 1.6.4 default size (ADR-0082)', () => {
     compact.close();
     const writes = store.write.mock.calls.length;
     compact.open('s1');
-    expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 640, width: 900 });
-    // Nothing was written on the second open.
-    expect(store.write.mock.calls.length).toBe(writes);
+    expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 576, width: 1028 });
+    // Nothing but Private (1.6.5, ADR-0085: on before the overlay shows) was written on the second open.
+    expect(store.write.mock.calls.length).toBe(writes + 1);
+    expect(store.write.mock.calls.at(-1)).toEqual([{ shareProtection: true }]);
     expect(store.read().overlayDefaultSized).toBe(OVERLAY_DEFAULT_SIZE_VERSION);
   });
 
@@ -997,7 +997,7 @@ describe('the one-time 1.6.4 default size (ADR-0082)', () => {
   it('a fresh install opens at the default size and is marked as sized', () => {
     const { compact, store } = upgraded({});
     compact.open('s1');
-    expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 640, y: 16, ...DEFAULT });
+    expect(FakeWindow.created.at(-1)!.options).toMatchObject({ x: 576, y: 16, ...DEFAULT });
     expect(store.read().overlayDefaultSized).toBe(OVERLAY_DEFAULT_SIZE_VERSION);
   });
 });
@@ -1340,5 +1340,126 @@ describe('v1.3.2: the keyboard goes back to the app behind', () => {
       sender: window.webContents,
     });
     expect(window.blur).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('1.6.5 (ADR-0085): the zoom scales the window; Private before the overlay shows', () => {
+  it('minWidthAt: 440 CSS px of page at every zoom, within the work area', () => {
+    expect(minWidthAt(1)).toBe(440);
+    expect(minWidthAt(1.3)).toBe(572);
+    expect(minWidthAt(0.8)).toBe(352);
+    // A 500-wide work area: no wider than it less the 16 DIP margins (but never under 440).
+    expect(minWidthAt(1.3, { width: 500 })).toBe(468);
+  });
+
+  it('zoomedWidth: grows and shrinks about the anchor of its position, inside the work area', () => {
+    const top = { y: 16, height: 520 };
+    // Centre: the centre stays.
+    expect(zoomedWidth({ x: 576, width: 768, ...top }, 1, 1.3, PRIMARY, 'top-center')).toEqual({
+      x: 461,
+      width: 998,
+    });
+    expect(zoomedWidth({ x: 576, width: 768, ...top }, 1, 0.8, PRIMARY, 'bottom-center')).toEqual({
+      x: 653,
+      width: 614,
+    });
+    // Left: the left edge stays. Right: the right edge stays.
+    expect(zoomedWidth({ x: 16, width: 768, ...top }, 1, 1.3, PRIMARY, 'top-left')).toEqual({
+      x: 16,
+      width: 998,
+    });
+    expect(zoomedWidth({ x: 1136, width: 768, ...top }, 1, 1.3, PRIMARY, 'bottom-right')).toEqual({
+      x: 1904 - 998,
+      width: 998,
+    });
+    // And back: the same size again.
+    expect(zoomedWidth({ x: 461, width: 998, ...top }, 1.3, 1, PRIMARY, 'top-center')).toEqual({
+      x: 576,
+      width: 768,
+    });
+    // Too wide for the work area: it stops at the area less the margins (1888), about its centre (200 +
+    // 750 = 950), still wholly on the work area.
+    expect(zoomedWidth({ x: 200, width: 1500, ...top }, 1, 1.3, PRIMARY, 'top-center')).toEqual({
+      x: 6,
+      width: 1888,
+    });
+    // Never under the zoomed minimum.
+    expect(zoomedWidth({ x: 16, width: 440, ...top }, 1, 0.8, PRIMARY, 'top-left').width).toBe(352);
+    expect(zoomedWidth({ x: 16, width: 352, ...top }, 0.8, 1.3, PRIMARY, 'top-left').width).toBe(
+      572,
+    );
+  });
+
+  it('a new zoom from the page resizes the open window, and the width is remembered at 100 %', () => {
+    const { compact, store } = setup(SIZED);
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { x: 576, y: 16, width: 768, height: 300 };
+    const layout = { transcript: true, answer: true, popupHeight: 0, contentHeight: 300 };
+    compact.setLayout({ ...layout, scale: 1 });
+    expect(window.bounds.width).toBe(768);
+    // 130 %: wider about the top centre; the height follows the page's content (390 = 300 × 1.3).
+    compact.setLayout({ ...layout, scale: 1.3, contentHeight: 390 });
+    expect(window.bounds).toMatchObject({ x: 461, y: 16, width: 998, height: 390 });
+    // The minimum width follows the zoom (440 CSS px of page).
+    expect(window.setMinimumSize).toHaveBeenLastCalledWith(572, expect.any(Number));
+    // Closing saves the width at 100 %.
+    compact.close();
+    expect(store.read().compactBounds?.width).toBe(768);
+    // The next call opens at that width, and the page's zoom makes it 998 again.
+    compact.open('s1');
+    const next = FakeWindow.created.at(-1)!;
+    expect(next.options).toMatchObject({ width: 768 });
+    next.bounds = { x: 576, y: 16, width: 768, height: 300 };
+    compact.setLayout({ ...layout, scale: 1.3, contentHeight: 390 });
+    expect(next.bounds).toMatchObject({ x: 461, width: 998 });
+    // Back to 100 %: the exact size again.
+    compact.setLayout({ ...layout, scale: 1, contentHeight: 300 });
+    expect(next.bounds).toMatchObject({ x: 576, width: 768, height: 300 });
+  });
+
+  it('on the bottom row the bottom edge and, at the right, the right edge stay', () => {
+    const { compact } = setup(SIZED);
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { x: 1136, y: 1040 - 16 - 300, width: 768, height: 300 };
+    compact.goTo('bottom-right');
+    const layout = { transcript: true, answer: true, popupHeight: 0, contentHeight: 300 };
+    compact.setLayout({ ...layout, scale: 1 });
+    compact.setLayout({ ...layout, scale: 1.3, contentHeight: 390 });
+    expect(window.bounds.x + window.bounds.width).toBe(1904);
+    expect(window.bounds.y + window.bounds.height).toBe(1040 - 16);
+    expect(window.bounds.width).toBe(998);
+  });
+
+  it('opening the overlay turns Private on for every window first, even after a call that left it off', () => {
+    const store = memoryStore({ ...SIZED, shareProtection: false });
+    const protection = createProtection(store, 'win32', '10.0.26200');
+    const other = { setContentProtection: vi.fn() };
+    const compact = createCompactWindows({
+      createWindow: (options) => {
+        // When the window is made, Private is already on.
+        expect(store.read().shareProtection).toBe(true);
+        expect(other.setContentProtection).toHaveBeenCalledWith(true);
+        return new FakeWindow(options as Record<string, unknown>) as never;
+      },
+      screen: {
+        getAllDisplays: () => [{ workArea: PRIMARY }] as never,
+        getPrimaryDisplay: () => ({ workArea: PRIMARY }) as never,
+        getDisplayMatching: () => ({ workArea: PRIMARY }) as never,
+      },
+      kiteUrl: KITE,
+      preloadPath: '/app/preload.js',
+      appVersion: '1.6.5',
+      store,
+      protection,
+      allWindows: () => [other],
+    });
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    // Protected from creation, before it is ever shown.
+    expect(window.setContentProtection).toHaveBeenCalledWith(true);
+    expect(window.showInactive).not.toHaveBeenCalled();
+    expect(protection.state().on).toBe(true);
   });
 });

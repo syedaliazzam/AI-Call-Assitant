@@ -1,8 +1,9 @@
 /**
  * File: apps/web/src/features/live/overlay/StatusBar.tsx
  * Purpose: The overlay's one status bar (ADR-0082; it replaces the warning bar and the two-row transcript
- *          bar, LiveStrip.tsx): the level button (opens or closes the transcript panel), the answer
- *          language, one line, then Clear (the transcript) and collapse. The line shows the current warning
+ *          bar, LiveStrip.tsx): the level button (opens or closes the transcript panel), one line, then
+ *          Clear (the transcript) and collapse. ADR-0085: no answer-language control (calls are in
+ *          English; the session's language is set in the session, not mid-call). The line shows the current warning
  *          or state with its button ("Can't hear the other side · Choose audio source", "Speakers echoing —
  *          use headphones · OK", "Listening… · Cancel"), else the live words or the other person's
  *          question. With the transcript panel open the same row is the panel's header, and its line shows
@@ -17,14 +18,12 @@
 'use client';
 
 import { FOCUSED_HOTKEYS, hotkeyLabel } from '@kite/shared';
-import type { RefObject } from 'react';
 import type { CompactChip, CompactCommand, CompactState } from '@/core/live/liveChannel';
 import { CollapseIcon } from '@/ui/icons';
 import {
   BUTTON,
   ICON_BUTTON,
   KeyChip,
-  LanguageControl,
   LevelButton,
   PILL,
   tipShortcut,
@@ -63,16 +62,12 @@ export interface StatusBarProps {
   privateOff: boolean;
   /** Turns Private back on. */
   onPrivateOn: () => void;
+  /** ADR-0085: true while Private is off during the call (an amber line with Turn on). */
+  privateOffInCall?: boolean;
   /** True on macOS (for the shortcuts' spoken names). */
   mac: boolean;
   /** Where the live levels come from. */
   levels?: LevelStore | undefined;
-  /** Whether the language list is open. */
-  languagesOpen: boolean;
-  /** Opens or closes the language list. */
-  onLanguagesOpen: (open: boolean) => void;
-  /** The language list's element, so the window can grow to fit it. */
-  languagesRef?: RefObject<HTMLUListElement | null>;
 }
 
 /** How many chips the line shows. */
@@ -117,7 +112,9 @@ function MessageLine({
       <span
         role={message.tone === 'alert' ? 'alert' : 'status'}
         className={`min-w-0 flex-1 truncate ${TONE[message.tone]}`}
-        title={message.detail ?? message.text}
+        // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
+        // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
+        {...{ 'aria-description': message.detail ?? message.text }}
       >
         {message.text}
       </span>
@@ -209,7 +206,7 @@ function WordsLine({
  */
 export function StatusBar(props: StatusBarProps) {
   const { state, mac } = props;
-  const message = statusMessage(state, props.privateOff);
+  const message = statusMessage(state, props.privateOff, props.privateOffInCall ?? false);
   const clearKey = FOCUSED_HOTKEYS['clear-transcript'];
   return (
     <div
@@ -222,13 +219,6 @@ export function StatusBar(props: StatusBarProps) {
         levels={props.levels}
         label={props.transcriptOpen ? 'Hide the transcript' : 'Show the transcript'}
         onClick={() => props.onTranscript(!props.transcriptOpen)}
-      />
-      <LanguageControl
-        state={state}
-        onCommand={props.onCommand}
-        open={props.languagesOpen}
-        onOpen={props.onLanguagesOpen}
-        {...(props.languagesRef ? { listRef: props.languagesRef } : {})}
       />
       <span className="mx-1 flex min-w-0 flex-1 items-center rounded-control bg-ui-overlay-button px-2 py-0.5 [-webkit-app-region:no-drag]">
         {message ? (
@@ -257,7 +247,9 @@ export function StatusBar(props: StatusBarProps) {
         disabled={!state}
         aria-label="Clear transcript"
         aria-keyshortcuts={hotkeyLabel(clearKey, mac)}
-        title={`Clear transcript (${tipShortcut(clearKey, mac)})`}
+        // ADR-0085: words for screen readers (no title: its tooltip is an unprotected window). A spread,
+        // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
+        {...{ 'aria-description': `Clear transcript (${tipShortcut(clearKey, mac)})` }}
       >
         Clear <KeyChip hotkey="clear-transcript" visibleAt="@min-[620px]:inline-flex" />
       </button>
@@ -265,7 +257,6 @@ export function StatusBar(props: StatusBarProps) {
         type="button"
         className={ICON_BUTTON}
         aria-label={props.collapseLabel}
-        title={props.collapseLabel}
         onClick={props.onCollapse}
       >
         <CollapseIcon />

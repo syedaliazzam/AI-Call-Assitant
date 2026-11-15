@@ -13,10 +13,19 @@ import { SyncScope } from '@/features/sync/SyncScope';
 
 // The session id from the address (/compact/<id>), as the app's route does.
 const sessionId = window.location.pathname.split('/').pop() || 'harness-session';
-// ADR-0055: as an account with account sync sees it (the reference look, click-through); an invented
-// account, with no sync engine and no network.
+// ADR-0085 checks: 'rig.plainAccount' = '1' in the rig's storage shows the overlay as an account
+// WITHOUT account sync sees it (apps/desktop/tests/visual/compact-view-check.ts sets it).
+const plain = (() => {
+  try {
+    return localStorage.getItem('rig.plainAccount') === '1';
+  } catch {
+    return false;
+  }
+})();
+// ADR-0055: by default as an account with account sync sees it (the reference look, click-through); an
+// invented account, with no sync engine and no network.
 createRoot(document.getElementById('root')!).render(
-  <SyncScope accountId="rig-user" syncUserId="rig-user" runEngine={false}>
+  <SyncScope accountId="rig-user" syncUserId={plain ? null : 'rig-user'} runEngine={false}>
     <CompactLive sessionId={sessionId} />
   </SyncScope>,
 );

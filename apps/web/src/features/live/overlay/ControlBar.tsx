@@ -8,13 +8,13 @@
  *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer, Screenshot or Chat buttons
  *          (their shortcuts still work). The bar is the window's drag handle; its buttons opt out.
  *
- *          1.6.3 (ADR-0075): ⋮ and Exit are pinned on the right and never leave the window. When the bar
- *          has too little room, the left side gives way one step at a time, measured rather than guessed
- *          (the Rec pill, Auto answer and Click-through change its width): first Rec's key-cap, then the
+ *          1.6.3 (ADR-0075): ⋮ and Exit are pinned on the right and never leave the window. ADR-0085: the
+ *          device icons, the Transcript switch (every account) and, while recording, the Rec pill are
+ *          pinned on the left the same way: never hidden, never cut. When the bar has too little room, the
+ *          rest gives way one step at a time, measured rather than guessed: first Rec's key-cap, then the
  *          words "Transcript" and "Click-through" and the timer's clock, then the word "Auto"; after that
- *          things go: the Transcript pill (the level button and Ctrl+Alt+T open the transcript too), the
- *          move icon (the whole bar drags), and the timer last (only a picture-in-picture window is that
- *          narrow). Every control names itself and its shortcut in BarTooltip.tsx ("Click-through: Off ·
+ *          things go: the move icon (the whole bar drags), the Click-through toggle (⋮ and Ctrl+Alt+X still
+ *          turn it on), and the timer last (only a picture-in-picture window is that narrow). Every control names itself and its shortcut in BarTooltip.tsx ("Click-through: Off ·
  *          Ctrl+Alt+X").
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys), lucide-react, react-dom (flushSync), src/core/live/liveChannel.ts,
@@ -80,8 +80,8 @@ export interface ControlBarProps {
   /** The ⋮ button: a click on it is not a click outside the menu. */
   menuButton: RefObject<HTMLButtonElement | null>;
   /**
-   * The reference app's bar 1 (ADR-0055, accounts with account sync): with the Transcript pill.
-   * Otherwise the classic bar.
+   * The reference app's bar 1 (ADR-0055, accounts with account sync). ADR-0085: the Transcript pill is
+   * shown whenever onTranscript is given (for every account), whatever the look.
    */
   referenceLook?: boolean;
   /** Whether the transcript panel is open (the Transcript pill's switch). */
@@ -115,10 +115,10 @@ const FIT = {
   noWords: 2,
   /** From here: Auto answer is its bolt only. */
   iconAuto: 3,
-  /** From here: no Transcript pill (the status bar's level button and Ctrl+Alt+T open the transcript). */
-  noTranscript: 4,
   /** From here: no move icon (the whole bar still drags the window). */
-  noMove: 5,
+  noMove: 4,
+  /** ADR-0085: from here no Click-through toggle on the bar (⋮ and Ctrl+Alt+X still turn it on). */
+  noClickThrough: 5,
   /** From here: no call timer (a narrow picture-in-picture window only). */
   noTimer: 6,
 } as const;
@@ -548,7 +548,57 @@ export function ControlBar(props: ControlBarProps) {
       aria-label="Overlay controls"
       className="relative flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]"
     >
-      {/* 1.6.3: the left side may give way; it never pushes ⋮ and Exit out of the window. Full height,
+      {/* ADR-0085: pinned on the left, always whole: what is captured, the Transcript switch, and the
+          recording while it runs. */}
+      <div data-bar-pinned="" className="flex shrink-0 items-center gap-1">
+        <span className="inline-flex shrink-0 items-center">
+          <DeviceButton
+            on={state?.audio.them ?? false}
+            label="Screen audio"
+            icon={<MonitorIcon />}
+            chooser="Choose audio source"
+            open={deviceList === 'audio'}
+            onToggle={() => onDeviceList(deviceList === 'audio' ? null : 'audio')}
+          />
+          <DeviceButton
+            on={state?.audio.you ?? false}
+            label="Microphone"
+            icon={<MicIcon />}
+            chooser="Choose microphone"
+            open={deviceList === 'mic'}
+            onToggle={() => onDeviceList(deviceList === 'mic' ? null : 'mic')}
+          />
+        </span>
+        <span className="w-1 shrink-0" />
+
+        {props.onTranscript && (
+          <TranscriptPill
+            open={props.transcriptOpen ?? false}
+            disabled={ended}
+            word={words}
+            mac={mac}
+            onToggle={(open) => {
+              if (collapsed) props.onCollapse(false);
+              props.onTranscript?.(open);
+            }}
+          />
+        )}
+        {recording && props.onRecord && (
+          // Desktop 1.5.0 (ADR-0068): after the Transcript pill, in the same style.
+          <RecPill
+            recording={recording}
+            open={props.recordOpen ?? false}
+            onToggle={props.onRecord}
+            disabled={ended}
+            mac={mac}
+            buttonRef={props.recButton}
+            visibleInRecording={privateOff.visible}
+            showKey={recKey}
+            pageTip
+          />
+        )}
+      </div>
+      {/* 1.6.3: the rest may give way; it never pushes the pinned controls out of the window. Full height,
           so the focus rings are not clipped. */}
       <div ref={room} className="flex min-w-0 flex-1 items-center self-stretch overflow-hidden">
         <div
@@ -557,59 +607,13 @@ export function ControlBar(props: ControlBarProps) {
           data-fit-key={fitKey}
           className="flex shrink-0 items-center gap-1 pr-0.5"
         >
-          <span className="inline-flex shrink-0 items-center">
-            <DeviceButton
-              on={state?.audio.them ?? false}
-              label="Screen audio"
-              icon={<MonitorIcon />}
-              chooser="Choose audio source"
-              open={deviceList === 'audio'}
-              onToggle={() => onDeviceList(deviceList === 'audio' ? null : 'audio')}
-            />
-            <DeviceButton
-              on={state?.audio.you ?? false}
-              label="Microphone"
-              icon={<MicIcon />}
-              chooser="Choose microphone"
-              open={deviceList === 'mic'}
-              onToggle={() => onDeviceList(deviceList === 'mic' ? null : 'mic')}
-            />
-          </span>
-          <span className="w-1 shrink-0" />
-
-          {props.onTranscript && step < FIT.noTranscript && (
-            <TranscriptPill
-              open={props.transcriptOpen ?? false}
-              disabled={ended}
-              word={words}
-              mac={mac}
-              onToggle={(open) => {
-                if (collapsed) props.onCollapse(false);
-                props.onTranscript?.(open);
-              }}
-            />
-          )}
-          {recording && props.onRecord && (
-            // Desktop 1.5.0 (ADR-0068): after the Transcript pill, in the same style.
-            <RecPill
-              recording={recording}
-              open={props.recordOpen ?? false}
-              onToggle={props.onRecord}
-              disabled={ended}
-              mac={mac}
-              buttonRef={props.recButton}
-              visibleInRecording={privateOff.visible}
-              showKey={recKey}
-              pageTip
-            />
-          )}
           <AutoAnswerToggle
             on={autoOn}
             disabled={!state}
             word={step < FIT.iconAuto}
             onToggle={() => onCommand({ type: 'auto-answer', on: !autoOn })}
           />
-          {props.onClickThrough && (
+          {props.onClickThrough && step < FIT.noClickThrough && (
             <ClickThroughToggle
               on={clickThroughOn}
               disabled={!state}

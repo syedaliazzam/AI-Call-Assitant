@@ -42,6 +42,11 @@
  * Auto answer moved to bar 1, so there is no floating Auto answer pill. The panels' look and the
  * opacity setting are unchanged (ADR-0033).
  *
+ * ADR-0085: the transcript (left) and the answer (right) sit side by side from 600 CSS px wide, with a
+ * divider between them (overlay/PanelSplit.tsx; remembered per device); below that they stack. A panel open
+ * alone fills the width. The Transcript switch on bar 1 is there for every account and never gives way.
+ * The page is as tall as its window at every UI zoom (.k-zoom-screen), so zooming never adds a scrollbar.
+ *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
  * honours), and compact collapses to bar 1 where there is no icon.
@@ -63,7 +68,12 @@ import {
   type ResolvedTheme,
   type ThemeChoice,
 } from '@/core/storage/appearancePrefs';
-import { OVERLAY_OPACITY, type OverlayPanels } from '@/core/storage/overlayPrefs';
+import {
+  getOverlaySplit,
+  OVERLAY_OPACITY,
+  setOverlaySplit,
+  type OverlayPanels,
+} from '@/core/storage/overlayPrefs';
 import { isTranscriptKey } from '@/platform/keymap';
 import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
 import { ControlBar, type DeviceList } from './overlay/ControlBar';
@@ -73,6 +83,7 @@ import { usePrivateOffWhileRecording } from './PrivateOffWarning';
 import { IconMode } from './overlay/IconMode';
 import { LiveMenu } from './overlay/LiveMenu';
 import { OverlayAnswer } from './overlay/OverlayAnswer';
+import { PanelSplit } from './overlay/PanelSplit';
 import { pieceClass, type LevelStore } from './overlay/parts';
 import { ResizeGrips } from './overlay/ResizeGrips';
 import { ScriptBar } from './overlay/ScriptBar';
@@ -162,14 +173,14 @@ export interface CompactViewProps {
    */
   onReleaseFocus?: () => void;
   /**
-   * The reference app's bars and chat bar (ADR-0055: accounts with account sync): the Transcript pill,
-   * 900-wide bars and the reference chat bar. Otherwise the classic look, unchanged.
+   * The reference app's bars (ADR-0055: accounts with account sync): 980-wide bars. Otherwise the classic
+   * look (780). ADR-0085: the Transcript switch is on bar 1 for every account.
    */
   referenceLook?: boolean;
 }
 
 /** Which floating list or menu is open. */
-type Popup = DeviceList | 'menu' | 'preferences' | 'language' | 'record' | 'record-notice';
+type Popup = DeviceList | 'menu' | 'preferences' | 'record' | 'record-notice';
 
 /**
  * The bars keep their own width; only the panels fill a window wider than this (spec S13): 780, or 980
@@ -233,7 +244,7 @@ function naturalExtentOf(panel: HTMLElement, up: boolean, height: number): numbe
 
 /**
  * How the panels' area lays out its panels (1.6.3, ADR-0075). Top row: they hang from the bars, side by
- * side from 900 px or stacked below that (the transcript first). Bottom row: mirrored, so they sit on
+ * side from 600 CSS px (ADR-0085; 900 before) or stacked below that (the transcript first). Bottom row: mirrored, so they sit on
  * the bars: side by side along the bottom, or stacked upward with the transcript nearest the bars.
  *
  * @param both True when both panels are open.
@@ -244,8 +255,8 @@ function naturalExtentOf(panel: HTMLElement, up: boolean, height: number): numbe
 export function panelsLayout(both: boolean, up: boolean): string {
   if (!both) return up ? 'items-end' : 'items-start';
   return up
-    ? 'flex-col-reverse @min-[900px]:flex-row @min-[900px]:items-end'
-    : 'flex-col @min-[900px]:flex-row @min-[900px]:items-start';
+    ? 'flex-col-reverse @min-[600px]:flex-row @min-[600px]:items-end'
+    : 'flex-col @min-[600px]:flex-row @min-[600px]:items-start';
 }
 
 /** v1.3.2: the window's height follows the content in steps of this many pixels (fewer resizes). */
@@ -265,6 +276,9 @@ export function CompactView(props: CompactViewProps) {
   const { state, onCommand, mac = false, panels, onPanels, onMove } = props;
   // 1.5.2 (ADR-0070): a screen recording with Private off: a warning bar, and a hint on the Rec pill.
   const privateOff = usePrivateOffWhileRecording(state?.recording);
+  // ADR-0085: Private off during the call (where it can be on), recording or not: an amber line.
+  const privateOffInCall =
+    props.protection?.supported === true && !props.protection.on && !privateOff.visible;
   const { levels, onResize, copy } = props;
   const glass = props.glass ?? false;
   const referenceLook = props.referenceLook ?? false;
@@ -279,8 +293,9 @@ export function CompactView(props: CompactViewProps) {
   const [questionCleared, setQuestionCleared] = useState<string | null>(null);
   const [scriptInput, setScriptInput] = useState(false);
   const [neededHeight, setNeededHeight] = useState(0);
+  // ADR-0085: the transcript's share of the width side by side (the divider; remembered per device).
+  const [split, setSplit] = useState(getOverlaySplit);
   const popupElement = useRef<HTMLDivElement>(null);
-  const languagesElement = useRef<HTMLUListElement>(null);
   const barsEnd = useRef<HTMLDivElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   // Desktop 1.5.0 (ADR-0068): the Rec pill, whose popover sits under it (its left edge, measured when
@@ -347,17 +362,41 @@ export function CompactView(props: CompactViewProps) {
     onModeRef.current?.(mode);
   }, [mode]);
 
+  // ADR-0085: the zoom reaches <html> in CompactLive's effect (useAppearance), after this view's layout
+  // effects have measured, and the window's new size arrives later still: measure again on the next
+  // frame, and whenever what the panels hold changes size (text re-wrapping at a new zoom or width), so
+  // the window is fitted to the text as it is drawn (at 80 % and 130 % the answer panel was fitted to its
+  // 100 % wrapping and scrolled). A new measurement that gives the same height changes nothing.
+  const [zoomPass, setZoomPass] = useState(0);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setZoomPass((count) => count + 1));
+    return () => cancelAnimationFrame(frame);
+  }, [zoom, fontScale]);
+  const answerOpen = panels.answer;
+  const transcriptOpen = panels.transcript;
+  const shownAnswer = state?.answer?.id;
+  const turnCount = state?.groups?.length;
+  useEffect(() => {
+    const area = panelsArea.current;
+    // jsdom (unit tests) has no ResizeObserver.
+    if (!area || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => setZoomPass((count) => count + 1));
+    for (const content of area.querySelectorAll('[data-scroll] > *')) observer.observe(content);
+    return () => observer.disconnect();
+    // The panels' content elements change when a panel opens or a new answer replaces the last one.
+  }, [answerOpen, transcriptOpen, shownAnswer, turnCount]);
+
   // A menu, and on any shell the bars themselves with no panel open, need more room than the shell's
   // fixed heights: the window grows for them. Measured by content, because a menu's own height is
   // limited by the window it is about to enlarge.
   const noPanels = !panels.transcript && !panels.answer;
   useLayoutEffect(() => {
     const height = root.current?.offsetHeight ?? 0;
-    const floating = popupElement.current ?? languagesElement.current;
+    const floating = popupElement.current;
     const forPopup = floating ? extentOf(floating, up, height) + 8 : 0;
     const forBars = noPanels && barsEnd.current ? extentOf(barsEnd.current, up, height) + 2 : 0;
     setNeededHeight(Math.max(forPopup, forBars) * zoom);
-  }, [popup, noPanels, zoom, collapsed, icon, scriptBar, up]);
+  }, [popup, noPanels, zoom, zoomPass, collapsed, icon, scriptBar, up]);
 
   // Desktop 1.5.0 (ADR-0068): the Rec popover sits under its pill.
   useLayoutEffect(() => {
@@ -388,7 +427,7 @@ export function CompactView(props: CompactViewProps) {
     const stepped = Math.ceil((needed * zoom) / CONTENT_STEP) * CONTENT_STEP;
     setContentHeight((was) => (was === stepped ? was : stepped));
     // Everything that changes what the panels hold or where they sit: each state update is new words.
-  }, [state, panels, zoom, up, fontScale, collapsed, popup, icon, scriptBar]);
+  }, [state, panels, zoom, zoomPass, up, fontScale, collapsed, popup, icon, scriptBar]);
 
   useEffect(() => {
     onLayout.current?.({
@@ -427,9 +466,7 @@ export function CompactView(props: CompactViewProps) {
     if (!popup) return;
     const onPointer = (event: PointerEvent) => {
       const target = event.target as Element;
-      if (popupElement.current?.contains(target) || languagesElement.current?.contains(target)) {
-        return;
-      }
+      if (popupElement.current?.contains(target)) return;
       // The button that opened it toggles it; another one switches to its own.
       if (target.closest?.('[data-popup-button]')) return;
       setPopup(null);
@@ -549,7 +586,7 @@ export function CompactView(props: CompactViewProps) {
 
   if (icon && onMove) {
     return (
-      <div className={`${themeClass} k-overlay-root h-screen text-ui-text`} style={rootStyle}>
+      <div className={`${themeClass} k-overlay-root k-zoom-screen text-ui-text`} style={rootStyle}>
         <IconMode
           piece={piece}
           on={state?.audio.them ?? false}
@@ -565,13 +602,6 @@ export function CompactView(props: CompactViewProps) {
   }
 
   const both = panels.transcript && panels.answer;
-  /**
-   * Opens or closes the language list.
-   *
-   * @param open True to open it.
-   * @returns Nothing.
-   */
-  const languagesOpen = (open: boolean) => setPopup(open ? 'language' : null);
 
   // ADR-0082: the one status bar (bar 2): the live words, or the current warning with its button.
   const statusBar = (
@@ -592,11 +622,9 @@ export function CompactView(props: CompactViewProps) {
       onList={(list) => setPopup(list)}
       privateOff={privateOff.visible}
       onPrivateOn={privateOff.turnOn}
+      privateOffInCall={privateOffInCall}
       mac={mac}
       levels={levels}
-      languagesOpen={popup === 'language'}
-      onLanguagesOpen={languagesOpen}
-      languagesRef={languagesElement}
     />
   );
   // ADR-0082: collapsed to bar 1, a warning that needs the user (a side that cannot be heard, the Answer key
@@ -610,7 +638,7 @@ export function CompactView(props: CompactViewProps) {
       ref={root}
       {...{ [GAP_ATTRIBUTE]: '' }}
       data-row={up ? 'bottom' : 'top'}
-      className={`${themeClass} k-overlay-root @container relative flex h-screen ${up ? 'k-overlay-up flex-col-reverse' : 'flex-col'} gap-1.5 overflow-hidden text-[16px] text-ui-text`}
+      className={`${themeClass} k-overlay-root k-zoom-screen @container relative flex ${up ? 'k-overlay-up flex-col-reverse' : 'flex-col'} gap-1.5 overflow-hidden text-[16px] text-ui-text`}
       style={rootStyle}
     >
       {onResize && !collapsed && <ResizeGrips onResize={onResize} />}
@@ -654,12 +682,9 @@ export function CompactView(props: CompactViewProps) {
                   onClickThrough: (on: boolean) => onCommand({ type: 'click-through', on }),
                 }
               : {})}
-            {...(referenceLook
-              ? {
-                  transcriptOpen: panels.transcript,
-                  onTranscript: (open: boolean) => onPanels({ ...panels, transcript: open }),
-                }
-              : {})}
+            // ADR-0085: the Transcript switch for every account (it was only with account sync).
+            transcriptOpen={panels.transcript}
+            onTranscript={(open: boolean) => onPanels({ ...panels, transcript: open })}
           />
         </div>
         {popup === 'menu' && (
@@ -786,11 +811,14 @@ export function CompactView(props: CompactViewProps) {
               {...{ [GAP_ATTRIBUTE]: '' }}
               data-panels-area=""
               className={`flex min-h-0 flex-1 gap-1.5 ${panelsLayout(both, up)}`}
+              style={{ '--k-split': `${Math.round(split * 1000) / 10}%` } as CSSProperties}
             >
               {panels.transcript && (
                 <div
                   data-panel=""
-                  className={`${piece} flex max-h-full min-h-0 flex-1 flex-col overflow-hidden ${both ? '@min-[900px]:max-w-[38%]' : 'max-w-[540px]'}`}
+                  // ADR-0085: side by side its width is the split (at least 240); alone it fills the width. A
+                  // container of its own, so its header's key-caps follow the panel's width, not the window's.
+                  className={`${piece} @container flex max-h-full min-h-0 flex-1 flex-col overflow-hidden ${both ? '@min-[600px]:min-w-[240px] @min-[600px]:grow-0 @min-[600px]:basis-(--k-split)' : ''}`}
                 >
                   <TranscriptPanel
                     state={state}
@@ -800,19 +828,27 @@ export function CompactView(props: CompactViewProps) {
                     mac={mac}
                     levels={levels}
                     fontScale={fontScale}
-                    languagesOpen={popup === 'language'}
-                    onLanguagesOpen={languagesOpen}
-                    languagesRef={languagesElement}
                     onList={(list) => setPopup(list)}
                     privateOff={privateOff.visible}
                     onPrivateOn={privateOff.turnOn}
+                    privateOffInCall={privateOffInCall}
                   />
                 </div>
+              )}
+              {both && (
+                <PanelSplit
+                  ratio={split}
+                  area={panelsArea}
+                  onMove={setSplit}
+                  onCommit={setOverlaySplit}
+                  up={up}
+                />
               )}
               {panels.answer && (
                 <div
                   data-panel=""
-                  className={`${piece} flex max-h-full min-h-0 flex-1 flex-col overflow-hidden`}
+                  // ADR-0085: side by side it takes the rest, at least 340.
+                  className={`${piece} flex max-h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${both ? '@min-[600px]:min-w-[340px]' : ''}`}
                 >
                   <OverlayAnswer
                     state={state}
