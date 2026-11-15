@@ -5,8 +5,8 @@
  *   second time, a code shown with another session, and a code after 60 seconds are all refused;
  * - desktop: this checkout's 1.3.0 shell, with a fresh temporary profile (never signed in), receives
  *   paramountai://session/<id>/<code> as a second launch would pass it, opens the link page, signs in
- *   with the code and shows the sessions card with that session first, "From your browser" (ADR-0055);
- *   a click opens its Connect card (ADR-0082: no Start card any more), and the panel is signed in.
+ *   with the code and opens that session's Connect card at once (1.6.1, ADR-0082), signed in; Back shows
+ *   the sessions card with that session first, "From your browser" (ADR-0055).
  * Every session this run signs in with is signed out again, and the invented session is deleted. Codes
  * are never printed. Prints step names only.
  * Run: pnpm --filter @kite/desktop build, then
@@ -217,15 +217,18 @@ test('2. desktop 1.3.0: a link with a code opens the Connect card, signed in', a
       .getByRole('button', { name: 'Got it' })
       .click({ timeout: 60_000 })
       .catch(() => undefined);
-    // ADR-0055: the sessions card, with the link's session first and highlighted; a click opens its
-    // Connect card (ADR-0082), signed in (signedInThenOut() checks the sign-in below).
-    // 1.6.1: its Start button is named "<title>, <company> (from your browser)".
+    // 1.6.1 (ADR-0082): the link opens the session's Connect card at once, signed in
+    // (signedInThenOut() checks the sign-in below). Back shows the sessions, the link's first and
+    // highlighted, its Start button named "<title>, <company> (from your browser)".
+    const connect = panel.getByRole('heading', { name: 'Connect Call Session' });
+    await expect(connect).toBeVisible({ timeout: 60_000 });
+    await panel.getByRole('button', { name: 'Back', exact: true }).click();
     const fromBrowser = panel.getByRole('list', { name: 'Sessions' }).getByRole('button', {
       name: new RegExp(`^Start session: .*${COMPANY} \\(from your browser\\)$`),
     });
-    await expect(fromBrowser).toBeVisible({ timeout: 60_000 });
+    await expect(fromBrowser).toBeVisible({ timeout: 30_000 });
     await fromBrowser.click();
-    await expect(panel.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
+    await expect(connect).toBeVisible();
     // The code never reached an address.
     expect(panel.url()).not.toContain(code);
     report('desktop link: connect card, signed in', true);

@@ -24,8 +24,14 @@ const DOMAIN = 'stripe.com';
 /** Production limits sign-in attempts per computer, per address, in a short window. */
 const RATE_LIMIT_WAIT_MS = 11_000;
 
+/** This run's id, in each address's session topic. */
+const RUN = Date.now().toString(36);
+
 for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
   const host = new URL(address).host;
+  // Unique per run and address: a session left by an earlier run, or the other address's (deleted, but
+  // its delete may not have synced yet), is never matched.
+  const TOPIC = `Logo check ${host} ${RUN} (invented)`;
 
   test(`${host}: suggestions, a real logo on the card, and the off switch`, async () => {
     await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_WAIT_MS));
@@ -45,6 +51,13 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
       });
       await signInOnce(page, { baseUrl: address, ...testAccount(), fresh: true });
       await closeUseNotice(page);
+      // Start with suggestions on: the setting follows the account (account sync), so a run that
+      // failed after turning it off would otherwise leave it off for this one.
+      await page.goto(`${address}/settings`);
+      const startSwitch = page.getByRole('switch', { name: 'Company suggestions' });
+      await expect(startSwitch).toBeVisible();
+      if (!(await startSwitch.isChecked())) await startSwitch.click();
+      await expect(startSwitch).toBeChecked();
 
       // Suggestions from Brandfetch, with the company's domain.
       await page.goto(`${address}/sessions/new`);
@@ -73,10 +86,10 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
       // Pick it and create the session: the card shows the real logo.
       await option.click();
       await expect(field).toHaveValue(/stripe/i);
-      await page.getByLabel('Topic').fill('Logo check (invented)');
+      await page.getByLabel('Topic').filter({ visible: true }).fill(TOPIC);
       await page.getByRole('button', { name: 'Next' }).click();
       await page.getByRole('button', { name: 'Create regular session' }).click();
-      const card = page.getByRole('listitem').filter({ hasText: 'Logo check (invented)' });
+      const card = page.getByRole('listitem').filter({ hasText: TOPIC });
       await expect(card).toBeVisible();
       // Soft: a refused logo is recorded, and the off switch below is still checked.
       const logo = card.locator('img');
