@@ -360,8 +360,17 @@ test('hotkeys: the page turns them on and off, and a hotkey from the main proces
     return window.kiteDesktop!.setHotkeysEnabled!(true);
   });
   expect(statuses.map((status) => status.action)).toEqual(GLOBAL_HOTKEYS);
-  // Keys that edit text in other apps are never global.
-  expect(statuses.map((status) => status.accelerator)).not.toContain('CommandOrControl+Backspace');
+  // 1.6.4 (ADR-0082, the developer's choice for ParakeetAI parity): Clear answers, Clear transcript and
+  // previous / next are held during a call too (until 1.6.3 they never were); Escape never is.
+  expect(statuses.map((status) => status.accelerator)).toEqual(
+    expect.arrayContaining([
+      'CommandOrControl+Backspace',
+      'CommandOrControl+Shift+Backspace',
+      'CommandOrControl+Left',
+      'CommandOrControl+Right',
+    ]),
+  );
+  expect(statuses.map((status) => status.accelerator)).not.toContain('Escape');
   /**
    * Whether the main process holds a shortcut now.
    *
