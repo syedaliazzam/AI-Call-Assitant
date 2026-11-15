@@ -20,7 +20,7 @@ import { MenuIcon, MicIcon } from '@/ui/icons';
 import { Menu, type MenuItem } from '@/ui/Menu';
 import { callClock } from './callClock';
 import { KeyChip } from './overlay/parts';
-import { RecordPopover, RecPill } from './overlay/RecordControls';
+import { pressRecPill, RecordPopover, RecPill } from './overlay/RecordControls';
 import { usePrivateOffWhileRecording } from './PrivateOffWarning';
 import type { CallDictation } from './useCallDictation';
 
@@ -107,7 +107,10 @@ function TopBarRecord({
       <RecPill
         recording={recording}
         open={open === 'question'}
-        onToggle={() => setOpen(open === 'question' ? null : 'question')}
+        // ADR-0082: starts at once when consent was ticked at Connect; otherwise asks.
+        onToggle={() =>
+          pressRecPill(recording, onCommand, () => setOpen(open === 'question' ? null : 'question'))
+        }
         disabled={disabled}
         mac={mac}
         keyAt="inline-flex"
@@ -215,9 +218,10 @@ export function TopBar(props: TopBarProps) {
         className={BUTTON}
         onClick={props.onChat}
         disabled={props.ending}
-        title={`Type a question (${hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS.chat, mac)})`}
+        // ADR-0082: Ctrl+Shift+Space is the voice question now, so this button names no key.
+        title="Type a question"
       >
-        Chat <KeyChip hotkey="chat" />
+        Chat
       </button>
       {props.recording && props.onRecordCommand && (
         <TopBarRecord

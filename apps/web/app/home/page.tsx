@@ -33,8 +33,13 @@ export default async function HomeRoute({
   const { user } = await requireUser();
   const { session } = await searchParams;
   return (
-    // ADR-0049: the panel shows the account's sessions when the account syncs.
-    <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null} email={user.email}>
+    // ADR-0049: the panel shows the account's sessions when the account syncs; every account has its own
+    // database on this device (accountId), so no account sees another's sessions.
+    <SyncScope
+      accountId={user.id}
+      syncUserId={syncEnabledFor(user.id) ? user.id : null}
+      email={user.email}
+    >
       {/* v1.3.2: the user's own transcript turns show this name. */}
       <AccountNameProvider name={user.name}>
         <HomePanel

@@ -11,8 +11,10 @@
  *             src/ui/icons.tsx, ./parts.tsx, ./ResizeGrips.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S15); ADR-0037, ADR-0040, ADR-0041
  *
- * Clear never empties the card while answers exist (item 15): it stops a stream and goes back to the
- * newest answer. Question and answer text is only rendered, and copied when the user asks.
+ * ADR-0082: Clear (and Ctrl+Backspace) clears the answers: they leave the screen until the next one (until
+ * 1.6.3 it only stopped a stream and went back to the newest answer). The ← and → buttons show only the
+ * arrows; their tooltips name the keys. Question and answer text is only rendered, and copied when the user
+ * asks.
  */
 'use client';
 
@@ -28,7 +30,7 @@ import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { CollapseIcon, CopyIcon, FlagIcon, StopIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
-import { BUTTON, FOOTER_BUTTON, ICON_BUTTON, KeyChip, PILL } from './parts';
+import { BUTTON, FOOTER_BUTTON, ICON_BUTTON, KeyChip, PILL, tipShortcut } from './parts';
 import { ResizeCorner } from './ResizeGrips';
 
 /** Props for OverlayAnswer. */
@@ -91,8 +93,12 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           disabled={index <= 0}
           onClick={() => onCommand({ type: 'prev' })}
           aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS.prev, mac)}
+          title={`Previous answer (${tipShortcut(FOCUSED_HOTKEYS.prev, mac)})`}
         >
-          <KeyChip hotkey="prev" />
+          {/* ADR-0082: the arrow only (no Ctrl on the chip). */}
+          <span aria-hidden="true" className="px-0.5 text-[15px] leading-none">
+            ←
+          </span>
         </button>
         <button
           type="button"
@@ -101,8 +107,11 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           disabled={index < 0 || index >= total - 1}
           onClick={() => onCommand({ type: 'next' })}
           aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS.next, mac)}
+          title={`Next answer (${tipShortcut(FOCUSED_HOTKEYS.next, mac)})`}
         >
-          <KeyChip hotkey="next" />
+          <span aria-hidden="true" className="px-0.5 text-[15px] leading-none">
+            →
+          </span>
         </button>
         {total > 1 && index >= 0 && (
           <span className="text-[13px] font-medium text-ui-muted">
@@ -120,7 +129,9 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           className={PILL}
           onClick={() => onCommand({ type: 'clear' })}
           disabled={!state}
+          aria-label="Clear answers"
           aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS.clear, mac)}
+          title={`Clear answers (${tipShortcut(FOCUSED_HOTKEYS.clear, mac)})`}
         >
           Clear <KeyChip hotkey="clear" visibleAt="@min-[620px]:inline-flex" />
         </button>
@@ -312,7 +323,8 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
             </>
           ) : (
             <p className="text-ui-muted">
-              {state?.notice ?? 'Press Answer when they ask something.'}
+              {/* ADR-0082: the overlay has no Answer button any more: the key. */}
+              {state?.notice ?? `Press ${mac ? '⌘ Enter' : 'Ctrl+Enter'} when they ask something.`}
             </p>
           )}
         </div>

@@ -4,10 +4,11 @@
  * opening https://call.paramountintelligence.co with a fresh, empty profile, signed in as the end-to-end
  * TEST account (listed in KITE_SYNC_USERS). In order: sign in on the home panel, with the acceptable-use
  * notice, landing on "Your sessions"; an invented session put into the account through the sync API (the
- * desktop app has no dashboard) shows there; a call from the panel: the session → Start your session →
- * Start free → Connect Call Session → Connect (downloading the speech model first when the profile has
- * none); the call window opens minimised and the overlay on top; lines in the transcript (the Transcript
- * switch); a real answer to a typed question in the reference chat bar, rated; asking again adds no entry;
+ * desktop app has no dashboard) shows there; a call from the panel: the session → Connect Call Session
+ * (ADR-0082: no Start your session card) → Connect (downloading the speech model first when the profile
+ * has none); the call window opens minimised and the overlay on top; lines in the transcript (the
+ * Transcript switch); a real answer to a typed question (ADR-0082: the overlay has no chat bar, so it is
+ * typed in the call window's message box) shown on the overlay, rated; asking again adds no entry;
  * Private covers every window; the ⋮ Position grid moves the overlay to the bottom row and back; Exit
  * asks first, the overlay closes, the panel comes back with "Call ended", and the call window closes
  * itself; the session is deleted (only what this run made, ADR-0050). Manual run only (never in CI).
@@ -197,8 +198,7 @@ test('3. a call: Start → Connect, the overlay, an answer, Private, positions, 
     .getByRole('list', { name: 'Sessions' })
     .getByRole('button', { name: new RegExp(SESSION.company) })
     .click();
-  await expect(page.getByRole('heading', { name: 'Start your session' })).toBeVisible();
-  await page.getByRole('button', { name: 'Start free' }).click();
+  // ADR-0082: the session goes straight to its Connect card.
   await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
 
   const startedAt = Date.now();
@@ -240,15 +240,15 @@ test('3. a call: Start → Connect, the overlay, an answer, Private, positions, 
   });
   report('desktop transcript panel shows lines', true);
 
-  // A typed question in the reference chat bar gets a real answer in the answer panel. "Them" is this
-  // computer's real sound, which may be silent, so there may be no question for the Answer key.
+  // A typed question gets a real answer in the overlay's answer panel. ADR-0082: the overlay has no chat
+  // bar (Ctrl+Shift+Space asks by voice, which a test cannot speak), so it is typed in the call window's
+  // message box. "Them" is this computer's real sound, which may be silent, so there may be no question
+  // for the Answer key.
   const question = 'What was the late delivery change in the pilot?';
+  await expect(overlay.getByLabel('Type a question')).toHaveCount(0);
   const ask = async () => {
     const response = main.waitForResponse((r) => isMode(r, 'chat'), { timeout: 60_000 });
-    if (!(await overlay.getByLabel('Type a question').isVisible())) {
-      await overlay.getByRole('button', { name: /^Chat/ }).click();
-    }
-    const box = overlay.getByLabel('Type a question');
+    const box = main.getByLabel('Type a question');
     await box.fill(question);
     await box.press('Enter');
     await (await response).text();

@@ -95,7 +95,7 @@ async function advance(ms: number): Promise<void> {
 beforeEach(async () => {
   // Timers only: the fake database's own scheduling stays real.
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
-  selectAccountDatabase('user-client-test');
+  selectAccountDatabase('user-client-test', true);
   await getDb().delete();
   forgetDb();
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -104,13 +104,13 @@ beforeEach(async () => {
 afterEach(async () => {
   vi.useRealTimers();
   await getDb().delete();
-  selectAccountDatabase(null);
+  selectAccountDatabase(null, false);
   forgetDb();
 });
 
 describe('startAccountSync', () => {
   it('does nothing without an account cache', async () => {
-    selectAccountDatabase(null);
+    selectAccountDatabase(null, false);
     const server = fakeServer();
     const stop = startAccountSync({ transport: server.transport, target: fakeWindow() });
     await advance(5_000);

@@ -84,6 +84,7 @@ export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
       return press.shiftKey ? 'screenshot' : 'answer';
     case 'Backspace':
       // v1.1.0: Ctrl+Shift+Backspace clears the transcript; Chat moved to Ctrl+Shift+Space.
+      // ADR-0082: Ctrl+Backspace clears the answers.
       return press.shiftKey ? 'clear-transcript' : 'clear';
     case ' ':
       return press.shiftKey ? 'chat' : null;
@@ -91,9 +92,32 @@ export function hotkeyFor(press: KeyPress, mac: boolean): HotkeyAction | null {
       return press.shiftKey ? null : 'prev';
     case 'ArrowRight':
       return press.shiftKey ? null : 'next';
+    // ADR-0082: the overlay's zoom, as in browsers. "+" is Shift+= on most layouts, so both count.
+    case '=':
+    case '+':
+      return 'zoom-in';
+    case '-':
+      return press.shiftKey ? null : 'zoom-out';
+    case '0':
+      return press.shiftKey ? null : 'zoom-reset';
     default:
       return null;
   }
+}
+
+/**
+ * ADR-0082: whether a key press is Escape with no modifier, which cancels a voice question while it
+ * listens (the page's own key handling while a Kite window has focus; desktop 1.6.4 also holds it from
+ * other apps for those few seconds).
+ *
+ * @param press The key press.
+ * @returns True for a plain Escape.
+ * Called from: src/features/live/LiveAnswers.tsx, src/features/live/CompactLive.tsx; tests
+ */
+export function isVoiceCancelKey(press: KeyPress): boolean {
+  return (
+    press.key === 'Escape' && !press.ctrlKey && !press.metaKey && !press.altKey && !press.shiftKey
+  );
 }
 
 /**

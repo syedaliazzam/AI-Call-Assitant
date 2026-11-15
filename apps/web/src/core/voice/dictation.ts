@@ -62,6 +62,20 @@ export function shouldDivert(listening: boolean, target: TargetChoice): boolean 
   return listening && target !== 'call';
 }
 
+/**
+ * ADR-0082: the target a voice question (Ctrl+Shift+Space, Ctrl+Alt+Enter) listens with. The spoken
+ * question must never become a "You" transcript line or count as the user's reply, so it is always one
+ * that is diverted (shouldDivert()): the chat switch's own choice, except "For the call", which becomes
+ * "Auto".
+ *
+ * @param chatTarget The session's chat switch.
+ * @returns The target to dictate with.
+ * Called from: src/features/live/LiveAnswers.tsx; tests
+ */
+export function voiceQuestionTarget(chatTarget: TargetChoice): TargetChoice {
+  return chatTarget === 'call' ? 'auto' : chatTarget;
+}
+
 /** Timer functions (the browser's by default; tests pass fakes). */
 export interface DictationTimers {
   /** Starts a timer. */

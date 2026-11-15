@@ -60,7 +60,7 @@ declare global {
 }
 
 // The account's own cache, as SyncScope selects it for an account with sync.
-selectAccountDatabase(USER_ID);
+selectAccountDatabase(USER_ID, true);
 
 const root = createRoot(document.getElementById('root')!);
 
@@ -93,7 +93,7 @@ window.kiteLauncherHarness = {
   },
   show: (fromBrowserId) =>
     root.render(
-      <SyncScope syncUserId={USER_ID} runEngine={false} email={HARNESS_EMAIL}>
+      <SyncScope accountId={USER_ID} syncUserId={USER_ID} runEngine={false} email={HARNESS_EMAIL}>
         <HomePanel
           key={fromBrowserId ?? 'list'}
           email={HARNESS_EMAIL}

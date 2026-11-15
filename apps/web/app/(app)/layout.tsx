@@ -33,8 +33,13 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const { user } = await requireUser();
 
   return (
-    // ADR-0049: accounts with the accountSync switch keep their call data in the account.
-    <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null} email={user.email}>
+    // ADR-0049: accounts with the accountSync switch keep their call data in the account. Every account
+    // has its own database on this device (accountId), so no account sees another's data.
+    <SyncScope
+      accountId={user.id}
+      syncUserId={syncEnabledFor(user.id) ? user.id : null}
+      email={user.email}
+    >
       <AskKiteHotkey />
       <AcceptableUseNotice />
       {/* v1.3.2: the user's own transcript turns show this name. */}

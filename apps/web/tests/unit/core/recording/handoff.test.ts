@@ -1,15 +1,16 @@
 /**
- * Tests for apps/web/src/core/recording/handoff.ts (desktop 1.5.0, ADR-0068): the Connect card's note is
- * taken once, only by its session, only while fresh and well formed; Off clears it; blocked storage
+ * Tests for apps/web/src/core/recording/handoff.ts (desktop 1.5.0, ADR-0068; ADR-0082): the Connect card's
+ * consent note is taken once, only by its session, only while fresh and well formed; unticked clears it; an
+ * old 'record from the start' note is ignored; blocked storage
  * throws nothing; "recording saved" reaches a listener on the channel and stops after unsubscribing.
  */
 import { describe, expect, it } from 'vitest';
 import {
   announceRecordingSaved,
-  leaveRecordStart,
-  RECORD_START_KEY,
-  RECORD_START_TTL_MS,
-  takeRecordStart,
+  leaveRecordConsent,
+  RECORD_CONSENT_KEY,
+  RECORD_CONSENT_TTL_MS,
+  takeRecordConsent,
   watchRecordingSaved,
   type HandoffDeps,
 } from '@/core/recording/handoff';
@@ -56,38 +57,39 @@ const BLOCKED: NonNullable<HandoffDeps['storage']> = {
   },
 };
 
-describe('record start note', () => {
-  it('is taken once, by its own session', () => {
+describe('record consent note (ADR-0082)', () => {
+  it('is taken once, by its own session, and says yes only when ticked', () => {
     const deps = fakes({ value: 1_000 });
-    leaveRecordStart('s1', { kind: 'screen', displayId: '2' }, deps);
-    expect(takeRecordStart('other', deps)).toBeNull();
-    expect(takeRecordStart('s1', deps)).toEqual({ kind: 'screen', displayId: '2' });
-    expect(takeRecordStart('s1', deps)).toBeNull();
+    leaveRecordConsent('s1', true, deps);
+    expect(takeRecordConsent('other', deps)).toBe(false);
+    expect(takeRecordConsent('s1', deps)).toBe(true);
+    expect(takeRecordConsent('s1', deps)).toBe(false);
   });
 
-  it('is ignored once stale, and cleared by Off', () => {
+  it('is ignored once stale, and cleared when unticked', () => {
     const now = { value: 1_000 };
     const deps = fakes(now);
-    leaveRecordStart('s1', { kind: 'audio', displayId: null }, deps);
-    now.value += RECORD_START_TTL_MS + 1;
-    expect(takeRecordStart('s1', deps)).toBeNull();
-    leaveRecordStart('s1', { kind: 'audio', displayId: null }, deps);
-    leaveRecordStart('s1', null, deps);
-    expect(takeRecordStart('s1', deps)).toBeNull();
+    leaveRecordConsent('s1', true, deps);
+    now.value += RECORD_CONSENT_TTL_MS + 1;
+    expect(takeRecordConsent('s1', deps)).toBe(false);
+    leaveRecordConsent('s1', true, deps);
+    leaveRecordConsent('s1', false, deps);
+    expect(takeRecordConsent('s1', deps)).toBe(false);
   });
 
-  it('refuses a malformed note, and survives blocked storage', () => {
+  it('ignores a 1.6.3 "record from the start" note and a malformed note, and survives blocked storage', () => {
     const deps = fakes({ value: 1_000 });
+    // 1.5.0 to 1.6.3 left this; a call must never start recording by itself now.
     deps.storage!.setItem(
-      RECORD_START_KEY,
-      JSON.stringify({ sessionId: 's1', kind: 'video', at: 1_000 }),
+      'kite-record-start',
+      JSON.stringify({ sessionId: 's1', kind: 'screen', displayId: null, at: 1_000 }),
     );
-    expect(takeRecordStart('s1', deps)).toBeNull();
+    expect(takeRecordConsent('s1', deps)).toBe(false);
+    deps.storage!.setItem(RECORD_CONSENT_KEY, '{not json');
+    expect(takeRecordConsent('s1', deps)).toBe(false);
     const blocked: HandoffDeps = { ...deps, storage: BLOCKED };
-    expect(() =>
-      leaveRecordStart('s1', { kind: 'screen', displayId: null }, blocked),
-    ).not.toThrow();
-    expect(takeRecordStart('s1', blocked)).toBeNull();
+    expect(() => leaveRecordConsent('s1', true, blocked)).not.toThrow();
+    expect(takeRecordConsent('s1', blocked)).toBe(false);
   });
 });
 

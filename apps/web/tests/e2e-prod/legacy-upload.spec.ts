@@ -1,12 +1,14 @@
 /**
- * Production check of the one-time upload (ADR-0049, Phase 4) on BOTH web addresses, as the
- * end-to-end TEST account (listed in KITE_SYNC_USERS). No Claude request. For each address, a fresh
- * Chrome profile first gets an invented session in that address's own 'kite' database (the data a
- * device had before account sync, seeded by harness/seed-legacy.ts), then signs in: the dashboard asks
- * "This computer has 1 session that isn't in your account yet…", Add uploads it ("1 added, 0 were
- * already there"), the session shows on the dashboard, and the question is not asked again after a
- * reload. Everything this run created is deleted at the end through the sync API. Prints step names
- * only.
+ * Production check of the one-time upload (ADR-0049, Phase 4; privacy fix of 14 Nov 2026) on BOTH web
+ * addresses, as the end-to-end TEST account (listed in KITE_SYNC_USERS). No Claude request. For each
+ * address, a fresh Chrome profile signs in, then gets an invented session in the account's OWN local
+ * database ('kite-l-<id>', what the account made on this device without account sync) and another in
+ * the old shared 'kite' database (no owner recorded), seeded by harness/seed-legacy.ts. After a reload
+ * the dashboard asks "This computer has 1 session from this account that isn't synced yet…" (the shared
+ * database's session is never counted or shown), Add uploads it ("1 added, 0 were already there"), the
+ * session shows on the dashboard, the shared session never does, and the question is not asked again
+ * after a reload. Everything this run created in the account is deleted at the end through the sync
+ * API. Prints step names only.
  * Run: pnpm --filter web exec playwright test -c tests/e2e-prod/playwright.config.ts legacy-upload.spec.ts
  */
 import path from 'node:path';
@@ -50,28 +52,32 @@ test.beforeAll(async () => {
  */
 async function checkAddress(browser: Browser, address: string, label: string): Promise<void> {
   const company = `E2E Upload ${label} ${Date.now().toString(36)}`;
+  const sharedCompany = `E2E Shared ${label} ${Date.now().toString(36)}`;
   const context = await browser.newContext();
   const page = await context.newPage();
   let sessionId = '';
   try {
-    await page.goto(`${address}/login`);
+    await signInOnce(page, { baseUrl: address, ...testAccount(), fresh: true });
+    await closeUseNotice(page);
     await page.addScriptTag({ content: seedScript });
     sessionId = await page.evaluate(
-      (name) =>
+      ([own, shared]) =>
         (
           window as unknown as {
             /** The seeding function (harness/seed-legacy.ts). */
-            kiteSeedLegacy(company: string): Promise<string>;
+            kiteSeedLegacy(ownCompany: string, sharedCompany: string): Promise<string>;
           }
-        ).kiteSeedLegacy(name),
-      company,
+        ).kiteSeedLegacy(own!, shared!),
+      [company, sharedCompany],
     );
-    await signInOnce(page, { baseUrl: address, ...testAccount(), fresh: true });
+    await page.reload();
     await closeUseNotice(page);
 
-    const card = page.getByRole('region', { name: "Add this computer's data to your account" });
+    const card = page.getByRole('region', {
+      name: "Add this account's unsynced data from this computer",
+    });
     await expect(card).toContainText(
-      "This computer has 1 session that isn't in your account yet.",
+      "This computer has 1 session from this account that isn't synced yet.",
       {
         timeout: 30_000,
       },
@@ -79,7 +85,8 @@ async function checkAddress(browser: Browser, address: string, label: string): P
     await card.getByRole('button', { name: 'Add' }).click();
     await expect(card).toContainText('1 added, 0 were already there.', { timeout: 60_000 });
     await expect(sessionCard(page, company)).toBeVisible({ timeout: 30_000 });
-    report(`upload on ${label}: asked, added, shown`, true);
+    await expect(sessionCard(page, sharedCompany)).toHaveCount(0);
+    report(`upload on ${label}: asked, added, shown; the shared database never offered`, true);
 
     await page.reload();
     await expect(sessionCard(page, company)).toBeVisible({ timeout: 30_000 });

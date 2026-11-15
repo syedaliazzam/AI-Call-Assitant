@@ -7,13 +7,17 @@
  *          close button hides it or quits), and the page reloads a session link causes keep it too; a
  *          browser tab forgets it when closed. With storage blocked, the notice shows again on the next
  *          page load, which is the safe way to fail for something the person should act on.
- * Used by: src/features/drive/DriveNotices.tsx
+ * Used by: src/features/drive/DriveNotices.tsx; src/core/storage/accountScope.ts (the key, removed when
+ *          another account signs in)
  * Depends on: sessionStorage
  * Architecture: ADR-0072
  */
 
-/** The sessionStorage key of the closed reconnect notice. */
-const RECONNECT_CLOSED_KEY = 'kite.drive.reconnectNoticeClosed';
+/**
+ * The sessionStorage key of the closed reconnect notice. Exported so the account switch removes it
+ * (core/storage/accountScope.ts): it belongs to the account that closed the notice.
+ */
+export const RECONNECT_CLOSED_KEY = 'kite.drive.reconnectNoticeClosed';
 
 /**
  * Whether the reconnect notice was closed in this window's run.

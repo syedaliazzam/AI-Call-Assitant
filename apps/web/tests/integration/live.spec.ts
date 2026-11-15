@@ -8,7 +8,12 @@
  *   arriving, the action row, the answer panel's size and its footer (Cancel) do not move;
  * - the "Claude unavailable" message in the answer panel;
  * - the phone check: an iPhone sees "Live calls need a computer"; Chrome on Windows does not;
- * - the overlay: three bars, the answer's parts, one scroll area, at its default and smallest sizes.
+ * - the overlay: three bars, the answer's parts, one scroll area, at its default and smallest sizes;
+ * - ADR-0082: bar 1 without Answer, Screenshot or Chat (and no chat bar), with a Click-through switch
+ *   where clicks can pass; bar 2 as the one status bar, whose line shows the current message with its
+ *   button ("Can't hear the other side", "Listening…", the headphones hint, "Still in a call?", listening
+ *   paused, the Answer key held elsewhere, Private off) instead of separate warning bars; the answer
+ *   panel's arrows without key-caps, and its Clear sending "clear answers".
  * Set KITE_SCREENSHOT_DIR to also save screenshots (1440, 900 and 390 px; 360 px for the
  * compact view and picture-in-picture, which render the same component), each checked for
  * sideways scroll, 44 px touch targets on touch screens and console errors (tests/ui/shots.ts).
@@ -467,7 +472,8 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
     const watched = await open('compact', size);
     const { page } = watched;
     await expect(page.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Live transcript bar' })).toBeVisible();
+    // ADR-0082: bar 2 is the one status bar.
+    await expect(page.getByRole('group', { name: 'Status bar' })).toBeVisible();
     await expect(page.getByLabel('Latest words')).toContainText('the Professional plan');
     await expect(page.getByLabel('Question', { exact: true })).toContainText('Professional plan');
     await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText(
@@ -484,7 +490,7 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
     expect(fits, 'the window itself does not scroll').toBe(true);
     await shot(watched, size, `overlay-${size.width}`);
 
-    // The current live question sits in the strip (v1.1.0: above the words, not the answer).
+    // The current live question sits on the status bar (v1.1.0: not on the answer).
     await expect(page.getByLabel('Current question from the other person')).toContainText(
       'What would the Professional plan cost',
     );
@@ -493,10 +499,10 @@ test('overlay: three bars, the answer in full, one scroll area, at default and s
     await expect(page.getByRole('region', { name: 'Latest answer' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Open the overlay' }).click();
     await expect(page.getByRole('region', { name: 'Latest answer' })).toBeVisible();
-    // The strip's Clear hides the words on screen; the answer stays (v1.1.0).
+    // The status bar's Clear hides the words on screen; the answer stays (v1.1.0).
     await page
-      .getByRole('region', { name: 'Live transcript bar' })
-      .getByRole('button', { name: 'Clear' })
+      .getByRole('group', { name: 'Status bar' })
+      .getByRole('button', { name: 'Clear transcript' })
       .click();
     await expect(page.getByLabel('Latest words')).not.toContainText('the Professional plan');
     await expect(page.getByRole('heading', { name: 'Answer line' })).toBeVisible();
@@ -538,10 +544,10 @@ test('overlay: a coding answer, a figure to check and a private answer fit (ADR-
     );
     expect(fits, 'the window itself does not scroll').toBe(true);
     await shot(coding, size, `overlay-coding-${size.width}`);
-    // ADR-0055: the chat bar as in the reference: no switch on it (the live page keeps the choice).
-    await page.getByRole('button', { name: 'Chat', exact: false }).first().click();
+    // ADR-0082: the overlay has no Chat button and no message box (Ctrl+Shift+Space asks by voice).
+    await expect(page.getByRole('button', { name: 'Chat' })).toHaveCount(0);
+    await expect(page.getByRole('textbox')).toHaveCount(0);
     await expect(page.getByRole('radiogroup', { name: 'Who the answer is for' })).toHaveCount(0);
-    await shot(coding, size, `overlay-chat-${size.width}`);
     await coding.context.close();
 
     const privately = await open('compact-private', size);
@@ -746,34 +752,46 @@ const BARS_SIZE: Width = { width: 900, height: 520, touch: false };
 /** A window wide enough for both panels side by side. */
 const WIDE_SIZE: Width = { width: 1080, height: 560, touch: false };
 
-test('ADR-0055: accounts without sync keep the classic bar 1 and chat bar', async () => {
+test('ADR-0055: accounts without sync keep the classic bar 1 (ADR-0082: no chat bar there either)', async () => {
   const classic: Width = { width: 780, height: 520, touch: false };
   const watched = await openOverlayView(classic, '&panels=none&shell=1&look=classic');
   const { page } = watched;
   const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
   await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveCount(0);
-  // 1.6.3 (ADR-0075): with Auto answer on the 780 bar, Screenshot's and Chat's key-caps give way
-  // first; Answer keeps its own, and the bar fits with ⋮ and Exit whole.
-  await expect(
-    bar.getByRole('button', { name: 'Answer', exact: true }).locator('kbd'),
-  ).toBeVisible();
-  await expect(bar.getByRole('button', { name: 'Screenshot' }).locator('kbd')).toHaveCount(0);
+  // ADR-0082: no Answer, Screenshot or Chat buttons (their shortcuts still work), and the bar fits with
+  // ⋮ and Exit whole.
+  for (const name of ['Answer', 'Screenshot', 'Chat']) {
+    await expect(bar.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
   await expect
     .poll(() => barFit(page))
     .toMatchObject({ barFits: true, leftFits: true, exitInside: true, menuInside: true });
-  await bar.getByRole('button', { name: 'Chat' }).click();
-  const chat = page.getByRole('group', { name: 'Chat' });
-  await expect(chat.getByLabel('Type a question')).toHaveAttribute(
-    'placeholder',
-    'Type a message…',
-  );
-  await expect(chat.getByRole('radiogroup', { name: 'Who the answer is for' })).toBeVisible();
+  // No chat bar and no message box anywhere on the overlay.
+  await expect(page.getByRole('group', { name: 'Chat' })).toHaveCount(0);
+  await expect(page.getByLabel('Type a question')).toHaveCount(0);
+  await expect(page.getByRole('group', { name: 'Status bar' })).toBeVisible();
   await watched.context.close();
 });
 
-test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothing cut off', async () => {
-  // 1.6.3 (ADR-0075): at the desktop overlay's default width, which every key-cap fits with Auto answer
-  // on the bar (a narrower window drops them first, measured).
+/**
+ * The names of bar 1's controls, in order (the device icons' states left out).
+ *
+ * @param page The overlay's page.
+ * @returns Each button's, picture's and timer's name.
+ */
+async function barWords(page: Page): Promise<(string | undefined)[]> {
+  const words = await page
+    .getByRole('toolbar', { name: 'Overlay controls' })
+    .evaluate((element) =>
+      [...element.querySelectorAll('button,[role="img"],[role="timer"]')].map(
+        (item) => item.getAttribute('aria-label') ?? item.textContent?.trim(),
+      ),
+    );
+  return words.filter((word) => !word?.includes('capturing') && !word?.includes('not connected'));
+}
+
+test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screenshot or Chat', async () => {
+  // 1.6.3 (ADR-0075): at the desktop overlay's default width.
   const watched = await openOverlayView(
     { width: 980, height: 480, touch: false },
     '&panels=none&shell=1',
@@ -781,19 +799,9 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
   const { page } = watched;
   const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
   expect((await bar.boundingBox())!.height).toBeCloseTo(44, 0);
-  const words = await bar.evaluate((element) =>
-    [...element.querySelectorAll('button,[role="img"],[role="timer"]')].map(
-      (item) => item.getAttribute('aria-label') ?? item.textContent?.trim(),
-    ),
-  );
-  expect(
-    words.filter((word) => !word?.includes('capturing') && !word?.includes('not connected')),
-  ).toEqual([
+  expect(await barWords(page)).toEqual([
     'Choose audio source',
     'Choose microphone',
-    expect.stringMatching(/^Answer/),
-    expect.stringMatching(/^Screenshot/),
-    expect.stringMatching(/^Chat/),
     // ADR-0055: the Transcript pill with its switch.
     'Transcript',
     // 1.6.3 (ADR-0075): Auto answer moved here from its floating pill.
@@ -804,12 +812,27 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
     'Overlay menu',
     'Exit: end call',
   ]);
-  await expect(bar.getByRole('button', { name: 'Answer' }).locator('kbd')).toContainText('Ctrl');
-  // [Ctrl ⇧ ↵] and [Ctrl ⇧ ␣]: their shift, enter and space are icons with the symbol for readers.
-  await expect(bar.getByRole('button', { name: 'Screenshot' }).locator('kbd')).toContainText('⇧');
-  await expect(bar.getByRole('button', { name: 'Screenshot' }).locator('kbd')).toContainText('↵');
-  await expect(bar.getByRole('button', { name: 'Chat' }).locator('kbd')).toContainText('␣');
+  // ADR-0082: the shortcuts still work, but bar 1 has no buttons for them.
+  for (const name of ['Answer', 'Screenshot', 'Chat']) {
+    await expect(bar.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
   await shot(watched, BARS_SIZE, 'call-bars');
+  // ADR-0082: where clicks can pass (a desktop shell from 1.3.0), the Click-through switch follows Auto
+  // answer.
+  await page.goto(overlayUrl('&panels=none&ct=off'));
+  await bar.waitFor();
+  expect(await barWords(page)).toEqual([
+    'Choose audio source',
+    'Choose microphone',
+    'Transcript',
+    'Auto answer',
+    'Click-through',
+    'Drag here to move',
+    'Shrink to an icon',
+    'Call time',
+    'Overlay menu',
+    'Exit: end call',
+  ]);
   // At the width a 1.1.0 window keeps, at its smallest, and in a narrow picture-in-picture window,
   // everything still fits: nothing on the left is cut off, and ⋮ and Exit are whole.
   const exit = bar.getByRole('button', { name: 'Exit: end call' });
@@ -828,16 +851,35 @@ test('S13: bar 1 in order, 44 tall, radius 12, every key-cap from the map, nothi
   await watched.context.close();
 });
 
-test('S13: bar 2 is narrower and left-aligned, the level button opens the transcript; Auto answer is on bar 1 (1.6.3)', async () => {
+test('S13: bar 2 is the one status bar, under bar 1; the level button opens the transcript; Auto answer is on bar 1 (1.6.3)', async () => {
   const watched = await openOverlayView(BARS_SIZE, '&panels=none');
   const { page } = watched;
   const bar1 = (await page.getByRole('toolbar', { name: 'Overlay controls' }).boundingBox())!;
-  const region = page.getByRole('region', { name: 'Live transcript bar' });
+  // ADR-0082: one row (was the two-row "Live transcript bar"), left-aligned with bar 1 and no wider.
+  const region = page.getByRole('group', { name: 'Status bar' });
+  await expect(region).toHaveCount(1);
+  await expect(page.getByRole('region', { name: 'Live transcript bar' })).toHaveCount(0);
   const bar2 = (await region.boundingBox())!;
   expect(Math.abs(bar2.x - bar1.x)).toBeLessThanOrEqual(2);
-  expect(bar2.width).toBeLessThan(bar1.width - 100);
+  expect(bar2.y).toBeGreaterThanOrEqual(bar1.y + bar1.height);
+  expect(bar2.width).toBeLessThanOrEqual(bar1.width + 1);
+  expect(bar2.height).toBeCloseTo(44, 0);
+  // In order: the level button, the language, the line (the live words), Clear and collapse.
+  const names = await region.evaluate((element) =>
+    [...element.querySelectorAll('button')].map((button) => button.getAttribute('aria-label')),
+  );
+  expect(names).toEqual([
+    'Show the transcript',
+    expect.stringMatching(/^Answer language: /),
+    'Latest words: open the transcript',
+    'Clear transcript',
+    'Hide the status bar',
+  ]);
   await expect(region.getByRole('button', { name: /^Answer language: / })).toBeVisible();
-  await expect(region.getByRole('button', { name: 'Clear' }).locator('kbd')).toContainText('⌫');
+  await expect(
+    region.getByRole('button', { name: 'Clear transcript' }).locator('kbd'),
+  ).toContainText('⌫');
+  await expect(region.getByRole('button', { name: 'Clear transcript' })).toContainText('Clear');
   // 1.6.3 (ADR-0075): no floating Auto answer pill beside it; the toggle is on bar 1, and toggles.
   await expect(page.getByRole('button', { name: /^Auto answer / })).toHaveCount(0);
   const toggle = page
@@ -855,9 +897,18 @@ test('S13: bar 2 is narrower and left-aligned, the level button opens the transc
   await region.getByRole('button', { name: /^Answer language: / }).click();
   await expect(page.getByRole('listbox', { name: 'Answer language' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Open the transcript', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Transcript panel' })).toBeVisible();
-  await expect(region).toHaveCount(0);
+  await region.getByRole('button', { name: 'Show the transcript' }).click();
+  const panel = page.getByRole('region', { name: 'Transcript panel' });
+  await expect(panel).toBeVisible();
+  // ADR-0082: the panel's header is the same status bar (one on screen): its level button and collapse
+  // close the panel, and its line does not repeat the words that are in the panel.
+  await expect(region).toHaveCount(1);
+  const header = panel.getByRole('group', { name: 'Status bar' });
+  await expect(header.getByRole('button', { name: 'Hide the transcript' })).toBeVisible();
+  await expect(header.getByLabel('Latest words')).toHaveCount(0);
+  await header.getByRole('button', { name: 'Close the transcript' }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(region.getByLabel('Latest words')).toBeVisible();
   await watched.context.close();
 });
 
@@ -900,59 +951,126 @@ test('S13: a shell before 1.2.0 has no icon: compact collapses to bar 1 and open
   await expect(page.getByRole('button', { name: 'Shrink to an icon' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Collapse the overlay' }).click();
   expect(await watched.log()).toContainEqual({ mode: 'collapsed' });
-  await expect(page.getByRole('region', { name: 'Live transcript bar' })).toHaveCount(0);
+  const statusBar = page.getByRole('group', { name: 'Status bar' });
+  await expect(statusBar).toHaveCount(0);
   await page.getByRole('button', { name: 'Open the overlay' }).click();
-  await expect(page.getByRole('region', { name: 'Live transcript bar' })).toBeVisible();
+  await expect(statusBar).toBeVisible();
   // Bar 2's collapse does the same, and bar 1 opens it again.
-  await page.getByRole('button', { name: 'Hide the transcript bar' }).click();
-  await expect(page.getByRole('region', { name: 'Live transcript bar' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Hide the status bar' }).click();
+  await expect(statusBar).toHaveCount(0);
   await page.getByRole('button', { name: 'Open the overlay' }).click();
-  await expect(page.getByRole('region', { name: 'Live transcript bar' })).toBeVisible();
+  await expect(statusBar).toBeVisible();
   await watched.context.close();
 });
 
-test('S14: the chat bar opens under bar 1 at its width; Send waits for words; a screenshot can go alone', async () => {
+/** ADR-0082: one message the status bar can show, as the harness's ?status= sets it up. */
+interface StatusCase {
+  /** The ?status= value (harness/live.tsx statusParams()). */
+  status: string;
+  /** The message's key (data-status). */
+  key: string;
+  /** The line's words. */
+  text: string | RegExp;
+  /** Its button. */
+  button: string;
+  /** What the button sends to the live page, or null when it opens a list on the overlay. */
+  sends: object | null;
+  /** True for an alert (it stays when the overlay is collapsed to bar 1). */
+  alert: boolean;
+}
+
+/** ADR-0082: the status bar's messages and their buttons (statusLine.ts). */
+const STATUS_CASES: readonly StatusCase[] = [
+  {
+    status: 'them-silent',
+    key: 'them-silent',
+    text: "Can't hear the other side",
+    button: 'Choose audio source',
+    sends: null,
+    alert: true,
+  },
+  {
+    status: 'listening',
+    key: 'listening',
+    text: 'Listening… (Esc cancels)',
+    button: 'Cancel',
+    sends: { type: 'voice-cancel' },
+    alert: false,
+  },
+  {
+    status: 'headphones',
+    key: 'headphones',
+    text: 'Speakers echoing — use headphones',
+    button: 'OK',
+    sends: { type: 'headphones-seen' },
+    alert: false,
+  },
+  {
+    status: 'still-here',
+    key: 'still-here',
+    text: 'Still in a call?',
+    button: 'Yes',
+    sends: { type: 'still-here' },
+    alert: false,
+  },
+  {
+    status: 'paused',
+    key: 'paused',
+    text: /^Listening is paused/,
+    button: 'Resume',
+    sends: { type: 'resume' },
+    alert: false,
+  },
+  {
+    status: 'answer-key',
+    key: 'answer-key',
+    text: 'Ctrl+Enter is used by another app',
+    button: 'Hotkeys',
+    sends: { type: 'hotkey-settings' },
+    alert: true,
+  },
+];
+
+test('ADR-0082: the status bar shows the current message with its button; no separate warning bars', async () => {
   const watched = await openOverlayView(BARS_SIZE, '&panels=none');
   const { page } = watched;
-  await page.getByRole('button', { name: 'Chat' }).first().click();
-  const chat = page.getByRole('group', { name: 'Chat' });
-  const bar1 = (await page.getByRole('toolbar', { name: 'Overlay controls' }).boundingBox())!;
-  const box = (await chat.boundingBox())!;
-  expect(box.y).toBeGreaterThanOrEqual(bar1.y + bar1.height);
-  expect(Math.abs(box.width - bar1.width)).toBeLessThanOrEqual(2);
-  const input = chat.getByLabel('Type a question');
-  await expect(input).toBeFocused();
-  await expect(input).toHaveAttribute('placeholder', 'Enter a message…');
-  // [Ctrl Alt ↵] and [↵], from the map; Send is muted until there are words.
-  await expect(
-    chat.getByRole('button', { name: 'Send with a screenshot' }).locator('kbd'),
-  ).toContainText('Alt');
-  const send = chat.getByRole('button', { name: 'Send', exact: true });
-  await expect(send).toBeDisabled();
-  await shot(watched, BARS_SIZE, 'call-chat');
-  await input.fill('What did they ask?');
-  await expect(send).toBeEnabled();
-  await send.click();
-  expect(await watched.log()).toContainEqual({ type: 'chat', question: 'What did they ask?' });
-  await expect(chat).toHaveCount(0);
-  // With no words, the screenshot button simply takes a screenshot.
-  await page.getByRole('button', { name: 'Chat' }).first().click();
-  await chat.getByRole('button', { name: 'Send with a screenshot' }).click();
-  expect(await watched.log()).toContainEqual({ type: 'screenshot' });
-  // With words, they go with it.
-  await page.getByRole('button', { name: 'Chat' }).first().click();
-  await chat.getByLabel('Type a question').fill('And this diagram?');
-  await chat.getByRole('button', { name: 'Send with a screenshot' }).click();
-  expect(await watched.log()).toContainEqual({
-    type: 'chat-screenshot',
-    question: 'And this diagram?',
-  });
-  // The ✕ closes it. As in the reference: no switch and no microphone on the bar.
-  await page.getByRole('button', { name: 'Chat' }).first().click();
-  await expect(chat.getByRole('radiogroup', { name: 'Who the answer is for' })).toHaveCount(0);
-  await expect(chat.getByRole('button', { name: /listening|Speak/ })).toHaveCount(0);
-  await chat.getByRole('button', { name: 'Close chat' }).click();
-  await expect(chat).toHaveCount(0);
+  const statusBar = page.getByRole('group', { name: 'Status bar' });
+  for (const { status, key, text, button, sends, alert } of STATUS_CASES) {
+    await page.goto(overlayUrl(`&panels=none&status=${status}`));
+    await statusBar.waitFor();
+    const line = statusBar.locator(`[data-status="${key}"]`);
+    // The message takes the line's place: the live words are not shown with it.
+    await expect(line, status).toBeVisible();
+    await expect(line.getByRole(alert ? 'alert' : 'status'), status).toHaveText(text);
+    await expect(statusBar.getByLabel('Latest words'), status).toHaveCount(0);
+    // One bar: nothing else on the overlay says it (the old warning bars under bar 1 are gone).
+    await expect(page.getByText(text), status).toHaveCount(1);
+    await expect(page.getByRole('group', { name: 'Status bar' }), status).toHaveCount(1);
+    await line.getByRole('button', { name: button, exact: true }).click();
+    if (sends) expect(await watched.log(), status).toContainEqual(sends);
+    else {
+      // "Choose audio source" opens the device list on the overlay.
+      await expect(page.getByRole('group', { name: 'Audio source' }), status).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
+  }
+
+  // The "can't hear" message stays visible when the overlay collapses to bar 1 (it needs the user); the
+  // headphones hint does not.
+  await page.goto(overlayUrl('&panels=none&status=them-silent'));
+  await statusBar.getByRole('button', { name: 'Hide the status bar' }).click();
+  await expect(statusBar.locator('[data-status="them-silent"]')).toBeVisible();
+  await shot(watched, BARS_SIZE, 'call-status-collapsed-alert');
+  await page.goto(overlayUrl('&panels=none&status=headphones'));
+  await statusBar.getByRole('button', { name: 'Hide the status bar' }).click();
+  await expect(statusBar).toHaveCount(0);
+
+  // With the transcript panel open, its header (the same status bar) carries the message.
+  await page.goto(overlayUrl('&panels=transcript&status=listening'));
+  const panel = page.getByRole('region', { name: 'Transcript panel' });
+  await expect(panel.locator('[data-status="listening"]')).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Status bar' })).toHaveCount(1);
+  await shot(watched, BARS_SIZE, 'call-status-listening');
   await watched.context.close();
 });
 
@@ -985,16 +1103,22 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   await expect(you.locator(':scope > span').last()).toHaveCSS('font-weight', '600');
   await expect(you.locator(':scope > span').first()).toHaveCSS('font-size', '14px');
 
-  // The header: nav chips, Clear and collapse, in one line (1.6.3: Auto answer is on bar 1).
-  await expect(
-    answer.getByRole('button', { name: 'Previous question' }).locator('kbd'),
-  ).toContainText('←');
-  await expect(answer.getByRole('button', { name: 'Next question' }).locator('kbd')).toContainText(
-    '→',
-  );
+  // The header: ← →, Clear and collapse, in one line (1.6.3: Auto answer is on bar 1). ADR-0082: the
+  // arrows only, with no Ctrl key-cap (their tooltips name the keys).
+  const previous = answer.getByRole('button', { name: 'Previous question' });
+  const next = answer.getByRole('button', { name: 'Next question' });
+  await expect(previous).toHaveText('←');
+  await expect(next).toHaveText('→');
+  await expect(previous.locator('kbd')).toHaveCount(0);
+  await expect(next.locator('kbd')).toHaveCount(0);
+  await expect(previous).toHaveAttribute('title', 'Previous answer (Ctrl+Left)');
+  await expect(next).toHaveAttribute('title', 'Next answer (Ctrl+Right)');
   await expect(answer.getByRole('button', { name: /^Auto answer / })).toHaveCount(0);
   await expect(answer.getByRole('switch', { name: 'Auto answer' })).toHaveCount(0);
-  await expect(answer.getByRole('button', { name: 'Clear' }).locator('kbd')).toContainText('⌫');
+  // ADR-0082: Clear clears the answers (Ctrl+Backspace); it sends 'clear' to the live page.
+  const clear = answer.getByRole('button', { name: 'Clear answers' });
+  await expect(clear.locator('kbd')).toContainText('⌫');
+  await expect(clear).toHaveAttribute('title', 'Clear answers (Ctrl+Backspace)');
   // The card: the question with a 2 px accent bar, then the bold line.
   const question = answer.getByLabel('Question', { exact: true });
   await expect(question).toHaveCSS('border-left-width', '2px');
@@ -1027,6 +1151,10 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
+  // ADR-0082: the answer panel's Clear asks the live page to clear the answers (the real clearing is
+  // in sim-calls.spec.ts, with the live page).
+  await clear.click();
+  expect(await watched.log()).toContainEqual({ type: 'clear' });
   await watched.context.close();
 });
 
@@ -1321,26 +1449,26 @@ test('1.6.3 overlay pictures: top and bottom rows, recording with Private off, t
     size: Width;
     /** The address's switches. */
     extra: string;
-    /** A bar-1 control to hover first, so its tooltip is in the picture. */
+    /** A bar-1 switch to hover first, so its tooltip is in the picture. */
     hover?: string;
   }[] = [
     {
       name: 'tooltip-top',
       size: DESKTOP_OVERLAY.default,
       extra: '&position=top-center&rec=on&private=off',
-      hover: 'Answer',
+      hover: 'Transcript',
     },
     {
       name: 'tooltip-bottom',
       size: DESKTOP_OVERLAY.default,
       extra: '&position=bottom-center&rec=on&private=off',
-      hover: 'Screenshot',
+      hover: 'Auto answer',
     },
     {
       name: 'tooltip-narrowest',
       size: DESKTOP_OVERLAY.narrowest,
       extra: '&position=top-center&rec=on&private=off&auto=on',
-      hover: 'Chat',
+      hover: 'Auto answer',
     },
     { name: 'top-answer', size: DESKTOP_OVERLAY.default, extra: '&position=top-center&rec=off' },
     {
@@ -1390,7 +1518,7 @@ test('1.6.3 overlay pictures: top and bottom rows, recording with Private off, t
     if (hover) {
       await watched.page
         .getByRole('toolbar', { name: 'Overlay controls' })
-        .getByRole('button', { name: hover, exact: true })
+        .getByRole('switch', { name: hover, exact: true })
         .hover();
       await watched.page.getByRole('tooltip').filter({ hasText: hover }).waitFor();
     }
@@ -1454,7 +1582,8 @@ test('1.6.3: ⋮ and Exit are always whole; bar 1 gives way in order at the defa
             auto === 'on' ? 'true' : 'false',
           );
           if (rec === 'on' && privateSetting === 'off') {
-            await expect(page.locator('[data-private-off-warning]')).toBeVisible();
+            // ADR-0082: the warning is the status bar's message now.
+            await expect(page.locator('[data-status="private-off"]')).toBeVisible();
           }
           await expect
             .poll(() => barFit(page), { message: name })
@@ -1464,26 +1593,20 @@ test('1.6.3: ⋮ and Exit are always whole; bar 1 gives way in order at the defa
               exitInside: true,
               menuInside: true,
             });
-          // Every control is still there (as an icon when short of room); the timer stays, short; so
-          // do move and compact.
-          for (const control of ['Answer', 'Chat', 'Overlay menu', 'Exit: end call']) {
+          // The controls that never give way are still there; the timer stays, short; so do move and
+          // compact. ADR-0082: no Answer, Screenshot or Chat buttons.
+          for (const control of ['Overlay menu', 'Exit: end call', 'Shrink to an icon']) {
             await expect(bar.getByRole('button', { name: control, exact: true })).toBeVisible();
           }
-          await expect(bar.getByRole('button', { name: /^Screenshot/ })).toBeVisible();
-          await expect(bar.getByRole('button', { name: 'Shrink to an icon' })).toBeVisible();
+          for (const control of ['Answer', 'Screenshot', 'Chat']) {
+            await expect(bar.getByRole('button', { name: control, exact: true })).toHaveCount(0);
+          }
           await expect(bar.getByRole('img', { name: 'Drag here to move' })).toBeVisible();
           await expect(bar.getByRole('timer', { name: 'Call time' })).toHaveText(/^\d+:\d\d$/);
           if (sizeName === 'default') {
-            // The default window keeps the words on Answer, Screenshot and Chat.
-            await expect(bar.getByRole('button', { name: 'Answer', exact: true })).toHaveText(
-              /^Answer/,
-            );
-            await expect(bar.getByRole('button', { name: /^Screenshot/ })).toHaveText(
-              /^Screenshot/,
-            );
-            await expect(bar.getByRole('button', { name: 'Chat', exact: true })).toHaveText(
-              /^Chat/,
-            );
+            // The default window keeps the words on the Transcript and Auto answer switches.
+            await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveText(/Transcript/);
+            await expect(bar.getByRole('switch', { name: 'Auto answer' })).toHaveText(/Auto/);
           }
         }
       }
@@ -1502,18 +1625,18 @@ interface BarControl {
   tip: string;
 }
 
-/** 1.6.3: the "Click-through on" button, on bar 1 while the mode is on. */
+/** ADR-0082: the Click-through switch, on bar 1 while the mode is on (it was a "Click-through on" button). */
 const CLICK_THROUGH_CONTROL: BarControl = {
-  role: 'button',
-  name: 'Click-through on. Turn off',
-  tip: 'Click-through on: turn off · Ctrl+Alt+X',
+  role: 'switch',
+  name: 'Click-through',
+  tip: 'Click-through: On (clicks outside the bars go to the app behind) · Ctrl+Alt+X',
 };
 
 /**
  * 1.6.3 (ADR-0075): bar 1's controls and the tooltip each one shows, for a bar drawn with
  * rec=on&private=off (and Click-through mode on when asked).
  *
- * @param clickThrough True when the "Click-through on" button is on the bar.
+ * @param clickThrough True when the Click-through switch is on the bar (the mode on).
  * @returns How to find each control, and its tooltip's words.
  */
 function barControls(clickThrough: boolean): readonly BarControl[] {
@@ -1522,15 +1645,12 @@ function barControls(clickThrough: boolean): readonly BarControl[] {
     { role: 'img', name: /^Screen audio:/, tip: 'Screen audio: capturing' },
     { role: 'button', name: 'Choose microphone', tip: 'Choose microphone' },
     { role: 'img', name: /^Microphone:/, tip: 'Microphone: capturing' },
-    { role: 'button', name: 'Answer', tip: 'Answer · Ctrl+Enter' },
-    { role: 'button', name: 'Screenshot', tip: 'Screenshot · Ctrl+Shift+Enter' },
-    { role: 'button', name: 'Chat', tip: 'Chat · Ctrl+Shift+Space' },
     { role: 'switch', name: 'Transcript', tip: 'Transcript: Off · Ctrl+Alt+T' },
     { role: 'button', name: /^Recording, /, tip: 'Stop recording · Ctrl+Alt+R' },
     { role: 'switch', name: 'Auto answer', tip: 'Auto answer: Off' },
+    ...(clickThrough ? [CLICK_THROUGH_CONTROL] : []),
     { role: 'img', name: 'Drag here to move', tip: 'Drag to move · Ctrl+Alt+Arrows' },
     { role: 'button', name: 'Shrink to an icon', tip: 'Shrink to an icon' },
-    ...(clickThrough ? [CLICK_THROUGH_CONTROL] : []),
     { role: 'button', name: 'Overlay menu', tip: 'Menu' },
     { role: 'button', name: 'Exit: end call', tip: 'Exit: end the call' },
   ];
@@ -1662,7 +1782,7 @@ test('1.6.3: tooltips with Click-through on, in the light theme, over a dark pag
   await checkBarTips(page, DESKTOP_OVERLAY.default, 'below', false, 'light theme');
   // Collapsed to bar 1 (the shell makes the window 56 tall): beside each control, still whole.
   await page.goto(overlayUrl('&position=top-center&rec=on&private=off&panels=none'));
-  await page.getByRole('button', { name: 'Hide the transcript bar' }).click();
+  await page.getByRole('button', { name: 'Hide the status bar' }).click();
   await page.setViewportSize({ width: DESKTOP_OVERLAY.default.width, height: 56 });
   await checkBarTips(
     page,
@@ -1674,7 +1794,7 @@ test('1.6.3: tooltips with Click-through on, in the light theme, over a dark pag
   await watched.context.close();
 });
 
-test('1.6.3: the default window keeps the words on Answer, Screenshot and Chat in every state, up to 130 % zoom', async () => {
+test('ADR-0082: the default window keeps the words on Transcript, Auto and Click-through in every state; bar 1 fits up to 130 % zoom', async () => {
   const watched = await openDesktopOverlay(DESKTOP_OVERLAY.default, '&position=top-center');
   const { page } = watched;
   const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
@@ -1694,15 +1814,15 @@ test('1.6.3: the default window keeps the words on Answer, Screenshot and Chat i
       await expect
         .poll(() => barFit(page), { message: name })
         .toMatchObject({ barFits: true, leftFits: true, exitInside: true, menuInside: true });
-      await expect(bar.getByRole('button', { name: 'Answer', exact: true }), name).toHaveText(
-        /^Answer/,
-      );
-      await expect(bar.getByRole('button', { name: /^Screenshot/ }), name).toHaveText(
-        /^Screenshot/,
-      );
-      await expect(bar.getByRole('button', { name: 'Chat', exact: true }), name).toHaveText(
-        /^Chat/,
-      );
+      // At 100 % the words stay; zoomed in, they may give way to icons (measured), but the bar still fits.
+      if (zoom !== 1) continue;
+      await expect(bar.getByRole('switch', { name: 'Transcript' }), name).toHaveText(/Transcript/);
+      await expect(bar.getByRole('switch', { name: 'Auto answer' }), name).toHaveText(/Auto/);
+      if (extra.includes('ct=on')) {
+        await expect(bar.getByRole('switch', { name: 'Click-through' }), name).toHaveText(
+          /Click-through/,
+        );
+      }
     }
   }
   // Narrower than the default, they do become icons (the narrowest window, everything on).
@@ -1710,7 +1830,11 @@ test('1.6.3: the default window keeps the words on Answer, Screenshot and Chat i
   await page.evaluate(() => {
     document.documentElement.style.zoom = '';
   });
-  await expect(bar.getByRole('button', { name: 'Answer', exact: true })).toHaveText('');
+  await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveText('');
+  await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
   await watched.context.close();
 });
 
@@ -1832,19 +1956,52 @@ test('1.6.3: Auto answer is a toggle on bar 1; the recording warning shows once'
   await auto.click();
   expect(await watched.log()).toContainEqual({ type: 'auto-answer', on: true });
 
-  // The warning once: the bar with its fix; the Rec pill only "● Rec m:ss" and an amber dot.
+  // The warning once: on the status bar (ADR-0082) with its fix; the Rec pill only "● Rec m:ss" and an
+  // amber dot.
   await expect(
     page.getByText('Private is off: Paramount AI will appear in your recording'),
   ).toHaveCount(1);
+  const warning = page
+    .getByRole('group', { name: 'Status bar' })
+    .locator('[data-status="private-off"]');
+  await expect(warning.getByRole('alert')).toHaveText(
+    'Private is off: Paramount AI will appear in your recording',
+  );
   await expect(page.getByText('Visible in recording')).toHaveCount(0);
   const rec = bar.getByRole('button', { name: /^Recording, / });
   await expect(rec).toHaveText(/^Rec \d+:\d\d$/);
   await expect(rec.locator('[data-visible-in-recording]')).toBeVisible();
   // Screen readers still hear it.
   await expect(rec).toHaveAttribute('aria-label', /Visible in recording/);
-  await page.getByRole('button', { name: 'Turn Private back on' }).click();
-  await expect(page.locator('[data-private-off-warning]')).toHaveCount(0);
+  await warning.getByRole('button', { name: 'Turn on' }).click();
+  await expect(warning).toHaveCount(0);
   await expect(rec.locator('[data-visible-in-recording]')).toHaveCount(0);
 
+  await watched.context.close();
+});
+
+test('ADR-0082: bar 1 has a Click-through switch where clicks can pass, which turns the mode on and off', async () => {
+  const watched = await openDesktopOverlay(DESKTOP_OVERLAY.default, '&position=top-center&ct=off');
+  const { page } = watched;
+  const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+  const toggle = bar.getByRole('switch', { name: 'Click-through' });
+  // Off: the switch is there, unchecked, and a click asks for the mode on.
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await expect(toggle).toHaveText('Click-through');
+  await toggle.hover();
+  await expect(page.getByRole('tooltip')).toHaveText(
+    'Click-through: Off (turn on to click the app behind the overlay) · Ctrl+Alt+X',
+  );
+  await toggle.click();
+  expect(await watched.log()).toContainEqual({ type: 'click-through', on: true });
+  // On: checked, and a click turns it off (the bars always take clicks).
+  await page.goto(overlayUrl('&position=top-center&ct=on'));
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await toggle.click();
+  expect(await watched.log()).toContainEqual({ type: 'click-through', on: false });
+  // Where clicks cannot pass (a browser, an older shell), there is no switch.
+  await page.goto(overlayUrl('&position=top-center'));
+  await bar.waitFor();
+  await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveCount(0);
   await watched.context.close();
 });

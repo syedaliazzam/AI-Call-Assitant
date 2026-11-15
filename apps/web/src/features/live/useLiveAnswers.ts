@@ -119,7 +119,7 @@ export const ALREADY_ANSWERING_NOTICE = 'Already answering — the answer is on 
 
 /** ADR-0076 (G3): a press with nothing at all to answer. */
 export const NOTHING_NEW_NOTICE =
-  'Nothing new to answer. Press Answer when they ask something, or type the question.';
+  'Nothing new to answer. Press Answer (Ctrl+Enter) when they ask something, or ask your own question (Ctrl+Shift+Space).';
 
 /** ADR-0076 (E3 rule 8): only lost audio follows the last answer. */
 export const GAP_NOTICE =
@@ -461,6 +461,40 @@ export interface LiveAnswers {
   screenshot: (question?: string, trigger?: AnswerTrigger) => void;
   /** True while a screenshot is being taken and prepared. */
   capturing: boolean;
+  /**
+   * ADR-0082 (Ctrl+Backspace, the answer panel's Clear, ⋮ Clear answers): cancels a streaming answer and
+   * takes every answer asked until now off the screen (the overlay and the call window); they stay saved
+   * for the session's review. New answers show as usual.
+   */
+  clearAnswers: () => void;
+  /**
+   * ADR-0082 (Ctrl+Alt+Enter): takes the screenshot now, for a question the user is about to speak.
+   *
+   * @returns The prepared image (a data URL), or null when it could not be taken (the notice says why).
+   */
+  captureScreen: () => Promise<string | null>;
+  /**
+   * ADR-0082: answers a spoken question about a screenshot taken before it (captureScreen()).
+   *
+   * @param question The spoken question.
+   * @param image    The prepared image.
+   */
+  askAboutScreen: (question: string, image: string) => void;
+}
+
+/**
+ * ADR-0082 (Clear answers, Ctrl+Backspace): the answers still on screen after a clear: those asked after it.
+ *
+ * @param list          The call's answers, oldest first.
+ * @param clearedBefore When answers were last cleared (Unix ms), or 0 for never.
+ * @returns The answers asked after that moment (all of them when never cleared).
+ * Called from: useLiveAnswers(); tests
+ */
+export function answersAfterClear<T extends { askedAt: number }>(
+  list: T[],
+  clearedBefore: number,
+): T[] {
+  return clearedBefore === 0 ? list : list.filter((entry) => entry.askedAt > clearedBefore);
 }
 
 /**
@@ -1547,7 +1581,12 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       ),
     [entries],
   );
-  const list = history.list;
+  // ADR-0082: Clear answers hides every answer asked until the press (Unix ms; 0: none hidden).
+  const [clearedBefore, setClearedBefore] = useState(0);
+  const list = useMemo(
+    () => answersAfterClear(history.list, clearedBefore),
+    [history.list, clearedBefore],
+  );
   const selectedId = shownId === null ? null : (history.winnerOf.get(shownId) ?? shownId);
   // With nothing chosen, the newest answer that has something to show.
   const selected = list.findIndex((entry) => entry.id === selectedId);
@@ -1616,6 +1655,53 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   }, [list, index]);
 
   const showLatest = useCallback(() => setShownId(null), []);
+
+  const clearAnswers = useCallback(() => {
+    clear();
+    setClearedBefore(Date.now());
+  }, [clear]);
+
+  const captureScreen = useCallback(async (): Promise<string | null> => {
+    if (capturing) return null;
+    const pressedAt = performance.now();
+    setCapturing(true);
+    setNotice(null);
+    try {
+      const png = await getPlatform().captureScreenshot();
+      const prepared = await prepareScreenshot(png);
+      // Sizes and times only; never the image.
+      console.info('screenshot: prepared', {
+        sessionId: session.id,
+        width: prepared.width,
+        height: prepared.height,
+        bytes: prepared.bytes,
+        ms: Math.round(performance.now() - pressedAt),
+      });
+      return prepared.dataUrl;
+    } catch (error) {
+      setNotice(
+        error instanceof CaptureError
+          ? error.message
+          : 'Paramount AI could not take a screenshot. Try again.',
+      );
+      return null;
+    } finally {
+      setCapturing(false);
+    }
+  }, [capturing, session.id]);
+
+  const askAboutScreen = useCallback(
+    (question: string, image: string) => {
+      // The question is the user's own words, so it is the screenshot's question as a typed one is.
+      ask('screenshot', {
+        typed: question,
+        image,
+        pressedAt: performance.now(),
+        trigger: 'screenshot-chat',
+      });
+    },
+    [ask],
+  );
 
   const reanswer = useCallback(
     (id: string, answerType: AnswerType) => {
@@ -1745,5 +1831,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     saveFailed,
     screenshot,
     capturing,
+    clearAnswers,
+    captureScreen,
+    askAboutScreen,
   };
 }

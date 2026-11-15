@@ -9,10 +9,12 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (data model), §8.1;
  *               day-03-sessions.md Stage 1
  *
- * Without account sync (ADR-0024) nothing here is sent anywhere: the browser and the desktop app
- * each have their own database 'kite'. With account sync (ADR-0049, the accountSync switch) the
- * storage modules use the account's cache instead ('kite-u-<id>'), whose changes the sync engine
- * sends to the account; 'kite' is left as it was, for the one-time upload (Phase 4).
+ * Every signed-in account has its own database on this device (privacy fix of 14 Nov 2026). With
+ * account sync (ADR-0049, the accountSync switch) it is the account's cache ('kite-u-<id>'), whose
+ * changes the sync engine sends to the account. Without account sync (ADR-0024) it is the account's own
+ * local database ('kite-l-<id>'), and nothing in it is sent anywhere. The old shared database 'kite'
+ * (data from before account sync, with no owner recorded) is never opened by a signed-in page, never
+ * offered for upload and never changed: its owner cannot be proven, so it stays hidden.
  *
  * The database opens lazily (getDb()), so importing this module during server rendering never
  * touches IndexedDB, which only exists in the browser.
@@ -101,8 +103,8 @@ export class KiteDb extends Dexie {
    * where upgrade() rewrites existing rows if a field's meaning changes. Dexie runs it once on
    * each device that still has version 1, so users keep their sessions.
    *
-   * @param name    The database: 'kite' (this device's own data), or an account's cache
-   *                (accountDbName(), ADR-0049).
+   * @param name    The database: an account's cache (accountDbName(), ADR-0049), an account's local
+   *                database (localAccountDbName()), or 'kite' (tests and harnesses only).
    * @param capture True to record every change to call data in the outbox (account caches).
    */
   constructor(name: string = DB_NAME, capture = false) {
@@ -264,43 +266,89 @@ export interface SyncMetaRow {
 export const ACCOUNT_DB_PREFIX = 'kite-u-';
 
 /**
+ * The name prefix of an account's own local database on this device, used while the account has no
+ * account sync (privacy fix of 14 Nov 2026: every signed-in account has its own database, so one account
+ * never sees another account's sessions on a shared computer).
+ */
+export const LOCAL_ACCOUNT_DB_PREFIX = 'kite-l-';
+
+/**
  * The cache database of an account.
  *
  * @param userId The account's id.
  * @returns For example 'kite-u-<id>'.
- * Called from: selectAccountDatabase(); the one-time upload (Phase 4); tests
+ * Called from: selectAccountDatabase(); tests
  */
 export function accountDbName(userId: string): string {
   return `${ACCOUNT_DB_PREFIX}${userId}`;
 }
 
-/** The database getDb() opens: this device's own ('kite') until an account cache is selected. */
-let activeName = DB_NAME;
-
 /**
- * Chooses which database the storage modules use from now on: an account's cache when the account
- * syncs (ADR-0049), else this device's own 'kite' database. Must run before the first query of a
- * page (SyncScope does it while rendering, before any child loads data). Does nothing on the server.
+ * The local database of an account without account sync. Nothing in it is sent anywhere; when the
+ * account later gets account sync, the one-time upload (core/sync/legacyUpload.ts) offers to add it to
+ * the account.
  *
- * @param userId The account's id when it syncs, or null.
- * Called from: src/features/sync/SyncScope.tsx; tests
+ * @param userId The account's id.
+ * @returns For example 'kite-l-<id>'.
+ * Called from: selectAccountDatabase(); src/core/sync/legacyUpload.ts; src/core/sync/client.ts; tests
  */
-export function selectAccountDatabase(userId: string | null): void {
-  if (typeof window === 'undefined' && typeof indexedDB === 'undefined') return;
-  const name = userId ? accountDbName(userId) : DB_NAME;
-  if (name === activeName) return;
-  forgetDb();
-  activeName = name;
+export function localAccountDbName(userId: string): string {
+  return `${LOCAL_ACCOUNT_DB_PREFIX}${userId}`;
 }
 
 /**
- * Whether the storage modules use an account's cache.
+ * The database getDb() opens. It starts as the old shared device database ('kite') only so that unit
+ * tests and the test harness pages (which render components without a signed-in account) keep working
+ * unchanged. Every signed-in page renders SyncScope, which always selects the signed-in account's own
+ * database (kite-u-<id> or kite-l-<id>) before any child loads data, so a signed-in page never reads
+ * 'kite'. That shared database holds data from before 9 Nov 2026 with no owner recorded, so it must
+ * stay hidden: its owner cannot be proven.
+ */
+let activeName = DB_NAME;
+
+/** True when the active database is an account's sync cache (its changes go to the outbox). */
+let activeSync = false;
+
+/**
+ * Chooses which database the storage modules use from now on: the account's sync cache when the
+ * account syncs (ADR-0049, 'kite-u-<id>'), else the account's own local database ('kite-l-<id>'). Must
+ * run before the first query of a page (SyncScope does it while rendering, before any child loads
+ * data). Does nothing on the server.
  *
- * @returns True after selectAccountDatabase() with an account.
- * Called from: src/core/storage/wipe.ts; src/core/sync/client.ts
+ * @param userId The signed-in account's id. null selects the old shared device database ('kite'):
+ *               only unit tests and test harnesses pass null; app pages always pass an account.
+ * @param sync   True when the account has account sync (ignored when userId is null).
+ * Called from: src/features/sync/SyncScope.tsx; tests and test harnesses
+ */
+export function selectAccountDatabase(userId: string | null, sync: boolean): void {
+  if (typeof window === 'undefined' && typeof indexedDB === 'undefined') return;
+  const name =
+    userId === null ? DB_NAME : sync ? accountDbName(userId) : localAccountDbName(userId);
+  if (name === activeName) return;
+  forgetDb();
+  activeName = name;
+  activeSync = userId !== null && sync;
+}
+
+/**
+ * Whether the storage modules use an account's sync cache (account sync is on for this page). An
+ * account's local database (kite-l-<id>) is not a sync cache: nothing in it is sent.
+ *
+ * @returns True after selectAccountDatabase() with an account that syncs.
+ * Called from: src/core/sync/client.ts; Settings.tsx; SessionReview.tsx
  */
 export function usingAccountDatabase(): boolean {
-  return activeName !== DB_NAME;
+  return activeSync;
+}
+
+/**
+ * The name of the database the storage modules use now.
+ *
+ * @returns 'kite-u-<id>', 'kite-l-<id>', or 'kite' (tests and harnesses only).
+ * Called from: tests (the privacy checks of SyncScope)
+ */
+export function activeDatabaseName(): string {
+  return activeName;
 }
 
 /** The open database, created on first use; null before that and after forgetDb(). */
@@ -313,8 +361,9 @@ let instance: KiteDb | null = null;
  * Called from: the repositories in src/core/storage (sessions, documents, utterances, wipe)
  */
 export function getDb(): KiteDb {
-  // An account cache records every change to call data in its outbox (ADR-0049).
-  instance ??= new KiteDb(activeName, activeName !== DB_NAME);
+  // An account's sync cache records every change to call data in its outbox (ADR-0049); an account's
+  // local database (kite-l-<id>) and the old shared one do not.
+  instance ??= new KiteDb(activeName, activeSync);
   return instance;
 }
 

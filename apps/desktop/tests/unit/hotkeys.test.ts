@@ -5,16 +5,24 @@
  * and re-enabling does not register twice; isKiteSender() accepts only the Kite page's main
  * frame; installHotkeys() turns the shortcuts on and off over IPC for the Kite page, refuses
  * any other sender, and logs only the taken accelerators; overlay shortcuts go to the shell,
- * text-editing keys are never global, and check() finds conflicts without keeping anything.
+ * and check() finds conflicts without keeping anything. 1.6.4 (ADR-0082): the screenshot and voice
+ * question, Clear answers, Clear transcript, previous / next answer and the zoom keys are held during a
+ * call and released at End; setChatSend() only reports Ctrl+Alt+Enter; Escape is held only while a voice
+ * question listens during a call (setVoiceCancel and its IPC channel).
  */
 import {
   ASK_KITE_HOTKEY,
   DEFAULT_GLOBAL_HOTKEYS,
   FOCUSED_HOTKEYS,
   SCREENSHOT_SEND_HOTKEY,
+  VOICE_CANCEL_HOTKEY,
 } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
-import { HOTKEY_CHANNEL, SET_HOTKEYS_CHANNEL } from '../../src/channels';
+import {
+  HOTKEY_CHANNEL,
+  SET_HOTKEYS_CHANNEL,
+  VOICE_CANCEL_HOTKEY_CHANNEL,
+} from '../../src/channels';
 import { createHotkeys, installHotkeys, isKiteSender } from '../../src/hotkeys';
 
 /** The Kite origin used in these tests. */
@@ -207,9 +215,11 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     expect(controller.check().map((s) => s.accelerator)).not.toContain(undefined);
   });
 
-  it('never registers the shortcuts that edit text in other apps', () => {
+  it('1.6.4 (ADR-0082): the focused keys are held during a call too, with the same keys', () => {
+    // Until 1.6.3 these keys were never global; the developer chose to hold them during a call
+    // (ParakeetAI parity). The page still handles them itself while Kite has focus.
     const accelerators = Object.values(DEFAULT_GLOBAL_HOTKEYS);
-    for (const text of Object.values(FOCUSED_HOTKEYS)) expect(accelerators).not.toContain(text);
+    for (const text of Object.values(FOCUSED_HOTKEYS)) expect(accelerators).toContain(text);
   });
 
   it('check() finds conflicts outside a call and releases everything again', () => {
@@ -256,59 +266,166 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     const statuses = hotkeys.enable();
     expect(hotkeys.check().slice(0, statuses.length)).toEqual(statuses);
     expect(hotkeys.enabled()).toBe(true);
-    // Only the moment's tries (the chat bar's shortcut, Transcript's keys) were released; the call's
-    // shortcuts stay.
-    expect(globalShortcut.unregister.mock.calls).toEqual([
-      [SCREENSHOT_SEND_HOTKEY],
-      ['CommandOrControl+Alt+T'],
-    ]);
+    // Only the moment's try (Transcript's keys) was released; the call's shortcuts stay, Ctrl+Alt+Enter
+    // among them (1.6.4, ADR-0082).
+    expect(globalShortcut.unregister.mock.calls).toEqual([['CommandOrControl+Alt+T']]);
   });
 });
 
-describe('the chat bar’s screenshot shortcut (spec S14)', () => {
-  it('is held only during a call, only while asked, and reaches the page', () => {
-    const { globalShortcut, press } = fakeGlobalShortcut();
+describe('the call keys added in 1.6.4 (ADR-0082)', () => {
+  /** The shortcuts that became global during a call in 1.6.4, in the order the test presses them. */
+  const ADDED = [
+    SCREENSHOT_SEND_HOTKEY,
+    'CommandOrControl+Backspace',
+    'CommandOrControl+Shift+Backspace',
+    'CommandOrControl+Left',
+    'CommandOrControl+Right',
+    'CommandOrControl+=',
+    'CommandOrControl+-',
+    'CommandOrControl+0',
+  ];
+
+  it('are registered during a call, reach the page, and are released at End', () => {
+    const { globalShortcut, callbacks, press } = fakeGlobalShortcut();
     const send = vi.fn();
     const hotkeys = createHotkeys(globalShortcut, send);
-    // Not during a call: a late message must not take the keys from other apps.
+    // Not before a call: they edit text in other apps.
+    for (const keys of ADDED) expect(callbacks.has(keys)).toBe(false);
+    hotkeys.enable();
+    for (const keys of ADDED) expect(callbacks.has(keys)).toBe(true);
+    for (const keys of ADDED) press(keys);
+    expect(send.mock.calls).toEqual([
+      ['screenshot-send'],
+      ['clear'],
+      ['clear-transcript'],
+      ['prev'],
+      ['next'],
+      ['zoom-in'],
+      ['zoom-out'],
+      ['zoom-reset'],
+    ]);
+    hotkeys.disable();
+    for (const keys of ADDED) {
+      expect(callbacks.has(keys)).toBe(false);
+      expect(globalShortcut.unregister).toHaveBeenCalledWith(keys);
+    }
+  });
+
+  it('Settings can see a Ctrl+Alt+Enter clash before a call; the keys are not kept', () => {
+    const { globalShortcut, callbacks } = fakeGlobalShortcut();
+    const hotkeys = createHotkeys(globalShortcut, vi.fn());
+    const found = hotkeys.check().filter((status) => status.action === 'screenshot-send');
+    // Reported once, with the other call shortcuts.
+    expect(found).toEqual([
+      { action: 'screenshot-send', accelerator: SCREENSHOT_SEND_HOTKEY, registered: true },
+    ]);
+    expect(globalShortcut.unregister).toHaveBeenCalledWith(SCREENSHOT_SEND_HOTKEY);
+    expect(callbacks.has(SCREENSHOT_SEND_HOTKEY)).toBe(false);
+  });
+});
+
+describe('setChatSend (spec S14; 1.6.4, ADR-0082: it only reports)', () => {
+  it('reports the call’s Ctrl+Alt+Enter status without registering anything', () => {
+    const { globalShortcut } = fakeGlobalShortcut([SCREENSHOT_SEND_HOTKEY]);
+    const hotkeys = createHotkeys(globalShortcut, vi.fn());
+    // Not during a call: nothing to report, nothing registered.
     expect(hotkeys.setChatSend(true)).toBeNull();
-    expect(globalShortcut.register).not.toHaveBeenCalledWith(
-      SCREENSHOT_SEND_HOTKEY,
-      expect.anything(),
-    );
+    expect(globalShortcut.register).not.toHaveBeenCalled();
 
     hotkeys.enable();
-    expect(hotkeys.setChatSend(true)).toMatchObject({
+    const registerCalls = globalShortcut.register.mock.calls.length;
+    // The status enable() found; here another app holds the keys.
+    expect(hotkeys.setChatSend(true)).toEqual({
       action: 'screenshot-send',
+      accelerator: SCREENSHOT_SEND_HOTKEY,
+      registered: false,
+    });
+    expect(hotkeys.setChatSend(false)).toBeNull();
+    expect(globalShortcut.register.mock.calls.length).toBe(registerCalls);
+    expect(globalShortcut.unregister).not.toHaveBeenCalled();
+  });
+
+  it('turning it off keeps Ctrl+Alt+Enter held for the rest of the call', () => {
+    const { globalShortcut, callbacks } = fakeGlobalShortcut();
+    const hotkeys = createHotkeys(globalShortcut, vi.fn());
+    hotkeys.enable();
+    expect(hotkeys.setChatSend(true)?.registered).toBe(true);
+    hotkeys.setChatSend(false);
+    expect(callbacks.has(SCREENSHOT_SEND_HOTKEY)).toBe(true);
+    hotkeys.disable();
+    expect(callbacks.has(SCREENSHOT_SEND_HOTKEY)).toBe(false);
+  });
+});
+
+describe('Escape while a voice question listens (1.6.4, ADR-0082)', () => {
+  it('is held only during a call, only while asked, and reaches the page', () => {
+    const { globalShortcut, callbacks, press } = fakeGlobalShortcut();
+    const send = vi.fn();
+    const hotkeys = createHotkeys(globalShortcut, send);
+    // Not during a call: a late message must not take Escape from other apps.
+    expect(hotkeys.setVoiceCancel(true)).toBeNull();
+    expect(callbacks.has(VOICE_CANCEL_HOTKEY)).toBe(false);
+    // Not one of the call's shortcuts either.
+    hotkeys.enable();
+    expect(callbacks.has(VOICE_CANCEL_HOTKEY)).toBe(false);
+
+    expect(hotkeys.setVoiceCancel(true)).toEqual({
+      action: 'voice-cancel',
+      accelerator: VOICE_CANCEL_HOTKEY,
       registered: true,
     });
-    press(SCREENSHOT_SEND_HOTKEY);
-    expect(send).toHaveBeenCalledWith('screenshot-send');
-    expect(hotkeys.setChatSend(false)).toBeNull();
-    expect(globalShortcut.unregister).toHaveBeenCalledWith(SCREENSHOT_SEND_HOTKEY);
+    press(VOICE_CANCEL_HOTKEY);
+    expect(send).toHaveBeenCalledWith('voice-cancel');
+    expect(hotkeys.setVoiceCancel(false)).toBeNull();
+    expect(callbacks.has(VOICE_CANCEL_HOTKEY)).toBe(false);
+    // The call's shortcuts stay.
+    expect(hotkeys.enabled()).toBe(true);
+    expect(callbacks.has(DEFAULT_GLOBAL_HOTKEYS.answer)).toBe(true);
   });
 
-  it('asking twice registers it once, and the end of a call releases it', () => {
-    const { globalShortcut } = fakeGlobalShortcut();
+  it('asking twice registers it once, and disable() releases it', () => {
+    const { globalShortcut, callbacks } = fakeGlobalShortcut();
     const hotkeys = createHotkeys(globalShortcut, vi.fn());
     hotkeys.enable();
-    hotkeys.setChatSend(true);
-    hotkeys.setChatSend(true);
-    const calls = vi
-      .mocked(globalShortcut.register)
-      .mock.calls.filter(([keys]) => keys === SCREENSHOT_SEND_HOTKEY);
+    hotkeys.setVoiceCancel(true);
+    hotkeys.setVoiceCancel(true);
+    const calls = globalShortcut.register.mock.calls.filter(
+      ([keys]) => keys === VOICE_CANCEL_HOTKEY,
+    );
     expect(calls).toHaveLength(1);
     hotkeys.disable();
-    expect(globalShortcut.unregister).toHaveBeenCalledWith(SCREENSHOT_SEND_HOTKEY);
+    expect(globalShortcut.unregister).toHaveBeenCalledWith(VOICE_CANCEL_HOTKEY);
+    expect(callbacks.has(VOICE_CANCEL_HOTKEY)).toBe(false);
   });
 
-  it('Settings can see a clash before a call; the keys are not kept', () => {
-    const { globalShortcut } = fakeGlobalShortcut();
+  it('reports Escape held by another app, and never releases it', () => {
+    const { globalShortcut } = fakeGlobalShortcut([VOICE_CANCEL_HOTKEY]);
     const hotkeys = createHotkeys(globalShortcut, vi.fn());
-    const found = hotkeys.check().find((status) => status.action === 'screenshot-send');
-    expect(found?.accelerator).toBe(SCREENSHOT_SEND_HOTKEY);
-    expect(found?.registered).toBe(true);
-    expect(globalShortcut.unregister).toHaveBeenCalledWith(SCREENSHOT_SEND_HOTKEY);
+    hotkeys.enable();
+    expect(hotkeys.setVoiceCancel(true)?.registered).toBe(false);
+    hotkeys.setVoiceCancel(false);
+    hotkeys.disable();
+    expect(globalShortcut.unregister).not.toHaveBeenCalledWith(VOICE_CANCEL_HOTKEY);
+  });
+
+  it('is turned on and off over IPC by the Kite page only', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const { globalShortcut, callbacks } = fakeGlobalShortcut();
+    const handlers = new Map<string, (event: unknown, on: unknown) => unknown>();
+    const ipcMain = { handle: vi.fn((channel: string, fn) => handlers.set(channel, fn)) };
+    installHotkeys({ globalShortcut, ipcMain, sendToPage: vi.fn(), allowedOrigin: ORIGIN });
+    await handlers.get(SET_HOTKEYS_CHANNEL)!(eventFrom(`${ORIGIN}/live/s1`), true);
+    const setVoiceCancel = handlers.get(VOICE_CANCEL_HOTKEY_CHANNEL)!;
+
+    expect(() => setVoiceCancel(eventFrom('https://example.com/'), true)).toThrow(/Kite page/);
+    expect(callbacks.has(VOICE_CANCEL_HOTKEY)).toBe(false);
+    // Anything but true counts as off.
+    await setVoiceCancel(eventFrom(`${ORIGIN}/live/s1`), 'yes');
+    expect(callbacks.has(VOICE_CANCEL_HOTKEY)).toBe(false);
+    await setVoiceCancel(eventFrom(`${ORIGIN}/live/s1`), true);
+    expect(callbacks.has(VOICE_CANCEL_HOTKEY)).toBe(true);
+    await setVoiceCancel(eventFrom(`${ORIGIN}/live/s1`), false);
+    expect(callbacks.has(VOICE_CANCEL_HOTKEY)).toBe(false);
   });
 });
 

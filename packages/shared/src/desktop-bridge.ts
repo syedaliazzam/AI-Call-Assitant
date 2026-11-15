@@ -264,6 +264,15 @@ export interface KiteDesktopApi {
    */
   setChatHotkey?: (on: boolean) => Promise<void>;
   /**
+   * ADR-0082 (desktop 1.6.4): holds Escape from any app while a voice question listens, so Escape cancels it
+   * even with the meeting in front; released when listening ends. Optional: in an older shell Escape works
+   * only while Paramount AI has focus (pressing the voice shortcut again also cancels).
+   *
+   * @param on True while a voice question listens.
+   * @returns Resolves when done.
+   */
+  setVoiceCancelHotkey?: (on: boolean) => Promise<void>;
+  /**
    * v1.2.0 (ADR-0045): lets the person pick a session file in the system's dialog, for the hand-off
    * from a browser. Optional: a shell before 1.2.0 has no such call (and no paramountai:// link either).
    *

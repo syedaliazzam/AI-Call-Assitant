@@ -271,7 +271,7 @@ export function Dashboard() {
       />
 
       <section aria-label="Sessions" className="flex flex-col gap-5 px-5 py-5">
-        {/* ADR-0049: with account sync, offers once to add this computer's own data. */}
+        {/* ADR-0049: with account sync, offers once to add this account's own unsynced local data. */}
         <LegacyUploadCard />
         <div className="flex items-center justify-between gap-3">
           {/* The search box and the sort button read as one control (shared with the desktop app). */}

@@ -3,7 +3,10 @@
  * Purpose: The /api/sync/* handlers (ADR-0049): who may call them, and turning requests into store
  *          calls and responses. The account always comes from the signed-in session, read from
  *          the database on every call (a disabled account is refused at once), never from the
- *          request. Accounts without the accountSync switch get 404, as if the routes did not exist.
+ *          request. Accounts without the accountSync switch get 404, as if the routes did not exist. A
+ *          request that names another account than the signed-in one (ACCOUNT_HEADER: a window left
+ *          open from before a sign-out and a sign-in as someone else) gets 409 and changes nothing
+ *          (privacy fix of 14 Nov 2026).
  * Used by: app/api/sync/push/route.ts, app/api/sync/pull/route.ts, app/api/sync/record/route.ts,
  *          app/api/sync/status/route.ts
  * Depends on: src/server/auth.ts, src/server/db.ts, src/server/calldata/{store,crypto,flag,validate}.ts
@@ -12,7 +15,7 @@
  * Logs carry the route, operation counts and timings only: never ids of records, never content.
  */
 import 'server-only';
-import type { SyncPushResponse, SyncStatusResponse } from '@kite/shared';
+import { ACCOUNT_HEADER, type SyncPushResponse, type SyncStatusResponse } from '@kite/shared';
 import { auth } from '../auth';
 import { db } from '../db';
 import { DataKeyError, dataKeys } from './crypto';
@@ -67,8 +70,9 @@ function failure(status: number, code: string, message: string): Response {
  * @param deps    The dependencies.
  * @param route   The route's name, for the log.
  * @param run     The handler.
- * @returns The handler's response, or 401 (signed out), 403 (password change needed), 404 (no account
- *          sync), 503 (no data key), 500 (anything else).
+ * @returns The handler's response, or 401 (signed out), 403 (password change needed), 409 (the page
+ *          was opened for another account), 404 (no account sync), 503 (no data key), 500 (anything
+ *          else).
  */
 async function withAccount(
   request: Request,
@@ -80,6 +84,14 @@ async function withAccount(
   if (user === 'signed-out') return failure(401, 'unauthorized', 'Sign in required');
   if (user === 'password')
     return failure(403, 'password_change_required', 'Change your password first');
+  // The page names the account it was opened for; a different one means another account signed in
+  // since, and this page's data must not go into (or come from) that account. No header: an older
+  // page, checked by the session alone as before. The log names no account.
+  const named = request.headers.get(ACCOUNT_HEADER);
+  if (named && named !== user.id) {
+    console.warn(`sync: ${route} refused, page opened for another account`);
+    return failure(409, 'account_changed', 'Another account signed in. Reload the page.');
+  }
   if (!deps.enabled(user.id)) return failure(404, 'not_found', 'Not found');
   const started = Date.now();
   try {

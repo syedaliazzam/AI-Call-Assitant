@@ -61,7 +61,7 @@ const transport: SyncTransport = {
  * @param device The device's cache name.
  */
 function on(device: string): void {
-  selectAccountDatabase(device);
+  selectAccountDatabase(device, true);
 }
 
 /** Pushes everything a device has waiting (several rounds when needed). */
@@ -91,7 +91,7 @@ afterEach(async () => {
     on(device);
     await getDb().delete();
   }
-  selectAccountDatabase(null);
+  selectAccountDatabase(null, false);
   forgetDb();
   vi.unstubAllGlobals();
 });

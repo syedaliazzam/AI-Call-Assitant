@@ -1,35 +1,35 @@
 /**
  * File: apps/web/src/core/recording/handoff.ts
- * Purpose: Carries recording between the desktop app's windows (1.5.0, ADR-0068). The Connect card (the
- *          small window) leaves a short-lived note saying the call should be recorded from the start, of
- *          which type and which display, with the person's consent ticked; the live page (the main
- *          window) takes it once when the call connects. When the call ends with a recording, the live
- *          page announces it, so the small window shows "Recording saved · Open in Meetings". Only ids
- *          and choices travel; never call content.
+ * Purpose: Carries recording between the desktop app's windows (1.5.0, ADR-0068). ADR-0082: the Connect card
+ *          (the small window) has no Record choice any more (recording starts only from the call bars' Rec
+ *          pill); when the person ticks "Everyone on the call has agreed to be recorded" there, it leaves a
+ *          short-lived note of that consent, and the live page (the main window) takes it once when the
+ *          call connects, so the Rec pill can start without asking again. When the call ends with a
+ *          recording, the live page announces it, so the small window shows "Recording saved · Open in
+ *          Meetings". Only ids and a yes travel; never call content.
  * Used by: src/features/home/LauncherConnect.tsx (leaves the note), src/features/live/LivePage.tsx
  *          (takes it, announces), src/features/home/Launcher.tsx (listens)
- * Depends on: localStorage, BroadcastChannel (both injectable for tests), @kite/shared
- * Architecture: docs/decisions/ADR-0068-meeting-recording.md; ADR-0055 (the same pattern as callStart.ts)
+ * Depends on: localStorage, BroadcastChannel (both injectable for tests)
+ * Architecture: docs/decisions/ADR-0068-meeting-recording.md, ADR-0082; ADR-0055 (the same pattern as
+ *               callStart.ts)
  */
-import { RECORDING_KINDS, type RecordingKind } from '@kite/shared';
 
-/** The localStorage key of the note. */
-export const RECORD_START_KEY = 'kite-record-start';
+/**
+ * ADR-0082: the localStorage key of the consent note. (1.5.0 to 1.6.3 used 'kite-record-start' for "record
+ * from the start"; such a note is ignored now, so no call ever starts recording by itself.)
+ */
+export const RECORD_CONSENT_KEY = 'kite-record-consent';
 
 /** The BroadcastChannel's name. */
 export const RECORDING_CHANNEL = 'kite-recording';
 
 /** How long a note is good for, in ms (Connect waits up to 60 s for the speech model). */
-export const RECORD_START_TTL_MS = 120_000;
+export const RECORD_CONSENT_TTL_MS = 120_000;
 
-/** The Connect card's recording choice for a call. */
-export interface RecordStartNote {
+/** ADR-0082: the Connect card's consent for one call. */
+export interface RecordConsentNote {
   /** The session. */
   sessionId: string;
-  /** Screen and sound, or sound only. */
-  kind: RecordingKind;
-  /** The display to record, or null for the main one. */
-  displayId: string | null;
   /** When it was left (Unix ms). */
   at: number;
 }
@@ -70,58 +70,51 @@ export function defaultHandoffDeps(): HandoffDeps {
 }
 
 /**
- * Leaves the note for the call about to start (the Connect card's Connect, with Record on and the
- * consent ticked). Record Off clears any old note.
+ * ADR-0082: leaves the consent note for the call about to start (the Connect card's Connect). Unticked
+ * clears any old note, so consent never carries over to another call.
  * @param sessionId The session.
- * @param choice    The type and display, or null for Off.
+ * @param consented True when "Everyone on the call has agreed to be recorded" is ticked.
  * @param deps      See HandoffDeps.
  * Called from: LauncherConnect.tsx
  */
-export function leaveRecordStart(
+export function leaveRecordConsent(
   sessionId: string,
-  choice: { kind: RecordingKind; displayId: string | null } | null,
+  consented: boolean,
   deps = defaultHandoffDeps(),
 ): void {
   try {
-    if (!choice) {
-      deps.storage?.removeItem(RECORD_START_KEY);
+    if (!consented) {
+      deps.storage?.removeItem(RECORD_CONSENT_KEY);
       return;
     }
-    const note: RecordStartNote = { sessionId, ...choice, at: deps.now() };
-    deps.storage?.setItem(RECORD_START_KEY, JSON.stringify(note));
+    const note: RecordConsentNote = { sessionId, at: deps.now() };
+    deps.storage?.setItem(RECORD_CONSENT_KEY, JSON.stringify(note));
   } catch {
-    // Storage blocked: the call starts without recording; the Rec pill still starts one.
+    // Storage blocked: the Rec pill simply asks for consent, as without the tick.
   }
 }
 
 /**
- * Takes the note for this session, once (it is removed whatever it holds).
+ * ADR-0082: takes the consent note for this session, once (it is removed whatever it holds).
  * @param sessionId The live page's session.
  * @param deps      See HandoffDeps.
- * @returns The choice, or null when the call should not record from the start.
+ * @returns True when consent was ticked at Connect for this call (a fresh note for this session).
  * Called from: LivePage.tsx (when the call has connected)
  */
-export function takeRecordStart(
-  sessionId: string,
-  deps = defaultHandoffDeps(),
-): { kind: RecordingKind; displayId: string | null } | null {
+export function takeRecordConsent(sessionId: string, deps = defaultHandoffDeps()): boolean {
   try {
-    const raw = deps.storage?.getItem(RECORD_START_KEY);
-    if (!raw) return null;
-    const note = JSON.parse(raw) as Partial<RecordStartNote>;
-    if (note.sessionId !== sessionId) return null;
-    deps.storage?.removeItem(RECORD_START_KEY);
-    const fresh =
+    const raw = deps.storage?.getItem(RECORD_CONSENT_KEY);
+    if (!raw) return false;
+    const note = JSON.parse(raw) as Partial<RecordConsentNote>;
+    if (note.sessionId !== sessionId) return false;
+    deps.storage?.removeItem(RECORD_CONSENT_KEY);
+    return (
       typeof note.at === 'number' &&
       note.at <= deps.now() &&
-      deps.now() - note.at <= RECORD_START_TTL_MS;
-    if (!fresh || !(RECORDING_KINDS as readonly unknown[]).includes(note.kind)) return null;
-    return {
-      kind: note.kind as RecordingKind,
-      displayId: typeof note.displayId === 'string' ? note.displayId : null,
-    };
+      deps.now() - note.at <= RECORD_CONSENT_TTL_MS
+    );
   } catch {
-    return null;
+    return false;
   }
 }
 

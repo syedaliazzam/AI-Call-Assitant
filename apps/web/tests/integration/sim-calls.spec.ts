@@ -10,6 +10,11 @@
  *    multi-part question asked again on one card, talk about the call, another language, and a remark.
  * Checks that the right questions are answered, with no duplicates; that panels, hotkeys and arrows
  * behave; and that the transcript is readable. Also the home panel and a keyboard pass (item 26).
+ * ADR-0082: the overlay's one status bar carries the call's messages ("Still in a call?", the headphones
+ * hint, listening paused); its Answer key replaces the removed Answer button; Clear and Ctrl+Backspace
+ * clear the answers on both pages; and Ctrl+Shift+Space is the voice question ("Listening…" on the status
+ * bar, Escape or a second press cancels, the spoken question is never a "You" line), with Ctrl+Alt+Enter
+ * taking a screenshot first.
  * All text is invented.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -241,6 +246,18 @@ const questions = () => received.map((request) => request.question ?? '');
  */
 const cards = () => page.getByRole('region', { name: 'Answers', exact: true }).locator('article');
 
+/**
+ * ADR-0082: asks for an answer from the overlay, as its Answer key (Ctrl+Enter) does with the overlay
+ * focused (bar 1 has no Answer button any more).
+ *
+ * @param overlay The overlay's page.
+ * @returns When the key has been pressed.
+ */
+async function answerFromOverlay(overlay: Page): Promise<void> {
+  await overlay.locator('body').click({ position: { x: 2, y: 2 } });
+  await overlay.keyboard.press('Control+Enter');
+}
+
 test('a) interview: only real questions are answered, once each', async () => {
   const { say } = await openCall();
   // A greeting and an instruction: nothing to answer, and no request spent.
@@ -347,9 +364,13 @@ test('a) interview: only real questions are answered, once each', async () => {
   await expect(bubbles).toHaveCount(0);
   await expect(cards()).toHaveCount(before);
 
-  // Chat moved to Ctrl+Shift+Space.
+  // ADR-0082: Ctrl+Shift+Space is the voice question (it opened the typed box until 1.6.3): the
+  // microphone listens, the box is not focused, and Escape cancels.
   await page.keyboard.press('Control+Shift+Space');
-  await expect(page.getByLabel('Type a question')).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Stop listening' }).first()).toBeVisible();
+  await expect(page.getByLabel('Type a question')).not.toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Stop listening' })).toHaveCount(0);
 });
 
 test('b) coding round: a problem on screen gets the coding shape, about the question just asked', async () => {
@@ -418,8 +439,16 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
   await expect(page.getByRole('button', { name: 'Answer', exact: true }).first()).toBeVisible();
   const overlay = await context.newPage();
   await overlay.goto(`${origin}/compact-harness`);
-  const strip = overlay.getByRole('region', { name: 'Live transcript bar' });
+  // ADR-0082: the one status bar (was the "Live transcript bar"); its line shows the call's messages.
+  const strip = overlay.getByRole('group', { name: 'Status bar' }).first();
   await expect(strip).toBeVisible();
+  /**
+   * The status bar's message with this key (statusLine.ts), wherever the status bar is.
+   *
+   * @param key The message's key.
+   * @returns Its locator.
+   */
+  const message = (key: string) => overlay.locator(`[data-status="${key}"]`);
 
   /**
    * Adds a line.
@@ -440,9 +469,9 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
 
   // Ten quiet minutes: asks.
   await context.clock.fastForward('10:30');
-  await expect(strip.getByRole('alert')).toContainText('Still in a call?');
-  await strip.getByRole('button', { name: 'Yes' }).click();
-  await expect(strip.getByRole('alert')).toHaveCount(0);
+  await expect(message('still-here')).toContainText('Still in a call?');
+  await message('still-here').getByRole('button', { name: 'Yes' }).click();
+  await expect(message('still-here')).toHaveCount(0);
 
   // The other person speaks again; the speakers echo it three times; one real reply stays.
   const ECHOES = [
@@ -458,10 +487,10 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
   await say('you', 'THAT IS GOOD TO HEAR FROM THEM', 5);
   const transcript = page.getByLabel('Live transcript');
   await expect(transcript.getByRole('listitem', { name: 'You said' })).toHaveCount(1);
-  // One hint, once.
-  await expect(overlay.getByText('Your speakers are echoing. Use headphones.')).toBeVisible();
-  await overlay.getByRole('button', { name: 'OK' }).click();
-  await expect(overlay.getByText('Your speakers are echoing. Use headphones.')).toHaveCount(0);
+  // One hint, once, on the status bar (ADR-0082: short words).
+  await expect(message('headphones')).toHaveText(/Speakers echoing — use headphones/);
+  await message('headphones').getByRole('button', { name: 'OK' }).click();
+  await expect(message('headphones')).toHaveCount(0);
 
   // Background speech collapses, and it is not "someone on the call" for the transcript's sake.
   await say('them', 'GRONK BLIMP SPROCKET WIBBLE FLANGE', 4);
@@ -471,7 +500,7 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
   );
 
   // The overlay's transcript panel shows the same, under its own bar.
-  await overlay.getByRole('button', { name: 'Open the transcript', exact: true }).click();
+  await overlay.getByRole('button', { name: 'Show the transcript', exact: true }).click();
   const panel = overlay.getByRole('region', { name: 'Transcript panel' });
   await expect(panel.getByLabel('Live transcript')).toContainText('Dana');
   await expect(panel.getByRole('button', { name: /^Unclear speech/ })).toBeVisible();
@@ -480,15 +509,16 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
   await context.clock.fastForward('31:00');
   await expect.poll(() => page.evaluate(() => window.kiteSim.pauses())).toBe(1);
   await overlay.getByRole('button', { name: 'Close the transcript' }).click();
-  await expect(strip.getByRole('alert')).toContainText('Listening is paused');
-  await strip.getByRole('button', { name: 'Resume' }).click();
+  await expect(message('paused')).toContainText('Listening is paused');
+  await message('paused').getByRole('button', { name: 'Resume' }).click();
   await expect.poll(() => page.evaluate(() => window.kiteSim.resumes())).toBe(1);
-  await expect(strip.getByRole('alert')).toHaveCount(0);
+  await expect(message('paused')).toHaveCount(0);
 
   // After all that, a question still gets its answer, in both views.
   received.length = 0;
   await say('them', 'WHAT WOULD THE NEXT STEP BE FOR THE PILOT');
-  await overlay.getByRole('button', { name: 'Answer', exact: false }).first().click();
+  // ADR-0082: no Answer button on the overlay; its key does it.
+  await answerFromOverlay(overlay);
   await expect.poll(() => received.length).toBe(1);
   await expect(overlay.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 1');
   await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 1');
@@ -496,7 +526,7 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
   await expect(overlay.getByRole('timer', { name: 'Call time' })).toContainText(/^4\d:\d\d$/);
 });
 
-test('the overlay: panels open with an answer, the arrows move, Clear keeps the answer', async () => {
+test('the overlay: panels open with an answer, the arrows move, Clear clears the answers (ADR-0082)', async () => {
   const { say } = await openCall();
   const overlay = await context.newPage();
   await overlay.goto(`${origin}/compact-harness`);
@@ -506,11 +536,11 @@ test('the overlay: panels open with an answer, the arrows move, Clear keeps the 
   await expect(answerPanel).toHaveCount(0);
 
   await say('them', 'HOW DID YOU TEST THE NEW EXPORT');
-  await overlay.getByRole('button', { name: 'Answer', exact: false }).first().click();
+  await answerFromOverlay(overlay);
   await expect(answerPanel).toBeVisible();
   await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 1');
   await say('them', 'WHY DID YOU CHOOSE GO FOR IT');
-  await overlay.getByRole('button', { name: 'Answer', exact: false }).first().click();
+  await answerFromOverlay(overlay);
   await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 2');
 
   await answerPanel.getByRole('button', { name: 'Previous question' }).click();
@@ -528,7 +558,7 @@ test('the overlay: panels open with an answer, the arrows move, Clear keeps the 
 
   // The question shows at once, with Thinking… and Stop, before the first word.
   await say('them', 'WHAT WOULD YOU DO SLOWLY AT THE START');
-  await overlay.getByRole('button', { name: 'Answer', exact: false }).first().click();
+  await answerFromOverlay(overlay);
   await expect(answerPanel.getByText('Thinking…')).toBeVisible();
   await expect(answerPanel.getByLabel('Question', { exact: true })).toContainText(
     'What would you do slowly at the start',
@@ -539,13 +569,25 @@ test('the overlay: panels open with an answer, the arrows move, Clear keeps the 
   );
   await expect(answerPanel.getByRole('button', { name: 'Stop' })).toHaveCount(0);
 
-  // Clear never empties the card.
-  await answerPanel.getByRole('button', { name: 'Clear' }).click();
-  await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toBeVisible();
+  // ADR-0082: Clear clears the answers: none on the overlay, none in the call window, until the next one.
+  await answerPanel.getByRole('button', { name: 'Clear answers' }).click();
+  await expect(overlay.getByRole('heading', { name: 'Answer line' })).toHaveCount(0);
+  await expect(cards()).toHaveCount(0);
+  await say('them', 'HOW WOULD YOU ROLL IT OUT TO THE OTHER TEAMS');
+  await answerFromOverlay(overlay);
+  await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 4');
+  await expect(cards()).toHaveCount(1);
+  // Ctrl+Backspace does the same from the overlay's keyboard.
+  await overlay.keyboard.press('Control+Backspace');
+  await expect(overlay.getByRole('heading', { name: 'Answer line' })).toHaveCount(0);
+  await expect(cards()).toHaveCount(0);
+  await say('them', 'AND WHAT WOULD YOU MEASURE FIRST');
+  await answerFromOverlay(overlay);
+  await expect(answerPanel.getByRole('heading', { name: 'Answer line' })).toContainText('Answer 5');
 
   // Both panels at once: transcript above answer in a narrow window (side by side in a wide one).
   await overlay.setViewportSize({ width: 780, height: 700 });
-  await overlay.getByRole('button', { name: 'Open the transcript', exact: true }).click();
+  await overlay.getByRole('button', { name: 'Show the transcript', exact: true }).click();
   const transcriptPanel = overlay.getByRole('region', { name: 'Transcript panel' });
   await expect(transcriptPanel).toBeVisible();
   await expect(answerPanel).toBeVisible();
@@ -811,58 +853,64 @@ test('home panel: cards, search, sort, the menu and its buttons', async () => {
   await expect(menu).toHaveCount(0);
 });
 
-test('the chat bar: Ctrl+Alt+Enter sends with a screenshot; pressing Chat twice dictates (spec S14)', async () => {
+test('ADR-0082: the voice question: Ctrl+Shift+Space listens on the status bar, Escape cancels, Ctrl+Alt+Enter adds a screenshot', async () => {
   await openCall('desktop');
   const overlay = await context.newPage();
   await overlay.goto(`${origin}/compact-harness`);
   await expect(overlay.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
-  const input = overlay.getByLabel('Type a question');
-  const sent = received.length;
-
-  // Ctrl+Alt+Enter with words sends them about a screenshot, and the bar closes.
-  await overlay.getByRole('button', { name: 'Chat', exact: false }).first().click();
-  await input.fill('WHAT IS ON MY SCREEN');
-  await input.press('Control+Alt+Enter');
-  await expect(input).toHaveCount(0);
-  await expect.poll(() => received.length).toBe(sent + 1);
-  expect(received.at(-1)!.question).toBe('WHAT IS ON MY SCREEN');
-  expect(received.at(-1)!.mode).toBe('screenshot');
-  expect(received.at(-1)!.image).toMatch(/^data:image\/jpeg;base64,/);
-
-  // Chat pressed once opens it, without the microphone.
-  await overlay.locator('body').click();
-  await overlay.keyboard.press('Control+Shift+Space');
-  await expect(input).toBeFocused();
-  await expect(overlay.getByRole('button', { name: 'Speak a question' })).toBeVisible();
-  await overlay.keyboard.press('Escape');
-  await expect(input).toHaveCount(0);
-
-  // Pressed twice: open, with the microphone on. Escape cancels and nothing is sent.
-  await overlay.waitForTimeout(600);
+  // No message box on the overlay at all.
+  await expect(overlay.getByLabel('Type a question')).toHaveCount(0);
+  const listening = overlay
+    .getByRole('group', { name: 'Status bar' })
+    .locator('[data-status="listening"]');
   const before = received.length;
+
+  // Ctrl+Shift+Space: the status bar says it is listening, with Cancel; no box opens.
+  await overlay.locator('body').click({ position: { x: 2, y: 2 } });
   await overlay.keyboard.press('Control+Shift+Space');
-  // As a person presses twice: faster than this is a held key repeating.
-  await overlay.waitForTimeout(120);
-  await overlay.keyboard.press('Control+Shift+Space');
-  await expect(overlay.getByRole('button', { name: 'Stop listening' })).toBeVisible();
+  await expect(listening).toContainText('Listening… (Esc cancels)');
+  await expect(listening.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  await expect(overlay.getByRole('textbox')).toHaveCount(0);
+  // Escape cancels: what is said afterwards is not sent.
   await overlay.keyboard.press('Escape');
-  await expect(input).toHaveCount(0);
+  await expect(listening).toHaveCount(0);
   await page.evaluate(() => window.kiteSim.dictate('THIS MUST NOT BE SENT'));
   await overlay.waitForTimeout(1_700);
   expect(received.length).toBe(before);
 
-  // Pressed twice again: what is said goes by itself after 1.5 s of silence.
+  // Pressed again while listening, it cancels too; so does the status bar's Cancel.
   await overlay.keyboard.press('Control+Shift+Space');
-  // As a person presses twice: faster than this is a held key repeating.
-  await overlay.waitForTimeout(120);
+  await expect(listening).toBeVisible();
   await overlay.keyboard.press('Control+Shift+Space');
-  await expect(overlay.getByRole('button', { name: 'Stop listening' })).toBeVisible();
+  await expect(listening).toHaveCount(0);
+  await overlay.keyboard.press('Control+Shift+Space');
+  await listening.getByRole('button', { name: 'Cancel' }).click();
+  await expect(listening).toHaveCount(0);
+
+  // Spoken: the question goes by itself after 1.5 s of silence, as a question, never a "You" line.
+  await overlay.locator('body').click({ position: { x: 2, y: 2 } });
+  await overlay.keyboard.press('Control+Shift+Space');
+  await expect(listening).toBeVisible();
   await page.evaluate(() => window.kiteSim.dictate('WHAT IS THE NOTICE PERIOD'));
   await overlay.waitForTimeout(1_200);
   expect(received.length, 'not before the 1.5 s').toBe(before);
   await expect.poll(() => received.length, { timeout: 2_000 }).toBe(before + 1);
   expect(received.at(-1)!.question).toBe('WHAT IS THE NOTICE PERIOD');
-  await expect(overlay.getByRole('button', { name: 'Speak a question' })).toBeVisible();
+  expect(received.at(-1)!.mode).toBe('chat');
+  await expect(listening).toHaveCount(0);
+  await expect(page.getByLabel('Live transcript')).not.toContainText(/notice period/i);
+  await expect(overlay.getByRole('heading', { name: 'Answer line' })).toBeVisible();
+
+  // Ctrl+Alt+Enter: a screenshot first, then the spoken question; both go together.
+  await overlay.locator('body').click({ position: { x: 2, y: 2 } });
+  await overlay.keyboard.press('Control+Alt+Enter');
+  await expect(listening).toBeVisible();
+  await page.evaluate(() => window.kiteSim.dictate('WHAT IS ON MY SCREEN'));
+  await expect.poll(() => received.length, { timeout: 4_000 }).toBe(before + 2);
+  expect(received.at(-1)!.question).toBe('WHAT IS ON MY SCREEN');
+  expect(received.at(-1)!.mode).toBe('screenshot');
+  expect(received.at(-1)!.image).toMatch(/^data:image\/jpeg;base64,/);
+  await expect(page.getByLabel('Live transcript')).not.toContainText(/on my screen/i);
 });
 
 test('keyboard pass: every control of the overlay and the panel can be reached and used', async () => {
@@ -871,7 +919,7 @@ test('keyboard pass: every control of the overlay and the panel can be reached a
   await overlay.goto(`${origin}/compact-harness`);
   await expect(overlay.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
   await say('them', 'HOW DID YOU TEST THE NEW EXPORT');
-  await overlay.getByRole('button', { name: 'Answer', exact: false }).first().click();
+  await answerFromOverlay(overlay);
   await expect(overlay.getByRole('region', { name: 'Latest answer' })).toBeVisible();
 
   /**
@@ -905,13 +953,16 @@ test('keyboard pass: every control of the overlay and the panel can be reached a
   };
   const stops = await tabStops(overlay);
   const names = stops.map((stop) => stop.name);
+  // ADR-0082: no Answer, Screenshot or Chat buttons; the status bar's controls follow bar 1's.
+  expect(names).not.toContain('Answer');
+  expect(names).not.toContain('Chat');
   for (const expected of [
-    'Answer',
-    'Screenshot',
-    'Chat',
+    'Auto answer',
     'Overlay menu',
     'Exit: end call',
-    'Open the transcript',
+    'Show the transcript',
+    'Clear transcript',
+    'Clear answers',
     'Copy the answer',
     'Good answer',
   ]) {

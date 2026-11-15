@@ -7,7 +7,8 @@
  * 1. Every file the web app's engine fetches, fetched at its usual address from the page, comes back
  *    from the bundle with the pinned SHA-256 (and a plain Hugging Face address fails: it really is
  *    unreachable).
- * 2. An invented session (through the sync API) → Start free → Connect: never a "Speech model needed"
+ * 2. An invented session (through the sync API) → its Connect card (ADR-0082: no Start free step) →
+ *    Connect: never a "Speech model needed"
  *    dialog; the call bars appear; Exit ends the call. The session is deleted at the end.
  * Prints step names and numbers only. "Them" is this computer's real sound; no screenshots.
  * Run: KITE_SHELL_EXE=<…\Paramount AI.exe> pnpm --filter web exec playwright test
@@ -164,7 +165,7 @@ test('2. first Connect on a fresh profile: no download dialog, the call starts, 
     .getByRole('list', { name: 'Sessions' })
     .getByRole('button', { name: new RegExp(SESSION.company) })
     .click();
-  await panel.getByRole('button', { name: 'Start free' }).click();
+  // ADR-0082: the session goes straight to its Connect card.
   await expect(panel.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
 
   const findOverlay = () => app.windows().find((window) => window.url().includes('/compact/'));

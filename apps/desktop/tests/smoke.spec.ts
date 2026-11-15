@@ -264,6 +264,8 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
       typeof window.kiteDesktop?.setRecordingDisplay,
       typeof window.kiteDesktop?.deviceIdentity,
       typeof window.kiteDesktop?.renameDevice,
+      // 1.6.4 (ADR-0082): Escape while a voice question listens.
+      typeof window.kiteDesktop?.setVoiceCancelHotkey,
     ],
     version: window.kiteDesktop?.version,
     os: window.kiteDesktop?.os,
@@ -333,6 +335,8 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'setOverlayPosition',
     'setRecordingDisplay',
     'setShareProtection',
+    // 1.6.4 (ADR-0082): Escape while a voice question listens.
+    'setVoiceCancelHotkey',
     'showCallWindow',
     // 1.6.0 (ADR-0072): the native "saved to Google Drive" notification.
     'showNotice',
@@ -341,7 +345,7 @@ test('exposes window.kiteDesktop with exactly its bridge methods, frozen', async
     'version',
     'windowControl',
   ]);
-  expect(bridge.methods).toEqual(Array(42).fill('function'));
+  expect(bridge.methods).toEqual(Array(43).fill('function'));
   expect(bridge.version).toBe(appVersion);
   expect(bridge.version).toMatch(/^\d+\.\d+\.\d+/);
   expect(bridge.os).toBe(expectedOs);
@@ -356,8 +360,17 @@ test('hotkeys: the page turns them on and off, and a hotkey from the main proces
     return window.kiteDesktop!.setHotkeysEnabled!(true);
   });
   expect(statuses.map((status) => status.action)).toEqual(GLOBAL_HOTKEYS);
-  // Keys that edit text in other apps are never global.
-  expect(statuses.map((status) => status.accelerator)).not.toContain('CommandOrControl+Backspace');
+  // 1.6.4 (ADR-0082, the developer's choice for ParakeetAI parity): Clear answers, Clear transcript and
+  // previous / next are held during a call too (until 1.6.3 they never were); Escape never is.
+  expect(statuses.map((status) => status.accelerator)).toEqual(
+    expect.arrayContaining([
+      'CommandOrControl+Backspace',
+      'CommandOrControl+Shift+Backspace',
+      'CommandOrControl+Left',
+      'CommandOrControl+Right',
+    ]),
+  );
+  expect(statuses.map((status) => status.accelerator)).not.toContain('Escape');
   /**
    * Whether the main process holds a shortcut now.
    *
@@ -787,20 +800,23 @@ test('overlay: opacity, collapse, minimises the main window and brings it back (
     page.evaluate(() => window.kiteDesktop!.moveOverlay!(Number.NaN, 0)),
   ).rejects.toThrow();
 
-  // v1.2.0 (spec S15): both panels widen it about its centre, and it goes back.
+  // v1.2.0 (spec S15) widened it with both panels open; 1.6.4 (ADR-0082): by default it keeps its width
+  // (the panels stack in the third-of-the-screen window), and is in the same place after.
   const place = await overlayBounds();
   await page.evaluate(() =>
     window.kiteDesktop!.setOverlayLayout!({ transcript: true, answer: true, popupHeight: 0 }),
   );
-  await expect.poll(async () => (await overlayBounds()).width).toBeGreaterThan(place.width);
+  // setOverlayLayout is an invoke: the shell has applied the layout when it answers.
+  expect((await overlayBounds()).width).toBe(place.width);
   await page.evaluate(() =>
     window.kiteDesktop!.setOverlayLayout!({ transcript: false, answer: false, popupHeight: 0 }),
   );
   await expect.poll(async () => (await overlayBounds()).width).toBe(place.width);
   expect((await overlayBounds()).x).toBe(place.x);
 
-  // Conflicts can be checked with no call on, and nothing stays registered. The chat bar's shortcut
-  // (spec S14) is among them, so Settings can report a clash.
+  // Conflicts can be checked with no call on, and nothing stays registered. The screenshot and voice
+  // question's shortcut (Ctrl+Alt+Enter; 1.6.4, ADR-0082: one of the call's) is among them, so Settings can
+  // report a clash.
   const statuses = await page.evaluate(() => window.kiteDesktop!.checkHotkeys!());
   expect(statuses.length).toBeGreaterThan(5);
   expect(statuses.map((status) => status.action)).toContain('screenshot-send');

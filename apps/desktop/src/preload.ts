@@ -62,6 +62,7 @@ import {
   OPEN_PAGES_CHANNEL,
   OVERLAY_COLLAPSE_CHANNEL,
   CHAT_HOTKEY_CHANNEL,
+  VOICE_CANCEL_HOTKEY_CHANNEL,
   OVERLAY_LAYOUT_CHANNEL,
   OVERLAY_MOVE_CHANNEL,
   OVERLAY_MODE_CHANNEL,
@@ -260,6 +261,9 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
   moveOverlay: (dx: number, dy: number) =>
     ipcRenderer.invoke(OVERLAY_MOVE_CHANNEL, { dx: Number(dx), dy: Number(dy) }),
   setChatHotkey: (on: boolean) => ipcRenderer.invoke(CHAT_HOTKEY_CHANNEL, on === true),
+  // 1.6.4 (ADR-0082): only a boolean crosses.
+  setVoiceCancelHotkey: (on: boolean) =>
+    ipcRenderer.invoke(VOICE_CANCEL_HOTKEY_CHANNEL, on === true),
   setOverlayLayout: (layout: OverlayLayout) =>
     ipcRenderer.invoke(OVERLAY_LAYOUT_CHANNEL, {
       transcript: layout?.transcript === true,

@@ -12,17 +12,20 @@
  *          - gate: the live page's phone check (platform supportsLiveCalls()), showing
  *            LiveCallsUnsupported on a phone or tablet;
  *          - compact / compact-unavailable: CompactView with a live answer, or with the
- *            "Claude unavailable" message.
+ *            "Claude unavailable" message; ?status= puts a message on the overlay's status bar
+ *            (ADR-0082) and ?ct=on|off gives bar 1 its Click-through switch.
  *          No sign-in, no microphone, no speech model and no Claude call.
  * Used by: tests/integration/live.spec.ts (bundled with esbuild and served on a test page)
  * Depends on: src/features/live (LiveCallLayout, TranscriptStrip, LiveAnswers, AudioMeter,
- *             ConnectPanel, CompactView, LiveCallsUnsupported), src/core/transcript, src/platform
+ *             ConnectPanel, CompactView, LiveCallsUnsupported), src/core/transcript,
+ *             src/core/live/callNotice.ts, src/platform
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing);
  *               docs/design/kite-ui-theme.md §6
  */
 import { useState } from 'react';
 import { CLAUDE_UNAVAILABLE_MESSAGES, type OverlayPreset } from '@kite/shared';
 import { createRoot } from 'react-dom/client';
+import { callNoticeFor } from '@/core/live/callNotice';
 import type { CompactState } from '@/core/live/liveChannel';
 import type { OverlayPanels } from '@/core/storage/overlayPrefs';
 import type { Session } from '@/core/storage/types';
@@ -369,8 +372,8 @@ const COMPACT_STATE: CompactState = {
 };
 
 /**
- * The compact view on a fixed state, with its Chat button working (CompactLive holds this state in
- * the app).
+ * The compact view on a fixed state (CompactLive holds this state in the app); the commands it sends are
+ * logged in window.overlayLog for the test to read.
  *
  * @param props.state What to show.
  * @returns The view.
@@ -382,7 +385,6 @@ function CompactHarness({
   /** What to show. */
   state: CompactState;
 }) {
-  const [chatOpen, setChatOpen] = useState(false);
   const params = new URLSearchParams(window.location.search);
   // ?panels=transcript,answer: which panels start open (the answer panel by default here).
   const [panels, setPanels] = useState<OverlayPanels>(() => {
@@ -396,8 +398,10 @@ function CompactHarness({
   const [alpha, setAlpha] = useState<number | null>(() =>
     alphaParam === null ? null : Number(alphaParam),
   );
-  // 1.6.3: ?ct=on: Click-through mode on (v1.3.2), as a desktop shell from 1.3.0 has it.
+  // 1.6.3: ?ct=on: Click-through mode on (v1.3.2), as a desktop shell from 1.3.0 has it. ADR-0082: ?ct=off:
+  // a shell that can pass clicks, with the mode off (bar 1 then shows the Click-through switch, off).
   const clickThrough = params.get('ct') === 'on';
+  const canClickThrough = clickThrough || params.get('ct') === 'off';
   // What the view asks for, so a test can read it. ?shell=1: a shell from 1.2.0, with the icon.
   const log = (window as unknown as { overlayLog: unknown[] }).overlayLog;
   // ?position=bottom-left: a shell from 1.3.0 with the six positions (ADR-0056), at that one.
@@ -407,7 +411,7 @@ function CompactHarness({
   return (
     <CompactView
       state={clickThrough ? { ...state, clickThrough: true } : state}
-      {...(clickThrough ? { onClickThrough: () => undefined } : {})}
+      {...(canClickThrough ? { onClickThrough: () => undefined } : {})}
       protection={{ supported: true, on: true }}
       onCommand={(command) => log.push(command)}
       onProtection={() => undefined}
@@ -433,8 +437,6 @@ function CompactHarness({
             },
           }
         : {})}
-      chatOpen={chatOpen}
-      onChatOpen={setChatOpen}
       panels={panels}
       onPanels={setPanels}
       // ?glass=1: the see-through panel of the desktop window (the overlay look test).
@@ -526,9 +528,39 @@ const view = new URLSearchParams(window.location.search).get('view') ?? 'live';
 const root = createRoot(document.getElementById('root')!);
 
 /**
+ * ADR-0082: what the overlay's status bar has to say, by ?status=: the other side unheard (a real call
+ * notice from core/live/callNotice.ts), a voice question listening, the headphones hint, "Still in a
+ * call?", listening paused, or the Answer key held by another app.
+ *
+ * @param status The ?status= value, or null for none.
+ * @returns The state fields that make the status bar show it (none for an unknown value).
+ * Called from: withOverlayParams()
+ */
+function statusParams(status: string | null): Partial<CompactState> {
+  switch (status) {
+    case 'them-silent': {
+      const notice = callNoticeFor({ silent: 'them', backlog: 'ok', platform: 'desktop' });
+      return notice ? { callNotice: notice } : {};
+    }
+    case 'listening':
+      return { dictationSupported: true, dictating: true };
+    case 'headphones':
+      return { headphonesHint: true };
+    case 'still-here':
+      return { hygiene: 'ask' };
+    case 'paused':
+      return { hygiene: 'paused' };
+    case 'answer-key':
+      return { answerKeyTaken: 'Ctrl+Enter' };
+    default:
+      return {};
+  }
+}
+
+/**
  * 1.6.3 overlay checks: the compact state with what the address asks for. ?rec=on: a screen recording
  * that started 33 seconds ago (desktop 1.5.0, ADR-0068); ?rec=off: the Rec pill, not recording;
- * ?auto=on: auto answer on.
+ * ?auto=on: auto answer on; ?status=…: a message on the status bar (ADR-0082, statusParams()).
  *
  * @param base The state to start from.
  * @returns The state to show.
@@ -539,6 +571,7 @@ function withOverlayParams(base: CompactState): CompactState {
   const rec = params.get('rec');
   return {
     ...base,
+    ...statusParams(params.get('status')),
     ...(params.get('auto') === 'on' ? { autoAnswer: true } : {}),
     ...(rec === 'on' || rec === 'off'
       ? {

@@ -6,7 +6,7 @@
  * - desktop: this checkout's 1.3.0 shell, with a fresh temporary profile (never signed in), receives
  *   paramountai://session/<id>/<code> as a second launch would pass it, opens the link page, signs in
  *   with the code and shows the sessions card with that session first, "From your browser" (ADR-0055);
- *   its Start card says "Signed in as …".
+ *   a click opens its Connect card (ADR-0082: no Start card any more), and the panel is signed in.
  * Every session this run signs in with is signed out again, and the invented session is deleted. Codes
  * are never printed. Prints step names only.
  * Run: pnpm --filter @kite/desktop build, then
@@ -191,7 +191,7 @@ test('1. web: a code signs a fresh browser in once; reuse, another session and 6
   await fresh.close();
 });
 
-test('2. desktop 1.3.0: a link with a code opens the start card, signed in', async () => {
+test('2. desktop 1.3.0: a link with a code opens the Connect card, signed in', async () => {
   const profile = mkdtempSync(path.join(tmpdir(), 'kite-e2e-link-'));
   const { ELECTRON_RUN_AS_NODE: _runAsNode, ...env } = process.env;
   const app = await electron.launch({
@@ -218,17 +218,16 @@ test('2. desktop 1.3.0: a link with a code opens the start card, signed in', asy
       .click({ timeout: 60_000 })
       .catch(() => undefined);
     // ADR-0055: the sessions card, with the link's session first and highlighted; a click opens its
-    // Start card, signed in.
+    // Connect card (ADR-0082), signed in (signedInThenOut() checks the sign-in below).
     const fromBrowser = panel
       .getByRole('list', { name: 'Sessions' })
       .getByRole('button', { name: /from your browser/ });
     await expect(fromBrowser).toContainText(COMPANY, { timeout: 60_000 });
     await fromBrowser.click();
-    await expect(panel.getByRole('heading', { name: 'Start your session' })).toBeVisible();
-    await expect(panel.getByText(/^Signed in as /)).toBeVisible();
+    await expect(panel.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
     // The code never reached an address.
     expect(panel.url()).not.toContain(code);
-    report('desktop link: start card, signed in', true);
+    report('desktop link: connect card, signed in', true);
     expect(await signedInThenOut(panel)).toBe(true);
   } finally {
     await app.close().catch(() => undefined);

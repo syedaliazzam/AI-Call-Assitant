@@ -1,9 +1,12 @@
 /**
  * File: apps/web/src/core/sync/legacyUpload.ts
- * Purpose: The one-time upload of this device's own data into the account (ADR-0049, Phase 4). Before
- *          account sync each browser, browser address and desktop app kept its data in its own 'kite'
- *          database; after the person agrees ("Add them to <email>?"), this reads that database (it is
- *          never written to) and adds each session, with its documents, lines, answers, notes and
+ * Purpose: The one-time upload of an account's own local data into the account (ADR-0049, Phase 4).
+ *          Privacy fix of 14 Nov 2026: the source is ONLY the signed-in account's own local database
+ *          ('kite-l-<id>', what this account made on this device while it had no account sync). The old
+ *          shared database 'kite' (from before 9 Nov 2026) records no owner, so on a shared computer it
+ *          may hold another person's sessions: it is never offered, never read, never changed.
+ *          After the person agrees ("Add them to <email>?"), this reads the account's local database (it
+ *          is never written to) and adds each session, with its documents, lines, answers, notes and
  *          question bank, then lessons, library items, Ask AI chats and the default preferences, to
  *          the account. Each record is added only when the account has none with its id
  *          ("already there"), so running it twice, or on two devices holding the same session, adds
@@ -24,14 +27,20 @@ import {
   type SyncOp,
 } from '@kite/shared';
 import Dexie from 'dexie';
-import { DB_NAME, getDb, KiteDb } from '../storage/db';
+import {
+  accountDbName,
+  activeDatabaseName,
+  getDb,
+  KiteDb,
+  localAccountDbName,
+} from '../storage/db';
 import type { LibraryItem, Session, StoredLesson } from '../storage/types';
 import { httpTransport, pullAll, type SyncTransport } from './engine';
 import { jsonBytes } from './size';
 
-/** What this device holds that the account may not have. */
+/** What this account's local database on this device holds that the account may not have. */
 export interface LegacySummary {
-  /** Sessions in this device's own database. */
+  /** Sessions in the account's local database. */
   sessions: number;
   /** Library items, lessons and Ask AI chats. */
   other: number;
@@ -45,12 +54,16 @@ export interface LegacyUploadResult {
   existing: number;
   /** Sessions that cannot sync (an id the server would refuse); they stay on this device only. */
   skipped: number;
-  /** Sessions this device held. */
+  /** Sessions the account's local database held. */
   total: number;
 }
 
-/** The local storage key that remembers the upload was done for an account on this address. */
-const DONE_PREFIX = 'kite.legacyUpload.';
+/**
+ * The local storage key prefix that remembers the upload was done (or found unnecessary) for an
+ * account on this address ('kite.localUpload.done.<id>'). New on 14 Nov 2026: the older
+ * 'kite.legacyUpload.<id>' flags were about the shared 'kite' database and no longer apply.
+ */
+const DONE_PREFIX = 'kite.localUpload.done.';
 
 /**
  * Whether the upload is done (or was found unnecessary) for an account on this address.
@@ -82,25 +95,29 @@ export function markLegacyUploadDone(userId: string): void {
 }
 
 /**
- * Opens this device's own database for reading, if it exists (never creates it).
+ * Opens the account's own local database for reading, if it exists (never creates it). Only this
+ * account's database can be opened here: the name is built from the signed-in account's id.
  *
- * @returns The database, or null when this device has none.
+ * @param userId The signed-in account.
+ * @returns The database, or null when this account has none on this device.
  */
-async function openLegacy(): Promise<KiteDb | null> {
-  if (!(await Dexie.exists(DB_NAME))) return null;
-  const legacy = new KiteDb(DB_NAME, false);
+async function openLegacy(userId: string): Promise<KiteDb | null> {
+  const name = localAccountDbName(userId);
+  if (!(await Dexie.exists(name))) return null;
+  const legacy = new KiteDb(name, false);
   await legacy.open();
   return legacy;
 }
 
 /**
- * Counts what this device's own database holds.
+ * Counts what the account's own local database holds.
  *
+ * @param userId The signed-in account.
  * @returns The counts, or null when there is no such database or it is empty.
  * Called from: LegacyUploadCard.tsx; tests
  */
-export async function legacySummary(): Promise<LegacySummary | null> {
-  const legacy = await openLegacy();
+export async function legacySummary(userId: string): Promise<LegacySummary | null> {
+  const legacy = await openLegacy(userId);
   if (!legacy) return null;
   try {
     const sessions = await legacy.sessions.count();
@@ -182,20 +199,26 @@ async function sendAll(transport: SyncTransport, ops: SyncOp[]): Promise<string[
 }
 
 /**
- * Adds this device's own data to the account.
+ * Adds the account's own local data to the account (its sync cache must be the active database).
  *
+ * @param userId     The signed-in account (whose local database is read).
  * @param onProgress Called after each session: sessions done and the total.
  * @param transport  The server (tests pass one).
  * @returns How many sessions were added and how many the account already had.
  * @throws SyncHttpError or a network error; what was added stays added, and running again adds the
  *         rest (and counts the rest as already there).
+ * @throws Error('NOT_ACCOUNT_CACHE') when the page's database is not this account's sync cache (the
+ *         data would otherwise land in some other database); nothing is read or sent.
  * Called from: LegacyUploadCard.tsx; tests
  */
 export async function uploadLegacyData(
+  userId: string,
   onProgress: (done: number, total: number) => void = () => undefined,
   transport: SyncTransport = httpTransport,
 ): Promise<LegacyUploadResult> {
-  const legacy = await openLegacy();
+  // Only into the same account's sync cache: never one account's local data into another account.
+  if (activeDatabaseName() !== accountDbName(userId)) throw new Error('NOT_ACCOUNT_CACHE');
+  const legacy = await openLegacy(userId);
   if (!legacy) return { added: 0, existing: 0, skipped: 0, total: 0 };
   try {
     // The account's current state first: lessons and library items it has are not added again.

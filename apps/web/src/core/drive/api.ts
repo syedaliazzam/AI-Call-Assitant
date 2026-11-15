@@ -8,27 +8,32 @@
  *          finished one, and uploads the page's own small files (transcript, notes) itself.
  * Used by: src/core/drive/uploader.ts, src/core/drive/runner.ts, src/core/drive/picker.ts,
  *          src/features/drive/*
- * Depends on: @kite/shared (the request and reply shapes)
+ * Depends on: @kite/shared (the request and reply shapes, ACCOUNT_HEADER), src/core/storage/accountScope.ts
+ *
+ * Privacy fix of 14 Nov 2026: each call names the page's account (ACCOUNT_HEADER), so a window left open
+ * from before a sign-out and a sign-in as someone else can never save its calls to the new account.
  * Architecture: ADR-0074 (ADR-0072 before it)
  */
-import type {
-  DriveFolder,
-  DriveNotificationsResponse,
-  DriveNotifyRequest,
-  DriveNotifyResponse,
-  DrivePickerConfig,
-  DriveSessionFolderRequest,
-  DriveSessionFolderResponse,
-  DriveSettingsRequest,
-  DriveStatusResponse,
-  DriveTestEmailResponse,
-  DriveUploadCompleteRequest,
-  DriveUploadOffsetRequest,
-  DriveUploadOffsetResponse,
-  DriveUploadStartRequest,
-  DriveUploadStartResponse,
-  DriveVerifiedFile,
+import {
+  ACCOUNT_HEADER,
+  type DriveFolder,
+  type DriveNotificationsResponse,
+  type DriveNotifyRequest,
+  type DriveNotifyResponse,
+  type DrivePickerConfig,
+  type DriveSessionFolderRequest,
+  type DriveSessionFolderResponse,
+  type DriveSettingsRequest,
+  type DriveStatusResponse,
+  type DriveTestEmailResponse,
+  type DriveUploadCompleteRequest,
+  type DriveUploadOffsetRequest,
+  type DriveUploadOffsetResponse,
+  type DriveUploadStartRequest,
+  type DriveUploadStartResponse,
+  type DriveVerifiedFile,
 } from '@kite/shared';
+import { currentAccountId } from '../storage/accountScope';
 
 /** A refused or failed route call: code is the route's machine-readable code. */
 export class DriveApiError extends Error {
@@ -59,18 +64,22 @@ export type DriveFetch = (input: string, init?: RequestInit) => Promise<Response
  * @throws DriveApiError.
  */
 async function call<T>(fetchFn: DriveFetch, path: string, body?: unknown): Promise<T> {
+  // The page's account, so the server refuses the call once another account has signed in.
+  const accountId = currentAccountId();
+  const account: Record<string, string> = accountId ? { [ACCOUNT_HEADER]: accountId } : {};
+  const named = accountId ? { headers: account } : {};
   let response: Response;
   try {
     response = await fetchFn(
       path,
       body === undefined
-        ? { cache: 'no-store' }
+        ? { cache: 'no-store', ...named }
         : body instanceof FormData
           ? // The browser sets the multipart boundary itself.
-            { method: 'POST', body, cache: 'no-store' }
+            { method: 'POST', body, cache: 'no-store', ...named }
           : {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', ...account },
               body: JSON.stringify(body),
               cache: 'no-store',
             },
@@ -91,6 +100,12 @@ async function call<T>(fetchFn: DriveFetch, path: string, body?: unknown): Promi
       if (typeof failure.message === 'string') message = failure.message;
     } catch {
       // Not JSON (a proxy's page): the general words above.
+    }
+    // Another account signed in since this page opened: reported like an unreachable server (status 0),
+    // so the uploader keeps the job to try again later for its own account, instead of marking files
+    // failed or a call reported. The page reloads as soon as it hears of the sign-in (SyncScope).
+    if (response.status === 409 && code === 'account_changed') {
+      throw new DriveApiError(0, code, message);
     }
     throw new DriveApiError(response.status, code, message);
   }

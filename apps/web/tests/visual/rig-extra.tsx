@@ -12,10 +12,11 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createSession } from '@/core/storage/sessions';
-import { getDb } from '@/core/storage/db';
+import { getDb, selectAccountDatabase } from '@/core/storage/db';
 import type { SessionPreferences } from '@/core/storage/types';
 import { HomePanel } from '@/features/home/HomePanel';
 import { SnapZones } from '@/features/live/overlay/SnapZones';
+import { SyncScope } from '@/features/sync/SyncScope';
 
 /** The same preferences for each invented session. */
 const PREFERENCES: SessionPreferences = {
@@ -80,8 +81,27 @@ function RigHome() {
       setReady(true);
     })();
   }, []);
-  return ready ? <HomePanel email="sam@example.com" /> : null;
+  if (!ready) return null;
+  // ADR-0082 visual check: ?launcher=1 is the launcher an account with account sync sees (no sync engine,
+  // no network; an invented account).
+  if (new URLSearchParams(window.location.search).get('launcher') === '1') {
+    return (
+      <SyncScope
+        accountId="rig-user"
+        syncUserId="rig-user"
+        runEngine={false}
+        email="sam@example.com"
+      >
+        <HomePanel email="sam@example.com" />
+      </SyncScope>
+    );
+  }
+  return <HomePanel email="sam@example.com" />;
 }
+
+// ADR-0082 visual check: the launcher's sessions go into the invented account's own database.
+if (new URLSearchParams(window.location.search).get('launcher') === '1')
+  selectAccountDatabase('rig-user', true);
 
 const zones = new URLSearchParams(window.location.search).get('zones');
 createRoot(document.getElementById('root')!).render(

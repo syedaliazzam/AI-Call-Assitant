@@ -9,8 +9,9 @@
  * and adds the earlier answer (append-only). Stage 7: finished answers are saved (a cancelled
  * one is not); a rating and a note survive a reload; deleting the session removes its answers.
  * Day 5: the browser compact view opens in Document Picture-in-Picture where the browser has
- * it (else a clear message); a second page with the real compact view shows the live answer, and its Answer
- * button and typed question make the live page answer.
+ * it (else a clear message); a second page with the real compact view shows the live answer, and its
+ * Answer key (Ctrl+Enter) makes the live page answer. ADR-0082: the overlay has no Answer, Screenshot or
+ * Chat buttons and no message box; Ctrl+Backspace there clears the answers on both pages.
  * ADR-0030: the switch next to the chat box goes in the request and is remembered; a private answer
  * shows code with its own Copy; the type and source tags show, and choosing another type answers
  * again; a figure in no document is underlined with a "check before saying" note; a repeated
@@ -306,24 +307,30 @@ test('deleting the session removes its answers', async () => {
   await expect(page.getByRole('article', { name: 'Answer' })).toHaveCount(0);
 });
 
-test('the compact view shows the live answer and its Answer button asks the live page (Day 5)', async () => {
+test('the compact view shows the live answer; its Answer and Clear answers keys ask the live page (Day 5, ADR-0082)', async () => {
   // A second page in the same browser, like the desktop compact window.
   const compact = await page.context().newPage();
   await compact.goto(`${origin}/compact-harness`);
   // Nothing has been answered since the reload: the live page says so.
   await expect(compact.getByLabel('Latest words')).toContainText(/forty/i);
-  await expect(compact.getByRole('toolbar', { name: 'Overlay controls' })).toBeVisible();
-  await compact.getByRole('button', { name: 'Answer', exact: true }).click();
+  const bar = compact.getByRole('toolbar', { name: 'Overlay controls' });
+  await expect(bar).toBeVisible();
+  // ADR-0082: no Answer, Screenshot or Chat buttons on the overlay, and no message box; the shortcuts do
+  // their work. Ctrl+Enter with the overlay focused asks the live page.
+  for (const name of ['Answer', 'Screenshot', 'Chat']) {
+    await expect(bar.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
+  await expect(compact.getByLabel('Type a question')).toHaveCount(0);
+  await compact.locator('body').click({ position: { x: 2, y: 2 } });
+  await compact.keyboard.press('Control+Enter');
   await expect(compact.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
   // The live page answered it (the same answer shows there).
   await expect(page.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
-  // A typed question from the overlay goes to the live page as chat.
-  await compact.getByRole('button', { name: 'Chat' }).click();
-  await compact.getByLabel('Type a question').fill('What is the seat price?');
-  await compact.getByLabel('Type a question').press('Enter');
-  await expect(compact.getByRole('heading', { name: 'Answer line' })).toContainText(
-    'The seat price is 52 dollars.',
-  );
+  // ADR-0082: Ctrl+Backspace clears the answers: the overlay shows none, and neither does the live page,
+  // until the next answer.
+  await compact.keyboard.press('Control+Backspace');
+  await expect(compact.getByRole('heading', { name: 'Answer line' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Answer line' })).toHaveCount(0);
   // Answer preferences change from the overlay's menu; the next answer uses them.
   await compact.getByRole('button', { name: 'Overlay menu' }).click();
   await compact.getByRole('button', { name: 'Answer preferences', exact: true }).click();
@@ -334,12 +341,14 @@ test('the compact view shows the live answer and its Answer button asks the live
   await compact.getByRole('option', { name: 'Bullets only' }).click();
   await expect(compact.getByRole('button', { name: 'Tone: Technical' })).toBeVisible();
   await compact.getByRole('button', { name: 'Overlay menu' }).click();
-  await compact.getByRole('button', { name: 'Chat' }).click();
-  await compact.getByLabel('Type a question').fill('What is the seat price?');
-  await compact.getByLabel('Type a question').press('Enter');
+  // New speech, then Answer from the overlay's keyboard: the answer comes back after the clear.
+  await page.evaluate(() => window.kiteAnswerHarness.addThem('HOW LONG DOES THE ROLLOUT TAKE'));
+  await compact.locator('body').click({ position: { x: 2, y: 2 } });
+  await compact.keyboard.press('Control+Enter');
   await expect
     .poll(() => received.at(-1)?.session?.style)
     .toMatchObject({ tone: 'technical', format: 'bullets' });
+  await expect(compact.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
   await compact.close();
 });
 
@@ -364,7 +373,8 @@ test('the browser overlay: picture-in-picture, or a clear message where unsuppor
           '',
       ),
     )
-    .toContain('Screenshot');
+    // ADR-0082: bar 1 has no Screenshot button any more; Exit is always there.
+    .toContain('Exit');
   const headline = await page
     .locator('article[aria-current="true"]')
     .getByRole('heading', { name: 'Answer line' })

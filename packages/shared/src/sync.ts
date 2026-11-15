@@ -80,6 +80,15 @@ export const SYNC_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,199}$/;
  */
 export const SYNC_PULL_OVERLAP_MS = 60_000;
 
+/**
+ * Request header in which a page names the account it was opened for (privacy fix of 14 Nov 2026).
+ * The sync and Google Drive routes refuse a request (409 'account_changed') when it names an account
+ * other than the one now signed in: a window left open from before a sign-out and a sign-in as someone
+ * else must never send its account's data into the new account, or read the new account's data. The
+ * account still always comes from the sign-in session; this header only adds a refusal.
+ */
+export const ACCOUNT_HEADER = 'x-kite-account';
+
 /** A record's fields, as the device stores them (the server keeps them encrypted). */
 export type SyncRecordBody = Record<string, unknown>;
 

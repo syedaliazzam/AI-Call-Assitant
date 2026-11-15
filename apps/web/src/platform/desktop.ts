@@ -502,6 +502,15 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * ADR-0082: holds Escape while a voice question listens, where this shell can (1.6.4).
+     *
+     * @param on True while a voice question listens.
+     */
+    setVoiceCancelHotkey(on: boolean) {
+      void bridge.setVoiceCancelHotkey?.(on).catch(() => undefined);
+    },
+
+    /**
      * Tells the window which panels are open (older shells ignore it).
      *
      * @param layout The open panels.

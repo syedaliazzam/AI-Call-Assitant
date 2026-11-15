@@ -5,6 +5,7 @@
  * `kiteDesktop`; setHotkeysEnabled sends only a boolean on its fixed channel; onHotkey passes
  * only valid actions to the page (never the IPC event) and stops when asked. v1.0.2 (ADR-0035):
  * the overlay's place, preset, resize and mode methods send only plain values on fixed channels.
+ * 1.6.4 (ADR-0082): setVoiceCancelHotkey sends only a boolean on its own channel.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -124,6 +125,8 @@ describe('the exposed bridge', () => {
       'setOverlayPosition',
       'setRecordingDisplay',
       'setShareProtection',
+      // 1.6.4 (ADR-0082): Escape while a voice question listens.
+      'setVoiceCancelHotkey',
       'showCallWindow',
       // 1.6.0 (ADR-0072): the native "saved to Google Drive" notification.
       'showNotice',
@@ -133,6 +136,20 @@ describe('the exposed bridge', () => {
       'windowControl',
     ]);
     expect(Object.isFrozen(api)).toBe(true);
+  });
+
+  it('setVoiceCancelHotkey sends only a boolean on its channel (1.6.4, ADR-0082)', async () => {
+    const [, api] = exposeCalls[0]!;
+    const { VOICE_CANCEL_HOTKEY_CHANNEL } = await import('../../src/channels');
+    await api.setVoiceCancelHotkey(true);
+    // Anything but true crosses as false.
+    await api.setVoiceCancelHotkey('yes');
+    await api.setVoiceCancelHotkey(false);
+    expect(ipcRenderer.invoke.mock.calls).toEqual([
+      [VOICE_CANCEL_HOTKEY_CHANNEL, true],
+      [VOICE_CANCEL_HOTKEY_CHANNEL, false],
+      [VOICE_CANCEL_HOTKEY_CHANNEL, false],
+    ]);
   });
 
   it('setHotkeysEnabled sends only a boolean on its channel', async () => {

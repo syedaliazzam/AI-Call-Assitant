@@ -10,10 +10,11 @@
  *          small progress bar only if it is still running (a silent download when the installer's copy
  *          was missing). Connecting starts the call in the main window (core/live/callStart.ts); the
  *          shell then hides this window and the call bars appear. A call that fails to start says why
- *          here, with Connect to try again. Desktop 1.5.0 (ADR-0068): "Record" (Off / Audio only / Screen +
- *          audio, Off by default), a display picker when there are several monitors, and the required
- *          "Everyone on the call has agreed to be recorded" tick; the choice reaches the live page through
- *          core/recording/handoff.ts.
+ *          here, with Connect to try again. ADR-0082: no "Record" choice here any more (until 1.6.3: Off /
+ *          Audio only / Screen + audio and a display picker): recording starts only from the call bars' Rec
+ *          pill. Where the app can record, the "Everyone on the call has agreed to be recorded" tick stays;
+ *          ticked, it reaches the live page through core/recording/handoff.ts, so the Rec pill starts
+ *          without asking again. It never blocks Connect.
  * Used by: src/features/home/Launcher.tsx
  * Depends on: lucide-react, src/core/live/callStart.ts, src/core/stt/prefetch.ts,
  *             src/features/sync/dashboardLink.ts, src/platform,
@@ -24,9 +25,8 @@
 
 import { ArrowLeft, Play, ShieldCheck, TriangleAlert, Upload } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import type { RecordChoice, RecordingDisplay } from '@kite/shared';
 import { requestCallStart, watchCallStart } from '@/core/live/callStart';
-import { leaveRecordStart } from '@/core/recording/handoff';
+import { leaveRecordConsent } from '@/core/recording/handoff';
 import { NO_STEREO_WARNING } from '@/features/live/overlay/RecordControls';
 import { speechModelPrefetch, type PrefetchState } from '@/core/stt/prefetch';
 import { openDashboard } from '@/features/sync/dashboardLink';
@@ -42,7 +42,7 @@ export interface LauncherConnectProps {
   sessionId: string;
   /** Desktop 1.5.0 (ADR-0068): whether the session saves its transcript (the stereo file needs it). */
   saveTranscript?: boolean;
-  /** Back to the Start card. */
+  /** Back to "Your sessions" (ADR-0082: there is no Start card before this one). */
   onBack: () => void;
   /** The call is running (the shell hides this window; the card goes back to the sessions). */
   onConnected: () => void;
@@ -50,13 +50,6 @@ export interface LauncherConnectProps {
 
 /** A public search for mock interviews, for trying the app without a real call. */
 export const MOCK_VIDEO_URL = 'https://www.youtube.com/results?search_query=mock+interview';
-
-/** The Record choices (desktop 1.5.0, ADR-0068); Off is the default. */
-export const RECORD_OPTIONS: readonly { value: RecordChoice; label: string }[] = [
-  { value: 'off', label: 'Off' },
-  { value: 'audio', label: 'Audio only' },
-  { value: 'screen', label: 'Screen + audio' },
-];
 
 /**
  * No-op subscription: whether this app can record never changes while the page is open.
@@ -130,26 +123,9 @@ export function LauncherConnect({
   onConnected,
 }: LauncherConnectProps) {
   const [phase, setPhase] = useState<Phase>('idle');
-  // Desktop 1.5.0 (ADR-0068): Record starts Off every time; consent is ticked for every call.
+  // ADR-0082: consent is ticked for every call (never remembered); it only lets the Rec pill start at once.
   const canRecord = useSyncExternalStore(subscribeNever, hasRecording, () => false);
-  const [record, setRecord] = useState<RecordChoice>('off');
   const [consent, setConsent] = useState(false);
-  const [displays, setDisplays] = useState<RecordingDisplay[]>([]);
-  const [displayId, setDisplayId] = useState<string | null>(null);
-  useEffect(() => {
-    const host = getPlatform().recording;
-    if (!host || record !== 'screen') return;
-    let live = true;
-    host
-      .displays()
-      .then((list) => {
-        if (live) setDisplays(list);
-      })
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [record]);
   const [problem, setProblem] = useState<string | null>(null);
   const prefetch = speechModelPrefetch(globalThis.location?.origin ?? '');
   const model = useSyncExternalStore(prefetch.subscribe, prefetch.state, () => IDLE);
@@ -190,11 +166,8 @@ export function LauncherConnect({
   const start = () => {
     setPhase('connecting');
     setProblem(null);
-    // Desktop 1.5.0 (ADR-0068): the live page records from the start when Record is on (consent ticked).
-    leaveRecordStart(
-      sessionId,
-      record === 'off' ? null : { kind: record, displayId: record === 'screen' ? displayId : null },
-    );
+    // ADR-0082: no call records from the start; the tick only carries the consent to the Rec pill.
+    leaveRecordConsent(sessionId, canRecord && consent);
     requestCallStart(sessionId);
     getPlatform().openCallWindow(sessionId);
     if (timeout.current) clearTimeout(timeout.current);
@@ -222,8 +195,6 @@ export function LauncherConnect({
   };
 
   const busy = phase === 'preparing' || phase === 'connecting';
-  // Record on needs the consent ticked before Connect.
-  const blocked = record !== 'off' && !consent;
   // The bar shows only while Connect waits on a load that is still running.
   const loading = phase === 'preparing' && model.kind === 'downloading' ? model : null;
 
@@ -254,61 +225,23 @@ export function LauncherConnect({
         </div>
 
         {canRecord && (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-[15px] font-medium text-ui-heading">Record</span>
-              <div className="w-48">
-                <Select
-                  label="Record"
-                  hideLabel
-                  align="end"
-                  options={RECORD_OPTIONS}
-                  value={record}
-                  onChange={(value) => {
-                    setRecord(value as RecordChoice);
-                    setConsent(false);
-                  }}
-                />
-              </div>
-            </div>
-            {record === 'screen' && displays.length > 1 && (
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-[15px] font-medium text-ui-heading">Screen</span>
-                <div className="w-48">
-                  <Select
-                    label="Screen to record"
-                    hideLabel
-                    align="end"
-                    options={displays.map((display) => ({
-                      value: display.id,
-                      label: display.label,
-                    }))}
-                    value={displayId ?? displays.find((d) => d.primary)?.id ?? displays[0]!.id}
-                    onChange={(value) => setDisplayId(value)}
-                  />
-                </div>
-              </div>
-            )}
-            {record !== 'off' && (
-              <>
-                <label className="flex items-start gap-2.5 text-[15px] text-ui-text">
-                  <input
-                    type="checkbox"
-                    className="mt-1 size-4 shrink-0 accent-[var(--ui-accent-fill)]"
-                    checked={consent}
-                    onChange={(event) => setConsent(event.target.checked)}
-                  />
-                  <span>Everyone on the call has agreed to be recorded</span>
-                </label>
-                <p className="text-[13px] text-ui-muted">
-                  Saved on this computer only, in Documents › Paramount AI › Recordings. Paramount
-                  AI’s windows are kept out of the video (Private comes on).
-                </p>
-                {!saveTranscript && (
-                  <p className="text-[13px] text-ui-warning">{NO_STEREO_WARNING}</p>
-                )}
-              </>
-            )}
+          // ADR-0082: no Record choice; recording starts from the call bars' Rec pill. Ticked, the pill
+          // starts without asking again in this call.
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-start gap-2.5 text-[15px] text-ui-text">
+              <input
+                type="checkbox"
+                className="mt-1 size-4 shrink-0 accent-[var(--ui-accent-fill)]"
+                checked={consent}
+                onChange={(event) => setConsent(event.target.checked)}
+              />
+              <span>Everyone on the call has agreed to be recorded</span>
+            </label>
+            <p className="text-[13px] text-ui-muted">
+              To record, press Rec on the call bar (or Ctrl+Alt+R). Recordings are saved on this
+              computer only, in Documents › Paramount AI › Recordings.
+            </p>
+            {!saveTranscript && <p className="text-[13px] text-ui-warning">{NO_STEREO_WARNING}</p>}
           </div>
         )}
 
@@ -377,12 +310,7 @@ export function LauncherConnect({
           <button
             type="button"
             onClick={() => void connect()}
-            disabled={busy || blocked}
-            title={
-              blocked
-                ? 'Tick that everyone has agreed to be recorded, or set Record to Off.'
-                : undefined
-            }
+            disabled={busy}
             className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] bg-ui-primary px-4 text-[15px] font-semibold text-ui-on-primary hover:bg-ui-primary-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] disabled:opacity-70"
           >
             <Upload aria-hidden="true" size={18} strokeWidth={1.75} />

@@ -5,7 +5,7 @@
  *          arrived (first grey words, final line) against when they were spoken, the speech worker's
  *          backlog each second, what Accurate did with each line, each answer's trigger and timings (key
  *          press or question end → request sent → first word → done), and the call notices. At End the
- *          call is kept in this browser profile's localStorage (the last MAX_CALLS calls) and can be
+ *          call is kept in this browser profile's localStorage, per account (the last MAX_CALLS calls) and can be
  *          downloaded from Settings as JSON with a summary (p50 / p95).
  *          Never any text: no words, no questions, no answers, no audio, no device names.
  *          ADR-0076 (investigation T0.1): with Settings → Transcription → "Timing trace" on (this device only,
@@ -15,13 +15,31 @@
  *          page's load. Codes, counts and times only.
  * Used by: src/features/live/LivePage.tsx, src/features/live/useLiveAnswers.ts,
  *          src/features/settings/CallTimingLog.tsx
- * Depends on: localStorage (missing or blocked: the log stays in memory for this page only)
+ * Depends on: localStorage (missing or blocked: the log stays in memory for this page only);
+ *             src/core/storage/accountScope.ts (the signed-in account: the log is kept per account)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (testing); ADR-0069
  */
+import { currentAccountId } from '../storage/accountScope';
 import type { BacklogInfo } from '../stt/protocol';
 
-/** localStorage key of the saved calls. */
+/**
+ * localStorage key prefix of the saved calls. The log is kept per account ('kite.callTimings.<id>'):
+ * its call and session ids belong to the account that made the calls (privacy fix of 14 Nov 2026). The
+ * old log under this exact key, from before that fix, has no owner recorded: it is never read again
+ * (and never deleted).
+ */
 export const CALL_TIMINGS_KEY = 'kite.callTimings';
+
+/**
+ * The localStorage key of one account's saved calls.
+ *
+ * @param accountId The account's id.
+ * @returns 'kite.callTimings.<id>'.
+ * Called from: the localStorage store below; tests
+ */
+export function callTimingsKey(accountId: string): string {
+  return `${CALL_TIMINGS_KEY}.${accountId}`;
+}
 
 /** How many calls are kept. */
 export const MAX_CALLS = 5;
@@ -231,18 +249,25 @@ export interface TimingStore {
   write: (text: string) => void;
 }
 
-/** localStorage, when it can be used. */
+/**
+ * localStorage, when it can be used, under the signed-in account's own key. Outside a signed-in page
+ * (no account known) nothing is read or written: the log stays in memory for that page.
+ */
 const LOCAL_STORE: TimingStore = {
   read: () => {
+    const accountId = currentAccountId();
+    if (!accountId) return null;
     try {
-      return localStorage.getItem(CALL_TIMINGS_KEY);
+      return localStorage.getItem(callTimingsKey(accountId));
     } catch {
       return null;
     }
   },
   write: (text) => {
+    const accountId = currentAccountId();
+    if (!accountId) return;
     try {
-      localStorage.setItem(CALL_TIMINGS_KEY, text);
+      localStorage.setItem(callTimingsKey(accountId), text);
     } catch {
       // Storage full or blocked: the log is only for testing; the call is unaffected.
     }

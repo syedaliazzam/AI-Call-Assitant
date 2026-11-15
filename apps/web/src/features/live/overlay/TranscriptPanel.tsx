@@ -1,35 +1,27 @@
 /**
  * File: apps/web/src/features/live/overlay/TranscriptPanel.tsx
- * Purpose: The transcript panel (spec S15): the level button, language, Clear and collapse on top, and
- *          the bubbles below: oldest at the top, newest at the bottom, following the newest unless the
+ * Purpose: The transcript panel (spec S15): on top the overlay's status bar (ADR-0082, StatusBar.tsx: the
+ *          level button, language, the line with the call's messages, Clear and collapse), and the bubbles below: oldest at the top, newest at the bottom, following the newest unless the
  *          reader has scrolled up, when "Scroll to bottom" shows. You on the right, the other person on
  *          the left, each with who and when under the words.
  * Used by: src/features/live/CompactView.tsx
- * Depends on: @kite/shared (hotkeys), src/core/live/liveChannel.ts,
+ * Depends on: src/core/live/liveChannel.ts, ./StatusBar.tsx,
  *             src/features/live/TranscriptBubbles.tsx, src/features/live/useStickToBottom.ts,
  *             src/ui/icons.tsx, ./parts.tsx
- * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S15); ADR-0041
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S15); ADR-0041, ADR-0082
  *
  * Transcript text is only rendered on screen; it is never logged.
  */
 'use client';
 
-import { FOCUSED_HOTKEYS, hotkeyLabel } from '@kite/shared';
 import { useMemo, type RefObject } from 'react';
 import type { CompactCommand, CompactGroup, CompactState } from '@/core/live/liveChannel';
 import { TranscriptBubbles } from '@/features/live/TranscriptBubbles';
 import { useAccountName } from '@/features/shell/AccountName';
 import { useStickToBottom } from '@/features/live/useStickToBottom';
-import { ChevronDownIcon, CollapseIcon } from '@/ui/icons';
-import {
-  BUTTON,
-  ICON_BUTTON,
-  KeyChip,
-  LanguageControl,
-  LevelButton,
-  PILL,
-  type LevelStore,
-} from './parts';
+import { ChevronDownIcon } from '@/ui/icons';
+import { BUTTON, type LevelStore } from './parts';
+import { StatusBar } from './StatusBar';
 
 /** No bubbles yet: one shared empty list. */
 const NO_GROUPS: readonly CompactGroup[] = [];
@@ -56,6 +48,12 @@ export interface TranscriptPanelProps {
   onLanguagesOpen: (open: boolean) => void;
   /** The language list's element, so the window can grow to fit it. */
   languagesRef?: RefObject<HTMLUListElement | null>;
+  /** ADR-0082: opens a device list (a status message's button). */
+  onList: (list: 'audio' | 'mic') => void;
+  /** ADR-0082: true while a screen recording runs with Private off. */
+  privateOff: boolean;
+  /** ADR-0082: turns Private back on. */
+  onPrivateOn: () => void;
 }
 
 /**
@@ -82,39 +80,30 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
 
   return (
     <section aria-label="Transcript panel" className="flex min-h-0 flex-auto flex-col">
-      <div className="relative flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]">
-        <LevelButton
-          on={state?.audio.them ?? false}
-          levels={props.levels}
-          label="Hide the transcript"
-          onClick={props.onCollapse}
-        />
-        <LanguageControl
-          state={state}
-          onCommand={onCommand}
-          open={props.languagesOpen}
-          onOpen={props.onLanguagesOpen}
-          {...(props.languagesRef ? { listRef: props.languagesRef } : {})}
-        />
-        <span className="flex-1" />
-        <button
-          type="button"
-          className={PILL}
-          onClick={props.onClear}
-          disabled={!state}
-          aria-keyshortcuts={hotkeyLabel(FOCUSED_HOTKEYS['clear-transcript'], mac)}
-        >
-          Clear <KeyChip hotkey="clear-transcript" visibleAt="@min-[620px]:inline-flex" />
-        </button>
-        <button
-          type="button"
-          className={ICON_BUTTON}
-          aria-label="Close the transcript"
-          onClick={props.onCollapse}
-        >
-          <CollapseIcon />
-        </button>
-      </div>
+      {/* ADR-0082: the overlay's one status bar is the panel's header: the level button closes the panel,
+          and the line shows the call's messages (the words are below). */}
+      <StatusBar
+        state={state}
+        chips={[]}
+        question={null}
+        words={false}
+        transcriptOpen
+        onTranscript={(open) => {
+          if (!open) props.onCollapse();
+        }}
+        onCommand={onCommand}
+        onClear={props.onClear}
+        onCollapse={props.onCollapse}
+        collapseLabel="Close the transcript"
+        onList={props.onList}
+        privateOff={props.privateOff}
+        onPrivateOn={props.onPrivateOn}
+        mac={mac}
+        levels={props.levels}
+        languagesOpen={props.languagesOpen}
+        onLanguagesOpen={props.onLanguagesOpen}
+        {...(props.languagesRef ? { languagesRef: props.languagesRef } : {})}
+      />
       {/* v1.3.2: as tall as the turns, up to the panel's height; then it scrolls (data-scroll: the overlay
           measures how tall it would be, to fit the window to it). */}
       <div className="relative flex min-h-0 flex-auto flex-col px-1.5 pb-1.5">

@@ -3,10 +3,12 @@
  * Postgres in memory (PGlite) and a fake sign-in: every route answers 401 signed out, 403 before a
  * password change, and 404 for an account without the accountSync switch (status answers false);
  * each route keeps accounts apart (another account's record is 404 on /record, absent from /pull,
- * and untouched by /push); a missing data key answers 503 and stores nothing; a bad body answers 400
+ * and untouched by /push); a request from a page opened for another account (ACCOUNT_HEADER, privacy
+ * fix of 14 Nov 2026) answers 409 and stores or reveals nothing; a missing data key answers 503 and
+ * stores nothing; a bad body answers 400
  * naming fields without echoing values.
  */
-import type { SyncPullResponse, SyncPushResponse } from '@kite/shared';
+import { ACCOUNT_HEADER, type SyncPullResponse, type SyncPushResponse } from '@kite/shared';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   handlePull,
@@ -181,6 +183,38 @@ describe('another account (one check per route)', () => {
     });
     const alice = await (await handleRecord(recordRequest(), deps(ALICE))).json();
     expect(alice).toMatchObject({ record: { company: 'Invented Co' } });
+  });
+
+  it('409 and nothing stored or read when the page was opened for another account', async () => {
+    await aliceCreatesSession();
+    // A window of Alice's, still open after Bob signed in on the same browser profile.
+    const named = { [ACCOUNT_HEADER]: ALICE };
+    const pushed = await handlePush(
+      new Request('https://kite.test/api/sync/push', {
+        method: 'POST',
+        headers: named,
+        body: JSON.stringify({
+          ops: [{ op: 'put', kind: 'session', id: S1, baseRev: null, record: { id: S1 } }],
+        }),
+      }),
+      deps(BOB),
+    );
+    expect(pushed.status).toBe(409);
+    expect(await pushed.json()).toMatchObject({ code: 'account_changed' });
+    const pulled = await handlePull(
+      new Request('https://kite.test/api/sync/pull?since=0', { headers: named }),
+      deps(BOB),
+    );
+    expect(pulled.status).toBe(409);
+    expect(await pulled.text()).not.toContain('Invented');
+    const bob = (await (await handlePull(pullRequest(), deps(BOB))).json()) as SyncPullResponse;
+    expect(bob.records).toEqual([]);
+    // The page's own account (or an older page without the header) is served as before.
+    const own = await handlePull(
+      new Request('https://kite.test/api/sync/pull?since=0', { headers: named }),
+      deps(ALICE),
+    );
+    expect(own.status).toBe(200);
   });
 });
 

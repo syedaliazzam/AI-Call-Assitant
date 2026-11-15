@@ -99,8 +99,9 @@ import { SilentChannelNotice } from './ThemSilentNotice';
 import { PrivateOffWarning, usePrivateOffWhileRecording } from './PrivateOffWarning';
 import { endCall } from '@/core/transcript/endCall';
 import { reportCallStart, takeCallStart, watchCallStart } from '@/core/live/callStart';
-import { announceRecordingSaved, takeRecordStart } from '@/core/recording/handoff';
+import { announceRecordingSaved, takeRecordConsent } from '@/core/recording/handoff';
 import { useSyncAccount } from '@/features/sync/SyncScope';
+import { turnPrivateOn } from '@/features/privacy/usePrivate';
 import { useAccountName } from '@/features/shell/AccountName';
 import { BackgroundCallStatus, type BackgroundCallState } from './BackgroundCallStatus';
 import { startTranscriptSaver, type TranscriptSaver } from '@/core/transcript/saver';
@@ -592,6 +593,8 @@ export function LivePage({
         },
         onPartial: ({ channel, text, tStart, tEnd }) => {
           if (!isActive()) return;
+          // ADR-0082: words prove the channel hears sound (never a false "can't hear" warning).
+          if (text.trim()) silence.current?.heard(channel, Date.now());
           if (channel === 'you' && dictationRoute.partial(text)) {
             // Words for Kite, not the call: clear any grey "You" line and show nothing.
             transcript.addPartial(channel, '', null);
@@ -641,6 +644,7 @@ export function LivePage({
         },
         onFinal: ({ channel, text, tStart, tEnd, audio, confidence, recent, speechEnd }) => {
           if (!isActive()) return;
+          if (text.trim()) silence.current?.heard(channel, Date.now());
           if (channel === 'you' && dictationRoute.final(text)) {
             // A question dictated to Kite: never a transcript line, never saved or sent later.
             transcript.addPartial(channel, '', null);
@@ -776,6 +780,10 @@ export function LivePage({
    */
   const onCloudEvent = useCallback(
     (channel: Speaker, event: CloudEvent) => {
+      // ADR-0082: words prove the channel hears sound (never a false "can't hear" warning).
+      if ((event.type === 'partial' || event.type === 'final') && event.text.trim()) {
+        silence.current?.heard(channel, Date.now());
+      }
       if (event.type === 'partial') {
         if (channel === 'you' && dictationRoute.partial(event.text)) {
           transcript.addPartial(channel, '', null);
@@ -1154,10 +1162,13 @@ export function LivePage({
       }
       // ADR-0055: the Connect card in the small window learns that the call runs.
       if (launcherCall) reportCallStart(session.id, 'connected');
-      // Desktop 1.5.0 (ADR-0068): Record was on at the Connect card, with consent ticked: record from
-      // the start. The note is taken once, so a Reconnect does not start another part.
-      const recordFromStart = takeRecordStart(session.id);
-      if (recordFromStart && recording.available) void recording.start(recordFromStart);
+      // ADR-0082: recording starts only from the call bars' Rec pill. Consent ticked at the Connect card
+      // lets that pill start without asking again; the note is taken once, so a Reconnect asks again (the
+      // safe side), and consent never carries over to another call.
+      recording.setConsented(takeRecordConsent(session.id));
+      // ADR-0082: Private (screen-share protection) is on at the start of every call, whatever was chosen
+      // before; the person can turn it off in ⋮ for this call. Nothing happens in a browser.
+      void turnPrivateOn();
     } catch (error) {
       setConnection('idle');
       setLevels({ you: 0, them: 0 });

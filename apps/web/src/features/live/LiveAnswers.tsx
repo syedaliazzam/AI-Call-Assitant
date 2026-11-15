@@ -39,8 +39,11 @@ import {
   FONT_SCALE_RANGE,
   setFontScale,
   setTheme,
+  stepZoom,
   type ThemeChoice,
 } from '@/core/storage/appearancePrefs';
+import { isVoiceCancelKey } from '@/platform/keymap';
+import { voiceQuestionTarget } from '@/core/voice/dictation';
 import { useAppearance } from '@/features/appearance/useAppearance';
 import { displayTerms, sentenceCase, transcriptChips } from '@/core/transcript/display';
 import { liveQuestion } from '@/core/transcript/liveQuestion';
@@ -58,7 +61,6 @@ import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
 import { AnswerPanel } from './AnswerPanel';
 import { openOverlay, startsCallsInOverlay, type OverlayAtStart } from './openOverlay';
-import { isDoublePress } from '@/core/live/doublePress';
 import { ChatBox, type ChatBoxHandle } from './ChatBox';
 import { KeyChip } from './overlay/parts';
 import { TopBar } from './TopBar';
@@ -250,11 +252,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const [chatTarget, setTarget] = useState<TargetChoice>(() => getChatTarget(props.session.id));
   // Grows with each press of the Ask Kite shortcut, so the overlay opens its chat box too.
   const [askKiteCount, setAskKiteCount] = useState(0);
-  // v1.1.0: likewise the Chat shortcut pressed in another app.
-  const [chatCount, setChatCount] = useState(0);
-  // The chat bar's screenshot shortcut, pressed in another app (the overlay holds the typed words).
-  const [screenshotSendCount, setScreenshotSendCount] = useState(0);
-  const lastChatPress = useRef<number | null>(null);
   const chatBox = useRef<ChatBoxHandle>(null);
   // v1.1.0: the overlay's ⋮ can turn auto-answer on or off for this call.
   const [autoChoice, setAutoChoice] = useState<boolean | null>(null);
@@ -275,8 +272,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
   });
   // Grows with each Chat or Ask Kite shortcut: the message box (always shown) takes the typing.
   const [focusSignal, setFocusSignal] = useState(0);
-  // ⋮ "Clear answers" hides the answers asked until then from the list (Unix ms; 0: none hidden).
-  const [hiddenBefore, setHiddenBefore] = useState(0);
   // Clear also takes the live question off the overlay until a new one is asked (Unix ms).
   const [questionClearedAt, setQuestionClearedAt] = useState(0);
   // The overlay as the slim script bar (v1.0.2; Ctrl+Alt+S or a ⋮ menu).
@@ -390,8 +385,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
       themName: speakerNames({ contactName: props.session.contactName }).them,
       language,
       autoAnswer: autoOn,
-      chatCount,
-      screenshotSendCount,
       hygiene: props.hygiene ?? 'ok',
       headphonesHint,
       ...(props.callNotice ? { callNotice: props.callNotice } : {}),
@@ -448,8 +441,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
     answeredSpanList,
     language,
     autoOn,
-    chatCount,
-    screenshotSendCount,
     props.hygiene,
     headphonesHint,
     props.callNotice,
@@ -489,9 +480,45 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const sessionIdRef = useRef(props.session.id);
   const dictationRef = useRef(props.dictation);
   const chatTargetRef = useRef(chatTarget);
-  /** Clear: stops a streaming answer, goes back to the newest one, and clears the live question. */
-  const clearView = useRef(() => {
-    actions.current.clear();
+  /**
+   * ADR-0082: Clear answers (Ctrl+Backspace, the overlay answer panel's Clear, ⋮ Clear answers): every answer
+   * asked until now leaves the screen, here and in the overlay; they stay saved for the review.
+   */
+  const clearAnswers = useRef(() => {
+    actions.current.clearAnswers();
+  });
+  // ADR-0082 (Ctrl+Alt+Enter): the screenshot taken before the spoken question, sent with it.
+  const voiceShot = useRef<string | null>(null);
+  /**
+   * ADR-0082: the voice question (Ctrl+Shift+Space) and the screenshot and voice question (Ctrl+Alt+Enter).
+   * Listens to the microphone ("Listening…" on the overlay's status bar) and sends the question after a
+   * pause. Its words never become a "You" line and never count as a reply: dictation keeps them out of the
+   * transcript for every target but "For the call", so that one is never used here. Pressed again while
+   * listening, it cancels (as Escape does).
+   *
+   * @param withScreenshot True to take the screenshot first and send it with the question.
+   */
+  const voiceQuestion = useRef(async (withScreenshot: boolean) => {
+    const dictation = dictationRef.current;
+    if (!dictation?.supported) return;
+    if (dictation.listening) {
+      voiceShot.current = null;
+      dictation.stop();
+      return;
+    }
+    voiceShot.current = null;
+    if (withScreenshot) {
+      // The screen as it is now, before the user speaks (the notice says why when it fails).
+      const image = await actions.current.captureScreen();
+      if (!image) return;
+      voiceShot.current = image;
+    }
+    dictationRef.current?.start(voiceQuestionTarget(chatTargetRef.current));
+  });
+  /** ADR-0082: Escape (or the shell's held Escape) while a voice question listens: stop, send nothing. */
+  const cancelVoice = useRef(() => {
+    voiceShot.current = null;
+    dictationRef.current?.stop();
   });
   // v1.1.0: the words on screen and the live question; the answer stays.
   const onClearTranscript = useRef(props.onClearTranscript);
@@ -500,6 +527,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     onClearTranscript.current?.();
   });
   const overlayProps = useRef(props);
+  // ADR-0082: with account sync, Ask AI during a call opens the dashboard in the browser.
+  const syncedRef = useRef(synced);
   /**
    * Desktop 1.5.0 (ADR-0068): a recording command, from either bar's Rec pill or the ⋮ menu. Consent was
    * given in the question that sent 'record-start'.
@@ -525,6 +554,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     latestPreferences.current = props.session.preferences;
     onClearTranscript.current = props.onClearTranscript;
     overlayProps.current = props;
+    syncedRef.current = synced;
     groupsRef.current = groups;
   });
   // A request for an answer counts as someone being on the call (ADR-0044).
@@ -544,7 +574,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'answer') actions.current.answer('button');
       else if (command.type === 'screenshot')
         actions.current.screenshot(undefined, 'screenshot-button');
-      else if (command.type === 'clear') clearView.current();
+      // ADR-0082: the answer panel's Clear and Ctrl+Backspace clear the answers.
+      else if (command.type === 'clear') clearAnswers.current();
       else if (command.type === 'stop') actions.current.stop();
       else if (command.type === 'clear-transcript') clearTranscript.current();
       else if (command.type === 'answer-this') {
@@ -574,7 +605,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
       else if (command.type === 'dictate') {
         if (command.on) dictationRef.current?.start(chatTargetRef.current);
         else dictationRef.current?.stop();
-      } else if (command.type === 'prev') actions.current.prev();
+      } else if (command.type === 'voice') void voiceQuestion.current(command.screenshot);
+      else if (command.type === 'voice-cancel') cancelVoice.current();
+      else if (command.type === 'prev') actions.current.prev();
       else if (command.type === 'next') actions.current.next();
       else if (command.type === 'rate') actions.current.rate(command.id, command.rating);
       else if (command.type === 'report') actions.current.report(command.id, command.note);
@@ -645,19 +678,14 @@ export function LiveAnswers(props: LiveAnswersProps) {
       getPlatform().onHotkey(
         (action) => {
           if (action === 'answer') actions.current.answer('hotkey');
-          else if (action === 'chat') {
-            setFocusSignal((count) => count + 1);
-            setChatCount((count) => count + 1);
-            // Pressed twice (spec S14): the microphone comes on too.
-            const now = Date.now();
-            if (isDoublePress(lastChatPress.current, now)) {
-              dictationRef.current?.start(chatTargetRef.current);
-            }
-            lastChatPress.current = now;
-          } else if (action === 'screenshot-send') {
-            setScreenshotSendCount((count) => count + 1);
-            chatBox.current?.sendWithScreenshot();
-          } else if (action === 'clear') clearView.current();
+          // ADR-0082: Ctrl+Shift+Space is the voice question; Ctrl+Alt+Enter the screenshot and voice
+          // question (until 1.6.3: the chat box, and the chat box's message with a screenshot).
+          else if (action === 'chat') void voiceQuestion.current(false);
+          else if (action === 'screenshot-send') void voiceQuestion.current(true);
+          else if (action === 'voice-cancel') cancelVoice.current();
+          else if (action === 'zoom-in' || action === 'zoom-out' || action === 'zoom-reset') {
+            stepZoom(action);
+          } else if (action === 'clear') clearAnswers.current();
           else if (action === 'clear-transcript') clearTranscript.current();
           else if (action === 'prev') actions.current.prev();
           else if (action === 'next') actions.current.next();
@@ -676,8 +704,15 @@ export function LiveAnswers(props: LiveAnswersProps) {
             // is a click, never the shortcut alone).
             overlayProps.current.recording?.prompt();
           } else if (action === 'ask-kite') {
+            // ADR-0082: the overlay has no message box any more, so while it is in use Ask AI opens in
+            // its own window (the dashboard's, or the pages window), and the call goes on here.
+            if (overlayOpened.current) {
+              if (syncedRef.current) openDashboard('/ask-kite');
+              else getPlatform().openPagesWindow('/ask-kite');
+              return;
+            }
             // Leaving this page would end the call, so during a call the shortcut opens the chat
-            // box, here and in the overlay, set to a private answer (ADR-0030).
+            // box here, set to a private answer (ADR-0030).
             setFocusSignal((count) => count + 1);
             setTarget('kite');
             setChatTarget(sessionIdRef.current, 'kite');
@@ -694,12 +729,51 @@ export function LiveAnswers(props: LiveAnswersProps) {
 
   // The dictated question goes where a typed one would (ADR-0038); for "For the call" the words
   // also stay in the transcript as "You" (useCallDictation decides that).
+  // ADR-0082: after Ctrl+Alt+Enter it goes with the screenshot taken before it.
   const dictation = props.dictation;
   useEffect(() => {
     if (!dictation) return;
-    dictation.setOnText((text) => actions.current.chat(text));
+    dictation.setOnText((text) => {
+      const image = voiceShot.current;
+      voiceShot.current = null;
+      if (image) actions.current.askAboutScreen(text, image);
+      else actions.current.chat(text);
+    });
     return () => dictation.setOnText(null);
   }, [dictation]);
+
+  // ADR-0082: listening ended without a question (nothing heard, cancelled): the screenshot is dropped.
+  const listening = props.dictation?.listening ?? false;
+  useEffect(() => {
+    if (!listening) voiceShot.current = null;
+  }, [listening]);
+
+  // ADR-0082: while a voice question listens, Escape cancels it: from any app where the shell can hold it
+  // (desktop 1.6.4), and in this window.
+  useEffect(() => {
+    if (!listening) return;
+    const platform = getPlatform();
+    platform.setVoiceCancelHotkey(true);
+    const onKey = (event: KeyboardEvent) => {
+      if (!isVoiceCancelKey(event)) return;
+      // Before the Escape that goes back to the overlay.
+      event.preventDefault();
+      cancelVoice.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      platform.setVoiceCancelHotkey(false);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [listening]);
+
+  // ADR-0082: Ctrl+Alt+Enter is a call shortcut. A desktop app from 1.2.0 to 1.6.3 holds it only while the
+  // page asks (it was the chat bar's key), so the page asks for the whole call; 1.6.4 holds it anyway.
+  useEffect(() => {
+    const platform = getPlatform();
+    platform.setChatHotkey(true);
+    return () => platform.setChatHotkey(false);
+  }, []);
 
   // The transcript's "Answer this" buttons (drawn by the live page) use this panel's guarded ask.
   const onAnswerThis = props.onAnswerThis;
@@ -804,9 +878,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     {
       label: 'Clear answers',
       onSelect: () => {
-        // The cards asked until now leave the list, except the newest (selected): never empty.
-        if (!answering) setHiddenBefore(Date.now());
-        clearView.current();
+        // ADR-0082: the same as Ctrl+Backspace (the overlay follows).
+        clearAnswers.current();
       },
     },
     ...(placement
@@ -873,8 +946,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
         <AnswerPanel
           entries={answers.entries}
           shownId={entry?.id ?? null}
-          hiddenBefore={hiddenBefore}
-          onShowHidden={() => setHiddenBefore(0)}
+          // ADR-0082: cleared answers are no longer in the list at all (Clear answers).
+          hiddenBefore={0}
+          onShowHidden={() => undefined}
           terms={terms}
           mac={mac}
           notice={answers.notice}

@@ -19,7 +19,7 @@ import { sessionInput } from '../storage/helpers';
 const USER = 'user-capture-test';
 
 beforeEach(async () => {
-  selectAccountDatabase(USER);
+  selectAccountDatabase(USER, true);
   await getDb().delete();
   forgetDb();
 });
@@ -27,7 +27,7 @@ beforeEach(async () => {
 afterEach(async () => {
   onLocalChange(null);
   await getDb().delete();
-  selectAccountDatabase(null);
+  selectAccountDatabase(null, false);
   forgetDb();
 });
 
@@ -110,7 +110,7 @@ describe('recording changes in the account cache', () => {
 
 describe("this device's own database (no account sync)", () => {
   it('records nothing', async () => {
-    selectAccountDatabase(null);
+    selectAccountDatabase(null, false);
     await getDb().delete();
     forgetDb();
     await createSession(sessionInput());

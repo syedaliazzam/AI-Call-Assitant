@@ -15,17 +15,25 @@
  * An action the Kite page carries out.
  * - `answer`: answer the latest question.
  * - `screenshot`: answer from a screenshot of the screen.
- * - `chat`: open the box for a typed question.
- * - `clear`: clear the current answer.
+ * - `chat`: ADR-0082: the voice question (Ctrl+Shift+Space). Kite listens to the microphone, shows
+ *   "Listening…", and sends the spoken question after a pause; it is never a "You" transcript line and never
+ *   counts as a reply. The id stays 'chat' so a desktop app from before 1.6.4 still sends it (it opened the
+ *   typed chat box until then).
+ * - `clear`: ADR-0082: clear the answers on screen (it only cancelled a streaming answer before).
  * - `clear-transcript`: clear the words on screen (v1.1.0: Ctrl+Shift+Backspace, formerly Chat).
  * - `prev` / `next`: move through earlier answers.
  * - `ask-kite`: open Ask Kite (ADR-0030).
  * - `script-bar`: show or hide the overlay's slim script bar (v1.0.2, ADR-0035).
- * - `screenshot-send`: send the chat bar's message with a screenshot (v1.2.0, spec S14).
+ * - `screenshot-send`: ADR-0082: the screenshot and voice question (Ctrl+Alt+Enter): a screenshot first, then
+ *   the spoken question, sent together. The id stays (it sent the chat bar's message with a screenshot from
+ *   v1.2.0, spec S14).
  * - `click-through`: turn the overlay's Click-through mode on or off (v1.3.2): every click and key outside
  *   the bars goes to the app behind.
  * - `record`: start or stop recording the meeting (desktop 1.5.0, ADR-0068). The page asks for consent
  *   before a start and confirms a stop, as the Rec pill does.
+ * - `zoom-in` / `zoom-out` / `zoom-reset`: ADR-0082: the overlay's zoom (the ⋮ menu's Zoom), one step up or
+ *   down, or back to 100 %.
+ * - `voice-cancel`: ADR-0082: Escape while a voice question is listening: stop without sending.
  */
 export type HotkeyAction =
   | 'answer'
@@ -39,7 +47,11 @@ export type HotkeyAction =
   | 'script-bar'
   | 'screenshot-send'
   | 'click-through'
-  | 'record';
+  | 'record'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'zoom-reset'
+  | 'voice-cancel';
 
 /** Every action the Kite page carries out (messages from the shell are checked against it). */
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
@@ -55,6 +67,10 @@ export const HOTKEY_ACTIONS: readonly HotkeyAction[] = [
   'screenshot-send',
   'click-through',
   'record',
+  'zoom-in',
+  'zoom-out',
+  'zoom-reset',
+  'voice-cancel',
 ];
 
 /** A direction the overlay can move in. */
@@ -77,12 +93,31 @@ export type OverlayAction = 'overlay-toggle' | `overlay-${OverlayDirection}` | O
 /**
  * A shortcut that works from any app while a call is on. `chat` and `script-bar` go to the page like
  * Answer (the live page decides what the overlay shows); the overlay actions are done by the shell.
+ * ADR-0082 (desktop 1.6.4, the developer's choice, as ParakeetAI does): Clear answers, Clear transcript,
+ * previous / next answer, the zoom keys and the screenshot and voice question are held during a call too.
  */
 export type CallHotkey =
-  'answer' | 'screenshot' | 'chat' | 'script-bar' | 'click-through' | 'record' | OverlayAction;
+  | 'answer'
+  | 'screenshot'
+  | 'chat'
+  | 'screenshot-send'
+  | 'clear'
+  | 'clear-transcript'
+  | 'prev'
+  | 'next'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'zoom-reset'
+  | 'script-bar'
+  | 'click-through'
+  | 'record'
+  | OverlayAction;
 
-/** A shortcut that works from any app, or the shortcut held for as long as the app runs. */
-export type GlobalHotkey = CallHotkey | 'ask-kite' | 'screenshot-send';
+/**
+ * A shortcut that works from any app, the shortcut held for as long as the app runs, or Escape while a voice
+ * question listens (ADR-0082).
+ */
+export type GlobalHotkey = CallHotkey | 'ask-kite' | 'voice-cancel';
 
 /**
  * Opens Ask Kite from any app, for as long as the desktop app runs (ADR-0030). It is the one global
@@ -92,12 +127,18 @@ export type GlobalHotkey = CallHotkey | 'ask-kite' | 'screenshot-send';
 export const ASK_KITE_HOTKEY = 'CommandOrControl+Alt+K';
 
 /**
- * Sends the chat bar's message with a screenshot (v1.2.0, spec S14). From a shell at 1.2.0 it is held
- * only while the chat bar is open, so it takes nothing from other apps the rest of the time; an older
- * shell cannot hold it, and it works while Paramount AI has focus. On layouts where Ctrl+Alt is AltGr it
- * can clash, which Settings → Hotkeys reports.
+ * The screenshot and voice question (ADR-0082; v1.2.0 to 1.6.3 it sent the chat bar's message with a
+ * screenshot). Desktop 1.6.4 holds it for the whole call with the other call shortcuts; a 1.2.0–1.6.3 shell
+ * holds it while the page asks (setChatHotkey), which the page now does for the whole call. On layouts where
+ * Ctrl+Alt is AltGr it can clash, which Settings → Hotkeys reports.
  */
 export const SCREENSHOT_SEND_HOTKEY = 'CommandOrControl+Alt+Enter';
+
+/**
+ * ADR-0082: cancels a voice question while it listens. Held by desktop 1.6.4 only for those few seconds
+ * (Escape belongs to every other app the rest of the time).
+ */
+export const VOICE_CANCEL_HOTKEY = 'Escape';
 
 /** The chat bar's own Send key: only ever in the chat box, never a shortcut. */
 export const CHAT_SEND_KEY = 'Enter';
@@ -112,7 +153,23 @@ export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
   screenshot: 'CommandOrControl+Shift+Enter',
   // v1.1.0 (ADR-0041): global during a call, because the meeting usually has the keyboard. It edits
   // no text in other apps, but some apps and input methods use it, which Settings → Hotkeys reports.
+  // ADR-0082: the voice question (it opened the typed chat box until 1.6.3).
   chat: 'CommandOrControl+Shift+Space',
+  // ADR-0082: the screenshot and voice question, held with the others from desktop 1.6.4.
+  'screenshot-send': SCREENSHOT_SEND_HOTKEY,
+  // ADR-0082 (desktop 1.6.4, the developer's choice for ParakeetAI parity): global during a call. Until
+  // 1.6.3 these worked only while Paramount AI had the keyboard, which the overlay gives back after most
+  // clicks. While a call runs, other apps cannot use them (for example Ctrl+Backspace to delete a word in
+  // a code editor); they are released at End. Settings → Hotkeys says so.
+  'clear-transcript': 'CommandOrControl+Shift+Backspace',
+  clear: 'CommandOrControl+Backspace',
+  prev: 'CommandOrControl+Left',
+  next: 'CommandOrControl+Right',
+  // ADR-0082: the overlay's zoom, as in browsers (Ctrl+= / Ctrl+- / Ctrl+0). Global during a call, like the
+  // keys above: a browser or editor behind the overlay does not zoom with them while the call runs.
+  'zoom-in': 'CommandOrControl+=',
+  'zoom-out': 'CommandOrControl+-',
+  'zoom-reset': 'CommandOrControl+0',
   'overlay-toggle': 'CommandOrControl+Alt+H',
   // v1.0.2 (ADR-0035): the script bar. Registered only during a call, like the others. On layouts
   // where Ctrl+Alt types a letter (AltGr; Polish: AltGr+S types "ś") it can clash, and on macOS
@@ -148,17 +205,18 @@ export const TRANSCRIPT_HOTKEY = 'CommandOrControl+Alt+T';
 export const GLOBAL_HOTKEYS = Object.keys(DEFAULT_GLOBAL_HOTKEYS) as readonly CallHotkey[];
 
 /**
- * The shortcuts that work only while Kite has focus (the page's own key handling), never
- * registered globally: in other apps these keys delete and move by word.
+ * The shortcuts that the page also handles itself while Kite has focus (platform/keymap.ts): in a browser,
+ * and with a desktop app before 1.6.4, they work only then. ADR-0082: desktop 1.6.4 also holds them during a
+ * call (DEFAULT_GLOBAL_HOTKEYS); the keys are the same.
  */
 export const FOCUSED_HOTKEYS: Readonly<
   Record<'clear' | 'clear-transcript' | 'prev' | 'next', string>
 > = {
   // v1.1.0: this key was Chat until 1.0.4; Chat moved to Ctrl+Shift+Space.
-  'clear-transcript': 'CommandOrControl+Shift+Backspace',
-  clear: 'CommandOrControl+Backspace',
-  prev: 'CommandOrControl+Left',
-  next: 'CommandOrControl+Right',
+  'clear-transcript': DEFAULT_GLOBAL_HOTKEYS['clear-transcript'],
+  clear: DEFAULT_GLOBAL_HOTKEYS.clear,
+  prev: DEFAULT_GLOBAL_HOTKEYS.prev,
+  next: DEFAULT_GLOBAL_HOTKEYS.next,
 };
 
 /** Whether one global shortcut could be registered. */
@@ -198,7 +256,10 @@ export interface HotkeyRow {
   shells?: 'positions' | 'classic';
 }
 
-/** The list Settings shows. */
+/**
+ * The list Settings shows. ADR-0082: in ParakeetAI's order first (answer, screenshot, voice, answers,
+ * clearing, zoom), then Paramount AI's own.
+ */
 export const HOTKEY_ROWS: readonly HotkeyRow[] = [
   {
     label: 'Answer',
@@ -207,22 +268,48 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     actions: ['answer'],
   },
   {
-    label: 'Screenshot',
+    label: 'Answer from a screenshot',
     accelerator: DEFAULT_GLOBAL_HOTKEYS.screenshot,
     scope: 'global',
     actions: ['screenshot'],
   },
   {
-    label: 'Chat',
+    label: 'Voice question: speak, sent when you pause (Esc cancels)',
     accelerator: DEFAULT_GLOBAL_HOTKEYS.chat,
     scope: 'global',
     actions: ['chat'],
   },
   {
-    label: 'Send chat with a screenshot',
+    label: 'Screenshot and voice question',
     accelerator: SCREENSHOT_SEND_HOTKEY,
     scope: 'global',
     actions: ['screenshot-send'],
+  },
+  {
+    label: 'Previous or next answer',
+    accelerator: DEFAULT_GLOBAL_HOTKEYS.prev,
+    keysOverride: 'CommandOrControl+Left / Right',
+    scope: 'global',
+    actions: ['prev', 'next'],
+  },
+  {
+    label: 'Clear answers',
+    accelerator: DEFAULT_GLOBAL_HOTKEYS.clear,
+    scope: 'global',
+    actions: ['clear'],
+  },
+  {
+    label: 'Clear transcript',
+    accelerator: DEFAULT_GLOBAL_HOTKEYS['clear-transcript'],
+    scope: 'global',
+    actions: ['clear-transcript'],
+  },
+  {
+    label: 'Zoom the overlay in, out, or back to 100 %',
+    accelerator: DEFAULT_GLOBAL_HOTKEYS['zoom-in'],
+    keysOverride: 'CommandOrControl+= / - / 0',
+    scope: 'global',
+    actions: ['zoom-in', 'zoom-out', 'zoom-reset'],
   },
   {
     label: 'Show or hide overlay',
@@ -287,20 +374,6 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     actions: ['transcript'],
     shells: 'positions',
   },
-  {
-    label: 'Clear transcript',
-    accelerator: FOCUSED_HOTKEYS['clear-transcript'],
-    scope: 'focused',
-    actions: [],
-  },
-  { label: 'Clear answer', accelerator: FOCUSED_HOTKEYS.clear, scope: 'focused', actions: [] },
-  {
-    label: 'Previous or next answer',
-    accelerator: FOCUSED_HOTKEYS.prev,
-    keysOverride: 'CommandOrControl+Left / Right',
-    scope: 'focused',
-    actions: [],
-  },
 ];
 
 /** A shortcut a key-cap chip can show (v1.2.0, spec §4): any global or focused one. */
@@ -315,7 +388,7 @@ export type KeycapHotkey = GlobalHotkey | keyof typeof FOCUSED_HOTKEYS | 'chat-s
  */
 export function hotkeyAccelerator(hotkey: KeycapHotkey): string {
   if (hotkey === 'ask-kite') return ASK_KITE_HOTKEY;
-  if (hotkey === 'screenshot-send') return SCREENSHOT_SEND_HOTKEY;
+  if (hotkey === 'voice-cancel') return VOICE_CANCEL_HOTKEY;
   if (hotkey === 'chat-send') return CHAT_SEND_KEY;
   if (hotkey === 'transcript') return TRANSCRIPT_HOTKEY;
   if (hotkey in FOCUSED_HOTKEYS) return FOCUSED_HOTKEYS[hotkey as keyof typeof FOCUSED_HOTKEYS];

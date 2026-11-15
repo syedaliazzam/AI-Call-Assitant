@@ -1,9 +1,11 @@
 /**
  * File: apps/web/src/features/live/CompactView.tsx
  * Purpose: The overlay (the compact live view; spec S13–S16, ADR-0029, ADR-0041): separate pieces rather
- *          than one window-sized panel. Bar 1 (status, Answer, Screenshot, Chat, move, compact, timer, ⋮
- *          and Exit; 1.6.3: and the Auto answer toggle), the chat bar under it while open, then bar 2 with
- *          the live strip, or the transcript panel in bar 2's place. The answer panel opens by itself when an
+ *          than one window-sized panel. Bar 1 (status, the Transcript, Rec, Auto answer and Click-through
+ *          toggles, move, compact, timer, ⋮ and Exit; ADR-0082: no Answer, Screenshot or Chat buttons and
+ *          no chat bar, the shortcuts do those), then bar 2, the one status bar (ADR-0082: the warnings and
+ *          the live words share it; StatusBar.tsx), or the transcript panel in bar 2's place, whose header
+ *          is the same status bar. The answer panel opens by itself when an
  *          answer starts; with both panels open they sit side by side when the window is wide enough, and
  *          stack when it is not. Compact shrinks everything to an icon. The panels are see-through with
  *          the opacity setting, and are remembered. The script bar (v1.0.2) replaces all of it with one
@@ -16,8 +18,8 @@
  *               ADR-0029, ADR-0041, ADR-0045
  *
  * Bar 1 is the window's drag handle (the desktop window has no frame); its buttons opt out. Nothing
- * here calls focus() on its own: updates never take the keyboard from the meeting; opening Chat or
- * clicking into a box does.
+ * here calls focus() on its own: updates never take the keyboard from the meeting; clicking into a box
+ * does.
  *
  * ADR-0055: the empty space around and between the pieces is marked data-gap; in desktop 1.3.0 clicks
  * there pass through to the app behind the overlay (overlay/useClickThrough.ts).
@@ -54,14 +56,7 @@ import {
   type OverlayResizeStep,
   type ShareProtectionState,
 } from '@kite/shared';
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type RefObject,
-} from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import {
   THEME_DEFAULTS,
@@ -71,18 +66,18 @@ import {
 import { OVERLAY_OPACITY, type OverlayPanels } from '@/core/storage/overlayPrefs';
 import { isTranscriptKey } from '@/platform/keymap';
 import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
-import { ChatBar, type ChatBarHandle } from './overlay/ChatBar';
 import { ControlBar, type DeviceList } from './overlay/ControlBar';
 import { DevicePicker } from './overlay/DevicePicker';
-import { RecordPopover } from './overlay/RecordControls';
-import { PrivateOffWarning, usePrivateOffWhileRecording } from './PrivateOffWarning';
+import { pressRecPill, RecordPopover } from './overlay/RecordControls';
+import { usePrivateOffWhileRecording } from './PrivateOffWarning';
 import { IconMode } from './overlay/IconMode';
 import { LiveMenu } from './overlay/LiveMenu';
-import { LiveStrip } from './overlay/LiveStrip';
 import { OverlayAnswer } from './overlay/OverlayAnswer';
 import { pieceClass, type LevelStore } from './overlay/parts';
 import { ResizeGrips } from './overlay/ResizeGrips';
 import { ScriptBar } from './overlay/ScriptBar';
+import { StatusBar } from './overlay/StatusBar';
+import { statusMessage } from './overlay/statusLine';
 import { TranscriptPanel } from './overlay/TranscriptPanel';
 import { BARS_ATTRIBUTE, GAP_ATTRIBUTE, useClickThrough } from './overlay/useClickThrough';
 
@@ -138,12 +133,6 @@ export interface CompactViewProps {
   onHelp?: () => void;
   /** Opens Edit session, likewise. */
   onEditSession?: () => void;
-  /** Whether the chat bar is open. */
-  chatOpen: boolean;
-  /** Opens or closes the chat bar (also the Chat shortcut's job). */
-  onChatOpen: (open: boolean) => void;
-  /** The chat bar's handle, for its shortcut. */
-  chatBar?: RefObject<ChatBarHandle | null>;
   /** True for the see-through panels (the desktop window); otherwise they are solid. */
   glass?: boolean;
   /** Which panels are open. */
@@ -276,7 +265,7 @@ export function CompactView(props: CompactViewProps) {
   const { state, onCommand, mac = false, panels, onPanels, onMove } = props;
   // 1.5.2 (ADR-0070): a screen recording with Private off: a warning bar, and a hint on the Rec pill.
   const privateOff = usePrivateOffWhileRecording(state?.recording);
-  const { levels, onResize, copy, chatBar } = props;
+  const { levels, onResize, copy } = props;
   const glass = props.glass ?? false;
   const referenceLook = props.referenceLook ?? false;
   const BARS_WIDTH = BARS_WIDTHS[referenceLook ? 'reference' : 'classic'];
@@ -314,13 +303,6 @@ export function CompactView(props: CompactViewProps) {
     setCollapsed(next);
     setPopup(null);
   };
-
-  // The Chat shortcut brings the overlay back from the icon (while rendering, as React advises for
-  // state that follows a changed value).
-  if (icon && props.chatOpen) {
-    setIcon(false);
-    setCollapsed(false);
-  }
 
   // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R (the live page counts the presses) opens the Start or Stop
   // question; a new recording notice opens on its own unless another list is open. While rendering, as
@@ -369,14 +351,13 @@ export function CompactView(props: CompactViewProps) {
   // fixed heights: the window grows for them. Measured by content, because a menu's own height is
   // limited by the window it is about to enlarge.
   const noPanels = !panels.transcript && !panels.answer;
-  const chatOpen = props.chatOpen;
   useLayoutEffect(() => {
     const height = root.current?.offsetHeight ?? 0;
     const floating = popupElement.current ?? languagesElement.current;
     const forPopup = floating ? extentOf(floating, up, height) + 8 : 0;
     const forBars = noPanels && barsEnd.current ? extentOf(barsEnd.current, up, height) + 2 : 0;
     setNeededHeight(Math.max(forPopup, forBars) * zoom);
-  }, [popup, noPanels, chatOpen, zoom, collapsed, icon, scriptBar, up]);
+  }, [popup, noPanels, zoom, collapsed, icon, scriptBar, up]);
 
   // Desktop 1.5.0 (ADR-0068): the Rec popover sits under its pill.
   useLayoutEffect(() => {
@@ -407,7 +388,7 @@ export function CompactView(props: CompactViewProps) {
     const stepped = Math.ceil((needed * zoom) / CONTENT_STEP) * CONTENT_STEP;
     setContentHeight((was) => (was === stepped ? was : stepped));
     // Everything that changes what the panels hold or where they sit: each state update is new words.
-  }, [state, panels, zoom, up, fontScale, collapsed, chatOpen, popup, icon, scriptBar]);
+  }, [state, panels, zoom, up, fontScale, collapsed, popup, icon, scriptBar]);
 
   useEffect(() => {
     onLayout.current?.({
@@ -496,7 +477,7 @@ export function CompactView(props: CompactViewProps) {
 
   // v1.3.2: a click on a panel's button (copy, ← →, a switch), or in Click-through mode on any of the
   // bars' buttons, gives the keyboard back to the app that had it: the overlay keeps no focus it was not
-  // asked to keep. Not when the click opened a box to type in (the report box, the chat bar).
+  // asked to keep. Not when the click opened a box to type in (the report box).
   const releaseFocus = props.onReleaseFocus;
   const releaseAfterBars = useRef(passAll);
   useEffect(() => {
@@ -592,6 +573,37 @@ export function CompactView(props: CompactViewProps) {
    */
   const languagesOpen = (open: boolean) => setPopup(open ? 'language' : null);
 
+  // ADR-0082: the one status bar (bar 2): the live words, or the current warning with its button.
+  const statusBar = (
+    <StatusBar
+      state={state}
+      chips={chips}
+      question={question}
+      words
+      transcriptOpen={false}
+      onTranscript={(open) => {
+        if (collapsed) collapse(false);
+        onPanels({ ...panels, transcript: open });
+      }}
+      onCommand={onCommand}
+      onClear={clearTranscript}
+      onCollapse={() => collapse(true)}
+      collapseLabel="Hide the status bar"
+      onList={(list) => setPopup(list)}
+      privateOff={privateOff.visible}
+      onPrivateOn={privateOff.turnOn}
+      mac={mac}
+      levels={levels}
+      languagesOpen={popup === 'language'}
+      onLanguagesOpen={languagesOpen}
+      languagesRef={languagesElement}
+    />
+  );
+  // ADR-0082: collapsed to bar 1, a warning that needs the user (a side that cannot be heard, the Answer key
+  // held by another app, a recording with Private off) still shows the status bar.
+  const alertWhileCollapsed =
+    collapsed && statusMessage(state, privateOff.visible)?.tone === 'alert';
+
   return (
     // @container: buttons drop their key-caps when it is narrow, and the panels stack.
     <div
@@ -617,7 +629,6 @@ export function CompactView(props: CompactViewProps) {
               onMove
                 ? () => {
                     setPopup(null);
-                    props.onChatOpen(false);
                     setIcon(true);
                   }
                 : undefined
@@ -626,16 +637,22 @@ export function CompactView(props: CompactViewProps) {
             onMenu={(open) => setPopup(open ? 'menu' : null)}
             deviceList={popup === 'audio' || popup === 'mic' ? popup : null}
             onDeviceList={setPopup}
-            chatOpen={props.chatOpen}
-            onChatOpen={props.onChatOpen}
             menuButton={menuButton}
             referenceLook={referenceLook}
             recordOpen={popup === 'record'}
-            onRecord={() => setPopup(popup === 'record' ? null : 'record')}
+            // ADR-0082: starts at once when consent was ticked at Connect; otherwise asks.
+            onRecord={() => {
+              const ask = () => setPopup(popup === 'record' ? null : 'record');
+              if (state?.recording) pressRecPill(state.recording, onCommand, ask);
+              else ask();
+            }}
             recButton={recButton}
             up={up}
             {...(clickThrough && glass
-              ? { onClickThroughOff: () => onCommand({ type: 'click-through', on: false }) }
+              ? {
+                  // ADR-0082: the Click-through toggle on bar 1 (as Ctrl+Alt+X and ⋮ do).
+                  onClickThrough: (on: boolean) => onCommand({ type: 'click-through', on }),
+                }
               : {})}
             {...(referenceLook
               ? {
@@ -735,77 +752,11 @@ export function CompactView(props: CompactViewProps) {
         )}
       </div>
 
-      {/* 1.5.1 (ADR-0069): what the call hears: a silent channel (with its device list one click
-          away), or the speech worker catching up. A bar of its own, so it shows whatever panels are open. */}
-      {state?.callNotice && !state.ended && !icon && (
-        <div
-          className={`${piece} flex shrink-0 items-center gap-2 px-3 py-1.5 text-[13px] ${BARS_WIDTH}`}
-          {...{ [BARS_ATTRIBUTE]: '' }}
-        >
-          <span
-            role={state.callNotice.action ? 'alert' : 'status'}
-            className={`min-w-0 flex-1 truncate ${state.callNotice.action ? 'text-ui-warning' : 'text-ui-muted'}`}
-            title={state.callNotice.detail}
-          >
-            {state.callNotice.text}
-          </span>
-          {state.callNotice.action && (
-            <button
-              type="button"
-              data-popup-button=""
-              className="h-7 shrink-0 rounded-control bg-ui-overlay-button px-2 text-[13px] font-medium hover:bg-ui-overlay-button-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]"
-              onClick={() => setPopup(state.callNotice!.action!.list)}
-            >
-              {state.callNotice.action.label}
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* ADR-0076 (G4): another app holds the Answer shortcut, so it reaches Paramount AI only while it is in
-          front. Shown for the whole call, with the way to change it. */}
-      {state?.answerKeyTaken && !state.ended && !icon && (
-        <div
-          className={`${piece} flex shrink-0 items-center gap-2 px-3 py-1.5 text-[13px] ${BARS_WIDTH}`}
-          {...{ [BARS_ATTRIBUTE]: '' }}
-        >
-          <span role="alert" className="min-w-0 flex-1 truncate text-ui-warning">
-            {state.answerKeyTaken} is used by another app: press Answer, or pick another key.
-          </span>
-          <button
-            type="button"
-            className="h-7 shrink-0 rounded-control bg-ui-overlay-button px-2 text-[13px] font-medium hover:bg-ui-overlay-button-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]"
-            onClick={() => onCommand({ type: 'hotkey-settings' })}
-          >
-            Hotkeys
-          </button>
-        </div>
-      )}
-
-      {/* 1.5.2 (ADR-0070): a screen recording with Private off: Paramount AI is in the video. */}
-      {privateOff.visible && !state?.ended && !icon && (
-        <PrivateOffWarning
-          look="overlay"
-          onTurnOn={privateOff.turnOn}
-          className={`${piece} ${BARS_WIDTH}`}
-          barsAttribute={BARS_ATTRIBUTE}
-        />
-      )}
-
-      {props.chatOpen && !collapsed && (
-        // v1.3.2: a bar (takes clicks in Click-through mode) that keeps the keyboard: it is for typing.
-        <div
-          className={`${piece} shrink-0 ${BARS_WIDTH}`}
-          {...{ [BARS_ATTRIBUTE]: '', 'data-keeps-focus': '' }}
-        >
-          <ChatBar
-            ref={chatBar}
-            state={state}
-            onCommand={onCommand}
-            onClose={() => props.onChatOpen(false)}
-            mac={mac}
-            look={referenceLook ? 'reference' : 'classic'}
-          />
+      {/* ADR-0082: no warning bars of their own any more (the call notices, the Answer key held elsewhere, a
+          screen recording with Private off): the status bar's line shows the current one with its button. */}
+      {alertWhileCollapsed && !state?.ended && (
+        <div className={`${piece} shrink-0 ${BARS_WIDTH}`} {...{ [BARS_ATTRIBUTE]: '' }}>
+          {statusBar}
         </div>
       )}
 
@@ -820,24 +771,8 @@ export function CompactView(props: CompactViewProps) {
               {...{ [GAP_ATTRIBUTE]: '' }}
               className={`flex shrink-0 gap-1.5 ${up ? 'items-end' : 'items-start'} ${BARS_WIDTH}`}
             >
-              <div
-                className={`${piece} min-w-0 max-w-[540px] flex-1`}
-                {...{ [BARS_ATTRIBUTE]: '' }}
-              >
-                <LiveStrip
-                  state={state}
-                  chips={chips}
-                  question={question}
-                  onCommand={onCommand}
-                  onClear={clearTranscript}
-                  onExpand={() => onPanels({ ...panels, transcript: true })}
-                  onCollapse={() => collapse(true)}
-                  mac={mac}
-                  levels={levels}
-                  languagesOpen={popup === 'language'}
-                  onLanguagesOpen={languagesOpen}
-                  languagesRef={languagesElement}
-                />
+              <div className={`${piece} min-w-0 flex-1`} {...{ [BARS_ATTRIBUTE]: '' }}>
+                {statusBar}
               </div>
             </div>
           )}
@@ -868,6 +803,9 @@ export function CompactView(props: CompactViewProps) {
                     languagesOpen={popup === 'language'}
                     onLanguagesOpen={languagesOpen}
                     languagesRef={languagesElement}
+                    onList={(list) => setPopup(list)}
+                    privateOff={privateOff.visible}
+                    onPrivateOn={privateOff.turnOn}
                   />
                 </div>
               )}
