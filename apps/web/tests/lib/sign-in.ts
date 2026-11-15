@@ -103,9 +103,14 @@ export async function signInOnce(page: Page, options: SignInOptions): Promise<vo
   const { baseUrl, email, password, fresh = false, timeout = 30_000, panel = false } = options;
   const key = `${baseUrl}|${email}`;
   // The panel is ready when it shows its search box, or, as the launcher of an account with account
-  // sync (ADR-0051), its Open dashboard button.
+  // sync (ADR-0051), its Open dashboard button (older shells) or its "Your sessions" heading (1.6.1:
+  // an account with no sessions has neither a search box nor that button).
   const dashboard = panel
-    ? page.getByLabel('Search sessions').or(page.getByRole('button', { name: /Open dashboard/ }))
+    ? page
+        .getByLabel('Search sessions')
+        .or(page.getByRole('button', { name: /Open dashboard/ }))
+        .or(page.getByRole('heading', { name: 'Your sessions' }))
+        .first()
     : page.getByRole('heading', { name: 'Call Sessions' });
 
   const saved = sessions.get(key);
