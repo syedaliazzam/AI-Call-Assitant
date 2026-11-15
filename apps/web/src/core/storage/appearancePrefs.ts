@@ -194,6 +194,27 @@ export function setZoom(zoom: number): void {
 }
 
 /**
+ * ADR-0082: the zoom keys (Ctrl+= / Ctrl+- / Ctrl+0): one step of the ⋮ menu's Zoom up or down, or back to
+ * 100 %. Every open window follows (the setting is shared and watched).
+ *
+ * @param action 'zoom-in', 'zoom-out' or 'zoom-reset'.
+ * @returns The new scale.
+ * Called from: src/features/live/LiveAnswers.tsx (the call's shortcuts), src/features/live/CompactLive.tsx
+ *              (the overlay's own key handling); tests
+ */
+export function stepZoom(action: 'zoom-in' | 'zoom-out' | 'zoom-reset'): number {
+  const next =
+    action === 'zoom-reset'
+      ? ZOOM_RANGE.default
+      : clampStep(
+          getZoom() + (action === 'zoom-in' ? ZOOM_RANGE.step : -ZOOM_RANGE.step),
+          ZOOM_RANGE,
+        );
+  setZoom(next);
+  return next;
+}
+
+/**
  * The overlay's text size.
  *
  * @returns The scale (default 1).

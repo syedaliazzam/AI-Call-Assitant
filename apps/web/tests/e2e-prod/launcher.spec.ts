@@ -5,8 +5,8 @@
  * whose call just ended. The home panel is then the launcher: "Your sessions" with both (and their
  * status); no search and no Create session; "Call ended · … View notes"; Open dashboard. Links open the
  * web app in the system browser: here window.open is replaced inside the panel, so nothing opens on this
- * computer and the addresses are checked instead. A row opens the Start card (Free and Paid; Buy
- * credits only shows a toast), and Start free the Connect card (Connect is not pressed: no call). Both
+ * computer and the addresses are checked instead. A row opens the Connect card at once (ADR-0082: no
+ * Free / Paid Start card and no Buy credits; Connect is not pressed: no call), and Back the sessions. Both
  * sessions are deleted at the end. Prints step names only.
  * The shell: this checkout's (1.3.0, built first), or with KITE_SHELL_EXE an installed program, for
  * example the 1.2.0 Paramount AI.exe extracted from its installer (never installed on this computer).
@@ -205,28 +205,18 @@ test('2. Open dashboard, View notes and the menu open the web app in the browser
   report('launcher: links open the web app', true);
 });
 
-test('3. a row opens the Start card, and Start free the Connect card', async () => {
+test('3. a row opens the Connect card at once (ADR-0082), and Back the sessions', async () => {
   await panel.keyboard.press('Escape');
   await panel
     .getByRole('list', { name: 'Sessions' })
     .getByRole('button', { name: new RegExp(READY.company) })
     .click();
-  await expect(panel.getByRole('heading', { name: 'Start your session' })).toBeVisible();
-  await expect(panel.getByText(/^Signed in as /)).toBeVisible();
-  await expect(panel.getByRole('region', { name: 'Free session' })).toContainText('Team');
-  // Buy credits only shows a toast: nothing opens.
-  await panel.evaluate(() => {
-    (window as unknown as { kiteOpened?: string }).kiteOpened = undefined;
-  });
-  await panel.getByRole('region', { name: 'Paid session' }).getByRole('button').click();
-  await expect(
-    panel.getByRole('status').filter({ hasText: 'team account is unlimited' }),
-  ).toBeVisible();
-  expect(await lastOpened()).toBeNull();
-  await panel.getByRole('button', { name: 'Start free' }).click();
+  // ADR-0082: no "Start your session" Free / Paid card and no Buy credits anywhere.
   await expect(panel.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: 'Start your session' })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: /Buy credits/i })).toHaveCount(0);
   await expect(panel.getByRole('list', { name: 'Tips' }).getByRole('listitem')).toHaveCount(3);
   await panel.getByRole('button', { name: 'Back', exact: true }).click();
-  await expect(panel.getByRole('heading', { name: 'Start your session' })).toBeVisible();
-  report('launcher: Start card and Connect card', true);
+  await expect(panel.getByRole('list', { name: 'Sessions' })).toBeVisible();
+  report('launcher: Connect card', true);
 });

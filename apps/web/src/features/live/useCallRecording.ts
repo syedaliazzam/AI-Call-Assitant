@@ -116,6 +116,12 @@ export interface CallRecording {
   setKind: (kind: RecordingKind) => void;
   /** Ctrl+Alt+R: the bars ask "Start?" or "Stop?". */
   prompt: () => void;
+  /**
+   * ADR-0082: the Connect card's "Everyone on the call has agreed to be recorded" was ticked for this call:
+   * the Rec pill then starts recording without asking again.
+   * @param consented True when it was ticked.
+   */
+  setConsented: (consented: boolean) => void;
   /** Closes the notice. */
   clearNotice: () => void;
   /**
@@ -147,6 +153,8 @@ export function useCallRecording(options: CallRecordingOptions): CallRecording {
   const [promptCount, setPromptCount] = useState(0);
   const [parts, setParts] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  // ADR-0082: "Everyone on the call has agreed to be recorded" was ticked at Connect for this call.
+  const [consented, setConsented] = useState(false);
   const active = useRef<ActiveRecording | null>(null);
   const busy = useRef(false);
   // One meeting per call: its parts share this id.
@@ -378,6 +386,7 @@ export function useCallRecording(options: CallRecordingOptions): CallRecording {
             promptCount,
             parts,
             notice,
+            consented,
           }
         : undefined,
     [
@@ -391,6 +400,7 @@ export function useCallRecording(options: CallRecordingOptions): CallRecording {
       promptCount,
       parts,
       notice,
+      consented,
     ],
   );
 
@@ -404,6 +414,7 @@ export function useCallRecording(options: CallRecordingOptions): CallRecording {
     stop: stopPart,
     setKind,
     prompt: () => setPromptCount((count) => count + 1),
+    setConsented,
     clearNotice: () => setNotice(null),
     replaceSource,
     finish,

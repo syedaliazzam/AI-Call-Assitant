@@ -35,8 +35,13 @@ export default async function PlayerRoute({ params }: PlayerRouteProps) {
   const { user } = await requireUser();
   const { id } = await params;
   return (
-    // ADR-0049: the recording records sync like the rest of the call data (Delete reaches the account).
-    <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null} email={user.email}>
+    // ADR-0049: the recording records sync like the rest of the call data (Delete reaches the account);
+    // they live in the account's own database on this device (accountId).
+    <SyncScope
+      accountId={user.id}
+      syncUserId={syncEnabledFor(user.id) ? user.id : null}
+      email={user.email}
+    >
       <AccountNameProvider name={user.name}>
         <RecordingPlayer recordingId={id} />
       </AccountNameProvider>

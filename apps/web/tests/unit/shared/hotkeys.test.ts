@@ -14,6 +14,7 @@ import {
   keycapParts,
   HOTKEY_ROWS,
   SCREENSHOT_SEND_HOTKEY,
+  VOICE_CANCEL_HOTKEY,
 } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
 
@@ -39,13 +40,43 @@ describe('key-cap chips (spec §4)', () => {
 });
 
 describe('Kite shortcuts', () => {
-  it('never share an accelerator (global, focused and Ask Kite together)', () => {
+  it('never share an accelerator (global, Ask Kite and Escape together)', () => {
     const all = [
       ...Object.values(DEFAULT_GLOBAL_HOTKEYS),
-      ...Object.values(FOCUSED_HOTKEYS),
       ASK_KITE_HOTKEY,
+      VOICE_CANCEL_HOTKEY,
     ].map((accelerator) => accelerator.toLowerCase());
     expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('ADR-0082: holds the ParakeetAI keys during a call; the focused ones are the same keys', () => {
+    expect(DEFAULT_GLOBAL_HOTKEYS).toMatchObject({
+      answer: 'CommandOrControl+Enter',
+      screenshot: 'CommandOrControl+Shift+Enter',
+      chat: 'CommandOrControl+Shift+Space',
+      'screenshot-send': 'CommandOrControl+Alt+Enter',
+      prev: 'CommandOrControl+Left',
+      next: 'CommandOrControl+Right',
+      clear: 'CommandOrControl+Backspace',
+      'clear-transcript': 'CommandOrControl+Shift+Backspace',
+      'zoom-in': 'CommandOrControl+=',
+      'zoom-out': 'CommandOrControl+-',
+      'zoom-reset': 'CommandOrControl+0',
+      record: 'CommandOrControl+Alt+R',
+      'click-through': 'CommandOrControl+Alt+X',
+      'overlay-toggle': 'CommandOrControl+Alt+H',
+    });
+    for (const [action, keys] of Object.entries(FOCUSED_HOTKEYS)) {
+      expect(DEFAULT_GLOBAL_HOTKEYS[action as keyof typeof FOCUSED_HOTKEYS]).toBe(keys);
+    }
+    expect(HOTKEY_ACTIONS).toEqual(
+      expect.arrayContaining(['zoom-in', 'zoom-out', 'zoom-reset', 'voice-cancel']),
+    );
+    expect(hotkeyAccelerator('voice-cancel')).toBe('Escape');
+    expect(HOTKEY_ROWS.find((row) => row.actions.includes('chat'))?.label).toMatch(
+      /^Voice question/,
+    );
+    expect(HOTKEY_ROWS.find((row) => row.actions.includes('clear'))?.label).toBe('Clear answers');
   });
 
   it('give the script bar Ctrl+Alt+S, as a page action with a Settings row', () => {
@@ -62,7 +93,8 @@ describe('Kite shortcuts', () => {
     const listed = HOTKEY_ROWS.flatMap((row) => row.actions);
     // v1.3.0 (ADR-0056): plus Transcript, checked (never held) so Settings can report a clash.
     expect([...listed].sort()).toEqual(
-      [...GLOBAL_HOTKEYS, 'ask-kite', 'screenshot-send', 'transcript'].sort(),
+      // ADR-0082: Ctrl+Alt+Enter is one of the call shortcuts now.
+      [...GLOBAL_HOTKEYS, 'ask-kite', 'transcript'].sort(),
     );
   });
 

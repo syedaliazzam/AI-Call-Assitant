@@ -16,7 +16,7 @@ const sessionId = window.location.pathname.split('/').pop() || 'harness-session'
 // ADR-0055: as an account with account sync sees it (the reference look, click-through); an invented
 // account, with no sync engine and no network.
 createRoot(document.getElementById('root')!).render(
-  <SyncScope syncUserId="rig-user" runEngine={false}>
+  <SyncScope accountId="rig-user" syncUserId="rig-user" runEngine={false}>
     <CompactLive sessionId={sessionId} />
   </SyncScope>,
 );

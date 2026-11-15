@@ -20,8 +20,11 @@ import type { TargetChoice } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createDictation, shouldDivert, type Dictation } from '@/core/voice/dictation';
 
-/** What the user sees when listening stopped because nothing was heard (v1.0.3). */
-export const IDLE_NOTICE = "Didn't catch a question. Press the microphone and speak.";
+/**
+ * What the user sees when listening stopped because nothing was heard (v1.0.3). ADR-0082: the same words
+ * after the microphone button and after the voice question's shortcut.
+ */
+export const IDLE_NOTICE = "Didn't catch a question. Try again and speak your question.";
 
 /** Receives a dictated question and the chat mode it was spoken in. */
 export type DictationHandler = (text: string, target: TargetChoice) => void;

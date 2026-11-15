@@ -504,31 +504,23 @@ function start(): void {
       overlayAction: (action) => {
         if (compact) overlayShortcut(compact, action);
       },
-      // During a call the overlay opens its chat box, and the main window stays where it is;
-      // otherwise the main window opens the Ask Kite page.
+      // During a call with the overlay up, the call's page opens Ask AI in its own window (1.6.4); with the
+      // call window in front, its message box takes the question; otherwise the main window opens Ask Kite.
       showForAskKite: () => {
         const overlay = compact?.window();
         // v1.0.4: a hidden overlay means the full call window is in front: its message box takes
         // the typing (the page handles the shortcut too), so the overlay stays hidden.
-        if (overlay?.isVisible()) {
-          overlay.show();
-          overlay.focus();
-          return;
-        }
+        // 1.6.4 (ADR-0082): the overlay has no message box any more; the call's page opens Ask AI in its
+        // own window, so nothing is brought up here and the meeting keeps the keyboard.
+        if (overlay?.isVisible()) return;
         if (!mainWindow) {
           mainWindow = createMainWindow(config, '/ask-kite');
           return;
         }
         bringForward(mainWindow);
       },
-      // v1.1.0: the Chat shortcut from another app gives the overlay the keyboard, for typing.
-      showForChat: () => {
-        const overlay = compact?.window();
-        if (overlay?.isVisible()) {
-          overlay.show();
-          overlay.focus();
-        }
-      },
+      // 1.6.4 (ADR-0082): Ctrl+Shift+Space is the voice question, so it no longer gives the overlay the
+      // keyboard (v1.1.0 to 1.6.3 it did, for typing in the chat box): the meeting keeps it.
       allowedOrigin: config.allowedOrigin,
     });
     // The compact live window and screen-share protection (Day 5); the shell remembers the

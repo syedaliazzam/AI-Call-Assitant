@@ -1,6 +1,8 @@
 /**
  * File: apps/web/src/core/storage/wipe.ts
- * Purpose: "Delete all local data": deletes Kite's whole IndexedDB database on this device
+ * Purpose: "Delete all local data": deletes the signed-in account's own IndexedDB database on this
+ *          device (the database the page uses, core/storage/db.ts; other accounts' databases and the old
+ *          shared 'kite' one are not touched)
  *          (sessions, documents, transcripts, answers, notes, the Resume and Document
  *          libraries, Ask Kite chats, and the default preferences in the settings store) and reports how much was removed.
  * Used by: the Settings page (Day 3 Stage 3)

@@ -8,16 +8,21 @@
  *          here is merged, keeping those changes). Every write they make is marked as coming from
  *          the server, so it is not sent back.
  * Used by: src/core/sync/client.ts (when to run them); tests
- * Depends on: dexie, @kite/shared (sync types and limits), src/core/storage/db.ts,
+ * Depends on: dexie, @kite/shared (sync types and limits), src/core/storage/{db,accountScope}.ts,
  *             src/core/sync/{capture,events,mapping,outbox,prefs,size}.ts
+ *
+ * Privacy fix of 14 Nov 2026: every request names the page's account (ACCOUNT_HEADER), and
+ * rereadAccountPrefs() brings the account's preferences back after an account switch on this device.
  * Architecture: ADR-0049
  *
  * Logs carry counts only, never ids or record content.
  */
 import {
+  ACCOUNT_HEADER,
   SYNC_ID_PATTERN,
   SYNC_LIMITS,
   SYNC_PULL_OVERLAP_MS,
+  type SyncKind,
   type SyncOp,
   type SyncOpResult,
   type SyncPulledRecord,
@@ -25,6 +30,7 @@ import {
   type SyncPushResponse,
 } from '@kite/shared';
 import type { Table } from 'dexie';
+import { currentAccountId } from '../storage/accountScope';
 import type { KiteDb } from '../storage/db';
 import { markRemote, OUTBOX_STORE } from './capture';
 import { notifySyncApplied } from './events';
@@ -48,6 +54,22 @@ export interface SyncTransport {
   push(ops: SyncOp[], options?: { keepalive?: boolean }): Promise<SyncPushResponse>;
   /** GET /api/sync/pull. */
   pull(since: number, after: string | null): Promise<SyncPullResponse>;
+  /**
+   * GET /api/sync/record: one of the account's records, or null when the account has none. Optional:
+   * only rereadAccountPrefs() uses it, and test transports without it skip that step.
+   */
+  record?(kind: SyncKind, id: string): Promise<SyncPulledRecord | null>;
+}
+
+/**
+ * The headers every sync request carries: the account this page was opened for, so the server refuses
+ * the request when another account has signed in since (ACCOUNT_HEADER; privacy fix of 14 Nov 2026).
+ *
+ * @returns The headers (none outside a signed-in page).
+ */
+function accountHeaders(): Record<string, string> {
+  const accountId = currentAccountId();
+  return accountId ? { [ACCOUNT_HEADER]: accountId } : {};
 }
 
 /** A sync route answered with an error status. */
@@ -70,7 +92,7 @@ export const httpTransport: SyncTransport = {
   async push(ops, options) {
     const response = await fetch('/api/sync/push', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...accountHeaders() },
       body: JSON.stringify({ ops }),
       // keepalive lets a push sent while the page closes finish (its body must stay under 64 KB).
       keepalive: options?.keepalive ?? false,
@@ -81,11 +103,48 @@ export const httpTransport: SyncTransport = {
   async pull(since, after) {
     const query = new URLSearchParams({ since: String(since) });
     if (after) query.set('after', after);
-    const response = await fetch(`/api/sync/pull?${query.toString()}`);
+    const response = await fetch(`/api/sync/pull?${query.toString()}`, {
+      headers: accountHeaders(),
+    });
     if (!response.ok) throw new SyncHttpError(response.status);
     return (await response.json()) as SyncPullResponse;
   },
+  async record(kind, id) {
+    const query = new URLSearchParams({ kind, id });
+    const response = await fetch(`/api/sync/record?${query.toString()}`, {
+      headers: accountHeaders(),
+    });
+    // 404: the account has no such record (for 'prefs': never changed, so every default applies).
+    if (response.status === 404) return null;
+    if (!response.ok) throw new SyncHttpError(response.status);
+    return (await response.json()) as SyncPulledRecord;
+  },
 };
+
+/**
+ * Reads the account preferences again from the account, after an account switch on this browser
+ * profile removed the previous account's values from localStorage (core/storage/accountScope.ts). A
+ * normal pull would not bring them back: it only brings records changed since this cache's last pull.
+ * A preferences change that waited in this cache is dropped first, because its values were the ones
+ * removed (sending it would overwrite the account's values with the defaults).
+ *
+ * @param db        The account's cache.
+ * @param transport The server; a transport without record() does nothing.
+ * @returns True when the account's values are now in localStorage (or the account has none).
+ * @throws SyncHttpError or a network error (the caller tries again at the next start).
+ * Called from: client.ts (start of account sync, when accountPrefsWereReset()); tests
+ */
+export async function rereadAccountPrefs(db: KiteDb, transport: SyncTransport): Promise<boolean> {
+  if (!transport.record) return false;
+  await db.syncMeta.delete('prefs');
+  const pulled = await transport.record('prefs', 'account');
+  // No record, or a deleted one: nothing set, so the defaults (the keys stay removed).
+  if (pulled && !pulled.deleted && pulled.record) writeAccountPrefs(pulled.record);
+  if (pulled) {
+    await remote(db, () => db.syncRevs.put({ ref: PREFS_REF, rev: pulled.rev }));
+  }
+  return true;
+}
 
 /**
  * The tables a sync write touches: every synced store and the bookkeeping.

@@ -8,9 +8,11 @@
  *          shell itself. The page turns them on for a live call and off at End
  *          (`kite:set-hotkeys`, from the Kite origin only); they are also released when the app
  *          quits. A shortcut another app already uses is reported back, so the page can say which
- *          one, and Settings can check them all before a call (`kite:check-hotkeys`). The chat bar's
- *          screenshot shortcut (v1.2.0, spec S14) is held only while the bar is open. Click-through
- *          (v1.3.2, ADR-0061: Ctrl+Alt+X) goes to the page like the script bar.
+ *          one, and Settings can check them all before a call (`kite:check-hotkeys`). Click-through
+ *          (v1.3.2, ADR-0061: Ctrl+Alt+X) goes to the page like the script bar. 1.6.4 (ADR-0082): the
+ *          screenshot and voice question (Ctrl+Alt+Enter), Clear answers, Clear transcript, previous / next
+ *          answer and the zoom keys are held for the whole call too, and Escape only while a voice question
+ *          listens.
  * Used by: src/main.ts (installHotkeys)
  * Depends on: electron (globalShortcut, ipcMain types), @kite/shared (DEFAULT_GLOBAL_HOTKEYS,
  *             HOTKEY_ACTIONS, HotkeyStatus), src/channels.ts
@@ -18,16 +20,17 @@
  *               Stage 8
  *
  * Why only during a call: a global shortcut takes its keys away from every other app while it
- * is registered (Electron docs). Ctrl+Backspace / Ctrl+← / Ctrl+→ edit text everywhere, so they
- * are never global (the page handles them while Kite has focus).
+ * is registered (Electron docs). Ctrl+Backspace / Ctrl+← / Ctrl+→ edit text everywhere: until 1.6.3 they
+ * were never global; from 1.6.4 (ADR-0082, the developer's choice for ParakeetAI parity) they are held
+ * during a call only, and released at End.
  * Electron's register() returns false, silently, when another app already holds a shortcut.
  */
 import {
   ASK_KITE_HOTKEY,
   DEFAULT_GLOBAL_HOTKEYS,
   GLOBAL_HOTKEYS,
-  SCREENSHOT_SEND_HOTKEY,
   TRANSCRIPT_HOTKEY,
+  VOICE_CANCEL_HOTKEY,
   type CallHotkey,
   type GlobalHotkey,
   type HotkeyStatus,
@@ -38,6 +41,7 @@ import {
   CHECK_HOTKEYS_CHANNEL,
   HOTKEY_CHANNEL,
   SET_HOTKEYS_CHANNEL,
+  VOICE_CANCEL_HOTKEY_CHANNEL,
 } from './channels';
 
 /** The global shortcuts and what they do. */
@@ -49,12 +53,21 @@ export interface HotkeyController {
    */
   enable(): HotkeyStatus[];
   /**
-   * Holds or releases the chat bar's screenshot shortcut (only during a call).
+   * The screenshot and voice question's shortcut (Ctrl+Alt+Enter). 1.6.4 (ADR-0082): held for the whole call
+   * with the others, so this only reports it; a page that still asks (every page does, for the shells from
+   * 1.2.0 to 1.6.3) changes nothing.
    *
-   * @param on True while the chat bar is open.
-   * @returns Whether it could be registered, when turning it on; otherwise null.
+   * @param on True to ask for it.
+   * @returns Its status during a call when asked for; otherwise null.
    */
   setChatSend(on: boolean): HotkeyStatus | null;
+  /**
+   * Holds or releases Escape while a voice question listens (1.6.4, ADR-0082; only during a call).
+   *
+   * @param on True while a voice question listens.
+   * @returns Whether it could be registered, when turning it on; otherwise null.
+   */
+  setVoiceCancel(on: boolean): HotkeyStatus | null;
   /** Releases every shortcut this controller registered. */
   disable(): void;
   /** True while the shortcuts are on. */
@@ -99,36 +112,21 @@ export function createHotkeys(
   let registered: string[] = [];
   let on = false;
   let statuses: HotkeyStatus[] = [];
-  /** The chat bar's screenshot shortcut, while it is held. */
-  let chatSend: HotkeyStatus | null = null;
+  /** 1.6.4 (ADR-0082): Escape, while a voice question listens. */
+  let voiceCancel: HotkeyStatus | null = null;
 
-  /** Releases the chat bar's screenshot shortcut, if held. */
-  const releaseChatSend = () => {
-    if (chatSend?.registered) globalShortcut.unregister(SCREENSHOT_SEND_HOTKEY);
-    chatSend = null;
+  /** Releases Escape, if held. */
+  const releaseVoiceCancel = () => {
+    if (voiceCancel?.registered) globalShortcut.unregister(VOICE_CANCEL_HOTKEY);
+    voiceCancel = null;
   };
 
   const disable = () => {
     for (const accelerator of registered) globalShortcut.unregister(accelerator);
     registered = [];
     on = false;
-    releaseChatSend();
-  };
-
-  /**
-   * Registers the chat bar's screenshot shortcut.
-   *
-   * @returns Whether it could be registered.
-   */
-  const holdChatSend = (): HotkeyStatus => {
-    let ok = false;
-    try {
-      ok = globalShortcut.register(SCREENSHOT_SEND_HOTKEY, () => send('screenshot-send'));
-    } catch {
-      // An accelerator the OS cannot register at all counts as unavailable.
-      ok = false;
-    }
-    return { action: 'screenshot-send', accelerator: SCREENSHOT_SEND_HOTKEY, registered: ok };
+    // Escape never outlives the call.
+    releaseVoiceCancel();
   };
 
   /**
@@ -159,14 +157,27 @@ export function createHotkeys(
     disable,
     enabled: () => on,
     setChatSend(wanted) {
+      if (!wanted || !on) return null;
+      return statuses.find((status) => status.action === 'screenshot-send') ?? null;
+    },
+    setVoiceCancel(wanted) {
       if (!wanted) {
-        releaseChatSend();
+        releaseVoiceCancel();
         return null;
       }
-      // Only during a call: a late message after End must not take the keys from other apps.
+      // Only during a call: a late message after End must not take Escape from other apps.
       if (!on) return null;
-      if (!chatSend) chatSend = holdChatSend();
-      return chatSend;
+      if (!voiceCancel) {
+        let ok = false;
+        try {
+          ok = globalShortcut.register(VOICE_CANCEL_HOTKEY, () => send('voice-cancel'));
+        } catch {
+          // An accelerator the OS cannot register at all counts as unavailable.
+          ok = false;
+        }
+        voiceCancel = { action: 'voice-cancel', accelerator: VOICE_CANCEL_HOTKEY, registered: ok };
+      }
+      return voiceCancel;
     },
     enableAskKite() {
       let ok = false;
@@ -186,13 +197,6 @@ export function createHotkeys(
     },
     check() {
       const always = askKite ? [askKite] : [];
-      // Tried for a moment unless it is already held, so Settings can report a clash before a call.
-      const tryChatSend = () => {
-        if (chatSend) return chatSend;
-        const tried = holdChatSend();
-        if (tried.registered) globalShortcut.unregister(SCREENSHOT_SEND_HOTKEY);
-        return tried;
-      };
       // Never held: tried for a moment and released straight away.
       const tryTranscript = (): HotkeyStatus => {
         let ok = false;
@@ -205,10 +209,11 @@ export function createHotkeys(
         if (ok) globalShortcut.unregister(TRANSCRIPT_HOTKEY);
         return { action: 'transcript', accelerator: TRANSCRIPT_HOTKEY, registered: ok };
       };
-      if (on) return [...statuses, tryChatSend(), tryTranscript(), ...always];
+      // 1.6.4 (ADR-0082): Ctrl+Alt+Enter is one of the call shortcuts, so it is in the statuses.
+      if (on) return [...statuses, tryTranscript(), ...always];
       const found = enable();
       disable();
-      return [...found, tryChatSend(), tryTranscript(), ...always];
+      return [...found, tryTranscript(), ...always];
     },
   };
 }
@@ -247,8 +252,6 @@ export interface HotkeyDeps {
   overlayAction?: (action: GlobalHotkey) => void;
   /** Brings up the window where Ask Kite will open (ADR-0030). Optional in tests. */
   showForAskKite?: () => void;
-  /** Gives the overlay the keyboard for the Chat shortcut (v1.1.0). Optional in tests. */
-  showForChat?: () => void;
   /** The Kite origin. */
   allowedOrigin: string;
 }
@@ -267,7 +270,6 @@ export function installHotkeys(deps: HotkeyDeps): HotkeyController {
     else {
       // The page has to be in view for Ask Kite: main.ts brings up the right window first.
       if (action === 'ask-kite') deps.showForAskKite?.();
-      if (action === 'chat') deps.showForChat?.();
       deps.sendToPage(HOTKEY_CHANNEL, action);
     }
   });
@@ -284,6 +286,13 @@ export function installHotkeys(deps: HotkeyDeps): HotkeyController {
       throw new Error('Hotkeys can only be changed by the Kite page');
     }
     controller.setChatSend(on === true);
+  });
+  // 1.6.4 (ADR-0082): Escape while a voice question listens.
+  deps.ipcMain.handle(VOICE_CANCEL_HOTKEY_CHANNEL, (event, on: unknown) => {
+    if (!isKiteSender(event, deps.allowedOrigin)) {
+      throw new Error('Hotkeys can only be changed by the Kite page');
+    }
+    controller.setVoiceCancel(on === true);
   });
   deps.ipcMain.handle(SET_HOTKEYS_CHANNEL, (event, on: unknown) => {
     if (!isKiteSender(event, deps.allowedOrigin)) {

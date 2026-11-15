@@ -114,13 +114,13 @@ describe('lastEndedCall', () => {
 });
 
 describe('the first card (1.6.1)', () => {
-  it('opens on the Start card of the session the browser’s Start named, else on the sessions', () => {
-    expect(initialLauncherView('abc')).toEqual({ kind: 'start', sessionId: 'abc' });
+  it('opens on the Connect card of the session the browser’s Start named, else on the sessions (ADR-0082: no Start card)', () => {
+    expect(initialLauncherView('abc')).toEqual({ kind: 'connect', sessionId: 'abc' });
     expect(initialLauncherView(undefined)).toEqual({ kind: 'sessions' });
   });
 
   it('keeps the chosen card while the link’s session can be started (also while the list loads)', () => {
-    const start = { kind: 'start', sessionId: 'abc' } as const;
+    const start = { kind: 'connect', sessionId: 'abc' } as const;
     expect(shownLauncherView(start, 'abc', 'ok')).toEqual(start);
     // Another session's card is never affected by the link's session.
     const other = { kind: 'connect', sessionId: 'xyz' } as const;
@@ -128,8 +128,8 @@ describe('the first card (1.6.1)', () => {
   });
 
   it('goes back to the sessions only when the link’s session is gone or not in the account', () => {
-    const start = { kind: 'start', sessionId: 'abc' } as const;
+    const start = { kind: 'connect', sessionId: 'abc' } as const;
     expect(shownLauncherView(start, 'abc', 'missing')).toEqual({ kind: 'sessions' });
-    // ADR-0073: an ended session starts again, so its link keeps the Start card ('ok').
+    // ADR-0073: an ended session starts again, so its link keeps the Connect card ('ok').
   });
 });

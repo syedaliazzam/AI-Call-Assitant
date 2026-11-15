@@ -56,6 +56,11 @@ export interface ShellSettings {
    */
   overlayBarsWidth?: number;
   /**
+   * 1.6.4 (ADR-0082): set once the overlay has taken the new default size (a third of the display's width;
+   * panels up to half its height). Its value is the version of that default (OVERLAY_DEFAULT_SIZE_VERSION).
+   */
+  overlayDefaultSized?: number;
+  /**
    * v1.3.0 (ADR-0056): the overlay's last position (one of the six) on each display, by display id. The
    * overlay opens there on that display.
    */
@@ -175,6 +180,9 @@ export function createStore(file: string): ShellStore {
       if (raw.overlayBarsWidened === true) settings.overlayBarsWidened = true;
       if (typeof raw.overlayBarsWidth === 'number' && Number.isFinite(raw.overlayBarsWidth)) {
         settings.overlayBarsWidth = raw.overlayBarsWidth;
+      }
+      if (typeof raw.overlayDefaultSized === 'number' && Number.isFinite(raw.overlayDefaultSized)) {
+        settings.overlayDefaultSized = raw.overlayDefaultSized;
       }
       if (typeof raw.deviceId === 'string' && raw.deviceId.length <= 64)
         settings.deviceId = raw.deviceId;

@@ -33,7 +33,7 @@ test('an account without the switch sees no change', async ({ browser }) => {
     await expect(page.getByRole('heading', { name: 'Call Sessions' })).toBeAttached();
     await page.waitForTimeout(3_000);
     await expect(
-      page.getByRole('region', { name: "Add this computer's data to your account" }),
+      page.getByRole('region', { name: "Add this account's unsynced data from this computer" }),
     ).toHaveCount(0);
     await page.goto(`${PRODUCTION_URL}/help`);
     await expect(page.getByRole('region', { name: 'Your account and your data' })).toHaveCount(0);

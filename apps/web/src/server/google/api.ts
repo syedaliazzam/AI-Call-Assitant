@@ -28,6 +28,7 @@ import 'server-only';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import {
+  ACCOUNT_HEADER,
   DRIVE_NOTIFICATIONS_SHOWN,
   MAX_ALSO_NOTIFY,
   MAX_EMAIL_CHARS,
@@ -316,7 +317,8 @@ interface Context {
  * @param route   The route's name, for the log.
  * @param options post: check Origin; limit: which rate limit counts it.
  * @param run     The handler.
- * @returns Its response, or 401, 403, 429, 503 (key or Google), 500.
+ * @returns Its response, or 401, 403, 409 (the page was opened for another account), 429, 503 (key or
+ *          Google), 500.
  */
 async function withUser(
   request: Request,
@@ -332,6 +334,14 @@ async function withUser(
   if (user === 'signed-out') return failure(401, 'unauthorized', 'Sign in required');
   if (user === 'password')
     return failure(403, 'password_change_required', 'Change your password first');
+  // Privacy fix of 14 Nov 2026: a window left open from before a sign-out and a sign-in as someone else
+  // names its own account (ACCOUNT_HEADER); its calls must never go to the new account's Drive folder or
+  // email. No header: an older page, checked by the session alone as before. The log names no account.
+  const named = request.headers.get(ACCOUNT_HEADER);
+  if (named && named !== user.id) {
+    console.warn(`drive: ${route} refused, page opened for another account`);
+    return failure(409, 'account_changed', 'Another account signed in. Reload the page.');
+  }
   if (!deps.limits[options.limit].allow(`${route}:${user.id}`)) {
     return failure(429, 'too_many', 'Too many requests. Wait a minute and try again.');
   }

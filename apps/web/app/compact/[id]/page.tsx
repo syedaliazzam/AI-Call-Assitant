@@ -37,8 +37,13 @@ export default async function CompactRoute({ params }: CompactRouteProps) {
   const { user } = await requireUser();
   const { id } = await params;
   return (
-    // ADR-0049: the overlay uses the same data as the call window; that window does the syncing.
-    <SyncScope syncUserId={syncEnabledFor(user.id) ? user.id : null} runEngine={false}>
+    // ADR-0049: the overlay uses the same data as the call window (the same account's own database,
+    // accountId); that window does the syncing.
+    <SyncScope
+      accountId={user.id}
+      syncUserId={syncEnabledFor(user.id) ? user.id : null}
+      runEngine={false}
+    >
       {/* v1.3.2: the user's own transcript turns show this name. */}
       <AccountNameProvider name={user.name}>
         <CompactLive sessionId={id} email={user.email} />

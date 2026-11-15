@@ -385,6 +385,14 @@ export interface Platform {
   setChatHotkey(on: boolean): void;
 
   /**
+   * ADR-0082: holds Escape from any app while a voice question listens, where the shell can (desktop
+   * 1.6.4). Nothing happens in a browser or an older shell (Escape then works while the page has focus).
+   *
+   * @param on True while a voice question listens.
+   */
+  setVoiceCancelHotkey(on: boolean): void;
+
+  /**
    * Minimises the main window when a call starts in the overlay. Nothing happens in a browser
    * (a web page cannot minimise its window).
    */

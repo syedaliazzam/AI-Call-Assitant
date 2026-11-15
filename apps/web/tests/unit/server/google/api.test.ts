@@ -12,7 +12,8 @@
  *   the completion need that ticket; a file that does not verify (size, MD5, tag) goes to the bin; the
  *   page's small files are uploaded by the server (MD5 checked, at most 4 MB);
  * - notify links only Drive ids the company token finds with this account's tag;
- * - POSTs from another site are refused; signed-out is 401; the routes are rate-limited;
+ * - POSTs from another site are refused; signed-out is 401; the routes are rate-limited; a page opened for
+ *   another account (ACCOUNT_HEADER, privacy fix of 14 Nov 2026) is refused with 409;
  * - one email per call: a repeated notify sends nothing; without SMTP settings it is "not-set-up"; switched
  *   off it is "off"; a failed email can be retried, with a new Message-ID; the test email goes to the
  *   signed-in person only and is rate-limited;
@@ -23,7 +24,7 @@
  *   tried again by itself an hour later (never an older call's).
  */
 import { createHash } from 'node:crypto';
-import { DRIVE_SCOPE, type DriveNotifyRequest } from '@kite/shared';
+import { ACCOUNT_HEADER, DRIVE_SCOPE, type DriveNotifyRequest } from '@kite/shared';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   handleCallback,
@@ -906,6 +907,25 @@ describe('test email', () => {
     expect(f.mail[0]!.subject).toBe('Paramount AI test email');
     expect((await handleTestEmail(post('/api/drive/test-email', {}), d)).status).toBe(429);
     expect(f.mail).toHaveLength(1);
+  });
+
+  it('refuses a page opened for another account (privacy fix of 14 Nov 2026): 409, nothing sent', async () => {
+    const f = fakes();
+    // A window of Bob's, still open after Alice signed in on the same browser profile.
+    const stale = new Request(`${SITE}/api/drive/test-email`, {
+      method: 'POST',
+      headers: { origin: SITE, 'content-type': 'application/json', [ACCOUNT_HEADER]: BOB },
+      body: '{}',
+    });
+    const refused = await handleTestEmail(stale, deps(ALICE, f, { email: true }));
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ code: 'account_changed' });
+    expect(f.mail).toHaveLength(0);
+    const status = await handleStatus(
+      new Request(`${SITE}/api/google/status`, { headers: { [ACCOUNT_HEADER]: BOB } }),
+      deps(ALICE, f),
+    );
+    expect(status.status).toBe(409);
   });
 
   it('says why it failed, refuses other sites, and needs SMTP settings', async () => {

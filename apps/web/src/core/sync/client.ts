@@ -10,14 +10,20 @@
  *          another window of this app (the overlay) without asking the server anything.
  * Used by: src/features/sync/SyncScope.tsx (start/stop), src/features/live/LivePage.tsx (End),
  *          src/core/storage/wipe.ts (Delete all my data)
- * Depends on: dexie, src/core/storage/{db,wipe}.ts, src/core/sync/{engine,capture,foreground,prefsSignal}.ts
+ * Depends on: dexie, src/core/storage/{db,wipe,accountScope}.ts,
+ *             src/core/sync/{engine,capture,foreground,prefsSignal}.ts
  * Architecture: ADR-0049
  */
 import Dexie from 'dexie';
-import { DB_NAME, getDb, usingAccountDatabase } from '../storage/db';
+import {
+  accountPrefsWereReset,
+  clearAccountPrefsReset,
+  currentAccountId,
+} from '../storage/accountScope';
+import { getDb, localAccountDbName, usingAccountDatabase } from '../storage/db';
 import { deleteAllLocalData, type DeletedCounts } from '../storage/wipe';
 import { onLocalChange } from './capture';
-import { httpTransport, pullAll, pushOnce, type SyncTransport } from './engine';
+import { httpTransport, pullAll, pushOnce, rereadAccountPrefs, type SyncTransport } from './engine';
 import { answerStreaming, whenNoAnswerStreams } from './foreground';
 import { onAccountPrefChange } from './prefsSignal';
 
@@ -269,7 +275,17 @@ export function startAccountSync(options: SyncClientOptions = {}): () => void {
     },
   };
   running = state;
-  void pull().then(() => schedule(0));
+  // After an account switch on this browser profile the account's preferences were removed from
+  // localStorage (core/storage/accountScope.ts): read them from the account first, before any push
+  // could send the defaults in their place. Offline or failed: tried again at the next start.
+  const prefsFirst = accountPrefsWereReset()
+    ? rereadAccountPrefs(getDb(), transport)
+        .then((done) => {
+          if (done) clearAccountPrefsReset();
+        })
+        .catch(() => console.warn('sync: preferences not read yet'))
+    : Promise.resolve();
+  void prefsFirst.then(() => pull()).then(() => schedule(0));
   return state.stop;
 }
 
@@ -310,8 +326,10 @@ export function accountSyncRunning(): boolean {
 
 /**
  * Deletes everything this account has synced, on the server (so on every device signed in to it),
- * then this device's cache and this device's own pre-sync data ('kite'). The server step comes first:
- * when it fails, nothing is deleted and the error is thrown.
+ * then this device's cache and this account's own local data from before account sync
+ * ('kite-l-<id>'). The server step comes first: when it fails, nothing is deleted and the error is
+ * thrown. The old shared database 'kite' is never deleted here: its owner cannot be proven, so it may
+ * hold another person's data (privacy fix of 14 Nov 2026).
  *
  * @param transport The server (tests pass a fake).
  * @returns How many rows this device's cache had.
@@ -323,7 +341,8 @@ export async function deleteAllAccountData(
 ): Promise<DeletedCounts> {
   await transport.push([{ op: 'deleteAll' }]);
   const counts = await deleteAllLocalData();
-  // This device's data from before account sync: the same person asked for everything to go.
-  await Dexie.delete(DB_NAME);
+  // This account's own local data from before account sync: the same person asked for everything to go.
+  const accountId = currentAccountId();
+  if (accountId) await Dexie.delete(localAccountDbName(accountId));
   return counts;
 }

@@ -27,6 +27,7 @@ import { BrowserCallLayout } from '@/features/live/BrowserCallLayout';
 import { LiveCallLayout } from '@/features/live/LiveCallLayout';
 import { TranscriptStrip } from '@/features/live/TranscriptStrip';
 import type { AnswerStore } from '@/features/live/useLiveAnswers';
+import { callNoticeFor } from '@/core/live/callNotice';
 import { Sidebar } from '@/ui/Sidebar';
 
 /** The session id the rig uses (the overlay page is /compact/<this>). */
@@ -234,6 +235,10 @@ function CallRig() {
       copy={async () => undefined}
       onAnswerThis={setBridge}
       dictation={dictation}
+      // ADR-0082 visual check: ?notice=them-silent shows the "can't hear the other side" notice.
+      {...(new URLSearchParams(window.location.search).get('notice') === 'them-silent'
+        ? { callNotice: callNoticeFor({ silent: 'them', backlog: 'ok', platform: 'desktop' }) }
+        : {})}
       topBarSlot={slot}
       slimTopBar={browserLayout}
     />

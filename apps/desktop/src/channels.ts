@@ -126,6 +126,9 @@ export const OVERLAY_MOVE_CHANNEL = 'kite:overlay-move';
 /** v1.2.0 (spec S14): holds or releases the chat bar's screenshot shortcut. */
 export const CHAT_HOTKEY_CHANNEL = 'kite:chat-hotkey';
 
+/** 1.6.4 (ADR-0082): holds or releases Escape while a voice question listens. */
+export const VOICE_CANCEL_HOTKEY_CHANNEL = 'kite:voice-cancel-hotkey';
+
 /** 1.5.0 (ADR-0068): open a recording's files (invoke; a RecordingOpenRequest, answers RecordingOpenResult). */
 export const RECORDING_OPEN_CHANNEL = 'kite:recording-open';
 

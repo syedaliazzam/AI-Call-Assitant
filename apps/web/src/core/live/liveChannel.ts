@@ -147,6 +147,11 @@ export interface CompactRecording {
   parts: number;
   /** A short notice (Private turned on, low disk, a stop or failure), or null. */
   notice: string | null;
+  /**
+   * ADR-0082: true when "Everyone on the call has agreed to be recorded" was ticked at Connect for this call:
+   * the Rec pill then starts recording at once, without asking again. Absent (older pages): it asks.
+   */
+  consented?: boolean;
 }
 
 /** Everything the overlay shows. */
@@ -205,10 +210,6 @@ export interface CompactState {
   language?: string;
   /** v1.1.0: whether Kite answers finished questions by itself in this call. */
   autoAnswer?: boolean;
-  /** v1.1.0: grows each time the Chat shortcut is pressed, so the overlay opens its input. */
-  chatCount?: number;
-  /** v1.2.0: grows each time the chat bar's screenshot shortcut is pressed in another app. */
-  screenshotSendCount?: number;
   /** v1.1.0: "Still in a call?" (ask) or listening paused (paused); ADR-0044. */
   hygiene?: 'ok' | 'ask' | 'paused';
   /** v1.1.0: true to show the one-time "Use headphones" hint (ADR-0044). */
@@ -245,7 +246,9 @@ export interface SimpleCommand {
    * 'headphones-seen': the hint was closed. Desktop 1.5.0 (ADR-0068): 'record-stop': stop recording
    * (after the Stop question); 'record-notice-seen': the recording notice was closed; 'record-prompt':
    * Ctrl+Alt+R pressed while the overlay had focus (the bars then ask Start or Stop). ADR-0076 (G4):
-   * 'hotkey-settings': open Settings at Hotkeys (the Answer shortcut is held by another app).
+   * 'hotkey-settings': open Settings at Hotkeys (the Answer shortcut is held by another app). ADR-0082:
+   * 'clear' clears the answers on screen (Ctrl+Backspace, the answer panel's Clear); 'voice-cancel': Escape
+   * while a voice question listens.
    */
   type:
     | 'answer'
@@ -264,7 +267,19 @@ export interface SimpleCommand {
     | 'record-stop'
     | 'record-notice-seen'
     | 'record-prompt'
-    | 'hotkey-settings';
+    | 'hotkey-settings'
+    | 'voice-cancel';
+}
+
+/**
+ * ADR-0082: a voice question, from the overlay's own key handling (Ctrl+Shift+Space, or Ctrl+Alt+Enter for
+ * the screenshot first). Pressed while one listens, it cancels.
+ */
+export interface VoiceCommand {
+  /** Command type. */
+  type: 'voice';
+  /** True to take a screenshot first and send it with the spoken question. */
+  screenshot: boolean;
 }
 
 /** Answers one transcript bubble, from the overlay's transcript panel (v1.1.0). */
@@ -417,6 +432,7 @@ export type CompactCommand =
   | ScriptBarCommand
   | ClickThroughCommand
   | DictateCommand
+  | VoiceCommand
   | AnswerThisCommand
   | LanguageCommand
   | AutoAnswerCommand
@@ -573,6 +589,9 @@ export function isCommand(value: unknown): value is CompactCommand {
   ) {
     return typeof (value as { on?: unknown }).on === 'boolean';
   }
+  if (command.type === 'voice') {
+    return typeof (value as { screenshot?: unknown }).screenshot === 'boolean';
+  }
   if (command.type === 'answer-this') {
     return typeof (value as { groupId?: unknown }).groupId === 'string';
   }
@@ -609,6 +628,7 @@ export function isCommand(value: unknown): value is CompactCommand {
     'record-notice-seen',
     'record-prompt',
     'hotkey-settings',
+    'voice-cancel',
   ].includes(command.type);
 }
 

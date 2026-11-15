@@ -1,22 +1,21 @@
 /**
  * File: apps/web/src/features/live/overlay/ControlBar.tsx
  * Purpose: Bar 1 of the call bars (spec S13): the screen-audio and microphone icons, each with its ▾;
- *          Answer, Screenshot and Chat with their key-caps; the Transcript pill with its on/off switch
- *          (ADR-0055: it opens and closes the transcript panel, as the live words do); desktop 1.5.0
- *          (ADR-0068): the Rec pill after the Transcript pill, where the app can record; 1.6.3 (ADR-0075):
- *          the Auto answer toggle; then move and compact, the call timer, ⋮ and Exit (red; web 9 Nov 2026:
- *          one press ends the call). The bar is the window's drag handle; its buttons opt out.
+ *          the Transcript pill with its on/off switch (ADR-0055: it opens and closes the transcript panel,
+ *          as the level button does); desktop 1.5.0 (ADR-0068): the Rec pill after the Transcript pill,
+ *          where the app can record; 1.6.3 (ADR-0075): the Auto answer toggle; ADR-0082: the Click-through
+ *          toggle (as Ctrl+Alt+X), where clicks can pass; then move and compact, the call timer, ⋮ and Exit
+ *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer, Screenshot or Chat buttons
+ *          (their shortcuts still work). The bar is the window's drag handle; its buttons opt out.
  *
  *          1.6.3 (ADR-0075): ⋮ and Exit are pinned on the right and never leave the window. When the bar
  *          has too little room, the left side gives way one step at a time, measured rather than guessed
- *          (the Rec pill, Auto answer and Click-through change its width): first the key-caps (Rec's,
- *          then Screenshot's and Chat's, then Answer's), then the words "Transcript" and "Click-through
- *          on" and the timer's clock, then the word "Auto", and only then do Answer, Screenshot and
- *          Chat become icons (so the default 980 px window keeps their words, at any UI zoom up to
- *          130 %); after that things go: the Transcript pill (the live words and Ctrl+Alt+T open the
- *          transcript too), the move icon (the whole bar drags), and the timer last (only a
- *          picture-in-picture window is that narrow). Every control names itself and its shortcut in
- *          BarTooltip.tsx ("Answer · Ctrl+Enter").
+ *          (the Rec pill, Auto answer and Click-through change its width): first Rec's key-cap, then the
+ *          words "Transcript" and "Click-through" and the timer's clock, then the word "Auto"; after that
+ *          things go: the Transcript pill (the level button and Ctrl+Alt+T open the transcript too), the
+ *          move icon (the whole bar drags), and the timer last (only a picture-in-picture window is that
+ *          narrow). Every control names itself and its shortcut in BarTooltip.tsx ("Click-through: Off ·
+ *          Ctrl+Alt+X").
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys), lucide-react, react-dom (flushSync), src/core/live/liveChannel.ts,
  *             ./parts.tsx, ./RecordControls.tsx, ./BarTooltip.tsx, src/features/live/callClock.ts,
@@ -26,7 +25,7 @@
 'use client';
 
 import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
-import { Camera, Clock, ScrollText } from 'lucide-react';
+import { Clock, MousePointerClick, ScrollText } from 'lucide-react';
 import {
   useEffect,
   useLayoutEffect,
@@ -40,7 +39,6 @@ import { callClock } from '@/features/live/callClock';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import {
   BoltIcon,
-  ChatIcon,
   ChevronDownIcon,
   CollapseIcon,
   ExpandIcon,
@@ -48,18 +46,9 @@ import {
   MicIcon,
   MonitorIcon,
   MoveIcon,
-  SparkIcon,
 } from '@/ui/icons';
 import { BarTooltip } from './BarTooltip';
-import {
-  BUTTON_BASE,
-  CHEVRON_BUTTON,
-  ICON_BUTTON,
-  KeyChip,
-  PILL,
-  StatusIcon,
-  tipShortcut,
-} from './parts';
+import { BUTTON_BASE, CHEVRON_BUTTON, ICON_BUTTON, PILL, StatusIcon, tipShortcut } from './parts';
 import { RecPill } from './RecordControls';
 import { usePrivateOffWhileRecording } from '../PrivateOffWarning';
 
@@ -88,10 +77,6 @@ export interface ControlBarProps {
   deviceList: DeviceList | null;
   /** Opens or closes a device list. */
   onDeviceList: (list: DeviceList | null) => void;
-  /** Whether the chat bar is open. */
-  chatOpen: boolean;
-  /** Opens or closes the chat bar. */
-  onChatOpen: (open: boolean) => void;
   /** The ⋮ button: a click on it is not a click outside the menu. */
   menuButton: RefObject<HTMLButtonElement | null>;
   /**
@@ -104,10 +89,11 @@ export interface ControlBarProps {
   /** Opens or closes the transcript panel (remembered with the panels). */
   onTranscript?: (open: boolean) => void;
   /**
-   * v1.3.2: turns Click-through off from the "Click-through on" indicator, shown while it is on (the bars
-   * still take clicks, so the mouse can always turn it off).
+   * ADR-0082: turns Click-through on or off from its toggle on this bar (v1.3.2 to 1.6.3 an indicator showed
+   * only while it was on). Absent where clicks cannot pass (a browser, an older shell): no toggle then. The
+   * bars always take clicks, so the mouse can always turn it off again.
    */
-  onClickThroughOff?: () => void;
+  onClickThrough?: (on: boolean) => void;
   /** Desktop 1.5.0 (ADR-0068): whether the Rec pill's popover is open. */
   recordOpen?: boolean;
   /** Desktop 1.5.0: opens or closes the Rec pill's popover. */
@@ -125,22 +111,16 @@ export interface ControlBarProps {
 const FIT = {
   /** From here: no key-cap on the Rec pill. */
   noRecKey: 1,
-  /** From here: no key-caps on Screenshot and Chat either. */
-  noShotChatKeys: 2,
-  /** From here: no key-cap on Answer either. */
-  noKeys: 3,
-  /** From here: the Transcript pill's word and "Click-through on" give way to icons; no clock icon. */
-  noWords: 4,
+  /** From here: the Transcript and Click-through toggles' words give way to icons; no clock icon. */
+  noWords: 2,
   /** From here: Auto answer is its bolt only. */
-  iconAuto: 5,
-  /** From here: Answer, Screenshot and Chat are icons. */
-  iconPills: 6,
-  /** From here: no Transcript pill (the live words' level button and Ctrl+Alt+T open the transcript). */
-  noTranscript: 7,
+  iconAuto: 3,
+  /** From here: no Transcript pill (the status bar's level button and Ctrl+Alt+T open the transcript). */
+  noTranscript: 4,
   /** From here: no move icon (the whole bar still drags the window). */
-  noMove: 8,
+  noMove: 5,
   /** From here: no call timer (a narrow picture-in-picture window only). */
-  noTimer: 9,
+  noTimer: 6,
 } as const;
 
 /** The last step. */
@@ -265,6 +245,71 @@ function AutoAnswerToggle({
       <span
         aria-hidden="true"
         className={`size-1.5 shrink-0 rounded-full ${word ? '' : 'absolute right-1 top-1'} ${on ? 'bg-ui-indicator' : 'bg-ui-muted opacity-60'}`}
+      />
+    </button>
+  );
+}
+
+/** Ctrl+Alt+X: Click-through on or off (v1.3.2). */
+const CLICK_THROUGH_ACCELERATOR = DEFAULT_GLOBAL_HOTKEYS['click-through'];
+
+/**
+ * ADR-0082: Click-through on bar 1, as Ctrl+Alt+X and the ⋮ menu: a pointer and "Click-through", with a
+ * dot that is lit while it is on. While on, every click and key outside the bars goes to the app behind
+ * the overlay; the bars still take clicks, so this toggle can always turn it off.
+ *
+ * @param props.on       True while Click-through is on.
+ * @param props.disabled True before the live page answers.
+ * @param props.word     False to show the pointer only.
+ * @param props.mac      True on macOS (the shortcut's name).
+ * @param props.onToggle Turns it on or off.
+ * @returns The toggle.
+ * Rendered by: ControlBar
+ */
+function ClickThroughToggle({
+  on,
+  disabled,
+  word,
+  mac,
+  onToggle,
+}: {
+  /** True while Click-through is on. */
+  on: boolean;
+  /** True before the live page answers. */
+  disabled: boolean;
+  /** False to show the pointer only. */
+  word: boolean;
+  /** True on macOS (the shortcut's name). */
+  mac: boolean;
+  /** Turns it on or off. */
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label="Click-through"
+      aria-keyshortcuts={hotkeyLabel(CLICK_THROUGH_ACCELERATOR, mac)}
+      data-tip={tipText(
+        on
+          ? 'Click-through: On (clicks outside the bars go to the app behind)'
+          : 'Click-through: Off (turn on to click the app behind the overlay)',
+        CLICK_THROUGH_ACCELERATOR,
+        mac,
+      )}
+      data-click-through={on ? 'on' : 'off'}
+      className={`${word ? `${PILL} gap-1.5` : `${ICON_BUTTON} relative`} ${on ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : 'text-ui-muted'}`}
+      onClick={onToggle}
+      disabled={disabled}
+    >
+      <span aria-hidden="true" className={`inline-flex ${on ? 'text-ui-accent' : ''}`}>
+        <MousePointerClick size={15} />
+      </span>
+      {word && 'Click-through'}
+      <span
+        aria-hidden="true"
+        className={`size-1.5 shrink-0 rounded-full ${word ? '' : 'absolute right-1 top-1'} ${on ? 'bg-ui-accent-fill' : 'bg-ui-muted opacity-60'}`}
       />
     </button>
   );
@@ -477,7 +522,7 @@ export function ControlBar(props: ControlBarProps) {
   const ended = !state || state.ended;
   const autoOn = state?.autoAnswer ?? false;
   const recording = state?.recording && props.onRecord ? state.recording : null;
-  const clickThroughOn = (state?.clickThrough ?? false) && props.onClickThroughOff !== undefined;
+  const clickThroughOn = (state?.clickThrough ?? false) && props.onClickThrough !== undefined;
 
   const bar = useRef<HTMLDivElement>(null);
   // What changes the left side's width on a re-render; a change starts the fitting again.
@@ -486,6 +531,7 @@ export function ControlBar(props: ControlBarProps) {
     privateOff.visible,
     autoOn,
     clickThroughOn,
+    props.onClickThrough !== undefined,
     props.onTranscript !== undefined,
     collapsed,
     onIcon !== undefined,
@@ -493,15 +539,7 @@ export function ControlBar(props: ControlBarProps) {
   ].join('|');
   const { step, room, content } = useFitStep(fitKey);
   const recKey = step < FIT.noRecKey;
-  const shotChatKeys = step < FIT.noShotChatKeys;
-  const keys = step < FIT.noKeys;
   const words = step < FIT.noWords;
-  const pillWords = step < FIT.iconPills;
-
-  const answerKey = DEFAULT_GLOBAL_HOTKEYS.answer;
-  const shotKey = DEFAULT_GLOBAL_HOTKEYS.screenshot;
-  const chatKey = DEFAULT_GLOBAL_HOTKEYS.chat;
-  const shotName = state?.capturing ? 'Screenshot…' : 'Screenshot';
 
   return (
     <div
@@ -537,48 +575,8 @@ export function ControlBar(props: ControlBarProps) {
               onToggle={() => onDeviceList(deviceList === 'mic' ? null : 'mic')}
             />
           </span>
-          {pillWords && <span className="w-1 shrink-0" />}
+          <span className="w-1 shrink-0" />
 
-          <button
-            type="button"
-            className={pillWords ? PILL : ICON_BUTTON}
-            onClick={() => onCommand({ type: 'answer' })}
-            disabled={ended}
-            aria-label="Answer"
-            aria-keyshortcuts={hotkeyLabel(answerKey, mac)}
-            data-tip={tipText('Answer', answerKey, mac)}
-          >
-            {pillWords ? 'Answer' : <SparkIcon />}
-            {keys && <KeyChip hotkey="answer" />}
-          </button>
-          <button
-            type="button"
-            className={pillWords ? PILL : ICON_BUTTON}
-            onClick={() => onCommand({ type: 'screenshot' })}
-            disabled={ended || state.capturing}
-            aria-label={shotName}
-            aria-keyshortcuts={hotkeyLabel(shotKey, mac)}
-            data-tip={tipText(shotName, shotKey, mac)}
-          >
-            {pillWords ? shotName : <Camera aria-hidden="true" size={16} strokeWidth={1.75} />}
-            {shotChatKeys && <KeyChip hotkey="screenshot" />}
-          </button>
-          <button
-            type="button"
-            className={pillWords ? PILL : ICON_BUTTON}
-            aria-pressed={props.chatOpen}
-            onClick={() => {
-              if (collapsed) props.onCollapse(false);
-              props.onChatOpen(!props.chatOpen);
-            }}
-            disabled={ended}
-            aria-label="Chat"
-            aria-keyshortcuts={hotkeyLabel(chatKey, mac)}
-            data-tip={tipText('Chat', chatKey, mac)}
-          >
-            {pillWords ? 'Chat' : <ChatIcon />}
-            {shotChatKeys && <KeyChip hotkey="chat" />}
-          </button>
           {props.onTranscript && step < FIT.noTranscript && (
             <TranscriptPill
               open={props.transcriptOpen ?? false}
@@ -611,6 +609,15 @@ export function ControlBar(props: ControlBarProps) {
             word={step < FIT.iconAuto}
             onToggle={() => onCommand({ type: 'auto-answer', on: !autoOn })}
           />
+          {props.onClickThrough && (
+            <ClickThroughToggle
+              on={clickThroughOn}
+              disabled={!state}
+              word={words}
+              mac={mac}
+              onToggle={() => props.onClickThrough?.(!clickThroughOn)}
+            />
+          )}
         </div>
       </div>
 
@@ -661,24 +668,6 @@ export function ControlBar(props: ControlBarProps) {
             onClick={() => props.onCollapse(!collapsed)}
           >
             {collapsed ? <ExpandIcon /> : <CollapseIcon />}
-          </button>
-        )}
-        {clickThroughOn && (
-          // v1.3.2: says that clicks outside the bars go to the app behind; a click turns it off.
-          <button
-            type="button"
-            onClick={props.onClickThroughOff}
-            aria-label="Click-through on. Turn off"
-            aria-keyshortcuts={hotkeyLabel(DEFAULT_GLOBAL_HOTKEYS['click-through'], mac)}
-            data-tip={tipText(
-              'Click-through on: turn off',
-              DEFAULT_GLOBAL_HOTKEYS['click-through'],
-              mac,
-            )}
-            className="inline-flex h-6 shrink-0 items-center gap-1 rounded-full border border-ui-border px-2 text-[12px] font-medium text-ui-text hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] [-webkit-app-region:no-drag]"
-          >
-            <span aria-hidden="true" className="size-1.5 rounded-full bg-ui-accent-fill" />
-            {words && 'Click-through on'}
           </button>
         )}
         {step < FIT.noTimer && <CallTimer startedAt={state?.startedAt} clock={words} />}

@@ -3,17 +3,19 @@
  * Purpose: Harness test of the desktop launcher (ADR-0055) in Chromium, acting as desktop 1.3.0 with a
  *          fake window.kiteDesktop, for an invented account with account sync: the sessions card (all
  *          dashboard's session cards, the browser's first and highlighted, search and sort, ⋮ View in
- *          dashboard and Delete, Buy credits' toast, the bottom bar (ADR-0071), Call ended · View notes), the
- *          Start card (two tiles, Team, Buy credits only shows a toast, Back) and the Connect card
+ *          dashboard and Delete, the bottom bar (ADR-0071), Call ended · View notes) and the Connect card
  *          (tips and their links, no meter or status text, the speech model dialog, Connect asks the main
- *          window for the call and follows its answer). With KITE_SCREENSHOT_DIR it saves the cards at
+ *          window for the call and follows its answer). ADR-0082: Start and Start again go straight to the
+ *          Connect card (no "Start your session" Free / Paid card), there is no Buy credits button
+ *          anywhere, and where the app can record the Connect card has only the consent tick (no Record
+ *          choice), which never blocks Connect and is handed to the call for its Rec pill. With KITE_SCREENSHOT_DIR it saves the cards at
  *          560 × 720, the window size, for the visual pairs (tests/visual/v12-pairs.ts). 1.6.1: the
- *          browser's Start opens the session's Start card (cold start and a running app's reload), and
+ *          browser's Start opens the session's Connect card (cold start and a running app's reload), and
  *          Drive's reconnect notice sits above the list, never over the bottom bar, closed for the run.
  *          ADR-0073: an ended session starts again from the link (cold start and reload) and its card.
  * Used by: `pnpm --filter web test:launcher`
  * Depends on: @playwright/test, esbuild, @tailwindcss/postcss, tests/integration/harness/launcher.tsx
- * Architecture: ADR-0051, ADR-0055
+ * Architecture: ADR-0051, ADR-0055, ADR-0082
  */
 import { createServer, type Server } from 'node:http';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -150,8 +152,11 @@ test.afterEach(async () => {
 
 /**
  * Opens the harness in a fresh profile, as desktop 1.3.0.
+ *
+ * @param options.recording True for a shell that can record (desktop 1.5.0's recording methods, as
+ *                          stubs that do nothing), so the Connect card shows the consent tick.
  */
-async function open(): Promise<void> {
+async function open(options: { recording?: boolean } = {}): Promise<void> {
   context = await browser!.newContext({ viewport: WINDOW, deviceScaleFactor: 1.5 });
   page = await context.newPage();
   heldModel = [];
@@ -167,7 +172,7 @@ async function open(): Promise<void> {
       process.env.KITE_VISUAL_THEME,
     );
   }
-  await page.addInitScript(() => {
+  await page.addInitScript((recording) => {
     // A fresh profile shows the acceptable-use notice first; shell.spec covers it.
     localStorage.setItem('kite.hint.acceptableUse', 'seen');
     const state = {
@@ -199,8 +204,27 @@ async function open(): Promise<void> {
       },
       getShareProtection: async () => ({ on: false, scope: 'all', supported: true }),
       setShareProtection: async (on: boolean) => ({ on, scope: 'all', supported: true }),
+      // Desktop 1.5.0's recording methods (platform/recording.ts needs all of them); never called here.
+      ...(recording
+        ? Object.fromEntries(
+            [
+              'recordingOpen',
+              'recordingWrite',
+              'recordingClose',
+              'recordingList',
+              'recordingPlay',
+              'recordingSaveAs',
+              'recordingShowInFolder',
+              'recordingDelete',
+              'listDisplays',
+              'setRecordingDisplay',
+              'deviceIdentity',
+              'renameDevice',
+            ].map((name) => [name, async () => undefined]),
+          )
+        : {}),
     };
-  });
+  }, options.recording ?? false);
   await page.goto(origin);
   await page.waitForFunction(() => 'kiteLauncherHarness' in window);
   await page.evaluate(() => document.fonts.ready);
@@ -247,9 +271,10 @@ async function seedAndShow(fromBrowser?: number): Promise<string[]> {
 test('the sessions card: search and sort, the dashboard’s cards, the browser’s first, and the bottom bar', async () => {
   await open();
   const ids = await seedAndShow(0);
-  // 1.6.1: the browser's Start opens the session's Start card first; Back shows the sessions.
-  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
-  await page.getByRole('button', { name: 'Back' }).click();
+  // 1.6.1: the browser's Start opens the session's card first (ADR-0082: its Connect card); Back shows the
+  // sessions.
+  await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   const card = page.getByRole('region', { name: 'Your sessions' });
   await expect(card).toBeVisible();
   const cards = card.getByRole('list', { name: 'Sessions' }).getByRole('listitem');
@@ -264,21 +289,17 @@ test('the sessions card: search and sort, the dashboard’s cards, the browser�
   await expect(cards.nth(1)).toContainText('Not started yet');
   await expect(cards.nth(1)).toContainText('Interview');
   await expect(cards.nth(1).getByRole('button', { name: /^Start session/ })).toBeVisible();
-  // The frame: logo, Buy credits (ADR-0071: on this card too), compact, move, menu, close.
+  // The frame: logo, compact, move, menu, close (ADR-0082: no Buy credits).
   const header = page.getByRole('banner');
   await expect(header).toContainText('Paramount AI');
-  for (const name of ['Buy credits', 'Compact', 'Menu', 'Close']) {
+  for (const name of ['Compact', 'Menu', 'Close']) {
     await expect(header.getByRole('button', { name })).toBeVisible();
   }
+  await expect(page.getByRole('button', { name: /Buy credits/i })).toHaveCount(0);
   await expect(page.getByRole('tab')).toHaveCount(0);
   // The window asks for its size.
   expect(await page.evaluate(() => window.launcherDesktop.sizes)).toContainEqual(WINDOW);
   await shot('launcher-sessions-560');
-
-  // Buy credits only shows the toast: nothing opens.
-  await header.getByRole('button', { name: 'Buy credits' }).click();
-  await expect(page.getByRole('status')).toHaveText('Not needed, your team account is unlimited.');
-  expect(await page.evaluate(() => window.windowOpened)).toEqual([]);
 
   // The search filters as you type; the browser's session is not kept when it does not match.
   const search = page.getByRole('searchbox', { name: 'Search sessions' });
@@ -364,34 +385,70 @@ test('after a call: Call ended · View notes on top, opening the notes in the br
   expect(await page.evaluate(() => window.windowOpened)).toEqual([`${origin}/sessions/${ids[1]}`]);
 });
 
-test('the Start card: two tiles, Team, Buy credits only shows a toast, Back', async () => {
+test('ADR-0082: Start goes straight to the Connect card: no Free / Paid card and no Buy credits; Back', async () => {
   await open();
   await seedAndShow();
   await page
     .getByRole('button', { name: /^Start session/ })
     .first()
     .click();
-  await expect(page.getByRole('heading', { name: 'Start your session' })).toBeVisible();
-  await expect(page.getByText('Signed in as sam.lee@example.com')).toBeVisible();
-  const free = page.getByRole('region', { name: 'Free session' });
-  await expect(free).toContainText('Unlimited · Free');
-  await expect(free).toContainText('Paramount Intelligence team account.');
-  await expect(free).toContainText('Team');
-  const paid = page.getByRole('region', { name: 'Paid session' });
-  await expect(paid).toContainText('No limit · Included');
-  await expect(paid).toContainText('Your team account already includes everything.');
-  await shot('launcher-start-560');
-
-  // Both Buy credits buttons: a toast, nothing opened, nothing navigated.
-  await page.getByRole('banner').getByRole('button', { name: 'Buy credits' }).click();
-  await expect(page.getByRole('status')).toHaveText('Not needed, your team account is unlimited.');
-  await paid.getByRole('button', { name: 'Buy Credits' }).click();
-  await expect(page.getByRole('status')).toHaveText('Not needed, your team account is unlimited.');
+  await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Start your session' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Free session' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Paid session' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Buy credits|Start free/i })).toHaveCount(0);
+  // Back goes to the sessions (there is no card between them).
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Your sessions' })).toBeVisible();
   expect(await page.evaluate(() => window.windowOpened)).toEqual([]);
   expect(await page.evaluate(() => window.launcherDesktop.opened)).toEqual([]);
+});
 
-  await page.getByRole('button', { name: 'Back' }).click();
-  await expect(page.getByRole('region', { name: 'Your sessions' })).toBeVisible();
+test('ADR-0082: where the app can record, Connect has only the consent tick; it never blocks Connect and goes to the call', async () => {
+  await open({ recording: true });
+  const ids = await seedAndShow();
+  const newest = ids[2]!;
+  await page
+    .getByRole('button', { name: /^Start session/ })
+    .first()
+    .click();
+  await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
+  // No Record choice (Off / Audio only / Screen + audio) and no screen picker: Rec on the call bar records.
+  await expect(page.getByRole('combobox', { name: 'Record' })).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Screen to record' })).toHaveCount(0);
+  const consent = page.getByRole('checkbox', {
+    name: 'Everyone on the call has agreed to be recorded',
+  });
+  await expect(consent).not.toBeChecked();
+  await expect(page.getByText(/press Rec on the call bar/)).toBeVisible();
+  // Not ticked: Connect still works, and no consent goes to the call. The speech model is ready first
+  // (the held background load ends, then the harness marks the model as stored), as in the test below.
+  await expect.poll(() => heldModel.length).toBeGreaterThan(0);
+  for (const route of heldModel.splice(0)) await route.abort('internetdisconnected');
+  await page.evaluate(() => window.kiteLauncherHarness.fakeModelCached());
+  const connect = page.getByRole('button', { name: 'Connect', exact: true });
+  await expect(connect).toBeEnabled();
+  await connect.click();
+  await expect
+    .poll(() => page.evaluate(() => window.launcherDesktop.callWindows))
+    .toEqual([newest]);
+  expect(await page.evaluate(() => localStorage.getItem('kite-record-consent'))).toBeNull();
+  // The call fails to start (so the card stays); ticked, the consent goes with the next Connect.
+  await page.evaluate((id) => {
+    const channel = new BroadcastChannel('kite-call-start');
+    channel.postMessage({ type: 'status', sessionId: id, state: 'failed', message: 'Try again.' });
+    channel.close();
+  }, newest);
+  await expect(page.getByRole('alert')).toHaveText('Try again.');
+  await consent.check();
+  await connect.click();
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('kite-record-consent')))
+    .not.toBeNull();
+  const note = JSON.parse(
+    (await page.evaluate(() => localStorage.getItem('kite-record-consent')))!,
+  ) as { sessionId: string };
+  expect(note.sessionId).toBe(newest);
 });
 
 test('the Connect card: tips, no meter or status, no model dialog (background load), and the call start', async () => {
@@ -402,7 +459,7 @@ test('the Connect card: tips, no meter or status, no model dialog (background lo
     .getByRole('button', { name: /^Start session/ })
     .first()
     .click();
-  await page.getByRole('button', { name: 'Start free' }).click();
+  // ADR-0082: straight to the Connect card.
   await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
   await expect(
     page.getByText('Your session is ready. Connect to start transcribing.'),
@@ -484,7 +541,7 @@ test('the Connect card: tips, no meter or status, no model dialog (background lo
   await expect(page.getByRole('region', { name: 'Your sessions' })).toBeVisible();
 });
 
-test('1.6.1: the browser’s Start opens the Start card, with Drive’s reconnect notice never over the bottom bar', async () => {
+test('1.6.1: the browser’s Start opens the Connect card, with Drive’s reconnect notice never over the bottom bar', async () => {
   await open();
   const ids = await seedAndShow();
   // An upload waits for Google Drive to be reconnected (as after the switch to the team's project).
@@ -494,14 +551,13 @@ test('1.6.1: the browser’s Start opens the Start card, with Drive’s reconnec
     .filter({ hasText: 'Your calls are kept and will upload afterwards' });
   await expect(notice).toBeVisible();
 
-  // App closed (cold start): the panel loads /home?session=<id>; the Start card comes first, not
-  // blocked by the notice or the sessions card.
+  // App closed (cold start): the panel loads /home?session=<id>; the session's Connect card comes first
+  // (ADR-0082), not blocked by the notice or the sessions card.
   await page.evaluate((id) => window.kiteLauncherHarness.show(id), ids[0]);
-  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Paid session' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
 
   // Back: the notice sits above "Your sessions", and the bottom bar's buttons stay clickable.
-  await page.getByRole('button', { name: 'Back' }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(notice).toBeVisible();
   for (const name of [/View in Dashboard/, /Create session/]) {
     // A trial click fails when something covers the button.
@@ -517,10 +573,10 @@ test('1.6.1: the browser’s Start opens the Start card, with Drive’s reconnec
   await expect(notice).toHaveCount(0);
   await page.reload();
   await page.waitForFunction(() => 'kiteLauncherHarness' in window);
-  // App already open (second launch): the reloaded panel goes to the other session's Start card.
+  // App already open (second launch): the reloaded panel goes to the other session's Connect card.
   await page.evaluate((id) => window.kiteLauncherHarness.show(id), ids[2]);
-  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
-  await page.getByRole('button', { name: 'Back' }).click();
+  await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   const cards = page.getByRole('list', { name: 'Sessions' }).getByRole('listitem');
   await expect(cards.nth(0)).toContainText('From your browser');
   await expect(cards.nth(0)).toContainText('Copperfield Labs (invented)');
@@ -532,22 +588,19 @@ test('ADR-0073: an ended session starts again, from the browser’s link and fro
   const ids = await seedAndShow();
   await page.evaluate((id) => window.kiteLauncherHarness.endNow(id), ids[0]!);
 
-  // App closed (cold start): the browser's Start for the ended session opens its Start card.
+  // App closed (cold start): the browser's Start for the ended session opens its Connect card, as for
+  // a new session (ADR-0082: no Start card first).
   await page.evaluate((id) => window.kiteLauncherHarness.show(id), ids[0]);
-  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Paid session' })).toBeVisible();
-  // Free goes on to Connect, as for a new session.
-  await page.getByRole('button', { name: 'Start free' }).click();
   await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
 
   // App already open (a second launch reloads the panel): the same again.
   await page.reload();
   await page.waitForFunction(() => 'kiteLauncherHarness' in window);
   await page.evaluate((id) => window.kiteLauncherHarness.show(id), ids[0]);
-  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
 
   // The desktop card: an ended session has View transcript and Start again.
-  await page.getByRole('button', { name: 'Back' }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   const ended = page
     .getByRole('list', { name: 'Sessions' })
     .getByRole('listitem')
@@ -556,5 +609,5 @@ test('ADR-0073: an ended session starts again, from the browser’s link and fro
   await expect(ended.getByRole('button', { name: /View transcript/ })).toBeVisible();
   await shot('launcher-ended-card-560');
   await ended.getByRole('button', { name: /^Start again/ }).click();
-  await expect(page.getByRole('region', { name: 'Free session' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
 });

@@ -214,24 +214,29 @@ async function main(): Promise<void> {
   await paintBackdrop(overlay);
   await shot(overlay, 'bars-during-call');
 
-  await overlay.getByRole('button', { name: 'Chat' }).click();
-  await overlay.setViewportSize({ width: 680, height: 108 });
-  await shot(overlay, 'chat-input');
-  await overlay.getByRole('button', { name: 'Close chat' }).click();
+  // ADR-0082: no chat bar; Ctrl+Shift+Space is the voice question, shown on the status bar ("Listening…").
+  // Where the rig's live page has no dictation the bar stays as it is, and the picture shows that.
+  await overlay.locator('body').click({ position: { x: 2, y: 2 } });
+  await overlay.keyboard.press('Control+Shift+Space');
+  await overlay
+    .locator('[data-status="listening"]')
+    .waitFor({ timeout: 3_000 })
+    .catch(() => undefined);
+  await shot(overlay, 'voice-question');
+  await overlay.keyboard.press('Escape');
 
   await say(call, 'them', 'TELL ME ABOUT A TIME YOU LED A MIGRATION');
   await say(call, 'them', 'GRONK BLIMP SPROCKET WIBBLE FLANGE');
   await overlay.setViewportSize({ width: 680, height: 390 });
-  await overlay.getByRole('button', { name: 'Open the transcript', exact: true }).click();
+  await overlay.getByRole('button', { name: 'Show the transcript', exact: true }).click();
   await shot(overlay, 'transcript-panel');
   await overlay.getByRole('button', { name: 'Close the transcript' }).click();
 
   await overlay.setViewportSize({ width: 680, height: 452 });
   await say(call, 'them', 'HOW WOULD YOU DESIGN A VOICE AGENT FOR A HOSPITAL');
-  await overlay
-    .getByRole('button', { name: /^Answer/ })
-    .first()
-    .click();
+  // ADR-0082: no Answer button on the overlay; its key (Ctrl+Enter) with the overlay focused.
+  await overlay.locator('body').click({ position: { x: 2, y: 2 } });
+  await overlay.keyboard.press('Control+Enter');
   // At once: the mocked answer takes about a second.
   await overlay.getByRole('button', { name: 'Stop' }).waitFor({ timeout: 3_000 });
   await overlay.screenshot({ path: path.join(OUT, 'answer-thinking.png') });
@@ -240,7 +245,7 @@ async function main(): Promise<void> {
   await shot(overlay, 'answer-panel');
 
   await overlay.setViewportSize({ width: 680, height: 660 });
-  await overlay.getByRole('button', { name: 'Open the transcript', exact: true }).click();
+  await overlay.getByRole('button', { name: 'Show the transcript', exact: true }).click();
   await shot(overlay, 'both-panels');
   await overlay.getByRole('button', { name: 'Overlay menu' }).click();
   await shot(overlay, 'live-menu');
@@ -257,10 +262,9 @@ async function main(): Promise<void> {
   await overlay.emulateMedia({ colorScheme: 'dark' });
 
   await say(call, 'them', 'CAN YOU WRITE A FUNCTION THAT COUNTS VOWELS IN A STRING');
-  await overlay
-    .getByRole('button', { name: /^Answer/ })
-    .first()
-    .click();
+  // ADR-0082: no Answer button on the overlay; its key (Ctrl+Enter) with the overlay focused.
+  await overlay.locator('body').click({ position: { x: 2, y: 2 } });
+  await overlay.keyboard.press('Control+Enter');
   await overlay
     .getByLabel('Complexity')
     .waitFor({ timeout: 8_000 })

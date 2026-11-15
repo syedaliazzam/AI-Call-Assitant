@@ -28,14 +28,14 @@ function serverWith(pages: SyncPullResponse['records'][]): SyncTransport {
 }
 
 beforeEach(async () => {
-  selectAccountDatabase('user-livequery-test');
+  selectAccountDatabase('user-livequery-test', true);
   await getDb().delete();
   forgetDb();
 });
 
 afterEach(async () => {
   await getDb().delete();
-  selectAccountDatabase(null);
+  selectAccountDatabase(null, false);
   forgetDb();
 });
 

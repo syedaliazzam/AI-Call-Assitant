@@ -86,9 +86,21 @@ import type { Bounds, OverlayLayoutKey, ShellStore } from './store';
  * enough to sit above a meeting's video at the top centre. v1.2.0: 780 wide, which fits every key-cap on
  * bar 1 (spec S13); v1.3.0 (ADR-0055): 900, for the Transcript pill too; 1.5.0 (ADR-0068): 980, for the
  * Rec pill and its key-cap too (measured: bar 1 needs about 950 with it). The height is what a web app
- * before 1.1.0 gets.
+ * before 1.1.0 gets. 1.6.4 (ADR-0082): no longer the overlay's default size (overlayDefaultSize() is); the
+ * height is still what save() stores for a rolled-back web app.
  */
 export const COMPACT_DEFAULT_SIZE = { width: 980, height: 480 };
+
+/**
+ * 1.6.4 (ADR-0082): the overlay's default size as a share of the work area of the display it opens on: a
+ * third of its width, and up to half of its height with panels open (the height still follows what the
+ * panels show). Bar 1 no longer has Answer, Screenshot and Chat, and gives way step by step when narrow,
+ * with ⋮ and Exit always whole (ADR-0075).
+ */
+export const OVERLAY_DEFAULT_SHARE = { width: 1 / 3, height: 1 / 2 };
+
+/** 1.6.4 (ADR-0082): the version of the default size; a store with a lower one takes it once. */
+export const OVERLAY_DEFAULT_SIZE_VERSION = 164;
 
 /** v1.2.0 (spec S15): the window's width with both panels open, side by side, in DIPs. */
 export const OVERLAY_BOTH_WIDTH = 1080;
@@ -123,10 +135,11 @@ const MAX_POPUP_HEIGHT = 900;
 const MAX_CONTENT_HEIGHT = 8_000;
 
 /**
- * The overlay's smallest size, in DIPs (v1.0.3: 560 wide, the narrowest that still shows the
- * key hints on Answer, Screenshot and Chat).
+ * The overlay's smallest size, in DIPs (v1.0.3: 560 wide, the narrowest that still showed the key hints on
+ * Answer, Screenshot and Chat). 1.6.4 (ADR-0082): 440, so a third of a 1366-wide laptop screen fits; bar 1
+ * has no Answer, Screenshot and Chat buttons any more, and ⋮ and Exit always fit.
  */
-export const COMPACT_MIN_SIZE = { width: 560, height: 260 };
+export const COMPACT_MIN_SIZE = { width: 440, height: 260 };
 
 /** The overlay's height when collapsed to its controls bar, in DIPs (v1.1.0: 60 → 56, bar 1's own). */
 export const COMPACT_COLLAPSED_HEIGHT = 56;
@@ -173,9 +186,32 @@ export function compactUrl(kiteUrl: string, sessionId: unknown): string | null {
 }
 
 /**
- * The overlay at a preset place in a work area, at the default size (shrunk to fit a small
- * screen), 16 DIPs from the work area's edges (v1.3.0; 24 before). The taskbar is already outside the
- * work area.
+ * 1.6.4 (ADR-0082): the overlay's default size on a display: a third of its work area's width and half of
+ * its height, never below the smallest size and never beyond the work area.
+ *
+ * @param area The display's work area.
+ * @returns Width and height, in whole DIPs.
+ * Called from: presetBounds(), createCompactWindows() (open, applyLayout); tests
+ */
+export function overlayDefaultSize(area: Pick<Rectangle, 'width' | 'height'>): {
+  width: number;
+  height: number;
+} {
+  const width = Math.min(
+    area.width,
+    Math.max(COMPACT_MIN_SIZE.width, area.width * OVERLAY_DEFAULT_SHARE.width),
+  );
+  const height = Math.min(
+    area.height,
+    Math.max(OVERLAY_LAYOUT_MIN_HEIGHTS.answer, area.height * OVERLAY_DEFAULT_SHARE.height),
+  );
+  return { width: Math.round(width), height: Math.round(height) };
+}
+
+/**
+ * The overlay at a preset place in a work area, at the default size (1.6.4, ADR-0082: a third of the work
+ * area's width and half its height), 16 DIPs from the work area's edges (v1.3.0; 24 before). The taskbar is
+ * already outside the work area.
  *
  * @param preset Where.
  * @param area   The display's work area.
@@ -183,8 +219,7 @@ export function compactUrl(kiteUrl: string, sessionId: unknown): string | null {
  * Called from: restoreBounds(), createCompactWindows() (place); tests
  */
 export function presetBounds(preset: OverlayPreset, area: Rectangle): Bounds {
-  const width = Math.min(COMPACT_DEFAULT_SIZE.width, area.width);
-  const height = Math.min(COMPACT_DEFAULT_SIZE.height, area.height);
+  const { width, height } = overlayDefaultSize(area);
   return { ...presetPosition(preset, area, width, height), width, height };
 }
 
@@ -230,6 +265,8 @@ export function layoutKey(layout: Pick<OverlayLayout, 'transcript' | 'answer'>):
  * @param remembered  The height the user last gave this layout, if any.
  * @param available   The DIPs between the window's top and the bottom of the work area.
  * @param scale       The page's UI scale (default 1): the bars and the default heights grow with it.
+ * @param panelsDefault 1.6.4 (ADR-0082): the default height with panels open (half the work area, from
+ *                      overlayDefaultSize()); absent: the fixed OVERLAY_LAYOUT_HEIGHTS, as before.
  * @returns The height, in whole DIPs.
  * Called from: createCompactWindows(); tests
  */
@@ -239,10 +276,15 @@ export function layoutHeight(
   remembered: number | undefined,
   available: number,
   scale = 1,
+  panelsDefault?: number,
 ): number {
   // The bars-only height is exact, so it always follows the scale; a height the user chose stays.
   const base = key === 'bars' ? undefined : remembered;
-  const wanted = Math.max(base ?? OVERLAY_LAYOUT_HEIGHTS[key] * scale, popupHeight);
+  const byDefault =
+    key === 'bars' || panelsDefault === undefined
+      ? OVERLAY_LAYOUT_HEIGHTS[key] * scale
+      : Math.max(OVERLAY_LAYOUT_MIN_HEIGHTS[key] * scale, panelsDefault);
+  const wanted = Math.max(base ?? byDefault, popupHeight);
   return Math.round(Math.max(OVERLAY_LAYOUT_MIN_HEIGHTS.bars * scale, Math.min(wanted, available)));
 }
 
@@ -956,12 +998,16 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       deps.store.read().overlayHeights?.[key],
       bottomRow ? bounds.y + bounds.height - area.y : area.y + area.height - bounds.y,
       layout.scale,
+      // 1.6.4 (ADR-0082): with panels open, up to half the display's height by default.
+      overlayDefaultSize(area).height,
     );
     // v1.3.2: no taller than the bars and panels the page shows.
     const fitted = fittedHeight(height, layout.contentHeight, layout.popupHeight, layout.scale);
     let sideways = { x: bounds.x, width: bounds.width };
     if (key === 'both') {
-      const wanted = deps.store.read().overlayBothWidth ?? OVERLAY_BOTH_WIDTH * (layout.scale ?? 1);
+      // 1.6.4 (ADR-0082): no widening by default (the panels stack in the third-of-the-screen window); a
+      // width the user gave with both panels open still applies.
+      const wanted = deps.store.read().overlayBothWidth ?? bounds.width;
       sideways = widthAboutCentre(bounds, Math.max(wanted, narrow?.width ?? bounds.width), area);
       narrow ??= { width: bounds.width, shift: bounds.x - sideways.x };
     } else if (narrow !== null) {
@@ -1234,25 +1280,31 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       // v1.1.0: the place last used on this display, if any (its height follows the panels).
       const place = settings.overlayPlaces?.[String(deps.screen.getDisplayMatching(bounds)?.id)];
       if (place) Object.assign(bounds, place);
-      // v1.2.0: a place saved by 1.1.0 is too narrow for bar 1's key-caps; v1.3.0: one saved before the
-      // Transcript pill too; 1.5.0: before the Rec pill. Widened once per change, about its centre; a
-      // width chosen after this stays.
-      const widenedTo = settings.overlayBarsWidth ?? (settings.overlayBarsWidened ? 780 : 0);
-      if (widenedTo < COMPACT_DEFAULT_SIZE.width) {
-        if (bounds.width < COMPACT_DEFAULT_SIZE.width) {
-          Object.assign(
-            bounds,
-            widthAboutCentre(
-              bounds,
-              COMPACT_DEFAULT_SIZE.width,
-              deps.screen.getDisplayMatching(bounds)?.workArea ??
-                deps.screen.getPrimaryDisplay().workArea,
-            ),
-          );
-        }
+      // 1.6.4 (ADR-0082): once, the overlay takes the new default size on the display it opens on: a third
+      // of the width, about its centre, and the panels' heights and the both-panels width chosen before are
+      // forgotten (panels now default to half the display's height). (v1.2.0 to 1.6.3 widened a saved place
+      // once per bar 1 change instead, up to 980.) A size chosen after this stays.
+      if ((settings.overlayDefaultSized ?? 0) < OVERLAY_DEFAULT_SIZE_VERSION) {
+        const area =
+          deps.screen.getDisplayMatching(bounds)?.workArea ??
+          deps.screen.getPrimaryDisplay().workArea;
+        const size = overlayDefaultSize(area);
+        Object.assign(bounds, widthAboutCentre(bounds, size.width, area), { height: size.height });
+        // Taller than before: kept inside the display (a place low on the screen moves up).
+        bounds.y = Math.max(area.y, Math.min(bounds.y, area.y + area.height - bounds.height));
+        const display = deps.screen.getDisplayMatching(bounds);
         deps.store.write({
+          overlayDefaultSized: OVERLAY_DEFAULT_SIZE_VERSION,
           overlayBarsWidened: true,
-          overlayBarsWidth: COMPACT_DEFAULT_SIZE.width,
+          overlayBarsWidth: size.width,
+          overlayHeights: {},
+          overlayBothWidth: undefined,
+          compactBounds: { ...bounds },
+          // Places on other displays kept their old widths: they are dropped, and the positions still say
+          // where the overlay goes there.
+          overlayPlaces: display
+            ? { [String(display.id)]: { x: bounds.x, y: bounds.y, width: bounds.width } }
+            : {},
         });
       }
       // v1.3.0 (ADR-0056): the position last used on this display puts the window exactly there;

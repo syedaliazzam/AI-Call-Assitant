@@ -79,6 +79,31 @@ export interface RecPillProps {
 }
 
 /**
+ * ADR-0082: what a press on the Rec pill does. With "Everyone on the call has agreed to be recorded" ticked
+ * at Connect for this call, a press while off starts recording at once (the ⋮ menu's type, the picked
+ * display); otherwise it opens the Start or Stop question as before. Ctrl+Alt+R always asks.
+ *
+ * @param recording The recording's state.
+ * @param onCommand Sends a command to the live page.
+ * @param ask       Opens (or closes) the question.
+ * Called from: CompactView.tsx, TopBar.tsx; tests
+ */
+export function pressRecPill(
+  recording: Pick<CompactRecording, 'state' | 'consented' | 'kind' | 'displayId'>,
+  onCommand: (command: CompactCommand) => void,
+  ask: () => void,
+): void {
+  if (recording.state === 'off' && recording.consented === true) {
+    onCommand({
+      type: 'record-start',
+      displayId: recording.kind === 'screen' ? recording.displayId : null,
+    });
+    return;
+  }
+  ask();
+}
+
+/**
  * The Rec pill.
  * @param props See RecPillProps.
  * @returns The button.

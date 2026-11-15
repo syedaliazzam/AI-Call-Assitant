@@ -16,7 +16,6 @@
 import type { OverlayLayout, OverlayPreset, OverlayResizeStep } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { authClient } from '@/core/auth/authClient';
-import { isDoublePress } from '@/core/live/doublePress';
 import {
   openLiveChannel,
   type CompactLevels,
@@ -32,11 +31,12 @@ import {
   setOverlayPanels,
   type OverlayPanels,
 } from '@/core/storage/overlayPrefs';
+import { stepZoom } from '@/core/storage/appearancePrefs';
+import { isVoiceCancelKey } from '@/platform/keymap';
 import { useAppearance } from '@/features/appearance/useAppearance';
 import { usePrivate } from '@/features/privacy/usePrivate';
 import { getPlatform } from '@/platform';
 import { CompactView } from './CompactView';
-import type { ChatBarHandle } from './overlay/ChatBar';
 import { openDashboard } from '@/features/sync/dashboardLink';
 import { useSyncAccount } from '@/features/sync/SyncScope';
 import type { LevelStore } from './overlay/parts';
@@ -103,12 +103,14 @@ function createLevelStore(): LevelStore & {
 export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLiveProps) {
   // ADR-0051: with account sync, Dashboard ↗ and the rest open the web app in the browser.
   const synced = useSyncAccount() !== null;
+  // ADR-0082: for Ask AI from the overlay's own key handling (the handler is added once).
+  const syncedRef = useRef(synced);
+  useEffect(() => {
+    syncedRef.current = synced;
+  });
   const [state, setState] = useState<CompactState | null>(null);
   const [askedEmail, setAskedEmail] = useState<string | null>(null);
-  const chatBar = useRef<ChatBarHandle>(null);
-  const lastChatPress = useRef<number | null>(null);
   const { state: protection, change: changeProtection } = usePrivate();
-  const [chatOpen, setChatOpen] = useState(false);
   const [opacity, setOpacity] = useState(getOverlayOpacity);
   const [fade] = useState(getOverlayFade);
   const [panels, setPanels] = useState<OverlayPanels>(getOverlayPanels);
@@ -210,18 +212,15 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
   useEffect(() => {
     const target = root.current?.ownerDocument.defaultView;
     if (!target) return;
-    return getPlatform().listenForFocusedHotkeys(target, (action) => {
-      if (action === 'chat') {
-        // Pressed twice (spec S14): open, with the microphone on. Once: open or close.
-        const now = Date.now();
-        if (isDoublePress(lastChatPress.current, now)) {
-          setChatOpen(true);
-          if (stateRef.current?.dictationSupported) {
-            channel.current?.send({ type: 'dictate', on: true });
-          }
-        } else setChatOpen((open) => !open);
-        lastChatPress.current = now;
-      } else if (action === 'screenshot-send') chatBar.current?.screenshotSend();
+    const stopKeys = getPlatform().listenForFocusedHotkeys(target, (action) => {
+      // ADR-0082: the voice question, and the screenshot and voice question (the live page listens).
+      if (action === 'chat') channel.current?.send({ type: 'voice', screenshot: false });
+      else if (action === 'screenshot-send') {
+        channel.current?.send({ type: 'voice', screenshot: true });
+      } else if (action === 'zoom-in' || action === 'zoom-out' || action === 'zoom-reset') {
+        // ADR-0082: the ⋮ menu's Zoom, one step (every window follows the shared setting).
+        stepZoom(action);
+      } else if (action === 'voice-cancel') channel.current?.send({ type: 'voice-cancel' });
       else if (action === 'script-bar') {
         // Ctrl+Alt+S with the overlay focused: the live page holds the switch (v1.0.2).
         channel.current?.send({ type: 'script-bar', on: !(stateRef.current?.scriptBar ?? false) });
@@ -233,44 +232,26 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
           on: !(stateRef.current?.clickThrough ?? false),
         });
       } else if (action === 'ask-kite') {
-        channel.current?.send({ type: 'chat-target', target: 'kite' });
-        setChatOpen(true);
+        // ADR-0082: the overlay has no message box: Ask AI opens in its own window; the call goes on.
+        if (syncedRef.current) openDashboard('/ask-kite');
+        else getPlatform().openPagesWindow('/ask-kite');
       } else if (action === 'record') {
         // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R with the overlay focused: the bars ask Start or Stop.
         channel.current?.send({ type: 'record-prompt' });
       } else channel.current?.send({ type: action });
     });
+    // ADR-0082: Escape with the overlay focused cancels a voice question while it listens (a menu that is
+    // open closes first: CompactView's own Escape).
+    const onKey = (event: KeyboardEvent) => {
+      if (!isVoiceCancelKey(event) || !stateRef.current?.dictating) return;
+      channel.current?.send({ type: 'voice-cancel' });
+    };
+    target.addEventListener('keydown', onKey);
+    return () => {
+      stopKeys();
+      target.removeEventListener('keydown', onKey);
+    };
   }, []);
-
-  // The Ask Kite shortcut was pressed (the live page counts the presses, ADR-0030): open the box.
-  const askKiteCount = state?.askKiteCount ?? 0;
-  const [seenAskKite, setSeenAskKite] = useState(0);
-  if (askKiteCount !== seenAskKite) {
-    setSeenAskKite(askKiteCount);
-    if (askKiteCount > seenAskKite) setChatOpen(true);
-  }
-
-  // v1.1.0: likewise the Chat shortcut, pressed in another app.
-  const chatCount = state?.chatCount ?? 0;
-  const [seenChat, setSeenChat] = useState(0);
-  if (chatCount !== seenChat) {
-    setSeenChat(chatCount);
-    if (chatCount > seenChat) setChatOpen(true);
-  }
-
-  // v1.2.0: likewise the chat bar's screenshot shortcut. Nothing happens with the bar closed.
-  const screenshotSendCount = state?.screenshotSendCount ?? 0;
-  const seenScreenshotSend = useRef(0);
-  useEffect(() => {
-    if (screenshotSendCount > seenScreenshotSend.current) chatBar.current?.screenshotSend();
-    seenScreenshotSend.current = screenshotSendCount;
-  }, [screenshotSendCount]);
-
-  // v1.2.0: that shortcut is held from other apps only while the bar is open.
-  useEffect(() => {
-    getPlatform().setChatHotkey(chatOpen);
-    return () => getPlatform().setChatHotkey(false);
-  }, [chatOpen]);
 
   // The call ended: close this window shortly (the live page also asks the shell to close it).
   useEffect(() => {
@@ -291,9 +272,6 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
         protection={protection}
         mac={mac}
         email={email ?? askedEmail}
-        chatOpen={chatOpen}
-        onChatOpen={setChatOpen}
-        chatBar={chatBar}
         {...(iconMode
           ? { onMove: (dx: number, dy: number) => getPlatform().moveOverlay(dx, dy) }
           : {})}

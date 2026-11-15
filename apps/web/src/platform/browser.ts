@@ -521,6 +521,13 @@ export const browserPlatform: Platform = {
    */
   setChatHotkey(_on: boolean) {},
 
+  /**
+   * Nothing to do: a web page holds no global shortcuts (ADR-0082: Escape works while the page has focus).
+   *
+   * @param _on Ignored.
+   */
+  setVoiceCancelHotkey(_on: boolean) {},
+
   /** Nothing to do: a web page cannot minimise its window. */
   minimizeMainWindow() {},
 

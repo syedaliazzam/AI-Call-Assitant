@@ -1,24 +1,25 @@
 /**
  * File: apps/web/src/features/home/Launcher.tsx
  * Purpose: The desktop app's window for an account with account sync (ADR-0051, ADR-0055): the window
- *          frame and one card at a time: "Your sessions" → the session's Start card → its Connect card.
+ *          frame and one card at a time: "Your sessions" → the session's Connect card (ADR-0082: Start and
+ *          Start again go straight to Connect; the "Start your session" Free / Paid card is gone).
  *          Connect starts the call in the main window (core/live/callStart.ts), and the shell then
  *          hides this window until the call ends. Opened from the Start menu it shows the sessions; opened
  *          by the browser's Start (a paramountai://session link, /home?session=<id>) it goes straight to
- *          that session's Start card (1.6.1; also an ended one, ADR-0073), and Back shows the sessions
+ *          that session's Connect card (1.6.1; also an ended one, ADR-0073), and Back shows the sessions
  *          with it first, highlighted.
  *          Google Drive's notices sit above "Your sessions" (1.6.1). The acceptable-use notice, the accurate-transcription offer and the one-time
- *          upload of this computer's own data keep their places. Desktop 1.5.0 (ADR-0068): "Recording saved ·
+ *          upload of this account's own unsynced data (ADR-0082) keep their places. Desktop 1.5.0 (ADR-0068): "Recording saved ·
  *          Open in Meetings" after a call that recorded, and this computer's recordings brought up to date
- *          in the account (core/recording/reconcile.ts). ADR-0071: Buy credits in the header on every card,
- *          and each session card's answer count and Delete.
+ *          in the account (core/recording/reconcile.ts). ADR-0071: each session card's answer count and
+ *          Delete (ADR-0082: no Buy credits button any more).
  * Used by: src/features/home/HomePanel.tsx (accounts with account sync)
  * Depends on: next/navigation, src/core/storage (sessions.ts, answers.ts), src/core/stt/prefetch.ts,
  *             src/core/sync/client.ts,
  *             src/features/appearance/useAppearance, src/features/drive/DriveNotices.tsx,
  *             src/features/notices/AcceptableUseNotice.tsx,
  *             src/features/sync/LegacyUploadCard.tsx, src/platform, ./AccurateDownload.tsx,
- *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx, ./LauncherStart.tsx,
+ *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx,
  *             ./RecordingSavedNotice.tsx, src/core/recording (handoff.ts, reconcile.ts)
  * Architecture: ADR-0051, ADR-0052, ADR-0055, ADR-0068, ADR-0071
  *
@@ -45,7 +46,6 @@ import { LauncherConnect } from './LauncherConnect';
 import { RecordingSavedNotice } from './RecordingSavedNotice';
 import { reconcileRecordings } from '@/core/recording/reconcile';
 import { watchRecordingSaved } from '@/core/recording/handoff';
-import { LauncherStart } from './LauncherStart';
 
 /** Props for Launcher. */
 export interface LauncherProps {
@@ -62,15 +62,15 @@ export type LauncherView =
       kind: 'sessions';
     }
   | {
-      /** A session's Start card, or its Connect card. */
-      kind: 'start' | 'connect';
+      /** A session's Connect card (ADR-0082: there is no Start card before it any more). */
+      kind: 'connect';
       /** The session. */
       sessionId: string;
     };
 
 /**
  * The card the launcher opens on (1.6.1): the browser's Start button (a paramountai://session link, which
- * the shell turns into /home?session=<id>) goes straight to that session's Start card, Free or Paid;
+ * the shell turns into /home?session=<id>) goes straight to that session's Connect card (ADR-0082);
  * otherwise "Your sessions".
  *
  * @param fromBrowserId The session the link named, if any.
@@ -78,7 +78,7 @@ export type LauncherView =
  * Called from: Launcher; tests
  */
 export function initialLauncherView(fromBrowserId: string | undefined): LauncherView {
-  return fromBrowserId ? { kind: 'start', sessionId: fromBrowserId } : { kind: 'sessions' };
+  return fromBrowserId ? { kind: 'connect', sessionId: fromBrowserId } : { kind: 'sessions' };
 }
 
 /**
@@ -251,14 +251,7 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
   const toSessions = () => setView({ kind: 'sessions' });
 
   return (
-    <DesktopFrame
-      email={email}
-      theme={theme}
-      resolved={resolved}
-      zoom={zoom}
-      // ADR-0071: on every card, the sessions card too.
-      buyCredits
-    >
+    <DesktopFrame email={email} theme={theme} resolved={resolved} zoom={zoom}>
       <AcceptableUseNotice />
       {view.kind === 'sessions' ? (
         <LauncherSessions
@@ -273,23 +266,18 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
           onDelete={async (session) => {
             await deleteSession(session.id);
           }}
-          onOpen={(session) => setView({ kind: 'start', sessionId: session.id })}
+          // ADR-0082: Start / Start again go straight to Connect (the audio source).
+          onOpen={(session) => setView({ kind: 'connect', sessionId: session.id })}
           notices={
             <>
               {/* 1.6.1: Drive's notices in the card's flow, never over the bottom bar. */}
               <DriveNotices placement="inline" />
               {recordingSaved && <RecordingSavedNotice onClose={() => setRecordingSaved(false)} />}
               <AccurateDownload />
-              {/* ADR-0049: offers once to add this computer's own data to the account. */}
+              {/* ADR-0049, ADR-0082: offers once to add this account's own unsynced data to it. */}
               <LegacyUploadCard compact />
             </>
           }
-        />
-      ) : view.kind === 'start' ? (
-        <LauncherStart
-          email={email}
-          onStartFree={() => setView({ kind: 'connect', sessionId: view.sessionId })}
-          onBack={toSessions}
         />
       ) : (
         <LauncherConnect
@@ -298,7 +286,7 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
           saveTranscript={
             sessions?.find((session) => session.id === view.sessionId)?.saveTranscript ?? true
           }
-          onBack={() => setView({ kind: 'start', sessionId: view.sessionId })}
+          onBack={toSessions}
           // The call runs: the shell hides this window; when it comes back after End, the sessions
           // card shows "Call ended · View notes".
           onConnected={toSessions}
