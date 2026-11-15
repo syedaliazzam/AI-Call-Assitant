@@ -30,7 +30,7 @@ export interface DevicePickerProps {
 
 /** The look of the list. */
 const LIST =
-  'k-overlay-menu absolute top-[calc(100%+6px)] z-30 flex max-h-[calc(100vh-3.75rem)] w-72 flex-col gap-1.5 overflow-y-auto rounded-menu border border-ui-border p-2 text-[13px] text-ui-text shadow-modal [-webkit-app-region:no-drag]';
+  'k-overlay-menu absolute top-[calc(100%+6px)] z-30 flex max-h-[calc(100vh/var(--k-zoom,1)-3.75rem)] w-72 flex-col gap-1.5 overflow-y-auto rounded-menu border border-ui-border p-2 text-[13px] text-ui-text shadow-modal [-webkit-app-region:no-drag]';
 
 /**
  * The list.

@@ -4,12 +4,15 @@
  * question listening, a channel that hears nothing with its device list, the Answer key held elsewhere,
  * Private off in a screen recording, the other call notices, the voice question's notice, the answers'
  * notice, the headphones hint), and nothing (the live words) when there is none or the call ended.
+ * ADR-0085: Private off during a call without a recording is an amber line with Turn on, after the
+ * call's own notices.
  */
 import { describe, expect, it } from 'vitest';
 import type { CompactState } from '@/core/live/liveChannel';
 import {
   HEADPHONES_TEXT,
   LISTENING_TEXT,
+  PRIVATE_OFF_CALL_TEXT,
   SILENT_TEXT,
   statusMessage,
 } from '@/features/live/overlay/statusLine';
@@ -146,5 +149,29 @@ describe('statusMessage', () => {
       tone: 'muted',
       detail: 'Close busy apps.',
     });
+  });
+
+  it('ADR-0085: Private off during a call: an amber line with Turn on, after the call notices', () => {
+    expect(statusMessage(QUIET, false, true)).toEqual({
+      key: 'private-off-call',
+      text: PRIVATE_OFF_CALL_TEXT,
+      tone: 'warning',
+      action: { kind: 'private', label: 'Turn on' },
+    });
+    // The recording warning comes first; a call notice too.
+    expect(statusMessage({ ...QUIET, recording: undefined }, true, true)?.key).toBe('private-off');
+    expect(
+      statusMessage(
+        {
+          ...QUIET,
+          callNotice: { kind: 'catching-up', text: 'Catching up', detail: 'Close busy apps.' },
+        },
+        false,
+        true,
+      )?.key,
+    ).toBe('call-notice');
+    // Not after the call ended; not with Private on.
+    expect(statusMessage({ ...QUIET, ended: true }, false, true)).toBeNull();
+    expect(statusMessage(QUIET, false, false)).toBeNull();
   });
 });

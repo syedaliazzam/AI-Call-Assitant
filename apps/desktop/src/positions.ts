@@ -57,9 +57,9 @@ function along(
  *
  * @param preset The position.
  * @returns Its column.
- * Called from: positionPlace(), jumpPosition()
+ * Called from: positionPlace(), jumpPosition(); src/windows.ts (zoomedWidth, ADR-0085); tests
  */
-function columnOf(preset: OverlayPreset): 'start' | 'middle' | 'end' {
+export function columnOf(preset: OverlayPreset): 'start' | 'middle' | 'end' {
   if (preset.endsWith('left')) return 'start';
   if (preset.endsWith('right')) return 'end';
   return 'middle';

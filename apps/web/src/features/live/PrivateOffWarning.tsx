@@ -91,11 +91,7 @@ export function PrivateOffWarning({
         data-private-off-warning=""
         {...(barsAttribute ? { [barsAttribute]: '' } : {})}
       >
-        <span
-          role="alert"
-          className="min-w-0 flex-1 truncate text-ui-warning"
-          title={PRIVATE_OFF_TEXT}
-        >
+        <span role="alert" className="min-w-0 flex-1 truncate text-ui-warning">
           {PRIVATE_OFF_TEXT}
         </span>
         <button

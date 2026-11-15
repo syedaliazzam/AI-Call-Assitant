@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/features/live/overlay/TranscriptPanel.tsx
  * Purpose: The transcript panel (spec S15): on top the overlay's status bar (ADR-0082, StatusBar.tsx: the
- *          level button, language, the line with the call's messages, Clear and collapse), and the bubbles below: oldest at the top, newest at the bottom, following the newest unless the
+ *          level button, the line with the call's messages, Clear and collapse), and the bubbles below: oldest at the top, newest at the bottom, following the newest unless the
  *          reader has scrolled up, when "Scroll to bottom" shows. You on the right, the other person on
  *          the left, each with who and when under the words.
  * Used by: src/features/live/CompactView.tsx
@@ -14,7 +14,7 @@
  */
 'use client';
 
-import { useMemo, type RefObject } from 'react';
+import { useMemo } from 'react';
 import type { CompactCommand, CompactGroup, CompactState } from '@/core/live/liveChannel';
 import { TranscriptBubbles } from '@/features/live/TranscriptBubbles';
 import { useAccountName } from '@/features/shell/AccountName';
@@ -42,18 +42,14 @@ export interface TranscriptPanelProps {
   levels?: LevelStore | undefined;
   /** The text size chosen in the menu. */
   fontScale: number;
-  /** Whether the language list is open. */
-  languagesOpen: boolean;
-  /** Opens or closes the language list. */
-  onLanguagesOpen: (open: boolean) => void;
-  /** The language list's element, so the window can grow to fit it. */
-  languagesRef?: RefObject<HTMLUListElement | null>;
   /** ADR-0082: opens a device list (a status message's button). */
   onList: (list: 'audio' | 'mic') => void;
   /** ADR-0082: true while a screen recording runs with Private off. */
   privateOff: boolean;
   /** ADR-0082: turns Private back on. */
   onPrivateOn: () => void;
+  /** ADR-0085: true while Private is off during the call. */
+  privateOffInCall?: boolean;
 }
 
 /**
@@ -98,11 +94,9 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
         onList={props.onList}
         privateOff={props.privateOff}
         onPrivateOn={props.onPrivateOn}
+        privateOffInCall={props.privateOffInCall ?? false}
         mac={mac}
         levels={props.levels}
-        languagesOpen={props.languagesOpen}
-        onLanguagesOpen={props.onLanguagesOpen}
-        {...(props.languagesRef ? { languagesRef: props.languagesRef } : {})}
       />
       {/* v1.3.2: as tall as the turns, up to the panel's height; then it scrolls (data-scroll: the overlay
           measures how tall it would be, to fit the window to it). */}
@@ -113,7 +107,10 @@ export function TranscriptPanel(props: TranscriptPanelProps) {
           aria-label="Live transcript"
           aria-live="polite"
           data-scroll=""
-          className="min-h-0 flex-auto overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2"
+          // ADR-0085: room for the scrollbar is always kept, so the words wrap the same with or without it.
+          // Otherwise a scrollbar that appeared once (a smaller zoom) narrowed the text, which then wrapped
+          // onto one more line and kept the panel scrolling at its old height.
+          className="min-h-0 flex-auto overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2 [scrollbar-gutter:stable]"
           style={{ zoom: props.fontScale }}
         >
           <TranscriptBubbles

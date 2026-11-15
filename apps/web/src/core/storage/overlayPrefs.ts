@@ -4,7 +4,9 @@
  *          on), the panel's background opacity (default 70%), whether the panel grows more
  *          see-through when the pointer is elsewhere (default off), and (v1.1.0) which panels are open
  *          and which microphone is chosen. Kept in localStorage: per-device conveniences, not session
- *          data.
+ *          data. ADR-0085: the transcript panel is open by default (applied once to existing devices too)
+ *          and then follows the user's own choice; the answer panel is not remembered (it opens by itself on
+ *          the first answer of each call); and the split between the side-by-side panels.
  * Used by: src/features/live/LiveAnswers.tsx, src/features/live/CompactLive.tsx,
  *          src/features/settings/OverlaySetting.tsx
  * Depends on: nothing (localStorage)
@@ -37,6 +39,24 @@ export const OVERLAY_FADE_AWAY_KEY = 'kite.overlayFadeAway';
 
 /** v1.1.0: the key for which of the overlay's panels are open. */
 export const OVERLAY_PANELS_KEY = 'kite.overlayPanels';
+
+/**
+ * ADR-0085: the version of the panels' default applied on this device. Below PANELS_DEFAULT_VERSION the
+ * transcript is opened once (whatever was stored), then the stored choice is followed again.
+ */
+export const OVERLAY_PANELS_DEFAULT_KEY = 'kite.overlayPanelsDefault';
+
+/** ADR-0085: the current panels' default (2: transcript open). */
+export const PANELS_DEFAULT_VERSION = 2;
+
+/** ADR-0085: the key for the transcript's share of the width when the panels sit side by side. */
+export const OVERLAY_SPLIT_KEY = 'kite.overlaySplit';
+
+/**
+ * ADR-0085: the transcript's share of the panels' width side by side: 40 % by default (the answer gets the
+ * rest); a drag of the divider stays between these limits (each panel's minimum width is kept in CSS too).
+ */
+export const OVERLAY_SPLIT = { min: 0.2, max: 0.7, default: 0.4 } as const;
 
 /** v1.1.0: the key for the microphone chosen in the overlay's device list. */
 export const MIC_DEVICE_KEY = 'kite.micDevice';
@@ -116,25 +136,68 @@ export interface OverlayPanels {
 }
 
 /**
- * Which panels were open last (both closed the first time: an answer opens its panel).
+ * The panels a call starts with (ADR-0085): the transcript as the user last left it, open on a device's
+ * first call, and opened once on a device that stored a choice before this default existed; the answer
+ * panel closed (an answer opens it). Before ADR-0085 both panels were remembered and both started closed.
  *
  * @returns The panels.
  * Called from: CompactLive.tsx; tests
  */
 export function getOverlayPanels(): OverlayPanels {
-  const stored = read(OVERLAY_PANELS_KEY) ?? '';
-  return { transcript: stored.includes('transcript'), answer: stored.includes('answer') };
+  const applied = Number(read(OVERLAY_PANELS_DEFAULT_KEY) ?? 0);
+  if (!(applied >= PANELS_DEFAULT_VERSION)) {
+    // Once per device: the new default wins over what was stored, then the user's own choice is kept.
+    write(OVERLAY_PANELS_KEY, 'transcript');
+    write(OVERLAY_PANELS_DEFAULT_KEY, String(PANELS_DEFAULT_VERSION));
+  }
+  const stored = read(OVERLAY_PANELS_KEY);
+  // Nothing stored (storage blocked): the default, open.
+  return { transcript: stored === null ? true : stored.includes('transcript'), answer: false };
 }
 
 /**
- * Remembers which panels are open.
+ * Remembers whether the transcript panel is open: the user's own choice (its switch, the level button,
+ * Ctrl+Alt+T, its collapse button). The answer panel is not remembered (ADR-0085): an answer opening it is
+ * not a choice.
  *
- * @param panels The panels.
+ * @param panels The panels (only the transcript is stored).
  * Called from: CompactLive.tsx; tests
  */
 export function setOverlayPanels(panels: OverlayPanels): void {
-  const open = [panels.transcript ? 'transcript' : '', panels.answer ? 'answer' : ''];
-  write(OVERLAY_PANELS_KEY, open.filter(Boolean).join(',') || 'none');
+  write(OVERLAY_PANELS_KEY, panels.transcript ? 'transcript' : 'none');
+}
+
+/**
+ * The transcript's share of the width when the panels sit side by side (ADR-0085).
+ *
+ * @returns A ratio inside OVERLAY_SPLIT (the default when unset or unreadable).
+ * Called from: CompactView.tsx; tests
+ */
+export function getOverlaySplit(): number {
+  const raw = read(OVERLAY_SPLIT_KEY);
+  const value = Number(raw);
+  return raw !== null && Number.isFinite(value) ? clampSplit(value) : OVERLAY_SPLIT.default;
+}
+
+/**
+ * Remembers the split (a drag of the divider, its arrow keys, or a double-click back to the default).
+ *
+ * @param ratio The transcript's share (kept inside OVERLAY_SPLIT).
+ * Called from: CompactView.tsx; tests
+ */
+export function setOverlaySplit(ratio: number): void {
+  write(OVERLAY_SPLIT_KEY, String(Math.round(clampSplit(ratio) * 1000) / 1000));
+}
+
+/**
+ * Keeps a split inside its limits.
+ *
+ * @param ratio The transcript's share.
+ * @returns The ratio, clamped to OVERLAY_SPLIT.min–max.
+ * Called from: getOverlaySplit(), setOverlaySplit(); overlay/PanelSplit.tsx
+ */
+export function clampSplit(ratio: number): number {
+  return Math.min(OVERLAY_SPLIT.max, Math.max(OVERLAY_SPLIT.min, ratio));
 }
 
 /**

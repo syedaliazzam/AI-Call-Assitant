@@ -4,13 +4,24 @@
  * 82% default when unset or out of range; an old stored value (the window-opacity key, default 1)
  * is migrated once to the panel key, 1 becoming the default; fading away from the pointer is off by default
  * and never makes the panel more solid than the chosen value (the v1.0.2 bug: solid under the
- * pointer); blocked storage leaves the defaults.
+ * pointer); blocked storage leaves the defaults. ADR-0085: the transcript panel is open by default (once
+ * on a device that stored a choice before), then follows the user's own choice; the answer panel is never
+ * remembered; the side-by-side split defaults to 40 % and stays within its limits.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FADE_AWAY_FACTOR,
   getOverlayFade,
   getOverlayOpacity,
+  getOverlayPanels,
+  getOverlaySplit,
+  OVERLAY_PANELS_DEFAULT_KEY,
+  OVERLAY_PANELS_KEY,
+  OVERLAY_SPLIT,
+  OVERLAY_SPLIT_KEY,
+  PANELS_DEFAULT_VERSION,
+  setOverlayPanels,
+  setOverlaySplit,
   getStartInOverlay,
   OVERLAY_FADE_KEY,
   OVERLAY_OPACITY,
@@ -111,5 +122,63 @@ describe('overlayPrefs', () => {
     expect(getOverlayOpacity()).toBe(OVERLAY_OPACITY.default);
     expect(getOverlayFade()).toBe(false);
     expect(() => setStartInOverlay(false)).not.toThrow();
+  });
+});
+
+describe('overlay panels and split (ADR-0085)', () => {
+  it('opens the transcript on the first call on a device, with the answer panel closed', () => {
+    expect(getOverlayPanels()).toEqual({ transcript: true, answer: false });
+    expect(stored.get(OVERLAY_PANELS_DEFAULT_KEY)).toBe(String(PANELS_DEFAULT_VERSION));
+  });
+
+  it('opens the transcript once on a device that stored a choice before, then keeps the choice', () => {
+    // A 1.6.4 device: both panels closed last time, and the answer panel remembered as open before that.
+    stored.set(OVERLAY_PANELS_KEY, 'none');
+    expect(getOverlayPanels()).toEqual({ transcript: true, answer: false });
+    // The user closes it: the next call starts closed.
+    setOverlayPanels({ transcript: false, answer: true });
+    expect(getOverlayPanels()).toEqual({ transcript: false, answer: false });
+    // And opens it again: open from then on.
+    setOverlayPanels({ transcript: true, answer: false });
+    expect(getOverlayPanels()).toEqual({ transcript: true, answer: false });
+  });
+
+  it('never remembers the answer panel (an answer opening it is not a choice)', () => {
+    stored.set(OVERLAY_PANELS_DEFAULT_KEY, String(PANELS_DEFAULT_VERSION));
+    setOverlayPanels({ transcript: false, answer: true });
+    expect(stored.get(OVERLAY_PANELS_KEY)).toBe('none');
+    // An old stored value with the answer open starts with it closed.
+    stored.set(OVERLAY_PANELS_KEY, 'transcript,answer');
+    expect(getOverlayPanels()).toEqual({ transcript: true, answer: false });
+  });
+
+  it('keeps the split at 40 % by default and within its limits', () => {
+    expect(getOverlaySplit()).toBe(OVERLAY_SPLIT.default);
+    setOverlaySplit(0.55);
+    expect(getOverlaySplit()).toBe(0.55);
+    setOverlaySplit(0.99);
+    expect(stored.get(OVERLAY_SPLIT_KEY)).toBe(String(OVERLAY_SPLIT.max));
+    setOverlaySplit(0);
+    expect(getOverlaySplit()).toBe(OVERLAY_SPLIT.min);
+    stored.set(OVERLAY_SPLIT_KEY, 'wide');
+    expect(getOverlaySplit()).toBe(OVERLAY_SPLIT.default);
+  });
+
+  it('with storage blocked: the transcript open, the default split, and no error', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked');
+      },
+      setItem: () => {
+        throw new Error('blocked');
+      },
+      removeItem: () => {
+        throw new Error('blocked');
+      },
+    });
+    expect(getOverlayPanels()).toEqual({ transcript: true, answer: false });
+    expect(getOverlaySplit()).toBe(OVERLAY_SPLIT.default);
+    expect(() => setOverlayPanels({ transcript: false, answer: false })).not.toThrow();
+    expect(() => setOverlaySplit(0.5)).not.toThrow();
   });
 });

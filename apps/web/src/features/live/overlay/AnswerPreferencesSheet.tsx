@@ -65,7 +65,7 @@ export const AnswerPreferencesSheet = forwardRef<HTMLDivElement, AnswerPreferenc
         ref={ref}
         role="group"
         aria-label="Answer preferences"
-        className="k-overlay-menu absolute right-1.5 top-[calc(100%+6px)] z-30 flex max-h-[calc(100vh-3.75rem)] w-80 flex-col gap-1.5 overflow-y-auto rounded-menu border border-ui-border p-1.5 text-ui-text shadow-modal [-webkit-app-region:no-drag]"
+        className="k-overlay-menu absolute right-1.5 top-[calc(100%+6px)] z-30 flex max-h-[calc(100vh/var(--k-zoom,1)-3.75rem)] w-80 flex-col gap-1.5 overflow-y-auto rounded-menu border border-ui-border p-1.5 text-ui-text shadow-modal [-webkit-app-region:no-drag]"
       >
         <div className="flex items-center gap-1 px-1 py-0.5">
           <button type="button" className={BUTTON} onClick={onBack}>

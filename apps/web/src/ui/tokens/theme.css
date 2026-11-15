@@ -448,9 +448,18 @@ html[data-theme='dark'] {
 
 /* v1.1.0 (ADR-0042): inside the overlay a <select> lists its choices in the page. A browser's own
    list is a separate window, which screen-share protection may not reach. ADR-0055: in the desktop app
-   (html.k-desktop, set by src/platform/desktopDocument.ts) every <select> does. */
+   (html.k-desktop, set by src/platform/desktopDocument.ts) every <select> does. ADR-0085: anything in the
+   overlay's page too (.k-overlay-root: the Rec popover sits beside bar 1's piece, not inside it). */
+/* ADR-0085: a box as tall as the window at any UI zoom. The zoom is CSS zoom on <html>, under which 100vh is
+   scaled too (useAppearance.ts sets --k-zoom), so the overlay's page never runs past its window and scrolls. */
+.k-zoom-screen {
+  height: calc(100vh / var(--k-zoom, 1));
+}
+
 .k-overlay select,
 .k-overlay select::picker(select),
+.k-overlay-root select,
+.k-overlay-root select::picker(select),
 .k-desktop select,
 .k-desktop select::picker(select) {
   appearance: base-select;
@@ -463,14 +472,16 @@ html[data-theme='dark'] {
   color: var(--ui-text);
 }
 
-.k-overlay select::picker(select) {
+.k-overlay select::picker(select),
+.k-overlay-root select::picker(select) {
   background: var(--k-dark-surface);
   border: 1px solid var(--k-dark-border);
   border-radius: var(--k-radius-control);
   color: var(--k-dark-text);
 }
 
-.k-light .k-overlay select::picker(select) {
+.k-light .k-overlay select::picker(select),
+.k-light.k-overlay-root select::picker(select) {
   background: var(--k-surface);
   border-color: var(--k-border);
   color: var(--k-text);

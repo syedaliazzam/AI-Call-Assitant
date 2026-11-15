@@ -1019,6 +1019,12 @@ export function LivePage({
     // share picker still opens afterwards (Chrome 156, measured); the other order would leave the
     // overlay without a click once the picker closes. The desktop app opens its overlay window over
     // IPC, which needs no click, so one order serves both.
+    // ADR-0082: Private (screen-share protection) is on at the start of every call, whatever was chosen
+    // before; the person can turn it off in ⋮ for this call. ADR-0085: BEFORE the overlay opens (it was
+    // turned on after the whole connect, so a call after one that ended with Private off showed the overlay
+    // unprotected for its first seconds). One IPC round trip; nothing happens in a browser (it resolves at
+    // once, well inside the click's activation, so picture-in-picture still opens).
+    await turnPrivateOn();
     let overlay: OverlayAtStart = 'off';
     if (fromCard && startsCallsInOverlay()) {
       overlay = await openOverlay(session.id).then(
@@ -1171,9 +1177,6 @@ export function LivePage({
       // lets that pill start without asking again; the note is taken once, so a Reconnect asks again (the
       // safe side), and consent never carries over to another call.
       recording.setConsented(takeRecordConsent(session.id));
-      // ADR-0082: Private (screen-share protection) is on at the start of every call, whatever was chosen
-      // before; the person can turn it off in ⋮ for this call. Nothing happens in a browser.
-      void turnPrivateOn();
     } catch (error) {
       setConnection('idle');
       setLevels({ you: 0, them: 0 });

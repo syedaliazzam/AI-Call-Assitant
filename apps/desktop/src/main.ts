@@ -578,6 +578,8 @@ function start(): void {
       appVersion: app.getVersion(),
       store,
       protection: shield,
+      // 1.6.5 (ADR-0085): opening the overlay turns Private on for every window first.
+      allWindows: () => BrowserWindow.getAllWindows(),
       snap,
       // v1.3.1 (ADR-0058): jumps between the six places slide over 150 ms, unless the system asks for
       // reduced motion (Windows: Settings → Accessibility → Visual effects → Animation effects off).

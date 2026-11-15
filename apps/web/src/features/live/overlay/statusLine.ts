@@ -51,6 +51,7 @@ export interface StatusMessage {
     | 'them-silent'
     | 'answer-key'
     | 'private-off'
+    | 'private-off-call'
     | 'call-notice'
     | 'voice-notice'
     | 'notice'
@@ -74,6 +75,9 @@ export const SILENT_TEXT = {
   you: "Can't hear your microphone",
 } as const;
 
+/** ADR-0085: the line while Private is off during a call (no recording). */
+export const PRIVATE_OFF_CALL_TEXT = 'Private is off: the overlay shows in screen shares';
+
 /** ADR-0082: the headphones hint, short. */
 export const HEADPHONES_TEXT = 'Speakers echoing — use headphones';
 
@@ -82,12 +86,15 @@ export const HEADPHONES_TEXT = 'Speakers echoing — use headphones';
  *
  * @param state      What the live page shows (null until it answers).
  * @param privateOff True while a screen recording runs with Private off (usePrivateOffWhileRecording()).
+ * @param privateOffInCall ADR-0085: true while Private is off during the call (where it can be on); quieter
+ *                         than the recording warning, after the call's own notices.
  * @returns The message, or null for none (the line then shows the live words).
  * Called from: StatusBar.tsx; tests
  */
 export function statusMessage(
   state: CompactState | null,
   privateOff: boolean,
+  privateOffInCall = false,
 ): StatusMessage | null {
   if (!state || state.ended) return null;
   if (state.hygiene === 'paused') {
@@ -157,6 +164,14 @@ export function statusMessage(
     return { key: 'voice-notice', text: state.dictationNotice, tone: 'warning' };
   }
   if (state.notice) return { key: 'notice', text: state.notice, tone: 'warning' };
+  if (privateOffInCall) {
+    return {
+      key: 'private-off-call',
+      text: PRIVATE_OFF_CALL_TEXT,
+      tone: 'warning',
+      action: { kind: 'private', label: 'Turn on' },
+    };
+  }
   if (state.headphonesHint) {
     return {
       key: 'headphones',

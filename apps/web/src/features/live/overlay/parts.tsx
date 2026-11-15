@@ -1,11 +1,11 @@
 /**
  * File: apps/web/src/features/live/overlay/parts.tsx
  * Purpose: The small pieces the call bars and panels share (spec S13–S15, ADR-0041): button looks,
- *          key-caps, the level bars and their button, the language list and the status icons. (1.6.3,
+ *          key-caps, the level bars and their button, and the status icons (ADR-0085: no language list). (1.6.3,
  *          ADR-0075: the Auto answer pill became a toggle on bar 1, ControlBar.tsx.)
  * Used by: src/features/live/CompactView.tsx, src/features/live/overlay/*, src/features/live/TopBar.tsx
- * Depends on: @kite/shared (KeycapHotkey), src/core/live/liveChannel.ts, src/core/storage/types.ts
- *             (languages), src/ui (KeyCap, icons), React
+ * Depends on: @kite/shared (KeycapHotkey), src/core/live/liveChannel.ts (levels), src/ui (KeyCap),
+ *             React
  * Architecture: docs/design/paramount-ai-ui-spec.md §1 (overlay), §3 (S13–S15); ADR-0041
  *
  * No title attributes here: a browser's title tooltip is a separate window that screen-share protection
@@ -14,10 +14,8 @@
 'use client';
 
 import { hotkeyLabel, type KeycapHotkey } from '@kite/shared';
-import { useSyncExternalStore, type ReactNode, type RefObject } from 'react';
-import type { CompactCommand, CompactLevels, CompactState } from '@/core/live/liveChannel';
-import { ANSWER_LANGUAGES } from '@/core/storage/types';
-import { ChevronDownIcon, GlobeIcon } from '@/ui/icons';
+import { useSyncExternalStore, type ReactNode } from 'react';
+import type { CompactLevels } from '@/core/live/liveChannel';
 import { KeyCap } from '@/ui/KeyCap';
 
 /**
@@ -237,79 +235,5 @@ export function LevelButton({
         <LevelBars on={on} levels={levels} />
       </button>
     </span>
-  );
-}
-
-/**
- * The answer language: a button and, while open, its list. In the page, not a browser's own list
- * (ADR-0042). Answers use it; the transcript stays English, because the speech model is English only.
- *
- * @param props.state     What the live page shows.
- * @param props.onCommand Sends a command to the live page.
- * @param props.open      True while the list is open.
- * @param props.onOpen    Opens or closes the list.
- * @param props.listRef   The list's element, so the window can grow to fit it.
- * @returns The button and the list.
- * Rendered by: LiveStrip.tsx, TranscriptPanel.tsx
- */
-export function LanguageControl({
-  state,
-  onCommand,
-  open,
-  onOpen,
-  listRef,
-}: {
-  /** What the live page shows. */
-  state: CompactState | null;
-  /** Sends a command to the live page. */
-  onCommand: (command: CompactCommand) => void;
-  /** True while the list is open. */
-  open: boolean;
-  /** Opens or closes the list. */
-  onOpen: (open: boolean) => void;
-  /** The list's element. */
-  listRef?: RefObject<HTMLUListElement | null>;
-}) {
-  const language = ANSWER_LANGUAGES.find((option) => option.value === state?.language);
-  return (
-    <>
-      <button
-        type="button"
-        data-popup-button
-        className={PILL}
-        aria-label={`Answer language: ${language?.label ?? 'English'}`}
-        aria-expanded={open}
-        onClick={() => onOpen(!open)}
-      >
-        <GlobeIcon />
-        {language?.label ?? 'English'}
-        <ChevronDownIcon size={14} />
-      </button>
-      {open && (
-        <ul
-          ref={listRef}
-          role="listbox"
-          aria-label="Answer language"
-          className="k-overlay-menu absolute left-10 top-9 z-30 flex max-h-56 w-44 flex-col overflow-y-auto rounded-control border border-ui-border py-1 text-[13px] shadow-modal [-webkit-app-region:no-drag]"
-        >
-          {ANSWER_LANGUAGES.map((option) => (
-            <li key={option.value}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={option.value === state?.language}
-                onClick={() => {
-                  onOpen(false);
-                  onCommand({ type: 'language', code: option.value });
-                }}
-                className="w-full px-3 py-1 text-left hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
-              >
-                {option.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
   );
 }

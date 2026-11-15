@@ -7,7 +7,8 @@
  *          a signed-in page. The choice is made while rendering, before any child loads data. It also
  *          records the page's account for the account-tied stored values (core/storage/accountScope.ts)
  *          and reloads the page when another account signed in since it opened, so nothing of the
- *          previous account stays on screen or in memory.
+ *          previous account stays on screen or in memory. In the desktop app it keeps every page's popups
+ *          inside its window, for every account (ADR-0085).
  * Used by: app/(app)/layout.tsx, app/home/page.tsx, app/compact/[id]/page.tsx, app/player/[id]/page.tsx
  * Depends on: src/core/storage/db.ts (selectAccountDatabase), src/core/storage/accountScope.ts,
  *             src/core/sync/client.ts, src/platform (keepPopupsInWindow, ADR-0055)
@@ -100,11 +101,12 @@ export function SyncScope({
     if (!syncing || !runEngine) return;
     return startAccountSync();
   }, [syncing, runEngine]);
-  // ADR-0055 (accounts with account sync): in the desktop app every popup stays inside its window,
-  // where screen-share protection reaches. Nothing changes in a browser.
+  // ADR-0055, for every account since ADR-0085 (it was only with account sync): in the desktop app every
+  // popup (a <select>'s list, a title tooltip) stays inside its window, where screen-share protection
+  // reaches. Nothing changes in a browser.
   useEffect(() => {
-    if (syncing) getPlatform().keepPopupsInWindow();
-  }, [syncing]);
+    getPlatform().keepPopupsInWindow();
+  }, []);
   const account = useMemo(
     () => (syncing && syncUserId ? { userId: syncUserId, email } : null),
     [syncing, syncUserId, email],
