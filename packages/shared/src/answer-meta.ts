@@ -112,16 +112,19 @@ export type TargetChoice = 'auto' | AnswerTarget;
 /** Where an answer's facts mainly come from. Shown only to the user, never copied or exported. */
 export type AnswerSource = 'docs' | 'call' | 'general' | 'example';
 
-/** The private words for each source (`docs` depends on the session: sourceLabel()). */
-const SOURCE_LABELS: Readonly<Record<Exclude<AnswerSource, 'docs'>, string>> = {
+/**
+ * The private words for each source (`docs` and `example` depend on the session: sourceLabel()).
+ */
+const SOURCE_LABELS: Readonly<Record<Exclude<AnswerSource, 'docs' | 'example'>, string>> = {
   call: 'From the call',
   general: 'General knowledge',
-  example: 'Example',
 };
 
 /**
  * The private source tag's words. Documents read "From your CV" in an interview, where the
  * documents are the CV, and "From your documents" otherwise, where saying CV would be wrong.
+ * An example story (only with the user's "Full example story" setting) is made up, not backed by the
+ * CV, so its tag says so (ADR-0084): "Example — not from your CV" (or "your documents").
  *
  * @param source      The answer's source.
  * @param sessionType The session's type ('interview', 'regular', 'mock'), when there is one.
@@ -129,10 +132,12 @@ const SOURCE_LABELS: Readonly<Record<Exclude<AnswerSource, 'docs'>, string>> = {
  * Called from: the answer cards; tests
  */
 export function sourceLabel(source: AnswerSource, sessionType?: string): string {
+  const documents = sessionType === 'regular' || sessionType === undefined;
+  if (source === 'example') {
+    return documents ? 'Example — not from your documents' : 'Example — not from your CV';
+  }
   if (source !== 'docs') return SOURCE_LABELS[source];
-  return sessionType === 'regular' || sessionType === undefined
-    ? 'From your documents'
-    : 'From your CV';
+  return documents ? 'From your documents' : 'From your CV';
 }
 
 /** What the hidden first line says. */
