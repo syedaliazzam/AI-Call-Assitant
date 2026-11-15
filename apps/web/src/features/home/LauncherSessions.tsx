@@ -286,6 +286,11 @@ function LauncherCard({
 }) {
   const status = shownStatus(session, now);
   const title = sessionCardTitle(session);
+  // The Start buttons' names: the title, the line under it (the company of a regular call) and the
+  // browser's highlight, so sessions with the same topic are told apart by a screen reader (15 Nov
+  // 2026: every regular session named only "Start session: <topic>").
+  const named = [title, sessionCardLine(session)].filter(Boolean).join(', ');
+  const name = fromBrowser ? `${named} (from your browser)` : named;
   return (
     <SessionCardFrame
       session={session}
@@ -309,7 +314,7 @@ function LauncherCard({
             <Button
               variant="secondary"
               className="shrink-0"
-              aria-label={`Start again: ${title}`}
+              aria-label={`Start again: ${name}`}
               onClick={() => onOpen(session)}
             >
               Start again
@@ -319,7 +324,7 @@ function LauncherCard({
           <Button
             variant="secondary"
             className="shrink-0"
-            aria-label={`Start session: ${title}`}
+            aria-label={`Start session: ${name}`}
             onClick={() => onOpen(session)}
           >
             Start session

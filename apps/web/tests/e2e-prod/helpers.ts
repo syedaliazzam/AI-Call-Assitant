@@ -169,7 +169,8 @@ export interface NewSession {
 export async function createSession(page: Page, session: NewSession): Promise<void> {
   await page.goto(`${PRODUCTION_URL}/sessions/new`);
   await page.getByRole('radio', { name: 'Regular' }).click();
-  await page.getByLabel('Company').fill(session.company);
+  // The field's role and exact name: synced sessions' hidden edit forms are labelled "Company" too.
+  await page.getByRole('combobox', { name: 'Company', exact: true }).fill(session.company);
   await page.getByLabel('Topic').fill('Pilot review');
   if (session.document) {
     // The wizard has two file inputs: the CV's and this one.

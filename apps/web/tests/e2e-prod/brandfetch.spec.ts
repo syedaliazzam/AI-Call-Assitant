@@ -107,6 +107,18 @@ for (const address of [CUSTOM_DOMAIN_URL, OLD_ADDRESS_URL]) {
       await page.waitForTimeout(1_500);
       expect(toBrandfetch).toBe(0);
       report(`${host} off sends nothing to Brandfetch`, true, { requests: toBrandfetch });
+
+      // Leave the account as it was: with account sync the setting and the session follow the
+      // account, so the next address's fresh browser would otherwise start with suggestions off
+      // (found 15 Nov 2026: no logo there, as designed for "off").
+      await page.goto(`${address}/settings`);
+      await page.getByRole('switch', { name: 'Company suggestions' }).click();
+      await expect(page.getByRole('switch', { name: 'Company suggestions' })).toBeChecked();
+      await page.goto(`${address}/`);
+      await card.getByRole('button', { name: /^More for / }).click();
+      await page.getByRole('menuitem', { name: 'Delete' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+      await expect(card).toHaveCount(0);
     } finally {
       await browser.close();
     }

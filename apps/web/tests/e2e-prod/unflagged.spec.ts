@@ -4,6 +4,9 @@
  * sync routes say off and refuse, the dashboard has no one-time upload question, /help has no
  * account-data section, Settings still offers "Delete all local data", and the desktop link code route
  * refuses. No Claude request; nothing is written. Prints step names only.
+ * Since KITE_SYNC_USERS is "*" (account sync for everyone; sync-everyone.spec.ts checks it), no account
+ * is without the switch: the test then skips and says so, and runs again if the switch goes back to a
+ * list of ids.
  * Run: pnpm --filter web create-e2e-user --prod --admin, then
  *      pnpm --filter web exec playwright test -c tests/e2e-prod/playwright.config.ts unflagged.spec.ts,
  *      then pnpm --filter web delete-test-accounts --prod
@@ -16,6 +19,15 @@ test('an account without the switch sees no change', async ({ browser }) => {
   const page = await context.newPage();
   try {
     await signIn(page, testAccount('admin'), true);
+    const everyone = await page.evaluate(
+      async () =>
+        ((await (await fetch('/api/sync/status')).json()) as { enabled: boolean }).enabled,
+    );
+    // An unlisted account has sync only when the switch is "*": nothing to check then.
+    test.skip(
+      everyone,
+      'account sync is on for everyone (KITE_SYNC_USERS is "*"): no unflagged account',
+    );
     const api = await page.evaluate(async () => ({
       status: (await (await fetch('/api/sync/status')).json()) as { enabled: boolean },
       pull: (await fetch('/api/sync/pull?since=0')).status,

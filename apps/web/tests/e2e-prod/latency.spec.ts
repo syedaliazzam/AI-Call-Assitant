@@ -155,10 +155,20 @@ test('Desktop app: 20 answers on /dev/latency', async () => {
       await signIn(first, testAccount('admin'), true, true);
       // The one-time notice, here on the panel, so the main window does not show it too.
       await closeUseNotice(first);
+      // With account sync a desktop window keeps only the call page and /dev/latency (ADR-0055,
+      // desktopPages.ts): the dashboard ("/") opens in the browser and its window closes. The shell
+      // opens only its own list of pages, so the main window's "/" is redirected to /dev/latency here.
+      const dashboard = `${PRODUCTION_URL}/`;
+      await app
+        .context()
+        .route(dashboard, (route) =>
+          route.fulfill({ status: 302, headers: { location: `${PRODUCTION_URL}/dev/latency` } }),
+        );
       const opened = app.waitForEvent('window');
       await first.evaluate(openMainWindow);
       page = await opened;
       await page.waitForLoadState();
+      await app.context().unroute(dashboard);
     } else {
       await signIn(first, testAccount('admin'));
     }

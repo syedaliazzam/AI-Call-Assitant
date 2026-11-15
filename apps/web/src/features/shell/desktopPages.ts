@@ -13,11 +13,13 @@ import { isCallPage } from './pageTitles';
  * Whether a desktop app with account sync keeps a page in its own window.
  *
  * @param pathname The page's path.
- * @returns True for the live call page (/live/<id>), which runs the call; false for everything else.
+ * @returns True for the live call page (/live/<id>), which runs the call, and for /dev/latency (admins
+ *          only: it measures answers through the desktop app's own client path, e2e-prod latency.spec.ts;
+ *          sent to the browser it could not measure the desktop); false for everything else.
  * Called from: AppShell.tsx; tests
  */
 export function desktopKeepsPage(pathname: string): boolean {
-  return isCallPage(pathname);
+  return isCallPage(pathname) || pathname === '/dev/latency';
 }
 
 /**
