@@ -31,6 +31,7 @@ describe('parseEvalArgs', () => {
       only: 'screenshots',
       show: false,
       dryRun: true,
+      grade: true,
       withoutLessons: false,
       style: null,
     });
@@ -39,6 +40,7 @@ describe('parseEvalArgs', () => {
       only: '01-a',
       show: true,
       dryRun: false,
+      grade: true,
       withoutLessons: false,
       style: null,
     });
@@ -47,10 +49,16 @@ describe('parseEvalArgs', () => {
       only: null,
       show: false,
       dryRun: false,
+      grade: true,
       withoutLessons: false,
       style: null,
     });
     expect(parseEvalArgs(['--without-lessons'], 2).withoutLessons).toBe(true);
+  });
+
+  it('reads --no-grade: answers only, no grader requests (ADR-0084)', () => {
+    expect(parseEvalArgs(['--no-grade'], 2).grade).toBe(false);
+    expect(parseEvalArgs(['--only=company-star'], 2).grade).toBe(true);
   });
 
   it('reads --style: previous selects the rollback prompt, current is the default', () => {

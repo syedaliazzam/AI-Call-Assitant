@@ -15,6 +15,7 @@ import { ASK_RULES } from '@/server/ask';
 import { buildKiteChatPrompt, KITE_CHAT_RULES } from '@/server/kite-chat';
 import { NOTES_RULES, notesPrompt } from '@/server/notes';
 import {
+  CALL_REMINDER,
   CORE_RULES,
   LESSONS_HEADING,
   SYSTEM_RULES,
@@ -169,5 +170,38 @@ describe('honesty under a shape instruction', () => {
     // Found on production (15 Nov 2026): with no CV and "always use STAR", Haiku invented a story.
     expect(COMPANY_HEADINGS.live).toMatch(/shape or style \(such as STAR\) never allows/);
     expect(COMPANY_HEADINGS.live).toMatch(/the approach \("I would…"\)/);
+  });
+
+  it('locked core (ADR-0084): no CV or nothing close means a hypothetical approach, never a story', () => {
+    // The control try (no company text, no CV) also got a made-up story: the rule is in the core.
+    expect(CORE_RULES).toContain(
+      'If there is no CV or document, or nothing in them is close, follow the session\'s "Missing information" line; without one, answer with a clearly hypothetical approach',
+    );
+    expect(CORE_RULES).toMatch(/Never invent an employer, client, project, past event, story/);
+    expect(CORE_RULES).toMatch(/close means the CV states the same kind of situation/);
+    expect(CORE_RULES).toMatch(
+      /such as "always use STAR", from the company or the session, applies only to experience the CV or documents state/,
+    );
+    expect(CALL_REMINDER).toMatch(/never as a past story, whatever shape the instructions ask for/);
+  });
+
+  it('keeps those locked lines ahead of a company "always use STAR" instruction', () => {
+    const star = 'Behavioural questions: always use the STAR shape.';
+    const rules = buildPrompt(REQUEST, star).system[0]!.text;
+    const rule = rules.indexOf('applies only to experience the CV or documents state');
+    expect(rules.startsWith(CORE_RULES)).toBe(true);
+    expect(rule).toBeGreaterThan(-1);
+    expect(rule).toBeLessThan(rules.indexOf(star));
+  });
+
+  it("leaves the user's own example-story setting in force (only that line may ask for a story)", () => {
+    const story = buildPrompt({
+      ...REQUEST,
+      session: { ...SESSION, missingInfo: 'story' },
+    }).system[1]!.text;
+    expect(story).toContain('Missing information: when nothing in the CV is close, tell one');
+    expect(CALL_REMINDER).toContain(
+      'only the session\'s "Missing information" line may ask for an example story',
+    );
   });
 });
