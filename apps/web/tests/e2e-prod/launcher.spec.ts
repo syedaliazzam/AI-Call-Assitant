@@ -3,7 +3,7 @@
  * app, with a fresh temporary profile, as the end-to-end TEST account (listed in KITE_SYNC_USERS). No
  * Claude request. Two invented sessions are put into the account through the sync API: one ready, one
  * whose call just ended. The home panel is then the launcher: "Your sessions" with both (and their
- * status); no search and no Create session; "Call ended · … View notes"; Open dashboard. Links open the
+ * status), a search box, "Call ended · … View notes", View in Dashboard and + Create session (1.6.1). Links open the
  * web app in the system browser: here window.open is replaced inside the panel, so nothing opens on this
  * computer and the addresses are checked instead. A row opens the Connect card at once (ADR-0082: no
  * Free / Paid Start card and no Buy credits; Connect is not pressed: no call), and Back the sessions. Both
@@ -140,7 +140,7 @@ test.afterAll(async () => {
   rmSync(PROFILE_DIR, { recursive: true, force: true });
 });
 
-test('1. the panel is a launcher: Your sessions, the last call, Open dashboard', async () => {
+test('1. the panel is a launcher: Your sessions, the last call, View in Dashboard', async () => {
   expect(
     await push([
       {
@@ -173,19 +173,26 @@ test('1. the panel is a launcher: Your sessions, the last call, Open dashboard',
   // ADR-0055: every session, as on the dashboard, with its status.
   await expect(panel.getByRole('region', { name: 'Your sessions' })).toBeVisible();
   const list = panel.getByRole('list', { name: 'Sessions' });
-  await expect(list.getByRole('button', { name: new RegExp(ENDED.company) })).toContainText(
-    'Ended',
-  );
+  // 1.6.1: the dashboard's cards. An ended one says so and has View transcript and Start again, whose
+  // name holds the company (15 Nov 2026: Start buttons named "<title>, <company>").
+  const ended = list.getByRole('listitem').filter({ hasText: ENDED.company });
+  await expect(ended).toContainText('Ended');
+  await expect(ended.getByRole('button', { name: /View transcript/ })).toBeVisible();
+  await expect(
+    list.getByRole('button', { name: new RegExp(`^Start again: .*${ENDED.company}`) }),
+  ).toBeVisible();
   // The most recent call that ended shows its notes on top. The test account may hold a call that
   // ended later than this run's, so only its presence is checked here.
   await expect(panel.getByRole('status').filter({ hasText: 'Call ended' })).toBeVisible();
-  await expect(panel.getByRole('textbox', { name: 'Search sessions' })).toHaveCount(0);
-  await expect(panel.getByRole('button', { name: /Create session/ })).toHaveCount(0);
-  await expect(panel.getByRole('button', { name: /Open dashboard/ })).toBeVisible();
-  report('launcher: sessions, last call, no search or create', true);
+  // 1.6.1: a search box over the cards, and a bottom bar with View in Dashboard and + Create session
+  // (ADR-0071: both open the web app in the browser).
+  await expect(panel.getByLabel('Search sessions')).toBeVisible();
+  await expect(panel.getByRole('button', { name: /View in Dashboard/ })).toBeVisible();
+  await expect(panel.getByRole('button', { name: /Create session/ })).toBeVisible();
+  report('launcher: cards, last call, search, View in Dashboard and Create session', true);
 });
 
-test('2. Open dashboard, View notes and the menu open the web app in the browser', async () => {
+test('2. View in Dashboard, View notes and the menu open the web app in the browser', async () => {
   await panel.evaluate(() => {
     // Nothing opens on this computer: the address is kept for the check.
     window.open = (url?: string | URL) => {
@@ -193,7 +200,7 @@ test('2. Open dashboard, View notes and the menu open the web app in the browser
       return null;
     };
   });
-  await panel.getByRole('button', { name: /Open dashboard/ }).click();
+  await panel.getByRole('button', { name: /View in Dashboard/ }).click();
   expect(await lastOpened()).toBe(`${PRODUCTION_URL}/`);
   await panel.getByRole('button', { name: 'View notes' }).click();
   // A session's review in the browser (whichever call ended last).
@@ -209,7 +216,7 @@ test('3. a row opens the Connect card at once (ADR-0082), and Back the sessions'
   await panel.keyboard.press('Escape');
   await panel
     .getByRole('list', { name: 'Sessions' })
-    .getByRole('button', { name: new RegExp(READY.company) })
+    .getByRole('button', { name: new RegExp(`^Start session: .*${READY.company}`) })
     .click();
   // ADR-0082: no "Start your session" Free / Paid card and no Buy credits anywhere.
   await expect(panel.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();

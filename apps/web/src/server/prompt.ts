@@ -85,7 +85,7 @@ How to answer for the call:
 - Every line is words to say. Never write a line about the other person or what they might want, such as "if they want more depth…" or "you could mention…".
 
 Shape the answer for the user's role and domain (work them out from the call type, role, description and documents) and for the type of question, keeping the format above:
-- behavioural: a short STAR story built from the closest real project in the CV: the situation and task, what I did, and the result, each only as far as the CV states it. If the CV gives no result, leave the result out rather than invent one. With no CV, or nothing in it close to the question, there is no story to tell: answer with the approach (see "When information is missing").
+- behavioural: a short STAR story built from the closest real project in the CV: the situation and task, what I did, and the result, each only as far as the CV states it. If the CV gives no result, leave the result out rather than invent one.
 - concept: what it is in plain words, how it works, then when to use it or its main trade-off.
 - coding: the headline is the approach, in one line of 12 words or fewer. Then a line "Key steps:" with the steps as bullets. Then one fenced code block in the coding language that runs as it is: no input(), no placeholders. Then one line starting "Complexity:". Last, one line starting "Say:" with one sentence the user can say to explain it. The length and bullet limits above do not apply to this shape. The coding language is Python unless the session names another.
 - design: the requirements I would confirm, the main components, how data flows, how it scales, and one trade-off.
@@ -99,9 +99,7 @@ Shape the answer for the user's role and domain (work them out from the call typ
 
 When information is missing:
 - Never say or imply that something is missing from the notes, CV or documents: no "not in your notes", no "not in your CV", no "the documents don't say", no "from what I have here", no "I don't have", no "in front of me", no "to hand", no "I haven't got", no "a figure I can quote", no "I can't claim", no "on record", no "my CV says", no comment about what you were given. Say what you will do instead. That applies to every line, including the Note.
-- For a question about the user's own experience: use the closest real project in the CV first, and say truthfully how it relates. If there is no CV or document, or nothing in them is close, follow the session's "Missing information" line; without one, answer with a clearly hypothetical approach: the answer line starts "I would" or "I'd", every line stays in that voice, with specific methods, tools and steps, and source is general, never example. Never invent an employer, client, project, past event, story, number or result, and never tell what happened ("I handled…", "once, at…") when the CV does not state it. Never describe a past event, or imply experience, that the CV does not state.
-- For a behavioural question, close means the CV states the same kind of situation the question asks about (a difficult client needs work with a client or customer), not only the same field or employer. Never stretch an unrelated project to fit the question, and never add people, feelings, pressures or outcomes to make it fit.
-- An instruction about the shape of experience answers, such as "always use STAR", from the company or the session, applies only to experience the CV or documents state that is close to the question. A part the CV does not state is left out without remark. Without that experience, keep the hypothetical approach (or the session's "Missing information" line): the shape may order its steps (the situation I would expect, what I would aim for, what I would do, the result I would look for), all said as "I would", never as a story.
+- For a question about the user's own experience: use the closest real project in the CV first, and say truthfully how it relates. If nothing is close, follow the session's "Missing information" line; without one, answer with the approach: "I would...", with specific methods, tools and steps, and no invented numbers, employers or results. Never describe a past event, or imply experience, that the CV does not state.
 - When they ask for a number, size, tool or result of a real project that the CV does not give: the headline says what the CV does state, plainly and positively; leave the missing detail out of every spoken line without remarking on it, then give the approach. Never promise to look up, confirm or send the user's own past figures or records after the call; a "Note:" line may name the detail to check.
 - For a fact you cannot support (a price, a term, a date, a certification, something about a company): write a natural reply in the session's format, such as the headline "I'll confirm that and send you the details after the call", with no explanation of why, and add a "Note:" line that only names what to check. The headline is still 12 words or fewer.
 - Examples of the shape only; never reuse their words or facts:
@@ -252,6 +250,9 @@ function sessionLines(session: SessionContext): string[] {
           'For behavioural questions in this session, structure the answer as Situation, Task, Action and Result, one bullet each, starting with those words, built from the closest real project in the CV. If the CV does not state a part, leave that bullet out rather than invent it.',
         ]
       : []),
+    // ADR-0084: the experience rules, only where questions about the user's own past belong
+    // (experienceApplies()). In the shared rules block they moved unrelated regular-call answers.
+    ...(experienceApplies(session) ? [EXPERIENCE_RULES] : []),
     ...(session.language
       ? [
           `Answer language: ${session.language}. Write the answer in this language, even though the transcript is in English. Keep names, prices and product terms as they are.`,
@@ -468,12 +469,62 @@ function conversationBlocks(capped: CappedConversation): Anthropic.TextBlockPara
   return blocks;
 }
 
+/** The session types the experience rules are for: interviews, mock interviews and Try it's blank session. */
+const EXPERIENCE_SESSION_TYPES: readonly string[] = ['interview', 'mock', ''];
+
+/**
+ * ADR-0084: the experience rules, a line of the session block in interview, mock and blank (Try it)
+ * sessions only (experienceApplies()). Locked like the core rules, and never in regular calls: in the
+ * shared rules block every wording moved unrelated regular-call answers (answer-eval.md, 15 Nov 2026).
+ */
+export const EXPERIENCE_RULES = `Questions about your own past: use the closest real project in the CV, told exactly as the CV states it, with nothing added. For a behavioural question, close means the CV states the same kind of situation (a difficult client needs work with a client or customer), not only the same field. With nothing close (or no CV), the answer is your approach: the answer line starts "I would" or "I'd" and never claims past experience ("I handled…", "I've dealt with…", "In my experience…"), every line stays in that voice, source is general, and an unrelated real project appears in at most one bullet, exactly as the CV states it. A shape such as "always use STAR", from the company or the session, applies only to a close CV project; without one it may order the approach's steps, never as a story.`;
+
+/**
+ * Whether a session gets the experience rules (EXPERIENCE_RULES, EXPERIENCE_REMINDER): an interview, a
+ * mock interview or Try it's blank session, unless the user chose "Full example story", whose own line
+ * asks for a story.
+ *
+ * @param session The session.
+ * @returns True when they apply.
+ * Called from: sessionLines(), experienceReminder(); tests
+ */
+export function experienceApplies(session: SessionContext): boolean {
+  return EXPERIENCE_SESSION_TYPES.includes(session.type) && session.missingInfo !== 'story';
+}
+
+/**
+ * ADR-0084: added after CALL_REMINDER for interview, mock and blank (Try it) sessions only
+ * (experienceReminder()). With no close CV project, an experience question gets an "I would…" approach,
+ * never a made-up story, whatever shape the company or session asks for. Not in regular calls: there
+ * the same words leaked into sales answers as "I don't have…" lines (answer-eval.md, 15 Nov 2026).
+ */
+export const EXPERIENCE_REMINDER = `For a question about your own past: tell only a close CV project; with none, answer only as your approach, the answer line starting "I would" or "I'd" and never claiming past experience, never as a past story, whatever shape the instructions ask for.`;
+
+/**
+ * Whether a request gets EXPERIENCE_REMINDER: current rules, an answer or typed question (not a
+ * screenshot), an interview, mock or blank session, and not the user's "Full example story" setting
+ * (whose own session line asks for a story).
+ *
+ * @param request The answer request.
+ * @returns The reminder lines to add ([] or [EXPERIENCE_REMINDER]).
+ * Called from: the request text in buildPrompt(); tests
+ */
+export function experienceReminder(request: AnswerRequest): string[] {
+  const session = request.session;
+  return request.styleVersion !== 'previous' &&
+    request.mode !== 'screenshot' &&
+    session !== undefined &&
+    experienceApplies(session)
+    ? [EXPERIENCE_REMINDER]
+    : [];
+}
+
 /**
  * The last words before Claude writes. The rules say all of this, but with the shapes added the
  * fast model drifted into opening sentences and embellished stories (first adaptive evaluation,
  * docs/testing/answer-eval.md); a reminder next to the question costs a few uncached tokens.
  */
-export const CALL_REMINDER = `Reminder for an answer for the call, unless its shape says otherwise: start with one short answer line to say at once (no filler, no "Here are…", no "based on my CV"), follow the answer format and length exactly (headline+bullets means a first line of at most 12 words, the gist only, then 2 to 4 short bullets), end with the hidden [[question|…]] line, add no detail the session, documents or call do not state, keep every real CV project exactly as the CV states it and give extra depth only as your approach ("I'd typically..."), answer an experience question with no close CV project only as your approach ("I would…"), never as a past story, whatever shape the instructions ask for (only the session's "Missing information" line may ask for an example story), and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the documents", "a figure I can quote"): say what you know, leave out a detail you lack without remarking on it, and never promise to look up or send the user's own past figures.`;
+export const CALL_REMINDER = `Reminder for an answer for the call, unless its shape says otherwise: start with one short answer line to say at once (no filler, no "Here are…", no "based on my CV"), follow the answer format and length exactly (headline+bullets means a first line of at most 12 words, the gist only, then 2 to 4 short bullets), end with the hidden [[question|…]] line, add no detail the session, documents or call do not state, keep every real CV project exactly as the CV states it and give extra depth only as your approach ("I'd typically..."), and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the documents", "a figure I can quote"): say what you know, leave out a detail you lack without remarking on it, and never promise to look up or send the user's own past figures.`;
 
 /**
  * What a screenshot answer is told in v-previous (ADR-0032): kept word for word, so a rollback sends
@@ -604,6 +655,7 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
   parts.push(
     ...choiceLines(request),
     request.styleVersion === 'previous' ? CALL_REMINDER_PREVIOUS : CALL_REMINDER,
+    ...experienceReminder(request),
   );
   return parts.join('\n');
 }

@@ -93,10 +93,12 @@ export const COMPANY_SCENARIOS: readonly Scenario[] = [
       },
     ],
     mustInclude: [
-      'no story about a difficult client: either the approach in the conditional ("I would…"), or a truthful link to work the CV states (such as the internal help desk), told only as the CV states it',
+      'an answer line (the first line) that starts "I would" or "I\'d" and gives the approach',
+      'no story about a difficult client; a real CV project, if mentioned at all, in one bullet told exactly as the CV states it',
     ],
     mustNotInclude: [
       NO_INVENTED_STORY,
+      'a first line that claims or implies past experience with difficult clients ("I handled…", "I\'ve dealt with…", "In my experience…")',
       'a client, complaint, escalation or outcome placed in the help-desk or bank work that the CV does not state',
     ],
   }),

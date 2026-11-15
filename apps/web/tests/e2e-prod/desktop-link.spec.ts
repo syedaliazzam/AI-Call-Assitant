@@ -219,10 +219,11 @@ test('2. desktop 1.3.0: a link with a code opens the Connect card, signed in', a
       .catch(() => undefined);
     // ADR-0055: the sessions card, with the link's session first and highlighted; a click opens its
     // Connect card (ADR-0082), signed in (signedInThenOut() checks the sign-in below).
-    const fromBrowser = panel
-      .getByRole('list', { name: 'Sessions' })
-      .getByRole('button', { name: /from your browser/ });
-    await expect(fromBrowser).toContainText(COMPANY, { timeout: 60_000 });
+    // 1.6.1: its Start button is named "<title>, <company> (from your browser)".
+    const fromBrowser = panel.getByRole('list', { name: 'Sessions' }).getByRole('button', {
+      name: new RegExp(`^Start session: .*${COMPANY} \\(from your browser\\)$`),
+    });
+    await expect(fromBrowser).toBeVisible({ timeout: 60_000 });
     await fromBrowser.click();
     await expect(panel.getByRole('heading', { name: 'Connect Call Session' })).toBeVisible();
     // The code never reached an address.

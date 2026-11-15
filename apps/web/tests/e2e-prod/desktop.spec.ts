@@ -169,7 +169,8 @@ test('1. sign in on the home panel: Your sessions', async () => {
   await expect(page.getByRole('dialog', { name: 'Using Paramount AI' })).toBeVisible();
   await page.getByRole('button', { name: 'Got it' }).click();
   await expect(page.getByRole('region', { name: 'Your sessions' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Create session/ })).toHaveCount(0);
+  // ADR-0071: the launcher's "+ Create session" opens the dashboard in the browser (not clicked here).
+  await expect(page.getByRole('button', { name: /Create session/ })).toBeVisible();
   report('desktop sign in, Your sessions', true);
 });
 

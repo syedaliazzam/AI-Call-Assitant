@@ -69,7 +69,13 @@ export function AnswerTags({ meta, sessionType, onChangeType, compact }: AnswerT
         <span>{ANSWER_TYPE_LABELS[meta.type]}</span>
       )}
       <span aria-hidden="true">·</span>
-      <span aria-label="Source, just for you">{sourceLabel(meta.source, sessionType)}</span>
+      {/* ADR-0084: a made-up example story is marked in the warning colour, so it is not said as fact. */}
+      <span
+        aria-label="Source, just for you"
+        className={meta.source === 'example' ? 'font-medium text-ui-warning' : undefined}
+      >
+        {sourceLabel(meta.source, sessionType)}
+      </span>
       {meta.target === 'kite' && (
         <>
           <span aria-hidden="true">·</span>

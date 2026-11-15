@@ -11,6 +11,13 @@ describe('desktopKeepsPage', () => {
     expect(desktopKeepsPage('/live/2f1c7d1e-1111-4222-8333-444455556666')).toBe(true);
   });
 
+  it('keeps the admins-only latency page, so it measures the desktop app itself', () => {
+    expect(desktopKeepsPage('/dev/latency')).toBe(true);
+    // Other developer pages still go to the browser.
+    expect(desktopKeepsPage('/dev/ui')).toBe(false);
+    expect(desktopKeepsPage('/dev/latency/x')).toBe(false);
+  });
+
   it('sends the dashboard and every other page to the browser', () => {
     for (const page of [
       '/',

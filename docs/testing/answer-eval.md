@@ -522,3 +522,16 @@ Same laptop; answers by `claude-haiku-5-5`, **not graded** (`--no-grade`), one r
 | `star-cv-no-match` | not run | first fix **fails** (STAR forced onto an unrelated project, details added, the missing result remarked on); with the "close means the same kind of situation" line, **better but fails**: the answer line still claims "I handled a difficult client…" and one bullet adds a detail |
 
 **Not run:** `answers` and `screenshots`, which a change to the rules block calls for (192 requests). Run them, and `company-star` graded with 2 runs (12 requests), before the next release.
+
+### Revised (same day, architecture 4.25.0)
+
+The fix was moved out of the shared rules block (ADR-0084, Decision 2). Rounds, all graded by `claude-sonnet-5-5`:
+
+| Round | Where the rules were | `company-star` (2 runs): no CV / no match / match | `answers` 3-run mean (gate ≥ 8.86) | What moved |
+|---|---|---|---|---|
+| 1 | core rules + call reminder, first-line rule | 9.5 / 9.5 / 7.0, nothing invented 6/6 | 8.84 (8.77, 8.73, 9.03) | 08 and 14 said "I don't have…" aloud |
+| 2 | shorter core rules + call reminder | — | 08: 4.5, 14: 6.5 (2 runs) | an invented hosting location |
+| 3 | core rules; reminder line for interview, mock, blank | 9.5 / 8.5 / 7.0, nothing invented 6/6 | 8.72 (8.53, 8.80, 8.83) | 11, 12, 13 (paragraph format, no answer, long headline) |
+| 4 (shipped) | core rules unchanged; session line + reminder line for interview, mock, blank | 9.0 / 8.0 / 7.5 | **9.07** (8.97, 9.10, 9.13): passes | 03 (interview) 8–9 |
+
+Round 4 also: `screenshots` 9.33, `preferences` 9.13 (24-star-structure 9.0). Spend for the whole fix: about $0.97 (cap $5).

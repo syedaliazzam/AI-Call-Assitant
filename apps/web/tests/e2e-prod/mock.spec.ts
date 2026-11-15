@@ -38,7 +38,7 @@ test.afterAll(async () => {
 
 test('a mock interview with the real speech model, saved as a Mock session', async () => {
   await page.goto(`${PRODUCTION_URL}/sessions/new?type=interview`);
-  await page.getByLabel('Company').fill('E2E Mock Co (invented)');
+  await page.getByRole('combobox', { name: 'Company', exact: true }).fill('E2E Mock Co (invented)');
   await page.getByLabel('Role').fill('Data Analyst');
   await page
     .getByLabel('Job description')
