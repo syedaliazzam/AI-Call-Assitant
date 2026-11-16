@@ -586,3 +586,26 @@ Final, graded:
 | Hidden line present | 86/90 | 30/30 |
 
 Per scenario in the final regression run: 01 9.0, 02 8.0, 03 10.0, 04 10.0, 05 9.0, 06 10.0, 07 9.5, 08 7.5, 09 10.0, 10 10.0, 11 8.0, 12 10.0, 13 6.5, 14 10.0, 15 9.5. The 08 deductions are style (no bullets; "both" is vague), with nothing invented. 13 lost points for its old reasons (no steer back, long line), not a promise. 02 lost a point twice for not naming what E42 means, a question the documents answer, which the change does not touch (02 was 10 in the run before); this is likely run-to-run variation.
+
+## Global prompt after a locked app contract (2026-11-16, ADR-0089)
+
+The live prompt was rebuilt in a new order:
+
+1. the locked app contract;
+2. the default global prompt (the ADR-0086/0088 rules without the contract parts; preference values made generic; screenshot guidance moved in);
+3. the user's preferences in the session block, under an override heading, with the meaning of the format and length, and the approved lessons;
+4. the automatic end reminder: the contract, the user's format and length, and ADR-0088's rule word for word.
+
+Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`. One run of each group, as the developer asked (answers cap $0.30).
+
+| Group | Gate | Result | Spend |
+|---|---|---|---|
+| `answers` (15 × 2) | ≥ 8.86 | **9.30**; hidden line 30/30; nothing invented 29/30; no comment on what Kite was given 30/30; answer line as shown ≤ 12 words 26/26 | $0.094 (60 requests) |
+| `notes` (3 × 3) | ≥ 8 | **9.67** (n1 9.7, n2 10.0, n3 9.3) | $0.074 (18 requests) |
+
+Per scenario (`answers`): 01 10.0, 02 8.0, 03 9.5, 04 10.0, 05 9.5, 06 9.5, 07 9.5, 08 9.0, 09 10.0, 10 7.0, 11 9.5, 12 10.0, 13 8.5, 14 10.0, 15 9.5.
+
+- **08 and 14** (the developer asked for them to be confirmed): 9.0 and 10.0, two graded runs each. ADR-0088 measured 8.7 and 10.0. 08's lost point is style, for the intended promise with no bullets.
+- **10** (discount pressure): 7.0 in both runs. The ADR-0088 runs today gave 8, 8, 8.5, 8 and 10. The grader: the spoken line does not refuse the 30% and the 10% cap is only in the Note. That is ADR-0088's promise shape reaching a term the documents do give. Watch it in the next run; not changed here.
+
+The default prompts are what a tab sends until an admin saves one. An admin's own prompt is checked with Try it and Quality check (8 scenarios, the same rubric), not by these baselines.

@@ -1,6 +1,6 @@
 # ADR-0086: Simple AI settings, and full system-prompt editing for admins
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0089 (2026-11-16)
 - **Date:** 2026-11-16
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5, §6.3, §7.2, §8.1 (version 4.27.0)
 - **Supersedes / superseded by:** amends ADR-0083 (its page layout, and its rejection of "making the whole prompt editable"). Builds on ADR-0025 (prompt caching), ADR-0032 (rules versions), ADR-0050 (additive migrations).
