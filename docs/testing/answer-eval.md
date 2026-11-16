@@ -609,3 +609,16 @@ Per scenario (`answers`): 01 10.0, 02 8.0, 03 9.5, 04 10.0, 05 9.5, 06 9.5, 07 9
 - **10** (discount pressure): 7.0 in both runs. The ADR-0088 runs today gave 8, 8, 8.5, 8 and 10. The grader: the spoken line does not refuse the 30% and the 10% cap is only in the Note. That is ADR-0088's promise shape reaching a term the documents do give. Watch it in the next run; not changed here.
 
 The default prompts are what a tab sends until an admin saves one. An admin's own prompt is checked with Try it and Quality check (8 scenarios, the same rubric), not by these baselines.
+
+## Promise only for facts nothing gives (2026-11-16, ADR-0090)
+
+One sentence was added to the end of the ADR-0088 rule: the promise is only for a fact nothing gives. When the documents cover it, even as a limit, the answer comes from them in the user's format and says plainly what they do not allow. Same laptop and models; developer's cap $0.40, spend **$0.111** (72 requests).
+
+| Check | Before (ADR-0089 run) | After |
+|---|---|---|
+| 10 discount pressure (2 graded runs) | 7.0 (facts 1/3: no refusal, the cap only in the Note) | **8.5** (facts 3/3; one run lost a point for a 16-word answer line) |
+| 08 documents cannot answer (2 runs) | 9.0 | **8.0** (style 0 for the intended no-bullets promise, as before; ADR-0088 range 7.5–9) |
+| 14 session without documents (2 runs) | 10.0 | **10.0** |
+| `answers` regression (15 × 2) | 9.30 | **9.43** (gate ≥ 8.86); 10 10.0, 08 8.0, 14 10.0; hidden line 30/30 |
+
+Per scenario in the regression: 01 10.0, 02 9.0, 03 9.0, 04 10.0, 05 9.5, 06 9.5, 07 9.5, 08 8.0, 09 10.0, 10 10.0, 11 8.5, 12 10.0, 13 9.0, 14 10.0, 15 9.5. 11 lost points for paragraph layout and rounding ("halved" for 40 → 18 minutes), not for the promise; it was 8.0 in the ADR-0088 final run.

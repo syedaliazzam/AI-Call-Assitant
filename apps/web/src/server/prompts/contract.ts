@@ -44,11 +44,13 @@ Every reply also ends with one more hidden line, after the answer and on its own
 - The app shows some lines in their own style, so each of these starts its own line with exactly this label: "Tip:" (one closing line to say), "Note:" (a private line the user does not say), and, in coding answers, "Key steps:", "Complexity:" and "Say:".`;
 
 /**
- * ADR-0088, word for word: what to do when the other person asks about the company or offer for a fact
- * nothing supports. The last sentence of the automatic end reminder (measured: it took scenario 08 from
- * 6.67 to 8.7 and 14 from 7.5 to 10.0, docs/testing/answer-eval.md).
+ * ADR-0088: what to do when the other person asks about the company or offer for a fact nothing
+ * supports. The last sentence of the automatic end reminder (measured: it took scenario 08 from 6.67 to
+ * 8.7 and 14 from 7.5 to 10.0, docs/testing/answer-eval.md). ADR-0090: its last sentence keeps the
+ * promise away from facts the documents do cover, even as a limit (scenario 10: a discount above the
+ * price list's cap had become a "confirm later" promise instead of a plain no).
  */
-export const UNSUPPORTED_FACT_RULE = `When they ask about your company or offer for a fact the session, documents and call do not give (a price, where data is hosted, a certification, a term, a date; not small talk or an off-topic question, which keep their own shape), never answer yes or no and never guess: after the hidden first line as always, the answer line is only a short promise of at most 10 words that does not repeat their question, such as "I'll confirm the price and send it after the call." or "I'll confirm both and send them after the call.", with no bullets at all (nothing true to add, and nothing about what you lack; this overrides the answer format and the question's shape), then a "Note:" line naming what to check, then the hidden [[question|…]] line.`;
+export const UNSUPPORTED_FACT_RULE = `When they ask about your company or offer for a fact the session, documents and call do not give (a price, where data is hosted, a certification, a term, a date; not small talk or an off-topic question, which keep their own shape), never answer yes or no and never guess: after the hidden first line as always, the answer line is only a short promise of at most 10 words that does not repeat their question, such as "I'll confirm the price and send it after the call." or "I'll confirm both and send them after the call.", with no bullets at all (nothing true to add, and nothing about what you lack; this overrides the answer format and the question's shape), then a "Note:" line naming what to check, then the hidden [[question|…]] line. This promise is only for a fact nothing gives: when the documents cover it, even as a limit (such as the most discount allowed), answer from them directly in the user's format, and say plainly what they do not allow.`;
 
 /**
  * The automatic end reminder of a live answer (ADR-0089): the last words before Claude writes. It
