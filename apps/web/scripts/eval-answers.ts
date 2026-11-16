@@ -28,6 +28,8 @@
  *            --show     also print each answer and the grader's reason (local use only; the
  *                       scenarios are invented, but answers are never printed by default)
  *            --dry-run  print the estimated number of Claude requests and stop
+ *            --their-name=<name>  ADR-0093: the other person is named (their lines carry the name)
+ *            --max-dollars=<n>    stop before the next scenario once this much is spent
  *            --no-grade answers only, no grader requests (half the cost): the code checks are
  *                       reported and the grader's columns show "–"; read the answers with --show
  *          Every paid run also saves per-scenario scores and grader reasons to a git-ignored
@@ -65,6 +67,7 @@ import {
   type AnswerMeta,
   type AnswerRequest,
   type AnswerUsage,
+  cleanPersonName,
 } from '@kite/shared';
 import { buildClaimCorpus, checkClaims, needsClaimCheck } from '@/core/answer/claimCheck';
 import { findSimilarAnswer } from '@/core/answer/similar';
@@ -300,6 +303,7 @@ interface ScenarioAnswer {
  * @param withoutLessons True to leave out the scenario's lessons (the comparison run).
  * @param style          'previous' to answer with the v-previous rules (ADR-0032), else null.
  * @param meter          Counts the spend.
+ * @param theirName      ADR-0093: the other person's name for every scenario (--their-name), or null.
  * @param earlier        Consistency scenarios: the first answer, in the conversation, and the
  *                       question asked again.
  * @returns The answer.
@@ -311,6 +315,7 @@ async function answerScenario(
   withoutLessons: boolean,
   style: 'previous' | null,
   meter: SpendMeter,
+  theirName: string | null,
   earlier?: { question: string; text: string },
 ): Promise<ScenarioAnswer> {
   const question = earlier ? (scenario.repeat ?? scenario.question) : scenario.question;
@@ -322,7 +327,7 @@ async function answerScenario(
     ...(scenario.mode === 'kite'
       ? { attachments: scenario.attachments ?? [], history: scenario.history ?? [] }
       : {
-          session: scenario.session,
+          session: theirName ? { ...scenario.session, themName: theirName } : scenario.session,
           conversation: earlier
             ? [
                 [
@@ -616,6 +621,8 @@ function summariseChecks(results: readonly ScenarioResult[]): string[] {
  */
 async function main(): Promise<void> {
   const options = parseEvalArgs(process.argv.slice(2), 2);
+  // ADR-0093: cleaned as the app cleans it, so the prompt is the one a named call sends.
+  const theirName = cleanPersonName(options.theirName) || null;
   const scenarios = loadScenarios(options.only);
   // Model names only, so --dry-run works without a key.
   console.log(
@@ -638,7 +645,13 @@ async function main(): Promise<void> {
   const rows: string[] = [];
   const results: ScenarioResult[] = [];
   let sum = 0;
+  let stopped = 0;
   for (const scenario of scenarios) {
+    // The developer's cap: stop before a scenario once the run has spent it (the table shows what ran).
+    if (options.maxDollars !== null && meter.spent() >= options.maxDollars) {
+      stopped += 1;
+      continue;
+    }
     const totals = { facts: 0, grounded: 0, consistent: 0, style: 0, headline: 0, bullets: 0 };
     const runs: ScenarioRunResult[] = [];
     for (let run = 1; run <= options.runs; run += 1) {
@@ -649,13 +662,22 @@ async function main(): Promise<void> {
         options.withoutLessons,
         options.style,
         meter,
+        theirName,
       );
       // Consistency: the first answer goes into the conversation, and the question comes again.
       const first = scenario.repeat
         ? { question: scenario.question, text: answer.text }
         : undefined;
       if (first)
-        answer = await answerScenario(scenario, models, false, options.style, meter, first);
+        answer = await answerScenario(
+          scenario,
+          models,
+          false,
+          options.style,
+          meter,
+          theirName,
+          first,
+        );
       const { text, meta } = answer;
       // A garbled line must get no answer at all (ADR-0043): nothing to grade, and no grader's request
       // to pay for. It scores in full when Claude said so, and nothing when it answered anyway.
@@ -664,7 +686,17 @@ async function main(): Promise<void> {
       const graded = nothingToGrade
         ? noAnswerGrade(scenario)
         : options.grade
-          ? await grade(scenario, text, env.modelSmart, meter, first)
+          ? await grade(
+              // ADR-0093: with --their-name the grader reads the same session line as the answer (the
+              // other person is named), so using the name is not marked as invented.
+              theirName
+                ? { ...scenario, session: { ...scenario.session, themName: theirName } }
+                : scenario,
+              text,
+              env.modelSmart,
+              meter,
+              first,
+            )
           : UNGRADED;
       const shape = nothingToGrade
         ? { headline: 1, bullets: 1 }
@@ -712,6 +744,9 @@ async function main(): Promise<void> {
     );
   }
   console.log(`\n${header}\n|---|---|---|---|---|---|---|---|\n${rows.join('\n')}`);
+  if (stopped > 0)
+    console.log(`
+Stopped at the --max-dollars cap: ${stopped} scenario(s) not run.`);
   const checkLines = summariseChecks(results);
   if (checkLines.length > 0) console.log(`\n${checkLines.join('\n')}`);
   console.log(

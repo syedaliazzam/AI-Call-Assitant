@@ -34,6 +34,8 @@ describe('parseEvalArgs', () => {
       grade: true,
       withoutLessons: false,
       style: null,
+      theirName: null,
+      maxDollars: null,
     });
     expect(parseEvalArgs(['--only', '01-a', '--runs', '1', '--show'], 2)).toEqual({
       runs: 1,
@@ -43,6 +45,8 @@ describe('parseEvalArgs', () => {
       grade: true,
       withoutLessons: false,
       style: null,
+      theirName: null,
+      maxDollars: null,
     });
     expect(parseEvalArgs([], 3)).toEqual({
       runs: 3,
@@ -52,8 +56,18 @@ describe('parseEvalArgs', () => {
       grade: true,
       withoutLessons: false,
       style: null,
+      theirName: null,
+      maxDollars: null,
     });
     expect(parseEvalArgs(['--without-lessons'], 2).withoutLessons).toBe(true);
+  });
+
+  it('reads --their-name (ADR-0093) and --max-dollars, and refuses a cap that is not a positive number', () => {
+    const named = parseEvalArgs(['--their-name=Sarah', '--max-dollars', '0.15'], 2);
+    expect(named.theirName).toBe('Sarah');
+    expect(named.maxDollars).toBe(0.15);
+    expect(() => parseEvalArgs(['--max-dollars=0'], 2)).toThrow('--max-dollars');
+    expect(() => parseEvalArgs(['--max-dollars=lots'], 2)).toThrow('--max-dollars');
   });
 
   it('reads --no-grade: answers only, no grader requests (ADR-0084)', () => {

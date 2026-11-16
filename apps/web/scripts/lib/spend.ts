@@ -51,6 +51,12 @@ export interface SpendMeter {
    */
   add(model: string, usage: AnswerUsage): void;
   /**
+   * The dollars counted so far in this run (for --max-dollars).
+   *
+   * @returns Dollars.
+   */
+  spent(): number;
+  /**
    * Writes the run to the running total.
    *
    * @param label What ran, for example 'answers --only=adaptive'.
@@ -74,6 +80,7 @@ export function createSpendMeter(root: string = process.cwd()): SpendMeter {
       dollars += requestCost(model, usage);
       requests += 1;
     },
+    spent: () => dollars,
     finish(label) {
       mkdirSync(path.join(root, EVAL_RESULTS_DIR), { recursive: true });
       const file = path.join(root, EVAL_RESULTS_DIR, LEDGER_FILE);

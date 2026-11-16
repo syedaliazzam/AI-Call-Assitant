@@ -39,6 +39,8 @@ describe('createSpendMeter', () => {
     const usage = { ...MILLION, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
     const first = createSpendMeter(root);
     first.add('claude-haiku-5-5', usage);
+    // --max-dollars reads what this run spent so far.
+    expect(first.spent()).toBeCloseTo(0.6, 6);
     expect(first.finish('one')).toBe('Spend: $0.6000 for 1 requests; ledger total $0.6000');
     const second = createSpendMeter(root);
     second.add('claude-haiku-5-5', usage);

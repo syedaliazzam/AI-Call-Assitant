@@ -32,6 +32,16 @@ export interface EvalOptions {
   withoutLessons: boolean;
   /** The answer style version to evaluate (ADR-0032 rollback switch); null means v-current. */
   style: 'previous' | null;
+  /**
+   * ADR-0093: --their-name=<name>: every scenario's session gets this name for the other person (their
+   * lines are labelled with it), to check answers with a named contact. null: as written.
+   */
+  theirName: string | null;
+  /**
+   * --max-dollars=<n>: stop before the next scenario once the run has spent this much (the developer's
+   * cap for a paid run). null: no cap.
+   */
+  maxDollars: number | null;
 }
 
 /**
@@ -58,9 +68,15 @@ export function parseEvalArgs(argv: readonly string[], defaultRuns: number): Eva
   if (style !== 'current' && style !== 'previous') {
     throw new Error("--style must be 'current' or 'previous'");
   }
+  const capText = value('--max-dollars');
+  const maxDollars = capText === null ? null : Number(capText);
+  if (maxDollars !== null && !(maxDollars > 0))
+    throw new Error('--max-dollars must be a number > 0');
   return {
     runs,
     only: value('--only'),
+    theirName: value('--their-name'),
+    maxDollars,
     show: argv.includes('--show'),
     dryRun: argv.includes('--dry-run'),
     grade: !argv.includes('--no-grade'),
