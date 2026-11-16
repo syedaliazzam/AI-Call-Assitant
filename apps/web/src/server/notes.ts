@@ -29,9 +29,10 @@ import {
   type NotesRequest,
   type NotesQuestion,
   type AnswerUsage,
+  type SessionContext,
 } from '@kite/shared';
 import { cachedBlock, jsonReply } from './claude';
-import { clockTime, smartSessionBlock } from './prompt';
+import { clockTime, smartSessionBlock, themSpeaker } from './prompt';
 import { NOTES_CONTRACT, NOTES_END_REMINDER, withGlobalPrompt } from './prompts/contract';
 import { DEFAULT_NOTES_PROMPT } from './prompts/defaults';
 
@@ -151,16 +152,20 @@ function answerText(answer: NotesAnswer, index: number): string {
 }
 
 /**
- * A call's record as prompt lines: its transcript and Kite's answers.
+ * A call's record as prompt lines: its transcript and Kite's answers. ADR-0093: the other person's lines
+ * carry their name when the session gives one (themSpeaker()), else "Them".
  *
- * @param request The call.
+ * @param request The call (its session, for the other person's name).
  * @returns The lines.
  * Called from: notesPrompt(); server/ask.ts
  */
-export function callRecord(request: Pick<NotesRequest, 'lines' | 'answers'>): string[] {
+export function callRecord(
+  request: Pick<NotesRequest, 'lines' | 'answers'> & { session?: Pick<SessionContext, 'themName'> },
+): string[] {
+  const them = themSpeaker(request.session);
   const lines = request.lines.map(
     (line) =>
-      `[${clockTime(line.at)}] ${line.speaker === 'you' ? 'You' : 'Them'}: ${escape(line.text)}`,
+      `[${clockTime(line.at)}] ${line.speaker === 'you' ? 'You' : them}: ${escape(line.text)}`,
   );
   return [
     '<transcript>',

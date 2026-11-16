@@ -19,6 +19,11 @@ export interface AudioMeterProps {
   inactive?: boolean;
   /** Narrow version for the live view header. */
   compact?: boolean;
+  /**
+   * ADR-0093: the channel's name to show (the other person's name, or "Interviewer"); absent: "You" or
+   * "Them". A long name is cut with an ellipsis.
+   */
+  name?: string;
 }
 
 /**
@@ -28,16 +33,25 @@ export interface AudioMeterProps {
  * @returns The meter.
  * Rendered by: LivePage.tsx (one per channel)
  */
-export function AudioMeter({ speaker, level, inactive = false, compact = false }: AudioMeterProps) {
+export function AudioMeter({
+  speaker,
+  level,
+  inactive = false,
+  compact = false,
+  name,
+}: AudioMeterProps) {
   const style = SPEAKER_STYLE[speaker];
+  const shown = name?.trim() || style.name;
   const percent = inactive ? 0 : Math.round(Math.min(1, Math.max(0, level)) * 100);
   return (
     <div className={`flex items-center gap-2 ${compact ? 'w-40' : 'w-full'}`}>
-      <span className={`w-12 shrink-0 text-[13px] font-semibold ${style.label}`}>{style.name}</span>
+      <span className={`w-16 shrink-0 truncate text-[13px] font-semibold ${style.label}`}>
+        {shown}
+      </span>
       <div
         className="h-2 flex-1 overflow-hidden rounded-full bg-ui-segment"
         role="meter"
-        aria-label={`${style.name} audio level`}
+        aria-label={`${shown} audio level`}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}

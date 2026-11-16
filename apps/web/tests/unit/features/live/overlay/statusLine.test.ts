@@ -175,3 +175,23 @@ describe('statusMessage', () => {
     expect(statusMessage(QUIET, false, false)).toBeNull();
   });
 });
+
+describe('the rename offer (ADR-0093)', () => {
+  it('offers "Rename Them to Sarah?" with Rename and Not now, after every warning', () => {
+    const offer = statusMessage({ ...QUIET, themName: 'Them', nameOffer: 'Sarah' }, false);
+    expect(offer).toMatchObject({
+      key: 'rename-them',
+      text: 'Rename Them to Sarah?',
+      tone: 'offer',
+      action: { kind: 'command', command: { type: 'rename-them', name: 'Sarah' }, label: 'Rename' },
+      dismiss: { command: { type: 'dismiss-name' }, label: 'Not now' },
+    });
+    // Says the interview fallback when that is the label now.
+    expect(
+      statusMessage({ ...QUIET, themName: 'Interviewer', nameOffer: 'Sarah' }, false)?.text,
+    ).toBe('Rename Interviewer to Sarah?');
+    // A warning still comes first.
+    expect(statusMessage({ ...QUIET, nameOffer: 'Sarah' }, true)?.key).toBe('private-off');
+    expect(statusMessage({ ...QUIET, nameOffer: 'Sarah', ended: true }, false)).toBeNull();
+  });
+});

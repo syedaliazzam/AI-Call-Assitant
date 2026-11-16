@@ -3,14 +3,17 @@
  * Purpose: Two more real screens for the v1.0.4 visual checks, chosen by the path: /ask is the real
  *          Ask Kite page, to check it stays solid; /history is the real Review transcript section
  *          over saved answers that repeat a question, to check there is one entry per question and
- *          that the clean question shows. Served by overlay-rig.ts.
+ *          that the clean question shows, and (ADR-0093) the other person's name renamable for the call.
+ *          Served by overlay-rig.ts.
  * Used by: tests/visual/overlay-rig.ts (bundled); apps/desktop/tests/visual/call-window-shots.ts
  * Depends on: src/features/ask-kite/AskKitePage.tsx, src/features/review/ConversationSection.tsx
  * Architecture: docs/decisions/ADR-0040-full-call-window-and-one-entry-per-question.md
  *
  * Invented data only.
  */
+import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { withTheirName } from '@/core/transcript/theirName';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
 import { AskKitePage } from '@/features/ask-kite/AskKitePage';
 import { ConversationSection } from '@/features/review/ConversationSection';
@@ -121,19 +124,33 @@ const ANSWERS: StoredAnswer[] = [
   }),
 ];
 
+/**
+ * The transcript section with a working rename (ADR-0093): clicking the other person's name renames them
+ * for the call, as the session page does (there the call's record keeps it).
+ *
+ * @returns The section.
+ */
+function HistoryRig() {
+  const [name, setName] = useState('');
+  return (
+    <ConversationSection
+      session={withTheirName(SESSION, name ? { themName: name } : null)}
+      lines={LINES}
+      answers={ANSWERS}
+      terms={[]}
+      onChanged={() => undefined}
+      onRename={setName}
+    />
+  );
+}
+
 const root = createRoot(document.getElementById('root')!);
 if (window.location.pathname.startsWith('/ask')) {
   root.render(<AskKitePage />);
 } else {
   root.render(
     <div className="min-h-screen bg-ui-bg p-6 text-ui-text">
-      <ConversationSection
-        session={SESSION}
-        lines={LINES}
-        answers={ANSWERS}
-        terms={[]}
-        onChanged={() => undefined}
-      />
+      <HistoryRig />
     </div>,
   );
 }

@@ -58,6 +58,11 @@ export interface NotificationContent {
   callFilesSaved?: boolean;
   /** ADR-0077: the session's Recordings subfolder, linked in both emails. */
   recordingsFolderUrl?: string;
+  /**
+   * ADR-0093: the other person's name for the call (cleanPersonName()), shown as "With" in the call's
+   * emails. Absent when no name is known (the "Them" / "Interviewer" fallbacks are never sent).
+   */
+  withName?: string;
   /** ADR-0077: email 2 went after 24 hours without the recording ("Recording not uploaded"). */
   recordingMissing?: boolean;
   /** ADR-0077: when sending was last tried (Unix ms); a failed email is tried again an hour later. */

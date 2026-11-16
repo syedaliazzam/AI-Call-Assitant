@@ -307,7 +307,7 @@ test('lessons: Edit and Approve for all calls, Reject; only decisions are stored
 
 test('a usage-limit reply shows the clear message and keeps the old notes', async () => {
   notesMode = 'limit';
-  await page.getByRole('button', { name: 'Regenerate' }).click();
+  await page.getByRole('button', { name: 'Rewrite notes' }).click();
   await expect(page.getByRole('alert')).toHaveText(
     "The call notes could not be written: the team's Claude usage limit has been reached.",
   );
@@ -318,7 +318,7 @@ test('a usage-limit reply shows the clear message and keeps the old notes', asyn
 test('Regenerate replaces the notes from the saved call', async () => {
   notesMode = 'ok';
   received.length = 0;
-  await page.getByRole('button', { name: 'Regenerate' }).click();
+  await page.getByRole('button', { name: 'Rewrite notes' }).click();
   await expect(page.getByText('The new notes are saved.')).toBeVisible();
   await expect(page.getByRole('list', { name: 'Summary' })).toHaveText(
     'Regenerated: 40 seats on Professional, proposal by Monday.',

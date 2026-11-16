@@ -172,3 +172,13 @@ describe('ControlBar (bar 1)', () => {
     expect(html.indexOf('aria-label="Click-through"')).toBeGreaterThan(fitting);
   });
 });
+
+describe('the rename offer on the status bar (ADR-0093)', () => {
+  it('shows the question with its two buttons', () => {
+    const html = bar({ ...QUIET, themName: 'Them', nameOffer: 'Sarah' });
+    expect(html).toContain('data-status="rename-them"');
+    expect(html).toContain('Rename Them to Sarah?');
+    expect(html).toContain('>Rename<');
+    expect(html).toContain('>Not now<');
+  });
+});

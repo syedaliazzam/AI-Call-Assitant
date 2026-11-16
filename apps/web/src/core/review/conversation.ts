@@ -321,8 +321,12 @@ export function answerLabel(answer: Pick<StoredAnswer, 'mode' | 'meta'>): string
   return `Paramount AI answered${kinds.length > 0 ? ` (${kinds.join(', ')})` : ''}`;
 }
 
-/** The session fields a download uses. */
-type DownloadSession = Pick<Session, 'company' | 'role' | 'contactName'>;
+/**
+ * The session fields a download uses. ADR-0093: contactName is the other person's name for the call
+ * (callers pass the call's own name there, withTheirName()), and the type picks the fallback label.
+ */
+type DownloadSession = Pick<Session, 'company' | 'role' | 'contactName'> &
+  Partial<Pick<Session, 'type'>>;
 
 /**
  * The paragraphs of a download, shared by TXT and PDF so they always say the same (v1.3.2, the Otter

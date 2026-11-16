@@ -151,6 +151,12 @@ export interface SessionContext {
    * place of those documents. Absent: an older page, whose documents are written in full.
    */
   documentsSummary?: string;
+  /**
+   * ADR-0093: the other person's real name for this call (cleanPersonName(), at most 60 characters):
+   * their transcript lines are labelled with it instead of "Them". Absent when no name is known (the
+   * "Interviewer" fallback is display only), so such a prompt, and its cache entry, stay as they were.
+   */
+  themName?: string;
 }
 
 /** POST /api/summary: summarise a session's documents other than the CV (ADR-0067). */

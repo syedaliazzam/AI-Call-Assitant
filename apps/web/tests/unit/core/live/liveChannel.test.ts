@@ -125,6 +125,14 @@ describe('isCommand and isState', () => {
     expect(isCommand({ type: 'style' })).toBe(false);
   });
 
+  it('ADR-0093: accepts the rename offer commands only with a name', () => {
+    expect(isCommand({ type: 'rename-them', name: 'Sarah' })).toBe(true);
+    expect(isCommand({ type: 'rename-them', name: '' })).toBe(false);
+    expect(isCommand({ type: 'rename-them' })).toBe(false);
+    expect(isCommand({ type: 'rename-them', name: 'x'.repeat(201) })).toBe(false);
+    expect(isCommand({ type: 'dismiss-name' })).toBe(true);
+  });
+
   it('accept only the known shapes', () => {
     for (const type of ['answer', 'screenshot', 'clear', 'prev', 'next', 'end', 'hello'])
       expect(isCommand({ type })).toBe(true);

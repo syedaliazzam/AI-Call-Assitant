@@ -18,6 +18,7 @@
  */
 import {
   DEFAULT_CODING_LANGUAGE,
+  cleanPersonName,
   parseKeyTerms,
   type ConversationChunk,
   type SessionContext,
@@ -57,7 +58,9 @@ export function sortDocuments<T extends Pick<StoredDocument, 'id' | 'addedAt' | 
 /**
  * Builds the request's session details from what is stored on this computer. The job description
  * and the user's instructions are part of the details; the documents follow, the CV first
- * (sortDocuments()). The CV carries kind 'resume', which is never written into the prompt.
+ * (sortDocuments()). The CV carries kind 'resume', which is never written into the prompt. ADR-0093:
+ * the session's contactName, when it has one, goes as themName (the other person's speaker label); a
+ * caller with a call whose own name wins passes the session with that name (withTheirName()).
  *
  * @param session   The stored session.
  * @param documents Its documents (any order).
@@ -93,6 +96,10 @@ export function toSessionContext(
     ...(language ? { language } : {}),
     ...(codingLanguage !== DEFAULT_CODING_LANGUAGE ? { codingLanguage } : {}),
     ...(missingInfo === 'story' ? { missingInfo } : {}),
+    // ADR-0093: only with a real name, so a session without one keeps its bytes.
+    ...(cleanPersonName(session.contactName)
+      ? { themName: cleanPersonName(session.contactName) }
+      : {}),
     documents: sorted.map((document) => ({
       name: document.name,
       text: document.text,

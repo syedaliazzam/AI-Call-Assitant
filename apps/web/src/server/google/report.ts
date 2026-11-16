@@ -132,6 +132,11 @@ export interface SessionReport {
   callFilesSaved?: boolean;
   /** ADR-0077: the session's Recordings subfolder in Drive. */
   recordingsFolderUrl?: string;
+  /**
+   * ADR-0093: the other person's name for the call (cleanPersonName()), shown as "With" in the call's
+   * emails. Absent when no name is known (the "Them" / "Interviewer" fallbacks are never sent).
+   */
+  withName?: string;
 }
 
 /**
@@ -184,6 +189,10 @@ export function mergeReport(
     ...(current?.callFilesSaved || report.callFilesSaved ? { callFilesSaved: true } : {}),
     ...(report.recordingsFolderUrl || current?.recordingsFolderUrl
       ? { recordingsFolderUrl: report.recordingsFolderUrl ?? current?.recordingsFolderUrl }
+      : {}),
+    // ADR-0093: the latest report's name for the other person (a rename before the email is sent).
+    ...(report.withName || current?.withName
+      ? { withName: report.withName ?? current?.withName }
       : {}),
     ...(current?.kind ? { kind: current.kind } : {}),
     ...(current?.lastTriedAt ? { lastTriedAt: current.lastTriedAt } : {}),

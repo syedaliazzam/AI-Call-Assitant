@@ -26,6 +26,7 @@ import {
 } from '@kite/shared';
 import type { CallView } from '../review/calls';
 import type { CallDriveState, DriveCallJob, DriveFileJob, Session } from '../storage/types';
+import { theirName } from '../transcript/theirName';
 import { DriveApiError } from './api';
 import type { CallFile } from './callFiles';
 import { callFileDriveName, recordingDriveName, sessionFolderName, sessionTitle } from './names';
@@ -304,6 +305,9 @@ async function reportCall(
     recordingOfCall(job, { meetingId: recording.meetingId, startedAt: recording.startedAt }),
   );
   const folderUrl = `https://drive.google.com/drive/folders/${encodeURIComponent(job.folderId)}`;
+  // ADR-0093: the other person's name for the call (a real name only), for the email's "With" row.
+  const view = await deps.calls.call(job).catch(() => null);
+  const withName = theirName(session, view?.record);
   try {
     await deps.api.notify({
       sessionId: job.sessionId,
@@ -329,6 +333,7 @@ async function reportCall(
       ],
       // ADR-0077: a call that ended is emailed by the two-step rule; an earlier call only by hand.
       manualOnly: job.origin === 'earlier',
+      ...(withName ? { withName } : {}),
       ...(job.origin === 'call'
         ? {
             emailRule: 'two-step' as const,

@@ -15,9 +15,11 @@
  *
  * Invented data only; nothing is saved but this rig's own browser storage.
  */
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { displayTerms } from '@/core/transcript/display';
+import { findNameOffer, theirLabel, theirName, withTheirName } from '@/core/transcript/theirName';
+import { RenameOffer } from '@/features/live/RenameOffer';
 import { createTranscript, type Speaker } from '@/core/transcript/transcript';
 import type { Session, StoredAnswer } from '@/core/storage/types';
 import { groupWords, type TranscriptGroup } from '@/core/transcript/group';
@@ -173,6 +175,38 @@ function CallRig() {
     transcript.displayLines,
   );
   const terms = useMemo(() => displayTerms(SESSION), []);
+  // ADR-0093, as LivePage: the call's name for the other person, and the "Rename Them to …?" offer.
+  const [callName, setCallName] = useState('');
+  const [offer, setOffer] = useState<string | null>(null);
+  const checked = useRef(new Set<string>());
+  const declined = useRef(new Set<string>());
+  const session = useMemo(
+    () => withTheirName(SESSION, callName ? { themName: callName } : null),
+    [callName],
+  );
+  const label = theirLabel(session);
+  const known = theirName(session) !== '';
+  useEffect(() => {
+    if (known || offer) return;
+    const found = findNameOffer(lines, checked.current, declined.current, [
+      'Rig user',
+      SESSION.company,
+    ]);
+    if (found) setOffer(found);
+  }, [lines, known, offer]);
+  const rename = useCallback((name: string) => {
+    setOffer(null);
+    setCallName(name);
+  }, []);
+  const dismiss = useCallback(() => {
+    setOffer((current) => {
+      if (current) declined.current.add(current.toLowerCase());
+      return null;
+    });
+  }, []);
+  const notices = offer ? (
+    <RenameOffer label={label} name={offer} onRename={rename} onDismiss={dismiss} />
+  ) : null;
   const [bridge, setBridge] = useState<AnswerThisBridge | null>(null);
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const browserLayout = new URLSearchParams(window.location.search).get('layout') === 'browser';
@@ -199,6 +233,7 @@ function CallRig() {
       level={speaker === 'you' ? 0.3 : 0.55}
       inactive={false}
       compact
+      {...(speaker === 'them' ? { name: label } : {})}
     />
   ));
   const transcriptNode = (
@@ -206,6 +241,7 @@ function CallRig() {
       lines={lines}
       health="ok"
       terms={terms}
+      themName={label}
       flush={browserLayout}
       {...(bridge
         ? {
@@ -224,7 +260,10 @@ function CallRig() {
    */
   const answersNode = (startInOverlay: boolean) => (
     <LiveAnswers
-      session={SESSION}
+      session={session}
+      nameOffer={offer}
+      onRenameThem={rename}
+      onDismissName={dismiss}
       documents={[]}
       transcript={transcript}
       callStartedAt={STARTED_AT}
@@ -265,6 +304,7 @@ function CallRig() {
         }}
         transcript={transcriptNode}
         answers={answersNode(false)}
+        notices={notices}
       />
     );
   }
@@ -286,6 +326,7 @@ function CallRig() {
           topBarSlot={setSlot}
           transcript={transcriptNode}
           answers={answersNode(true)}
+          notices={notices}
         />
       </main>
     </div>

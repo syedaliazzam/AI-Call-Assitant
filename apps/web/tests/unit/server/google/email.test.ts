@@ -312,6 +312,13 @@ describe('the two emails of a call (ADR-0077)', () => {
     );
   });
 
+  it('ADR-0093: says who the call was with when their name is known, and nothing otherwise', () => {
+    const named = buildCallSavedEmail({ ...CALL, withName: 'Sarah Chen' });
+    expect(named.text).toContain('With: Sarah Chen');
+    expect(named.html).toContain('>With<');
+    expect(buildCallSavedEmail(CALL).text).not.toContain('With:');
+  });
+
   it('email 1 for a call that saved no transcript still goes, with the Recordings folder', () => {
     const email = buildCallSavedEmail({ ...CALL, files: [] });
     expect(email.text).toContain('No transcript or notes were saved for this call.');

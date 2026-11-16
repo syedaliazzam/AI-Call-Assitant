@@ -468,3 +468,32 @@ export function buildKeyterms(
   for (const word of extractSingleWordTerms(texts).slice(0, MAX_SINGLE_WORD_TERMS)) add(word);
   return result;
 }
+
+/**
+ * ADR-0093: adds the other person's name, accepted during the call ("Rename Them to Sarah?"), to the
+ * call's keyterms, so Deepgram spells it the same way from then on. It goes first (a name heard on the
+ * call matters more than a document term); the list keeps MAX_KEYTERMS and MAX_KEYTERM_CHARS by dropping
+ * its last terms. A name already listed (ignoring case), too long, or empty changes nothing.
+ *
+ * @param terms The call's keyterms (buildKeyterms()).
+ * @param name  The other person's name.
+ * @returns The keyterms with the name (the same array when nothing changes).
+ * Called from: LivePage.tsx (after a rename during the call); tests
+ */
+export function withNameKeyterm(terms: readonly string[], name: string): readonly string[] {
+  const term = name.replace(/\s+/g, ' ').trim();
+  if (
+    term === '' ||
+    term.length > MAX_PHRASE_CHARS ||
+    term.split(' ').length > MAX_PHRASE_WORDS ||
+    terms.some((existing) => existing.toLowerCase() === term.toLowerCase())
+  ) {
+    return terms;
+  }
+  const result = [term, ...terms];
+  let chars = result.reduce((total, one) => total + one.length, 0);
+  while (result.length > MAX_KEYTERMS || chars > MAX_KEYTERM_CHARS) {
+    chars -= result.pop()!.length;
+  }
+  return result;
+}

@@ -98,6 +98,8 @@ export async function regenerateCallNotes(
       })),
       answers: call.answers,
       callStartedAt: call.startedAt,
+      // ADR-0093: the call's own name for the other person.
+      ...(call.record?.themName ? { callTheirName: call.record.themName } : {}),
     },
     {
       ...deps,
@@ -111,6 +113,7 @@ export async function regenerateCallNotes(
             callStartedAt: stored.callStartedAt,
             createdAt: stored.createdAt,
             ...(stored.fromAnswersOnly ? { fromAnswersOnly: true } : {}),
+            ...(stored.writtenTheirName ? { writtenTheirName: stored.writtenTheirName } : {}),
           })),
     },
   );

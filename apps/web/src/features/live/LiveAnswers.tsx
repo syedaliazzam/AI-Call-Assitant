@@ -152,6 +152,15 @@ export interface LiveAnswersProps {
   /** v1.1.0: how many echo lines were hidden in this call (the one-time headphones hint). */
   echoCount?: number;
   /**
+   * ADR-0093: a name the other person gave when introducing themselves, offered on the overlay as
+   * "Rename Them to Sarah?". Absent when there is nothing to offer.
+   */
+  nameOffer?: string | null;
+  /** ADR-0093: the overlay's Rename on the offer (the live page renames the other person for this call). */
+  onRenameThem?: (name: string) => void;
+  /** ADR-0093: the overlay's Not now on the offer. */
+  onDismissName?: () => void;
+  /**
    * Desktop 1.5.0 (ADR-0068): the call's meeting recording (the Rec pill on both bars, Ctrl+Alt+R and
    * the ⋮ menu's type). Absent where the app cannot record, and in harnesses.
    */
@@ -379,7 +388,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
         answered: answeredIds.has(group.id),
         unclear: isUnclearGroup(group),
       })),
-      themName: speakerNames({ contactName: props.session.contactName }).them,
+      // ADR-0093: the call's name for the other person, else "Interviewer" or "Them" by session type.
+      themName: speakerNames({ contactName: props.session.contactName, type: props.session.type })
+        .them,
+      ...(props.nameOffer ? { nameOffer: props.nameOffer } : {}),
       language,
       autoAnswer: autoOn,
       hygiene: props.hygiene ?? 'ok',
@@ -444,6 +456,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     answerTaken,
     props.session.id,
     props.session.contactName,
+    props.nameOffer,
     props.micDeviceId,
     props.themSourceLabel,
     scriptBar,
@@ -519,6 +532,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
   });
   // v1.1.0: the words on screen and the live question; the answer stays.
   const onClearTranscript = useRef(props.onClearTranscript);
+  // ADR-0093: the rename offer's buttons on the overlay (the handler is added once).
+  const renameThem = useRef(props.onRenameThem);
+  const dismissName = useRef(props.onDismissName);
   const clearTranscript = useRef(() => {
     setQuestionClearedAt(Date.now());
     onClearTranscript.current?.();
@@ -548,6 +564,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     onEnd.current = props.onEnd;
     latestPreferences.current = props.session.preferences;
     onClearTranscript.current = props.onClearTranscript;
+    renameThem.current = props.onRenameThem;
+    dismissName.current = props.onDismissName;
     overlayProps.current = props;
     groupsRef.current = groups;
   });
@@ -594,7 +612,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
         void getPlatform()
           .showCallWindow()
           .catch(() => undefined);
-      } else if (command.type === 'script-bar') setScriptBar(command.on);
+      } else if (command.type === 'rename-them') renameThem.current?.(command.name);
+      else if (command.type === 'dismiss-name') dismissName.current?.();
+      else if (command.type === 'script-bar') setScriptBar(command.on);
       else if (command.type === 'click-through') setClickThrough(command.on);
       else if (command.type === 'dictate') {
         if (command.on) dictationRef.current?.start(chatTargetRef.current);

@@ -314,6 +314,11 @@ export interface DriveNotifyRequest {
   callFilesSaved?: boolean;
   /** ADR-0077: the session's Recordings subfolder in Drive, linked in email 1 while a recording uploads. */
   recordingsFolderUrl?: string;
+  /**
+   * ADR-0093: the other person's name for the call (cleanPersonName()), shown as "With" in the call's
+   * emails. Absent when no name is known (the "Them" / "Interviewer" fallbacks are never sent).
+   */
+  withName?: string;
 }
 
 /**

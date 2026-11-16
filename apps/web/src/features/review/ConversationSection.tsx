@@ -4,13 +4,14 @@
  *          like an Otter export): each turn as "<Speaker name>  <mm:ss>" with its words under it, each
  *          answer right after the turn it answered as a collapsible "Paramount AI answered  <mm:ss>" with
  *          its Question and Answer, and a divider between calls. "You" shows the account's display name;
- *          the other person's name is renamable here (click it), stored on the session and synced. Answers: every answer as a card, with its time, thumbs and "Report this
+ *          the other person's name is renamable here (click it; ADR-0093: for the shown call, kept on the
+ *          call and synced; the call's notes and Drive files follow). Answers: every answer as a card, with its time, thumbs and "Report this
  *          answer". Oldest first by default, with a toggle that is remembered. Also Download (TXT and
  *          PDF, always in time order) and Clear transcript (asks first).
  * Used by: src/features/review/SessionReview.tsx
  * Depends on: src/core/review/conversation.ts, src/core/answer/format.ts (splitAnswer),
  *             src/core/storage/answers.ts (rating, report), src/core/storage/utterances.ts (clear),
- *             src/core/storage/sessions.ts (updateSession: the other person's name),
+ *             src/core/transcript/theirName.ts (the fallback label, ADR-0093),
  *             src/core/transcript/turns.ts (names, mm:ss), src/features/shell/AccountName.tsx,
  *             src/ui (Button, Dialog, icons)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Session review); ADR-0029
@@ -37,7 +38,8 @@ import {
 import { downloadFile } from '@/core/review/downloadTranscript';
 import { rateAnswer, reportAnswer } from '@/core/storage/answers';
 import type { Session, StoredAnswer, StoredUtterance } from '@/core/storage/types';
-import { updateSession } from '@/core/storage/sessions';
+import { cleanPersonName } from '@kite/shared';
+import { fallbackTheirLabel } from '@/core/transcript/theirName';
 import { clearTranscript } from '@/core/storage/utterances';
 import type { DisplayTerm } from '@/core/transcript/display';
 import { formatElapsed, speakerNames } from '@/core/transcript/turns';
@@ -89,6 +91,13 @@ export interface ConversationSectionProps {
   terms: readonly DisplayTerm[];
   /** Reads the data again after a change. */
   onChanged: () => void;
+  /**
+   * ADR-0093: renames the other person for the shown call (the whole call: its turns, notes, downloads
+   * and Drive files). '' goes back to the session's name, else "Interviewer" or "Them".
+   */
+  onRename: (name: string) => void;
+  /** ADR-0093: what happened after the last rename (the Drive files), or null. */
+  renameStatus?: string | null;
 }
 
 /**
@@ -257,35 +266,35 @@ function AnswerChip({
 
 /**
  * The other person's name on their turns (v1.3.2): a button; clicking it turns it into a box. Enter or
- * leaving the box saves the name on the session (it syncs with the session), Escape keeps the old one.
- * An empty name goes back to "Them".
+ * leaving the box renames them for the shown call (ADR-0093: the whole call, its notes and Drive files),
+ * Escape keeps the old name. An empty name goes back to the session's name, else "Interviewer" or "Them".
  *
- * @param props.session   The session (its contactName).
- * @param props.name      The name shown now.
- * @param props.onChanged Reads the data again after a change.
+ * @param props.session  The session as the shown call reads it (contactName: the call's name).
+ * @param props.name     The name shown now.
+ * @param props.onRename Renames the other person for the shown call.
  * @returns The name, or the box while editing.
  * Rendered by: ConversationSection
  */
 function ThemName({
   session,
   name,
-  onChanged,
+  onRename,
 }: {
-  /** The session. */
+  /** The session, as the shown call reads it. */
   session: Session;
   /** The name shown now. */
   name: string;
-  /** Reads the data again after a change. */
-  onChanged: () => void;
+  /** Renames the other person for the shown call. */
+  onRename: (name: string) => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
 
   /** Saves the typed name, if it changed. */
   function save() {
-    const next = (draft ?? '').trim().slice(0, 80);
+    const next = cleanPersonName(draft);
     setDraft(null);
-    if (next === (session.contactName?.trim() ?? '')) return;
-    void updateSession(session.id, { contactName: next }).then(onChanged, () => undefined);
+    if (next === cleanPersonName(session.contactName)) return;
+    onRename(next);
   }
 
   if (draft === null) {
@@ -294,7 +303,7 @@ function ThemName({
         type="button"
         title="Rename"
         aria-label={`${name}: rename`}
-        onClick={() => setDraft(session.contactName?.trim() ?? '')}
+        onClick={() => setDraft(cleanPersonName(session.contactName))}
         className="rounded-control font-semibold text-ui-text underline-offset-2 hover:underline focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"
       >
         {name}
@@ -307,8 +316,8 @@ function ThemName({
       // The user opened the box with a click: it takes the typing at once.
       autoFocus
       value={draft}
-      maxLength={80}
-      placeholder="Them"
+      maxLength={60}
+      placeholder={fallbackTheirLabel(session.type)}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={save}
       onKeyDown={(event) => {
@@ -365,6 +374,8 @@ export function ConversationSection({
   answers,
   terms,
   onChanged,
+  onRename,
+  renameStatus = null,
 }: ConversationSectionProps) {
   const [confirming, setConfirming] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -466,6 +477,11 @@ export function ConversationSection({
           {notice}
         </p>
       )}
+      {renameStatus && (
+        <p role="status" className="mt-2 text-[13px] text-ui-muted">
+          {renameStatus}
+        </p>
+      )}
       {lines.length === 0 && (
         <p className="mt-2 text-[13px] text-ui-muted">
           {session.saveTranscript
@@ -513,7 +529,7 @@ export function ConversationSection({
                   {you ? (
                     <span className="font-semibold text-ui-you">{names.you}</span>
                   ) : (
-                    <ThemName session={session} name={names.them} onChanged={onChanged} />
+                    <ThemName session={session} name={names.them} onRename={onRename} />
                   )}
                   <span className="tabular-nums text-ui-muted">{formatElapsed(entry.elapsed)}</span>
                 </span>

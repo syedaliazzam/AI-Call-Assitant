@@ -13,6 +13,7 @@
  */
 import 'server-only';
 import {
+  cleanPersonName,
   AI_INSTRUCTIONS_PIN_PATTERN,
   ANSWER_STYLE_VERSIONS,
   parseKeyTerms,
@@ -115,6 +116,13 @@ const sessionSchema = z
     documents: z.array(documentSchema).max(20),
     // Smart-model routes only (ADR-0067): the summary of the documents other than the CV.
     documentsSummary: z.string().max(MAX_DOCUMENTS_SUMMARY_CHARS).optional(),
+    // ADR-0093: cleaned again here (the label must never carry a quote, colon or tag); a name that
+    // cleans to nothing is dropped, so the prompt is the one without a name.
+    themName: z
+      .string()
+      .max(200)
+      .optional()
+      .transform((name) => cleanPersonName(name) || undefined),
   })
   .refine(
     (session) =>

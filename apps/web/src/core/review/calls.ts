@@ -45,7 +45,7 @@ const AFTER_END_MS = 120_000;
 /** A call's notes as the session page and the Drive files read them (a call's own, or the older row). */
 export type CallNotesView = Pick<
   StoredNotes,
-  'notes' | 'callStartedAt' | 'createdAt' | 'fromAnswersOnly'
+  'notes' | 'callStartedAt' | 'createdAt' | 'fromAnswersOnly' | 'writtenTheirName'
 >;
 
 /** One call of a session, with everything it has. */

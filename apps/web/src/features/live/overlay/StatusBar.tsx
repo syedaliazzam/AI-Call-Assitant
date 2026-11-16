@@ -79,6 +79,7 @@ const TONE: Readonly<Record<StatusMessage['tone'], string>> = {
   warning: 'text-ui-warning',
   listening: 'text-ui-danger',
   muted: 'text-ui-muted',
+  offer: 'text-ui-text',
 };
 
 /**
@@ -131,6 +132,15 @@ function MessageLine({
           }}
         >
           {action.label}
+        </button>
+      )}
+      {message.dismiss && (
+        <button
+          type="button"
+          className={`${BUTTON} h-6 shrink-0 text-[13px]`}
+          onClick={() => onCommand(message.dismiss!.command)}
+        >
+          {message.dismiss.label}
         </button>
       )}
     </span>
