@@ -7,7 +7,8 @@
  *          format and length, never editable or shown), and how a system prompt is put together:
  *          contract, then the admin's global prompt.
  * Used by: src/server/prompt.ts (live answers), src/server/notes.ts, src/server/ask.ts,
- *          src/server/kite-chat.ts, src/server/aiTry.ts (the page's read-only "View app contract")
+ *          src/server/kite-chat.ts, src/server/aiBudget.ts, app/(app)/admin/ai-settings/page.tsx (the
+ *          page's read-only "View app contract")
  * Depends on: @kite/shared (SessionContext), ./preferences.ts (format and length meanings)
  * Architecture: docs/decisions/ADR-0089-global-prompts-with-locked-contract.md;
  *               ADR-0088 (the unsupported company facts rule, kept word for word in the end reminder)

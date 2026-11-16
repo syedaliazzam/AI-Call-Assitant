@@ -1,24 +1,20 @@
 /**
- * Tests for Admin → AI settings' page (ADR-0089: src/features/admin/ai-settings/AiSettingsPage.tsx and
+ * Tests for Admin → AI settings' page (ADR-0089, ADR-0091: src/features/admin/ai-settings/AiSettingsPage.tsx and
  * PromptWorkspace.tsx), as the server renders them:
  * - three tabs with the selected tab's description and live-version status (number, editor, time);
  * - the editor is not a bare text box: a toolbar (undo, redo, find, line numbers), a character counter;
- * - Save is disabled until this exact draft was tried, with the reason shown; a tried draft enables it;
+ * - Save is disabled with nothing to save, and enabled for any unsaved change, a lint-flagged one too;
  * - Preview renders the prompt as a document (headings, lists, quoted examples);
  * - the lint hint shows for an edited line that sets layout or preferences, not for the default text;
  * - the app contract is a folded, read-only "View app contract" with the locked text;
- * - the actions bar holds Try it, Quality check (live answers only), History, Discard, Reset and Save.
+ * - the actions bar holds History, Discard, Reset to default and Save, with no Try it or Quality check;
+ * - History opens with the versions, Compare and Restore.
  * All data is invented.
  */
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { BlockView, BudgetView } from '@/features/admin/ai-settings/blocks';
 
-vi.mock('@/core/admin/aiTry', () => ({
-  listTrySessions: vi.fn(async () => []),
-  runAiTry: vi.fn(),
-  runQualityCheck: vi.fn(),
-}));
 const { AiSettingsPage } = await import('@/features/admin/ai-settings/AiSettingsPage');
 const { PromptWorkspace } = await import('@/features/admin/ai-settings/PromptWorkspace');
 
@@ -119,19 +115,17 @@ describe('PromptWorkspace', () => {
     expect(html).toContain('font-sans');
   });
 
-  it('keeps Save disabled until this exact draft was tried, and says why', () => {
-    const untried = workspace({ draft: 'How to answer for the call:\n- Say customers, always.' });
-    expect(untried).toMatch(/<button(?=[^>]*disabled="")[^>]*>Save<\/button>/);
-    expect(untried).toContain(
-      'Save unlocks after Try it or Quality check runs on this exact draft.',
-    );
-    expect(untried).toContain('Unsaved changes');
-    const tried = workspace({
-      draft: 'How to answer for the call:\n- Say customers, always.',
-      tried: true,
-    });
-    expect(tried).not.toMatch(/<button(?=[^>]*disabled="")[^>]*>Save<\/button>/);
-    expect(tried).toContain('Tried');
+  it('enables Save for any unsaved change, even one the lint hint flags (ADR-0091)', () => {
+    /** Matches a disabled Save button. */
+    const disabledSave = /<button(?=[^>]*disabled="")[^>]*>Save<\/button>/;
+    expect(workspace()).toMatch(disabledSave);
+    expect(workspace()).toContain('No unsaved changes');
+    const edited = workspace({ draft: 'How to answer for the call:\n- Say customers, always.' });
+    expect(edited).not.toMatch(disabledSave);
+    expect(edited).toContain('Unsaved changes');
+    const flagged = workspace({ draft: `${DEFAULT}\n- Use five bullet points with a headline.` });
+    expect(flagged).toContain('Structure and personal preferences are set elsewhere');
+    expect(flagged).not.toMatch(disabledSave);
   });
 
   it('renders the prompt as a document in Preview', () => {
@@ -156,12 +150,48 @@ describe('PromptWorkspace', () => {
     expect(html).toContain('[[type|for|source]]');
   });
 
-  it('offers Quality check for live answers only', () => {
-    expect(workspace()).toContain('Quality check');
-    expect(workspace({}, 'notes')).not.toContain('Quality check');
-    for (const label of ['Try it', 'History', 'Discard', 'Reset to default', 'Save']) {
-      expect(workspace({}, 'notes')).toContain(label);
+  it('has no Try it or Quality check, and keeps History, Discard, Reset and Save', () => {
+    for (const block of ['live', 'notes'] as const) {
+      const html = workspace({}, block);
+      expect(html).not.toContain('Try it');
+      expect(html).not.toContain('Quality check');
+      for (const label of ['History', 'Discard', 'Reset to default', 'Save']) {
+        expect(html).toContain(label);
+      }
     }
+  });
+
+  it('opens History with the versions, Compare and Restore', () => {
+    const html = renderToString(
+      <PromptWorkspace
+        block="live"
+        view={view({
+          versions: [
+            ...view().versions,
+            {
+              id: 'v1',
+              number: 1,
+              prompt: null,
+              note: null,
+              authorName: 'Ben Admin',
+              restored: false,
+              legacy: false,
+              createdAt: '2026-11-15T09:05:00.000Z',
+            },
+          ],
+        })}
+        budget={BUDGET}
+        actions={ACTIONS}
+        onToast={() => undefined}
+        onDirtyChange={() => undefined}
+        initial={{ history: true }}
+      />,
+    );
+    // React writes 'Version <!-- -->2' for 'Version {number}'.
+    expect(html).toMatch(/Version (<!-- -->)?2/);
+    expect(html).toMatch(/Version (<!-- -->)?1/);
+    expect(html).toContain('Compare');
+    expect(html).toContain('Restore');
   });
 });
 

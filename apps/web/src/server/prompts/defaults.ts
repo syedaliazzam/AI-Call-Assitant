@@ -7,7 +7,7 @@
  *          user's answer format, length, tone, STAR preference and coding language" (the values and
  *          their meaning are in the session's user preferences, ./preferences.ts).
  * Used by: src/server/aiInstructions.ts (a version with no global prompt uses these),
- *          src/server/aiTry.ts, src/server/aiQuality.ts, app/(app)/admin/ai-settings/page.tsx,
+ *          app/(app)/admin/ai-settings/page.tsx,
  *          scripts/eval-answers.ts, scripts/eval-notes.ts; tests
  * Depends on: @kite/shared (AiInstructionBlock, MAX_SUMMARY_BULLETS, MAX_PROPOSED_LESSONS)
  * Architecture: docs/decisions/ADR-0089-global-prompts-with-locked-contract.md

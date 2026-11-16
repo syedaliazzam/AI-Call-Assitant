@@ -2,22 +2,19 @@
  * File: packages/shared/src/aiInstructions.ts
  * Purpose: Shared names, limits and request shapes for Admin → AI settings (ADR-0083, redesigned in
  *          ADR-0089): the three tabs (live answers, AI notes, Ask AI), each with ONE admin-edited global
- *          prompt sent after the app's locked contract; the per-call version pin; the "Try it" and
- *          "Quality check" requests and replies; the lint hint for text that tries to set layout or
- *          personal preferences; and the input-budget check shown next to the live answers prompt.
- * Used by: apps/web/src/server/aiInstructions.ts, apps/web/src/server/aiTry.ts,
- *          apps/web/src/server/aiQuality.ts, apps/web/src/server/validate.ts,
- *          apps/web/src/core/answer/instructionsPin.ts, apps/web/src/core/admin/aiTry.ts,
+ *          prompt sent after the app's locked contract; the per-call version pin; the lint hint for text
+ *          that tries to set layout or personal preferences (a hint only: it never blocks Save,
+ *          ADR-0091); and the input-budget check shown next to the live answers prompt.
+ * Used by: apps/web/src/server/aiInstructions.ts, apps/web/src/server/aiBudget.ts,
+ *          apps/web/src/server/validate.ts, apps/web/src/core/answer/instructionsPin.ts,
  *          apps/web/src/features/admin/ai-settings/*
- * Depends on: ./answer-meta.ts (AnswerMeta), ./api.ts (SessionContext), ./notes.ts (CallNotes)
+ * Depends on: nothing
  * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md,
- *               docs/decisions/ADR-0089-global-prompts-with-locked-contract.md
+ *               docs/decisions/ADR-0089-global-prompts-with-locked-contract.md,
+ *               docs/decisions/ADR-0091-simpler-ai-settings.md
  *
  * A global prompt is company content: it goes into prompts only, never into a log.
  */
-import type { AnswerMeta } from './answer-meta';
-import type { SessionContext } from './api';
-import type { CallNotes } from './notes';
 
 /**
  * The tabs, one per kind of Claude request:
@@ -59,132 +56,17 @@ export interface InstructionsPin {
 }
 
 /**
- * Cleans a global prompt the same way everywhere it is tried, checked or saved: Windows line endings
- * become "\n", and spaces and blank lines at the start and end go. So the same text always gives the
- * same prompt bytes (and the same try token).
+ * Cleans a global prompt the same way everywhere it is compared or saved: Windows line endings become
+ * "\n", and spaces and blank lines at the start and end go. So the same text always gives the same
+ * prompt bytes.
  *
  * @param text The text as typed.
  * @returns The cleaned text.
- * Called from: apps/web/src/server (aiInstructions.ts, aiTry.ts, aiQuality.ts, promptTryToken.ts),
- *              features/admin/ai-settings (the "tried" check); tests
+ * Called from: apps/web/src/server/aiInstructions.ts (saving), features/admin/ai-settings (unsaved
+ *              changes); tests
  */
 export function normaliseGlobalPrompt(text: string): string {
   return text.replace(/\r\n?/g, '\n').trim();
-}
-
-/** Body of POST /api/admin/ai-instructions/try (admins only). */
-export interface AiTryRequest {
-  /** Which tab the draft is for. */
-  block: AiInstructionBlock;
-  /** The draft global prompt (not saved), at most MAX_GLOBAL_PROMPT_CHARS characters. */
-  prompt: string;
-  /**
-   * 'live' and 'ask': the sample question. 'notes': a short sample call, one line per turn, each
-   * starting "Them:" or "You:".
-   */
-  sample: string;
-  /** A session for context (its details, preferences and documents), or absent for none. */
-  session?: SessionContext;
-}
-
-/** Reply of a "Try it" for 'live' or 'ask': the answer as the user would see it. */
-export interface AiTryAnswer {
-  /** Which kind of reply this is. */
-  kind: 'answer';
-  /** The answer text, without the hidden lines. */
-  text: string;
-  /** What the hidden first line said (question type, who it is for, source), or null. */
-  meta: AnswerMeta | null;
-  /** The question as the hidden last line cleaned it up, or null when the reply had none. */
-  question: string | null;
-  /** Proof that this exact draft was tried; Save requires it (server/promptTryToken.ts). */
-  promptToken: string;
-}
-
-/** Reply of a "Try it" for 'notes': the notes as they would be saved. */
-export interface AiTryNotes {
-  /** Which kind of reply this is. */
-  kind: 'notes';
-  /** The notes. */
-  notes: CallNotes;
-  /** Proof that this exact draft was tried; Save requires it. */
-  promptToken: string;
-}
-
-/** Reply of POST /api/admin/ai-instructions/try. */
-export type AiTryResponse = AiTryAnswer | AiTryNotes;
-
-/** Body of POST /api/admin/ai-instructions/quality (admins only; live answers only). */
-export interface QualityCheckRequest {
-  /** The draft global prompt for live answers. */
-  prompt: string;
-}
-
-/** What a quality-check scenario tests: a failed honesty or format case is a warning on its own. */
-export type QualityKind = 'honesty' | 'format' | 'quality';
-
-/** One scenario's result. */
-export interface QualityScenarioResult {
-  /** The scenario's id (for example 'no-cv-behavioural'). */
-  id: string;
-  /** What it checks, in a few words. */
-  title: string;
-  /** What kind of case it is. */
-  kind: QualityKind;
-  /** Its score, 0 to 10. */
-  score: number;
-  /** False when a must-pass rule failed (an invented fact, a missing hidden line, the wrong format). */
-  passed: boolean;
-  /** One short sentence on what cost points ('' when nothing did). Never logged. */
-  reason: string;
-}
-
-/** Reply of POST /api/admin/ai-instructions/quality. */
-export interface QualityCheckResponse {
-  /** The draft's mean score, 0 to 10. */
-  score: number;
-  /** The mean score of the prompt in force (checked once and remembered), or null when unknown. */
-  liveScore: number | null;
-  /** Per scenario, in a fixed order. */
-  scenarios: QualityScenarioResult[];
-  /** A warning to show (a drop of QUALITY_DROP_WARN or more, or a failed honesty or format case), or null. */
-  warning: string | null;
-  /** About what the check cost, in dollars (shown next to the result). */
-  costDollars: number;
-  /** Proof that this exact draft was checked; Save accepts it like a try token. */
-  promptToken: string;
-}
-
-/** A drop in the mean score at or above this warns (ADR-0089). */
-export const QUALITY_DROP_WARN = 0.3;
-
-/**
- * The warning for a quality check, or null when there is none to show.
- *
- * @param score     The draft's mean score.
- * @param liveScore The score of the prompt in force, or null when unknown.
- * @param scenarios The results.
- * @returns The words to show, or null.
- * Called from: apps/web/src/server/aiQuality.ts; tests
- */
-export function qualityWarning(
-  score: number,
-  liveScore: number | null,
-  scenarios: readonly Pick<QualityScenarioResult, 'kind' | 'passed' | 'title'>[],
-): string | null {
-  const parts: string[] = [];
-  if (liveScore !== null && liveScore - score >= QUALITY_DROP_WARN - 1e-9) {
-    parts.push(
-      `The score dropped by ${(liveScore - score).toFixed(1)} compared with the live version.`,
-    );
-  }
-  const failed = scenarios.filter(
-    (result) => !result.passed && (result.kind === 'honesty' || result.kind === 'format'),
-  );
-  if (failed.length > 0) {
-    parts.push(`Failed: ${failed.map((result) => result.title).join(', ')}.`);
-  }
-  return parts.length > 0 ? parts.join(' ') : null;
 }
 
 /**
