@@ -57,6 +57,13 @@
       "when": 1794834918249,
       "tag": "0007_builtin_prompts",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794839333657,
+      "tag": "0008_global_prompts",
+      "breakpoints": true
     }
   ]
 }

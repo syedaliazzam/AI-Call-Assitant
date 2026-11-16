@@ -14,16 +14,15 @@
  * limit and an overload (even mid-stream) end with claude_unavailable and the fixed message.
  * v1.0.2 (ADR-0036): over the daily limit, 429 daily_limit and Claude is never called; answer,
  * chat and screenshot count (msLimit logged), warm-ups and hello never do.
- * ADR-0083: the company instructions: live answers and warm-ups read the version the call pinned and
- * put it after the locked rules in the first cached block; Ask AI reads its own block; hello reads none;
- * only their size is logged.
- * ADR-0086: the custom full prompt of the same pinned version replaces the core rules and the reminder
- * (the warm-up sends the same cached bytes), the rollback rules stay as they are, and Ask AI uses its
- * chat part; only whether one was used is logged.
+ * ADR-0089: the global prompt: live answers and warm-ups read the version the call pinned (ADR-0083) and
+ * send the locked contract first, then the prompt, in the first cached block (the same bytes for the
+ * warm-up); Ask AI reads its own tab; hello reads none; the rollback rules stay as they are; only the
+ * prompt's size and whether it is the default are logged. The contract fallback: a reply with no hidden
+ * lines gets the default type and no raw tags, logged as counts only.
  */
 import Anthropic from '@anthropic-ai/sdk';
 import { CLAUDE_UNAVAILABLE_MESSAGES, dailyLimitMessage, type AnswerTimings } from '@kite/shared';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /** Spy standing in for countRequest() (the daily limit, ADR-0036): allows every request by default. */
 const countRequestMock = vi.hoisted(() =>
@@ -42,25 +41,23 @@ vi.mock('@/server/modelAccess', async (importOriginal) => ({
 import { fakeMessageStream } from '../../helpers/fakeClaude';
 
 /**
- * Spy standing in for the instructions text of companySettings() (ADR-0083): no company instructions by default, so every
- * other test sees today's prompts byte for byte.
+ * Spy standing in for companySettings() (ADR-0089): the global prompt a request uses, or null for the tab's
+ * default prompt (the default, so every other test sees today's prompts).
  */
-const companyMock = vi.hoisted(() => vi.fn(async (_block: string, _pin?: string) => ''));
-/**
- * Spy standing in for the custom full prompt of companySettings() (ADR-0086): null (the built-in
- * prompt) by default.
- */
-const promptMock = vi.hoisted(() =>
-  vi.fn((..._args: unknown[]): import('@kite/shared').CustomPrompt | null => null),
+const companyMock = vi.hoisted(() =>
+  vi.fn(async (_block: string, _pin?: string): Promise<string | null> => null),
 );
-vi.mock('@/server/aiInstructions', () => ({
-  // The same arguments reach both spies, so call checks stay exact.
-  companySettings: async (...args: [string, string?]) => ({
-    text: await companyMock(...args),
-    prompt: promptMock(...args),
-  }),
-  NO_SETTINGS: { text: '', prompt: null },
-}));
+vi.mock('@/server/aiInstructions', async () => {
+  const { DEFAULT_PROMPTS } = await import('@/server/prompts/defaults');
+  return {
+    companySettings: async (block: 'live' | 'notes' | 'ask', pin?: string) => {
+      const text = await companyMock(block, pin);
+      return text === null
+        ? { globalPrompt: DEFAULT_PROMPTS[block], isDefault: true }
+        : { globalPrompt: text, isDefault: false };
+    },
+  };
+});
 
 /** Spy standing in for client.messages.stream(). */
 const streamMock = vi.fn();
@@ -686,16 +683,16 @@ describe('POST /api/answer, daily limit (v1.0.2, ADR-0036)', () => {
   });
 });
 
-describe('POST /api/answer, company instructions (ADR-0083)', () => {
+describe('POST /api/answer, global prompt (ADR-0089)', () => {
   /** An invented version id the call pinned. */
   const PIN = '0b9c7a3e-5d1f-4c2a-9e8b-1a2b3c4d5e6f';
 
   beforeEach(() => {
     companyMock.mockReset();
-    companyMock.mockResolvedValue('');
+    companyMock.mockResolvedValue(null);
   });
 
-  it('reads the live block with the pin the call sent, and puts it after the locked rules', async () => {
+  it('reads the live tab with the pin the call sent, and sends the contract first, then the prompt', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     companyMock.mockResolvedValue('Say customers, never users.');
     streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
@@ -704,14 +701,15 @@ describe('POST /api/answer, company instructions (ADR-0083)', () => {
     expect(companyMock).toHaveBeenCalledWith('live', PIN);
     const [params] = streamMock.mock.calls[0]!;
     const rules: string = params.system[0].text;
-    expect(rules.startsWith('You are Paramount AI, a live call assistant.')).toBe(true);
-    expect(rules).toContain('Say customers, never users.');
+    const { LIVE_CONTRACT, GLOBAL_HEADING } = await import('@/server/prompts/contract');
+    expect(rules).toBe(`${LIVE_CONTRACT}\n\n${GLOBAL_HEADING}\nSay customers, never users.`);
     expect(params.system[0].cache_control).toEqual({ type: 'ephemeral' });
-    // The session block (with the user's own instructions) comes after it.
+    // The session block (the user's preferences and instructions) comes after it.
+    expect(params.system[1].text).toContain('These user preferences override the general rules');
     expect(params.system[1].text).toContain('Instructions from the user:');
   });
 
-  it('warms the cache with the same pinned instructions as the answers', async () => {
+  it('warms the cache with the same pinned prompt as the answers', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     companyMock.mockResolvedValue('Say customers, never users.');
     createMock.mockResolvedValue({
@@ -732,19 +730,24 @@ describe('POST /api/answer, company instructions (ADR-0083)', () => {
     expect(createMock.mock.calls[0]![0].system[0]).toEqual(streamMock.mock.calls[0]![0].system[0]);
   });
 
-  it("sends exactly today's rules block when there are no company instructions", async () => {
+  it('sends the contract and the default prompt when no version was saved', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
     await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
-    const { SYSTEM_RULES } = await import('@/server/prompt');
-    expect(streamMock.mock.calls[0]![0].system[0].text).toBe(SYSTEM_RULES);
+    const { rulesBlock } = await import('@/server/prompt');
+    expect(streamMock.mock.calls[0]![0].system[0].text).toBe(rulesBlock());
   });
 
-  it('uses the Ask AI block for the Ask AI page and no block for hello', async () => {
+  it('uses the Ask AI tab for the Ask AI page and nothing for hello', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
+    companyMock.mockResolvedValue('ASK PROMPT');
     streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|kite|general]] Hi'] }));
     await (await POST(post(JSON.stringify({ mode: 'kite', question: 'What is 2 + 2?' })))).text();
     expect(companyMock).toHaveBeenCalledWith('ask', undefined);
+    const { ASK_CHAT_CONTRACT } = await import('@/server/prompts/contract');
+    const system: string = streamMock.mock.calls[0]![0].system[0].text;
+    expect(system.startsWith(ASK_CHAT_CONTRACT)).toBe(true);
+    expect(system.endsWith('ASK PROMPT')).toBe(true);
     companyMock.mockClear();
     streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Hi'] }));
     await (await POST(post('{"mode":"hello"}'))).text();
@@ -758,7 +761,7 @@ describe('POST /api/answer, company instructions (ADR-0083)', () => {
     expect(companyMock).not.toHaveBeenCalled();
   });
 
-  it('logs the instructions size only, never their text or the pin', async () => {
+  it('logs the prompt size and whether it is the default only, never its text or the pin', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     companyMock.mockResolvedValue('Say customers, never users.');
     streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
@@ -766,86 +769,60 @@ describe('POST /api/answer, company instructions (ADR-0083)', () => {
       await POST(post(JSON.stringify({ ...ANSWER_REQUEST, instructionsVersion: PIN })))
     ).text();
     const logs = JSON.stringify(vi.mocked(console.info).mock.calls);
-    expect(logs).toContain('"companyChars":27');
+    expect(logs).toContain('"globalPromptChars":27');
+    expect(logs).toContain('"defaultPrompt":false');
     expect(logs).not.toContain('customers');
     expect(logs).not.toContain(PIN);
   });
-});
 
-describe('POST /api/answer, custom full prompt (ADR-0086)', () => {
-  /** An invented version id the call pinned. */
-  const PIN = '0b9c7a3e-5d1f-4c2a-9e8b-1a2b3c4d5e6f';
-
-  /** An invented custom live prompt (the route does not check it: it was checked when saved). */
-  const CUSTOM = {
-    core: 'CUSTOM CORE RULES',
-    reminder: 'CUSTOM REMINDER',
-    screenshot: 'CUSTOM SCREENSHOT RULES',
-  };
-
-  beforeEach(() => {
-    companyMock.mockReset();
-    companyMock.mockResolvedValue('Say customers.');
-    promptMock.mockReset();
-    promptMock.mockReturnValue(null);
-  });
-
-  afterEach(() => {
-    promptMock.mockReturnValue(null);
-    companyMock.mockResolvedValue('');
-  });
-
-  it("replaces the rules and the reminder with the call's pinned prompt, the same bytes for the warm-up", async () => {
-    getSessionMock.mockResolvedValue(SIGNED_IN);
-    promptMock.mockImplementation((block) => (block === 'live' ? CUSTOM : null));
-    createMock.mockResolvedValue({
-      stop_reason: 'max_tokens',
-      usage: { input_tokens: 1, output_tokens: 0 },
-      content: [],
-    });
-    await (
-      await POST(post(JSON.stringify({ mode: 'warm', session: SESSION, instructionsVersion: PIN })))
-    ).text();
-    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
-    await (
-      await POST(post(JSON.stringify({ ...ANSWER_REQUEST, instructionsVersion: PIN })))
-    ).text();
-    expect(promptMock.mock.calls).toEqual([
-      ['live', PIN],
-      ['live', PIN],
-    ]);
-    const params = streamMock.mock.calls[0]![0];
-    const rules: string = params.system[0].text;
-    expect(rules.startsWith('CUSTOM CORE RULES\n\n')).toBe(true);
-    expect(rules).toContain('Say customers.');
-    expect(rules).not.toContain('You are Paramount AI');
-    // The cached prefix is the same for the warm-up and the answers of the call.
-    expect(createMock.mock.calls[0]![0].system[0]).toEqual(params.system[0]);
-    const tail: string = params.messages[0].content.at(-1).text;
-    expect(tail).toContain('CUSTOM REMINDER');
-    expect(tail).not.toContain('Reminder for an answer for the call');
-    const logs = JSON.stringify(vi.mocked(console.info).mock.calls);
-    expect(logs).toContain('"customPrompt":true');
-    expect(logs).not.toContain('CUSTOM');
-  });
-
-  it('keeps the rollback rules (v-previous) for an admin, whatever the custom prompt', async () => {
+  it('keeps the rollback rules (v-previous) for an admin, whatever the global prompt', async () => {
     getSessionMock.mockResolvedValue({ ...SIGNED_IN, user: { ...SIGNED_IN.user, role: 'admin' } });
-    promptMock.mockReturnValue(CUSTOM);
+    companyMock.mockResolvedValue('Say customers.');
     streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|call|general]] Hi'] }));
     const body = { ...ANSWER_REQUEST, styleVersion: 'previous', instructionsVersion: PIN };
     await (await POST(post(JSON.stringify(body)))).text();
     const rules: string = streamMock.mock.calls[0]![0].system[0].text;
     expect(rules.startsWith('You are Kite, a live call assistant.')).toBe(true);
+    expect(rules).not.toContain('Say customers.');
+  });
+});
+
+describe('POST /api/answer, contract fallback (ADR-0089)', () => {
+  beforeEach(() => {
+    companyMock.mockReset();
+    companyMock.mockResolvedValue(null);
   });
 
-  it("uses the Ask AI block's chat part on the Ask AI page", async () => {
+  it('shows a reply with no hidden lines cleanly: the default type, no raw tags, counts in the log', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
-    promptMock.mockImplementation((block) =>
-      block === 'ask' ? { chat: 'CUSTOM CHAT', review: 'CUSTOM REVIEW' } : null,
+    streamMock.mockReturnValue(
+      fakeMessageStream({ pieces: ['We ship in two days.', ' [[sales|call|docs]]', ' Thanks.'] }),
     );
-    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|kite|general]] Hi'] }));
-    await (await POST(post(JSON.stringify({ mode: 'kite', question: 'What is 2 + 2?' })))).text();
-    expect(streamMock.mock.calls[0]![0].system[0].text.startsWith('CUSTOM CHAT\n\n')).toBe(true);
+    const response = await POST(post(JSON.stringify(ANSWER_REQUEST)));
+    const text = await response.text();
+    // The default meta comes before the first words, and no "[[" reaches the browser.
+    expect(text.indexOf('"type":"meta"')).toBeLessThan(text.indexOf('We ship'));
+    expect(text).toContain('"type":"other"');
+    expect(text).not.toContain('[[');
+    const logs = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logs).toContain('"missingMeta":true');
+    expect(logs).toContain('"missingQuestion":true');
+    expect(logs).toContain('"strippedTags":1');
+    expect(logs).not.toContain('ship');
+  });
+
+  it('changes nothing for a reply that keeps the contract', async () => {
+    getSessionMock.mockResolvedValue(SIGNED_IN);
+    streamMock.mockReturnValue(
+      fakeMessageStream({
+        pieces: ['[[sales|call|docs]]\nWe ship in two days.\n[[question|How fast do you ship?]]'],
+      }),
+    );
+    const text = await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
+    expect(text).toContain('"type":"sales"');
+    expect(text).not.toContain('"type":"other"');
+    const logs = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logs).toContain('"missingMeta":false');
+    expect(logs).toContain('"missingQuestion":false');
   });
 });

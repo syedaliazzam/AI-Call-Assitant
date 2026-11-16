@@ -1,19 +1,20 @@
 /**
  * File: apps/web/tests/visual/ai-settings-shots.ts
- * Purpose: Pictures of Admin → AI settings (ADR-0086) for the visual check: the real page component with
- *          the real built-in rules and invented data, in simple mode (a try with the draft), in advanced
- *          mode (an edited prompt, tried, ready to save), with a draft prompt that lost two required
- *          rules (what the check names), simple mode in the dark theme, and (ADR-0087) the built-in
- *          change notice with its "View changes" diff. Builds the page, serves it on
- *          a free port with a mocked try endpoint, captures the PAGE only (never the screen) in headless
+ * Purpose: Pictures of Admin → AI settings (ADR-0089) for the visual check: the real page component with
+ *          the real default prompts and app contracts and invented data. For each tab (Live answers, AI
+ *          notes, Ask AI): Edit, Preview, History and a Try it with its reply; then the live answers
+ *          Quality check, the side-by-side comparison of a version, an edited draft tried and ready to
+ *          save, and Edit and History in the dark theme. Builds the page, serves it on a free port with
+ *          mocked try and quality endpoints, captures the PAGE only (never the screen) in headless
  *          Microsoft Edge, and exits.
  *          Usage: pnpm --filter web exec tsx --conditions=react-server tests/visual/ai-settings-shots.ts <out dir>
  * Used by: the developer (not part of the automated suites)
- * Depends on: esbuild, @tailwindcss/postcss, @playwright/test (Edge), src/server/aiTry.ts (lockedRulesFor,
- *             budgetFacts), tests/visual/rig-ai-settings.tsx, tests/lib/fonts.ts
- * Architecture: docs/decisions/ADR-0086-full-system-prompt-editing.md
+ * Depends on: esbuild, @tailwindcss/postcss, @playwright/test (Edge), src/server/aiTry.ts (budgetFacts),
+ *             src/server/prompts/defaults.ts, src/server/prompts/contract.ts (contractFor),
+ *             tests/visual/rig-ai-settings.tsx, tests/lib/fonts.ts
+ * Architecture: docs/decisions/ADR-0089-global-prompts-with-locked-contract.md
  *
- * Invented data only; no Claude request is made (the try endpoint is mocked).
+ * Invented data only; no Claude request is made (the endpoints are mocked).
  */
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -26,7 +27,9 @@ import { chromium, type Page } from '@playwright/test';
 import tailwind from '@tailwindcss/postcss';
 import { build } from 'esbuild';
 import { AI_INSTRUCTION_BLOCKS } from '@kite/shared';
-import { budgetFacts, lockedRulesFor } from '../../src/server/aiTry';
+import { budgetFacts } from '../../src/server/aiTry';
+import { contractFor } from '../../src/server/prompts/contract';
+import { DEFAULT_PROMPTS } from '../../src/server/prompts/defaults';
 import { brandFonts } from '../lib/fonts';
 
 /** apps/web. */
@@ -82,16 +85,20 @@ async function bundle(): Promise<string> {
 }
 
 /**
- * The page's HTML, with the built-in rules and budget facts from the server code.
+ * The page's HTML, with the default prompts, the contracts and the budget facts from the server code.
  *
  * @returns The HTML.
  */
 function html(): string {
-  const locked = Object.fromEntries(
-    AI_INSTRUCTION_BLOCKS.map((block) => [block, lockedRulesFor(block)]),
+  const contracts = Object.fromEntries(
+    AI_INSTRUCTION_BLOCKS.map((block) => [block, contractFor(block)]),
   );
-  // Escaped so no rule text can close the script tag.
-  const data = JSON.stringify({ locked, budget: budgetFacts() }).replaceAll('<', '\\u003c');
+  // Escaped so no prompt text can close the script tag.
+  const data = JSON.stringify({
+    defaults: DEFAULT_PROMPTS,
+    contracts,
+    budget: budgetFacts(),
+  }).replaceAll('<', '\\u003c');
   return (
     '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>AI settings rig</title><link rel="stylesheet" href="/rig/rig.css">' +
@@ -102,7 +109,79 @@ function html(): string {
 }
 
 /**
- * Serves the page and a mocked try endpoint on a free port.
+ * The mocked reply of a try, by tab (invented).
+ *
+ * @param block The tab tried.
+ * @returns The JSON reply.
+ */
+function tryReply(block: string): unknown {
+  if (block === 'notes') {
+    return {
+      kind: 'notes',
+      notes: {
+        summary: ['They asked about per-seat pricing.', 'A proposal is due before Friday.'],
+        questions: [{ question: 'Pricing per seat?', at: 0, answered: 'no', rating: null }],
+        nextSteps: [{ step: 'Send the proposal by Thursday', owner: 'You' }],
+        unclear: [],
+        lessons: [],
+      },
+      promptToken: 'f'.repeat(64),
+    };
+  }
+  if (block === 'ask') {
+    return {
+      kind: 'answer',
+      text: 'Here is a short follow-up you can send:\n\nThanks for your time today. As promised, I will send the proposal by Thursday.\n\nThe Northwind team',
+      meta: { type: 'sales', target: 'kite', source: 'general' },
+      question: null,
+      promptToken: 'f'.repeat(64),
+    };
+  }
+  return {
+    kind: 'answer',
+    text: 'I would listen first, then agree a clear fix and a date.\n- Let them explain the problem fully before answering.\n- Confirm the fix in writing, with a date I can meet.\n- Check back after the fix to make sure it held.',
+    meta: { type: 'behavioural', target: 'call', source: 'general' },
+    question: 'How have you handled a difficult client?',
+    promptToken: 'f'.repeat(64),
+  };
+}
+
+/** The mocked quality check (invented scores). */
+const QUALITY = {
+  score: 8.9,
+  liveScore: 9.3,
+  warning:
+    'The score dropped by 0.4 compared with the live version. Failed: Documents cannot answer.',
+  costDollars: 0.031,
+  promptToken: 'f'.repeat(64),
+  scenarios: [
+    ['no-cv-behavioural', 'Behavioural question, no CV', 'honesty', 9.5, true, ''],
+    [
+      'docs-cannot-answer',
+      'Documents cannot answer',
+      'honesty',
+      6.3,
+      false,
+      'It said yes to an ISO certification the documents do not state.',
+    ],
+    ['behavioural-with-cv', 'Behavioural question with a CV', 'honesty', 10, true, ''],
+    ['coding', 'Coding question', 'format', 10, true, ''],
+    ['concept', 'Concept question', 'quality', 8.8, true, 'Health checks were not mentioned.'],
+    ['smalltalk', 'Small talk', 'format', 10, true, ''],
+    ['none', 'Nothing asked (no answer)', 'format', 10, true, ''],
+    [
+      'format-compliance',
+      "User's paragraph format",
+      'format',
+      6.9,
+      true,
+      'Slightly long for a short answer.',
+    ],
+  ].map(([id, title, kind, score, passed, reason]) => ({ id, title, kind, score, passed, reason })),
+};
+
+/**
+ * Serves the page and the mocked try and quality endpoints on a free port.
  *
  * @param outDir The bundle folder.
  * @returns The base URL and a function that stops the server.
@@ -110,20 +189,14 @@ function html(): string {
 async function serve(outDir: string): Promise<{ base: string; stop: () => void }> {
   const server = createServer((req, res) => {
     const url = req.url ?? '/';
-    if (req.method === 'POST' && url === '/api/admin/ai-instructions/try') {
+    if (req.method === 'POST' && url.startsWith('/api/admin/ai-instructions/')) {
       const parts: Buffer[] = [];
       req.on('data', (part: Buffer) => parts.push(part));
       req.on('end', () => {
-        const body = JSON.parse(Buffer.concat(parts).toString('utf8')) as { prompt?: unknown };
+        const body = JSON.parse(Buffer.concat(parts).toString('utf8')) as { block?: string };
+        const reply = url.endsWith('/quality') ? QUALITY : tryReply(body.block ?? 'live');
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({
-            kind: 'answer',
-            text: 'I calmed a frustrated client by listening first, then fixing the issue.\n- I confirmed what went wrong and owned it.\n- I agreed a clear fix and a date, and met it.',
-            meta: { type: 'behavioural', target: 'call', source: 'example' },
-            ...(body.prompt ? { promptToken: 'f'.repeat(64) } : {}),
-          }),
-        );
+        res.end(JSON.stringify(reply));
       });
       return;
     }
@@ -161,6 +234,14 @@ async function open(page: Page, url: string, ready: string): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
 }
 
+/** The sample typed into Try it, by tab. */
+const SAMPLES = {
+  live: 'Tell me about a time you handled a difficult client.',
+  notes:
+    'Them: Can you walk me through pricing per seat?\nYou: Sure, I will send a proposal by Thursday.',
+  ask: 'Draft a short follow-up email after a sales call.',
+} as const;
+
 /** Builds, serves, takes the pictures, stops. */
 async function main(): Promise<void> {
   mkdirSync(OUT, { recursive: true });
@@ -168,54 +249,59 @@ async function main(): Promise<void> {
   const browser = await chromium.launch({ channel: 'msedge', headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-
-    // 1. Simple mode: the instructions box, a try with the draft, Save.
-    await open(page, base, 'Instructions for the AI');
-    await page
-      .getByLabel('Sample question (as the other person asks it)')
-      .first()
-      .fill('Tell me about a time you handled a difficult client.');
-    await page.getByRole('button', { name: 'Try with draft' }).first().click();
-    await page.getByTestId('try-reply').first().waitFor();
-    await page.screenshot({ path: path.join(OUT, '1-simple-mode.png'), fullPage: true });
-
-    // 2. Advanced mode: an edited prompt, tried, ready to save.
-    await open(page, `${base}/?mode=advanced`, 'Live answers: full system prompt');
-    const editor = page.locator('section[aria-label="Live answers full system prompt"]');
-    const reminder = editor.getByLabel('Reminder added after the question');
-    await reminder.fill(`${await reminder.inputValue()} Keep every answer under 30 seconds.`);
-    await editor
-      .getByLabel('Sample question (as the other person asks it)')
-      .fill('Tell me about a time you handled a difficult client.');
-    await editor.getByRole('button', { name: 'Try with this prompt' }).click();
-    await editor.getByTestId('try-reply').waitFor();
-    await editor.getByText('Tried: ready to save.').waitFor();
-    await page.screenshot({ path: path.join(OUT, '2-advanced-mode.png'), fullPage: true });
-
-    // 3. Advanced mode with a draft that lost the hidden last line and the none rule.
-    const core = editor.getByLabel('Rules for every live answer');
-    const text = (await core.inputValue())
-      .split('\n')
-      .filter((line) => !line.includes('[[question|') && !line.startsWith('- none:'))
-      .join('\n');
-    await core.fill(text);
-    await editor.getByTestId('prompt-problems').waitFor();
-    await editor.getByTestId('prompt-problems').scrollIntoViewIfNeeded();
-    await page.screenshot({ path: path.join(OUT, '3-advanced-missing-rules.png') });
-
-    // 4. Simple mode, dark theme.
-    await open(page, `${base}/?theme=dark`, 'Instructions for the AI');
-    await page.screenshot({ path: path.join(OUT, '4-simple-mode-dark.png'), fullPage: true });
-
-    // 5. ADR-0087: a custom prompt older than the built-in rules: the notice, then "View changes".
-    await open(page, `${base}/?change=1`, 'Built-in rules were updated on');
-    await page.screenshot({ path: path.join(OUT, '5-built-in-change-notice.png') });
-    await page.getByRole('button', { name: 'View changes' }).click();
-    await page.getByTestId('version-diff').waitFor();
+    let n = 0;
+    /**
+     * Saves the visible page.
+     *
+     * @param name The picture's name.
+     */
+    const shot = async (name: string) => {
+      n += 1;
+      await page.screenshot({ path: path.join(OUT, `${String(n).padStart(2, '0')}-${name}.png`) });
+    };
+    for (const tab of AI_INSTRUCTION_BLOCKS) {
+      // Edit: the writing editor with its toolbar and the sticky actions bar.
+      await open(page, `${base}/?tab=${tab}`, 'Live version: 3');
+      await shot(`${tab}-edit`);
+      // Preview: the prompt as a document.
+      await open(page, `${base}/?tab=${tab}&mode=preview`, 'Live version: 3');
+      await shot(`${tab}-preview`);
+      // History: the versions with their badges.
+      await open(page, `${base}/?tab=${tab}&panel=history`, 'Moved from old settings');
+      await shot(`${tab}-history`);
+      // Try it: a sample, then the reply as users see it.
+      await open(page, `${base}/?tab=${tab}&panel=try`, 'Run Try it');
+      const panel = page.locator('section[aria-label^="Try "]').filter({ visible: true });
+      await panel.getByRole('textbox').first().fill(SAMPLES[tab]);
+      await panel.getByRole('button', { name: 'Run Try it' }).click();
+      await panel
+        .locator(tab === 'notes' ? 'h4' : '[data-testid="try-reply"]')
+        .first()
+        .waitFor();
+      await panel.scrollIntoViewIfNeeded();
+      await shot(`${tab}-try-it`);
+    }
+    // Quality check (live answers only), with a drop and a failed case.
+    await open(page, `${base}/?tab=live&panel=quality`, 'Run quality check');
+    await page.getByRole('button', { name: 'Run quality check' }).click();
+    await page.getByTestId('quality-result').waitFor();
+    await shot('live-quality-check');
+    // The side-by-side comparison of version 1 with the live version.
+    await open(page, `${base}/?tab=live&panel=history`, 'Moved from old settings');
+    await page.getByRole('button', { name: 'Compare' }).last().click();
+    await page.getByText('Removed text on the left').waitFor();
     // The dialog's opening animation.
     await page.waitForTimeout(600);
-    await page.screenshot({ path: path.join(OUT, '6-built-in-changes-diff.png') });
-    console.info(`ai settings shots: ${OUT}`);
+    await shot('live-compare');
+    // An edited draft, tried: Save enabled, with the lint hint for the new line.
+    await open(page, `${base}/?tab=live&edited=1`, 'Unsaved changes');
+    await shot('live-edited-tried');
+    // Dark theme.
+    await open(page, `${base}/?tab=live&theme=dark`, 'Live version: 3');
+    await shot('live-edit-dark');
+    await open(page, `${base}/?tab=notes&panel=history&theme=dark`, 'Moved from old settings');
+    await shot('notes-history-dark');
+    console.info(`ai settings shots: ${n} pictures in ${OUT}`);
   } finally {
     await browser.close();
     stop();

@@ -5,12 +5,11 @@
  * Used by: apps/web and apps/desktop (`import type { ... } from '@kite/shared'`)
  * Depends on: ./api.ts, ./answer-meta.ts, ./desktop-bridge.ts, ./hotkeys.ts, ./screenshot.ts,
  *             ./notes.ts, ./prepare.ts, ./sync.ts (ADR-0049), ./recording.ts (ADR-0068),
- *             ./drive.ts (ADR-0072), ./aiInstructions.ts (ADR-0083), ./customPrompt.ts (ADR-0086)
+ *             ./drive.ts (ADR-0072), ./aiInstructions.ts (ADR-0083, ADR-0089)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §9.1 (packages/shared)
  */
 export * from './aiInstructions';
 export * from './answer-meta';
-export * from './customPrompt';
 export * from './api';
 export * from './desktop-bridge';
 export * from './drive';

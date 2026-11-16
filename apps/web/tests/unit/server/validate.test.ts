@@ -418,12 +418,14 @@ describe('company instructions fields (ADR-0083)', () => {
     expect(parseAskRequest({ ...ask, instructionsVersion: PIN }).ok).toBe(false);
   });
 
-  it('checks a try: block, draft up to 4,000 characters, a sample, an optional session', () => {
-    const valid = { block: 'live', draft: '', sample: 'What does it cost?' };
+  it('checks a try (ADR-0089): tab, prompt up to 30,000 characters, a sample, an optional session', () => {
+    const valid = { block: 'live', prompt: '', sample: 'What does it cost?' };
     expect(parseAiTryRequest(valid).ok).toBe(true);
     expect(parseAiTryRequest({ ...valid, session: SESSION }).ok).toBe(true);
-    expect(parseAiTryRequest({ ...valid, draft: 'x'.repeat(4_000) }).ok).toBe(true);
-    expect(parseAiTryRequest({ ...valid, draft: 'x'.repeat(4_001) }).ok).toBe(false);
+    expect(parseAiTryRequest({ ...valid, prompt: 'x'.repeat(30_000) }).ok).toBe(true);
+    expect(parseAiTryRequest({ ...valid, prompt: 'x'.repeat(30_001) }).ok).toBe(false);
+    // The old shape (a draft of company instructions) is refused.
+    expect(parseAiTryRequest({ block: 'live', draft: '', sample: 'x' }).ok).toBe(false);
     expect(parseAiTryRequest({ ...valid, block: 'other' }).ok).toBe(false);
     expect(parseAiTryRequest({ ...valid, sample: '  ' }).ok).toBe(false);
     expect(parseAiTryRequest({ ...valid, extra: 1 }).ok).toBe(false);

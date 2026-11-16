@@ -1,14 +1,15 @@
 /**
  * File: apps/web/app/api/admin/ai-instructions/try/route.ts
- * Purpose: POST /api/admin/ai-instructions/try: Admin → AI settings' "Try it" (ADR-0083). Runs one
- *          request with an unsaved draft of a block's company instructions (and, ADR-0086, optionally a
- *          draft full system prompt, answered with a token that lets it be saved) and returns the reply.
- *          Admins only (403 for anyone else); counts against the daily limit like any request.
+ * Purpose: POST /api/admin/ai-instructions/try: Admin → AI settings' "Try it" (ADR-0083, ADR-0089). Runs
+ *          one request with an unsaved draft of a tab's global prompt and returns the reply, with a token
+ *          that lets that exact draft be saved. Admins only (401 signed out, 403 for anyone else); counts
+ *          against the daily limit like any request.
  * Used by: src/core/admin/aiTry.ts (browser)
  * Depends on: src/server/auth.ts (auth: a fresh session read), src/server/aiTry.ts (handleTry, runTry),
  *             src/server/env.ts, src/server/usage.ts, src/server/requestBody.ts,
  *             src/server/promptTryToken.ts
- * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md, ADR-0086-full-system-prompt-editing.md
+ * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md,
+ *               ADR-0089-global-prompts-with-locked-contract.md
  */
 import { auth } from '@/server/auth';
 import { handleTry, runTry, type TryDeps } from '@/server/aiTry';

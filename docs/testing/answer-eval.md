@@ -557,3 +557,55 @@ What the grader marked down in 08 and 14 (12 graded answers): in 8, a spoken lin
 Other checks over the three runs: hidden line present 86/90; no number outside the documents and call 84/90; grader found nothing invented 73/90; no comment on what Kite was given 89/90.
 
 Custom full prompts (ADR-0086) are not covered by these baselines: they run on the built-in prompt. An admin checks a custom prompt with Try it.
+
+## Unsupported company facts: short promise, no bullets (2026-11-16, ADR-0088)
+
+Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; developer's cap $1, spend **$0.31**. Iterations were checked with ungraded answers (`--no-grade --show`, 4–6 per scenario, about $0.001 each set), then graded.
+
+| Step | What changed | What the answers showed |
+|---|---|---|
+| Before | — | 08: all 6 answer lines over 12 words, 1 "Yes, …", 2 "not in the details I have"; 14: all 6 over 12 words, 1 "I don't have … in front of me", invented bullets ("I'll price it as a team plan") |
+| 1 | reminder sentence: no yes/no, short promise, no bullets, Note | no "Yes", no invented bullets; 14 still repeats the question (14 words); one 08 "not in the details" bullet |
+| 2 | "does not repeat their question", "nothing about what you lack" | 08 6/6 at 12 words or fewer; 14 bullets back in 3/6 |
+| 3 | core example line shortened; "overrides the answer format and the question's shape" | 08 6/6 clean; 14 no bullets, line still 14 words |
+| 4 (dropped) | "names it in at most two words" | 14 2/6 short, but the hidden first line moved to the end in 2/6 of 08 |
+| 5 | example "I'll confirm the price…" | as step 3 |
+| regression 1 | — | `answers` 9.10, but hidden line 21/30 (04–07 multi-turn): fixed by naming the hidden lines' order |
+| regression 2 | — | 9.17, hidden 30/30; 13 now promised to "check and send" a lunch tip: fixed by leaving small talk and off-topic out |
+| final | — | see below |
+
+Final, graded:
+
+| | Before (3 runs, ADR-0086 wording) | After |
+|---|---|---|
+| 08 | 6.67 (7, 5, 8) | **8.7** (3 runs: 9, 9, 8); 7.5 in the regression run |
+| 14 | 7.50 (6.5, 7, 9) | **10.0** (3 runs); 10.0 in the regression run |
+| `answers` overall | 9.07 | **9.13** (1 run; gate ≥ 8.86) |
+| Grader found nothing invented | 73/90 | 29/30 |
+| Answer line 12 words or fewer | 36/83 | 15/26 |
+| Hidden line present | 86/90 | 30/30 |
+
+Per scenario in the final regression run: 01 9.0, 02 8.0, 03 10.0, 04 10.0, 05 9.0, 06 10.0, 07 9.5, 08 7.5, 09 10.0, 10 10.0, 11 8.0, 12 10.0, 13 6.5, 14 10.0, 15 9.5. The 08 deductions are style (no bullets; "both" is vague), with nothing invented. 13 lost points for its old reasons (no steer back, long line), not a promise. 02 lost a point twice for not naming what E42 means, a question the documents answer, which the change does not touch (02 was 10 in the run before); this is likely run-to-run variation.
+
+## Global prompt after a locked app contract (2026-11-16, ADR-0089)
+
+The live prompt was rebuilt in a new order:
+
+1. the locked app contract;
+2. the default global prompt (the ADR-0086/0088 rules without the contract parts; preference values made generic; screenshot guidance moved in);
+3. the user's preferences in the session block, under an override heading, with the meaning of the format and length, and the approved lessons;
+4. the automatic end reminder: the contract, the user's format and length, and ADR-0088's rule word for word.
+
+Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`. One run of each group, as the developer asked (answers cap $0.30).
+
+| Group | Gate | Result | Spend |
+|---|---|---|---|
+| `answers` (15 × 2) | ≥ 8.86 | **9.30**; hidden line 30/30; nothing invented 29/30; no comment on what Kite was given 30/30; answer line as shown ≤ 12 words 26/26 | $0.094 (60 requests) |
+| `notes` (3 × 3) | ≥ 8 | **9.67** (n1 9.7, n2 10.0, n3 9.3) | $0.074 (18 requests) |
+
+Per scenario (`answers`): 01 10.0, 02 8.0, 03 9.5, 04 10.0, 05 9.5, 06 9.5, 07 9.5, 08 9.0, 09 10.0, 10 7.0, 11 9.5, 12 10.0, 13 8.5, 14 10.0, 15 9.5.
+
+- **08 and 14** (the developer asked for them to be confirmed): 9.0 and 10.0, two graded runs each. ADR-0088 measured 8.7 and 10.0. 08's lost point is style, for the intended promise with no bullets.
+- **10** (discount pressure): 7.0 in both runs. The ADR-0088 runs today gave 8, 8, 8.5, 8 and 10. The grader: the spoken line does not refuse the 30% and the 10% cap is only in the Note. That is ADR-0088's promise shape reaching a term the documents do give. Watch it in the next run; not changed here.
+
+The default prompts are what a tab sends until an admin saves one. An admin's own prompt is checked with Try it and Quality check (8 scenarios, the same rubric), not by these baselines.

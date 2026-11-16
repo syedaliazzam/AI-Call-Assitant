@@ -1,37 +1,28 @@
 /**
  * File: apps/web/src/server/aiTry.ts
- * Purpose: Admin → AI settings, server side (ADR-0083): "Try it" runs one real request with a DRAFT of
- *          a block's company instructions (not saved), and (ADR-0086) optionally a draft of its full
- *          system prompt, the same way a call, the notes or Ask AI would, and returns the reply (with a
- *          token proving the prompt was tried); and the read-only facts the page shows: each block's
- *          built-in prompt, the heading the company text goes under, and the input-budget numbers for
- *          the live block.
+ * Purpose: Admin → AI settings, server side (ADR-0083, ADR-0089): "Try it" runs one real request with a
+ *          DRAFT of a tab's global prompt (not saved), the same way a call, the notes or Ask AI would,
+ *          and returns the reply with a token proving this exact draft was tried (Save requires it).
+ *          Also the input-budget facts the page shows next to the live answers prompt.
  * Used by: app/api/admin/ai-instructions/try/route.ts (handleTry), app/(app)/admin/ai-settings/page.tsx
- *          (lockedRulesFor, budgetFacts)
+ *          (budgetFacts), src/server/aiQuality.ts (collectReply, BLANK_SESSION)
  * Depends on: src/server/prompt.ts, src/server/notes.ts, src/server/kite-chat.ts, src/server/claude.ts,
- *             src/server/answer-meta.ts, src/server/budget.ts, src/server/prompts/company.ts,
- *             src/server/prompts/builtIn.ts (BUILT_IN_PROMPTS),
- *             src/server/validate.ts (parseAiTryRequest), src/server/usage.ts (the daily limit),
- *             @kite/shared (checkCustomPrompt)
- * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md, ADR-0086-full-system-prompt-editing.md
+ *             src/server/answer-meta.ts, src/server/budget.ts, src/server/prompts/contract.ts,
+ *             src/server/validate.ts (parseAiTryRequest), @kite/shared
+ * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md,
+ *               docs/decisions/ADR-0089-global-prompts-with-locked-contract.md
  *
- * A try counts as one normal request against the daily limit (ADR-0036). Logs carry the block, sizes,
+ * A try counts as one normal request against the daily limit (ADR-0036). Logs carry the tab, sizes,
  * timings and token counts only: never the draft, the sample, the session, the reply or any id.
  */
 import 'server-only';
 import {
   CHARS_PER_TOKEN,
-  checkCustomPrompt,
   CONVERSATION_CAP_TOKENS,
   dailyLimitMessage,
-  describePromptProblems,
   MAX_ACTIVE_LESSONS,
   MAX_LESSON_CHARS,
-  normalisePrompt,
-  PROMPT_PART_TITLES,
-  PROMPT_PARTS,
-  type CustomPrompt,
-  type PromptPartKey,
+  normaliseGlobalPrompt,
   type AiInstructionBlock,
   type AiTryRequest,
   type AiTryResponse,
@@ -43,7 +34,7 @@ import {
   type ModelTier,
   type SessionContext,
 } from '@kite/shared';
-import { withAnswerMeta } from './answer-meta';
+import { withAnswerMeta, type ReplyItem } from './answer-meta';
 import {
   BUDGET_CHARS_PER_TOKEN,
   BUDGET_TOKENS,
@@ -53,87 +44,25 @@ import {
 import { describeClaudeError, errorLogDetails, streamReply, type ReplyResult } from './claude';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from './kite-chat';
 import { generateCallNotes } from './notes';
+import { ANSWER_MAX_TOKENS, buildPrompt, LEARNED_HEADING, smartSessionBlock } from './prompt';
 import {
-  ANSWER_MAX_TOKENS,
-  buildPrompt,
-  CALL_REMINDER,
-  CORE_RULES,
-  LESSONS_HEADING,
-  SCREENSHOT_RULES,
-  smartSessionBlock,
-} from './prompt';
-import { BUILT_IN_PROMPTS } from './prompts/builtIn';
-import { COMPANY_HEADINGS, normaliseInstructions } from './prompts/company';
+  GLOBAL_HEADING,
+  LIVE_CONTRACT,
+  liveEndReminder,
+  SCREENSHOT_TAIL,
+} from './prompts/contract';
 import { parseAiTryRequest } from './validate';
 
-/** One part of a block's built-in prompt, as the page shows it. */
-export interface LockedPart {
-  /** Which part (ADR-0086: the key a custom prompt uses for it). */
-  key: PromptPartKey;
-  /** What this part is, for example "Rules for every live answer". */
-  title: string;
-  /** The exact text sent to Claude. */
-  text: string;
-}
-
-/**
- * The built-in prompt of a block: the text that comes first in its requests (the answer format the
- * app reads, honesty, privacy and safety rules). Simple mode shows it read-only; advanced mode starts
- * editing from it (ADR-0086).
- *
- * @param block The block.
- * @returns Its parts, in prompt order.
- * Called from: app/(app)/admin/ai-settings/page.tsx; tests
- */
-export function lockedRulesFor(block: AiInstructionBlock): LockedPart[] {
-  return PROMPT_PARTS[block].map((key) => ({
-    key,
-    title: PROMPT_PART_TITLES[key],
-    text: BUILT_IN_PROMPTS[block][key] ?? '',
-  }));
-}
-
-/** The numbers the page needs to show the live block's input-budget check (answerBudgetUse()). */
+/** The numbers the page needs for the live answers input-budget check (answerBudgetUse()). */
 export interface BudgetFacts {
-  /** The largest live-answer request without company instructions, tokens. */
+  /** The largest live-answer request without a global prompt, tokens. */
   baseTokens: number;
   /** The budget a request must fit in, tokens. */
   budgetTokens: number;
   /** Characters a token, as the server counts. */
   charsPerToken: number;
-  /** The characters the live block's heading adds when the block is not empty. */
-  overheadChars: number;
-  /** ADR-0086: the built-in live prompt's length (all three parts), to count a custom one against. */
-  builtInPromptChars: number;
-}
-
-/**
- * The live block's budget facts. The largest request is counted the way server/budget.ts counts
- * (BUDGET_CHARS_PER_TOKEN characters a token): the locked rules with the most lessons, the session
- * block at its ceiling, the conversation at its cap, the reminder, the screenshot rules and a
- * screenshot. The lines that may still change and the question come on top, and the budget's own
- * step (dropping the oldest parts) still keeps any request within the limit.
- *
- * @returns See BudgetFacts.
- * Called from: app/(app)/admin/ai-settings/page.tsx; tests
- */
-export function budgetFacts(): BudgetFacts {
-  const lessonsChars = LESSONS_HEADING.length + MAX_ACTIVE_LESSONS * (MAX_LESSON_CHARS + 3);
-  const chars =
-    CORE_RULES.length +
-    lessonsChars +
-    SESSION_BLOCK_MAX_CHARS +
-    CONVERSATION_CAP_TOKENS * CHARS_PER_TOKEN +
-    CALL_REMINDER.length +
-    SCREENSHOT_RULES.length;
-  return {
-    baseTokens: Math.ceil(chars / BUDGET_CHARS_PER_TOKEN) + IMAGE_TOKENS,
-    budgetTokens: BUDGET_TOKENS,
-    charsPerToken: BUDGET_CHARS_PER_TOKEN,
-    // The heading, a new line after it, and the blank line before it.
-    overheadChars: COMPANY_HEADINGS.live.length + 3,
-    builtInPromptChars: CORE_RULES.length + CALL_REMINDER.length + SCREENSHOT_RULES.length,
-  };
+  /** The characters the global prompt's heading adds (with the blank line before it). */
+  headingChars: number;
 }
 
 /** The session used when the admin tries a draft without picking one: every field left empty. */
@@ -147,6 +76,32 @@ export const BLANK_SESSION: SessionContext = {
   style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
   documents: [],
 };
+
+/**
+ * The live answers budget facts. The largest request is counted the way server/budget.ts counts
+ * (BUDGET_CHARS_PER_TOKEN characters a token): the contract, the session block at its ceiling with the
+ * most lessons, the conversation at its cap, the end reminder, the screenshot text and a screenshot.
+ * The budget's own step (dropping the oldest parts) still keeps any request within the limit.
+ *
+ * @returns See BudgetFacts.
+ * Called from: app/(app)/admin/ai-settings/page.tsx; tests
+ */
+export function budgetFacts(): BudgetFacts {
+  const lessonsChars = LEARNED_HEADING.length + MAX_ACTIVE_LESSONS * (MAX_LESSON_CHARS + 3);
+  const chars =
+    LIVE_CONTRACT.length +
+    lessonsChars +
+    SESSION_BLOCK_MAX_CHARS +
+    CONVERSATION_CAP_TOKENS * CHARS_PER_TOKEN +
+    liveEndReminder(BLANK_SESSION).length +
+    SCREENSHOT_TAIL.length;
+  return {
+    baseTokens: Math.ceil(chars / BUDGET_CHARS_PER_TOKEN) + IMAGE_TOKENS,
+    budgetTokens: BUDGET_TOKENS,
+    charsPerToken: BUDGET_CHARS_PER_TOKEN,
+    headingChars: GLOBAL_HEADING.length + 3,
+  };
+}
 
 /** Seconds between the lines of a sample call (the notes need times; the sample has none). */
 const SAMPLE_LINE_SECONDS = 20;
@@ -180,9 +135,9 @@ export interface TryModels {
   smart: string;
 }
 
-/** A try's reply and its token usage. */
+/** A try's reply (without the token) and its token usage. */
 export interface TryResult {
-  /** What the page shows. */
+  /** What the page shows (the handler adds the token). */
   response: AiTryResponse;
   /** Token counts (logged). */
   usage: AnswerUsage;
@@ -190,24 +145,38 @@ export interface TryResult {
   model: string;
 }
 
+/** A whole reply, read to its end. */
+export interface CollectedReply {
+  /** The answer text, hidden lines removed. */
+  text: string;
+  /** What the hidden first line said, or null when the reply had none. */
+  meta: AnswerMeta | null;
+  /** The question from the hidden last line, or null when the reply had none. */
+  question: string | null;
+  /** Token counts. */
+  usage: AnswerUsage;
+}
+
 /**
- * Streams a reply to its end and returns the answer text and the hidden first line.
+ * Streams a reply to its end and returns the answer text and what the hidden lines said.
  *
  * @param source The reply, wrapped by withAnswerMeta().
- * @returns The text (hidden lines removed), the meta, and the usage.
- * Called from: runTry()
+ * @returns The text (hidden lines removed), the meta, the question and the usage.
+ * Called from: runTry(); src/server/aiQuality.ts
  */
-async function collect(
-  source: AsyncGenerator<string | { meta: AnswerMeta } | { question: string }, ReplyResult>,
-): Promise<{ text: string; meta: AnswerMeta | null; usage: AnswerUsage }> {
+export async function collectReply(
+  source: AsyncGenerator<ReplyItem, ReplyResult>,
+): Promise<CollectedReply> {
   let text = '';
   let meta: AnswerMeta | null = null;
+  let question: string | null = null;
   for (;;) {
     const next = await source.next();
-    if (next.done) return { text: text.trim(), meta, usage: next.value.usage };
+    if (next.done) return { text: text.trim(), meta, question, usage: next.value.usage };
     const item = next.value;
     if (typeof item === 'string') text += item;
     else if ('meta' in item) meta = item.meta;
+    else question = item.question;
   }
 }
 
@@ -219,7 +188,7 @@ async function collect(
  * @param request A validated try request.
  * @param models  The model names.
  * @param signal  Stops the request (time limit or the admin left).
- * @returns The reply, usage and model.
+ * @returns The reply (its token is added by handleTry()), usage and model.
  * @throws What the Claude calls throw (the handler turns it into a status).
  * Called from: handleTry(); tests
  */
@@ -228,69 +197,57 @@ export async function runTry(
   models: TryModels,
   signal?: AbortSignal,
 ): Promise<TryResult> {
-  const draft = normaliseInstructions(request.draft);
-  // ADR-0086: the draft full prompt (handleTry() has checked it), or null for the built-in prompt.
-  const custom = request.prompt ? normalisePrompt(request.block, request.prompt) : null;
+  const draft = normaliseGlobalPrompt(request.prompt);
   const session = request.session ?? BLANK_SESSION;
   if (request.block === 'notes') {
     const { notes, usage } = await generateCallNotes(
       { session, lines: parseSampleCall(request.sample), answers: [] },
       models.smart,
       draft,
-      custom?.rules,
     );
-    return { response: { kind: 'notes', notes }, usage, model: models.smart };
+    return { response: { kind: 'notes', notes, promptToken: '' }, usage, model: models.smart };
   }
-  if (request.block === 'live') {
-    const answer: AnswerRequest = { mode: 'answer', session, question: request.sample.trim() };
-    const prompt = buildPrompt(answer, draft, custom);
-    const tier: ModelTier = 'fast';
-    const reply = await collect(
-      withAnswerMeta(
-        streamReply({
-          model: models.fast,
-          tier,
-          system: prompt.system,
-          messages: prompt.messages,
-          maxTokens: ANSWER_MAX_TOKENS,
-          ...(signal ? { signal } : {}),
-        }),
-      ),
-    );
-    return {
-      response: { kind: 'answer', text: reply.text, meta: reply.meta },
-      usage: reply.usage,
-      model: models.fast,
-    };
-  }
-  const chat: AnswerRequest = {
-    mode: 'kite',
-    question: request.sample.trim(),
-    ...(request.session
-      ? { attachments: [{ name: 'Session', text: smartSessionBlock(request.session) }] }
-      : {}),
-  };
-  const prompt = buildKiteChatPrompt(chat, draft, custom?.chat);
-  const reply = await collect(
+  const live = request.block === 'live';
+  const prompt = live
+    ? buildPrompt({ mode: 'answer', session, question: request.sample.trim() }, draft)
+    : buildKiteChatPrompt(
+        {
+          mode: 'kite',
+          question: request.sample.trim(),
+          ...(request.session
+            ? { attachments: [{ name: 'Session', text: smartSessionBlock(request.session) }] }
+            : {}),
+        } satisfies AnswerRequest,
+        draft,
+      );
+  const tier: ModelTier = live ? 'fast' : 'smart';
+  const model = live ? models.fast : models.smart;
+  const reply = await collectReply(
     withAnswerMeta(
       streamReply({
-        model: models.smart,
-        tier: 'smart',
+        model,
+        tier,
         system: prompt.system,
         messages: prompt.messages,
-        maxTokens: KITE_CHAT_MAX_TOKENS,
+        maxTokens: live ? ANSWER_MAX_TOKENS : KITE_CHAT_MAX_TOKENS,
         ...(signal ? { signal } : {}),
       }),
     ),
   );
   return {
-    response: { kind: 'answer', text: reply.text, meta: reply.meta },
+    response: {
+      kind: 'answer',
+      text: reply.text,
+      meta: reply.meta,
+      question: reply.question,
+      promptToken: '',
+    },
     usage: reply.usage,
-    model: models.smart,
+    model,
   };
 }
 
-/** The signed-in account, as the try handler needs it. */
+/** The signed-in account, as the admin handlers need it. */
 export interface TryUser {
   /** The account's id (for the daily limit). */
   id: string;
@@ -308,8 +265,8 @@ export interface TryDeps {
   count: (userId: string) => Promise<{ allowed: boolean; limit: number }>;
   /** Runs the try (runTry()). */
   run: (request: AiTryRequest, models: TryModels, signal: AbortSignal) => Promise<TryResult>;
-  /** ADR-0086: the token proving a prompt was tried (server/promptTryToken.ts promptTryToken()). */
-  tokenFor: (block: AiInstructionBlock, prompt: CustomPrompt) => string;
+  /** The token proving a draft was tried (server/promptTryToken.ts promptTryToken()). */
+  tokenFor: (block: AiInstructionBlock, prompt: string) => string;
 }
 
 /**
@@ -319,15 +276,32 @@ export interface TryDeps {
  * @param code    Machine-readable reason.
  * @param message Short explanation (never request content).
  * @returns The response.
- * Called from: handleTry()
+ * Called from: handleTry(); src/server/aiQuality.ts
  */
-function jsonError(status: number, code: AnswerErrorCode, message: string): Response {
+export function jsonError(status: number, code: AnswerErrorCode, message: string): Response {
   return Response.json({ code, message }, { status, headers: { 'cache-control': 'no-store' } });
 }
 
 /**
- * POST /api/admin/ai-instructions/try, after the session read: admins only (403 for anyone else,
- * before the body is read), a valid body, the daily limit, then one Claude request.
+ * The first checks of every admin AI settings route: signed in (401), password changed (401), an admin
+ * (403). Run before the body is read.
+ *
+ * @param user The signed-in account, or null.
+ * @returns The error response, or null when the caller may go on.
+ * Called from: handleTry(); handleQualityCheck() in src/server/aiQuality.ts
+ */
+export function adminRefusal(user: TryUser | null): Response | null {
+  if (!user) return jsonError(401, 'unauthorized', 'Sign in required');
+  if (user.mustChangePassword) {
+    return jsonError(401, 'unauthorized', 'Change your temporary password first');
+  }
+  if (user.role !== 'admin') return jsonError(403, 'unauthorized', 'Admins only');
+  return null;
+}
+
+/**
+ * POST /api/admin/ai-instructions/try, after the session read: admins only (401/403 before the body is
+ * read), a valid body, the daily limit, then one Claude request.
  *
  * @param user   The signed-in account, or null.
  * @param body   The raw request text.
@@ -343,11 +317,8 @@ export async function handleTry(
   signal: AbortSignal,
 ): Promise<Response> {
   const startedAt = performance.now();
-  if (!user) return jsonError(401, 'unauthorized', 'Sign in required');
-  if (user.mustChangePassword) {
-    return jsonError(401, 'unauthorized', 'Change your temporary password first');
-  }
-  if (user.role !== 'admin') return jsonError(403, 'unauthorized', 'Admins only');
+  const refused = adminRefusal(user);
+  if (refused || !user) return refused ?? jsonError(401, 'unauthorized', 'Sign in required');
   let json: unknown;
   try {
     json = JSON.parse(body);
@@ -356,20 +327,12 @@ export async function handleTry(
   }
   const parsed = parseAiTryRequest(json);
   if (!parsed.ok) return jsonError(400, 'bad_request', parsed.message);
-  // ADR-0086: a draft prompt that misses the output format is refused before any request is spent.
-  const draftPrompt = parsed.data.prompt;
-  if (draftPrompt) {
-    const problems = checkCustomPrompt(parsed.data.block, draftPrompt);
-    if (problems.length > 0) {
-      return jsonError(400, 'bad_request', describePromptProblems(problems));
-    }
-  }
   let models: TryModels;
   // Worked out before the request is spent, so missing settings never waste one.
-  let promptToken: string | null = null;
+  let promptToken: string;
   try {
     models = deps.models();
-    if (draftPrompt) promptToken = deps.tokenFor(parsed.data.block, draftPrompt);
+    promptToken = deps.tokenFor(parsed.data.block, parsed.data.prompt);
   } catch {
     return jsonError(500, 'internal', 'Claude is not configured on the server');
   }
@@ -378,13 +341,9 @@ export async function handleTry(
   // Sizes only, never text.
   const sizes = {
     block: parsed.data.block,
-    draftChars: parsed.data.draft.length,
+    promptChars: parsed.data.prompt.length,
     sampleChars: parsed.data.sample.length,
     session: parsed.data.session ? true : false,
-    // ADR-0086: whether a draft prompt was tried, and its size (never its text).
-    promptChars: draftPrompt
-      ? Object.values(draftPrompt).reduce((total, part) => total + (part ?? '').length, 0)
-      : 0,
   };
   try {
     const result = await deps.run(parsed.data, models, signal);
@@ -395,10 +354,8 @@ export async function handleTry(
       usage: result.usage,
       ms: Math.round(performance.now() - startedAt),
     });
-    // ADR-0086: the proof that this exact prompt was tried; saving it requires it.
-    const response: AiTryResponse = promptToken
-      ? { ...result.response, promptToken }
-      : result.response;
+    // The proof that this exact draft was tried; saving it requires it.
+    const response: AiTryResponse = { ...result.response, promptToken };
     return Response.json(response, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     const described = describeClaudeError(error);

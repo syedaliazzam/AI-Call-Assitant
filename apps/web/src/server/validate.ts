@@ -3,7 +3,8 @@
  * Purpose: Checks the body of POST /api/answer against the AnswerRequest type from @kite/shared,
  *          with size limits so one request cannot send unbounded text to Claude: documents,
  *          key terms, and (Day 4) the conversation chunks, tail and question.
- * Used by: app/api/answer/route.ts, app/api/notes/route.ts (Day 5), src/server/aiTry.ts (ADR-0083)
+ * Used by: app/api/answer/route.ts, app/api/notes/route.ts (Day 5), src/server/aiTry.ts (ADR-0083),
+ *          src/server/aiQuality.ts (ADR-0089)
  * Depends on: zod, @kite/shared (AnswerRequest, request limits, estimateItemTokens)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (server rules: validate with zod,
  *               documents ≤ 500k characters per session (ADR-0067), request ≤ 4 MB);
@@ -15,9 +16,9 @@ import 'server-only';
 import {
   AI_INSTRUCTION_BLOCKS,
   AI_INSTRUCTIONS_PIN_PATTERN,
-  MAX_AI_INSTRUCTIONS_CHARS,
-  MAX_PROMPT_PART_CHARS,
+  MAX_GLOBAL_PROMPT_CHARS,
   type AiTryRequest,
+  type QualityCheckRequest,
   ANSWER_STYLE_VERSIONS,
   parseKeyTerms,
   ANSWER_TYPES,
@@ -562,37 +563,41 @@ export function parseSummaryRequest(body: unknown): SmallParseResult<DocumentsSu
   );
 }
 
+/** A draft global prompt (ADR-0089): at most MAX_GLOBAL_PROMPT_CHARS; '' tries the contract alone. */
+const globalPromptSchema = z
+  .string()
+  .max(MAX_GLOBAL_PROMPT_CHARS, `at most ${MAX_GLOBAL_PROMPT_CHARS} characters`);
+
 /**
- * The body of POST /api/admin/ai-instructions/try (ADR-0083): a block, its draft (at most
- * MAX_AI_INSTRUCTIONS_CHARS; '' tries "no instructions"), a sample question or call, and an optional
- * session. Unknown fields are rejected.
+ * The body of POST /api/admin/ai-instructions/try (ADR-0083, ADR-0089): a tab, its draft global prompt, a
+ * sample question or call, and an optional session. Unknown fields are rejected.
  */
 const aiTryRequestSchema = z
   .object({
     block: z.enum(AI_INSTRUCTION_BLOCKS),
-    draft: z
-      .string()
-      .max(MAX_AI_INSTRUCTIONS_CHARS, `at most ${MAX_AI_INSTRUCTIONS_CHARS} characters`),
+    prompt: globalPromptSchema,
     // A sample call for the notes can hold several lines; a question is far shorter.
     sample: z.string().trim().min(1, 'required').max(4_000),
     session: sessionSchema.optional(),
-    // ADR-0086: a draft full prompt, part by part (handleTry() checks the parts the block needs and the
-    // output format with checkCustomPrompt()). The slack over the part limit lets that check name a
-    // part that is too long instead of a field path.
-    prompt: z
-      .object({
-        core: z.string().max(MAX_PROMPT_PART_CHARS * 2),
-        reminder: z.string().max(MAX_PROMPT_PART_CHARS * 2),
-        screenshot: z.string().max(MAX_PROMPT_PART_CHARS * 2),
-        rules: z.string().max(MAX_PROMPT_PART_CHARS * 2),
-        chat: z.string().max(MAX_PROMPT_PART_CHARS * 2),
-        review: z.string().max(MAX_PROMPT_PART_CHARS * 2),
-      })
-      .partial()
-      .strict()
-      .optional(),
   })
   .strict();
+
+/** The body of POST /api/admin/ai-instructions/quality (ADR-0089): the draft live answers prompt. */
+const qualityRequestSchema = z.object({ prompt: globalPromptSchema }).strict();
+
+/**
+ * Validates a quality-check request.
+ *
+ * @param body The JSON value from the request.
+ * @returns The validated request, or a message (field paths only).
+ * Called from: handleQualityCheck() in src/server/aiQuality.ts; tests
+ */
+export function parseQualityRequest(body: unknown): SmallParseResult<QualityCheckRequest> {
+  return parseSmall<QualityCheckRequest>(
+    qualityRequestSchema as unknown as z.ZodType<QualityCheckRequest>,
+    body,
+  );
+}
 
 /**
  * Validates a "Try it" request.

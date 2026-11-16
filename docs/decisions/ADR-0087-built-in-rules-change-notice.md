@@ -1,6 +1,6 @@
 # ADR-0087: Tell admins when the built-in rules change under a custom prompt
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0089 (2026-11-16)
 - **Date:** 2026-11-16
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5, §8.1 (version 4.28.0)
 - **Supersedes / superseded by:** none. Builds on ADR-0086 (custom full system prompts) and ADR-0050 (additive migrations).

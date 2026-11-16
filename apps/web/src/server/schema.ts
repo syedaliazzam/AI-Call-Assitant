@@ -8,7 +8,8 @@
  *          account's Google Drive connection (refresh token encrypted) and one "saved" email record
  *          per session. (ADR-0083) The company AI instructions: every saved version, and the one in
  *          force per block, and (ADR-0086) a custom full system prompt per version; (ADR-0087) the
- *          built-in prompts the app has run with.
+ *          built-in prompts the app has run with (unused since ADR-0089); (ADR-0089) one admin-edited
+ *          global prompt per version with a note, and the scores of the AI settings quality check.
  *          Generated with the Better Auth CLI (`auth generate --adapter drizzle --dialect
  *          postgresql`, better-auth 1.7.13) for email + password, the admin plugin and our
  *          `mustChangePassword` field; comments added by hand. If the Better Auth config gains
@@ -21,7 +22,8 @@
  *               ADR-0049 (call_record, written by hand; migrations are additive only, ADR-0050);
  *               ADR-0072 (google_drive and drive_notification, written by hand); ADR-0083
  *               (ai_instructions_version and ai_instructions_active, written by hand); ADR-0086
- *               (ai_instructions_version.prompt); ADR-0087 (ai_instructions_version.base_hash, ai_builtin_prompt)
+ *               (ai_instructions_version.prompt); ADR-0087 (ai_instructions_version.base_hash, ai_builtin_prompt);
+ *               ADR-0089 (ai_instructions_version.global_prompt and note, ai_quality_check)
  */
 import { relations, sql } from 'drizzle-orm';
 import {
@@ -33,6 +35,7 @@ import {
   pgSequence,
   pgTable,
   primaryKey,
+  real,
   smallint,
   text,
   timestamp,
@@ -472,6 +475,16 @@ export const aiInstructionsVersion = pgTable(
      * built-in prompt, and for custom prompts saved before ADR-0087.
      */
     baseHash: text('base_hash'),
+    /**
+     * ADR-0089: the block's global system prompt as the admin wrote it (line endings normalised), sent
+     * after the locked app contract. Null means the block's default prompt from the code. A row saved
+     * before ADR-0089 also has null here: when its `text` or `prompt` is set, the server reads it as
+     * the default prompt with its company instructions added (server/aiInstructions.ts). Rows saved
+     * since ADR-0089 always leave `text` empty and `prompt` null.
+     */
+    globalPrompt: text('global_prompt'),
+    /** ADR-0089: the admin's short note about this version ("Shorter sales answers"), or null. */
+    note: text('note'),
     /** The admin who saved it; null once that account is deleted (the version stays). */
     authorId: text('author_id').references(() => user.id, { onDelete: 'set null' }),
     /** For a restore: the version whose text it copied; null for a normal save. */
@@ -488,6 +501,16 @@ export const aiInstructionsVersion = pgTable(
     check(
       'ai_instructions_version_prompt_check',
       sql`${table.prompt} is null or char_length(${table.prompt}) <= 130000`,
+    ),
+    // ADR-0089: the same 30,000-character limit as the page and the server (MAX_GLOBAL_PROMPT_CHARS).
+    check(
+      'ai_instructions_version_global_prompt_check',
+      sql`${table.globalPrompt} is null or char_length(${table.globalPrompt}) <= 30000`,
+    ),
+    // ADR-0089: a short note (MAX_VERSION_NOTE_CHARS).
+    check(
+      'ai_instructions_version_note_check',
+      sql`${table.note} is null or char_length(${table.note}) <= 200`,
     ),
     // The page lists one block's history, newest first.
     index('ai_instructions_version_block_created_idx').on(table.block, table.createdAt),
@@ -535,5 +558,38 @@ export const aiBuiltinPrompt = pgTable(
     check('ai_builtin_prompt_block_check', sql`${table.block} in ('live', 'notes', 'ask')`),
     // The same size limit as a custom prompt (ai_instructions_version_prompt_check).
     check('ai_builtin_prompt_prompt_check', sql`char_length(${table.prompt}) <= 130000`),
+  ],
+);
+
+/**
+ * ADR-0089: the scores of each AI settings quality check (live answers only), so a draft is compared
+ * with the score of the prompt in force without running that prompt again. One row per prompt checked.
+ * Scores and scenario ids only: never the prompt, an answer or a grader's words.
+ */
+export const aiQualityCheck = pgTable(
+  'ai_quality_check',
+  {
+    /** Random UUID. */
+    id: text('id').primaryKey(),
+    /** Which block ('live'; the only block with a quality check). */
+    block: text('block').notNull(),
+    /** SHA-256 of the global prompt checked (the exact bytes sent after the contract). */
+    promptHash: text('prompt_hash').notNull(),
+    /** The mean score over the scenarios, 0 to 10. */
+    score: real('score').notNull(),
+    /** How many honesty or format scenarios failed. */
+    failed: integer('failed').notNull(),
+    /** Per scenario, as JSON: [{ id, score, passed }] (ids and numbers only). */
+    results: text('results').notNull(),
+    /** When it ran. */
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // The database refuses an unknown block, whatever the code does.
+    check('ai_quality_check_block_check', sql`${table.block} in ('live', 'notes', 'ask')`),
+    // The results are small: ids and numbers for about 8 scenarios.
+    check('ai_quality_check_results_check', sql`char_length(${table.results}) <= 4000`),
+    // The page looks up the latest check of one prompt.
+    index('ai_quality_check_prompt_idx').on(table.block, table.promptHash, table.createdAt),
   ],
 );

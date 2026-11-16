@@ -1,61 +1,53 @@
 /**
  * File: apps/web/src/features/admin/ai-settings/blocks.ts
- * Purpose: What Admin → AI settings says about each editable block (ADR-0083): its name, which model
- *          and requests it applies to, one short helper line, and the sample the "Try it" box offers.
- *          Also the page's data types, filled by the server page, including (ADR-0086) each block's
- *          built-in and custom full system prompt, and helpers to compare prompts.
+ * Purpose: What Admin → AI settings says about each tab (ADR-0089): its name, the one-line description,
+ *          the model, and the sample the "Try it" box offers. Also the page's data types, filled by the
+ *          server page (each tab's version in force, default prompt, app contract and history), the
+ *          server actions' shapes, and small helpers (version labels, dates).
  * Used by: src/features/admin/ai-settings/*.tsx, app/(app)/admin/ai-settings/page.tsx
- * Depends on: @kite/shared (AiInstructionBlock, prompt parts)
- * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md,
- *               docs/decisions/ADR-0086-full-system-prompt-editing.md
+ * Depends on: @kite/shared (AiInstructionBlock)
+ * Architecture: docs/decisions/ADR-0089-global-prompts-with-locked-contract.md
  */
-import {
-  PROMPT_PART_TITLES,
-  PROMPT_PARTS,
-  promptKey,
-  type AiInstructionBlock,
-  type CustomPrompt,
-  type PromptPartKey,
-} from '@kite/shared';
+import type { AiInstructionBlock } from '@kite/shared';
 
 /** A card's classes, as on the Users and Usage pages. */
-export const CARD = 'rounded-card border border-ui-border bg-ui-surface p-6 shadow-card';
+export const CARD = 'rounded-card border border-ui-border bg-ui-surface shadow-card';
 
-/** The fixed words about one block. */
+/** The fixed words about one tab. */
 export interface BlockCopy {
   /** The tab's name. */
   label: string;
-  /** The model and where it applies, in a few words. */
+  /** One line under the tabs: where this prompt is used. */
+  description: string;
+  /** The model, in a few words. */
   model: string;
-  /** One short line under the title. */
-  helper: string;
   /** The label of the try's sample box. */
   sampleLabel: string;
   /** The sample box's placeholder. */
   samplePlaceholder: string;
 }
 
-/** The words for each block. */
+/** The words for each tab. */
 export const BLOCK_COPY: Readonly<Record<AiInstructionBlock, BlockCopy>> = {
   live: {
     label: 'Live answers',
-    model: 'Claude Haiku · during calls',
-    helper: 'Tone, length, words to use or avoid, and company facts for answers during calls.',
+    description: 'Used during calls',
+    model: 'Claude Haiku',
     sampleLabel: 'Sample question (as the other person asks it)',
     samplePlaceholder: 'Tell me about a time you handled a difficult client.',
   },
   notes: {
     label: 'AI notes',
-    model: 'Claude Sonnet · after each call',
-    helper: 'What the notes written after each call should bring out, and how they are worded.',
+    description: 'Used for after-call notes',
+    model: 'Claude Sonnet',
     sampleLabel: 'Sample call (one turn per line, starting "Them:" or "You:")',
     samplePlaceholder:
       'Them: Thanks for joining. Can you walk me through your pricing?\nYou: Sure, our standard plan is per seat, billed monthly.\nThem: Great, can you send a proposal by Friday?\nYou: Yes, I will send it by Thursday.',
   },
   ask: {
     label: 'Ask AI',
-    model: 'Claude Sonnet · Ask AI page and session reviews',
-    helper: 'Tone, length and company facts for Ask AI replies.',
+    description: 'Used in Ask AI',
+    model: 'Claude Sonnet',
     sampleLabel: 'Sample question',
     samplePlaceholder: 'Draft a short follow-up email after a sales call.',
   },
@@ -65,64 +57,54 @@ export const BLOCK_COPY: Readonly<Record<AiInstructionBlock, BlockCopy>> = {
 export interface VersionView {
   /** The version's id. */
   id: string;
-  /** Its instructions ('' means none). */
-  text: string;
-  /** Its custom full prompt (ADR-0086), or null for the built-in prompt. */
-  prompt: CustomPrompt | null;
+  /** Its number in the tab's history (1 = the first ever saved). */
+  number: number;
+  /** Its global prompt, or null for the default prompt. */
+  prompt: string | null;
+  /** The admin's note, or null. */
+  note: string | null;
   /** Who saved it, or null when that account was deleted. */
   authorName: string | null;
   /** True for a restore of an earlier version. */
   restored: boolean;
+  /** True for a version saved before ADR-0089 (moved from the old AI settings). */
+  legacy: boolean;
   /** When it was saved (ISO 8601). */
   createdAt: string;
 }
 
-/** One part of a block's built-in prompt (read-only in simple mode; the start of advanced mode). */
-export interface LockedView {
-  /** Which part (the key a custom prompt uses). */
-  key: PromptPartKey;
-  /** What it is. */
+/** One part of a tab's app contract (read-only). */
+export interface ContractView {
+  /** Where it applies. */
   title: string;
-  /** The exact text. */
+  /** The exact text sent. */
   text: string;
 }
 
-/** ADR-0087: the built-in rules changed after the custom prompt in force was written. */
-export interface BuiltInChangeView {
-  /** The day the built-in rules changed (YYYY-MM-DD). */
-  date: string;
-  /** The built-in prompt the custom one was written against, or null when it was not recorded. */
-  previous: CustomPrompt | null;
-}
-
-/** Everything the page shows for one block. */
+/** Everything the page shows for one tab. */
 export interface BlockView {
-  /** The version in force, or null when never saved. */
+  /** The version in force, or null when never saved (the default prompt). */
   activeId: string | null;
-  /** The instructions in force ('' for none). */
-  activeText: string;
-  /** The custom full prompt in force, or null for the built-in prompt (ADR-0086). */
-  activePrompt: CustomPrompt | null;
-  /** ADR-0087: set when the built-in rules changed after the custom prompt in force was written. */
-  builtInChange: BuiltInChangeView | null;
+  /** The global prompt in force, or null for the default prompt. */
+  activePrompt: string | null;
+  /** The tab's default prompt (what "Reset to default" goes back to). */
+  defaultPrompt: string;
+  /** The app contract, sent before the prompt (read-only). */
+  contract: ContractView[];
   /** The history, newest first. */
   versions: VersionView[];
-  /** The built-in prompt, in prompt order. */
-  locked: LockedView[];
 }
 
-/** The live block's budget facts (from the server; see answerBudgetUse() in @kite/shared). */
+/** The live answers budget facts (from the server; see answerBudgetUse() in @kite/shared). */
 export interface BudgetView {
-  /** The largest live-answer request without company instructions, tokens. */
+  /** The largest live-answer request without a global prompt, tokens. */
   baseTokens: number;
   /** The budget, tokens. */
   budgetTokens: number;
   /** Characters a token, as the server counts. */
   charsPerToken: number;
-  /** The characters the heading adds. */
-  overheadChars: number;
-  /** The built-in live prompt's length, all parts (ADR-0086). */
-  builtInPromptChars: number;
+  /** The characters the global prompt's heading adds. */
+  headingChars: number;
 }
 
 /** What the save, reset and restore actions return. */
@@ -142,64 +124,44 @@ export type InstructionsActionResult =
 
 /** The server actions the page calls (app/(app)/admin/ai-settings/actions.ts). */
 export interface InstructionsActions {
-  /** Saves a block's instructions as a new version in force. */
-  save: (block: AiInstructionBlock, text: string) => Promise<InstructionsActionResult>;
-  /** Saves a block's tried custom prompt as a new version in force (ADR-0086). */
-  savePrompt: (
+  /** Saves a tab's tried global prompt as a new version in force, with an optional note. */
+  save: (
     block: AiInstructionBlock,
-    prompt: CustomPrompt,
+    prompt: string,
     token: string,
+    note: string,
   ) => Promise<InstructionsActionResult>;
-  /** Goes back to the block's built-in prompt (ADR-0086). */
-  resetPrompt: (block: AiInstructionBlock) => Promise<InstructionsActionResult>;
-  /** Restores an earlier version's instructions or prompt as a new version in force. */
-  restore: (
-    block: AiInstructionBlock,
-    versionId: string,
-    part: 'text' | 'prompt',
-  ) => Promise<InstructionsActionResult>;
+  /** Goes back to the tab's default prompt (a new version). */
+  reset: (block: AiInstructionBlock) => Promise<InstructionsActionResult>;
+  /** Restores an earlier version as a new version in force. */
+  restore: (block: AiInstructionBlock, versionId: string) => Promise<InstructionsActionResult>;
 }
 
 /**
- * A block's built-in prompt as a CustomPrompt (part by part).
+ * The text a version sends: its own prompt, or the default one.
  *
- * @param locked The block's built-in parts.
- * @returns The prompt.
- * Called from: PromptEditor.tsx, VersionHistory.tsx
- */
-export function builtInPrompt(locked: readonly LockedView[]): CustomPrompt {
-  const prompt: CustomPrompt = {};
-  for (const part of locked) prompt[part.key] = part.text;
-  return prompt;
-}
-
-/**
- * A full prompt as one text, part by part under its title: what the version history compares.
- *
- * @param block  The block.
- * @param prompt The prompt.
+ * @param version The version.
+ * @param fallback The tab's default prompt.
  * @returns The text.
- * Called from: VersionHistory.tsx
+ * Called from: VersionHistory.tsx, PromptWorkspace.tsx
  */
-export function promptAsText(block: AiInstructionBlock, prompt: CustomPrompt): string {
-  return PROMPT_PARTS[block]
-    .map((part) => `## ${PROMPT_PART_TITLES[part]}\n${prompt[part] ?? ''}`)
-    .join('\n\n');
+export function versionText(version: Pick<VersionView, 'prompt'> | null, fallback: string): string {
+  return version?.prompt ?? fallback;
 }
 
 /**
- * The key of the prompt a version uses (the built-in one when it has none), to compare versions.
+ * A date and time for the page, in the viewer's own settings ("16 Nov 2026, 14:05").
  *
- * @param block   The block.
- * @param prompt  The version's prompt, or null.
- * @param builtIn The built-in prompt.
- * @returns The key.
- * Called from: VersionHistory.tsx, PromptEditor.tsx
+ * @param iso The time (ISO 8601).
+ * @returns The words.
+ * Called from: AiSettingsPage.tsx, VersionHistory.tsx
  */
-export function effectivePromptKey(
-  block: AiInstructionBlock,
-  prompt: CustomPrompt | null,
-  builtIn: CustomPrompt,
-): string {
-  return promptKey(block, prompt ?? builtIn);
+export function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }

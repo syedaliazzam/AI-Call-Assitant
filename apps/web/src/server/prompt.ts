@@ -1,33 +1,35 @@
 /**
  * File: apps/web/src/server/prompt.ts
- * Purpose: Builds the prompt Claude receives for a session, in three cached parts and an
- *          uncached tail (day-04-answers.md "Prompt design"): the system block (Kite's rules,
- *          the imperfect-transcript rule, the consistency rules and the learned-preferences
- *          slot), the session block (call details, description, key terms, answer style,
- *          instructions, documents), the conversation (stable lines and earlier answers, one
- *          block per chunk, with the long-call cap), then the tail (lines that may still
- *          change, and the question; a placeholder for a warm-up).
- * Used by: app/api/answer/route.ts (modes 'warm', 'answer', 'chat');
- *          scripts/verify-warm.ts, scripts/verify-answer-cache.ts
- * Depends on: @kite/shared (AnswerRequest and conversation types, cap limits,
- *             estimateItemTokens), src/server/claude.ts (cachedBlock), src/server/prompts/company.ts
- *             (the company instructions, ADR-0083)
+ * Purpose: Builds the prompt Claude receives for a live answer, in three cached parts and an uncached
+ *          tail (day-04-answers.md "Prompt design"; ADR-0089 order): the rules block (the locked app
+ *          contract, then the admin's global prompt for live answers), the session block (call details,
+ *          then the user's preferences under a heading that says they override the general rules, with
+ *          the approved lessons and the user's instructions, then the documents), the conversation
+ *          (stable lines and earlier answers, one block per chunk, with the long-call cap), then the tail
+ *          (lines that may still change, the question, and the automatic end reminder; a placeholder for
+ *          a warm-up).
+ * Used by: app/api/answer/route.ts (modes 'warm', 'answer', 'chat', 'screenshot'); src/server/aiTry.ts,
+ *          src/server/aiQuality.ts; scripts/verify-warm.ts, scripts/verify-answer-cache.ts,
+ *          scripts/eval-answers.ts
+ * Depends on: @kite/shared (AnswerRequest and conversation types, cap limits, estimateItemTokens),
+ *             src/server/claude.ts (cachedBlock), src/server/budget.ts, src/server/prompts/contract.ts
+ *             (contract, end reminder), src/server/prompts/defaults.ts, src/server/prompts/preferences.ts,
+ *             src/server/prompts/rules-previous.ts (the rollback rules, ADR-0032)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3 (prompt caching rules),
- *               §7.2 (prompt structure); day-04-answers.md Stage 2; ADR-0025
+ *               §7.2 (prompt structure); day-04-answers.md Stage 2; ADR-0025; ADR-0089
  *
  * Caching depends on bytes, not meaning: Claude reuses its cache only when everything up to a
  * breakpoint is byte-for-byte identical to an earlier request. So:
- * - SYSTEM_RULES is a constant (no dates, ids or per-session text). It is shared by every
- *   session. The company instructions (ADR-0083) follow it in the same block; a call sends the
- *   version it started with, so the block stays the same for the whole call. With the Day 4 rules it is about 836 tokens, above the 512-token caching
- *   minimum, so it is cached once and read by every session's first request.
+ * - The rules block depends only on the global prompt version the call pinned when it started
+ *   (ADR-0083, ADR-0089), so it is the same for every request of a call, and shared by every session.
  * - sessionBlock() writes the fields in a fixed order with fixed labels, and adds nothing that
- *   changes between requests (no timestamps, no random ids). The same session always gives the
- *   same text.
+ *   changes between requests (no timestamps, no random ids). The same session (and lessons) always
+ *   gives the same text.
  * - The conversation only grows at the end: the client never changes a chunk it has sent, and
  *   each chunk is its own block, so request N+1 starts with request N's blocks, byte for byte,
  *   and its cache read lands on request N's last breakpoint.
- * - Lines that can still change (and the question) are in the tail, after every breakpoint.
+ * - Lines that can still change, the question and the end reminder are in the tail, after every
+ *   breakpoint.
  *
  * Session and document text is the user's own content: it is put into the prompt only, never
  * logged.
@@ -46,100 +48,28 @@ import {
   type CallLine,
   type ConversationChunk,
   type ConversationItem,
-  type CustomPrompt,
   type SessionContext,
 } from '@kite/shared';
 import { capSessionDocuments, fitToBudget } from './budget';
 import { cachedBlock } from './claude';
-import { withCompany } from './prompts/company';
+import {
+  LIVE_CONTRACT,
+  liveEndReminder,
+  SCREENSHOT_TAIL,
+  withGlobalPrompt,
+} from './prompts/contract';
+import { DEFAULT_LIVE_PROMPT } from './prompts/defaults';
+import {
+  DEFAULT_CODING_LANGUAGE,
+  formatPreference,
+  lengthPreference,
+  PREFERENCES_HEADING,
+} from './prompts/preferences';
 import { CALL_REMINDER_PREVIOUS, CORE_RULES_PREVIOUS } from './prompts/rules-previous';
 
 /**
- * Kite's core rules (architecture §7.2 "System"), with the imperfect-transcript rule (Day 3)
- * and the consistency rules for earlier answers in the call. The learned preferences go after
- * them (rulesBlock()). Do not add anything that changes between requests.
- * This is "v-current". The rules from before the honesty and answer-shape change (ADR-0032) are
- * kept word for word as "v-previous" in server/prompts/rules-previous.ts, for the rollback switch.
- */
-export const CORE_RULES = `You are Paramount AI, a live call assistant. During a call the user presses a key when they need help answering the other person, or types or screenshots a question. You write what they need right away.
-
-Every reply starts with one hidden line, exactly in this form and with nothing else on it: [[type|for|source]]
-- type is the kind of question: behavioural (about the user's own past: "tell me about a time", "describe a situation", "have you ever"), concept (how something works or behaves, including "how does the system…" and "what happens when…"), coding, design (system design), case (case or estimation), sales (anything a client or buyer asks about the offer, its price, terms or support), product (product or demo), smalltalk (greetings, thanks, off-topic chat or wrap-up; never a question about the work), unclear, garbled (the words make no sense even with the session's details and the call: noise that speech recognition turned into words; a clear remark that asks nothing is smalltalk or none, not garbled), none (clear words that ask the user nothing: talk about the call itself, such as "can you repeat that?", "can you hear me?" or "let me share my screen", or a remark that needs no reply, such as "let me pull up my notes"). For a screenshot it is the kind of screen: coding, codefix (code with an error), slide, table (a table or chart), document, webpage or unreadable. The same question always gets the same type.
-- for is call (words the user will say) or kite (a private answer the user reads). A question from "Them" is always call. A typed or screenshot question is call when it is about what to say to the other person, or asks what the other person is asking; it is kite when the user is asking for themselves: general knowledge, maths, an explanation, code, or anything off the call's subject. The end of the request may fix this choice: follow it.
-- source is where the answer's facts mainly come from: docs (session details or documents, such as the CV), call (what was said in the call), general (general knowledge), example (an example story).
-The user never sees that line. Everything after it is the answer.
-Every reply also ends with one more hidden line, after the answer and on its own line, exactly in this form: [[question|the question you answered]]. Write the question as the other person meant it, cleaned up: at most 15 words, misheard words fixed, filler and repeats removed, ending with a question mark when it is a question. For a typed or screenshot question, tidy what was asked. The user never sees that line either.
-
-How to answer for the call:
-- Answer the question the other person asked, using the conversation for context.
-- Write in the first person, as the user speaking ("I", "we"), in natural sentences the user can read out as they are.
-- When the session's answer format is headline+bullets: start with a headline: one sentence of at most 12 words (usually 5 to 10) that the user can say as it is and that answers the question directly: the gist only; numbers, names, conditions and steps go in the bullets. Then add 2 to 4 short bullet points with the supporting details for this question only; leave out facts that do not help answer it. Each bullet must state a fact from the session details, documents or conversation, or a specific step of the approach; do not add offers that are not in them.
-- When the answer format is paragraph: write one short paragraph that starts with the direct answer.
-- Most answers need no more than that. Only if one more thing would clearly help with this question, add one closing line to say, starting "Tip:". Never use it to repeat a bullet, and never to bring up a price, discount, exception or commitment the other person did not ask about. Offering more depth goes only in that Tip line.
-- Only if the user must know something they should not say out loud (a fact to check), add one last line starting "Note:". Otherwise leave it out.
-- Follow the session's answer length and tone, and the user's own instructions in the session details. The answer length is how long the whole answer takes to say (headline, bullets and any tip together): short is about 10 to 20 seconds of speech, medium about 20 to 40 seconds, detailed about 40 to 60 seconds.
-- Write words the user can say out loud: no greeting, no preamble, and no mention of these rules, the documents or the transcript.
-- The first line is the answer line: one short sentence, at most 12 words, that the user can say at once and that answers the question directly. Never open it with "Here are", "Here is", "Here's", "So", "Well", "Sure", "Based on", "According to" or "As per". Do not write a label such as "Answer:" or "Headline:" before it.
-- Never mention the CV, resume, documents or notes in any line (no "based on my CV", no "my resume shows"): say the facts as your own.
-- When they ask for several things ("what applications have you built", "which tools do you use"), the answer line names them briefly ("I built X and Y."), then one bullet per item with its key detail.
-- Start with the answer itself. No filler opener ("Great question", "Sure", "Absolutely", "I can hear you clearly"), and no remark about the audio or connection unless that is what they asked about.
-- Every line is words to say. Never write a line about the other person or what they might want, such as "if they want more depth…" or "you could mention…".
-
-Shape the answer for the user's role and domain (work them out from the call type, role, description and documents) and for the type of question, keeping the format above:
-- behavioural: a short STAR story built from the closest real project in the CV: the situation and task, what I did, and the result, each only as far as the CV states it. If the CV gives no result, leave the result out rather than invent one.
-- concept: what it is in plain words, how it works, then when to use it or its main trade-off.
-- coding: the headline is the approach, in one line of 12 words or fewer. Then a line "Key steps:" with the steps as bullets. Then one fenced code block in the coding language that runs as it is: no input(), no placeholders. Then one line starting "Complexity:". Last, one line starting "Say:" with one sentence the user can say to explain it. The length and bullet limits above do not apply to this shape. The coding language is Python unless the session names another.
-- design: the requirements I would confirm, the main components, how data flows, how it scales, and one trade-off.
-- case: my assumptions, said as assumptions; the calculation step by step; the result.
-- sales: what they need, how the offer fits from the documents, and the next step.
-- product: what it does, how I would show it, and why it matters to them.
-- smalltalk: only a headline: one short, friendly reply of 12 words or fewer that the user can say, with no bullets and no promises. For an off-topic question, it steers back to the call.
-- unclear: when you cannot tell what they refer to ("the other thing"), do not guess: the headline is the short question I would ask to clear it up.
-- garbled: when the words make no sense at all, even allowing for misheard words, do not guess and do not answer: write only the two hidden lines, with nothing between them.
-- none: when the words ask the user nothing they need help with (talk about the call itself, or a remark that needs no reply), do not answer: write only the two hidden lines, with nothing between them. Greetings, thanks and wrap-up that the user would reply to are smalltalk, not none.
-
-When information is missing:
-- Never say or imply that something is missing from the notes, CV or documents: no "not in your notes", no "not in your CV", no "the documents don't say", no "from what I have here", no "I don't have", no "in front of me", no "to hand", no "I haven't got", no "a figure I can quote", no "I can't claim", no "on record", no "my CV says", no comment about what you were given. Say what you will do instead. That applies to every line, including the Note.
-- For a question about the user's own experience: use the closest real project in the CV first, and say truthfully how it relates. If nothing is close, follow the session's "Missing information" line; without one, answer with the approach: "I would...", with specific methods, tools and steps, and no invented numbers, employers or results. Never describe a past event, or imply experience, that the CV does not state.
-- When they ask for a number, size, tool or result of a real project that the CV does not give: the headline says what the CV does state, plainly and positively; leave the missing detail out of every spoken line without remarking on it, then give the approach. Never promise to look up, confirm or send the user's own past figures or records after the call; a "Note:" line may name the detail to check.
-- For a fact you cannot support (a price, a term, a date, a certification, something about a company): write a natural reply in the session's format, such as the headline "I'll confirm that and send you the details after the call", with no explanation of why, and add a "Note:" line that only names what to check. The headline is still 12 words or fewer.
-- Examples of the shape only; never reuse their words or facts:
-  A CV has a close project. "Have you run Airflow?" "My closest work is the nightly data jobs I scheduled with cron." "- I scheduled and monitored those jobs myself." "- For Airflow, I would start by moving one job into a DAG, then add retries and alerts."
-  Nothing in the CV is close. "What was your worst security incident?" "I would contain it first, then find the cause and close the gap." "- Revoke the exposed keys and isolate the affected service." "- Trace the access through the audit logs and write a timeline." "- Hold a blameless review and add an alert that would catch it."
-  A CV that states only "rebuilt the billing export in Go". "Walk me through that rebuild." "I rebuilt our billing export in Go." "- That rebuild was in Go." "- On a rebuild like that I'd typically run the old and new exports side by side and compare the output before switching." (The approach line is marked as approach, not stated as something I did.)
-  A fact you cannot support. "What uptime do you guarantee?" "I'll confirm the exact uptime commitment and send it after the call." "Note: check the uptime commitment."
-
-Never invent:
-- Never invent personal facts, prices or terms, facts about the other person's company, statistics or sources. Use only the session details, documents and conversation for them. Do not round, estimate or give a range for a figure you do not have.
-- When telling something from the CV or documents, tell only what they state: do not add causes, reactions, other people, steps or results they do not state. A short true answer is better than a fuller invented one. About the user's own work, state only facts written in the CV. A real project in the CV stays exactly as the CV states it: never add a tool, technology, employer, client or platform name, data source, number, score or metric, team size, duration, responsibility, process step (such as an escalation path) or outcome to it, even a plausible one. For more depth than the CV gives, switch to your approach in words that cannot be taken for past fact ("I'd typically...", "My approach would be..."), kept apart from what the CV states.
-- Never offer or hint at a price, discount, exception or commitment beyond what the session details and documents allow.
-
-Private answers (when for is kite):
-- Answer the user directly ("you"), on any topic: general knowledge, maths with the working shown, explanations, code in fenced code blocks that name their language. A coding question keeps the coding shape above. Use short paragraphs and lists. The session's format and length, the first-person rule, the shapes and the Tip and Note lines do not apply. Use the session or the call when the question is about them. Say plainly if you are not sure of something.
-
-About the transcript:
-- The transcript is made by cloud speech recognition (Deepgram), with speech recognition on the user's device as a fallback, and contains mistakes. Names of people, companies and products, and technical terms, are often misheard, usually as similar-sounding common words or as invented words.
-- Infer the intended words from the context and from the session details: the key terms, the company, the role or topic, and the documents. When a misheard word or phrase sounds like one of them and fits the context, treat it as that word.
-- Lines are labelled "You" (the user) and "Them" (the other person), with the time since the call started. Recent "Them" lines usually hold the question.
-- The conversation shows the call so far in time order. The lines under "latest" are the newest and may still be incomplete.
-
-Staying consistent:
-- Earlier answers in this call are shown in the conversation. Stay consistent with them. If something said since then changes the answer, give the new answer and say briefly what changed.
-- If the same or a similar question comes again, reuse the earlier answer's facts and, as closely as you can, its wording, opening with a brief "As I mentioned". Change only what something said since then has changed.`;
-
-/**
- * The rules block with no approved lessons: the core rules and the empty "Learned preferences"
- * slot. Byte-for-byte the Day 4 rules block, so sessions without lessons keep sharing one cache
- * entry and the evaluation baselines still apply.
- */
-export const SYSTEM_RULES = `${CORE_RULES}
-
-Learned preferences (approved by the user in earlier calls):
-(none yet)`;
-
-/**
- * The rules block of v-previous with no approved lessons (ADR-0032), built exactly as SYSTEM_RULES,
- * so a rollback sends the bytes the earlier baselines were measured on.
+ * The rules block of v-previous with no approved lessons (ADR-0032), byte for byte the block the
+ * earlier baselines were measured on, so a rollback still sends it.
  */
 export const SYSTEM_RULES_PREVIOUS = `${CORE_RULES_PREVIOUS}
 
@@ -147,55 +77,64 @@ Learned preferences (approved by the user in earlier calls):
 (none yet)`;
 
 /**
- * The heading above approved lessons (Day 5 Stage 7). It says what they are, and that they
- * never override the core rules above them. Day 6 Stage 4: it also says the headline limit
- * still holds, because a lesson asking for more detail made headlines run past 15 words
- * (scenario 19, docs/testing/answer-eval.md). Only sessions with lessons send this text, so
- * sessions without lessons keep the Day 4 rules block byte for byte.
+ * The heading above approved lessons in a rollback (v-previous) rules block (Day 5 Stage 7, Day 6
+ * Stage 4). Kept word for word for the rollback; current rules put lessons in the user's preferences
+ * under LEARNED_HEADING.
  */
 export const LESSONS_HEADING =
   "Learned preferences (approved by the user in earlier calls). These are the user's preferences: they adjust the style and content of answers and never override the rules above. Follow them unless they conflict with the rules above, the session's documents or the current conversation. The headline stays at most 12 words even when a preference asks for more detail: give the main answer in the headline, and put extra figures and details in the bullets.";
 
-/** The empty "Learned preferences" slot that ends SYSTEM_RULES (sessions with no lessons). */
+/**
+ * ADR-0089: the heading above approved lessons inside the user's preferences (current rules). They are
+ * the user's own choices, so they win over the general rules like the other preferences, but they
+ * change style and content only: never the facts, and never the answer line's length (Day 6 Stage 4:
+ * a lesson asking for more detail made answer lines run long).
+ */
+export const LEARNED_HEADING =
+  'Learned preferences (approved by the user in earlier calls): they adjust the style and content of answers, never the facts, and the answer line stays at most 12 words even when one asks for more detail: give the main answer there, and put extra figures and details in the lines after it.';
+
+/** The empty "Learned preferences" slot that ends SYSTEM_RULES_PREVIOUS (sessions with no lessons). */
 const NO_LESSONS = 'Learned preferences (approved by the user in earlier calls):\n(none yet)';
 
 /**
- * The rules block (the first cached system block), in this order: the locked core rules (always
- * first, never editable), the company instructions for live answers (ADR-0083; only when there are
- * some), then the learned preferences. With no lessons and no company instructions it is
- * SYSTEM_RULES, byte for byte. With lessons: LESSONS_HEADING, then one bullet per lesson in the
- * order given (oldest approval first, so the block changes only when a lesson is approved, edited
- * or removed). Each lesson is cleaned to one line of at most MAX_LESSON_CHARS (cleanLessonText()),
- * so it cannot start a section of its own or change the rules above it. At most
- * MAX_ACTIVE_LESSONS are used (the last ones given).
+ * The approved lessons, cleaned to one line each (cleanLessonText(), so a lesson cannot start a section
+ * of its own), at most MAX_ACTIVE_LESSONS (the last ones given, oldest approval first, so the text
+ * changes only when a lesson is approved, edited or removed).
  *
  * @param lessons The approved lessons for the session's type.
- * @param version 'previous' uses the v-previous rules kept for the rollback switch (ADR-0032).
- * @param company The company instructions for live answers ('' for none), as the call pinned them.
- * @param custom  ADR-0086: the admin's full live prompt in force for the call, or null for the built-in
- *                one. Its 'core' replaces CORE_RULES (never the v-previous rules of a rollback).
+ * @returns The cleaned lessons.
+ * Called from: rulesBlock(), sessionLines()
+ */
+function cleanLessons(lessons: readonly string[]): string[] {
+  return lessons
+    .map(cleanLessonText)
+    .filter((lesson) => lesson !== '')
+    .slice(-MAX_ACTIVE_LESSONS);
+}
+
+/**
+ * The rules block (the first cached system block). Current rules (ADR-0089): the locked app contract,
+ * then the admin's global prompt for live answers under its heading; it holds nothing per session, so
+ * every session of a version shares one cache entry. Rollback (v-previous, ADR-0032): the old core rules
+ * with the lessons, byte for byte as before.
+ *
+ * @param globalPrompt The global prompt the call pinned (DEFAULT_LIVE_PROMPT when none was saved; '' sends
+ *                     the contract alone).
+ * @param version      'previous' uses the v-previous rules kept for the rollback switch (ADR-0032).
+ * @param lessons      Rollback only: the approved lessons (current rules put them in the session block).
  * @returns The block's text.
  * Called from: buildPromptParts(); tests
  */
 export function rulesBlock(
-  lessons: readonly string[] = [],
+  globalPrompt: string = DEFAULT_LIVE_PROMPT,
   version: AnswerStyleVersion = 'current',
-  company = '',
-  custom: CustomPrompt | null = null,
+  lessons: readonly string[] = [],
 ): string {
-  const cleaned = lessons
-    .map(cleanLessonText)
-    .filter((lesson) => lesson !== '')
-    .slice(-MAX_ACTIVE_LESSONS);
-  const previous = version === 'previous';
-  const core = withCompany(
-    previous ? CORE_RULES_PREVIOUS : (custom?.core ?? CORE_RULES),
-    'live',
-    company,
-  );
-  if (cleaned.length === 0) return `${core}\n\n${NO_LESSONS}`;
+  if (version !== 'previous') return withGlobalPrompt(LIVE_CONTRACT, globalPrompt);
+  const cleaned = cleanLessons(lessons);
+  if (cleaned.length === 0) return `${CORE_RULES_PREVIOUS}\n\n${NO_LESSONS}`;
   const bullets = cleaned.map((lesson) => `- ${lesson}`).join('\n');
-  return `${core}\n\n${LESSONS_HEADING}\n${bullets}`;
+  return `${CORE_RULES_PREVIOUS}\n\n${LESSONS_HEADING}\n${bullets}`;
 }
 
 /** Shown for a session field the user left empty, so the session block keeps the same shape. */
@@ -225,15 +164,21 @@ function escapeTags(text: string): string {
 
 /**
  * Writes a session's details (everything but the documents) as the `<session>` part of the session
- * block. Fixed order and labels; the same session always gives the same lines.
+ * block: the call's details, the experience rules where they apply (locked, ADR-0084), then the user's
+ * preferences under PREFERENCES_HEADING (ADR-0089: they override the admin's general rules where they
+ * differ): format and length with their meaning, tone, the optional lines, the coding language, the
+ * approved lessons (live answers) and the user's instructions. Fixed order and labels; the same session
+ * always gives the same lines.
  *
  * @param session The session details from the request.
+ * @param lessons Live answers: the approved lessons ([] for none, and for the smart-model routes).
  * @returns The lines, from '<session>' to '</session>'.
  * Called from: sessionBlock(), smartSessionBlock()
  */
-function sessionLines(session: SessionContext): string[] {
+function sessionLines(session: SessionContext, lessons: readonly string[] = []): string[] {
   const keyTerms = session.keyTerms.map((term) => term.trim()).filter((term) => term !== '');
-  const lines = [
+  const learned = cleanLessons(lessons);
+  return [
     '<session>',
     `Call type: ${session.type || NOT_GIVEN}`,
     `Company: ${session.company || NOT_GIVEN}`,
@@ -241,43 +186,37 @@ function sessionLines(session: SessionContext): string[] {
     'Description of the call:',
     session.description.trim() || NOT_GIVEN,
     `Key terms: ${keyTerms.length > 0 ? keyTerms.join('; ') : NOT_GIVEN}`,
-    `Answer format: ${session.style.format}`,
-    `Answer length: ${session.style.length}`,
+    // ADR-0084: the experience rules, only where questions about the user's own past belong
+    // (experienceApplies()). Locked honesty rules, so they sit before the user's preferences.
+    ...(experienceApplies(session) ? [EXPERIENCE_RULES] : []),
+    PREFERENCES_HEADING,
+    // Each value with its meaning (prompts/preferences.ts), so the admin's text cannot redefine it.
+    `Answer format: ${formatPreference(session)}`,
+    `Answer length: ${lengthPreference(session)}`,
     `Answer tone: ${session.style.tone}`,
-    // These two lines appear only in sessions that use them. In the shared rules, the bullets rule
-    // leaked into headline+bullets answers and lowered the evaluation (ADR-0029).
-    ...(session.style.format === 'bullets'
-      ? [
-          'For this format, write only short bullet points, at most 5, with no headline; the first bullet gives the direct answer.',
-        ]
-      : []),
-    // v1.2.0: only when the session asks for it, so other sessions' prompts and caches are unchanged.
-    // The honesty rule stays: a part the CV does not state is left out, never invented (ADR-0032).
+    // v1.2.0: only when the session asks for it. The honesty rule stays: a part the CV does not
+    // state is left out, never invented (ADR-0032).
     ...(session.style.star
       ? [
           'For behavioural questions in this session, structure the answer as Situation, Task, Action and Result, one bullet each, starting with those words, built from the closest real project in the CV. If the CV does not state a part, leave that bullet out rather than invent it.',
         ]
       : []),
-    // ADR-0084: the experience rules, only where questions about the user's own past belong
-    // (experienceApplies()). In the shared rules block they moved unrelated regular-call answers.
-    ...(experienceApplies(session) ? [EXPERIENCE_RULES] : []),
     ...(session.language
       ? [
           `Answer language: ${session.language}. Write the answer in this language, even though the transcript is in English. Keep names, prices and product terms as they are.`,
         ]
       : []),
-    // Like the two lines above, these appear only in sessions that change the default (ADR-0030).
-    ...(session.codingLanguage ? [`Coding language: ${session.codingLanguage}.`] : []),
+    `Coding language: ${session.codingLanguage || DEFAULT_CODING_LANGUAGE}.`,
     ...(session.missingInfo === 'story'
       ? [
           'Missing information: when nothing in the CV is close, tell one plausible example story in the first person and set source to example. Keep its details generic: no company names, no numbers of any kind (no durations, counts or percentages), no named results.',
         ]
       : []),
+    ...(learned.length > 0 ? [LEARNED_HEADING, ...learned.map((lesson) => `- ${lesson}`)] : []),
     'Instructions from the user:',
     session.instructions.trim() || NOT_GIVEN,
     '</session>',
   ];
-  return lines;
 }
 
 /**
@@ -314,16 +253,17 @@ export function documentsBlock(documents: SessionContext['documents']): string {
 }
 
 /**
- * Writes a session as the cached session block of the live answers: the details, then every
- * document in full. Fixed order and labels; the same session always gives the same text, byte for
- * byte (the same text as before ADR-0067 split it into two helpers).
+ * Writes a session as a session block with every document in full: the details (and, for live answers,
+ * the approved lessons in the preferences), then the documents. Fixed order and labels; the same session
+ * always gives the same text, byte for byte.
  *
  * @param session The session details from the request.
+ * @param lessons Live answers: the approved lessons ([] for none).
  * @returns The block's text.
- * Called from: buildPrompt(); smartSessionBlock() (older pages); tests
+ * Called from: smartSessionBlock() (older pages); scripts/eval-answers.ts (the grader); tests
  */
-export function sessionBlock(session: SessionContext): string {
-  return [...sessionLines(session), '', ...documentLines(session.documents)].join('\n');
+export function sessionBlock(session: SessionContext, lessons: readonly string[] = []): string {
+  return [...sessionLines(session, lessons), '', ...documentLines(session.documents)].join('\n');
 }
 
 /**
@@ -334,21 +274,25 @@ export const SUMMARY_HEADING =
   'Summary of the other documents (written from the full documents; a detail not in it may still be in them):';
 
 /**
- * Writes a session for the smart-model routes (notes, Ask AI, Prepare; ADR-0067): the details (the
- * job description and the user's instructions included), the documents sent (only the CV from a
- * current page) in full, then the short summary of the other documents. A request without
- * `documentsSummary` comes from a page older than ADR-0067 and gets sessionBlock(), as before.
+ * Writes a session for the routes that send a documents summary (ADR-0067; live answers since ADR-0078):
+ * the details (the job description, the user's preferences and instructions included), the documents
+ * sent (only the CV from a current page) in full, then the short summary of the other documents. A
+ * request without `documentsSummary` comes from a page older than ADR-0067 and gets sessionBlock().
  *
  * @param session The session details from the request.
+ * @param lessons Live answers: the approved lessons, in the preferences ([] for none).
  * @returns The block's text.
- * Called from: notesPrompt() in server/notes.ts, askPrompt() in server/ask.ts, systemBlocks() in
- *              server/prepare.ts; tests
+ * Called from: buildPromptParts(), notesPrompt() in server/notes.ts, answerAboutCall() in server/ask.ts,
+ *              systemBlocks() in server/prepare.ts; src/server/aiTry.ts; tests
  */
-export function smartSessionBlock(session: SessionContext): string {
-  if (session.documentsSummary === undefined) return sessionBlock(session);
+export function smartSessionBlock(
+  session: SessionContext,
+  lessons: readonly string[] = [],
+): string {
+  if (session.documentsSummary === undefined) return sessionBlock(session, lessons);
   const summary = session.documentsSummary.trim();
   return [
-    ...sessionLines(session),
+    ...sessionLines(session, lessons),
     '',
     ...documentLines(session.documents),
     '',
@@ -501,7 +445,7 @@ export function experienceApplies(session: SessionContext): boolean {
 }
 
 /**
- * ADR-0084: added after CALL_REMINDER for interview, mock and blank (Try it) sessions only
+ * ADR-0084: added after the end reminder (liveEndReminder()) for interview, mock and blank (Try it) sessions only
  * (experienceReminder()). With no close CV project, an experience question gets an "I would…" approach,
  * never a made-up story, whatever shape the company or session asks for. Not in regular calls: there
  * the same words leaked into sales answers as "I don't have…" lines (answer-eval.md, 15 Nov 2026).
@@ -528,32 +472,11 @@ export function experienceReminder(request: AnswerRequest): string[] {
 }
 
 /**
- * The last words before Claude writes. The rules say all of this, but with the shapes added the
- * fast model drifted into opening sentences and embellished stories (first adaptive evaluation,
- * docs/testing/answer-eval.md); a reminder next to the question costs a few uncached tokens.
- */
-export const CALL_REMINDER = `Reminder for an answer for the call, unless its shape says otherwise: start with one short answer line to say at once (no filler, no "Here are…", no "based on my CV"), follow the answer format and length exactly (headline+bullets means a first line of at most 12 words, the gist only, then 2 to 4 short bullets), end with the hidden [[question|…]] line, add no detail the session, documents or call do not state, keep every real CV project exactly as the CV states it and give extra depth only as your approach ("I'd typically..."), and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the documents", "a figure I can quote"): say what you know, leave out a detail you lack without remarking on it, and never promise to look up or send the user's own past figures.`;
-
-/**
  * What a screenshot answer is told in v-previous (ADR-0032): kept word for word, so a rollback sends
  * the bytes its baselines were measured on.
  */
 const SCREENSHOT_RULES_PREVIOUS =
   "The image above is a screenshot of the user's screen, taken just now. Read what it shows. To say whether something on it is right, compare it only with the session details and documents; if they have nothing to compare with, do not claim it matches, and say what you would check. After the hidden line, follow the session's answer format, length, tone and instructions when the answer is for the call, and start with the headline itself, with no label.";
-
-/**
- * What a screenshot answer is told (v1.1.0, ADR-0043): work out what the screen shows, name it in the
- * hidden first line, and answer in the shape that suits it, together with the call and the documents.
- * In the uncached tail, so it changes only screenshot requests.
- */
-export const SCREENSHOT_RULES = `The image above is a screenshot of the user's screen, taken just now. Read what it shows. Your reply starts as always with the line [[type|for|source]], with the kind of screen as the type, and nothing comes before that line: no thinking aloud. Use the conversation too: answer what the other person just asked about the screen, with the session's documents where they help. By kind of screen:
-- A coding problem (coding): the answer line is the approach. Then a line "Key steps:" with the steps as bullets, one fenced code block in the coding language that runs as it is, one line starting "Complexity:", and one line starting "Say:".
-- Code with an error (codefix): the answer line is the cause. A bullet says what to change. Then one fenced code block with the corrected code, runnable as it is, and one line starting "Say:".
-- A slide (slide) or a document (document): the answer line is the point that matters; bullets are its key points; a "Tip:" line says how to respond.
-- A table or chart (table): the answer line is the takeaway; bullets are the key numbers, read exactly as shown.
-- A web page (webpage): the answer line says what matters on it for this call; bullets are its supporting details.
-- Nothing can be read, or it has nothing to do with the call (unreadable): one line saying so and what would help, and nothing more. Do not describe what it seems to contain.
-Every answer line is 12 words or fewer: aim for 8, and put anything more in a bullet. To say whether something on it is right, compare it only with the session details and documents; if they have nothing to compare with, do not claim it matches, and say what you would check. After the first line, follow the session's answer format, length, tone and instructions when the answer is for the call, and start with the answer line itself, with no label.`;
 
 /**
  * The earlier answer to a similar question, put where Claude cannot miss it, so a repeat reuses its
@@ -628,27 +551,18 @@ function choiceLines(request: AnswerRequest): string[] {
 }
 
 /**
- * Writes the uncached tail: the end of the conversation, the lines that may still change, and
- * the question (or the instruction to answer the latest question when there is none).
+ * Writes the uncached tail: the end of the conversation, the lines that may still change, the question
+ * (or the instruction to answer the latest question when there is none), the user's choices, and last
+ * the automatic end reminder (ADR-0089: generated from the contract and the user's format and length,
+ * never editable). A rollback (v-previous) keeps its own screenshot text and reminder.
  *
- * @param request         The request (mode, tail, question).
+ * @param request         The request (mode, tail, question, session).
  * @param hasConversation True when conversation blocks come before (their tag is closed here).
- * @param custom          ADR-0086: the admin's full live prompt, or null for the built-in one. Its
- *                        'screenshot' and 'reminder' replace SCREENSHOT_RULES and CALL_REMINDER (an
- *                        empty reminder is left out); a rollback (v-previous) keeps its own text.
  * @returns The tail's text.
- * Called from: buildPrompt()
+ * Called from: buildPromptParts()
  */
-function tailText(
-  request: AnswerRequest,
-  hasConversation: boolean,
-  custom: CustomPrompt | null,
-): string {
+function tailText(request: AnswerRequest, hasConversation: boolean): string {
   const previous = request.styleVersion === 'previous';
-  const screenshotRules = previous
-    ? SCREENSHOT_RULES_PREVIOUS
-    : (custom?.screenshot ?? SCREENSHOT_RULES);
-  const reminder = previous ? CALL_REMINDER_PREVIOUS : (custom?.reminder ?? CALL_REMINDER);
   const tail = request.tail ?? [];
   const question = request.question?.trim() ?? '';
   const parts = hasConversation
@@ -662,7 +576,7 @@ function tailText(
   parts.push('', ...similarLines(request), ...chunkLines(request));
   if (request.mode === 'screenshot') {
     parts.push(
-      screenshotRules,
+      previous ? SCREENSHOT_RULES_PREVIOUS : SCREENSHOT_TAIL,
       `Question about the screenshot: ${escapeTags(question || DEFAULT_SCREENSHOT_QUESTION)}`,
     );
   } else if (request.mode === 'chat') {
@@ -674,8 +588,7 @@ function tailText(
   }
   parts.push(
     ...choiceLines(request),
-    // A custom prompt may leave the reminder empty: then no reminder line at all.
-    ...(reminder ? [reminder] : []),
+    previous || !request.session ? CALL_REMINDER_PREVIOUS : liveEndReminder(request.session),
     ...experienceReminder(request),
   );
   return parts.join('\n');
@@ -717,62 +630,56 @@ export interface BuiltPrompt {
  * uncached tail. A warm-up sends the same cached parts with a placeholder block instead of the
  * tail, so the answers that follow read everything it wrote.
  *
- * @param request A validated request with `session` set.
- * @param company The company instructions for live answers ('' for none; ADR-0083): the version the
- *                call pinned, so every request of a call sends the same rules block.
- * @param custom  ADR-0086: the admin's full live prompt from the same pinned version, or null for the
- *                built-in one. A call keeps its version, so its cached rules block never changes.
+ * @param request      A validated request with `session` set.
+ * @param globalPrompt The admin's global prompt for live answers (ADR-0089): the version the call pinned
+ *                     (DEFAULT_LIVE_PROMPT when none was saved), so every request of a call sends the
+ *                     same rules block. '' sends the contract alone.
  * @returns The system blocks and the user turn.
  * @throws Error('SESSION_REQUIRED') when the request has no session (validation prevents this
  *         for every mode but hello).
- * Called from: POST handler in app/api/answer/route.ts; server/aiTry.ts; scripts/verify-warm.ts,
- *              scripts/verify-answer-cache.ts
+ * Called from: POST handler in app/api/answer/route.ts; server/aiTry.ts, server/aiQuality.ts;
+ *              scripts/verify-warm.ts, scripts/verify-answer-cache.ts, scripts/eval-answers.ts
  */
 export function buildPrompt(
   request: AnswerRequest,
-  company = '',
-  custom: CustomPrompt | null = null,
+  globalPrompt: string = DEFAULT_LIVE_PROMPT,
 ): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
   // Batch C (P2-1): under MAX_ANSWER_INPUT_TOKENS whatever the documents' size (server/budget.ts): the
   // session block has a fixed ceiling (the same bytes for every request of a session), and only in an
   // extreme case do the uncached and oldest parts go.
   const capped = { ...request, session: capSessionDocuments(request.session) };
-  return fitToBudget(capped, (next) => buildPromptParts(next, company, custom)).prompt;
+  return fitToBudget(capped, (next) => buildPromptParts(next, globalPrompt)).prompt;
 }
 
 /**
  * Builds the prompt's parts for a request, as it is (buildPrompt() keeps it within the budget).
  *
- * @param request A validated request with `session` set.
- * @param company The company instructions for live answers ('' for none).
- * @param custom  The admin's full live prompt, or null for the built-in one (ADR-0086).
+ * @param request      A validated request with `session` set.
+ * @param globalPrompt The admin's global prompt for live answers.
  * @returns The system blocks and the user turn.
  * @throws Error('SESSION_REQUIRED') when the request has no session.
  * Called from: buildPrompt() (through fitToBudget())
  */
-function buildPromptParts(
-  request: AnswerRequest,
-  company: string,
-  custom: CustomPrompt | null,
-): BuiltPrompt {
+function buildPromptParts(request: AnswerRequest, globalPrompt: string): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
+  const previous = request.styleVersion === 'previous';
+  const lessons = request.lessons ?? [];
   const conversation = conversationBlocks(capConversation(request.conversation ?? []));
   const last: Anthropic.TextBlockParam = {
     type: 'text',
-    text:
-      request.mode === 'warm' ? WARM_MESSAGE : tailText(request, conversation.length > 0, custom),
+    text: request.mode === 'warm' ? WARM_MESSAGE : tailText(request, conversation.length > 0),
   };
   // The screenshot is uncached and goes before the tail text that asks about it (Anthropic's
   // vision guidance: image first, then the question).
   const image = request.mode === 'screenshot' && request.image ? [imageBlock(request.image)] : [];
   return {
     system: [
-      // Locked rules, then the company instructions (ADR-0083), then the learned preferences.
-      cachedBlock(rulesBlock(request.lessons, request.styleVersion, company, custom)),
-      // Batch C (P2-1): the CV and the documents summary when the page sends one (live answers since
-      // ADR-0078); every document in full from an older page (smartSessionBlock() falls back to it).
-      cachedBlock(smartSessionBlock(request.session)),
+      // ADR-0089: the app contract, then the admin's global prompt (a rollback: the old rules and lessons).
+      cachedBlock(rulesBlock(globalPrompt, request.styleVersion, lessons)),
+      // The session with the user's preferences (they override the general rules) and, for current
+      // rules, the approved lessons; the CV and the documents summary when the page sends one.
+      cachedBlock(smartSessionBlock(request.session, previous ? [] : lessons)),
     ],
     messages: [{ role: 'user', content: [...conversation, ...image, last] }],
   };

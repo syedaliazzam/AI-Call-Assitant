@@ -101,14 +101,9 @@ async function respond(
   }
   const sizes = { lines: parsed.data.lines.length, answers: parsed.data.answers.length };
   try {
-    // ADR-0083: the Ask AI instructions in force; ADR-0086: and its custom review rules, if any.
+    // ADR-0089: the Ask AI global prompt in force, after the locked review contract.
     const company = await companySettings('ask');
-    const { text, usage } = await answerAboutCall(
-      parsed.data,
-      model,
-      company.text,
-      company.prompt?.review,
-    );
+    const { text, usage } = await answerAboutCall(parsed.data, model, company.globalPrompt);
     const ms = Math.round(performance.now() - startedAt);
     console.info('ask: done', {
       userId: user.id,
