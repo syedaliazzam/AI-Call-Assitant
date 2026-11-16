@@ -10,6 +10,7 @@
  *          (lockedRulesFor, budgetFacts)
  * Depends on: src/server/prompt.ts, src/server/notes.ts, src/server/kite-chat.ts, src/server/claude.ts,
  *             src/server/answer-meta.ts, src/server/budget.ts, src/server/prompts/company.ts,
+ *             src/server/prompts/builtIn.ts (BUILT_IN_PROMPTS),
  *             src/server/validate.ts (parseAiTryRequest), src/server/usage.ts (the daily limit),
  *             @kite/shared (checkCustomPrompt)
  * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md, ADR-0086-full-system-prompt-editing.md
@@ -43,7 +44,6 @@ import {
   type SessionContext,
 } from '@kite/shared';
 import { withAnswerMeta } from './answer-meta';
-import { ASK_RULES } from './ask';
 import {
   BUDGET_CHARS_PER_TOKEN,
   BUDGET_TOKENS,
@@ -51,8 +51,8 @@ import {
   SESSION_BLOCK_MAX_CHARS,
 } from './budget';
 import { describeClaudeError, errorLogDetails, streamReply, type ReplyResult } from './claude';
-import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS, KITE_CHAT_RULES } from './kite-chat';
-import { generateCallNotes, NOTES_RULES } from './notes';
+import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from './kite-chat';
+import { generateCallNotes } from './notes';
 import {
   ANSWER_MAX_TOKENS,
   buildPrompt,
@@ -62,6 +62,7 @@ import {
   SCREENSHOT_RULES,
   smartSessionBlock,
 } from './prompt';
+import { BUILT_IN_PROMPTS } from './prompts/builtIn';
 import { COMPANY_HEADINGS, normaliseInstructions } from './prompts/company';
 import { parseAiTryRequest } from './validate';
 
@@ -74,16 +75,6 @@ export interface LockedPart {
   /** The exact text sent to Claude. */
   text: string;
 }
-
-/**
- * Each block's built-in prompt, part by part (ADR-0086): what a block with no custom prompt sends, and
- * what "Reset to default" goes back to.
- */
-export const BUILT_IN_PROMPTS: Readonly<Record<AiInstructionBlock, CustomPrompt>> = {
-  live: { core: CORE_RULES, reminder: CALL_REMINDER, screenshot: SCREENSHOT_RULES },
-  notes: { rules: NOTES_RULES },
-  ask: { chat: KITE_CHAT_RULES, review: ASK_RULES },
-};
 
 /**
  * The built-in prompt of a block: the text that comes first in its requests (the answer format the

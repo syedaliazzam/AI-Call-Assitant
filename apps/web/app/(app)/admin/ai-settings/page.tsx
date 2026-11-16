@@ -43,6 +43,7 @@ export default async function AdminAiSettingsPage() {
       activeId: state.activeId,
       activeText: state.activeText,
       activePrompt: state.activePrompt,
+      builtInChange: state.builtInChange,
       versions: state.versions.map((version) => ({
         id: version.id,
         text: version.text,

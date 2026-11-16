@@ -4,14 +4,17 @@
  *          accounts database: every saved version per block (never changed or deleted), the version
  *          in force per block, saving and restoring (admins only), the version ids a call pins when it
  *          starts, and the instructions and prompt a request uses (its pinned version, or the one in
- *          force), kept in memory so answers do not wait for the database.
+ *          force), kept in memory so answers do not wait for the database. ADR-0087: the built-in
+ *          prompts the app has run with, and whether a custom prompt in force predates the current one.
  * Used by: app/(app)/admin/ai-settings/page.tsx and actions.ts, app/api/ai-instructions/pin/route.ts,
  *          app/api/answer/route.ts, app/api/notes/route.ts, app/api/ask/route.ts
  * Depends on: drizzle-orm, src/server/db.ts (companySettings), src/server/schema.ts (aiInstructionsVersion,
- *             aiInstructionsActive, user), src/server/calldata/store.ts (the database type),
+ *             aiInstructionsActive, aiBuiltinPrompt, user), src/server/calldata/store.ts (the database type),
+ *             src/server/prompts/builtIn.ts (the built-in prompts, their hash and date),
  *             src/server/prompts/company.ts (normaliseInstructions), @kite/shared (blocks, limit, pin,
  *             custom prompt check)
- * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md, ADR-0086-full-system-prompt-editing.md;
+ * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md, ADR-0086-full-system-prompt-editing.md,
+ *               ADR-0087-built-in-rules-change-notice.md;
  *               ADR-0050 (additive migrations)
  *
  * One version holds both the instructions and the prompt (null = the built-in prompt), so a call's pin
@@ -19,7 +22,7 @@
  * and an error's name only: never the text, a version id or a person.
  */
 import 'server-only';
-import { desc, eq, sql } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import {
   AI_INSTRUCTION_BLOCKS,
   AI_INSTRUCTIONS_NONE,
@@ -36,8 +39,9 @@ import {
 } from '@kite/shared';
 import type { CallDataDb } from './calldata/store';
 import { db as appDb } from './db';
+import { BUILT_IN_PROMPTS, BUILT_IN_REVISIONS, builtInHash } from './prompts/builtIn';
 import { normaliseInstructions } from './prompts/company';
-import { aiInstructionsActive, aiInstructionsVersion, user } from './schema';
+import { aiBuiltinPrompt, aiInstructionsActive, aiInstructionsVersion, user } from './schema';
 
 /** The database these functions use (the app's Neon client, or PGlite in tests). */
 export type InstructionsDb = CallDataDb;
@@ -68,6 +72,17 @@ export interface InstructionsVersion {
   createdAt: string;
 }
 
+/**
+ * ADR-0087: the built-in rules changed after the custom prompt in force was written (it does not
+ * include those changes).
+ */
+export interface BuiltInChange {
+  /** The day the built-in prompt last changed (YYYY-MM-DD, BUILT_IN_REVISIONS). */
+  date: string;
+  /** The built-in prompt the custom one was written against, or null when it was not recorded. */
+  previous: CustomPrompt | null;
+}
+
 /** One block's state for the admin page. */
 export interface BlockInstructions {
   /** The version in force, or null when the block was never saved. */
@@ -76,9 +91,28 @@ export interface BlockInstructions {
   activeText: string;
   /** The custom prompt in force, or null for the built-in prompt. */
   activePrompt: CustomPrompt | null;
+  /** ADR-0087: set when the built-in rules changed since the custom prompt in force was written. */
+  builtInChange: BuiltInChange | null;
   /** Its versions, newest first (at most HISTORY_LIMIT). */
   versions: InstructionsVersion[];
 }
+
+/** Where the built-in prompts come from: the code (tests pass others to act out a release). */
+export interface BuiltInSource {
+  /** A block's built-in prompt. */
+  prompt: (block: AiInstructionBlock) => CustomPrompt;
+  /** Its hash. */
+  hash: (block: AiInstructionBlock) => string;
+  /** The day it last changed (YYYY-MM-DD). */
+  date: (block: AiInstructionBlock) => string;
+}
+
+/** The app's own built-in prompts (server/prompts/builtIn.ts). */
+export const APP_BUILT_INS: BuiltInSource = {
+  prompt: (block) => BUILT_IN_PROMPTS[block],
+  hash: (block) => builtInHash(block),
+  date: (block) => BUILT_IN_REVISIONS[block].date,
+};
 
 /** What a request uses for one block: the instructions and the prompt of one version. */
 export interface BlockSettings {
@@ -104,7 +138,12 @@ const VERSION_CACHE_SIZE = 200;
 interface StoredVersion extends BlockSettings {
   /** Its block. */
   block: AiInstructionBlock;
+  /** ADR-0087: the hash of the built-in prompt its custom prompt was written against, or null. */
+  baseHash: string | null;
 }
+
+/** The built-in prompts this server has recorded ("block:hash"), so it records each one once. */
+const registered = new Set<string>();
 
 /** Versions by id. A version never changes, so a call's pinned version is read once per server. */
 const byId = new Map<string, StoredVersion>();
@@ -220,18 +259,22 @@ function samePrompt(
 /**
  * Turns a row into what is kept in memory.
  *
- * @param block  The row's block.
- * @param text   Its instructions.
- * @param prompt Its prompt column.
+ * @param block    The row's block.
+ * @param text     Its instructions.
+ * @param prompt   Its prompt column.
+ * @param baseHash Its base_hash column.
  * @returns The stored version.
- * Called from: readActive(), versionRow()
+ * Called from: readActive(), versionRow(), insertVersion()
  */
 function rowToStored(
   block: AiInstructionBlock,
   text: string,
   prompt: string | null,
+  baseHash: string | null,
 ): StoredVersion {
-  return { block, text, prompt: parseStoredPrompt(block, prompt) };
+  const parsed = parseStoredPrompt(block, prompt);
+  // A base only means something for a custom prompt.
+  return { block, text, prompt: parsed, baseHash: parsed ? baseHash : null };
 }
 
 /**
@@ -270,6 +313,7 @@ async function readActive(
       id: aiInstructionsVersion.id,
       text: aiInstructionsVersion.text,
       prompt: aiInstructionsVersion.prompt,
+      baseHash: aiInstructionsVersion.baseHash,
     })
     .from(aiInstructionsActive)
     .innerJoin(aiInstructionsVersion, eq(aiInstructionsVersion.id, aiInstructionsActive.versionId));
@@ -277,7 +321,7 @@ async function readActive(
   for (const row of rows) {
     if (!isInstructionBlock(row.block)) continue;
     ids[row.block] = row.id;
-    remember(row.id, rowToStored(row.block, row.text, row.prompt));
+    remember(row.id, rowToStored(row.block, row.text, row.prompt, row.baseHash));
   }
   activeCache = { at: now, ids };
   return ids;
@@ -315,13 +359,14 @@ async function versionRow(db: InstructionsDb, id: string): Promise<StoredVersion
       block: aiInstructionsVersion.block,
       text: aiInstructionsVersion.text,
       prompt: aiInstructionsVersion.prompt,
+      baseHash: aiInstructionsVersion.baseHash,
     })
     .from(aiInstructionsVersion)
     .where(eq(aiInstructionsVersion.id, id))
     .limit(1);
   const row = rows[0];
   if (!row || !isInstructionBlock(row.block)) return null;
-  const stored = rowToStored(row.block, row.text, row.prompt);
+  const stored = rowToStored(row.block, row.text, row.prompt, row.baseHash);
   remember(id, stored);
   return stored;
 }
@@ -339,6 +384,77 @@ function knownSettings(id: string | null): BlockSettings {
 }
 
 /**
+ * The base hash of the version in force, from memory (just read by readActive()).
+ *
+ * @param id The id in force, or null.
+ * @returns Its base hash, or null.
+ * Called from: loadAiInstructions(), saveInstructions(), restoreInstructions()
+ */
+function knownBase(id: string | null): string | null {
+  return (id ? byId.get(id)?.baseHash : null) ?? null;
+}
+
+/**
+ * Records the built-in prompts this server runs with (ADR-0087), once per server for each: a row per
+ * block and hash in ai_builtin_prompt, kept so "View changes" can show it after a later release. Never
+ * stops the caller: a failure is logged (its name only) and tried again next time.
+ *
+ * @param db       The database.
+ * @param builtIns Where the built-in prompts come from (the code; tests pass others).
+ * Called from: loadAiInstructions(), savePrompt(), readPin()
+ */
+export async function registerBuiltIns(
+  db: InstructionsDb,
+  builtIns: BuiltInSource = APP_BUILT_INS,
+): Promise<void> {
+  const rows = AI_INSTRUCTION_BLOCKS.map((block) => ({
+    block,
+    hash: builtIns.hash(block),
+    prompt: storedPrompt(block, builtIns.prompt(block)) ?? '{}',
+  })).filter((row) => !registered.has(`${row.block}:${row.hash}`));
+  if (rows.length === 0) return;
+  try {
+    await db.insert(aiBuiltinPrompt).values(rows).onConflictDoNothing();
+    for (const row of rows) registered.add(`${row.block}:${row.hash}`);
+  } catch (error) {
+    console.error('ai instructions: built-in record failed', {
+      reason: error instanceof Error ? error.name : 'unknown',
+    });
+  }
+}
+
+/**
+ * Whether the built-in rules changed since the custom prompt in force was written (ADR-0087). A custom
+ * prompt saved before base hashes were kept is taken to be based on the first built-in prompt recorded
+ * for the block (base hashes and the record started in the same release, whose built-in text had not
+ * changed since custom prompts began).
+ *
+ * @param block    The block.
+ * @param active   The prompt in force (null = built-in: no change to report).
+ * @param baseHash Its base hash, or null when not recorded.
+ * @param records  The recorded built-in prompts for the block, oldest first.
+ * @param builtIns Where the current built-in prompt comes from.
+ * @returns The change, or null when there is none to report.
+ * Called from: loadAiInstructions()
+ */
+function changeSince(
+  block: AiInstructionBlock,
+  active: CustomPrompt | null,
+  baseHash: string | null,
+  records: readonly { hash: string; prompt: string }[],
+  builtIns: BuiltInSource,
+): BuiltInChange | null {
+  if (active === null) return null;
+  const base = baseHash ?? records[0]?.hash ?? null;
+  if (base === null || base === builtIns.hash(block)) return null;
+  const record = records.find((row) => row.hash === base);
+  return {
+    date: builtIns.date(block),
+    previous: record ? parseStoredPrompt(block, record.prompt) : null,
+  };
+}
+
+/**
  * The version ids in force now, read fresh from the database (no memory copy), for a call that is
  * starting: it sends them with every request until it ends, so a later save does not change it.
  *
@@ -352,7 +468,12 @@ export async function readPin(
   db: InstructionsDb,
   now: number = Date.now(),
 ): Promise<InstructionsPin> {
-  const ids = await readActive(db, now);
+  const [ids] = await Promise.all([
+    readActive(db, now),
+    // ADR-0087: calls start soon after a release, so its built-in prompts are recorded early. Once per
+    // server; never fails the pin (registerBuiltIns() catches its own errors).
+    registerBuiltIns(db),
+  ]);
   return { live: ids.live ?? AI_INSTRUCTIONS_NONE, notes: ids.notes ?? AI_INSTRUCTIONS_NONE };
 }
 
@@ -417,19 +538,31 @@ export async function resolveInstructions(
 /**
  * Every block's state for the admin page: the version in force and the history with authors.
  *
- * @param db     The database.
- * @param caller The signed-in account (must be an admin).
- * @returns The state per block.
+ * @param db       The database.
+ * @param caller   The signed-in account (must be an admin).
+ * @param builtIns ADR-0087: the built-in prompts in force (tests pass others to act out a release).
+ * @returns The state per block, with any built-in change since the custom prompt in force.
  * @throws Error('FORBIDDEN') for anyone but an admin (the database is not touched).
  * Called from: app/(app)/admin/ai-settings/page.tsx; tests
  */
 export async function loadAiInstructions(
   db: InstructionsDb,
   caller: InstructionsCaller,
+  builtIns: BuiltInSource = APP_BUILT_INS,
 ): Promise<Record<AiInstructionBlock, BlockInstructions>> {
   assertAdmin(caller);
-  const [ids, ...histories] = await Promise.all([
+  // Recorded first, so a release's built-in prompt is known before anything is compared with it.
+  await registerBuiltIns(db, builtIns);
+  const [ids, records, ...histories] = await Promise.all([
     readActive(db, Date.now()),
+    db
+      .select({
+        block: aiBuiltinPrompt.block,
+        hash: aiBuiltinPrompt.hash,
+        prompt: aiBuiltinPrompt.prompt,
+      })
+      .from(aiBuiltinPrompt)
+      .orderBy(asc(aiBuiltinPrompt.firstSeenAt), asc(aiBuiltinPrompt.hash)),
     ...AI_INSTRUCTION_BLOCKS.map((block) =>
       db
         .select({
@@ -460,7 +593,19 @@ export async function loadAiInstructions(
     }));
     const activeId = ids[block];
     const active = knownSettings(activeId);
-    result[block] = { activeId, activeText: active.text, activePrompt: active.prompt, versions };
+    result[block] = {
+      activeId,
+      activeText: active.text,
+      activePrompt: active.prompt,
+      builtInChange: changeSince(
+        block,
+        active.prompt,
+        knownBase(activeId),
+        records.filter((row) => row.block === block),
+        builtIns,
+      ),
+      versions,
+    };
   });
   return result;
 }
@@ -483,6 +628,8 @@ export interface SavedInstructions {
  * @param authorId     The admin.
  * @param restoredFrom The version a restore copies, or null.
  * @param now          The save time.
+ * @param baseHash     ADR-0087: for a custom prompt, the hash of the built-in prompt it was written
+ *                     against (null for the built-in prompt or when unknown).
  * @returns The new version's id.
  * Called from: saveInstructions(), savePrompt(), restoreInstructions()
  */
@@ -493,14 +640,16 @@ async function insertVersion(
   authorId: string,
   restoredFrom: string | null,
   now: Date,
+  baseHash: string | null,
 ): Promise<string> {
   const id = crypto.randomUUID();
   const at = now.toISOString();
   const prompt = storedPrompt(block, settings.prompt);
+  const base = prompt === null ? null : baseHash;
   await db.execute(sql`
     WITH added AS (
-      INSERT INTO ai_instructions_version (id, block, text, prompt, author_id, restored_from, created_at)
-      VALUES (${id}, ${block}, ${settings.text}, ${prompt}, ${authorId}, ${restoredFrom}, ${at}::timestamptz)
+      INSERT INTO ai_instructions_version (id, block, text, prompt, base_hash, author_id, restored_from, created_at)
+      VALUES (${id}, ${block}, ${settings.text}, ${prompt}, ${base}, ${authorId}, ${restoredFrom}, ${at}::timestamptz)
       RETURNING id, block
     )
     INSERT INTO ai_instructions_active (block, version_id, updated_at)
@@ -508,7 +657,7 @@ async function insertVersion(
     ON CONFLICT (block) DO UPDATE SET version_id = excluded.version_id, updated_at = excluded.updated_at`);
   // This server applies it at once (other servers within ACTIVE_CACHE_MS for requests with no pin;
   // a call that starts reads the pin fresh, so it gets the new version straight away).
-  remember(id, rowToStored(block, settings.text, prompt));
+  remember(id, rowToStored(block, settings.text, prompt, base));
   if (activeCache) activeCache = { ...activeCache, ids: { ...activeCache.ids, [block]: id } };
   return id;
 }
@@ -545,7 +694,9 @@ export async function saveInstructions(
   // Never saved and empty: nothing to record (an empty block already means no instructions).
   if (!current && cleaned === '') return { id: '', created: false };
   const settings = { text: cleaned, prompt: active.prompt };
-  return { id: await insertVersion(db, block, settings, caller.id, null, now), created: true };
+  // The prompt in force is kept, and so is what it was written against.
+  const id = await insertVersion(db, block, settings, caller.id, null, now, knownBase(current));
+  return { id, created: true };
 }
 
 /**
@@ -557,8 +708,10 @@ export async function saveInstructions(
  * @param db     The database.
  * @param caller The signed-in account (must be an admin).
  * @param block  The block.
- * @param prompt The prompt (cleaned here), or null for the built-in prompt.
- * @param now    The save time (tests pass one).
+ * @param prompt   The prompt (cleaned here), or null for the built-in prompt.
+ * @param now      The save time (tests pass one).
+ * @param builtIns ADR-0087: the built-in prompts in force (tests pass others); a custom prompt records
+ *                 the hash of the current one as its base, and that built-in prompt is recorded.
  * @returns The version in force and whether one was added.
  * @throws Error('FORBIDDEN') for anyone but an admin; Error('BAD_BLOCK') for an unknown block;
  *         PromptRejectedError when checkCustomPrompt() finds a problem. Nothing is written then.
@@ -570,6 +723,7 @@ export async function savePrompt(
   block: AiInstructionBlock,
   prompt: CustomPrompt | null,
   now: Date = new Date(),
+  builtIns: BuiltInSource = APP_BUILT_INS,
 ): Promise<SavedInstructions> {
   assertAdmin(caller);
   if (!isInstructionBlock(block)) throw new Error('BAD_BLOCK');
@@ -578,11 +732,22 @@ export async function savePrompt(
     const problems = checkCustomPrompt(block, cleaned);
     if (problems.length > 0) throw new PromptRejectedError(problems);
   }
+  const base = cleaned === null ? null : builtIns.hash(block);
   const current = (await readActive(db, now.getTime()))[block];
   const active = knownSettings(current);
-  if (samePrompt(block, active.prompt, cleaned)) return { id: current ?? '', created: false };
+  // The same prompt written against the same built-in prompt changes nothing. The same text saved
+  // after a built-in change is a new version: the admin has looked at the changes.
+  if (
+    samePrompt(block, active.prompt, cleaned) &&
+    (cleaned === null || knownBase(current) === base)
+  ) {
+    return { id: current ?? '', created: false };
+  }
+  // The base must stay readable for "View changes" after a later release.
+  if (base !== null) await registerBuiltIns(db, builtIns);
   const settings = { text: active.text, prompt: cleaned };
-  return { id: await insertVersion(db, block, settings, caller.id, null, now), created: true };
+  const id = await insertVersion(db, block, settings, caller.id, null, now, base);
+  return { id, created: true };
 }
 
 /**
@@ -622,12 +787,17 @@ export async function restoreInstructions(
     const problems = checkCustomPrompt(block, source.prompt);
     if (problems.length > 0) throw new PromptRejectedError(problems);
   }
-  const active = knownSettings((await readActive(db, now.getTime()))[block]);
+  const current = (await readActive(db, now.getTime()))[block];
+  const active = knownSettings(current);
   const settings: BlockSettings =
     part === 'prompt'
       ? { text: active.text, prompt: source.prompt }
       : { text: source.text, prompt: active.prompt };
-  return { id: await insertVersion(db, block, settings, caller.id, versionId, now), created: true };
+  // A restored prompt keeps what it was written against (ADR-0087); restored instructions keep the
+  // prompt in force and its base.
+  const base = part === 'prompt' ? source.baseHash : knownBase(current);
+  const id = await insertVersion(db, block, settings, caller.id, versionId, now, base);
+  return { id, created: true };
 }
 
 /**
@@ -638,6 +808,7 @@ export async function restoreInstructions(
  */
 export function resetInstructionsCache(): void {
   byId.clear();
+  registered.clear();
   activeCache = null;
 }
 

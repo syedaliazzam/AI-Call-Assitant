@@ -4,10 +4,11 @@
  *          ADR-0083 simplified in ADR-0086) shows each block's instructions box with Try it and Save;
  *          the "Edit full system prompt" switch shows advanced mode, the block's whole system prompt in
  *          an editor (ADR-0086). Every editor stays mounted (hidden when not shown), so switching tabs or
- *          modes keeps a draft. One toast for the page.
+ *          modes keeps a draft. One toast for the page. ADR-0087: a block whose custom prompt predates
+ *          the built-in rules shows the built-in change notice above its editor, in both modes.
  * Used by: app/(app)/admin/ai-settings/page.tsx
  * Depends on: React, src/ui/Tabs.tsx, src/ui/Toggle.tsx (Switch), src/ui/Toast.tsx,
- *             ./InstructionsEditor.tsx, ./PromptEditor.tsx, ./blocks.ts
+ *             ./InstructionsEditor.tsx, ./PromptEditor.tsx, ./BuiltInChangeNotice.tsx, ./blocks.ts
  * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md,
  *               docs/decisions/ADR-0086-full-system-prompt-editing.md
  * Theme: tokens from src/ui/tokens/theme.css (light and dark)
@@ -20,6 +21,7 @@ import { Tabs } from '@/ui/Tabs';
 import { Toast, useToast } from '@/ui/Toast';
 import { Switch } from '@/ui/Toggle';
 import { BLOCK_COPY, type BlockView, type BudgetView, type InstructionsActions } from './blocks';
+import { BuiltInChangeNotice } from './BuiltInChangeNotice';
 import { InstructionsEditor } from './InstructionsEditor';
 import { PromptEditor } from './PromptEditor';
 
@@ -69,6 +71,15 @@ export function AiSettingsPage({
       </div>
       {AI_INSTRUCTION_BLOCKS.map((block) => (
         <div key={block} hidden={block !== tab}>
+          {blocks[block].builtInChange && (
+            <BuiltInChangeNotice
+              block={block}
+              change={blocks[block].builtInChange}
+              locked={blocks[block].locked}
+              resetPrompt={actions.resetPrompt}
+              onToast={toast.show}
+            />
+          )}
           <div hidden={advanced}>
             <InstructionsEditor
               block={block}

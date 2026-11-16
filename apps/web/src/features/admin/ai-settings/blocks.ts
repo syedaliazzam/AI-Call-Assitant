@@ -87,6 +87,14 @@ export interface LockedView {
   text: string;
 }
 
+/** ADR-0087: the built-in rules changed after the custom prompt in force was written. */
+export interface BuiltInChangeView {
+  /** The day the built-in rules changed (YYYY-MM-DD). */
+  date: string;
+  /** The built-in prompt the custom one was written against, or null when it was not recorded. */
+  previous: CustomPrompt | null;
+}
+
 /** Everything the page shows for one block. */
 export interface BlockView {
   /** The version in force, or null when never saved. */
@@ -95,6 +103,8 @@ export interface BlockView {
   activeText: string;
   /** The custom full prompt in force, or null for the built-in prompt (ADR-0086). */
   activePrompt: CustomPrompt | null;
+  /** ADR-0087: set when the built-in rules changed after the custom prompt in force was written. */
+  builtInChange: BuiltInChangeView | null;
   /** The history, newest first. */
   versions: VersionView[];
   /** The built-in prompt, in prompt order. */
