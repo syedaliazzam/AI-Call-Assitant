@@ -7,9 +7,19 @@
  * - runTry(): the DRAFT goes after the locked rules (live answers, notes, Ask AI), the hidden lines are
  *   removed from the answer, the sample call is read for the notes;
  * - parseSampleCall(), lockedRulesFor(), and the budget check (budgetFacts() with answerBudgetUse()).
+ * - ADR-0086: a draft full prompt missing the output format is refused (400, what is missing, nothing
+ *   counted); a tried prompt comes back with its token; a draft prompt replaces the built-in rules
+ *   (live core and reminder, notes, Ask AI); the built-in prompts pass the check and carry the fixed
+ *   wording (Paramount AI; cloud speech recognition with an on-device fallback).
  */
 import Anthropic from '@anthropic-ai/sdk';
-import { answerBudgetUse, MAX_AI_INSTRUCTIONS_CHARS, type AiTryRequest } from '@kite/shared';
+import {
+  answerBudgetUse,
+  checkCustomPrompt,
+  MAX_AI_INSTRUCTIONS_CHARS,
+  type AiTryRequest,
+  type CustomPrompt,
+} from '@kite/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TryDeps } from '@/server/aiTry';
 import { fakeMessageStream } from '../../helpers/fakeClaude';
@@ -36,7 +46,7 @@ vi.stubEnv('KITE_MODEL_SMART', 'claude-sonnet-5-5');
 
 const { budgetFacts, handleTry, lockedRulesFor, parseSampleCall, runTry } =
   await import('@/server/aiTry');
-const { CORE_RULES } = await import('@/server/prompt');
+const { CALL_REMINDER, CORE_RULES } = await import('@/server/prompt');
 const { NOTES_RULES } = await import('@/server/notes');
 const { KITE_CHAT_RULES } = await import('@/server/kite-chat');
 
@@ -73,9 +83,22 @@ function deps(overrides: Partial<TryDeps> = {}): TryDeps {
       },
       model: MODELS.fast,
     })),
+    tokenFor: vi.fn(() => 'TOKEN-1'),
     ...overrides,
   };
 }
+
+/** An invented live prompt that keeps every rule the app needs (ADR-0086). */
+const LIVE_PROMPT: CustomPrompt = {
+  core: [
+    'PROMPT-SECRET custom rules. Every reply starts with [[type|for|source]].',
+    'Every reply ends with [[question|the question you answered]].',
+    '- garbled: write only the two hidden lines.',
+    '- none: write only the two hidden lines.',
+  ].join('\n'),
+  reminder: 'CUSTOM-REMINDER.',
+  screenshot: 'A screenshot reply starts with [[type|for|source]].',
+};
 
 beforeEach(() => {
   streamMock.mockReset();
@@ -146,6 +169,44 @@ describe('handleTry', () => {
     const response = await handleTry(ADMIN, JSON.stringify(TRY), d, signal);
     expect(response.status).toBe(503);
     expect(JSON.stringify(await response.json())).not.toContain('detail');
+  });
+
+  it('ADR-0086: refuses a draft prompt missing the output format with what is missing, spending nothing', async () => {
+    const d = deps();
+    const broken = { ...TRY, prompt: { ...LIVE_PROMPT, screenshot: 'Describe the screen.' } };
+    const response = await handleTry(ADMIN, JSON.stringify(broken), d, signal);
+    expect(response.status).toBe(400);
+    const { message } = (await response.json()) as { message: string };
+    expect(message).toBe(
+      'Added for a screenshot: The hidden first line is missing: keep the rule that a screenshot reply starts with the line [[type|for|source]], with the kind of screen as the type.',
+    );
+    expect(d.count).not.toHaveBeenCalled();
+    expect(d.run).not.toHaveBeenCalled();
+    // An unknown part name is refused too.
+    const extra = { ...TRY, prompt: { ...LIVE_PROMPT, other: 'x' } };
+    expect((await handleTry(ADMIN, JSON.stringify(extra), d, signal)).status).toBe(400);
+  });
+
+  it('ADR-0086: a tried prompt comes back with its token; a try with no prompt gets none', async () => {
+    const d = deps();
+    const response = await handleTry(
+      ADMIN,
+      JSON.stringify({ ...TRY, prompt: LIVE_PROMPT }),
+      d,
+      signal,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ kind: 'answer', promptToken: 'TOKEN-1' });
+    expect(d.tokenFor).toHaveBeenCalledWith('live', LIVE_PROMPT);
+    expect(d.run).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: LIVE_PROMPT }),
+      MODELS,
+      signal,
+    );
+    const logs = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logs).not.toMatch(/SECRET|TOKEN-1/);
+    const plain = await handleTry(ADMIN, JSON.stringify(TRY), deps(), signal);
+    expect(await plain.json()).not.toHaveProperty('promptToken');
   });
 });
 
@@ -228,6 +289,55 @@ describe('runTry', () => {
     expect(params.system[0].text).toContain('Answer briefly.');
     expect(params.system[1].text).toContain('Northwind (invented)');
   });
+
+  it('ADR-0086: a draft live prompt replaces the core rules and the reminder, with the draft instructions after it', async () => {
+    streamMock.mockReturnValue(
+      fakeMessageStream({ pieces: ['[[sales|call|general]]\nPer seat.'] }),
+    );
+    await runTry({ ...TRY, prompt: LIVE_PROMPT }, MODELS);
+    const [params] = streamMock.mock.calls[0]!;
+    const rules: string = params.system[0].text;
+    expect(rules.startsWith(LIVE_PROMPT.core!)).toBe(true);
+    expect(rules).not.toContain(CORE_RULES.slice(0, 60));
+    expect(rules).toContain('DRAFT-SECRET: say customers.');
+    const tail: string = params.messages[0].content.at(-1).text;
+    expect(tail).toContain('CUSTOM-REMINDER.');
+    expect(tail).not.toContain(CALL_REMINDER);
+  });
+
+  it('ADR-0086: draft notes and Ask AI prompts replace their rules', async () => {
+    createMock.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            summary: [],
+            questions: [],
+            nextSteps: [],
+            unclear: [],
+            lessons: [],
+          }),
+        },
+      ],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    await runTry(
+      { block: 'notes', draft: '', sample: 'Them: Hi', prompt: { rules: 'CUSTOM NOTES RULES' } },
+      MODELS,
+    );
+    expect(createMock.mock.calls[0]![0].system[0].text).toBe('CUSTOM NOTES RULES');
+    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['[[concept|kite|general]] Four.'] }));
+    await runTry(
+      {
+        block: 'ask',
+        draft: '',
+        sample: 'What is 2 + 2?',
+        prompt: { chat: 'CUSTOM CHAT [[type|kite|source]]', review: 'CUSTOM REVIEW' },
+      },
+      MODELS,
+    );
+    expect(streamMock.mock.calls[0]![0].system[0].text).toBe('CUSTOM CHAT [[type|kite|source]]');
+  });
 });
 
 describe('parseSampleCall', () => {
@@ -248,6 +358,32 @@ describe('locked rules and the budget check', () => {
     expect(lockedRulesFor('live')[0]!.text).toBe(CORE_RULES);
     expect(lockedRulesFor('notes')[0]!.text).toBe(NOTES_RULES);
     expect(lockedRulesFor('ask')[0]!.text).toBe(KITE_CHAT_RULES);
+    // ADR-0086: each part carries its key, in prompt order.
+    expect(lockedRulesFor('live').map((part) => part.key)).toEqual([
+      'core',
+      'reminder',
+      'screenshot',
+    ]);
+    expect(lockedRulesFor('ask').map((part) => part.key)).toEqual(['chat', 'review']);
+  });
+
+  it('ADR-0086: the built-in prompts pass the format check, and say Paramount AI and cloud speech recognition', () => {
+    for (const block of ['live', 'notes', 'ask'] as const) {
+      const prompt = Object.fromEntries(lockedRulesFor(block).map((part) => [part.key, part.text]));
+      expect(checkCustomPrompt(block, prompt)).toEqual([]);
+    }
+    expect(CORE_RULES.startsWith('You are Paramount AI, a live call assistant.')).toBe(true);
+    expect(NOTES_RULES.startsWith('You are Paramount AI.')).toBe(true);
+    expect(CORE_RULES).toContain('cloud speech recognition (Deepgram)');
+    expect(CORE_RULES).toContain("speech recognition on the user's device as a fallback");
+    expect(CORE_RULES).not.toContain("on the user's computer");
+    expect(CORE_RULES).not.toContain('You are Kite');
+  });
+
+  it('ADR-0086: a longer custom prompt counts against the budget', () => {
+    const facts = budgetFacts();
+    const longer = answerBudgetUse({ ...facts, chars: 0, extraChars: 3_000 });
+    expect(longer.largestTokens).toBe(facts.baseTokens + Math.ceil(3_000 / facts.charsPerToken));
   });
 
   it('counts what a full block adds, and warns only near the budget', () => {

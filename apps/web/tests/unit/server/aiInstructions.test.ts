@@ -7,16 +7,24 @@
  * - a restore adds a NEW version (restoredFrom set) and changes or deletes nothing;
  * - the pin (ids only), and a live call keeps its starting version after a later save;
  * - a pin of another block, an unknown pin or 'none'; a failed read falls back to the last text known.
+ * - ADR-0086 (drizzle/0006_full_prompt.sql): custom full prompts are admins only; saved as new versions
+ *   that keep the instructions; refused (nothing written) when the output format is missing; Reset to
+ *   default; restoring one part keeps the other; a running call keeps its prompt; a damaged row reads
+ *   as the built-in prompt; the database refuses an over-long prompt.
  */
-import { AI_INSTRUCTIONS_NONE } from '@kite/shared';
+import { AI_INSTRUCTIONS_NONE, type CustomPrompt } from '@kite/shared';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   loadAiInstructions,
+  parseStoredPrompt,
+  PromptRejectedError,
   readPin,
   resetInstructionsCache,
   resolveInstructions,
+  resolveSettings,
   restoreInstructions,
   saveInstructions,
+  savePrompt,
   type InstructionsDb,
 } from '@/server/aiInstructions';
 import { ALICE, BOB, createTestDb, type TestDb } from './calldata/pgliteDb';
@@ -108,7 +116,12 @@ describe('saving', () => {
     expect(state.live.activeText).toBe('Be brief.\nSay customers.');
     expect(state.live.versions).toHaveLength(1);
     expect(state.live.versions[0]).toMatchObject({ authorName: ALICE, restoredFrom: null });
-    expect(state.notes).toEqual({ activeId: null, activeText: '', versions: [] });
+    expect(state.notes).toEqual({
+      activeId: null,
+      activeText: '',
+      activePrompt: null,
+      versions: [],
+    });
   });
 
   it('adds nothing when the text equals the version in force, or when a never-saved block stays empty', async () => {
@@ -260,5 +273,137 @@ describe('pins and the text a request uses', () => {
     await resolveInstructions(db, 'live', saved.id);
     await resolveInstructions(db, 'live', saved.id);
     expect(select).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** An invented live prompt that keeps every rule the app needs (ADR-0086). */
+const LIVE_PROMPT: CustomPrompt = {
+  core: [
+    'Custom rules. Every reply starts with [[type|for|source]].',
+    'Every reply ends with [[question|the question you answered]].',
+    '- garbled: write only the two hidden lines.',
+    '- none: write only the two hidden lines.',
+  ].join('\n'),
+  reminder: 'Custom reminder.',
+  screenshot: 'A screenshot reply starts with [[type|for|source]].',
+};
+
+describe('custom full prompts (ADR-0086)', () => {
+  it('refuses a non-admin before touching the database', async () => {
+    const untouchable = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error('the database must not be touched');
+        },
+      },
+    ) as InstructionsDb;
+    await expect(savePrompt(untouchable, USER, 'live', LIVE_PROMPT)).rejects.toThrow('FORBIDDEN');
+    await expect(savePrompt(untouchable, USER, 'live', null)).rejects.toThrow('FORBIDDEN');
+    await expect(
+      restoreInstructions(
+        untouchable,
+        USER,
+        'live',
+        '0b9c7a3e-5d1f-4c2a-9e8b-1a2b3c4d5e6f',
+        minutes(1),
+        'prompt',
+      ),
+    ).rejects.toThrow('FORBIDDEN');
+  });
+
+  it('saves a prompt as a new version, keeping the instructions in force, and lists it', async () => {
+    await saveInstructions(db, ADMIN, 'live', 'Be brief.', minutes(1));
+    const saved = await savePrompt(
+      db,
+      ADMIN,
+      'live',
+      { ...LIVE_PROMPT, reminder: ' r \r\n' },
+      minutes(2),
+    );
+    expect(saved.created).toBe(true);
+    const state = await loadAiInstructions(db, ADMIN);
+    expect(state.live.activeId).toBe(saved.id);
+    expect(state.live.activeText).toBe('Be brief.');
+    // Cleaned like the instructions: line endings and outer spaces.
+    expect(state.live.activePrompt).toEqual({ ...LIVE_PROMPT, reminder: 'r' });
+    expect(state.live.versions.map((version) => version.prompt === null)).toEqual([false, true]);
+    // Saving the same prompt again adds nothing; saving instructions keeps the prompt.
+    expect(
+      (await savePrompt(db, ADMIN, 'live', { ...LIVE_PROMPT, reminder: 'r' }, minutes(3))).created,
+    ).toBe(false);
+    await saveInstructions(db, ADMIN, 'live', 'Be warm.', minutes(4));
+    expect(await resolveSettings(db, 'live')).toEqual({
+      text: 'Be warm.',
+      prompt: { ...LIVE_PROMPT, reminder: 'r' },
+    });
+  });
+
+  it('refuses a prompt missing the output format, writing nothing, and names what is missing', async () => {
+    const broken = { ...LIVE_PROMPT, core: 'Just be helpful.' };
+    const error = await savePrompt(db, ADMIN, 'live', broken).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(PromptRejectedError);
+    const messages = (error as PromptRejectedError).problems.map((problem) => problem.message);
+    expect(messages).toHaveLength(4);
+    expect(messages.join(' ')).toContain('[[type|for|source]]');
+    expect(messages.join(' ')).toContain('[[question|');
+    expect(await versionCount()).toBe(0);
+  });
+
+  it('Reset to default goes back to the built-in prompt as a new version, and adds nothing when already there', async () => {
+    expect((await savePrompt(db, ADMIN, 'notes', null, minutes(1))).created).toBe(false);
+    await savePrompt(db, ADMIN, 'live', LIVE_PROMPT, minutes(2));
+    const reset = await savePrompt(db, ADMIN, 'live', null, minutes(3));
+    expect(reset.created).toBe(true);
+    expect((await resolveSettings(db, 'live')).prompt).toBeNull();
+    expect(await versionCount()).toBe(2);
+  });
+
+  it("restores one part only: an old prompt keeps today's instructions, old instructions keep today's prompt", async () => {
+    const withPrompt = await savePrompt(db, ADMIN, 'live', LIVE_PROMPT, minutes(1));
+    await saveInstructions(db, ADMIN, 'live', 'Old text', minutes(2));
+    const oldText = (await loadAiInstructions(db, ADMIN)).live.activeId!;
+    await savePrompt(db, ADMIN, 'live', null, minutes(3));
+    await saveInstructions(db, ADMIN, 'live', 'New text', minutes(4));
+
+    const restoredPrompt = await restoreInstructions(
+      db,
+      ADMIN,
+      'live',
+      withPrompt.id,
+      minutes(5),
+      'prompt',
+    );
+    expect(restoredPrompt.created).toBe(true);
+    expect(await resolveSettings(db, 'live')).toEqual({ text: 'New text', prompt: LIVE_PROMPT });
+
+    await savePrompt(db, ADMIN, 'live', null, minutes(6));
+    await restoreInstructions(db, ADMIN, 'live', oldText, minutes(7), 'text');
+    expect(await resolveSettings(db, 'live')).toEqual({ text: 'Old text', prompt: null });
+    const state = await loadAiInstructions(db, ADMIN);
+    expect(state.live.versions[0]).toMatchObject({ restoredFrom: oldText });
+  });
+
+  it('a running call keeps its prompt after an admin saves a new one; a new call gets the new one', async () => {
+    await savePrompt(db, ADMIN, 'live', LIVE_PROMPT, minutes(1));
+    const pin = await readPin(db);
+    const changed = { ...LIVE_PROMPT, reminder: 'Changed reminder.' };
+    await savePrompt(db, ADMIN, 'live', changed, minutes(2));
+    expect((await resolveSettings(db, 'live', pin.live)).prompt).toEqual(LIVE_PROMPT);
+    resetInstructionsCache();
+    expect((await resolveSettings(db, 'live', pin.live)).prompt).toEqual(LIVE_PROMPT);
+    expect((await resolveSettings(db, 'live', (await readPin(db)).live)).prompt).toEqual(changed);
+  });
+
+  it('treats a damaged stored prompt as the built-in one, and the database refuses an over-long one', async () => {
+    expect(parseStoredPrompt('live', '{"core":"x"}')).toBeNull();
+    expect(parseStoredPrompt('live', 'not json')).toBeNull();
+    expect(parseStoredPrompt('notes', '{"rules":"r","core":"ignored"}')).toEqual({ rules: 'r' });
+    await expect(
+      t.pg.query(
+        `INSERT INTO ai_instructions_version (id, block, text, prompt) VALUES ('x3', 'live', '', $1)`,
+        ['p'.repeat(130_001)],
+      ),
+    ).rejects.toThrow();
   });
 });

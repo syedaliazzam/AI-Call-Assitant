@@ -2,6 +2,7 @@
  * Tests for apps/web/src/core/admin/textDiff.ts (ADR-0083): the word diff Admin → AI settings shows
  * between an earlier version and the one in force. Joining the 'same' and 'removed' runs gives the old
  * text, 'same' and 'added' the new one; equal texts are one 'same' run; runs of one kind are merged.
+ * ADR-0086: two long texts that differ throughout are compared line by line.
  */
 import { describe, expect, it } from 'vitest';
 import { diffWords, type DiffPart } from '@/core/admin/textDiff';
@@ -55,5 +56,22 @@ describe('diffWords', () => {
     const parts = diffWords(before, after);
     expect(performance.now() - started).toBeLessThan(2_000);
     expect(side(parts, 'after')).toBe(after);
+  });
+
+  it('ADR-0086: compares two long full prompts that differ throughout line by line, still exact', () => {
+    const lines = (seed: number) =>
+      Array.from(
+        { length: 400 },
+        (_, index) => `Rule ${(index * seed) % 397}: keep answers short and true.\n`,
+      ).join('');
+    const before = lines(3);
+    const after = lines(7);
+    const started = performance.now();
+    const parts = diffWords(before, after);
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(side(parts, 'before')).toBe(before);
+    expect(side(parts, 'after')).toBe(after);
+    // Line by line: every run is made of whole lines.
+    for (const part of parts) expect(part.text.endsWith('\n')).toBe(true);
   });
 });

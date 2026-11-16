@@ -74,11 +74,16 @@ export function attachmentsBlock(request: AnswerRequest): string {
  * Builds the prompt for one Ask Kite message.
  *
  * @param request A validated request with mode 'kite'.
- * @param company The company instructions for Ask AI ('' for none; ADR-0083), after the locked rules.
+ * @param company The company instructions for Ask AI ('' for none; ADR-0083), after the rules.
+ * @param rules   ADR-0086: the rules (the admin's custom 'chat' part in force, or KITE_CHAT_RULES).
  * @returns The system blocks and the chat so far, ending with this message.
- * Called from: POST handler in app/api/answer/route.ts; scripts/eval-answers.ts; tests
+ * Called from: POST handler in app/api/answer/route.ts; server/aiTry.ts; scripts/eval-answers.ts; tests
  */
-export function buildKiteChatPrompt(request: AnswerRequest, company = ''): BuiltPrompt {
+export function buildKiteChatPrompt(
+  request: AnswerRequest,
+  company = '',
+  rules: string = KITE_CHAT_RULES,
+): BuiltPrompt {
   const history = request.history ?? [];
   const messages: Anthropic.MessageParam[] = history.map((turn, index) => ({
     role: turn.role === 'you' ? 'user' : 'assistant',
@@ -101,7 +106,7 @@ export function buildKiteChatPrompt(request: AnswerRequest, company = ''): Built
   messages.push({ role: 'user', content: [...images, { type: 'text', text: question }] });
   return {
     system: [
-      cachedBlock(withCompany(KITE_CHAT_RULES, 'ask', company)),
+      cachedBlock(withCompany(rules, 'ask', company)),
       cachedBlock(attachmentsBlock(request)),
     ],
     messages,

@@ -7,7 +7,7 @@
  *          ciphertext, never as readable text. Audio is never stored anywhere. (ADR-0072) Each
  *          account's Google Drive connection (refresh token encrypted) and one "saved" email record
  *          per session. (ADR-0083) The company AI instructions: every saved version, and the one in
- *          force per block.
+ *          force per block, and (ADR-0086) a custom full system prompt per version.
  *          Generated with the Better Auth CLI (`auth generate --adapter drizzle --dialect
  *          postgresql`, better-auth 1.7.13) for email + password, the admin plugin and our
  *          `mustChangePassword` field; comments added by hand. If the Better Auth config gains
@@ -19,7 +19,8 @@
  *               (usage_day and app_setting are written by hand, not by the Better Auth CLI);
  *               ADR-0049 (call_record, written by hand; migrations are additive only, ADR-0050);
  *               ADR-0072 (google_drive and drive_notification, written by hand); ADR-0083
- *               (ai_instructions_version and ai_instructions_active, written by hand)
+ *               (ai_instructions_version and ai_instructions_active, written by hand); ADR-0086
+ *               (ai_instructions_version.prompt)
  */
 import { relations, sql } from 'drizzle-orm';
 import {
@@ -458,6 +459,12 @@ export const aiInstructionsVersion = pgTable(
     block: text('block').notNull(),
     /** The instructions, as the admin wrote them (line endings normalised); '' means none. */
     text: text('text').notNull(),
+    /**
+     * ADR-0086: the block's custom full system prompt, as JSON ({ part: text } for the block's parts,
+     * cleaned and checked before saving), or null for the built-in prompt. Kept in the same version as
+     * the instructions, so a call's pin covers both and its prompt cache never changes mid-call.
+     */
+    prompt: text('prompt'),
     /** The admin who saved it; null once that account is deleted (the version stays). */
     authorId: text('author_id').references(() => user.id, { onDelete: 'set null' }),
     /** For a restore: the version whose text it copied; null for a normal save. */
@@ -470,6 +477,11 @@ export const aiInstructionsVersion = pgTable(
     check('ai_instructions_version_block_check', sql`${table.block} in ('live', 'notes', 'ask')`),
     // The same 4,000-character limit as the page and the server (MAX_AI_INSTRUCTIONS_CHARS).
     check('ai_instructions_version_text_check', sql`char_length(${table.text}) <= 4000`),
+    // ADR-0086: at most 3 parts of 40,000 characters (MAX_PROMPT_PART_CHARS) plus the JSON around them.
+    check(
+      'ai_instructions_version_prompt_check',
+      sql`${table.prompt} is null or char_length(${table.prompt}) <= 130000`,
+    ),
     // The page lists one block's history, newest first.
     index('ai_instructions_version_block_created_idx').on(table.block, table.createdAt),
   ],

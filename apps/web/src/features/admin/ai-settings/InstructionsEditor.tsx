@@ -1,19 +1,20 @@
 /**
  * File: apps/web/src/features/admin/ai-settings/InstructionsEditor.tsx
- * Purpose: One block of Admin → AI settings (ADR-0083): the editable company instructions with a live
- *          character counter (4,000 at most), the input-budget check (live answers), examples to add,
- *          Save and Discard, then "Try it" with the draft, the locked rules (read-only) and the version
- *          history.
+ * Purpose: Simple mode of one block in Admin → AI settings (ADR-0083, simplified in ADR-0086): one
+ *          "Instructions for the AI" box with a character counter (4,000 at most), Try it with the draft,
+ *          Save and Discard, then the built-in rules folded behind a link, and the instructions' version
+ *          history. A warning appears only when long instructions bring live answers near the input
+ *          budget.
  * Used by: src/features/admin/ai-settings/AiSettingsPage.tsx
  * Depends on: React, @kite/shared (limit, answerBudgetUse), src/ui (Button, Textarea),
  *             ./TryPanel.tsx, ./VersionHistory.tsx, ./LockedRules.tsx, ./blocks.ts
- * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md
+ * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md,
+ *               docs/decisions/ADR-0086-full-system-prompt-editing.md
  * Theme: tokens from src/ui/tokens/theme.css (light and dark)
  */
 'use client';
 
 import { useState, useTransition } from 'react';
-import { Plus } from 'lucide-react';
 import { answerBudgetUse, MAX_AI_INSTRUCTIONS_CHARS, type AiInstructionBlock } from '@kite/shared';
 import type { ToastTone } from '@/ui/Toast';
 import { Button } from '@/ui/Button';
@@ -55,7 +56,7 @@ function cleaned(text: string): string {
 }
 
 /**
- * One block's editor and its panels.
+ * One block's simple editor.
  *
  * @param props See InstructionsEditorProps.
  * @returns The block's cards.
@@ -82,7 +83,17 @@ export function InstructionsEditor({
   }
 
   const dirty = cleaned(draft) !== cleaned(view.activeText);
-  const use = budget ? answerBudgetUse({ ...budget, chars: cleaned(draft).length }) : null;
+  const use = budget
+    ? answerBudgetUse({
+        ...budget,
+        chars: cleaned(draft).length,
+        // A custom full prompt in force counts too (ADR-0086).
+        extraChars: view.activePrompt
+          ? Object.values(view.activePrompt).reduce((sum, part) => sum + (part ?? '').length, 0) -
+            budget.builtInPromptChars
+          : 0,
+      })
+    : null;
 
   /** Saves the draft as the new version in force. */
   function save() {
@@ -106,18 +117,6 @@ export function InstructionsEditor({
     });
   }
 
-  /**
-   * Adds an example line at the end of the draft (on a new line), within the limit.
-   *
-   * @param line The example.
-   */
-  function addExample(line: string) {
-    setDraft((current) => {
-      const next = current.trim() ? `${current.replace(/\s+$/, '')}\n${line}` : line;
-      return next.length <= MAX_AI_INSTRUCTIONS_CHARS ? next : current;
-    });
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <section aria-label={`${copy.label} instructions`} className={CARD}>
@@ -127,39 +126,34 @@ export function InstructionsEditor({
             {copy.model}
           </span>
         </div>
-        <p className="mt-1 max-w-prose text-[13px] text-ui-muted">{copy.helper}</p>
+        <p className="mt-1 text-[13px] text-ui-muted">{copy.helper}</p>
 
         <div className="mt-4">
           <Textarea
-            label="Company instructions"
+            label="Instructions for the AI"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             maxLength={MAX_AI_INSTRUCTIONS_CHARS}
             counter
-            rows={10}
-            placeholder="Empty: no company instructions (the AI answers as it does today)."
-            hint="Plain sentences or short bullet lines. Leave it empty for no company instructions."
+            rows={8}
+            placeholder="For example: keep answers short and warm; say “customers”, never “users”."
             {...(error ? { error } : {})}
             className="font-[inherit]"
           />
         </div>
 
-        {use && (
-          <p
-            role={use.near ? 'alert' : undefined}
-            className={`mt-2 text-helper ${use.near ? 'text-ui-warning' : 'text-ui-muted'}`}
-            data-testid="budget-line"
-          >
-            {use.blockTokens > 0
-              ? `Adds about ${use.blockTokens.toLocaleString('en-US')} tokens to every answer request. `
-              : 'Adds nothing to answer requests. '}
-            The largest possible request would use about {Math.round(use.share * 100)}% of the{' '}
-            {use.budgetTokens.toLocaleString('en-US')}-token input budget
-            {use.near
-              ? ': close to the limit. Shorten the instructions, or long calls with large documents may lose their oldest parts.'
-              : '.'}
+        {use?.near && (
+          <p role="alert" className="mt-2 text-helper text-ui-warning" data-testid="budget-line">
+            Long instructions: the largest live request would use about{' '}
+            {Math.round(use.share * 100)}% of the {use.budgetTokens.toLocaleString('en-US')}-token
+            input budget. Shorten them, or long calls with large documents may lose their oldest
+            parts.
           </p>
         )}
+
+        <div className="mt-4">
+          <TryPanel block={block} draft={draft} prompt={view.activePrompt} />
+        </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Button onClick={save} disabled={!dirty || pending}>
@@ -176,48 +170,23 @@ export function InstructionsEditor({
             Discard changes
           </Button>
           <span className="text-[13px] text-ui-muted" aria-live="polite">
-            {dirty
-              ? 'Unsaved changes: Try it uses this draft.'
-              : view.activeId
-                ? 'Live version.'
-                : 'Not set yet.'}
+            {dirty ? 'Unsaved changes.' : view.activeId ? 'Live version.' : 'Not set yet.'}
           </span>
         </div>
 
-        <details className="mt-5 group">
-          <summary className="cursor-pointer text-[14px] font-medium text-ui-link">
-            Examples of what to write
-          </summary>
-          <ul className="mt-3 flex flex-col gap-2">
-            {copy.examples.map((example) => (
-              <li
-                key={example}
-                className="flex items-start justify-between gap-3 rounded-control bg-ui-subtle px-3 py-2"
-              >
-                <span className="text-[13px] text-ui-text">{example}</span>
-                <Button
-                  variant="plain"
-                  size="sm"
-                  className="shrink-0 gap-1"
-                  onClick={() => addExample(example)}
-                  aria-label={`Add example: ${example}`}
-                >
-                  <Plus aria-hidden="true" size={14} strokeWidth={1.75} />
-                  Add
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </details>
+        <div className="mt-5">
+          <LockedRules parts={view.locked} replaced={view.activePrompt !== null} />
+        </div>
       </section>
 
-      <TryPanel block={block} draft={draft} />
-      <LockedRules parts={view.locked} />
       <VersionHistory
         block={block}
+        mode="text"
         versions={view.versions}
         activeId={view.activeId}
         activeText={view.activeText}
+        activePrompt={view.activePrompt}
+        locked={view.locked}
         restore={actions.restore}
         onToast={onToast}
       />

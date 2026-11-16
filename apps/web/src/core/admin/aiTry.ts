@@ -83,7 +83,7 @@ export interface AiTryInput extends Omit<AiTryRequest, 'session'> {
 /**
  * Runs a try on the server.
  *
- * @param input     The block, draft, sample and picked session.
+ * @param input     The block, draft, sample, picked session and (ADR-0086) optional full prompt.
  * @param fetchImpl fetch (tests pass one).
  * @returns The reply, or a message to show.
  * Called from: TryPanel.tsx; tests
@@ -99,6 +99,8 @@ export async function runAiTry(
       draft: input.draft,
       sample: input.sample,
       ...(session ? { session } : {}),
+      // ADR-0086: the full prompt to try (advanced mode's draft, or a custom prompt in force).
+      ...(input.prompt ? { prompt: input.prompt } : {}),
     };
     const response = await fetchImpl('/api/admin/ai-instructions/try', {
       method: 'POST',

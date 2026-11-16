@@ -16,6 +16,7 @@ import {
   AI_INSTRUCTION_BLOCKS,
   AI_INSTRUCTIONS_PIN_PATTERN,
   MAX_AI_INSTRUCTIONS_CHARS,
+  MAX_PROMPT_PART_CHARS,
   type AiTryRequest,
   ANSWER_STYLE_VERSIONS,
   parseKeyTerms,
@@ -575,6 +576,21 @@ const aiTryRequestSchema = z
     // A sample call for the notes can hold several lines; a question is far shorter.
     sample: z.string().trim().min(1, 'required').max(4_000),
     session: sessionSchema.optional(),
+    // ADR-0086: a draft full prompt, part by part (handleTry() checks the parts the block needs and the
+    // output format with checkCustomPrompt()). The slack over the part limit lets that check name a
+    // part that is too long instead of a field path.
+    prompt: z
+      .object({
+        core: z.string().max(MAX_PROMPT_PART_CHARS * 2),
+        reminder: z.string().max(MAX_PROMPT_PART_CHARS * 2),
+        screenshot: z.string().max(MAX_PROMPT_PART_CHARS * 2),
+        rules: z.string().max(MAX_PROMPT_PART_CHARS * 2),
+        chat: z.string().max(MAX_PROMPT_PART_CHARS * 2),
+        review: z.string().max(MAX_PROMPT_PART_CHARS * 2),
+      })
+      .partial()
+      .strict()
+      .optional(),
   })
   .strict();
 

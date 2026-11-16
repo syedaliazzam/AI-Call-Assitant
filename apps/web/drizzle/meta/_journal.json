@@ -43,6 +43,13 @@
       "when": 1794727772847,
       "tag": "0005_ai_instructions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794831914936,
+      "tag": "0006_full_prompt",
+      "breakpoints": true
     }
   ]
 }

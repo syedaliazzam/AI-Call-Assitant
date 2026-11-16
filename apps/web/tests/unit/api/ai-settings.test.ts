@@ -6,29 +6,55 @@
  *   as messages, and the logs hold no text, ids or names;
  * - app/api/ai-instructions/pin/route.ts: 401 signed out or with a temporary password; ids only for a
  *   signed-in account; 503 (no detail) when the database fails; never cached.
+ * - ADR-0086, the full-prompt actions: a non-admin is refused before anything is saved; a prompt
+ *   missing the output format is refused with what is missing; a prompt not tried exactly as it is
+ *   (no token, or a token for other text) is refused; a tried prompt is saved; Reset to default saves
+ *   the built-in prompt; a restore names the part it copies; no prompt text reaches the logs.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CustomPrompt, PromptProblem } from '@kite/shared';
 
 /** Spies standing in for the modules the actions and route use. */
 const mocks = vi.hoisted(() => ({
   requireAdmin: vi.fn(),
   saveInstructions: vi.fn(),
+  savePrompt: vi.fn(),
   restoreInstructions: vi.fn(),
   readPin: vi.fn(),
   getCachedSession: vi.fn(),
   revalidatePath: vi.fn(),
+  checkPromptTryToken: vi.fn(),
 }));
+
+/** The real error's shape (server/aiInstructions.ts), for a prompt the check refuses. */
+const PromptRejectedError = vi.hoisted(
+  () =>
+    class extends Error {
+      /** What is missing. */
+      readonly problems: PromptProblem[];
+      /**
+       * @param problems What is missing.
+       */
+      constructor(problems: PromptProblem[]) {
+        super('INVALID_PROMPT');
+        this.problems = problems;
+      }
+    },
+);
 vi.mock('@/server/guard', () => ({ requireAdmin: mocks.requireAdmin }));
 vi.mock('@/server/db', () => ({ db: {} }));
 vi.mock('@/server/aiInstructions', () => ({
   saveInstructions: mocks.saveInstructions,
+  savePrompt: mocks.savePrompt,
   restoreInstructions: mocks.restoreInstructions,
   readPin: mocks.readPin,
+  PromptRejectedError,
 }));
+vi.mock('@/server/promptTryToken', () => ({ checkPromptTryToken: mocks.checkPromptTryToken }));
 vi.mock('@/server/auth', () => ({ getCachedSession: mocks.getCachedSession }));
 vi.mock('next/cache', () => ({ revalidatePath: mocks.revalidatePath }));
 
-const { restoreInstructionsAction, saveInstructionsAction } =
+const { resetPromptAction, restoreInstructionsAction, saveInstructionsAction, savePromptAction } =
   await import('../../../app/(app)/admin/ai-settings/actions');
 const { GET } = await import('../../../app/api/ai-instructions/pin/route');
 
@@ -87,7 +113,14 @@ describe('AI settings actions', () => {
     mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
     mocks.restoreInstructions.mockResolvedValue({ id: 'new', created: true });
     expect(await restoreInstructionsAction('live', PIN)).toEqual({ ok: true, created: true });
-    expect(mocks.restoreInstructions).toHaveBeenCalledWith({}, ADMIN_SESSION.user, 'live', PIN);
+    expect(mocks.restoreInstructions).toHaveBeenCalledWith(
+      {},
+      ADMIN_SESSION.user,
+      'live',
+      PIN,
+      expect.any(Date),
+      'text',
+    );
     mocks.restoreInstructions.mockRejectedValue(new Error('NOT_FOUND'));
     expect(await restoreInstructionsAction('live', PIN)).toEqual({
       ok: false,
@@ -105,6 +138,117 @@ describe('AI settings actions', () => {
     const logs = JSON.stringify(vi.mocked(console.error).mock.calls);
     expect(logs).toContain('TypeError');
     expect(logs).not.toContain('SECRET');
+  });
+});
+
+/** An invented live prompt that keeps every rule the app needs. */
+const GOOD_PROMPT: CustomPrompt = {
+  core: [
+    'SECRET-PROMPT. Every reply starts with [[type|for|source]].',
+    'Every reply ends with [[question|the question you answered]].',
+    '- garbled: write only the two hidden lines.',
+    '- none: write only the two hidden lines.',
+  ].join('\n'),
+  reminder: '',
+  screenshot: 'A screenshot reply starts with [[type|for|source]].',
+};
+
+/** An invented token (64 hex characters). */
+const TOKEN = 'a'.repeat(64);
+
+describe('AI settings full-prompt actions (ADR-0086)', () => {
+  it('refuses a non-admin before saving or resetting a prompt', async () => {
+    mocks.requireAdmin.mockRejectedValue(new Error('NEXT_REDIRECT'));
+    await expect(savePromptAction('live', GOOD_PROMPT, TOKEN)).rejects.toThrow('NEXT_REDIRECT');
+    await expect(resetPromptAction('live')).rejects.toThrow('NEXT_REDIRECT');
+    await expect(restoreInstructionsAction('live', PIN, 'prompt')).rejects.toThrow('NEXT_REDIRECT');
+    expect(mocks.savePrompt).not.toHaveBeenCalled();
+    expect(mocks.restoreInstructions).not.toHaveBeenCalled();
+    expect(mocks.checkPromptTryToken).not.toHaveBeenCalled();
+  });
+
+  it('refuses a prompt missing the hidden lines, saying exactly what is missing', async () => {
+    mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
+    mocks.checkPromptTryToken.mockReturnValue(true);
+    const result = await savePromptAction(
+      'live',
+      { ...GOOD_PROMPT, core: 'Be brief. - garbled: only the two hidden lines.' },
+      TOKEN,
+    );
+    expect(result.ok).toBe(false);
+    const error = result.ok ? '' : result.error;
+    expect(error).toContain('Rules for every live answer: The hidden first line is missing');
+    expect(error).toContain('[[type|for|source]]');
+    expect(error).toContain('The hidden last line is missing');
+    expect(error).toContain('The none rule is missing');
+    // The garbled rule is there, so it is not named.
+    expect(error).not.toContain('The garbled rule is missing');
+    expect(mocks.savePrompt).not.toHaveBeenCalled();
+  });
+
+  it('refuses a prompt that was not tried exactly as it is', async () => {
+    mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
+    mocks.checkPromptTryToken.mockReturnValue(false);
+    expect(await savePromptAction('live', GOOD_PROMPT, TOKEN)).toEqual({
+      ok: false,
+      error: 'Run Try it with this exact prompt before saving it.',
+    });
+    expect(mocks.checkPromptTryToken).toHaveBeenCalledWith('live', GOOD_PROMPT, TOKEN);
+    expect(mocks.savePrompt).not.toHaveBeenCalled();
+  });
+
+  it('saves a tried prompt with the session user, logging no prompt text', async () => {
+    mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
+    mocks.checkPromptTryToken.mockReturnValue(true);
+    mocks.savePrompt.mockResolvedValue({ id: PIN, created: true });
+    expect(await savePromptAction('live', GOOD_PROMPT, TOKEN)).toEqual({ ok: true, created: true });
+    expect(mocks.savePrompt).toHaveBeenCalledWith({}, ADMIN_SESSION.user, 'live', GOOD_PROMPT);
+    expect(mocks.revalidatePath).toHaveBeenCalledWith('/admin/ai-settings');
+    const logs = JSON.stringify(vi.mocked(console.info).mock.calls);
+    expect(logs).not.toMatch(/SECRET|admin-1|Admin Name|0b9c7a3e|aaaa/);
+  });
+
+  it('refuses an unknown part name or an unknown block', async () => {
+    mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
+    mocks.checkPromptTryToken.mockReturnValue(true);
+    const extra = { ...GOOD_PROMPT, other: 'x' } as CustomPrompt;
+    expect((await savePromptAction('live', extra, TOKEN)).ok).toBe(false);
+    expect((await savePromptAction('other' as never, GOOD_PROMPT, TOKEN)).ok).toBe(false);
+    expect((await resetPromptAction('other' as never)).ok).toBe(false);
+    expect(mocks.savePrompt).not.toHaveBeenCalled();
+  });
+
+  it('Reset to default saves the built-in prompt (null), with no try needed', async () => {
+    mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
+    mocks.savePrompt.mockResolvedValue({ id: PIN, created: true });
+    expect(await resetPromptAction('notes')).toEqual({ ok: true, created: true });
+    expect(mocks.savePrompt).toHaveBeenCalledWith({}, ADMIN_SESSION.user, 'notes', null);
+    expect(mocks.checkPromptTryToken).not.toHaveBeenCalled();
+  });
+
+  it('restores a prompt by its part, and explains a restored prompt the check now refuses', async () => {
+    mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
+    mocks.restoreInstructions.mockResolvedValue({ id: 'new', created: true });
+    expect(await restoreInstructionsAction('ask', PIN, 'prompt')).toEqual({
+      ok: true,
+      created: true,
+    });
+    expect(mocks.restoreInstructions).toHaveBeenCalledWith(
+      {},
+      ADMIN_SESSION.user,
+      'ask',
+      PIN,
+      expect.any(Date),
+      'prompt',
+    );
+    mocks.restoreInstructions.mockRejectedValue(
+      new PromptRejectedError([{ part: 'chat', message: 'Empty: this part is needed.' }]),
+    );
+    expect(await restoreInstructionsAction('ask', PIN, 'prompt')).toEqual({
+      ok: false,
+      error: 'Rules for the Ask AI page: Empty: this part is needed.',
+    });
+    expect((await restoreInstructionsAction('ask', PIN, 'all' as never)).ok).toBe(false);
   });
 });
 

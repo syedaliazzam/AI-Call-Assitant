@@ -3,11 +3,14 @@
  * Purpose: Shared names, limits and request shapes for the company AI instructions (ADR-0083): the
  *          three editable blocks (live answers, AI notes, Ask AI), the 4,000-character limit, the
  *          per-call version pin, the "Try it" request and reply, and the input-budget check the
- *          Admin → AI settings page shows next to the live-answers block.
+ *          Admin → AI settings page shows next to the live-answers block. Also the full system prompt
+ *          an admin may edit per block (ADR-0086): its parts, how it is cleaned, and the check that
+ *          refuses a prompt missing the output format the app reads (in ./customPrompt.ts).
  * Used by: apps/web/src/server/aiInstructions.ts, apps/web/src/server/aiTry.ts,
  *          apps/web/src/server/validate.ts, apps/web/src/core/answer/instructionsPin.ts,
  *          apps/web/src/core/admin/aiTry.ts, apps/web/src/features/admin/ai-settings/*
- * Depends on: ./api.ts (SessionContext, AnswerMeta types through answer-meta.ts), ./notes.ts (CallNotes)
+ * Depends on: ./api.ts (SessionContext, AnswerMeta types through answer-meta.ts), ./notes.ts (CallNotes),
+ *             ./customPrompt.ts (CustomPrompt, ADR-0086)
  * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md
  *
  * The instructions' text is company content: it goes into prompts only, never into a log.
@@ -15,6 +18,7 @@
 import type { AnswerMeta } from './answer-meta';
 import type { SessionContext } from './api';
 import type { CallNotes } from './notes';
+import type { CustomPrompt } from './customPrompt';
 
 /**
  * The editable blocks, one per kind of Claude request:
@@ -65,6 +69,11 @@ export interface AiTryRequest {
   sample: string;
   /** A session for context (its details and documents), or absent for none. */
   session?: SessionContext;
+  /**
+   * ADR-0086: a full system prompt to try instead of the one in force (advanced mode), or absent to
+   * use the prompt in force. It must pass checkCustomPrompt(); a successful try returns a promptToken.
+   */
+  prompt?: CustomPrompt;
 }
 
 /** Reply of a "Try it" for 'live' or 'ask': the answer as the user would see it. */
@@ -75,6 +84,8 @@ export interface AiTryAnswer {
   text: string;
   /** What the hidden first line said (question type, who it is for, source), or null. */
   meta: AnswerMeta | null;
+  /** ADR-0086: proof that this exact prompt was tried (only when the request sent a prompt). */
+  promptToken?: string;
 }
 
 /** Reply of a "Try it" for 'notes': the notes as they would be saved. */
@@ -83,6 +94,8 @@ export interface AiTryNotes {
   kind: 'notes';
   /** The notes. */
   notes: CallNotes;
+  /** ADR-0086: proof that this exact prompt was tried (only when the request sent a prompt). */
+  promptToken?: string;
 }
 
 /** Reply of POST /api/admin/ai-instructions/try. */
@@ -117,8 +130,10 @@ export interface AnswerBudgetUse {
  * @param input.charsPerToken Characters a token (server/budget.ts BUDGET_CHARS_PER_TOKEN).
  * @param input.overheadChars The fixed heading the block adds when it is not empty.
  * @param input.chars         The block's length in characters (0 adds nothing).
+ * @param input.extraChars    ADR-0086: how many characters a custom full prompt adds to the built-in
+ *                            one (negative when shorter); absent or 0 for the built-in prompt.
  * @returns See AnswerBudgetUse.
- * Called from: features/admin/ai-settings/InstructionsEditor.tsx; tests
+ * Called from: features/admin/ai-settings/InstructionsEditor.tsx, PromptEditor.tsx; tests
  */
 export function answerBudgetUse(input: {
   baseTokens: number;
@@ -126,10 +141,13 @@ export function answerBudgetUse(input: {
   charsPerToken: number;
   overheadChars: number;
   chars: number;
+  extraChars?: number;
 }): AnswerBudgetUse {
   const blockTokens =
     input.chars > 0 ? Math.ceil((input.chars + input.overheadChars) / input.charsPerToken) : 0;
-  const largestTokens = input.baseTokens + blockTokens;
+  // A custom prompt's difference from the built-in one, counted the same way.
+  const extraTokens = Math.ceil((input.extraChars ?? 0) / input.charsPerToken);
+  const largestTokens = input.baseTokens + blockTokens + extraTokens;
   const share = input.budgetTokens > 0 ? largestTokens / input.budgetTokens : 1;
   return {
     blockTokens,

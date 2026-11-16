@@ -26,11 +26,25 @@ const countRequestMock = vi.hoisted(() =>
 vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
 
 /**
- * Spy standing in for companyInstructions() (ADR-0083): no company instructions by default, so every
+ * Spy standing in for the instructions text of companySettings() (ADR-0083): no company instructions by default, so every
  * other test sees today's prompts byte for byte.
  */
 const companyMock = vi.hoisted(() => vi.fn(async (_block: string, _pin?: string) => ''));
-vi.mock('@/server/aiInstructions', () => ({ companyInstructions: companyMock }));
+/**
+ * Spy standing in for the custom full prompt of companySettings() (ADR-0086): null (the built-in
+ * prompt) by default.
+ */
+const promptMock = vi.hoisted(() =>
+  vi.fn((..._args: unknown[]): import('@kite/shared').CustomPrompt | null => null),
+);
+vi.mock('@/server/aiInstructions', () => ({
+  // The same arguments reach both spies, so call checks stay exact.
+  companySettings: async (...args: [string, string?]) => ({
+    text: await companyMock(...args),
+    prompt: promptMock(...args),
+  }),
+  NO_SETTINGS: { text: '', prompt: null },
+}));
 
 /** Spy standing in for client.messages.create(). */
 const createMock = vi.fn();
@@ -279,7 +293,7 @@ describe('POST /api/notes, company instructions (ADR-0083)', () => {
     expect(companyMock).toHaveBeenCalledWith('notes', PIN);
     const [params] = createMock.mock.calls[0]!;
     const rules: string = params.system[0].text;
-    expect(rules.startsWith('You are Kite. A call has just ended.')).toBe(true);
+    expect(rules.startsWith('You are Paramount AI. A call has just ended.')).toBe(true);
     expect(rules.indexOf('Use British spelling.')).toBeGreaterThan(rules.indexOf('Write plainly.'));
     expect(JSON.stringify(vi.mocked(console.info).mock.calls)).not.toContain('British');
   });

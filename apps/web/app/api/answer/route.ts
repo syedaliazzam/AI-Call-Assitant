@@ -11,7 +11,7 @@
  * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts, src/server/claude.ts,
  *             src/server/sse.ts, src/server/prompts/hello.ts, src/server/prompt.ts,
  *             src/server/usage.ts (the daily limit, ADR-0036), src/server/aiInstructions.ts (the company
- *             instructions, ADR-0083)
+ *             instructions, ADR-0083, and the custom full prompt, ADR-0086)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6 (answer flow), §7.2 (/api/answer);
  *               day-04-answers.md Stage 3
  *
@@ -42,7 +42,7 @@ import {
 import { withAnswerMeta, type ReplyItem } from '@/server/answer-meta';
 import { getClaudeEnv } from '@/server/env';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
-import { companyInstructions } from '@/server/aiInstructions';
+import { companySettings, NO_SETTINGS, type BlockSettings } from '@/server/aiInstructions';
 import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
 import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts/hello';
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
@@ -105,8 +105,11 @@ interface WarmReplyOptions {
   signal: AbortSignal;
   /** Called when Claude's response arrives (there is no stream to open). */
   onResponse: () => void;
-  /** The company instructions the answers of this call use (ADR-0083), so the warm-up writes their cache. */
-  company: string;
+  /**
+   * The company instructions and custom prompt the answers of this call use (ADR-0083, ADR-0086), so
+   * the warm-up writes their cache.
+   */
+  company: BlockSettings;
 }
 
 /**
@@ -123,7 +126,7 @@ async function* warmReply(
   request: AnswerRequest,
   options: WarmReplyOptions,
 ): AsyncGenerator<string, ReplyResult, undefined> {
-  const prompt = buildPrompt(request, options.company);
+  const prompt = buildPrompt(request, options.company.text, options.company.prompt);
   const result = await warmCache({
     model: options.model,
     tier: options.tier,
@@ -205,13 +208,11 @@ async function respond(
   // ADR-0083: the company instructions. Live answers (and their warm-ups) use the version the call
   // pinned when it started, so its rules block, and so its prompt cache, never change mid-call; Ask AI
   // uses the version in force. Read from memory after the first request (versions never change).
+  // ADR-0086: the same version carries the admin's custom full prompt (null = the built-in prompt).
   const companyBlock = mode === 'kite' ? 'ask' : mode === 'hello' ? null : 'live';
   const companyRead = companyBlock
-    ? companyInstructions(
-        companyBlock,
-        companyBlock === 'live' ? data.instructionsVersion : undefined,
-      )
-    : Promise.resolve('');
+    ? companySettings(companyBlock, companyBlock === 'live' ? data.instructionsVersion : undefined)
+    : Promise.resolve(NO_SETTINGS);
 
   // Ask Kite has no call to keep up with, so it defaults to the smart model (ADR-0030).
   const wanted: ModelTier = data.model ?? (mode === 'kite' ? 'smart' : 'fast');
@@ -273,9 +274,12 @@ async function respond(
     msLimit: null as number | null,
     // ADR-0083: the company instructions' size only (never their text or version id).
     companyChars: 0,
+    // ADR-0086: whether a custom full prompt was used (never its text or version id).
+    customPrompt: false,
   };
   const company = await companyRead;
-  context.companyChars = company.length;
+  context.companyChars = company.text.length;
+  context.customPrompt = company.prompt !== null;
   let source: AsyncGenerator<ReplyItem, ReplyResult, undefined>;
   if (mode === 'warm') {
     source = warmReply(data, { model, tier, signal, onResponse: markOpen, company });
@@ -294,7 +298,9 @@ async function respond(
     // (with the screenshot first for 'screenshot'; server/prompt.ts). 'kite': the Ask Kite page.
     // The SDK's single retry happens only before any text arrives (server/claude.ts).
     const prompt =
-      mode === 'kite' ? buildKiteChatPrompt(data, company) : buildPrompt(data, company);
+      mode === 'kite'
+        ? buildKiteChatPrompt(data, company.text, company.prompt?.chat)
+        : buildPrompt(data, company.text, company.prompt);
     // The hidden first line becomes its own event, so the first delta is the first real word.
     source = withAnswerMeta(
       streamReply({
