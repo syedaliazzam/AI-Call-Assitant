@@ -10,7 +10,6 @@
  *          real pointer resting on a button that has a tooltip.
  *          Usage: start the rig, `pnpm --filter @kite/desktop build`, then
  *                 `pnpm --filter web exec tsx ../desktop/tests/visual/compact-view-check.ts <out dir>`
- *          KITE_RIG_PLAIN=1 shows the overlay as an account without account sync sees it.
  *          Prints PASS / FAIL / INFO lines and writes measurements.json next to the pictures.
  * Used by: the developer before a release (it needs a screen: the shell's windows appear on it)
  * Depends on: @playwright/test (_electron), the overlay rig (apps/web/tests/visual/overlay-rig.ts),
@@ -387,10 +386,6 @@ async function main(): Promise<void> {
     mainPid = await app.evaluate(() => process.pid);
     const panel = await app.firstWindow();
     await panel.waitForLoadState();
-    await panel.evaluate((plain) => {
-      if (plain) localStorage.setItem('rig.plainAccount', '1');
-      else localStorage.removeItem('rig.plainAccount');
-    }, process.env.KITE_RIG_PLAIN === '1');
     await panel.evaluate(() => window.kiteDesktop!.openPagesWindow!('/'));
     let overlay: Page | undefined;
     let call: Page | undefined;

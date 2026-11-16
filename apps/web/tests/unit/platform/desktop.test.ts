@@ -357,29 +357,6 @@ describe('createDesktopPlatform: the icon and the chat shortcut (spec S13, S14)'
   });
 });
 
-describe('createDesktopPlatform: the session file (spec S9)', () => {
-  it('an older shell has neither call: nothing is picked or deleted', async () => {
-    const platform = createDesktopPlatform({ version: '1.1.0', os: 'windows' });
-    expect(await platform.pickHandoffFile()).toBeNull();
-    expect(await platform.deleteHandoffFile()).toBe(false);
-  });
-
-  it('passes both calls through, and a failed delete stays quiet', async () => {
-    const picked = { name: 'a.json', text: '{}' };
-    const bridge = {
-      version: '1.2.0',
-      os: 'windows' as const,
-      pickHandoffFile: vi.fn(async () => picked),
-      deleteHandoffFile: vi.fn(async () => true),
-    };
-    const platform = createDesktopPlatform(bridge);
-    expect(await platform.pickHandoffFile()).toBe(picked);
-    expect(await platform.deleteHandoffFile()).toBe(true);
-    bridge.deleteHandoffFile.mockRejectedValueOnce(new Error('ipc closed'));
-    expect(await platform.deleteHandoffFile()).toBe(false);
-  });
-});
-
 describe("createDesktopPlatform: the link's one-time code (ADR-0052)", () => {
   it('passes a well-formed code from a 1.3.0 shell, and nothing else', async () => {
     const code = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE';

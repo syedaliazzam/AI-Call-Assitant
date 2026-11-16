@@ -1,7 +1,7 @@
 /**
  * Tests for apps/web/src/server/calldata/api.ts (ADR-0049), the /api/sync/* handlers, with a real
  * Postgres in memory (PGlite) and a fake sign-in: every route answers 401 signed out, 403 before a
- * password change, and 404 for an account without the accountSync switch (status answers false);
+ * password change (every account has account sync, ADR-0092; GET /api/sync/status is gone);
  * each route keeps accounts apart (another account's record is 404 on /record, absent from /pull,
  * and untouched by /push); a request from a page opened for another account (ACCOUNT_HEADER, privacy
  * fix of 14 Nov 2026) answers 409 and stores or reveals nothing; a missing data key answers 503 and
@@ -10,13 +10,7 @@
  */
 import { ACCOUNT_HEADER, type SyncPullResponse, type SyncPushResponse } from '@kite/shared';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  handlePull,
-  handlePush,
-  handleRecord,
-  handleStatus,
-  type SyncDeps,
-} from '@/server/calldata/api';
+import { handlePull, handlePush, handleRecord, type SyncDeps } from '@/server/calldata/api';
 import { DataKeyError } from '@/server/calldata/crypto';
 import { ALICE, BOB, createTestDb, type TestDb, resetTestDb } from './pgliteDb';
 
@@ -45,18 +39,12 @@ beforeEach(async () => {
  * Dependencies for one signed-in state.
  *
  * @param user     Who is signed in, or a refusal.
- * @param enabled  Accounts with the switch on.
  * @param keysFail True to make the data keys unavailable.
  * @returns The dependencies.
  */
-function deps(
-  user: string | 'signed-out' | 'password',
-  enabled: readonly string[] = [ALICE, BOB],
-  keysFail = false,
-): SyncDeps {
+function deps(user: string | 'signed-out' | 'password', keysFail = false): SyncDeps {
   return {
     user: async () => (user === 'signed-out' || user === 'password' ? user : { id: user }),
-    enabled: (userId) => enabled.includes(userId),
     db: () => t.db,
     keys: () => {
       if (keysFail) throw new DataKeyError('KITE_DATA_KEY_V1 is not set.');
@@ -116,7 +104,6 @@ describe('who may call', () => {
     ['push', () => handlePush(push({ ops: [{ op: 'deleteAll' }] }), deps('signed-out'))],
     ['pull', () => handlePull(pullRequest(), deps('signed-out'))],
     ['record', () => handleRecord(recordRequest(), deps('signed-out'))],
-    ['status', () => handleStatus(pullRequest(), deps('signed-out'))],
   ] as const;
 
   it.each(routes)('%s: 401 when signed out', async (_name, call) => {
@@ -128,26 +115,6 @@ describe('who may call', () => {
     expect((await handlePush(push({ ops: [{ op: 'deleteAll' }] }), d)).status).toBe(403);
     expect((await handlePull(pullRequest(), d)).status).toBe(403);
     expect((await handleRecord(recordRequest(), d)).status).toBe(403);
-    expect((await handleStatus(pullRequest(), d)).status).toBe(403);
-  });
-
-  it('without the accountSync switch: 404 everywhere, status says false, nothing stored', async () => {
-    const off = deps(ALICE, []);
-    const pushed = await handlePush(
-      push({ ops: [{ op: 'put', kind: 'session', id: S1, baseRev: null, record: { id: S1 } }] }),
-      off,
-    );
-    expect(pushed.status).toBe(404);
-    expect((await handlePull(pullRequest(), off)).status).toBe(404);
-    expect((await handleRecord(recordRequest(), off)).status).toBe(404);
-    expect(await (await handleStatus(pullRequest(), off)).json()).toEqual({ enabled: false });
-    expect((await t.pg.query('SELECT 1 FROM call_record')).rows).toHaveLength(0);
-  });
-
-  it('status says true with the switch on', async () => {
-    expect(await (await handleStatus(pullRequest(), deps(ALICE))).json()).toEqual({
-      enabled: true,
-    });
   });
 });
 
@@ -222,7 +189,7 @@ describe('failures', () => {
   it('503 and nothing stored when no data key is set', async () => {
     const response = await handlePush(
       push({ ops: [{ op: 'put', kind: 'session', id: S1, baseRev: null, record: { id: S1 } }] }),
-      deps(ALICE, [ALICE], true),
+      deps(ALICE, true),
     );
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({ code: 'sync_unavailable' });

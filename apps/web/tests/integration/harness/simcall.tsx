@@ -1,12 +1,12 @@
 /**
  * File: apps/web/tests/integration/harness/simcall.tsx
  * Purpose: The browser side of the simulated calls (v1.1.0, item 27): the real answer panel, transcript,
- *          overlay link and home panel on invented sessions, with no sign-in. Lines come from the test
+ *          and overlay link on invented sessions, with no sign-in. Lines come from the test
  *          instead of a microphone, and answers from the test server's mocked /api/answer. Screenshots
  *          come from a small drawn image, through the desktop bridge's method. Batch D: ?rules=newest runs
  *          the cloud-transcription question rules, with turn() for grey lines and engine end-of-turn lines.
  * Used by: tests/integration/sim-calls.spec.ts (bundled with esbuild and served on a test page)
- * Depends on: src/features/live/LiveAnswers.tsx, TranscriptStrip.tsx, src/features/home/HomePanel.tsx,
+ * Depends on: src/features/live/LiveAnswers.tsx, TranscriptStrip.tsx,
  *             src/core/live/hygiene.ts, src/core/transcript/transcript.ts, src/core/storage, react-dom
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (Testing); ADR-0041, ADR-0043, ADR-0044
  *
@@ -17,12 +17,10 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { hygieneState, type HygieneState } from '@/core/live/hygiene';
 import { listAnswers } from '@/core/storage/answers';
-import { createSession } from '@/core/storage/sessions';
 import type { Session } from '@/core/storage/types';
 import { createTranscript } from '@/core/transcript/transcript';
 import { displayTerms } from '@/core/transcript/display';
 import { groupWords } from '@/core/transcript/group';
-import { HomePanel } from '@/features/home/HomePanel';
 import { LiveAnswers, type AnswerThisBridge } from '@/features/live/LiveAnswers';
 import { useCallDictation, type DictationRoute } from '@/features/live/useCallDictation';
 import { TranscriptStrip } from '@/features/live/TranscriptStrip';
@@ -109,7 +107,10 @@ function installBridge(bridge: object): void {
   (window as unknown as { kiteDesktop: object }).kiteDesktop = bridge;
 }
 
-/** The view asked for in the address: 'call' (the default), 'desktop' or 'home'. */
+/**
+ * The view asked for in the address: 'call' (the default) or 'desktop'. ADR-0092: the classic home panel
+ * view is gone (the desktop window is the launcher; tests/integration/launcher.spec.ts covers it).
+ */
 const VIEW = new URLSearchParams(window.location.search).get('view') ?? 'call';
 
 /** v1.4: auto-answer on for this page (?auto=1), for the timed checks. */
@@ -268,57 +269,4 @@ function SimCall() {
   );
 }
 
-/**
- * The home panel, on two invented sessions in this browser's real IndexedDB.
- *
- * @returns The panel, once they are stored.
- */
-function SimHome() {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    const preferences = SESSION.preferences;
-    const base = { preferences, instructions: '', saveTranscript: true, autoAnswer: false };
-    void (async () => {
-      await createSession(
-        {
-          ...base,
-          type: 'mock',
-          company: 'Harbor Lane (invented)',
-          role: 'Practice interview',
-          description: 'A mock interview.',
-        },
-        1_000,
-      );
-      await createSession(
-        {
-          ...base,
-          type: 'regular',
-          company: 'Northwind Routes (invented)',
-          role: 'Pilot review',
-          description: 'A client call.',
-        },
-        2_000,
-      );
-      setReady(true);
-    })();
-  }, []);
-  return ready ? <HomePanel email="sam@example.com" /> : null;
-}
-
-if (VIEW === 'home') {
-  // The panel shows only in a desktop app from 1.1.0.
-  installBridge({
-    version: '1.1.0',
-    os: 'windows',
-    openPagesWindow: async (path: string) => {
-      (window as unknown as { opened: string[] }).opened.push(path);
-    },
-    windowControl: async () => undefined,
-    setOverlayLayout: async () => undefined,
-    getShareProtection: async () => ({ on: false, supported: true, scope: 'all' }),
-    setShareProtection: async (on: boolean) => ({ on, supported: true, scope: 'all' }),
-  });
-  (window as unknown as { opened: string[] }).opened = [];
-}
-
-createRoot(document.getElementById('root')!).render(VIEW === 'home' ? <SimHome /> : <SimCall />);
+createRoot(document.getElementById('root')!).render(<SimCall />);

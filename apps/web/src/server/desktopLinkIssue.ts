@@ -1,19 +1,17 @@
 /**
  * File: apps/web/src/server/desktopLinkIssue.ts
  * Purpose: POST /api/desktop/link-code (ADR-0052): makes a one-time desktop sign-in code for one of
- *          the signed-in account's sessions. Only for accounts with the accountSync switch (the session
- *          must be in the account for the desktop app to open it). The account always comes from the
+ *          the signed-in account's sessions (the session is in the account, so the desktop app can open
+ *          it; every account has account sync since ADR-0092). The account always comes from the
  *          session cookie (read from the database), never from the request.
  * Used by: app/api/desktop/link-code/route.ts
- * Depends on: src/server/auth.ts, src/server/db.ts, src/server/calldata/flag.ts,
- *             src/server/desktopLink.ts, zod
- * Architecture: ADR-0052
+ * Depends on: src/server/auth.ts, src/server/db.ts, src/server/desktopLink.ts, zod
+ * Architecture: ADR-0052, ADR-0092
  */
 import 'server-only';
 import { z } from 'zod';
 import { auth } from './auth';
 import type { CallDataDb } from './calldata/store';
-import { syncEnabledFor } from './calldata/flag';
 import { db } from './db';
 import { issueLinkCode } from './desktopLink';
 
@@ -24,8 +22,6 @@ const bodySchema = z.object({ sessionId: z.string().uuid() }).strict();
 export interface IssueDeps {
   /** The signed-in account's id, or a refusal. */
   user(headers: Headers): Promise<{ id: string } | 'signed-out' | 'password'>;
-  /** Whether the account has the accountSync switch. */
-  enabled(userId: string): boolean;
   /** The database. */
   db(): CallDataDb;
 }
@@ -38,7 +34,6 @@ export const realIssueDeps: IssueDeps = {
     if (session.user.mustChangePassword) return 'password';
     return { id: session.user.id };
   },
-  enabled: (userId) => syncEnabledFor(userId),
   // The app's Neon client has the common Drizzle Postgres shape the code store needs.
   db: () => db as unknown as CallDataDb,
 };
@@ -60,8 +55,8 @@ function failure(status: number, code: string, message: string): Response {
  *
  * @param request The request (body: { sessionId }).
  * @param deps    The dependencies (tests pass fakes).
- * @returns 200 { code, expiresAt } (never cached); 401 signed out; 403 password change needed; 404 no
- *          account sync or not this account's session; 429 more than 10 codes in a minute; 400 bad body.
+ * @returns 200 { code, expiresAt } (never cached); 401 signed out; 403 password change needed; 404 not
+ *          this account's session; 429 more than 10 codes in a minute; 400 bad body.
  * Called from: app/api/desktop/link-code/route.ts
  */
 export async function handleIssueLinkCode(
@@ -72,7 +67,6 @@ export async function handleIssueLinkCode(
   if (user === 'signed-out') return failure(401, 'unauthorized', 'Sign in required');
   if (user === 'password')
     return failure(403, 'password_change_required', 'Change your password first');
-  if (!deps.enabled(user.id)) return failure(404, 'not_found', 'Not found');
   let body: unknown;
   try {
     body = await request.json();

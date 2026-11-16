@@ -752,28 +752,6 @@ const BARS_SIZE: Width = { width: 900, height: 520, touch: false };
 /** A window wide enough for both panels side by side. */
 const WIDE_SIZE: Width = { width: 1080, height: 560, touch: false };
 
-test('ADR-0055: accounts without sync keep the classic bar 1 (ADR-0082: no chat bar there either)', async () => {
-  const classic: Width = { width: 780, height: 520, touch: false };
-  const watched = await openOverlayView(classic, '&panels=none&shell=1&look=classic');
-  const { page } = watched;
-  const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
-  // ADR-0085: the Transcript switch is on bar 1 for every account (it was only with account sync).
-  await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveCount(1);
-  // ADR-0082: no Answer, Screenshot or Chat buttons (their shortcuts still work), and the bar fits with
-  // ⋮ and Exit whole.
-  for (const name of ['Answer', 'Screenshot', 'Chat']) {
-    await expect(bar.getByRole('button', { name, exact: true })).toHaveCount(0);
-  }
-  await expect
-    .poll(() => barFit(page))
-    .toMatchObject({ barFits: true, leftFits: true, exitInside: true, menuInside: true });
-  // No chat bar and no message box anywhere on the overlay.
-  await expect(page.getByRole('group', { name: 'Chat' })).toHaveCount(0);
-  await expect(page.getByLabel('Type a question')).toHaveCount(0);
-  await expect(page.getByRole('group', { name: 'Status bar' })).toBeVisible();
-  await watched.context.close();
-});
-
 /**
  * The names of bar 1's controls, in order (the device icons' states left out).
  *

@@ -1,6 +1,6 @@
 /**
- * Production check of account sync across devices (ADR-0049), as the end-to-end TEST account (which
- * must be listed in KITE_SYNC_USERS). No Claude request: no live page is opened. Three "devices":
+ * Production check of account sync across devices (ADR-0049), as the end-to-end TEST account (account sync is on for every account,
+ * ADR-0092). No Claude request: no live page is opened. Three "devices":
  * two Chrome profiles (separate browser storage) and the desktop shell (apps/desktop as built from this
  * checkout, the same code as release 1.2.0) with a fresh temporary profile. Covers: a session created
  * in one profile appears in the other and on the desktop home panel; deleted while offline in one

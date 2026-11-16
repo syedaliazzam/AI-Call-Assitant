@@ -221,9 +221,3 @@ export interface SyncPullResponse {
   /** Pass as `after` to read the next page; null when this was the last. */
   next: string | null;
 }
-
-/** Response of GET /api/sync/status. */
-export interface SyncStatusResponse {
-  /** True when this account syncs its call data (the accountSync switch, ADR-0049). */
-  enabled: boolean;
-}

@@ -13,7 +13,8 @@
  *
  * Transcript text is only arranged for the screen and the downloads here; it is never logged.
  */
-import type { Session } from '../storage/types';
+import type { Session, StoredCall } from '../storage/types';
+import { theirLabel } from './theirName';
 import { isBlip } from './blip';
 import { groupLines, type GroupLine, type TranscriptGroup } from './group';
 import type { DisplayTerm } from './display';
@@ -211,26 +212,29 @@ export function formatElapsed(ms: number): string {
 export interface SpeakerNames {
   /** The user: the account's display name. */
   you: string;
-  /** The other person: the session's name for them. */
+  /** The other person: the call's or the session's name for them, else "Interviewer" or "Them". */
   them: string;
 }
 
 /**
- * The names on each side's turns: "You" shows the account's display name, "Them" the name stored on the
- * session (renamable in Review). Each falls back to "You" or "Them".
+ * The names on each side's turns: "You" shows the account's display name, the other side the call's own
+ * name (a rename for this call), else the session's contact name, else "Interviewer" (interviews and
+ * mock interviews) or "Them" (ADR-0093, theirName.ts). The user falls back to "You".
  *
- * @param session     The session (its contactName is the other person's name).
+ * @param session     The session (its contactName and type).
  * @param accountName The signed-in account's display name, when known.
+ * @param call        The call (its themName), when the turns are one call's.
  * @returns The two names.
  * Called from: TranscriptBubbles.tsx (through its props), conversation.ts, ConversationSection.tsx,
  *              LiveAnswers.tsx; tests
  */
 export function speakerNames(
-  session: Pick<Session, 'contactName'> | null | undefined,
+  session: (Pick<Session, 'contactName'> & Partial<Pick<Session, 'type'>>) | null | undefined,
   accountName?: string | null,
+  call?: Pick<StoredCall, 'themName'> | null,
 ): SpeakerNames {
   return {
     you: accountName?.trim() || DEFAULT_YOU_NAME,
-    them: session?.contactName?.trim() || DEFAULT_THEM_NAME,
+    them: theirLabel(session, call),
   };
 }

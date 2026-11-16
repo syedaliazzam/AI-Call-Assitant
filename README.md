@@ -163,7 +163,7 @@ Run a command in a single package with `--filter`, for example `pnpm --filter we
 
 ```sh
 pnpm --filter web create-e2e-user --prod           # role user: KITE_E2E_EMAIL / KITE_E2E_PASSWORD in apps/web/.env.local
-pnpm --filter web create-e2e-user --prod --admin   # role admin (latency, unflagged, the domain "admin page" check): KITE_E2E_ADMIN_*
+pnpm --filter web create-e2e-user --prod --admin   # role admin (latency, the domain "admin page" check): KITE_E2E_ADMIN_*
 #   ... run the suites ...
 pnpm --filter web delete-test-accounts             # dry run: the SQL it would run and the row counts per table
 pnpm --filter web delete-test-accounts --prod      # deletes the accounts and their data, and removes their lines from .env.local
@@ -171,7 +171,6 @@ pnpm --filter web delete-test-accounts --prod      # deletes the accounts and th
 
 - `create-e2e-user` creates the account as an admin would, completes its first password change, and appends the email and a generated password to `apps/web/.env.local` (git-ignored, never printed). It refuses when those lines are already there.
 - `delete-test-accounts` acts only on `kite-e2e…@example.com` addresses (the default test addresses, and those named by `KITE_E2E_EMAIL` / `KITE_E2E_ADMIN_EMAIL` in `.env.local`), never on a real account. It deletes the sign-in sessions, the credential, daily request counts, synced call data, Google Drive rows and desktop link codes in one transaction, and prints counts only.
-- The account sync suites (`sync-devices.spec.ts`) need the account in `KITE_SYNC_USERS` unless it is `*`: `sync-user-ids` adds `KITE_E2E_EMAIL` to the ids it prints.
 - `vercel env pull` rewrites `.env.local` and removes the lines: delete the account and create a new one.
 
 **Production end-to-end suites** (`apps/web/tests/e2e-prod/`, manual only, never in CI). They run against https://call.paramountintelligence.co (or `KITE_E2E_URL`) as a disposable test account (above), and print only PASS/FAIL with numbers:

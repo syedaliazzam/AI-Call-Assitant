@@ -29,12 +29,15 @@ import { notesUnavailableOf } from '@/core/live/afterCall';
 import { regenerateCallNotes } from '@/core/notes/regenerate';
 import type { CallView } from '@/core/review/calls';
 import { loadReview, type ReviewData } from '@/core/review/load';
-import { usingAccountDatabase } from '@/core/storage/db';
-import { deleteSession } from '@/core/storage/sessions';
+import { refreshRenamedCall } from '@/core/drive/renamedCall';
+import { updateCall } from '@/core/storage/calls';
+import { deleteSession, updateSession } from '@/core/storage/sessions';
 import { pullAccountSync } from '@/core/sync/client';
 import { buildKeyterms } from '@/core/stt/sessionHotwords';
 import { onSyncApplied } from '@/core/sync/events';
 import { displayTerms } from '@/core/transcript/display';
+import { relabelNotes, theirLabel, withTheirName } from '@/core/transcript/theirName';
+import { useAccountName } from '@/features/shell/AccountName';
 import {
   FORMAT_OPTIONS,
   LENGTH_OPTIONS,
@@ -164,6 +167,9 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
+  // ADR-0093: what happened to the Drive files after the last rename of a call.
+  const [renameStatus, setRenameStatus] = useState<string | null>(null);
+  const accountName = useAccountName();
 
   /** Reads the session's data again (after Regenerate). */
   const reload = useCallback(async () => {
@@ -178,15 +184,13 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
         .then((data) => {
           if (!cancelled) setReview(data);
         });
-    // ADR-0077: with account sync, the account's newest data first (a call ended on another device),
-    // then this device's copy; and again after every pull.
+    // ADR-0077: the account's newest data first (a call ended on another device), then this device's
+    // copy; and again after every pull.
     void (async () => {
-      if (usingAccountDatabase()) {
-        setSyncing(true);
-        await pullAccountSync().catch(() => undefined);
-        if (cancelled) return;
-        setSyncing(false);
-      }
+      setSyncing(true);
+      await pullAccountSync().catch(() => undefined);
+      if (cancelled) return;
+      setSyncing(false);
       await load();
     })();
     const stop = onSyncApplied(() => void load());
@@ -203,7 +207,7 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
     if (!finishing) return;
     const timer = window.setInterval(() => {
       void (async () => {
-        if (usingAccountDatabase()) await pullAccountSync().catch(() => undefined);
+        await pullAccountSync().catch(() => undefined);
         setReview(await loadReview(sessionId).catch(() => null));
       })();
     }, PENDING_REFRESH_MS);
@@ -233,6 +237,37 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
         failed: true,
       });
     }
+  }
+
+  /**
+   * ADR-0093: renames the other person for the shown call, for the whole call: its turns, its notes (shown
+   * with the new name, no new notes request), its downloads, and its Drive transcript and notes PDFs,
+   * which are made again and replaced when the call is already saved to Drive. A call made before call
+   * records (no record to keep the name) renames the session's contact instead, as before.
+   *
+   * @param name The new name ('' goes back to the session's name, else the fallback label).
+   */
+  async function renameCall(name: string) {
+    const call = review?.calls.find((one) => one.id === selectedId) ?? review?.calls[0];
+    if (!review || !call) return;
+    setRenameStatus(null);
+    if (!call.record) {
+      await updateSession(review.session.id, { contactName: name }).catch(() => undefined);
+      await reload();
+      return;
+    }
+    await updateCall(call.id, { themName: name || undefined }).catch(() => false);
+    await reload();
+    if (call.record.drive.state !== 'done') return;
+    setRenameStatus('Updating the transcript and notes in Google Drive…');
+    const outcome = await refreshRenamedCall(review.session.id, call.id, accountName);
+    setRenameStatus(
+      outcome === 'replaced'
+        ? 'The transcript and notes in Google Drive now use the new name.'
+        : outcome === 'failed'
+          ? 'The files in Google Drive could not be updated. Rename again to retry.'
+          : null,
+    );
   }
 
   /** Deletes the session and everything saved with it, then leaves the page. */
@@ -279,7 +314,15 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
   const call = review.calls.find((one) => one.id === selectedId) ?? review.calls[0] ?? null;
   const lines = call?.lines ?? [];
   const answers = call?.answers ?? [];
-  const notes = call?.notes ?? null;
+  // ADR-0093: the session as the shown call reads it (the call's name for the other person wins), and its
+  // notes with that name in place of the one they were written with.
+  const named = call ? withTheirName(session, call.record) : session;
+  const notes = call?.notes
+    ? {
+        ...call.notes,
+        notes: relabelNotes(call.notes.notes, call.notes.writtenTheirName, theirLabel(named)),
+      }
+    : null;
   const drive = call ? callDriveText(call) : null;
   // Batch D (P1-F): the words cloud transcription is told to listen for in this session's calls (the same
   // list the call sends), so missing names can be added under Key terms.
@@ -481,11 +524,13 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
           )}
           {section === 'transcript' && (
             <ConversationSection
-              session={session}
+              session={named}
               lines={lines}
               answers={answers}
               terms={displayTerms(session)}
               onChanged={() => void reload()}
+              onRename={(name) => void renameCall(name)}
+              renameStatus={renameStatus}
             />
           )}
           {section === 'ask' && <AskSection review={review} />}

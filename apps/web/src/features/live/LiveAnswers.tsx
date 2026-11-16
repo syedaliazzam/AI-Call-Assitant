@@ -69,7 +69,6 @@ import { SignInAgainDialog } from './SignInAgainDialog';
 import { useAutoAnswer } from './useAutoAnswer';
 import type { CallDictation } from './useCallDictation';
 import { openDashboard } from '@/features/sync/dashboardLink';
-import { useSyncAccount } from '@/features/sync/SyncScope';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
 import type { CallRecording } from './useCallRecording';
 import type { CallNotice } from '@/core/live/callNotice';
@@ -152,6 +151,15 @@ export interface LiveAnswersProps {
   onActivity?: () => void;
   /** v1.1.0: how many echo lines were hidden in this call (the one-time headphones hint). */
   echoCount?: number;
+  /**
+   * ADR-0093: a name the other person gave when introducing themselves, offered on the overlay as
+   * "Rename Them to Sarah?". Absent when there is nothing to offer.
+   */
+  nameOffer?: string | null;
+  /** ADR-0093: the overlay's Rename on the offer (the live page renames the other person for this call). */
+  onRenameThem?: (name: string) => void;
+  /** ADR-0093: the overlay's Not now on the offer. */
+  onDismissName?: () => void;
   /**
    * Desktop 1.5.0 (ADR-0068): the call's meeting recording (the Rec pill on both bars, Ctrl+Alt+R and
    * the ⋮ menu's type). Absent where the app cannot record, and in harnesses.
@@ -238,8 +246,6 @@ const isMac = () => getPlatform().hotkeyModifier() === '⌘';
  * Rendered by: LivePage.tsx; the answer harness page
  */
 export function LiveAnswers(props: LiveAnswersProps) {
-  // ADR-0051: with account sync, Edit session opens the dashboard in the browser.
-  const synced = useSyncAccount() !== null;
   // Read only: the layout around this panel paints the theme (v1.1.0).
   const appearance = useAppearance('call', false);
   // The overlay's menu can change how answers are written during a call (ADR-0029).
@@ -382,7 +388,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
         answered: answeredIds.has(group.id),
         unclear: isUnclearGroup(group),
       })),
-      themName: speakerNames({ contactName: props.session.contactName }).them,
+      // ADR-0093: the call's name for the other person, else "Interviewer" or "Them" by session type.
+      themName: speakerNames({ contactName: props.session.contactName, type: props.session.type })
+        .them,
+      ...(props.nameOffer ? { nameOffer: props.nameOffer } : {}),
       language,
       autoAnswer: autoOn,
       hygiene: props.hygiene ?? 'ok',
@@ -447,6 +456,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     answerTaken,
     props.session.id,
     props.session.contactName,
+    props.nameOffer,
     props.micDeviceId,
     props.themSourceLabel,
     scriptBar,
@@ -522,13 +532,14 @@ export function LiveAnswers(props: LiveAnswersProps) {
   });
   // v1.1.0: the words on screen and the live question; the answer stays.
   const onClearTranscript = useRef(props.onClearTranscript);
+  // ADR-0093: the rename offer's buttons on the overlay (the handler is added once).
+  const renameThem = useRef(props.onRenameThem);
+  const dismissName = useRef(props.onDismissName);
   const clearTranscript = useRef(() => {
     setQuestionClearedAt(Date.now());
     onClearTranscript.current?.();
   });
   const overlayProps = useRef(props);
-  // ADR-0082: with account sync, Ask AI during a call opens the dashboard in the browser.
-  const syncedRef = useRef(synced);
   /**
    * Desktop 1.5.0 (ADR-0068): a recording command, from either bar's Rec pill or the ⋮ menu. Consent was
    * given in the question that sent 'record-start'.
@@ -553,8 +564,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
     onEnd.current = props.onEnd;
     latestPreferences.current = props.session.preferences;
     onClearTranscript.current = props.onClearTranscript;
+    renameThem.current = props.onRenameThem;
+    dismissName.current = props.onDismissName;
     overlayProps.current = props;
-    syncedRef.current = synced;
     groupsRef.current = groups;
   });
   // A request for an answer counts as someone being on the call (ADR-0044).
@@ -600,7 +612,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
         void getPlatform()
           .showCallWindow()
           .catch(() => undefined);
-      } else if (command.type === 'script-bar') setScriptBar(command.on);
+      } else if (command.type === 'rename-them') renameThem.current?.(command.name);
+      else if (command.type === 'dismiss-name') dismissName.current?.();
+      else if (command.type === 'script-bar') setScriptBar(command.on);
       else if (command.type === 'click-through') setClickThrough(command.on);
       else if (command.type === 'dictate') {
         if (command.on) dictationRef.current?.start(chatTargetRef.current);
@@ -705,10 +719,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
             overlayProps.current.recording?.prompt();
           } else if (action === 'ask-kite') {
             // ADR-0082: the overlay has no message box any more, so while it is in use Ask AI opens in
-            // its own window (the dashboard's, or the pages window), and the call goes on here.
+            // the dashboard, in the browser, and the call goes on here.
             if (overlayOpened.current) {
-              if (syncedRef.current) openDashboard('/ask-kite');
-              else getPlatform().openPagesWindow('/ask-kite');
+              openDashboard('/ask-kite');
               return;
             }
             // Leaving this page would end the call, so during a call the shortcut opens the chat
@@ -856,11 +869,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       : [
           {
             label: 'Edit session',
-            // ADR-0051: with account sync, editing happens in the dashboard, in the system browser.
-            onSelect: () =>
-              synced
-                ? openDashboard(`/sessions/${sessionId}/edit`)
-                : getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
+            // ADR-0051: editing happens in the dashboard, in the system browser.
+            onSelect: () => openDashboard(`/sessions/${sessionId}/edit`),
           },
         ]),
     ...(placement

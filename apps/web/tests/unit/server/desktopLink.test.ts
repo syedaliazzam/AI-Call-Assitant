@@ -130,12 +130,10 @@ describe('POST /api/desktop/link-code', () => {
    * The route's dependencies for one signed-in state.
    *
    * @param user    Who is signed in, or a refusal.
-   * @param enabled Whether the switch is on.
    * @returns The dependencies.
    */
-  const deps = (user: string | 'signed-out' | 'password', enabled = true): IssueDeps => ({
+  const deps = (user: string | 'signed-out' | 'password'): IssueDeps => ({
     user: async () => (user === 'signed-out' || user === 'password' ? user : { id: user }),
-    enabled: () => enabled,
     db: () => t.db,
   });
 
@@ -158,11 +156,10 @@ describe('POST /api/desktop/link-code', () => {
     expect(((await response.json()) as { code: string }).code).toMatch(LINK_CODE_PATTERN);
   });
 
-  it('refuses signed out, before a password change, without the switch, and for another account', async () => {
+  it('refuses signed out, before a password change, and for another account', async () => {
     const body = { sessionId: SESSION };
     expect((await handleIssueLinkCode(request(body), deps('signed-out'))).status).toBe(401);
     expect((await handleIssueLinkCode(request(body), deps('password'))).status).toBe(403);
-    expect((await handleIssueLinkCode(request(body), deps(ALICE, false))).status).toBe(404);
     expect((await handleIssueLinkCode(request(body), deps(BOB))).status).toBe(404);
     expect((await handleIssueLinkCode(request({ sessionId: 'x' }), deps(ALICE))).status).toBe(400);
   });

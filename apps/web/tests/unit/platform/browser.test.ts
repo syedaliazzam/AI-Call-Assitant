@@ -198,11 +198,6 @@ describe('browserPlatform: what only the desktop app has (v1.1.0)', () => {
     expect(() => browserPlatform.setChatHotkey(true)).not.toThrow();
   });
 
-  it('has no session file to pick or delete (spec S9)', async () => {
-    expect(await browserPlatform.pickHandoffFile()).toBeNull();
-    expect(await browserPlatform.deleteHandoffFile()).toBe(false);
-  });
-
   it('has no home panel and no panels to fit, and those calls do nothing', () => {
     expect(browserPlatform.hasHomePanel()).toBe(false);
     expect(browserPlatform.overlayFitsPanels()).toBe(false);

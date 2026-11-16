@@ -202,10 +202,15 @@ export interface CompactState {
   /** v1.1.0: the latest transcript bubbles, oldest first. */
   groups?: CompactGroup[];
   /**
-   * v1.1.0: the name on the other person's turns. v1.3.2: the session's name for them, renamable in Review
-   * ("Them" when it has none; "Client 1" before).
+   * v1.1.0: the name on the other person's turns. ADR-0093: the call's name for them, else the session's,
+   * else "Interviewer" (interviews) or "Them".
    */
   themName?: string;
+  /**
+   * ADR-0093: a name the other person gave when introducing themselves, offered as "Rename Them to
+   * Sarah?" (one click; never applied by itself). Absent when there is nothing to offer.
+   */
+  nameOffer?: string;
   /** v1.1.0: the answer language's code. */
   language?: string;
   /** v1.1.0: whether Kite answers finished questions by itself in this call. */
@@ -248,7 +253,7 @@ export interface SimpleCommand {
    * Ctrl+Alt+R pressed while the overlay had focus (the bars then ask Start or Stop). ADR-0076 (G4):
    * 'hotkey-settings': open Settings at Hotkeys (the Answer shortcut is held by another app). ADR-0082:
    * 'clear' clears the answers on screen (Ctrl+Backspace, the answer panel's Clear); 'voice-cancel': Escape
-   * while a voice question listens.
+   * while a voice question listens. ADR-0093: 'dismiss-name': "Not now" on the rename offer.
    */
   type:
     | 'answer'
@@ -268,7 +273,8 @@ export interface SimpleCommand {
     | 'record-notice-seen'
     | 'record-prompt'
     | 'hotkey-settings'
-    | 'voice-cancel';
+    | 'voice-cancel'
+    | 'dismiss-name';
 }
 
 /**
@@ -328,6 +334,14 @@ export interface ClickThroughCommand {
   type: 'click-through';
   /** True to let clicks and keys outside the bars go to the app behind. */
   on: boolean;
+}
+
+/** ADR-0093: accepts the offered name for the other person, for the rest of this call. */
+export interface RenameThemCommand {
+  /** Command type. */
+  type: 'rename-them';
+  /** The name offered (the live page checks it is the one it offered). */
+  name: string;
 }
 
 /** Starts or stops dictating a spoken question (v1.0.2, ADR-0038). */
@@ -438,7 +452,8 @@ export type CompactCommand =
   | AutoAnswerCommand
   | MicCommand
   | RecordStartCommand
-  | RecordKindCommand;
+  | RecordKindCommand
+  | RenameThemCommand;
 
 /** One message on the channel. */
 type Message =
@@ -607,6 +622,10 @@ export function isCommand(value: unknown): value is CompactCommand {
     const displayId = (value as { displayId?: unknown }).displayId;
     return displayId === null || (typeof displayId === 'string' && displayId.length <= 64);
   }
+  if (command.type === 'rename-them') {
+    const name = (value as { name?: unknown }).name;
+    return typeof name === 'string' && name.length > 0 && name.length <= 200;
+  }
   if (command.type === 'record-kind') {
     return (RECORDING_KINDS as readonly unknown[]).includes((value as { kind?: unknown }).kind);
   }
@@ -629,6 +648,8 @@ export function isCommand(value: unknown): value is CompactCommand {
     'record-prompt',
     'hotkey-settings',
     'voice-cancel',
+    // ADR-0093: "Not now" on the rename offer.
+    'dismiss-name',
   ].includes(command.type);
 }
 

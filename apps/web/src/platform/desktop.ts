@@ -310,24 +310,6 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
-     * Lets the person pick a session file, where this shell can (1.2.0 and later).
-     *
-     * @returns The file, or null.
-     */
-    async pickHandoffFile() {
-      return (await bridge.pickHandoffFile?.()) ?? null;
-    },
-
-    /**
-     * Deletes the session file picked last, where this shell can (1.2.0 and later).
-     *
-     * @returns True when it was deleted.
-     */
-    async deleteHandoffFile() {
-      return (await bridge.deleteHandoffFile?.().catch(() => false)) ?? false;
-    },
-
-    /**
      * The link's one-time sign-in code, where this shell has one (1.3.0 and later, ADR-0052). Only a
      * well-formed code is passed on.
      *

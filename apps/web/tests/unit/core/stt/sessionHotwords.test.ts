@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_KEYTERMS,
   buildHotwords,
   cleanPhrase,
   DOCUMENT_TERM_SCORE,
@@ -22,6 +23,7 @@ import {
   MAX_HOTWORDS,
   ROLE_SCORE,
   TECH_TERM_SCORE,
+  withNameKeyterm,
 } from '@/core/stt/sessionHotwords';
 
 /**
@@ -186,5 +188,23 @@ describe('buildHotwords with numbers in terms (ADR-0027)', () => {
   it('respects a typed score on a number term', () => {
     const hotwords = buildHotwords(session('BM25 :3'), []);
     expect(hotwords.find((h) => h.phrase === 'BM TWENTY FIVE')?.score).toBe(3);
+  });
+});
+
+describe('withNameKeyterm (ADR-0093)', () => {
+  it('puts a name accepted during the call first, once, within the limits', () => {
+    expect(withNameKeyterm(['Freshdesk', 'Toptal'], 'Sarah Chen')).toEqual([
+      'Sarah Chen',
+      'Freshdesk',
+      'Toptal',
+    ]);
+    const terms = ['sarah chen', 'Toptal'];
+    expect(withNameKeyterm(terms, 'Sarah Chen')).toBe(terms);
+    expect(withNameKeyterm(terms, '  ')).toBe(terms);
+    const full = Array.from({ length: MAX_KEYTERMS }, (_, index) => `Term${index}`);
+    const added = withNameKeyterm(full, 'Priya');
+    expect(added).toHaveLength(MAX_KEYTERMS);
+    expect(added[0]).toBe('Priya');
+    expect(added).not.toContain(`Term${MAX_KEYTERMS - 1}`);
   });
 });

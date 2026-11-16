@@ -28,6 +28,7 @@ import 'server-only';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import {
+  cleanPersonName,
   ACCOUNT_HEADER,
   DRIVE_NOTIFICATIONS_SHOWN,
   MAX_ALSO_NOTIFY,
@@ -972,9 +973,11 @@ const SMALL_KEY = /^call:\d{1,15}:(transcript-txt|transcript-pdf|notes-pdf)$/;
 
 /**
  * POST /api/drive/files (ADR-0074): one of the page's own files (a call's transcript TXT or PDF, or its
- * notes PDF), sent as multipart/form-data (sessionId, key, name, file), at most 4 MB. Uploaded to the
- * session's Transcripts with the company token; held in memory for this request only, never stored or
- * logged. Returns the file when it is already there. The upload is checked against the bytes sent (MD5).
+ * notes PDF), sent as multipart/form-data (sessionId, key, name, file, optional replace), at most 4 MB.
+ * Uploaded to the session's Transcripts with the company token; held in memory for this request only,
+ * never stored or logged. Returns the file when it is already there, unless replace is "1" (ADR-0093: a
+ * renamed call's PDFs): then the new file is uploaded and verified first, and only then is the old one
+ * moved to the bin, so a failure never leaves the call without its file. The upload is checked against the bytes sent (MD5).
  * @param request The request (multipart form).
  * @param deps    The dependencies (tests pass fakes).
  * @returns 200 DriveVerifiedFile; 400; 404 not connected; 409 no session folder, reconnect; 413 too large.
@@ -995,6 +998,7 @@ export function handleSmallUpload(
     const key = form.get('key');
     const name = form.get('name');
     const file = form.get('file');
+    const replace = form.get('replace') === '1';
     if (
       typeof sessionId !== 'string' ||
       !z.uuid().safeParse(sessionId).success ||
@@ -1022,7 +1026,7 @@ export function handleSmallUpload(
     const tag = fileTag(user.id, sessionId, key);
     // Already there (saved before this device lost track of it): never uploaded twice.
     const existing = await company.drive.find(parentId, [tag], company.folder.driveId);
-    if (existing) return reply({ fileId: existing } satisfies DriveVerifiedFile);
+    if (existing && !replace) return reply({ fileId: existing } satisfies DriveVerifiedFile);
     const bytes = new Uint8Array(await file.arrayBuffer());
     const facts = await company.drive.uploadSmall(
       {
@@ -1038,6 +1042,8 @@ export function handleSmallUpload(
       console.warn('drive: small upload did not verify');
       return failure(502, 'verify_failed', 'Google Drive did not keep the file. Try again.');
     }
+    // ADR-0093: the new copy is in and verified; the old one goes to the bin (recoverable there).
+    if (existing && existing !== facts.id) await company.drive.trash(existing);
     return reply({ fileId: facts.id } satisfies DriveVerifiedFile);
   });
 }
@@ -1097,6 +1103,12 @@ const notifySchema = z
     emailRule: z.literal('two-step').optional(),
     callFilesSaved: z.boolean().optional(),
     recordingsFolderUrl: z.string().max(400).refine(isDriveLink).optional(),
+    // ADR-0093: cleaned again; a name that cleans to nothing is dropped.
+    withName: z
+      .string()
+      .max(200)
+      .optional()
+      .transform((name) => cleanPersonName(name) || undefined),
   })
   .strict();
 

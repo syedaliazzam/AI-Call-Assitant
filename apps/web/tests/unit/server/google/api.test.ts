@@ -779,6 +779,20 @@ describe('server-side uploads: no token reaches a client (ADR-0074)', () => {
       (await handleSmallUpload(form('call:1:notes-pdf', Buffer.alloc(4 * 1024 * 1024 + 1)), d))
         .status,
     ).toBe(413);
+    // ADR-0093: replace=1 (a renamed call's PDFs) saves the new copy, then moves the old one to the bin.
+    const again = form(key, Buffer.from('renamed'));
+    const body = await again.formData();
+    body.set('replace', '1');
+    const replaced = await (
+      await handleSmallUpload(
+        new Request(`${SITE}/api/drive/files`, { method: 'POST', headers: { origin: SITE }, body }),
+        d,
+      )
+    ).json();
+    expect(replaced.fileId).not.toBe(saved.fileId);
+    expect(f.files.get(replaced.fileId)!.size).toBe(7);
+    expect(f.files.get(replaced.fileId)!.trashed).toBe(false);
+    expect(f.files.get(saved.fileId)!.trashed).toBe(true);
   });
 
   it('links in the email only Drive ids the company token finds with this account’s tag', async () => {

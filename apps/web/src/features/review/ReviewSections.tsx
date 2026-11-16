@@ -1,6 +1,7 @@
 /**
  * File: apps/web/src/features/review/ReviewSections.tsx
- * Purpose: The AI notes section of the session window, with its Regenerate button and status.
+ * Purpose: The AI notes section of the session window, with its Rewrite notes button (ADR-0093: was
+ *          "Regenerate") and status.
  * Used by: src/features/review/SessionReview.tsx
  * Depends on: src/core/review/load.ts (formatCallTime),
  *             src/features/review/ProposedLessons.tsx (Stage 7),
@@ -98,7 +99,7 @@ export function NotesSection(props: NotesSectionProps) {
           onClick={props.onRegenerate}
           disabled={props.writing || !props.canWrite}
         >
-          {props.writing ? 'Writing…' : notes ? 'Regenerate' : 'Write the notes'}
+          {props.writing ? 'Writing…' : notes ? 'Rewrite notes' : 'Write the notes'}
         </Button>
       </div>
       {props.status && (

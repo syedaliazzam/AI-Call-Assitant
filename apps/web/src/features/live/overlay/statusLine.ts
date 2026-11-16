@@ -5,12 +5,14 @@
  *          the live words. In order: listening paused, "Still in a call?", a voice question listening, a
  *          channel that hears nothing (with its device list), another app holding the Answer key, a screen
  *          recording with Private off, the other call notices (catching up, cloud transcription), why the
- *          last voice question sent nothing, the answers' notice, and the one-time headphones hint.
+ *          last voice question sent nothing, the answers' notice, Private off during the call, the offer to
+ *          rename the other person (ADR-0093: "Rename Them to Sarah?"), and the one-time headphones hint.
  * Used by: src/features/live/overlay/StatusBar.tsx (and through it TranscriptPanel.tsx)
  * Depends on: src/core/live/liveChannel.ts (types), src/features/live/PrivateOffWarning.tsx (words)
  * Architecture: ADR-0082 (one status bar); ADR-0069 (call notices), ADR-0070 (Private off), ADR-0076 (G4)
  *
- * Pure: no React, no text from the call (only the app's own messages).
+ * Pure: no React, no text from the call (only the app's own messages), except the other person's name
+ * in the rename offer (ADR-0093), which is shown, never logged.
  */
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import { PRIVATE_OFF_TEXT } from '../PrivateOffWarning';
@@ -52,18 +54,29 @@ export interface StatusMessage {
     | 'answer-key'
     | 'private-off'
     | 'private-off-call'
+    | 'rename-them'
     | 'call-notice'
     | 'voice-notice'
     | 'notice'
     | 'headphones';
   /** The words (short: one line of the bar). */
   text: string;
-  /** How it looks: an alert (red), a warning (amber), the listening state (red), or quiet (muted). */
-  tone: 'alert' | 'warning' | 'listening' | 'muted';
+  /**
+   * How it looks: an alert (red), a warning (amber), the listening state (red), quiet (muted), or an
+   * offer (ADR-0093: plain text, nothing is wrong).
+   */
+  tone: 'alert' | 'warning' | 'listening' | 'muted' | 'offer';
   /** One more sentence, shown as the line's tooltip, or absent. */
   detail?: string;
   /** Its button, if any. */
   action?: StatusAction;
+  /** ADR-0093: a second button that sends a command ("Not now"), if any. */
+  dismiss?: {
+    /** The command it sends. */
+    command: CompactCommand;
+    /** The button's words. */
+    label: string;
+  };
 }
 
 /** ADR-0082: what the status line says while a voice question listens. */
@@ -170,6 +183,20 @@ export function statusMessage(
       text: PRIVATE_OFF_CALL_TEXT,
       tone: 'warning',
       action: { kind: 'private', label: 'Turn on' },
+    };
+  }
+  // ADR-0093: one click renames the other person for this call; never applied by itself.
+  if (state.nameOffer) {
+    return {
+      key: 'rename-them',
+      text: `Rename ${state.themName || 'Them'} to ${state.nameOffer}?`,
+      tone: 'offer',
+      action: {
+        kind: 'command',
+        command: { type: 'rename-them', name: state.nameOffer },
+        label: 'Rename',
+      },
+      dismiss: { command: { type: 'dismiss-name' }, label: 'Not now' },
     };
   }
   if (state.headphonesHint) {

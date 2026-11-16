@@ -1,6 +1,6 @@
 /**
  * Production check of the one-time desktop sign-in codes (ADR-0052), as the end-to-end TEST account
- * (listed in KITE_SYNC_USERS). No Claude request. An invented session is put into the account; then:
+ * (account sync is on for every account, ADR-0092). No Claude request. An invented session is put into the account; then:
  * - web: a code for it signs a fresh, signed-out browser in (a session of its own); the same code a
  *   second time, a code shown with another session, and a code after 60 seconds are all refused;
  * - desktop: this checkout's 1.3.0 shell, with a fresh temporary profile (never signed in), receives

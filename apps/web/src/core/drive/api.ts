@@ -122,6 +122,11 @@ export interface DriveSmallFile {
   name: string;
   /** Its bytes. */
   blob: Blob;
+  /**
+   * ADR-0093: true to replace the file already saved under this key (a renamed call's PDFs). Absent:
+   * a file already there is kept and returned.
+   */
+  replace?: boolean;
 }
 
 /** The calls, over one fetch. */
@@ -220,6 +225,7 @@ export function createDriveApi(
       form.set('key', file.key);
       form.set('name', file.name);
       form.set('file', file.blob, file.name);
+      if (file.replace) form.set('replace', '1');
       return call(fetchFn, '/api/drive/files', form);
     },
     notify: (request) => call(fetchFn, '/api/drive/notify', request),

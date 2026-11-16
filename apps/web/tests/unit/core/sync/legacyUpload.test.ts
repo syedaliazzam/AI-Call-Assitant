@@ -21,6 +21,7 @@ import {
   getDb,
   localAccountDbName,
   selectAccountDatabase,
+  selectDatabaseForTests,
 } from '@/core/storage/db';
 import { addDocument, listDocuments } from '@/core/storage/documents';
 import { saveLesson } from '@/core/storage/lessons';
@@ -50,28 +51,28 @@ const transport: SyncTransport = {
 
 /** Switches to Alice's own local database ('kite-l-<id>'), as a page of hers without sync does. */
 function onDeviceData(): void {
-  selectAccountDatabase(ALICE, false);
+  selectDatabaseForTests(localAccountDbName(ALICE));
 }
 
 /** Switches to the old shared database ('kite', no owner recorded), to fill it as before 9 Nov. */
 function onSharedData(): void {
-  selectAccountDatabase(null, false);
+  selectAccountDatabase(null);
 }
 
 /** Switches to Bob's own local database, as a page of his without sync does. */
 function onBobData(): void {
-  selectAccountDatabase(BOB, false);
+  selectDatabaseForTests(localAccountDbName(BOB));
 }
 
 /** Switches to Alice's sync cache, as a synced page of hers does. */
 function onAccountCache(): void {
-  selectAccountDatabase(ALICE, true);
+  selectAccountDatabase(ALICE);
 }
 
 /** Empties every database these tests use (a "new device"). */
 async function newDevice(): Promise<void> {
   for (const account of [ALICE, BOB]) {
-    selectAccountDatabase(account, true);
+    selectAccountDatabase(account);
     await getDb().delete();
     forgetDb();
     await Dexie.delete(localAccountDbName(account));
@@ -133,7 +134,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await newDevice();
-  selectAccountDatabase(null, false);
+  selectAccountDatabase(null);
   forgetDb();
   vi.unstubAllGlobals();
 });
@@ -294,7 +295,7 @@ describe('uploadLegacyData', () => {
   it("refuses unless the page's database is the same account's sync cache", async () => {
     await seedSession('Alice Own');
     // Bob's synced page: Alice's local data must never go into his account.
-    selectAccountDatabase(BOB, true);
+    selectAccountDatabase(BOB);
     await expect(uploadLegacyData(ALICE, undefined, transport)).rejects.toThrow(
       'NOT_ACCOUNT_CACHE',
     );

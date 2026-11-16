@@ -110,14 +110,9 @@ describe('StatusBar', () => {
  *
  * @param state          The overlay state.
  * @param onClickThrough The Click-through toggle's handler, or undefined where clicks cannot pass.
- * @param referenceLook  The look of accounts with account sync (default true); false for the classic one.
  * @returns The markup.
  */
-function bar1(
-  state: CompactState,
-  onClickThrough?: (on: boolean) => void,
-  referenceLook = true,
-): string {
+function bar1(state: CompactState, onClickThrough?: (on: boolean) => void): string {
   return renderToString(
     <ControlBar
       state={state}
@@ -130,7 +125,6 @@ function bar1(
       deviceList={null}
       onDeviceList={() => undefined}
       menuButton={{ current: null }}
-      referenceLook={referenceLook}
       transcriptOpen={false}
       onTranscript={() => undefined}
       {...(onClickThrough ? { onClickThrough } : {})}
@@ -164,19 +158,27 @@ describe('ControlBar (bar 1)', () => {
   });
 
   it('ADR-0085: pins the device icons and the Transcript switch, for every account, outside the part that gives way', () => {
-    for (const look of [true, false]) {
-      const html = bar1(QUIET, () => undefined, look);
-      const pinned = html.indexOf('data-bar-pinned');
-      const fitting = html.indexOf('data-fit-step');
-      expect(pinned).toBeGreaterThan(-1);
-      // The switch and the device lists come before the part that gives way, inside the pinned group.
-      const transcript = html.indexOf('aria-label="Transcript"');
-      expect(transcript).toBeGreaterThan(pinned);
-      expect(transcript).toBeLessThan(fitting);
-      expect(html.indexOf('aria-label="Choose microphone"')).toBeLessThan(fitting);
-      // Auto answer and Click-through are in the part that gives way.
-      expect(html.indexOf('aria-label="Auto answer"')).toBeGreaterThan(fitting);
-      expect(html.indexOf('aria-label="Click-through"')).toBeGreaterThan(fitting);
-    }
+    const html = bar1(QUIET, () => undefined);
+    const pinned = html.indexOf('data-bar-pinned');
+    const fitting = html.indexOf('data-fit-step');
+    expect(pinned).toBeGreaterThan(-1);
+    // The switch and the device lists come before the part that gives way, inside the pinned group.
+    const transcript = html.indexOf('aria-label="Transcript"');
+    expect(transcript).toBeGreaterThan(pinned);
+    expect(transcript).toBeLessThan(fitting);
+    expect(html.indexOf('aria-label="Choose microphone"')).toBeLessThan(fitting);
+    // Auto answer and Click-through are in the part that gives way.
+    expect(html.indexOf('aria-label="Auto answer"')).toBeGreaterThan(fitting);
+    expect(html.indexOf('aria-label="Click-through"')).toBeGreaterThan(fitting);
+  });
+});
+
+describe('the rename offer on the status bar (ADR-0093)', () => {
+  it('shows the question with its two buttons', () => {
+    const html = bar({ ...QUIET, themName: 'Them', nameOffer: 'Sarah' });
+    expect(html).toContain('data-status="rename-them"');
+    expect(html).toContain('Rename Them to Sarah?');
+    expect(html).toContain('>Rename<');
+    expect(html).toContain('>Not now<');
   });
 });

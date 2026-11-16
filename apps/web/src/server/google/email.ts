@@ -263,6 +263,7 @@ type CallEmailContent = Pick<
   | 'recordingsFolderUrl'
   | 'expected'
   | 'recordingMissing'
+  | 'withName'
 >;
 
 /**
@@ -370,6 +371,8 @@ export function buildCallSavedEmail(content: CallEmailContent): SavedEmail {
     rows: [
       ['Date', formatWhen(content.callStartedAt, content.timeZone)],
       ...(length ? [['Duration', length] as [string, string]] : []),
+      // ADR-0093: who the call was with, when their name is known.
+      ...(content.withName ? [['With', content.withName] as [string, string]] : []),
     ],
     notes: [
       ...(hasTranscript ? [] : ['No transcript or notes were saved for this call.']),
@@ -420,7 +423,10 @@ export function buildRecordingEmail(content: CallEmailContent): SavedEmail {
   return composeEmail({
     headline: 'Recording saved',
     title: content.title,
-    rows: [['Date', when]],
+    rows: [
+      ['Date', when],
+      ...(content.withName ? [['With', content.withName] as [string, string]] : []),
+    ],
     notes: [],
     folderUrl: content.folderUrl,
     files: emailFiles(content.files),

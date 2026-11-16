@@ -368,7 +368,12 @@ export function createAfterCallDeps(): AfterCallDeps {
     },
     writeNotes: (call, input) =>
       generateNotes(
-        { ...input, callStartedAt: call.startedAt },
+        // ADR-0093: the call's own name for the other person, when it was renamed during the call.
+        {
+          ...input,
+          callStartedAt: call.startedAt,
+          ...(call.themName ? { callTheirName: call.themName } : {}),
+        },
         {
           save: (stored) =>
             saveCallNotes({
@@ -378,6 +383,7 @@ export function createAfterCallDeps(): AfterCallDeps {
               callStartedAt: stored.callStartedAt,
               createdAt: stored.createdAt,
               ...(stored.fromAnswersOnly ? { fromAnswersOnly: true } : {}),
+              ...(stored.writtenTheirName ? { writtenTheirName: stored.writtenTheirName } : {}),
             }),
         },
       ),

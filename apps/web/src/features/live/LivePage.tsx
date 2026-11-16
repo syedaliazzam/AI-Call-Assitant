@@ -49,6 +49,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { cleanPersonName } from '@kite/shared';
 import {
   CallCaptureError,
   startCallCapture,
@@ -75,6 +76,8 @@ import { saveCall, updateCall, watchCall } from '@/core/storage/calls';
 import { SttHealthMonitor, type SttHealthStatus } from '@/core/stt/health';
 import { createSttEngine, type SttEngine } from '@/core/stt/sttEngine';
 import { createCloudStt, type CloudStt } from '@/core/stt/cloudStt';
+import { withNameKeyterm } from '@/core/stt/sessionHotwords';
+import { findNameOffer, theirLabel, theirName, withTheirName } from '@/core/transcript/theirName';
 import type { CloudEvent } from '@/core/stt/deepgram';
 import type { ChannelEngine } from '@/core/stt/failover';
 import { CATCH_UP_CAP_MS } from '@/core/answer/newestQuestion';
@@ -101,7 +104,6 @@ import { PrivateOffWarning, usePrivateOffWhileRecording } from './PrivateOffWarn
 import { endCall } from '@/core/transcript/endCall';
 import { reportCallStart, takeCallStart, watchCallStart } from '@/core/live/callStart';
 import { announceRecordingSaved, takeRecordConsent } from '@/core/recording/handoff';
-import { useSyncAccount } from '@/features/sync/SyncScope';
 import { turnPrivateOn } from '@/features/privacy/usePrivate';
 import { useAccountName } from '@/features/shell/AccountName';
 import { BackgroundCallStatus, type BackgroundCallState } from './BackgroundCallStatus';
@@ -111,6 +113,7 @@ import { SESSION_TYPE_LABELS, sessionSummary } from '@/features/session-setup/la
 import { getPlatform, type OtherSideSource } from '@/platform';
 import { Button } from '@/ui/Button';
 import { AudioMeter } from './AudioMeter';
+import { RenameOffer } from './RenameOffer';
 import { LiveAnswers, type AnswerThisBridge } from './LiveAnswers';
 import { useCallRecording } from './useCallRecording';
 import { LiveCallLayout, type LiveCallStatus } from './LiveCallLayout';
@@ -314,17 +317,16 @@ export function LivePage({
     () => getPlatform().kind,
     () => 'browser' as const,
   );
-  // ADR-0055: a desktop app with the home panel and account sync starts calls from its Connect card;
+  // ADR-0055: a desktop app with the home panel starts calls from its Connect card;
   // this page then runs the call in the background. The server snapshot is false, like the platform's.
   const panelApp = useSyncExternalStore(
     subscribeNever,
     () => getPlatform().hasHomePanel(),
     () => false,
   );
-  const synced = useSyncAccount() !== null;
   // v1.3.2: the user's own turns show the account's display name.
   const accountName = useAccountName();
-  const launcherCall = platform === 'desktop' && panelApp && synced;
+  const launcherCall = platform === 'desktop' && panelApp;
   const [transcript] = useState(() => createTranscript());
   // What the strip shows: "You" lines that arrive while "Them" speaks are held back briefly, so
   // an echo does not flash up before it is recognised (transcript.ts). Answers (Day 4) use
@@ -447,6 +449,13 @@ export function LivePage({
   const [callId, setCallId] = useState<string | null>(null);
   const callIdRef = useRef<string | null>(null);
   const callStartRef = useRef<number | null>(null);
+  // ADR-0093: the other person's name for this call, from "Rename Them to …?" ('' none: the session's
+  // contact name, else "Interviewer" or "Them"), and the name offered when they introduced themselves.
+  const [callTheirName, setCallTheirName] = useState('');
+  const [nameOffer, setNameOffer] = useState<string | null>(null);
+  // Names the user said Not now to in this call (never offered again), and the lines already looked at.
+  const declinedNames = useRef(new Set<string>());
+  const nameCheckedLines = useRef(new Set<string>());
   // ADR-0077: which engines heard this call (the record's sttEngine), and what it recorded.
   const enginesUsed = useRef(new Set<'deepgram' | 'local'>());
   const recordedKind = useRef<StoredCall['recording']>('off');
@@ -505,9 +514,14 @@ export function LivePage({
   });
   // Batch C (P1-3): the session's keyterms changed during the call (LiveSession.tsx watches the session and
   // its documents): Deepgram's Flux socket gets them at once, without reconnecting.
+  // ADR-0093: a name accepted during the call goes first in the call's keyterms.
+  const liveKeyterms = useMemo(
+    () => (callTheirName ? withNameKeyterm(keyterms, callTheirName) : keyterms),
+    [keyterms, callTheirName],
+  );
   useEffect(() => {
-    cloudRef.current?.setKeyterms(keyterms);
-  }, [keyterms]);
+    cloudRef.current?.setKeyterms(liveKeyterms);
+  }, [liveKeyterms]);
   // ADR-0076 (timing trace): when each channel last had sound, for speech onsets.
   const lastSoundAt = useRef<Record<Speaker, number>>({ you: 0, them: 0 });
   const captureRef = useRef<CallCapture | null>(null);
@@ -1042,7 +1056,7 @@ export function LivePage({
           local: () => engineRef.current,
           // Flux is English only: any other language uses Nova-3 multilingual on both channels.
           language: liveSessionLanguage(session.preferences.language),
-          keyterms,
+          keyterms: liveKeyterms,
           localIdle: (channel) =>
             !transcript.lines().some((line) => line.speaker === channel && !line.final),
           handlers: {
@@ -1112,6 +1126,11 @@ export function LivePage({
         const id = crypto.randomUUID();
         callIdRef.current = id;
         setCallId(id);
+        // ADR-0093: a new call starts with the session's name for the other person, and no offer.
+        setCallTheirName('');
+        setNameOffer(null);
+        declinedNames.current.clear();
+        nameCheckedLines.current.clear();
         markCallLiveHere(id, true);
         enginesUsed.current = new Set(cloudStt ? ['deepgram'] : ['local']);
         recordedKind.current = 'off';
@@ -1608,10 +1627,52 @@ export function LivePage({
   // flight, and this page re-renders on every transcript line and meter tick. A fresh object here
   // aborted every answer within milliseconds (production check, v1.0.0 release, 3 Nov 2026).
   // Above the Connect view's early return: a hook must run on every render, in the same order.
+  // ADR-0093: the call's own name for the other person wins over the session's (answers send it as their
+  // speaker label; the transcript and the overlay show it).
   const liveSession = useMemo(
-    () => ({ ...session, preferences: { ...session.preferences, language } }),
-    [session, language],
+    () => ({
+      ...withTheirName(session, callTheirName ? { themName: callTheirName } : null),
+      preferences: { ...session.preferences, language },
+    }),
+    [session, language, callTheirName],
   );
+  const themLabel = theirLabel(liveSession);
+
+  // ADR-0093: when no name is known, each new final line of the other person is looked at once for an
+  // introduction ("I'm Sarah…"); a name found is offered, never applied by itself.
+  const nameKnown = theirName(liveSession) !== '';
+  useEffect(() => {
+    if (nameKnown || nameOffer || callStartedAt === null) return;
+    const found = findNameOffer(lines, nameCheckedLines.current, declinedNames.current, [
+      accountName ?? '',
+      session.company,
+    ]);
+    if (found) setNameOffer(found);
+  }, [lines, nameKnown, nameOffer, callStartedAt, accountName, session.company]);
+
+  /**
+   * ADR-0093: renames the other person for the rest of this call (Rename on the offer): their lines, the
+   * overlay, the answers' speaker label and the keyterms use it, and the call's record keeps it (the
+   * notes, the session page and the Drive files read it there).
+   *
+   * @param name The name offered.
+   */
+  const renameThem = useCallback((name: string) => {
+    const clean = cleanPersonName(name);
+    setNameOffer(null);
+    if (!clean) return;
+    setCallTheirName(clean);
+    const id = callIdRef.current;
+    if (id) void updateCall(id, { themName: clean }).catch(() => false);
+  }, []);
+
+  /** ADR-0093: Not now on the offer: that name is not offered again in this call. */
+  const dismissName = useCallback(() => {
+    setNameOffer((offer) => {
+      if (offer) declinedNames.current.add(offer.toLowerCase());
+      return null;
+    });
+  }, []);
 
   const callNotice: CallNotice | null =
     connection === 'connected'
@@ -1711,6 +1772,8 @@ export function LivePage({
       level={levels[speaker]}
       inactive={connection !== 'connected' || channelErrors[speaker] !== undefined}
       compact
+      // ADR-0093: the other side's meter shows their name, or "Interviewer" / "Them".
+      {...(speaker === 'them' ? { name: themLabel } : {})}
     />
   ));
   const transcriptNode = (
@@ -1718,7 +1781,7 @@ export function LivePage({
       lines={shownLines}
       health={health}
       terms={terms}
-      themName={session.contactName}
+      themName={themLabel}
       youName={accountName}
       startedAt={callStartedAt ?? undefined}
       flush={platform === 'browser'}
@@ -1764,6 +1827,9 @@ export function LivePage({
         onResume={resumeListening}
         onActivity={noteActivity}
         echoCount={echoStats.count}
+        nameOffer={nameOffer}
+        onRenameThem={renameThem}
+        onDismissName={dismissName}
         {...(recording.available ? { recording } : {})}
         {...(cloudStt
           ? {
@@ -1784,8 +1850,22 @@ export function LivePage({
       </div>
     );
   const notices =
-    lostChannel || saveFailed || echoNoteVisible || callNotice || restartNoteVisible ? (
+    lostChannel ||
+    saveFailed ||
+    echoNoteVisible ||
+    callNotice ||
+    restartNoteVisible ||
+    nameOffer ? (
       <>
+        {/* ADR-0093: one click renames the other person for this call; never applied by itself. */}
+        {nameOffer && (
+          <RenameOffer
+            label={themLabel}
+            name={nameOffer}
+            onRename={renameThem}
+            onDismiss={dismissName}
+          />
+        )}
         {restartNoteVisible && (
           <p
             role="status"

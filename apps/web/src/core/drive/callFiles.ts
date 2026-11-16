@@ -23,6 +23,13 @@ import { getNotes } from '../storage/notes';
 import type { DriveCall, Session, StoredAnswer, StoredUtterance } from '../storage/types';
 import { listUtterances } from '../storage/utterances';
 import { displayTerms } from '../transcript/display';
+import {
+  INTERVIEWER_LABEL,
+  THEM_LABEL,
+  relabelNotes,
+  theirLabel,
+  withTheirName,
+} from '../transcript/theirName';
 import type { CallFileKind } from './names';
 
 /** Lines may start a little before the call's recorded start (the connect takes a moment), ms. */
@@ -72,11 +79,19 @@ export function callSlice(
  *
  * @param title The session's title.
  * @param notes The notes.
+ * @param them  The other person's label for the call (ADR-0093): a real name adds "With …" and
+ *              "Questions from …".
  * @returns The paragraphs.
  * Called from: notesPdf(); tests
  */
-export function notesParagraphs(title: string, notes: CallNotes): PdfLine[] {
-  const lines: PdfLine[] = [{ text: `Paramount AI notes: ${title}`, bold: true }];
+export function notesParagraphs(title: string, notes: CallNotes, them?: string): PdfLine[] {
+  const lines: PdfLine[] = [
+    { text: `Paramount AI notes: ${title}`, bold: true },
+    // ADR-0093: who the call was with, when their name is known (not for the fallback labels).
+    ...(them && them !== THEM_LABEL && them !== INTERVIEWER_LABEL
+      ? [{ text: `With ${them}` }]
+      : []),
+  ];
   const section = (heading: string, body: PdfLine[]) => {
     if (body.length === 0) return;
     lines.push({ text: '' }, { text: heading, bold: true }, ...body);
@@ -87,7 +102,10 @@ export function notesParagraphs(title: string, notes: CallNotes): PdfLine[] {
   );
   const answered = { yes: 'answered', partly: 'partly answered', no: 'not answered' } as const;
   section(
-    'Questions',
+    // ADR-0093: "Questions from Sarah" when the call has the other person's name.
+    them && them !== THEM_LABEL && them !== INTERVIEWER_LABEL
+      ? `Questions from ${them}`
+      : 'Questions',
     notes.questions.map((question) => ({
       text: `- ${formatCallTime(question.at)}  ${question.question} (${answered[question.answered]})`,
     })),
@@ -112,11 +130,12 @@ export function notesParagraphs(title: string, notes: CallNotes): PdfLine[] {
  *
  * @param title The session's title.
  * @param notes The notes.
+ * @param them  The other person's label for the call (ADR-0093), if known.
  * @returns The file.
  * Called from: buildCallFiles(); tests
  */
-export function notesPdf(title: string, notes: CallNotes): Blob {
-  const { bytes } = writePdf(`Paramount AI notes: ${title}`, notesParagraphs(title, notes));
+export function notesPdf(title: string, notes: CallNotes, them?: string): Blob {
+  const { bytes } = writePdf(`Paramount AI notes: ${title}`, notesParagraphs(title, notes, them));
   return new Blob([bytes as BlobPart], { type: 'application/pdf' });
 }
 
@@ -177,22 +196,28 @@ export async function buildCallFiles(
  */
 export async function buildCallViewFiles(
   session: Session,
-  call: Pick<CallView, 'lines' | 'answers' | 'notes'>,
+  call: Pick<CallView, 'lines' | 'answers' | 'notes'> & Partial<Pick<CallView, 'record'>>,
   title: string,
   accountName: string | null,
 ): Promise<CallFile[]> {
   const files: CallFile[] = [];
+  // ADR-0093: the other person's name for this call (a rename of the call wins over the session's).
+  const named = withTheirName(session, call.record);
   if (session.saveTranscript && (call.lines.length > 0 || call.answers.length > 0)) {
     const items = conversationItems(call.lines, call.answers);
     const terms = displayTerms(session);
     // ADR-0080: the transcript PDF only (no TXT).
     files.push({
       kind: 'transcript-pdf',
-      blob: new Blob([transcriptPdf(session, items, terms, accountName).bytes as BlobPart], {
+      blob: new Blob([transcriptPdf(named, items, terms, accountName).bytes as BlobPart], {
         type: 'application/pdf',
       }),
     });
   }
-  if (call.notes) files.push({ kind: 'notes-pdf', blob: notesPdf(title, call.notes.notes) });
+  if (call.notes) {
+    // ADR-0093: the notes read with the call's current label (no new notes request after a rename).
+    const notes = relabelNotes(call.notes.notes, call.notes.writtenTheirName, theirLabel(named));
+    files.push({ kind: 'notes-pdf', blob: notesPdf(title, notes, theirLabel(named)) });
+  }
   return files;
 }

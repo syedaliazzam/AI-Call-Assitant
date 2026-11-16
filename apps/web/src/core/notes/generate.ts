@@ -35,6 +35,7 @@ import {
 import { saveNotes } from '../storage/notes';
 import { pinFor } from '../answer/instructionsPin';
 import type { Session, StoredAnswer, StoredDocument, StoredNotes } from '../storage/types';
+import { theirName } from '../transcript/theirName';
 
 /** A final transcript line, as the live page has it. */
 export interface NotesLine {
@@ -58,6 +59,11 @@ export interface NotesInput {
   answers: readonly StoredAnswer[];
   /** When the call connected (Unix ms). */
   callStartedAt: number;
+  /**
+   * ADR-0093: the call's own name for the other person (StoredCall.themName), which wins over the
+   * session's contactName. Absent: the session's.
+   */
+  callTheirName?: string;
 }
 
 /** What generateNotes() needs from the outside (tests replace them). */
@@ -125,8 +131,15 @@ export function notesRequest(input: NotesInput, summary: string | null = null): 
       rating: answer.rating ?? null,
       note: (answer.note ?? '').slice(0, MAX_LINE_CHARS),
     }));
+  // ADR-0093: the other person's name for this call goes as their speaker label (toSessionContext()
+  // reads it from contactName).
+  const named = theirName(input.session, { themName: input.callTheirName });
   return {
-    session: withDocumentsSummary(input.session, input.documents, summary),
+    session: withDocumentsSummary(
+      { ...input.session, contactName: named },
+      input.documents,
+      summary,
+    ),
     lines: lines.slice(first),
     answers,
   };
@@ -210,6 +223,8 @@ export async function generateNotes(
       callStartedAt: input.callStartedAt,
       createdAt: now(),
       fromAnswersOnly: request.lines.length === 0,
+      // ADR-0093: the label the notes were written with, so a later rename can show the new one.
+      ...(request.session.themName ? { writtenTheirName: request.session.themName } : {}),
     };
     await (deps.save ?? saveNotes)(stored);
     console.info('notes: saved', {

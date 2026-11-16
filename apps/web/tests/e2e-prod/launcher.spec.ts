@@ -1,6 +1,6 @@
 /**
  * Production check of the desktop launcher (ADR-0051, ADR-0055) in a desktop shell against the new web
- * app, with a fresh temporary profile, as the end-to-end TEST account (listed in KITE_SYNC_USERS). No
+ * app, with a fresh temporary profile, as the end-to-end TEST account (account sync is on for every account, ADR-0092). No
  * Claude request. Two invented sessions are put into the account through the sync API: one ready, one
  * whose call just ended. The home panel is then the launcher: "Your sessions" with both (and their
  * status), a search box, "Call ended · … View notes", View in Dashboard and + Create session (1.6.1). Links open the

@@ -5,7 +5,7 @@
  *          requireUser() sends signed-out visitors to /login and users with a temporary
  *          password to /change-password before anything renders.
  * Used by: Next.js App Router (wraps app/(app)/**)
- * Depends on: src/server/guard.ts, src/server/calldata/flag.ts, src/features/sync/SyncScope.tsx,
+ * Depends on: src/server/guard.ts, src/features/sync/SyncScope.tsx,
  *             src/features/shell/AppShell.tsx, src/features/shell/AccountName.tsx (v1.3.2),
  *             src/features/ask-kite/AskKiteHotkey.tsx, src/features/notices/AcceptableUseNotice.tsx
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S1, S2);
@@ -20,7 +20,6 @@ import { DriveNotices } from '@/features/drive/DriveNotices';
 import { DriveUploader } from '@/features/drive/DriveUploader';
 import { AfterCallRunner } from '@/features/live/AfterCallRunner';
 import { SyncScope } from '@/features/sync/SyncScope';
-import { syncEnabledFor } from '@/server/calldata/flag';
 import { requireUser } from '@/server/guard';
 
 /**
@@ -33,13 +32,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const { user } = await requireUser();
 
   return (
-    // ADR-0049: accounts with the accountSync switch keep their call data in the account. Every account
-    // has its own database on this device (accountId), so no account sees another's data.
-    <SyncScope
-      accountId={user.id}
-      syncUserId={syncEnabledFor(user.id) ? user.id : null}
-      email={user.email}
-    >
+    // ADR-0049, ADR-0092: every account keeps its call data in the account, with its own database on
+    // this device (accountId), so no account sees another's data.
+    <SyncScope accountId={user.id} email={user.email}>
       <AskKiteHotkey />
       <AcceptableUseNotice />
       {/* v1.3.2: the user's own transcript turns show this name. */}

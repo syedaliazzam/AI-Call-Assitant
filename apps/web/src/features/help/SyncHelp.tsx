@@ -3,15 +3,12 @@
  * Purpose: The help and privacy text for an account with account sync (ADR-0049, ADR-0051, ADR-0052):
  *          where sessions are kept, what is encrypted, what never leaves the computer, what Save
  *          transcript off means, deleting, and the desktop app with one dashboard. Shown at the top of
- *          /help only for those accounts; everyone else's guide is unchanged until account sync is on
- *          for all.
+ *          /help (every account has account sync since ADR-0092).
  * Used by: src/features/help/HelpPage.tsx
- * Depends on: src/features/sync/SyncScope.tsx (useSyncAccount)
+ * Depends on: nothing
  * Architecture: ADR-0049 (privacy), ADR-0051, ADR-0052
  */
 'use client';
-
-import { useSyncAccount } from '@/features/sync/SyncScope';
 
 /** The points, in order. */
 const POINTS: readonly string[] = [
@@ -27,11 +24,10 @@ const POINTS: readonly string[] = [
 /**
  * The section.
  *
- * @returns The section, or nothing without account sync.
+ * @returns The section.
  * Rendered by: HelpPage.tsx
  */
 export function SyncHelp() {
-  if (!useSyncAccount()) return null;
   return (
     <section
       aria-label="Your account and your data"

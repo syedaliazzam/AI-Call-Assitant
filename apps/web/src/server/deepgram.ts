@@ -6,12 +6,12 @@
  *          same host. The long-lived DEEPGRAM_API_KEY stays on the server: it is never returned, logged or
  *          sent to a browser; browsers only ever get the 60-second token.
  * Used by: app/api/stt/token/route.ts, app/(app)/live/[id]/page.tsx (the flag)
- * Depends on: src/server/calldata/flag.ts (parseSyncUsers: the same "ids or *" list format)
+ * Depends on: src/server/userList.ts (parseUserList: the "ids or *" list format)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1; docs/investigations/2026-11-13-production-
  *               readiness.md C2, C3; ADR-0076
  */
 import 'server-only';
-import { parseSyncUsers } from './calldata/flag';
+import { parseUserList } from './userList';
 
 /** Deepgram's EU endpoint: measured faster from Pakistan than the US one, and processing stays in the EU. */
 export const DEFAULT_DEEPGRAM_HOST = 'api.eu.deepgram.com';
@@ -116,7 +116,7 @@ export function deepgramEnabledFor(
   userId: string,
   env: Record<string, string | undefined> = process.env,
 ): boolean {
-  const users = parseSyncUsers(env.KITE_STT_DEEPGRAM_USERS);
+  const users = parseUserList(env.KITE_STT_DEEPGRAM_USERS);
   return users === 'everyone' || users.has(userId);
 }
 

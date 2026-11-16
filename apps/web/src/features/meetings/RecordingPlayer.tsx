@@ -25,7 +25,8 @@ import {
 } from '@/core/recording/meetings';
 import { deleteRecording, getRecording, listMeetingParts } from '@/core/storage/recordings';
 import { getSession } from '@/core/storage/sessions';
-import type { Session, StoredRecording, StoredUtterance } from '@/core/storage/types';
+import type { Session, StoredCall, StoredRecording, StoredUtterance } from '@/core/storage/types';
+import { getCall } from '@/core/storage/calls';
 import { listUtterances } from '@/core/storage/utterances';
 import { flushAccountSync, pullAccountSync } from '@/core/sync/client';
 import { speakerNames } from '@/core/transcript/turns';
@@ -61,6 +62,8 @@ interface ReadyLoad {
   session: Session | null;
   /** The session's saved transcript lines. */
   lines: StoredUtterance[];
+  /** ADR-0093: the recorded call's record (its name for the other person), or null. */
+  call: StoredCall | null;
 }
 
 /** Where the page stands. */
@@ -116,14 +119,16 @@ export function RecordingPlayer({ recordingId }: { recordingId: string }) {
         deviceName: '',
         updatedAt: 0,
       };
-      const [parts, session, lines] = await Promise.all([
+      const [parts, session, lines, call] = await Promise.all([
         listMeetingParts(base.meetingId),
         getSession(base.sessionId),
         listUtterances(base.sessionId).catch(() => []),
+        // ADR-0077: a recording's meeting is its call (older recordings have no call record).
+        getCall(base.meetingId).catch(() => null),
       ]);
       if (!live) return;
       setNow(Date.now());
-      setLoad({ kind: 'ready', record: base, local, parts, session, lines });
+      setLoad({ kind: 'ready', record: base, local, parts, session, lines, call });
     })().catch(() => {
       if (live) setLoad({ kind: 'missing' });
     });
@@ -137,7 +142,8 @@ export function RecordingPlayer({ recordingId }: { recordingId: string }) {
     () => (ready ? linesInPart(ready.lines, ready.record, now) : []),
     [ready, now],
   );
-  const names = speakerNames(ready?.session, accountName);
+  // ADR-0093: the recorded call's name for the other person wins over the session's.
+  const names = speakerNames(ready?.session, accountName, ready?.call);
   const [current, setCurrent] = useState(-1);
 
   if (load.kind === 'loading') {

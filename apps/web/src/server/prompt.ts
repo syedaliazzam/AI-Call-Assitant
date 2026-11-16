@@ -183,6 +183,12 @@ function sessionLines(session: SessionContext, lessons: readonly string[] = []):
     `Call type: ${session.type || NOT_GIVEN}`,
     `Company: ${session.company || NOT_GIVEN}`,
     `Role or topic: ${session.role || NOT_GIVEN}`,
+    // ADR-0093: only with a name, so a session without one keeps its bytes (and cache entry).
+    ...(session.themName
+      ? [
+          `The other person ("Them" in these rules) is ${session.themName}: their lines are labelled "${session.themName}".`,
+        ]
+      : []),
     'Description of the call:',
     session.description.trim() || NOT_GIVEN,
     `Key terms: ${keyTerms.length > 0 ? keyTerms.join('; ') : NOT_GIVEN}`,
@@ -320,15 +326,32 @@ export function clockTime(seconds: number): string {
   return h > 0 ? `${h}:${mmss}` : mmss;
 }
 
+/** The other person's speaker label when the session gives no name for them. */
+export const THEM_SPEAKER = 'Them';
+
 /**
- * Writes one transcript line as `[mm:ss] Them: text`.
+ * The other person's speaker label in the prompt (ADR-0093): their name when the request has one, else
+ * "Them" (so a request without a name is byte for byte what it was).
  *
- * @param line The line.
+ * @param session The session details, if any.
+ * @returns For example "Sarah" or "Them".
+ * Called from: buildPromptParts(), tailText(); server/notes.ts callRecord()
+ */
+export function themSpeaker(session: Pick<SessionContext, 'themName'> | undefined): string {
+  return session?.themName || THEM_SPEAKER;
+}
+
+/**
+ * Writes one transcript line as `[mm:ss] Them: text` (ADR-0093: the other person's name instead of
+ * "Them" when the session gives one).
+ *
+ * @param line  The line.
+ * @param them  The other person's speaker label (themSpeaker()).
  * @returns The line's text in the prompt.
  * Called from: itemText(), tailText()
  */
-function lineText(line: CallLine): string {
-  const speaker = line.speaker === 'you' ? 'You' : 'Them';
+function lineText(line: CallLine, them: string): string {
+  const speaker = line.speaker === 'you' ? 'You' : them;
   return `[${clockTime(line.at)}] ${speaker}: ${escapeTags(line.text)}`;
 }
 
@@ -336,11 +359,12 @@ function lineText(line: CallLine): string {
  * Writes one conversation item: a line, or an earlier answer with the question it answered.
  *
  * @param item The item.
+ * @param them The other person's speaker label (themSpeaker(), ADR-0093).
  * @returns Its text in the prompt (fixed labels, escaped content).
  * Called from: conversationBlocks()
  */
-function itemText(item: ConversationItem): string {
-  if (item.kind === 'line') return lineText(item);
+function itemText(item: ConversationItem, them: string): string {
+  if (item.kind === 'line') return lineText(item, them);
   const asked =
     item.mode === 'chat'
       ? 'typed question'
@@ -407,12 +431,13 @@ export function capConversation(chunks: readonly ConversationChunk[]): CappedCon
  * uncached tail, so no cached block has to change when the conversation grows.
  *
  * @param capped The chunks to write (from capConversation()).
+ * @param them   The other person's speaker label (themSpeaker(), ADR-0093).
  * @returns The blocks ([] when there is no conversation yet).
  * Called from: buildPrompt()
  */
-function conversationBlocks(capped: CappedConversation): Anthropic.TextBlockParam[] {
+function conversationBlocks(capped: CappedConversation, them: string): Anthropic.TextBlockParam[] {
   const blocks = capped.chunks.map((chunk, index): Anthropic.TextBlockParam => {
-    const items = chunk.map(itemText);
+    const items = chunk.map((item) => itemText(item, them));
     if (index === 0) items.unshift('<conversation>', ...(capped.omitted ? [OMITTED_NOTE] : []));
     return { type: 'text', text: items.join('\n') };
   });
@@ -570,7 +595,9 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
     : ['<conversation>', '(nothing said yet)', '</conversation>', ''];
   parts.push(
     '<latest>',
-    ...(tail.length > 0 ? tail.map(lineText) : ['(nothing new)']),
+    ...(tail.length > 0
+      ? tail.map((line) => lineText(line, themSpeaker(request.session)))
+      : ['(nothing new)']),
     '</latest>',
   );
   parts.push('', ...similarLines(request), ...chunkLines(request));
@@ -665,7 +692,10 @@ function buildPromptParts(request: AnswerRequest, globalPrompt: string): BuiltPr
   if (!request.session) throw new Error('SESSION_REQUIRED');
   const previous = request.styleVersion === 'previous';
   const lessons = request.lessons ?? [];
-  const conversation = conversationBlocks(capConversation(request.conversation ?? []));
+  const conversation = conversationBlocks(
+    capConversation(request.conversation ?? []),
+    themSpeaker(request.session),
+  );
   const last: Anthropic.TextBlockParam = {
     type: 'text',
     text: request.mode === 'warm' ? WARM_MESSAGE : tailText(request, conversation.length > 0),

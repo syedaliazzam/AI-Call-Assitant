@@ -133,7 +133,8 @@ export interface Session {
   lastActiveAt: number | null;
   /**
    * v1.1.0 (ADR-0041): the name of the person on the call, shown on their transcript lines. Missing or
-   * '': the line says "Client 1". Display only: it is not sent to Claude.
+   * '': "Interviewer" for interviews, else "Them" (ADR-0093). ADR-0093: also sent to Claude as their
+   * speaker label, and a call's own themName wins over it.
    */
   contactName?: string;
   /**
@@ -372,6 +373,11 @@ export interface StoredNotes {
    * Day 5 Stage 6: read as false. No index uses it, so no new database version.
    */
   fromAnswersOnly?: boolean;
+  /**
+   * ADR-0093: the other person's name their lines carried when the notes were written (absent: "Them").
+   * When the call is renamed later, the notes show the new name in its place without a new request.
+   */
+  writtenTheirName?: string;
 }
 
 /** Which sessions a lesson applies to: every session, or one session type. */
@@ -665,7 +671,8 @@ export type CallDriveState =
  * One call (ADR-0077): every start of a session is its own call, with its own transcript lines, answers,
  * recordings, notes, Drive upload and emails. Made when the call connects; written again at End before
  * anything else, so the after-call work (core/live/afterCall.ts) can finish even when the call window
- * closes. Synced (kind 'call'); goes with its session. Times and states only, never call content.
+ * closes. Synced (kind 'call'); goes with its session. Times and states only, never call content, except
+ * the other person's name when the user gave one (themName, ADR-0093).
  */
 export interface StoredCall {
   /** Random id made at Connect (crypto.randomUUID()); lines, answers and recordings (meetingId) carry it. */
@@ -716,6 +723,13 @@ export interface StoredCall {
   driveHoldUntil?: number;
   /** Which speech-to-text engine heard it: Deepgram (ADR-0076), on-device, or both (a fallback). */
   sttEngine?: 'deepgram' | 'local' | 'mixed';
+  /**
+   * ADR-0093: the other person's name for this call, from "Rename Them to …?" during the call or Rename
+   * on the session page. It wins over the session's contactName for this call only. Absent: the session's
+   * contactName, else "Interviewer" (interviews) or "Them". Synced with the call (encrypted, like all call
+   * data); never logged.
+   */
+  themName?: string;
   /** When this record last changed (Unix ms). */
   updatedAt: number;
 }
@@ -737,6 +751,8 @@ export interface StoredCallNotes {
   createdAt: number;
   /** True when written from the answers only (no transcript lines were available). */
   fromAnswersOnly?: boolean;
+  /** ADR-0093: the other person's name the notes were written with (absent: "Them"); see StoredNotes. */
+  writtenTheirName?: string;
 }
 
 /**

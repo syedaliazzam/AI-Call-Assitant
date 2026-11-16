@@ -6,14 +6,12 @@
  * Used by: Next.js App Router; opened by apps/desktop/src/main.ts (openPlayer) for Play and for
  *          paramountai://recording/<id> links
  * Depends on: src/server/guard.ts (requireUser), src/features/meetings/RecordingPlayer.tsx,
- *             src/features/shell/AccountName.tsx, src/features/sync/SyncScope.tsx,
- *             src/server/calldata/flag.ts (ADR-0049)
+ *             src/features/shell/AccountName.tsx, src/features/sync/SyncScope.tsx (ADR-0049)
  * Architecture: docs/decisions/ADR-0068-meeting-recording.md; architecture §9.2 (thin routes)
  */
 import { RecordingPlayer } from '@/features/meetings/RecordingPlayer';
 import { AccountNameProvider } from '@/features/shell/AccountName';
 import { SyncScope } from '@/features/sync/SyncScope';
-import { syncEnabledFor } from '@/server/calldata/flag';
 import { requireUser } from '@/server/guard';
 
 /** Props Next.js passes to this page (route parameters arrive as a promise in Next.js 16). */
@@ -37,11 +35,7 @@ export default async function PlayerRoute({ params }: PlayerRouteProps) {
   return (
     // ADR-0049: the recording records sync like the rest of the call data (Delete reaches the account);
     // they live in the account's own database on this device (accountId).
-    <SyncScope
-      accountId={user.id}
-      syncUserId={syncEnabledFor(user.id) ? user.id : null}
-      email={user.email}
-    >
+    <SyncScope accountId={user.id} email={user.email}>
       <AccountNameProvider name={user.name}>
         <RecordingPlayer recordingId={id} />
       </AccountNameProvider>

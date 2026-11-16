@@ -1,7 +1,8 @@
 /**
  * Tests for apps/web/src/features/sync/SyncScope.tsx (privacy fix of 14 Nov 2026), rendered as React
  * renders it before effects run: it selects the signed-in account's own database before any child
- * renders ('kite-u-<id>' with account sync, 'kite-l-<id>' without), never the shared 'kite' database;
+ * renders ('kite-u-<id>': account sync is always on, ADR-0092), never its old local database
+ * ('kite-l-<id>') or the shared 'kite' database;
  * it records the page's account (removing a previous account's stored values); and after a sign-out and
  * a sign-in as someone else on the same page it renders nothing and keeps the previous account's
  * database until the page reloads. Invented ids only.
@@ -40,12 +41,11 @@ function Probe() {
  * Renders a page of an account the way the routes do.
  *
  * @param accountId The signed-in account.
- * @param sync      Whether it has account sync.
  * @returns The HTML.
  */
-function page(accountId: string, sync: boolean): string {
+function page(accountId: string): string {
   return renderToString(
-    <SyncScope accountId={accountId} syncUserId={sync ? accountId : null} email="a@example.test">
+    <SyncScope accountId={accountId} email="a@example.test">
       <Probe />
     </SyncScope>,
   );
@@ -68,40 +68,40 @@ beforeEach(() => {
   // A browser page: SyncScope records the account only there.
   vi.stubGlobal('window', { location: { reload: () => undefined } });
   forgetPageAccount();
-  selectAccountDatabase(null, false);
+  selectAccountDatabase(null);
 });
 
 afterEach(() => {
   forgetPageAccount();
-  selectAccountDatabase(null, false);
+  selectAccountDatabase(null);
   forgetDb();
 });
 
 describe('SyncScope', () => {
   it("selects a synced account's own cache before the children render", () => {
-    expect(page('account-a', true)).toContain(`${accountDbName('account-a')}|account-a`);
+    expect(page('account-a')).toContain(`${accountDbName('account-a')}|account-a`);
     expect(usingAccountDatabase()).toBe(true);
     expect(currentAccountId()).toBe('account-a');
   });
 
-  it("selects an account's own local database without account sync, never 'kite'", () => {
-    const html = page('account-a', false);
-    expect(html).toContain(`${localAccountDbName('account-a')}|none`);
+  it("always syncs: never the account's old local database or 'kite' (ADR-0092)", () => {
+    const html = page('account-a');
+    expect(html).not.toContain(localAccountDbName('account-a'));
     expect(html).not.toContain(`>${DB_NAME}|`);
-    expect(usingAccountDatabase()).toBe(false);
+    expect(usingAccountDatabase()).toBe(true);
   });
 
   it('records the account on this browser profile (removing the previous one’s values)', () => {
     local.set(LAST_ACCOUNT_KEY, 'account-a');
     local.set('kite.autoAnswer', 'on');
-    page('account-b', true);
+    page('account-b');
     expect(local.get(LAST_ACCOUNT_KEY)).toBe('account-b');
     expect(local.has('kite.autoAnswer')).toBe(false);
   });
 
   it('renders nothing after a sign-in as someone else on the same page, keeping the old database', () => {
-    expect(page('account-a', true)).toContain('account-a');
-    const html = page('account-b', true);
+    expect(page('account-a')).toContain('account-a');
+    const html = page('account-b');
     expect(html).toBe('');
     // Work still running for the previous account keeps writing to its own database, never B's.
     expect(activeDatabaseName()).toBe(accountDbName('account-a'));

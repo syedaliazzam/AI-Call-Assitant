@@ -20,7 +20,6 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { getSidebarCollapsed, setSidebarCollapsedPref } from '@/core/storage/sidebarPrefs';
 import { getPlatform } from '@/platform';
-import { useSyncAccount } from '@/features/sync/SyncScope';
 import { Sidebar } from '@/ui/Sidebar';
 import { AppHeader } from './AppHeader';
 import { DesktopAppCard } from './DesktopAppCard';
@@ -77,8 +76,7 @@ export function AppShell({ user, children }: AppShellProps) {
   const collapsed = chosenCollapsed ?? savedCollapsed;
   // ADR-0055: one dashboard, in the browser. Server render: not a desktop app.
   const panelApp = useSyncExternalStore(subscribeNever, inPanelApp, () => false);
-  const synced = useSyncAccount() !== null;
-  const desktopNoDashboard = panelApp && synced;
+  const desktopNoDashboard = panelApp;
 
   // Escape closes the drawer.
   useEffect(() => {
