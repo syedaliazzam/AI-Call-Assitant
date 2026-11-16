@@ -19,7 +19,8 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { listAnswers } from '@/core/storage/answers';
-import { deleteSession } from '@/core/storage/sessions';
+import { getDb } from '@/core/storage/db';
+import { deleteSession, getSession } from '@/core/storage/sessions';
 import type { Session } from '@/core/storage/types';
 import { createTranscript } from '@/core/transcript/transcript';
 import { LiveAnswers } from '@/features/live/LiveAnswers';
@@ -34,6 +35,10 @@ export interface KiteAnswerHarness {
   deleteSession: () => Promise<void>;
   /** Adds a finished "Them" line that ended just now (new speech, so Answer is not a repeat). */
   addThem: (text: string) => void;
+  /** ADR-0094: the model stored with the harness session, or null when it is not stored. */
+  sessionModel: () => Promise<string | null>;
+  /** ADR-0094: the model each saved answer records (oldest first). */
+  savedModels: () => Promise<string[]>;
 }
 
 declare global {
@@ -100,7 +105,15 @@ window.kiteAnswerHarness = {
     const now = Date.now();
     transcript.addFinal({ speaker: 'them', text, tStart: now - 1_500, tEnd: now });
   },
+  sessionModel: async () => (await getSession(SESSION.id))?.preferences.model ?? null,
+  savedModels: async () => (await listAnswers(SESSION.id)).map((answer) => answer.model),
 };
+
+// ADR-0094: the session is stored, as the app's are, so a model switch can be saved with it. Kept when it is
+// already there (a reload keeps what the call saved).
+void getSession(SESSION.id).then((stored) => {
+  if (!stored) void getDb().sessions.put(SESSION);
+});
 
 /**
  * The answer UI. With `?rerender` in the URL the parent re-renders every 50 ms and passes a fresh

@@ -408,12 +408,24 @@ function CompactHarness({
   const [position, setPosition] = useState<OverlayPreset | null>(
     () => params.get('position') as OverlayPreset | null,
   );
+  // ADR-0094: a model command is applied as the live page applies it (Smart only while allowed), so the
+  // chip, the menu and the toast follow.
+  const [model, setModel] = useState(state.model);
+  const shown = { ...state, ...(model ? { model } : {}) };
   return (
     <CompactView
-      state={clickThrough ? { ...state, clickThrough: true } : state}
+      state={clickThrough ? { ...shown, clickThrough: true } : shown}
       {...(canClickThrough ? { onClickThrough: () => undefined } : {})}
       protection={{ supported: true, on: true }}
-      onCommand={(command) => log.push(command)}
+      onCommand={(command) => {
+        log.push(command);
+        if (
+          command.type === 'model' &&
+          (command.model === 'fast' || state.smartAllowed !== false)
+        ) {
+          setModel(command.model);
+        }
+      }}
       onProtection={() => undefined}
       email="sam.lee@example.com"
       onDashboard={() => log.push('dashboard')}
@@ -558,7 +570,9 @@ function statusParams(status: string | null): Partial<CompactState> {
 /**
  * 1.6.3 overlay checks: the compact state with what the address asks for. ?rec=on: a screen recording
  * that started 33 seconds ago (desktop 1.5.0, ADR-0068); ?rec=off: the Rec pill, not recording;
- * ?auto=on: auto answer on; ?status=…: a message on the status bar (ADR-0082, statusParams()).
+ * ?auto=on: auto answer on; ?status=…: a message on the status bar (ADR-0082, statusParams()). ADR-0094:
+ * the model is Fast unless ?model=smart (?model=none: an older live page, no model choice); ?smart=off: an
+ * admin has turned Smart off.
  *
  * @param base The state to start from.
  * @returns The state to show.
@@ -571,6 +585,12 @@ function withOverlayParams(base: CompactState): CompactState {
     ...base,
     ...statusParams(params.get('status')),
     ...(params.get('auto') === 'on' ? { autoAnswer: true } : {}),
+    ...(params.get('model') === 'none'
+      ? {}
+      : {
+          model: params.get('model') === 'smart' ? ('smart' as const) : ('fast' as const),
+          smartAllowed: params.get('smart') !== 'off',
+        }),
     ...(rec === 'on' || rec === 'off'
       ? {
           recording: {

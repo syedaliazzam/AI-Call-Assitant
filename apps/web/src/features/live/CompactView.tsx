@@ -47,6 +47,10 @@
  * alone fills the width. The Transcript switch on bar 1 is there for every account and never gives way.
  * The page is as tall as its window at every UI zoom (.k-zoom-screen), so zooming never adds a scrollbar.
  *
+ * ADR-0094: bar 1's model chip and the ⋮ menu's Model row switch the answer model (Fast / Smart) for the
+ * next answers; once the live page has switched, a short toast says so under bar 1 (above it on the bottom
+ * row), and the window grows for it as it does for a menu.
+ *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
  * honours), and compact collapses to bar 1 where there is no icon.
@@ -74,6 +78,7 @@ import {
   setOverlaySplit,
   type OverlayPanels,
 } from '@/core/storage/overlayPrefs';
+import type { AnswerModel } from '@/core/storage/types';
 import { isTranscriptKey } from '@/platform/keymap';
 import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
 import { ControlBar, type DeviceList } from './overlay/ControlBar';
@@ -82,6 +87,12 @@ import { pressRecPill, RecordPopover } from './overlay/RecordControls';
 import { usePrivateOffWhileRecording } from './PrivateOffWarning';
 import { IconMode } from './overlay/IconMode';
 import { LiveMenu } from './overlay/LiveMenu';
+import {
+  modelOf,
+  ModelPopover,
+  modelSwitchToast,
+  SMART_REFUSED_TOAST,
+} from './overlay/ModelChoice';
 import { OverlayAnswer } from './overlay/OverlayAnswer';
 import { PanelSplit } from './overlay/PanelSplit';
 import { pieceClass, type LevelStore } from './overlay/parts';
@@ -175,7 +186,10 @@ export interface CompactViewProps {
 }
 
 /** Which floating list or menu is open. */
-type Popup = DeviceList | 'menu' | 'preferences' | 'record' | 'record-notice';
+type Popup = DeviceList | 'menu' | 'preferences' | 'record' | 'record-notice' | 'model';
+
+/** ADR-0094: how long the model toast stays, ms (the --k-toast-ms token's 3 s, spec §1 motion). */
+export const MODEL_TOAST_MS = 3_000;
 
 /**
  * The bars keep their own width; only the panels fill a window wider than this (spec S13): 980, the
@@ -292,6 +306,10 @@ export function CompactView(props: CompactViewProps) {
   // the popover opens).
   const recButton = useRef<HTMLButtonElement>(null);
   const [recLeft, setRecLeft] = useState(6);
+  // ADR-0094: the model chip, whose popover sits under it, and the toast after a switch.
+  const modelButton = useRef<HTMLButtonElement>(null);
+  const [modelLeft, setModelLeft] = useState(6);
+  const toastElement = useRef<HTMLParagraphElement>(null);
   const root = useRef<HTMLDivElement>(null);
   // v1.3.2: the panels' area, measured for the window's height.
   const panelsArea = useRef<HTMLDivElement>(null);
@@ -329,6 +347,35 @@ export function CompactView(props: CompactViewProps) {
     if (recordNotice && (popup === null || popup === 'record-notice')) setPopup('record-notice');
     else if (!recordNotice && popup === 'record-notice') setPopup(null);
   }
+
+  // ADR-0094: the model picked here, until the live page says it is in use (or refused it); then a toast.
+  // While rendering, as React advises for state that follows a changed value.
+  const modelChoice = modelOf(state);
+  const [pendingModel, setPendingModel] = useState<AnswerModel | null>(null);
+  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  if (pendingModel && modelChoice?.model === pendingModel) {
+    setPendingModel(null);
+    setToast((was) => ({ id: (was?.id ?? 0) + 1, text: modelSwitchToast(pendingModel) }));
+  } else if (pendingModel === 'smart' && modelChoice && !modelChoice.smartAllowed) {
+    // An admin turned Smart off between the menu opening and the pick: the model stays Fast.
+    setPendingModel(null);
+    setToast((was) => ({ id: (was?.id ?? 0) + 1, text: SMART_REFUSED_TOAST }));
+  }
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), MODEL_TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [toast]);
+  /**
+   * ADR-0094: switches the answer model (the live page applies it from the next answer and saves it with
+   * the session).
+   *
+   * @param model The model picked.
+   */
+  const pickModel = (model: AnswerModel) => {
+    setPendingModel(model);
+    onCommand({ type: 'model', model });
+  };
 
   // The script bar (v1.0.2): the live page holds whether it is on (Ctrl+Alt+S reaches it there).
   const scriptBar = state?.scriptBar ?? false;
@@ -385,8 +432,10 @@ export function CompactView(props: CompactViewProps) {
     const floating = popupElement.current;
     const forPopup = floating ? extentOf(floating, up, height) + 8 : 0;
     const forBars = noPanels && barsEnd.current ? extentOf(barsEnd.current, up, height) + 2 : 0;
-    setNeededHeight(Math.max(forPopup, forBars) * zoom);
-  }, [popup, noPanels, zoom, zoomPass, collapsed, icon, scriptBar, up]);
+    // ADR-0094: the model toast floats like a menu, so the window grows for it too while it shows.
+    const forToast = toastElement.current ? extentOf(toastElement.current, up, height) + 8 : 0;
+    setNeededHeight(Math.max(forPopup, forBars, forToast) * zoom);
+  }, [popup, noPanels, zoom, zoomPass, collapsed, icon, scriptBar, up, toast]);
 
   // Desktop 1.5.0 (ADR-0068): the Rec popover sits under its pill.
   useLayoutEffect(() => {
@@ -394,6 +443,13 @@ export function CompactView(props: CompactViewProps) {
     // Under the pill, but inside the window (the popover is 320 wide).
     const width = root.current?.clientWidth ?? 900;
     setRecLeft(Math.max(6, Math.min(recButton.current?.offsetLeft ?? 6, width - 326)));
+  }, [popup]);
+
+  // ADR-0094: the model popover sits under its chip, inside the window (it is 256 wide).
+  useLayoutEffect(() => {
+    if (popup !== 'model') return;
+    const width = root.current?.clientWidth ?? 900;
+    setModelLeft(Math.max(6, Math.min(modelButton.current?.offsetLeft ?? 6, width - 262)));
   }, [popup]);
 
   // v1.3.2: with a panel open, how tall the bars and panels are, so the shell can fit the window to them.
@@ -665,6 +721,14 @@ export function CompactView(props: CompactViewProps) {
             }}
             recButton={recButton}
             up={up}
+            // ADR-0094: the model chip next to Auto, where the live page says its model.
+            {...(modelChoice
+              ? {
+                  modelOpen: popup === 'model',
+                  onModel: () => setPopup(popup === 'model' ? null : 'model'),
+                  modelButton,
+                }
+              : {})}
             {...(clickThrough && glass
               ? {
                   // ADR-0082: the Click-through toggle on bar 1 (as Ctrl+Alt+X and ⋮ do).
@@ -726,6 +790,8 @@ export function CompactView(props: CompactViewProps) {
             onPosition={props.onPosition}
             onCallWindow={openCallWindow}
             mac={mac}
+            onModel={pickModel}
+            onClose={() => setPopup(null)}
             onClickThrough={
               clickThrough && glass
                 ? (on: boolean) => {
@@ -754,6 +820,29 @@ export function CompactView(props: CompactViewProps) {
             left={recLeft}
             up={up}
           />
+        )}
+        {popup === 'model' && modelChoice && (
+          <ModelPopover
+            ref={popupElement}
+            model={modelChoice.model}
+            smartAllowed={modelChoice.smartAllowed}
+            left={modelLeft}
+            onSelect={pickModel}
+            onClose={() => setPopup(null)}
+          />
+        )}
+        {toast && (
+          // ADR-0094: the switch's toast, solid like the menus, centred under bar 1 (above it on the bottom
+          // row: k-overlay-menu). It takes no clicks; it hides after MODEL_TOAST_MS.
+          <p
+            ref={toastElement}
+            key={toast.id}
+            role="status"
+            data-toast="model"
+            className="k-overlay-menu pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 w-max max-w-[calc(100%-12px)] -translate-x-1/2 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal"
+          >
+            {toast.text}
+          </p>
         )}
         {(popup === 'audio' || popup === 'mic') && (
           <DevicePicker

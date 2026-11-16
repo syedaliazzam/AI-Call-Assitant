@@ -3,7 +3,8 @@
  * Purpose: Asks the server whether the deeper model is on (GET /api/models), so the wizard can show it
  *          as unavailable. Never throws: when it cannot tell it says yes, because the server enforces
  *          the switch on every answer anyway.
- * Used by: src/features/session-setup/PreferencesStep.tsx
+ * Used by: src/features/session-setup/PreferencesStep.tsx, src/features/live/LiveAnswers.tsx (the overlay's
+ *          model switch, ADR-0094)
  * Depends on: @kite/shared (response type), the browser's fetch
  * Architecture: docs/design/paramount-ai-ui-spec.md §6
  */
@@ -14,7 +15,7 @@ import type { ModelAccessResponse } from '@kite/shared';
  *
  * @param fetchImpl fetch (tests replace it).
  * @returns True unless the server says it is off.
- * Called from: PreferencesStep.tsx; tests
+ * Called from: PreferencesStep.tsx; LiveAnswers.tsx (call start, and a switch to Smart; ADR-0094); tests
  */
 export async function deepModelEnabled(fetchImpl: typeof fetch = fetch): Promise<boolean> {
   try {

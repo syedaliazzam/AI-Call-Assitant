@@ -516,6 +516,12 @@ export type AnswerEvent =
       usage: AnswerUsage;
       /** Server-side timings. */
       ms: AnswerTimings;
+      /**
+       * ADR-0094: the tier that really answered. It differs from the one asked for when an admin has
+       * turned the deeper model off (the server then answers with the fast one). Absent from an older
+       * server.
+       */
+      model?: ModelTier;
     }
   | {
       /** Event name. */
