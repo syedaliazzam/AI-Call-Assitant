@@ -11,12 +11,21 @@
  *   that keep the instructions; refused (nothing written) when the output format is missing; Reset to
  *   default; restoring one part keeps the other; a running call keeps its prompt; a damaged row reads
  *   as the built-in prompt; the database refuses an over-long prompt.
+ * - ADR-0087 (drizzle/0007_builtin_prompts.sql): the built-in change notice: none while the custom prompt
+ *   matches the built-in rules in force; after a release, the date and the old rules; kept by saving
+ *   instructions, cleared by re-saving the prompt or Reset to default; a restore keeps its base; a prompt
+ *   from before ADR-0087 counts as written against the first recorded rules; the pin records the
+ *   built-in rules once, and a failed record never stops it.
  */
 import { AI_INSTRUCTIONS_NONE, type CustomPrompt } from '@kite/shared';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { builtInHash } from '@/server/prompts/builtIn';
 import {
+  APP_BUILT_INS,
   loadAiInstructions,
   parseStoredPrompt,
+  registerBuiltIns,
+  type BuiltInSource,
   PromptRejectedError,
   readPin,
   resetInstructionsCache,
@@ -47,7 +56,9 @@ beforeAll(async () => {
 }, 60_000);
 
 beforeEach(async () => {
-  await t.pg.exec('DELETE FROM ai_instructions_active; DELETE FROM ai_instructions_version;');
+  await t.pg.exec(
+    'DELETE FROM ai_instructions_active; DELETE FROM ai_instructions_version; DELETE FROM ai_builtin_prompt;',
+  );
   resetInstructionsCache();
   vi.spyOn(console, 'info').mockImplementation(() => undefined);
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -120,6 +131,7 @@ describe('saving', () => {
       activeId: null,
       activeText: '',
       activePrompt: null,
+      builtInChange: null,
       versions: [],
     });
   });
@@ -405,5 +417,104 @@ describe('custom full prompts (ADR-0086)', () => {
         ['p'.repeat(130_001)],
       ),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * Built-in prompts as one release had them (ADR-0087): the app's own, with the live core replaced.
+ *
+ * @param core The live core rules of that release.
+ * @param date The day that release's built-in prompt took effect.
+ * @returns The source.
+ */
+function release(core: string, date: string): BuiltInSource {
+  const live: CustomPrompt = { ...LIVE_PROMPT, core };
+  return {
+    prompt: (block) => (block === 'live' ? live : APP_BUILT_INS.prompt(block)),
+    hash: (block) => (block === 'live' ? builtInHash('live', live) : APP_BUILT_INS.hash(block)),
+    date: (block) => (block === 'live' ? date : APP_BUILT_INS.date(block)),
+  };
+}
+
+/** The release a custom prompt is written under. */
+const OLD = release(`${LIVE_PROMPT.core!}\nOld rule.`, '2026-11-16');
+/** A later release whose live built-in rules changed. */
+const NEW = release(`${LIVE_PROMPT.core!}\nNew rule.`, '2026-12-01');
+/** The admin's custom prompt. */
+const CUSTOM: CustomPrompt = { ...LIVE_PROMPT, reminder: 'Custom reminder.' };
+
+describe('built-in rules change notice (ADR-0087)', () => {
+  it('shows no notice while the custom prompt was written against the built-in rules in force', async () => {
+    await savePrompt(db, ADMIN, 'live', CUSTOM, minutes(1), OLD);
+    const state = await loadAiInstructions(db, ADMIN, OLD);
+    expect(state.live.activePrompt).toEqual(CUSTOM);
+    expect(state.live.builtInChange).toBeNull();
+    // The built-in prompt it was written against is recorded, with every block's.
+    const rows = await t.pg.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM ai_builtin_prompt',
+    );
+    expect(rows.rows[0]!.n).toBe(3);
+  });
+
+  it('after a release that changed the rules: the date, and the old built-in rules for the diff', async () => {
+    await savePrompt(db, ADMIN, 'live', CUSTOM, minutes(1), OLD);
+    const state = await loadAiInstructions(db, ADMIN, NEW);
+    expect(state.live.builtInChange).toEqual({ date: '2026-12-01', previous: OLD.prompt('live') });
+    // Blocks with the built-in prompt get no notice.
+    expect(state.notes.builtInChange).toBeNull();
+  });
+
+  it('saving instructions keeps the notice; re-saving the prompt or Reset to default clears it', async () => {
+    await savePrompt(db, ADMIN, 'live', CUSTOM, minutes(1), OLD);
+    await saveInstructions(db, ADMIN, 'live', 'Be brief.', minutes(2));
+    expect((await loadAiInstructions(db, ADMIN, NEW)).live.builtInChange).not.toBeNull();
+    // The same text saved under the new release is a new version: the admin has seen the changes.
+    expect((await savePrompt(db, ADMIN, 'live', CUSTOM, minutes(3), NEW)).created).toBe(true);
+    expect((await loadAiInstructions(db, ADMIN, NEW)).live.builtInChange).toBeNull();
+    await savePrompt(db, ADMIN, 'live', CUSTOM, minutes(4), OLD);
+    await savePrompt(db, ADMIN, 'live', null, minutes(5), NEW);
+    expect((await loadAiInstructions(db, ADMIN, NEW)).live.builtInChange).toBeNull();
+  });
+
+  it('a restored custom prompt keeps the built-in rules it was written against', async () => {
+    const written = await savePrompt(db, ADMIN, 'live', CUSTOM, minutes(1), OLD);
+    await savePrompt(db, ADMIN, 'live', null, minutes(2), NEW);
+    await restoreInstructions(db, ADMIN, 'live', written.id, minutes(3), 'prompt');
+    expect((await loadAiInstructions(db, ADMIN, NEW)).live.builtInChange).toEqual({
+      date: '2026-12-01',
+      previous: OLD.prompt('live'),
+    });
+  });
+
+  it('a custom prompt saved before ADR-0087 (no base) counts as written against the first recorded rules', async () => {
+    // The first page load after the ADR-0087 release records that release's built-in rules.
+    await loadAiInstructions(db, ADMIN, OLD);
+    await savePrompt(db, ADMIN, 'live', CUSTOM, minutes(1), OLD);
+    await t.pg.exec("UPDATE ai_instructions_version SET base_hash = NULL WHERE block = 'live'");
+    resetInstructionsCache();
+    expect((await loadAiInstructions(db, ADMIN, OLD)).live.builtInChange).toBeNull();
+    expect((await loadAiInstructions(db, ADMIN, NEW)).live.builtInChange).toEqual({
+      date: '2026-12-01',
+      previous: OLD.prompt('live'),
+    });
+  });
+
+  it('the pin records the built-in rules once per server, and a failed record never stops it', async () => {
+    await readPin(db);
+    await readPin(db);
+    const rows = await t.pg.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM ai_builtin_prompt',
+    );
+    expect(rows.rows[0]!.n).toBe(3);
+    resetInstructionsCache();
+    const broken = {
+      insert() {
+        throw new Error('connection lost');
+      },
+    } as unknown as InstructionsDb;
+    await expect(registerBuiltIns(broken)).resolves.toBeUndefined();
+    const logged = JSON.stringify(vi.mocked(console.error).mock.calls);
+    expect(logged).toContain('built-in record failed');
+    expect(logged).not.toContain('connection lost');
   });
 });

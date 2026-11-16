@@ -7,7 +7,8 @@
  *          ciphertext, never as readable text. Audio is never stored anywhere. (ADR-0072) Each
  *          account's Google Drive connection (refresh token encrypted) and one "saved" email record
  *          per session. (ADR-0083) The company AI instructions: every saved version, and the one in
- *          force per block, and (ADR-0086) a custom full system prompt per version.
+ *          force per block, and (ADR-0086) a custom full system prompt per version; (ADR-0087) the
+ *          built-in prompts the app has run with.
  *          Generated with the Better Auth CLI (`auth generate --adapter drizzle --dialect
  *          postgresql`, better-auth 1.7.13) for email + password, the admin plugin and our
  *          `mustChangePassword` field; comments added by hand. If the Better Auth config gains
@@ -20,7 +21,7 @@
  *               ADR-0049 (call_record, written by hand; migrations are additive only, ADR-0050);
  *               ADR-0072 (google_drive and drive_notification, written by hand); ADR-0083
  *               (ai_instructions_version and ai_instructions_active, written by hand); ADR-0086
- *               (ai_instructions_version.prompt)
+ *               (ai_instructions_version.prompt); ADR-0087 (ai_instructions_version.base_hash, ai_builtin_prompt)
  */
 import { relations, sql } from 'drizzle-orm';
 import {
@@ -465,6 +466,12 @@ export const aiInstructionsVersion = pgTable(
      * the instructions, so a call's pin covers both and its prompt cache never changes mid-call.
      */
     prompt: text('prompt'),
+    /**
+     * ADR-0087: for a custom prompt, the hash of the built-in prompt it was written against (a row of
+     * ai_builtin_prompt), so the page can say when the built-in rules changed since. Null for the
+     * built-in prompt, and for custom prompts saved before ADR-0087.
+     */
+    baseHash: text('base_hash'),
     /** The admin who saved it; null once that account is deleted (the version stays). */
     authorId: text('author_id').references(() => user.id, { onDelete: 'set null' }),
     /** For a restore: the version whose text it copied; null for a normal save. */
@@ -502,3 +509,31 @@ export const aiInstructionsActive = pgTable('ai_instructions_active', {
   /** When it last changed. */
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * Every built-in full system prompt the app has run with, per block (ADR-0087), recorded the first time
+ * a server sees it, so the text a custom prompt was written against can still be shown after the
+ * built-in rules change ("View changes"). App text from the code, not company or call data. Rows are
+ * never changed or deleted.
+ */
+export const aiBuiltinPrompt = pgTable(
+  'ai_builtin_prompt',
+  {
+    /** 'live', 'notes' or 'ask'. */
+    block: text('block').notNull(),
+    /** SHA-256 of the prompt's cleaned parts (server/prompts/builtIn.ts builtInHash()). */
+    hash: text('hash').notNull(),
+    /** The prompt, as JSON ({ part: text } for the block's parts). */
+    prompt: text('prompt').notNull(),
+    /** When a server first recorded it (about when it was released). */
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // One row per built-in prompt per block: recording it again changes nothing.
+    primaryKey({ columns: [table.block, table.hash] }),
+    // The database refuses an unknown block, whatever the code does.
+    check('ai_builtin_prompt_block_check', sql`${table.block} in ('live', 'notes', 'ask')`),
+    // The same size limit as a custom prompt (ai_instructions_version_prompt_check).
+    check('ai_builtin_prompt_prompt_check', sql`char_length(${table.prompt}) <= 130000`),
+  ],
+);

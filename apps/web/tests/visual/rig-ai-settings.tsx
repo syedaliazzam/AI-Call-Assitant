@@ -1,7 +1,8 @@
 /**
  * File: apps/web/tests/visual/rig-ai-settings.tsx
  * Purpose: The real Admin → AI settings page (ADR-0086) for the visual check, in the browser with invented
- *          data: simple mode by default, advanced mode with ?mode=advanced, dark with ?theme=dark. The
+ *          data: simple mode by default, advanced mode with ?mode=advanced, dark with ?theme=dark, and
+ *          (ADR-0087) a custom live prompt older than the built-in rules with ?change=1. The
  *          built-in rules come from the server code
  *          (ai-settings-shots.ts puts them in window.__AI_SETTINGS__); the actions only answer "saved".
  * Used by: tests/visual/ai-settings-shots.ts (bundled and served there)
@@ -44,6 +45,7 @@ const blocks: Record<AiInstructionBlock, BlockView> = {
     activeId: IDS[0]!,
     activeText: LIVE_TEXT,
     activePrompt: null,
+    builtInChange: null,
     versions: [
       {
         id: IDS[0]!,
@@ -68,6 +70,7 @@ const blocks: Record<AiInstructionBlock, BlockView> = {
     activeId: null,
     activeText: '',
     activePrompt: null,
+    builtInChange: null,
     versions: [],
     locked: data.locked.notes,
   },
@@ -75,13 +78,34 @@ const blocks: Record<AiInstructionBlock, BlockView> = {
     activeId: null,
     activeText: '',
     activePrompt: null,
+    builtInChange: null,
     versions: [],
     locked: data.locked.ask,
   },
 };
 
-/** ?mode=advanced and ?theme=dark. */
+/** ?mode=advanced, ?theme=dark and ?change=1. */
 const params = new URLSearchParams(window.location.search);
+
+if (params.get('change') === '1') {
+  // ADR-0087: a custom live prompt written against the rules from before 16 Nov 2026 (the old name and
+  // transcript line put back), so the notice and "View changes" show.
+  const today = Object.fromEntries(data.locked.live.map((part) => [part.key, part.text]));
+  const previous = {
+    ...today,
+    core: today
+      .core!.replace(
+        'You are Paramount AI, a live call assistant.',
+        'You are Kite, a live call assistant.',
+      )
+      .replace(
+        "made by cloud speech recognition (Deepgram), with speech recognition on the user's device as a fallback, and contains",
+        "made by speech recognition on the user's computer and contains",
+      ),
+  };
+  blocks.live.activePrompt = { ...previous, reminder: `${today.reminder!} Keep it brief.` };
+  blocks.live.builtInChange = { date: '2026-11-16', previous };
+}
 
 /** Actions that only say "saved" (nothing is stored). */
 const actions: InstructionsActions = {

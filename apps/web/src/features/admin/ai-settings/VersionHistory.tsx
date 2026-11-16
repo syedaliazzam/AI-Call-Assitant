@@ -6,7 +6,7 @@
  *          one in force, and one-click Restore, which saves that instructions text or prompt as a NEW
  *          version (the other part stays as it is; nothing is deleted).
  * Used by: src/features/admin/ai-settings/InstructionsEditor.tsx, PromptEditor.tsx
- * Depends on: React, src/core/admin/textDiff.ts, src/ui (Button, Modal), ./blocks.ts
+ * Depends on: React, src/ui (Button, Modal), ./blocks.ts, ./DiffView.tsx
  * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md,
  *               docs/decisions/ADR-0086-full-system-prompt-editing.md
  * Theme: tokens from src/ui/tokens/theme.css (light and dark)
@@ -16,7 +16,6 @@
 import { useMemo, useState, useTransition } from 'react';
 import { History } from 'lucide-react';
 import type { AiInstructionBlock, CustomPrompt } from '@kite/shared';
-import { diffWords } from '@/core/admin/textDiff';
 import type { ToastTone } from '@/ui/Toast';
 import { Button } from '@/ui/Button';
 import { Modal } from '@/ui/Modal';
@@ -29,6 +28,7 @@ import {
   type LockedView,
   type VersionView,
 } from './blocks';
+import { DiffView } from './DiffView';
 
 /** Props for VersionHistory. */
 export interface VersionHistoryProps {
@@ -76,59 +76,6 @@ function savedAt(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-/**
- * The word diff from a version to the one in force.
- *
- * @param props.before The version's text.
- * @param props.after  The text in force.
- * @returns The diff, with removed words struck through and added ones marked.
- * Rendered by: VersionHistory (in its dialog)
- */
-function DiffView({
-  before,
-  after,
-}: {
-  /** The version's text. */
-  before: string;
-  /** The text in force. */
-  after: string;
-}) {
-  const parts = useMemo(() => diffWords(before, after), [before, after]);
-  if (before === after) {
-    return (
-      <p className="text-[14px] text-ui-muted">This version has the same text as the live one.</p>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-3">
-      <p className="text-[13px] text-ui-muted">
-        <span className="rounded bg-ui-danger-bg px-1 text-ui-danger line-through">Struck</span>{' '}
-        words are only in this version;{' '}
-        <span className="rounded bg-ui-success-bg px-1 text-ui-success">marked</span> words are only
-        in the live version.
-      </p>
-      <p
-        className="whitespace-pre-wrap break-words rounded-control border border-ui-border bg-ui-subtle p-3 text-[14px] leading-relaxed text-ui-text"
-        data-testid="version-diff"
-      >
-        {parts.map((part, index) =>
-          part.kind === 'same' ? (
-            <span key={index}>{part.text}</span>
-          ) : part.kind === 'removed' ? (
-            <del key={index} className="rounded bg-ui-danger-bg text-ui-danger">
-              {part.text}
-            </del>
-          ) : (
-            <ins key={index} className="rounded bg-ui-success-bg text-ui-success no-underline">
-              {part.text}
-            </ins>
-          ),
-        )}
-      </p>
-    </div>
-  );
 }
 
 /**
@@ -295,6 +242,8 @@ export function VersionHistory({
         title={viewing ? `Version of ${savedAt(viewing.version.createdAt)}` : 'Version'}
         subtitle={viewing && !viewing.live ? 'Compared with the live version' : 'The live version'}
         width={720}
+        // A full prompt is long: a fixed height lets it scroll instead of being cut off (ADR-0087).
+        {...(mode === 'prompt' ? { height: 760 } : {})}
         footer={
           viewing && !viewing.live ? (
             <div className="flex justify-end gap-2">
@@ -314,7 +263,13 @@ export function VersionHistory({
               {viewing.shown || 'Empty: no company instructions.'}
             </p>
           ) : (
-            <DiffView before={viewing.shown} after={liveShown} />
+            <DiffView
+              before={viewing.shown}
+              after={liveShown}
+              beforeLabel="only in this version"
+              afterLabel="only in the live version"
+              sameText="This version has the same text as the live one."
+            />
           ))}
       </Modal>
     </section>

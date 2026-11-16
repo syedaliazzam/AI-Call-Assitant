@@ -3,7 +3,8 @@
  * Purpose: Pictures of Admin → AI settings (ADR-0086) for the visual check: the real page component with
  *          the real built-in rules and invented data, in simple mode (a try with the draft), in advanced
  *          mode (an edited prompt, tried, ready to save), with a draft prompt that lost two required
- *          rules (what the check names), and simple mode in the dark theme. Builds the page, serves it on
+ *          rules (what the check names), simple mode in the dark theme, and (ADR-0087) the built-in
+ *          change notice with its "View changes" diff. Builds the page, serves it on
  *          a free port with a mocked try endpoint, captures the PAGE only (never the screen) in headless
  *          Microsoft Edge, and exits.
  *          Usage: pnpm --filter web exec tsx --conditions=react-server tests/visual/ai-settings-shots.ts <out dir>
@@ -205,6 +206,15 @@ async function main(): Promise<void> {
     // 4. Simple mode, dark theme.
     await open(page, `${base}/?theme=dark`, 'Instructions for the AI');
     await page.screenshot({ path: path.join(OUT, '4-simple-mode-dark.png'), fullPage: true });
+
+    // 5. ADR-0087: a custom prompt older than the built-in rules: the notice, then "View changes".
+    await open(page, `${base}/?change=1`, 'Built-in rules were updated on');
+    await page.screenshot({ path: path.join(OUT, '5-built-in-change-notice.png') });
+    await page.getByRole('button', { name: 'View changes' }).click();
+    await page.getByTestId('version-diff').waitFor();
+    // The dialog's opening animation.
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: path.join(OUT, '6-built-in-changes-diff.png') });
     console.info(`ai settings shots: ${OUT}`);
   } finally {
     await browser.close();
