@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-11-16
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5, §6.3, §7.2, §8.1 (version 4.30.0)
-- **Supersedes / superseded by:** supersedes ADR-0086 (simple box and advanced full-prompt mode) and ADR-0087 (built-in rules change notice). Keeps ADR-0083's versions, pin and history, and ADR-0088's unsupported company facts rule word for word.
+- **Supersedes / superseded by:** amended by ADR-0091 (Try it and Quality check removed; Save needs no try). Supersedes ADR-0086 (simple box and advanced full-prompt mode) and ADR-0087 (built-in rules change notice). Keeps ADR-0083's versions, pin and history, and ADR-0088's unsupported company facts rule word for word.
 
 ## Context
 
