@@ -19,7 +19,7 @@ ADR-0089 gave each AI settings tab a Try it panel and, for live answers, a paid 
 - the server code behind them (`server/aiTry.ts`, `server/aiQuality.ts`, `server/promptTryToken.ts`) and the browser code (`core/admin/aiTry.ts`);
 - the request shapes in `@kite/shared`.
 
-The removed routes now answer 404. The input-budget facts the page still shows moved to `server/aiBudget.ts`.
+The build has no `/api/admin/*` route any more: a signed-in request to one gets 404, and a signed-out one gets the proxy's 401 first, as for every API path. The input-budget facts the page still shows moved to `server/aiBudget.ts`.
 
 **2. Save needs no try.**
 
@@ -57,5 +57,5 @@ The removed routes now answer 404. The input-budget facts the page still shows m
   - `tests/unit/api/ai-settings.test.ts`: a non-admin is refused; a save with no try succeeds, including a line the lint flags; the note is kept; Reset; restore.
   - `tests/unit/features/admin/AiSettingsPage.test.tsx`: Save is disabled with nothing to save and enabled for any change, a flagged one too; there is no Try it or Quality check; History opens with Compare and Restore.
   - `tests/unit/server/aiBudget.test.ts`.
-- On production: the pin route answers 401 signed out, the page redirects to sign-in, and the removed routes answer 404.
+- On production (signed out): the pin route and the removed paths answer 401 (the proxy), and the page redirects to sign-in. The build output has no `/api/admin` routes.
 - Visual: `tests/visual/ai-settings-shots.ts`, 13 page captures (Edit, Preview and History per tab, Compare, an edited draft with the lint hint and Save enabled, dark mode).
