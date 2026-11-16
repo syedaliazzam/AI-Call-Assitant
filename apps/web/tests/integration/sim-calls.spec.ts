@@ -499,8 +499,12 @@ test('d) a 40-minute call: hygiene prompts, echo, background speech', async () =
     'Unclear speech (2)',
   );
 
-  // The overlay's transcript panel shows the same, under its own bar.
-  await overlay.getByRole('button', { name: 'Show the transcript', exact: true }).click();
+  // The overlay's transcript panel shows the same, under its own bar. ADR-0085: it is open on a device's
+  // first call (this fresh profile), so its level button offers to hide it.
+  await expect(overlay.getByRole('switch', { name: 'Transcript' })).toBeChecked();
+  await expect(
+    overlay.getByRole('button', { name: 'Hide the transcript', exact: true }),
+  ).toBeVisible();
   const panel = overlay.getByRole('region', { name: 'Transcript panel' });
   await expect(panel.getByLabel('Live transcript')).toContainText('Dana');
   await expect(panel.getByRole('button', { name: /^Unclear speech/ })).toBeVisible();
@@ -587,7 +591,8 @@ test('the overlay: panels open with an answer, the arrows move, Clear clears the
 
   // Both panels at once: transcript above answer in a narrow window (side by side in a wide one).
   await overlay.setViewportSize({ width: 780, height: 700 });
-  await overlay.getByRole('button', { name: 'Show the transcript', exact: true }).click();
+  // ADR-0085: the transcript was open from the start (a device's first call); the answer opened beside it.
+  await expect(overlay.getByRole('switch', { name: 'Transcript' })).toBeChecked();
   const transcriptPanel = overlay.getByRole('region', { name: 'Transcript panel' });
   await expect(transcriptPanel).toBeVisible();
   await expect(answerPanel).toBeVisible();
@@ -910,7 +915,8 @@ test('keyboard pass: every control of the overlay and the panel can be reached a
     'Auto answer',
     'Overlay menu',
     'Exit: end call',
-    'Show the transcript',
+    // ADR-0085: the transcript panel is open on a device's first call, so its level button hides it.
+    'Hide the transcript',
     'Clear transcript',
     'Clear answers',
     'Copy the answer',
