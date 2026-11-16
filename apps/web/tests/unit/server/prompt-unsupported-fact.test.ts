@@ -5,7 +5,8 @@
  * it is in the tail of every current-rules answer (not v-previous, so a rollback keeps its bytes); it
  * forbids yes/no and guessing, asks for a short promise with no bullets and a Note; it keeps the hidden
  * lines' order (first line, answer, Note, [[question|…]]); it leaves small talk and off-topic questions
- * out; and its example answer lines are 12 words or fewer.
+ * out; its example answer lines are 12 words or fewer; and (ADR-0090) it keeps the promise away from a
+ * fact the documents cover, even as a limit, which is answered from them, declining what they do not allow.
  */
 import type { AnswerRequest } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
@@ -51,6 +52,12 @@ describe('the unsupported-fact sentence (ADR-0088)', () => {
       'then a "Note:" line naming what to check, then the hidden [[question|…]] line.',
     );
     expect(sentence).toContain('not small talk or an off-topic question');
+  });
+
+  it('applies only to a fact nothing gives, not one the documents cover as a limit (ADR-0090)', () => {
+    expect(sentence).toContain('This promise is only for a fact nothing gives');
+    expect(sentence).toContain('even as a limit (such as the most discount allowed)');
+    expect(sentence).toContain('say plainly what they do not allow');
   });
 
   it('gives example answer lines of 12 words or fewer', () => {
