@@ -79,11 +79,6 @@ export interface ControlBarProps {
   onDeviceList: (list: DeviceList | null) => void;
   /** The ⋮ button: a click on it is not a click outside the menu. */
   menuButton: RefObject<HTMLButtonElement | null>;
-  /**
-   * The reference app's bar 1 (ADR-0055, accounts with account sync). ADR-0085: the Transcript pill is
-   * shown whenever onTranscript is given (for every account), whatever the look.
-   */
-  referenceLook?: boolean;
   /** Whether the transcript panel is open (the Transcript pill's switch). */
   transcriptOpen?: boolean;
   /** Opens or closes the transcript panel (remembered with the panels). */

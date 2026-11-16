@@ -1,8 +1,8 @@
 /**
  * Tests for apps/web/src/core/storage/db.ts, the choice of database (privacy fix of 14 Nov 2026): every
- * signed-in account has its own database on this device ('kite-u-<id>' with account sync, 'kite-l-<id>'
- * without), so switching accounts on one computer never shows one account's sessions to another, with
- * or without sync; an account's local database records nothing for sync; the old shared 'kite'
+ * signed-in account has its own sync cache on this device ('kite-u-<id>'; account sync is always on,
+ * ADR-0092), so switching accounts on one computer never shows one account's sessions to another; an
+ * account's old local database ('kite-l-<id>') is never opened for it and records nothing for sync; the old shared 'kite'
  * database is only chosen without an account (tests and harnesses). Invented data only.
  */
 import 'fake-indexeddb/auto';
@@ -16,6 +16,7 @@ import {
   getDb,
   localAccountDbName,
   selectAccountDatabase,
+  selectDatabaseForTests,
   usingAccountDatabase,
 } from '@/core/storage/db';
 import { createSession, listSessions } from '@/core/storage/sessions';
@@ -42,51 +43,55 @@ async function deleteAll(): Promise<void> {
 beforeEach(deleteAll);
 
 afterEach(async () => {
-  selectAccountDatabase(null, false);
+  selectAccountDatabase(null);
   await deleteAll();
 });
 
 describe('selectAccountDatabase', () => {
   it("names each account's own database, and 'kite' only without an account", () => {
-    selectAccountDatabase(A, true);
+    selectAccountDatabase(A);
     expect(activeDatabaseName()).toBe(accountDbName(A));
     expect(usingAccountDatabase()).toBe(true);
-    selectAccountDatabase(A, false);
+    selectDatabaseForTests(localAccountDbName(A));
     expect(activeDatabaseName()).toBe(localAccountDbName(A));
     expect(usingAccountDatabase()).toBe(false);
-    selectAccountDatabase(null, true);
+    selectAccountDatabase(null);
     expect(activeDatabaseName()).toBe(DB_NAME);
     expect(usingAccountDatabase()).toBe(false);
   });
 
-  it.each([
-    ['with account sync', true],
-    ['without account sync', false],
-  ])("keeps A's sessions invisible to B on the same computer (%s)", async (_label, sync) => {
-    selectAccountDatabase(A, sync);
+  it("keeps A's sessions invisible to B on the same computer", async () => {
+    selectAccountDatabase(A);
     await createSession(sessionInput({ company: 'Only A' }));
-    selectAccountDatabase(B, sync);
+    selectAccountDatabase(B);
     expect(await listSessions()).toEqual([]);
     await createSession(sessionInput({ company: 'Only B' }));
     expect((await listSessions()).map((s) => s.company)).toEqual(['Only B']);
-    selectAccountDatabase(A, sync);
+    selectAccountDatabase(A);
     expect((await listSessions()).map((s) => s.company)).toEqual(['Only A']);
   });
 
   it("never shows the old shared 'kite' database to a signed-in account", async () => {
-    selectAccountDatabase(null, false);
+    selectAccountDatabase(null);
     await createSession(sessionInput({ company: 'Ownerless' }));
-    for (const sync of [true, false]) {
-      selectAccountDatabase(A, sync);
-      expect(await listSessions()).toEqual([]);
-    }
+    selectAccountDatabase(A);
+    expect(await listSessions()).toEqual([]);
   });
 
-  it("records nothing for sync in an account's local database", async () => {
-    selectAccountDatabase(A, false);
+  it('a signed-in account always opens its sync cache, never its old local database (ADR-0092)', async () => {
+    selectDatabaseForTests(localAccountDbName(A));
+    await createSession(sessionInput({ company: 'Old local' }));
+    selectAccountDatabase(A);
+    expect(activeDatabaseName()).toBe(accountDbName(A));
+    expect(usingAccountDatabase()).toBe(true);
+    expect(await listSessions()).toEqual([]);
+  });
+
+  it("records nothing for sync in an account's old local database", async () => {
+    selectDatabaseForTests(localAccountDbName(A));
     await createSession(sessionInput());
     expect(await getDb().outbox.count()).toBe(0);
-    selectAccountDatabase(A, true);
+    selectAccountDatabase(A);
     await createSession(sessionInput());
     expect(await getDb().outbox.count()).toBeGreaterThan(0);
   });

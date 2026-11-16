@@ -2,7 +2,7 @@
  * Production end-to-end suite, desktop app (v1.3.0 flow, ADR-0051, ADR-0053, ADR-0055, ADR-0056): the
  * real Electron shell (apps/desktop, built to dist/, or an installed program with KITE_INSTALLED_EXE)
  * opening https://call.paramountintelligence.co with a fresh, empty profile, signed in as the end-to-end
- * TEST account (listed in KITE_SYNC_USERS). In order: sign in on the home panel, with the acceptable-use
+ * TEST account (account sync is on for every account, ADR-0092). In order: sign in on the home panel, with the acceptable-use
  * notice, landing on "Your sessions"; an invented session put into the account through the sync API (the
  * desktop app has no dashboard) shows there; a call from the panel: the session → Connect Call Session
  * (ADR-0082: no Start your session card) → Connect (downloading the speech model first when the profile

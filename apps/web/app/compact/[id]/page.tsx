@@ -7,14 +7,13 @@
  * Used by: Next.js App Router; loaded by apps/desktop/src/windows.ts (compactUrl)
  * Depends on: src/server/guard.ts (requireUser), src/features/live/CompactLive.tsx,
  *             src/features/shell/AccountName.tsx (v1.3.2),
- *             src/features/sync/SyncScope.tsx and src/server/calldata/flag.ts (ADR-0049)
+ *             src/features/sync/SyncScope.tsx (ADR-0049)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (compact view), §9.2 (thin
  *               routes); day-05-overlay-screenshots-notes.md Stage 3
  */
 import { CompactLive } from '@/features/live/CompactLive';
 import { AccountNameProvider } from '@/features/shell/AccountName';
 import { SyncScope } from '@/features/sync/SyncScope';
-import { syncEnabledFor } from '@/server/calldata/flag';
 import { requireUser } from '@/server/guard';
 
 /** Props Next.js passes to this page (route parameters arrive as a promise in Next.js 16). */
@@ -39,11 +38,7 @@ export default async function CompactRoute({ params }: CompactRouteProps) {
   return (
     // ADR-0049: the overlay uses the same data as the call window (the same account's own database,
     // accountId); that window does the syncing.
-    <SyncScope
-      accountId={user.id}
-      syncUserId={syncEnabledFor(user.id) ? user.id : null}
-      runEngine={false}
-    >
+    <SyncScope accountId={user.id} runEngine={false}>
       {/* v1.3.2: the user's own transcript turns show this name. */}
       <AccountNameProvider name={user.name}>
         <CompactLive sessionId={id} email={user.email} />

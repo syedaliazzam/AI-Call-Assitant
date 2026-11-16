@@ -3,7 +3,7 @@
  * packaged program (KITE_SHELL_EXE: Paramount AI.exe from release/win-unpacked, or extracted from the
  * installer; never installed on this computer), a fresh temporary profile, and Hugging Face made
  * unreachable for the whole run (Chromium's host-resolver rules), so the model cannot be downloaded.
- * Signed in as the end-to-end TEST account (listed in KITE_SYNC_USERS). No Claude request.
+ * Signed in as the end-to-end TEST account (account sync is on for every account, ADR-0092). No Claude request.
  * 1. Every file the web app's engine fetches, fetched at its usual address from the page, comes back
  *    from the bundle with the pinned SHA-256 (and a plain Hugging Face address fails: it really is
  *    unreachable).

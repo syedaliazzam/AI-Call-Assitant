@@ -1,6 +1,6 @@
 /**
  * Production check of the one-time upload (ADR-0049, Phase 4; privacy fix of 14 Nov 2026) on BOTH web
- * addresses, as the end-to-end TEST account (listed in KITE_SYNC_USERS). No Claude request. For each
+ * addresses, as the end-to-end TEST account (account sync is on for every account, ADR-0092). No Claude request. For each
  * address, a fresh Chrome profile signs in, then gets an invented session in the account's OWN local
  * database ('kite-l-<id>', what the account made on this device without account sync) and another in
  * the old shared 'kite' database (no owner recorded), seeded by harness/seed-legacy.ts. After a reload

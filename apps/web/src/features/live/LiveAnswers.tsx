@@ -69,7 +69,6 @@ import { SignInAgainDialog } from './SignInAgainDialog';
 import { useAutoAnswer } from './useAutoAnswer';
 import type { CallDictation } from './useCallDictation';
 import { openDashboard } from '@/features/sync/dashboardLink';
-import { useSyncAccount } from '@/features/sync/SyncScope';
 import { useLiveAnswers, type AnswerStore } from './useLiveAnswers';
 import type { CallRecording } from './useCallRecording';
 import type { CallNotice } from '@/core/live/callNotice';
@@ -238,8 +237,6 @@ const isMac = () => getPlatform().hotkeyModifier() === '⌘';
  * Rendered by: LivePage.tsx; the answer harness page
  */
 export function LiveAnswers(props: LiveAnswersProps) {
-  // ADR-0051: with account sync, Edit session opens the dashboard in the browser.
-  const synced = useSyncAccount() !== null;
   // Read only: the layout around this panel paints the theme (v1.1.0).
   const appearance = useAppearance('call', false);
   // The overlay's menu can change how answers are written during a call (ADR-0029).
@@ -527,8 +524,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
     onClearTranscript.current?.();
   });
   const overlayProps = useRef(props);
-  // ADR-0082: with account sync, Ask AI during a call opens the dashboard in the browser.
-  const syncedRef = useRef(synced);
   /**
    * Desktop 1.5.0 (ADR-0068): a recording command, from either bar's Rec pill or the ⋮ menu. Consent was
    * given in the question that sent 'record-start'.
@@ -554,7 +549,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
     latestPreferences.current = props.session.preferences;
     onClearTranscript.current = props.onClearTranscript;
     overlayProps.current = props;
-    syncedRef.current = synced;
     groupsRef.current = groups;
   });
   // A request for an answer counts as someone being on the call (ADR-0044).
@@ -705,10 +699,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
             overlayProps.current.recording?.prompt();
           } else if (action === 'ask-kite') {
             // ADR-0082: the overlay has no message box any more, so while it is in use Ask AI opens in
-            // its own window (the dashboard's, or the pages window), and the call goes on here.
+            // the dashboard, in the browser, and the call goes on here.
             if (overlayOpened.current) {
-              if (syncedRef.current) openDashboard('/ask-kite');
-              else getPlatform().openPagesWindow('/ask-kite');
+              openDashboard('/ask-kite');
               return;
             }
             // Leaving this page would end the call, so during a call the shortcut opens the chat
@@ -856,11 +849,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       : [
           {
             label: 'Edit session',
-            // ADR-0051: with account sync, editing happens in the dashboard, in the system browser.
-            onSelect: () =>
-              synced
-                ? openDashboard(`/sessions/${sessionId}/edit`)
-                : getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
+            // ADR-0051: editing happens in the dashboard, in the system browser.
+            onSelect: () => openDashboard(`/sessions/${sessionId}/edit`),
           },
         ]),
     ...(placement

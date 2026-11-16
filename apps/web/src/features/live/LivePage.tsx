@@ -101,7 +101,6 @@ import { PrivateOffWarning, usePrivateOffWhileRecording } from './PrivateOffWarn
 import { endCall } from '@/core/transcript/endCall';
 import { reportCallStart, takeCallStart, watchCallStart } from '@/core/live/callStart';
 import { announceRecordingSaved, takeRecordConsent } from '@/core/recording/handoff';
-import { useSyncAccount } from '@/features/sync/SyncScope';
 import { turnPrivateOn } from '@/features/privacy/usePrivate';
 import { useAccountName } from '@/features/shell/AccountName';
 import { BackgroundCallStatus, type BackgroundCallState } from './BackgroundCallStatus';
@@ -314,17 +313,16 @@ export function LivePage({
     () => getPlatform().kind,
     () => 'browser' as const,
   );
-  // ADR-0055: a desktop app with the home panel and account sync starts calls from its Connect card;
+  // ADR-0055: a desktop app with the home panel starts calls from its Connect card;
   // this page then runs the call in the background. The server snapshot is false, like the platform's.
   const panelApp = useSyncExternalStore(
     subscribeNever,
     () => getPlatform().hasHomePanel(),
     () => false,
   );
-  const synced = useSyncAccount() !== null;
   // v1.3.2: the user's own turns show the account's display name.
   const accountName = useAccountName();
-  const launcherCall = platform === 'desktop' && panelApp && synced;
+  const launcherCall = platform === 'desktop' && panelApp;
   const [transcript] = useState(() => createTranscript());
   // What the strip shows: "You" lines that arrive while "Them" speaks are held back briefly, so
   // an echo does not flash up before it is recognised (transcript.ts). Answers (Day 4) use

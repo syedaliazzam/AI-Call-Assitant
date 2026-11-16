@@ -1,8 +1,8 @@
 /**
  * Production check of the call-data sync routes (ADR-0049), signed in as the end-to-end TEST
- * account (which must be listed in KITE_SYNC_USERS). No Claude request. It writes invented records
+ * account (every account has account sync, ADR-0092). No Claude request. It writes invented records
  * only, under fresh random ids, and deletes every one of them at the end (deleted records keep a
- * content-free tombstone). Covers: the switch is on; an encrypted write and read round trip
+ * content-free tombstone). Covers: the old status route is gone; an encrypted write and read round trip
  * (which also proves the production data key decodes to 32 bytes: otherwise every call answers 503);
  * a pull lists the change; a stale write is a conflict; Save transcript off refuses lines; deleting
  * the session takes its document and line. Prints step names and counts only, never ids or text.
@@ -75,10 +75,10 @@ test.afterAll(async () => {
   await page?.close();
 });
 
-test('1. the accountSync switch is on for the test account', async () => {
-  const status = await call('/api/sync/status');
-  expect(status).toEqual({ status: 200, json: { enabled: true } });
-  report('sync switch on', true);
+test('1. no accountSync switch: GET /api/sync/status is gone (ADR-0092)', async () => {
+  const status = await page.evaluate(async () => (await fetch('/api/sync/status')).status);
+  expect(status).toBe(404);
+  report('sync status route removed', true);
 });
 
 test('2. an encrypted write and read round trip (the data key works)', async () => {

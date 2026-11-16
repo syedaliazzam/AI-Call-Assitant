@@ -172,26 +172,18 @@ export interface CompactViewProps {
    * absent where the window cannot).
    */
   onReleaseFocus?: () => void;
-  /**
-   * The reference app's bars (ADR-0055: accounts with account sync): 980-wide bars. Otherwise the classic
-   * look (780). ADR-0085: the Transcript switch is on bar 1 for every account.
-   */
-  referenceLook?: boolean;
 }
 
 /** Which floating list or menu is open. */
 type Popup = DeviceList | 'menu' | 'preferences' | 'record' | 'record-notice';
 
 /**
- * The bars keep their own width; only the panels fill a window wider than this (spec S13): 780, or 980
- * in the reference look (ADR-0055: bar 1 also holds the Transcript pill; desktop 1.5.0, ADR-0068: and the
+ * The bars keep their own width; only the panels fill a window wider than this (spec S13): 980, the
+ * reference look (ADR-0055: bar 1 also holds the Transcript pill; desktop 1.5.0, ADR-0068: and the
  * Rec pill, so a 1.5.0 overlay opens 980 wide and every key-cap shows; in a 900-wide window of an older
  * shell, which has no Rec pill, the bar fills the window as before).
  */
-const BARS_WIDTHS = {
-  classic: 'mx-auto w-full max-w-[780px]',
-  reference: 'mx-auto w-full max-w-[980px]',
-} as const;
+const BARS_WIDTH = 'mx-auto w-full max-w-[980px]';
 
 /**
  * How far an element's top is below the top of the page, whatever it sits inside.
@@ -281,8 +273,6 @@ export function CompactView(props: CompactViewProps) {
     props.protection?.supported === true && !props.protection.on && !privateOff.visible;
   const { levels, onResize, copy } = props;
   const glass = props.glass ?? false;
-  const referenceLook = props.referenceLook ?? false;
-  const BARS_WIDTH = BARS_WIDTHS[referenceLook ? 'reference' : 'classic'];
   const zoom = props.zoom ?? 1;
   const fontScale = props.fontScale ?? 1;
   const [popup, setPopup] = useState<Popup | null>(null);
@@ -666,7 +656,6 @@ export function CompactView(props: CompactViewProps) {
             deviceList={popup === 'audio' || popup === 'mic' ? popup : null}
             onDeviceList={setPopup}
             menuButton={menuButton}
-            referenceLook={referenceLook}
             recordOpen={popup === 'record'}
             // ADR-0082: starts at once when consent was ticked at Connect; otherwise asks.
             onRecord={() => {

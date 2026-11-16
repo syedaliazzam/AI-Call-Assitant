@@ -20,6 +20,7 @@ import {
   getDb,
   localAccountDbName,
   selectAccountDatabase,
+  selectDatabaseForTests,
 } from '@/core/storage/db';
 import { createSession } from '@/core/storage/sessions';
 import { deleteAllAccountData, startAccountSync } from '@/core/sync/client';
@@ -76,16 +77,16 @@ beforeEach(async () => {
   vi.stubGlobal('window', {});
   vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   forgetPageAccount();
-  selectAccountDatabase(USER, true);
+  selectAccountDatabase(USER);
   await getDb().delete();
   forgetDb();
 });
 
 afterEach(async () => {
   forgetPageAccount();
-  selectAccountDatabase(USER, true);
+  selectAccountDatabase(USER);
   await getDb().delete();
-  selectAccountDatabase(null, false);
+  selectAccountDatabase(null);
   forgetDb();
   await Dexie.delete(DB_NAME);
   await Dexie.delete(localAccountDbName(USER));
@@ -144,13 +145,13 @@ describe('httpTransport', () => {
 
 describe('deleteAllAccountData', () => {
   it("deletes the account's own local database, never the shared 'kite' one", async () => {
-    selectAccountDatabase(null, false);
+    selectAccountDatabase(null);
     await createSession(sessionInput({ company: 'Ownerless' }));
-    selectAccountDatabase(USER, false);
+    selectDatabaseForTests(localAccountDbName(USER));
     await createSession(sessionInput({ company: 'Own local' }));
     forgetDb();
     enterAccount(USER);
-    selectAccountDatabase(USER, true);
+    selectAccountDatabase(USER);
     await createSession(sessionInput({ company: 'Synced' }));
     const server = fakeServer();
     await deleteAllAccountData(server.transport);

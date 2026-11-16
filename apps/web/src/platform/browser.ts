@@ -365,24 +365,6 @@ export const browserPlatform: Platform = {
   setOverlayMode(_mode: OverlayMode) {},
 
   /**
-   * A browser saves hand-off files; it never reads one.
-   *
-   * @returns Null.
-   */
-  async pickHandoffFile() {
-    return null;
-  },
-
-  /**
-   * A browser has no file to delete.
-   *
-   * @returns False.
-   */
-  async deleteHandoffFile() {
-    return false;
-  },
-
-  /**
    * A browser receives no paramountai:// links.
    *
    * @returns Null.

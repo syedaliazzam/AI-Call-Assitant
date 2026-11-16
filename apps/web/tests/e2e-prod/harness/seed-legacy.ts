@@ -12,7 +12,13 @@
  * Depends on: src/core/storage (db, sessions, documents)
  * Architecture: ADR-0049 (migration); ADR-0050 (test account only, invented data)
  */
-import { forgetDb, getDb, selectAccountDatabase } from '@/core/storage/db';
+import {
+  forgetDb,
+  getDb,
+  localAccountDbName,
+  selectAccountDatabase,
+  selectDatabaseForTests,
+} from '@/core/storage/db';
 import { addDocument } from '@/core/storage/documents';
 import { createSession } from '@/core/storage/sessions';
 
@@ -68,10 +74,11 @@ async function seedOne(company: string): Promise<string> {
   };
   const accountId = session.user.id;
   // The old shared database, as before 9 Nov 2026: it must never be offered to anyone.
-  selectAccountDatabase(null, false);
+  selectAccountDatabase(null);
   await seedOne(sharedCompany);
-  // The account's own local database, as the app keeps it for an account without account sync.
-  selectAccountDatabase(accountId, false);
+  // The account's own local database, as the app kept it for an account without account sync (until
+  // ADR-0092; devices may still hold one).
+  selectDatabaseForTests(localAccountDbName(accountId));
   const id = await seedOne(ownCompany);
   // The first dashboard visit found no local database and marked the upload done; ask again.
   localStorage.removeItem(`kite.localUpload.done.${accountId}`);

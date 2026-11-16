@@ -441,8 +441,6 @@ function CompactHarness({
       onPanels={setPanels}
       // ?glass=1: the see-through panel of the desktop window (the overlay look test).
       glass={params.has('glass')}
-      // ADR-0055: the reference look, as for an account with sync; ?look=classic for everyone else.
-      referenceLook={params.get('look') !== 'classic'}
       // ?theme=light: the overlay's light theme.
       resolvedTheme={params.get('theme') === 'light' ? 'light' : 'dark'}
       {...(alpha !== null

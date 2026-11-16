@@ -7,19 +7,12 @@ import {
   DESKTOP_OPEN_LINK,
   desktopRecordingLink,
   desktopSessionLink,
-  handoffFileName,
   parseDesktopLink,
 } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
 
 /** A valid session id. */
 const ID = '86495cda-fbd1-4cea-8387-cd29f5c1381b';
-
-describe('handoffFileName', () => {
-  it('is paramount-ai-session-<short id>.json', () => {
-    expect(handoffFileName(ID)).toBe('paramount-ai-session-86495cda.json');
-  });
-});
 
 describe('parseDesktopLink', () => {
   it('reads the two shapes a link can have', () => {

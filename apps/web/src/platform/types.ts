@@ -16,7 +16,6 @@ import type {
   DriveUploadProgress,
   DriveUploadRequest,
   DriveUploadResult,
-  HandoffPick,
   LocalRecording,
   RecordingCloseResult,
   RecordingDisplay,
@@ -240,20 +239,6 @@ export interface Platform {
    * @returns True where openPagesWindow and windowControl do something.
    */
   hasHomePanel(): boolean;
-
-  /**
-   * Lets the person pick a session file for the hand-off from a browser (v1.2.0, ADR-0045).
-   *
-   * @returns The file, or null when cancelled or where this app has no such thing.
-   */
-  pickHandoffFile(): Promise<HandoffPick | null>;
-
-  /**
-   * Deletes the session file picked last (v1.2.0, ADR-0045).
-   *
-   * @returns True when it was deleted.
-   */
-  deleteHandoffFile(): Promise<boolean>;
 
   /**
    * The one-time sign-in code a paramountai:// link brought (desktop 1.3.0, ADR-0052), given once.

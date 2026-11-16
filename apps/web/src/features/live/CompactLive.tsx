@@ -38,7 +38,6 @@ import { usePrivate } from '@/features/privacy/usePrivate';
 import { getPlatform } from '@/platform';
 import { CompactView } from './CompactView';
 import { openDashboard } from '@/features/sync/dashboardLink';
-import { useSyncAccount } from '@/features/sync/SyncScope';
 import type { LevelStore } from './overlay/parts';
 
 /** Props for CompactLive. */
@@ -101,13 +100,6 @@ function createLevelStore(): LevelStore & {
  * Rendered by: app/compact/[id]/page.tsx
  */
 export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLiveProps) {
-  // ADR-0051: with account sync, Dashboard ↗ and the rest open the web app in the browser.
-  const synced = useSyncAccount() !== null;
-  // ADR-0082: for Ask AI from the overlay's own key handling (the handler is added once).
-  const syncedRef = useRef(synced);
-  useEffect(() => {
-    syncedRef.current = synced;
-  });
   const [state, setState] = useState<CompactState | null>(null);
   const [askedEmail, setAskedEmail] = useState<string | null>(null);
   const { state: protection, change: changeProtection } = usePrivate();
@@ -136,13 +128,6 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
   const windowControls = useSyncExternalStore(
     subscribeNever,
     () => getPlatform().overlayWindowControls(),
-    () => false,
-  );
-  // A separate window for pages opened during a call: a desktop app from 1.1.0, or a new tab in a
-  // browser. In an older shell it would leave the call's window, or open another browser profile.
-  const canOpenPages = useSyncExternalStore(
-    subscribeNever,
-    () => getPlatform().kind === 'browser' || getPlatform().hasHomePanel(),
     () => false,
   );
   const iconMode = useSyncExternalStore(
@@ -233,8 +218,7 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
         });
       } else if (action === 'ask-kite') {
         // ADR-0082: the overlay has no message box: Ask AI opens in its own window; the call goes on.
-        if (syncedRef.current) openDashboard('/ask-kite');
-        else getPlatform().openPagesWindow('/ask-kite');
+        openDashboard('/ask-kite');
       } else if (action === 'record') {
         // Desktop 1.5.0 (ADR-0068): Ctrl+Alt+R with the overlay focused: the bars ask Start or Stop.
         channel.current?.send({ type: 'record-prompt' });
@@ -286,10 +270,8 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
         onCommand={(command) => channel.current?.send(command)}
         onMode={(mode) => getPlatform().setOverlayMode(mode)}
         onLayout={(layout: OverlayLayout) => getPlatform().setOverlayLayout(layout)}
-        // ADR-0055 (accounts with account sync): the reference app's bars and chat bar, and clicks
-        // passing through the gaps to the app behind (desktop 1.3.0).
-        referenceLook={synced}
-        {...(windowControls && synced
+        // ADR-0055: clicks pass through the gaps to the app behind (desktop 1.3.0).
+        {...(windowControls
           ? {
               onClickThrough: (through: boolean) => getPlatform().setOverlayClickThrough(through),
               // v1.3.2: a click on a panel's button gives the keyboard back to the app behind.
@@ -308,20 +290,10 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
               onPosition: (preset: OverlayPreset) => getPlatform().setOverlayPosition(preset),
             }
           : {})}
-        {...(synced
-          ? {
-              // ADR-0051: with account sync, the dashboard is the web app, in the system browser.
-              onDashboard: () => openDashboard('/'),
-              onHelp: () => openDashboard('/help'),
-              onEditSession: () => openDashboard(`/sessions/${sessionId}/edit`),
-            }
-          : canOpenPages
-            ? {
-                onDashboard: () => getPlatform().openPagesWindow('/'),
-                onHelp: () => getPlatform().openPagesWindow('/help'),
-                onEditSession: () => getPlatform().openPagesWindow(`/sessions/${sessionId}/edit`),
-              }
-            : {})}
+        // ADR-0051: the dashboard is the web app, in the system browser.
+        onDashboard={() => openDashboard('/')}
+        onHelp={() => openDashboard('/help')}
+        onEditSession={() => openDashboard(`/sessions/${sessionId}/edit`)}
         onProtection={changeProtection}
         {...(windowControls
           ? {

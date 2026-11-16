@@ -99,7 +99,7 @@ function Line({
 export function HelpPage() {
   return (
     <PageShell title="Help">
-      {/* ADR-0049: accounts with account sync read how their data is kept first. */}
+      {/* ADR-0049: how the account's data is kept comes first. */}
       <SyncHelp />
       <article className="flex flex-col gap-3 text-[15px] leading-relaxed text-ui-text">
         {markdownBlocks(USER_GUIDE_MD).map((block, index) => {

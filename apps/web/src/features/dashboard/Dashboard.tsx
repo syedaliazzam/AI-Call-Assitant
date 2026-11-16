@@ -17,7 +17,6 @@
 import { Bot, Briefcase, ChevronDown, LayoutGrid, List, Phone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { saveHandoffFile } from '@/core/session/handoff';
 import { countAnswersBySession } from '@/core/storage/answers';
 import {
   getDashboardLayout,
@@ -46,7 +45,6 @@ import { SessionCard } from './SessionCard';
 import { SessionSearch } from './SessionSearch';
 import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
 import { onSyncApplied } from '@/core/sync/events';
-import { useSyncAccount } from '@/features/sync/SyncScope';
 
 /** The type filter: one session type, or all of them. */
 type TypeFilter = SessionType | 'all';
@@ -165,10 +163,8 @@ export function Dashboard() {
     };
   }, [version]);
 
-  // ADR-0049: with account sync, reload when sync brought changes from the account (another device,
-  // the one-time upload). Without account sync this never fires.
+  // ADR-0049: reload when sync brought changes from the account (another device, the one-time upload).
   useEffect(() => onSyncApplied(() => setVersion((n) => n + 1)), []);
-  const synced = useSyncAccount() !== null;
 
   /**
    * Starts a session: Choose platform first where it applies (browser), otherwise straight to
@@ -355,10 +351,7 @@ export function Dashboard() {
         }}
         onOpenInDesktop={() => {
           if (!choosing) return;
-          // ADR-0052: with account sync the session is already in the account; the link carries a
-          // one-time sign-in code instead of a file. Without it, the file is saved here, on the press
-          // (a browser allows a download from a person's action).
-          if (!synced) void saveHandoffFile(choosing.id);
+          // ADR-0052: the session is already in the account; the link carries a one-time sign-in code.
           router.push(`/sessions/${choosing.id}/desktop`);
         }}
       />

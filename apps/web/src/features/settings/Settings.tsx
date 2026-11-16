@@ -23,8 +23,7 @@ import {
   saveSessionDefaults,
 } from '@/core/storage/settings';
 import type { SessionDefaults } from '@/core/storage/types';
-import { usingAccountDatabase } from '@/core/storage/db';
-import { deleteAllLocalData, type DeletedCounts } from '@/core/storage/wipe';
+import type { DeletedCounts } from '@/core/storage/wipe';
 import { deleteAllAccountData } from '@/core/sync/client';
 import {
   FORMAT_OPTIONS,
@@ -108,9 +107,6 @@ export function Settings({ isAdmin }: SettingsProps) {
   const [saved, setSaved] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  // ADR-0049: with account sync, deleting removes the data from the account, on every device.
-  // Fixed for the page: SyncScope chose the database before this page rendered.
-  const [synced] = useState(() => usingAccountDatabase());
   const [deleted, setDeleted] = useState<DeletedCounts | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -149,18 +145,19 @@ export function Settings({ isAdmin }: SettingsProps) {
     }
   }
 
-  /** Deletes all local data after confirmation and shows the counts. */
+  /**
+   * Deletes all the account's data after confirmation and shows the counts. ADR-0049: deleting removes
+   * the data from the account, on every device (every account has account sync, ADR-0092).
+   */
   async function wipe() {
     setDeleting(true);
     try {
-      setDeleted(await (synced ? deleteAllAccountData() : deleteAllLocalData()));
+      setDeleted(await deleteAllAccountData());
       setDefaults(BUILT_IN_DEFAULTS);
       setSaved(false);
     } catch {
       setError(
-        synced
-          ? 'Your data could not be deleted. Check your connection and try again; nothing was deleted.'
-          : 'The local data could not be deleted. Close other Paramount AI tabs and try again.',
+        'Your data could not be deleted. Check your connection and try again; nothing was deleted.',
       );
     } finally {
       setDeleting(false);
@@ -277,29 +274,20 @@ export function Settings({ isAdmin }: SettingsProps) {
       </Section>
 
       <Section title="What Paramount AI has learned">
-        {/* Remounted after "Delete all local data", so the list shows the empty store. */}
+        {/* Remounted after "Delete all my data", so the list shows the empty store. */}
         <LearnedLessons key={deleted ? 'wiped' : 'kept'} />
       </Section>
 
-      <Section title={synced ? 'Your data' : 'Local data'}>
+      <Section title="Your data">
         <DataTransfer />
-        {synced ? (
-          <p className="mb-4 text-[13px] text-ui-muted">
-            Deletes every session, document, transcript, answer, Ask AI chat and learned lesson in
-            your account, on every device signed in to it, and these settings. They are removed from
-            the server at once; the database provider&apos;s short-term backups keep them only until
-            those expire. The speech model stays on this computer (it holds no personal data).
-          </p>
-        ) : (
-          <p className="mb-4 text-[13px] text-ui-muted">
-            Deletes every session, document, transcript, answer, Ask AI chat and learned lesson
-            saved by Paramount AI on this computer, and these settings. The speech model stays (it
-            holds no personal data and is 204 MB to download again). Sessions in another browser or
-            in the desktop app are separate and are not affected.
-          </p>
-        )}
+        <p className="mb-4 text-[13px] text-ui-muted">
+          Deletes every session, document, transcript, answer, Ask AI chat and learned lesson in
+          your account, on every device signed in to it, and these settings. They are removed from
+          the server at once; the database provider&apos;s short-term backups keep them only until
+          those expire. The speech model stays on this computer (it holds no personal data).
+        </p>
         <Button variant="danger" onClick={() => setConfirming(true)}>
-          {synced ? 'Delete all my data' : 'Delete all local data'}
+          Delete all my data
         </Button>
         {deleted && (
           <p role="status" className="mt-3 text-[13px] text-ui-success">
@@ -313,7 +301,7 @@ export function Settings({ isAdmin }: SettingsProps) {
       <Dialog
         open={confirming}
         onClose={() => setConfirming(false)}
-        title={synced ? 'Delete all your data?' : 'Delete all local data?'}
+        title="Delete all your data?"
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirming(false)} disabled={deleting}>
@@ -326,9 +314,8 @@ export function Settings({ isAdmin }: SettingsProps) {
         }
       >
         <p>
-          {synced
-            ? 'Every session, document, transcript, answer and learned lesson in your account will be deleted, on every device signed in to it. This cannot be undone.'
-            : 'Every session, document, transcript, answer and learned lesson Paramount AI saved on this computer will be deleted. This cannot be undone.'}
+          Every session, document, transcript, answer and learned lesson in your account will be
+          deleted, on every device signed in to it. This cannot be undone.
         </p>
       </Dialog>
     </PageShell>

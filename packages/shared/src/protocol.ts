@@ -44,17 +44,6 @@ export function desktopSessionLink(sessionId: string, code?: string): string {
   return `${DESKTOP_PROTOCOL}://session/${sessionId}${code ? `/${code}` : ''}`;
 }
 
-/**
- * The name of the file a browser saves for the desktop app (spec S9).
- *
- * @param sessionId The session's id.
- * @returns For example "paramount-ai-session-86495cda.json".
- * Called from: apps/web/src/core/session/handoff.ts, the hand-off screens; tests
- */
-export function handoffFileName(sessionId: string): string {
-  return `paramount-ai-session-${sessionId.slice(0, 8)}.json`;
-}
-
 /** What a paramountai:// link asks for. */
 export type DesktopLink =
   /** Bring the app forward. */

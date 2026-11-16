@@ -2,7 +2,7 @@
  * File: apps/web/scripts/create-e2e-user.ts
  * Purpose: Creates a disposable test account for one run of the production end-to-end suites
  *          (tests/e2e-prod/): role 'user' (KITE_E2E_EMAIL / KITE_E2E_PASSWORD), or with --admin
- *          role 'admin' for the admin-only checks (/dev/latency, unflagged.spec.ts, the domain
+ *          role 'admin' for the admin-only checks (/dev/latency, the domain
  *          suite's admin page; KITE_E2E_ADMIN_EMAIL / KITE_E2E_ADMIN_PASSWORD). Since 14 Nov 2026
  *          production keeps no test accounts: delete it after the run (delete-test-accounts --prod).
  *          It creates the account with a temporary password exactly

@@ -1,19 +1,16 @@
 /**
  * File: apps/web/tests/integration/harness/handoff.tsx
- * Purpose: Browser side of the hand-off harness test (spec S8–S10, S12): the real sessions page,
- *          DesktopHandoffPage and HomePanel against this browser's real IndexedDB, with no sign-in. A
- *          test's init script can add a fake window.kiteDesktop to act as the desktop app.
+ * Purpose: Browser side of the hand-off harness test (spec S8, S9): the real sessions page and
+ *          DesktopHandoffPage against this browser's real IndexedDB, with no sign-in.
  * Used by: apps/web/tests/integration/handoff.spec.ts
  * Depends on: src/features/dashboard/Dashboard.tsx, src/features/handoff/DesktopHandoffPage.tsx,
- *             src/features/home/HomePanel.tsx, src/core/storage
- * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S8–S10, S12)
+ *             src/core/storage
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S8, S9); ADR-0092
  */
 import { createRoot } from 'react-dom/client';
-import { createSessionWithDocuments, getSession, listSessions } from '@/core/storage/sessions';
-import { listDocuments } from '@/core/storage/documents';
+import { createSessionWithDocuments } from '@/core/storage/sessions';
 import { Dashboard } from '@/features/dashboard/Dashboard';
 import { DesktopHandoffPage } from '@/features/handoff/DesktopHandoffPage';
-import { HomePanel } from '@/features/home/HomePanel';
 
 /** What the test can do on this page. */
 export interface HandoffHarness {
@@ -23,14 +20,8 @@ export interface HandoffHarness {
   showDashboard: () => void;
   /** Shows the hand-off page for a session. */
   showHandoff: (id: string) => void;
-  /** Shows the home panel, on a session's start card if an id is given. */
-  showHome: (id?: string) => void;
   /** The address the app last asked to go to. */
   pushed: () => string;
-  /** What this browser holds for a session. */
-  stored: (id: string) => Promise<{ company: string; documents: string[] } | null>;
-  /** How many sessions this browser holds. */
-  count: () => Promise<number>;
 }
 
 declare global {
@@ -39,15 +30,6 @@ declare global {
     kiteHandoffHarness: HandoffHarness;
     /** The paramountai:// links followed so far (set by the test's init script). */
     followed: string[];
-    /** The fake desktop app's record (set by the test's init script). */
-    desktop: {
-      /** The pages the app asked to open in the main window. */
-      opened: string[];
-      /** How many times the app asked to delete the picked file. */
-      deleted: number;
-      /** What the fake file dialog answers. */
-      pick: unknown;
-    };
   }
 }
 
@@ -85,20 +67,5 @@ window.kiteHandoffHarness = {
   },
   showDashboard: () => root.render(<Dashboard />),
   showHandoff: (id) => root.render(<DesktopHandoffPage sessionId={id} />),
-  showHome: (id) =>
-    root.render(
-      <HomePanel
-        key={id ?? 'list'}
-        email="sam.lee@example.com"
-        {...(id ? { startSessionId: id } : {})}
-      />,
-    ),
   pushed: () => lastPushed,
-  stored: async (id) => {
-    const session = await getSession(id);
-    if (!session) return null;
-    const documents = await listDocuments(id);
-    return { company: session.company, documents: documents.map((document) => document.text) };
-  },
-  count: async () => (await listSessions()).length,
 };

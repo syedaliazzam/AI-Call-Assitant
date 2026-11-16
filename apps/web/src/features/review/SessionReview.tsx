@@ -29,7 +29,6 @@ import { notesUnavailableOf } from '@/core/live/afterCall';
 import { regenerateCallNotes } from '@/core/notes/regenerate';
 import type { CallView } from '@/core/review/calls';
 import { loadReview, type ReviewData } from '@/core/review/load';
-import { usingAccountDatabase } from '@/core/storage/db';
 import { deleteSession } from '@/core/storage/sessions';
 import { pullAccountSync } from '@/core/sync/client';
 import { buildKeyterms } from '@/core/stt/sessionHotwords';
@@ -178,15 +177,13 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
         .then((data) => {
           if (!cancelled) setReview(data);
         });
-    // ADR-0077: with account sync, the account's newest data first (a call ended on another device),
-    // then this device's copy; and again after every pull.
+    // ADR-0077: the account's newest data first (a call ended on another device), then this device's
+    // copy; and again after every pull.
     void (async () => {
-      if (usingAccountDatabase()) {
-        setSyncing(true);
-        await pullAccountSync().catch(() => undefined);
-        if (cancelled) return;
-        setSyncing(false);
-      }
+      setSyncing(true);
+      await pullAccountSync().catch(() => undefined);
+      if (cancelled) return;
+      setSyncing(false);
       await load();
     })();
     const stop = onSyncApplied(() => void load());
@@ -203,7 +200,7 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
     if (!finishing) return;
     const timer = window.setInterval(() => {
       void (async () => {
-        if (usingAccountDatabase()) await pullAccountSync().catch(() => undefined);
+        await pullAccountSync().catch(() => undefined);
         setReview(await loadReview(sessionId).catch(() => null));
       })();
     }, PENDING_REFRESH_MS);

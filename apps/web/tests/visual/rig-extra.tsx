@@ -86,12 +86,7 @@ function RigHome() {
   // no network; an invented account).
   if (new URLSearchParams(window.location.search).get('launcher') === '1') {
     return (
-      <SyncScope
-        accountId="rig-user"
-        syncUserId="rig-user"
-        runEngine={false}
-        email="sam@example.com"
-      >
+      <SyncScope accountId="rig-user" runEngine={false} email="sam@example.com">
         <HomePanel email="sam@example.com" />
       </SyncScope>
     );
@@ -101,7 +96,7 @@ function RigHome() {
 
 // ADR-0082 visual check: the launcher's sessions go into the invented account's own database.
 if (new URLSearchParams(window.location.search).get('launcher') === '1')
-  selectAccountDatabase('rig-user', true);
+  selectAccountDatabase('rig-user');
 
 const zones = new URLSearchParams(window.location.search).get('zones');
 createRoot(document.getElementById('root')!).render(
