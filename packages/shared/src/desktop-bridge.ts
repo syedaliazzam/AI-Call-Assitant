@@ -461,7 +461,6 @@ export interface PanelSize {
   height: number;
 }
 
-
 /** What windowControl() can do (v1.1.0). */
 export type WindowControlAction = 'minimize' | 'close';
 

@@ -10,12 +10,7 @@
  */
 import { ACCOUNT_HEADER, type SyncPullResponse, type SyncPushResponse } from '@kite/shared';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  handlePull,
-  handlePush,
-  handleRecord,
-  type SyncDeps,
-} from '@/server/calldata/api';
+import { handlePull, handlePush, handleRecord, type SyncDeps } from '@/server/calldata/api';
 import { DataKeyError } from '@/server/calldata/crypto';
 import { ALICE, BOB, createTestDb, type TestDb, resetTestDb } from './pgliteDb';
 
@@ -47,10 +42,7 @@ beforeEach(async () => {
  * @param keysFail True to make the data keys unavailable.
  * @returns The dependencies.
  */
-function deps(
-  user: string | 'signed-out' | 'password',
-  keysFail = false,
-): SyncDeps {
+function deps(user: string | 'signed-out' | 'password', keysFail = false): SyncDeps {
   return {
     user: async () => (user === 'signed-out' || user === 'password' ? user : { id: user }),
     db: () => t.db,
