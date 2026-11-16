@@ -622,3 +622,18 @@ One sentence was added to the end of the ADR-0088 rule: the promise is only for 
 | `answers` regression (15 × 2) | 9.30 | **9.43** (gate ≥ 8.86); 10 10.0, 08 8.0, 14 10.0; hidden line 30/30 |
 
 Per scenario in the regression: 01 10.0, 02 9.0, 03 9.0, 04 10.0, 05 9.5, 06 9.5, 07 9.5, 08 8.0, 09 10.0, 10 10.0, 11 8.5, 12 10.0, 13 9.0, 14 10.0, 15 9.5. 11 lost points for paragraph layout and rounding ("halved" for 40 → 18 minutes), not for the promise; it was 8.0 in the ADR-0088 final run.
+
+## The other person named (2026-11-16, ADR-0093)
+
+The `answers` group once and `question-detection` at one run, with every session's other person named "Sarah" (`--their-name=Sarah`: their lines are labelled "Sarah" and the session block names them, as a call with a contact name now sends). Prompts without a name are unchanged, so no baseline moves. Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`. Developer's cap $0.15 (each command stopped by `--max-dollars`); spend **$0.122** (83 requests).
+
+| Group | Gate | Result | Spend |
+|---|---|---|---|
+| `answers` (15 × 2) | ≥ 8.86 | **9.30** (last run without a name: 9.43); hidden line 30/30; answer line as shown ≤ 12 words 26/26 | $0.096 (60 requests) |
+| `question-detection` (13 × 1) | ≥ 8 | **9.31** (last full run: 9.73); garbled and none 10.0 each (no answer given); type as expected 12/13 | $0.026 (23 requests) |
+
+Per scenario (`answers`): 01 9.0, 02 9.0, 03 9.5, 04 10.0, 05 9.0, 06 9.5, 07 9.5, 08 8.5, 09 10.0, 10 9.5, 11 8.0, 12 10.0, 13 8.0, 14 10.0, 15 10.0. `question-detection`: garbled 1–3 10, statement 1–3 8, 10, 9, none 1–2 10, real 1–5 10, 7, 8, 9, 10.
+
+- **Question detection holds:** every garbled line and every remark got no answer; every real question got one.
+- **Three runs lost points only because the grader was not told the name:** 11 (one run), qd-statement-1 and qd-statement-3. In each, the answer used "Sarah" and the grader marked the name as invented, because the script gave the grader the session without it. `eval-answers.ts` now gives the grader the named session when `--their-name` is set. These numbers were not re-measured after that fix (the cap), so they slightly under-read.
+- The other deductions are the usual ones: layout on 08, 11 and 13, and small CV embellishments on qd-real-2 and qd-real-3. They are not related to the name.
