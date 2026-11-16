@@ -42,9 +42,10 @@ export interface BuiltInRevision {
  */
 export const BUILT_IN_REVISIONS: Readonly<Record<AiInstructionBlock, BuiltInRevision>> = {
   // 2026-11-16 (ADR-0086): "You are Paramount AI"; the transcript comes from Deepgram, on-device fallback.
+  // Same day (ADR-0088): an unsupported company fact gets a short promise with no bullets.
   live: {
     date: '2026-11-16',
-    sha256: '437551a24c9776d51e0ffb1d07db7fc58cd3e674bb94fc2506ee968a6084d609',
+    sha256: '28517b2e536f17f6c96b8a8df2e0ab8d1484d135b459bd21b371b834f02ef679',
   },
   // 2026-11-16 (ADR-0086): "You are Paramount AI".
   notes: {

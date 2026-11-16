@@ -43,8 +43,10 @@ import { parseAnswerRequest } from '@/server/validate';
  * ADR-0086 (16 Nov 2026): "You are Kite" became "You are Paramount AI", and the transcript line says it
  * comes from cloud speech recognition (Deepgram) with on-device recognition as the fallback; checked
  * with the answers group (answer-eval.md).
+ * ADR-0088 (16 Nov 2026): the "fact you cannot support" example's answer line is now "I'll confirm
+ * that and send it after the call." (the old one, repeating the subject, was copied into long lines).
  */
-const RULES_SHA256 = '9547e76eb76120f9b62749a9294c5e79fba79aada21a415b1dcdc20f1343496a';
+const RULES_SHA256 = '01dcfd2109f00fe63c5c8e550b2b1a824be137e0b09d9d42759a61d627d34eb3';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte
