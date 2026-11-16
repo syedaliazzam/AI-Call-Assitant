@@ -6,12 +6,15 @@
  *          3 proposed lessons from the user's ratings and notes. One structured (JSON) request.
  * Used by: app/api/notes/route.ts; scripts/verify-notes.ts, scripts/eval-notes.ts
  * Depends on: src/server/claude.ts (jsonReply, cachedBlock), src/server/prompt.ts (smartSessionBlock,
- *             clockTime), src/server/prompts/company.ts (ADR-0083), @kite/shared (notes types and limits)
+ *             clockTime), src/server/prompts/contract.ts (the notes contract, ADR-0089),
+ *             src/server/prompts/defaults.ts (the default notes prompt), @kite/shared (notes types and limits)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.2 (/api/notes), §7.6 (learning
  *               loop); day-05-overlay-screenshots-notes.md Stage 5
  *
- * - The session block is the smart-model session block (smartSessionBlock(): the CV in full and a
- *   summary of the other documents, ADR-0067), cached; the notes rules are a constant, cached too. (The answers' cache is not shared: it is per model.)
+ * - The first cached block is the locked notes contract (the fields the app reads), then the admin's
+ *   global prompt for notes (ADR-0089). The session block is the smart-model session block
+ *   (smartSessionBlock(): the user's preferences, the CV in full and a summary of the other documents,
+ *   ADR-0067), cached too. (The answers' cache is not shared: it is per model.)
  * - Ratings in the notes come from the request (the user's own ratings), never from the model.
  * - A part of the call too unclear to follow is listed as unclear instead of guessed.
  * - Proposed lessons are suggestions: nothing is learned until the user approves one (Stage 7).
@@ -29,26 +32,14 @@ import {
 } from '@kite/shared';
 import { cachedBlock, jsonReply } from './claude';
 import { clockTime, smartSessionBlock } from './prompt';
-import { withCompany } from './prompts/company';
+import { NOTES_CONTRACT, NOTES_END_REMINDER, withGlobalPrompt } from './prompts/contract';
+import { DEFAULT_NOTES_PROMPT } from './prompts/defaults';
 
 /** Most tokens the notes may use (a long call's notes are about 1,000–1,500). */
 export const NOTES_MAX_TOKENS = 4_000;
 
 /** Time limit for the notes request, in ms (a 60-minute call takes about 20–40 s). */
 export const NOTES_TIMEOUT_MS = 110_000;
-
-/** The notes rules. A constant (cached); nothing that changes between calls. */
-export const NOTES_RULES = `You are Paramount AI. A call has just ended. Write short, faithful notes for the user, who took part in the call.
-
-Rules:
-- Use only what is in the transcript, the answers Kite gave, and the session details and documents. Never invent names, numbers, dates, commitments or next steps.
-- The transcript comes from speech recognition and contains mistakes. Names and terms are often misheard; read them in the light of the session's key terms and documents.
-- If speech in the call could not be understood (garbled words, or lines that do not make sense together), do not guess what was said: add it to "unclear" with its time range (in seconds since the call started) and a short reason, and leave it out of the summary. Silence, or a gap where nobody spoke, is not unclear: leave it out.
-- summary: at most ${MAX_SUMMARY_BULLETS} short bullets about what was discussed and decided.
-- questions: the questions the other person ("Them") asked, each in a few words, with when it was asked (seconds since the call started). "answerId" is the id of the one Kite answer (from the answers list, for example "A2") that was given for this question; null when Kite gave no answer for it. An answer the user gave themselves does not count. "answered" says whether that Kite answer covered the question: yes or partly; "no" when answerId is null. Use each answer id for at most one question.
-- nextSteps: only steps that were actually agreed or promised in the call, with the person who will do them if a name or role was said (otherwise an empty owner).
-- lessons: at most ${MAX_PROPOSED_LESSONS} short lessons for how Kite should answer in future calls, each one sentence, based only on the user's ratings and notes on Kite's answers (a thumbs down, or a note saying what was wrong or what a better answer would be). Give the evidence: which answer (its time and question) and the rating or note. If the ratings and notes show nothing to learn, give no lessons.
-- Write plainly. No preamble.`;
 
 /** The structured-output schema of the notes (the model's part; ratings are added after). */
 export const NOTES_SCHEMA = {
@@ -185,27 +176,27 @@ export function callRecord(request: Pick<NotesRequest, 'lines' | 'answers'>): st
 }
 
 /**
- * The notes prompt: the cached rules and session block, and the call as the user turn.
+ * The notes prompt: the cached contract with the global prompt, the session block, and the call as the
+ * user turn, ending with the contract's reminder.
  *
- * @param request A validated notes request.
- * @param company The company instructions for the notes ('' for none; ADR-0083). They follow the
- *                notes rules in the first cached block.
- * @param rules   ADR-0086: the notes rules: the admin's custom prompt in force, or NOTES_RULES.
+ * @param request      A validated notes request.
+ * @param globalPrompt The admin's global prompt for notes (ADR-0089; the call's pinned version, or the one
+ *                     in force), after the locked contract. '' sends the contract alone.
  * @returns The system blocks and the user turn's text.
  * Called from: generateCallNotes(); tests
  */
-export function notesPrompt(request: NotesRequest, company = '', rules: string = NOTES_RULES) {
+export function notesPrompt(request: NotesRequest, globalPrompt: string = DEFAULT_NOTES_PROMPT) {
   const last = request.lines.at(-1)?.at ?? 0;
   const prompt = [
     `The call lasted about ${clockTime(last)} (times are minutes:seconds since it started; "at" values are seconds).`,
     '',
     ...callRecord(request),
     '',
-    'Write the notes.',
+    NOTES_END_REMINDER,
   ].join('\n');
   return {
     system: [
-      cachedBlock(withCompany(rules, 'notes', company)),
+      cachedBlock(withGlobalPrompt(NOTES_CONTRACT, globalPrompt)),
       cachedBlock(smartSessionBlock(request.session)),
     ],
     prompt,
@@ -250,10 +241,9 @@ export function finishNotes(model: ModelNotes, answers: readonly NotesAnswer[]):
 /**
  * Writes the notes for a call with the smart model.
  *
- * @param request A validated notes request.
- * @param model   The smart model's name (KITE_MODEL_SMART).
- * @param company The company instructions for the notes ('' for none; ADR-0083).
- * @param rules   ADR-0086: the notes rules (the admin's custom prompt in force, or NOTES_RULES).
+ * @param request      A validated notes request.
+ * @param model        The smart model's name (KITE_MODEL_SMART).
+ * @param globalPrompt The admin's global prompt for notes (ADR-0089).
  * @returns The notes and the token usage.
  * @throws Anthropic.APIError on API failures; Error('NO_JSON') when the reply has no notes.
  * Called from: POST handler in app/api/notes/route.ts; server/aiTry.ts; scripts/verify-notes.ts,
@@ -262,10 +252,9 @@ export function finishNotes(model: ModelNotes, answers: readonly NotesAnswer[]):
 export async function generateCallNotes(
   request: NotesRequest,
   model: string,
-  company = '',
-  rules: string = NOTES_RULES,
+  globalPrompt: string = DEFAULT_NOTES_PROMPT,
 ): Promise<{ notes: CallNotes; usage: AnswerUsage }> {
-  const { system, prompt } = notesPrompt(request, company, rules);
+  const { system, prompt } = notesPrompt(request, globalPrompt);
   const { value, usage } = await jsonReply({
     model,
     tier: 'smart',

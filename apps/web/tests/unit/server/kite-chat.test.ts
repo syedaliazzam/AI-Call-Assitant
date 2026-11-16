@@ -4,7 +4,12 @@
  */
 import type Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it, vi } from 'vitest';
-import { attachmentsBlock, buildKiteChatPrompt, KITE_CHAT_RULES } from '@/server/kite-chat';
+import { attachmentsBlock, buildKiteChatPrompt } from '@/server/kite-chat';
+import { ASK_CHAT_CONTRACT, withGlobalPrompt } from '@/server/prompts/contract';
+import { DEFAULT_ASK_PROMPT } from '@/server/prompts/defaults';
+
+/** ADR-0089: the Ask AI page's first block with the default prompt (the contract, then the default). */
+const KITE_CHAT_RULES = withGlobalPrompt(ASK_CHAT_CONTRACT, DEFAULT_ASK_PROMPT);
 import { parseAnswerRequest } from '@/server/validate';
 
 vi.mock('server-only', () => ({}));
@@ -59,8 +64,11 @@ describe('attachmentsBlock', () => {
     expect(block).toContain('a&quot;b');
   });
 
-  it('names a coding language only when it is not the default', () => {
-    expect(attachmentsBlock({ mode: 'kite' })).not.toContain('Coding language');
+  it('names the coding language under the user preferences, Python by default (ADR-0089)', () => {
+    expect(attachmentsBlock({ mode: 'kite' })).toContain('Coding language: Python.');
+    expect(attachmentsBlock({ mode: 'kite' })).toContain(
+      'These user preferences override the general rules',
+    );
     expect(attachmentsBlock({ mode: 'kite', codingLanguage: 'Go' })).toContain(
       'Coding language: Go',
     );

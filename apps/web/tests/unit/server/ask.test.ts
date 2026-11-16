@@ -12,25 +12,23 @@ const countRequestMock = vi.hoisted(() =>
 vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
 
 /**
- * Spy standing in for the instructions text of companySettings() (ADR-0083): no company instructions by default, so every
- * other test sees today's prompts byte for byte.
+ * Spy standing in for companySettings() (ADR-0089): the global prompt a request uses, or null for the
+ * tab's default prompt (the default, so every other test sees today's prompts).
  */
-const companyMock = vi.hoisted(() => vi.fn(async (_block: string, _pin?: string) => ''));
-/**
- * Spy standing in for the custom full prompt of companySettings() (ADR-0086): null (the built-in
- * prompt) by default.
- */
-const promptMock = vi.hoisted(() =>
-  vi.fn((..._args: unknown[]): import('@kite/shared').CustomPrompt | null => null),
+const companyMock = vi.hoisted(() =>
+  vi.fn(async (_block: string, _pin?: string): Promise<string | null> => null),
 );
-vi.mock('@/server/aiInstructions', () => ({
-  // The same arguments reach both spies, so call checks stay exact.
-  companySettings: async (...args: [string, string?]) => ({
-    text: await companyMock(...args),
-    prompt: promptMock(...args),
-  }),
-  NO_SETTINGS: { text: '', prompt: null },
-}));
+vi.mock('@/server/aiInstructions', async () => {
+  const { DEFAULT_PROMPTS } = await import('@/server/prompts/defaults');
+  return {
+    companySettings: async (block: 'live' | 'notes' | 'ask', pin?: string) => {
+      const text = await companyMock(block, pin);
+      return text === null
+        ? { globalPrompt: DEFAULT_PROMPTS[block], isDefault: true }
+        : { globalPrompt: text, isDefault: false };
+    },
+  };
+});
 
 vi.mock('server-only', () => ({}));
 const mocks = vi.hoisted(() => ({ jsonReply: vi.fn(), getCachedSession: vi.fn() }));
@@ -42,7 +40,9 @@ vi.mock('@/server/auth', () => ({ getCachedSession: mocks.getCachedSession }));
 vi.mock('@/server/env', () => ({ getClaudeEnv: () => ({ modelSmart: 'smart-model' }) }));
 
 import { POST } from '../../../app/api/ask/route';
-import { answerAboutCall, ASK_RULES, estimatedCost } from '@/server/ask';
+import { answerAboutCall, estimatedCost } from '@/server/ask';
+import { ASK_REVIEW_CONTRACT, withGlobalPrompt } from '@/server/prompts/contract';
+import { DEFAULT_ASK_PROMPT } from '@/server/prompts/defaults';
 
 const USAGE = {
   input_tokens: 1_000_000,
@@ -108,7 +108,7 @@ describe('answerAboutCall', () => {
     expect(input.tier).toBe('smart');
     expect(input.system).toHaveLength(3);
     expect(input.system.every((block) => block.cache_control)).toBe(true);
-    expect(input.system[0]!.text).toBe(ASK_RULES);
+    expect(input.system[0]!.text).toBe(withGlobalPrompt(ASK_REVIEW_CONTRACT, DEFAULT_ASK_PROMPT));
     expect(input.system[1]!.text).toContain('Alder Foods');
     expect(input.system[2]!.text).toContain('SECRETLINE');
     expect(input.system[2]!.text).toContain('SECRETNOTE');
@@ -128,12 +128,12 @@ describe('answerAboutCall', () => {
     );
     expect(blocks[0]).toEqual(blocks[1]);
   });
-  it('puts the company Ask AI instructions after the locked rules, in the first cached block (ADR-0083)', async () => {
+  it('puts the Ask AI global prompt after the locked review contract, in the first cached block (ADR-0089)', async () => {
     await answerAboutCall(REQUEST as never, 'smart-model', 'Answer in plain English.');
     const input = mocks.jsonReply.mock.calls[0]![0] as {
       system: { text: string; cache_control?: unknown }[];
     };
-    expect(input.system[0]!.text.startsWith(ASK_RULES)).toBe(true);
+    expect(input.system[0]!.text.startsWith(ASK_REVIEW_CONTRACT)).toBe(true);
     expect(input.system[0]!.text.endsWith('Answer in plain English.')).toBe(true);
     expect(input.system[0]!.cache_control).toBeTruthy();
   });
@@ -147,7 +147,7 @@ describe('answerAboutCall', () => {
     await POST(
       new Request('http://localhost/api/ask', { method: 'POST', body: JSON.stringify(REQUEST) }),
     );
-    expect(companyMock).toHaveBeenCalledWith('ask');
+    expect(companyMock).toHaveBeenCalledWith('ask', undefined);
   });
 });
 

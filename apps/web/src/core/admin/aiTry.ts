@@ -1,17 +1,24 @@
 /**
  * File: apps/web/src/core/admin/aiTry.ts
- * Purpose: Browser side of Admin → AI settings' "Try it" (ADR-0083): lists this device's sessions to
- *          pick one for context, builds that session's details and documents as the live page sends
- *          them, and posts the try to the server.
- * Used by: src/features/admin/ai-settings/TryPanel.tsx
+ * Purpose: Browser side of Admin → AI settings' "Try it" and "Quality check" (ADR-0083, ADR-0089): lists
+ *          this device's sessions to pick one for context, builds that session's details and documents
+ *          as the live page sends them, and posts the try or the check to the server.
+ * Used by: src/features/admin/ai-settings/TryPanel.tsx, QualityPanel.tsx
  * Depends on: src/core/storage (sessions.ts, documents.ts), src/core/answer/warm.ts
- *             (toLiveSessionContext), @kite/shared (AiTryRequest, AiTryResponse), the browser's fetch
- * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md
+ *             (toLiveSessionContext), @kite/shared (try and quality-check shapes), the browser's fetch
+ * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md,
+ *               docs/decisions/ADR-0089-global-prompts-with-locked-contract.md
  *
  * The session's text goes to the server only inside the try request (as for any answer); nothing is
  * logged here.
  */
-import type { AiTryRequest, AiTryResponse, SessionContext } from '@kite/shared';
+import type {
+  AiTryRequest,
+  AiTryResponse,
+  QualityCheckRequest,
+  QualityCheckResponse,
+  SessionContext,
+} from '@kite/shared';
 import { toLiveSessionContext } from '../answer/warm';
 import { listDocuments } from '../storage/documents';
 import { listSessions } from '../storage/sessions';
@@ -81,11 +88,24 @@ export interface AiTryInput extends Omit<AiTryRequest, 'session'> {
 }
 
 /**
- * Runs a try on the server.
+ * Reads a failed response's message (the server's own, which never holds content).
  *
- * @param input     The block, draft, sample, picked session and (ADR-0086) optional full prompt.
+ * @param response The response.
+ * @param fallback What to say when it has none.
+ * @returns The message.
+ * Called from: runAiTry(), runQualityCheck()
+ */
+async function failureMessage(response: Response, fallback: string): Promise<string> {
+  const failure = (await response.json().catch(() => ({}))) as { message?: unknown };
+  return typeof failure.message === 'string' ? failure.message : fallback;
+}
+
+/**
+ * Runs a try on the server with the draft global prompt.
+ *
+ * @param input     The tab, the draft prompt, the sample and the picked session.
  * @param fetchImpl fetch (tests pass one).
- * @returns The reply, or a message to show.
+ * @returns The reply (with the token that lets this draft be saved), or a message to show.
  * Called from: TryPanel.tsx; tests
  */
 export async function runAiTry(
@@ -96,11 +116,9 @@ export async function runAiTry(
     const session = input.sessionId ? await sessionContext(input.sessionId) : undefined;
     const body: AiTryRequest = {
       block: input.block,
-      draft: input.draft,
+      prompt: input.prompt,
       sample: input.sample,
       ...(session ? { session } : {}),
-      // ADR-0086: the full prompt to try (advanced mode's draft, or a custom prompt in force).
-      ...(input.prompt ? { prompt: input.prompt } : {}),
     };
     const response = await fetchImpl('/api/admin/ai-instructions/try', {
       method: 'POST',
@@ -108,17 +126,62 @@ export async function runAiTry(
       body: JSON.stringify(body),
     });
     if (!response.ok) {
-      const failure = (await response.json().catch(() => ({}))) as { message?: unknown };
       return {
         ok: false,
-        message:
-          typeof failure.message === 'string'
-            ? failure.message
-            : 'The try did not work. Try again.',
+        message: await failureMessage(response, 'The try did not work. Try again.'),
       };
     }
     return { ok: true, reply: (await response.json()) as AiTryResponse };
   } catch {
     return { ok: false, message: 'The try did not work. Check the connection and try again.' };
+  }
+}
+
+/** What a quality check comes back with. */
+export type QualityOutcome =
+  | {
+      /** It worked. */
+      ok: true;
+      /** The result. */
+      result: QualityCheckResponse;
+    }
+  | {
+      /** It did not. */
+      ok: false;
+      /** A short message to show. */
+      message: string;
+    };
+
+/**
+ * Runs the live answers quality check on the server with the draft global prompt.
+ *
+ * @param prompt    The draft.
+ * @param fetchImpl fetch (tests pass one).
+ * @returns The result (with the token that lets this draft be saved), or a message to show.
+ * Called from: QualityPanel.tsx; tests
+ */
+export async function runQualityCheck(
+  prompt: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<QualityOutcome> {
+  try {
+    const body: QualityCheckRequest = { prompt };
+    const response = await fetchImpl('/api/admin/ai-instructions/quality', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: await failureMessage(response, 'The quality check did not work. Try again.'),
+      };
+    }
+    return { ok: true, result: (await response.json()) as QualityCheckResponse };
+  } catch {
+    return {
+      ok: false,
+      message: 'The quality check did not work. Check the connection and try again.',
+    };
   }
 }

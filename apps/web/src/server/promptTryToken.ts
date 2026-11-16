@@ -1,40 +1,37 @@
 /**
  * File: apps/web/src/server/promptTryToken.ts
- * Purpose: Proof that a custom full system prompt was tried before it is saved (ADR-0086). A successful
- *          "Try it" with a prompt returns a token: an HMAC of the block and the prompt's exact bytes,
- *          keyed with the server's auth secret. Saving that prompt requires a token that matches it, so
+ * Purpose: Proof that a global prompt was tried (Try it) or quality-checked before it is saved (ADR-0086,
+ *          ADR-0089). A successful try or check returns a token: an HMAC of the tab and the prompt's exact
+ *          cleaned bytes, keyed with the server's auth secret. Saving requires a token that matches it, so
  *          an untried or edited-after-trying prompt cannot be saved, even by calling the action directly.
- * Used by: app/api/admin/ai-instructions/try/route.ts (issues), app/(app)/admin/ai-settings/actions.ts
- *          (checks)
- * Depends on: node:crypto, @kite/shared (promptKey), src/server/env.ts (getAuthEnv: the secret)
- * Architecture: docs/decisions/ADR-0086-full-system-prompt-editing.md
+ * Used by: src/server/aiTry.ts and src/server/aiQuality.ts (issue, through the try and quality routes),
+ *          app/(app)/admin/ai-settings/actions.ts (checks)
+ * Depends on: node:crypto, @kite/shared (normaliseGlobalPrompt), src/server/env.ts (getAuthEnv: the secret)
+ * Architecture: docs/decisions/ADR-0086-full-system-prompt-editing.md,
+ *               docs/decisions/ADR-0089-global-prompts-with-locked-contract.md
  *
  * The token reveals nothing about the prompt, and neither it nor the prompt is ever logged.
  */
 import 'server-only';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { promptKey, type AiInstructionBlock, type CustomPrompt } from '@kite/shared';
+import { normaliseGlobalPrompt, type AiInstructionBlock } from '@kite/shared';
 import { getAuthEnv } from './env';
 
 /** Keeps these tokens apart from anything else signed with the same secret. */
-const PURPOSE = 'kite-prompt-try-v1';
+const PURPOSE = 'kite-prompt-try-v2';
 
 /**
  * The token for a tried prompt.
  *
  * @param secret The signing secret (the auth secret in the app; tests pass one).
  * @param block  The block the prompt is for.
- * @param prompt The prompt tried (cleaned inside promptKey()).
+ * @param prompt The global prompt tried (cleaned here, so line endings and outer spaces do not matter).
  * @returns The token (64 hex characters).
  * Called from: promptTryToken(), checkPromptTryToken(); tests
  */
-export function signPromptTry(
-  secret: string,
-  block: AiInstructionBlock,
-  prompt: CustomPrompt,
-): string {
+export function signPromptTry(secret: string, block: AiInstructionBlock, prompt: string): string {
   return createHmac('sha256', secret)
-    .update(`${PURPOSE}\n${block}\n${promptKey(block, prompt)}`)
+    .update(`${PURPOSE}\n${block}\n${normaliseGlobalPrompt(prompt)}`)
     .digest('hex');
 }
 
@@ -51,7 +48,7 @@ export function signPromptTry(
 export function verifyPromptTry(
   secret: string,
   block: AiInstructionBlock,
-  prompt: CustomPrompt,
+  prompt: string,
   token: string,
 ): boolean {
   const expected = Buffer.from(signPromptTry(secret, block, prompt), 'hex');
@@ -66,9 +63,9 @@ export function verifyPromptTry(
  * @param prompt The prompt tried.
  * @returns The token.
  * @throws Error when the auth settings are missing (the route answers 500).
- * Called from: app/api/admin/ai-instructions/try/route.ts
+ * Called from: src/server/aiTry.ts (handleTry), src/server/aiQuality.ts (handleQualityCheck)
  */
-export function promptTryToken(block: AiInstructionBlock, prompt: CustomPrompt): string {
+export function promptTryToken(block: AiInstructionBlock, prompt: string): string {
   return signPromptTry(getAuthEnv().secret, block, prompt);
 }
 
@@ -83,7 +80,7 @@ export function promptTryToken(block: AiInstructionBlock, prompt: CustomPrompt):
  */
 export function checkPromptTryToken(
   block: AiInstructionBlock,
-  prompt: CustomPrompt,
+  prompt: string,
   token: string,
 ): boolean {
   return verifyPromptTry(getAuthEnv().secret, block, prompt, token);

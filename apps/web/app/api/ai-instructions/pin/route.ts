@@ -1,9 +1,9 @@
 /**
  * File: apps/web/app/api/ai-instructions/pin/route.ts
- * Purpose: GET /api/ai-instructions/pin: the company AI instructions' version ids in force now (live
+ * Purpose: GET /api/ai-instructions/pin: the AI settings version ids in force now (global prompts of live
  *          answers and AI notes), read fresh from the database, for a call that is starting. The call
  *          sends them with every request until it ends, so an admin's save during the call does not
- *          change it (ADR-0083). Ids only, never text: any signed-in account may read them.
+ *          change it (ADR-0083, ADR-0089). Ids only, never text: any signed-in account may read them.
  * Used by: src/core/answer/instructionsPin.ts (browser, at Connect)
  * Depends on: src/server/auth.ts (getCachedSession), src/server/aiInstructions.ts (readPin), src/server/db.ts
  * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md

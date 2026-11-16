@@ -36,7 +36,8 @@
  *          "Evaluation cost" says. The estimate is printed before anything is sent.
  * Used by: the "eval:answers" script in apps/web/package.json (run by a developer by hand;
  *          never in CI: it calls the real API and needs the real key)
- * Depends on: src/server/prompt.ts (buildPrompt, sessionBlock, SYSTEM_RULES),
+ * Depends on: src/server/prompt.ts (buildPrompt, sessionBlock), src/server/prompts/defaults.ts (the
+ *             default global prompts and LEGACY_HEADING, ADR-0089),
  *             src/server/claude.ts (streamReply, jsonReply), src/server/env.ts, @kite/shared,
  *             scripts/lib/eval-options.ts (options, groups, estimate),
  *             scripts/lib/eval-results.ts (the saved results)
@@ -71,6 +72,7 @@ import { jsonReply, streamReply } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
+import { DEFAULT_ASK_PROMPT, DEFAULT_LIVE_PROMPT, LEGACY_HEADING } from '@/server/prompts/defaults';
 import { ADAPTIVE_SCENARIOS } from '../tests/eval/groups/adaptive';
 import { COMPANY_SCENARIOS } from '../tests/eval/groups/company';
 import { HONESTY_SCENARIOS } from '../tests/eval/groups/honesty';
@@ -349,9 +351,15 @@ async function answerScenario(
       : {}),
   };
   const page = scenario.mode === 'kite';
-  // Company instructions (ADR-0083) go after the locked rules, as the live route sends them.
-  const company = scenario.company ?? '';
-  const prompt = page ? buildKiteChatPrompt(request, company) : buildPrompt(request, company);
+  // ADR-0089: the default global prompt, with a scenario's company instructions (ADR-0083) added the way
+  // a pre-ADR-0089 saved version is read (server/aiInstructions.ts rowPrompt()).
+  const base = page ? DEFAULT_ASK_PROMPT : DEFAULT_LIVE_PROMPT;
+  const globalPrompt = scenario.company
+    ? `${base}\n\n${LEGACY_HEADING}\n${scenario.company}`
+    : base;
+  const prompt = page
+    ? buildKiteChatPrompt(request, globalPrompt)
+    : buildPrompt(request, globalPrompt);
   const model = page ? models.smart : models.fast;
   let raw = '';
   const reply = streamReply({

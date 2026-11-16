@@ -1,8 +1,8 @@
 /**
  * Tests for apps/web/src/server/prompt.ts, the document parts (ADR-0067):
- * - sessionBlock() gives exactly the bytes it gave before it was split into helpers (the live
- *   answers' cache and the evaluation baselines depend on them), and the CV's kind never reaches
- *   the prompt;
+ * - sessionBlock() gives exactly the pinned bytes (the live answers' cache and the evaluation baselines
+ *   depend on them; ADR-0089 added the user-preferences heading, the meaning of the format and length,
+ *   and the coding language), and the CV's kind never reaches the prompt;
  * - smartSessionBlock() gives sessionBlock() for a request without documentsSummary (an older
  *   page), and otherwise the details, the documents sent (the CV) and the escaped summary under its
  *   heading, in that order, with "(not given)" for an empty summary;
@@ -12,6 +12,7 @@
 import type { SessionContext } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
 import { documentsBlock, sessionBlock, smartSessionBlock, SUMMARY_HEADING } from '@/server/prompt';
+import { PREFERENCES_HEADING } from '@/server/prompts/preferences';
 
 /** An invented session with a CV and one other document. */
 const SESSION: SessionContext = {
@@ -28,7 +29,7 @@ const SESSION: SessionContext = {
   ],
 };
 
-/** The session block as the code before ADR-0067 wrote it, byte for byte. */
+/** The session block, byte for byte (ADR-0067's split, with ADR-0089's user preferences). */
 const EXPECTED = [
   '<session>',
   'Call type: regular',
@@ -37,9 +38,11 @@ const EXPECTED = [
   'Description of the call:',
   'Renewal call.',
   'Key terms: Bluefin Route',
-  'Answer format: headline+bullets',
-  'Answer length: short',
+  PREFERENCES_HEADING,
+  'Answer format: headline+bullets (a headline of one sentence of at most 12 words (usually 5 to 10) that the user can say as it is and that answers the question directly, the gist only; then 2 to 4 short bullet points with the supporting details)',
+  'Answer length: short (the whole answer, every line together, takes about 10 to 20 seconds to say)',
   'Answer tone: simple',
+  'Coding language: Python.',
   'Instructions from the user:',
   'Keep it short.',
   '</session>',
@@ -55,7 +58,7 @@ const EXPECTED = [
 ].join('\n');
 
 describe('sessionBlock (ADR-0067)', () => {
-  it('gives the same bytes as before the split', () => {
+  it('gives the pinned bytes', () => {
     expect(sessionBlock(SESSION)).toBe(EXPECTED);
   });
 

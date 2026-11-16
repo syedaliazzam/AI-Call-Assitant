@@ -123,15 +123,10 @@ async function respond(
     answers: parsed.data.answers.length,
   };
   try {
-    // ADR-0083: the notes instructions the call started with (or, with no pin, the ones in force);
-    // ADR-0086: and the custom notes rules of that version, when an admin saved some.
+    // ADR-0089: the notes global prompt of the version the call started with (ADR-0083 pin), or, with
+    // no pin, the one in force.
     const company = await companySettings('notes', parsed.data.instructionsVersion);
-    const { notes, usage } = await generateCallNotes(
-      parsed.data,
-      model,
-      company.text,
-      company.prompt?.rules,
-    );
+    const { notes, usage } = await generateCallNotes(parsed.data, model, company.globalPrompt);
     const ms = Math.round(performance.now() - startedAt);
     console.info('notes: done', {
       requestId,

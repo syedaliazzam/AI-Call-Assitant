@@ -1,5 +1,7 @@
 /**
- * Tests for the unsupported-fact sentence of CALL_REMINDER in apps/web/src/server/prompt.ts (ADR-0088):
+ * Tests for the unsupported-fact sentence (ADR-0088), UNSUPPORTED_FACT_RULE in
+ * apps/web/src/server/prompts/contract.ts, kept word for word at the end of the automatic end reminder
+ * (ADR-0089):
  * it is in the tail of every current-rules answer (not v-previous, so a rollback keeps its bytes); it
  * forbids yes/no and guessing, asks for a short promise with no bullets and a Note; it keeps the hidden
  * lines' order (first line, answer, Note, [[question|…]]); it leaves small talk and off-topic questions
@@ -7,7 +9,8 @@
  */
 import type { AnswerRequest } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, CALL_REMINDER } from '@/server/prompt';
+import { buildPrompt } from '@/server/prompt';
+import { UNSUPPORTED_FACT_RULE } from '@/server/prompts/contract';
 import { CALL_REMINDER_PREVIOUS } from '@/server/prompts/rules-previous';
 
 /** An invented answer request. */
@@ -38,7 +41,7 @@ function tail(request: AnswerRequest): string {
 }
 
 describe('the unsupported-fact sentence (ADR-0088)', () => {
-  const sentence = CALL_REMINDER.slice(CALL_REMINDER.indexOf('When they ask about your company'));
+  const sentence = UNSUPPORTED_FACT_RULE;
 
   it('says what to do instead of answering yes or no, and keeps the hidden lines in order', () => {
     expect(sentence).toContain('never answer yes or no and never guess');
@@ -57,7 +60,7 @@ describe('the unsupported-fact sentence (ADR-0088)', () => {
   });
 
   it('is in the tail of a current-rules answer, and not in a rollback (v-previous) answer', () => {
-    expect(tail(REQUEST)).toContain('never answer yes or no and never guess');
+    expect(tail(REQUEST).trimEnd().endsWith(UNSUPPORTED_FACT_RULE)).toBe(true);
     const rollback = tail({ ...REQUEST, styleVersion: 'previous' });
     expect(rollback).toContain(CALL_REMINDER_PREVIOUS);
     expect(rollback).not.toContain('never answer yes or no');

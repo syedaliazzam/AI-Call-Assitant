@@ -25,17 +25,23 @@ import {
 } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
 import {
-  CALL_REMINDER,
   OMITTED_NOTE,
-  SCREENSHOT_RULES,
-  SYSTEM_RULES,
   WARM_MESSAGE,
   buildPrompt,
   capConversation,
   clockTime,
+  rulesBlock,
   sessionBlock,
   type BuiltPrompt,
 } from '@/server/prompt';
+import { liveEndReminder, SCREENSHOT_TAIL } from '@/server/prompts/contract';
+import { DEFAULT_LIVE_PROMPT } from '@/server/prompts/defaults';
+
+/** ADR-0089: the rules block with the default global prompt (the app contract, then the default). */
+const SYSTEM_RULES = rulesBlock();
+
+/** ADR-0089: the screenshot guidance, now a section of the default global prompt. */
+const SCREENSHOT_RULES = DEFAULT_LIVE_PROMPT.slice(DEFAULT_LIVE_PROMPT.indexOf('Screenshots ('));
 
 /** An invented session. */
 const SESSION: SessionContext = {
@@ -383,17 +389,15 @@ describe('sessionBlock', () => {
   });
 });
 
-describe('SYSTEM_RULES', () => {
-  it('includes the answer, imperfect-transcript and consistency rules, and the slot', () => {
-    expect(SYSTEM_RULES).toContain('headline: one sentence of at most 12 words');
-    expect(SYSTEM_RULES).toContain('2 to 4 short bullet points');
+describe('the rules block with the default prompt (ADR-0089)', () => {
+  it('includes the answer, imperfect-transcript and consistency rules', () => {
     // v1.0.1: question types are defined, and the CV rule names what a real call added.
     expect(SYSTEM_RULES).toContain('concept (how something works or behaves');
     expect(SYSTEM_RULES).toContain('never a question about the work');
     expect(SYSTEM_RULES).toContain('state only facts written in the CV');
     expect(SYSTEM_RULES).toContain('employer, client or platform name, data source');
     expect(SYSTEM_RULES).toContain('Use only the session details, documents and conversation');
-    // The new rule on missing information (ADR-0030): never a comment on what Kite was given.
+    // The rule on missing information (ADR-0030): never a comment on what Kite was given.
     expect(SYSTEM_RULES).toContain('no "not in your notes"');
     expect(SYSTEM_RULES).toContain('[[type|for|source]]');
     expect(SYSTEM_RULES).toContain('often misheard');
@@ -404,13 +408,20 @@ describe('SYSTEM_RULES', () => {
     expect(SYSTEM_RULES).toContain(
       "If the same or a similar question comes again, reuse the earlier answer's facts and, as closely as you can, its wording",
     );
-    expect(SYSTEM_RULES).toContain('Learned preferences');
-    // Day 4 Stage 10 (round 2, kept): short headlines, bullets only from session facts.
-    expect(SYSTEM_RULES).toContain('numbers, names, conditions and steps go in the bullets');
-    expect(SYSTEM_RULES).toContain('Each bullet must state a fact from the session details');
+    // Day 4 Stage 10 (round 2, kept): short answer lines, supporting lines only from session facts.
+    expect(SYSTEM_RULES).toContain('numbers, names, conditions and steps go in the lines after it');
+    expect(SYSTEM_RULES).toContain(
+      'Each supporting line must state a fact from the session details',
+    );
     expect(SYSTEM_RULES).toContain('Never offer or hint at a price, discount, exception');
-    // Round 3 (kept): a short headline even when the session cannot answer.
-    expect(SYSTEM_RULES).toContain('The headline is still 12 words or fewer');
+    // Round 3 (kept): a short answer line even when the session cannot answer.
+    expect(SYSTEM_RULES).toContain('The answer line is still 12 words or fewer');
+    // ADR-0089: the learned preferences moved to the user's preferences in the session block.
+    expect(SYSTEM_RULES).not.toContain('Learned preferences');
+  });
+
+  it('defines the formats where the user picks them: in the session block', () => {
+    expect(sessionBlock(SESSION)).toContain('one sentence of at most 12 words');
   });
 });
 
@@ -472,29 +483,26 @@ describe('screenshot answers (Day 5)', () => {
   });
 });
 
-describe('screenshot tail text (Day 5)', () => {
-  it('asks for the session style and a headline without a label', () => {
+describe('screenshot tail text (Day 5, ADR-0089)', () => {
+  it('starts with the hidden line, and the rules ask for the session style and no label', () => {
     const prompt = buildPrompt({
       mode: 'screenshot',
       session: SESSION,
       image: 'data:image/jpeg;base64,/9j/4AAQ',
     });
     const tail = (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!;
-    expect(tail.text).toContain(
-      "follow the session's answer format, length, tone and instructions",
+    expect(tail.text).toContain(SCREENSHOT_TAIL);
+    expect(SCREENSHOT_TAIL).toContain('nothing comes before that line');
+    expect(SCREENSHOT_RULES).toContain(
+      "follow the user's answer format, length, tone and instructions",
     );
-    expect(tail.text).toContain('start with the answer line itself, with no label');
-    expect(tail.text).toContain('if they have nothing to compare with, do not claim it matches');
+    expect(SYSTEM_RULES).toContain('never a label such as "Answer:"');
+    expect(SCREENSHOT_RULES).toContain(
+      'if they have nothing to compare with, do not claim it matches',
+    );
   });
 
   it('names a shape for each kind of screen, and joins the call and the documents (ADR-0043)', () => {
-    const prompt = buildPrompt({
-      mode: 'screenshot',
-      session: SESSION,
-      image: 'data:image/jpeg;base64,/9j/4AAQ',
-    });
-    const tail = (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!;
-    expect(tail.text).toContain(SCREENSHOT_RULES);
     for (const type of [
       'coding',
       'codefix',
@@ -507,9 +515,9 @@ describe('screenshot tail text (Day 5)', () => {
       expect(SCREENSHOT_RULES).toContain(`(${type})`);
     }
     expect(SCREENSHOT_RULES).toContain('answer what the other person just asked about the screen');
-    // Nothing that could be repeated as words in front of the first line (found in the evaluation).
-    expect(SCREENSHOT_RULES).not.toContain('hidden');
     expect(SCREENSHOT_RULES).toContain("the session's documents");
+    // The guidance is in the cached rules block, so a screenshot's tail stays short.
+    expect(SYSTEM_RULES).toContain(SCREENSHOT_RULES);
   });
 
   it('sends the words v1.0.4 sent when the rollback switch is on (ADR-0032)', () => {
@@ -520,7 +528,7 @@ describe('screenshot tail text (Day 5)', () => {
       styleVersion: 'previous',
     });
     const tail = (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!;
-    expect(tail.text).not.toContain(SCREENSHOT_RULES);
+    expect(tail.text).not.toContain(SCREENSHOT_TAIL);
     expect(tail.text).toContain('start with the headline itself, with no label');
     expect(tail.text).not.toContain('codefix');
   });
@@ -529,7 +537,7 @@ describe('screenshot tail text (Day 5)', () => {
 describe('the v1.1.0 answer rules (ADR-0043)', () => {
   it('gives the coding shape of item 7, in its order', () => {
     const shape = SYSTEM_RULES.slice(
-      SYSTEM_RULES.indexOf('- coding: the headline is the approach'),
+      SYSTEM_RULES.indexOf('- coding: the answer line is the approach'),
     );
     const order = ['Key steps:', 'fenced code block', 'Complexity:', 'Say:'].map((label) =>
       shape.indexOf(label),
@@ -544,9 +552,8 @@ describe('the v1.1.0 answer rules (ADR-0043)', () => {
   });
 
   it('asks for an answer line of at most 12 words in the reminder', () => {
-    // v1.0.4's words, on purpose: tighter ones made lines no shorter and answers less careful
-    // (measured in the v1.1.0 evaluation). The card's cut at a clause enforces the limit.
-    expect(CALL_REMINDER).toContain('a first line of at most 12 words');
+    // ADR-0089: the reminder restates the session's own format with its meaning.
+    expect(liveEndReminder(SESSION)).toContain('one sentence of at most 12 words');
   });
 });
 
@@ -605,8 +612,9 @@ describe('choices and repeats in the tail (ADR-0030)', () => {
 });
 
 describe('settings in the session block (ADR-0030)', () => {
-  it('adds a line only when a setting is not the default', () => {
-    expect(sessionBlock(SESSION)).not.toContain('Coding language');
+  it('adds a line only when a setting is not the default (the coding language is always named)', () => {
+    // ADR-0089: the default prompt no longer says "Python unless…": the preference names the language.
+    expect(sessionBlock(SESSION)).toContain('Coding language: Python.');
     expect(sessionBlock(SESSION)).not.toContain('Missing information');
     expect(sessionBlock({ ...SESSION, codingLanguage: 'Go' })).toContain('Coding language: Go.');
     expect(sessionBlock({ ...SESSION, missingInfo: 'story' })).toContain('Missing information');

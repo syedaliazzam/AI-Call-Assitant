@@ -10,8 +10,8 @@
  * Used by: src/core/answer/answerClient.ts (browser)
  * Depends on: src/server/auth.ts (getCachedSession), src/server/env.ts, src/server/validate.ts, src/server/claude.ts,
  *             src/server/sse.ts, src/server/prompts/hello.ts, src/server/prompt.ts,
- *             src/server/usage.ts (the daily limit, ADR-0036), src/server/aiInstructions.ts (the company
- *             instructions, ADR-0083, and the custom full prompt, ADR-0086)
+ *             src/server/usage.ts (the daily limit, ADR-0036), src/server/aiInstructions.ts (the admin's
+ *             global prompt, ADR-0089, from the call's pinned version, ADR-0083)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6 (answer flow), §7.2 (/api/answer);
  *               day-04-answers.md Stage 3
  *
@@ -39,10 +39,15 @@ import {
   warmCache,
   type ReplyResult,
 } from '@/server/claude';
-import { withAnswerMeta, type ReplyItem } from '@/server/answer-meta';
+import {
+  withAnswerMeta,
+  withContractFallback,
+  type ContractStats,
+  type ReplyItem,
+} from '@/server/answer-meta';
 import { getClaudeEnv } from '@/server/env';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
-import { companySettings, NO_SETTINGS, type BlockSettings } from '@/server/aiInstructions';
+import { companySettings, type BlockSettings } from '@/server/aiInstructions';
 import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
 import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts/hello';
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
@@ -105,10 +110,7 @@ interface WarmReplyOptions {
   signal: AbortSignal;
   /** Called when Claude's response arrives (there is no stream to open). */
   onResponse: () => void;
-  /**
-   * The company instructions and custom prompt the answers of this call use (ADR-0083, ADR-0086), so
-   * the warm-up writes their cache.
-   */
+  /** The global prompt the answers of this call use (ADR-0089), so the warm-up writes their cache. */
   company: BlockSettings;
 }
 
@@ -126,7 +128,7 @@ async function* warmReply(
   request: AnswerRequest,
   options: WarmReplyOptions,
 ): AsyncGenerator<string, ReplyResult, undefined> {
-  const prompt = buildPrompt(request, options.company.text, options.company.prompt);
+  const prompt = buildPrompt(request, options.company.globalPrompt);
   const result = await warmCache({
     model: options.model,
     tier: options.tier,
@@ -205,14 +207,18 @@ async function respond(
     session.user.role === 'admin' ? parsed.data : { ...parsed.data, styleVersion: undefined };
 
   const { mode } = data;
-  // ADR-0083: the company instructions. Live answers (and their warm-ups) use the version the call
-  // pinned when it started, so its rules block, and so its prompt cache, never change mid-call; Ask AI
-  // uses the version in force. Read from memory after the first request (versions never change).
-  // ADR-0086: the same version carries the admin's custom full prompt (null = the built-in prompt).
-  const companyBlock = mode === 'kite' ? 'ask' : mode === 'hello' ? null : 'live';
-  const companyRead = companyBlock
-    ? companySettings(companyBlock, companyBlock === 'live' ? data.instructionsVersion : undefined)
-    : Promise.resolve(NO_SETTINGS);
+  // ADR-0089: the admin's global prompt (after the locked contract). Live answers (and their warm-ups)
+  // use the version the call pinned when it started (ADR-0083), so its rules block, and so its prompt
+  // cache, never change mid-call; Ask AI uses the version in force. Read from memory after the first
+  // request (versions never change). The hello test sends no global prompt.
+  const companyBlock = mode === 'kite' ? 'ask' : 'live';
+  const companyRead: Promise<BlockSettings> =
+    mode === 'hello'
+      ? Promise.resolve({ globalPrompt: '', isDefault: true })
+      : companySettings(
+          companyBlock,
+          companyBlock === 'live' ? data.instructionsVersion : undefined,
+        );
 
   // Ask Kite has no call to keep up with, so it defaults to the smart model (ADR-0030).
   const wanted: ModelTier = data.model ?? (mode === 'kite' ? 'smart' : 'fast');
@@ -272,14 +278,15 @@ async function respond(
     styleVersion: data.styleVersion ?? 'current',
     // How long the daily-limit check took (ADR-0036); null for modes that do not count (set below).
     msLimit: null as number | null,
-    // ADR-0083: the company instructions' size only (never their text or version id).
-    companyChars: 0,
-    // ADR-0086: whether a custom full prompt was used (never its text or version id).
-    customPrompt: false,
+    // ADR-0089: the global prompt's size, and whether it is the default (never its text or version id).
+    globalPromptChars: 0,
+    defaultPrompt: true,
   };
+  // ADR-0089: what the contract fallback saw (flags and counts only), logged with the request.
+  const contract: ContractStats = { missingMeta: false, missingQuestion: false, strippedTags: 0 };
   const company = await companyRead;
-  context.companyChars = company.text.length;
-  context.customPrompt = company.prompt !== null;
+  context.globalPromptChars = company.globalPrompt.length;
+  context.defaultPrompt = company.isDefault;
   let source: AsyncGenerator<ReplyItem, ReplyResult, undefined>;
   if (mode === 'warm') {
     source = warmReply(data, { model, tier, signal, onResponse: markOpen, company });
@@ -299,19 +306,29 @@ async function respond(
     // The SDK's single retry happens only before any text arrives (server/claude.ts).
     const prompt =
       mode === 'kite'
-        ? buildKiteChatPrompt(data, company.text, company.prompt?.chat)
-        : buildPrompt(data, company.text, company.prompt);
+        ? buildKiteChatPrompt(data, company.globalPrompt)
+        : buildPrompt(data, company.globalPrompt);
     // The hidden first line becomes its own event, so the first delta is the first real word.
-    source = withAnswerMeta(
-      streamReply({
-        model,
-        tier,
-        system: prompt.system,
-        messages: prompt.messages,
-        maxTokens: mode === 'kite' ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS,
-        signal,
-        onStreamOpen: markOpen,
-      }),
+    // ADR-0089: a reply that breaks the contract still shows cleanly: the default type when the hidden
+    // first line is missing, stray tags taken out; the counts go in this request's log line.
+    source = withContractFallback(
+      withAnswerMeta(
+        streamReply({
+          model,
+          tier,
+          system: prompt.system,
+          messages: prompt.messages,
+          maxTokens: mode === 'kite' ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS,
+          signal,
+          onStreamOpen: markOpen,
+        }),
+      ),
+      {
+        type: 'other',
+        target: mode === 'kite' || data.target === 'kite' ? 'kite' : 'call',
+        source: 'general',
+      },
+      contract,
     );
   }
 
@@ -353,6 +370,7 @@ async function respond(
         mode,
         model,
         ...context,
+        ...(mode === 'warm' || mode === 'hello' ? {} : { contract }),
         stopReason: result.stopReason,
         ms,
         usage: result.usage,
@@ -370,6 +388,7 @@ async function respond(
         mode,
         model,
         ...context,
+        ...(mode === 'warm' || mode === 'hello' ? {} : { contract }),
         code: described.code,
         ...errorLogDetails(error),
         msAuth: elapsed(startedAt, authDoneAt),

@@ -26,25 +26,23 @@ const countRequestMock = vi.hoisted(() =>
 vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
 
 /**
- * Spy standing in for the instructions text of companySettings() (ADR-0083): no company instructions by default, so every
- * other test sees today's prompts byte for byte.
+ * Spy standing in for companySettings() (ADR-0089): the global prompt a request uses, or null for the
+ * tab's default prompt (the default, so every other test sees today's prompts).
  */
-const companyMock = vi.hoisted(() => vi.fn(async (_block: string, _pin?: string) => ''));
-/**
- * Spy standing in for the custom full prompt of companySettings() (ADR-0086): null (the built-in
- * prompt) by default.
- */
-const promptMock = vi.hoisted(() =>
-  vi.fn((..._args: unknown[]): import('@kite/shared').CustomPrompt | null => null),
+const companyMock = vi.hoisted(() =>
+  vi.fn(async (_block: string, _pin?: string): Promise<string | null> => null),
 );
-vi.mock('@/server/aiInstructions', () => ({
-  // The same arguments reach both spies, so call checks stay exact.
-  companySettings: async (...args: [string, string?]) => ({
-    text: await companyMock(...args),
-    prompt: promptMock(...args),
-  }),
-  NO_SETTINGS: { text: '', prompt: null },
-}));
+vi.mock('@/server/aiInstructions', async () => {
+  const { DEFAULT_PROMPTS } = await import('@/server/prompts/defaults');
+  return {
+    companySettings: async (block: 'live' | 'notes' | 'ask', pin?: string) => {
+      const text = await companyMock(block, pin);
+      return text === null
+        ? { globalPrompt: DEFAULT_PROMPTS[block], isDefault: true }
+        : { globalPrompt: text, isDefault: false };
+    },
+  };
+});
 
 /** Spy standing in for client.messages.create(). */
 const createMock = vi.fn();
@@ -279,11 +277,11 @@ describe('POST /api/notes, daily limit (v1.0.2, ADR-0036)', () => {
   });
 });
 
-describe('POST /api/notes, company instructions (ADR-0083)', () => {
+describe('POST /api/notes, global prompt (ADR-0089)', () => {
   /** An invented version id the call pinned. */
   const PIN = '0b9c7a3e-5d1f-4c2a-9e8b-1a2b3c4d5e6f';
 
-  it('reads the notes block with the call pin and puts it after the locked notes rules', async () => {
+  it('reads the notes tab with the call pin and puts it after the locked notes contract', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     companyMock.mockReset();
     companyMock.mockResolvedValue('Use British spelling.');
@@ -293,15 +291,16 @@ describe('POST /api/notes, company instructions (ADR-0083)', () => {
     expect(companyMock).toHaveBeenCalledWith('notes', PIN);
     const [params] = createMock.mock.calls[0]!;
     const rules: string = params.system[0].text;
-    expect(rules.startsWith('You are Paramount AI. A call has just ended.')).toBe(true);
-    expect(rules.indexOf('Use British spelling.')).toBeGreaterThan(rules.indexOf('Write plainly.'));
+    expect(rules.startsWith('App contract')).toBe(true);
+    expect(rules).toContain('You are Paramount AI. A call has just ended.');
+    expect(rules.endsWith('Use British spelling.')).toBe(true);
     expect(JSON.stringify(vi.mocked(console.info).mock.calls)).not.toContain('British');
   });
 
   it('uses the version in force when the request has no pin', async () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     companyMock.mockReset();
-    companyMock.mockResolvedValue('');
+    companyMock.mockResolvedValue(null);
     createMock.mockResolvedValue(modelReply());
     await POST(post(JSON.stringify(BODY)));
     expect(companyMock).toHaveBeenCalledWith('notes', undefined);

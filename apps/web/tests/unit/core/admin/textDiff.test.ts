@@ -3,9 +3,11 @@
  * between an earlier version and the one in force. Joining the 'same' and 'removed' runs gives the old
  * text, 'same' and 'added' the new one; equal texts are one 'same' run; runs of one kind are merged.
  * ADR-0086: two long texts that differ throughout are compared line by line.
+ * ADR-0089: diffLines() gives side-by-side rows: equal lines kept, an edited line paired with its new
+ * text (with a word diff), removed and added lines on their own side, with line numbers.
  */
 import { describe, expect, it } from 'vitest';
-import { diffWords, type DiffPart } from '@/core/admin/textDiff';
+import { diffLines, diffWords, type DiffPart } from '@/core/admin/textDiff';
 
 /**
  * The text a diff gives back for one side.
@@ -73,5 +75,45 @@ describe('diffWords', () => {
     expect(side(parts, 'after')).toBe(after);
     // Line by line: every run is made of whole lines.
     for (const part of parts) expect(part.text.endsWith('\n')).toBe(true);
+  });
+});
+
+describe('diffLines (ADR-0089)', () => {
+  it('keeps equal lines, pairs an edited line, and places removed and added lines', () => {
+    const rows = diffLines(
+      'Intro\nBe brief.\nOld rule.\nEnd',
+      'Intro\nBe very brief.\nEnd\nNew rule.',
+    );
+    expect(rows.map((row) => row.kind)).toEqual(['same', 'changed', 'removed', 'same', 'added']);
+    expect(rows[1]).toMatchObject({
+      left: 'Be brief.',
+      right: 'Be very brief.',
+      leftNumber: 2,
+      rightNumber: 2,
+    });
+    expect(
+      rows[1]!
+        .words!.filter((part) => part.kind === 'added')
+        .map((part) => part.text)
+        .join(''),
+    ).toContain('very');
+    expect(rows[2]).toMatchObject({
+      left: 'Old rule.',
+      right: null,
+      leftNumber: 3,
+      rightNumber: null,
+    });
+    expect(rows[4]).toMatchObject({
+      left: null,
+      right: 'New rule.',
+      leftNumber: null,
+      rightNumber: 4,
+    });
+  });
+
+  it('gives only same rows for equal texts, and handles empty sides', () => {
+    expect(diffLines('a\nb', 'a\nb').every((row) => row.kind === 'same')).toBe(true);
+    expect(diffLines('', 'a').map((row) => row.kind)).toEqual(['added']);
+    expect(diffLines('a', '').map((row) => row.kind)).toEqual(['removed']);
   });
 });
