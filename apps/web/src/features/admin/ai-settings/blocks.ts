@@ -1,14 +1,22 @@
 /**
  * File: apps/web/src/features/admin/ai-settings/blocks.ts
  * Purpose: What Admin → AI settings says about each editable block (ADR-0083): its name, which model
- *          and requests it applies to, a short helper text, example instructions an admin can start
- *          from, and the sample the "Try it" box offers. Also the page's data types, filled by the
- *          server page.
+ *          and requests it applies to, one short helper line, and the sample the "Try it" box offers.
+ *          Also the page's data types, filled by the server page, including (ADR-0086) each block's
+ *          built-in and custom full system prompt, and helpers to compare prompts.
  * Used by: src/features/admin/ai-settings/*.tsx, app/(app)/admin/ai-settings/page.tsx
- * Depends on: @kite/shared (AiInstructionBlock)
- * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md
+ * Depends on: @kite/shared (AiInstructionBlock, prompt parts)
+ * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md,
+ *               docs/decisions/ADR-0086-full-system-prompt-editing.md
  */
-import type { AiInstructionBlock } from '@kite/shared';
+import {
+  PROMPT_PART_TITLES,
+  PROMPT_PARTS,
+  promptKey,
+  type AiInstructionBlock,
+  type CustomPrompt,
+  type PromptPartKey,
+} from '@kite/shared';
 
 /** A card's classes, as on the Users and Usage pages. */
 export const CARD = 'rounded-card border border-ui-border bg-ui-surface p-6 shadow-card';
@@ -19,10 +27,8 @@ export interface BlockCopy {
   label: string;
   /** The model and where it applies, in a few words. */
   model: string;
-  /** One or two sentences under the title. */
+  /** One short line under the title. */
   helper: string;
-  /** Example lines an admin can write (shown, and insertable). */
-  examples: readonly string[];
   /** The label of the try's sample box. */
   sampleLabel: string;
   /** The sample box's placeholder. */
@@ -34,30 +40,14 @@ export const BLOCK_COPY: Readonly<Record<AiInstructionBlock, BlockCopy>> = {
   live: {
     label: 'Live answers',
     model: 'Claude Haiku · during calls',
-    helper:
-      'Applies to every answer during a call, including typed questions, screenshots and private answers. Write how answers should sound and what they should know about the company. The locked rules below always come first and win where they differ.',
-    examples: [
-      'Tone: confident and warm; avoid jargon unless the other person uses it first.',
-      'Keep answers short: the headline and at most three bullets unless asked for detail.',
-      'Say "customers", never "users". Never say "cheap"; say "cost-effective".',
-      'Company facts: we are <company>; we sell <product> to <kind of customer>; support is by email, weekdays.',
-      'Behavioural questions: always use the STAR shape (Situation, Task, Action, Result).',
-      'Pricing questions: give the headline price only and offer to send the full quote after the call.',
-    ],
+    helper: 'Tone, length, words to use or avoid, and company facts for answers during calls.',
     sampleLabel: 'Sample question (as the other person asks it)',
     samplePlaceholder: 'Tell me about a time you handled a difficult client.',
   },
   notes: {
     label: 'AI notes',
     model: 'Claude Sonnet · after each call',
-    helper:
-      'Applies to the notes written when a call ends (and to Regenerate). Write what the notes should bring out and how they should be worded. The notes keep their fixed sections, and never add anything the call did not say.',
-    examples: [
-      'In the summary, always say whether a budget or a deadline was mentioned.',
-      'Write next steps as short imperatives ("Send the proposal").',
-      'Use British spelling.',
-      'Call the other side "the client", not "them".',
-    ],
+    helper: 'What the notes written after each call should bring out, and how they are worded.',
     sampleLabel: 'Sample call (one turn per line, starting "Them:" or "You:")',
     samplePlaceholder:
       'Them: Thanks for joining. Can you walk me through your pricing?\nYou: Sure, our standard plan is per seat, billed monthly.\nThem: Great, can you send a proposal by Friday?\nYou: Yes, I will send it by Thursday.',
@@ -65,13 +55,7 @@ export const BLOCK_COPY: Readonly<Record<AiInstructionBlock, BlockCopy>> = {
   ask: {
     label: 'Ask AI',
     model: 'Claude Sonnet · Ask AI page and session reviews',
-    helper:
-      "Applies to the Ask AI page and to Ask AI in a session's review. Write the tone, length and company facts its replies should use.",
-    examples: [
-      'Answer in plain English, in at most five sentences unless asked for more.',
-      'When asked about our products, use the official names: Paramount Voice, Paramount Notes.',
-      'For code, prefer TypeScript unless the user names another language.',
-    ],
+    helper: 'Tone, length and company facts for Ask AI replies.',
     sampleLabel: 'Sample question',
     samplePlaceholder: 'Draft a short follow-up email after a sales call.',
   },
@@ -81,8 +65,10 @@ export const BLOCK_COPY: Readonly<Record<AiInstructionBlock, BlockCopy>> = {
 export interface VersionView {
   /** The version's id. */
   id: string;
-  /** Its text ('' means no instructions). */
+  /** Its instructions ('' means none). */
   text: string;
+  /** Its custom full prompt (ADR-0086), or null for the built-in prompt. */
+  prompt: CustomPrompt | null;
   /** Who saved it, or null when that account was deleted. */
   authorName: string | null;
   /** True for a restore of an earlier version. */
@@ -91,8 +77,10 @@ export interface VersionView {
   createdAt: string;
 }
 
-/** One locked part of a block's rules (read-only). */
+/** One part of a block's built-in prompt (read-only in simple mode; the start of advanced mode). */
 export interface LockedView {
+  /** Which part (the key a custom prompt uses). */
+  key: PromptPartKey;
   /** What it is. */
   title: string;
   /** The exact text. */
@@ -103,11 +91,13 @@ export interface LockedView {
 export interface BlockView {
   /** The version in force, or null when never saved. */
   activeId: string | null;
-  /** The text in force ('' for none). */
+  /** The instructions in force ('' for none). */
   activeText: string;
+  /** The custom full prompt in force, or null for the built-in prompt (ADR-0086). */
+  activePrompt: CustomPrompt | null;
   /** The history, newest first. */
   versions: VersionView[];
-  /** The locked rules, in prompt order. */
+  /** The built-in prompt, in prompt order. */
   locked: LockedView[];
 }
 
@@ -121,14 +111,16 @@ export interface BudgetView {
   charsPerToken: number;
   /** The characters the heading adds. */
   overheadChars: number;
+  /** The built-in live prompt's length, all parts (ADR-0086). */
+  builtInPromptChars: number;
 }
 
-/** What the save and restore actions return. */
+/** What the save, reset and restore actions return. */
 export type InstructionsActionResult =
   | {
       /** It worked. */
       ok: true;
-      /** False when nothing changed (the text equals the version in force). */
+      /** False when nothing changed (equal to the version in force). */
       created: boolean;
     }
   | {
@@ -138,10 +130,66 @@ export type InstructionsActionResult =
       error: string;
     };
 
-/** The server actions the page calls. */
+/** The server actions the page calls (app/(app)/admin/ai-settings/actions.ts). */
 export interface InstructionsActions {
-  /** Saves a block's text as a new version in force. */
+  /** Saves a block's instructions as a new version in force. */
   save: (block: AiInstructionBlock, text: string) => Promise<InstructionsActionResult>;
-  /** Restores an earlier version as a new version in force. */
-  restore: (block: AiInstructionBlock, versionId: string) => Promise<InstructionsActionResult>;
+  /** Saves a block's tried custom prompt as a new version in force (ADR-0086). */
+  savePrompt: (
+    block: AiInstructionBlock,
+    prompt: CustomPrompt,
+    token: string,
+  ) => Promise<InstructionsActionResult>;
+  /** Goes back to the block's built-in prompt (ADR-0086). */
+  resetPrompt: (block: AiInstructionBlock) => Promise<InstructionsActionResult>;
+  /** Restores an earlier version's instructions or prompt as a new version in force. */
+  restore: (
+    block: AiInstructionBlock,
+    versionId: string,
+    part: 'text' | 'prompt',
+  ) => Promise<InstructionsActionResult>;
+}
+
+/**
+ * A block's built-in prompt as a CustomPrompt (part by part).
+ *
+ * @param locked The block's built-in parts.
+ * @returns The prompt.
+ * Called from: PromptEditor.tsx, VersionHistory.tsx
+ */
+export function builtInPrompt(locked: readonly LockedView[]): CustomPrompt {
+  const prompt: CustomPrompt = {};
+  for (const part of locked) prompt[part.key] = part.text;
+  return prompt;
+}
+
+/**
+ * A full prompt as one text, part by part under its title: what the version history compares.
+ *
+ * @param block  The block.
+ * @param prompt The prompt.
+ * @returns The text.
+ * Called from: VersionHistory.tsx
+ */
+export function promptAsText(block: AiInstructionBlock, prompt: CustomPrompt): string {
+  return PROMPT_PARTS[block]
+    .map((part) => `## ${PROMPT_PART_TITLES[part]}\n${prompt[part] ?? ''}`)
+    .join('\n\n');
+}
+
+/**
+ * The key of the prompt a version uses (the built-in one when it has none), to compare versions.
+ *
+ * @param block   The block.
+ * @param prompt  The version's prompt, or null.
+ * @param builtIn The built-in prompt.
+ * @returns The key.
+ * Called from: VersionHistory.tsx, PromptEditor.tsx
+ */
+export function effectivePromptKey(
+  block: AiInstructionBlock,
+  prompt: CustomPrompt | null,
+  builtIn: CustomPrompt,
+): string {
+  return promptKey(block, prompt ?? builtIn);
 }

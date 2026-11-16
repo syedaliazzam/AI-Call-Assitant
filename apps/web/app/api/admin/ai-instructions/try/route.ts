@@ -1,17 +1,20 @@
 /**
  * File: apps/web/app/api/admin/ai-instructions/try/route.ts
  * Purpose: POST /api/admin/ai-instructions/try: Admin → AI settings' "Try it" (ADR-0083). Runs one
- *          request with an unsaved draft of a block's company instructions and returns the reply.
+ *          request with an unsaved draft of a block's company instructions (and, ADR-0086, optionally a
+ *          draft full system prompt, answered with a token that lets it be saved) and returns the reply.
  *          Admins only (403 for anyone else); counts against the daily limit like any request.
  * Used by: src/core/admin/aiTry.ts (browser)
  * Depends on: src/server/auth.ts (auth: a fresh session read), src/server/aiTry.ts (handleTry, runTry),
- *             src/server/env.ts, src/server/usage.ts, src/server/requestBody.ts
- * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md
+ *             src/server/env.ts, src/server/usage.ts, src/server/requestBody.ts,
+ *             src/server/promptTryToken.ts
+ * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md, ADR-0086-full-system-prompt-editing.md
  */
 import { auth } from '@/server/auth';
 import { handleTry, runTry, type TryDeps } from '@/server/aiTry';
 import { CLAUDE_TIMEOUT_MS } from '@/server/claude';
 import { getClaudeEnv } from '@/server/env';
+import { promptTryToken } from '@/server/promptTryToken';
 import { readRequestText } from '@/server/requestBody';
 import { countRequest } from '@/server/usage';
 import { MAX_REQUEST_BYTES } from '@/server/validate';
@@ -31,6 +34,7 @@ const deps: TryDeps = {
   },
   count: (userId) => countRequest(userId),
   run: runTry,
+  tokenFor: promptTryToken,
 };
 
 /**

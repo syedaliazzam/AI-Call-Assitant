@@ -38,7 +38,7 @@ export const NOTES_MAX_TOKENS = 4_000;
 export const NOTES_TIMEOUT_MS = 110_000;
 
 /** The notes rules. A constant (cached); nothing that changes between calls. */
-export const NOTES_RULES = `You are Kite. A call has just ended. Write short, faithful notes for the user, who took part in the call.
+export const NOTES_RULES = `You are Paramount AI. A call has just ended. Write short, faithful notes for the user, who took part in the call.
 
 Rules:
 - Use only what is in the transcript, the answers Kite gave, and the session details and documents. Never invent names, numbers, dates, commitments or next steps.
@@ -189,11 +189,12 @@ export function callRecord(request: Pick<NotesRequest, 'lines' | 'answers'>): st
  *
  * @param request A validated notes request.
  * @param company The company instructions for the notes ('' for none; ADR-0083). They follow the
- *                locked notes rules in the first cached block.
+ *                notes rules in the first cached block.
+ * @param rules   ADR-0086: the notes rules: the admin's custom prompt in force, or NOTES_RULES.
  * @returns The system blocks and the user turn's text.
  * Called from: generateCallNotes(); tests
  */
-export function notesPrompt(request: NotesRequest, company = '') {
+export function notesPrompt(request: NotesRequest, company = '', rules: string = NOTES_RULES) {
   const last = request.lines.at(-1)?.at ?? 0;
   const prompt = [
     `The call lasted about ${clockTime(last)} (times are minutes:seconds since it started; "at" values are seconds).`,
@@ -204,7 +205,7 @@ export function notesPrompt(request: NotesRequest, company = '') {
   ].join('\n');
   return {
     system: [
-      cachedBlock(withCompany(NOTES_RULES, 'notes', company)),
+      cachedBlock(withCompany(rules, 'notes', company)),
       cachedBlock(smartSessionBlock(request.session)),
     ],
     prompt,
@@ -252,6 +253,7 @@ export function finishNotes(model: ModelNotes, answers: readonly NotesAnswer[]):
  * @param request A validated notes request.
  * @param model   The smart model's name (KITE_MODEL_SMART).
  * @param company The company instructions for the notes ('' for none; ADR-0083).
+ * @param rules   ADR-0086: the notes rules (the admin's custom prompt in force, or NOTES_RULES).
  * @returns The notes and the token usage.
  * @throws Anthropic.APIError on API failures; Error('NO_JSON') when the reply has no notes.
  * Called from: POST handler in app/api/notes/route.ts; server/aiTry.ts; scripts/verify-notes.ts,
@@ -261,8 +263,9 @@ export async function generateCallNotes(
   request: NotesRequest,
   model: string,
   company = '',
+  rules: string = NOTES_RULES,
 ): Promise<{ notes: CallNotes; usage: AnswerUsage }> {
-  const { system, prompt } = notesPrompt(request, company);
+  const { system, prompt } = notesPrompt(request, company, rules);
   const { value, usage } = await jsonReply({
     model,
     tier: 'smart',

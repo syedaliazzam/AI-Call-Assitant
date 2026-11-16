@@ -1,16 +1,18 @@
 /**
  * File: apps/web/src/server/aiTry.ts
  * Purpose: Admin → AI settings, server side (ADR-0083): "Try it" runs one real request with a DRAFT of
- *          a block's company instructions (not saved), the same way a call, the notes or Ask AI would,
- *          and returns the reply; and the read-only facts the page shows: each block's locked rules,
- *          the heading the company text goes under, and the input-budget numbers for the live block.
+ *          a block's company instructions (not saved), and (ADR-0086) optionally a draft of its full
+ *          system prompt, the same way a call, the notes or Ask AI would, and returns the reply (with a
+ *          token proving the prompt was tried); and the read-only facts the page shows: each block's
+ *          built-in prompt, the heading the company text goes under, and the input-budget numbers for
+ *          the live block.
  * Used by: app/api/admin/ai-instructions/try/route.ts (handleTry), app/(app)/admin/ai-settings/page.tsx
  *          (lockedRulesFor, budgetFacts)
  * Depends on: src/server/prompt.ts, src/server/notes.ts, src/server/kite-chat.ts, src/server/claude.ts,
  *             src/server/answer-meta.ts, src/server/budget.ts, src/server/prompts/company.ts,
  *             src/server/validate.ts (parseAiTryRequest), src/server/usage.ts (the daily limit),
- *             @kite/shared
- * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md
+ *             @kite/shared (checkCustomPrompt)
+ * Architecture: docs/decisions/ADR-0083-company-ai-instructions.md, ADR-0086-full-system-prompt-editing.md
  *
  * A try counts as one normal request against the daily limit (ADR-0036). Logs carry the block, sizes,
  * timings and token counts only: never the draft, the sample, the session, the reply or any id.
@@ -18,10 +20,17 @@
 import 'server-only';
 import {
   CHARS_PER_TOKEN,
+  checkCustomPrompt,
   CONVERSATION_CAP_TOKENS,
   dailyLimitMessage,
+  describePromptProblems,
   MAX_ACTIVE_LESSONS,
   MAX_LESSON_CHARS,
+  normalisePrompt,
+  PROMPT_PART_TITLES,
+  PROMPT_PARTS,
+  type CustomPrompt,
+  type PromptPartKey,
   type AiInstructionBlock,
   type AiTryRequest,
   type AiTryResponse,
@@ -56,35 +65,41 @@ import {
 import { COMPANY_HEADINGS, normaliseInstructions } from './prompts/company';
 import { parseAiTryRequest } from './validate';
 
-/** One part of a block's locked rules, as the page shows it (read-only). */
+/** One part of a block's built-in prompt, as the page shows it. */
 export interface LockedPart {
-  /** What this part is, for example "Rules for every answer". */
+  /** Which part (ADR-0086: the key a custom prompt uses for it). */
+  key: PromptPartKey;
+  /** What this part is, for example "Rules for every live answer". */
   title: string;
   /** The exact text sent to Claude. */
   text: string;
 }
 
 /**
- * The locked rules of a block: the text that always comes first and that the company instructions
- * cannot change (the answer format the app reads, honesty, privacy and safety rules).
+ * Each block's built-in prompt, part by part (ADR-0086): what a block with no custom prompt sends, and
+ * what "Reset to default" goes back to.
+ */
+export const BUILT_IN_PROMPTS: Readonly<Record<AiInstructionBlock, CustomPrompt>> = {
+  live: { core: CORE_RULES, reminder: CALL_REMINDER, screenshot: SCREENSHOT_RULES },
+  notes: { rules: NOTES_RULES },
+  ask: { chat: KITE_CHAT_RULES, review: ASK_RULES },
+};
+
+/**
+ * The built-in prompt of a block: the text that comes first in its requests (the answer format the
+ * app reads, honesty, privacy and safety rules). Simple mode shows it read-only; advanced mode starts
+ * editing from it (ADR-0086).
  *
  * @param block The block.
  * @returns Its parts, in prompt order.
  * Called from: app/(app)/admin/ai-settings/page.tsx; tests
  */
 export function lockedRulesFor(block: AiInstructionBlock): LockedPart[] {
-  if (block === 'live') {
-    return [
-      { title: 'Rules for every live answer (first in the prompt)', text: CORE_RULES },
-      { title: 'Reminder added after the question', text: CALL_REMINDER },
-      { title: 'Added for a screenshot', text: SCREENSHOT_RULES },
-    ];
-  }
-  if (block === 'notes') return [{ title: 'Rules for the AI notes', text: NOTES_RULES }];
-  return [
-    { title: 'Rules for the Ask AI page', text: KITE_CHAT_RULES },
-    { title: "Rules for Ask AI in a session's review", text: ASK_RULES },
-  ];
+  return PROMPT_PARTS[block].map((key) => ({
+    key,
+    title: PROMPT_PART_TITLES[key],
+    text: BUILT_IN_PROMPTS[block][key] ?? '',
+  }));
 }
 
 /** The numbers the page needs to show the live block's input-budget check (answerBudgetUse()). */
@@ -97,6 +112,8 @@ export interface BudgetFacts {
   charsPerToken: number;
   /** The characters the live block's heading adds when the block is not empty. */
   overheadChars: number;
+  /** ADR-0086: the built-in live prompt's length (all three parts), to count a custom one against. */
+  builtInPromptChars: number;
 }
 
 /**
@@ -124,6 +141,7 @@ export function budgetFacts(): BudgetFacts {
     charsPerToken: BUDGET_CHARS_PER_TOKEN,
     // The heading, a new line after it, and the blank line before it.
     overheadChars: COMPANY_HEADINGS.live.length + 3,
+    builtInPromptChars: CORE_RULES.length + CALL_REMINDER.length + SCREENSHOT_RULES.length,
   };
 }
 
@@ -220,18 +238,21 @@ export async function runTry(
   signal?: AbortSignal,
 ): Promise<TryResult> {
   const draft = normaliseInstructions(request.draft);
+  // ADR-0086: the draft full prompt (handleTry() has checked it), or null for the built-in prompt.
+  const custom = request.prompt ? normalisePrompt(request.block, request.prompt) : null;
   const session = request.session ?? BLANK_SESSION;
   if (request.block === 'notes') {
     const { notes, usage } = await generateCallNotes(
       { session, lines: parseSampleCall(request.sample), answers: [] },
       models.smart,
       draft,
+      custom?.rules,
     );
     return { response: { kind: 'notes', notes }, usage, model: models.smart };
   }
   if (request.block === 'live') {
     const answer: AnswerRequest = { mode: 'answer', session, question: request.sample.trim() };
-    const prompt = buildPrompt(answer, draft);
+    const prompt = buildPrompt(answer, draft, custom);
     const tier: ModelTier = 'fast';
     const reply = await collect(
       withAnswerMeta(
@@ -258,7 +279,7 @@ export async function runTry(
       ? { attachments: [{ name: 'Session', text: smartSessionBlock(request.session) }] }
       : {}),
   };
-  const prompt = buildKiteChatPrompt(chat, draft);
+  const prompt = buildKiteChatPrompt(chat, draft, custom?.chat);
   const reply = await collect(
     withAnswerMeta(
       streamReply({
@@ -296,6 +317,8 @@ export interface TryDeps {
   count: (userId: string) => Promise<{ allowed: boolean; limit: number }>;
   /** Runs the try (runTry()). */
   run: (request: AiTryRequest, models: TryModels, signal: AbortSignal) => Promise<TryResult>;
+  /** ADR-0086: the token proving a prompt was tried (server/promptTryToken.ts promptTryToken()). */
+  tokenFor: (block: AiInstructionBlock, prompt: CustomPrompt) => string;
 }
 
 /**
@@ -342,9 +365,20 @@ export async function handleTry(
   }
   const parsed = parseAiTryRequest(json);
   if (!parsed.ok) return jsonError(400, 'bad_request', parsed.message);
+  // ADR-0086: a draft prompt that misses the output format is refused before any request is spent.
+  const draftPrompt = parsed.data.prompt;
+  if (draftPrompt) {
+    const problems = checkCustomPrompt(parsed.data.block, draftPrompt);
+    if (problems.length > 0) {
+      return jsonError(400, 'bad_request', describePromptProblems(problems));
+    }
+  }
   let models: TryModels;
+  // Worked out before the request is spent, so missing settings never waste one.
+  let promptToken: string | null = null;
   try {
     models = deps.models();
+    if (draftPrompt) promptToken = deps.tokenFor(parsed.data.block, draftPrompt);
   } catch {
     return jsonError(500, 'internal', 'Claude is not configured on the server');
   }
@@ -356,6 +390,10 @@ export async function handleTry(
     draftChars: parsed.data.draft.length,
     sampleChars: parsed.data.sample.length,
     session: parsed.data.session ? true : false,
+    // ADR-0086: whether a draft prompt was tried, and its size (never its text).
+    promptChars: draftPrompt
+      ? Object.values(draftPrompt).reduce((total, part) => total + (part ?? '').length, 0)
+      : 0,
   };
   try {
     const result = await deps.run(parsed.data, models, signal);
@@ -366,7 +404,11 @@ export async function handleTry(
       usage: result.usage,
       ms: Math.round(performance.now() - startedAt),
     });
-    return Response.json(result.response, { headers: { 'cache-control': 'no-store' } });
+    // ADR-0086: the proof that this exact prompt was tried; saving it requires it.
+    const response: AiTryResponse = promptToken
+      ? { ...result.response, promptToken }
+      : result.response;
+    return Response.json(response, { headers: { 'cache-control': 'no-store' } });
   } catch (error) {
     const described = describeClaudeError(error);
     console.error('ai try: failed', {

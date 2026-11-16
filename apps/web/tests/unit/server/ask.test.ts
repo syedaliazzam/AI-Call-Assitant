@@ -12,11 +12,25 @@ const countRequestMock = vi.hoisted(() =>
 vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
 
 /**
- * Spy standing in for companyInstructions() (ADR-0083): no company instructions by default, so every
+ * Spy standing in for the instructions text of companySettings() (ADR-0083): no company instructions by default, so every
  * other test sees today's prompts byte for byte.
  */
 const companyMock = vi.hoisted(() => vi.fn(async (_block: string, _pin?: string) => ''));
-vi.mock('@/server/aiInstructions', () => ({ companyInstructions: companyMock }));
+/**
+ * Spy standing in for the custom full prompt of companySettings() (ADR-0086): null (the built-in
+ * prompt) by default.
+ */
+const promptMock = vi.hoisted(() =>
+  vi.fn((..._args: unknown[]): import('@kite/shared').CustomPrompt | null => null),
+);
+vi.mock('@/server/aiInstructions', () => ({
+  // The same arguments reach both spies, so call checks stay exact.
+  companySettings: async (...args: [string, string?]) => ({
+    text: await companyMock(...args),
+    prompt: promptMock(...args),
+  }),
+  NO_SETTINGS: { text: '', prompt: null },
+}));
 
 vi.mock('server-only', () => ({}));
 const mocks = vi.hoisted(() => ({ jsonReply: vi.fn(), getCachedSession: vi.fn() }));

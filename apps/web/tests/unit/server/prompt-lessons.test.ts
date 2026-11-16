@@ -40,8 +40,11 @@ import { parseAnswerRequest } from '@/server/validate';
  * ADR-0084 (15 Nov 2026) left this block unchanged: its experience rules are a line of the session
  * block in interview, mock and blank sessions instead (EXPERIENCE_RULES), because every wording tried
  * here moved unrelated regular-call answers (answer-eval.md).
+ * ADR-0086 (16 Nov 2026): "You are Kite" became "You are Paramount AI", and the transcript line says it
+ * comes from cloud speech recognition (Deepgram) with on-device recognition as the fallback; checked
+ * with the answers group (answer-eval.md).
  */
-const RULES_SHA256 = '526e2c13f504bdc4dc618ff4edb4da6e23fe83bf8cbff388b4eba2801a89a31e';
+const RULES_SHA256 = '9547e76eb76120f9b62749a9294c5e79fba79aada21a415b1dcdc20f1343496a';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte

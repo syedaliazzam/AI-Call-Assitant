@@ -46,6 +46,7 @@ import {
   type CallLine,
   type ConversationChunk,
   type ConversationItem,
+  type CustomPrompt,
   type SessionContext,
 } from '@kite/shared';
 import { capSessionDocuments, fitToBudget } from './budget';
@@ -60,7 +61,7 @@ import { CALL_REMINDER_PREVIOUS, CORE_RULES_PREVIOUS } from './prompts/rules-pre
  * This is "v-current". The rules from before the honesty and answer-shape change (ADR-0032) are
  * kept word for word as "v-previous" in server/prompts/rules-previous.ts, for the rollback switch.
  */
-export const CORE_RULES = `You are Kite, a live call assistant. During a call the user presses a key when they need help answering the other person, or types or screenshots a question. You write what they need right away.
+export const CORE_RULES = `You are Paramount AI, a live call assistant. During a call the user presses a key when they need help answering the other person, or types or screenshots a question. You write what they need right away.
 
 Every reply starts with one hidden line, exactly in this form and with nothing else on it: [[type|for|source]]
 - type is the kind of question: behavioural (about the user's own past: "tell me about a time", "describe a situation", "have you ever"), concept (how something works or behaves, including "how does the system…" and "what happens when…"), coding, design (system design), case (case or estimation), sales (anything a client or buyer asks about the offer, its price, terms or support), product (product or demo), smalltalk (greetings, thanks, off-topic chat or wrap-up; never a question about the work), unclear, garbled (the words make no sense even with the session's details and the call: noise that speech recognition turned into words; a clear remark that asks nothing is smalltalk or none, not garbled), none (clear words that ask the user nothing: talk about the call itself, such as "can you repeat that?", "can you hear me?" or "let me share my screen", or a remark that needs no reply, such as "let me pull up my notes"). For a screenshot it is the kind of screen: coding, codefix (code with an error), slide, table (a table or chart), document, webpage or unreadable. The same question always gets the same type.
@@ -117,7 +118,7 @@ Private answers (when for is kite):
 - Answer the user directly ("you"), on any topic: general knowledge, maths with the working shown, explanations, code in fenced code blocks that name their language. A coding question keeps the coding shape above. Use short paragraphs and lists. The session's format and length, the first-person rule, the shapes and the Tip and Note lines do not apply. Use the session or the call when the question is about them. Say plainly if you are not sure of something.
 
 About the transcript:
-- The transcript is made by speech recognition on the user's computer and contains mistakes. Names of people, companies and products, and technical terms, are often misheard, usually as similar-sounding common words or as invented words.
+- The transcript is made by cloud speech recognition (Deepgram), with speech recognition on the user's device as a fallback, and contains mistakes. Names of people, companies and products, and technical terms, are often misheard, usually as similar-sounding common words or as invented words.
 - Infer the intended words from the context and from the session details: the key terms, the company, the role or topic, and the documents. When a misheard word or phrase sounds like one of them and fits the context, treat it as that word.
 - Lines are labelled "You" (the user) and "Them" (the other person), with the time since the call started. Recent "Them" lines usually hold the question.
 - The conversation shows the call so far in time order. The lines under "latest" are the newest and may still be incomplete.
@@ -171,6 +172,8 @@ const NO_LESSONS = 'Learned preferences (approved by the user in earlier calls):
  * @param lessons The approved lessons for the session's type.
  * @param version 'previous' uses the v-previous rules kept for the rollback switch (ADR-0032).
  * @param company The company instructions for live answers ('' for none), as the call pinned them.
+ * @param custom  ADR-0086: the admin's full live prompt in force for the call, or null for the built-in
+ *                one. Its 'core' replaces CORE_RULES (never the v-previous rules of a rollback).
  * @returns The block's text.
  * Called from: buildPromptParts(); tests
  */
@@ -178,13 +181,18 @@ export function rulesBlock(
   lessons: readonly string[] = [],
   version: AnswerStyleVersion = 'current',
   company = '',
+  custom: CustomPrompt | null = null,
 ): string {
   const cleaned = lessons
     .map(cleanLessonText)
     .filter((lesson) => lesson !== '')
     .slice(-MAX_ACTIVE_LESSONS);
   const previous = version === 'previous';
-  const core = withCompany(previous ? CORE_RULES_PREVIOUS : CORE_RULES, 'live', company);
+  const core = withCompany(
+    previous ? CORE_RULES_PREVIOUS : (custom?.core ?? CORE_RULES),
+    'live',
+    company,
+  );
   if (cleaned.length === 0) return `${core}\n\n${NO_LESSONS}`;
   const bullets = cleaned.map((lesson) => `- ${lesson}`).join('\n');
   return `${core}\n\n${LESSONS_HEADING}\n${bullets}`;
@@ -625,10 +633,22 @@ function choiceLines(request: AnswerRequest): string[] {
  *
  * @param request         The request (mode, tail, question).
  * @param hasConversation True when conversation blocks come before (their tag is closed here).
+ * @param custom          ADR-0086: the admin's full live prompt, or null for the built-in one. Its
+ *                        'screenshot' and 'reminder' replace SCREENSHOT_RULES and CALL_REMINDER (an
+ *                        empty reminder is left out); a rollback (v-previous) keeps its own text.
  * @returns The tail's text.
  * Called from: buildPrompt()
  */
-function tailText(request: AnswerRequest, hasConversation: boolean): string {
+function tailText(
+  request: AnswerRequest,
+  hasConversation: boolean,
+  custom: CustomPrompt | null,
+): string {
+  const previous = request.styleVersion === 'previous';
+  const screenshotRules = previous
+    ? SCREENSHOT_RULES_PREVIOUS
+    : (custom?.screenshot ?? SCREENSHOT_RULES);
+  const reminder = previous ? CALL_REMINDER_PREVIOUS : (custom?.reminder ?? CALL_REMINDER);
   const tail = request.tail ?? [];
   const question = request.question?.trim() ?? '';
   const parts = hasConversation
@@ -642,7 +662,7 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
   parts.push('', ...similarLines(request), ...chunkLines(request));
   if (request.mode === 'screenshot') {
     parts.push(
-      request.styleVersion === 'previous' ? SCREENSHOT_RULES_PREVIOUS : SCREENSHOT_RULES,
+      screenshotRules,
       `Question about the screenshot: ${escapeTags(question || DEFAULT_SCREENSHOT_QUESTION)}`,
     );
   } else if (request.mode === 'chat') {
@@ -654,7 +674,8 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
   }
   parts.push(
     ...choiceLines(request),
-    request.styleVersion === 'previous' ? CALL_REMINDER_PREVIOUS : CALL_REMINDER,
+    // A custom prompt may leave the reminder empty: then no reminder line at all.
+    ...(reminder ? [reminder] : []),
     ...experienceReminder(request),
   );
   return parts.join('\n');
@@ -699,19 +720,25 @@ export interface BuiltPrompt {
  * @param request A validated request with `session` set.
  * @param company The company instructions for live answers ('' for none; ADR-0083): the version the
  *                call pinned, so every request of a call sends the same rules block.
+ * @param custom  ADR-0086: the admin's full live prompt from the same pinned version, or null for the
+ *                built-in one. A call keeps its version, so its cached rules block never changes.
  * @returns The system blocks and the user turn.
  * @throws Error('SESSION_REQUIRED') when the request has no session (validation prevents this
  *         for every mode but hello).
  * Called from: POST handler in app/api/answer/route.ts; server/aiTry.ts; scripts/verify-warm.ts,
  *              scripts/verify-answer-cache.ts
  */
-export function buildPrompt(request: AnswerRequest, company = ''): BuiltPrompt {
+export function buildPrompt(
+  request: AnswerRequest,
+  company = '',
+  custom: CustomPrompt | null = null,
+): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
   // Batch C (P2-1): under MAX_ANSWER_INPUT_TOKENS whatever the documents' size (server/budget.ts): the
   // session block has a fixed ceiling (the same bytes for every request of a session), and only in an
   // extreme case do the uncached and oldest parts go.
   const capped = { ...request, session: capSessionDocuments(request.session) };
-  return fitToBudget(capped, (next) => buildPromptParts(next, company)).prompt;
+  return fitToBudget(capped, (next) => buildPromptParts(next, company, custom)).prompt;
 }
 
 /**
@@ -719,16 +746,22 @@ export function buildPrompt(request: AnswerRequest, company = ''): BuiltPrompt {
  *
  * @param request A validated request with `session` set.
  * @param company The company instructions for live answers ('' for none).
+ * @param custom  The admin's full live prompt, or null for the built-in one (ADR-0086).
  * @returns The system blocks and the user turn.
  * @throws Error('SESSION_REQUIRED') when the request has no session.
  * Called from: buildPrompt() (through fitToBudget())
  */
-function buildPromptParts(request: AnswerRequest, company: string): BuiltPrompt {
+function buildPromptParts(
+  request: AnswerRequest,
+  company: string,
+  custom: CustomPrompt | null,
+): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
   const conversation = conversationBlocks(capConversation(request.conversation ?? []));
   const last: Anthropic.TextBlockParam = {
     type: 'text',
-    text: request.mode === 'warm' ? WARM_MESSAGE : tailText(request, conversation.length > 0),
+    text:
+      request.mode === 'warm' ? WARM_MESSAGE : tailText(request, conversation.length > 0, custom),
   };
   // The screenshot is uncached and goes before the tail text that asks about it (Anthropic's
   // vision guidance: image first, then the question).
@@ -736,7 +769,7 @@ function buildPromptParts(request: AnswerRequest, company: string): BuiltPrompt 
   return {
     system: [
       // Locked rules, then the company instructions (ADR-0083), then the learned preferences.
-      cachedBlock(rulesBlock(request.lessons, request.styleVersion, company)),
+      cachedBlock(rulesBlock(request.lessons, request.styleVersion, company, custom)),
       // Batch C (P2-1): the CV and the documents summary when the page sends one (live answers since
       // ADR-0078); every document in full from an older page (smartSessionBlock() falls back to it).
       cachedBlock(smartSessionBlock(request.session)),

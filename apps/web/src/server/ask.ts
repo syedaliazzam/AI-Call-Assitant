@@ -22,7 +22,7 @@ import { withCompany } from './prompts/company';
 const ASK_MAX_TOKENS = 800;
 
 /** The rules. Keep them byte-for-byte stable: they are the first cached block. */
-export const ASK_RULES = `You are Kite. A call has ended, and the user is asking about it. Answer from what is below: the session details and documents, the AI notes, the transcript, and the answers Kite gave during the call.
+export const ASK_RULES = `You are Paramount AI. A call has ended, and the user is asking about it. Answer from what is below: the session details and documents, the AI notes, the transcript, and the answers Kite gave during the call.
 
 - Answer in at most three short sentences, or at most five short bullets when the user asks for a list. No preamble.
 - Say who said what when it matters. "You" is the user; "Them" is the other person.
@@ -53,7 +53,8 @@ export function estimatedCost(usage: AnswerUsage): number {
  *
  * @param request A validated request.
  * @param model   The smart model's name.
- * @param company The company instructions for Ask AI ('' for none; ADR-0083), after the locked rules.
+ * @param company The company instructions for Ask AI ('' for none; ADR-0083), after the rules.
+ * @param rules   ADR-0086: the rules (the admin's custom 'review' part in force, or ASK_RULES).
  * @returns The reply and the token usage.
  * @throws What jsonReply() throws.
  * Called from: app/api/ask/route.ts; tests
@@ -62,6 +63,7 @@ export async function answerAboutCall(
   request: AskRequest,
   model: string,
   company = '',
+  rules: string = ASK_RULES,
 ): Promise<{ text: string; usage: AnswerUsage }> {
   const record = [
     '<notes>',
@@ -77,7 +79,7 @@ export async function answerAboutCall(
     model,
     tier: 'smart',
     system: [
-      cachedBlock(withCompany(ASK_RULES, 'ask', company)),
+      cachedBlock(withCompany(rules, 'ask', company)),
       cachedBlock(smartSessionBlock(request.session)),
       cachedBlock(record),
     ],
