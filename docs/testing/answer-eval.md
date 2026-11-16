@@ -535,3 +535,15 @@ The fix was moved out of the shared rules block (ADR-0084, Decision 2). Rounds, 
 | 4 (shipped) | core rules unchanged; session line + reminder line for interview, mock, blank | 9.0 / 8.0 / 7.5 | **9.07** (8.97, 9.10, 9.13): passes | 03 (interview) 8–9 |
 
 Round 4 also: `screenshots` 9.33, `preferences` 9.13 (24-star-structure 9.0). Spend for the whole fix: about $0.97 (cap $5).
+
+## Paramount AI name and cloud transcript line (2026-11-16, ADR-0086)
+
+The core rules changed in two places: "You are Kite" became "You are Paramount AI", and the transcript line now says it comes from cloud speech recognition (Deepgram), with speech recognition on the user's device as the fallback. Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`. The developer asked for **one** run of the `answers` group (cap $2); spend **$0.09** for 60 requests.
+
+| Group | Gate (3-run mean, ADR-0084 rounds) | Shipped baseline (8.97, 9.10, 9.13) | This change (1 run) | Result |
+|---|---|---|---|---|
+| `answers` (15) | ≥ 8.86 | 9.07 | **9.03** | **holds**: above the gate, 0.04 under the baseline, within the single-run spread seen on the old wording (8.53–9.13) |
+
+Per scenario, the largest moves were 14 (session without documents) 6.5, against 7.5–10 in the seven earlier runs on 15 Nov, and 13 (off-topic) 8.0, against 6.0–8.5. Both have swung that much between runs before; no answer showed a new kind of fault. Other checks: hidden line 28/30, nothing invented in 24/30 graded runs, no number outside the documents and call 28/30. This is one run, not the three the gate is defined on.
+
+Custom full prompts (ADR-0086) are not covered by these baselines: they run on the built-in prompt. An admin checks a custom prompt with Try it.
