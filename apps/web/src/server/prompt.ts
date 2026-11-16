@@ -8,8 +8,8 @@
  *          (stable lines and earlier answers, one block per chunk, with the long-call cap), then the tail
  *          (lines that may still change, the question, and the automatic end reminder; a placeholder for
  *          a warm-up).
- * Used by: app/api/answer/route.ts (modes 'warm', 'answer', 'chat', 'screenshot'); src/server/aiTry.ts,
- *          src/server/aiQuality.ts; scripts/verify-warm.ts, scripts/verify-answer-cache.ts,
+ * Used by: app/api/answer/route.ts (modes 'warm', 'answer', 'chat', 'screenshot');
+ *          scripts/verify-warm.ts, scripts/verify-answer-cache.ts,
  *          scripts/eval-answers.ts
  * Depends on: @kite/shared (AnswerRequest and conversation types, cap limits, estimateItemTokens),
  *             src/server/claude.ts (cachedBlock), src/server/budget.ts, src/server/prompts/contract.ts
@@ -283,7 +283,7 @@ export const SUMMARY_HEADING =
  * @param lessons Live answers: the approved lessons, in the preferences ([] for none).
  * @returns The block's text.
  * Called from: buildPromptParts(), notesPrompt() in server/notes.ts, answerAboutCall() in server/ask.ts,
- *              systemBlocks() in server/prepare.ts; src/server/aiTry.ts; tests
+ *              systemBlocks() in server/prepare.ts; tests
  */
 export function smartSessionBlock(
   session: SessionContext,
@@ -421,11 +421,11 @@ function conversationBlocks(capped: CappedConversation): Anthropic.TextBlockPara
   return blocks;
 }
 
-/** The session types the experience rules are for: interviews, mock interviews and Try it's blank session. */
+/** The session types the experience rules are for: interviews, mock interviews and a blank session (no type). */
 const EXPERIENCE_SESSION_TYPES: readonly string[] = ['interview', 'mock', ''];
 
 /**
- * ADR-0084: the experience rules, a line of the session block in interview, mock and blank (Try it)
+ * ADR-0084: the experience rules, a line of the session block in interview, mock and blank (no type)
  * sessions only (experienceApplies()). Locked like the core rules, and never in regular calls: in the
  * shared rules block every wording moved unrelated regular-call answers (answer-eval.md, 15 Nov 2026).
  */
@@ -433,7 +433,7 @@ export const EXPERIENCE_RULES = `Questions about your own past: use the closest 
 
 /**
  * Whether a session gets the experience rules (EXPERIENCE_RULES, EXPERIENCE_REMINDER): an interview, a
- * mock interview or Try it's blank session, unless the user chose "Full example story", whose own line
+ * mock interview or a blank session (no type), unless the user chose "Full example story", whose own line
  * asks for a story.
  *
  * @param session The session.
@@ -445,7 +445,7 @@ export function experienceApplies(session: SessionContext): boolean {
 }
 
 /**
- * ADR-0084: added after the end reminder (liveEndReminder()) for interview, mock and blank (Try it) sessions only
+ * ADR-0084: added after the end reminder (liveEndReminder()) for interview, mock and blank (no type) sessions only
  * (experienceReminder()). With no close CV project, an experience question gets an "I would…" approach,
  * never a made-up story, whatever shape the company or session asks for. Not in regular calls: there
  * the same words leaked into sales answers as "I don't have…" lines (answer-eval.md, 15 Nov 2026).
@@ -637,7 +637,7 @@ export interface BuiltPrompt {
  * @returns The system blocks and the user turn.
  * @throws Error('SESSION_REQUIRED') when the request has no session (validation prevents this
  *         for every mode but hello).
- * Called from: POST handler in app/api/answer/route.ts; server/aiTry.ts, server/aiQuality.ts;
+ * Called from: POST handler in app/api/answer/route.ts;
  *              scripts/verify-warm.ts, scripts/verify-answer-cache.ts, scripts/eval-answers.ts
  */
 export function buildPrompt(

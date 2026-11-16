@@ -246,7 +246,7 @@ export function finishNotes(model: ModelNotes, answers: readonly NotesAnswer[]):
  * @param globalPrompt The admin's global prompt for notes (ADR-0089).
  * @returns The notes and the token usage.
  * @throws Anthropic.APIError on API failures; Error('NO_JSON') when the reply has no notes.
- * Called from: POST handler in app/api/notes/route.ts; server/aiTry.ts; scripts/verify-notes.ts,
+ * Called from: POST handler in app/api/notes/route.ts; scripts/verify-notes.ts,
  *              scripts/eval-notes.ts
  */
 export async function generateCallNotes(

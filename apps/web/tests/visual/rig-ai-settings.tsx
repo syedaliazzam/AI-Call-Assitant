@@ -1,10 +1,9 @@
 /**
  * File: apps/web/tests/visual/rig-ai-settings.tsx
- * Purpose: The real Admin → AI settings page (ADR-0089) for the visual check, in the browser with invented
- *          data and the real default prompts and app contracts (ai-settings-shots.ts puts them in
- *          window.__AI_SETTINGS__). Query: ?tab=live|notes|ask, ?mode=preview, ?panel=history|try|quality,
- *          ?edited=1 (an edited draft already tried, so Save is enabled), ?theme=dark. The actions only
- *          answer "saved".
+ * Purpose: The real Admin → AI settings page (ADR-0089, ADR-0091) for the visual check, in the browser
+ *          with invented data and the real default prompts and app contracts (ai-settings-shots.ts puts
+ *          them in window.__AI_SETTINGS__). Query: ?tab=live|notes|ask, ?mode=preview, ?history=1,
+ *          ?edited=1 (an edited draft, so Save is enabled), ?theme=dark. The actions only answer "saved".
  * Used by: tests/visual/ai-settings-shots.ts (bundled and served there)
  * Depends on: src/features/admin/ai-settings/AiSettingsPage.tsx, react-dom
  * Architecture: docs/decisions/ADR-0089-global-prompts-with-locked-contract.md
@@ -21,7 +20,7 @@ import type {
   InstructionsActions,
   VersionView,
 } from '@/features/admin/ai-settings/blocks';
-import type { Mode, Panel } from '@/features/admin/ai-settings/PromptWorkspace';
+import type { Mode } from '@/features/admin/ai-settings/PromptWorkspace';
 
 /** What the shots script puts on the page. */
 interface RigData {
@@ -114,7 +113,7 @@ const actions: InstructionsActions = {
 
 const tab = (params.get('tab') ?? 'live') as AiInstructionBlock;
 const mode = (params.get('mode') ?? 'edit') as Mode;
-const panel = (params.get('panel') ?? null) as Panel;
+const history = params.get('history') === '1';
 const edited = params.get('edited') === '1';
 
 if (params.get('theme') === 'dark') document.documentElement.dataset.theme = 'dark';
@@ -130,11 +129,10 @@ createRoot(document.getElementById('root')!).render(
         initial={{
           [tab]: {
             mode,
-            panel,
+            history,
             ...(edited
               ? {
-                  draft: `${blocks[tab].activePrompt ?? ''}\n- Mention the 30-day free trial when pricing comes up.`,
-                  tried: true,
+                  draft: `${blocks[tab].activePrompt ?? ''}\n- Keep every answer to two bullet points.`,
                 }
               : {}),
           },

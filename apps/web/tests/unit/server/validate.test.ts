@@ -9,7 +9,7 @@
  * Kite attachments at 150k, and checks POST /api/summary's body (parseSummaryRequest()). All text is
  * invented.
  * ADR-0083: the company instructions pin on answers and notes (a version id or none), none on Ask AI,
- * and the "Try it" body.
+ * (the "Try it" body went with ADR-0091).
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -24,7 +24,6 @@ import {
   MAX_ATTACHMENT_CHARS,
   MAX_DOCUMENT_CHARS,
   MAX_KEY_TERMS,
-  parseAiTryRequest,
   parseAnswerRequest,
   parseAskRequest,
   parseNotesRequest,
@@ -416,18 +415,5 @@ describe('company instructions fields (ADR-0083)', () => {
     const ask = { ...NOTES, notes: '', question: 'Who spoke?', history: [] };
     expect(parseAskRequest(ask).ok).toBe(true);
     expect(parseAskRequest({ ...ask, instructionsVersion: PIN }).ok).toBe(false);
-  });
-
-  it('checks a try (ADR-0089): tab, prompt up to 30,000 characters, a sample, an optional session', () => {
-    const valid = { block: 'live', prompt: '', sample: 'What does it cost?' };
-    expect(parseAiTryRequest(valid).ok).toBe(true);
-    expect(parseAiTryRequest({ ...valid, session: SESSION }).ok).toBe(true);
-    expect(parseAiTryRequest({ ...valid, prompt: 'x'.repeat(30_000) }).ok).toBe(true);
-    expect(parseAiTryRequest({ ...valid, prompt: 'x'.repeat(30_001) }).ok).toBe(false);
-    // The old shape (a draft of company instructions) is refused.
-    expect(parseAiTryRequest({ block: 'live', draft: '', sample: 'x' }).ok).toBe(false);
-    expect(parseAiTryRequest({ ...valid, block: 'other' }).ok).toBe(false);
-    expect(parseAiTryRequest({ ...valid, sample: '  ' }).ok).toBe(false);
-    expect(parseAiTryRequest({ ...valid, extra: 1 }).ok).toBe(false);
   });
 });

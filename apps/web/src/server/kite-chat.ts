@@ -70,7 +70,7 @@ export function attachmentsBlock(request: AnswerRequest): string {
  * @param request      A validated request with mode 'kite'.
  * @param globalPrompt The admin's global prompt for Ask AI in force (ADR-0089), after the locked contract.
  * @returns The system blocks and the chat so far, ending with this message.
- * Called from: POST handler in app/api/answer/route.ts; server/aiTry.ts; scripts/eval-answers.ts; tests
+ * Called from: POST handler in app/api/answer/route.ts; scripts/eval-answers.ts; tests
  */
 export function buildKiteChatPrompt(
   request: AnswerRequest,

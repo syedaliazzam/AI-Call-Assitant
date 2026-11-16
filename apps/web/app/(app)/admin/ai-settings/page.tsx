@@ -5,7 +5,7 @@
  *          version history. Kept thin: loads the data (admins only) and passes it, with the server
  *          actions, to the feature UI.
  * Used by: Next.js App Router (admins only, see ../layout.tsx)
- * Depends on: src/server/guard.ts, src/server/aiInstructions.ts, src/server/aiTry.ts (budgetFacts),
+ * Depends on: src/server/guard.ts, src/server/aiInstructions.ts, src/server/aiBudget.ts (budgetFacts),
  *             src/server/prompts/contract.ts, src/server/prompts/defaults.ts, src/server/db.ts,
  *             src/features/admin/ai-settings/AiSettingsPage.tsx, ./actions.ts, src/ui/PageShell.tsx
  * Architecture: docs/decisions/ADR-0089-global-prompts-with-locked-contract.md
@@ -14,7 +14,7 @@ import { AI_INSTRUCTION_BLOCKS, type AiInstructionBlock } from '@kite/shared';
 import { AiSettingsPage } from '@/features/admin/ai-settings/AiSettingsPage';
 import type { BlockView } from '@/features/admin/ai-settings/blocks';
 import { loadAiInstructions, type InstructionsDb } from '@/server/aiInstructions';
-import { budgetFacts } from '@/server/aiTry';
+import { budgetFacts } from '@/server/aiBudget';
 import { db } from '@/server/db';
 import { requireAdmin } from '@/server/guard';
 import { contractFor } from '@/server/prompts/contract';

@@ -9,7 +9,8 @@
  *          per session. (ADR-0083) The company AI instructions: every saved version, and the one in
  *          force per block, and (ADR-0086) a custom full system prompt per version; (ADR-0087) the
  *          built-in prompts the app has run with (unused since ADR-0089); (ADR-0089) one admin-edited
- *          global prompt per version with a note, and the scores of the AI settings quality check.
+ *          global prompt per version with a note, and the scores of the AI settings quality check (unused since
+ *          ADR-0091, kept: migrations are additive).
  *          Generated with the Better Auth CLI (`auth generate --adapter drizzle --dialect
  *          postgresql`, better-auth 1.7.13) for email + password, the admin plugin and our
  *          `mustChangePassword` field; comments added by hand. If the Better Auth config gains
@@ -562,7 +563,8 @@ export const aiBuiltinPrompt = pgTable(
 );
 
 /**
- * ADR-0089: the scores of each AI settings quality check (live answers only), so a draft is compared
+ * ADR-0089: the scores of each AI settings quality check (live answers only). Unused since ADR-0091 (the
+ * quality check was removed); kept because migrations are additive only (ADR-0050). It held: so a draft is compared
  * with the score of the prompt in force without running that prompt again. One row per prompt checked.
  * Scores and scenario ids only: never the prompt, an answer or a grader's words.
  */

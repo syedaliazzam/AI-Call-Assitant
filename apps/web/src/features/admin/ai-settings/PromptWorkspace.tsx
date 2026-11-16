@@ -1,32 +1,22 @@
 /**
  * File: apps/web/src/features/admin/ai-settings/PromptWorkspace.tsx
- * Purpose: One tab of Admin → AI settings (ADR-0089): the global prompt's editor with an Edit / Preview
- *          switch, a sticky actions bar (Try it, Quality check for live answers, History, Discard, Reset
- *          to default, Save), the panel each opens, the lint hint for layout or personal-preference words,
- *          the input-budget warning (live answers), and the folded app contract. Save is allowed only for
- *          a draft that was tried or quality-checked exactly as it is (the server checks the token too).
+ * Purpose: One tab of Admin → AI settings (ADR-0089, simplified in ADR-0091): the global prompt's editor
+ *          with an Edit / Preview switch, a sticky actions bar (History, Discard, Reset to default, Save
+ *          with an optional note), the History panel, the lint hint for layout or personal-preference
+ *          words (a hint only: it never blocks Save), the input-budget warning (live answers), and the
+ *          folded app contract. Save is enabled whenever the draft differs from the live version.
  * Used by: src/features/admin/ai-settings/AiSettingsPage.tsx
  * Depends on: React, lucide-react, @kite/shared (lint, limits, budget), src/ui (Button, Input, Modal),
- *             ./PromptTextEditor.tsx, ./PromptPreview.tsx, ./TryPanel.tsx, ./QualityPanel.tsx,
- *             ./VersionHistory.tsx, ./ContractView.tsx, ./blocks.ts
- * Architecture: docs/decisions/ADR-0089-global-prompts-with-locked-contract.md
+ *             ./PromptTextEditor.tsx, ./PromptPreview.tsx, ./VersionHistory.tsx, ./ContractView.tsx,
+ *             ./blocks.ts
+ * Architecture: docs/decisions/ADR-0089-global-prompts-with-locked-contract.md,
+ *               docs/decisions/ADR-0091-simpler-ai-settings.md
  * Theme: tokens from src/ui/tokens/theme.css (light and dark)
  */
 'use client';
 
-import { useEffect, useId, useMemo, useRef, useState, useTransition, type ReactNode } from 'react';
-import {
-  AlertTriangle,
-  Check,
-  Eye,
-  FlaskConical,
-  Gauge,
-  History,
-  Pencil,
-  RotateCcw,
-  Undo,
-  X,
-} from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState, useTransition } from 'react';
+import { AlertTriangle, Eye, History, Pencil, RotateCcw, Undo, X } from 'lucide-react';
 import {
   answerBudgetUse,
   lintGlobalPrompt,
@@ -50,8 +40,6 @@ import {
 import { ContractView } from './ContractView';
 import { PromptPreview } from './PromptPreview';
 import { PromptTextEditor } from './PromptTextEditor';
-import { QualityPanel } from './QualityPanel';
-import { TryPanel } from './TryPanel';
 import { VersionHistory } from './VersionHistory';
 
 /** Props for PromptWorkspace. */
@@ -76,66 +64,20 @@ export interface PromptWorkspaceProps {
 export interface WorkspaceStart {
   /** Edit or Preview. */
   mode?: Mode;
-  /** The panel open under the actions bar. */
-  panel?: Panel;
+  /** True to start with History open. */
+  history?: boolean;
   /** The draft in the editor (the live text when absent). */
   draft?: string;
-  /**
-   * True to count that draft as tried, so Save shows enabled. Display only: the server still checks a
-   * real token on save.
-   */
-  tried?: boolean;
 }
 
 /** Edit or Preview. */
 export type Mode = 'edit' | 'preview';
 
-/** The panel open under the actions bar, if any. */
-export type Panel = 'try' | 'quality' | 'history' | null;
-
-/**
- * A button that opens or closes a panel.
- *
- * @param props.active   True while its panel is open.
- * @param props.onClick  Toggles it.
- * @param props.icon     Its icon.
- * @param props.children Its words.
- * @returns The button.
- * Rendered by: PromptWorkspace
- */
-function PanelButton({
-  active,
-  onClick,
-  icon,
-  children,
-}: {
-  /** Open. */
-  active: boolean;
-  /** Toggle. */
-  onClick: () => void;
-  /** Icon. */
-  icon: ReactNode;
-  /** Words. */
-  children: ReactNode;
-}) {
-  return (
-    <Button
-      size="sm"
-      variant={active ? 'primary' : 'secondary'}
-      aria-pressed={active}
-      onClick={onClick}
-    >
-      {icon}
-      {children}
-    </Button>
-  );
-}
-
 /**
  * One tab's workspace.
  *
  * @param props See PromptWorkspaceProps.
- * @returns The card with the bar, the panel, the editor or preview, the hints and the contract.
+ * @returns The card with the bar, History when open, the editor or preview, the hints and the contract.
  * Rendered by: AiSettingsPage.tsx
  */
 export function PromptWorkspace({
@@ -151,16 +93,7 @@ export function PromptWorkspace({
   const live = view.activePrompt ?? view.defaultPrompt;
   const [draft, setDraft] = useState(initial?.draft ?? live);
   const [mode, setMode] = useState<Mode>(initial?.mode ?? 'edit');
-  const [panel, setPanel] = useState<Panel>(initial?.panel ?? null);
-  // Save tokens by the exact (cleaned) text they prove was tried or checked.
-  const [tokens, setTokens] = useState<ReadonlyMap<string, string>>(
-    () =>
-      new Map(
-        initial?.tried && initial.draft !== undefined
-          ? [[normaliseGlobalPrompt(initial.draft), 'seeded']]
-          : [],
-      ),
-  );
+  const [historyOpen, setHistoryOpen] = useState(initial?.history ?? false);
   const [saveOpen, setSaveOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [note, setNote] = useState('');
@@ -171,7 +104,6 @@ export function PromptWorkspace({
 
   const cleanDraft = normaliseGlobalPrompt(draft);
   const dirty = cleanDraft !== normaliseGlobalPrompt(live);
-  const token = tokens.get(cleanDraft);
   const isDefaultLive = view.activePrompt === null;
 
   // After a save, reset or restore the page gets the new version: an untouched draft follows it.
@@ -194,33 +126,17 @@ export function PromptWorkspace({
     ? answerBudgetUse({ ...budget, chars: cleanDraft.length + budget.headingChars })
     : null;
 
-  /**
-   * Keeps the token of a try or check (only while the draft is still that text, it enables Save).
-   *
-   * @param promptToken The token.
-   * @param sent        The prompt that was tried.
-   */
-  const remember = (promptToken: string, sent: string) => {
-    if (!promptToken) return;
-    setTokens((current) => new Map(current).set(normaliseGlobalPrompt(sent), promptToken));
-  };
-
-  /**
-   * Opens a panel, or closes it when it is open, and brings it into view.
-   *
-   * @param next The panel.
-   */
-  const toggle = (next: Exclude<Panel, null>) => {
-    setPanel((current) => (current === next ? null : next));
+  /** Opens or closes History, and brings it into view. */
+  const toggleHistory = () => {
+    setHistoryOpen((open) => !open);
     requestAnimationFrame(() => panelRef.current?.scrollIntoView({ block: 'nearest' }));
   };
 
-  /** Saves the tried draft with the note. */
+  /** Saves the draft with the note. */
   const save = () => {
-    if (!token) return;
     startTransition(async () => {
       try {
-        const result = await actions.save(block, draft, token, note);
+        const result = await actions.save(block, draft, note);
         if (!result.ok) onToast(result.error, 'danger');
         else {
           onToast(
@@ -260,15 +176,6 @@ export function PromptWorkspace({
     });
   };
 
-  const panelTitle =
-    panel === 'try'
-      ? 'Try it'
-      : panel === 'quality'
-        ? 'Quality check'
-        : panel === 'history'
-          ? 'History'
-          : '';
-
   return (
     <div className={`${CARD} flex flex-col`}>
       {/* The actions bar stays in view while the prompt scrolls. */}
@@ -305,40 +212,21 @@ export function PromptWorkspace({
             <>
               <span aria-hidden="true" className="size-2 rounded-full bg-ui-dot-warning" />
               <span className="text-ui-warning">Unsaved changes</span>
-              {token && (
-                <span className="inline-flex items-center gap-1 text-ui-success">
-                  · <Check aria-hidden="true" size={13} /> Tried
-                </span>
-              )}
             </>
           ) : (
             <span className="text-ui-muted">No unsaved changes</span>
           )}
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <PanelButton
-            active={panel === 'try'}
-            onClick={() => toggle('try')}
-            icon={<FlaskConical aria-hidden="true" size={14} className="mr-1.5" />}
+          <Button
+            size="sm"
+            variant={historyOpen ? 'primary' : 'secondary'}
+            aria-pressed={historyOpen}
+            onClick={toggleHistory}
           >
-            Try it
-          </PanelButton>
-          {block === 'live' && (
-            <PanelButton
-              active={panel === 'quality'}
-              onClick={() => toggle('quality')}
-              icon={<Gauge aria-hidden="true" size={14} className="mr-1.5" />}
-            >
-              Quality check
-            </PanelButton>
-          )}
-          <PanelButton
-            active={panel === 'history'}
-            onClick={() => toggle('history')}
-            icon={<History aria-hidden="true" size={14} className="mr-1.5" />}
-          >
+            <History aria-hidden="true" size={14} className="mr-1.5" />
             History
-          </PanelButton>
+          </Button>
           <span aria-hidden="true" className="mx-1 h-5 w-px bg-ui-border" />
           <Button
             size="sm"
@@ -362,41 +250,29 @@ export function PromptWorkspace({
           </Button>
           <Button
             size="sm"
-            disabled={!dirty || !token || busy || cleanDraft.length > MAX_GLOBAL_PROMPT_CHARS}
-            title={
-              dirty && !token ? 'Run Try it or Quality check on this exact draft first' : undefined
-            }
+            // The lint hint never blocks Save (ADR-0091); only "nothing to save" and the length limit do.
+            disabled={!dirty || busy || cleanDraft.length > MAX_GLOBAL_PROMPT_CHARS}
             onClick={() => setSaveOpen(true)}
           >
             Save
           </Button>
         </div>
-        {dirty && !token && (
-          <p className="basis-full text-[12px] text-ui-muted">
-            {`Save unlocks after Try it${block === 'live' ? ' or Quality check' : ''} runs on this exact draft.`}
-          </p>
-        )}
       </div>
 
-      {panel && (
+      {historyOpen && (
         <div ref={panelRef} className="border-b border-ui-border bg-ui-subtle/40 px-5 py-4">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[15px] font-semibold text-ui-heading">{panelTitle}</h2>
+            <h2 className="text-[15px] font-semibold text-ui-heading">History</h2>
             <Button
               size="sm"
               variant="plain"
-              aria-label={`Close ${panelTitle}`}
-              onClick={() => setPanel(null)}
+              aria-label="Close History"
+              onClick={() => setHistoryOpen(false)}
             >
               <X aria-hidden="true" size={15} />
             </Button>
           </div>
-          {/* Kept mounted while open; each panel uses the draft as it is when it runs. */}
-          {panel === 'try' && <TryPanel block={block} prompt={draft} onTried={remember} />}
-          {panel === 'quality' && <QualityPanel prompt={draft} onChecked={remember} />}
-          {panel === 'history' && (
-            <VersionHistory block={block} view={view} restore={actions.restore} onToast={onToast} />
-          )}
+          <VersionHistory block={block} view={view} restore={actions.restore} onToast={onToast} />
         </div>
       )}
 

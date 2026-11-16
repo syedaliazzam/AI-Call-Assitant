@@ -1,12 +1,12 @@
 /**
  * File: apps/web/src/features/admin/ai-settings/blocks.ts
- * Purpose: What Admin → AI settings says about each tab (ADR-0089): its name, the one-line description,
- *          the model, and the sample the "Try it" box offers. Also the page's data types, filled by the
+ * Purpose: What Admin → AI settings says about each tab (ADR-0089, ADR-0091): its name, the one-line
+ *          description and the model. Also the page's data types, filled by the
  *          server page (each tab's version in force, default prompt, app contract and history), the
  *          server actions' shapes, and small helpers (version labels, dates).
  * Used by: src/features/admin/ai-settings/*.tsx, app/(app)/admin/ai-settings/page.tsx
  * Depends on: @kite/shared (AiInstructionBlock)
- * Architecture: docs/decisions/ADR-0089-global-prompts-with-locked-contract.md
+ * Architecture: docs/decisions/ADR-0089-global-prompts-with-locked-contract.md, ADR-0091-simpler-ai-settings.md
  */
 import type { AiInstructionBlock } from '@kite/shared';
 
@@ -21,10 +21,6 @@ export interface BlockCopy {
   description: string;
   /** The model, in a few words. */
   model: string;
-  /** The label of the try's sample box. */
-  sampleLabel: string;
-  /** The sample box's placeholder. */
-  samplePlaceholder: string;
 }
 
 /** The words for each tab. */
@@ -33,23 +29,16 @@ export const BLOCK_COPY: Readonly<Record<AiInstructionBlock, BlockCopy>> = {
     label: 'Live answers',
     description: 'Used during calls',
     model: 'Claude Haiku',
-    sampleLabel: 'Sample question (as the other person asks it)',
-    samplePlaceholder: 'Tell me about a time you handled a difficult client.',
   },
   notes: {
     label: 'AI notes',
     description: 'Used for after-call notes',
     model: 'Claude Sonnet',
-    sampleLabel: 'Sample call (one turn per line, starting "Them:" or "You:")',
-    samplePlaceholder:
-      'Them: Thanks for joining. Can you walk me through your pricing?\nYou: Sure, our standard plan is per seat, billed monthly.\nThem: Great, can you send a proposal by Friday?\nYou: Yes, I will send it by Thursday.',
   },
   ask: {
     label: 'Ask AI',
     description: 'Used in Ask AI',
     model: 'Claude Sonnet',
-    sampleLabel: 'Sample question',
-    samplePlaceholder: 'Draft a short follow-up email after a sales call.',
   },
 };
 
@@ -124,11 +113,10 @@ export type InstructionsActionResult =
 
 /** The server actions the page calls (app/(app)/admin/ai-settings/actions.ts). */
 export interface InstructionsActions {
-  /** Saves a tab's tried global prompt as a new version in force, with an optional note. */
+  /** Saves a tab's global prompt as a new version in force, with an optional note. */
   save: (
     block: AiInstructionBlock,
     prompt: string,
-    token: string,
     note: string,
   ) => Promise<InstructionsActionResult>;
   /** Goes back to the tab's default prompt (a new version). */

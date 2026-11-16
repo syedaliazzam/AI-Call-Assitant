@@ -1,9 +1,8 @@
 /**
- * Tests for Admin → AI settings' server side outside src/server (ADR-0089; pin from ADR-0083):
+ * Tests for Admin → AI settings' server side outside src/server (ADR-0089, ADR-0091; pin from ADR-0083):
  * - app/(app)/admin/ai-settings/actions.ts: a non-admin is refused (requireAdmin() redirects) before
- *   anything is saved, reset or restored; Save is refused unless the token proves this exact text was
- *   tried or quality-checked (no token, or a token for other text, saves nothing); a tried prompt is
- *   saved with the session's user and the note; Reset to default needs no try; restore adds a version and
+ *   anything is saved, reset or restored; Save needs no try (ADR-0091), and a prompt the lint flags is
+ *   saved too; it is saved with the session's user and the note; Reset to default; restore adds a version and
  *   explains a version that is gone; text over 30,000 characters, an unknown tab or a bad version id is
  *   refused; errors come back as messages, and the logs hold no text, notes, ids or names;
  * - app/api/ai-instructions/pin/route.ts: 401 signed out or with a temporary password; ids only for a
@@ -20,7 +19,6 @@ const mocks = vi.hoisted(() => ({
   readPin: vi.fn(),
   getCachedSession: vi.fn(),
   revalidatePath: vi.fn(),
-  checkPromptTryToken: vi.fn(),
 }));
 vi.mock('@/server/guard', () => ({ requireAdmin: mocks.requireAdmin }));
 vi.mock('@/server/db', () => ({ db: {} }));
@@ -29,7 +27,6 @@ vi.mock('@/server/aiInstructions', () => ({
   restoreVersion: mocks.restoreVersion,
   readPin: mocks.readPin,
 }));
-vi.mock('@/server/promptTryToken', () => ({ checkPromptTryToken: mocks.checkPromptTryToken }));
 vi.mock('@/server/auth', () => ({ getCachedSession: mocks.getCachedSession }));
 vi.mock('next/cache', () => ({ revalidatePath: mocks.revalidatePath }));
 
@@ -56,34 +53,31 @@ describe('AI settings actions', () => {
   it('refuses a non-admin before saving, resetting or restoring anything', async () => {
     // requireAdmin() redirects a non-admin, which Next.js does by throwing.
     mocks.requireAdmin.mockRejectedValue(new Error('NEXT_REDIRECT'));
-    mocks.checkPromptTryToken.mockReturnValue(true);
-    await expect(savePromptAction('live', PROMPT, 'TOKEN', '')).rejects.toThrow('NEXT_REDIRECT');
+    await expect(savePromptAction('live', PROMPT, '')).rejects.toThrow('NEXT_REDIRECT');
     await expect(resetPromptAction('live')).rejects.toThrow('NEXT_REDIRECT');
     await expect(restoreVersionAction('live', PIN)).rejects.toThrow('NEXT_REDIRECT');
     expect(mocks.saveGlobalPrompt).not.toHaveBeenCalled();
     expect(mocks.restoreVersion).not.toHaveBeenCalled();
   });
 
-  it('refuses to save a draft that was not tried or quality-checked exactly as it is', async () => {
+  it('saves without any try, even a line the lint hint flags (ADR-0091)', async () => {
     mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
-    // No token, or a token for other text: the check fails.
-    mocks.checkPromptTryToken.mockReturnValue(false);
-    for (const token of ['', 'a'.repeat(64)]) {
-      const result = await savePromptAction('live', PROMPT, token, '');
-      expect(result).toEqual({
-        ok: false,
-        error: 'Run Try it or Quality check on this exact draft before saving it.',
-      });
-    }
-    expect(mocks.checkPromptTryToken).toHaveBeenCalledWith('live', PROMPT, 'a'.repeat(64));
-    expect(mocks.saveGlobalPrompt).not.toHaveBeenCalled();
+    mocks.saveGlobalPrompt.mockResolvedValue({ id: PIN, created: true });
+    const flagged = 'How to answer:\n- Always use five bullet points with a headline.';
+    expect(await savePromptAction('live', flagged, '')).toEqual({ ok: true, created: true });
+    expect(mocks.saveGlobalPrompt).toHaveBeenCalledWith(
+      {},
+      ADMIN_SESSION.user,
+      'live',
+      flagged,
+      '',
+    );
   });
 
-  it('saves a tried prompt with the session user and the note, logging no text', async () => {
+  it('saves a prompt with the session user and the note, logging no text', async () => {
     mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
-    mocks.checkPromptTryToken.mockReturnValue(true);
     mocks.saveGlobalPrompt.mockResolvedValue({ id: PIN, created: true });
-    const result = await savePromptAction('notes', PROMPT, 'TOKEN', 'NOTE-SECRET');
+    const result = await savePromptAction('notes', PROMPT, 'NOTE-SECRET');
     expect(result).toEqual({ ok: true, created: true });
     expect(mocks.saveGlobalPrompt).toHaveBeenCalledWith(
       {},
@@ -94,29 +88,27 @@ describe('AI settings actions', () => {
     );
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/admin/ai-settings');
     const logs = JSON.stringify(vi.mocked(console.info).mock.calls);
-    for (const secret of ['PROMPT-SECRET', 'NOTE-SECRET', 'TOKEN', PIN, 'admin-1', 'Admin Name']) {
+    for (const secret of ['PROMPT-SECRET', 'NOTE-SECRET', PIN, 'admin-1', 'Admin Name']) {
       expect(logs).not.toContain(secret);
     }
   });
 
   it('refuses text over 30,000 characters, an unknown tab or a bad version id, saving nothing', async () => {
     mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
-    mocks.checkPromptTryToken.mockReturnValue(true);
-    const long = await savePromptAction('live', 'x'.repeat(MAX_GLOBAL_PROMPT_CHARS + 1), 'T', '');
+    const long = await savePromptAction('live', 'x'.repeat(MAX_GLOBAL_PROMPT_CHARS + 1), '');
     expect(long).toEqual({ ok: false, error: 'Use at most 30,000 characters.' });
-    expect((await savePromptAction('other' as never, PROMPT, 'T', '')).ok).toBe(false);
+    expect((await savePromptAction('other' as never, PROMPT, '')).ok).toBe(false);
     expect((await resetPromptAction('other' as never)).ok).toBe(false);
     expect((await restoreVersionAction('live', 'latest')).ok).toBe(false);
     expect(mocks.saveGlobalPrompt).not.toHaveBeenCalled();
     expect(mocks.restoreVersion).not.toHaveBeenCalled();
   });
 
-  it('Reset to default saves the default (null) with no try needed', async () => {
+  it('Reset to default saves the default (null)', async () => {
     mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
     mocks.saveGlobalPrompt.mockResolvedValue({ id: PIN, created: true });
     expect(await resetPromptAction('ask')).toEqual({ ok: true, created: true });
     expect(mocks.saveGlobalPrompt).toHaveBeenCalledWith({}, ADMIN_SESSION.user, 'ask', null, null);
-    expect(mocks.checkPromptTryToken).not.toHaveBeenCalled();
   });
 
   it('restores as a new version, and says so when the version is gone', async () => {
@@ -133,9 +125,8 @@ describe('AI settings actions', () => {
 
   it('turns a database failure into a generic message, logging only its name', async () => {
     mocks.requireAdmin.mockResolvedValue(ADMIN_SESSION);
-    mocks.checkPromptTryToken.mockReturnValue(true);
     mocks.saveGlobalPrompt.mockRejectedValue(new Error('insert ... PROMPT-SECRET failed'));
-    const result = await savePromptAction('live', PROMPT, 'T', '');
+    const result = await savePromptAction('live', PROMPT, '');
     expect(result).toEqual({ ok: false, error: 'Something went wrong. Please try again.' });
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('PROMPT-SECRET');
   });
