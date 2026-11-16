@@ -538,12 +538,22 @@ Round 4 also: `screenshots` 9.33, `preferences` 9.13 (24-star-structure 9.0). Sp
 
 ## Paramount AI name and cloud transcript line (2026-11-16, ADR-0086)
 
-The core rules changed in two places: "You are Kite" became "You are Paramount AI", and the transcript line now says it comes from cloud speech recognition (Deepgram), with speech recognition on the user's device as the fallback. Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`. The developer asked for **one** run of the `answers` group (cap $2); spend **$0.09** for 60 requests.
+The core rules changed in two places: "You are Kite" became "You are Paramount AI", and the transcript line now says it comes from cloud speech recognition (Deepgram), with speech recognition on the user's device as the fallback. Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`. One run of the `answers` group first (cap $2, spend $0.09), then two more the same day (cap $0.30, spend $0.17), so the gate's 3-run mean is complete. Total spend **$0.26** for 180 requests.
 
-| Group | Gate (3-run mean, ADR-0084 rounds) | Shipped baseline (8.97, 9.10, 9.13) | This change (1 run) | Result |
+| Group | Gate (3-run mean, ADR-0084 rounds) | Shipped baseline (8.97, 9.10, 9.13) | This change (9.03, 8.97, 9.20) | Result |
 |---|---|---|---|---|
-| `answers` (15) | ≥ 8.86 | 9.07 | **9.03** | **holds**: above the gate, 0.04 under the baseline, within the single-run spread seen on the old wording (8.53–9.13) |
+| `answers` (15) | ≥ 8.86 | 9.07 | **9.07** | **passes**, equal to the baseline |
 
-Per scenario, the largest moves were 14 (session without documents) 6.5, against 7.5–10 in the seven earlier runs on 15 Nov, and 13 (off-topic) 8.0, against 6.0–8.5. Both have swung that much between runs before; no answer showed a new kind of fault. Other checks: hidden line 28/30, nothing invented in 24/30 graded runs, no number outside the documents and call 28/30. This is one run, not the three the gate is defined on.
+Per scenario, against the seven runs on the old wording on 15 Nov:
+
+| Scenario | 15 Nov (7 runs) | This change | Mean |
+|---|---|---|---|
+| 14 session without documents | 7.5–10, mean 8.93 | 6.5, 7.0, 9.0 | **7.50** |
+| 08 documents cannot answer | 6.0–9.0, mean 7.64 | 7.0, 5.0, 8.0 | **6.67** |
+| 03 interview | 8.0–10 | 10, 10, 10 | 10.0 |
+
+What the grader marked down in 08 and 14 (12 graded answers): in 8, a spoken line that says what is missing ("I don't have the per-seat pricing", "not covered in my materials"); in 7, an answer line over 15 words; in 2 (both in 08, one run), an invented hosting location and certification; in 4 (all in 14), a smaller unsupported detail (volume terms, billing period changing the quote, "tailor the price", a "standard team size"). This is the failure ADR-0084's first round also hit, and the rules against it are unchanged. Whether the new wording makes it more frequent cannot be told from 6 answers per scenario: 14's mean is exactly the 7.5 line the developer set for investigating. 08 is not part of that check, but it is worth watching: its invented-fact case is the serious one.
+
+Other checks over the three runs: hidden line present 86/90; no number outside the documents and call 84/90; grader found nothing invented 73/90; no comment on what Kite was given 89/90.
 
 Custom full prompts (ADR-0086) are not covered by these baselines: they run on the built-in prompt. An admin checks a custom prompt with Try it.
