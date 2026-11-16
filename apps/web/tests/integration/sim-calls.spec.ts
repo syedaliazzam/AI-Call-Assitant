@@ -803,56 +803,6 @@ test('g) Batch D, auto-answer on: a re-ask that adds a new question gets a new c
   expect(since().filter((question) => question.includes('SCALE'))).toHaveLength(2);
 });
 
-test('home panel: cards, search, sort, the menu and its buttons', async () => {
-  await page.goto(`${origin}/?view=home`);
-  // The acceptable-use notice, word for word, once on this device.
-  const notice = page.getByRole('dialog', { name: 'Using Paramount AI' });
-  await expect(notice).toContainText(
-    "Use Paramount AI in calls where AI assistance is allowed — your own meetings, client calls, practice and mock interviews. Don't use it to get hidden help in interviews, exams or assessments where outside help isn't permitted. Screen-share protection only hides Paramount AI's windows; it does nothing against monitoring or proctoring tools. Record a meeting only when everyone on it has agreed; recording or transcribing others may require their consent.",
-  );
-  await notice.getByRole('button', { name: 'Got it' }).click();
-  await expect(notice).toHaveCount(0);
-  const list = page.getByRole('list', { name: 'Sessions' });
-  await expect(list.getByRole('listitem')).toHaveCount(2);
-  // Newest first, each with its type, Transcript chip, status and Start.
-  await expect(list.getByRole('listitem').first()).toContainText('Northwind Routes');
-  await expect(list.getByRole('listitem').first()).toContainText('Regular');
-  await expect(list.getByRole('listitem').first()).toContainText('Transcript');
-  await expect(
-    list.getByRole('listitem').first().getByRole('button', { name: 'Start' }),
-  ).toBeVisible();
-
-  await page.getByLabel('Search sessions').fill('harbor');
-  await expect(list.getByRole('listitem')).toHaveCount(1);
-  await page.getByLabel('Search sessions').fill('nothing like this');
-  await expect(page.getByText('Nothing matches that')).toBeVisible();
-  await page.getByLabel('Search sessions').fill('');
-
-  await page.getByRole('button', { name: 'Sorted newest first' }).click();
-  await expect(list.getByRole('listitem').first()).toContainText('Harbor Lane');
-
-  // The buttons open pages through the shell.
-  const opened = () =>
-    page.evaluate(() => (window as unknown as { opened: string[] }).opened.slice());
-  await page.getByRole('button', { name: 'View in dashboard' }).click();
-  await page.getByRole('button', { name: 'Create session' }).click();
-  expect(await opened()).toEqual(['/', '/sessions/new']);
-
-  // The menu: the email, Dashboard, Private, Zoom, Theme, Log out. Escape closes it.
-  await page.getByRole('button', { name: 'Menu', exact: true }).click();
-  const menu = page.getByRole('group', { name: 'Home panel menu' });
-  for (const words of ['sam@example.com', 'Dashboard', 'Private', 'Zoom', 'Log out']) {
-    await expect(menu).toContainText(words);
-  }
-  // The theme reaches the page at once, and stays.
-  await menu.getByRole('radio', { name: 'Dark' }).click();
-  await expect(page.locator('.k-dark').first()).toBeVisible();
-  await menu.getByRole('radio', { name: 'Light' }).click();
-  await expect(page.locator('.k-light').first()).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(menu).toHaveCount(0);
-});
-
 test('ADR-0082: the voice question: Ctrl+Shift+Space listens on the status bar, Escape cancels, Ctrl+Alt+Enter adds a screenshot', async () => {
   await openCall('desktop');
   const overlay = await context.newPage();

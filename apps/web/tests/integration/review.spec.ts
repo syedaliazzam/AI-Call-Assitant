@@ -377,15 +377,18 @@ test('Transcript: a chat with answer chips, an Answers tab; thumbs and reports a
     page.getByRole('listitem', { name: 'You said' }).first().locator(':scope > span').first(),
   ).toHaveText(/^You\s*\d\d:\d\d$/);
 
-  // v1.3.2: the other person's name is renamed in place, stored on the session, and used at once.
+  // v1.3.2: the other person's name is renamed in place and used at once (ADR-0093: for the shown call,
+  // kept on the call; the name is cleaned, so brackets are dropped).
   await page
     .getByRole('button', { name: /: rename$/ })
     .first()
     .click();
   const nameBox = page.getByRole('textbox', { name: "The other person's name" });
-  await nameBox.fill('Dana (invented)');
+  await nameBox.fill("Dana O'Neil-Ray (invented)");
   await nameBox.press('Enter');
-  await expect(page.getByRole('button', { name: 'Dana (invented): rename' }).first()).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: "Dana O'Neil-Ray invented: rename" }).first(),
+  ).toBeVisible();
 
   // The oldest answer, which has no rating of its own to begin with.
   await page.getByRole('button', { name: 'Answers', exact: true }).click();
@@ -419,7 +422,7 @@ test('Download gives TXT and PDF with the conversation, not the private notes', 
   expect(text).toContain('Paramount AI transcript: Northwind Logistics (invented)');
   // v1.3.2: turns headed "<name>  <mm:ss>" (the other person renamed above, when that test ran first),
   // and each answer written out in full.
-  expect(text).toMatch(/^(Them|Dana \(invented\)) {2}\d\d:\d\d$/m);
+  expect(text).toMatch(/^(Them|Dana O'Neil-Ray invented) {2}\d\d:\d\d$/m);
   expect(text).toMatch(/^You {2}\d\d:\d\d$/m);
   expect(text).toMatch(
     /^Paramount AI answered( \([\w, ]+\))? {2}\d\d:\d\d\nQuestion: .+\nAnswer: /m,
