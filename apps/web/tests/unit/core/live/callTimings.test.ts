@@ -178,4 +178,26 @@ describe('cardTimings (1.5.2, ADR-0070)', () => {
     t.noteEchoCancel('on');
     expect(t.current()!.echoCancel).toBe('on');
   });
+
+  it("ADR-0094: records the model per answer; the server's tier replaces the one asked for", () => {
+    const start = 1_700_000_000_000;
+    const t = createCallTimings({ read: () => null, write: () => undefined }, () => start);
+    t.start({
+      sessionId: 's',
+      startedAt: start,
+      platform: 'desktop',
+      accurate: true,
+      recording: 'off',
+      documentChars: 0,
+    });
+    // Asked on Fast, then the model is switched mid-call: the next one asks for Smart.
+    t.noteAnswer({ answerId: 'a', sentAt: start + 1_000, model: 'fast' });
+    t.noteAnswer({ answerId: 'b', sentAt: start + 5_000, model: 'smart' });
+    // An admin turned Smart off: the server answered with the fast model, and says so.
+    t.noteAnswer({ answerId: 'b', status: 'done', doneAt: start + 6_000, model: 'fast' });
+    t.noteAnswer({ answerId: 'c', sentAt: start + 9_000 });
+    const cards = cardTimings(t.current()!);
+    expect(cards.map((card) => card.model)).toEqual(['fast', 'fast', null]);
+    expect(t.current()!.answers.map((answer) => answer.model)).toEqual(['fast', 'fast', undefined]);
+  });
 });

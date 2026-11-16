@@ -8,6 +8,7 @@
  *          the desktop app's two windows and with a browser picture-in-picture window. v1.1.0
  *          (ADR-0041): also the transcript's bubbles, the audio levels and the stacked overlay's
  *          commands. Desktop 1.5.0 (ADR-0068): the meeting recording's state and its Rec pill's commands.
+ *          ADR-0094: the answer model in use (and whether Smart is allowed), and the overlay's model switch.
  * Used by: src/features/live/LiveAnswers.tsx (publishes, takes commands),
  *          src/features/live/CompactLive.tsx (shows, sends commands)
  * Depends on: the browser's BroadcastChannel (injectable for tests)
@@ -27,7 +28,7 @@ import {
   type TargetChoice,
 } from '@kite/shared';
 import type { CallNotice } from './callNotice';
-import type { AnswerStyle } from '@/core/storage/types';
+import type { AnswerModel, AnswerStyle } from '@/core/storage/types';
 
 /** A few of the latest words, as one chip in the overlay's transcript bar. */
 export interface CompactChip {
@@ -184,6 +185,15 @@ export interface CompactState {
   ended: boolean;
   /** How answers are written now; the overlay's menu can change it during a call. */
   style?: AnswerStyle;
+  /**
+   * ADR-0094: the model the next answer uses ('fast' = Claude Haiku, 'smart' = Claude Sonnet); the ⋮ menu's
+   * Model row and bar 1's chip can change it during a call. 'fast' when the session asks for the deeper
+   * model but an admin has turned it off (the server answers with the fast one then). Absent from an older
+   * live page: the overlay then shows no model choice.
+   */
+  model?: AnswerModel;
+  /** ADR-0094: false when an admin has turned the deeper model off (Smart is shown disabled). */
+  smartAllowed?: boolean;
   /** True while the overlay is the slim script bar (v1.0.2; Ctrl+Alt+S or the ⋮ menu). */
   scriptBar?: boolean;
   /**
@@ -302,6 +312,17 @@ export interface LanguageCommand {
   type: 'language';
   /** The language's code. */
   code: string;
+}
+
+/**
+ * ADR-0094: the model for this session's next answers, from the overlay's ⋮ menu or bar 1's chip. An answer
+ * already streaming finishes on the model it started with.
+ */
+export interface ModelCommand {
+  /** Command type. */
+  type: 'model';
+  /** 'fast' (Claude Haiku) or 'smart' (Claude Sonnet). */
+  model: AnswerModel;
 }
 
 /** Turns auto-answer on or off for this call, from the overlay's menu (v1.1.0). */
@@ -450,6 +471,7 @@ export type CompactCommand =
   | AnswerThisCommand
   | LanguageCommand
   | AutoAnswerCommand
+  | ModelCommand
   | MicCommand
   | RecordStartCommand
   | RecordKindCommand
@@ -613,6 +635,10 @@ export function isCommand(value: unknown): value is CompactCommand {
   if (command.type === 'language') {
     const code = (value as { code?: unknown }).code;
     return typeof code === 'string' && code.length > 0 && code.length <= 16;
+  }
+  if (command.type === 'model') {
+    const model = (value as { model?: unknown }).model;
+    return model === 'fast' || model === 'smart';
   }
   if (command.type === 'mic') {
     const deviceId = (value as { deviceId?: unknown }).deviceId;

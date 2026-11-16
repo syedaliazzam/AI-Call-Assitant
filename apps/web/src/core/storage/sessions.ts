@@ -3,7 +3,8 @@
  * Purpose: Create, read, list (search and type filter), update and delete call sessions on
  *          this device, and work out the status the dashboard shows (a 'live' session with no
  *          activity for 12 hours is shown as 'ended').
- * Used by: the dashboard, the Create/Edit session wizard and the live screen (Day 3 Stages 3–4)
+ * Used by: the dashboard, the Create/Edit session wizard and the live screen (Day 3 Stages 3–4; ADR-0094:
+ *          the model and answer preferences changed during a call)
  * Depends on: src/core/storage/db.ts, src/core/storage/types.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4, §8.1; day-03-sessions.md
  *               Stage 1
@@ -13,7 +14,14 @@
  */
 import { liveQuery } from 'dexie';
 import { getDb } from './db';
-import type { LibraryKind, Session, SessionStatus, SessionType, StoredDocument } from './types';
+import type {
+  LibraryKind,
+  Session,
+  SessionPreferences,
+  SessionStatus,
+  SessionType,
+  StoredDocument,
+} from './types';
 import { joinDocumentParts, rowIdsOf, splitDocumentText } from '../documents/parts';
 
 /**
@@ -168,6 +176,32 @@ export async function updateSession(id: string, changes: SessionChanges): Promis
       id: current.id,
       createdAt: current.createdAt,
     };
+    await db.sessions.put(next);
+    return next;
+  });
+}
+
+/**
+ * Changes some of a session's preferences, keeping the others as they are stored now (ADR-0094). Read
+ * and written in one transaction, so two changes made during a call (the model from the overlay, the
+ * answer preferences) never put back each other's old value, as spreading a preferences object read
+ * when the call started would.
+ *
+ * @param id      The session id.
+ * @param changes The preferences to change (for example { model: 'smart' }).
+ * @returns The session after the change.
+ * @throws Error('SESSION_NOT_FOUND') when there is no session with this id.
+ * Called from: LiveAnswers.tsx (the overlay's model and answer-preference changes); tests
+ */
+export async function updateSessionPreferences(
+  id: string,
+  changes: Partial<SessionPreferences>,
+): Promise<Session> {
+  const db = getDb();
+  return db.transaction('rw', db.sessions, async () => {
+    const current = await db.sessions.get(id);
+    if (!current) throw new Error('SESSION_NOT_FOUND');
+    const next: Session = { ...current, preferences: { ...current.preferences, ...changes } };
     await db.sessions.put(next);
     return next;
   });

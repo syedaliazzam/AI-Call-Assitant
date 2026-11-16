@@ -3,6 +3,7 @@
  * create/get (new sessions are 'not-started' with no activity yet; unknown ids give null);
  * listSessions() is newest first, filters by type and searches company and role
  * ignoring case; updateSession() keeps id and createdAt and fails for unknown ids;
+ * updateSessionPreferences() (ADR-0094) changes only the preferences given, never putting back older ones;
  * createSessionWithDocuments() and updateSessionWithDocuments() save a session and its document
  * changes all-or-nothing (and never touch another session's documents);
  * markSessionActive() sets 'live' and lastActiveAt; shownStatus() shows a 'live' session with no
@@ -24,6 +25,7 @@ import {
   shownStatus,
   STALE_LIVE_MS,
   updateSession,
+  updateSessionPreferences,
   updateSessionWithDocuments,
 } from '@/core/storage/sessions';
 import { listUtterances, saveUtterance } from '@/core/storage/utterances';
@@ -124,6 +126,42 @@ describe('updateSession / markSessionActive', () => {
       status: 'live',
       lastActiveAt: 9_000,
     });
+  });
+});
+
+describe('updateSessionPreferences (ADR-0094)', () => {
+  it('saves the model switched during a call, keeping the other preferences', async () => {
+    const session = await createSession(sessionInput(), 5);
+    const updated = await updateSessionPreferences(session.id, { model: 'smart' });
+    expect(updated.preferences).toEqual({ ...session.preferences, model: 'smart' });
+    expect((await getSession(session.id))!.preferences.model).toBe('smart');
+    // The rest of the session is as it was.
+    expect({ ...updated, preferences: session.preferences }).toEqual(session);
+  });
+
+  it('never puts back an older value: a style change after a model change keeps the model', async () => {
+    const session = await createSession(sessionInput(), 5);
+    await updateSessionPreferences(session.id, { model: 'smart' });
+    const style = { ...session.preferences.style, tone: 'technical' as const };
+    await updateSessionPreferences(session.id, { style });
+    expect((await getSession(session.id))!.preferences).toEqual({
+      ...session.preferences,
+      model: 'smart',
+      style,
+    });
+  });
+
+  it('changes only the session asked for', async () => {
+    const one = await createSession(sessionInput(), 5);
+    const two = await createSession(sessionInput(), 6);
+    await updateSessionPreferences(one.id, { model: 'smart' });
+    expect((await getSession(two.id))!.preferences.model).toBe(two.preferences.model);
+  });
+
+  it('fails for an unknown id', async () => {
+    await expect(updateSessionPreferences('nope', { model: 'fast' })).rejects.toThrow(
+      'SESSION_NOT_FOUND',
+    );
   });
 });
 

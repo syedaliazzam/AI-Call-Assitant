@@ -378,7 +378,8 @@ async function respond(
       if (result.stopReason === 'refusal') {
         return { type: 'error', code: 'refused', message: 'Claude declined to answer this.' };
       }
-      return { type: 'done', usage: result.usage, ms };
+      // ADR-0094: the tier used (after the admin's switch), so the browser records what really answered.
+      return { type: 'done', usage: result.usage, ms, model: tier };
     },
     onError: (error): AnswerEvent => {
       const described = describeClaudeError(error);

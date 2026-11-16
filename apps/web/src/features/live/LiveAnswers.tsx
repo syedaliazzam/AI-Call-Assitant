@@ -33,7 +33,9 @@ import { looksGarbled } from '@/core/transcript/questionKind';
 import { isUnclearGroup } from '@/core/transcript/unclear';
 import { AnswerPreferencesDialog } from '@/features/session-setup/AnswerPreferencesDialog';
 import type { MenuItem } from '@/ui/Menu';
-import { updateSession } from '@/core/storage/sessions';
+import { updateSessionPreferences } from '@/core/storage/sessions';
+import { deepModelEnabled } from '@/core/session/modelAccess';
+import { callTimings } from '@/core/live/callTimings';
 import {
   clampStep,
   FONT_SCALE_RANGE,
@@ -56,7 +58,7 @@ import {
   type LiveChannel,
 } from '@/core/live/liveChannel';
 import type { HygieneState } from '@/core/live/hygiene';
-import type { Session, StoredDocument } from '@/core/storage/types';
+import type { AnswerModel, Session, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
 import { AnswerPanel } from './AnswerPanel';
@@ -250,10 +252,34 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const appearance = useAppearance('call', false);
   // The overlay's menu can change how answers are written during a call (ADR-0029).
   const [style, setStyle] = useState(props.session.preferences.style);
+  // ADR-0094: the overlay's model chip and ⋮ Model row can switch the model during a call. It follows the
+  // session too when that changes (Edit session in another window), while rendering as React advises.
+  const [model, setModel] = useState<AnswerModel>(props.session.preferences.model);
+  const [seenSessionModel, setSeenSessionModel] = useState(props.session.preferences.model);
+  if (props.session.preferences.model !== seenSessionModel) {
+    setSeenSessionModel(props.session.preferences.model);
+    setModel(props.session.preferences.model);
+  }
+  // ADR-0094: false once the server says an admin has turned the deeper model off (Smart then shows
+  // disabled in the overlay). The server enforces it on every answer whatever this says.
+  const [smartAllowed, setSmartAllowed] = useState(true);
+  useEffect(() => {
+    let active = true;
+    void deepModelEnabled().then((enabled) => {
+      if (active) setSmartAllowed(enabled);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  // The answers use the new style and model from the next answer: one already streaming keeps its request.
   const session = useMemo(
-    () => ({ ...props.session, preferences: { ...props.session.preferences, style } }),
-    [props.session, style],
+    () => ({ ...props.session, preferences: { ...props.session.preferences, style, model } }),
+    [props.session, style, model],
   );
+  // ADR-0094: what the overlay shows: Fast when Smart is asked for but turned off (the server answers with
+  // the fast model then).
+  const shownModel: AnswerModel = model === 'smart' && !smartAllowed ? 'fast' : model;
   // The chat box's switch, remembered per session (ADR-0030).
   const [chatTarget, setTarget] = useState<TargetChoice>(() => getChatTarget(props.session.id));
   // Grows with each press of the Ask Kite shortcut, so the overlay opens its chat box too.
@@ -435,6 +461,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       notice: answers.notice,
       ended: false,
       style,
+      model: shownModel,
+      smartAllowed,
       scriptBar,
       clickThrough,
       dictationSupported: props.dictation?.supported ?? false,
@@ -479,6 +507,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     answers.capturing,
     answers.notice,
     style,
+    shownModel,
+    smartAllowed,
   ]);
   const compactStateRef = useRef(compactState);
   const channel = useRef<LiveChannel | null>(null);
@@ -486,10 +516,35 @@ export function LiveAnswers(props: LiveAnswersProps) {
   // The hotkeys call the latest actions (a ref, so the listener is added only once).
   const actions = useRef(answers);
   const onEnd = useRef(props.onEnd);
-  const latestPreferences = useRef(props.session.preferences);
   const sessionIdRef = useRef(props.session.id);
   const dictationRef = useRef(props.dictation);
   const chatTargetRef = useRef(chatTarget);
+  /**
+   * ADR-0094: switches this session's answer model, from the overlay's chip or ⋮ Model row. It applies from
+   * the next answer (one already streaming finishes on the model it was sent with), is saved as the
+   * session's model (so AI preferences show it afterwards; this device's session only, never another
+   * user's or the global settings), and the new model's prompt cache is warmed in the background
+   * (useLiveAnswers). Smart is asked of the server first: when an admin has turned it off, nothing
+   * changes and the overlay shows it disabled.
+   *
+   * @param next The model picked.
+   */
+  const switchModel = useRef((next: AnswerModel) => {
+    const apply = () => {
+      setModel(next);
+      // The tier only (never text), so the call's trace shows when the model changed.
+      callTimings.noteTrace('model', { model: next });
+      updateSessionPreferences(sessionIdRef.current, { model: next }).catch(() => undefined);
+    };
+    if (next === 'fast') {
+      apply();
+      return;
+    }
+    void deepModelEnabled().then((enabled) => {
+      setSmartAllowed(enabled);
+      if (enabled) apply();
+    });
+  });
   /**
    * ADR-0082: Clear answers (Ctrl+Backspace, the overlay answer panel's Clear, ⋮ Clear answers): every answer
    * asked until now leaves the screen, here and in the overlay; they stay saved for the review.
@@ -562,7 +617,6 @@ export function LiveAnswers(props: LiveAnswersProps) {
     chatTargetRef.current = chatTarget;
     actions.current = answers;
     onEnd.current = props.onEnd;
-    latestPreferences.current = props.session.preferences;
     onClearTranscript.current = props.onClearTranscript;
     renameThem.current = props.onRenameThem;
     dismissName.current = props.onDismissName;
@@ -637,10 +691,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
         actions.current.screenshot(command.question, 'screenshot-chat');
       else if (command.type === 'style') {
         setStyle(command.style);
-        // Kept with the session, so a reconnect and the review show what was used last.
-        const preferences = { ...latestPreferences.current, style: command.style };
-        updateSession(props.session.id, { preferences }).catch(() => undefined);
-      }
+        // Kept with the session, so a reconnect and the review show what was used last. Only the style is
+        // written (ADR-0094): the model may have changed since the call started.
+        updateSessionPreferences(props.session.id, { style: command.style }).catch(() => undefined);
+      } else if (command.type === 'model') switchModel.current(command.model);
     });
     return () => {
       link.publish({ ...compactStateRef.current, ended: true });
@@ -1023,9 +1077,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
         onApply={(next) => {
           setPrefsOpen(false);
           setStyle(next);
-          // Kept with the session, like the overlay's menu (ADR-0029).
-          const preferences = { ...latestPreferences.current, style: next };
-          updateSession(props.session.id, { preferences }).catch(() => undefined);
+          // Kept with the session, like the overlay's menu (ADR-0029); only the style (ADR-0094).
+          updateSessionPreferences(props.session.id, { style: next }).catch(() => undefined);
         }}
       />
       <SignInAgainDialog

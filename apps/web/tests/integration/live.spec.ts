@@ -785,6 +785,8 @@ test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screen
     'Transcript',
     // 1.6.3 (ADR-0075): Auto answer moved here from its floating pill.
     'Auto answer',
+    // ADR-0094: the model chip next to Auto.
+    'Model: Fast',
     'Drag here to move',
     'Shrink to an icon',
     'Call time',
@@ -805,6 +807,7 @@ test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screen
     'Choose microphone',
     'Transcript',
     'Auto answer',
+    'Model: Fast',
     'Click-through',
     'Drag here to move',
     'Shrink to an icon',
@@ -1195,6 +1198,12 @@ test('S16: the ⋮ menu in order; Answer preferences as a sheet that fits the ov
     'Opacity',
     'Answer text size',
     // ADR-0085: no Answer language in the compact view.
+    // ADR-0094: the Model row (its group, its title, its two choices).
+    'Model',
+    'Model',
+    'Answer model',
+    'Fast — quickest answers',
+    'Smart — more thorough, slower',
     'Auto answer',
     'Answer preferences',
     'Edit session',
@@ -1665,6 +1674,8 @@ function barControls(clickThrough: boolean): readonly BarControl[] {
     { role: 'switch', name: 'Transcript', tip: 'Transcript: Off · Ctrl+Alt+T' },
     { role: 'button', name: /^Recording, /, tip: 'Stop recording · Ctrl+Alt+R' },
     { role: 'switch', name: 'Auto answer', tip: 'Auto answer: Off' },
+    // ADR-0094: the model chip.
+    { role: 'button', name: 'Model: Fast', tip: 'Model: Fast — quickest answers' },
     ...(clickThrough ? [CLICK_THROUGH_CONTROL] : []),
     { role: 'img', name: 'Drag here to move', tip: 'Drag to move · Ctrl+Alt+Arrows' },
     { role: 'button', name: 'Shrink to an icon', tip: 'Shrink to an icon' },
@@ -2020,5 +2031,167 @@ test('ADR-0082: bar 1 has a Click-through switch where clicks can pass, which tu
   await page.goto(overlayUrl('&position=top-center'));
   await bar.waitFor();
   await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveCount(0);
+  await watched.context.close();
+});
+
+/**
+ * ADR-0094: whether an element is whole inside the window (a menu, a tooltip, the toast).
+ *
+ * @param page     The overlay's page.
+ * @param selector The element.
+ * @returns True when its box is inside the viewport, and its box (rounded) for further checks.
+ */
+async function insideWindow(page: Page, selector: string) {
+  return page.evaluate((query) => {
+    const element = document.querySelector(query);
+    if (!element) return { inside: false, top: 0, bottom: 0 };
+    const b = element.getBoundingClientRect();
+    const w = document.documentElement.clientWidth;
+    const h = document.documentElement.clientHeight;
+    return {
+      inside: b.width > 0 && b.left >= 0 && b.top >= 0 && b.right <= w && b.bottom <= h,
+      top: Math.round(b.top),
+      bottom: Math.round(b.bottom),
+    };
+  }, selector);
+}
+
+test('ADR-0094: the model chip sits next to Auto and gives way without pushing out Exit, ⋮ or Transcript', async () => {
+  for (const [sizeName, size] of Object.entries(DESKTOP_OVERLAY)) {
+    const watched = await openDesktopOverlay(size, '&position=top-center');
+    const { page } = watched;
+    for (const model of ['fast', 'smart']) {
+      for (const extra of ['&rec=off', '&rec=on&private=off&auto=on&ct=on']) {
+        const name = `${sizeName} ${model}${extra}`;
+        await page.goto(overlayUrl(`&position=top-center&model=${model}${extra}`));
+        const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+        const chip = bar.getByRole('button', {
+          name: `Model: ${model === 'smart' ? 'Smart' : 'Fast'}`,
+        });
+        await expect(chip, name).toBeVisible();
+        await expect
+          .poll(() => barFit(page), { message: name })
+          .toMatchObject({ barFits: true, leftFits: true, exitInside: true, menuInside: true });
+        // The Transcript switch is pinned: always there and whole, whatever the chip does.
+        await expect(bar.getByRole('switch', { name: 'Transcript' }), name).toBeVisible();
+        // The chip keeps its word until Auto gives way to its bolt; then both are icons.
+        const { step } = await barFit(page);
+        await expect(chip, name).toHaveText(step >= 3 ? '' : model === 'smart' ? 'Smart' : 'Fast');
+        if (sizeName === 'default') {
+          // The default window keeps the words, the chip's too.
+          await expect(chip, name).toHaveText(model === 'smart' ? 'Smart' : 'Fast');
+          await expect(bar.getByRole('switch', { name: 'Auto answer' }), name).toHaveText(/Auto/);
+        }
+      }
+    }
+    await watched.context.close();
+  }
+  // Narrower windows (an older shell, picture-in-picture): the chip never pushes the pinned controls out.
+  const watched = await openOverlayView(
+    BARS_SIZE,
+    '&panels=none&shell=1&model=smart&ct=off&auto=on',
+  );
+  const { page } = watched;
+  for (const width of [900, 780, 680, 560, 460]) {
+    await page.setViewportSize({ width, height: 400 });
+    await expect
+      .poll(() => barFit(page), { message: `bar 1 with the chip fits ${width}` })
+      .toMatchObject({ barFits: true, leftFits: true, exitInside: true, menuInside: true });
+  }
+  await watched.context.close();
+});
+
+test('ADR-0094: the chip and ⋮ open the model choice; Smart off shows its tooltip; the toast stays in the window', async () => {
+  for (const position of ['top-center', 'bottom-left'] as const) {
+    const watched = await openDesktopOverlay(DESKTOP_OVERLAY.default, `&position=${position}`);
+    const { page } = watched;
+    const up = position === 'bottom-left';
+    const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+    const barBox = (await bar.boundingBox())!;
+
+    // The chip's tooltip names the model, inside the window.
+    await bar.getByRole('button', { name: 'Model: Fast' }).hover();
+    await expect(page.getByRole('tooltip')).toHaveText('Model: Fast — quickest answers');
+
+    // The chip's popover: under the chip (above it on the bottom row), the current model checked.
+    await bar.getByRole('button', { name: 'Model: Fast' }).click();
+    const popover = page.getByRole('group', { name: 'Model' });
+    await expect(popover.getByRole('radio', { checked: true })).toHaveAccessibleName(
+      'Fast — quickest answers',
+    );
+    const placed = await insideWindow(page, '[data-menu="model"]');
+    expect(placed.inside, `${position}: the popover is inside the window`).toBe(true);
+    if (up) expect(placed.bottom).toBeLessThanOrEqual(Math.round(barBox.y));
+    else expect(placed.top).toBeGreaterThanOrEqual(Math.round(barBox.y + barBox.height));
+    if (SHOT_DIR)
+      await page.screenshot({ path: path.join(SHOT_DIR, `overlay-model-chip-${position}.png`) });
+
+    // Picking Smart sends the command; once the live page has switched, the toast shows inside the window.
+    await popover.getByRole('radio', { name: 'Smart — more thorough, slower' }).click();
+    expect(await watched.log()).toContainEqual({ type: 'model', model: 'smart' });
+    const toast = page.getByRole('status').filter({ hasText: 'Smart model on' });
+    await expect(toast).toHaveText('Smart model on — answers may take a bit longer');
+    await expect(bar.getByRole('button', { name: 'Model: Smart' })).toBeVisible();
+    expect((await insideWindow(page, '[data-toast="model"]')).inside, `${position}: toast`).toBe(
+      true,
+    );
+    // The window is asked to grow for it, as for a menu.
+    expect((await watched.log()).findLast(isLoggedLayout)?.layout.popupHeight).toBeGreaterThan(0);
+    if (SHOT_DIR) {
+      // After its rise (the motion tokens), so the picture shows it as it stays.
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: path.join(SHOT_DIR, `overlay-model-toast-${position}.png`) });
+    }
+    // It hides by itself after 3 s.
+    await expect(toast).toHaveCount(0, { timeout: 5_000 });
+
+    // The ⋮ menu's Model row shows the same choice, Smart now checked.
+    await page.getByRole('button', { name: 'Overlay menu' }).click();
+    const row = page
+      .getByRole('group', { name: 'Overlay settings' })
+      .getByRole('radiogroup', { name: 'Answer model' });
+    await expect(row.getByRole('radio', { checked: true })).toHaveAccessibleName(
+      'Smart — more thorough, slower',
+    );
+    await row.scrollIntoViewIfNeeded();
+    if (SHOT_DIR)
+      await page.screenshot({ path: path.join(SHOT_DIR, `overlay-model-menu-${position}.png`) });
+    await page.keyboard.press('Escape');
+    await watched.context.close();
+  }
+
+  // An admin has turned Smart off: it is disabled in both places, with the tooltip drawn in the page.
+  const watched = await openDesktopOverlay(
+    DESKTOP_OVERLAY.default,
+    '&position=top-center&smart=off',
+  );
+  const { page } = watched;
+  const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
+  await bar.getByRole('button', { name: 'Model: Fast' }).click();
+  const smart = page
+    .getByRole('group', { name: 'Model' })
+    .getByRole('radio', { name: 'Smart — more thorough, slower' });
+  await expect(smart).toHaveAttribute('aria-disabled', 'true');
+  await smart.hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Turned off by your admin');
+  expect((await insideWindow(page, '[role="tooltip"]')).inside).toBe(true);
+  if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, 'overlay-model-admin-off.png') });
+  await smart.click({ force: true });
+  expect(await watched.log()).not.toContainEqual({ type: 'model', model: 'smart' });
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Overlay menu' }).click();
+  const menuSmart = page
+    .getByRole('radiogroup', { name: 'Answer model' })
+    .getByRole('radio', { name: 'Smart — more thorough, slower' });
+  await expect(menuSmart).toHaveAttribute('aria-disabled', 'true');
+  await menuSmart.hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Turned off by your admin');
+  expect((await insideWindow(page, '[role="tooltip"]')).inside).toBe(true);
+
+  // An older live page that does not say its model: no chip and no Model row.
+  await page.goto(overlayUrl('&position=top-center&model=none'));
+  await expect(bar.getByRole('button', { name: /^Model:/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Overlay menu' }).click();
+  await expect(page.getByRole('radiogroup', { name: 'Answer model' })).toHaveCount(0);
   await watched.context.close();
 });

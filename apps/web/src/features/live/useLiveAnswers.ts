@@ -171,7 +171,10 @@ export interface AnswerEntry {
   problem?: AnswerProblem;
   /** When the user asked (Unix ms). */
   askedAt: number;
-  /** The model tier used. */
+  /**
+   * The model tier used: the session's when it was asked, replaced by the server's own when it finishes
+   * (ADR-0094: an admin may have turned the deeper model off).
+   */
   model: ModelTier;
   /** Where the time went (set when it finished). */
   timeline?: AnswerTimeline;
@@ -674,6 +677,26 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     };
   }, [callStartedAt, sessionId, paused]);
 
+  // ADR-0094: the model switched during the call (the overlay's chip or ⋮ Model row): its prompt cache is
+  // empty, so warm it now, in the background, with the conversation sent so far, and the first answer
+  // after the switch reads the cache instead of writing it. Not on the first render: the call's own
+  // warm-up (Connect) covers the model it started with. warmInputRef already holds the new session: its
+  // effect is declared above, so it runs first.
+  const modelNow = session.preferences.model;
+  const warmedModel = useRef(modelNow);
+  useEffect(() => {
+    if (warmedModel.current === modelNow) return;
+    warmedModel.current = modelNow;
+    const latest = warmInputRef.current;
+    keepWarmRef.current?.noteActivity();
+    void warmSession(latest.session, latest.documents, {
+      conversation: logRef.current.chunks,
+      lessons: latest.lessons,
+      // ADR-0083: the call's company instructions version, as its answers send it.
+      callStartedAt,
+    });
+  }, [modelNow, callStartedAt]);
+
   /**
    * Replaces one entry's fields.
    *
@@ -1088,6 +1111,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         bytes: JSON.stringify(built.request).length,
         // Batch C (P2-1): how many document parts went with it (a count only).
         documentChunks: built.request.documentChunks?.length ?? 0,
+        // ADR-0094: the model tier asked for (the server's own replaces it when the answer finishes).
+        model: entry.model,
         // ADR-0076 (timing trace): which lines and how many words were asked (ids and counts only).
         ...(pickedLines ? { lineIds: [...pickedLines] } : {}),
         ...(span ? { span: { start: span.start, end: span.end } } : {}),
@@ -1253,6 +1278,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             cacheRead: done.usage?.cache_read_input_tokens ?? 0,
             cacheWrite: done.usage?.cache_creation_input_tokens ?? 0,
             inputTokens: done.usage?.input_tokens ?? 0,
+            // ADR-0094: the tier that really answered, as the server says.
+            ...(done.model ? { model: done.model } : {}),
           });
           // Not an answer: nothing to keep, send later or save.
           if (dropped(meta?.type)) return;
@@ -1276,6 +1303,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
               status: 'done',
               timeline,
               usage: done.usage,
+              // ADR-0094: the tier that really answered (saved with the answer).
+              model: done.model ?? entry.model,
               ...(meta ? { meta } : {}),
               ...(cleanQuestion ? { cleanQuestion } : {}),
               ...(claims.length > 0 ? { claims } : {}),
@@ -1296,6 +1325,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
               sessionId: session.id,
               answerId: entry.id,
               mode,
+              model: done.model ?? entry.model,
               ...timeline,
               cacheRead: done.usage.cache_read_input_tokens,
               cacheWrite: done.usage.cache_creation_input_tokens,

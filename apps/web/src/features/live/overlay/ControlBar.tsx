@@ -4,7 +4,8 @@
  *          the Transcript pill with its on/off switch (ADR-0055: it opens and closes the transcript panel,
  *          as the level button does); desktop 1.5.0 (ADR-0068): the Rec pill after the Transcript pill,
  *          where the app can record; 1.6.3 (ADR-0075): the Auto answer toggle; ADR-0082: the Click-through
- *          toggle (as Ctrl+Alt+X), where clicks can pass; then move and compact, the call timer, ⋮ and Exit
+ *          toggle (as Ctrl+Alt+X), where clicks can pass; ADR-0094: the model chip (Fast / Smart) next to Auto,
+ *          which opens the model choice; then move and compact, the call timer, ⋮ and Exit
  *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer, Screenshot or Chat buttons
  *          (their shortcuts still work). The bar is the window's drag handle; its buttons opt out.
  *
@@ -12,7 +13,7 @@
  *          device icons, the Transcript switch (every account) and, while recording, the Rec pill are
  *          pinned on the left the same way: never hidden, never cut. When the bar has too little room, the
  *          rest gives way one step at a time, measured rather than guessed: first Rec's key-cap, then the
- *          words "Transcript" and "Click-through" and the timer's clock, then the word "Auto"; after that
+ *          words "Transcript" and "Click-through" and the timer's clock, then the word "Auto" and the model chip's word (ADR-0094); after that
  *          things go: the move icon (the whole bar drags), the Click-through toggle (⋮ and Ctrl+Alt+X still
  *          turn it on), and the timer last (only a picture-in-picture window is that narrow). Every control names itself and its shortcut in BarTooltip.tsx ("Click-through: Off ·
  *          Ctrl+Alt+X").
@@ -48,6 +49,7 @@ import {
   MoveIcon,
 } from '@/ui/icons';
 import { BarTooltip } from './BarTooltip';
+import { ModelChip, modelOf } from './ModelChoice';
 import { BUTTON_BASE, CHEVRON_BUTTON, ICON_BUTTON, PILL, StatusIcon, tipShortcut } from './parts';
 import { RecPill } from './RecordControls';
 import { usePrivateOffWhileRecording } from '../PrivateOffWarning';
@@ -97,6 +99,15 @@ export interface ControlBarProps {
   recButton?: RefObject<HTMLButtonElement | null>;
   /** 1.6.3: true on the overlay's bottom row (ADR-0056): tooltips open above the bar, not below. */
   up?: boolean;
+  /** ADR-0094: whether the model chip's popover is open. */
+  modelOpen?: boolean;
+  /**
+   * ADR-0094: opens or closes the model chip's popover. Absent, or a live page that does not say its model:
+   * no chip.
+   */
+  onModel?: () => void;
+  /** ADR-0094: the model chip (its popover sits under it). */
+  modelButton?: RefObject<HTMLButtonElement | null>;
 }
 
 /**
@@ -108,7 +119,7 @@ const FIT = {
   noRecKey: 1,
   /** From here: the Transcript and Click-through toggles' words give way to icons; no clock icon. */
   noWords: 2,
-  /** From here: Auto answer is its bolt only. */
+  /** From here: Auto answer is its bolt only, and the model chip its icon (ADR-0094). */
   iconAuto: 3,
   /** From here: no move icon (the whole bar still drags the window). */
   noMove: 4,
@@ -518,6 +529,8 @@ export function ControlBar(props: ControlBarProps) {
   const autoOn = state?.autoAnswer ?? false;
   const recording = state?.recording && props.onRecord ? state.recording : null;
   const clickThroughOn = (state?.clickThrough ?? false) && props.onClickThrough !== undefined;
+  // ADR-0094: the model chip, when the live page says its model.
+  const modelChoice = props.onModel ? modelOf(state) : null;
 
   const bar = useRef<HTMLDivElement>(null);
   // What changes the left side's width on a re-render; a change starts the fitting again.
@@ -531,6 +544,8 @@ export function ControlBar(props: ControlBarProps) {
     collapsed,
     onIcon !== undefined,
     state?.capturing ?? false,
+    // ADR-0094: "Smart" is wider than "Fast".
+    modelChoice?.model ?? 'no-model',
   ].join('|');
   const { step, room, content } = useFitStep(fitKey);
   const recKey = step < FIT.noRecKey;
@@ -608,6 +623,18 @@ export function ControlBar(props: ControlBarProps) {
             word={step < FIT.iconAuto}
             onToggle={() => onCommand({ type: 'auto-answer', on: !autoOn })}
           />
+          {modelChoice && props.onModel && (
+            // ADR-0094: next to Auto; it gives way to its icon with Auto, and never pushes the pinned
+            // controls out (it is inside the part that gives way).
+            <ModelChip
+              model={modelChoice.model}
+              word={step < FIT.iconAuto}
+              open={props.modelOpen ?? false}
+              disabled={ended}
+              buttonRef={props.modelButton}
+              onToggle={props.onModel}
+            />
+          )}
           {props.onClickThrough && step < FIT.noClickThrough && (
             <ClickThroughToggle
               on={clickThroughOn}

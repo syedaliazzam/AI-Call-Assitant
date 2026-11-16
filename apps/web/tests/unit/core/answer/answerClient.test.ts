@@ -103,6 +103,24 @@ describe('streamAnswer', () => {
     });
   });
 
+  it('passes on the tier that answered (ADR-0094), and only a known one', async () => {
+    const withTier = (model: string) =>
+      `event: done\ndata: {"usage":{},"ms":{},"model":${JSON.stringify(model)}}\n\n`;
+    expect((await run(fakeFetch([new TextEncoder().encode(withTier('fast'))]))).done).toMatchObject(
+      { model: 'fast' },
+    );
+    expect(
+      (await run(fakeFetch([new TextEncoder().encode(withTier('smart'))]))).done,
+    ).toMatchObject({ model: 'smart' });
+    const odd = (await run(fakeFetch([new TextEncoder().encode(withTier('claude-x'))]))).done;
+    expect(odd).toBeDefined();
+    expect(odd).not.toHaveProperty('model');
+    // An older server says nothing: no tier.
+    expect((await run(fakeFetch([new TextEncoder().encode(REPLY)]))).done).not.toHaveProperty(
+      'model',
+    );
+  });
+
   it('parses correctly when every chunk is 7 bytes (splitting lines and the é character)', async () => {
     const result = await run(fakeFetch(splitBytes(new TextEncoder().encode(REPLY), 7)));
     expect(result.deltas).toEqual(['Héllo', ' world']);

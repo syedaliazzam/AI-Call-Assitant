@@ -17,6 +17,7 @@ import type {
   AnswerRequest,
   AnswerTimings,
   AnswerUsage,
+  ModelTier,
 } from '@kite/shared';
 import { holdSyncForAnswer } from '../sync/foreground';
 
@@ -30,6 +31,11 @@ export interface AnswerDone {
   msToFirstText: number;
   /** Browser-side: milliseconds from sending the request to the end of the reply. */
   msTotal: number;
+  /**
+   * ADR-0094: the tier that really answered (the server's, after the admin's switch); absent when the
+   * server did not say (an older server).
+   */
+  model?: ModelTier;
 }
 
 /** A failed answer. */
@@ -217,6 +223,10 @@ export function streamAnswer(
           serverMs: payload.ms as AnswerTimings,
           msToFirstText: Math.round((firstTextAt ?? doneAt) - startedAt),
           msTotal: Math.round(doneAt - startedAt),
+          // ADR-0094: only a known tier is passed on.
+          ...(payload.model === 'fast' || payload.model === 'smart'
+            ? { model: payload.model }
+            : {}),
         }),
       );
     } else if (event === 'error') {

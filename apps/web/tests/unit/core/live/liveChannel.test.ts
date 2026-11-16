@@ -125,6 +125,14 @@ describe('isCommand and isState', () => {
     expect(isCommand({ type: 'style' })).toBe(false);
   });
 
+  it('ADR-0094: accepts a model switch only to an allowed tier', () => {
+    expect(isCommand({ type: 'model', model: 'fast' })).toBe(true);
+    expect(isCommand({ type: 'model', model: 'smart' })).toBe(true);
+    // Never a model name: the server maps tiers to names.
+    expect(isCommand({ type: 'model', model: 'claude-opus-5-5' })).toBe(false);
+    expect(isCommand({ type: 'model' })).toBe(false);
+  });
+
   it('ADR-0093: accepts the rename offer commands only with a name', () => {
     expect(isCommand({ type: 'rename-them', name: 'Sarah' })).toBe(true);
     expect(isCommand({ type: 'rename-them', name: '' })).toBe(false);

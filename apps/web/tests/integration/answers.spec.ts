@@ -15,7 +15,9 @@
  * ADR-0030: the switch next to the chat box goes in the request and is remembered; a private answer
  * shows code with its own Copy; the type and source tags show, and choosing another type answers
  * again; a figure in no document is underlined with a "check before saying" note; a repeated
- * question sends the earlier answer.
+ * question sends the earlier answer. ADR-0094: the overlay switches the answer model mid-call: an answer
+ * already streaming finishes on the old model, the next one uses the new one, the new model is warmed and
+ * saved with the session, and Smart stays off when an admin has turned it off.
  * All text is invented.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
@@ -40,6 +42,9 @@ const BULLET_DELAY_MS = 1_500;
 /** Every request body the mocked /api/answer received, in order. */
 const received: AnswerRequest[] = [];
 
+/** ADR-0094: true while the mocked admin setting has the deeper model turned off. */
+let smartOff = false;
+
 /**
  * Reads a request body.
  *
@@ -61,6 +66,12 @@ async function bodyOf(req: IncomingMessage): Promise<string> {
 async function serve(bundleDir: string): Promise<{ server: Server; origin: string }> {
   const server = createServer((req, res) => {
     void (async () => {
+      if (req.url === '/api/models') {
+        // ADR-0094: the admin's switch, as GET /api/models says it.
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ deepModel: !smartOff }));
+        return;
+      }
       if (req.method === 'POST' && req.url === '/api/answer') {
         const request = JSON.parse(await bodyOf(req)) as AnswerRequest;
         received.push(request);
@@ -76,6 +87,8 @@ async function serve(bundleDir: string): Promise<{ server: Server; origin: strin
               cache_read_input_tokens: 900,
             },
             ms: { auth: 1, toStreamOpen: 2, streamOpenToFirstText: 3, toFirstText: 4, total: 5 },
+            // ADR-0094: the tier that answered, as the real server says (fast when Smart is off).
+            model: request.model === 'smart' && !smartOff ? 'smart' : 'fast',
           });
         if (request.mode === 'warm') {
           done();
@@ -311,10 +324,15 @@ test('the compact view shows the live answer; its Answer and Clear answers keys 
   // A second page in the same browser, like the desktop compact window.
   const compact = await page.context().newPage();
   await compact.goto(`${origin}/compact-harness`);
-  // Nothing has been answered since the reload: the live page says so.
-  await expect(compact.getByLabel('Latest words')).toContainText(/forty/i);
   const bar = compact.getByRole('toolbar', { name: 'Overlay controls' });
   await expect(bar).toBeVisible();
+  // ADR-0085: the transcript panel is open on a device's first call (this fresh profile), in bar 2's place;
+  // its switch closes it, and bar 2 with the latest words shows again.
+  const transcriptSwitch = bar.getByRole('switch', { name: 'Transcript' });
+  await expect(transcriptSwitch).toBeChecked();
+  await transcriptSwitch.click();
+  // Nothing has been answered since the reload: the live page says so.
+  await expect(compact.getByLabel('Latest words')).toContainText(/forty/i);
   // ADR-0082: no Answer, Screenshot or Chat buttons on the overlay, and no message box; the shortcuts do
   // their work. Ctrl+Enter with the overlay focused asks the live page.
   for (const name of ['Answer', 'Screenshot', 'Chat']) {
@@ -480,4 +498,99 @@ test('an answer survives the parent re-rendering with a fresh session object (v1
   ).toHaveText(BULLETS, { timeout: 10_000 });
   await expect(rerendering.getByText('Stopped.')).toHaveCount(0);
   await context.close();
+});
+
+test('ADR-0094: the overlay switches the model mid-call; the streaming answer finishes on the old one', async () => {
+  await page.reload();
+  await expect
+    .poll(() => page.evaluate(() => window.kiteAnswerHarness.sessionModel()))
+    .toBe('fast');
+  const compact = await page.context().newPage();
+  await compact.goto(`${origin}/compact-harness`);
+  const bar = compact.getByRole('toolbar', { name: 'Overlay controls' });
+  const chip = bar.getByRole('button', { name: 'Model: Fast' });
+  await expect(chip).toBeVisible();
+  // Earlier tests saved answers for this session too: only the ones from here on are compared.
+  const savedBefore = (await page.evaluate(() => window.kiteAnswerHarness.savedModels())).length;
+  const savedSince = async () =>
+    (await page.evaluate(() => window.kiteAnswerHarness.savedModels())).slice(savedBefore);
+
+  // An answer starts on Fast; while it streams (its bullets come 1.5 s later), Smart is picked on the chip.
+  await page.evaluate(() => window.kiteAnswerHarness.addThem('WHAT ABOUT THE ONBOARDING FEE'));
+  await compact.locator('body').click({ position: { x: 2, y: 2 } });
+  await compact.keyboard.press('Control+Enter');
+  await expect(compact.getByRole('heading', { name: 'Answer line' })).toContainText(HEADLINE);
+  expect(received.at(-1)).toMatchObject({ mode: 'answer', model: 'fast' });
+  const warmsBefore = received.filter((body) => body.mode === 'warm').length;
+  await chip.click();
+  const popover = compact.getByRole('group', { name: 'Model' });
+  await expect(popover.getByRole('radio', { name: 'Fast — quickest answers' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await popover.getByRole('radio', { name: 'Smart — more thorough, slower' }).click();
+  await expect(popover).toHaveCount(0);
+  await expect(compact.getByRole('status').filter({ hasText: 'Smart model on' })).toHaveText(
+    'Smart model on — answers may take a bit longer',
+  );
+  await expect(bar.getByRole('button', { name: 'Model: Smart' })).toBeVisible();
+
+  // The answer that was streaming finishes, on Fast, and is saved as Fast.
+  await expect(page.getByRole('list', { name: 'Answer details' }).getByRole('listitem')).toHaveText(
+    BULLETS,
+    { timeout: 10_000 },
+  );
+  await expect.poll(savedSince).toEqual(['fast']);
+  // The new model's cache is warmed in the background, and the switch is saved with the session.
+  await expect
+    .poll(() => received.filter((body) => body.mode === 'warm' && body.model === 'smart').length)
+    .toBeGreaterThan(0);
+  expect(received.filter((body) => body.mode === 'warm').length).toBeGreaterThan(warmsBefore);
+  await expect
+    .poll(() => page.evaluate(() => window.kiteAnswerHarness.sessionModel()))
+    .toBe('smart');
+
+  // The next answer uses Smart, and is saved as Smart.
+  await page.evaluate(() => window.kiteAnswerHarness.addThem('AND HOW LONG IS THE CONTRACT'));
+  await compact.locator('body').click({ position: { x: 2, y: 2 } });
+  await compact.keyboard.press('Control+Enter');
+  await expect.poll(() => received.at(-1)).toMatchObject({ mode: 'answer', model: 'smart' });
+  await expect.poll(savedSince, { timeout: 10_000 }).toEqual(['fast', 'smart']);
+
+  // Back to Fast from the ⋮ menu's Model row: the menu closes and the toast says so.
+  await compact.getByRole('button', { name: 'Overlay menu' }).click();
+  const menu = compact.getByRole('group', { name: 'Overlay settings' });
+  const row = menu.getByRole('radiogroup', { name: 'Answer model' });
+  await expect(row.getByRole('radio', { name: 'Smart — more thorough, slower' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await row.getByRole('radio', { name: 'Fast — quickest answers' }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(compact.getByRole('status').filter({ hasText: 'Fast model on' })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.kiteAnswerHarness.sessionModel()))
+    .toBe('fast');
+
+  // An admin turns Smart off: picking it changes nothing and says so; Smart then shows disabled, with its
+  // tooltip drawn in the page.
+  smartOff = true;
+  const warmsOff = received.filter((body) => body.mode === 'warm').length;
+  await bar.getByRole('button', { name: 'Model: Fast' }).click();
+  await popover.getByRole('radio', { name: 'Smart — more thorough, slower' }).click();
+  await expect(
+    compact.getByRole('status').filter({ hasText: 'Smart model is turned off by your admin' }),
+  ).toBeVisible();
+  await bar.getByRole('button', { name: 'Model: Fast' }).click();
+  const smart = popover.getByRole('radio', { name: 'Smart — more thorough, slower' });
+  await expect(smart).toHaveAttribute('aria-disabled', 'true');
+  await smart.hover();
+  await expect(compact.getByRole('tooltip')).toHaveText('Turned off by your admin');
+  // Playwright waits for an aria-disabled control to be enabled; forced, the click lands and does nothing.
+  await smart.click({ force: true });
+  await expect(popover).toBeVisible();
+  expect(await page.evaluate(() => window.kiteAnswerHarness.sessionModel())).toBe('fast');
+  expect(received.filter((body) => body.mode === 'warm').length).toBe(warmsOff);
+  smartOff = false;
+  await compact.close();
 });

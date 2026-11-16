@@ -306,12 +306,14 @@ describe('POST /api/answer, mode warm', () => {
       stop_reason: 'max_tokens',
       usage: { input_tokens: 5, output_tokens: 0 },
     });
-    await (
+    const text = await (
       await POST(post(JSON.stringify({ mode: 'warm', model: 'smart', session: SESSION })))
     ).text();
     const [params] = createMock.mock.calls[0]!;
     expect(params.model).toBe('claude-sonnet-5-5');
     expect(params.thinking).toEqual({ type: 'between_tools' });
+    // ADR-0094: the done event says which tier answered (a tier, never a model name).
+    expect(text).toMatch(/event: done\ndata: .*"model":"smart"/);
   });
 
   it('falls back to the fast model when an admin has turned the smart one off', async () => {
@@ -321,10 +323,12 @@ describe('POST /api/answer, mode warm', () => {
       usage: { input_tokens: 5, output_tokens: 0 },
     });
     deepModelMock.mockResolvedValueOnce(false);
-    await (
+    const text = await (
       await POST(post(JSON.stringify({ mode: 'warm', model: 'smart', session: SESSION })))
     ).text();
     expect(createMock.mock.calls[0]![0].model).toBe('claude-haiku-5-5');
+    // ADR-0094: the browser records the tier that really answered: fast.
+    expect(text).toMatch(/event: done\ndata: .*"model":"fast"/);
   });
 
   it('reads the switch only for a request that wants the smart model', async () => {

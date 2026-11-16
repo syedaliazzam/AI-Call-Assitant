@@ -2,13 +2,14 @@
  * File: apps/web/src/features/live/overlay/LiveMenu.tsx
  * Purpose: The ⋮ menu during a call (spec S16): the email, Dashboard ↗, Get help ↗, Private, Zoom, Theme,
  *          Opacity, Answer text size, Auto answer, Answer preferences and Edit session, then
- *          Open call window and Reset position. An entry shows only where it can work: a browser's
+ *          Open call window and Reset position. ADR-0094: a Model row (Fast / Smart, the current one checked;
+ *          Smart disabled with "Turned off by your admin" when an admin has turned it off). An entry shows only where it can work: a browser's
  *          picture-in-picture window has no opacity, a shell before 1.1.0 no separate pages window.
  *          v1.3.0 (ADR-0056): in desktop 1.3.0 a Position row, a 2 × 3 grid of the overlay's six
  *          positions with the current one highlighted, replaces Reset position. Desktop 1.5.0
  *          (ADR-0068): Recording type (Screen + audio / Audio only), where the app can record.
  * Used by: src/features/live/CompactView.tsx
- * Depends on: @kite/shared (ShareProtectionState), lucide-react, src/core/storage (appearancePrefs,
+ * Depends on: @kite/shared (ShareProtectionState), lucide-react, ./ModelChoice.tsx, src/core/storage (appearancePrefs,
  *             overlayPrefs, types), src/core/live/liveChannel.ts, src/features/privacy/usePrivate.ts,
  *             src/ui (PanelMenu, icons)
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S16); ADR-0041, ADR-0042
@@ -23,7 +24,7 @@ import {
   type RecordingKind,
   type ShareProtectionState,
 } from '@kite/shared';
-import { LifeBuoy, SlidersHorizontal, User, Video } from 'lucide-react';
+import { LifeBuoy, SlidersHorizontal, Sparkles, User, Video } from 'lucide-react';
 import { forwardRef } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import {
@@ -36,6 +37,7 @@ import {
   type ThemeChoice,
 } from '@/core/storage/appearancePrefs';
 import { OVERLAY_OPACITY } from '@/core/storage/overlayPrefs';
+import type { AnswerModel } from '@/core/storage/types';
 import { PRIVATE_LABEL, privateHint } from '@/features/privacy/usePrivate';
 import { GridIcon, MonitorIcon, PenIcon } from '@/ui/icons';
 import {
@@ -46,6 +48,7 @@ import {
   MenuSwitch,
   MenuTheme,
 } from '@/ui/PanelMenu';
+import { modelOf, ModelOptions } from './ModelChoice';
 
 /** The ⋮ menu's recording types (desktop 1.5.0, ADR-0068). */
 export const RECORDING_TYPE_OPTIONS: readonly { value: RecordingKind; label: string }[] = [
@@ -174,6 +177,12 @@ export interface LiveMenuProps {
   mac?: boolean;
   /** Opens the answer preferences. */
   onPreferences: () => void;
+  /**
+   * ADR-0094: switches this session's answer model (from the next answer). Absent: no Model row.
+   */
+  onModel?: ((model: AnswerModel) => void) | undefined;
+  /** ADR-0094: closes the menu (after a model is picked). */
+  onClose?: (() => void) | undefined;
 }
 
 /**
@@ -186,6 +195,8 @@ export interface LiveMenuProps {
  */
 export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveMenu(props, ref) {
   const { state, onCommand, protection, zoom, fontScale, opacity, onOpacity } = props;
+  // ADR-0094: the Model row, when the live page says its model.
+  const modelChoice = props.onModel ? modelOf(state) : null;
   return (
     <div
       ref={ref}
@@ -270,6 +281,24 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
             options={RECORDING_TYPE_OPTIONS}
             onChange={(kind) => onCommand({ type: 'record-kind', kind })}
           />
+        )}
+        {modelChoice && props.onModel && (
+          // ADR-0094: the same two choices as the wizard's "Select model"; applies from the next answer.
+          <div role="group" aria-label="Model" data-menu-row="model">
+            <p className="flex min-h-10 items-center gap-2.5 px-3 pt-1 text-input text-ui-text">
+              <Sparkles {...ICON} />
+              <span className="min-w-0 flex-1 truncate">Model</span>
+            </p>
+            <div className="px-1 pb-1">
+              <ModelOptions
+                label="Answer model"
+                model={modelChoice.model}
+                smartAllowed={modelChoice.smartAllowed}
+                onSelect={props.onModel}
+                onClose={() => props.onClose?.()}
+              />
+            </div>
+          </div>
         )}
         <MenuSwitch
           label="Auto answer"
