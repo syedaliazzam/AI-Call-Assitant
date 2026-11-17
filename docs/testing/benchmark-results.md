@@ -843,3 +843,14 @@ Tokens per answer (averages): about 1,840 uncached input, 4,070–4,230 cached, 
 **Reading:** priority did not make Luna's first word quicker or steadier in these four runs: the medians overlap (default 1,059–1,291, priority 1,054–1,529) and priority had the worst tails and the only two fallbacks. Luna was also slower and less steady than on 17 Nov (default p95 2.3–2.9 s then 1.3–1.6 s), so Luna's own day-to-day variation is larger than any priority effect seen here.
 
 **Connection reuse (local check, Node 24 global `fetch`, tiny requests):** the Claude SDK (1.3.0) has no connection pool of its own; it calls the global `fetch`, as `server/openai.ts` does, so both reuse connections the same way. Measured with Node's `undici:client:connected` events: a request 0–1 s after the previous one reused the connection (OpenAI and Claude alike); after a 10 s or 30 s gap both opened a new one. Neither provider sends a `Keep-Alive` header, so Node's default idle timeout (4 s) applies. In a call, where questions come tens of seconds apart, each answer to either provider starts a new connection from the server.
+
+### Longer keep-alive to the providers (ADR-0100, 18 Nov 2026): rejected
+
+Same laptop and method; Claude Haiku (`fast`), the CV session, 20 answers **20 s apart** (`/dev/latency?model=fast&session=cv&gap=20000`; `KITE_LATENCY_GAP_MS=20000`), production, a disposable admin test account (deleted afterwards). Before: Node's global fetch (idle connections closed after 4 s). After: one undici Agent with a 60 s idle keep-alive for Claude, OpenAI, Gemini and Groq (deployed for this run, then reverted). Milliseconds.
+
+| | First word p50 / p95 | Done p50 / p95 | Server: received → provider stream open p50 / p95 | Server: received → first text p50 / p95 | Cache reads |
+|---|---|---|---|---|---|
+| Before | 1,019 / 1,362 | 1,516 / 2,432 | 391 / 495 | 569 / 666 | 20/20 |
+| After | 1,102 / 1,568 | 1,521 / 2,172 | 381 / 519 | 562 / 707 | 20/20 |
+
+No gain on the server side (the part the change touches), and the first word was not quicker, so the change was reverted (the developer's rule: keep only if faster or equal). Local check of the tested pool (tiny requests): OpenAI and Claude reused the connection after 20 s and 45 s idle and opened a new one after 65 s, with no errors. Spend about $0.01 (Haiku, 42 answers and 2 warm-ups, plus a few tiny checks).
