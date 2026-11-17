@@ -5,7 +5,7 @@
  *          withFirstTokenFallback() (when a provider fails, or sends no first token within FIRST_TOKEN_MS, the
  *          same answer is asked of Claude Haiku instead).
  * Used by: src/server/groq.ts, src/server/openai.ts, src/server/gemini.ts, app/api/answer/route.ts
- * Depends on: src/server/providerFetch.ts (the keep-alive connection pool, ADR-0100)
+ * Depends on: nothing (the server's fetch types only)
  * Architecture: docs/decisions/ADR-0099-gemini-and-openai-answer-models.md (moved here from server/groq.ts,
  *               ADR-0095); architecture §6, §7.2
  *
@@ -15,7 +15,6 @@
 import 'server-only';
 import type Anthropic from '@anthropic-ai/sdk';
 import type { AnswerProvider } from '@kite/shared';
-import { providerFetch } from './providerFetch';
 
 /**
  * An OpenAI-style finish reason in Claude's words, so the route treats every provider alike (a content
@@ -142,8 +141,7 @@ export async function postJson(input: {
   /** Who is asked. */
   provider: Exclude<AnswerProvider, 'claude'>;
 }): Promise<Response & { body: ResponseBody }> {
-  // ADR-0100: through the keep-alive pool unless a test passes its own fetch.
-  const response = await (input.fetchImpl ?? providerFetch)(input.url, {
+  const response = await (input.fetchImpl ?? fetch)(input.url, {
     method: 'POST',
     headers: { ...input.headers, 'content-type': 'application/json' },
     body: JSON.stringify(input.body),
