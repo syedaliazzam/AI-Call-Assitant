@@ -802,3 +802,25 @@ i5-8350U laptop, Windows 11, plugged in. **Evidence:** the real call of 11 Nov 2
 | `Paramount-AI-Setup-1.7.0.exe` | 288,805,388 bytes; SHA-256 `9af184a0fc52512f1f2d958f78ae9816af92932eed1a116b3f33a60272a6315f` | Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.7.0. Shell change: the overlay's jumps on Ctrl+Shift+Arrows (checked in the built `dist/main.js`: no Ctrl+Alt+Left). |
 | Local update check (`update-check.ts` with a local feed; 1.6.5 extracted from its published installer, never installed) | PASS | 1.6.5 found, downloaded and verified 1.7.0. |
 | Real-feed update check (the same 1.6.5 copy) | PASS | 1.6.5 found, downloaded and verified 1.7.0 from the real releases repository. The Windows install step itself was not run on this laptop (it would replace the real app). |
+
+### Answer models: Gemini, GPT, Claude Haiku and Groq (ADR-0099, 17 Nov 2026)
+
+Same laptop (Intel Core i5-8350U, Windows 11 Pro 10.0.26200, Pakistan; power not recorded); production `dpl_7kho3Wgc9AevsahAo92jhBL9tqHQ` (merge `4e2d213`); Playwright 1.64.1 Chromium (new headless); `/dev/latency?session=cv&model=…` (`latency.spec.ts -g Chrome` with `KITE_LATENCY_MODEL`, `KITE_LATENCY_SESSION=cv`) as a disposable admin test account added to the rollout for the run. Each run: one warm-up, then 20 answers one after another (about one every 2 s) on an invented interview with a CV, through the live client path, with the real global prompt. Approved paid run (cap $2). Milliseconds.
+
+| Model | Run | First word p50 / p95 | Done p50 / p95 | Server: received → first text p50 / p95 | Cache reads | Fell back to Claude Haiku |
+|---|---|---|---|---|---|---|
+| Claude Haiku 5.5 (`fast`) | 1 | **792 / 1,123** | 1,218 / 1,643 | 417 / 477 | 20/20 | 0 |
+| GPT-5.6 Luna (`gpt-luna`) | 1 | **1,133 / 1,615** | 1,626 / 2,172 | 713 / 1,090 | 20/20 | 0 |
+| GPT-5.6 Luna | 2 | **1,107 / 1,288** | 1,666 / 1,926 | 638 / 791 | 20/20 | 0 |
+| Gemini 3.5 Flash Lite (`gemini-lite`) | 1 | 1,105 / 1,554 (mixed: 15 Gemini + 5 Haiku answers) | 1,219 / 1,743 | 592 / 1,136 | 5/20 (the 5 Haiku answers) | 5 (HTTP 429) |
+| Gemini 3.5 Flash Lite | 2 | **2,108 / 4,075** | 2,424 / 4,326 | 1,619 / 3,403 | 1/20 | 0 |
+| Gemini 3.5 Flash Lite | 3 | 1,046 / 4,281 (mixed); Gemini's own 12: **1,297 / 4,281** | own: 1,446 / 4,465 | own: 800 / — | own: 2/12 | 8 (HTTP 429) |
+| Groq (`groq`) | 1 | not measurable: 1,104 / 1,227 is Claude Haiku's | — | — | 19/20 (Haiku's) | 19 (18 × HTTP 429, 1 × HTTP 413) |
+
+Findings:
+
+- **Gemini's key is rate-limited per minute.** Back-to-back answers got HTTP 429 on 5 and 8 of 20; the `answers` evaluation's first request twice got 429 straight after the latency runs, and passed a few minutes later. Its first word varied from run to run (p50 1.1–2.1 s) with a p95 near 4.1–4.3 s, close to the 4 s fallback limit. Gemini's implicit cache was read on at most 2 of its own answers per run, so the growing prompt was mostly read uncached.
+- **Groq's key cannot serve the CV session's request rate**: 413 (request larger than the key's per-minute token limit) on the first answer, 429 on the rest. Every Groq answer then went to Claude Haiku, which is fast because the errors come back at once. This affects every session set to "Fastest (Groq)" today, not only the rollout.
+- **GPT-5.6 Luna** answered every request itself, read the cache on all 20 (`prompt_cache_key` = the call id), and was steady between runs; its first word is about 300 ms later than Claude Haiku's.
+- **Claude Haiku** had the quickest first word and the lowest server time.
+- Fallback reasons are from the production logs (`answer: <provider> fallback to haiku`, reason and HTTP status only).

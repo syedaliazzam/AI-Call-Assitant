@@ -637,3 +637,15 @@ Per scenario (`answers`): 01 9.0, 02 9.0, 03 9.5, 04 10.0, 05 9.0, 06 9.5, 07 9.
 - **Question detection holds:** every garbled line and every remark got no answer; every real question got one.
 - **Three runs lost points only because the grader was not told the name:** 11 (one run), qd-statement-1 and qd-statement-3. In each, the answer used "Sarah" and the grader marked the name as invented, because the script gave the grader the session without it. `eval-answers.ts` now gives the grader the named session when `--their-name` is set. These numbers were not re-measured after that fix (the cap), so they slightly under-read.
 - The other deductions are the usual ones: layout on 08, 11 and 13, and small CV embellishments on qd-real-2 and qd-real-3. They are not related to the name.
+
+## Gemini and GPT answer models (2026-11-17, ADR-0099)
+
+`eval-answers --only=answers --model=<model> --max-dollars=1`, one command each (2 runs per scenario), answers from the named model with the answer route's settings (same prompt and global prompt; OpenAI reasoning `none`, Gemini thinking `minimal`), graded by `claude-sonnet-5-5`. Approved paid run. The Claude Haiku rows are the three latest `answers` commands (16 Nov 2026), for comparison.
+
+| Answers by | Overall /10 (gate 8.86) | Hidden line | Answer line ≤ 12 words (as written / as shown) | Answers with something invented (grader) | Answers with a number outside the documents and call | Spend |
+|---|---|---|---|---|---|---|
+| `gpt-5.6-luna` | **9.37** | 30/30 | 28/28 / 28/28 | 3 (5 items) | 2 | $0.10 |
+| `gemini-3.5-flash-lite` | **9.30** | 30/30 | 22/28 / 28/28 | 3 (3 items) | 2 | $0.12 |
+| `claude-haiku-5-5` (16 Nov, 3 commands) | 9.30, 9.43, 9.30 | 30/30 each | — | 3, 2, 1 | 3, 2, 3 | $0.09 each |
+
+Both pass the gate with one command (the gate rule asks for a 3-command mean; this was a single reading, as the developer asked). Neither is below Claude Haiku on hidden-line compliance or invented facts. Gemini writes longer answer lines more often (6 of 28 over 12 words as written; the card's cut keeps all 28 within 12). The Gemini command twice failed on its first request with HTTP 429 straight after the latency runs, and ran a few minutes later; see `docs/testing/benchmark-results.md` (ADR-0099) for the rate limits.

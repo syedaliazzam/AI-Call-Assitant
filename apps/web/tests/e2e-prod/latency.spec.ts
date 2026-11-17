@@ -109,7 +109,66 @@ async function summarise(page: Page, label: string): Promise<Summary> {
       fallbacks: summary.fallbacks ?? 0,
     },
   );
+  // ADR-0099: the same timings over only the answers the asked model gave itself (a fallback is Claude
+  // Haiku's), so a rate-limited provider's numbers are not mixed with Haiku's.
+  const { samples = [] } = JSON.parse(text) as { samples?: OwnSample[] };
+  const own = samples.filter((sample) => sample.fallback === null || sample.fallback === undefined);
+  if (own.length !== samples.length) {
+    report(`${label} latency, the model's own answers only`, own.length > 0, {
+      answers: own.length,
+      firstWordP50: nearestRank(
+        own.map((sample) => sample.toFirstWord),
+        50,
+      ),
+      firstWordP95: nearestRank(
+        own.map((sample) => sample.toFirstWord),
+        95,
+      ),
+      doneP50: nearestRank(
+        own.map((sample) => sample.toDone),
+        50,
+      ),
+      doneP95: nearestRank(
+        own.map((sample) => sample.toDone),
+        95,
+      ),
+      serverFirstTextP50: nearestRank(
+        own.map((sample) => sample.serverToFirstText),
+        50,
+      ),
+      cacheHits: own.filter((sample) => sample.cacheRead > 0).length,
+    });
+  }
   return summary;
+}
+
+/** ADR-0099: the per-answer numbers the page publishes (core/answer/latency.ts LatencySample). */
+interface OwnSample {
+  /** Key press → first word, ms. */
+  toFirstWord: number;
+  /** Key press → done, ms. */
+  toDone: number;
+  /** Server: request received → first text, ms. */
+  serverToFirstText: number;
+  /** Cache tokens read. */
+  cacheRead: number;
+  /** Why the answer moved to Claude Haiku, or null. */
+  fallback?: string | null;
+}
+
+/**
+ * Nearest-rank percentile (as core/stt/metrics.ts percentile()).
+ *
+ * @param values The numbers.
+ * @param p      The percentile, 0–100.
+ * @returns The value, or 0 for none.
+ */
+function nearestRank(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[
+    Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1))
+  ]!;
 }
 
 /**
