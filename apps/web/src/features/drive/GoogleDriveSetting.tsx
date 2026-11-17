@@ -1,7 +1,9 @@
 /**
  * File: apps/web/src/features/drive/GoogleDriveSetting.tsx
  * Purpose: Settings → Google Drive (ADR-0074: one company Google account). Everyone sees where calls are
- *          saved ("Company Drive · <folder> ↗"), or that an admin still has to set it up or reconnect it,
+ *          saved ("Company Drive · <folder> ↗" for admins; ADR-0097: "Company Drive · Your folder ↗",
+ *          their own folder, for everyone else, with no link until it exists), or that an admin still has
+ *          to set it up or reconnect it,
  *          and their own choices: "Save calls to Google Drive", the "saved" email switch, the "Also
  *          notify" team list, "Send test email" (to the person only), and the latest notifications with
  *          Retry (or "Email not set up"). Admins also get "Company Google Drive": Connect (Google's
@@ -19,6 +21,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import type { DriveMyFolderResponse } from '@kite/shared';
 import { parseAddressList } from '@/core/drive/addresses';
 import { DriveApiError, driveApi } from '@/core/drive/api';
 import { preparePicker, type PreparedPicker } from '@/core/drive/picker';
@@ -149,6 +152,26 @@ export function GoogleDriveSetting() {
     });
   };
 
+  // ADR-0097: a non-admin's own folder (null while it is looked up, or when the lookup failed).
+  const [ownFolder, setOwnFolder] = useState<DriveMyFolderResponse | null>(null);
+  const companyFolderId = status?.folder?.id ?? null;
+  useEffect(() => {
+    if (admin || !companyFolderId || status?.status !== 'connected') return;
+    let live = true;
+    driveApi()
+      .myFolder()
+      .then((found) => {
+        if (live) setOwnFolder(found);
+      })
+      // No link when it cannot be looked up (Google did not answer).
+      .catch(() => {
+        if (live) setOwnFolder(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [admin, companyFolderId, status?.status]);
+
   // What Google's redirect asked for (?drive=pick or ?drive=error), once the status is known.
   useEffect(() => {
     if (!status || handled.current) return;
@@ -196,6 +219,35 @@ export function GoogleDriveSetting() {
     </p>
   );
 
+  // The company folder (admins, the company account's own), or "No folder chosen yet".
+  const companyFolderLine = status.folder ? (
+    <a
+      href={status.folder.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-ui-link underline-offset-2 hover:underline"
+    >
+      {status.folder.name} ↗
+    </a>
+  ) : (
+    <span className="text-ui-muted">No folder chosen yet</span>
+  );
+  // ADR-0097: everyone else sees their own folder (the company folder is not shared with them); no
+  // link until it exists, and nothing while it is looked up or when the lookup failed.
+  const ownFolderLine =
+    admin || !status.folder || !ownFolder ? null : ownFolder.url ? (
+      <a
+        href={ownFolder.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-ui-link underline-offset-2 hover:underline"
+      >
+        Your folder ↗
+      </a>
+    ) : (
+      <span className="text-ui-muted">Your folder appears after your first saved call</span>
+    );
+
   // Where calls go, for everyone.
   const where =
     status.status === 'not-connected' ? (
@@ -207,19 +259,17 @@ export function GoogleDriveSetting() {
       <div className="flex flex-col gap-1">
         <p className="min-w-0 text-[14px] text-ui-text">
           <span className="font-medium text-ui-heading">Company Drive</span>
-          {' · '}
-          {status.folder ? (
-            <a
-              href={status.folder.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-ui-link underline-offset-2 hover:underline"
-            >
-              {status.folder.name} ↗
-            </a>
-          ) : (
-            <span className="text-ui-muted">No folder chosen yet</span>
-          )}
+          {ownFolderLine ? (
+            <>
+              {' · '}
+              {ownFolderLine}
+            </>
+          ) : admin || !status.folder ? (
+            <>
+              {' · '}
+              {companyFolderLine}
+            </>
+          ) : null}
         </p>
         {status.status === 'reconnect' && (
           <p className="text-[13px] text-ui-text">

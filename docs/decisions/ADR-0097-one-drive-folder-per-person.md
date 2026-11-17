@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-17
-- **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §7.2, §8, §10.1 (version 4.37.0)
+- **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5, §7.2, §8, §10.1 (version 4.37.0)
 - **Supersedes / superseded by:** changes ADR-0096's sharing (one Viewer share per session folder) to one share per person; extends ADR-0074 (company Drive account). Session folder names, subfolders, file names, uploads and the "Call saved" emails are unchanged.
 
 ## Context
@@ -22,15 +22,15 @@ The app works with the `drive.file` scope: it can only see and change what it ma
    - A folder that matches no known pair stays where it is.
    The per-session share is removed just before the move, while it is the folder's own share only, rather than after: Drive's handling of removing a share that is also inherited from the new parent is not something we rely on. The end state is the one asked for.
    Replies and logs carry counts only, never a name, email, account, session or Drive id. After the move the secret is removed from Vercel, which closes the route.
-5. **No schema change.** No migration; nothing new is stored on the server.
+5. **Settings.** Settings → Google Drive shows admins the company folder as before; everyone else sees "Company Drive · Your folder ↗", a link to their own folder from the read-only `GET /api/drive/my-folder` (found by their account tag only; nothing is made or shared by it), or "Your folder appears after your first saved call" until it exists. The status route is unchanged, so the uploaders pay no extra Drive lookup.
+6. **No schema change.** No migration; nothing new is stored on the server.
 
 ## Consequences
 
 - Each person sees one folder of their own in Drive ("Shared with me"), holding all their calls; adding a call needs no new share.
 - "Open in Drive" / "Watch in Drive" links and the links in earlier emails keep working: a move keeps every id.
-- A display name changed later does not rename the folder (it is named once).
+- A display name changed later does not rename the folder (it is named once; kept on purpose).
 - One more Drive lookup (the person's folder) per upload request; a session folder never moved costs one more lookup.
-- Settings → Google Drive still links to the company folder, which only admins (the company account) can open.
 
 ## Alternatives considered
 

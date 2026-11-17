@@ -389,6 +389,15 @@ export interface DriveCallAccessRequest {
   callStartedAt: number;
 }
 
+/**
+ * What GET /api/drive/my-folder returns (ADR-0097, Settings for everyone but an admin): the signed-in
+ * person's own folder in the company folder, found by their account's tag only.
+ */
+export interface DriveMyFolderResponse {
+  /** Its Drive address, or null until it exists (it is made when they first save a call). */
+  url: string | null;
+}
+
 /** One saved file of a call, with its Drive link (names and links only, never content). */
 export interface DriveCallFileLink {
   /** What it is. */
