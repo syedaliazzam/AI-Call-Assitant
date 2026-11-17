@@ -10,7 +10,8 @@
  *          force per block, and (ADR-0086) a custom full system prompt per version; (ADR-0087) the
  *          built-in prompts the app has run with (unused since ADR-0089); (ADR-0089) one admin-edited
  *          global prompt per version with a note, and the scores of the AI settings quality check (unused since
- *          ADR-0091, kept: migrations are additive).
+ *          ADR-0091, kept: migrations are additive). (ADR-0098) Each session's live lock: which call (on
+ *          which device) is running it, ids and times only.
  *          Generated with the Better Auth CLI (`auth generate --adapter drizzle --dialect
  *          postgresql`, better-auth 1.7.13) for email + password, the admin plugin and our
  *          `mustChangePassword` field; comments added by hand. If the Better Auth config gains
@@ -24,7 +25,8 @@
  *               ADR-0072 (google_drive and drive_notification, written by hand); ADR-0083
  *               (ai_instructions_version and ai_instructions_active, written by hand); ADR-0086
  *               (ai_instructions_version.prompt); ADR-0087 (ai_instructions_version.base_hash, ai_builtin_prompt);
- *               ADR-0089 (ai_instructions_version.global_prompt and note, ai_quality_check)
+ *               ADR-0089 (ai_instructions_version.global_prompt and note, ai_quality_check); ADR-0098
+ *               (live_call_lock, written by hand)
  */
 import { relations, sql } from 'drizzle-orm';
 import {
@@ -599,5 +601,40 @@ export const aiQualityCheck = pgTable(
     check('ai_quality_check_results_check', sql`char_length(${table.results}) <= 4000`),
     // The page looks up the latest check of one prompt.
     index('ai_quality_check_prompt_idx').on(table.block, table.promptHash, table.createdAt),
+  ],
+);
+
+/**
+ * ADR-0098: which call holds each session's live lock, so a session runs on one device at a time. One row per
+ * account and session, written by POST /api/live-lock (src/server/liveLock.ts): a call's start takes it, its
+ * heartbeat (every 15 s) keeps it, End releases it. A lock with no heartbeat for 90 s has expired (decided
+ * from heartbeat_at when read; nothing deletes it). Ids and times only: no call content. The row is kept
+ * after release, so a call that was taken over still learns it was moved on its next heartbeat.
+ */
+export const liveCallLock = pgTable(
+  'live_call_lock',
+  {
+    /** The account. Every query is filtered by it. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** The session (the device's session id, as in call_record.session_id). */
+    sessionId: text('session_id').notNull(),
+    /** The call holding (or that last held) the lock: the call record's id, made by the device. */
+    callId: text('call_id').notNull(),
+    /** The device running that call: the random id of its browser profile (core/live/deviceId.ts). */
+    deviceId: text('device_id').notNull(),
+    /** When that call took the lock. */
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    /** The call's last heartbeat; older than 90 s means the lock has expired. */
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }).defaultNow().notNull(),
+    /** When the call released it at End; null while held. */
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+    /** The call this one replaced while that call had not ended (a take-over), so it learns it was moved. */
+    replacedCallId: text('replaced_call_id'),
+  },
+  (table) => [
+    // One lock per session of an account; another account's identical session id is a different row.
+    primaryKey({ columns: [table.userId, table.sessionId] }),
   ],
 );

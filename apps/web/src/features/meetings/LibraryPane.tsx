@@ -4,11 +4,12 @@
  *          person's name) and a date filter, then the session folders named as in Google Drive
  *          ("<YYYY-MM-DD> <Company> – <Session>"), newest first, each opening to one row per call: date and
  *          time, length, and small icons for recorded, AI notes and transcript. Folders open with a click
- *          or Enter; ↑ / ↓ (and Home / End) move between folders and calls.
+ *          or Enter; ↑ / ↓ (and Home / End) move between folders and calls. ADR-0098: a session live on
+ *          another device of the account shows a red dot and "Live on another device" on its folder.
  * Used by: MeetingsPage.tsx
  * Depends on: lucide-react (icons), src/core/meetings/library.ts, src/features/review/CallsList.tsx
  *             (callLengthText), src/ui (Input, Select)
- * Architecture: docs/decisions/ADR-0096-meetings-library.md
+ * Architecture: docs/decisions/ADR-0096-meetings-library.md; ADR-0098
  * Theme: tokens from src/ui/tokens/theme.css (light and dark)
  *
  * Session details are shown on screen only; nothing is logged.
@@ -27,6 +28,7 @@ import {
 } from '@/core/meetings/library';
 import type { CallView } from '@/core/review/calls';
 import { callLengthText } from '@/features/review/CallsList';
+import { LIVE_ELSEWHERE_LABEL } from '@/features/live/useLiveElsewhere';
 import { Input } from '@/ui/Input';
 import { Select } from '@/ui/Select';
 
@@ -43,6 +45,8 @@ export interface LibraryPaneProps {
   onSelect: (callId: string) => void;
   /** Something under the list (the desktop app: this computer's name). */
   footer?: ReactNode;
+  /** ADR-0098: the sessions live on another device of the account. */
+  liveElsewhere?: ReadonlySet<string>;
 }
 
 /** The attribute the arrow keys move between (folder buttons and call rows). */
@@ -172,7 +176,13 @@ function CallRow({
  * @returns The pane.
  * Rendered by: MeetingsPage.tsx
  */
-export function LibraryPane({ folders, selectedId, onSelect, footer }: LibraryPaneProps) {
+export function LibraryPane({
+  folders,
+  selectedId,
+  onSelect,
+  footer,
+  liveElsewhere,
+}: LibraryPaneProps) {
   const [query, setQuery] = useState('');
   const [range, setRange] = useState<LibraryRange>('all');
   // The person's own open / closed choices; otherwise the folder of the shown call (or the newest) is open.
@@ -268,8 +278,17 @@ export function LibraryPane({ folders, selectedId, onSelect, footer }: LibraryPa
                       strokeWidth={1.75}
                       className="shrink-0 text-ui-muted"
                     />
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
-                      {folder.name}
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-[13px] font-semibold">{folder.name}</span>
+                      {liveElsewhere?.has(folder.session.id) && (
+                        <span className="flex items-center gap-1.5 text-[12px] font-normal text-ui-text">
+                          <span
+                            aria-hidden="true"
+                            className="size-2 shrink-0 animate-pulse rounded-full bg-ui-dot-recording"
+                          />
+                          {LIVE_ELSEWHERE_LABEL}
+                        </span>
+                      )}
                     </span>
                     <span className="shrink-0 text-[12px] text-ui-muted">
                       {folder.calls.length}

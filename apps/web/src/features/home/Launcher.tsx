@@ -21,7 +21,9 @@
  *             src/features/sync/LegacyUploadCard.tsx, src/platform, ./AccurateDownload.tsx,
  *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx,
  *             ./RecordingSavedNotice.tsx, src/core/recording (handoff.ts, reconcile.ts)
- * Architecture: ADR-0051, ADR-0052, ADR-0055, ADR-0068, ADR-0071
+ *             ADR-0098: src/core/live/liveLock.ts (Take over, "moved"), src/features/live/useLiveElsewhere.ts,
+ *             ./CallMovedNotice.tsx
+ * Architecture: ADR-0051, ADR-0052, ADR-0055, ADR-0068, ADR-0071, ADR-0098
  *
  * Session text is shown on screen only; it is never logged.
  */
@@ -29,6 +31,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { leaveTakeOver, watchCallMoved } from '@/core/live/liveLock';
 import { countAnswersBySession } from '@/core/storage/answers';
 import { deleteSession, shownStatus, watchSessions } from '@/core/storage/sessions';
 import { speechModelPrefetch } from '@/core/stt/prefetch';
@@ -37,9 +40,11 @@ import { pullAccountSync } from '@/core/sync/client';
 import { useAppearance } from '@/features/appearance/useAppearance';
 import { DriveNotices } from '@/features/drive/DriveNotices';
 import { AcceptableUseNotice } from '@/features/notices/AcceptableUseNotice';
+import { useLiveElsewhere } from '@/features/live/useLiveElsewhere';
 import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
 import { getPlatform } from '@/platform';
 import { AccurateDownload } from './AccurateDownload';
+import { CallMovedNotice } from './CallMovedNotice';
 import { DesktopFrame } from './DesktopFrame';
 import { LauncherSessions } from './LauncherSessions';
 import { LauncherConnect } from './LauncherConnect';
@@ -167,6 +172,10 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
   // Meetings").
   const [recordingSaved, setRecordingSaved] = useState(false);
   useEffect(() => watchRecordingSaved(() => setRecordingSaved(true)), []);
+  // ADR-0098: a call here was taken over by another device; the call window says so as it closes.
+  const [callMoved, setCallMoved] = useState(false);
+  useEffect(() => watchCallMoved(() => setCallMoved(true)), []);
+  const liveElsewhere = useLiveElsewhere();
   // Recordings this computer finalised after a crash or a quit get their length and size in the
   // account (the shell recovers them when it starts).
   useEffect(() => {
@@ -268,11 +277,18 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
           }}
           // ADR-0082: Start / Start again go straight to Connect (the audio source).
           onOpen={(session) => setView({ kind: 'connect', sessionId: session.id })}
+          // ADR-0098: live on another device: Start disabled, Take over leaves the note for Connect.
+          liveElsewhere={liveElsewhere}
+          onTakeOver={(session) => {
+            leaveTakeOver(session.id);
+            setView({ kind: 'connect', sessionId: session.id });
+          }}
           notices={
             <>
               {/* 1.6.1: Drive's notices in the card's flow, never over the bottom bar. */}
               <DriveNotices placement="inline" />
               {recordingSaved && <RecordingSavedNotice onClose={() => setRecordingSaved(false)} />}
+              {callMoved && <CallMovedNotice onClose={() => setCallMoved(false)} />}
               <AccurateDownload />
               {/* ADR-0049, ADR-0082: offers once to add this account's own unsynced data to it. */}
               <LegacyUploadCard compact />

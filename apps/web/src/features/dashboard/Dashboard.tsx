@@ -3,20 +3,24 @@
  * Purpose: The sessions page ("Call Sessions", spec S3): tabs by type with the count at the right, a
  *          search box joined to a sort button, grid or list (remembered), collapsible Active and Past
  *          sections of session cards, and an empty state. Starting a session goes through Choose
- *          platform in the browser and straight to the live screen in the desktop app.
+ *          platform in the browser and straight to the live screen in the desktop app. ADR-0098: a session
+ *          live on another device of the account shows so on its card, with Take over.
  * Used by: app/(app)/page.tsx
  * Depends on: lucide-react, src/core/storage (sessions.ts, answers.ts, dashboardPrefs.ts),
  *             src/features/sync/LegacyUploadCard.tsx and src/core/sync/events.ts (ADR-0049), src/platform
  *             (offersPlatformChoice), ./SessionCard.tsx, ./SessionSearch.tsx,
  *             src/features/shell/CreateSessionButton.tsx,
- *             src/features/session-setup/ChoosePlatformDialog.tsx, src/ui/Tabs.tsx
- * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S3); docs/architecture/kite-architecture-v3.1.md §5
+ *             src/features/session-setup/ChoosePlatformDialog.tsx, src/ui/Tabs.tsx,
+ *             src/core/live/liveLock.ts and src/features/live/useLiveElsewhere.ts (ADR-0098)
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S3); docs/architecture/kite-architecture-v3.1.md §5;
+ *               ADR-0098
  */
 'use client';
 
 import { Bot, Briefcase, ChevronDown, LayoutGrid, List, Phone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { leaveTakeOver } from '@/core/live/liveLock';
 import { countAnswersBySession } from '@/core/storage/answers';
 import {
   getDashboardLayout,
@@ -39,6 +43,7 @@ import type { Session, SessionType } from '@/core/storage/types';
 import { ChoosePlatformDialog } from '@/features/session-setup/ChoosePlatformDialog';
 import { SESSION_TYPE_LABELS } from '@/features/session-setup/labels';
 import { CreateSessionButton } from '@/features/shell/CreateSessionButton';
+import { useLiveElsewhere } from '@/features/live/useLiveElsewhere';
 import { getPlatform } from '@/platform';
 import { Tabs } from '@/ui/Tabs';
 import { SessionCard } from './SessionCard';
@@ -141,6 +146,8 @@ export function Dashboard() {
     getDashboardSort,
     () => 'newest',
   );
+  // ADR-0098: the sessions live on another device of the account (Start disabled, Take over).
+  const liveElsewhere = useLiveElsewhere();
   const [chosenLayout, setChosenLayout] = useState<DashboardLayout | null>(null);
   const [chosenSort, setChosenSort] = useState<SessionSort | null>(null);
   const layout = chosenLayout ?? savedLayout;
@@ -175,6 +182,17 @@ export function Dashboard() {
   function open(session: Session) {
     if (getPlatform().offersPlatformChoice) setChoosing(session);
     else router.push(`/live/${session.id}`);
+  }
+
+  /**
+   * ADR-0098: Take over (confirmed on the card): the session's next Connect on this device takes the call
+   * from the other device; then it starts as usual.
+   *
+   * @param session The session.
+   */
+  function takeOver(session: Session) {
+    leaveTakeOver(session.id);
+    open(session);
   }
 
   /**
@@ -241,6 +259,8 @@ export function Dashboard() {
           grid={layout === 'grid'}
           answers={answerCounts.get(session.id) ?? 0}
           onOpen={open}
+          liveElsewhere={liveElsewhere.has(session.id)}
+          onTakeOver={takeOver}
           onDelete={remove}
           onRename={rename}
           onDuplicate={duplicate}

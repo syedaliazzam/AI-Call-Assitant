@@ -5,15 +5,17 @@
  *          the account's sessions as the dashboard's own session cards, one column. Each card's button
  *          opens the Start card (Start session) or the session's page in the browser (View transcript; an
  *          ended session also has Start again, ADR-0073);
- *          its ⋮ has View in dashboard ↗ and Delete. A session the browser's "Desktop app" link opened
+ *          its ⋮ has View in dashboard ↗ and Delete. ADR-0098: a session live on another device of the
+ *          account shows "Live on another device", its Start disabled with that tooltip, and Take over. A session the browser's "Desktop app" link opened
  *          stays first, edged in green, "From your browser". After a call, "Call ended · View notes"
  *          sits on top. A bar stuck to the bottom holds "View in Dashboard ↗" and "+ Create session",
  *          both opening the browser.
  * Used by: src/features/home/Launcher.tsx
  * Depends on: lucide-react, src/core/storage (sessions, dashboardPrefs, types),
  *             src/features/dashboard (SessionCard, SessionSearch, sessionCardParts),
- *             src/features/sync/dashboardLink.ts, src/ui (Button, icons), ./LauncherSessionMenu.tsx
- * Architecture: ADR-0051, ADR-0055, ADR-0071
+ *             src/features/sync/dashboardLink.ts, src/ui (Button, icons), ./LauncherSessionMenu.tsx,
+ *             src/features/live/TakeOver.tsx (ADR-0098)
+ * Architecture: ADR-0051, ADR-0055, ADR-0071, ADR-0098
  *
  * Session text is shown on screen only; it is never logged.
  */
@@ -27,6 +29,7 @@ import type { Session } from '@/core/storage/types';
 import { SessionCardFrame } from '@/features/dashboard/SessionCard';
 import { sessionCardLine, sessionCardTitle } from '@/features/dashboard/sessionCardParts';
 import { SessionSearch } from '@/features/dashboard/SessionSearch';
+import { TakeOverButtons } from '@/features/live/TakeOver';
 import { openDashboard } from '@/features/sync/dashboardLink';
 import { Button } from '@/ui/Button';
 import { OutIcon } from '@/ui/icons';
@@ -53,6 +56,10 @@ export interface LauncherSessionsProps {
   lastCall?: Session | null;
   /** Opens a session's Start card. */
   onOpen: (session: Session) => void;
+  /** ADR-0098: the sessions live on another device of the account. */
+  liveElsewhere?: ReadonlySet<string>;
+  /** ADR-0098: Take over was confirmed on a card (the session's Start card opens, taking the call over). */
+  onTakeOver?: (session: Session) => void;
   /** Deletes a session after the user confirmed. */
   onDelete: (session: Session) => Promise<void>;
   /** Extra rows above the list (the accurate-transcription offer, the one-time upload). */
@@ -127,6 +134,8 @@ export function LauncherSessions({
   fromBrowserMissing = false,
   lastCall = null,
   onOpen,
+  liveElsewhere,
+  onTakeOver,
   onDelete,
   notices,
 }: LauncherSessionsProps) {
@@ -222,6 +231,8 @@ export function LauncherSessions({
                   answers={answers?.get(session.id) ?? 0}
                   fromBrowser={session.id === fromBrowserId}
                   onOpen={onOpen}
+                  liveElsewhere={liveElsewhere?.has(session.id) ?? false}
+                  onTakeOver={(chosen) => onTakeOver?.(chosen)}
                   onDelete={onDelete}
                 />
               ))}
@@ -259,6 +270,8 @@ export function LauncherSessions({
  * @param props.answers     How many answers it has.
  * @param props.fromBrowser True for the session the browser's link opened.
  * @param props.onOpen      Opens its Start card.
+ * @param props.liveElsewhere ADR-0098: true while it is live on another device.
+ * @param props.onTakeOver  ADR-0098: Take over was confirmed.
  * @param props.onDelete    Deletes it after the user confirmed.
  * @returns The card.
  * Rendered by: LauncherSessions
@@ -269,6 +282,8 @@ function LauncherCard({
   answers,
   fromBrowser,
   onOpen,
+  liveElsewhere,
+  onTakeOver,
   onDelete,
 }: {
   /** The session. */
@@ -281,6 +296,10 @@ function LauncherCard({
   fromBrowser: boolean;
   /** Opens its Start card. */
   onOpen: (session: Session) => void;
+  /** True while it is live on another device. */
+  liveElsewhere: boolean;
+  /** Take over was confirmed. */
+  onTakeOver: (session: Session) => void;
   /** Deletes it after the user confirmed. */
   onDelete: (session: Session) => Promise<void>;
 }) {
@@ -297,10 +316,30 @@ function LauncherCard({
       status={status}
       answers={answers}
       highlighted={fromBrowser}
+      liveElsewhere={liveElsewhere}
       {...(fromBrowser ? { eyebrow: 'From your browser' } : {})}
       menu={<LauncherSessionMenu session={session} title={title} onDelete={onDelete} />}
       action={
-        status === 'ended' ? (
+        liveElsewhere ? (
+          // ADR-0098: live on another device: Start is disabled with the tooltip; Take over asks first.
+          // The transcript of an ended session stays one click away.
+          <div className="flex shrink-0 flex-wrap justify-end gap-2">
+            {status === 'ended' && (
+              <Button
+                variant="secondary"
+                className="shrink-0"
+                onClick={() => openDashboard(`/sessions/${session.id}`)}
+              >
+                View transcript <OutIcon />
+              </Button>
+            )}
+            <TakeOverButtons
+              startLabel={status === 'ended' ? 'Start again' : 'Start session'}
+              name={name}
+              onTakeOver={() => onTakeOver(session)}
+            />
+          </div>
+        ) : status === 'ended' ? (
           // The transcript is read in the browser (the session's Review page). ADR-0073: an ended
           // session starts again too, each start a new call in the same session (same documents).
           <div className="flex shrink-0 flex-wrap justify-end gap-2">

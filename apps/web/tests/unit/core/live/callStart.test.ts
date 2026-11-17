@@ -1,13 +1,14 @@
 /**
  * Tests for apps/web/src/core/live/callStart.ts: the desktop Connect card asks the main window's live
  * page to connect, once, through a short-lived note and a channel; the live page answers on the
- * channel (ADR-0055). Only a session id and a state travel.
+ * channel (ADR-0055). Only a session id and a state travel. ADR-0098: a refusal carries the live-elsewhere code.
  */
 import { describe, expect, it } from 'vitest';
 import {
   CALL_START_KEY,
   CALL_START_TTL_MS,
   reportCallStart,
+  reportLiveElsewhere,
   requestCallStart,
   takeCallStart,
   watchCallStart,
@@ -109,6 +110,23 @@ describe('reportCallStart', () => {
     expect(seen).toEqual([
       { type: 'status', sessionId: 's1', state: 'connected' },
       { type: 'status', sessionId: 's1', state: 'failed', message: 'Allow the microphone.' },
+    ]);
+  });
+
+  it('ADR-0098: carries the live-elsewhere code, so the card offers Take over', () => {
+    const { deps } = fakes();
+    const seen: unknown[] = [];
+    const stop = watchCallStart('s1', 'status', (message) => seen.push(message), deps);
+    reportLiveElsewhere('s1', 'Live elsewhere.', deps);
+    stop();
+    expect(seen).toEqual([
+      {
+        type: 'status',
+        sessionId: 's1',
+        state: 'failed',
+        message: 'Live elsewhere.',
+        code: 'live-elsewhere',
+      },
     ]);
   });
 

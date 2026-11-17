@@ -13,7 +13,7 @@
  *             src/features/live/* (ConnectPanel, TranscriptStrip, AudioMeter, LiveAnswers),
  *             src/core/drive/queue.ts (1.6.0: End queues the call for Google Drive, ADR-0072)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Connect, Live session), §6.1,
- *               §7.4 (save-transcript toggle); day-03-sessions.md Stage 4; ADR-0072
+ *               §7.4 (save-transcript toggle); day-03-sessions.md Stage 4; ADR-0072; ADR-0098
  *
  * v1.1.0: one call at a time on a device (core/live/callLock.ts); Accurate transcription follows the
  * power source on Auto (ADR-0044); listening pauses when a call was left running (core/live/hygiene.ts).
@@ -22,6 +22,12 @@
  * Desktop 1.5.0 (ADR-0068): the meeting recording (useCallRecording.ts) records the call's own streams;
  * the Connect card's Record choice starts it once the call connects (core/recording/handoff.ts), and End
  * stops it first.
+ *
+ * ADR-0098 (live-call lock): Connect also takes the session's lock on the server (core/live/liveLock.ts),
+ * so a session runs on one device of the account at a time; a refusal shows "This session is live on another
+ * device" with Take over (asks first). While the call runs a heartbeat keeps the lock (every 15 s); End
+ * releases it. When another device takes the call over, the heartbeat hears it, the call ends here exactly
+ * as at End (transcript, notes and recording saved), and "This call was moved to another device" shows.
  *
  * ADR-0055: in a desktop app with the home panel and account sync, the Connect card is in the small
  * window (features/home/LauncherConnect.tsx). This page runs the call it starts (core/live/callStart.ts):
@@ -84,6 +90,15 @@ import { CATCH_UP_CAP_MS } from '@/core/answer/newestQuestion';
 import { mayRestart, soundCountsForWatchdog, TranscriptWatchdog } from '@/core/stt/watchdog';
 import { accurateWanted, getTranscriptionMode } from '@/core/storage/transcriptionPrefs';
 import { takeCallLock } from '@/core/live/callLock';
+import {
+  announceCallMoved,
+  endLiveLock,
+  keepLiveLock,
+  startLiveLock,
+  takeTakeOver,
+  type LiveLockKeeper,
+} from '@/core/live/liveLock';
+import { liveSessions } from '@/core/live/liveSessions';
 import { hygieneState, type HygieneState } from '@/core/live/hygiene';
 import { getMicDevice, setMicDevice } from '@/core/storage/overlayPrefs';
 import { createPunctuator, punctuateLine } from '@/core/punctuation/punctuator';
@@ -102,7 +117,14 @@ import { callNoticeFor, type CallNotice } from '@/core/live/callNotice';
 import { SilentChannelNotice } from './ThemSilentNotice';
 import { PrivateOffWarning, usePrivateOffWhileRecording } from './PrivateOffWarning';
 import { endCall } from '@/core/transcript/endCall';
-import { reportCallStart, takeCallStart, watchCallStart } from '@/core/live/callStart';
+import {
+  reportCallStart,
+  reportLiveElsewhere,
+  takeCallStart,
+  watchCallStart,
+} from '@/core/live/callStart';
+import { CALL_MOVED_TEXT } from '@/features/home/CallMovedNotice';
+import { TakeOverDialog } from './TakeOver';
 import { announceRecordingSaved, takeRecordConsent } from '@/core/recording/handoff';
 import { turnPrivateOn } from '@/features/privacy/usePrivate';
 import { useAccountName } from '@/features/shell/AccountName';
@@ -221,6 +243,9 @@ function channelEndedMessage(speaker: Speaker, platform: 'desktop' | 'browser'):
 
 /** Why a second call cannot start (shown on the Connect card, or sent to the desktop's card). */
 const LOCKED_OUT_TEXT = 'A call is already running in another Paramount AI window. End it first.';
+
+/** ADR-0098: why a start was refused by the server (another device of the account runs the session). */
+const LIVE_ELSEWHERE_TEXT = 'This session is live on another device.';
 
 /** Batch C (P1-1): a Flux turn event of the other side. */
 type CloudTurnEvent = Extract<CloudEvent, { type: 'turn' }>['event'];
@@ -386,6 +411,16 @@ export function LivePage({
   // v1.1.0: releases the one-call-at-a-time lock (core/live/callLock.ts).
   const releaseLock = useRef<(() => void) | null>(null);
   const [lockedOut, setLockedOut] = useState(false);
+  // ADR-0098: the server's live lock for this session: the running call's heartbeat, a start refused because
+  // another device runs the session (Take over offered), the confirmed take-over for the next Connect, and
+  // whether the last call ended because another device took it over.
+  const lockKeeper = useRef<LiveLockKeeper | null>(null);
+  const [liveElsewhere, setLiveElsewhere] = useState(false);
+  const [askingTakeOver, setAskingTakeOver] = useState(false);
+  const takeOverChosen = useRef(false);
+  const [movedAway, setMovedAway] = useState(false);
+  // The latest end(), for the heartbeat's "moved" (it is made once per call, end() changes each render).
+  const endRef = useRef<(() => Promise<void>) | null>(null);
   // v1.1.0 (ADR-0044): whether the accurate engine should run now. A ref, because the speech engine's
   // callbacks read it for each line; on Auto it follows the power source during the call.
   const accurateOn = useRef(false);
@@ -467,6 +502,8 @@ export function LivePage({
       // call is live on this device.
       if (callIdRef.current) markCallLiveHere(callIdRef.current, false);
       stopNotesWatch.current?.();
+      // ADR-0098: no heartbeat after the page goes; the lock expires 90 s later if End never ran.
+      lockKeeper.current?.stop();
     },
     [],
   );
@@ -1030,6 +1067,35 @@ export function LivePage({
       releaseLock.current = release;
       setLockedOut(false);
     }
+    // ADR-0098: the session's live lock on the server, for this call (a reconnect sends the call's own id and
+    // keeps it). Only a refusal stops the call: with no answer it starts, and its heartbeat takes the lock.
+    const reconnecting = callIdRef.current !== null;
+    const lockCallId = callIdRef.current ?? crypto.randomUUID();
+    const takingOver = takeTakeOver(session.id) || takeOverChosen.current;
+    const lock = await startLiveLock(session.id, lockCallId, takingOver);
+    if (lock === 'elsewhere') {
+      if (reconnecting) {
+        // Another device took this call over while it was reconnecting: it ends here as on a heartbeat.
+        onLiveLockMoved();
+        return;
+      }
+      // No call here: the device's own lock goes too.
+      releaseLock.current?.();
+      releaseLock.current = null;
+      setLiveElsewhere(true);
+      setMovedAway(false);
+      // The session cards of this page catch up at once.
+      void liveSessions().refresh();
+      if (launcherCall) {
+        setLauncherState('failed');
+        setLauncherProblem(LIVE_ELSEWHERE_TEXT);
+        reportLiveElsewhere(session.id, LIVE_ELSEWHERE_TEXT);
+      }
+      return;
+    }
+    takeOverChosen.current = false;
+    setLiveElsewhere(false);
+    setMovedAway(false);
     captureRef.current?.stop();
     captureRef.current = null;
     setChannelErrors({});
@@ -1127,8 +1193,9 @@ export function LivePage({
       callStartRef.current = startedAtNow;
       setCallStartedAt(startedAtNow);
       if (!callIdRef.current) {
-        // ADR-0077: every start of a session is its own call, with its own record.
-        const id = crypto.randomUUID();
+        // ADR-0077: every start of a session is its own call, with its own record. ADR-0098: its id is the
+        // one the live lock was taken for.
+        const id = lockCallId;
         callIdRef.current = id;
         setCallId(id);
         // ADR-0093: a new call starts with the session's name for the other person, and no offer.
@@ -1137,6 +1204,9 @@ export function LivePage({
         declinedNames.current.clear();
         nameCheckedLines.current.clear();
         markCallLiveHere(id, true);
+        // ADR-0098: the heartbeat keeps the session's lock while the call runs.
+        lockKeeper.current?.stop();
+        lockKeeper.current = keepLiveLock(session.id, id, () => onLiveLockMoved());
         enginesUsed.current = new Set(cloudStt ? ['deepgram'] : ['local']);
         recordedKind.current = 'off';
         stopNotesWatch.current?.();
@@ -1206,6 +1276,8 @@ export function LivePage({
       setLevels({ you: 0, them: 0 });
       releaseLock.current?.();
       releaseLock.current = null;
+      // ADR-0098: a new call that never ran gives the session's lock back (a reconnect keeps its call's).
+      if (!reconnecting) endLiveLock(session.id, lockCallId);
       // The overlay opened for this call is closed again: there is no call to follow.
       if (overlay === 'opened')
         void getPlatform()
@@ -1265,6 +1337,11 @@ export function LivePage({
         }).catch(() => undefined);
       }
     }
+    // ADR-0098: the heartbeat stops and the session's lock is released (the server ignores it when this call
+    // was moved: another device's call holds the lock now).
+    lockKeeper.current?.stop();
+    lockKeeper.current = null;
+    if (endingCallId) endLiveLock(session.id, endingCallId);
     watchdog.current.stop();
     // 1.5.1: no rewrite starts after End; the waiting line keeps its live words.
     refineQueue.clear();
@@ -1446,6 +1523,21 @@ export function LivePage({
         .catch(() => undefined);
     }
   };
+
+  useEffect(() => {
+    endRef.current = end;
+  });
+
+  /**
+   * ADR-0098: another device took this call over (its heartbeat, or a reconnect, heard it): the call ends
+   * here exactly as at End, and "This call was moved to another device" shows (in this window, and in the
+   * desktop app's small window).
+   */
+  function onLiveLockMoved() {
+    setMovedAway(true);
+    announceCallMoved();
+    void endRef.current?.();
+  }
 
   /**
    * Re-picks the shared tab without ending the call (the control strip's Change tab). Runs straight
@@ -1728,6 +1820,36 @@ export function LivePage({
             {LOCKED_OUT_TEXT}
           </p>
         )}
+        {/* ADR-0098: the server refused the start: another device of the account runs this session. */}
+        {liveElsewhere && (
+          <div
+            role="alert"
+            className="mx-auto mt-4 flex max-w-3xl flex-wrap items-center justify-between gap-3 rounded-control border border-ui-warning bg-ui-warning-bg px-3 py-2 text-[13px] text-ui-text"
+          >
+            <p>{LIVE_ELSEWHERE_TEXT}</p>
+            <Button size="sm" variant="secondary" onClick={() => setAskingTakeOver(true)}>
+              Take over
+            </Button>
+          </div>
+        )}
+        {movedAway && (
+          <p
+            role="status"
+            className="mx-auto mt-4 max-w-3xl rounded-control border border-ui-border bg-ui-surface px-3 py-2 text-[13px] text-ui-text"
+          >
+            {CALL_MOVED_TEXT}
+          </p>
+        )}
+        <TakeOverDialog
+          open={askingTakeOver}
+          onCancel={() => setAskingTakeOver(false)}
+          onConfirm={() => {
+            // Inside the click: Connect may open the overlay from it.
+            setAskingTakeOver(false);
+            takeOverChosen.current = true;
+            void connect(true);
+          }}
+        />
         <ConnectPanel
           call={call}
           hotwordCount={hotwordCount}

@@ -5,12 +5,13 @@
  *          under it the status dot and word, what happened in the call, and Start session or View
  *          transcript. As a row in the list view: the same data on one line. ADR-0071: the card itself
  *          (SessionCardFrame) is shared with the desktop app's "Your sessions", which gives it its own
- *          menu and button.
+ *          menu and button. ADR-0098: a session live on another device of the account shows "Live on
+ *          another device" (a red dot), its Start disabled with that tooltip, and Take over.
  * Used by: src/features/dashboard/Dashboard.tsx, src/features/home/LauncherSessions.tsx (SessionCardFrame)
  * Depends on: lucide-react, src/core/storage (types, shownStatus), src/ui (Button, Chip, LinkButton),
  *             ./CompanyTile.tsx, ./SessionMenu.tsx, ./sessionCardParts.ts,
- *             src/features/session-setup/labels.ts
- * Architecture: docs/design/paramount-ai-ui-spec.md §1, §3 (S3); ADR-0057, ADR-0071
+ *             src/features/session-setup/labels.ts, src/features/live (TakeOver.tsx, useLiveElsewhere.ts)
+ * Architecture: docs/design/paramount-ai-ui-spec.md §1, §3 (S3); ADR-0057, ADR-0071, ADR-0098
  *
  * Session text is shown on screen only; it is never logged.
  */
@@ -22,6 +23,8 @@ import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { shownStatus } from '@/core/storage/sessions';
 import type { Session, SessionStatus, SessionType } from '@/core/storage/types';
+import { TakeOverButtons } from '@/features/live/TakeOver';
+import { LIVE_ELSEWHERE_LABEL } from '@/features/live/useLiveElsewhere';
 import { SESSION_TYPE_LABELS, STATUS_LABELS } from '@/features/session-setup/labels';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/Chip';
@@ -42,6 +45,10 @@ export interface SessionCardProps {
   answers: number;
   /** Called when the user starts the session. */
   onOpen: (session: Session) => void;
+  /** ADR-0098: true while the session is live on another device of the account. */
+  liveElsewhere?: boolean;
+  /** ADR-0098: the user confirmed Take over (the session then starts here). */
+  onTakeOver?: (session: Session) => void;
   /** Called after the user confirmed deleting the session. */
   onDelete: (session: Session) => Promise<void>;
   /** Saves a new company and role or topic. */
@@ -80,6 +87,8 @@ export function SessionCard({
   grid,
   answers,
   onOpen,
+  liveElsewhere = false,
+  onTakeOver,
   onDelete,
   onRename,
   onDuplicate,
@@ -100,6 +109,7 @@ export function SessionCard({
       session={session}
       title={title}
       onOpen={onOpen}
+      liveElsewhere={liveElsewhere}
       onEdit={(target) => router.push(`/sessions/${target.id}/edit`)}
       onRename={onRename}
       onDuplicate={onDuplicate}
@@ -125,17 +135,41 @@ export function SessionCard({
       )}
     </div>
   );
-  const statusLines = <SessionStatusLines session={session} status={status} answers={answers} />;
-  const action =
-    status === 'ended' ? (
-      <LinkButton href={`/sessions/${session.id}`} variant="secondary" className="shrink-0">
-        View transcript
-      </LinkButton>
-    ) : (
-      <Button variant="secondary" className="shrink-0" onClick={() => onOpen(session)}>
-        Start session
-      </Button>
-    );
+  const statusLines = (
+    <SessionStatusLines
+      session={session}
+      status={status}
+      answers={answers}
+      liveElsewhere={liveElsewhere}
+    />
+  );
+  const viewTranscript = (
+    <LinkButton href={`/sessions/${session.id}`} variant="secondary" className="shrink-0">
+      View transcript
+    </LinkButton>
+  );
+  // ADR-0098: live on another device: Start is disabled (Start again is in ⋮, disabled there), and Take
+  // over asks first. The transcript stays one click away.
+  const takeOver = (
+    <TakeOverButtons
+      startLabel="Start session"
+      name={[title, line].filter(Boolean).join(', ')}
+      showStart={status !== 'ended'}
+      onTakeOver={() => onTakeOver?.(session)}
+    />
+  );
+  const action = liveElsewhere ? (
+    <div className="flex shrink-0 flex-wrap justify-end gap-2">
+      {status === 'ended' && viewTranscript}
+      {takeOver}
+    </div>
+  ) : status === 'ended' ? (
+    viewTranscript
+  ) : (
+    <Button variant="secondary" className="shrink-0" onClick={() => onOpen(session)}>
+      Start session
+    </Button>
+  );
 
   if (!grid) {
     return (
@@ -158,6 +192,7 @@ export function SessionCard({
       session={session}
       status={status}
       answers={answers}
+      liveElsewhere={liveElsewhere}
       menu={menu}
       action={action}
     />
@@ -180,6 +215,8 @@ export interface SessionCardFrameProps {
   eyebrow?: string;
   /** True to edge the card in green (the session the browser's link opened). */
   highlighted?: boolean;
+  /** ADR-0098: true while the session is live on another device ("Live on another device"). */
+  liveElsewhere?: boolean;
 }
 
 /**
@@ -199,6 +236,7 @@ export function SessionCardFrame({
   action,
   eyebrow,
   highlighted = false,
+  liveElsewhere = false,
 }: SessionCardFrameProps) {
   const title = sessionCardTitle(session);
   const line = sessionCardLine(session);
@@ -238,7 +276,12 @@ export function SessionCardFrame({
         <DriveSessionStatus sessionId={session.id} canUpload={session.lastActiveAt !== null} />
       </div>
       <div className="flex items-center justify-between gap-3 px-4 py-3">
-        <SessionStatusLines session={session} status={status} answers={answers} />
+        <SessionStatusLines
+          session={session}
+          status={status}
+          answers={answers}
+          liveElsewhere={liveElsewhere}
+        />
         {action}
       </div>
     </li>
@@ -251,6 +294,7 @@ export function SessionCardFrame({
  * @param props.session The session.
  * @param props.status  Its shown status.
  * @param props.answers How many answers it has.
+ * @param props.liveElsewhere ADR-0098: true while it is live on another device (a red dot and those words).
  * @returns The two lines.
  * Rendered by: SessionCard (list rows), SessionCardFrame
  */
@@ -258,6 +302,7 @@ function SessionStatusLines({
   session,
   status,
   answers,
+  liveElsewhere,
 }: {
   /** The session. */
   session: Session;
@@ -265,17 +310,19 @@ function SessionStatusLines({
   status: SessionStatus;
   /** How many answers it has. */
   answers: number;
+  /** True while it is live on another device. */
+  liveElsewhere: boolean;
 }) {
   return (
     <div className="min-w-0">
       <p
-        className={`flex items-center gap-2 text-[15px] ${status === 'ended' ? 'text-ui-muted' : 'text-ui-heading'}`}
+        className={`flex items-center gap-2 text-[15px] ${status === 'ended' && !liveElsewhere ? 'text-ui-muted' : 'text-ui-heading'}`}
       >
         <span
           aria-hidden="true"
-          className={`size-2 shrink-0 rounded-full ${STATUS_DOTS[status]}`}
+          className={`size-2 shrink-0 rounded-full ${liveElsewhere ? STATUS_DOTS.live : STATUS_DOTS[status]}`}
         />
-        {STATUS_LABELS[status]}
+        {liveElsewhere ? LIVE_ELSEWHERE_LABEL : STATUS_LABELS[status]}
       </p>
       <p className="truncate text-card-role text-ui-muted">
         {sessionUsageLine(session, status, answers)}

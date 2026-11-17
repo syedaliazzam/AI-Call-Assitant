@@ -15,7 +15,10 @@
  *             src/core/storage/{meetingsPrefs,recordings,sessions}.ts, src/core/recording/reconcile.ts,
  *             src/core/sync (client, events), src/features/shell/AccountName.tsx, src/platform,
  *             ./LibraryPane.tsx, ./CallPane.tsx, src/ui (Button, LinkButton)
- * Architecture: docs/decisions/ADR-0096-meetings-library.md; ADR-0068 (recordings), ADR-0077 (calls)
+ *          ADR-0098: sessions live on another device of the account are marked in the list
+ *          (src/features/live/useLiveElsewhere.ts).
+ * Architecture: docs/decisions/ADR-0096-meetings-library.md; ADR-0068 (recordings), ADR-0077 (calls),
+ *               ADR-0098 (live elsewhere)
  *
  * Privacy: the local database belongs to the signed-in account only (ADR-0082) and the server syncs and
  * shares only that account's own records and Drive folders (ADR-0096), so each person sees only their own
@@ -33,6 +36,7 @@ import { watchRecordings } from '@/core/storage/recordings';
 import { watchSessions } from '@/core/storage/sessions';
 import { pullAccountSync } from '@/core/sync/client';
 import { onSyncApplied } from '@/core/sync/events';
+import { useLiveElsewhere } from '@/features/live/useLiveElsewhere';
 import { useAccountName } from '@/features/shell/AccountName';
 import { getPlatform } from '@/platform';
 import { Button } from '@/ui/Button';
@@ -135,6 +139,8 @@ function anyFinishing(folders: readonly LibraryFolder[]): boolean {
 export function MeetingsPage() {
   const [folders, setFolders] = useState<LibraryFolder[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
+  // ADR-0098: the sessions live on another device of the account (marked on their folders).
+  const liveElsewhere = useLiveElsewhere();
   // The call chosen on this page, else the one opened last (read on the client only; null on the server).
   const [chosenId, setChosenId] = useState<string | null>(() => getLastMeetingCall());
   // Narrow screens: true while the call is shown instead of the list.
@@ -266,6 +272,7 @@ export function MeetingsPage() {
       >
         <LibraryPane
           folders={folders}
+          liveElsewhere={liveElsewhere}
           selectedId={shown?.call.id ?? null}
           onSelect={open}
           footer={
