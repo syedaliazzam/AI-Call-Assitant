@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { DEEP_MODEL_WARNING, documentWarnings } from '@/core/documents/limits';
-import { deepModelEnabled } from '@/core/session/modelAccess';
+import { answerModelAccess, type AnswerModelAccess } from '@/core/session/modelAccess';
 import { ANSWER_LANGUAGES, type AnswerModel } from '@/core/storage/types';
 import { parseAddressList } from '@/core/drive/addresses';
 import { Button } from '@/ui/Button';
@@ -98,18 +98,19 @@ function Row({
 export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
   const { preferences } = draft;
   const [window, setWindow] = useState<'answers' | 'instructions' | null>(null);
-  const [deepModel, setDeepModel] = useState(true);
+  // ADR-0095: Groq starts unavailable until the server says it has it.
+  const [access, setAccess] = useState<AnswerModelAccess>({ smart: true, groq: false });
   const instructions = draft.instructions.trim();
   // The Sonnet line only: the size warning itself is on step 1, next to the documents.
   const deepModelWarning = documentWarnings(draftChars(draft), preferences.model).includes(
     DEEP_MODEL_WARNING,
   );
 
-  // An admin can turn the deeper model off. The server enforces it either way: this only says so.
+  // An admin can turn the deeper model, or Groq, off. The server enforces it either way: this only says so.
   useEffect(() => {
     let cancelled = false;
-    void deepModelEnabled().then((enabled) => {
-      if (!cancelled) setDeepModel(enabled);
+    void answerModelAccess().then((next) => {
+      if (!cancelled) setAccess(next);
     });
     return () => {
       cancelled = true;
@@ -152,7 +153,8 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
                 options={MODEL_OPTIONS.map((option) => ({
                   ...option,
                   icon: <Sparkles aria-hidden="true" size={16} className="text-ui-muted" />,
-                  ...(option.value === 'smart' && !deepModel
+                  ...((option.value === 'smart' && !access.smart) ||
+                  (option.value === 'groq' && !access.groq)
                     ? { disabled: true, tag: 'Turned off' }
                     : {}),
                 }))}

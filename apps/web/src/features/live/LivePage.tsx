@@ -610,6 +610,8 @@ export function LivePage({
           if (!isActive()) return;
           // ADR-0082: words prove the channel hears sound (never a false "can't hear" warning).
           if (text.trim()) silence.current?.heard(channel, Date.now());
+          // ADR-0095: Voice mode pauses while the other person speaks.
+          if (channel === 'them' && text.trim()) dictationRoute.them();
           if (channel === 'you' && dictationRoute.partial(text)) {
             // Words for Kite, not the call: clear any grey "You" line and show nothing.
             transcript.addPartial(channel, '', null);
@@ -660,6 +662,7 @@ export function LivePage({
         onFinal: ({ channel, text, tStart, tEnd, audio, confidence, recent, speechEnd }) => {
           if (!isActive()) return;
           if (text.trim()) silence.current?.heard(channel, Date.now());
+          if (channel === 'them' && text.trim()) dictationRoute.them();
           if (channel === 'you' && dictationRoute.final(text)) {
             // A question dictated to Kite: never a transcript line, never saved or sent later.
             transcript.addPartial(channel, '', null);
@@ -798,6 +801,8 @@ export function LivePage({
       // ADR-0082: words prove the channel hears sound (never a false "can't hear" warning).
       if ((event.type === 'partial' || event.type === 'final') && event.text.trim()) {
         silence.current?.heard(channel, Date.now());
+        // ADR-0095: Voice mode pauses while the other person speaks.
+        if (channel === 'them') dictationRoute.them();
       }
       if (event.type === 'partial') {
         if (channel === 'you' && dictationRoute.partial(event.text)) {

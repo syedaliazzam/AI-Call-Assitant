@@ -194,6 +194,11 @@ export interface CompactState {
   model?: AnswerModel;
   /** ADR-0094: false when an admin has turned the deeper model off (Smart is shown disabled). */
   smartAllowed?: boolean;
+  /**
+   * ADR-0095: true when Groq may be chosen (the server has it and an admin has not turned it off). Absent or
+   * false: "Fastest (Groq)" is shown disabled.
+   */
+  groqAllowed?: boolean;
   /** True while the overlay is the slim script bar (v1.0.2; Ctrl+Alt+S or the ⋮ menu). */
   scriptBar?: boolean;
   /**
@@ -207,6 +212,13 @@ export interface CompactState {
   dictating?: boolean;
   /** Why the last dictation ended without a question (v1.0.3), or null. */
   dictationNotice?: string | null;
+  /**
+   * ADR-0095: Voice mode (hands-free talking to the assistant): 'listening', 'paused' (the other person is
+   * speaking, and 2 s after) or 'off'. Absent from an older live page: the overlay then shows no Voice toggle.
+   */
+  voiceMode?: 'off' | 'listening' | 'paused';
+  /** ADR-0095: true while Voice mode's one-time tip ("Mute yourself in the meeting first…") shows. */
+  voiceTip?: boolean;
   /** When the call connected (Unix ms), for the overlay's call timer (v1.0.3). */
   startedAt?: number;
   /** v1.1.0: the latest transcript bubbles, oldest first. */
@@ -284,7 +296,17 @@ export interface SimpleCommand {
     | 'record-prompt'
     | 'hotkey-settings'
     | 'voice-cancel'
-    | 'dismiss-name';
+    | 'dismiss-name'
+    // ADR-0095: Voice mode's one-time tip was closed.
+    | 'voice-tip-seen';
+}
+
+/** ADR-0095: turns Voice mode (hands-free talking to the assistant) on or off. */
+export interface VoiceModeCommand {
+  /** Command type. */
+  type: 'voice-mode';
+  /** True to turn it on. */
+  on: boolean;
 }
 
 /**
@@ -321,7 +343,7 @@ export interface LanguageCommand {
 export interface ModelCommand {
   /** Command type. */
   type: 'model';
-  /** 'fast' (Claude Haiku) or 'smart' (Claude Sonnet). */
+  /** 'fast' (Claude Haiku), 'smart' (Claude Sonnet) or, ADR-0095, 'groq' (Groq). */
   model: AnswerModel;
 }
 
@@ -468,6 +490,7 @@ export type CompactCommand =
   | ClickThroughCommand
   | DictateCommand
   | VoiceCommand
+  | VoiceModeCommand
   | AnswerThisCommand
   | LanguageCommand
   | AutoAnswerCommand
@@ -622,7 +645,8 @@ export function isCommand(value: unknown): value is CompactCommand {
     command.type === 'script-bar' ||
     command.type === 'click-through' ||
     command.type === 'dictate' ||
-    command.type === 'auto-answer'
+    command.type === 'auto-answer' ||
+    command.type === 'voice-mode'
   ) {
     return typeof (value as { on?: unknown }).on === 'boolean';
   }
@@ -638,7 +662,7 @@ export function isCommand(value: unknown): value is CompactCommand {
   }
   if (command.type === 'model') {
     const model = (value as { model?: unknown }).model;
-    return model === 'fast' || model === 'smart';
+    return model === 'fast' || model === 'smart' || model === 'groq';
   }
   if (command.type === 'mic') {
     const deviceId = (value as { deviceId?: unknown }).deviceId;
@@ -676,6 +700,7 @@ export function isCommand(value: unknown): value is CompactCommand {
     'voice-cancel',
     // ADR-0093: "Not now" on the rename offer.
     'dismiss-name',
+    'voice-tip-seen',
   ].includes(command.type);
 }
 

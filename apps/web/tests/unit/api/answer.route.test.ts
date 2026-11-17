@@ -635,7 +635,8 @@ describe('POST /api/answer, daily limit (v1.0.2, ADR-0036)', () => {
     expect(streamMock).toHaveBeenCalledTimes(1);
     const [, options] = streamMock.mock.calls[0]! as [unknown, { signal: AbortSignal }];
     expect(options.signal.aborted).toBe(true);
-    expect(countRequestMock).toHaveBeenLastCalledWith('u1');
+    // ADR-0095: not a Groq request.
+    expect(countRequestMock).toHaveBeenLastCalledWith('u1', undefined, { groq: false });
   });
 
   it('starts Claude before the daily-limit count has answered (Batch C, P1-2)', async () => {

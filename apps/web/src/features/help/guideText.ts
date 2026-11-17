@@ -67,10 +67,12 @@ During a call the desktop app is a set of slim bars over your screen, with panel
 **Bar 1:**
 
 - **Screen audio and microphone:** a red dot means it is capturing. Each **▾** shows that side's source; the microphone's chooses which one to use.
-- **Move:** the bars have six places: top left, top centre, top right, and the same along the bottom, 16 px from the screen's edges (never under the taskbar). **Ctrl+Alt+Left / Right** jumps one place along the row, **Ctrl+Alt+Up / Down** to the top or bottom row, and **Ctrl+Alt+Shift+Arrows** nudges them a little. Dragging the bar shows the six places; let go and the bars go to the nearest one. **⋮ → Position** has the same six as a small grid. On the bottom row everything is mirrored: the bars sit at the bottom and the panels and menus open above them. **Ctrl+Alt+H** shows or hides the bars, and each screen remembers its own place.
+- **Move:** the bars have six places: top left, top centre, top right, and the same along the bottom, 16 px from the screen's edges (never under the taskbar). **Ctrl+Shift+Left / Right** jumps one place along the row, **Ctrl+Shift+Up / Down** to the top or bottom row (desktop app 1.7.0; before it, Ctrl+Alt+Arrows), and **Ctrl+Alt+Shift+Arrows** nudges them a little. Dragging the bar shows the six places; let go and the bars go to the nearest one. **⋮ → Position** has the same six as a small grid. On the bottom row everything is mirrored: the bars sit at the bottom and the panels and menus open above them. **Ctrl+Alt+H** shows or hides the bars, and each screen remembers its own place.
 - **Transcript:** the **Transcript** switch on bar 1, or **Ctrl+Alt+T** while the bars have focus, turns the live transcript on or off. It is open when a call starts the first time, then stays as you last left it. The switch never leaves the bar, however narrow the window or large the zoom (it becomes an icon when space is short).
 - **Rec** (desktop app 1.5.0): records the meeting; see **Recording a meeting**.
 - **Auto answer** turns on or off answering finished questions by itself.
+- **Model** (the chip next to Auto, or **⋮ → Model**): **Fast (Claude Haiku)**, the default; **Smart (Claude Sonnet)**, more thorough and slower; or **Fastest (Groq)**. It applies from the next answer. Answers from a screenshot always use Claude. If Groq doesn't start an answer within 4 seconds, Claude Haiku answers it instead. An admin can turn Smart or Groq off.
+- **Voice** (the waveform, or **⋮ → Voice**): talk to Paramount AI hands-free. While it is on, each time you pause for about 1.5 seconds what you said is sent as a question and the answer shows; then it keeps listening. Your words aren't added to the transcript and don't count as your reply. It pauses while the other person speaks, and for 2 seconds after. It is off at the start of every call; **Esc** (with Paramount AI in front) or the toggle turns it off. **Mute yourself in the meeting first if others can hear you.**
 - **Click-through** (**Ctrl+Alt+X**): when it is lit, clicks and typing outside the bars go to the app behind; see **Click-through**.
 - **Compact** shrinks everything to a small square with moving level bars. Drag it to move it; click it to bring the bars back. The shortcuts keep working, and an answer starting brings the bars back by itself.
 - The **timer**, **⋮**, and **Exit**, which ends the call and closes the bars at once.
@@ -209,12 +211,12 @@ With Google Drive connected (**Settings → Google Drive**), each call's folder 
 | Click-through on or off | Ctrl+Alt+X | Any app, during a call |
 | Start or stop recording (asks first) | Ctrl+Alt+R | Any app, during a call (desktop app 1.5.0) |
 | Show or hide the bars | Ctrl+Alt+H | Any app, during a call |
-| Move the bars to the next place (← → along the row, ↑ ↓ top or bottom row) | Ctrl+Alt+Arrows | Any app, during a call |
+| Move the bars to the next place (← → along the row, ↑ ↓ top or bottom row) | Ctrl+Shift+Arrows | Any app, during a call (desktop app 1.7.0; before it Ctrl+Alt+Arrows) |
 | Nudge the bars | Ctrl+Alt+Shift+Arrows | Any app, during a call |
 | Transcript on or off | Ctrl+Alt+T | While the bars have focus |
 | Open Ask AI | Ctrl+Alt+K | Any app, while the desktop app runs (during a call it opens in its own window) |
 
-On macOS, Ctrl is ⌘. In a browser, all of them work while the tab has focus. While a call runs in the desktop app (1.6.4), the keys above belong to Paramount AI: for example **Ctrl+Backspace** does not delete a word in another app until the call ends. With an older desktop app, previous / next, the two Clears and zoom work only while Paramount AI is in front.
+On macOS, Ctrl is ⌘. In a browser, all of them work while the tab has focus. While a call runs in the desktop app (1.6.4), the keys above belong to Paramount AI: for example **Ctrl+Backspace** does not delete a word in another app until the call ends. With an older desktop app, previous / next, the two Clears and zoom work only while Paramount AI is in front. **Ctrl+Shift+Arrows** selects text by word in other apps, so it too belongs to Paramount AI only while a call runs.
 
 ## Settings
 

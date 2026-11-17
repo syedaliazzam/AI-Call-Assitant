@@ -92,6 +92,7 @@ import {
   ModelPopover,
   modelSwitchToast,
   SMART_REFUSED_TOAST,
+  GROQ_REFUSED_TOAST,
 } from './overlay/ModelChoice';
 import { OverlayAnswer } from './overlay/OverlayAnswer';
 import { PanelSplit } from './overlay/PanelSplit';
@@ -360,7 +361,13 @@ export function CompactView(props: CompactViewProps) {
     // An admin turned Smart off between the menu opening and the pick: the model stays Fast.
     setPendingModel(null);
     setToast((was) => ({ id: (was?.id ?? 0) + 1, text: SMART_REFUSED_TOAST }));
+  } else if (pendingModel === 'groq' && modelChoice && !modelChoice.groqAllowed) {
+    // ADR-0095: Groq was turned off (or the server has no key) between the menu opening and the pick.
+    setPendingModel(null);
+    setToast((was) => ({ id: (was?.id ?? 0) + 1, text: GROQ_REFUSED_TOAST }));
   }
+  // ADR-0095: Voice mode's one-time tip, where the toast shows (never both at once).
+  const voiceTipShown = (state?.voiceTip ?? false) && !toast && !state?.ended;
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), MODEL_TOAST_MS);
@@ -432,10 +439,11 @@ export function CompactView(props: CompactViewProps) {
     const floating = popupElement.current;
     const forPopup = floating ? extentOf(floating, up, height) + 8 : 0;
     const forBars = noPanels && barsEnd.current ? extentOf(barsEnd.current, up, height) + 2 : 0;
-    // ADR-0094: the model toast floats like a menu, so the window grows for it too while it shows.
+    // ADR-0094: the model toast floats like a menu, so the window grows for it too while it shows (ADR-0095:
+    // and Voice mode's tip, in the same place).
     const forToast = toastElement.current ? extentOf(toastElement.current, up, height) + 8 : 0;
     setNeededHeight(Math.max(forPopup, forBars, forToast) * zoom);
-  }, [popup, noPanels, zoom, zoomPass, collapsed, icon, scriptBar, up, toast]);
+  }, [popup, noPanels, zoom, zoomPass, collapsed, icon, scriptBar, up, toast, voiceTipShown]);
 
   // Desktop 1.5.0 (ADR-0068): the Rec popover sits under its pill.
   useLayoutEffect(() => {
@@ -735,6 +743,8 @@ export function CompactView(props: CompactViewProps) {
                   onClickThrough: (on: boolean) => onCommand({ type: 'click-through', on }),
                 }
               : {})}
+            // ADR-0095: the Voice toggle (hands-free talking to the assistant), where the live page says it.
+            onVoice={(on: boolean) => onCommand({ type: 'voice-mode', on })}
             // ADR-0085: the Transcript switch for every account (it was only with account sync).
             transcriptOpen={panels.transcript}
             onTranscript={(open: boolean) => onPanels({ ...panels, transcript: open })}
@@ -826,6 +836,7 @@ export function CompactView(props: CompactViewProps) {
             ref={popupElement}
             model={modelChoice.model}
             smartAllowed={modelChoice.smartAllowed}
+            groqAllowed={modelChoice.groqAllowed}
             left={modelLeft}
             onSelect={pickModel}
             onClose={() => setPopup(null)}
@@ -842,6 +853,25 @@ export function CompactView(props: CompactViewProps) {
             className="k-overlay-menu pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 w-max max-w-[calc(100%-12px)] -translate-x-1/2 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal"
           >
             {toast.text}
+          </p>
+        )}
+        {voiceTipShown && (
+          // ADR-0095: shown once per device, the first time Voice mode is turned on; drawn in the page like the
+          // toast, so it stays inside the protected window. It hides by itself after a few seconds.
+          <p
+            ref={toastElement}
+            role="status"
+            data-toast="voice-tip"
+            className="k-overlay-menu absolute left-1/2 top-[calc(100%+6px)] z-40 flex w-max max-w-[calc(100%-12px)] -translate-x-1/2 items-center gap-3 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal [-webkit-app-region:no-drag]"
+          >
+            <span>Mute yourself in the meeting first if others can hear you.</span>
+            <button
+              type="button"
+              className="shrink-0 rounded-control px-2 py-0.5 text-[13px] font-semibold text-ui-accent hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+              onClick={() => onCommand({ type: 'voice-tip-seen' })}
+            >
+              Got it
+            </button>
           </p>
         )}
         {(popup === 'audio' || popup === 'mic') && (

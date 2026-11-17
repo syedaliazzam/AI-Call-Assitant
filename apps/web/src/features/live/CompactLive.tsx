@@ -225,9 +225,15 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
       } else channel.current?.send({ type: action });
     });
     // ADR-0082: Escape with the overlay focused cancels a voice question while it listens (a menu that is
-    // open closes first: CompactView's own Escape).
+    // open closes first: CompactView's own Escape). ADR-0095: it also turns Voice mode off.
     const onKey = (event: KeyboardEvent) => {
-      if (!isVoiceCancelKey(event) || !stateRef.current?.dictating) return;
+      if (!isVoiceCancelKey(event)) return;
+      const voice = stateRef.current?.voiceMode;
+      if (voice === 'listening' || voice === 'paused') {
+        channel.current?.send({ type: 'voice-mode', on: false });
+        return;
+      }
+      if (!stateRef.current?.dictating) return;
       channel.current?.send({ type: 'voice-cancel' });
     };
     target.addEventListener('keydown', onKey);

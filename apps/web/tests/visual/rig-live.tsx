@@ -215,6 +215,8 @@ function CallRig() {
   // Dictation's state only: the rig has no speech engine, so nothing is ever heard.
   const [listening, setListening] = useState(false);
   const setOnText = useCallback(() => undefined, []);
+  // ADR-0095: Voice mode's state only (nothing is ever heard here either).
+  const [voice, setVoiceState] = useState<'off' | 'listening' | 'paused'>('off');
   const dictation = useMemo(
     () => ({
       supported: true,
@@ -223,8 +225,10 @@ function CallRig() {
       start: () => setListening(true),
       stop: () => setListening(false),
       setOnText,
+      voice,
+      setVoice: (on: boolean) => setVoiceState(on ? 'listening' : 'off'),
     }),
-    [listening, setOnText],
+    [listening, setOnText, voice],
   );
   const meters = (['you', 'them'] as const).map((speaker) => (
     <AudioMeter

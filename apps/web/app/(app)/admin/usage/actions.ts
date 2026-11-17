@@ -1,7 +1,7 @@
 /**
  * File: apps/web/app/(app)/admin/usage/actions.ts
- * Purpose: Server actions behind Admin → Usage: set the daily limit (v1.0.2, ADR-0036) and the deeper
- *          model's switch (v1.2.0, spec §6). Check the
+ * Purpose: Server actions behind Admin → Usage: set the daily limit (v1.0.2, ADR-0036), the deeper
+ *          model's switch (v1.2.0, spec §6) and Groq's switch (ADR-0095). Check the
  *          caller is an admin (layouts do not protect actions), validates with zod, saves through
  *          src/server/usage.ts and returns a result; errors are returned, never thrown to the UI.
  * Used by: app/(app)/admin/usage/page.tsx (passed to DailyLimitForm)
@@ -14,7 +14,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import type { DailyLimitState } from '@/features/admin/usageTypes';
 import { requireAdmin } from '@/server/guard';
-import { setDeepModelEnabled } from '@/server/modelAccess';
+import { setDeepModelEnabled, setGroqEnabled } from '@/server/modelAccess';
 import { DAILY_LIMIT_RANGE, setDailyLimit } from '@/server/usage';
 
 /** The page this action changes; refreshed after a successful change. */
@@ -83,6 +83,33 @@ export async function setDeepModelAction(enabled: boolean): Promise<boolean> {
     return false;
   }
   console.info('admin: deep model set', { userId: session.user.id, enabled });
+  revalidatePath(USAGE_PATH);
+  return true;
+}
+
+/**
+ * ADR-0095: turns Groq ("Fastest (Groq)") on or off for sessions.
+ *
+ * @param enabled The new state.
+ * @returns True when saved.
+ * Called from: the Groq DeepModelSwitch on app/(app)/admin/usage/page.tsx
+ */
+export async function setGroqModelAction(enabled: boolean): Promise<boolean> {
+  const session = await requireAdmin();
+  // A server action's argument comes from the browser: take only a real boolean.
+  if (typeof enabled !== 'boolean') return false;
+  try {
+    await setGroqEnabled(enabled);
+  } catch (error) {
+    // Ids and the error's name only.
+    console.error('admin action failed', {
+      action: 'setGroqModel',
+      userId: session.user.id,
+      reason: error instanceof Error ? error.message : 'unknown',
+    });
+    return false;
+  }
+  console.info('admin: groq model set', { userId: session.user.id, enabled });
   revalidatePath(USAGE_PATH);
   return true;
 }

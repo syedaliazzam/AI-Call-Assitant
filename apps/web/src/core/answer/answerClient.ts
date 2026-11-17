@@ -14,10 +14,10 @@
 import type {
   AnswerErrorCode,
   AnswerMeta,
+  AnswerModel,
   AnswerRequest,
   AnswerTimings,
   AnswerUsage,
-  ModelTier,
 } from '@kite/shared';
 import { holdSyncForAnswer } from '../sync/foreground';
 
@@ -33,9 +33,14 @@ export interface AnswerDone {
   msTotal: number;
   /**
    * ADR-0094: the tier that really answered (the server's, after the admin's switch); absent when the
-   * server did not say (an older server).
+   * server did not say (an older server). ADR-0095: 'groq' when Groq answered.
    */
-  model?: ModelTier;
+  model?: AnswerModel;
+  /**
+   * ADR-0095: why a Groq answer was answered by Claude Haiku instead ('timeout', 'error', 'empty'); absent
+   * when it was not.
+   */
+  fallback?: 'timeout' | 'error' | 'empty';
 }
 
 /** A failed answer. */
@@ -223,9 +228,14 @@ export function streamAnswer(
           serverMs: payload.ms as AnswerTimings,
           msToFirstText: Math.round((firstTextAt ?? doneAt) - startedAt),
           msTotal: Math.round(doneAt - startedAt),
-          // ADR-0094: only a known tier is passed on.
-          ...(payload.model === 'fast' || payload.model === 'smart'
+          // ADR-0094: only a known tier is passed on (ADR-0095: Groq too, and why it fell back).
+          ...(payload.model === 'fast' || payload.model === 'smart' || payload.model === 'groq'
             ? { model: payload.model }
+            : {}),
+          ...(payload.fallback === 'timeout' ||
+          payload.fallback === 'error' ||
+          payload.fallback === 'empty'
+            ? { fallback: payload.fallback }
             : {}),
         }),
       );

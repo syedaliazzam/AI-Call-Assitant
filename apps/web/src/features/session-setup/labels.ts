@@ -41,12 +41,14 @@ export const STATUS_LABELS: Record<SessionStatus, string> = {
 };
 
 /**
- * The model choices (spec S5). Stored as 'fast' and 'smart'; the server maps those to the real model
- * names from its environment and rejects anything else. These are the words a person reads.
+ * The model choices (spec S5; ADR-0095 adds Groq and names each by its speed first). Stored as 'fast', 'smart'
+ * and 'groq'; the server maps those to the real model names from its environment and rejects anything else.
+ * These are the words a person reads, the same here, in AI preferences and in the overlay.
  */
 export const MODEL_OPTIONS: readonly { value: AnswerModel; label: string; tag: string }[] = [
-  { value: 'fast', label: 'Claude Haiku 5.5', tag: 'Recommended' },
-  { value: 'smart', label: 'Claude Sonnet 5.5', tag: 'Deeper, slower' },
+  { value: 'fast', label: 'Fast (Claude Haiku)', tag: 'Recommended' },
+  { value: 'smart', label: 'Smart (Claude Sonnet)', tag: 'Deeper, slower' },
+  { value: 'groq', label: 'Fastest (Groq)', tag: 'Quickest' },
 ];
 
 /** One choice of how answers look, as a radio card shows it. */

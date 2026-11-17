@@ -120,10 +120,17 @@ export interface RequestCount {
  *
  * @param userId The signed-in user's id.
  * @param now    The time (tests pass one).
+ * @param options.groq True for a live answer sent to Groq (ADR-0095): also counted in groq_requests.
  * @returns See RequestCount.
  * Called from: the Claude routes (app/api/answer, notes, ask, prepare, job-import)
  */
-export async function countRequest(userId: string, now: Date = new Date()): Promise<RequestCount> {
+export async function countRequest(
+  userId: string,
+  now: Date = new Date(),
+  options: { groq?: boolean } = {},
+): Promise<RequestCount> {
+  // ADR-0095: a Groq request also counts in groq_requests, in the same statement (still one round trip).
+  const groq = options.groq ? 1 : 0;
   const startedAt = performance.now();
   const ms = () => Math.round(performance.now() - startedAt);
   try {
@@ -132,10 +139,13 @@ export async function countRequest(userId: string, now: Date = new Date()): Prom
       getDailyLimit(now.getTime()),
       db
         .insert(usageDay)
-        .values({ userId, day: utcDay(now), requests: 1 })
+        .values({ userId, day: utcDay(now), requests: 1, groqRequests: groq })
         .onConflictDoUpdate({
           target: [usageDay.userId, usageDay.day],
-          set: { requests: sql`${usageDay.requests} + 1` },
+          set: {
+            requests: sql`${usageDay.requests} + 1`,
+            groqRequests: sql`${usageDay.groqRequests} + ${groq}`,
+          },
         })
         .returning({ requests: usageDay.requests }),
     ]);
@@ -163,6 +173,10 @@ export interface UsageRow {
   today: number;
   /** Claude requests over the report's days, today included. */
   lastDays: number;
+  /** ADR-0095: of today's requests, how many went to Groq. */
+  groqToday: number;
+  /** ADR-0095: of the period's requests, how many went to Groq. */
+  groqLastDays: number;
 }
 
 /**
@@ -176,7 +190,7 @@ export interface UsageRow {
  */
 export function buildUsageReport(
   users: readonly { id: string; name: string; email: string }[],
-  counts: readonly { userId: string; day: string; requests: number }[],
+  counts: readonly { userId: string; day: string; requests: number; groqRequests?: number }[],
   today: string,
 ): UsageRow[] {
   const rows = users.map((account) => {
@@ -187,6 +201,10 @@ export function buildUsageReport(
       email: account.email,
       today: mine.filter((count) => count.day === today).reduce((sum, c) => sum + c.requests, 0),
       lastDays: mine.reduce((sum, count) => sum + count.requests, 0),
+      groqToday: mine
+        .filter((count) => count.day === today)
+        .reduce((sum, c) => sum + (c.groqRequests ?? 0), 0),
+      groqLastDays: mine.reduce((sum, count) => sum + (count.groqRequests ?? 0), 0),
     };
   });
   return rows.sort((a, b) => b.lastDays - a.lastDays || a.name.localeCompare(b.name));
@@ -206,7 +224,12 @@ export async function usageReport(days = 7, now: Date = new Date()): Promise<Usa
   const [accounts, counts] = await Promise.all([
     db.select({ id: user.id, name: user.name, email: user.email }).from(user),
     db
-      .select({ userId: usageDay.userId, day: usageDay.day, requests: usageDay.requests })
+      .select({
+        userId: usageDay.userId,
+        day: usageDay.day,
+        requests: usageDay.requests,
+        groqRequests: usageDay.groqRequests,
+      })
       .from(usageDay)
       .where(gte(usageDay.day, utcDay(first))),
   ]);

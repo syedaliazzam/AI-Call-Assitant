@@ -1,7 +1,8 @@
 /**
  * File: apps/web/src/features/admin/UsageTable.tsx
- * Purpose: The Admin → Usage table: Claude requests per user today and over the last 7 days, with
- *          who is at the daily limit (v1.0.2, ADR-0036). Counts only; no text.
+ * Purpose: The Admin → Usage table: AI requests per user today and over the last 7 days, with
+ *          who is at the daily limit (v1.0.2, ADR-0036), and how many of them went to Groq (ADR-0095). Counts
+ *          only; no text.
  * Used by: app/(app)/admin/usage/page.tsx
  * Depends on: src/features/admin/usageTypes.ts
  * Architecture: docs/decisions/ADR-0036-daily-limit-and-usage-counts.md
@@ -33,12 +34,14 @@ export function UsageTable({ rows, limit }: UsageTableProps) {
             <th className="px-4 py-3 font-semibold">Email</th>
             <th className="px-4 py-3 text-right font-semibold">Today</th>
             <th className="px-4 py-3 text-right font-semibold">Last 7 days</th>
+            {/* ADR-0095: included in the two counts before it. */}
+            <th className="px-4 py-3 text-right font-semibold">Groq today / 7 days</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-ui-border">
           {rows.length === 0 && (
             <tr>
-              <td colSpan={4} className="px-4 py-3 text-ui-muted">
+              <td colSpan={5} className="px-4 py-3 text-ui-muted">
                 No accounts yet.
               </td>
             </tr>
@@ -57,6 +60,9 @@ export function UsageTable({ rows, limit }: UsageTableProps) {
                 )}
               </td>
               <td className="px-4 py-3 text-right tabular-nums text-ui-text">{row.lastDays}</td>
+              <td className="px-4 py-3 text-right tabular-nums text-ui-text">
+                {row.groqToday} / {row.groqLastDays}
+              </td>
             </tr>
           ))}
         </tbody>

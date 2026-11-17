@@ -9,7 +9,12 @@
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (data model), §8.1 (where
  *               data lives); day-03-sessions.md Stage 1
  */
-import type { AnswerMeta, BankGroup, CallNotes } from '@kite/shared';
+import type {
+  AnswerMeta,
+  AnswerModel as SharedAnswerModel,
+  BankGroup,
+  CallNotes,
+} from '@kite/shared';
 
 /** What kind of call a session is for (the dashboard's type filter tabs). */
 export type SessionType = 'interview' | 'regular' | 'mock';
@@ -26,8 +31,11 @@ export const SESSION_TYPES: readonly SessionType[] = ['interview', 'regular', 'm
  */
 export type SessionStatus = 'not-started' | 'live' | 'ended';
 
-/** Which Claude model answers: 'fast' = Haiku (live answers), 'smart' = Sonnet. */
-export type AnswerModel = 'fast' | 'smart';
+/**
+ * Which model answers: 'fast' = Claude Haiku (the default), 'smart' = Claude Sonnet, 'groq' = Groq
+ * (ADR-0095). The shared type, so the request, the done event and the records agree.
+ */
+export type AnswerModel = SharedAnswerModel;
 
 /** How answers are laid out (architecture §7.2 "style"). */
 export interface AnswerStyle {

@@ -27,9 +27,9 @@
 import {
   DEFAULT_SCREENSHOT_QUESTION,
   type AnswerMeta,
+  type AnswerModel,
   type AnswerType,
   type AnswerUsage,
-  type ModelTier,
   type TargetChoice,
 } from '@kite/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -175,7 +175,7 @@ export interface AnswerEntry {
    * The model tier used: the session's when it was asked, replaced by the server's own when it finishes
    * (ADR-0094: an admin may have turned the deeper model off).
    */
-  model: ModelTier;
+  model: AnswerModel;
   /** Where the time went (set when it finished). */
   timeline?: AnswerTimeline;
   /** Token counts (set when it finished). */
@@ -682,7 +682,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   // after the switch reads the cache instead of writing it. Not on the first render: the call's own
   // warm-up (Connect) covers the model it started with. warmInputRef already holds the new session: its
   // effect is declared above, so it runs first.
-  const modelNow = session.preferences.model;
+  // ADR-0095: a Groq session's Claude parts (screenshots, the fallback) use Haiku, so Fast and Groq share one
+  // cache: switching between them needs no warm-up.
+  const modelNow = session.preferences.model === 'smart' ? 'smart' : 'fast';
   const warmedModel = useRef(modelNow);
   useEffect(() => {
     if (warmedModel.current === modelNow) return;
@@ -1278,8 +1280,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             cacheRead: done.usage?.cache_read_input_tokens ?? 0,
             cacheWrite: done.usage?.cache_creation_input_tokens ?? 0,
             inputTokens: done.usage?.input_tokens ?? 0,
-            // ADR-0094: the tier that really answered, as the server says.
+            // ADR-0094: the tier that really answered, as the server says (ADR-0095: and a Groq fallback).
             ...(done.model ? { model: done.model } : {}),
+            ...(done.fallback ? { fallback: done.fallback } : {}),
           });
           // Not an answer: nothing to keep, send later or save.
           if (dropped(meta?.type)) return;
@@ -1326,6 +1329,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
               answerId: entry.id,
               mode,
               model: done.model ?? entry.model,
+              ...(done.fallback ? { fallback: done.fallback } : {}),
               ...timeline,
               cacheRead: done.usage.cache_read_input_tokens,
               cacheWrite: done.usage.cache_creation_input_tokens,

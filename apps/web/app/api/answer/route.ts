@@ -13,7 +13,8 @@
  *             src/server/usage.ts (the daily limit, ADR-0036), src/server/aiInstructions.ts (the admin's
  *             global prompt, ADR-0089, from the call's pinned version, ADR-0083)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6 (answer flow), §7.2 (/api/answer);
- *               day-04-answers.md Stage 3
+ *               day-04-answers.md Stage 3; ADR-0095 (Groq as a third answer model, with Claude Haiku as
+ *               its fallback: src/server/groq.ts)
  *
  * The reply must stream, not be collected and sent at the end: "time to first word" is the main
  * latency number, and buffering would turn it into "time to last word". Each Claude text piece
@@ -25,6 +26,7 @@
 import type {
   AnswerErrorCode,
   AnswerEvent,
+  AnswerModel,
   AnswerRequest,
   AnswerTimings,
   ModelTier,
@@ -45,13 +47,20 @@ import {
   type ContractStats,
   type ReplyItem,
 } from '@/server/answer-meta';
-import { getClaudeEnv } from '@/server/env';
+import { getClaudeEnv, getGroqEnv } from '@/server/env';
+import {
+  GROQ_FIRST_TOKEN_MS,
+  GroqError,
+  streamGroqReply,
+  withFirstTokenFallback,
+  type FallbackReason,
+} from '@/server/groq';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { companySettings, type BlockSettings } from '@/server/aiInstructions';
 import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
 import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts/hello';
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
-import { allowedTier, getDeepModelEnabled } from '@/server/modelAccess';
+import { allowedTier, getDeepModelEnabled, getGroqEnabled } from '@/server/modelAccess';
 import { countRequest } from '@/server/usage';
 import { MAX_REQUEST_BYTES, parseAnswerRequest } from '@/server/validate';
 import { readRequestText } from '@/server/requestBody';
@@ -220,14 +229,34 @@ async function respond(
           companyBlock === 'live' ? data.instructionsVersion : undefined,
         );
 
-  // Ask Kite has no call to keep up with, so it defaults to the smart model (ADR-0030).
-  const wanted: ModelTier = data.model ?? (mode === 'kite' ? 'smart' : 'fast');
-  // A session's deeper model can be turned off by an admin (spec §6): its calls keep working on the
-  // fast one. Ask AI's page has no per-session model. Reads the setting only for such a request.
-  const tier: ModelTier =
-    wanted === 'smart' && mode !== 'kite'
-      ? allowedTier(wanted, await getDeepModelEnabled())
-      : wanted;
+  // Ask Kite has no call to keep up with, so it defaults to the smart model (ADR-0030). ADR-0095: Ask AI keeps
+  // its Claude model, so a Groq request there is answered as Ask AI's default.
+  const wanted: AnswerModel =
+    mode === 'kite'
+      ? data.model === 'groq'
+        ? 'smart'
+        : (data.model ?? 'smart')
+      : (data.model ?? 'fast');
+  // A session's deeper model, and Groq (ADR-0095), can be turned off by an admin (spec §6): its calls keep
+  // working on the fast one. Ask AI's page has no per-session model. Reads a setting only for such a request.
+  const chosen: AnswerModel =
+    mode === 'kite'
+      ? wanted
+      : allowedTier(
+          wanted,
+          wanted === 'smart' ? await getDeepModelEnabled() : true,
+          wanted === 'groq' ? await getGroqEnabled() : false,
+        );
+  // ADR-0095: Groq answers text questions only. Screenshots and anything with an image, warm-ups and the hello
+  // test always use Claude (Haiku for a Groq session, which is also what a Groq answer falls back to, so the
+  // warm-up writes the cache the fallback and the screenshots read). The user is shown nothing about it.
+  const groqEnv =
+    chosen === 'groq' && (mode === 'answer' || mode === 'chat') && !data.image
+      ? getGroqEnv()
+      : null;
+  const tier: ModelTier = chosen === 'smart' ? 'smart' : 'fast';
+  // ADR-0095: why a Groq answer moved to Claude Haiku (null while it has not).
+  let fallback: FallbackReason | null = null;
   let model: string;
   try {
     const env = getClaudeEnv();
@@ -245,7 +274,10 @@ async function respond(
   // (one database round trip, 30–100 ms, no longer in front of Claude's first token). Over the limit, the
   // Claude request is stopped at once and the reply is the same 429 as before: no text is ever sent. Its
   // time is logged as msLimit.
-  const counting = COUNTED_MODES.has(mode) ? countRequest(session.user.id) : null;
+  // ADR-0095: a Groq answer is also counted as a Groq request (Admin → Usage).
+  const counting = COUNTED_MODES.has(mode)
+    ? countRequest(session.user.id, undefined, { groq: groqEnv !== null })
+    : null;
   // Stops Claude when the request is over the daily limit.
   const overLimit = new AbortController();
 
@@ -308,21 +340,61 @@ async function respond(
       mode === 'kite'
         ? buildKiteChatPrompt(data, company.globalPrompt)
         : buildPrompt(data, company.globalPrompt);
+    const maxTokens = mode === 'kite' ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS;
+    // The answer from Claude (the session's tier; Haiku for a Groq session).
+    const claudeReply = () =>
+      streamReply({
+        model,
+        tier,
+        system: prompt.system,
+        messages: prompt.messages,
+        maxTokens,
+        signal,
+        onStreamOpen: markOpen,
+      });
+    // ADR-0095: Groq gets the same prompt (locked contract, global prompt, preferences, end reminder). When it
+    // fails or sends no first token within 4 s, the same answer is asked of Claude Haiku, and that is recorded.
+    const reply = groqEnv
+      ? withFirstTokenFallback(
+          (stop) =>
+            streamGroqReply({
+              apiKey: groqEnv.apiKey,
+              model: groqEnv.model,
+              system: prompt.system,
+              messages: prompt.messages,
+              maxTokens,
+              signal: AbortSignal.any([signal, stop]),
+              onStreamOpen: markOpen,
+            }),
+          () => {
+            // The timings then describe Claude's stream, the one that answered.
+            streamOpenAt = null;
+            return claudeReply();
+          },
+          {
+            firstTokenMs: GROQ_FIRST_TOKEN_MS,
+            signal,
+            onFallback: (reason, error) => {
+              fallback = reason;
+              // Ids, the reason and Groq's HTTP status only.
+              console.warn('answer: groq fallback to haiku', {
+                requestId,
+                userId: session.user.id,
+                mode,
+                reason,
+                status: error instanceof GroqError ? error.status : undefined,
+                error: error instanceof Error ? error.name : undefined,
+              });
+            },
+          },
+        )
+      : claudeReply();
     // The hidden first line becomes its own event, so the first delta is the first real word.
     // ADR-0089: a reply that breaks the contract still shows cleanly: the default type when the hidden
-    // first line is missing, stray tags taken out; the counts go in this request's log line.
+    // first line is missing, stray tags taken out; the counts go in this request's log line. ADR-0095: the
+    // same for a Groq reply.
     source = withContractFallback(
-      withAnswerMeta(
-        streamReply({
-          model,
-          tier,
-          system: prompt.system,
-          messages: prompt.messages,
-          maxTokens: mode === 'kite' ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS,
-          signal,
-          onStreamOpen: markOpen,
-        }),
-      ),
+      withAnswerMeta(reply),
       {
         type: 'other',
         target: mode === 'kite' || data.target === 'kite' ? 'kite' : 'call',
@@ -364,11 +436,15 @@ async function respond(
         toFirstText: elapsed(startedAt, firstTextAt),
         total: elapsed(startedAt, doneAt),
       };
+      // ADR-0095: the model that really answered (Groq, or Claude after a fallback or for an image).
+      const answeredBy: AnswerModel = groqEnv && fallback === null ? 'groq' : tier;
       console.info('answer: done', {
         requestId,
         userId: session.user.id,
         mode,
-        model,
+        model: answeredBy === 'groq' && groqEnv ? groqEnv.model : model,
+        answerModel: answeredBy,
+        ...(fallback ? { fallback } : {}),
         ...context,
         ...(mode === 'warm' || mode === 'hello' ? {} : { contract }),
         stopReason: result.stopReason,
@@ -379,19 +455,32 @@ async function respond(
         return { type: 'error', code: 'refused', message: 'Claude declined to answer this.' };
       }
       // ADR-0094: the tier used (after the admin's switch), so the browser records what really answered.
-      return { type: 'done', usage: result.usage, ms, model: tier };
+      // ADR-0095: 'groq' when Groq answered, with the fallback's reason when Claude Haiku did instead.
+      return {
+        type: 'done',
+        usage: result.usage,
+        ms,
+        model: answeredBy,
+        ...(fallback ? { fallback } : {}),
+      };
     },
     onError: (error): AnswerEvent => {
-      const described = describeClaudeError(error);
+      // ADR-0095: an error after Groq's first words (no fallback then: they were already shown).
+      const described =
+        error instanceof GroqError
+          ? { code: 'upstream_error' as const, message: 'The answer model returned an error.' }
+          : describeClaudeError(error);
       console.error('answer: failed', {
         requestId,
         userId: session.user.id,
         mode,
-        model,
+        model: groqEnv && fallback === null ? groqEnv.model : model,
+        ...(groqEnv ? { answerModel: fallback === null ? 'groq' : 'fast' } : {}),
+        ...(fallback ? { fallback } : {}),
         ...context,
         ...(mode === 'warm' || mode === 'hello' ? {} : { contract }),
         code: described.code,
-        ...errorLogDetails(error),
+        ...(error instanceof GroqError ? { status: error.status } : errorLogDetails(error)),
         msAuth: elapsed(startedAt, authDoneAt),
         msToStreamOpen: streamOpenAt === null ? null : elapsed(startedAt, streamOpenAt),
         msElapsed: elapsed(startedAt, performance.now()),

@@ -34,7 +34,7 @@ import { isUnclearGroup } from '@/core/transcript/unclear';
 import { AnswerPreferencesDialog } from '@/features/session-setup/AnswerPreferencesDialog';
 import type { MenuItem } from '@/ui/Menu';
 import { updateSessionPreferences } from '@/core/storage/sessions';
-import { deepModelEnabled } from '@/core/session/modelAccess';
+import { answerModelAccess } from '@/core/session/modelAccess';
 import { callTimings } from '@/core/live/callTimings';
 import {
   clampStep,
@@ -190,6 +190,9 @@ const HEADPHONES_HINT_AFTER = 3;
  */
 const LEVELS_EVERY_MS = 250;
 
+/** ADR-0095: how long Voice mode's one-time tip stays up by itself, in ms. */
+const VOICE_TIP_MS = 8_000;
+
 /** What the transcript's "Answer this" buttons need from the answers (v1.0.2). */
 export interface AnswerThisBridge {
   /**
@@ -263,10 +266,17 @@ export function LiveAnswers(props: LiveAnswersProps) {
   // ADR-0094: false once the server says an admin has turned the deeper model off (Smart then shows
   // disabled in the overlay). The server enforces it on every answer whatever this says.
   const [smartAllowed, setSmartAllowed] = useState(true);
+  // ADR-0095: true once the server says Groq may be used ("Fastest (Groq)" is disabled until then).
+  const [groqAllowed, setGroqAllowed] = useState(false);
+  // ADR-0095: whether the server has answered yet (a Groq session shows Fastest until it says Groq is off).
+  const [groqKnown, setGroqKnown] = useState(false);
   useEffect(() => {
     let active = true;
-    void deepModelEnabled().then((enabled) => {
-      if (active) setSmartAllowed(enabled);
+    void answerModelAccess().then((access) => {
+      if (!active) return;
+      setSmartAllowed(access.smart);
+      setGroqAllowed(access.groq);
+      setGroqKnown(true);
     });
     return () => {
       active = false;
@@ -278,8 +288,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
     [props.session, style, model],
   );
   // ADR-0094: what the overlay shows: Fast when Smart is asked for but turned off (the server answers with
-  // the fast model then).
-  const shownModel: AnswerModel = model === 'smart' && !smartAllowed ? 'fast' : model;
+  // the fast model then). ADR-0095: the same for Groq once the server has said it is off.
+  const shownModel: AnswerModel =
+    (model === 'smart' && !smartAllowed) || (model === 'groq' && !groqAllowed && groqKnown)
+      ? 'fast'
+      : model;
   // The chat box's switch, remembered per session (ADR-0030).
   const [chatTarget, setTarget] = useState<TargetChoice>(() => getChatTarget(props.session.id));
   // Grows with each press of the Ask Kite shortcut, so the overlay opens its chat box too.
@@ -288,6 +301,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
   // v1.1.0: the overlay's ⋮ can turn auto-answer on or off for this call.
   const [autoChoice, setAutoChoice] = useState<boolean | null>(null);
   const [headphonesClosed, setHeadphonesClosed] = useState(false);
+  // ADR-0095: Voice mode's one-time tip, shown when it is first turned on on this device.
+  const [voiceTip, setVoiceTip] = useState(false);
   const answers = useLiveAnswers({
     chatTarget,
     session,
@@ -463,11 +478,16 @@ export function LiveAnswers(props: LiveAnswersProps) {
       style,
       model: shownModel,
       smartAllowed,
+      groqAllowed,
       scriptBar,
       clickThrough,
       dictationSupported: props.dictation?.supported ?? false,
       dictating: props.dictation?.listening ?? false,
       dictationNotice: props.dictation?.notice ?? null,
+      // ADR-0095: only where dictation works in this call (the microphone is running).
+      ...(props.dictation?.supported
+        ? { voiceMode: props.dictation?.voice ?? 'off', voiceTip }
+        : {}),
       startedAt: props.callStartedAt,
       ...(recordingCompact ? { recording: recordingCompact } : {}),
     };
@@ -493,6 +513,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     props.dictation?.supported,
     props.dictation?.listening,
     props.dictation?.notice,
+    props.dictation?.voice,
+    voiceTip,
     questionClearedAt,
     terms,
     entry,
@@ -509,6 +531,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     style,
     shownModel,
     smartAllowed,
+    groqAllowed,
   ]);
   const compactStateRef = useRef(compactState);
   const channel = useRef<LiveChannel | null>(null);
@@ -524,7 +547,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
    * the next answer (one already streaming finishes on the model it was sent with), is saved as the
    * session's model (so AI preferences show it afterwards; this device's session only, never another
    * user's or the global settings), and the new model's prompt cache is warmed in the background
-   * (useLiveAnswers). Smart is asked of the server first: when an admin has turned it off, nothing
+   * (useLiveAnswers). Smart and Groq (ADR-0095) are asked of the server first: when one is off, nothing
    * changes and the overlay shows it disabled.
    *
    * @param next The model picked.
@@ -540,9 +563,11 @@ export function LiveAnswers(props: LiveAnswersProps) {
       apply();
       return;
     }
-    void deepModelEnabled().then((enabled) => {
-      setSmartAllowed(enabled);
-      if (enabled) apply();
+    void answerModelAccess().then((access) => {
+      setSmartAllowed(access.smart);
+      setGroqAllowed(access.groq);
+      setGroqKnown(true);
+      if (next === 'smart' ? access.smart : access.groq) apply();
     });
   });
   /**
@@ -566,6 +591,14 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const voiceQuestion = useRef(async (withScreenshot: boolean) => {
     const dictation = dictationRef.current;
     if (!dictation?.supported) return;
+    // ADR-0095: Voice mode already listens for every question. Ctrl+Alt+Enter then takes the screenshot, and
+    // the next question spoken goes with it; Ctrl+Shift+Space has nothing to start.
+    if (dictation.voice !== 'off') {
+      if (!withScreenshot) return;
+      const image = await actions.current.captureScreen();
+      if (image) voiceShot.current = image;
+      return;
+    }
     if (dictation.listening) {
       voiceShot.current = null;
       dictation.stop();
@@ -579,6 +612,31 @@ export function LiveAnswers(props: LiveAnswersProps) {
       voiceShot.current = image;
     }
     dictationRef.current?.start(voiceQuestionTarget(chatTargetRef.current));
+  });
+  /**
+   * ADR-0095: turns Voice mode on or off (bar 1's Voice toggle, the ⋮ menu, Escape). Its questions go where a
+   * voice question's go (the setOnText handler below). The first time on this device it shows the tip
+   * "Mute yourself in the meeting first if others can hear you". Off by default in every call: the state
+   * lives in the call's dictation, which starts off.
+   *
+   * @param on True to turn it on.
+   */
+  const setVoiceMode = useRef((on: boolean) => {
+    const dictation = dictationRef.current;
+    if (!dictation?.supported) return;
+    voiceShot.current = null;
+    if (!on) {
+      dictation.setVoice(false, 'auto');
+      setVoiceTip(false);
+      callTimings.noteTrace('voice-mode', { on: false });
+      return;
+    }
+    dictation.setVoice(true, voiceQuestionTarget(chatTargetRef.current));
+    callTimings.noteTrace('voice-mode', { on: true });
+    if (!hintSeen('voice-mode')) {
+      markHintSeen('voice-mode');
+      setVoiceTip(true);
+    }
   });
   /** ADR-0082: Escape (or the shell's held Escape) while a voice question listens: stop, send nothing. */
   const cancelVoice = useRef(() => {
@@ -674,6 +732,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
         if (command.on) dictationRef.current?.start(chatTargetRef.current);
         else dictationRef.current?.stop();
       } else if (command.type === 'voice') void voiceQuestion.current(command.screenshot);
+      // ADR-0095: Voice mode, and its tip closed.
+      else if (command.type === 'voice-mode') setVoiceMode.current(command.on);
+      else if (command.type === 'voice-tip-seen') setVoiceTip(false);
       else if (command.type === 'voice-cancel') cancelVoice.current();
       else if (command.type === 'prev') actions.current.prev();
       else if (command.type === 'next') actions.current.next();
@@ -833,6 +894,28 @@ export function LiveAnswers(props: LiveAnswersProps) {
       window.removeEventListener('keydown', onKey, true);
     };
   }, [listening]);
+
+  // ADR-0095: while Voice mode is on, Escape in this window turns it off. Escape is not held from other apps
+  // for it: Voice mode can stay on for a long time, and Escape belongs to the meeting app meanwhile.
+  const voiceOn = (props.dictation?.voice ?? 'off') !== 'off';
+  useEffect(() => {
+    if (!voiceOn) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!isVoiceCancelKey(event)) return;
+      // Before the Escape that goes back to the overlay.
+      event.preventDefault();
+      setVoiceMode.current(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [voiceOn]);
+
+  // ADR-0095: the tip hides by itself after a while (it was marked seen when shown).
+  useEffect(() => {
+    if (!voiceTip) return;
+    const timer = setTimeout(() => setVoiceTip(false), VOICE_TIP_MS);
+    return () => clearTimeout(timer);
+  }, [voiceTip]);
 
   // ADR-0082: Ctrl+Alt+Enter is a call shortcut. A desktop app from 1.2.0 to 1.6.3 holds it only while the
   // page asks (it was the chat bar's key), so the page asks for the whole call; 1.6.4 holds it anyway.

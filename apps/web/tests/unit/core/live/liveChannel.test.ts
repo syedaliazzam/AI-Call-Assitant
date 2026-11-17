@@ -128,6 +128,12 @@ describe('isCommand and isState', () => {
   it('ADR-0094: accepts a model switch only to an allowed tier', () => {
     expect(isCommand({ type: 'model', model: 'fast' })).toBe(true);
     expect(isCommand({ type: 'model', model: 'smart' })).toBe(true);
+    // ADR-0095: Groq is a third choice; Voice mode and its tip are commands too.
+    expect(isCommand({ type: 'model', model: 'groq' })).toBe(true);
+    expect(isCommand({ type: 'model', model: 'gpt' })).toBe(false);
+    expect(isCommand({ type: 'voice-mode', on: true })).toBe(true);
+    expect(isCommand({ type: 'voice-mode', on: 'yes' })).toBe(false);
+    expect(isCommand({ type: 'voice-tip-seen' })).toBe(true);
     // Never a model name: the server maps tiers to names.
     expect(isCommand({ type: 'model', model: 'claude-opus-5-5' })).toBe(false);
     expect(isCommand({ type: 'model' })).toBe(false);
