@@ -148,6 +148,25 @@ describe('streamOpenAIReply', () => {
     expect((calls[0]!.init.headers as Record<string, string>).authorization).toBe('Bearer sk-test');
   });
 
+  it('asks for priority processing only when told to (ADR-0099 measurement)', async () => {
+    const { fetchImpl, calls } = sseFetch(['data: {"choices":[{"delta":{"content":"x"}}]}']);
+    await drain(
+      streamOpenAIReply({
+        apiKey: 'k',
+        model: 'm',
+        ...PROMPT,
+        maxTokens: 10,
+        serviceTier: 'priority',
+        fetchImpl,
+      }),
+    );
+    await drain(
+      streamOpenAIReply({ apiKey: 'k', model: 'm', ...PROMPT, maxTokens: 10, fetchImpl }),
+    );
+    expect(JSON.parse(String(calls[0]!.init.body))).toMatchObject({ service_tier: 'priority' });
+    expect(JSON.parse(String(calls[1]!.init.body))).not.toHaveProperty('service_tier');
+  });
+
   it('sends no prompt_cache_key outside a call', async () => {
     const { fetchImpl, calls } = sseFetch(['data: {"choices":[{"delta":{"content":"x"}}]}']);
     await drain(

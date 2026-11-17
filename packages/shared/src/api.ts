@@ -436,6 +436,12 @@ export interface AnswerRequest {
    * '_'. Sent to OpenAI as prompt_cache_key, so a call's requests reach the same cache; nothing else reads it.
    */
   callId?: string;
+  /**
+   * ADR-0099 measurement only: OpenAI's priority processing ('priority') for a GPT model's answers and
+   * warm-ups. Sent only by /dev/latency (?tier=priority) and honoured only for admins; the live page never
+   * sends it, so calls always use OpenAI's default tier.
+   */
+  serviceTier?: 'priority';
   /** Session details (modes `warm`, `answer`, `chat`, `screenshot`). */
   session?: SessionContext;
   /**

@@ -65,6 +65,12 @@ export function LatencyTest() {
       ? 'cv'
       : 'pilot',
   );
+  // ADR-0099 measurement only: ?tier=priority asks OpenAI for priority processing (a GPT model; admins).
+  const [priority] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('tier') === 'priority',
+  );
   const [samples, setSamples] = useState<LatencySample[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +90,7 @@ export function LatencyTest() {
         count: 20,
         model,
         fixture,
+        ...(priority ? { serviceTier: 'priority' as const } : {}),
         onSample: (sample) => setSamples((current) => [...current, sample]),
       });
       setFinished(true);
@@ -94,7 +101,13 @@ export function LatencyTest() {
     }
   };
 
-  const results = summary ? JSON.stringify({ model, fixture, summary, samples }, null, 1) : '';
+  const results = summary
+    ? JSON.stringify(
+        { model, fixture, tier: priority ? 'priority' : 'default', summary, samples },
+        null,
+        1,
+      )
+    : '';
 
   return (
     <div className="flex flex-col gap-4">

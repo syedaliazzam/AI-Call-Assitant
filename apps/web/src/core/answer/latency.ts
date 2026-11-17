@@ -95,6 +95,8 @@ export interface LatencyOptions {
   model?: AnswerModel;
   /** ADR-0099: the invented session: 'pilot' (default) or 'cv'. */
   fixture?: LatencyFixture;
+  /** ADR-0099 measurement only: OpenAI priority processing for a GPT model (honoured for admins). */
+  serviceTier?: 'priority';
 }
 
 /** The invented session used for the measurement. */
@@ -277,9 +279,12 @@ export async function runLatencyTest(
   const questions = cv ? CV_QUESTIONS : QUESTIONS;
   const documents = cv ? latencyCvDocuments() : latencyDocuments();
   const callId = `latency-${Date.now().toString(36)}`;
+  // ADR-0099: priority processing (a GPT model, admins) goes with every request of the run, warm-up included.
+  const tier = options.serviceTier ? { serviceTier: options.serviceTier } : {};
   await warmSession(session, documents, {
     ...(options.send ? { send: options.send } : {}),
     callId,
+    ...tier,
   });
 
   // The invented call started an hour ago; each answer's lines sit a minute apart.
@@ -321,7 +326,7 @@ export async function runLatencyTest(
     log = built.log;
     const askedAt = base + 12_000;
     const sample = await new Promise<LatencySample>((resolve, reject) => {
-      runner.run({ ...built.request, callId }, keyPressAt, {
+      runner.run({ ...built.request, callId, ...tier }, keyPressAt, {
         onText: () => undefined,
         onDone: (text, done, timeline) => {
           answers.push({ id: `a${n}`, mode: 'answer', question, text, askedAt });

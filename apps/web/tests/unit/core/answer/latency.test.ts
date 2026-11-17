@@ -135,5 +135,18 @@ describe('runLatencyTest with a model and the CV session (ADR-0099)', () => {
     expect(requests[0]!.session!.type).toBe('interview');
     expect(requests[0]!.session!.documents[0]).toMatchObject({ kind: 'resume' });
     expect(requests[1]!.question ?? JSON.stringify(requests[1]!.tail)).toContain('DATABASE');
+    // Default tier unless asked.
+    expect(requests.every((request) => request.serviceTier === undefined)).toBe(true);
+  });
+
+  it('sends priority processing with every request of the run when asked', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const { send, requests } = fakeSend();
+    await runLatencyTest({ count: 2, send, model: 'gpt-luna', serviceTier: 'priority' });
+    expect(requests.map((request) => request.serviceTier)).toEqual([
+      'priority',
+      'priority',
+      'priority',
+    ]);
   });
 });
