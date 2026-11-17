@@ -138,6 +138,8 @@ interface WarmReplyOptions {
   thirdParty?: ThirdParty | null;
   /** ADR-0099: the call's id, OpenAI's prompt_cache_key. */
   cacheKey?: string | undefined;
+  /** ADR-0099 measurement only: OpenAI priority processing (admins, /dev/latency). */
+  serviceTier?: 'priority' | undefined;
   /** ADR-0099: the request's id, for the provider warm-up's log line. */
   requestId: string;
 }
@@ -224,6 +226,7 @@ async function* warmReply(
     maxTokens: 1,
     signal: options.signal,
     cacheKey: options.cacheKey,
+    serviceTier: options.serviceTier,
   };
   const [claudeResult, thirdResult] = await Promise.allSettled([
     claude,
@@ -314,7 +317,10 @@ async function respond(
   // The rollback switch is for admins (ADR-0032): the setting is shown only to them, and this is
   // what enforces it. Anyone else gets the current rules whatever the request asked for.
   const data: AnswerRequest =
-    session.user.role === 'admin' ? parsed.data : { ...parsed.data, styleVersion: undefined };
+    session.user.role === 'admin'
+      ? parsed.data
+      : // ADR-0099: OpenAI priority processing is a measurement for admins too (/dev/latency).
+        { ...parsed.data, styleVersion: undefined, serviceTier: undefined };
 
   const { mode } = data;
   // ADR-0089: the admin's global prompt (after the locked contract). Live answers (and their warm-ups)
@@ -419,6 +425,8 @@ async function respond(
     images: data.images?.length ?? 0,
     // Which answer rules were used: 'previous' only after an admin's rollback (ADR-0032).
     styleVersion: data.styleVersion ?? 'current',
+    // ADR-0099 measurement only: OpenAI priority processing asked for (admins, /dev/latency).
+    serviceTier: data.serviceTier ?? 'default',
     // How long the daily-limit check took (ADR-0036); null for modes that do not count (set below).
     msLimit: null as number | null,
     // ADR-0089: the global prompt's size, and whether it is the default (never its text or version id).
@@ -440,6 +448,7 @@ async function respond(
       company,
       thirdParty,
       cacheKey: data.callId,
+      serviceTier: data.serviceTier,
       requestId,
     });
   } else if (mode === 'hello') {
@@ -490,7 +499,11 @@ async function respond(
             };
             if (third.provider === 'gemini') return streamGeminiReply(input);
             if (third.provider === 'openai') {
-              return streamOpenAIReply({ ...input, cacheKey: data.callId });
+              return streamOpenAIReply({
+                ...input,
+                cacheKey: data.callId,
+                serviceTier: data.serviceTier,
+              });
             }
             return streamGroqReply(input);
           },

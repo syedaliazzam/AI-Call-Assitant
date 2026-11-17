@@ -126,6 +126,11 @@ export interface OpenAIReplyInput {
   maxTokens: number;
   /** The call's id, sent as prompt_cache_key (absent outside a call). */
   cacheKey?: string | undefined;
+  /**
+   * ADR-0099 measurement only: 'priority' for OpenAI's priority processing (an admin's /dev/latency run);
+   * absent: OpenAI's default tier, as every call uses.
+   */
+  serviceTier?: 'priority' | undefined;
   /** Aborts the request. */
   signal?: AbortSignal;
   /** Called once when OpenAI's response headers arrive (the "stream open" timing). */
@@ -201,6 +206,7 @@ function requestBody(input: OpenAIReplyInput, maxTokens: number): Record<string,
     // Not kept in OpenAI's stored completions (call content stays out of the dashboard).
     store: false,
     ...(input.cacheKey ? { prompt_cache_key: input.cacheKey } : {}),
+    ...(input.serviceTier ? { service_tier: input.serviceTier } : {}),
   };
 }
 

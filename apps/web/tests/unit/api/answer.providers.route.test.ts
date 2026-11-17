@@ -323,3 +323,34 @@ describe('POST /api/answer with Gemini and OpenAI (ADR-0099)', () => {
     expect(openaiMock).not.toHaveBeenCalled();
   });
 });
+
+describe('OpenAI priority processing, a measurement for admins only (ADR-0099)', () => {
+  it("sends the admin's priority tier to OpenAI, answers and warm-ups alike", async () => {
+    getSessionMock.mockResolvedValue({ user: { ...SIGNED_IN.user, role: 'admin' } });
+    openaiMock.mockImplementation(() => reply('[[call|general]]', 'Fast.'));
+    await (await POST(post({ ...chat('gpt-luna'), serviceTier: 'priority' }))).text();
+    expect(openaiMock.mock.calls[0]![0].serviceTier).toBe('priority');
+    createMock.mockResolvedValue({
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 1, output_tokens: 0 },
+    });
+    openaiWarmMock.mockResolvedValue({ usage: USAGE, stopReason: 'max_tokens' });
+    await (
+      await POST(
+        post({ mode: 'warm', model: 'gpt-luna', session: SESSION, serviceTier: 'priority' }),
+      )
+    ).text();
+    expect(openaiWarmMock.mock.calls[0]![0].serviceTier).toBe('priority');
+  });
+
+  it("ignores it for anyone else, so calls always use OpenAI's default tier", async () => {
+    openaiMock.mockImplementation(() => reply('x'));
+    await (await POST(post({ ...chat('gpt-luna'), serviceTier: 'priority' }))).text();
+    expect(openaiMock.mock.calls[0]![0].serviceTier).toBeUndefined();
+  });
+
+  it('rejects any other tier', async () => {
+    const response = await POST(post({ ...chat('gpt-luna'), serviceTier: 'flex' }));
+    expect(response.status).toBe(400);
+  });
+});

@@ -221,6 +221,8 @@ export interface WarmOptions {
    * prompt_cache_key), the same key the call's answers send.
    */
   callId?: string | undefined;
+  /** ADR-0099 measurement only: OpenAI priority processing (/dev/latency, admins). */
+  serviceTier?: 'priority' | undefined;
 }
 
 /**
@@ -283,6 +285,7 @@ function sendWarmUp(
           model: session.preferences.model,
           // ADR-0099: OpenAI's prompt_cache_key, as the call's answers send it.
           ...(options.callId ? { callId: options.callId } : {}),
+          ...(options.serviceTier ? { serviceTier: options.serviceTier } : {}),
           session: toLiveSessionContext(session, documents),
           ...(options.conversation?.length ? { conversation: options.conversation } : {}),
           ...(options.lessons?.length ? { lessons: [...options.lessons] } : {}),

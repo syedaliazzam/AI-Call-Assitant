@@ -75,6 +75,8 @@ async function runLatencyPage(page: Page): Promise<void> {
   const query = new URLSearchParams({
     ...(process.env.KITE_LATENCY_MODEL ? { model: process.env.KITE_LATENCY_MODEL } : {}),
     ...(process.env.KITE_LATENCY_SESSION ? { session: process.env.KITE_LATENCY_SESSION } : {}),
+    // ADR-0099: KITE_LATENCY_TIER=priority asks OpenAI for priority processing (a GPT model).
+    ...(process.env.KITE_LATENCY_TIER ? { tier: process.env.KITE_LATENCY_TIER } : {}),
   }).toString();
   await page.goto(`${PRODUCTION_URL}/dev/latency${query ? `?${query}` : ''}`);
   await page.getByRole('button', { name: 'Run 20 answers' }).click();
@@ -139,6 +141,16 @@ async function summarise(page: Page, label: string): Promise<Summary> {
       cacheHits: own.filter((sample) => sample.cacheRead > 0).length,
     });
   }
+  // ADR-0099: tokens per answer (averages over the 20), so the cost per answer can be worked out.
+  const mean = (pick: (sample: OwnSample) => number) =>
+    Math.round(
+      samples.reduce((sum, sample) => sum + pick(sample), 0) / Math.max(1, samples.length),
+    );
+  report(`${label} tokens per answer`, samples.length > 0, {
+    uncachedInput: mean((sample) => sample.input),
+    cacheRead: mean((sample) => sample.cacheRead),
+    output: mean((sample) => sample.output),
+  });
   return summary;
 }
 
@@ -152,6 +164,10 @@ interface OwnSample {
   serverToFirstText: number;
   /** Cache tokens read. */
   cacheRead: number;
+  /** Uncached input tokens. */
+  input: number;
+  /** Output tokens. */
+  output: number;
   /** Why the answer moved to Claude Haiku, or null. */
   fallback?: string | null;
 }

@@ -217,6 +217,8 @@ export const answerRequestSchema = z
       .max(MAX_CALL_ID_CHARS)
       .regex(/^[A-Za-z0-9_-]+$/, 'must be an id')
       .optional(),
+    // ADR-0099 measurement only: OpenAI priority processing (the route honours it for admins only).
+    serviceTier: z.enum(['priority']).optional(),
     session: sessionSchema.optional(),
     conversation: conversationSchema.optional(),
     tail: z.array(callLineSchema).max(MAX_TAIL_LINES).optional(),
