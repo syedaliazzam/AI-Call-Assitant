@@ -6,12 +6,15 @@
  * Used by: src/features/dashboard/SessionCard.tsx, src/features/home/HomeCard.tsx
  * Depends on: src/core/review/downloadTranscript.ts, src/core/storage (types, shownStatus),
  *             src/ui (Button, Dialog, Input, Menu, icons)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Dashboard); ADR-0029, ADR-0041
+ *          ADR-0098: while the session is live on another device, Start again is disabled ("Live on another
+ *          device"); the card's Take over moves the call here.
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Dashboard); ADR-0029, ADR-0041, ADR-0098
  */
 'use client';
 
 import { useState } from 'react';
 import { downloadSessionTranscript } from '@/core/review/downloadTranscript';
+import { LIVE_ELSEWHERE_LABEL } from '@/features/live/useLiveElsewhere';
 import { useAccountName } from '@/features/shell/AccountName';
 import { shownStatus } from '@/core/storage/sessions';
 import type { Session } from '@/core/storage/types';
@@ -29,6 +32,8 @@ export interface SessionMenuProps {
   title: string;
   /** Starts it. */
   onOpen: (session: Session) => void;
+  /** ADR-0098: true while it is live on another device (Start again is disabled). */
+  liveElsewhere?: boolean;
   /** Opens its details for editing. */
   onEdit: (session: Session) => void;
   /** Saves a new company and role or topic. */
@@ -50,6 +55,7 @@ export function SessionMenu({
   session,
   title,
   onOpen,
+  liveElsewhere = false,
   onEdit,
   onRename,
   onDuplicate,
@@ -90,7 +96,13 @@ export function SessionMenu({
         variant="plain"
         size="icon"
         items={[
-          ...(ended ? [{ label: 'Start again', onSelect: () => onOpen(session) }] : []),
+          ...(ended
+            ? [
+                liveElsewhere
+                  ? { label: 'Start again', disabled: true, detail: LIVE_ELSEWHERE_LABEL }
+                  : { label: 'Start again', onSelect: () => onOpen(session) },
+              ]
+            : []),
           { label: 'Edit', onSelect: () => onEdit(session) },
           {
             label: 'Rename',

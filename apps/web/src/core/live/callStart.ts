@@ -7,11 +7,12 @@
  *          - a short-lived note in localStorage, read by a live page that is just opening (it may not be
  *            listening yet);
  *          - a BroadcastChannel, for a live page that is already open (Try again) and for the answers.
- *          Only a session id and a state travel; never call text.
+ *          Only a session id and a state travel; never call text. ADR-0098: a start refused because the
+ *          session is live on another device carries the code 'live-elsewhere', so the card offers Take over.
  * Used by: src/features/home/LauncherConnect.tsx (asks, listens), src/features/live/LivePage.tsx (takes,
  *          answers); tests/unit/core/live/callStart.test.ts
  * Depends on: localStorage, BroadcastChannel (both injectable for tests)
- * Architecture: ADR-0055; ADR-0053 (Connect starts the call)
+ * Architecture: ADR-0055; ADR-0053 (Connect starts the call); ADR-0098 (live elsewhere)
  */
 
 /** The localStorage key of the note. */
@@ -43,6 +44,8 @@ export type CallStartMessage =
       state: CallStartState;
       /** For 'failed': what to tell the person (a fixed sentence from the app, never call text). */
       message?: string;
+      /** ADR-0098: for 'failed', 'live-elsewhere' when another device runs the session (Take over offered). */
+      code?: 'live-elsewhere';
     };
 
 /** What this module uses (the page's own objects by default). */
@@ -156,6 +159,22 @@ export function reportCallStart(
   deps = defaultCallStartDeps(),
 ): void {
   send({ type: 'status', sessionId, state, ...(message ? { message } : {}) }, deps);
+}
+
+/**
+ * ADR-0098: tells the card the start was refused because the session is live on another device.
+ *
+ * @param sessionId The session.
+ * @param message   The sentence to show.
+ * @param deps      See CallStartDeps.
+ * Called from: LivePage.tsx (connect)
+ */
+export function reportLiveElsewhere(
+  sessionId: string,
+  message: string,
+  deps = defaultCallStartDeps(),
+): void {
+  send({ type: 'status', sessionId, state: 'failed', message, code: 'live-elsewhere' }, deps);
 }
 
 /**

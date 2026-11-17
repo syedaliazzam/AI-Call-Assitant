@@ -19,13 +19,18 @@
  * Depends on: lucide-react, src/core/live/callStart.ts, src/core/stt/prefetch.ts,
  *             src/features/sync/dashboardLink.ts, src/platform,
  *             src/ui (ProgressBar, Select, Tooltip, Chip)
- * Architecture: ADR-0053 (Connect starts the call), ADR-0055, ADR-0059
+ *          ADR-0098: a start refused because the session is live on another device of the account shows
+ *          that with Take over, which asks first, then connects again taking the call over.
+ *          (src/core/live/liveLock.ts, src/features/live/TakeOver.tsx)
+ * Architecture: ADR-0053 (Connect starts the call), ADR-0055, ADR-0059, ADR-0098
  */
 'use client';
 
 import { ArrowLeft, Play, ShieldCheck, TriangleAlert, Upload } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { requestCallStart, watchCallStart } from '@/core/live/callStart';
+import { leaveTakeOver } from '@/core/live/liveLock';
+import { TakeOverDialog } from '@/features/live/TakeOver';
 import { leaveRecordConsent } from '@/core/recording/handoff';
 import { NO_STEREO_WARNING } from '@/features/live/overlay/RecordControls';
 import { speechModelPrefetch, type PrefetchState } from '@/core/stt/prefetch';
@@ -127,6 +132,9 @@ export function LauncherConnect({
   const canRecord = useSyncExternalStore(subscribeNever, hasRecording, () => false);
   const [consent, setConsent] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // ADR-0098: the start was refused because another device runs the session; Take over asks first.
+  const [elsewhere, setElsewhere] = useState(false);
+  const [askingTakeOver, setAskingTakeOver] = useState(false);
   const prefetch = speechModelPrefetch(globalThis.location?.origin ?? '');
   const model = useSyncExternalStore(prefetch.subscribe, prefetch.state, () => IDLE);
   const mounted = useRef(true);
@@ -148,6 +156,7 @@ export function LauncherConnect({
           if (timeout.current) clearTimeout(timeout.current);
           setPhase('failed');
           setProblem(message.message ?? 'The call could not start. Try again.');
+          setElsewhere(message.code === 'live-elsewhere');
         }
       }),
     [sessionId],
@@ -184,6 +193,7 @@ export function LauncherConnect({
   const connect = async () => {
     setPhase('preparing');
     setProblem(null);
+    setElsewhere(false);
     const ready = await prefetch.start();
     if (!mounted.current) return;
     if (ready) {
@@ -297,6 +307,25 @@ export function LauncherConnect({
             {problem}
           </p>
         )}
+        {elsewhere && !busy && (
+          <button
+            type="button"
+            onClick={() => setAskingTakeOver(true)}
+            className="inline-flex h-11 items-center justify-center rounded-[10px] border border-ui-border bg-ui-bg px-4 text-[15px] font-medium text-ui-heading hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+          >
+            Take over
+          </button>
+        )}
+        <TakeOverDialog
+          open={askingTakeOver}
+          onCancel={() => setAskingTakeOver(false)}
+          onConfirm={() => {
+            setAskingTakeOver(false);
+            // The call window's Connect reads the note and takes the call over.
+            leaveTakeOver(sessionId);
+            void connect();
+          }}
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <button
