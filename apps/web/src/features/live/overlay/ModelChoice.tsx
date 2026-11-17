@@ -1,9 +1,9 @@
 /**
  * File: apps/web/src/features/live/overlay/ModelChoice.tsx
- * Purpose: The answer model during a call, from the overlay (ADR-0094): the two choices (Fast = Claude
- *          Haiku, Smart = Claude Sonnet) as a list with the current one checked, used by the ⋮ menu's Model
- *          row and by bar 1's model chip; the chip itself; its popover; and the toast's words. Smart is
- *          shown disabled, with "Turned off by your admin", when an admin has turned the deeper model off
+ * Purpose: The answer model during a call, from the overlay (ADR-0094): the three choices (Fast = Claude
+ *          Haiku, Smart = Claude Sonnet, and since ADR-0095 Fastest = Groq) as a list with the current one
+ *          checked, used by the ⋮ menu's Model row and by bar 1's model chip; the chip itself; its popover; and
+ *          the toast's words. Smart or Groq is shown disabled, with "Turned off by your admin", when it is off
  *          (the server enforces that on every answer anyway). Tooltips are drawn in the page (ADR-0042), so
  *          they stay inside the protected window.
  * Used by: src/features/live/overlay/LiveMenu.tsx, src/features/live/overlay/ControlBar.tsx,
@@ -11,6 +11,7 @@
  * Depends on: lucide-react, src/core/live/liveChannel.ts (CompactState), src/core/storage/types.ts
  *             (AnswerModel), src/ui/Tooltip.tsx, ./parts.tsx (bar button styles)
  * Architecture: docs/decisions/ADR-0094-switch-the-answer-model-during-a-call.md;
+ *               docs/decisions/ADR-0095-voice-mode-groq-and-move-keys.md;
  *               docs/design/paramount-ai-ui-spec.md §3 (S13, S16)
  */
 'use client';
@@ -33,14 +34,38 @@ export interface ModelChoiceOption {
   label: string;
 }
 
-/** The two choices, in the order shown (ADR-0094; the wizard's "Select model" offers the same two). */
+/**
+ * The three choices, in the order shown (ADR-0095: the same words as the wizard's "Select model" and AI
+ * preferences).
+ */
 export const MODEL_CHOICES: readonly ModelChoiceOption[] = [
-  { value: 'fast', name: 'Fast', label: 'Fast — quickest answers' },
-  { value: 'smart', name: 'Smart', label: 'Smart — more thorough, slower' },
+  { value: 'fast', name: 'Fast', label: 'Fast (Claude Haiku)' },
+  { value: 'smart', name: 'Smart', label: 'Smart (Claude Sonnet)' },
+  { value: 'groq', name: 'Fastest', label: 'Fastest (Groq)' },
 ];
 
-/** The tooltip on Smart while an admin has turned the deeper model off. */
+/** The tooltip on Smart or Groq while it is turned off. */
 export const SMART_OFF_TIP = 'Turned off by your admin';
+
+/** Which of the choices may be picked now. */
+export interface ModelAllowed {
+  /** False when an admin has turned Smart off. */
+  smartAllowed: boolean;
+  /** ADR-0095: false when Groq is off (no server key, or an admin turned it off). */
+  groqAllowed: boolean;
+}
+
+/**
+ * Whether a choice is off.
+ *
+ * @param model   The choice.
+ * @param allowed Which may be picked.
+ * @returns True when it is shown disabled.
+ * Called from: ModelOptions; CompactView.tsx; tests
+ */
+export function modelOff(model: AnswerModel, allowed: ModelAllowed): boolean {
+  return (model === 'smart' && !allowed.smartAllowed) || (model === 'groq' && !allowed.groqAllowed);
+}
 
 /**
  * The toast shown once the live page has switched the model (ADR-0094).
@@ -50,19 +75,22 @@ export const SMART_OFF_TIP = 'Turned off by your admin';
  * Called from: CompactView.tsx; tests
  */
 export function modelSwitchToast(model: AnswerModel): string {
-  return model === 'smart'
-    ? 'Smart model on — answers may take a bit longer'
-    : 'Fast model on — quickest answers';
+  if (model === 'smart') return 'Smart model on — answers may take a bit longer';
+  if (model === 'groq') return 'Fastest model on (Groq)';
+  return 'Fast model on — quick answers';
 }
 
-/** The toast shown when Smart was picked but an admin has turned it off (the model stays Fast). */
+/** The toast shown when Smart was picked but an admin has turned it off (the model stays as it was). */
 export const SMART_REFUSED_TOAST = 'Smart model is turned off by your admin';
+
+/** ADR-0095: the toast shown when Groq was picked but it is off (the model stays as it was). */
+export const GROQ_REFUSED_TOAST = 'Fastest model (Groq) is turned off by your admin';
 
 /**
  * A choice's short name.
  *
  * @param model The tier.
- * @returns "Fast" or "Smart".
+ * @returns "Fast", "Smart" or "Fastest".
  * Called from: ModelChip; tests
  */
 export function modelName(model: AnswerModel): string {
@@ -74,25 +102,31 @@ export function modelName(model: AnswerModel): string {
  * (an older live page does not).
  *
  * @param state What the live page shows.
- * @returns The model in use and whether Smart may be chosen, or null for no choice.
+ * @returns The model in use and which choices may be picked, or null for no choice.
  * Called from: LiveMenu.tsx, ControlBar.tsx, CompactView.tsx
  */
 export function modelOf(
   state: CompactState | null,
-): { model: AnswerModel; smartAllowed: boolean } | null {
+): ({ model: AnswerModel } & ModelAllowed) | null {
   if (!state?.model) return null;
-  return { model: state.model, smartAllowed: state.smartAllowed !== false };
+  return {
+    model: state.model,
+    smartAllowed: state.smartAllowed !== false,
+    // ADR-0095: an older live page does not say, and Groq then stays disabled.
+    groqAllowed: state.groqAllowed === true,
+  };
 }
 
 /** The focus ring every control here shares. */
 const FOCUS = 'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]';
 
 /**
- * The two choices as radio rows, the current one checked. Picking the current one changes nothing.
+ * The three choices as radio rows, the current one checked. Picking the current one changes nothing.
  *
  * @param props.label        What the group chooses, for screen readers.
  * @param props.model        The model in use.
  * @param props.smartAllowed False when an admin has turned Smart off (it is then disabled, with a tooltip).
+ * @param props.groqAllowed  False when Groq is off (ADR-0095; disabled the same way).
  * @param props.onSelect     Called with a different, allowed choice.
  * @param props.onClose      Called after any choice (the menu or popover closes).
  * @returns The group.
@@ -102,6 +136,7 @@ export function ModelOptions({
   label,
   model,
   smartAllowed,
+  groqAllowed,
   onSelect,
   onClose,
 }: {
@@ -111,6 +146,8 @@ export function ModelOptions({
   model: AnswerModel;
   /** False when an admin has turned Smart off. */
   smartAllowed: boolean;
+  /** ADR-0095: false when Groq is off. */
+  groqAllowed: boolean;
   /** Called with a different, allowed choice. */
   onSelect: (model: AnswerModel) => void;
   /** Called after any choice. */
@@ -120,7 +157,7 @@ export function ModelOptions({
     <div role="radiogroup" aria-label={label} className="flex flex-col py-0.5">
       {MODEL_CHOICES.map((choice) => {
         const checked = choice.value === model;
-        const off = choice.value === 'smart' && !smartAllowed;
+        const off = modelOff(choice.value, { smartAllowed, groqAllowed });
         const row = (
           <button
             type="button"
@@ -205,13 +242,13 @@ export function ModelChip({
       aria-expanded={open}
       data-tip={`Model: ${MODEL_CHOICES.find((choice) => choice.value === model)?.label ?? name}`}
       data-model-chip={model}
-      className={`${word ? `${PILL} gap-1 pr-1` : `${ICON_BUTTON} relative`} ${model === 'smart' ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : 'text-ui-text'}`}
+      className={`${word ? `${PILL} gap-1 pr-1` : `${ICON_BUTTON} relative`} ${model !== 'fast' ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : 'text-ui-text'}`}
       onClick={onToggle}
       disabled={disabled}
     >
       <span
         aria-hidden="true"
-        className={`inline-flex ${model === 'smart' ? 'text-ui-accent' : 'text-ui-muted'}`}
+        className={`inline-flex ${model !== 'fast' ? 'text-ui-accent' : 'text-ui-muted'}`}
       >
         <Sparkles size={15} strokeWidth={1.75} />
       </span>
@@ -231,6 +268,8 @@ export interface ModelPopoverProps {
   model: AnswerModel;
   /** False when an admin has turned Smart off. */
   smartAllowed: boolean;
+  /** ADR-0095: false when Groq is off. */
+  groqAllowed: boolean;
   /** Its left edge inside bar 1's box, px (under the chip, kept inside the window). */
   left: number;
   /** Called with a different, allowed choice. */
@@ -249,7 +288,7 @@ export interface ModelPopoverProps {
  * Rendered by: CompactView.tsx
  */
 export const ModelPopover = forwardRef<HTMLDivElement, ModelPopoverProps>(function ModelPopover(
-  { model, smartAllowed, left, onSelect, onClose },
+  { model, smartAllowed, groqAllowed, left, onSelect, onClose },
   ref,
 ) {
   return (
@@ -266,6 +305,7 @@ export const ModelPopover = forwardRef<HTMLDivElement, ModelPopoverProps>(functi
         label="Model"
         model={model}
         smartAllowed={smartAllowed}
+        groqAllowed={groqAllowed}
         onSelect={onSelect}
         onClose={onClose}
       />

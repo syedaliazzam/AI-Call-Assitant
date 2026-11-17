@@ -32,6 +32,19 @@ export type AnswerMode = 'hello' | 'warm' | 'answer' | 'chat' | 'screenshot' | '
  */
 export type ModelTier = 'fast' | 'smart';
 
+/**
+ * ADR-0095: the model a session's live answers use, as the person chooses it.
+ * - `fast`: "Fast (Claude Haiku)", the default.
+ * - `smart`: "Smart (Claude Sonnet)".
+ * - `groq`: "Fastest (Groq)": Groq's model (GROQ_MODEL on the server). Answers with an image always use
+ *   Claude, and an answer Groq cannot start within 4 s is asked of Claude Haiku instead.
+ * Ask AI and the call notes keep their own Claude models (ModelTier).
+ */
+export type AnswerModel = ModelTier | 'groq';
+
+/** ADR-0095: every answer model, in the order the choices are shown. */
+export const ANSWER_MODELS: readonly AnswerModel[] = ['fast', 'smart', 'groq'];
+
 /** Who said a transcript line: the microphone ("you") or the other side of the call ("them"). */
 export type Speaker = 'you' | 'them';
 
@@ -54,6 +67,11 @@ export interface AnswerStyle {
 export interface ModelAccessResponse {
   /** True when sessions may choose the deeper model (an admin can turn it off). */
   deepModel: boolean;
+  /**
+   * ADR-0095: true when sessions may choose Groq (the server has a Groq key and an admin has not turned it
+   * off). Absent from an older server: treat as false.
+   */
+  groq?: boolean;
 }
 
 /** What the user is told when a job link cannot be read, whatever the reason (spec §6). */
@@ -335,8 +353,11 @@ export function estimateItemTokens(item: ConversationItem): number {
 export interface AnswerRequest {
   /** What kind of answer is wanted. */
   mode: AnswerMode;
-  /** Model tier; the server defaults to `fast` when omitted. */
-  model?: ModelTier;
+  /**
+   * The answer model; the server defaults to `fast` when omitted. `groq` (ADR-0095) applies to `answer`
+   * and `chat` only: warm-ups and screenshots go to Claude Haiku, and `kite` (Ask AI) keeps its Claude model.
+   */
+  model?: AnswerModel;
   /** Session details (modes `warm`, `answer`, `chat`, `screenshot`). */
   session?: SessionContext;
   /**
@@ -519,9 +540,15 @@ export type AnswerEvent =
       /**
        * ADR-0094: the tier that really answered. It differs from the one asked for when an admin has
        * turned the deeper model off (the server then answers with the fast one). Absent from an older
-       * server.
+       * server. ADR-0095: 'groq' when Groq answered; 'fast' when a Groq answer moved to Claude Haiku
+       * (then `fallback` says so) or had an image.
        */
-      model?: ModelTier;
+      model?: AnswerModel;
+      /**
+       * ADR-0095: present when Groq was asked and Claude Haiku answered instead: 'timeout' (no first token
+       * within 4 s), 'error' or 'empty'. Absent otherwise.
+       */
+      fallback?: 'timeout' | 'error' | 'empty';
     }
   | {
       /** Event name. */

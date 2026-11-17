@@ -2,7 +2,7 @@
  * File: apps/desktop/tests/visual/overlay-positions.ts
  * Purpose: 1.6.3 check (ADR-0075) of the overlay at its six positions in a real desktop shell: runs a
  *          simulated call against the overlay rig, opens an answer (and then the transcript too), puts
- *          the overlay at each position (the code path Ctrl+Alt+Arrows and the ⋮ grid share, goTo()) and
+ *          the overlay at each position (the code path Ctrl+Shift+Arrows (Ctrl+Alt+Arrows before 1.7.0) and the ⋮ grid share, goTo()) and
  *          nudges it on the bottom row (the code path Ctrl+Alt+Shift+Arrows shares, move()). For each it
  *          checks that the panels sit next to the bars with the same 6 px gap as on the top row, that the
  *          window is fitted to them (no empty band between the bars and a panel, on either row), and that

@@ -108,3 +108,24 @@ describe('Kite shortcuts', () => {
     expect(HOTKEY_ACTIONS).toContain('screenshot-send');
   });
 });
+
+describe('moving the overlay (ADR-0095)', () => {
+  it('jumps between positions with Ctrl+Shift+Arrows, and nudges with Ctrl+Alt+Shift+Arrows', () => {
+    expect(DEFAULT_GLOBAL_HOTKEYS['overlay-spot-left']).toBe('CommandOrControl+Shift+Left');
+    expect(DEFAULT_GLOBAL_HOTKEYS['overlay-spot-right']).toBe('CommandOrControl+Shift+Right');
+    expect(DEFAULT_GLOBAL_HOTKEYS['overlay-row-top']).toBe('CommandOrControl+Shift+Up');
+    expect(DEFAULT_GLOBAL_HOTKEYS['overlay-row-bottom']).toBe('CommandOrControl+Shift+Down');
+    expect(DEFAULT_GLOBAL_HOTKEYS['overlay-up']).toBe('CommandOrControl+Alt+Shift+Up');
+    expect(Object.values(DEFAULT_GLOBAL_HOTKEYS)).not.toContain('CommandOrControl+Alt+Left');
+  });
+
+  it('never shares keys between two shortcuts', () => {
+    const keys = Object.values(DEFAULT_GLOBAL_HOTKEYS);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('lists the move row with its new keys', () => {
+    const row = HOTKEY_ROWS.find((candidate) => candidate.actions.includes('overlay-spot-left'));
+    expect(row?.keysOverride).toBe('CommandOrControl+Shift+Arrows');
+  });
+});

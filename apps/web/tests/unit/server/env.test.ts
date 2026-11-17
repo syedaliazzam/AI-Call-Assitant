@@ -5,7 +5,13 @@
  * works before the Claude key exists.
  */
 import { describe, expect, it } from 'vitest';
-import { getAuthEnv, getClaudeEnv, getServerEnv } from '@/server/env';
+import {
+  DEFAULT_GROQ_MODEL,
+  getAuthEnv,
+  getClaudeEnv,
+  getGroqEnv,
+  getServerEnv,
+} from '@/server/env';
 
 /** A complete, valid set of sign-in variables (fake values). */
 const AUTH_VARS = {
@@ -136,5 +142,18 @@ describe('getServerEnv', () => {
     expect(getServerEnv({ ...AUTH_VARS, ...CLAUDE_VARS }).claude.modelFast).toBe(
       'claude-haiku-5-5',
     );
+  });
+});
+
+describe('getGroqEnv (ADR-0095)', () => {
+  it('is null without a key (Groq is then off)', () => {
+    expect(getGroqEnv({})).toBeNull();
+    expect(getGroqEnv({ GROQ_API_KEY: '' })).toBeNull();
+  });
+
+  it('uses the default model unless GROQ_MODEL names one', () => {
+    expect(getGroqEnv({ GROQ_API_KEY: 'k' })).toEqual({ apiKey: 'k', model: DEFAULT_GROQ_MODEL });
+    expect(DEFAULT_GROQ_MODEL).toBe('openai/gpt-oss-120b');
+    expect(getGroqEnv({ GROQ_API_KEY: 'k', GROQ_MODEL: 'other/model' })?.model).toBe('other/model');
   });
 });

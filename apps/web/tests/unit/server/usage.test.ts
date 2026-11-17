@@ -3,7 +3,8 @@
  * in-memory fake: each request is counted per user and UTC day; the request over the limit is
  * refused (and still counted); the limit defaults to 300, is read from app_setting, kept for 60 s,
  * and only whole numbers from 1 to 100,000 can be set; when counting fails the request is allowed
- * (fail open); the usage report gives today and the last 7 days per user, counts only.
+ * (fail open); the usage report gives today and the last 7 days per user, counts only. ADR-0095: a Groq
+ * request is also counted as one, in the same statement, and the report gives Groq's share.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -16,7 +17,9 @@ const fake = vi.hoisted(() => ({
   /** Accounts, for the report. */
   users: [] as { id: string; name: string; email: string }[],
   /** usage_day rows, for the report. */
-  usage: [] as { userId: string; day: string; requests: number }[],
+  usage: [] as { userId: string; day: string; requests: number; groqRequests?: number }[],
+  /** ADR-0095: the groq_requests value each counting statement inserted. */
+  groqInserted: [] as number[],
   /** True to make the counting statement fail. */
   fail: false,
   /** How many times app_setting was read. */
@@ -53,7 +56,12 @@ vi.mock('@/server/db', () => ({
       },
     }),
     insert: (table: unknown) => ({
-      values: (value: { userId?: string; day?: string; value?: string }) => ({
+      values: (value: {
+        userId?: string;
+        day?: string;
+        value?: string;
+        groqRequests?: number;
+      }) => ({
         onConflictDoUpdate: () => {
           if (tableName(table) === 'app_setting') {
             fake.setting = [{ value: value.value! }];
@@ -62,6 +70,7 @@ vi.mock('@/server/db', () => ({
           return {
             returning: async () => {
               if (fake.fail) throw new Error('connection refused');
+              fake.groqInserted.push(value.groqRequests ?? -1);
               const key = `${value.userId}|${value.day}`;
               const next = (fake.counts.get(key) ?? 0) + 1;
               fake.counts.set(key, next);
@@ -86,6 +95,7 @@ beforeEach(() => {
   fake.usage = [];
   fake.fail = false;
   fake.settingReads = 0;
+  fake.groqInserted = [];
   usage.resetUsageCache();
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -120,6 +130,28 @@ describe('countRequest', () => {
     expect(result.allowed).toBe(true);
     expect(result.count).toBe(0);
     expect(JSON.stringify(vi.mocked(console.error).mock.calls)).toContain('"userId":"u1"');
+  });
+});
+
+describe('countRequest and Groq (ADR-0095)', () => {
+  it('counts a Groq request in groq_requests too, in the same statement', async () => {
+    await usage.countRequest('u1', NOW, { groq: true });
+    await usage.countRequest('u1', NOW);
+    expect(fake.groqInserted).toEqual([1, 0]);
+    // Both count towards the daily limit.
+    expect(fake.counts.get('u1|2026-11-03')).toBe(2);
+  });
+
+  it("gives each person's Groq requests today and over the period", () => {
+    const rows = usage.buildUsageReport(
+      [{ id: 'a', name: 'Ann', email: 'ann@example.com' }],
+      [
+        { userId: 'a', day: '2026-11-03', requests: 4, groqRequests: 3 },
+        { userId: 'a', day: '2026-11-01', requests: 6, groqRequests: 2 },
+      ],
+      '2026-11-03',
+    );
+    expect(rows[0]).toMatchObject({ today: 4, lastDays: 10, groqToday: 3, groqLastDays: 5 });
   });
 });
 
@@ -173,7 +205,15 @@ describe('usage report', () => {
     fake.users = [{ id: 'a', name: 'Ann', email: 'ann@example.com' }];
     fake.usage = [{ userId: 'a', day: '2026-11-03', requests: 3 }];
     expect(await usage.usageReport(7, NOW)).toEqual([
-      { userId: 'a', name: 'Ann', email: 'ann@example.com', today: 3, lastDays: 3 },
+      {
+        userId: 'a',
+        name: 'Ann',
+        email: 'ann@example.com',
+        today: 3,
+        lastDays: 3,
+        groqToday: 0,
+        groqLastDays: 0,
+      },
     ]);
   });
 

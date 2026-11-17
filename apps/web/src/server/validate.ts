@@ -205,7 +205,8 @@ const instructionsPinSchema = z.string().regex(AI_INSTRUCTIONS_PIN_PATTERN, 'mus
 export const answerRequestSchema = z
   .object({
     mode: z.enum(['hello', 'warm', 'answer', 'chat', 'screenshot', 'kite']),
-    model: z.enum(['fast', 'smart']).optional(),
+    // ADR-0095: the allow-list of answer models; anything else is rejected before any model is called.
+    model: z.enum(['fast', 'smart', 'groq']).optional(),
     session: sessionSchema.optional(),
     conversation: conversationSchema.optional(),
     tail: z.array(callLineSchema).max(MAX_TAIL_LINES).optional(),

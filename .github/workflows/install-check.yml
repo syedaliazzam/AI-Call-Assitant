@@ -13,7 +13,8 @@
 #          G. (1.6.2, ADR-0074) the published 1.6.1, then this build by the updater;
 #          H. (1.6.3, ADR-0077) the published 1.6.2, then this build by the updater;
 #          I. (1.6.4, ADR-0082) the published 1.6.3, then this build by the updater;
-#          J. (1.6.5, ADR-0085) the published 1.6.4, what people have now, then this build by the updater.
+#          J. (1.6.5, ADR-0085) the published 1.6.4, then this build by the updater;
+#          K. (1.7.0, ADR-0095) the published 1.6.5, what people have now, then this build by the updater.
 #          Finally the installed app is opened directly with a temporary profile and the runner's screen is
 #          captured (an artifact, with the report).
 # Used by: the developer before each desktop release (Actions → install-check → Run workflow), and pushes
@@ -60,7 +61,7 @@ jobs:
           $built = Get-ChildItem apps/desktop/release -Filter 'Paramount-AI-Setup-*.exe' | Select-Object -First 1
           Copy-Item $built.FullName "$dir\built.exe"
           "built: {0} {1} bytes" -f $built.Name, $built.Length
-          $assets = @{ '1.1.0' = 'Kite-Setup-1.1.0.exe'; '1.2.0' = 'Paramount-AI-Setup-1.2.0.exe'; '1.4.0' = 'Paramount-AI-Setup-1.4.0.exe'; '1.5.0' = 'Paramount-AI-Setup-1.5.0.exe'; '1.5.1' = 'Paramount-AI-Setup-1.5.1.exe'; '1.5.2' = 'Paramount-AI-Setup-1.5.2.exe'; '1.6.0' = 'Paramount-AI-Setup-1.6.0.exe'; '1.6.1' = 'Paramount-AI-Setup-1.6.1.exe'; '1.6.2' = 'Paramount-AI-Setup-1.6.2.exe'; '1.6.3' = 'Paramount-AI-Setup-1.6.3.exe'; '1.6.4' = 'Paramount-AI-Setup-1.6.4.exe' }
+          $assets = @{ '1.1.0' = 'Kite-Setup-1.1.0.exe'; '1.2.0' = 'Paramount-AI-Setup-1.2.0.exe'; '1.4.0' = 'Paramount-AI-Setup-1.4.0.exe'; '1.5.0' = 'Paramount-AI-Setup-1.5.0.exe'; '1.5.1' = 'Paramount-AI-Setup-1.5.1.exe'; '1.5.2' = 'Paramount-AI-Setup-1.5.2.exe'; '1.6.0' = 'Paramount-AI-Setup-1.6.0.exe'; '1.6.1' = 'Paramount-AI-Setup-1.6.1.exe'; '1.6.2' = 'Paramount-AI-Setup-1.6.2.exe'; '1.6.3' = 'Paramount-AI-Setup-1.6.3.exe'; '1.6.4' = 'Paramount-AI-Setup-1.6.4.exe'; '1.6.5' = 'Paramount-AI-Setup-1.6.5.exe' }
           foreach ($v in $assets.Keys) {
             Invoke-WebRequest -Uri "https://github.com/Zainpak123/kite-releases/releases/download/v$v/$($assets[$v])" -OutFile "$dir\$v.exe"
           }
@@ -255,6 +256,17 @@ jobs:
           Install 'built' @('--updated')
           Snapshot 'J after the update to this build'
           ExpectFindable 'J update from 1.6.4'
+          CleanUninstall
+
+      - name: 'K: 1.6.5 by the updater to this build'
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP\helpers.ps1"
+          Install '1.6.5' @()
+          Snapshot 'K 1.6.5'
+          Install 'built' @('--updated')
+          Snapshot 'K after the update to this build'
+          ExpectFindable 'K update from 1.6.5'
 
       - name: 'Open the app directly (temporary profile, runner screen captured)'
         shell: pwsh

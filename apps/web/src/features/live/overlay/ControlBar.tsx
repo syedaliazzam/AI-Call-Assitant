@@ -4,8 +4,9 @@
  *          the Transcript pill with its on/off switch (ADR-0055: it opens and closes the transcript panel,
  *          as the level button does); desktop 1.5.0 (ADR-0068): the Rec pill after the Transcript pill,
  *          where the app can record; 1.6.3 (ADR-0075): the Auto answer toggle; ADR-0082: the Click-through
- *          toggle (as Ctrl+Alt+X), where clicks can pass; ADR-0094: the model chip (Fast / Smart) next to Auto,
- *          which opens the model choice; then move and compact, the call timer, ⋮ and Exit
+ *          toggle (as Ctrl+Alt+X), where clicks can pass; ADR-0094: the model chip (Fast / Smart / Fastest) next to
+ *          Auto, which opens the model choice; ADR-0095: the Voice toggle (hands-free talking to the assistant)
+ *          next to the model chip; then move and compact, the call timer, ⋮ and Exit
  *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer, Screenshot or Chat buttons
  *          (their shortcuts still work). The bar is the window's drag handle; its buttons opt out.
  *
@@ -13,7 +14,8 @@
  *          device icons, the Transcript switch (every account) and, while recording, the Rec pill are
  *          pinned on the left the same way: never hidden, never cut. When the bar has too little room, the
  *          rest gives way one step at a time, measured rather than guessed: first Rec's key-cap, then the
- *          words "Transcript" and "Click-through" and the timer's clock, then the word "Auto" and the model chip's word (ADR-0094); after that
+ *          words "Transcript" and "Click-through" and the timer's clock, then the word "Auto", the model chip's word (ADR-0094)
+ *          and the word "Voice" (ADR-0095); after that
  *          things go: the move icon (the whole bar drags), the Click-through toggle (⋮ and Ctrl+Alt+X still
  *          turn it on), and the timer last (only a picture-in-picture window is that narrow). Every control names itself and its shortcut in BarTooltip.tsx ("Click-through: Off ·
  *          Ctrl+Alt+X").
@@ -26,7 +28,7 @@
 'use client';
 
 import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
-import { Clock, MousePointerClick, ScrollText } from 'lucide-react';
+import { AudioLines, Clock, MousePointerClick, ScrollText } from 'lucide-react';
 import {
   useEffect,
   useLayoutEffect,
@@ -108,6 +110,11 @@ export interface ControlBarProps {
   onModel?: () => void;
   /** ADR-0094: the model chip (its popover sits under it). */
   modelButton?: RefObject<HTMLButtonElement | null>;
+  /**
+   * ADR-0095: turns Voice mode on or off from its toggle on this bar. Absent, or a live page that does not say
+   * its Voice mode (an older one, or no microphone in this call): no toggle.
+   */
+  onVoice?: (on: boolean) => void;
 }
 
 /**
@@ -119,7 +126,7 @@ const FIT = {
   noRecKey: 1,
   /** From here: the Transcript and Click-through toggles' words give way to icons; no clock icon. */
   noWords: 2,
-  /** From here: Auto answer is its bolt only, and the model chip its icon (ADR-0094). */
+  /** From here: Auto answer is its bolt only, the model chip its icon (ADR-0094), Voice its waveform (ADR-0095). */
   iconAuto: 3,
   /** From here: no move icon (the whole bar still drags the window). */
   noMove: 4,
@@ -148,8 +155,82 @@ function tipText(name: string, hotkey: string | undefined, mac: boolean): string
 /** Ctrl+Alt+T: the transcript on or off while the bars have focus (ADR-0056; platform/keymap.ts). */
 const TRANSCRIPT_ACCELERATOR = 'CommandOrControl+Alt+T';
 
-/** Ctrl+Alt+Arrows: the six positions (ADR-0056). */
-const POSITION_ACCELERATOR = 'CommandOrControl+Alt+Arrows';
+/** Ctrl+Shift+Arrows: the six positions (ADR-0056; ADR-0095 moved them from Ctrl+Alt+Arrows). */
+const POSITION_ACCELERATOR = 'CommandOrControl+Shift+Arrows';
+
+/** ADR-0095: Voice mode's tooltip, whatever its state adds after it. */
+export const VOICE_TIP = 'Talk to Paramount AI hands-free';
+
+/**
+ * ADR-0095: the Voice toggle's tooltip for a state.
+ *
+ * @param voice Voice mode's state.
+ * @returns The tooltip's words.
+ * Called from: VoiceToggle; LiveMenu.tsx; tests
+ */
+export function voiceTip(voice: 'off' | 'listening' | 'paused'): string {
+  if (voice === 'listening') return `${VOICE_TIP} · On (Esc turns it off)`;
+  if (voice === 'paused') return `${VOICE_TIP} · Paused while they speak`;
+  return `${VOICE_TIP} · Off`;
+}
+
+/**
+ * ADR-0095: Voice mode on bar 1: a waveform and "Voice", with a dot lit while it is on (amber while paused
+ * because the other person is speaking). On, each pause of about 1.5 s in what the user says is sent to the
+ * assistant as a question; the words never become "You" lines.
+ *
+ * @param props.voice    Voice mode's state.
+ * @param props.disabled True before the live page answers, or once the call ended.
+ * @param props.word     False to show the waveform only.
+ * @param props.onToggle Turns it on or off.
+ * @returns The toggle.
+ * Rendered by: ControlBar
+ */
+function VoiceToggle({
+  voice,
+  disabled,
+  word,
+  onToggle,
+}: {
+  /** Voice mode's state. */
+  voice: 'off' | 'listening' | 'paused';
+  /** True before the live page answers, or once the call ended. */
+  disabled: boolean;
+  /** False to show the waveform only. */
+  word: boolean;
+  /** Turns it on or off. */
+  onToggle: () => void;
+}) {
+  const on = voice !== 'off';
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label="Voice: talk to Paramount AI hands-free"
+      data-tip={voiceTip(voice)}
+      data-voice-mode={voice}
+      className={`${word ? `${PILL} gap-1.5` : `${ICON_BUTTON} relative`} ${on ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : 'text-ui-muted'}`}
+      onClick={onToggle}
+      disabled={disabled}
+    >
+      <span aria-hidden="true" className={`inline-flex ${on ? 'text-ui-accent' : ''}`}>
+        <AudioLines size={15} strokeWidth={1.75} />
+      </span>
+      {word && 'Voice'}
+      <span
+        aria-hidden="true"
+        className={`size-1.5 shrink-0 rounded-full ${word ? '' : 'absolute right-1 top-1'} ${
+          voice === 'listening'
+            ? 'bg-ui-accent-fill'
+            : voice === 'paused'
+              ? 'bg-ui-warning'
+              : 'bg-ui-muted opacity-60'
+        }`}
+      />
+    </button>
+  );
+}
 
 /**
  * The Transcript pill (ADR-0055): the word and a small switch inside; on opens the transcript panel,
@@ -531,6 +612,8 @@ export function ControlBar(props: ControlBarProps) {
   const clickThroughOn = (state?.clickThrough ?? false) && props.onClickThrough !== undefined;
   // ADR-0094: the model chip, when the live page says its model.
   const modelChoice = props.onModel ? modelOf(state) : null;
+  // ADR-0095: the Voice toggle, when the live page says Voice mode's state.
+  const voice = props.onVoice && state?.voiceMode !== undefined ? state.voiceMode : null;
 
   const bar = useRef<HTMLDivElement>(null);
   // What changes the left side's width on a re-render; a change starts the fitting again.
@@ -546,6 +629,8 @@ export function ControlBar(props: ControlBarProps) {
     state?.capturing ?? false,
     // ADR-0094: "Smart" is wider than "Fast".
     modelChoice?.model ?? 'no-model',
+    // ADR-0095: the Voice toggle appearing or going.
+    voice === null ? 'no-voice' : 'voice',
   ].join('|');
   const { step, room, content } = useFitStep(fitKey);
   const recKey = step < FIT.noRecKey;
@@ -633,6 +718,16 @@ export function ControlBar(props: ControlBarProps) {
               disabled={ended}
               buttonRef={props.modelButton}
               onToggle={props.onModel}
+            />
+          )}
+          {voice !== null && props.onVoice && (
+            // ADR-0095: next to the model chip; it gives way to its waveform with Auto, and never pushes the
+            // pinned controls out (it is inside the part that gives way).
+            <VoiceToggle
+              voice={voice}
+              disabled={ended}
+              word={step < FIT.iconAuto}
+              onToggle={() => props.onVoice?.(voice === 'off')}
             />
           )}
           {props.onClickThrough && step < FIT.noClickThrough && (

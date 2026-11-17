@@ -6,7 +6,8 @@
  *          Smart disabled with "Turned off by your admin" when an admin has turned it off). An entry shows only where it can work: a browser's
  *          picture-in-picture window has no opacity, a shell before 1.1.0 no separate pages window.
  *          v1.3.0 (ADR-0056): in desktop 1.3.0 a Position row, a 2 × 3 grid of the overlay's six
- *          positions with the current one highlighted, replaces Reset position. Desktop 1.5.0
+ *          positions with the current one highlighted, replaces Reset position. ADR-0095: a Voice switch (hands-free
+ *          talking to the assistant, as bar 1's toggle) after Auto answer; the Model row also offers Fastest (Groq). Desktop 1.5.0
  *          (ADR-0068): Recording type (Screen + audio / Audio only), where the app can record.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (ShareProtectionState), lucide-react, ./ModelChoice.tsx, src/core/storage (appearancePrefs,
@@ -294,6 +295,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
                 label="Answer model"
                 model={modelChoice.model}
                 smartAllowed={modelChoice.smartAllowed}
+                groqAllowed={modelChoice.groqAllowed}
                 onSelect={props.onModel}
                 onClose={() => props.onClose?.()}
               />
@@ -307,6 +309,16 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           info="Paramount AI answers a finished question by itself, at most once every 15 seconds. This call only."
           onChange={(on) => onCommand({ type: 'auto-answer', on })}
         />
+        {state?.voiceMode !== undefined && (
+          // ADR-0095: the same as bar 1's Voice toggle (off by default in every call; Esc turns it off).
+          <MenuSwitch
+            label="Voice"
+            checked={state.voiceMode !== 'off'}
+            disabled={state.ended}
+            info="Talk to Paramount AI hands-free: each pause sends what you said as a question. Your words aren't sent to the interviewer transcript. It pauses while the other person speaks. Esc turns it off."
+            onChange={(on) => onCommand({ type: 'voice-mode', on })}
+          />
+        )}
         {props.onClickThrough && (
           <MenuSwitch
             label="Click-through"

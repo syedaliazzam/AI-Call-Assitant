@@ -10,7 +10,7 @@ import { DEFAULT_GLOBAL_HOTKEYS, HOTKEY_ROWS, hotkeyLabel, type HotkeyStatus } f
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/platform', () => ({ getPlatform: () => ({}) }));
-const { hotkeyRowsFor, rowHasConflict } = await import('@/features/settings/HotkeyList');
+const { hotkeyRowsFor, rowHasConflict, rowKeys } = await import('@/features/settings/HotkeyList');
 
 /** A status saying the overlay's upward move is taken. */
 const TAKEN: HotkeyStatus[] = [
@@ -71,5 +71,29 @@ describe('the recording row (desktop 1.5.0, ADR-0068)', () => {
       [label],
     );
     expect(DEFAULT_GLOBAL_HOTKEYS.record).toBe('CommandOrControl+Alt+R');
+  });
+});
+
+describe('the keys a row shows (ADR-0095)', () => {
+  const move = HOTKEY_ROWS.find((row) => row.actions.includes('overlay-row-top'))!;
+
+  it('shows Ctrl+Shift+Arrows for moving the overlay, in a browser and in desktop 1.7.0', () => {
+    expect(rowKeys(move, null)).toBe('CommandOrControl+Shift+Arrows');
+    const current: HotkeyStatus[] = [
+      { action: 'overlay-row-top', accelerator: 'CommandOrControl+Shift+Up', registered: true },
+    ];
+    expect(rowKeys(move, current)).toBe('CommandOrControl+Shift+Arrows');
+  });
+
+  it('shows the keys an older desktop app reports (Ctrl+Alt+Arrows until 1.6.5)', () => {
+    const older: HotkeyStatus[] = [
+      { action: 'overlay-row-top', accelerator: 'CommandOrControl+Alt+Up', registered: true },
+    ];
+    expect(rowKeys(move, older)).toBe('CommandOrControl+Alt+Arrows');
+  });
+
+  it('shows a plain row as it is when the app holds the same keys', () => {
+    const answer = HOTKEY_ROWS.find((row) => row.actions.includes('answer'))!;
+    expect(rowKeys(answer, TAKEN)).toBe(DEFAULT_GLOBAL_HOTKEYS.answer);
   });
 });

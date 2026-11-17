@@ -108,7 +108,7 @@ const SessionSchema = z.object({
   description: z.string(),
   preferences: z.object({
     language: z.string(),
-    model: z.enum(['fast', 'smart']),
+    model: z.enum(['fast', 'smart', 'groq']),
     style: z.object({
       format: z.enum(['headline+bullets', 'bullets', 'paragraph']),
       length: z.enum(['short', 'medium', 'detailed']),
@@ -175,7 +175,7 @@ const AnswerSchema = z.object({
   // v1.1.0: absent in older files.
   callStartedAt: z.number().optional(),
   text: z.string(),
-  model: z.enum(['fast', 'smart']),
+  model: z.enum(['fast', 'smart', 'groq']),
   msFirstToken: z.number().nullable(),
   msTotal: z.number(),
   createdAt: z.number(),

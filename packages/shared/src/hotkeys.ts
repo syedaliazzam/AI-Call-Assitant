@@ -86,7 +86,8 @@ export type OverlayJump =
 /**
  * Something the shell does to the overlay window itself, without the page: show or hide it, jump
  * between positions, or nudge it a little (`overlay-up` and so on). Until 1.2.0 the nudge was on
- * Ctrl+Alt+Arrows and a bigger nudge (`-big`) on Ctrl+Alt+Shift+Arrows; 1.3.0 has no bigger nudge.
+ * Ctrl+Alt+Arrows and a bigger nudge (`-big`) on Ctrl+Alt+Shift+Arrows; 1.3.0 has no bigger nudge. The jumps
+ * were on Ctrl+Alt+Arrows from 1.3.0 to 1.6.5 and are on Ctrl+Shift+Arrows from desktop 1.7.0 (ADR-0095).
  */
 export type OverlayAction = 'overlay-toggle' | `overlay-${OverlayDirection}` | OverlayJump;
 
@@ -175,19 +176,21 @@ export const DEFAULT_GLOBAL_HOTKEYS: Readonly<Record<CallHotkey, string>> = {
   // where Ctrl+Alt types a letter (AltGr; Polish: AltGr+S types "ś") it can clash, and on macOS
   // ⌘⌥S is "Save All" in some apps; Settings → Hotkeys reports a shortcut another app holds.
   'script-bar': 'CommandOrControl+Alt+S',
-  // v1.3.2: Click-through. X is free among the Ctrl+Alt shortcuts (H, S, K, T, Enter, Arrows). Goes to the
+  // v1.3.2: Click-through. X is free among the Ctrl+Alt shortcuts (H, S, K, T, Enter). Goes to the
   // live page like the script bar; on AltGr layouts it can clash, which Settings → Hotkeys reports.
   'click-through': 'CommandOrControl+Alt+X',
   // Desktop 1.5.0 (ADR-0068): start or stop recording. R is free among the Ctrl+Alt shortcuts (H, S, K,
-  // T, X, Enter, Arrows). Goes to the live page, which asks for consent first; on AltGr layouts it can
+  // T, X, Enter). Goes to the live page, which asks for consent first; on AltGr layouts it can
   // clash, which Settings → Hotkeys reports. A shell before 1.5.0 does not register it.
   record: 'CommandOrControl+Alt+R',
-  // v1.3.0 (ADR-0056): Ctrl+Alt+Arrows jump between the six positions; the small nudge moved to
-  // Ctrl+Alt+Shift+Arrows. Never Ctrl+Shift+Arrows: in other apps that selects text by word.
-  'overlay-spot-left': 'CommandOrControl+Alt+Left',
-  'overlay-spot-right': 'CommandOrControl+Alt+Right',
-  'overlay-row-top': 'CommandOrControl+Alt+Up',
-  'overlay-row-bottom': 'CommandOrControl+Alt+Down',
+  // v1.3.0 (ADR-0056): the jumps between the six positions; the small nudge is Ctrl+Alt+Shift+Arrows.
+  // ADR-0095 (desktop 1.7.0, the developer's choice): the jumps moved from Ctrl+Alt+Arrows to Ctrl+Shift+Arrows.
+  // In other apps Ctrl+Shift+Arrows selects text by word (on macOS ⌘⇧←/→ to the line's start or end), so,
+  // like every key here, they are held only while a call runs and released at End.
+  'overlay-spot-left': 'CommandOrControl+Shift+Left',
+  'overlay-spot-right': 'CommandOrControl+Shift+Right',
+  'overlay-row-top': 'CommandOrControl+Shift+Up',
+  'overlay-row-bottom': 'CommandOrControl+Shift+Down',
   'overlay-up': 'CommandOrControl+Alt+Shift+Up',
   'overlay-down': 'CommandOrControl+Alt+Shift+Down',
   'overlay-left': 'CommandOrControl+Alt+Shift+Left',
@@ -337,9 +340,11 @@ export const HOTKEY_ROWS: readonly HotkeyRow[] = [
     recording: true,
   },
   {
-    label: 'Move overlay to the next position (← → in its row, ↑ ↓ top or bottom row)',
+    // ADR-0095: Ctrl+Shift+Arrows from desktop 1.7.0; Settings shows the keys an older app reports instead.
+    label:
+      'Move overlay to the next position (← → in its row, ↑ ↓ top or bottom row; during a call only)',
     accelerator: DEFAULT_GLOBAL_HOTKEYS['overlay-row-top'],
-    keysOverride: 'CommandOrControl+Alt+Arrows',
+    keysOverride: 'CommandOrControl+Shift+Arrows',
     scope: 'global',
     actions: ['overlay-spot-left', 'overlay-spot-right', 'overlay-row-top', 'overlay-row-bottom'],
     shells: 'positions',

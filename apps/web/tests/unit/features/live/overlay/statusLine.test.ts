@@ -15,6 +15,8 @@ import {
   PRIVATE_OFF_CALL_TEXT,
   SILENT_TEXT,
   statusMessage,
+  VOICE_MODE_TEXT,
+  VOICE_PAUSED_TEXT,
 } from '@/features/live/overlay/statusLine';
 
 /** A call's overlay state with nothing to say. */
@@ -193,5 +195,40 @@ describe('the rename offer (ADR-0093)', () => {
     // A warning still comes first.
     expect(statusMessage({ ...QUIET, nameOffer: 'Sarah' }, true)?.key).toBe('private-off');
     expect(statusMessage({ ...QUIET, nameOffer: 'Sarah', ended: true }, false)).toBeNull();
+  });
+});
+
+describe('Voice mode on the status line (ADR-0095)', () => {
+  it('says the user is talking to Paramount AI, with Turn off', () => {
+    const message = statusMessage({ ...QUIET, voiceMode: 'listening' }, false);
+    expect(message?.key).toBe('voice-mode');
+    expect(message?.text).toBe(VOICE_MODE_TEXT);
+    expect(VOICE_MODE_TEXT).toBe(
+      "Talking to Paramount AI — your words aren't sent to the interviewer transcript",
+    );
+    expect(message?.action).toEqual({
+      kind: 'command',
+      command: { type: 'voice-mode', on: false },
+      label: 'Turn off',
+    });
+  });
+
+  it('says when it is paused while they speak', () => {
+    const message = statusMessage({ ...QUIET, voiceMode: 'paused' }, false);
+    expect(message?.text).toBe(VOICE_PAUSED_TEXT);
+    expect(message?.tone).toBe('muted');
+  });
+
+  it('says nothing when off, and gives way to a silent microphone', () => {
+    expect(statusMessage({ ...QUIET, voiceMode: 'off' }, false)).toBeNull();
+    const silent = statusMessage(
+      {
+        ...QUIET,
+        voiceMode: 'listening',
+        callNotice: { kind: 'mic-silent', text: 'x' } as CompactState['callNotice'],
+      },
+      false,
+    );
+    expect(silent?.key).toBe('mic-silent');
   });
 });

@@ -213,6 +213,12 @@ export const usageDay = pgTable(
     day: text('day').notNull(),
     /** Claude requests made that day (answers, chat, screenshots, Ask Kite, notes, review, prepare). */
     requests: integer('requests').default(0).notNull(),
+    /**
+     * ADR-0095: how many of those requests were sent to Groq (live answers with "Fastest (Groq)"), for
+     * Admin → Usage. Included in `requests`; an answer Groq could not start and Claude Haiku answered still
+     * counts here (Groq was asked). Added by migration 0009 with 0 for every existing row.
+     */
+    groqRequests: integer('groq_requests').default(0).notNull(),
   },
   // One row per user and day: the counter is increased in place (INSERT … ON CONFLICT).
   (table) => [primaryKey({ columns: [table.userId, table.day] })],

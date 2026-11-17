@@ -49,6 +49,7 @@ export interface StatusMessage {
     | 'paused'
     | 'still-here'
     | 'listening'
+    | 'voice-mode'
     | 'mic-silent'
     | 'them-silent'
     | 'answer-key'
@@ -81,6 +82,14 @@ export interface StatusMessage {
 
 /** ADR-0082: what the status line says while a voice question listens. */
 export const LISTENING_TEXT = 'Listening… (Esc cancels)';
+
+/** ADR-0095: what the status line says while Voice mode listens. */
+export const VOICE_MODE_TEXT =
+  "Talking to Paramount AI — your words aren't sent to the interviewer transcript";
+
+/** ADR-0095: what it says while Voice mode is paused because the other person is speaking. */
+export const VOICE_PAUSED_TEXT =
+  "Voice paused while they speak — your words aren't sent to the interviewer transcript";
 
 /** ADR-0082: the short words for a channel that hears nothing (the call window keeps the long ones). */
 export const SILENT_TEXT = {
@@ -163,6 +172,18 @@ export function statusMessage(
       text: PRIVATE_OFF_TEXT,
       tone: 'alert',
       action: { kind: 'private', label: 'Turn on' },
+    };
+  }
+  // ADR-0095: Voice mode is on: always visible after the alerts above (a silent microphone or an Answer key
+  // held elsewhere matter more), with the button that turns it off.
+  if (state.voiceMode === 'listening' || state.voiceMode === 'paused') {
+    return {
+      key: 'voice-mode',
+      text: state.voiceMode === 'listening' ? VOICE_MODE_TEXT : VOICE_PAUSED_TEXT,
+      tone: state.voiceMode === 'listening' ? 'listening' : 'muted',
+      detail:
+        'Each pause of about 1.5 s sends what you said to Paramount AI as a question. It pauses while the other person speaks, and for 2 s after. Esc turns it off.',
+      action: { kind: 'command', command: { type: 'voice-mode', on: false }, label: 'Turn off' },
     };
   }
   if (notice) {

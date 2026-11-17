@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/core/storage/hintPrefs.ts
  * Purpose: Notices that show once on a device (v1.1.0): the acceptable-use notice and the headphones
- *          hint. (The offer to download the accurate-transcription model went in v1.4, ADR-0066: the
+ *          hint, and (ADR-0095) Voice mode's tip. (The offer to download the accurate-transcription model went in v1.4, ADR-0066: the
  *          desktop app now downloads it by itself.) Kept in localStorage: a
  *          per-device convenience. With storage blocked, a notice shows again next time, which is the
  *          safe way to fail for something the person should see.
@@ -12,12 +12,14 @@
  */
 
 /** A notice that shows once. */
-export type OnceHint = 'acceptable-use' | 'headphones';
+export type OnceHint = 'acceptable-use' | 'headphones' | 'voice-mode';
 
 /** The localStorage key of each notice. */
 const KEYS: Readonly<Record<OnceHint, string>> = {
   'acceptable-use': 'kite.hint.acceptableUse',
   headphones: 'kite.hint.headphones',
+  // ADR-0095: "Mute yourself in the meeting first if others can hear you", the first time Voice is turned on.
+  'voice-mode': 'kite.hint.voiceMode',
 };
 
 /**

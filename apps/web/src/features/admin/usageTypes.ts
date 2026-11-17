@@ -20,6 +20,10 @@ export interface UsageTableRow {
   today: number;
   /** Claude requests over the last 7 days, today included. */
   lastDays: number;
+  /** ADR-0095: of today's requests, how many went to Groq. */
+  groqToday: number;
+  /** ADR-0095: of the last 7 days' requests, how many went to Groq. */
+  groqLastDays: number;
 }
 
 /** The daily-limit form's state after a submit (useActionState). Never thrown. */

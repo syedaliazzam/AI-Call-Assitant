@@ -19,7 +19,7 @@
  *             src/core/storage/accountScope.ts (the signed-in account: the log is kept per account)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §11 (testing); ADR-0069
  */
-import type { ModelTier } from '@kite/shared';
+import type { AnswerModel } from '@kite/shared';
 import { currentAccountId } from '../storage/accountScope';
 import type { BacklogInfo } from '../stt/protocol';
 
@@ -192,8 +192,14 @@ export interface AnswerTiming {
   /**
    * ADR-0094: the model tier that answered: the one asked for when it was sent, replaced by the server's
    * own when it finishes (an admin may have turned the deeper model off). The tier only, never a model name.
+   * ADR-0095: 'groq' when Groq answered.
    */
-  model?: ModelTier;
+  model?: AnswerModel;
+  /**
+   * ADR-0095: Groq was asked but Claude Haiku answered ('timeout': no first token within 4 s; 'error';
+   * 'empty'). Absent otherwise.
+   */
+  fallback?: 'timeout' | 'error' | 'empty';
 }
 
 /** One Accurate decision (times are Unix ms). */
@@ -536,8 +542,8 @@ export interface CardTiming {
   flags: string[];
   /** 'done', 'error', 'cancelled', 'none' (nothing to answer), or 'streaming' when the call ended first. */
   status: string;
-  /** ADR-0094: the model tier that answered ('fast' or 'smart'), or null in an older log. */
-  model: ModelTier | null;
+  /** ADR-0094: the model that answered ('fast', 'smart' or, ADR-0095, 'groq'), or null in an older log. */
+  model: AnswerModel | null;
   /** The end of the question's speech, s. */
   questionEnd: number | null;
   /** The key press or the decision, s. */
@@ -581,6 +587,8 @@ export function cardTimings(log: CallTimingLog): CardTiming[] {
       ...(answer.rerunOf ? ['rerun'] : []),
       // Batch C (P1-1): sent at the end of turn and held hidden first.
       ...(answer.speculative ? ['speculative'] : []),
+      // ADR-0095: Groq was asked and Claude Haiku answered.
+      ...(answer.fallback ? [`groq-fallback-${answer.fallback}`] : []),
     ],
     status: answer.status,
     model: answer.model ?? null,

@@ -45,6 +45,28 @@ const claudeEnvSchema = z.object({
   KITE_MODEL_SMART: z.string().min(1),
 });
 
+/**
+ * ADR-0095: the model the "Fastest (Groq)" choice uses when GROQ_MODEL is not set. Checked against
+ * Groq's models endpoint on 17 Nov 2026 (active, 131,072-token context).
+ */
+export const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
+
+/** Variables for the third answer model, Groq (ADR-0095). Both optional: without a key Groq is off. */
+const groqEnvSchema = z.object({
+  /** Groq API key. Server-only; never logged or sent to the browser. */
+  GROQ_API_KEY: z.string().min(1).optional(),
+  /** Groq model id, for example 'openai/gpt-oss-120b' (default DEFAULT_GROQ_MODEL). */
+  GROQ_MODEL: z.string().min(1).optional(),
+});
+
+/** Validated Groq settings (ADR-0095). */
+export interface GroqEnv {
+  /** Groq API key. */
+  apiKey: string;
+  /** Groq model id. */
+  model: string;
+}
+
 /** Validated sign-in settings, with the app's public address already worked out. */
 export interface AuthEnv {
   /** Neon Postgres connection string. */
@@ -179,6 +201,20 @@ export function getClaudeEnv(source: EnvSource = process.env): ClaudeEnv {
     modelFast: env.KITE_MODEL_FAST,
     modelSmart: env.KITE_MODEL_SMART,
   };
+}
+
+/**
+ * Reads the Groq settings (ADR-0095). Groq is optional: with no key it is simply not offered, and a
+ * session set to it answers with Claude Haiku.
+ *
+ * @param source Variables to read; defaults to process.env (tests pass their own).
+ * @returns The GroqEnv, or null when GROQ_API_KEY is not set.
+ * Called from: app/api/answer/route.ts, src/server/modelAccess.ts
+ */
+export function getGroqEnv(source: EnvSource = process.env): GroqEnv | null {
+  const env = parseEnv(groqEnvSchema, source);
+  if (!env.GROQ_API_KEY) return null;
+  return { apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL ?? DEFAULT_GROQ_MODEL };
 }
 
 /**

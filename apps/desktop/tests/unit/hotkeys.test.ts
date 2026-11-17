@@ -70,8 +70,8 @@ describe('createHotkeys', () => {
     expect(statuses.every((status) => status.registered)).toBe(true);
     expect([...callbacks.keys()].sort()).toEqual(Object.values(DEFAULT_GLOBAL_HOTKEYS).sort());
     press('CommandOrControl+Enter');
-    // v1.3.0 (ADR-0056): Ctrl+Alt+Left jumps a spot; the nudge is Ctrl+Alt+Shift+Left.
-    press('CommandOrControl+Alt+Left');
+    // ADR-0095 (1.7.0): Ctrl+Shift+Left jumps a spot (Ctrl+Alt+Left from 1.3.0 to 1.6.5); the nudge is Ctrl+Alt+Shift+Left.
+    press('CommandOrControl+Shift+Left');
     press('CommandOrControl+Alt+Shift+Left');
     expect(send.mock.calls).toEqual([['answer'], ['overlay-spot-left'], ['overlay-left']]);
     expect(hotkeys.enabled()).toBe(true);
@@ -173,7 +173,7 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     press('CommandOrControl+Enter');
     press('CommandOrControl+Alt+H');
     press('CommandOrControl+Alt+Shift+Up');
-    press('CommandOrControl+Alt+Down');
+    press('CommandOrControl+Shift+Down');
     // v1.0.2 (ADR-0035): the script bar goes to the page, which decides what the overlay shows.
     press('CommandOrControl+Alt+S');
     // v1.3.2: Click-through goes to the page too: the live page holds the switch.
@@ -234,10 +234,20 @@ describe('overlay shortcuts and the conflict check (ADR-0029)', () => {
     void callbacks;
   });
 
-  it('never holds Ctrl+Shift+Arrows, which select text by word in other apps (v1.3.0)', () => {
-    const accelerators = Object.values(DEFAULT_GLOBAL_HOTKEYS);
+  it('holds Ctrl+Shift+Arrows for the jumps only during a call, and releases them at End (1.7.0, ADR-0095)', () => {
+    // v1.3.0 to 1.6.5 never held them (they select text by word in other apps); the developer moved the
+    // jumps there in 1.7.0, so they must never outlive the call.
+    const { globalShortcut, callbacks } = fakeGlobalShortcut();
+    const hotkeys = createHotkeys(globalShortcut, vi.fn());
+    expect(callbacks.has('CommandOrControl+Shift+Left')).toBe(false);
+    hotkeys.enable();
     for (const arrow of ['Up', 'Down', 'Left', 'Right']) {
-      expect(accelerators).not.toContain(`CommandOrControl+Shift+${arrow}`);
+      expect(callbacks.has(`CommandOrControl+Shift+${arrow}`)).toBe(true);
+      expect(Object.values(DEFAULT_GLOBAL_HOTKEYS)).not.toContain(`CommandOrControl+Alt+${arrow}`);
+    }
+    hotkeys.disable();
+    for (const arrow of ['Up', 'Down', 'Left', 'Right']) {
+      expect(callbacks.has(`CommandOrControl+Shift+${arrow}`)).toBe(false);
     }
   });
 
