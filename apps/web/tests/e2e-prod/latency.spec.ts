@@ -77,10 +77,14 @@ async function runLatencyPage(page: Page): Promise<void> {
     ...(process.env.KITE_LATENCY_SESSION ? { session: process.env.KITE_LATENCY_SESSION } : {}),
     // ADR-0099: KITE_LATENCY_TIER=priority asks OpenAI for priority processing (a GPT model).
     ...(process.env.KITE_LATENCY_TIER ? { tier: process.env.KITE_LATENCY_TIER } : {}),
+    // ADR-0100: KITE_LATENCY_GAP_MS spaces the answers (for example 20000 for 20 s).
+    ...(process.env.KITE_LATENCY_GAP_MS ? { gap: process.env.KITE_LATENCY_GAP_MS } : {}),
   }).toString();
   await page.goto(`${PRODUCTION_URL}/dev/latency${query ? `?${query}` : ''}`);
   await page.getByRole('button', { name: 'Run 20 answers' }).click();
-  await expect(page.getByText('Done: 20 answers.')).toBeVisible({ timeout: 300_000 });
+  // ADR-0100: spaced answers take 19 gaps longer.
+  const gap = Number(process.env.KITE_LATENCY_GAP_MS ?? 0) || 0;
+  await expect(page.getByText('Done: 20 answers.')).toBeVisible({ timeout: 300_000 + 19 * gap });
 }
 
 /**
@@ -146,6 +150,17 @@ async function summarise(page: Page, label: string): Promise<Summary> {
     Math.round(
       samples.reduce((sum, sample) => sum + pick(sample), 0) / Math.max(1, samples.length),
     );
+  // ADR-0100: request received → the provider's stream open (where a new connection's set-up shows).
+  report(`${label} server stream open`, samples.length > 0, {
+    p50: nearestRank(
+      samples.map((sample) => sample.serverToStreamOpen),
+      50,
+    ),
+    p95: nearestRank(
+      samples.map((sample) => sample.serverToStreamOpen),
+      95,
+    ),
+  });
   report(`${label} tokens per answer`, samples.length > 0, {
     uncachedInput: mean((sample) => sample.input),
     cacheRead: mean((sample) => sample.cacheRead),
@@ -166,6 +181,8 @@ interface OwnSample {
   cacheRead: number;
   /** Uncached input tokens. */
   input: number;
+  /** Server: request received → the provider's stream opened, ms. */
+  serverToStreamOpen: number;
   /** Output tokens. */
   output: number;
   /** Why the answer moved to Claude Haiku, or null. */
@@ -214,6 +231,8 @@ function openMainWindow(): void {
 }
 
 test('Chrome: 20 answers on /dev/latency', async () => {
+  // ADR-0100: spaced runs last longer than the suite's 10 minutes.
+  test.setTimeout(600_000 + 19 * (Number(process.env.KITE_LATENCY_GAP_MS ?? 0) || 0));
   const browser = await chromium.launch({ channel: 'chromium', headless: true });
   try {
     const summary = await measure(await browser.newPage(), 'chrome');

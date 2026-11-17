@@ -97,7 +97,18 @@ export interface LatencyOptions {
   fixture?: LatencyFixture;
   /** ADR-0099 measurement only: OpenAI priority processing for a GPT model (honoured for admins). */
   serviceTier?: 'priority';
+  /**
+   * ADR-0100: how long to wait before each answer after the first, in ms (default 0: one after another). A
+   * real call's questions come tens of seconds apart; spacing the answers shows what happens to the server's
+   * idle connections to the model's provider between them.
+   */
+  gapMs?: number;
+  /** Waits (tests replace it). Default setTimeout. */
+  wait?: (ms: number) => Promise<void>;
 }
+
+/** ADR-0100: the longest spacing between answers /dev/latency accepts, in ms. */
+export const MAX_LATENCY_GAP_MS = 60_000;
 
 /** The invented session used for the measurement. */
 export const LATENCY_SESSION: Session = {
@@ -295,7 +306,12 @@ export async function runLatencyTest(
   const answers: CallAnswer[] = [];
   const samples: LatencySample[] = [];
 
+  const gapMs = Math.min(MAX_LATENCY_GAP_MS, Math.max(0, options.gapMs ?? 0));
+  const wait =
+    options.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   for (let n = 1; n <= count; n += 1) {
+    // ADR-0100: the spacing between answers, before each one but the first (not part of any timing).
+    if (n > 1 && gapMs > 0) await wait(gapMs);
     const base = callStartedAt + n * 60_000;
     transcript.addFinal({
       speaker: 'you',

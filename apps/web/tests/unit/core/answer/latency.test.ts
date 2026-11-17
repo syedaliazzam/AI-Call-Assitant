@@ -150,3 +150,18 @@ describe('runLatencyTest with a model and the CV session (ADR-0099)', () => {
     ]);
   });
 });
+
+describe('runLatencyTest with spaced answers (ADR-0100)', () => {
+  it('waits the gap before each answer but the first, never more than the limit', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const { send } = fakeSend();
+    const waits: number[] = [];
+    await runLatencyTest({
+      count: 3,
+      send,
+      gapMs: 90_000,
+      wait: async (ms) => void waits.push(ms),
+    });
+    expect(waits).toEqual([60_000, 60_000]);
+  });
+});

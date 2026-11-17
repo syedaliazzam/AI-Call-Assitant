@@ -16,6 +16,7 @@
 import { isAnswerModel } from '@kite/shared';
 import { useState } from 'react';
 import {
+  MAX_LATENCY_GAP_MS,
   runLatencyTest,
   summarise,
   type LatencyFixture,
@@ -71,6 +72,14 @@ export function LatencyTest() {
       typeof window !== 'undefined' &&
       new URLSearchParams(window.location.search).get('tier') === 'priority',
   );
+  // ADR-0100: ?gap=<ms> spaces the answers (a call's questions come tens of seconds apart).
+  const [gapMs] = useState(() => {
+    const asked =
+      typeof window === 'undefined'
+        ? null
+        : Number(new URLSearchParams(window.location.search).get('gap'));
+    return asked && Number.isFinite(asked) ? Math.min(MAX_LATENCY_GAP_MS, Math.max(0, asked)) : 0;
+  });
   const [samples, setSamples] = useState<LatencySample[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +100,7 @@ export function LatencyTest() {
         model,
         fixture,
         ...(priority ? { serviceTier: 'priority' as const } : {}),
+        gapMs,
         onSample: (sample) => setSamples((current) => [...current, sample]),
       });
       setFinished(true);
@@ -103,7 +113,7 @@ export function LatencyTest() {
 
   const results = summary
     ? JSON.stringify(
-        { model, fixture, tier: priority ? 'priority' : 'default', summary, samples },
+        { model, fixture, tier: priority ? 'priority' : 'default', gapMs, summary, samples },
         null,
         1,
       )
