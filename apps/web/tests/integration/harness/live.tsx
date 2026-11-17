@@ -590,7 +590,15 @@ function withOverlayParams(base: CompactState): CompactState {
       : {
           model: params.get('model') === 'smart' ? ('smart' as const) : ('fast' as const),
           smartAllowed: params.get('smart') !== 'off',
+          // ADR-0095: Fastest (Groq) may be chosen unless ?groq=off.
+          groqAllowed: params.get('groq') !== 'off',
         }),
+    // ADR-0095: ?voice=off|listening|paused shows the Voice toggle and the ⋮ menu's Voice switch.
+    ...(params.get('voice') === 'off' ||
+    params.get('voice') === 'listening' ||
+    params.get('voice') === 'paused'
+      ? { voiceMode: params.get('voice') as 'off' | 'listening' | 'paused' }
+      : {}),
     ...(rec === 'on' || rec === 'off'
       ? {
           recording: {

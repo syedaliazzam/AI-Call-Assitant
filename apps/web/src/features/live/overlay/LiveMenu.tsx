@@ -1,17 +1,19 @@
 /**
  * File: apps/web/src/features/live/overlay/LiveMenu.tsx
- * Purpose: The ⋮ menu during a call (spec S16): the email, Dashboard ↗, Get help ↗, Private, Zoom, Theme,
- *          Opacity, Answer text size, Auto answer, Answer preferences and Edit session, then
+ * Purpose: The ⋮ menu during a call (spec S16): the email, Dashboard ↗, Get help ↗, Private, Display ›
+ *          (Zoom, Theme, Opacity and Answer text size, in DisplaySheet.tsx since 17 Nov 2026, so the menu stays
+ *          one complete card on a laptop screen), Auto answer, Answer preferences and Edit session, then
  *          Open call window and Reset position. ADR-0094: a Model row (Fast / Smart, the current one checked;
  *          Smart disabled with "Turned off by your admin" when an admin has turned it off). An entry shows only where it can work: a browser's
  *          picture-in-picture window has no opacity, a shell before 1.1.0 no separate pages window.
  *          v1.3.0 (ADR-0056): in desktop 1.3.0 a Position row, a 2 × 3 grid of the overlay's six
  *          positions with the current one highlighted, replaces Reset position. ADR-0095: a Voice switch (hands-free
- *          talking to the assistant, as bar 1's toggle) after Auto answer; the Model row also offers Fastest (Groq). Desktop 1.5.0
+ *          talking to the assistant, as bar 1's toggle) after Auto answer; the Model row also offers Fastest (Groq),
+ *          and is one row showing the current model that opens its three choices in place. Desktop 1.5.0
  *          (ADR-0068): Recording type (Screen + audio / Audio only), where the app can record.
  * Used by: src/features/live/CompactView.tsx
- * Depends on: @kite/shared (ShareProtectionState), lucide-react, ./ModelChoice.tsx, src/core/storage (appearancePrefs,
- *             overlayPrefs, types), src/core/live/liveChannel.ts, src/features/privacy/usePrivate.ts,
+ * Depends on: @kite/shared (ShareProtectionState), lucide-react, ./ModelChoice.tsx, src/core/storage (types),
+ *             src/core/live/liveChannel.ts, src/features/privacy/usePrivate.ts,
  *             src/ui (PanelMenu, icons)
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S16); ADR-0041, ADR-0042
  */
@@ -25,40 +27,20 @@ import {
   type RecordingKind,
   type ShareProtectionState,
 } from '@kite/shared';
-import { LifeBuoy, SlidersHorizontal, Sparkles, User, Video } from 'lucide-react';
-import { forwardRef } from 'react';
+import { LifeBuoy, MonitorCog, SlidersHorizontal, Sparkles, User, Video } from 'lucide-react';
+import { forwardRef, useState } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
-import {
-  clampStep,
-  FONT_SCALE_RANGE,
-  setFontScale,
-  setTheme,
-  setZoom,
-  ZOOM_RANGE,
-  type ThemeChoice,
-} from '@/core/storage/appearancePrefs';
-import { OVERLAY_OPACITY } from '@/core/storage/overlayPrefs';
 import type { AnswerModel } from '@/core/storage/types';
 import { PRIVATE_LABEL, privateHint } from '@/features/privacy/usePrivate';
-import { GridIcon, MonitorIcon, PenIcon } from '@/ui/icons';
-import {
-  MenuAction,
-  MenuBlock,
-  MenuList,
-  MenuStepper,
-  MenuSwitch,
-  MenuTheme,
-} from '@/ui/PanelMenu';
-import { modelOf, ModelOptions } from './ModelChoice';
+import { ChevronDownIcon, GridIcon, MonitorIcon, PenIcon } from '@/ui/icons';
+import { MenuAction, MenuBlock, MenuList, MenuSwitch } from '@/ui/PanelMenu';
+import { MODEL_CHOICES, modelOf, ModelOptions } from './ModelChoice';
 
 /** The ⋮ menu's recording types (desktop 1.5.0, ADR-0068). */
 export const RECORDING_TYPE_OPTIONS: readonly { value: RecordingKind; label: string }[] = [
   { value: 'screen', label: 'Screen + audio' },
   { value: 'audio', label: 'Audio only' },
 ];
-
-/** How much + and − change the opacity. */
-const OPACITY_STEP = 0.05;
 
 /** The icons in the rows this file adds. */
 const ICON = { size: 16, strokeWidth: 1.75, 'aria-hidden': true, className: 'shrink-0' } as const;
@@ -145,16 +127,8 @@ export interface LiveMenuProps {
   onProtection?: ((on: boolean) => void) | undefined;
   /** The signed-in person's email, once known. */
   email?: string | null | undefined;
-  /** The theme chosen. */
-  theme: ThemeChoice;
-  /** The UI scale. */
-  zoom: number;
-  /** The answer text size. */
-  fontScale: number;
-  /** The chosen panel opacity, where the window can do it. */
-  opacity?: number | undefined;
-  /** Sets the opacity. */
-  onOpacity?: ((value: number) => void) | undefined;
+  /** Opens the Display sheet (Zoom, Theme, Opacity, Answer text size: DisplaySheet.tsx). */
+  onDisplay: () => void;
   /** Opens the dashboard, where this app has a separate window for it. */
   onDashboard?: (() => void) | undefined;
   /** Opens the user guide, likewise. */
@@ -195,9 +169,11 @@ export interface LiveMenuProps {
  * Rendered by: CompactView.tsx
  */
 export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveMenu(props, ref) {
-  const { state, onCommand, protection, zoom, fontScale, opacity, onOpacity } = props;
+  const { state, onCommand, protection } = props;
   // ADR-0094: the Model row, when the live page says its model.
   const modelChoice = props.onModel ? modelOf(state) : null;
+  // The Model row's three choices, open in place under it (one row while shut keeps the menu short).
+  const [modelOpen, setModelOpen] = useState(false);
   return (
     <div
       ref={ref}
@@ -227,51 +203,15 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           disabled={!protection?.supported || !props.onProtection}
           onChange={(on) => props.onProtection?.(on)}
         />
-        <MenuStepper
-          label="Zoom"
-          value={`${Math.round(zoom * 100)}%`}
-          canMore={zoom < ZOOM_RANGE.max}
-          canLess={zoom > ZOOM_RANGE.min}
-          onMore={() => setZoom(clampStep(zoom + ZOOM_RANGE.step, ZOOM_RANGE))}
-          onLess={() => setZoom(clampStep(zoom - ZOOM_RANGE.step, ZOOM_RANGE))}
-          onReset={() => setZoom(ZOOM_RANGE.default)}
+        <MenuAction
+          label="Display"
+          icon={<MonitorCog {...ICON} />}
+          info="Zoom, theme, opacity and answer text size."
+          onSelect={props.onDisplay}
         />
-        <MenuTheme value={props.theme} onChange={(choice) => setTheme(choice, 'call')} />
       </MenuBlock>
 
       <MenuBlock>
-        {opacity !== undefined && onOpacity && (
-          <MenuStepper
-            label="Opacity"
-            value={`${Math.round(opacity * 100)}%`}
-            canMore={opacity < OVERLAY_OPACITY.max}
-            canLess={opacity > OVERLAY_OPACITY.min}
-            onMore={() =>
-              onOpacity(
-                Math.min(OVERLAY_OPACITY.max, Math.round((opacity + OPACITY_STEP) * 100) / 100),
-              )
-            }
-            onLess={() =>
-              onOpacity(
-                Math.max(OVERLAY_OPACITY.min, Math.round((opacity - OPACITY_STEP) * 100) / 100),
-              )
-            }
-            onReset={() => onOpacity(OVERLAY_OPACITY.default)}
-          />
-        )}
-        <MenuStepper
-          label="Answer text size"
-          value={`${Math.round(fontScale * 100)}%`}
-          canMore={fontScale < FONT_SCALE_RANGE.max}
-          canLess={fontScale > FONT_SCALE_RANGE.min}
-          onMore={() =>
-            setFontScale(clampStep(fontScale + FONT_SCALE_RANGE.step, FONT_SCALE_RANGE))
-          }
-          onLess={() =>
-            setFontScale(clampStep(fontScale - FONT_SCALE_RANGE.step, FONT_SCALE_RANGE))
-          }
-          onReset={() => setFontScale(FONT_SCALE_RANGE.default)}
-        />
         {/* ADR-0085: no Answer language here: calls are in English, and the session sets it. */}
         {state?.recording && (
           // Desktop 1.5.0 (ADR-0068): the type the Rec pill and Ctrl+Alt+R start (remembered here).
@@ -284,22 +224,38 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           />
         )}
         {modelChoice && props.onModel && (
-          // ADR-0094: the same two choices as the wizard's "Select model"; applies from the next answer.
+          // ADR-0094: the same choices as the wizard's "Select model"; applies from the next answer. One row
+          // with the model in use; its choices open in place under it.
           <div role="group" aria-label="Model" data-menu-row="model">
-            <p className="flex min-h-10 items-center gap-2.5 px-3 pt-1 text-input text-ui-text">
+            <button
+              type="button"
+              aria-expanded={modelOpen}
+              aria-label={`Model: ${MODEL_CHOICES.find((choice) => choice.value === modelChoice.model)?.label ?? modelChoice.model}`}
+              onClick={() => setModelOpen((was) => !was)}
+              className="flex min-h-10 w-full items-center gap-2.5 px-3 py-1 text-left text-input text-ui-text hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+            >
               <Sparkles {...ICON} />
-              <span className="min-w-0 flex-1 truncate">Model</span>
-            </p>
-            <div className="px-1 pb-1">
-              <ModelOptions
-                label="Answer model"
-                model={modelChoice.model}
-                smartAllowed={modelChoice.smartAllowed}
-                groqAllowed={modelChoice.groqAllowed}
-                onSelect={props.onModel}
-                onClose={() => props.onClose?.()}
-              />
-            </div>
+              <span className="shrink-0">Model</span>
+              <span className="min-w-0 flex-1 truncate text-right text-[13px] text-ui-muted">
+                {MODEL_CHOICES.find((choice) => choice.value === modelChoice.model)?.label}
+              </span>
+              <ChevronDownIcon size={14} />
+            </button>
+            {modelOpen && (
+              <div className="px-1 pb-1">
+                <ModelOptions
+                  label="Answer model"
+                  model={modelChoice.model}
+                  smartAllowed={modelChoice.smartAllowed}
+                  groqAllowed={modelChoice.groqAllowed}
+                  onSelect={props.onModel}
+                  onClose={() => {
+                    setModelOpen(false);
+                    props.onClose?.();
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
         <MenuSwitch

@@ -4,7 +4,8 @@
  * so its tooltip still opens) when an admin has turned it off; the toast's words; bar 1's chip next to
  * Auto answer with the model's name, only when the live page says its model; and the ⋮ menu's Model row.
  * ADR-0095: the third choice, Fastest (Groq), disabled until the live page says Groq may be used; and bar 1's
- * Voice toggle and the ⋮ menu's Voice switch.
+ * Voice toggle and the ⋮ menu's Voice switch. 17 Nov 2026: the menu's Model entry is one row (choices open in
+ * place) and Zoom, Theme, Opacity and Answer text size are in the Display sheet, so the menu fits a laptop.
  * Clicks, the popover, the toast and the fit rules are covered in tests/integration/live.spec.ts and
  * answers.spec.ts.
  */
@@ -30,6 +31,7 @@ const {
 } = await import('@/features/live/overlay/ModelChoice');
 const { ControlBar, voiceTip, VOICE_TIP } = await import('@/features/live/overlay/ControlBar');
 const { LiveMenu } = await import('@/features/live/overlay/LiveMenu');
+const { DisplaySheet } = await import('@/features/live/overlay/DisplaySheet');
 
 /** A call's overlay state, on the fast model. */
 const STATE: CompactState = {
@@ -89,9 +91,7 @@ function menu(state: CompactState): string {
       state={state}
       onCommand={() => undefined}
       protection={{ supported: true, on: true }}
-      theme="dark"
-      zoom={1}
-      fontScale={1}
+      onDisplay={() => undefined}
       onCallWindow={() => undefined}
       onPreferences={() => undefined}
       onModel={() => undefined}
@@ -213,15 +213,43 @@ describe('bar 1 and the ⋮ menu (ADR-0094)', () => {
     expect(bar(STATE, false)).not.toContain('aria-label="Model:');
   });
 
-  it('has a Model row in the ⋮ menu, before Auto answer, with Smart off when an admin turned it off', () => {
+  it('has a one-row Model entry in the ⋮ menu, before Auto answer, naming the model in use', () => {
     const html = menu(STATE);
-    expect(html).toContain('aria-label="Answer model"');
-    expect(html.indexOf('aria-label="Answer model"')).toBeLessThan(html.indexOf('Auto answer'));
-    expect(menu({ ...STATE, smartAllowed: false })).toMatch(
-      /aria-disabled="true"[^>]*data-model="smart"/,
+    expect(html).toContain('aria-label="Model: Fast (Claude Haiku)"');
+    expect(html.indexOf('data-menu-row="model"')).toBeLessThan(html.indexOf('Auto answer'));
+    // Shut until clicked, so the menu stays one complete card (its choices open in place).
+    expect(html).toMatch(/aria-expanded="false"[^>]*aria-label="Model: Fast \(Claude Haiku\)"/);
+    expect(html).not.toContain('aria-label="Answer model"');
+    expect(menu({ ...STATE, model: 'groq', groqAllowed: true })).toContain(
+      'aria-label="Model: Fastest (Groq)"',
     );
     const { model: _model, ...older } = STATE;
-    expect(menu(older)).not.toContain('aria-label="Answer model"');
+    expect(menu(older)).not.toContain('data-menu-row="model"');
+  });
+
+  it('keeps Zoom, Theme, Opacity and Answer text size in the Display sheet, not the menu', () => {
+    const html = menu(STATE);
+    expect(html).toContain('Display');
+    for (const moved of ['Zoom', 'Opacity', 'Answer text size', 'aria-label="Theme"']) {
+      expect(html).not.toContain(moved);
+    }
+    const sheet = renderToString(
+      <DisplaySheet
+        theme="dark"
+        zoom={1}
+        fontScale={1}
+        opacity={0.9}
+        onOpacity={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    for (const row of ['Back', 'Zoom', 'aria-label="Theme"', 'Opacity', 'Answer text size']) {
+      expect(sheet).toContain(row);
+    }
+    // No opacity where the window cannot do it (a browser's picture-in-picture window).
+    expect(
+      renderToString(<DisplaySheet theme="dark" zoom={1} fontScale={1} onBack={() => undefined} />),
+    ).not.toContain('Opacity');
   });
 });
 
