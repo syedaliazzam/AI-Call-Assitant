@@ -824,3 +824,22 @@ Findings:
 - **GPT-5.6 Luna** answered every request itself, read the cache on all 20 (`prompt_cache_key` = the call id), and was steady between runs; its first word is about 300 ms later than Claude Haiku's.
 - **Claude Haiku** had the quickest first word and the lowest server time.
 - Fallback reasons are from the production logs (`answer: <provider> fallback to haiku`, reason and HTTP status only).
+
+### GPT-5.6 Luna with and without OpenAI priority processing; connection reuse (ADR-0099, 18 Nov 2026)
+
+**Priority processing is available to our OpenAI account:** a request with `service_tier: "priority"` to `gpt-5.6-luna` was answered with `service_tier: "priority"`, one without it with `"default"`. OpenAI's pages say Priority Processing is now "Fast mode" (requests tagged `priority` keep working) and list Luna at $0.40 input / $0.04 cached / $2.40 output per million tokens, twice the standard $0.20 / $0.02 / $1.20; the row is not clearly labelled, so check the price on OpenAI's pricing page.
+
+Same laptop and method as the 17 Nov table (production; `/dev/latency?model=gpt-luna&session=cv`, with `&tier=priority` for the priority runs, an admin-only measurement option; a disposable admin test account in the rollout for the run, deleted afterwards). Runs alternated default, priority, default, priority. Milliseconds.
+
+| Tier | Run | First word p50 / p95 | Done p50 / p95 | Server: received → first text p50 / p95 | Cache reads | Fell back to Claude Haiku |
+|---|---|---|---|---|---|---|
+| default | 1 | **1,291 / 2,319** | 1,626 / 3,527 | 718 / 1,743 | 20/20 | 0 |
+| priority | 1 | **1,054 / 4,928** (own 18: 985 / 3,590) | 1,439 / 6,721 | 523 / 4,556 | 20/20 | 2 (no first token within 4 s) |
+| default | 2 | **1,059 / 2,887** | 1,516 / 4,355 | 602 / 2,529 | 20/20 | 0 |
+| priority | 2 | **1,529 / 3,029** | 2,421 / 6,339 | 961 / 2,532 | 20/20 | 0 |
+
+Tokens per answer (averages): about 1,840 uncached input, 4,070–4,230 cached, 78–89 output. **Cost per answer:** default about $0.00055 (1,840 × $0.20 + 4,070 × $0.02 + 80 × $1.20, per million); priority about $0.0011 at the listed double rate.
+
+**Reading:** priority did not make Luna's first word quicker or steadier in these four runs: the medians overlap (default 1,059–1,291, priority 1,054–1,529) and priority had the worst tails and the only two fallbacks. Luna was also slower and less steady than on 17 Nov (default p95 2.3–2.9 s then 1.3–1.6 s), so Luna's own day-to-day variation is larger than any priority effect seen here.
+
+**Connection reuse (local check, Node 24 global `fetch`, tiny requests):** the Claude SDK (1.3.0) has no connection pool of its own; it calls the global `fetch`, as `server/openai.ts` does, so both reuse connections the same way. Measured with Node's `undici:client:connected` events: a request 0–1 s after the previous one reused the connection (OpenAI and Claude alike); after a 10 s or 30 s gap both opened a new one. Neither provider sends a `Keep-Alive` header, so Node's default idle timeout (4 s) applies. In a call, where questions come tens of seconds apart, each answer to either provider starts a new connection from the server.
