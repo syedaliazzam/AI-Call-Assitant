@@ -4,7 +4,8 @@
  *          into meetings (one call; starting again in it makes a new part), their total length and size,
  *          the words of sizes and lengths, and the transcript lines that fall inside one part, each with
  *          its place in the video (for click-to-seek).
- * Used by: src/features/meetings/MeetingsPage.tsx, src/features/meetings/RecordingPlayer.tsx
+ * Used by: src/features/meetings/RecordingPlayer.tsx; ADR-0096: src/features/meetings/WatchTab.tsx and
+ *          FilesTab.tsx (the Meetings library groups calls itself, core/meetings/library.ts)
  * Depends on: src/core/storage/types.ts (types only)
  * Architecture: docs/decisions/ADR-0068-meeting-recording.md
  */
@@ -38,7 +39,7 @@ export interface MeetingGroup {
  * Groups recording parts into meetings, newest meeting first.
  * @param records Every recording record.
  * @returns The meetings.
- * Called from: MeetingsPage.tsx; tests
+ * Called from: tests (the Meetings page used it before ADR-0096)
  */
 export function groupMeetings(records: readonly StoredRecording[]): MeetingGroup[] {
   const byMeeting = new Map<string, StoredRecording[]>();
@@ -75,7 +76,7 @@ export function groupMeetings(records: readonly StoredRecording[]): MeetingGroup
  * A size in words: "820 KB", "265 MB", "1.4 GB".
  * @param bytes The size.
  * @returns The words ('—' for 0, a part still being recorded).
- * Called from: MeetingsPage.tsx, RecordingPlayer.tsx; tests
+ * Called from: RecordingPlayer.tsx, FilesTab.tsx; tests
  */
 export function formatBytes(bytes: number): string {
   if (bytes <= 0) return '—';
@@ -88,7 +89,7 @@ export function formatBytes(bytes: number): string {
  * A length in words: "12:05", or "1:02:03" from an hour.
  * @param ms The length.
  * @returns The words ('—' for 0).
- * Called from: MeetingsPage.tsx, RecordingPlayer.tsx; tests
+ * Called from: RecordingPlayer.tsx, FilesTab.tsx; tests
  */
 export function formatDuration(ms: number): string {
   if (ms <= 0) return '—';
@@ -116,7 +117,7 @@ const LEAD_MS = 2_000;
  * @param part   The part.
  * @param nowMs  The clock (a part still being recorded runs until now).
  * @returns The lines inside the part.
- * Called from: RecordingPlayer.tsx; tests
+ * Called from: RecordingPlayer.tsx, WatchTab.tsx; tests
  */
 export function linesInPart(
   lines: readonly StoredUtterance[],
@@ -135,7 +136,7 @@ export function linesInPart(
  * @param lines   The part's lines.
  * @param seconds The video's time.
  * @returns The line's index, or -1 before the first.
- * Called from: RecordingPlayer.tsx; tests
+ * Called from: RecordingPlayer.tsx, WatchTab.tsx; tests
  */
 export function currentLineIndex(lines: readonly PartLine[], seconds: number): number {
   let found = -1;

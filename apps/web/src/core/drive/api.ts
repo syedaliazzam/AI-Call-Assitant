@@ -2,7 +2,8 @@
  * File: apps/web/src/core/drive/api.ts
  * Purpose: The page's calls to Kite's own Google Drive routes: status, the Picker's settings (admins),
  *          the company folder (admins), the person's switches, disconnect (admins), the "saved"
- *          notification, its list and Retry, and the test email. ADR-0074: the page never holds a Google
+ *          notification, its list and Retry, the test email, and (ADR-0096) the Meetings library's
+ *          access to the person's own session folder and a call's file links. ADR-0074: the page never holds a Google
  *          token from Kite: the server makes a session's folders, starts each recording upload and gives
  *          back only that upload's session address and ticket, says where an upload got to, verifies a
  *          finished one, and uploads the page's own small files (transcript, notes) itself.
@@ -16,6 +17,8 @@
  */
 import {
   ACCOUNT_HEADER,
+  type DriveCallAccessRequest,
+  type DriveCallAccessResponse,
   type DriveFolder,
   type DriveNotificationsResponse,
   type DriveNotifyRequest,
@@ -192,6 +195,12 @@ export interface DriveApi {
   ): Promise<DriveNotifyResponse>;
   /** POST /api/drive/test-email (to the signed-in person only). */
   sendTestEmail(): Promise<DriveTestEmailResponse>;
+  /**
+   * POST /api/drive/call-access (ADR-0096): Viewer access to the person's own session folder, and one
+   * call's saved files with their links (the Meetings library).
+   * @param request The session and the call's start.
+   */
+  callAccess(request: DriveCallAccessRequest): Promise<DriveCallAccessResponse>;
 }
 
 /**
@@ -237,6 +246,7 @@ export function createDriveApi(
         ...(recording ? { recording: true } : {}),
       }),
     sendTestEmail: () => call(fetchFn, '/api/drive/test-email', {}),
+    callAccess: (request) => call(fetchFn, '/api/drive/call-access', request),
   };
 }
 

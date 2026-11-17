@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto';
 import { ACCOUNT_HEADER, DRIVE_SCOPE, type DriveNotifyRequest } from '@kite/shared';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  handleCallAccess,
   handleCallback,
   handleConnect,
   handleDisconnect,
@@ -137,6 +138,10 @@ interface Fakes {
   uploads: Map<string, { file: Omit<FakeFile, 'id'>; bytes: number; got: number }>;
   /** Its id counter. */
   n: number;
+  /** ADR-0096: Viewer permissions the fake Drive was asked to add (folder, address, notification email). */
+  shares: { fileId: string; email: string; role: string; notify: string | null }[];
+  /** ADR-0096: the status the fake Drive answers a permission request with (200 grants). */
+  shareStatus: number;
 }
 
 /**
@@ -224,6 +229,19 @@ async function fakeDrive(f: Fakes, url: string, init?: RequestInit): Promise<Res
     if (!file) return new Response('{}', { status: 404 });
     if (method === 'PATCH') file.trashed = true;
     return Response.json(described(file));
+  }
+  // ADR-0096: a Viewer permission on a folder.
+  const permissionsOf = /^\/drive\/v3\/files\/([^/]+)\/permissions$/.exec(address.pathname)?.[1];
+  if (permissionsOf && method === 'POST') {
+    if (f.shareStatus !== 200) return new Response('{}', { status: f.shareStatus });
+    const body = JSON.parse(String(init?.body)) as { role: string; emailAddress: string };
+    f.shares.push({
+      fileId: decodeURIComponent(permissionsOf),
+      email: body.emailAddress,
+      role: body.role,
+      notify: address.searchParams.get('sendNotificationEmail'),
+    });
+    return Response.json({ id: 'perm' });
   }
   if (address.pathname === '/upload/drive/v3/files' && method === 'POST') {
     const type = address.searchParams.get('uploadType');
@@ -381,6 +399,8 @@ function fakes(): Fakes {
     files: new Map(),
     uploads: new Map(),
     n: 0,
+    shares: [],
+    shareStatus: 200,
   };
   f.files.set(COMPANY_FOLDER, {
     id: COMPANY_FOLDER,
@@ -1281,5 +1301,123 @@ describe('two emails per call (ADR-0077)', () => {
     );
     expect(await retried.json()).toEqual({ status: 'sent' });
     expect(f.mail.at(-1)!.subject.startsWith('Recording saved')).toBe(true);
+  });
+});
+
+describe('the Meetings library: Viewer access to the person’s own folder (ADR-0096)', () => {
+  /** A notify body with a verified recording link for ALICE's S1. */
+  const WITH_RECORDING: DriveNotifyRequest = {
+    ...NOTIFY,
+    files: [
+      {
+        name: '2026-11-11 14.30 Part 1.mkv',
+        folder: 'Recordings',
+        key: `rec:${REC}:main`,
+        fileId: 'REC0000001',
+        kind: 'recording',
+        part: 1,
+      },
+    ],
+  };
+
+  it('shares the person’s own session folder as Viewer, without Google’s email, and lists the call’s files', async () => {
+    const f = fakes();
+    await setUp(f);
+    const alice = deps(ALICE, f);
+    const made = await handleSessionFolder(
+      post('/api/drive/session-folder', { sessionId: S1, name: 'Session' }),
+      alice,
+    );
+    const { folderId } = (await made.json()) as { folderId: string };
+    await handleNotify(post('/api/drive/notify', WITH_RECORDING), alice);
+
+    const response = await handleCallAccess(
+      post('/api/drive/call-access', { sessionId: S1, callStartedAt: NOTIFY.callStartedAt }),
+      alice,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.access).toBe('viewer');
+    expect(body.folderUrl).toBe(`https://drive.google.com/drive/folders/${folderId}`);
+    expect(body.files).toEqual([
+      {
+        kind: 'recording',
+        part: 1,
+        name: '2026-11-11 14.30 Part 1.mkv',
+        url: 'https://drive.google.com/file/d/REC0000001/view',
+      },
+    ]);
+    expect(f.shares).toEqual([
+      { fileId: folderId, email: `${ALICE}@example.test`, role: 'reader', notify: 'false' },
+    ]);
+
+    // Another call of the same session has none of these files.
+    const other = await handleCallAccess(
+      post('/api/drive/call-access', { sessionId: S1, callStartedAt: NOTIFY.callStartedAt + 1 }),
+      alice,
+    );
+    expect((await other.json()).files).toEqual([]);
+  });
+
+  it('never reaches another person’s folder or files, even with the same session id', async () => {
+    const f = fakes();
+    await setUp(f);
+    const alice = deps(ALICE, f);
+    await handleSessionFolder(
+      post('/api/drive/session-folder', { sessionId: S1, name: 'Session' }),
+      alice,
+    );
+    await handleNotify(post('/api/drive/notify', WITH_RECORDING), alice);
+
+    const response = await handleCallAccess(
+      post('/api/drive/call-access', { sessionId: S1, callStartedAt: NOTIFY.callStartedAt }),
+      deps(BOB, f),
+    );
+    expect(await response.json()).toEqual({ folderUrl: null, access: 'none', files: [] });
+    expect(f.shares).toEqual([]);
+  });
+
+  it('says "refused" when Google will not share with the address', async () => {
+    const f = fakes();
+    await setUp(f);
+    const alice = deps(ALICE, f);
+    await handleSessionFolder(
+      post('/api/drive/session-folder', { sessionId: S1, name: 'Session' }),
+      alice,
+    );
+    f.shareStatus = 400;
+    const response = await handleCallAccess(
+      post('/api/drive/call-access', { sessionId: S1, callStartedAt: NOTIFY.callStartedAt }),
+      alice,
+    );
+    const body = await response.json();
+    expect(body.access).toBe('refused');
+    expect(body.folderUrl).toMatch(/^https:[/][/]drive[.]google[.]com[/]drive[/]folders[/]/);
+  });
+
+  it('refuses signed-out, another site and a bad body', async () => {
+    const f = fakes();
+    await setUp(f);
+    const request = { sessionId: S1, callStartedAt: NOTIFY.callStartedAt };
+    expect(
+      (await handleCallAccess(post('/api/drive/call-access', request), deps('signed-out', f)))
+        .status,
+    ).toBe(401);
+    expect(
+      (
+        await handleCallAccess(
+          post('/api/drive/call-access', request, 'https://evil.example'),
+          deps(ALICE, f),
+        )
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await handleCallAccess(
+          post('/api/drive/call-access', { ...request, folderId: 'X' }),
+          deps(ALICE, f),
+        )
+      ).status,
+    ).toBe(400);
   });
 });

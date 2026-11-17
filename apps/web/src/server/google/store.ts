@@ -5,7 +5,8 @@
  *          notificationKey, which the functions below take as `sessionId`): the devices' reports merged into it
  *          (compare-and-swap, as the driver has no transactions), "collecting" until every file is in,
  *          then taken for its one email by an update only one request can win. Every statement is
- *          limited to one account, except the daily overdue list.
+ *          limited to one account, except the daily overdue list. ADR-0096: one session's records of one
+ *          account, for the Meetings library's file links.
  * Used by: src/server/google/api.ts
  * Depends on: drizzle-orm, src/server/schema.ts, src/server/calldata/crypto.ts (seal, open),
  *             src/server/calldata/store.ts (CallDataDb type)
@@ -367,6 +368,49 @@ export async function finishNotification(
         : { status: 'failed', error: outcome.error },
     )
     .where(and(eq(driveNotification.userId, userId), eq(driveNotification.sessionId, sessionId)));
+}
+
+/**
+ * ADR-0096 (the Meetings library): every record of ONE session of ONE account: the session's first record
+ * (its plain id) and each later call's ("<session>~…", report.ts notificationKey and recordingKey). Only
+ * the signed-in account's rows are read, so a person never sees another person's files. A row that cannot
+ * be decrypted (a removed key) is left out.
+ *
+ * @param db        The database.
+ * @param keys      The data keys.
+ * @param userId    The account (the signed-in person).
+ * @param sessionId The session (a UUID, checked by the caller, so it is safe in LIKE).
+ * @returns The decrypted contents, in no particular order.
+ * Called from: handleCallAccess() in api.ts; tests
+ */
+export async function listSessionRecords(
+  db: CallDataDb,
+  keys: DataKeys,
+  userId: string,
+  sessionId: string,
+): Promise<NotificationContent[]> {
+  const rows = await db
+    .select()
+    .from(driveNotification)
+    .where(
+      and(
+        eq(driveNotification.userId, userId),
+        sql`(${driveNotification.sessionId} = ${sessionId} OR ${driveNotification.sessionId} LIKE ${`${sessionId}~%`})`,
+      ),
+    );
+  const out: NotificationContent[] = [];
+  for (const row of rows) {
+    try {
+      out.push(
+        JSON.parse(
+          open(keys, notificationBinding(userId, row.sessionId), row.keyVersion, row.content),
+        ) as NotificationContent,
+      );
+    } catch {
+      // Unreadable (a removed key): skipped; nothing about it is logged.
+    }
+  }
+  return out;
 }
 
 /** One notification, decrypted for its owner. */

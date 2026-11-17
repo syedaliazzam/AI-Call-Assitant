@@ -5,7 +5,8 @@
  *          making the session folder and its Recordings and Transcripts in the company folder; starting a
  *          resumable upload (the client gets only that upload's session address, with a signed ticket
  *          for that one file); asking an upload where it got to; uploading the page's own small files
- *          (multipart); and reading a file to verify it (tag, size, MD5).
+ *          (multipart); reading a file to verify it (tag, size, MD5); and (ADR-0096) giving one person
+ *          Viewer access to their own session folder, without Google's email.
  * Used by: src/server/google/api.ts; tests
  * Depends on: node:crypto, @kite/shared (folder MIME type, Range parsing), src/server/google/oauth.ts
  *             (errors, FetchLike)
@@ -160,6 +161,17 @@ export interface DriveServer {
    * @param fileId The file.
    */
   trash(fileId: string): Promise<void>;
+  /**
+   * ADR-0096: gives one person Viewer ('reader') access to a folder the app made, without Google's
+   * "shared with you" email. Asking again for someone who already has it changes nothing.
+   * @param fileId The folder (always the person's own session folder, found by their account tag).
+   * @param email  The person's sign-in email.
+   * @returns 'granted'; 'refused' when Google will not share with that address (not a Google account,
+   *          outside the domain, or the Shared Drive does not allow it); 'unavailable' when Google did not
+   *          answer.
+   * @throws GoogleRefusedError when the company token was refused.
+   */
+  grantReader(fileId: string, email: string): Promise<'granted' | 'refused' | 'unavailable'>;
   /**
    * Asks an upload where it got to.
    * @param uploadUrl Its session address.
@@ -353,6 +365,30 @@ export function driveServer(fetchFn: FetchLike, token: string): DriveServer {
       // Already gone or not ours: nothing to move.
       if (response.status === 403 || response.status === 404) return;
       await ok(response);
+    },
+
+    async grantReader(fileId, email) {
+      // sendNotificationEmail=false: no "shared with you" email; the person opens it from Meetings.
+      let response: Response;
+      try {
+        response = await send(
+          `${FILES_URL}/${encodeURIComponent(fileId)}/permissions?supportsAllDrives=true&sendNotificationEmail=false&fields=id`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+            body: JSON.stringify({ type: 'user', role: 'reader', emailAddress: email }),
+          },
+        );
+      } catch {
+        return 'unavailable';
+      }
+      if (response.status === 401) throw new GoogleRefusedError('unauthorized');
+      if (response.ok) return 'granted';
+      // 400 (not a Google account, invalid sharing request) or 403/404 (sharing not allowed here).
+      if (response.status === 400 || response.status === 403 || response.status === 404) {
+        return 'refused';
+      }
+      return 'unavailable';
     },
 
     async offset(uploadUrl, bytes) {

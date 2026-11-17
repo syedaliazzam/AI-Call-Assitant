@@ -18,7 +18,7 @@
  *          src/core/sync/engine.ts (the account header); src/core/sync/client.ts (preferences
  *          re-read, the account's local database); src/core/drive/api.ts (the account header)
  * Depends on: localStorage and sessionStorage (missing or blocked: nothing is remembered or removed);
- *             src/core/storage/{answerPrefs,autoAnswer,companyPrefs,driveNoticePrefs}.ts,
+ *             src/core/storage/{answerPrefs,autoAnswer,companyPrefs,driveNoticePrefs,meetingsPrefs}.ts,
  *             src/core/live/callStart.ts (key names)
  * Architecture: ADR-0049 (account sync); docs/architecture/kite-architecture-v3.1.md §2 (privacy)
  *
@@ -30,6 +30,7 @@ import { CHAT_TARGET_KEY_PREFIX, CODING_LANGUAGE_KEY } from './answerPrefs';
 import { AUTO_ANSWER_KEY } from './autoAnswer';
 import { COMPANY_SUGGESTIONS_KEY } from './companyPrefs';
 import { RECONNECT_CLOSED_KEY } from './driveNoticePrefs';
+import { MEETINGS_LAST_CALL_KEY } from './meetingsPrefs';
 
 /** localStorage key: the id of the last account signed in on this browser profile. */
 export const LAST_ACCOUNT_KEY = 'kite.lastAccount';
@@ -52,6 +53,8 @@ export const PREFS_RESET_KEY = 'kite.accountPrefsReset';
  * - the short-lived notes between the desktop app's windows: a call start (core/live/callStart.ts) and
  *   recording consent ('kite-record-consent', core/recording/handoff.ts RECORD_CONSENT_KEY, written as
  *   text here; removing a key that is not there does nothing). They name one of that account's sessions.
+ * - ADR-0096: the Meetings library's last opened call (core/storage/meetingsPrefs.ts), one of that
+ *   account's calls.
  */
 export const ACCOUNT_TIED_KEYS: readonly string[] = [
   COMPANY_SUGGESTIONS_KEY,
@@ -60,6 +63,7 @@ export const ACCOUNT_TIED_KEYS: readonly string[] = [
   'kite.drive.saves',
   CALL_START_KEY,
   RECORD_CONSENT_KEY,
+  MEETINGS_LAST_CALL_KEY,
 ];
 
 /**

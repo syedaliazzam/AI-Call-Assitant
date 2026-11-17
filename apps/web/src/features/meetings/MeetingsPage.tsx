@@ -1,141 +1,60 @@
 /**
  * File: apps/web/src/features/meetings/MeetingsPage.tsx
- * Purpose: The Meetings page (desktop 1.5.0, ADR-0068): every recorded meeting of the account, newest
- *          first, with its date, session, length, size, parts and "Saved on <computer>". The recordings
- *          themselves stay on the computer that made them: in a browser, "Open in desktop app" opens the
- *          desktop app's player on that computer (paramountai://recording/<id>), and after a few seconds
- *          says what to do when nothing opened; in the desktop app, Play is offered for this computer's
- *          recordings, and this computer's name can be changed.
+ * Purpose: The Meetings page as a meeting library (ADR-0096; it replaced the 1.5.0 list of recordings,
+ *          ADR-0068): two panes, the library on the left (search, date filter, session folders named as in
+ *          Google Drive, one row per call) and the chosen call on the right (CallPane: Watch, Conversation,
+ *          AI notes, Files). On a narrow screen the list and the call take turns ("All meetings" goes
+ *          back). The call opened last is remembered (per account, on this browser). Everything comes from
+ *          this device's copy of the account's synced call data: it pulls the account's newest data first,
+ *          reads again after every sync and while a call is still being finished, so the transcript,
+ *          conversation and notes show in any browser before anything reaches Google Drive. In the desktop
+ *          app it also knows which recordings are on this computer (they play in the page) and keeps this
+ *          computer's name renamable.
  * Used by: app/(app)/meetings/page.tsx
- * Depends on: @kite/shared (desktopRecordingLink), src/core/storage (recordings, sessions),
- *             src/core/recording (meetings.ts, reconcile.ts), src/platform, src/ui (PageShell, Button)
- * Architecture: docs/decisions/ADR-0068-meeting-recording.md; ADR-0052 (the "update" fallback)
- * Session details are shown on screen only; nothing is logged.
+ * Depends on: @kite/shared (DeviceIdentity), src/core/meetings/{load,library}.ts,
+ *             src/core/storage/{meetingsPrefs,recordings,sessions}.ts, src/core/recording/reconcile.ts,
+ *             src/core/sync (client, events), src/features/shell/AccountName.tsx, src/platform,
+ *             ./LibraryPane.tsx, ./CallPane.tsx, src/ui (Button, LinkButton)
+ * Architecture: docs/decisions/ADR-0096-meetings-library.md; ADR-0068 (recordings), ADR-0077 (calls)
+ *
+ * Privacy: the local database belongs to the signed-in account only (ADR-0082) and the server syncs and
+ * shares only that account's own records and Drive folders (ADR-0096), so each person sees only their own
+ * calls, admins included. Session details are shown on screen only; nothing is logged.
  */
 'use client';
 
-import { DriveSessionStatus } from '@/features/drive/DriveSessionStatus';
-import { desktopRecordingLink, type DeviceIdentity } from '@kite/shared';
-import { MonitorDown, Play } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import {
-  formatBytes,
-  formatDuration,
-  groupMeetings,
-  type MeetingGroup,
-} from '@/core/recording/meetings';
+import type { DeviceIdentity } from '@kite/shared';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { findCall, type LibraryFolder } from '@/core/meetings/library';
+import { loadLibrary } from '@/core/meetings/load';
 import { reconcileRecordings } from '@/core/recording/reconcile';
+import { getLastMeetingCall, setLastMeetingCall } from '@/core/storage/meetingsPrefs';
 import { watchRecordings } from '@/core/storage/recordings';
 import { watchSessions } from '@/core/storage/sessions';
-import type { Session, StoredRecording } from '@/core/storage/types';
+import { pullAccountSync } from '@/core/sync/client';
+import { onSyncApplied } from '@/core/sync/events';
+import { useAccountName } from '@/features/shell/AccountName';
 import { getPlatform } from '@/platform';
 import { Button } from '@/ui/Button';
-import { PageShell } from '@/ui/PageShell';
+import { LinkButton } from '@/ui/LinkButton';
+import { CallPane } from './CallPane';
+import { LibraryPane } from './LibraryPane';
 
-/** How long the page waits before saying what to do when the desktop app did not open (ADR-0052). */
-const NOTHING_OPENED_MS = 6_000;
+/** While a call is still being finished (running, or its notes not written), how often to look again, ms. */
+const FINISHING_REFRESH_MS = 10_000;
 
-/**
- * Follows a paramountai:// link (a link click is what browsers expect for an app link).
- * @param link The link.
- */
-function followLink(link: string): void {
-  const anchor = document.createElement('a');
-  anchor.href = link;
-  anchor.click();
-}
+/** No recording files on this computer (the desktop app, before its list arrives). */
+const NONE_HERE: ReadonlySet<string> = new Set();
+
+/** Several changes in a row (a sync writes many rows) are read once, after this pause, ms. */
+const RELOAD_DEBOUNCE_MS = 400;
 
 /**
- * A session's name for a meeting row: "Company · Role", or what it has.
- * @param session The session, or undefined when it is not on this device yet.
- * @returns The name.
- */
-function sessionName(session: Session | undefined): string {
-  if (!session) return 'Session';
-  return [session.company, session.role].filter((part) => part.trim()).join(' · ') || 'Session';
-}
-
-/** Words of a meeting's status, when it is not simply complete. */
-const STATUS_WORDS: Readonly<Partial<Record<MeetingGroup['status'], string>>> = {
-  recording: 'Recording…',
-  recovered: 'Recovered after the app stopped',
-};
-
-/**
- * One meeting row.
- * @param props.meeting  The meeting.
- * @param props.session  Its session.
- * @param props.here     True when this desktop app holds its files; false on another computer; null in
- *                       a browser (it cannot tell).
- * @param props.onPlay   Plays it here (the desktop app).
- * @param props.onOpen   Opens it in the desktop app (a browser).
- * @returns The row.
- * Rendered by: MeetingsPage
- */
-function MeetingRow({
-  meeting,
-  session,
-  here,
-  onPlay,
-  onOpen,
-}: {
-  /** The meeting. */
-  meeting: MeetingGroup;
-  /** Its session. */
-  session: Session | undefined;
-  /** True: on this computer; false: on another; null: unknown (a browser). */
-  here: boolean | null;
-  /** Plays it here. */
-  onPlay: (part: StoredRecording) => void;
-  /** Opens it in the desktop app. */
-  onOpen: (part: StoredRecording) => void;
-}) {
-  const first = meeting.parts[0]!;
-  const when = new Date(meeting.startedAt).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-  const status = STATUS_WORDS[meeting.status];
-  return (
-    <li className="flex flex-col gap-3 rounded-card border border-ui-border bg-ui-surface p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 flex-col gap-1">
-        <p className="truncate text-[15px] font-semibold text-ui-heading">{sessionName(session)}</p>
-        <p className="text-[13px] text-ui-muted">
-          {when} · {formatDuration(meeting.durationMs)} · {formatBytes(meeting.bytes)} ·{' '}
-          {meeting.kind === 'screen' ? 'Screen + audio' : 'Audio only'}
-          {meeting.parts.length > 1 ? ` · ${meeting.parts.length} parts` : ''}
-        </p>
-        <p className="text-[13px] text-ui-text">
-          Saved on {meeting.deviceName}
-          {status ? <span className="text-ui-muted"> · {status}</span> : null}
-        </p>
-        {/* 1.6.0 (ADR-0072): the session's Google Drive upload from this computer. */}
-        <DriveSessionStatus sessionId={meeting.sessionId} canUpload />
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        {here === true && (
-          <Button variant="secondary" size="sm" onClick={() => onPlay(first)}>
-            <Play aria-hidden="true" size={16} strokeWidth={1.75} />
-            Play
-          </Button>
-        )}
-        {here === null && (
-          <Button variant="secondary" size="sm" onClick={() => onOpen(first)}>
-            <MonitorDown aria-hidden="true" size={16} strokeWidth={1.75} />
-            Open in desktop app
-          </Button>
-        )}
-      </div>
-    </li>
-  );
-}
-
-/**
- * This computer’s name, renamable (the desktop app).
+ * This computer's name, renamable (the desktop app).
  * @param props.device   The identity.
  * @param props.onRename Saves a new name.
  * @returns The line.
- * Rendered by: MeetingsPage
+ * Rendered by: MeetingsPage (the library's footer)
  */
 function DeviceName({
   device,
@@ -150,7 +69,7 @@ function DeviceName({
   const [name, setName] = useState(device.name);
   if (!editing) {
     return (
-      <p className="text-[13px] text-ui-muted">
+      <p className="text-[12px] text-ui-muted">
         This computer: <span className="text-ui-text">{device.name}</span>{' '}
         <button
           type="button"
@@ -167,19 +86,19 @@ function DeviceName({
   }
   return (
     <form
-      className="flex flex-wrap items-center gap-2 text-[13px]"
+      className="flex flex-wrap items-center gap-2 text-[12px]"
       onSubmit={(event) => {
         event.preventDefault();
         onRename(name);
         setEditing(false);
       }}
     >
-      <label htmlFor="device-name" className="text-ui-muted">
+      <label htmlFor="device-name" className="sr-only">
         This computer’s name
       </label>
       <input
         id="device-name"
-        className="h-8 rounded-control border border-ui-border bg-ui-bg px-2 text-ui-text"
+        className="h-8 min-w-0 flex-1 rounded-control border border-ui-border bg-ui-input px-2 text-ui-text"
         maxLength={60}
         value={name}
         onChange={(event) => setName(event.target.value)}
@@ -195,35 +114,95 @@ function DeviceName({
 }
 
 /**
+ * Whether a call is still being finished here or on another device (running, or its notes not written).
+ * @param folders The library.
+ * @returns True while one is.
+ */
+function anyFinishing(folders: readonly LibraryFolder[]): boolean {
+  return folders.some((folder) =>
+    folder.calls.some(
+      (call) =>
+        call.record !== null && (call.record.phase !== 'ended' || call.notesState === 'writing'),
+    ),
+  );
+}
+
+/**
  * The page.
  * @returns The page.
  * Rendered by: app/(app)/meetings/page.tsx
  */
 export function MeetingsPage() {
-  const [records, setRecords] = useState<StoredRecording[] | null>(null);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [folders, setFolders] = useState<LibraryFolder[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
+  // The call chosen on this page, else the one opened last (read on the client only; null on the server).
+  const [chosenId, setChosenId] = useState<string | null>(() => getLastMeetingCall());
+  // Narrow screens: true while the call is shown instead of the list.
+  const [showCall, setShowCall] = useState(false);
   const [device, setDevice] = useState<DeviceIdentity | null>(null);
-  const [hint, setHint] = useState(false);
+  const [localIds, setLocalIds] = useState<ReadonlySet<string> | null>(null);
+  const accountName = useAccountName();
   const host = getPlatform().recording;
 
-  useEffect(
+  /** Reads the library again from this device's copy of the call data. */
+  const reload = useCallback(async () => {
+    try {
+      setFolders(await loadLibrary());
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
+  }, []);
+
+  // The account's newest data first (a call ended on another device), then this device's copy; and again
+  // after every sync and every local change (debounced: a sync writes many rows).
+  useEffect(() => {
+    let live = true;
+    let timer: number | undefined;
+    const soon = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (live) void reload();
+      }, RELOAD_DEBOUNCE_MS);
+    };
+    void (async () => {
+      await pullAccountSync().catch(() => undefined);
+      if (live) await reload();
+    })();
+    const stops = [
+      onSyncApplied(soon),
+      watchSessions(soon, () => undefined),
+      watchRecordings(soon, () => undefined),
+    ];
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+      for (const stop of stops) stop();
+    };
+  }, [reload]);
+
+  // While a call is being finished (here or elsewhere), look again every few seconds for its notes.
+  const finishing = folders ? anyFinishing(folders) : false;
+  useEffect(() => {
+    if (!finishing) return;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        await pullAccountSync().catch(() => undefined);
+        await reload();
+      })();
+    }, FINISHING_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [finishing, reload]);
+
+  // The desktop app: this computer's identity, its recordings brought up to date in the account, and which
+  // recordings' files are here (they play in the page). Read again when the recordings change.
+  const recordingsKey = useMemo(
     () =>
-      watchRecordings(
-        (rows) => setRecords(rows),
-        () => setFailed(true),
-      ),
-    [],
+      (folders ?? [])
+        .flatMap((folder) => folder.calls.flatMap((call) => call.recordings.map((r) => r.id)))
+        .join(','),
+    [folders],
   );
-  useEffect(
-    () =>
-      watchSessions(
-        (rows) => setSessions(rows),
-        () => undefined,
-      ),
-    [],
-  );
-  // The desktop app: this computer's identity, and its recordings brought up to date in the account.
   useEffect(() => {
     if (!host) return;
     let live = true;
@@ -238,72 +217,120 @@ export function MeetingsPage() {
       live = false;
     };
   }, [host]);
+  useEffect(() => {
+    if (!host) return;
+    let live = true;
+    host
+      .list()
+      .then((entries) => {
+        if (!live) return;
+        setLocalIds(
+          new Set(
+            entries
+              .filter((entry) => entry.status === 'complete' || entry.status === 'recovered')
+              .map((entry) => entry.id),
+          ),
+        );
+      })
+      .catch(() => {
+        if (live) setLocalIds(new Set());
+      });
+    return () => {
+      live = false;
+    };
+  }, [host, recordingsKey]);
 
-  const meetings = useMemo(() => groupMeetings(records ?? []), [records]);
-  const byId = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions]);
+  // The shown call: the chosen one while it exists, else the newest.
+  const shown = useMemo(() => {
+    if (!folders || folders.length === 0) return null;
+    const found = chosenId ? findCall(folders, chosenId) : null;
+    return found ?? { folder: folders[0]!, call: folders[0]!.calls[0]! };
+  }, [folders, chosenId]);
 
   /**
-   * Opens a recording in the desktop app (a browser), and says what to do when nothing opened.
-   * @param part The meeting's first part.
+   * Opens a call: remembers it, and on a narrow screen shows it instead of the list.
+   * @param callId The call.
    */
-  const open = (part: StoredRecording) => {
-    setHint(false);
-    followLink(desktopRecordingLink(part.id));
-    window.setTimeout(() => setHint(true), NOTHING_OPENED_MS);
+  const open = (callId: string) => {
+    setChosenId(callId);
+    setLastMeetingCall(callId);
+    setShowCall(true);
   };
 
   return (
-    <PageShell
-      title="Meetings"
-      description="Your recorded meetings. The video and sound stay on the computer that recorded them; only these details are in your account."
-      width="lg"
-    >
-      <div className="flex flex-col gap-4">
-        {host && device && (
-          <DeviceName
-            device={device}
-            onRename={(name) =>
-              void host
-                .renameDevice(name)
-                .then(setDevice)
-                .catch(() => undefined)
-            }
-          />
-        )}
-        {hint && (
-          <p role="status" className="text-helper text-ui-muted">
-            Nothing opened? Update the desktop app to 1.5.0 or later (it updates itself when you
-            restart it), and open the recording on the computer that saved it.
-          </p>
-        )}
-        {failed && (
-          <p role="alert" className="text-helper text-ui-danger">
-            The recordings could not be read. Reload the page.
-          </p>
-        )}
-        {records && meetings.length === 0 && (
-          <section className="rounded-card border border-ui-border bg-ui-surface px-6 py-10 text-center shadow-card">
-            <p className="text-[15px] text-ui-muted">
-              No recordings yet. In the desktop app, set Record on the Connect card, or press Rec on
-              the call bar during a call.
-            </p>
-          </section>
-        )}
-        {meetings.length > 0 && (
-          <ul className="flex flex-col gap-3" aria-label="Recorded meetings">
-            {meetings.map((meeting) => (
-              <MeetingRow
-                key={meeting.meetingId}
-                meeting={meeting}
-                session={byId.get(meeting.sessionId)}
-                here={host ? (device ? meeting.deviceId === device.id : false) : null}
-                onPlay={(part) => void host?.play(part.id).catch(() => undefined)}
-                onOpen={open}
+    <div className="flex min-h-full flex-col lg:h-full lg:flex-row">
+      <h1 className="sr-only">Meetings</h1>
+      <aside
+        aria-label="Meeting library"
+        className={`${showCall ? 'hidden' : 'flex'} min-h-0 flex-col bg-ui-surface lg:flex lg:w-[340px] lg:shrink-0 lg:border-r lg:border-ui-border`}
+      >
+        <LibraryPane
+          folders={folders}
+          selectedId={shown?.call.id ?? null}
+          onSelect={open}
+          footer={
+            host && device ? (
+              <DeviceName
+                device={device}
+                onRename={(name) =>
+                  void host
+                    .renameDevice(name)
+                    .then(setDevice)
+                    .catch(() => undefined)
+                }
               />
-            ))}
-          </ul>
-        )}
-      </div>
-    </PageShell>
+            ) : undefined
+          }
+        />
+      </aside>
+
+      <section
+        aria-label="Selected call"
+        className={`${showCall ? 'block' : 'hidden'} min-w-0 flex-1 px-4 py-5 sm:px-6 lg:block lg:overflow-y-auto`}
+      >
+        <div className="mx-auto max-w-6xl">
+          {failed && (
+            <p role="alert" className="mb-4 text-[13px] text-ui-danger">
+              Your meetings could not be read. Reload the page.
+            </p>
+          )}
+          {folders === undefined && !failed && (
+            <div
+              aria-hidden="true"
+              className="flex animate-pulse flex-col gap-3 motion-reduce:animate-none"
+            >
+              <div className="h-4 w-48 rounded-control bg-ui-subtle" />
+              <div className="h-7 w-80 max-w-full rounded-control bg-ui-subtle" />
+              <div className="mt-4 aspect-video w-full rounded-card bg-ui-subtle" />
+            </div>
+          )}
+          {folders !== undefined && folders.length === 0 && (
+            <div className="flex flex-col items-center gap-3 rounded-card border border-ui-border bg-ui-surface px-6 py-12 text-center shadow-card">
+              <h2 className="text-[18px] font-semibold text-ui-heading">No meetings yet</h2>
+              <p className="max-w-md text-[14px] text-ui-text">
+                Every call you take with Paramount AI appears here, with its recording, the
+                conversation, AI notes and files.
+              </p>
+              <LinkButton href="/sessions/new" variant="accent">
+                Create session
+              </LinkButton>
+            </div>
+          )}
+          {shown && (
+            <CallPane
+              key={shown.call.id}
+              folder={shown.folder}
+              call={shown.call}
+              accountName={accountName}
+              host={host}
+              // The desktop app before its list arrives: no file here yet (never "a browser").
+              localIds={host ? (localIds ?? NONE_HERE) : null}
+              onChanged={() => void reload()}
+              onBack={() => setShowCall(false)}
+            />
+          )}
+        </div>
+      </section>
+    </div>
   );
 }

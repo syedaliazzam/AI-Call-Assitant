@@ -13,10 +13,12 @@
  *          saved" once the transcript and notes are in, "Recording saved" once the recording is), and a
  *          failed email of theirs is tried again by itself, an hour apart, for three days. The account always comes from the signed-in session, read from
  *          the database, never from the request. POSTs must come from a Kite address (Origin check) on
- *          top of the SameSite session cookie.
+ *          top of the SameSite session cookie. ADR-0096 (the Meetings library): call-access gives the
+ *          signed-in person Viewer access to their OWN session folder (found by their account tag only)
+ *          and lists one call's saved files from their own records.
  * Used by: app/api/google/{connect,callback,status,picker-config,folder,settings,disconnect}/route.ts,
  *          app/api/drive/{session-folder,uploads,uploads/offset,uploads/complete,files,notify,
- *          notifications,test-email}/route.ts, app/api/cron/drive-flush/route.ts
+ *          notifications,test-email,call-access}/route.ts, app/api/cron/drive-flush/route.ts
  * Depends on: zod, @kite/shared, src/server/auth.ts, src/server/db.ts, src/server/env.ts,
  *             src/server/calldata/crypto.ts,
  *             src/server/google/{company,config,oauth,store,tokens,uploads,email,rateLimit,report}.ts
@@ -37,6 +39,8 @@ import {
   MAX_SAVED_NAME_CHARS,
   driveFolderUrl,
   isDriveLink,
+  type DriveCallAccessResponse,
+  type DriveCallFileLink,
   type DriveNotificationItem,
   type DriveNotificationStatus,
   type DriveNotificationsResponse,
@@ -65,7 +69,14 @@ import {
 } from './company';
 import { getAuthEnv } from '../env';
 import { emailConfig, googleConfig, type EmailConfig, type GoogleConfig } from './config';
-import { emailMessageId, sendSavedEmail, sendTestEmail, smtpMailer, type Mailer } from './email';
+import {
+  driveFileUrl,
+  emailMessageId,
+  sendSavedEmail,
+  sendTestEmail,
+  smtpMailer,
+  type Mailer,
+} from './email';
 import {
   GoogleRefusedError,
   GoogleUnavailableError,
@@ -86,6 +97,7 @@ import {
   finishNotification,
   listNotifications,
   listOverdue,
+  listSessionRecords,
   listRetryCandidates,
   readRecord,
   writeRecord,
@@ -95,6 +107,7 @@ import {
 import {
   REPORT_WAIT_MS,
   emailDue,
+  fileKindOf,
   isComplete,
   mergeRecordingReport,
   mergeReport,
@@ -115,6 +128,7 @@ import {
   fileMatches,
   fileTag,
   findSubfolder,
+  folderTags,
   md5Hex,
   readTicket,
   signTicket,
@@ -800,6 +814,98 @@ export function handleSessionFolder(
       body.name,
     );
     return reply(ids satisfies DriveSessionFolderResponse);
+  });
+}
+
+/** POST /api/drive/call-access' body (ADR-0096). */
+const callAccessSchema = z
+  .object({
+    sessionId: z.uuid(),
+    callStartedAt: z.number().int().positive(),
+  })
+  .strict();
+
+/** The order of a call's files in the Meetings library: recordings (by part), then transcript, notes. */
+const LINK_ORDER: Readonly<Record<DriveCallFileLink['kind'], number>> = {
+  recording: 0,
+  stereo: 1,
+  'transcript-pdf': 2,
+  'transcript-txt': 3,
+  'notes-pdf': 4,
+};
+
+/**
+ * ADR-0096: one call's saved files with their links, from the person's own records of the session (a
+ * file reported more than once, by several devices or a retry, is listed once).
+ *
+ * @param contents      The session's records (already limited to the signed-in account).
+ * @param callStartedAt The call.
+ * @returns The files with a Drive id, in LINK_ORDER.
+ */
+function callFileLinks(
+  contents: readonly NotificationContent[],
+  callStartedAt: number,
+): DriveCallFileLink[] {
+  const byId = new Map<string, DriveCallFileLink>();
+  for (const content of contents) {
+    if (content.callStartedAt !== callStartedAt) continue;
+    for (const file of content.files) {
+      const kind = fileKindOf(file);
+      if (!file.fileId || !kind || byId.has(file.fileId)) continue;
+      byId.set(file.fileId, {
+        kind: kind.kind,
+        part: kind.part,
+        name: file.name,
+        url: driveFileUrl(file.fileId),
+      });
+    }
+  }
+  return [...byId.values()].sort(
+    (a, b) => LINK_ORDER[a.kind] - LINK_ORDER[b.kind] || a.part - b.part,
+  );
+}
+
+/**
+ * POST /api/drive/call-access (ADR-0096, the Meetings library): the signed-in person's OWN session folder,
+ * found only by their account's tag (folderTags(user.id, …)), so no request can reach another person's
+ * folder; gives that person (their sign-in email, from the session, never the request) Viewer access to
+ * it without Google's notification email, so "Watch in Drive" opens for them; and returns the call's saved
+ * files from their own records. Without a company connection it answers like the other Drive routes
+ * (404 / 409), and the page shows the call's status instead.
+ * @param request The request (body: DriveCallAccessRequest).
+ * @param deps    The dependencies (tests pass fakes).
+ * @returns 200 DriveCallAccessResponse; 400; 404 not connected; 409 no folder, reconnect, folder gone.
+ * Called from: app/api/drive/call-access/route.ts
+ */
+export function handleCallAccess(
+  request: Request,
+  deps: GoogleDeps = realGoogleDeps,
+): Promise<Response> {
+  return withUser(request, deps, 'access', { post: true, limit: 'other' }, async ({ user }) => {
+    const body = await readBody(request, callAccessSchema);
+    if (!body) return failure(400, 'invalid_request', 'The request is not valid.');
+    const company = await companyDrive(deps);
+    if (company instanceof Response) return company;
+    const folderId = await company.drive.find(
+      company.folder.folderId,
+      folderTags(user.id, body.sessionId, 'session'),
+      company.folder.driveId,
+    );
+    const files = callFileLinks(
+      await listSessionRecords(deps.db(), deps.keys(), user.id, body.sessionId),
+      body.callStartedAt,
+    );
+    if (!folderId) {
+      return reply({ folderUrl: null, access: 'none', files } satisfies DriveCallAccessResponse);
+    }
+    const granted = await company.drive.grantReader(folderId, user.email);
+    // The outcome only: never the folder, the address or the account.
+    if (granted !== 'granted') console.warn('drive: access not granted', { outcome: granted });
+    return reply({
+      folderUrl: driveFolderUrl(folderId),
+      access: granted === 'granted' ? 'viewer' : granted,
+      files,
+    } satisfies DriveCallAccessResponse);
   });
 }
 
