@@ -12,6 +12,7 @@
 'use client';
 
 import { PanelLeft } from 'lucide-react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AddUserButton } from '@/features/admin/AddUserButton';
 import { BrandLockup } from '@/ui/BrandLockup';
@@ -48,9 +49,14 @@ export function AppHeader({ collapsed, onToggleCollapsed, onOpenDrawer }: AppHea
             : 'md:w-[252px] md:justify-between md:pr-3',
         ].join(' ')}
       >
-        <span className={collapsed ? 'min-w-0 md:hidden' : 'min-w-0'}>
+        {/* The logo goes to Call Sessions (/), as the sidebar's first link does. */}
+        <Link
+          href="/"
+          aria-label="Paramount AI: go to Call Sessions"
+          className={`min-w-0 rounded-control focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] ${collapsed ? 'md:hidden' : ''}`}
+        >
           <BrandLockup tone="auto" size="sm" />
-        </span>
+        </Link>
         {/* One button: it collapses the sidebar on a computer and opens the drawer on a phone. */}
         <button
           type="button"

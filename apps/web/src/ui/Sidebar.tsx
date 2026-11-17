@@ -249,7 +249,15 @@ export function Sidebar({ collapsed, drawerOpen, onCloseDrawer, card, footer }: 
       ].join(' ')}
     >
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-ui-border px-4 md:hidden">
-        <BrandLockup tone="auto" size="sm" />
+        {/* The logo goes to Call Sessions (/), and the drawer closes, as for the links below. */}
+        <Link
+          href="/"
+          aria-label="Paramount AI: go to Call Sessions"
+          onClick={onCloseDrawer}
+          className="min-w-0 rounded-control focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+        >
+          <BrandLockup tone="auto" size="sm" />
+        </Link>
         <button
           type="button"
           aria-label="Close the menu"
