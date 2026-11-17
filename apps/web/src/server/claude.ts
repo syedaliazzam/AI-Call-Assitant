@@ -9,7 +9,7 @@
  * Used by: app/api/answer/route.ts, src/server/prompt.ts (cachedBlock); app/api/notes/route.ts
  *          (Day 5); scripts/verify-warm.ts, scripts/verify-answer-cache.ts,
  *          scripts/eval-answers.ts (developer-only)
- * Depends on: @anthropic-ai/sdk, src/server/env.ts (ANTHROPIC_API_KEY)
+ * Depends on: @anthropic-ai/sdk, src/server/env.ts (ANTHROPIC_API_KEY), src/server/providerFetch.ts (ADR-0100)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.3 (prompt caching), §7.2 (server rules)
  *
  * Prompt caching, in short:
@@ -30,6 +30,7 @@ import {
   type ModelTier,
 } from '@kite/shared';
 import { getClaudeEnv } from './env';
+import { providerFetch } from './providerFetch';
 
 /** Server time limit for one Claude reply (architecture §7.2: "Set a 60 s timeout"). */
 export const CLAUDE_TIMEOUT_MS = 60_000;
@@ -51,6 +52,9 @@ export function getClaude(): Anthropic {
     apiKey: getClaudeEnv().apiKey,
     timeout: CLAUDE_TIMEOUT_MS,
     maxRetries: 1,
+    // ADR-0100: the keep-alive connection pool shared with the other providers, so an answer reuses the
+    // connection the previous one opened (Node's own fetch closes it after 4 s idle).
+    fetch: providerFetch,
   });
   return client;
 }
