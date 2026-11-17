@@ -81,6 +81,7 @@ import {
 import type { AnswerModel } from '@/core/storage/types';
 import { isTranscriptKey } from '@/platform/keymap';
 import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
+import { DisplaySheet } from './overlay/DisplaySheet';
 import { ControlBar, type DeviceList } from './overlay/ControlBar';
 import { DevicePicker } from './overlay/DevicePicker';
 import { pressRecPill, RecordPopover } from './overlay/RecordControls';
@@ -187,7 +188,14 @@ export interface CompactViewProps {
 }
 
 /** Which floating list or menu is open. */
-type Popup = DeviceList | 'menu' | 'preferences' | 'record' | 'record-notice' | 'model';
+type Popup = DeviceList | 'menu' | 'preferences' | 'display' | 'record' | 'record-notice' | 'model';
+
+/**
+ * The most a menu may ask the desktop app's window to grow, in DIPs: the shell refuses a larger request
+ * outright (MAX_POPUP_HEIGHT in apps/desktop/src/windows.ts, every version so far), and then the window does
+ * not grow at all and the menu is cut off. Asked for at most this, the window grows as far as the screen allows.
+ */
+export const OVERLAY_MAX_POPUP_HEIGHT = 900;
 
 /** ADR-0094: how long the model toast stays, ms (the --k-toast-ms token's 3 s, spec §1 motion). */
 export const MODEL_TOAST_MS = 3_000;
@@ -442,7 +450,10 @@ export function CompactView(props: CompactViewProps) {
     // ADR-0094: the model toast floats like a menu, so the window grows for it too while it shows (ADR-0095:
     // and Voice mode's tip, in the same place).
     const forToast = toastElement.current ? extentOf(toastElement.current, up, height) + 8 : 0;
-    setNeededHeight(Math.max(forPopup, forBars, forToast) * zoom);
+    // Never more than the shell accepts (17 Nov 2026: a taller ⋮ menu made it refuse, and the menu was cut).
+    setNeededHeight(
+      Math.min(OVERLAY_MAX_POPUP_HEIGHT, Math.max(forPopup, forBars, forToast) * zoom),
+    );
   }, [popup, noPanels, zoom, zoomPass, collapsed, icon, scriptBar, up, toast, voiceTipShown]);
 
   // Desktop 1.5.0 (ADR-0068): the Rec popover sits under its pill.
@@ -715,7 +726,7 @@ export function CompactView(props: CompactViewProps) {
                   }
                 : undefined
             }
-            menuOpen={popup === 'menu' || popup === 'preferences'}
+            menuOpen={popup === 'menu' || popup === 'preferences' || popup === 'display'}
             onMenu={(open) => setPopup(open ? 'menu' : null)}
             deviceList={popup === 'audio' || popup === 'mic' ? popup : null}
             onDeviceList={setPopup}
@@ -758,11 +769,7 @@ export function CompactView(props: CompactViewProps) {
             protection={props.protection}
             onProtection={props.onProtection}
             email={props.email}
-            theme={props.theme ?? THEME_DEFAULTS.call}
-            zoom={zoom}
-            fontScale={fontScale}
-            opacity={props.windowSettings?.opacity}
-            onOpacity={props.windowSettings?.onOpacity}
+            onDisplay={() => setPopup('display')}
             onPreferences={() => setPopup('preferences')}
             onDashboard={
               props.onDashboard
@@ -810,6 +817,18 @@ export function CompactView(props: CompactViewProps) {
                   }
                 : undefined
             }
+          />
+        )}
+        {popup === 'display' && (
+          // Zoom, Theme, Opacity and Answer text size: a sheet of their own keeps the ⋮ menu one complete card.
+          <DisplaySheet
+            ref={popupElement}
+            theme={props.theme ?? THEME_DEFAULTS.call}
+            zoom={zoom}
+            fontScale={fontScale}
+            opacity={props.windowSettings?.opacity}
+            onOpacity={props.windowSettings?.onOpacity}
+            onBack={() => setPopup('menu')}
           />
         )}
         {popup === 'preferences' && state?.style && (

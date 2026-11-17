@@ -1193,28 +1193,39 @@ test('S16: the ⋮ menu in order; Answer preferences as a sheet that fits the ov
     'Dashboard',
     'Get help',
     'Private',
-    'Zoom',
-    'Theme',
-    'Opacity',
-    'Answer text size',
+    // 17 Nov 2026: Zoom, Theme, Opacity and Answer text size are in the Display sheet.
+    'Display',
     // ADR-0085: no Answer language in the compact view.
-    // ADR-0094: the Model row (its group, its title, its two choices).
+    // ADR-0094: the Model row (its group, and one row naming the model; its choices open in place).
     'Model',
-    'Model',
-    'Answer model',
-    'Fast — quickest answers',
-    'Smart — more thorough, slower',
+    'Model: Fast (Claude Haiku)',
     'Auto answer',
     'Answer preferences',
     'Edit session',
     'Open call window',
     'Reset position',
   ]);
-  const textSize = menu.getByRole('group', { name: 'Answer text size' }).locator('span').first();
+  // The Model row opens its three choices in place, and shuts again after a pick.
+  await menu.getByRole('button', { name: 'Model: Fast (Claude Haiku)' }).click();
+  await expect(menu.getByRole('radiogroup', { name: 'Answer model' })).toBeVisible();
+  await menu.getByRole('button', { name: 'Model: Fast (Claude Haiku)' }).click();
+  await expect(menu.getByRole('radiogroup', { name: 'Answer model' })).toBeHidden();
+
+  // Display: Zoom, Theme, Opacity and Answer text size, with Back to the menu.
+  await menu.getByRole('button', { name: 'Display', exact: true }).click();
+  const display = page.getByRole('group', { name: 'Display' });
+  for (const name of ['Zoom', 'Theme', 'Answer text size']) {
+    await expect(
+      display.getByRole(name === 'Theme' ? 'radiogroup' : 'group', { name }),
+    ).toBeVisible();
+  }
+  const textSize = display.getByRole('group', { name: 'Answer text size' }).locator('span').first();
   expect(
     await textSize.evaluate((label) => label.scrollWidth <= label.clientWidth),
     'the longest label is not cut off',
   ).toBe(true);
+  await display.getByRole('button', { name: 'Back' }).click();
+  await expect(menu).toBeVisible();
   await expect(menu.getByRole('button', { name: 'About Answer preferences' })).toBeVisible();
   await expect(menu.getByRole('button', { name: 'About Edit session' })).toBeVisible();
   await shot(watched, BARS_SIZE, 'call-menu');
@@ -1241,6 +1252,35 @@ test('S16: the ⋮ menu in order; Answer preferences as a sheet that fits the ov
   // The window is asked to grow for whichever is open.
   const last = (await watched.log()).findLast(isLoggedLayout);
   expect(last?.layout.popupHeight).toBeGreaterThan(0);
+  await watched.context.close();
+});
+
+test('the fullest ⋮ menu is one complete card on a laptop screen, and asks for no more than the shell accepts', async () => {
+  // The developer's laptop: 1920 × 1200 at 150 % is 1280 × 800 DIPs, about 736 below a top-row overlay.
+  const LAPTOP: Width = { width: 1280, height: 736, touch: false };
+  // Everything the desktop app can show: recording, Click-through, opacity, positions, Voice.
+  const watched = await openOverlayView(
+    LAPTOP,
+    '&panels=answer&shell=1&position=top-center&rec=off&ct=off&glass=1&alpha=0.9&voice=off',
+  );
+  const { page } = watched;
+  await page.getByRole('button', { name: 'Overlay menu' }).click();
+  const menu = page.getByRole('group', { name: 'Overlay settings' });
+  await expect(menu.getByRole('switch', { name: 'Voice' })).toBeVisible();
+  await expect(menu.getByRole('button', { name: /^Recording type/ })).toBeVisible();
+  const fit = await menu.evaluate((element) => ({
+    height: element.scrollHeight,
+    scrolls: element.scrollHeight > element.clientHeight + 1,
+    bottom: element.getBoundingClientRect().bottom,
+  }));
+  console.info(`fullest ⋮ menu: ${fit.height} px tall`);
+  expect(fit.scrolls, 'the menu shows whole, with no scrollbar').toBe(false);
+  expect(fit.bottom).toBeLessThanOrEqual(LAPTOP.height);
+  // The window is never asked for more than the desktop app accepts (it refuses the whole request then).
+  const last = (await watched.log()).findLast(isLoggedLayout);
+  expect(last?.layout.popupHeight).toBeGreaterThan(0);
+  expect(last?.layout.popupHeight).toBeLessThanOrEqual(900);
+  await shot(watched, LAPTOP, 'call-menu-laptop');
   await watched.context.close();
 });
 
