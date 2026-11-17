@@ -1,7 +1,7 @@
 /**
  * File: apps/web/src/features/meetings/DriveAccessNote.tsx
  * Purpose: The Meetings library's note when Google refused to give the person Viewer access to their own
- *          session folder (ADR-0096), for example because their sign-in email is not a Google account:
+ *          folder (ADR-0096; ADR-0097: their one folder holding their session folders), for example because their sign-in email is not a Google account:
  *          "Ask an admin for Drive access". Nothing is shown when access was granted or not needed.
  * Used by: WatchTab.tsx, FilesTab.tsx
  * Depends on: @kite/shared (DriveFolderAccess)

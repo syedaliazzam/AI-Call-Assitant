@@ -58,7 +58,8 @@ export function proxy(request: NextRequest) {
 export const config = {
   // Run on everything except: the sign-in page, the desktop link page (ADR-0052: it signs the app in
   // with a one-time code, so it must open signed out), Better Auth's own endpoints (sign-in must work
-  // without a cookie), Vercel's daily jobs (api/cron/, ADR-0072: they check CRON_SECRET themselves),
+  // without a cookie), Vercel's daily jobs (api/cron/, ADR-0072: they check CRON_SECRET themselves;
+  // ADR-0097's one-time drive-user-folders job checks its own secret the same way),
   // Next.js build files, and static files with an extension (icons, models).
   matcher: [
     '/((?!login|desktop/link|api/auth|api/cron/|_next/static|_next/image|favicon.ico|.*\\.[\\w]+$).*)',

@@ -2,7 +2,7 @@
  * File: apps/web/src/features/meetings/useCallDrive.ts
  * Purpose: The shown call's Google Drive side in the Meetings library (ADR-0096): asks the server once per
  *          call and page (POST /api/drive/call-access) for the person's own session folder, Viewer access
- *          to it (so "Watch in Drive" opens for them) and the call's saved file links. Kept in memory for
+ *          to their own folder that holds it (ADR-0097; so "Watch in Drive" opens for them) and the call's saved file links. Kept in memory for
  *          the page's life, so moving between calls does not ask again.
  * Used by: CallPane.tsx (WatchTab, FilesTab)
  * Depends on: @kite/shared (DriveCallAccessResponse), src/core/drive/api.ts
