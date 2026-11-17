@@ -24,6 +24,14 @@ export interface UsageTableRow {
   groqToday: number;
   /** ADR-0095: of the last 7 days' requests, how many went to Groq. */
   groqLastDays: number;
+  /** ADR-0099: of today's requests, how many went to Gemini. */
+  geminiToday: number;
+  /** ADR-0099: of the last 7 days' requests, how many went to Gemini. */
+  geminiLastDays: number;
+  /** ADR-0099: of today's requests, how many went to OpenAI. */
+  openaiToday: number;
+  /** ADR-0099: of the last 7 days' requests, how many went to OpenAI. */
+  openaiLastDays: number;
 }
 
 /** The daily-limit form's state after a submit (useActionState). Never thrown. */

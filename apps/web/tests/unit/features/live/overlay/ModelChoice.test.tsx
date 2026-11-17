@@ -26,6 +26,8 @@ const {
   modelOff,
   modelSwitchToast,
   modelName,
+  modelRefusedToast,
+  GROQ_REFUSED_TOAST,
   MODEL_CHOICES,
   SMART_OFF_TIP,
 } = await import('@/features/live/overlay/ModelChoice');
@@ -121,11 +123,21 @@ describe('the model choice (ADR-0094)', () => {
     expect(modelOf(null)).toBeNull();
     const { model: _model, ...older } = STATE;
     expect(modelOf(older)).toBeNull();
-    expect(modelOf(STATE)).toEqual({ model: 'fast', smartAllowed: true, groqAllowed: false });
+    expect(modelOf(STATE)).toEqual({
+      model: 'fast',
+      smartAllowed: true,
+      groqAllowed: false,
+      geminiAllowed: false,
+      openaiAllowed: false,
+      moreModels: false,
+    });
     expect(modelOf({ ...STATE, smartAllowed: false, groqAllowed: true })).toEqual({
       model: 'fast',
       smartAllowed: false,
       groqAllowed: true,
+      geminiAllowed: false,
+      openaiAllowed: false,
+      moreModels: false,
     });
   });
 
@@ -290,5 +302,60 @@ describe('Voice mode on bar 1 and in the ⋮ menu (ADR-0095)', () => {
     expect(html).toContain('Voice');
     expect(html.indexOf('>Voice<')).toBeGreaterThan(html.indexOf('Auto answer'));
     expect(menu(STATE)).not.toContain('>Voice<');
+  });
+});
+
+describe('ADR-0099: the new-models rollout in the overlay', () => {
+  it("lists the rollout's seven choices in order, with their tags, and disables the providers that are off", () => {
+    const html = renderToString(
+      <ModelOptions
+        label="Model"
+        model="gemini-lite"
+        smartAllowed
+        groqAllowed
+        geminiAllowed
+        openaiAllowed={false}
+        moreModels
+        onSelect={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+    const order = [
+      'Gemini 3.5 Flash Lite (Recommended)',
+      'GPT-5.6 Luna (Fast)',
+      'Gemini 3.6 Flash',
+      'GPT-5.6 Terra',
+      'Claude Haiku',
+      'Claude Sonnet',
+      'Groq (Fastest)',
+    ].map((label) => html.indexOf(label));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(html).toMatch(/aria-disabled="true" data-model="gpt-luna"/);
+    expect(html).not.toMatch(/aria-disabled="true" data-model="gemini-lite"/);
+  });
+
+  it('keeps the classic list for everyone else', () => {
+    const html = renderToString(
+      <ModelOptions
+        label="Model"
+        model="fast"
+        smartAllowed
+        groqAllowed
+        onSelect={() => undefined}
+        onClose={() => undefined}
+      />,
+    );
+    expect(html).toContain('Fast (Claude Haiku)');
+    expect(html).not.toContain('Gemini');
+  });
+
+  it('names the new models in its toasts and on the chip', () => {
+    expect(modelSwitchToast('gemini-lite')).toBe('Gemini 3.5 Flash Lite on');
+    expect(modelSwitchToast('fast', true)).toBe('Claude Haiku on');
+    expect(modelRefusedToast('gpt-terra', true)).toBe('GPT-5.6 Terra is turned off by your admin');
+    expect(modelRefusedToast('groq')).toBe(GROQ_REFUSED_TOAST);
+    expect(modelName('gpt-luna')).toBe('Luna');
+    expect(modelName('fast', true)).toBe('Haiku');
   });
 });

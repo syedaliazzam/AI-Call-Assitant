@@ -2,7 +2,9 @@
  * Tests apps/web/src/server/modelAccess.ts (spec §6), with the database mocked: the deeper model is on
  * until an admin turns it off, the setting is cached, a database failure does not stop answers, and a
  * session set to the deeper model falls back to the fast one while it is off. ADR-0095: Groq's switch works
- * the same way, and Groq is off whatever it says when the server has no Groq key.
+ * the same way, and Groq is off whatever it says when the server has no Groq key. ADR-0099: Gemini and OpenAI
+ * have a switch each, are on only for the accounts in KITE_ANSWER_MODELS_USERS with the provider's key, and
+ * allowedModel() falls back to the fast model for any model that is off.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,8 +16,14 @@ const rows = vi.hoisted(() => ({
 
 /** ADR-0095: whether the server has a Groq key. */
 const groqKey = vi.hoisted(() => ({ set: true }));
+/** ADR-0099: whether the server has the Gemini and OpenAI keys. */
+const providerKeys = vi.hoisted(() => ({ gemini: true, openai: true }));
 vi.mock('@/server/env', () => ({
   getGroqEnv: () => (groqKey.set ? { apiKey: 'k', model: 'm' } : null),
+  getGeminiEnv: () =>
+    providerKeys.gemini ? { apiKey: 'k', modelFast: 'f', modelSmart: 's' } : null,
+  getOpenAIEnv: () =>
+    providerKeys.openai ? { apiKey: 'k', modelFast: 'f', modelSmart: 's' } : null,
 }));
 
 vi.mock('@/server/db', () => ({
@@ -26,8 +34,13 @@ vi.mock('@/server/db', () => ({
 }));
 
 import {
+  allowedModel,
   allowedTier,
   getDeepModelEnabled,
+  getProviderEnabled,
+  getProviderSwitch,
+  moreModelsFor,
+  setProviderEnabled,
   getGroqEnabled,
   getGroqSwitch,
   parseDeepModelEnabled,
@@ -38,6 +51,9 @@ import {
 
 beforeEach(() => {
   groqKey.set = true;
+  providerKeys.gemini = true;
+  providerKeys.openai = true;
+  vi.unstubAllEnvs();
   resetModelAccessCache();
   rows.select.mockReset();
   rows.insert.mockReset();
@@ -130,5 +146,52 @@ describe('Groq (ADR-0095)', () => {
     expect(await getGroqEnabled()).toBe(false);
     rows.select.mockResolvedValue([]);
     expect(await getDeepModelEnabled()).toBe(true);
+  });
+});
+
+describe('Gemini and OpenAI (ADR-0099)', () => {
+  it('reads the rollout list: ids, or * for everyone; unset means no one', () => {
+    expect(moreModelsFor('u1', {})).toBe(false);
+    expect(moreModelsFor('u1', { KITE_ANSWER_MODELS_USERS: 'u2, u1' })).toBe(true);
+    expect(moreModelsFor('u3', { KITE_ANSWER_MODELS_USERS: 'u2,u1' })).toBe(false);
+    expect(moreModelsFor('anyone', { KITE_ANSWER_MODELS_USERS: '*' })).toBe(true);
+  });
+
+  it('is on only in the rollout, with a key, and while the switch is on', async () => {
+    vi.stubEnv('KITE_ANSWER_MODELS_USERS', 'u1');
+    rows.select.mockResolvedValue([]);
+    expect(await getProviderEnabled('gemini', 'u1', 1_000)).toBe(true);
+    // Outside the rollout: off, and no setting is read.
+    rows.select.mockClear();
+    expect(await getProviderEnabled('gemini', 'u2', 1_000)).toBe(false);
+    expect(rows.select).not.toHaveBeenCalled();
+    // No key: off, and no setting is read.
+    providerKeys.openai = false;
+    expect(await getProviderEnabled('openai', 'u1', 1_000)).toBe(false);
+    expect(rows.select).not.toHaveBeenCalled();
+  });
+
+  it('keeps a switch per provider, apart from the others', async () => {
+    vi.stubEnv('KITE_ANSWER_MODELS_USERS', 'u1');
+    const onConflictDoUpdate = vi.fn().mockResolvedValue(undefined);
+    rows.insert.mockReturnValue({ onConflictDoUpdate });
+    await setProviderEnabled('openai', false);
+    expect(rows.insert).toHaveBeenCalledWith({ key: 'openai_model_enabled', value: 'false' });
+    expect(await getProviderEnabled('openai', 'u1')).toBe(false);
+    rows.select.mockResolvedValue([]);
+    expect(await getProviderSwitch('gemini')).toBe(true);
+    expect(await getGroqSwitch()).toBe(true);
+  });
+
+  it('falls back to the fast model for any model that is off', () => {
+    const allOn = { smart: true, groq: true, gemini: true, openai: true };
+    expect(allowedModel('gemini-lite', allOn)).toBe('gemini-lite');
+    expect(allowedModel('gpt-terra', allOn)).toBe('gpt-terra');
+    expect(allowedModel('gemini-flash', { ...allOn, gemini: false })).toBe('fast');
+    expect(allowedModel('gpt-luna', { ...allOn, openai: false })).toBe('fast');
+    expect(allowedModel('groq', { ...allOn, groq: false })).toBe('fast');
+    expect(allowedModel('smart', { ...allOn, smart: false })).toBe('fast');
+    // The older form never gives a Gemini or GPT model.
+    expect(allowedTier('gemini-lite', true, true)).toBe('fast');
   });
 });

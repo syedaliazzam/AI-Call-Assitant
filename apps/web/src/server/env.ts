@@ -67,6 +67,51 @@ export interface GroqEnv {
   model: string;
 }
 
+/**
+ * ADR-0099: the models the Gemini and GPT choices use when their variables are not set. Each was checked on its
+ * provider's models endpoint with our keys on 17 Nov 2026 (all four listed).
+ */
+export const DEFAULT_ANSWER_MODEL_IDS = {
+  /** "Gemini 3.5 Flash Lite" (KITE_MODEL_GEMINI_LITE). */
+  geminiLite: 'gemini-3.5-flash-lite',
+  /** "Gemini 3.6 Flash" (KITE_MODEL_GEMINI_FLASH). */
+  geminiFlash: 'gemini-3.6-flash',
+  /** "GPT-5.6 Luna" (KITE_MODEL_OPENAI_FAST). */
+  openaiFast: 'gpt-5.6-luna',
+  /** "GPT-5.6 Terra" (KITE_MODEL_OPENAI_SMART). */
+  openaiSmart: 'gpt-5.6-terra',
+} as const;
+
+/** ADR-0099: Google's Gemini settings. All optional: without a key Gemini is off. */
+const geminiEnvSchema = z.object({
+  /** Gemini API key. Server-only; never logged or sent to the browser. */
+  GEMINI_API_KEY: z.string().min(1).optional(),
+  /** Model id for "Gemini 3.5 Flash Lite" (default DEFAULT_ANSWER_MODEL_IDS.geminiLite). */
+  KITE_MODEL_GEMINI_LITE: z.string().min(1).optional(),
+  /** Model id for "Gemini 3.6 Flash" (default DEFAULT_ANSWER_MODEL_IDS.geminiFlash). */
+  KITE_MODEL_GEMINI_FLASH: z.string().min(1).optional(),
+});
+
+/** ADR-0099: OpenAI's settings. All optional: without a key the GPT models are off. */
+const openaiEnvSchema = z.object({
+  /** OpenAI API key. Server-only; never logged or sent to the browser. */
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  /** Model id for "GPT-5.6 Luna" (default DEFAULT_ANSWER_MODEL_IDS.openaiFast). */
+  KITE_MODEL_OPENAI_FAST: z.string().min(1).optional(),
+  /** Model id for "GPT-5.6 Terra" (default DEFAULT_ANSWER_MODEL_IDS.openaiSmart). */
+  KITE_MODEL_OPENAI_SMART: z.string().min(1).optional(),
+});
+
+/** ADR-0099: validated settings for one third-party provider with two models. */
+export interface ProviderEnv {
+  /** The provider's API key. */
+  apiKey: string;
+  /** The quicker model's id (Gemini 3.5 Flash Lite, GPT-5.6 Luna). */
+  modelFast: string;
+  /** The smarter model's id (Gemini 3.6 Flash, GPT-5.6 Terra). */
+  modelSmart: string;
+}
+
 /** Validated sign-in settings, with the app's public address already worked out. */
 export interface AuthEnv {
   /** Neon Postgres connection string. */
@@ -215,6 +260,42 @@ export function getGroqEnv(source: EnvSource = process.env): GroqEnv | null {
   const env = parseEnv(groqEnvSchema, source);
   if (!env.GROQ_API_KEY) return null;
   return { apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL ?? DEFAULT_GROQ_MODEL };
+}
+
+/**
+ * Reads Google's Gemini settings (ADR-0099). Optional: with no key the Gemini models are not offered, and a
+ * session set to one answers with Claude Haiku.
+ *
+ * @param source Variables to read; defaults to process.env (tests pass their own).
+ * @returns The ProviderEnv, or null when GEMINI_API_KEY is not set.
+ * Called from: app/api/answer/route.ts, src/server/modelAccess.ts, app/(app)/admin/usage/page.tsx
+ */
+export function getGeminiEnv(source: EnvSource = process.env): ProviderEnv | null {
+  const env = parseEnv(geminiEnvSchema, source);
+  if (!env.GEMINI_API_KEY) return null;
+  return {
+    apiKey: env.GEMINI_API_KEY,
+    modelFast: env.KITE_MODEL_GEMINI_LITE ?? DEFAULT_ANSWER_MODEL_IDS.geminiLite,
+    modelSmart: env.KITE_MODEL_GEMINI_FLASH ?? DEFAULT_ANSWER_MODEL_IDS.geminiFlash,
+  };
+}
+
+/**
+ * Reads OpenAI's settings (ADR-0099). Optional: with no key the GPT models are not offered, and a session set
+ * to one answers with Claude Haiku.
+ *
+ * @param source Variables to read; defaults to process.env (tests pass their own).
+ * @returns The ProviderEnv, or null when OPENAI_API_KEY is not set.
+ * Called from: app/api/answer/route.ts, src/server/modelAccess.ts, app/(app)/admin/usage/page.tsx
+ */
+export function getOpenAIEnv(source: EnvSource = process.env): ProviderEnv | null {
+  const env = parseEnv(openaiEnvSchema, source);
+  if (!env.OPENAI_API_KEY) return null;
+  return {
+    apiKey: env.OPENAI_API_KEY,
+    modelFast: env.KITE_MODEL_OPENAI_FAST ?? DEFAULT_ANSWER_MODEL_IDS.openaiFast,
+    modelSmart: env.KITE_MODEL_OPENAI_SMART ?? DEFAULT_ANSWER_MODEL_IDS.openaiSmart,
+  };
 }
 
 /**

@@ -91,9 +91,9 @@ import { LiveMenu } from './overlay/LiveMenu';
 import {
   modelOf,
   ModelPopover,
+  modelRefusedToast,
   modelSwitchToast,
-  SMART_REFUSED_TOAST,
-  GROQ_REFUSED_TOAST,
+  modelOff,
 } from './overlay/ModelChoice';
 import { OverlayAnswer } from './overlay/OverlayAnswer';
 import { PanelSplit } from './overlay/PanelSplit';
@@ -364,15 +364,18 @@ export function CompactView(props: CompactViewProps) {
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   if (pendingModel && modelChoice?.model === pendingModel) {
     setPendingModel(null);
-    setToast((was) => ({ id: (was?.id ?? 0) + 1, text: modelSwitchToast(pendingModel) }));
-  } else if (pendingModel === 'smart' && modelChoice && !modelChoice.smartAllowed) {
-    // An admin turned Smart off between the menu opening and the pick: the model stays Fast.
+    setToast((was) => ({
+      id: (was?.id ?? 0) + 1,
+      text: modelSwitchToast(pendingModel, modelChoice?.moreModels),
+    }));
+  } else if (pendingModel && modelChoice && modelOff(pendingModel, modelChoice)) {
+    // An admin turned Smart off between the menu opening and the pick: the model stays as it was. ADR-0095:
+    // the same for Groq (or the server has no key); ADR-0099: and for the Gemini and GPT models.
     setPendingModel(null);
-    setToast((was) => ({ id: (was?.id ?? 0) + 1, text: SMART_REFUSED_TOAST }));
-  } else if (pendingModel === 'groq' && modelChoice && !modelChoice.groqAllowed) {
-    // ADR-0095: Groq was turned off (or the server has no key) between the menu opening and the pick.
-    setPendingModel(null);
-    setToast((was) => ({ id: (was?.id ?? 0) + 1, text: GROQ_REFUSED_TOAST }));
+    setToast((was) => ({
+      id: (was?.id ?? 0) + 1,
+      text: modelRefusedToast(pendingModel, modelChoice.moreModels),
+    }));
   }
   // ADR-0095: Voice mode's one-time tip, where the toast shows (never both at once).
   const voiceTipShown = (state?.voiceTip ?? false) && !toast && !state?.ended;
@@ -856,6 +859,9 @@ export function CompactView(props: CompactViewProps) {
             model={modelChoice.model}
             smartAllowed={modelChoice.smartAllowed}
             groqAllowed={modelChoice.groqAllowed}
+            geminiAllowed={modelChoice.geminiAllowed}
+            openaiAllowed={modelChoice.openaiAllowed}
+            moreModels={modelChoice.moreModels}
             left={modelLeft}
             onSelect={pickModel}
             onClose={() => setPopup(null)}

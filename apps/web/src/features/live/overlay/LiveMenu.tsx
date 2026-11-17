@@ -34,7 +34,8 @@ import type { AnswerModel } from '@/core/storage/types';
 import { PRIVATE_LABEL, privateHint } from '@/features/privacy/usePrivate';
 import { ChevronDownIcon, GridIcon, MonitorIcon, PenIcon } from '@/ui/icons';
 import { MenuAction, MenuBlock, MenuList, MenuSwitch } from '@/ui/PanelMenu';
-import { MODEL_CHOICES, modelOf, ModelOptions } from './ModelChoice';
+import { modelEntry } from '@/core/session/modelChoices';
+import { modelOf, ModelOptions } from './ModelChoice';
 
 /** The ⋮ menu's recording types (desktop 1.5.0, ADR-0068). */
 export const RECORDING_TYPE_OPTIONS: readonly { value: RecordingKind; label: string }[] = [
@@ -230,14 +231,14 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
             <button
               type="button"
               aria-expanded={modelOpen}
-              aria-label={`Model: ${MODEL_CHOICES.find((choice) => choice.value === modelChoice.model)?.label ?? modelChoice.model}`}
+              aria-label={`Model: ${modelEntry(modelChoice.model, modelChoice.moreModels === true).label}`}
               onClick={() => setModelOpen((was) => !was)}
               className="flex min-h-10 w-full items-center gap-2.5 px-3 py-1 text-left text-input text-ui-text hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
             >
               <Sparkles {...ICON} />
               <span className="shrink-0">Model</span>
               <span className="min-w-0 flex-1 truncate text-right text-[13px] text-ui-muted">
-                {MODEL_CHOICES.find((choice) => choice.value === modelChoice.model)?.label}
+                {modelEntry(modelChoice.model, modelChoice.moreModels === true).label}
               </span>
               <ChevronDownIcon size={14} />
             </button>
@@ -248,6 +249,9 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
                   model={modelChoice.model}
                   smartAllowed={modelChoice.smartAllowed}
                   groqAllowed={modelChoice.groqAllowed}
+                  geminiAllowed={modelChoice.geminiAllowed}
+                  openaiAllowed={modelChoice.openaiAllowed}
+                  moreModels={modelChoice.moreModels}
                   onSelect={props.onModel}
                   onClose={() => {
                     setModelOpen(false);

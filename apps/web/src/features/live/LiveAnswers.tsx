@@ -34,7 +34,12 @@ import { isUnclearGroup } from '@/core/transcript/unclear';
 import { AnswerPreferencesDialog } from '@/features/session-setup/AnswerPreferencesDialog';
 import type { MenuItem } from '@/ui/Menu';
 import { updateSessionPreferences } from '@/core/storage/sessions';
-import { answerModelAccess } from '@/core/session/modelAccess';
+import {
+  answerModelAccess,
+  DEFAULT_MODEL_ACCESS,
+  type AnswerModelAccess,
+} from '@/core/session/modelAccess';
+import { modelOff } from '@/core/session/modelChoices';
 import { callTimings } from '@/core/live/callTimings';
 import {
   clampStep,
@@ -263,20 +268,19 @@ export function LiveAnswers(props: LiveAnswersProps) {
     setSeenSessionModel(props.session.preferences.model);
     setModel(props.session.preferences.model);
   }
-  // ADR-0094: false once the server says an admin has turned the deeper model off (Smart then shows
-  // disabled in the overlay). The server enforces it on every answer whatever this says.
-  const [smartAllowed, setSmartAllowed] = useState(true);
-  // ADR-0095: true once the server says Groq may be used ("Fastest (Groq)" is disabled until then).
-  const [groqAllowed, setGroqAllowed] = useState(false);
-  // ADR-0095: whether the server has answered yet (a Groq session shows Fastest until it says Groq is off).
-  const [groqKnown, setGroqKnown] = useState(false);
+  // ADR-0094: Smart is off once the server says an admin has turned the deeper model off (it then shows
+  // disabled in the overlay). ADR-0095: Groq, and ADR-0099: the Gemini and GPT models, are off until the server
+  // says they may be used. The server enforces all of them on every answer whatever this says.
+  const [access, setAccess] = useState<AnswerModelAccess>(DEFAULT_MODEL_ACCESS);
+  // ADR-0095: whether the server has answered yet (a Groq, Gemini or GPT session shows its model until the
+  // server says it is off).
+  const [accessKnown, setAccessKnown] = useState(false);
   useEffect(() => {
     let active = true;
-    void answerModelAccess().then((access) => {
+    void answerModelAccess().then((next) => {
       if (!active) return;
-      setSmartAllowed(access.smart);
-      setGroqAllowed(access.groq);
-      setGroqKnown(true);
+      setAccess(next);
+      setAccessKnown(true);
     });
     return () => {
       active = false;
@@ -288,9 +292,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
     [props.session, style, model],
   );
   // ADR-0094: what the overlay shows: Fast when Smart is asked for but turned off (the server answers with
-  // the fast model then). ADR-0095: the same for Groq once the server has said it is off.
+  // the fast model then). ADR-0095: the same for Groq once the server has said it is off; ADR-0099: and for the
+  // Gemini and GPT models.
   const shownModel: AnswerModel =
-    (model === 'smart' && !smartAllowed) || (model === 'groq' && !groqAllowed && groqKnown)
+    (model === 'smart' && !access.smart) || (accessKnown && modelOff(model, access))
       ? 'fast'
       : model;
   // The chat box's switch, remembered per session (ADR-0030).
@@ -477,8 +482,13 @@ export function LiveAnswers(props: LiveAnswersProps) {
       ended: false,
       style,
       model: shownModel,
-      smartAllowed,
-      groqAllowed,
+      smartAllowed: access.smart,
+      groqAllowed: access.groq,
+      // ADR-0099: the longer list and the Gemini and GPT switches, only for an account in their rollout (an
+      // overlay then shows the classic list exactly as before for everyone else).
+      ...(access.moreModels
+        ? { moreModels: true, geminiAllowed: access.gemini, openaiAllowed: access.openai }
+        : {}),
       scriptBar,
       clickThrough,
       dictationSupported: props.dictation?.supported ?? false,
@@ -530,8 +540,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
     answers.notice,
     style,
     shownModel,
-    smartAllowed,
-    groqAllowed,
+    access,
   ]);
   const compactStateRef = useRef(compactState);
   const channel = useRef<LiveChannel | null>(null);
@@ -547,8 +556,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
    * the next answer (one already streaming finishes on the model it was sent with), is saved as the
    * session's model (so AI preferences show it afterwards; this device's session only, never another
    * user's or the global settings), and the new model's prompt cache is warmed in the background
-   * (useLiveAnswers). Smart and Groq (ADR-0095) are asked of the server first: when one is off, nothing
-   * changes and the overlay shows it disabled.
+   * (useLiveAnswers). Smart and Groq (ADR-0095), and the Gemini and GPT models (ADR-0099), are asked of the
+   * server first: when one is off, nothing changes and the overlay shows it disabled.
    *
    * @param next The model picked.
    */
@@ -563,11 +572,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
       apply();
       return;
     }
-    void answerModelAccess().then((access) => {
-      setSmartAllowed(access.smart);
-      setGroqAllowed(access.groq);
-      setGroqKnown(true);
-      if (next === 'smart' ? access.smart : access.groq) apply();
+    void answerModelAccess().then((now) => {
+      setAccess(now);
+      setAccessKnown(true);
+      if (!modelOff(next, now)) apply();
     });
   });
   /**

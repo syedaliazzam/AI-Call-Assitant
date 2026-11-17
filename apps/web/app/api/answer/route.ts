@@ -14,7 +14,9 @@
  *             global prompt, ADR-0089, from the call's pinned version, ADR-0083)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6 (answer flow), §7.2 (/api/answer);
  *               day-04-answers.md Stage 3; ADR-0095 (Groq as a third answer model, with Claude Haiku as
- *               its fallback: src/server/groq.ts)
+ *               its fallback: src/server/groq.ts); ADR-0099 (Google's Gemini and OpenAI as answer models for
+ *               the accounts in the rollout, screenshots included, with the same Claude Haiku fallback:
+ *               src/server/gemini.ts, src/server/openai.ts, src/server/providerStream.ts)
  *
  * The reply must stream, not be collected and sent at the end: "time to first word" is the main
  * latency number, and buffering would turn it into "time to last word". Each Claude text piece
@@ -27,11 +29,12 @@ import type {
   AnswerErrorCode,
   AnswerEvent,
   AnswerModel,
+  AnswerProvider,
   AnswerRequest,
   AnswerTimings,
   ModelTier,
 } from '@kite/shared';
-import { dailyLimitMessage } from '@kite/shared';
+import { dailyLimitMessage, providerOf } from '@kite/shared';
 import { getCachedSession, type AuthSession } from '@/server/auth';
 import {
   CLAUDE_TIMEOUT_MS,
@@ -47,20 +50,27 @@ import {
   type ContractStats,
   type ReplyItem,
 } from '@/server/answer-meta';
-import { getClaudeEnv, getGroqEnv } from '@/server/env';
+import { getClaudeEnv, getGeminiEnv, getGroqEnv, getOpenAIEnv } from '@/server/env';
+import { streamGeminiReply, warmGemini } from '@/server/gemini';
+import { streamGroqReply } from '@/server/groq';
+import { streamOpenAIReply, warmOpenAI } from '@/server/openai';
 import {
-  GROQ_FIRST_TOKEN_MS,
-  GroqError,
-  streamGroqReply,
+  FIRST_TOKEN_MS,
+  ProviderError,
   withFirstTokenFallback,
   type FallbackReason,
-} from '@/server/groq';
+} from '@/server/providerStream';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { companySettings, type BlockSettings } from '@/server/aiInstructions';
 import { ANSWER_MAX_TOKENS, buildPrompt } from '@/server/prompt';
 import { HELLO_MAX_TOKENS, HELLO_MESSAGES, HELLO_SYSTEM } from '@/server/prompts/hello';
 import { SSE_HEADERS, toEventStream } from '@/server/sse';
-import { allowedTier, getDeepModelEnabled, getGroqEnabled } from '@/server/modelAccess';
+import {
+  allowedModel,
+  getDeepModelEnabled,
+  getGroqEnabled,
+  getProviderEnabled,
+} from '@/server/modelAccess';
 import { countRequest } from '@/server/usage';
 import { MAX_REQUEST_BYTES, parseAnswerRequest } from '@/server/validate';
 import { readRequestText } from '@/server/requestBody';
@@ -121,6 +131,59 @@ interface WarmReplyOptions {
   onResponse: () => void;
   /** The global prompt the answers of this call use (ADR-0089), so the warm-up writes their cache. */
   company: BlockSettings;
+  /**
+   * ADR-0099: the Gemini or OpenAI model the session uses, warmed together with Claude Haiku (its fallback,
+   * which the warm-up warms as before). Absent or null: Claude only.
+   */
+  thirdParty?: ThirdParty | null;
+  /** ADR-0099: the call's id, OpenAI's prompt_cache_key. */
+  cacheKey?: string | undefined;
+  /** ADR-0099: the request's id, for the provider warm-up's log line. */
+  requestId: string;
+}
+
+/** ADR-0095 and ADR-0099: the third-party model a request is sent to, with its key (never logged). */
+interface ThirdParty {
+  /** Who serves it. */
+  provider: Exclude<AnswerProvider, 'claude'>;
+  /** The provider's API key. */
+  apiKey: string;
+  /** The model id, for example 'gemini-3.5-flash-lite'. */
+  model: string;
+}
+
+/**
+ * ADR-0095 and ADR-0099: whether a request goes to a third-party model, and which. Groq answers text questions
+ * only ('answer' and 'chat' without an image); Gemini and OpenAI answer those, screenshots (any request with
+ * an image) and warm-ups. Everything else (the hello test, Ask AI) stays on Claude.
+ *
+ * @param chosen The model the request may use (after the switches).
+ * @param mode   The request's mode.
+ * @param image  True when the request carries a screenshot.
+ * @returns The provider, key and model id, or null for Claude.
+ * Called from: respond()
+ */
+function thirdPartyFor(
+  chosen: AnswerModel,
+  mode: AnswerRequest['mode'],
+  image: boolean,
+): ThirdParty | null {
+  const provider = providerOf(chosen);
+  if (provider === 'groq') {
+    if ((mode !== 'answer' && mode !== 'chat') || image) return null;
+    const env = getGroqEnv();
+    return env ? { provider, apiKey: env.apiKey, model: env.model } : null;
+  }
+  if (provider === 'gemini' || provider === 'openai') {
+    if (mode !== 'answer' && mode !== 'chat' && mode !== 'screenshot' && mode !== 'warm') {
+      return null;
+    }
+    const env = provider === 'gemini' ? getGeminiEnv() : getOpenAIEnv();
+    if (!env) return null;
+    const smarter = chosen === 'gemini-flash' || chosen === 'gpt-terra';
+    return { provider, apiKey: env.apiKey, model: smarter ? env.modelSmart : env.modelFast };
+  }
+  return null;
 }
 
 /**
@@ -138,15 +201,53 @@ async function* warmReply(
   options: WarmReplyOptions,
 ): AsyncGenerator<string, ReplyResult, undefined> {
   const prompt = buildPrompt(request, options.company.globalPrompt);
-  const result = await warmCache({
+  const claude = warmCache({
     model: options.model,
     tier: options.tier,
     system: prompt.system,
     messages: prompt.messages,
     signal: options.signal,
   });
+  const third = options.thirdParty;
+  if (!third || third.provider === 'groq') {
+    const result = await claude;
+    options.onResponse();
+    return result;
+  }
+  // ADR-0099: the session's Gemini or GPT model is warmed at the same time as Claude Haiku (its fallback). One
+  // token is asked for; its usage shows the cache.
+  const input = {
+    apiKey: third.apiKey,
+    model: third.model,
+    system: prompt.system,
+    messages: prompt.messages,
+    maxTokens: 1,
+    signal: options.signal,
+    cacheKey: options.cacheKey,
+  };
+  const [claudeResult, thirdResult] = await Promise.allSettled([
+    claude,
+    third.provider === 'gemini' ? warmGemini(input) : warmOpenAI(input),
+  ]);
   options.onResponse();
-  return result;
+  // Ids, status and token counts only.
+  console.info('answer: provider warm', {
+    requestId: options.requestId,
+    provider: third.provider,
+    model: third.model,
+    ok: thirdResult.status === 'fulfilled',
+    ...(thirdResult.status === 'fulfilled'
+      ? { usage: thirdResult.value.usage }
+      : {
+          status:
+            thirdResult.reason instanceof ProviderError ? thirdResult.reason.status : undefined,
+        }),
+    claudeOk: claudeResult.status === 'fulfilled',
+  });
+  // The session's model's usage when it warmed; otherwise Claude's (or Claude's error).
+  if (thirdResult.status === 'fulfilled') return thirdResult.value;
+  if (claudeResult.status === 'fulfilled') return claudeResult.value;
+  throw claudeResult.reason;
 }
 
 /**
@@ -230,32 +331,41 @@ async function respond(
         );
 
   // Ask Kite has no call to keep up with, so it defaults to the smart model (ADR-0030). ADR-0095: Ask AI keeps
-  // its Claude model, so a Groq request there is answered as Ask AI's default.
+  // its Claude model, so a Groq request there is answered as Ask AI's default. ADR-0099: the same for the
+  // Gemini and GPT models.
   const wanted: AnswerModel =
     mode === 'kite'
-      ? data.model === 'groq'
-        ? 'smart'
-        : (data.model ?? 'smart')
+      ? data.model && providerOf(data.model) === 'claude'
+        ? data.model
+        : 'smart'
       : (data.model ?? 'fast');
+  const wantedProvider = providerOf(wanted);
   // A session's deeper model, and Groq (ADR-0095), can be turned off by an admin (spec §6): its calls keep
-  // working on the fast one. Ask AI's page has no per-session model. Reads a setting only for such a request.
+  // working on the fast one. ADR-0099: Gemini and OpenAI too, and they are on only for the accounts in the
+  // rollout, with the provider's key set. Ask AI's page has no per-session model. Reads a setting only for
+  // such a request.
   const chosen: AnswerModel =
     mode === 'kite'
       ? wanted
-      : allowedTier(
-          wanted,
-          wanted === 'smart' ? await getDeepModelEnabled() : true,
-          wanted === 'groq' ? await getGroqEnabled() : false,
-        );
-  // ADR-0095: Groq answers text questions only. Screenshots and anything with an image, warm-ups and the hello
-  // test always use Claude (Haiku for a Groq session, which is also what a Groq answer falls back to, so the
-  // warm-up writes the cache the fallback and the screenshots read). The user is shown nothing about it.
-  const groqEnv =
-    chosen === 'groq' && (mode === 'answer' || mode === 'chat') && !data.image
-      ? getGroqEnv()
-      : null;
+      : allowedModel(wanted, {
+          smart: wanted === 'smart' ? await getDeepModelEnabled() : true,
+          groq: wantedProvider === 'groq' ? await getGroqEnabled() : false,
+          gemini:
+            wantedProvider === 'gemini'
+              ? await getProviderEnabled('gemini', session.user.id)
+              : false,
+          openai:
+            wantedProvider === 'openai'
+              ? await getProviderEnabled('openai', session.user.id)
+              : false,
+        });
+  // ADR-0095: Groq answers text questions only; screenshots and anything with an image, warm-ups and the hello
+  // test use Claude (Haiku for a Groq session, which is also what a Groq answer falls back to, so the warm-up
+  // writes the cache the fallback and the screenshots read). ADR-0099: Gemini and OpenAI answer screenshots
+  // too, and a warm-up warms them with Claude Haiku. The user is shown nothing about it.
+  const thirdParty = thirdPartyFor(chosen, mode, Boolean(data.image));
   const tier: ModelTier = chosen === 'smart' ? 'smart' : 'fast';
-  // ADR-0095: why a Groq answer moved to Claude Haiku (null while it has not).
+  // ADR-0095: why a third-party answer moved to Claude Haiku (null while it has not).
   let fallback: FallbackReason | null = null;
   let model: string;
   try {
@@ -274,9 +384,10 @@ async function respond(
   // (one database round trip, 30–100 ms, no longer in front of Claude's first token). Over the limit, the
   // Claude request is stopped at once and the reply is the same 429 as before: no text is ever sent. Its
   // time is logged as msLimit.
-  // ADR-0095: a Groq answer is also counted as a Groq request (Admin → Usage).
+  // ADR-0095: a Groq answer is also counted as a Groq request (Admin → Usage). ADR-0099: Gemini and OpenAI the
+  // same, each in its own column.
   const counting = COUNTED_MODES.has(mode)
-    ? countRequest(session.user.id, undefined, { groq: groqEnv !== null })
+    ? countRequest(session.user.id, undefined, { provider: thirdParty?.provider })
     : null;
   // Stops Claude when the request is over the daily limit.
   const overLimit = new AbortController();
@@ -321,7 +432,16 @@ async function respond(
   context.defaultPrompt = company.isDefault;
   let source: AsyncGenerator<ReplyItem, ReplyResult, undefined>;
   if (mode === 'warm') {
-    source = warmReply(data, { model, tier, signal, onResponse: markOpen, company });
+    source = warmReply(data, {
+      model,
+      tier,
+      signal,
+      onResponse: markOpen,
+      company,
+      thirdParty,
+      cacheKey: data.callId,
+      requestId,
+    });
   } else if (mode === 'hello') {
     source = streamReply({
       model,
@@ -354,35 +474,45 @@ async function respond(
       });
     // ADR-0095: Groq gets the same prompt (locked contract, global prompt, preferences, end reminder). When it
     // fails or sends no first token within 4 s, the same answer is asked of Claude Haiku, and that is recorded.
-    const reply = groqEnv
+    // ADR-0099: Gemini and OpenAI the same (with the screenshot when there is one).
+    const third = thirdParty;
+    const reply = third
       ? withFirstTokenFallback(
-          (stop) =>
-            streamGroqReply({
-              apiKey: groqEnv.apiKey,
-              model: groqEnv.model,
+          (stop) => {
+            const input = {
+              apiKey: third.apiKey,
+              model: third.model,
               system: prompt.system,
               messages: prompt.messages,
               maxTokens,
               signal: AbortSignal.any([signal, stop]),
               onStreamOpen: markOpen,
-            }),
+            };
+            if (third.provider === 'gemini') return streamGeminiReply(input);
+            if (third.provider === 'openai') {
+              return streamOpenAIReply({ ...input, cacheKey: data.callId });
+            }
+            return streamGroqReply(input);
+          },
           () => {
             // The timings then describe Claude's stream, the one that answered.
             streamOpenAt = null;
             return claudeReply();
           },
           {
-            firstTokenMs: GROQ_FIRST_TOKEN_MS,
+            firstTokenMs: FIRST_TOKEN_MS,
             signal,
             onFallback: (reason, error) => {
               fallback = reason;
-              // Ids, the reason and Groq's HTTP status only.
-              console.warn('answer: groq fallback to haiku', {
+              // Ids, the reason and the provider's HTTP status only.
+              console.warn(`answer: ${third.provider} fallback to haiku`, {
                 requestId,
                 userId: session.user.id,
                 mode,
+                provider: third.provider,
+                model: third.model,
                 reason,
-                status: error instanceof GroqError ? error.status : undefined,
+                status: error instanceof ProviderError ? error.status : undefined,
                 error: error instanceof Error ? error.name : undefined,
               });
             },
@@ -436,13 +566,14 @@ async function respond(
         toFirstText: elapsed(startedAt, firstTextAt),
         total: elapsed(startedAt, doneAt),
       };
-      // ADR-0095: the model that really answered (Groq, or Claude after a fallback or for an image).
-      const answeredBy: AnswerModel = groqEnv && fallback === null ? 'groq' : tier;
+      // ADR-0095: the model that really answered (Groq, or Claude after a fallback or for an image). ADR-0099:
+      // the Gemini or GPT model the same way (a warm-up reports the session's model it warmed).
+      const answeredBy: AnswerModel = thirdParty && fallback === null ? chosen : tier;
       console.info('answer: done', {
         requestId,
         userId: session.user.id,
         mode,
-        model: answeredBy === 'groq' && groqEnv ? groqEnv.model : model,
+        model: thirdParty && fallback === null ? thirdParty.model : model,
         answerModel: answeredBy,
         ...(fallback ? { fallback } : {}),
         ...context,
@@ -466,21 +597,22 @@ async function respond(
     },
     onError: (error): AnswerEvent => {
       // ADR-0095: an error after Groq's first words (no fallback then: they were already shown).
+      // ADR-0099: the same for Gemini and OpenAI.
       const described =
-        error instanceof GroqError
+        error instanceof ProviderError
           ? { code: 'upstream_error' as const, message: 'The answer model returned an error.' }
           : describeClaudeError(error);
       console.error('answer: failed', {
         requestId,
         userId: session.user.id,
         mode,
-        model: groqEnv && fallback === null ? groqEnv.model : model,
-        ...(groqEnv ? { answerModel: fallback === null ? 'groq' : 'fast' } : {}),
+        model: thirdParty && fallback === null ? thirdParty.model : model,
+        ...(thirdParty ? { answerModel: fallback === null ? chosen : 'fast' } : {}),
         ...(fallback ? { fallback } : {}),
         ...context,
         ...(mode === 'warm' || mode === 'hello' ? {} : { contract }),
         code: described.code,
-        ...(error instanceof GroqError ? { status: error.status } : errorLogDetails(error)),
+        ...(error instanceof ProviderError ? { status: error.status } : errorLogDetails(error)),
         msAuth: elapsed(startedAt, authDoneAt),
         msToStreamOpen: streamOpenAt === null ? null : elapsed(startedAt, streamOpenAt),
         msElapsed: elapsed(startedAt, performance.now()),

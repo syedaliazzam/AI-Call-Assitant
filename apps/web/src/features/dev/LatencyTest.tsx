@@ -4,24 +4,32 @@
  *          call through the real client path (core/answer/latency.ts) and shows p50/p95 for key
  *          press → request sent → first word → headline complete → done, with each request's
  *          cache read and write, against the architecture §6.2 targets. "Copy results" copies
- *          the numbers as JSON (no text).
+ *          the numbers as JSON (no text). ADR-0099: the run's answer model and session (the pilot review or a
+ *          CV interview) can be chosen, here or with ?model=…&session=cv in the address (the production
+ *          measurement script uses that), and fallbacks to Claude Haiku are counted.
  * Used by: app/(app)/dev/latency/page.tsx
  * Depends on: src/core/answer/latency.ts, src/ui/Button.tsx
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.2; day-04-answers.md Stage 11
  */
 'use client';
 
+import { isAnswerModel } from '@kite/shared';
 import { useState } from 'react';
 import {
   runLatencyTest,
   summarise,
+  type LatencyFixture,
   type LatencySample,
   type LatencySummary,
 } from '@/core/answer/latency';
+import { ROLLOUT_MODEL_CHOICES } from '@/core/session/modelChoices';
+import type { AnswerModel } from '@/core/storage/types';
 import { Button } from '@/ui/Button';
 
 /** The §6.2 targets (p50, p95) in ms for the rows that have one. */
-const TARGETS: Partial<Record<keyof Omit<LatencySummary, 'count' | 'cacheHits'>, string>> = {
+const TARGETS: Partial<
+  Record<keyof Omit<LatencySummary, 'count' | 'cacheHits' | 'fallbacks'>, string>
+> = {
   toSent: '≤ 50 / ≤ 100',
   toFirstWord: '≤ 1,000 / ≤ 1,800',
   toHeadline: '≤ 1,500 / ≤ 2,500',
@@ -43,6 +51,20 @@ const ROWS = [
  * Rendered by: app/(app)/dev/latency/page.tsx
  */
 export function LatencyTest() {
+  // ADR-0099: the model and session, from the address when given (read once, on the first render).
+  const [model, setModel] = useState<AnswerModel>(() => {
+    const asked =
+      typeof window === 'undefined'
+        ? null
+        : new URLSearchParams(window.location.search).get('model');
+    return isAnswerModel(asked) ? asked : 'fast';
+  });
+  const [fixture, setFixture] = useState<LatencyFixture>(() =>
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('session') === 'cv'
+      ? 'cv'
+      : 'pilot',
+  );
   const [samples, setSamples] = useState<LatencySample[]>([]);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +82,8 @@ export function LatencyTest() {
     try {
       await runLatencyTest({
         count: 20,
+        model,
+        fixture,
         onSample: (sample) => setSamples((current) => [...current, sample]),
       });
       setFinished(true);
@@ -70,10 +94,45 @@ export function LatencyTest() {
     }
   };
 
-  const results = summary ? JSON.stringify({ summary, samples }, null, 1) : '';
+  const results = summary ? JSON.stringify({ model, fixture, summary, samples }, null, 1) : '';
 
   return (
     <div className="flex flex-col gap-4">
+      {/* ADR-0099: what the run measures. The server still decides what may answer (switches, rollout). */}
+      <div className="flex flex-wrap items-center gap-3 text-[13px]">
+        <label className="flex items-center gap-2">
+          Model
+          <select
+            aria-label="Model"
+            value={model}
+            disabled={running}
+            onChange={(event) => {
+              const next = event.target.value;
+              if (isAnswerModel(next)) setModel(next);
+            }}
+            className="rounded-control border border-ui-border bg-ui-input px-2 py-1 text-ui-text"
+          >
+            {ROLLOUT_MODEL_CHOICES.map((choice) => (
+              <option key={choice.value} value={choice.value}>
+                {choice.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2">
+          Session
+          <select
+            aria-label="Session"
+            value={fixture}
+            disabled={running}
+            onChange={(event) => setFixture(event.target.value === 'cv' ? 'cv' : 'pilot')}
+            className="rounded-control border border-ui-border bg-ui-input px-2 py-1 text-ui-text"
+          >
+            <option value="pilot">Pilot review (2,000-word document)</option>
+            <option value="cv">Interview with a CV</option>
+          </select>
+        </label>
+      </div>
       <div className="flex items-center gap-3">
         <Button onClick={() => void run()} disabled={running}>
           {running ? 'Running…' : 'Run 20 answers'}
@@ -111,7 +170,8 @@ export function LatencyTest() {
             </tbody>
           </table>
           <p className="text-[13px] text-ui-muted">
-            Cache read on {summary.cacheHits} of {summary.count} answers.
+            Cache read on {summary.cacheHits} of {summary.count} answers. Answered by Claude Haiku
+            after a fallback: {summary.fallbacks}.
           </p>
           <table aria-label="Per answer" className="w-full text-left text-[13px] text-ui-muted">
             <thead>

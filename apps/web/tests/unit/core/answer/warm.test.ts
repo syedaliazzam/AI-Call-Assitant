@@ -13,6 +13,7 @@ import {
   forgetRecentWarmUps,
   sortDocuments,
   toSessionContext,
+  warmGroup,
   warmSession,
 } from '@/core/answer/warm';
 import type { Session, StoredDocument } from '@/core/storage/types';
@@ -235,5 +236,39 @@ describe('1.5.1 (ADR-0069): one warm-up per open', () => {
     await warmSession(SESSION, [doc('c', 1)], { send: failing });
     await warmSession(SESSION, [doc('c', 1)], { send: failing });
     expect(failing).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ADR-0099: the Gemini and GPT models', () => {
+  it('give each its own warm group; Fast and Groq share one, Smart has its own', () => {
+    expect(warmGroup('fast')).toBe('fast');
+    expect(warmGroup('groq')).toBe('fast');
+    expect(warmGroup('smart')).toBe('smart');
+    expect(warmGroup('gemini-lite')).toBe('gemini-lite');
+    expect(warmGroup('gpt-luna')).toBe('gpt-luna');
+  });
+
+  it("sends the call's id with the warm-up, and a GPT call's own warm-up is not the page-open one", async () => {
+    forgetRecentWarmUps();
+    const send = fakeSend((handlers) => handlers.onDone(DONE));
+    const gpt = {
+      ...SESSION,
+      id: 's-gpt',
+      preferences: { ...SESSION.preferences, model: 'gpt-luna' as const },
+    };
+    await warmSession(gpt, [], { send });
+    await warmSession(gpt, [], { send, callId: 'call-1' });
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[0]![0]).not.toHaveProperty('callId');
+    expect(send.mock.calls[1]![0]).toMatchObject({ model: 'gpt-luna', callId: 'call-1' });
+    // Another model's page-open and call warm-ups stay one.
+    const gemini = {
+      ...SESSION,
+      id: 's-gem',
+      preferences: { ...SESSION.preferences, model: 'gemini-lite' as const },
+    };
+    await warmSession(gemini, [], { send });
+    await warmSession(gemini, [], { send, callId: 'call-1' });
+    expect(send).toHaveBeenCalledTimes(3);
   });
 });

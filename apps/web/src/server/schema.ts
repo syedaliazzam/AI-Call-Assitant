@@ -221,6 +221,14 @@ export const usageDay = pgTable(
      * counts here (Groq was asked). Added by migration 0009 with 0 for every existing row.
      */
     groqRequests: integer('groq_requests').default(0).notNull(),
+    /**
+     * ADR-0099: how many of those requests were sent to Google's Gemini (the Gemini answer models), for
+     * Admin → Usage. Included in `requests`; counted when Gemini is asked, so an answer that fell back to
+     * Claude Haiku still counts here. Added by migration 0011 with 0 for every existing row.
+     */
+    geminiRequests: integer('gemini_requests').default(0).notNull(),
+    /** ADR-0099: the same for OpenAI (the GPT answer models). Added by migration 0011. */
+    openaiRequests: integer('openai_requests').default(0).notNull(),
   },
   // One row per user and day: the counter is increased in place (INSERT … ON CONFLICT).
   (table) => [primaryKey({ columns: [table.userId, table.day] })],

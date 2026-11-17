@@ -37,11 +37,11 @@ import { buildKeyterms } from '@/core/stt/sessionHotwords';
 import { onSyncApplied } from '@/core/sync/events';
 import { displayTerms } from '@/core/transcript/display';
 import { relabelNotes, theirLabel, withTheirName } from '@/core/transcript/theirName';
+import { modelEntry } from '@/core/session/modelChoices';
 import { useAccountName } from '@/features/shell/AccountName';
 import {
   FORMAT_OPTIONS,
   LENGTH_OPTIONS,
-  MODEL_OPTIONS,
   SESSION_TYPE_LABELS,
   TONE_OPTIONS,
 } from '@/features/session-setup/labels';
@@ -446,7 +446,8 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
                 <div>
                   <dt className="text-[13px] text-ui-muted">Answers</dt>
                   <dd>
-                    {labelOf(MODEL_OPTIONS, session.preferences.model)};{' '}
+                    {/* ADR-0099: a Gemini or GPT model by its own name. */}
+                    {modelEntry(session.preferences.model, false).title};{' '}
                     {labelOf(FORMAT_OPTIONS, style.format)},{' '}
                     {labelOf(LENGTH_OPTIONS, style.length).toLowerCase()},{' '}
                     {labelOf(TONE_OPTIONS, style.tone).toLowerCase()}

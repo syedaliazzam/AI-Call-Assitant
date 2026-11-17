@@ -37,15 +37,38 @@ describe('answerModelAccess (ADR-0095)', () => {
     expect(await answerModelAccess(reply(200, { deepModel: true, groq: true }))).toEqual({
       smart: true,
       groq: true,
+      moreModels: false,
+      gemini: false,
+      openai: false,
     });
     // An older server says nothing about Groq: it is not offered.
     expect(await answerModelAccess(reply(200, { deepModel: false }))).toEqual({
       smart: false,
       groq: false,
+      moreModels: false,
+      gemini: false,
+      openai: false,
     });
   });
 
   it('offers Smart but not Groq when it cannot tell', async () => {
-    expect(await answerModelAccess(reply(500, {}))).toEqual({ smart: true, groq: false });
+    expect(await answerModelAccess(reply(500, {}))).toEqual({
+      smart: true,
+      groq: false,
+      moreModels: false,
+      gemini: false,
+      openai: false,
+    });
+  });
+
+  it('says when this account is in the new-models rollout, and which providers it may use (ADR-0099)', async () => {
+    const body = { deepModel: true, groq: true, moreModels: true, gemini: true, openai: false };
+    expect(await answerModelAccess(reply(200, body))).toEqual({
+      smart: true,
+      groq: true,
+      moreModels: true,
+      gemini: true,
+      openai: false,
+    });
   });
 });

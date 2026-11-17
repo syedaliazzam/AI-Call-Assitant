@@ -38,12 +38,70 @@ export type ModelTier = 'fast' | 'smart';
  * - `smart`: "Smart (Claude Sonnet)".
  * - `groq`: "Fastest (Groq)": Groq's model (GROQ_MODEL on the server). Answers with an image always use
  *   Claude, and an answer Groq cannot start within 4 s is asked of Claude Haiku instead.
+ * ADR-0099 adds four models from two more providers, offered only to the accounts in the rollout
+ * (KITE_ANSWER_MODELS_USERS) while they are measured:
+ * - `gemini-lite`: Google's Gemini 3.5 Flash Lite (KITE_MODEL_GEMINI_LITE on the server).
+ * - `gpt-luna`: OpenAI's GPT-5.6 Luna (KITE_MODEL_OPENAI_FAST).
+ * - `gemini-flash`: Google's Gemini 3.6 Flash (KITE_MODEL_GEMINI_FLASH).
+ * - `gpt-terra`: OpenAI's GPT-5.6 Terra (KITE_MODEL_OPENAI_SMART).
+ * These four answer screenshots too; an answer one of them cannot start within 4 s is asked of Claude Haiku.
  * Ask AI and the call notes keep their own Claude models (ModelTier).
  */
-export type AnswerModel = ModelTier | 'groq';
+export type AnswerModel =
+  ModelTier | 'groq' | 'gemini-lite' | 'gpt-luna' | 'gemini-flash' | 'gpt-terra';
 
-/** ADR-0095: every answer model, in the order the choices are shown. */
-export const ANSWER_MODELS: readonly AnswerModel[] = ['fast', 'smart', 'groq'];
+/**
+ * ADR-0095: every answer model. ADR-0099: in the order the rollout's model list shows them (the classic list
+ * shows only 'fast', 'smart' and 'groq', in that order).
+ */
+export const ANSWER_MODELS: readonly AnswerModel[] = [
+  'gemini-lite',
+  'gpt-luna',
+  'gemini-flash',
+  'gpt-terra',
+  'fast',
+  'smart',
+  'groq',
+];
+
+/**
+ * ADR-0099: who serves an answer model. 'claude' is Anthropic (Haiku and Sonnet); the other three are the
+ * third-party providers, each with its own admin switch and usage count.
+ */
+export type AnswerProvider = 'claude' | 'groq' | 'gemini' | 'openai';
+
+/**
+ * ADR-0099: the provider that serves a model.
+ *
+ * @param model The answer model.
+ * @returns Its provider.
+ * Called from: apps/web/app/api/answer/route.ts, apps/web/src/server/modelAccess.ts,
+ *              apps/web/src/core/session/modelChoices.ts; tests
+ */
+export function providerOf(model: AnswerModel): AnswerProvider {
+  if (model === 'groq') return 'groq';
+  if (model === 'gemini-lite' || model === 'gemini-flash') return 'gemini';
+  if (model === 'gpt-luna' || model === 'gpt-terra') return 'openai';
+  return 'claude';
+}
+
+/**
+ * ADR-0099: whether a value is a known answer model (a stored or received value may come from a newer or
+ * older app).
+ *
+ * @param value Anything.
+ * @returns True for one of ANSWER_MODELS.
+ * Called from: apps/web/src/core/answer/answerClient.ts, apps/web/src/core/live/liveChannel.ts; tests
+ */
+export function isAnswerModel(value: unknown): value is AnswerModel {
+  return typeof value === 'string' && (ANSWER_MODELS as readonly string[]).includes(value);
+}
+
+/**
+ * ADR-0099: the most characters of the call id an answer request may carry (a UUID is 36). It is used only as
+ * OpenAI's prompt_cache_key.
+ */
+export const MAX_CALL_ID_CHARS = 64;
 
 /** Who said a transcript line: the microphone ("you") or the other side of the call ("them"). */
 export type Speaker = 'you' | 'them';
@@ -72,6 +130,19 @@ export interface ModelAccessResponse {
    * off). Absent from an older server: treat as false.
    */
   groq?: boolean;
+  /**
+   * ADR-0099: true when this account is in the new-models rollout (KITE_ANSWER_MODELS_USERS): the model list
+   * then shows the Gemini and GPT models too, in the rollout's order and words. Absent or false: the classic
+   * list (Fast, Smart, Fastest).
+   */
+  moreModels?: boolean;
+  /**
+   * ADR-0099: true when this account may choose the Gemini models (in the rollout, the server has a Gemini
+   * key, and an admin has not turned Gemini off).
+   */
+  gemini?: boolean;
+  /** ADR-0099: the same for the OpenAI (GPT) models. */
+  openai?: boolean;
 }
 
 /** What the user is told when a job link cannot be read, whatever the reason (spec §6). */
@@ -356,8 +427,15 @@ export interface AnswerRequest {
   /**
    * The answer model; the server defaults to `fast` when omitted. `groq` (ADR-0095) applies to `answer`
    * and `chat` only: warm-ups and screenshots go to Claude Haiku, and `kite` (Ask AI) keeps its Claude model.
+   * ADR-0099: the Gemini and GPT models apply to `answer`, `chat`, `screenshot` and `warm` (which warms both
+   * that model and Claude Haiku, its fallback); `kite` keeps its Claude model.
    */
   model?: AnswerModel;
+  /**
+   * ADR-0099: the call's record id (live page only), at most MAX_CALL_ID_CHARS of letters, digits, '-' and
+   * '_'. Sent to OpenAI as prompt_cache_key, so a call's requests reach the same cache; nothing else reads it.
+   */
+  callId?: string;
   /** Session details (modes `warm`, `answer`, `chat`, `screenshot`). */
   session?: SessionContext;
   /**
@@ -541,12 +619,13 @@ export type AnswerEvent =
        * ADR-0094: the tier that really answered. It differs from the one asked for when an admin has
        * turned the deeper model off (the server then answers with the fast one). Absent from an older
        * server. ADR-0095: 'groq' when Groq answered; 'fast' when a Groq answer moved to Claude Haiku
-       * (then `fallback` says so) or had an image.
+       * (then `fallback` says so) or had an image. ADR-0099: the Gemini or GPT model when it answered;
+       * 'fast' when its answer moved to Claude Haiku (then `fallback` says so).
        */
       model?: AnswerModel;
       /**
        * ADR-0095: present when Groq was asked and Claude Haiku answered instead: 'timeout' (no first token
-       * within 4 s), 'error' or 'empty'. Absent otherwise.
+       * within 4 s), 'error' or 'empty'. Absent otherwise. ADR-0099: the same for a Gemini or GPT model.
        */
       fallback?: 'timeout' | 'error' | 'empty';
     }

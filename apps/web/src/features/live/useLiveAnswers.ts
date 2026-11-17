@@ -43,7 +43,7 @@ import { buildAnswerRequest, emptyLog, type CallAnswer } from '@/core/answer/con
 import { buildChunkIndex } from '@/core/documents/chunks';
 import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { startKeepAlive } from '@/core/answer/keepAlive';
-import { warmSession } from '@/core/answer/warm';
+import { warmGroup, warmSession } from '@/core/answer/warm';
 import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
 import { choosePress, PRESS_WAIT_MS } from '@/core/answer/pressQuestion';
 import {
@@ -615,7 +615,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   // below depends only on what makes a new call (session id, call start): a caller passing a
   // fresh but equal session object on each render must not cancel the answer in flight (v1.0.0).
   const warmInputRef = useRef({ session, documents, lessons });
+  // ADR-0099: the call's id for the re-warms (OpenAI's prompt_cache_key), read when they run.
+  const callIdRef = useRef(callId);
   useEffect(() => {
+    callIdRef.current = callId;
     storeRef.current = store;
     chatTargetRef.current = input.chatTarget ?? 'auto';
     warmInputRef.current = { session, documents, lessons };
@@ -662,6 +665,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           lessons: latest.lessons,
           // ADR-0083: the call's company instructions version, as its answers send it.
           callStartedAt,
+          // ADR-0099: OpenAI's prompt_cache_key, as the call's answers send it.
+          callId: callIdRef.current,
         });
       },
     });
@@ -683,8 +688,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   // warm-up (Connect) covers the model it started with. warmInputRef already holds the new session: its
   // effect is declared above, so it runs first.
   // ADR-0095: a Groq session's Claude parts (screenshots, the fallback) use Haiku, so Fast and Groq share one
-  // cache: switching between them needs no warm-up.
-  const modelNow = session.preferences.model === 'smart' ? 'smart' : 'fast';
+  // cache: switching between them needs no warm-up. ADR-0099: each Gemini and GPT model has a cache of its own,
+  // so switching to one warms it (and Claude Haiku, its fallback).
+  const modelNow = warmGroup(session.preferences.model);
   const warmedModel = useRef(modelNow);
   useEffect(() => {
     if (warmedModel.current === modelNow) return;
@@ -696,6 +702,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       lessons: latest.lessons,
       // ADR-0083: the call's company instructions version, as its answers send it.
       callStartedAt,
+      // ADR-0099: OpenAI's prompt_cache_key, as the call's answers send it.
+      callId: callIdRef.current,
     });
   }, [modelNow, callStartedAt]);
 
@@ -1191,7 +1199,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       };
       let retries = 0;
       let firstWordLogged = false;
-      runner.run(built.request, keyPressAt, {
+      // ADR-0099: the call's id goes with the request (OpenAI's prompt_cache_key; nothing else reads it).
+      runner.run(callId ? { ...built.request, callId } : built.request, keyPressAt, {
         // ADR-0076 (timing trace): the request's phases.
         onPhase: (phase, at) =>
           callTimings.noteAnswer({
@@ -1280,9 +1289,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             cacheRead: done.usage?.cache_read_input_tokens ?? 0,
             cacheWrite: done.usage?.cache_creation_input_tokens ?? 0,
             inputTokens: done.usage?.input_tokens ?? 0,
-            // ADR-0094: the tier that really answered, as the server says (ADR-0095: and a Groq fallback).
+            // ADR-0094: the tier that really answered, as the server says (ADR-0095: and a Groq fallback;
+            // ADR-0099: and which model fell back).
             ...(done.model ? { model: done.model } : {}),
-            ...(done.fallback ? { fallback: done.fallback } : {}),
+            ...(done.fallback ? { fallback: done.fallback, fallbackFrom: entry.model } : {}),
           });
           // Not an answer: nothing to keep, send later or save.
           if (dropped(meta?.type)) return;

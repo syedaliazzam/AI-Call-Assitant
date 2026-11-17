@@ -20,7 +20,7 @@ import type { TargetChoice } from '@kite/shared';
  * How long the speaker must stay quiet after a final line before the message is sent, in ms (spec S14):
  * long enough for a breath between sentences, short enough to feel like "it sends when I stop".
  */
-export const SEND_PAUSE_MS = 1_500;
+export const SEND_PAUSE_MS = 1_000;
 
 /**
  * How long listening may go on with nothing heard, in ms, before it stops without sending. During a

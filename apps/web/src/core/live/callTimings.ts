@@ -200,6 +200,11 @@ export interface AnswerTiming {
    * 'empty'). Absent otherwise.
    */
   fallback?: 'timeout' | 'error' | 'empty';
+  /**
+   * ADR-0099: the model that was asked when the answer fell back to Claude Haiku ('groq', or a Gemini or GPT
+   * model). Absent in an older log, where a fallback was always Groq's.
+   */
+  fallbackFrom?: AnswerModel;
 }
 
 /** One Accurate decision (times are Unix ms). */
@@ -587,8 +592,8 @@ export function cardTimings(log: CallTimingLog): CardTiming[] {
       ...(answer.rerunOf ? ['rerun'] : []),
       // Batch C (P1-1): sent at the end of turn and held hidden first.
       ...(answer.speculative ? ['speculative'] : []),
-      // ADR-0095: Groq was asked and Claude Haiku answered.
-      ...(answer.fallback ? [`groq-fallback-${answer.fallback}`] : []),
+      // ADR-0095: Groq was asked and Claude Haiku answered. ADR-0099: or a Gemini or GPT model.
+      ...(answer.fallback ? [`${answer.fallbackFrom ?? 'groq'}-fallback-${answer.fallback}`] : []),
     ],
     status: answer.status,
     model: answer.model ?? null,

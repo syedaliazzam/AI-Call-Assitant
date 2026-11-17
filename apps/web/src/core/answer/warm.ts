@@ -20,6 +20,8 @@ import {
   DEFAULT_CODING_LANGUAGE,
   cleanPersonName,
   parseKeyTerms,
+  providerOf,
+  type AnswerModel,
   type ConversationChunk,
   type SessionContext,
 } from '@kite/shared';
@@ -150,6 +152,7 @@ const recentWarmUps = new Map<string, { at: number; result: Promise<AnswerDone |
  * @param documents Its documents.
  * @param lessons   The lessons sent.
  * @param instructions The company instructions version the call pinned (ADR-0083), if any.
+ * @param callId    ADR-0099: the call's id, when the warm-up belongs to a call.
  * @returns The key.
  */
 function warmKey(
@@ -157,12 +160,31 @@ function warmKey(
   documents: readonly StoredDocument[],
   lessons: readonly string[] | undefined,
   instructions: string | undefined,
+  callId: string | undefined,
 ): string {
   const docs = documents.map((document) => `${document.id}:${document.chars}`).join(',');
   // Batch C (P2-1): the summary is part of the warmed prefix, so a new one is a new warm-up.
   const summary = session.documentsSummary?.createdAt ?? 0;
   // ADR-0083: the company instructions version is part of the warmed rules block too.
-  return `${session.id}|${session.preferences.model}|${docs}|${lessons?.length ?? 0}|${summary}|${instructions ?? ''}`;
+  // ADR-0099: for a GPT session the call's id is OpenAI's cache key, so the call's own warm-up is not the
+  // page-open one.
+  const key = providerOf(session.preferences.model) === 'openai' ? (callId ?? '') : '';
+  return `${session.id}|${session.preferences.model}|${docs}|${lessons?.length ?? 0}|${summary}|${instructions ?? ''}|${key}`;
+}
+
+/**
+ * ADR-0094 and ADR-0099: which prompt cache a model's answers read, so a switch during a call warms only when the
+ * cache changes. Fast and Groq share Claude Haiku's (ADR-0095: a Groq session's screenshots and fallback use
+ * Haiku); Smart has its own; each Gemini and GPT model has its own (with Claude Haiku as its fallback).
+ *
+ * @param model The session's model.
+ * @returns 'fast', 'smart', or the Gemini or GPT model itself.
+ * Called from: useLiveAnswers.ts (the model switch's warm-up); tests
+ */
+export function warmGroup(model: AnswerModel): AnswerModel {
+  const provider = providerOf(model);
+  if (provider === 'gemini' || provider === 'openai') return model;
+  return model === 'smart' ? 'smart' : 'fast';
 }
 
 /**
@@ -194,6 +216,11 @@ export interface WarmOptions {
    * Omitted (the page-open warm-up, before any call): the version in force.
    */
   callStartedAt?: number;
+  /**
+   * ADR-0099: the call's record id, when the warm-up belongs to a call: sent as the request's callId (OpenAI's
+   * prompt_cache_key), the same key the call's answers send.
+   */
+  callId?: string | undefined;
 }
 
 /**
@@ -217,7 +244,7 @@ export function warmSession(
   const instructions = pinFor(options.callStartedAt)?.live;
   const key = options.conversation?.length
     ? null
-    : warmKey(session, documents, options.lessons, instructions);
+    : warmKey(session, documents, options.lessons, instructions, options.callId);
   const now = Date.now();
   if (key) {
     const recent = recentWarmUps.get(key);
@@ -254,6 +281,8 @@ function sendWarmUp(
         {
           mode: 'warm',
           model: session.preferences.model,
+          // ADR-0099: OpenAI's prompt_cache_key, as the call's answers send it.
+          ...(options.callId ? { callId: options.callId } : {}),
           session: toLiveSessionContext(session, documents),
           ...(options.conversation?.length ? { conversation: options.conversation } : {}),
           ...(options.lessons?.length ? { lessons: [...options.lessons] } : {}),
