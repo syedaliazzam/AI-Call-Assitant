@@ -377,6 +377,50 @@ export interface DriveNotificationsResponse {
   items: DriveNotificationItem[];
 }
 
+/**
+ * POST /api/drive/call-access (ADR-0096, the Meetings library): the signed-in person's own session folder
+ * and one call's saved files. The server finds the folder by the person's own account tag only, so one
+ * person's request can never reach another person's folder.
+ */
+export interface DriveCallAccessRequest {
+  /** The session. */
+  sessionId: string;
+  /** When the call started (Unix ms): only this call's files are returned. */
+  callStartedAt: number;
+}
+
+/** One saved file of a call, with its Drive link (names and links only, never content). */
+export interface DriveCallFileLink {
+  /** What it is. */
+  kind: DriveFileKind;
+  /** The recording part (recording files); 1 for the others. */
+  part: number;
+  /** Its name in Drive. */
+  name: string;
+  /** Its Drive address (https://drive.google.com/file/d/<id>/view). */
+  url: string;
+}
+
+/**
+ * How the person's Viewer access to their own session folder stands:
+ * - 'viewer': granted (or already there);
+ * - 'refused': Google refused it (for example the sign-in email is not a Google account): the page says
+ *   "Ask an admin for Drive access";
+ * - 'unavailable': Google did not answer; the links are still given;
+ * - 'none': the session has no folder in Drive yet.
+ */
+export type DriveFolderAccess = 'viewer' | 'refused' | 'unavailable' | 'none';
+
+/** What POST /api/drive/call-access returns. */
+export interface DriveCallAccessResponse {
+  /** The session folder's address, or null when it is not in Drive yet. */
+  folderUrl: string | null;
+  /** The person's access to it. */
+  access: DriveFolderAccess;
+  /** The call's saved files, recordings first by part, then the transcript and notes PDFs. */
+  files: DriveCallFileLink[];
+}
+
 /** POST /api/drive/notifications: send a failed email again. */
 export interface DriveRetryRequest {
   /** The session whose email failed. */

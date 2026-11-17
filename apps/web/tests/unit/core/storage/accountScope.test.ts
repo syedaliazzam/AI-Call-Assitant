@@ -27,6 +27,7 @@ import { CHAT_TARGET_KEY_PREFIX, CODING_LANGUAGE_KEY } from '@/core/storage/answ
 import { AUTO_ANSWER_KEY } from '@/core/storage/autoAnswer';
 import { COMPANY_SUGGESTIONS_KEY } from '@/core/storage/companyPrefs';
 import { RECONNECT_CLOSED_KEY } from '@/core/storage/driveNoticePrefs';
+import { MEETINGS_LAST_CALL_KEY } from '@/core/storage/meetingsPrefs';
 
 /**
  * A Storage stand-in backed by a Map (key() and length too, for the prefix walk).
@@ -217,6 +218,8 @@ describe('the key lists', () => {
       CALL_START_KEY,
       // core/recording/handoff.ts RECORD_CONSENT_KEY.
       'kite-record-consent',
+      // ADR-0096: the Meetings library's last opened call (core/storage/meetingsPrefs.ts).
+      MEETINGS_LAST_CALL_KEY,
     ]);
     expect(ACCOUNT_TIED_SESSION_KEYS).toContain(RECONNECT_CLOSED_KEY);
   });
