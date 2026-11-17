@@ -19,6 +19,7 @@ import {
   ACCOUNT_HEADER,
   type DriveCallAccessRequest,
   type DriveCallAccessResponse,
+  type DriveMyFolderResponse,
   type DriveFolder,
   type DriveNotificationsResponse,
   type DriveNotifyRequest,
@@ -202,6 +203,8 @@ export interface DriveApi {
    * @param request The session and the call's start.
    */
   callAccess(request: DriveCallAccessRequest): Promise<DriveCallAccessResponse>;
+  /** GET /api/drive/my-folder (ADR-0097): the person's own Drive folder, or null until it exists. */
+  myFolder(): Promise<DriveMyFolderResponse>;
 }
 
 /**
@@ -248,6 +251,7 @@ export function createDriveApi(
       }),
     sendTestEmail: () => call(fetchFn, '/api/drive/test-email', {}),
     callAccess: (request) => call(fetchFn, '/api/drive/call-access', request),
+    myFolder: () => call(fetchFn, '/api/drive/my-folder'),
   };
 }
 

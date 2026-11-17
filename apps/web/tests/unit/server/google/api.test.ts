@@ -27,7 +27,8 @@
  *   from before (still in the company folder itself) is found and used where it is; call-access shares
  *   the person's own folder; the one-time move (secret-only, dry run by default) moves each folder into
  *   its proven owner's folder with the same id, removes the per-session share, leaves unmatched folders,
- *   and replies with counts only.
+ *   and replies with counts only; Settings' my-folder gives the person's own folder only (none before it
+ *   exists), read-only.
  */
 import { createHash } from 'node:crypto';
 import { ACCOUNT_HEADER, DRIVE_SCOPE, type DriveNotifyRequest } from '@kite/shared';
@@ -38,6 +39,7 @@ import {
   handleConnect,
   handleDisconnect,
   handleFolder,
+  handleMyFolder,
   handleNotifications,
   handleNotify,
   handlePickerConfig,
@@ -1708,6 +1710,29 @@ describe('one Drive folder per person (ADR-0097)', () => {
     // The folder that did not move keeps its own share.
     const stuck = [...f.files.values()].find((file) => file.parent === COMPANY_FOLDER)!;
     expect(f.shares.some((share) => share.fileId === stuck.id)).toBe(true);
+  });
+
+  it('gives Settings the person’s own folder only, and none before it exists', async () => {
+    const f = fakes();
+    await setUp(f);
+    const bob = deps(BOB, f);
+    expect(await (await handleMyFolder(get('/api/drive/my-folder'), bob)).json()).toEqual({
+      url: null,
+    });
+    await handleSessionFolder(post('/api/drive/session-folder', { sessionId: S1, name: 'A' }), bob);
+    const own = ownFolder(f, BOB)!;
+    expect(await (await handleMyFolder(get('/api/drive/my-folder'), bob)).json()).toEqual({
+      url: `https://drive.google.com/drive/folders/${own.id}`,
+    });
+    // ALICE has none yet: never BOB's.
+    expect(
+      await (await handleMyFolder(get('/api/drive/my-folder'), deps(ALICE, f))).json(),
+    ).toEqual({ url: null });
+    // Nothing was made or shared by asking.
+    expect(f.shares).toHaveLength(1);
+    expect((await handleMyFolder(get('/api/drive/my-folder'), deps('signed-out', f))).status).toBe(
+      401,
+    );
   });
 
   it('is closed without the secret, and refuses a wrong one', async () => {

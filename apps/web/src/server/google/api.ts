@@ -42,6 +42,7 @@ import {
   isDriveLink,
   type DriveCallAccessResponse,
   type DriveCallFileLink,
+  type DriveMyFolderResponse,
   type DriveNotificationItem,
   type DriveNotificationStatus,
   type DriveNotificationsResponse,
@@ -130,6 +131,7 @@ import {
   fileTag,
   findSessionFolder,
   findSubfolder,
+  findUserFolder,
   md5Hex,
   readTicket,
   signTicket,
@@ -919,6 +921,30 @@ export function handleCallAccess(
       access: granted === 'granted' ? 'viewer' : granted,
       files,
     } satisfies DriveCallAccessResponse);
+  });
+}
+
+/**
+ * GET /api/drive/my-folder (ADR-0097, Settings): the signed-in person's own folder in the company folder,
+ * found by their account's tag only, so Settings links there instead of to the company folder (which is
+ * not shared with them). Read-only: nothing is made or shared here. Without a connection or company
+ * folder the answer is simply no folder.
+ * @param request The request.
+ * @param deps    The dependencies (tests pass fakes).
+ * @returns 200 DriveMyFolderResponse; 503 when Google did not answer.
+ * Called from: app/api/drive/my-folder/route.ts
+ */
+export function handleMyFolder(
+  request: Request,
+  deps: GoogleDeps = realGoogleDeps,
+): Promise<Response> {
+  return withUser(request, deps, 'my-folder', { post: false, limit: 'other' }, async ({ user }) => {
+    const company = await companyDrive(deps);
+    if (company instanceof Response) return reply({ url: null } satisfies DriveMyFolderResponse);
+    const folderId = await findUserFolder(company.drive, company.folder, user.id);
+    return reply({
+      url: folderId ? driveFolderUrl(folderId) : null,
+    } satisfies DriveMyFolderResponse);
   });
 }
 
