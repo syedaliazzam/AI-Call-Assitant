@@ -196,7 +196,8 @@ export interface DriveApi {
   /** POST /api/drive/test-email (to the signed-in person only). */
   sendTestEmail(): Promise<DriveTestEmailResponse>;
   /**
-   * POST /api/drive/call-access (ADR-0096): Viewer access to the person's own session folder, and one
+   * POST /api/drive/call-access (ADR-0096): the person's own session folder and Viewer access to their
+   * own folder that holds it (ADR-0097), and one
    * call's saved files with their links (the Meetings library).
    * @param request The session and the call's start.
    */

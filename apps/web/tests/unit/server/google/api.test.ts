@@ -21,7 +21,13 @@
  * - ADR-0077 (two-step rule): email 1 "Call saved" as soon as the transcript and notes are in ("Recording:
  *   uploading…"), email 2 "Recording saved" when the recording is (never when it was in email 1),
  *   "Recording not uploaded" after 24 hours, "manual only" ignored; a failed email is listed with Retry and
- *   tried again by itself an hour later (never an older call's).
+ *   tried again by itself an hour later (never an older call's);
+ * - ADR-0097: each person's session folders go in ONE folder of their own in the company folder (named
+ *   after their display name, made once, shared with them only, never with anyone else); a session folder
+ *   from before (still in the company folder itself) is found and used where it is; call-access shares
+ *   the person's own folder; the one-time move (secret-only, dry run by default) moves each folder into
+ *   its proven owner's folder with the same id, removes the per-session share, leaves unmatched folders,
+ *   and replies with counts only.
  */
 import { createHash } from 'node:crypto';
 import { ACCOUNT_HEADER, DRIVE_SCOPE, type DriveNotifyRequest } from '@kite/shared';
@@ -50,7 +56,14 @@ import {
 import type { OutgoingEmail } from '@/server/google/email';
 import { createRateLimiter } from '@/server/google/rateLimit';
 import { forgetCompanyToken } from '@/server/google/tokens';
-import { fileTag } from '@/server/google/uploads';
+import { handleMoveToUserFolders } from '@/server/google/move';
+import {
+  UNNAMED_USER_FOLDER,
+  fileTag,
+  folderTags,
+  userFolderName,
+  userFolderTags,
+} from '@/server/google/uploads';
 import { ALICE, BOB, createTestDb, type TestDb } from '../calldata/pgliteDb';
 
 // The real sign-in, database and environment modules need production settings; these tests pass their
@@ -78,7 +91,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await t.pg.exec(
-    'DELETE FROM drive_company; DELETE FROM drive_member; DELETE FROM drive_notification;',
+    'DELETE FROM drive_company; DELETE FROM drive_member; DELETE FROM drive_notification; DELETE FROM call_record;',
   );
   forgetCompanyToken();
   vi.spyOn(console, 'info').mockImplementation(() => undefined);
@@ -142,6 +155,8 @@ interface Fakes {
   shares: { fileId: string; email: string; role: string; notify: string | null }[];
   /** ADR-0096: the status the fake Drive answers a permission request with (200 grants). */
   shareStatus: number;
+  /** ADR-0097: the status the fake Drive answers a move with (200 moves). */
+  moveStatus: number;
 }
 
 /**
@@ -197,12 +212,19 @@ async function fakeDrive(f: Fakes, url: string, init?: RequestInit): Promise<Res
     const q = address.searchParams.get('q') ?? '';
     const parent = /'([^']+)' in parents/.exec(q)?.[1];
     const tags = [...q.matchAll(/key='([^']+)' and value='([^']+)'/g)];
-    const found = [...f.files.values()].find(
+    const matches = [...f.files.values()].filter(
       (file) =>
         !file.trashed &&
         file.parent === parent &&
         tags.every(([, key, value]) => file.appProperties[key!] === value),
     );
+    // ADR-0097: a listing (the move) asks for every match with its tags.
+    if (address.searchParams.get('pageSize') !== '1') {
+      return Response.json({
+        files: matches.map((file) => ({ id: file.id, appProperties: file.appProperties })),
+      });
+    }
+    const found = matches[0];
     return Response.json({ files: found ? [{ id: found.id }] : [] });
   }
   if (address.pathname === '/drive/v3/files' && method === 'POST') {
@@ -227,14 +249,49 @@ async function fakeDrive(f: Fakes, url: string, init?: RequestInit): Promise<Res
   if (fileId) {
     const file = f.files.get(decodeURIComponent(fileId));
     if (!file) return new Response('{}', { status: 404 });
-    if (method === 'PATCH') file.trashed = true;
+    // ADR-0097: a move names its new and old parent; any other PATCH here is the bin.
+    if (method === 'PATCH' && address.searchParams.get('addParents')) {
+      if (f.moveStatus !== 200) return new Response('{}', { status: f.moveStatus });
+      if (file.parent !== address.searchParams.get('removeParents')) {
+        return new Response('{}', { status: 400 });
+      }
+      file.parent = address.searchParams.get('addParents')!;
+    } else if (method === 'PATCH') {
+      file.trashed = true;
+    }
     return Response.json(described(file));
   }
   // ADR-0096: a Viewer permission on a folder.
   const permissionsOf = /^\/drive\/v3\/files\/([^/]+)\/permissions$/.exec(address.pathname)?.[1];
+  // ADR-0097: a folder's shares, as Drive lists them.
+  if (permissionsOf && method === 'GET') {
+    const fileId = decodeURIComponent(permissionsOf);
+    return Response.json({
+      permissions: f.shares
+        .filter((share) => share.fileId === fileId)
+        .map((share) => ({
+          id: `P-${share.email}`,
+          type: 'user',
+          role: share.role,
+          emailAddress: share.email,
+        })),
+    });
+  }
+  const permission = /^\/drive\/v3\/files\/([^/]+)\/permissions\/([^/]+)$/.exec(address.pathname);
+  if (permission && method === 'DELETE') {
+    const fileId = decodeURIComponent(permission[1]!);
+    const email = decodeURIComponent(permission[2]!).replace(/^P-/, '');
+    f.shares = f.shares.filter((share) => !(share.fileId === fileId && share.email === email));
+    return new Response(null, { status: 204 });
+  }
   if (permissionsOf && method === 'POST') {
     if (f.shareStatus !== 200) return new Response('{}', { status: f.shareStatus });
     const body = JSON.parse(String(init?.body)) as { role: string; emailAddress: string };
+    // Sharing again with someone who already has it changes nothing (as in Drive).
+    const fileId = decodeURIComponent(permissionsOf);
+    if (f.shares.some((share) => share.fileId === fileId && share.email === body.emailAddress)) {
+      return Response.json({ id: 'perm' });
+    }
     f.shares.push({
       fileId: decodeURIComponent(permissionsOf),
       email: body.emailAddress,
@@ -345,7 +402,13 @@ function deps(
     user: async () =>
       user === 'signed-out'
         ? user
-        : { id: user, email: `${user}@example.test`, admin: options.admin ?? user === ALICE },
+        : {
+            id: user,
+            email: `${user}@example.test`,
+            // As the test database names it.
+            name: user,
+            admin: options.admin ?? user === ALICE,
+          },
     db: () => t.db,
     keys: () => t.keys,
     google: () => ({ clientId: 'cid', clientSecret: 'csec', pickerApiKey: 'pk', appId: '123' }),
@@ -401,6 +464,7 @@ function fakes(): Fakes {
     n: 0,
     shares: [],
     shareStatus: 200,
+    moveStatus: 200,
   };
   f.files.set(COMPANY_FOLDER, {
     id: COMPANY_FOLDER,
@@ -658,7 +722,13 @@ describe('server-side uploads: no token reaches a client (ADR-0074)', () => {
       await handleSessionFolder(post('/api/drive/session-folder', body), deps(BOB, f))
     ).json();
     expect(again).toEqual(first);
-    expect(f.files.get(first.folderId)!.parent).toBe(COMPANY_FOLDER);
+    // ADR-0097: in BOB's own folder, which is in the company folder.
+    const own = f.files.get(f.files.get(first.folderId)!.parent)!;
+    expect(own.parent).toBe(COMPANY_FOLDER);
+    expect(own.appProperties).toEqual({
+      kiteOwner: userFolderTags(BOB)[0]!.value,
+      kiteFolder: 'user',
+    });
     expect(f.files.get(first.recordingsId)!.parent).toBe(first.folderId);
     // The same session id from another account never reaches BOB's folders.
     const other = await (
@@ -1347,8 +1417,11 @@ describe('the Meetings library: Viewer access to the person’s own folder (ADR-
         url: 'https://drive.google.com/file/d/REC0000001/view',
       },
     ]);
+    // ADR-0097: one share, on ALICE's own folder (the session folder's parent), never the session folder.
+    const own = f.files.get(folderId)!.parent;
+    expect(own).not.toBe(COMPANY_FOLDER);
     expect(f.shares).toEqual([
-      { fileId: folderId, email: `${ALICE}@example.test`, role: 'reader', notify: 'false' },
+      { fileId: own, email: `${ALICE}@example.test`, role: 'reader', notify: 'false' },
     ]);
 
     // Another call of the same session has none of these files.
@@ -1374,7 +1447,8 @@ describe('the Meetings library: Viewer access to the person’s own folder (ADR-
       deps(BOB, f),
     );
     expect(await response.json()).toEqual({ folderUrl: null, access: 'none', files: [] });
-    expect(f.shares).toEqual([]);
+    // Only ALICE's own folder was ever shared, and only with ALICE.
+    expect(f.shares.map((share) => share.email)).toEqual([`${ALICE}@example.test`]);
   });
 
   it('says "refused" when Google will not share with the address', async () => {
@@ -1419,5 +1493,241 @@ describe('the Meetings library: Viewer access to the person’s own folder (ADR-
         )
       ).status,
     ).toBe(400);
+  });
+});
+
+describe('one Drive folder per person (ADR-0097)', () => {
+  /** A second invented session id. */
+  const S2 = '33333333-3333-4333-8333-333333333333';
+
+  /**
+   * Adds a session folder made before ADR-0097: in the company folder itself, tagged to its account,
+   * and (as ADR-0096 did) shared with that person on its own.
+   * @param f       The fakes.
+   * @param id      Its id.
+   * @param userId  The account.
+   * @param session The session.
+   */
+  function legacyFolder(f: Fakes, id: string, userId: string, session: string): void {
+    const tags = Object.fromEntries(
+      folderTags(userId, session, 'session').map((tag) => [tag.key, tag.value]),
+    );
+    f.files.set(id, {
+      id,
+      name: `Session ${id}`,
+      parent: COMPANY_FOLDER,
+      mimeType: 'application/vnd.google-apps.folder',
+      appProperties: tags,
+      trashed: false,
+    });
+    f.shares.push({ fileId: id, email: `${userId}@example.test`, role: 'reader', notify: 'false' });
+  }
+
+  /**
+   * Records a synced session for an account (ids only, as the move reads them).
+   * @param userId  The account.
+   * @param session The session.
+   */
+  async function syncedSession(userId: string, session: string): Promise<void> {
+    await t.pg.query(`INSERT INTO call_record (user_id, kind, id) VALUES ($1, 'session', $2)`, [
+      userId,
+      session,
+    ]);
+  }
+
+  /**
+   * The person's own folder, if any.
+   * @param f      The fakes.
+   * @param userId The account.
+   * @returns The folder.
+   */
+  function ownFolder(f: Fakes, userId: string): FakeFile | undefined {
+    const value = userFolderTags(userId)[0]!.value;
+    return [...f.files.values()].find((file) => file.appProperties.kiteOwner === value);
+  }
+
+  /** The move's secret in the tests. */
+  const MOVE_SECRET = 'm'.repeat(40);
+
+  /**
+   * A request to the one-time move.
+   * @param body   The body.
+   * @param secret The secret sent.
+   * @returns The request.
+   */
+  function moveRequest(body: unknown, secret = MOVE_SECRET): Request {
+    return new Request(`${SITE}/api/cron/drive-user-folders`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('names a folder after the display name, cleaned', () => {
+    expect(userFolderName('  Sara\u0007  Khan ')).toBe('Sara Khan');
+    expect(userFolderName('\u0000 ')).toBe(UNNAMED_USER_FOLDER);
+    expect(userFolderName('x'.repeat(300))).toHaveLength(100);
+  });
+
+  it('makes one folder per person, the first time, shared only with them; never another person’s', async () => {
+    const f = fakes();
+    await setUp(f);
+    const bob = deps(BOB, f);
+    await handleSessionFolder(post('/api/drive/session-folder', { sessionId: S1, name: 'A' }), bob);
+    await handleSessionFolder(post('/api/drive/session-folder', { sessionId: S2, name: 'B' }), bob);
+    const folders = [...f.files.values()].filter(
+      (file) => file.appProperties.kiteFolder === 'user',
+    );
+    expect(folders).toHaveLength(1);
+    expect(folders[0]!.name).toBe(BOB);
+    expect(folders[0]!.parent).toBe(COMPANY_FOLDER);
+    // Both sessions inside it; the company folder never shared; BOB only, Viewer, no email.
+    const sessions = [...f.files.values()].filter(
+      (file) => file.appProperties.kiteFolder === 'session',
+    );
+    expect(sessions.map((file) => file.parent)).toEqual([folders[0]!.id, folders[0]!.id]);
+    expect(f.shares).toEqual([
+      { fileId: folders[0]!.id, email: `${BOB}@example.test`, role: 'reader', notify: 'false' },
+    ]);
+    expect(ownFolder(f, ALICE)).toBeUndefined();
+  });
+
+  it('keeps using a session folder made before, where it is', async () => {
+    const f = fakes();
+    await setUp(f);
+    legacyFolder(f, 'OLDFOLDER1', BOB, S1);
+    const bob = deps(BOB, f);
+    const made = await (
+      await handleSessionFolder(
+        post('/api/drive/session-folder', { sessionId: S1, name: 'A' }),
+        bob,
+      )
+    ).json();
+    expect(made.folderId).toBe('OLDFOLDER1');
+    expect(f.files.get('OLDFOLDER1')!.parent).toBe(COMPANY_FOLDER);
+    // Its subfolders are found inside it, so uploads still land there.
+    expect(f.files.get(made.transcriptsId)!.parent).toBe('OLDFOLDER1');
+    // Call-access shares that folder by itself (as before) until it is moved.
+    const access = await (
+      await handleCallAccess(
+        post('/api/drive/call-access', { sessionId: S1, callStartedAt: NOTIFY.callStartedAt }),
+        bob,
+      )
+    ).json();
+    expect(access.folderUrl).toBe('https://drive.google.com/drive/folders/OLDFOLDER1');
+    expect(access.access).toBe('viewer');
+  });
+
+  it('moves each folder into its owner’s folder (dry run first), with the same id, counts only', async () => {
+    const f = fakes();
+    await setUp(f);
+    legacyFolder(f, 'OLDALICE01', ALICE, S1);
+    legacyFolder(f, 'OLDALICE02', ALICE, S2);
+    legacyFolder(f, 'OLDBOB0001', BOB, S1);
+    // A folder no known session matches.
+    legacyFolder(f, 'ORPHAN0001', 'user-gone', S1);
+    await syncedSession(ALICE, S1);
+    await syncedSession(BOB, S1);
+    // S2 of ALICE is known from a transcript line's session only.
+    await t.pg.query(
+      `INSERT INTO call_record (user_id, kind, id, session_id) VALUES ($1, 'utterance', 'u1', $2)`,
+      [ALICE, S2],
+    );
+    const md = { google: deps(ALICE, f), secret: () => MOVE_SECRET };
+
+    const dry = await handleMoveToUserFolders(moveRequest({}), md);
+    expect(dry.status).toBe(200);
+    const plan = await dry.json();
+    expect(plan).toEqual({
+      mode: 'dry-run',
+      sessionFolders: 4,
+      matched: 3,
+      unmatched: 1,
+      users: [
+        { user: 1, folders: 2, hasOwnFolder: false },
+        { user: 2, folders: 1, hasOwnFolder: false },
+      ],
+    });
+    // Nothing changed, and the reply names no one and no folder.
+    expect(f.files.get('OLDALICE01')!.parent).toBe(COMPANY_FOLDER);
+    expect(ownFolder(f, ALICE)).toBeUndefined();
+    expect(JSON.stringify(plan)).not.toMatch(/user-alice|user-bob|OLDALICE|OLDBOB|ORPHAN|example/);
+
+    const applied = await (await handleMoveToUserFolders(moveRequest({ apply: true }), md)).json();
+    expect(applied.applied).toEqual({
+      moved: 3,
+      failed: 0,
+      sharesRemoved: 3,
+      sharesKept: 0,
+      userFoldersMade: 2,
+      shareRefused: 0,
+      remaining: 0,
+    });
+    const alice = ownFolder(f, ALICE)!;
+    const bob = ownFolder(f, BOB)!;
+    expect(f.files.get('OLDALICE01')!.parent).toBe(alice.id);
+    expect(f.files.get('OLDALICE02')!.parent).toBe(alice.id);
+    expect(f.files.get('OLDBOB0001')!.parent).toBe(bob.id);
+    expect(f.files.get('ORPHAN0001')!.parent).toBe(COMPANY_FOLDER);
+    // One share per person, on their own folder; the per-session shares are gone (the orphan keeps its).
+    expect(f.shares.map((share) => [share.fileId, share.email]).sort()).toEqual(
+      [
+        [alice.id, `${ALICE}@example.test`],
+        [bob.id, `${BOB}@example.test`],
+        ['ORPHAN0001', 'user-gone@example.test'],
+      ].sort(),
+    );
+    // Run again: nothing left to move.
+    const again = await (await handleMoveToUserFolders(moveRequest({ apply: true }), md)).json();
+    expect(again).toMatchObject({ matched: 0, unmatched: 1, applied: { moved: 0, remaining: 0 } });
+    // The moved folder is still found for its owner (same id, so links still open).
+    const access = await (
+      await handleCallAccess(
+        post('/api/drive/call-access', { sessionId: S1, callStartedAt: NOTIFY.callStartedAt }),
+        deps(BOB, f),
+      )
+    ).json();
+    expect(access.folderUrl).toBe('https://drive.google.com/drive/folders/OLDBOB0001');
+  });
+
+  it('moves in batches, and puts a share back when a move fails', async () => {
+    const f = fakes();
+    await setUp(f);
+    legacyFolder(f, 'OLDALICE01', ALICE, S1);
+    legacyFolder(f, 'OLDALICE02', ALICE, S2);
+    await syncedSession(ALICE, S1);
+    await syncedSession(ALICE, S2);
+    const md = { google: deps(ALICE, f), secret: () => MOVE_SECRET };
+    const first = await (
+      await handleMoveToUserFolders(moveRequest({ apply: true, limit: 1 }), md)
+    ).json();
+    expect(first.applied).toMatchObject({ moved: 1, remaining: 1 });
+    f.moveStatus = 403;
+    const second = await (await handleMoveToUserFolders(moveRequest({ apply: true }), md)).json();
+    expect(second.applied).toMatchObject({ moved: 0, failed: 1 });
+    // The folder that did not move keeps its own share.
+    const stuck = [...f.files.values()].find((file) => file.parent === COMPANY_FOLDER)!;
+    expect(f.shares.some((share) => share.fileId === stuck.id)).toBe(true);
+  });
+
+  it('is closed without the secret, and refuses a wrong one', async () => {
+    const f = fakes();
+    await setUp(f);
+    expect(
+      (
+        await handleMoveToUserFolders(moveRequest({}), {
+          google: deps(ALICE, f),
+          secret: () => null,
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await handleMoveToUserFolders(moveRequest({}, 'x'.repeat(40)), {
+          google: deps(ALICE, f),
+          secret: () => MOVE_SECRET,
+        })
+      ).status,
+    ).toBe(401);
   });
 });

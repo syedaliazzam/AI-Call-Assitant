@@ -402,7 +402,9 @@ export interface DriveCallFileLink {
 }
 
 /**
- * How the person's Viewer access to their own session folder stands:
+ * How the person's Viewer access to their own folder stands (ADR-0097: their one folder in the company
+ * folder, which holds all their session folders; a session folder from before that was not moved yet is
+ * shared by itself):
  * - 'viewer': granted (or already there);
  * - 'refused': Google refused it (for example the sign-in email is not a Google account): the page says
  *   "Ask an admin for Drive access";

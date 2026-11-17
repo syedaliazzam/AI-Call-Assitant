@@ -14,8 +14,9 @@
  *          failed email of theirs is tried again by itself, an hour apart, for three days. The account always comes from the signed-in session, read from
  *          the database, never from the request. POSTs must come from a Kite address (Origin check) on
  *          top of the SameSite session cookie. ADR-0096 (the Meetings library): call-access gives the
- *          signed-in person Viewer access to their OWN session folder (found by their account tag only)
- *          and lists one call's saved files from their own records.
+ *          signed-in person Viewer access to their OWN folder (found by their account tag only) and lists
+ *          one call's saved files from their own records. ADR-0097: each person's session folders go in
+ *          one folder of their own in the company folder, shared with them only.
  * Used by: app/api/google/{connect,callback,status,picker-config,folder,settings,disconnect}/route.ts,
  *          app/api/drive/{session-folder,uploads,uploads/offset,uploads/complete,files,notify,
  *          notifications,test-email,call-access}/route.ts, app/api/cron/drive-flush/route.ts
@@ -127,8 +128,8 @@ import {
   ensureSessionFolders,
   fileMatches,
   fileTag,
+  findSessionFolder,
   findSubfolder,
-  folderTags,
   md5Hex,
   readTicket,
   signTicket,
@@ -142,8 +143,10 @@ const SETTINGS_PATH = '/settings';
 export interface DriveUser {
   /** The account's id. */
   id: string;
-  /** Its login email (the "saved" email's first recipient). */
+  /** Its login email (the "saved" email's first recipient; ADR-0097: their folder is shared with it). */
   email: string;
+  /** ADR-0097: its display name (their own Drive folder's name when it is made). */
+  name: string;
   /** True for an admin (connects the company account, picks the folder; ADR-0074). */
   admin: boolean;
 }
@@ -188,7 +191,12 @@ export const realGoogleDeps: GoogleDeps = {
     const session = await auth.api.getSession({ headers, query: { disableCookieCache: true } });
     if (!session) return 'signed-out';
     if (session.user.mustChangePassword) return 'password';
-    return { id: session.user.id, email: session.user.email, admin: session.user.role === 'admin' };
+    return {
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.name,
+      admin: session.user.role === 'admin',
+    };
   },
   // The app's Neon client has the common Drizzle Postgres shape the store needs.
   db: () => db as unknown as CallDataDb,
@@ -463,8 +471,9 @@ interface CompanyFolder {
  * The company Drive with a usable token AND its folder (the upload routes), or the reply saying why not.
  * @param deps The dependencies.
  * @returns Drive calls with the company token and the company folder, or an error response.
+ * Called from: the upload and call-access handlers here; handleMoveToUserFolders() in move.ts
  */
-async function companyDrive(
+export async function companyDrive(
   deps: GoogleDeps,
 ): Promise<{ drive: DriveServer; folder: CompanyFolder } | Response> {
   const connected = await companyToken(deps);
@@ -790,8 +799,9 @@ const sessionFolderSchema = z.object({ sessionId: z.uuid(), name: driveName }).s
 
 /**
  * POST /api/drive/session-folder (ADR-0074): finds or makes the session's folder and its Recordings and
- * Transcripts in the company folder, with the company token (server-side only). The folders' tags bind
- * them to this account and session.
+ * Transcripts, with the company token (server-side only). The folders' tags bind them to this account and
+ * session. ADR-0097: a new session folder goes in the signed-in person's own folder in the company folder
+ * (made and shared with them, as Viewer, the first time); a folder of theirs from before stays found.
  * @param request The request (body: DriveSessionFolderRequest).
  * @param deps    The dependencies (tests pass fakes).
  * @returns 200 DriveSessionFolderResponse; 400; 404 not connected; 409 no folder, reconnect, folder gone.
@@ -806,10 +816,11 @@ export function handleSessionFolder(
     if (!body) return failure(400, 'invalid_request', 'The session folder request is not valid.');
     const company = await companyDrive(deps);
     if (company instanceof Response) return company;
+    // ADR-0097: the person is always the signed-in account; the request names no one.
     const ids = await ensureSessionFolders(
       company.drive,
       company.folder,
-      user.id,
+      { id: user.id, name: user.name, email: user.email },
       body.sessionId,
       body.name,
     );
@@ -868,9 +879,11 @@ function callFileLinks(
 /**
  * POST /api/drive/call-access (ADR-0096, the Meetings library): the signed-in person's OWN session folder,
  * found only by their account's tag (folderTags(user.id, …)), so no request can reach another person's
- * folder; gives that person (their sign-in email, from the session, never the request) Viewer access to
- * it without Google's notification email, so "Watch in Drive" opens for them; and returns the call's saved
- * files from their own records. Without a company connection it answers like the other Drive routes
+ * folder; gives that person (their sign-in email, from the session, never the request) Viewer access
+ * without Google's notification email, so "Watch in Drive" opens for them; and returns the call's saved
+ * files from their own records. ADR-0097: the share is on the person's own folder (their one share,
+ * which covers every session folder in it), never on the company folder; only a session folder still in
+ * the company folder itself (made before ADR-0097, not moved yet) is shared by itself, as before. Without a company connection it answers like the other Drive routes
  * (404 / 409), and the page shows the call's status instead.
  * @param request The request (body: DriveCallAccessRequest).
  * @param deps    The dependencies (tests pass fakes).
@@ -886,23 +899,23 @@ export function handleCallAccess(
     if (!body) return failure(400, 'invalid_request', 'The request is not valid.');
     const company = await companyDrive(deps);
     if (company instanceof Response) return company;
-    const folderId = await company.drive.find(
-      company.folder.folderId,
-      folderTags(user.id, body.sessionId, 'session'),
-      company.folder.driveId,
-    );
+    const found = await findSessionFolder(company.drive, company.folder, user.id, body.sessionId);
     const files = callFileLinks(
       await listSessionRecords(deps.db(), deps.keys(), user.id, body.sessionId),
       body.callStartedAt,
     );
-    if (!folderId) {
+    if (!found) {
       return reply({ folderUrl: null, access: 'none', files } satisfies DriveCallAccessResponse);
     }
-    const granted = await company.drive.grantReader(folderId, user.email);
+    // ADR-0097: their own folder (asking again changes nothing); an unmoved older folder by itself.
+    const granted = await company.drive.grantReader(
+      found.userFolderId ?? found.folderId,
+      user.email,
+    );
     // The outcome only: never the folder, the address or the account.
     if (granted !== 'granted') console.warn('drive: access not granted', { outcome: granted });
     return reply({
-      folderUrl: driveFolderUrl(folderId),
+      folderUrl: driveFolderUrl(found.folderId),
       access: granted === 'granted' ? 'viewer' : granted,
       files,
     } satisfies DriveCallAccessResponse);

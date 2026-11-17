@@ -6,11 +6,15 @@
  *          resumable upload (the client gets only that upload's session address, with a signed ticket
  *          for that one file); asking an upload where it got to; uploading the page's own small files
  *          (multipart); reading a file to verify it (tag, size, MD5); and (ADR-0096) giving one person
- *          Viewer access to their own session folder, without Google's email.
+ *          Viewer access without Google's email. ADR-0097: each person has ONE folder of their own in the
+ *          company folder (named after their display name, tagged to their account, shared only with
+ *          them); their session folders are made inside it. A session folder still in the company folder
+ *          itself (made before ADR-0097 and not moved yet) is found there as before. Also the Drive calls
+ *          the one-time move needs (list, move, read and remove a share).
  * Used by: src/server/google/api.ts; tests
  * Depends on: node:crypto, @kite/shared (folder MIME type, Range parsing), src/server/google/oauth.ts
  *             (errors, FetchLike)
- * Architecture: ADR-0074 (folders and tags as ADR-0072)
+ * Architecture: ADR-0074 (folders and tags as ADR-0072), ADR-0097 (one folder per person)
  *
  * Nothing here logs; file contents are held in memory only for the one request.
  */
@@ -75,6 +79,46 @@ export function folderTags(
 }
 
 /**
+ * ADR-0097: the tags of a person's own folder in the company folder. The value is bound to the account
+ * only (with a fixed label, so it never equals a session tag), so one person's request never finds
+ * another person's folder.
+ *
+ * @param userId The account.
+ * @returns The tags.
+ * Called from: findUserFolder(), ensureUserFolder(); tests
+ */
+export function userFolderTags(userId: string): DriveTag[] {
+  return [
+    { key: 'kiteOwner', value: tagValue('user-folder', userId) },
+    { key: 'kiteFolder', value: 'user' },
+  ];
+}
+
+/** ADR-0097: the longest name a person's folder gets (Drive allows far more; the list stays readable). */
+const MAX_USER_FOLDER_NAME = 100;
+
+/** ADR-0097: a person's folder name when their display name is empty after cleaning. */
+export const UNNAMED_USER_FOLDER = 'Unnamed user';
+
+/**
+ * ADR-0097: a person's folder name, from their display name: control characters removed, spaces
+ * collapsed, at most MAX_USER_FOLDER_NAME characters.
+ *
+ * @param displayName The account's display name.
+ * @returns The folder's name (UNNAMED_USER_FOLDER when nothing is left).
+ * Called from: ensureUserFolder(); tests
+ */
+export function userFolderName(displayName: string): string {
+  const clean = displayName
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_USER_FOLDER_NAME)
+    .trim();
+  return clean || UNNAMED_USER_FOLDER;
+}
+
+/**
  * The tag of one file: bound to the account, the session and the file's stable key.
  *
  * @param userId    The account.
@@ -101,6 +145,28 @@ export interface DriveFileFacts {
   trashed: boolean;
 }
 
+/** ADR-0097: a file or folder as a listing returns it. */
+export interface DriveListed {
+  /** Its id. */
+  id: string;
+  /** Its app properties (the tags). */
+  appProperties: Record<string, string>;
+}
+
+/** ADR-0097: one share of a file or folder, as Drive lists it. */
+export interface DriveShare {
+  /** The permission's id. */
+  id: string;
+  /** 'user', 'group', 'domain' or 'anyone'. */
+  type: string;
+  /** 'reader', 'writer', 'owner', … */
+  role: string;
+  /** The address it is for, lower-case, or null (domain, anyone). */
+  email: string | null;
+  /** True when it only comes from a folder above (a Shared Drive or a shared parent): not removable here. */
+  inheritedOnly: boolean;
+}
+
 /** Drive calls with one access token. */
 export interface DriveServer {
   /**
@@ -110,6 +176,32 @@ export interface DriveServer {
    * @param driveId  Its Shared Drive, or null for My Drive.
    */
   find(parentId: string, tags: DriveTag[], driveId: string | null): Promise<string | null>;
+  /**
+   * ADR-0097: every file or folder in a folder with every tag (all pages).
+   * @param parentId The folder.
+   * @param tags     The tags.
+   * @param driveId  Its Shared Drive, or null for My Drive.
+   */
+  list(parentId: string, tags: DriveTag[], driveId: string | null): Promise<DriveListed[]>;
+  /**
+   * ADR-0097: moves a file or folder from one folder to another (its id, links and contents stay).
+   * @param fileId The file or folder.
+   * @param fromId The folder it is in now.
+   * @param toId   The folder it goes to.
+   */
+  move(fileId: string, fromId: string, toId: string): Promise<void>;
+  /**
+   * ADR-0097: the shares of a file or folder the app made.
+   * @param fileId The file or folder.
+   */
+  shares(fileId: string): Promise<DriveShare[]>;
+  /**
+   * ADR-0097: removes one share.
+   * @param fileId       The file or folder.
+   * @param permissionId The share's id.
+   * @returns True when removed (or already gone); false when Drive refused.
+   */
+  removeShare(fileId: string, permissionId: string): Promise<boolean>;
   /**
    * Makes a folder.
    * @param name     Its name.
@@ -164,7 +256,8 @@ export interface DriveServer {
   /**
    * ADR-0096: gives one person Viewer ('reader') access to a folder the app made, without Google's
    * "shared with you" email. Asking again for someone who already has it changes nothing.
-   * @param fileId The folder (always the person's own session folder, found by their account tag).
+   * @param fileId The folder: the person's own folder (ADR-0097), or a session folder of theirs still
+   *               in the company folder itself; always found by their account's tag.
    * @param email  The person's sign-in email.
    * @returns 'granted'; 'refused' when Google will not share with that address (not a Google account,
    *          outside the domain, or the Shared Drive does not allow it); 'unavailable' when Google did not
@@ -258,6 +351,8 @@ export function driveServer(fetchFn: FetchLike, token: string): DriveServer {
       url.searchParams.set('q', q);
       url.searchParams.set('fields', 'files(id)');
       url.searchParams.set('pageSize', '1');
+      // ADR-0097: the oldest first, so two folders made at once (two devices) always resolve to the same.
+      url.searchParams.set('orderBy', 'createdTime');
       url.searchParams.set('supportsAllDrives', 'true');
       url.searchParams.set('includeItemsFromAllDrives', 'true');
       if (driveId) {
@@ -272,6 +367,116 @@ export function driveServer(fetchFn: FetchLike, token: string): DriveServer {
       const out = (await ok(response)) as { files?: { id?: unknown }[] };
       const id = out.files?.[0]?.id;
       return typeof id === 'string' ? id : null;
+    },
+
+    async list(parentId, tags, driveId) {
+      const q = [
+        `'${quote(parentId)}' in parents`,
+        'trashed = false',
+        ...tags.map(
+          (tag) => `appProperties has { key='${quote(tag.key)}' and value='${quote(tag.value)}' }`,
+        ),
+      ].join(' and ');
+      const out: DriveListed[] = [];
+      let pageToken: string | null = null;
+      // At most 50 pages of 1000: far more than the company folder will hold; never an endless loop.
+      for (let page = 0; page < 50; page += 1) {
+        const url = new URL(FILES_URL);
+        url.searchParams.set('q', q);
+        url.searchParams.set('fields', 'nextPageToken,files(id,appProperties)');
+        url.searchParams.set('pageSize', '1000');
+        url.searchParams.set('supportsAllDrives', 'true');
+        url.searchParams.set('includeItemsFromAllDrives', 'true');
+        if (driveId) {
+          url.searchParams.set('corpora', 'drive');
+          url.searchParams.set('driveId', driveId);
+        } else {
+          url.searchParams.set('corpora', 'user');
+        }
+        if (pageToken) url.searchParams.set('pageToken', pageToken);
+        const response = await send(url.toString());
+        if (response.status === 404) throw new GoogleUnavailableError(404);
+        const json = (await ok(response)) as {
+          nextPageToken?: unknown;
+          files?: { id?: unknown; appProperties?: unknown }[];
+        };
+        for (const file of json.files ?? []) {
+          if (typeof file.id !== 'string') continue;
+          out.push({
+            id: file.id,
+            appProperties:
+              file.appProperties && typeof file.appProperties === 'object'
+                ? (file.appProperties as Record<string, string>)
+                : {},
+          });
+        }
+        pageToken = typeof json.nextPageToken === 'string' ? json.nextPageToken : null;
+        if (!pageToken) break;
+      }
+      return out;
+    },
+
+    async move(fileId, fromId, toId) {
+      // One PATCH: add the new parent and remove the old one. The id (and so every link) stays.
+      const url = new URL(`${FILES_URL}/${encodeURIComponent(fileId)}`);
+      url.searchParams.set('addParents', toId);
+      url.searchParams.set('removeParents', fromId);
+      url.searchParams.set('supportsAllDrives', 'true');
+      url.searchParams.set('fields', 'id');
+      await ok(
+        await send(url.toString(), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+          body: '{}',
+        }),
+      );
+    },
+
+    async shares(fileId) {
+      const url = new URL(`${FILES_URL}/${encodeURIComponent(fileId)}/permissions`);
+      url.searchParams.set('supportsAllDrives', 'true');
+      url.searchParams.set(
+        'fields',
+        'permissions(id,type,role,emailAddress,permissionDetails(inherited))',
+      );
+      const json = (await ok(await send(url.toString()))) as {
+        permissions?: {
+          id?: unknown;
+          type?: unknown;
+          role?: unknown;
+          emailAddress?: unknown;
+          permissionDetails?: { inherited?: unknown }[];
+        }[];
+      };
+      return (json.permissions ?? []).flatMap((share) =>
+        typeof share.id === 'string'
+          ? [
+              {
+                id: share.id,
+                type: typeof share.type === 'string' ? share.type : '',
+                role: typeof share.role === 'string' ? share.role : '',
+                email:
+                  typeof share.emailAddress === 'string' ? share.emailAddress.toLowerCase() : null,
+                // Drive describes where a share comes from only on some items; without details it is
+                // treated as the item's own.
+                inheritedOnly:
+                  Array.isArray(share.permissionDetails) &&
+                  share.permissionDetails.length > 0 &&
+                  share.permissionDetails.every((detail) => detail.inherited === true),
+              },
+            ]
+          : [],
+      );
+    },
+
+    async removeShare(fileId, permissionId) {
+      const response = await send(
+        `${FILES_URL}/${encodeURIComponent(fileId)}/permissions/${encodeURIComponent(permissionId)}?supportsAllDrives=true`,
+        { method: 'DELETE' },
+      );
+      if (response.status === 401) throw new GoogleRefusedError('unauthorized');
+      // Already gone counts as removed.
+      return response.ok || response.status === 404;
     },
 
     async createFolder(name, parentId, tags) {
@@ -411,12 +616,146 @@ export function driveServer(fetchFn: FetchLike, token: string): DriveServer {
   };
 }
 
+/** The company folder and its Shared Drive, as the folder functions need them. */
+export interface CompanyPlace {
+  /** The company folder's id. */
+  folderId: string;
+  /** Its Shared Drive, or null for My Drive. */
+  driveId: string | null;
+}
+
+/** ADR-0097: the person a folder is found or made for (always the signed-in account, never the request). */
+export interface FolderOwner {
+  /** The account. */
+  id: string;
+  /** Their display name (their folder's name when it is made). */
+  name: string;
+  /** Their sign-in email (their folder is shared with it, as Viewer). */
+  email: string;
+}
+
 /**
- * Finds or makes a session's folder and its two subfolders in the company folder.
+ * ADR-0097: folder makes in progress on this server instance, by company folder and account, so two
+ * requests of one person at once (two sessions saving) make one folder, not two.
+ */
+const userFoldersInProgress = new Map<string, Promise<UserFolder>>();
+
+/** ADR-0097: a person's own folder, as ensureUserFolder() returns it. */
+export interface UserFolder {
+  /** Its id. */
+  folderId: string;
+  /** True when it was made just now. */
+  created: boolean;
+  /**
+   * The share made with it: 'granted', 'refused' or 'unavailable' when it was made just now (shared
+   * with the person then); null when it already existed.
+   */
+  access: 'granted' | 'refused' | 'unavailable' | null;
+}
+
+/**
+ * ADR-0097: a person's own folder in the company folder, found by their account's tag only.
+ *
+ * @param drive   Drive calls with the company token.
+ * @param company The company folder and its Shared Drive.
+ * @param userId  The account.
+ * @returns Its id, or null when the person has none yet.
+ * @throws GoogleUnavailableError (404 when the company folder is gone).
+ * Called from: ensureUserFolder(), findSessionFolder(); move.ts; tests
+ */
+export async function findUserFolder(
+  drive: DriveServer,
+  company: CompanyPlace,
+  userId: string,
+): Promise<string | null> {
+  return drive.find(company.folderId, userFolderTags(userId), company.driveId);
+}
+
+/**
+ * ADR-0097: finds or makes a person's own folder in the company folder. A new one is named after their
+ * display name and shared with them ONLY (Viewer, without Google's email); nobody else is ever added, and
+ * the company folder itself is never shared here. Only ever called for the signed-in account (or, in the
+ * one-time move, for a session folder's proven owner).
+ *
+ * @param drive   Drive calls with the company token.
+ * @param company The company folder and its Shared Drive.
+ * @param owner   The person.
+ * @returns The folder, whether it was made now, and how sharing it went.
+ * @throws GoogleUnavailableError (404 when the company folder is gone); GoogleRefusedError.
+ * Called from: ensureSessionFolders(); move.ts; tests
+ */
+export function ensureUserFolder(
+  drive: DriveServer,
+  company: CompanyPlace,
+  owner: FolderOwner,
+): Promise<UserFolder> {
+  const key = `${company.folderId}\n${owner.id}`;
+  const running = userFoldersInProgress.get(key);
+  if (running) return running;
+  const work = (async (): Promise<UserFolder> => {
+    const existing = await findUserFolder(drive, company, owner.id);
+    if (existing) return { folderId: existing, created: false, access: null };
+    const folderId = await drive.createFolder(
+      userFolderName(owner.name),
+      company.folderId,
+      userFolderTags(owner.id),
+    );
+    const access = await drive.grantReader(folderId, owner.email);
+    return { folderId, created: true, access };
+  })();
+  userFoldersInProgress.set(key, work);
+  // Forgotten once settled (success or failure), so a later request looks again.
+  return work.finally(() => userFoldersInProgress.delete(key));
+}
+
+/** A session's folder, as findSessionFolder() returns it. */
+export interface FoundSessionFolder {
+  /** The session folder's id. */
+  folderId: string;
+  /**
+   * ADR-0097: the person's own folder it is in, or null when it is still in the company folder itself
+   * (made before ADR-0097 and not moved yet).
+   */
+  userFolderId: string | null;
+}
+
+/**
+ * Finds a session's folder: in the person's own folder (ADR-0097), else still in the company folder
+ * itself (made before ADR-0097, not moved yet). Found by the account-and-session tag only, so no request
+ * reaches another person's folder.
  *
  * @param drive     Drive calls with the company token.
  * @param company   The company folder and its Shared Drive.
  * @param userId    The account.
+ * @param sessionId The session.
+ * @returns The folder and where it is, or null when the session has none.
+ * @throws GoogleUnavailableError (404 when the company folder is gone).
+ * Called from: ensureSessionFolders(), findSubfolder(); api.ts (call-access); tests
+ */
+export async function findSessionFolder(
+  drive: DriveServer,
+  company: CompanyPlace,
+  userId: string,
+  sessionId: string,
+): Promise<FoundSessionFolder | null> {
+  const tags = folderTags(userId, sessionId, 'session');
+  const userFolderId = await findUserFolder(drive, company, userId);
+  if (userFolderId) {
+    const inside = await drive.find(userFolderId, tags, company.driveId);
+    if (inside) return { folderId: inside, userFolderId };
+  }
+  const legacy = await drive.find(company.folderId, tags, company.driveId);
+  return legacy ? { folderId: legacy, userFolderId: null } : null;
+}
+
+/**
+ * Finds or makes a session's folder and its two subfolders. ADR-0097: a new session folder is made in
+ * the person's own folder (made, and shared with them, the first time); one made before ADR-0097 that is
+ * still in the company folder itself is used where it is.
+ *
+ * @param drive     Drive calls with the company token.
+ * @param company   The company folder and its Shared Drive.
+ * @param owner     The signed-in person (never anyone named by the request).
  * @param sessionId The session.
  * @param name      The session folder's name (made only when it does not exist yet).
  * @returns The three folders' ids.
@@ -425,21 +764,20 @@ export function driveServer(fetchFn: FetchLike, token: string): DriveServer {
  */
 export async function ensureSessionFolders(
   drive: DriveServer,
-  company: { folderId: string; driveId: string | null },
-  userId: string,
+  company: CompanyPlace,
+  owner: FolderOwner,
   sessionId: string,
   name: string,
 ): Promise<{ folderId: string; recordingsId: string; transcriptsId: string }> {
+  const tags = folderTags(owner.id, sessionId, 'session');
+  const own = await ensureUserFolder(drive, company, owner);
   const folderId =
-    (await drive.find(
-      company.folderId,
-      folderTags(userId, sessionId, 'session'),
-      company.driveId,
-    )) ??
-    (await drive.createFolder(name, company.folderId, folderTags(userId, sessionId, 'session')));
+    (await drive.find(own.folderId, tags, company.driveId)) ??
+    (await drive.find(company.folderId, tags, company.driveId)) ??
+    (await drive.createFolder(name, own.folderId, tags));
   const sub = async (which: DriveSubfolder) =>
-    (await drive.find(folderId, folderTags(userId, sessionId, which), company.driveId)) ??
-    (await drive.createFolder(which, folderId, folderTags(userId, sessionId, which)));
+    (await drive.find(folderId, folderTags(owner.id, sessionId, which), company.driveId)) ??
+    (await drive.createFolder(which, folderId, folderTags(owner.id, sessionId, which)));
   return {
     folderId,
     recordingsId: await sub('Recordings'),
@@ -460,18 +798,14 @@ export async function ensureSessionFolders(
  */
 export async function findSubfolder(
   drive: DriveServer,
-  company: { folderId: string; driveId: string | null },
+  company: CompanyPlace,
   userId: string,
   sessionId: string,
   which: DriveSubfolder,
 ): Promise<string | null> {
-  const folderId = await drive.find(
-    company.folderId,
-    folderTags(userId, sessionId, 'session'),
-    company.driveId,
-  );
-  if (!folderId) return null;
-  return drive.find(folderId, folderTags(userId, sessionId, which), company.driveId);
+  const session = await findSessionFolder(drive, company, userId, sessionId);
+  if (!session) return null;
+  return drive.find(session.folderId, folderTags(userId, sessionId, which), company.driveId);
 }
 
 /** What an upload ticket vouches for. */
