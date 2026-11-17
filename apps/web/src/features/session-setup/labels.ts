@@ -4,9 +4,11 @@
  *          styles, in one place so the dashboard, the wizard and Settings say the same thing.
  * Used by: src/features/dashboard/*, src/features/session-setup/*, src/features/settings/*,
  *          src/features/review/* (lesson scopes, Day 5 Stage 7)
- * Depends on: src/core/storage/types.ts (the values)
+ * Depends on: src/core/storage/types.ts (the values), src/core/session/modelChoices.ts (the model words,
+ *             ADR-0099)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §2 (F1–F3), §5
  */
+import { modelChoices } from '@/core/session/modelChoices';
 import {
   SESSION_TYPES,
   type AnswerModel,
@@ -45,11 +47,26 @@ export const STATUS_LABELS: Record<SessionStatus, string> = {
  * and 'groq'; the server maps those to the real model names from its environment and rejects anything else.
  * These are the words a person reads, the same here, in AI preferences and in the overlay.
  */
-export const MODEL_OPTIONS: readonly { value: AnswerModel; label: string; tag: string }[] = [
-  { value: 'fast', label: 'Fast (Claude Haiku)', tag: 'Recommended' },
-  { value: 'smart', label: 'Smart (Claude Sonnet)', tag: 'Deeper, slower' },
-  { value: 'groq', label: 'Fastest (Groq)', tag: 'Quickest' },
-];
+export const MODEL_OPTIONS: readonly { value: AnswerModel; label: string; tag: string }[] =
+  modelOptions(false);
+
+/**
+ * ADR-0099: the model choices this account sees, as rows: the classic three, or (an account in the new-models
+ * rollout) the longer list with the Gemini and GPT models first (core/session/modelChoices.ts).
+ *
+ * @param moreModels True for an account in the rollout.
+ * @returns The rows: value, name and the tag at the row's end.
+ * Called from: MODEL_OPTIONS; PreferencesStep.tsx, Settings.tsx
+ */
+export function modelOptions(
+  moreModels: boolean,
+): readonly { value: AnswerModel; label: string; tag: string }[] {
+  return modelChoices(moreModels).map((choice) => ({
+    value: choice.value,
+    label: choice.title,
+    tag: choice.tag,
+  }));
+}
 
 /** One choice of how answers look, as a radio card shows it. */
 export interface StyleOption<T extends string> {

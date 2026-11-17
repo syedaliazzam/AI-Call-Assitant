@@ -15,6 +15,7 @@
  * trip, and the count shows how often a user hit the limit.
  */
 import 'server-only';
+import type { AnswerProvider } from '@kite/shared';
 import { eq, gte, sql } from 'drizzle-orm';
 import { db } from './db';
 import { appSetting, usageDay, user } from './schema';
@@ -120,17 +121,22 @@ export interface RequestCount {
  *
  * @param userId The signed-in user's id.
  * @param now    The time (tests pass one).
- * @param options.groq True for a live answer sent to Groq (ADR-0095): also counted in groq_requests.
+ * @param options.provider The third-party provider a live answer was sent to, if any: Groq (ADR-0095) is also
+ *                         counted in groq_requests, Gemini and OpenAI (ADR-0099) in gemini_requests and
+ *                         openai_requests.
  * @returns See RequestCount.
  * Called from: the Claude routes (app/api/answer, notes, ask, prepare, job-import)
  */
 export async function countRequest(
   userId: string,
   now: Date = new Date(),
-  options: { groq?: boolean } = {},
+  options: { provider?: Exclude<AnswerProvider, 'claude'> | undefined } = {},
 ): Promise<RequestCount> {
   // ADR-0095: a Groq request also counts in groq_requests, in the same statement (still one round trip).
-  const groq = options.groq ? 1 : 0;
+  // ADR-0099: Gemini and OpenAI the same, in their own columns.
+  const groq = options.provider === 'groq' ? 1 : 0;
+  const gemini = options.provider === 'gemini' ? 1 : 0;
+  const openai = options.provider === 'openai' ? 1 : 0;
   const startedAt = performance.now();
   const ms = () => Math.round(performance.now() - startedAt);
   try {
@@ -139,12 +145,21 @@ export async function countRequest(
       getDailyLimit(now.getTime()),
       db
         .insert(usageDay)
-        .values({ userId, day: utcDay(now), requests: 1, groqRequests: groq })
+        .values({
+          userId,
+          day: utcDay(now),
+          requests: 1,
+          groqRequests: groq,
+          geminiRequests: gemini,
+          openaiRequests: openai,
+        })
         .onConflictDoUpdate({
           target: [usageDay.userId, usageDay.day],
           set: {
             requests: sql`${usageDay.requests} + 1`,
             groqRequests: sql`${usageDay.groqRequests} + ${groq}`,
+            geminiRequests: sql`${usageDay.geminiRequests} + ${gemini}`,
+            openaiRequests: sql`${usageDay.openaiRequests} + ${openai}`,
           },
         })
         .returning({ requests: usageDay.requests }),
@@ -177,6 +192,30 @@ export interface UsageRow {
   groqToday: number;
   /** ADR-0095: of the period's requests, how many went to Groq. */
   groqLastDays: number;
+  /** ADR-0099: of today's requests, how many went to Gemini. */
+  geminiToday: number;
+  /** ADR-0099: of the period's requests, how many went to Gemini. */
+  geminiLastDays: number;
+  /** ADR-0099: of today's requests, how many went to OpenAI. */
+  openaiToday: number;
+  /** ADR-0099: of the period's requests, how many went to OpenAI. */
+  openaiLastDays: number;
+}
+
+/** One usage_day row as the report reads it (the provider counts are absent in older test data). */
+export interface UsageCount {
+  /** The account. */
+  userId: string;
+  /** 'YYYY-MM-DD' (UTC). */
+  day: string;
+  /** All counted requests that day. */
+  requests: number;
+  /** Of those, sent to Groq. */
+  groqRequests?: number;
+  /** Of those, sent to Gemini (ADR-0099). */
+  geminiRequests?: number;
+  /** Of those, sent to OpenAI (ADR-0099). */
+  openaiRequests?: number;
 }
 
 /**
@@ -190,11 +229,21 @@ export interface UsageRow {
  */
 export function buildUsageReport(
   users: readonly { id: string; name: string; email: string }[],
-  counts: readonly { userId: string; day: string; requests: number; groqRequests?: number }[],
+  counts: readonly UsageCount[],
   today: string,
 ): UsageRow[] {
   const rows = users.map((account) => {
     const mine = counts.filter((count) => count.userId === account.id);
+    const todays = mine.filter((count) => count.day === today);
+    /**
+     * Sums one provider's column over some rows.
+     *
+     * @param list The rows.
+     * @param pick Reads the column (absent counts as 0).
+     * @returns The total.
+     */
+    const sum = (list: readonly UsageCount[], pick: (count: UsageCount) => number | undefined) =>
+      list.reduce((total, count) => total + (pick(count) ?? 0), 0);
     return {
       userId: account.id,
       name: account.name,
@@ -205,6 +254,10 @@ export function buildUsageReport(
         .filter((count) => count.day === today)
         .reduce((sum, c) => sum + (c.groqRequests ?? 0), 0),
       groqLastDays: mine.reduce((sum, count) => sum + (count.groqRequests ?? 0), 0),
+      geminiToday: sum(todays, (count) => count.geminiRequests),
+      geminiLastDays: sum(mine, (count) => count.geminiRequests),
+      openaiToday: sum(todays, (count) => count.openaiRequests),
+      openaiLastDays: sum(mine, (count) => count.openaiRequests),
     };
   });
   return rows.sort((a, b) => b.lastDays - a.lastDays || a.name.localeCompare(b.name));
@@ -229,6 +282,8 @@ export async function usageReport(days = 7, now: Date = new Date()): Promise<Usa
         day: usageDay.day,
         requests: usageDay.requests,
         groqRequests: usageDay.groqRequests,
+        geminiRequests: usageDay.geminiRequests,
+        openaiRequests: usageDay.openaiRequests,
       })
       .from(usageDay)
       .where(gte(usageDay.day, utcDay(first))),

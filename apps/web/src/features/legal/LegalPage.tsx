@@ -17,7 +17,7 @@ import { BrandLockup } from '@/ui/BrandLockup';
 export const LEGAL_CONTACT_EMAIL = 'paramountintelligence.central@gmail.com';
 
 /** When the two pages last changed (shown as "Last updated"). Change it with the text. */
-export const LEGAL_LAST_UPDATED = '12 November 2026';
+export const LEGAL_LAST_UPDATED = '17 November 2026';
 
 /** The link style used on these pages and under the sign-in card (as DesktopAppLink). */
 const LINK =

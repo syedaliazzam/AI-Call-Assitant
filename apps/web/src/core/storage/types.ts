@@ -33,7 +33,8 @@ export type SessionStatus = 'not-started' | 'live' | 'ended';
 
 /**
  * Which model answers: 'fast' = Claude Haiku (the default), 'smart' = Claude Sonnet, 'groq' = Groq
- * (ADR-0095). The shared type, so the request, the done event and the records agree.
+ * (ADR-0095); ADR-0099: 'gemini-lite', 'gpt-luna', 'gemini-flash', 'gpt-terra'. The shared type, so the
+ * request, the done event and the records agree.
  */
 export type AnswerModel = SharedAnswerModel;
 

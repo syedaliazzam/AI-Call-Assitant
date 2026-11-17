@@ -1,7 +1,8 @@
 /**
  * File: apps/web/src/features/admin/UsageTable.tsx
  * Purpose: The Admin → Usage table: AI requests per user today and over the last 7 days, with
- *          who is at the daily limit (v1.0.2, ADR-0036), and how many of them went to Groq (ADR-0095). Counts
+ *          who is at the daily limit (v1.0.2, ADR-0036), and how many of them went to Groq (ADR-0095), Gemini
+ *          and OpenAI (ADR-0099). Counts
  *          only; no text.
  * Used by: app/(app)/admin/usage/page.tsx
  * Depends on: src/features/admin/usageTypes.ts
@@ -36,12 +37,15 @@ export function UsageTable({ rows, limit }: UsageTableProps) {
             <th className="px-4 py-3 text-right font-semibold">Last 7 days</th>
             {/* ADR-0095: included in the two counts before it. */}
             <th className="px-4 py-3 text-right font-semibold">Groq today / 7 days</th>
+            {/* ADR-0099: the same for Gemini and OpenAI. */}
+            <th className="px-4 py-3 text-right font-semibold">Gemini today / 7 days</th>
+            <th className="px-4 py-3 text-right font-semibold">OpenAI today / 7 days</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-ui-border">
           {rows.length === 0 && (
             <tr>
-              <td colSpan={5} className="px-4 py-3 text-ui-muted">
+              <td colSpan={7} className="px-4 py-3 text-ui-muted">
                 No accounts yet.
               </td>
             </tr>
@@ -62,6 +66,12 @@ export function UsageTable({ rows, limit }: UsageTableProps) {
               <td className="px-4 py-3 text-right tabular-nums text-ui-text">{row.lastDays}</td>
               <td className="px-4 py-3 text-right tabular-nums text-ui-text">
                 {row.groqToday} / {row.groqLastDays}
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums text-ui-text">
+                {row.geminiToday} / {row.geminiLastDays}
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums text-ui-text">
+                {row.openaiToday} / {row.openaiLastDays}
               </td>
             </tr>
           ))}

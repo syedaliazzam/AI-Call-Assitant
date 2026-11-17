@@ -18,6 +18,10 @@ import { EVAL_RESULTS_DIR } from './eval-results';
 const PRICES: readonly { match: RegExp; input: number; output: number }[] = [
   { match: /haiku/i, input: 0.1, output: 0.5 },
   { match: /sonnet/i, input: 2, output: 10 },
+  // ADR-0099: list prices on 17 Nov 2026 (OpenAI's after its 30 July cut; Google's paid tier). Cache reads are
+  // priced at 0.1 × input, as for Claude, which matches both providers' published cached rates.
+  { match: /gpt-5\.6-luna/i, input: 0.2, output: 1.2 },
+  { match: /flash-lite/i, input: 0.3, output: 2.5 },
 ];
 
 /** The running total's file, inside the git-ignored results folder. */

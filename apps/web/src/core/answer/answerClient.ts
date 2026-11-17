@@ -19,6 +19,7 @@ import type {
   AnswerTimings,
   AnswerUsage,
 } from '@kite/shared';
+import { isAnswerModel } from '@kite/shared';
 import { holdSyncForAnswer } from '../sync/foreground';
 
 /** Final details of a successful answer. */
@@ -228,10 +229,9 @@ export function streamAnswer(
           serverMs: payload.ms as AnswerTimings,
           msToFirstText: Math.round((firstTextAt ?? doneAt) - startedAt),
           msTotal: Math.round(doneAt - startedAt),
-          // ADR-0094: only a known tier is passed on (ADR-0095: Groq too, and why it fell back).
-          ...(payload.model === 'fast' || payload.model === 'smart' || payload.model === 'groq'
-            ? { model: payload.model }
-            : {}),
+          // ADR-0094: only a known tier is passed on (ADR-0095: Groq too, and why it fell back; ADR-0099: the
+          // Gemini and GPT models too).
+          ...(isAnswerModel(payload.model) ? { model: payload.model } : {}),
           ...(payload.fallback === 'timeout' ||
           payload.fallback === 'error' ||
           payload.fallback === 'empty'

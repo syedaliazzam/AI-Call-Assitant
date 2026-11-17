@@ -5,11 +5,15 @@
  *          checked, used by the ⋮ menu's Model row and by bar 1's model chip; the chip itself; its popover; and
  *          the toast's words. Smart or Groq is shown disabled, with "Turned off by your admin", when it is off
  *          (the server enforces that on every answer anyway). Tooltips are drawn in the page (ADR-0042), so
- *          they stay inside the protected window.
+ *          they stay inside the protected window. ADR-0099: an account in the new-models rollout sees the longer
+ *          list (Gemini 3.5 Flash Lite (Recommended), GPT-5.6 Luna (Fast), Gemini 3.6 Flash, GPT-5.6 Terra, Claude
+ *          Haiku, Claude Sonnet, Groq (Fastest)), from core/session/modelChoices.ts, the same words as AI
+ *          preferences.
  * Used by: src/features/live/overlay/LiveMenu.tsx, src/features/live/overlay/ControlBar.tsx,
  *          src/features/live/CompactView.tsx
  * Depends on: lucide-react, src/core/live/liveChannel.ts (CompactState), src/core/storage/types.ts
- *             (AnswerModel), src/ui/Tooltip.tsx, ./parts.tsx (bar button styles)
+ *             (AnswerModel), src/core/session/modelChoices.ts (the lists, ADR-0099), src/ui/Tooltip.tsx,
+ *             ./parts.tsx (bar button styles)
  * Architecture: docs/decisions/ADR-0094-switch-the-answer-model-during-a-call.md;
  *               docs/decisions/ADR-0095-voice-mode-groq-and-move-keys.md;
  *               docs/design/paramount-ai-ui-spec.md §3 (S13, S16)
@@ -19,6 +23,12 @@
 import { Check, Sparkles } from 'lucide-react';
 import { forwardRef, type RefObject } from 'react';
 import type { CompactState } from '@/core/live/liveChannel';
+import {
+  CLASSIC_MODEL_CHOICES,
+  modelChoices,
+  modelEntry,
+  modelOff as modelOffFor,
+} from '@/core/session/modelChoices';
 import type { AnswerModel } from '@/core/storage/types';
 import { ChevronDownIcon } from '@/ui/icons';
 import { Tooltip } from '@/ui/Tooltip';
@@ -38,11 +48,9 @@ export interface ModelChoiceOption {
  * The three choices, in the order shown (ADR-0095: the same words as the wizard's "Select model" and AI
  * preferences).
  */
-export const MODEL_CHOICES: readonly ModelChoiceOption[] = [
-  { value: 'fast', name: 'Fast', label: 'Fast (Claude Haiku)' },
-  { value: 'smart', name: 'Smart', label: 'Smart (Claude Sonnet)' },
-  { value: 'groq', name: 'Fastest', label: 'Fastest (Groq)' },
-];
+export const MODEL_CHOICES: readonly ModelChoiceOption[] = CLASSIC_MODEL_CHOICES.map(
+  ({ value, name, label }) => ({ value, name, label }),
+);
 
 /** The tooltip on Smart or Groq while it is turned off. */
 export const SMART_OFF_TIP = 'Turned off by your admin';
@@ -53,6 +61,12 @@ export interface ModelAllowed {
   smartAllowed: boolean;
   /** ADR-0095: false when Groq is off (no server key, or an admin turned it off). */
   groqAllowed: boolean;
+  /** ADR-0099: false (or absent) when the Gemini models are off for this account. */
+  geminiAllowed?: boolean | undefined;
+  /** ADR-0099: false (or absent) when the GPT models are off for this account. */
+  openaiAllowed?: boolean | undefined;
+  /** ADR-0099: true for an account in the new-models rollout (the longer list). */
+  moreModels?: boolean | undefined;
 }
 
 /**
@@ -64,17 +78,28 @@ export interface ModelAllowed {
  * Called from: ModelOptions; CompactView.tsx; tests
  */
 export function modelOff(model: AnswerModel, allowed: ModelAllowed): boolean {
-  return (model === 'smart' && !allowed.smartAllowed) || (model === 'groq' && !allowed.groqAllowed);
+  return modelOffFor(model, {
+    smart: allowed.smartAllowed,
+    groq: allowed.groqAllowed,
+    gemini: allowed.geminiAllowed === true,
+    openai: allowed.openaiAllowed === true,
+    moreModels: allowed.moreModels === true,
+  });
 }
 
 /**
  * The toast shown once the live page has switched the model (ADR-0094).
  *
- * @param model The model now in use.
+ * @param model      The model now in use.
+ * @param moreModels ADR-0099: true for an account in the new-models rollout ("<name> on" for every model).
  * @returns The toast's words.
  * Called from: CompactView.tsx; tests
  */
-export function modelSwitchToast(model: AnswerModel): string {
+export function modelSwitchToast(model: AnswerModel, moreModels = false): string {
+  const entry = modelEntry(model, moreModels);
+  // The Gemini and GPT models (and every model in the rollout's list) are named by their own names.
+  const classic = CLASSIC_MODEL_CHOICES.some((choice) => choice.value === model);
+  if (moreModels || !classic) return `${entry.title} on`;
   if (model === 'smart') return 'Smart model on — answers may take a bit longer';
   if (model === 'groq') return 'Fastest model on (Groq)';
   return 'Fast model on — quick answers';
@@ -87,14 +112,30 @@ export const SMART_REFUSED_TOAST = 'Smart model is turned off by your admin';
 export const GROQ_REFUSED_TOAST = 'Fastest model (Groq) is turned off by your admin';
 
 /**
+ * ADR-0099: the toast shown when a model was picked but it is off (the model stays as it was).
+ *
+ * @param model      The model picked.
+ * @param moreModels True for an account in the new-models rollout.
+ * @returns The toast's words: the classic ones for Smart and Groq in the classic list, else "<name> is
+ *          turned off by your admin".
+ * Called from: CompactView.tsx; tests
+ */
+export function modelRefusedToast(model: AnswerModel, moreModels = false): string {
+  if (!moreModels && model === 'smart') return SMART_REFUSED_TOAST;
+  if (!moreModels && model === 'groq') return GROQ_REFUSED_TOAST;
+  return `${modelEntry(model, moreModels).title} is turned off by your admin`;
+}
+
+/**
  * A choice's short name.
  *
- * @param model The tier.
- * @returns "Fast", "Smart" or "Fastest".
+ * @param model      The tier.
+ * @param moreModels ADR-0099: true for an account in the new-models rollout (its short names).
+ * @returns "Fast", "Smart" or "Fastest"; in the rollout's list "Flash Lite", "Luna", "Haiku" and so on.
  * Called from: ModelChip; tests
  */
-export function modelName(model: AnswerModel): string {
-  return MODEL_CHOICES.find((choice) => choice.value === model)?.name ?? 'Fast';
+export function modelName(model: AnswerModel, moreModels = false): string {
+  return modelEntry(model, moreModels).name;
 }
 
 /**
@@ -114,6 +155,10 @@ export function modelOf(
     smartAllowed: state.smartAllowed !== false,
     // ADR-0095: an older live page does not say, and Groq then stays disabled.
     groqAllowed: state.groqAllowed === true,
+    // ADR-0099: the same for the Gemini and GPT models, and the longer list.
+    geminiAllowed: state.geminiAllowed === true,
+    openaiAllowed: state.openaiAllowed === true,
+    moreModels: state.moreModels === true,
   };
 }
 
@@ -127,6 +172,9 @@ const FOCUS = 'focus-visible:outline-none focus-visible:[box-shadow:var(--k-focu
  * @param props.model        The model in use.
  * @param props.smartAllowed False when an admin has turned Smart off (it is then disabled, with a tooltip).
  * @param props.groqAllowed  False when Groq is off (ADR-0095; disabled the same way).
+ * @param props.geminiAllowed ADR-0099: false when the Gemini models are off.
+ * @param props.openaiAllowed ADR-0099: false when the GPT models are off.
+ * @param props.moreModels   ADR-0099: true for the rollout's longer list.
  * @param props.onSelect     Called with a different, allowed choice.
  * @param props.onClose      Called after any choice (the menu or popover closes).
  * @returns The group.
@@ -137,6 +185,9 @@ export function ModelOptions({
   model,
   smartAllowed,
   groqAllowed,
+  geminiAllowed = false,
+  openaiAllowed = false,
+  moreModels = false,
   onSelect,
   onClose,
 }: {
@@ -148,6 +199,12 @@ export function ModelOptions({
   smartAllowed: boolean;
   /** ADR-0095: false when Groq is off. */
   groqAllowed: boolean;
+  /** ADR-0099: false when the Gemini models are off. */
+  geminiAllowed?: boolean | undefined;
+  /** ADR-0099: false when the GPT models are off. */
+  openaiAllowed?: boolean | undefined;
+  /** ADR-0099: true for the rollout's longer list. */
+  moreModels?: boolean | undefined;
   /** Called with a different, allowed choice. */
   onSelect: (model: AnswerModel) => void;
   /** Called after any choice. */
@@ -155,9 +212,15 @@ export function ModelOptions({
 }) {
   return (
     <div role="radiogroup" aria-label={label} className="flex flex-col py-0.5">
-      {MODEL_CHOICES.map((choice) => {
+      {modelChoices(moreModels).map((choice) => {
         const checked = choice.value === model;
-        const off = modelOff(choice.value, { smartAllowed, groqAllowed });
+        const off = modelOff(choice.value, {
+          smartAllowed,
+          groqAllowed,
+          geminiAllowed,
+          openaiAllowed,
+          moreModels,
+        });
         const row = (
           <button
             type="button"
@@ -206,6 +269,7 @@ export function ModelOptions({
  * @param props.disabled  True before the live page answers, or once the call ended.
  * @param props.buttonRef The chip (its popover sits under it).
  * @param props.onToggle  Opens or closes its popover.
+ * @param props.moreModels ADR-0099: true for an account in the new-models rollout (its short names).
  * @returns The chip.
  * Rendered by: ControlBar
  */
@@ -216,6 +280,7 @@ export function ModelChip({
   disabled,
   buttonRef,
   onToggle,
+  moreModels = false,
 }: {
   /** The model in use. */
   model: AnswerModel;
@@ -229,8 +294,10 @@ export function ModelChip({
   buttonRef?: RefObject<HTMLButtonElement | null> | undefined;
   /** Opens or closes its popover. */
   onToggle: () => void;
+  /** ADR-0099: true for an account in the new-models rollout. */
+  moreModels?: boolean | undefined;
 }) {
-  const name = modelName(model);
+  const name = modelName(model, moreModels);
   return (
     <button
       ref={buttonRef}
@@ -240,7 +307,7 @@ export function ModelChip({
       aria-label={`Model: ${name}`}
       aria-haspopup="true"
       aria-expanded={open}
-      data-tip={`Model: ${MODEL_CHOICES.find((choice) => choice.value === model)?.label ?? name}`}
+      data-tip={`Model: ${modelEntry(model, moreModels).label}`}
       data-model-chip={model}
       className={`${word ? `${PILL} gap-1 pr-1` : `${ICON_BUTTON} relative`} ${model !== 'fast' ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : 'text-ui-text'}`}
       onClick={onToggle}
@@ -270,6 +337,12 @@ export interface ModelPopoverProps {
   smartAllowed: boolean;
   /** ADR-0095: false when Groq is off. */
   groqAllowed: boolean;
+  /** ADR-0099: false when the Gemini models are off. */
+  geminiAllowed?: boolean | undefined;
+  /** ADR-0099: false when the GPT models are off. */
+  openaiAllowed?: boolean | undefined;
+  /** ADR-0099: true for the rollout's longer list. */
+  moreModels?: boolean | undefined;
   /** Its left edge inside bar 1's box, px (under the chip, kept inside the window). */
   left: number;
   /** Called with a different, allowed choice. */
@@ -288,7 +361,17 @@ export interface ModelPopoverProps {
  * Rendered by: CompactView.tsx
  */
 export const ModelPopover = forwardRef<HTMLDivElement, ModelPopoverProps>(function ModelPopover(
-  { model, smartAllowed, groqAllowed, left, onSelect, onClose },
+  {
+    model,
+    smartAllowed,
+    groqAllowed,
+    geminiAllowed,
+    openaiAllowed,
+    moreModels,
+    left,
+    onSelect,
+    onClose,
+  },
   ref,
 ) {
   return (
@@ -298,7 +381,7 @@ export const ModelPopover = forwardRef<HTMLDivElement, ModelPopoverProps>(functi
       aria-label="Model"
       data-menu="model"
       style={{ left }}
-      className="k-overlay-menu absolute top-[calc(100%+6px)] z-30 flex w-64 flex-col rounded-menu border border-ui-border p-1.5 text-ui-text shadow-modal [-webkit-app-region:no-drag]"
+      className={`k-overlay-menu absolute top-[calc(100%+6px)] z-30 flex ${moreModels ? 'w-72' : 'w-64'} flex-col rounded-menu border border-ui-border p-1.5 text-ui-text shadow-modal [-webkit-app-region:no-drag]`}
     >
       <p className="px-3 pb-0.5 pt-1 text-[12px] font-medium text-ui-muted">Model</p>
       <ModelOptions
@@ -306,6 +389,9 @@ export const ModelPopover = forwardRef<HTMLDivElement, ModelPopoverProps>(functi
         model={model}
         smartAllowed={smartAllowed}
         groqAllowed={groqAllowed}
+        geminiAllowed={geminiAllowed}
+        openaiAllowed={openaiAllowed}
+        moreModels={moreModels}
         onSelect={onSelect}
         onClose={onClose}
       />

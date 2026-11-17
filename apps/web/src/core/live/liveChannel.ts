@@ -20,6 +20,7 @@
  */
 import {
   ANSWER_TYPES,
+  isAnswerModel,
   RECORDING_KINDS,
   type AnswerMeta,
   type AnswerType,
@@ -199,6 +200,15 @@ export interface CompactState {
    * false: "Fastest (Groq)" is shown disabled.
    */
   groqAllowed?: boolean;
+  /**
+   * ADR-0099: true for an account in the new-models rollout: the overlay shows the longer model list (the
+   * Gemini and GPT models first). Absent (an older live page) or false: the classic list.
+   */
+  moreModels?: boolean;
+  /** ADR-0099: true when the Gemini models may be chosen. Absent or false: shown disabled. */
+  geminiAllowed?: boolean;
+  /** ADR-0099: true when the GPT models may be chosen. Absent or false: shown disabled. */
+  openaiAllowed?: boolean;
   /** True while the overlay is the slim script bar (v1.0.2; Ctrl+Alt+S or the ⋮ menu). */
   scriptBar?: boolean;
   /**
@@ -343,7 +353,10 @@ export interface LanguageCommand {
 export interface ModelCommand {
   /** Command type. */
   type: 'model';
-  /** 'fast' (Claude Haiku), 'smart' (Claude Sonnet) or, ADR-0095, 'groq' (Groq). */
+  /**
+   * 'fast' (Claude Haiku), 'smart' (Claude Sonnet) or, ADR-0095, 'groq' (Groq); ADR-0099: or a Gemini or GPT
+   * model.
+   */
   model: AnswerModel;
 }
 
@@ -661,8 +674,8 @@ export function isCommand(value: unknown): value is CompactCommand {
     return typeof code === 'string' && code.length > 0 && code.length <= 16;
   }
   if (command.type === 'model') {
-    const model = (value as { model?: unknown }).model;
-    return model === 'fast' || model === 'smart' || model === 'groq';
+    // ADR-0099: any known answer model (the live page checks the account may use it).
+    return isAnswerModel((value as { model?: unknown }).model);
   }
   if (command.type === 'mic') {
     const deviceId = (value as { deviceId?: unknown }).deviceId;

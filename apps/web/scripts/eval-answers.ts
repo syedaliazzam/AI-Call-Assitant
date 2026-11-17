@@ -32,6 +32,10 @@
  *            --max-dollars=<n>    stop before the next scenario once this much is spent
  *            --no-grade answers only, no grader requests (half the cost): the code checks are
  *                       reported and the grader's columns show "–"; read the answers with --show
+ *            --model=<gemini-lite|gpt-luna|gemini-flash|gpt-terra>  ADR-0099: live answers from that
+ *                       Gemini or GPT model (its id from KITE_MODEL_GEMINI_* / KITE_MODEL_OPENAI_*, its key
+ *                       GEMINI_API_KEY / OPENAI_API_KEY), with the same prompt and latency settings as the
+ *                       answer route; the grader stays Sonnet. Ask AI scenarios stay on Claude.
  *          Every paid run also saves per-scenario scores and grader reasons to a git-ignored
  *          file (scripts/lib/eval-results.ts), so a drop can be diagnosed without another run.
  *          Re-run only the groups a change touches; the full suite only as CLAUDE.md
@@ -41,6 +45,7 @@
  * Depends on: src/server/prompt.ts (buildPrompt, sessionBlock), src/server/prompts/defaults.ts (the
  *             default global prompts and LEGACY_HEADING, ADR-0089),
  *             src/server/claude.ts (streamReply, jsonReply), src/server/env.ts, @kite/shared,
+ *             src/server/gemini.ts and src/server/openai.ts (--model, ADR-0099),
  *             scripts/lib/eval-options.ts (options, groups, estimate),
  *             scripts/lib/eval-results.ts (the saved results)
  * Key: refuses to run without ANTHROPIC_API_KEY (scripts/lib/require-key.ts). A paid run: agree
@@ -62,6 +67,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_SCREENSHOT_QUESTION,
+  isAnswerModel,
+  providerOf,
+  type AnswerModel,
   createQuestionLineFilter,
   splitMetaLine,
   type AnswerMeta,
@@ -72,7 +80,9 @@ import {
 import { buildClaimCorpus, checkClaims, needsClaimCheck } from '@/core/answer/claimCheck';
 import { findSimilarAnswer } from '@/core/answer/similar';
 import { jsonReply, streamReply } from '@/server/claude';
-import { getClaudeEnv } from '@/server/env';
+import { getClaudeEnv, getGeminiEnv, getOpenAIEnv } from '@/server/env';
+import { streamGeminiReply } from '@/server/gemini';
+import { streamOpenAIReply } from '@/server/openai';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
 import { DEFAULT_ASK_PROMPT, DEFAULT_LIVE_PROMPT, LEGACY_HEADING } from '@/server/prompts/defaults';
@@ -295,6 +305,60 @@ interface ScenarioAnswer {
 }
 
 /**
+ * ADR-0099: the third-party model a run's live answers come from (--model), with its key and model id.
+ */
+export interface ProviderModel {
+  /** The answer model asked for. */
+  model: AnswerModel;
+  /** 'gemini' or 'openai'. */
+  provider: 'gemini' | 'openai';
+  /** The provider's key (never printed). */
+  apiKey: string;
+  /** The model id, for example 'gemini-3.5-flash-lite'. */
+  modelId: string;
+}
+
+/**
+ * ADR-0099: reads --model. Only the Gemini and GPT models are taken (Claude is the default; Groq is not part
+ * of this evaluation).
+ *
+ * @param argv process.argv.slice(2).
+ * @returns The answer model, or null when --model is not given.
+ * @throws Error('--model …') for any other value.
+ * Called from: main(); tests
+ */
+export function parseAnswerModel(argv: readonly string[]): AnswerModel | null {
+  const joined = argv.find((arg) => arg.startsWith('--model='));
+  const at = argv.indexOf('--model');
+  const value = joined ? joined.slice('--model='.length) : at === -1 ? null : (argv[at + 1] ?? '');
+  if (value === null) return null;
+  if (!isAnswerModel(value) || (providerOf(value) !== 'gemini' && providerOf(value) !== 'openai')) {
+    throw new Error('--model must be gemini-lite, gpt-luna, gemini-flash or gpt-terra');
+  }
+  return value;
+}
+
+/**
+ * ADR-0099: the key and model id for --model, as the answer route picks them.
+ *
+ * @param model The Gemini or GPT model.
+ * @returns The provider model.
+ * @throws Error('--model …') when the provider's key is not set.
+ * Called from: main()
+ */
+function providerModel(model: AnswerModel): ProviderModel {
+  const provider = providerOf(model) === 'gemini' ? 'gemini' : 'openai';
+  const env = provider === 'gemini' ? getGeminiEnv() : getOpenAIEnv();
+  if (!env) {
+    throw new Error(
+      `--model=${model} needs ${provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY'}`,
+    );
+  }
+  const smarter = model === 'gemini-flash' || model === 'gpt-terra';
+  return { model, provider, apiKey: env.apiKey, modelId: smarter ? env.modelSmart : env.modelFast };
+}
+
+/**
  * Gets one answer through the real server prompt: the fast model, or the smart one for the Ask Kite
  * page, as the live route chooses.
  *
@@ -306,6 +370,7 @@ interface ScenarioAnswer {
  * @param theirName      ADR-0093: the other person's name for every scenario (--their-name), or null.
  * @param earlier        Consistency scenarios: the first answer, in the conversation, and the
  *                       question asked again.
+ * @param third          ADR-0099: the Gemini or GPT model live answers come from (--model), or null.
  * @returns The answer.
  * Called from: main()
  */
@@ -317,6 +382,7 @@ async function answerScenario(
   meter: SpendMeter,
   theirName: string | null,
   earlier?: { question: string; text: string },
+  third: ProviderModel | null = null,
 ): Promise<ScenarioAnswer> {
   const question = earlier ? (scenario.repeat ?? scenario.question) : scenario.question;
   const similar = earlier
@@ -365,14 +431,22 @@ async function answerScenario(
   const prompt = page
     ? buildKiteChatPrompt(request, globalPrompt)
     : buildPrompt(request, globalPrompt);
-  const model = page ? models.smart : models.fast;
+  // ADR-0099: with --model, live answers come from that Gemini or GPT model (the route's latency settings);
+  // Ask AI stays on Claude, as in the app.
+  const viaThird = third !== null && !page;
+  const model = viaThird ? third.modelId : page ? models.smart : models.fast;
   let raw = '';
-  const reply = streamReply({
-    model,
-    tier: page ? 'smart' : 'fast',
-    ...prompt,
-    maxTokens: page ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS,
-  });
+  const maxTokens = page ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS;
+  const reply = viaThird
+    ? third.provider === 'gemini'
+      ? streamGeminiReply({ apiKey: third.apiKey, model: third.modelId, ...prompt, maxTokens })
+      : streamOpenAIReply({ apiKey: third.apiKey, model: third.modelId, ...prompt, maxTokens })
+    : streamReply({
+        model,
+        tier: page ? 'smart' : 'fast',
+        ...prompt,
+        maxTokens,
+      });
   let next = await reply.next();
   for (; !next.done; next = await reply.next()) raw += next.value;
   meter.add(model, next.value.usage);
@@ -621,13 +695,18 @@ function summariseChecks(results: readonly ScenarioResult[]): string[] {
  */
 async function main(): Promise<void> {
   const options = parseEvalArgs(process.argv.slice(2), 2);
+  // ADR-0099: --model, the Gemini or GPT model live answers come from (null: Claude Haiku as before).
+  const answerModel = parseAnswerModel(process.argv.slice(2));
   // ADR-0093: cleaned as the app cleans it, so the prompt is the one a named call sends.
   const theirName = cleanPersonName(options.theirName) || null;
   const scenarios = loadScenarios(options.only);
   // Model names only, so --dry-run works without a key.
   console.log(
     estimateLine(scenarios, answerGroup, options.runs, [
-      { label: 'answers', model: process.env.KITE_MODEL_FAST || 'the fast model' },
+      {
+        label: 'answers',
+        model: answerModel ?? (process.env.KITE_MODEL_FAST || 'the fast model'),
+      },
       ...(options.grade
         ? [{ label: 'grades', model: process.env.KITE_MODEL_SMART || 'the smart model' }]
         : []),
@@ -636,8 +715,10 @@ async function main(): Promise<void> {
   if (options.dryRun) return;
   requireKey('eval-answers');
   const env = getClaudeEnv();
+  const third = answerModel ? providerModel(answerModel) : null;
+  const answeredBy = third ? third.modelId : env.modelFast;
   console.log(
-    `eval-answers: answers by ${env.modelFast}, ${options.grade ? `graded by ${env.modelSmart}` : 'not graded'}; ${scenarios.length} scenarios × ${options.runs} runs`,
+    `eval-answers: answers by ${answeredBy}, ${options.grade ? `graded by ${env.modelSmart}` : 'not graded'}; ${scenarios.length} scenarios × ${options.runs} runs`,
   );
   const meter = createSpendMeter();
   const header =
@@ -663,6 +744,8 @@ async function main(): Promise<void> {
         options.style,
         meter,
         theirName,
+        undefined,
+        third,
       );
       // Consistency: the first answer goes into the conversation, and the question comes again.
       const first = scenario.repeat
@@ -677,6 +760,7 @@ async function main(): Promise<void> {
           meter,
           theirName,
           first,
+          third,
         );
       const { text, meta } = answer;
       // A garbled line must get no answer at all (ADR-0043): nothing to grade, and no grader's request
@@ -760,7 +844,7 @@ Stopped at the --max-dollars cap: ${stopped} scenario(s) not run.`);
     withoutLessons: options.withoutLessons,
     style: options.style ?? 'current',
     finishedAt: new Date().toISOString(),
-    model: env.modelFast,
+    model: answeredBy,
     grader: options.grade ? env.modelSmart : 'none (--no-grade)',
     overall: sum / scenarios.length,
     scenarios: results,

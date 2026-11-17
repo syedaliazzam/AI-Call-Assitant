@@ -20,6 +20,8 @@ const fake = vi.hoisted(() => ({
   usage: [] as { userId: string; day: string; requests: number; groqRequests?: number }[],
   /** ADR-0095: the groq_requests value each counting statement inserted. */
   groqInserted: [] as number[],
+  /** ADR-0099: the Gemini and OpenAI counts each insert carried. */
+  providerInserted: [] as [number, number][],
   /** True to make the counting statement fail. */
   fail: false,
   /** How many times app_setting was read. */
@@ -61,6 +63,8 @@ vi.mock('@/server/db', () => ({
         day?: string;
         value?: string;
         groqRequests?: number;
+        geminiRequests?: number;
+        openaiRequests?: number;
       }) => ({
         onConflictDoUpdate: () => {
           if (tableName(table) === 'app_setting') {
@@ -71,6 +75,7 @@ vi.mock('@/server/db', () => ({
             returning: async () => {
               if (fake.fail) throw new Error('connection refused');
               fake.groqInserted.push(value.groqRequests ?? -1);
+              fake.providerInserted.push([value.geminiRequests ?? -1, value.openaiRequests ?? -1]);
               const key = `${value.userId}|${value.day}`;
               const next = (fake.counts.get(key) ?? 0) + 1;
               fake.counts.set(key, next);
@@ -96,6 +101,7 @@ beforeEach(() => {
   fake.fail = false;
   fake.settingReads = 0;
   fake.groqInserted = [];
+  fake.providerInserted = [];
   usage.resetUsageCache();
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -135,7 +141,7 @@ describe('countRequest', () => {
 
 describe('countRequest and Groq (ADR-0095)', () => {
   it('counts a Groq request in groq_requests too, in the same statement', async () => {
-    await usage.countRequest('u1', NOW, { groq: true });
+    await usage.countRequest('u1', NOW, { provider: 'groq' });
     await usage.countRequest('u1', NOW);
     expect(fake.groqInserted).toEqual([1, 0]);
     // Both count towards the daily limit.
@@ -152,6 +158,38 @@ describe('countRequest and Groq (ADR-0095)', () => {
       '2026-11-03',
     );
     expect(rows[0]).toMatchObject({ today: 4, lastDays: 10, groqToday: 3, groqLastDays: 5 });
+  });
+});
+
+describe('countRequest with Gemini and OpenAI (ADR-0099)', () => {
+  it('counts each in its own column, in the same statement, and both towards the daily limit', async () => {
+    await usage.countRequest('u1', NOW, { provider: 'gemini' });
+    await usage.countRequest('u1', NOW, { provider: 'openai' });
+    await usage.countRequest('u1', NOW);
+    expect(fake.providerInserted).toEqual([
+      [1, 0],
+      [0, 1],
+      [0, 0],
+    ]);
+    expect(fake.groqInserted).toEqual([0, 0, 0]);
+    expect(fake.counts.get('u1|2026-11-03')).toBe(3);
+  });
+
+  it("gives each person's Gemini and OpenAI requests today and over the period", () => {
+    const rows = usage.buildUsageReport(
+      [{ id: 'a', name: 'Ann', email: 'ann@example.com' }],
+      [
+        { userId: 'a', day: '2026-11-03', requests: 4, geminiRequests: 2, openaiRequests: 1 },
+        { userId: 'a', day: '2026-11-01', requests: 6, geminiRequests: 3 },
+      ],
+      '2026-11-03',
+    );
+    expect(rows[0]).toMatchObject({
+      geminiToday: 2,
+      geminiLastDays: 5,
+      openaiToday: 1,
+      openaiLastDays: 1,
+    });
   });
 });
 
@@ -213,6 +251,10 @@ describe('usage report', () => {
         lastDays: 3,
         groqToday: 0,
         groqLastDays: 0,
+        geminiToday: 0,
+        geminiLastDays: 0,
+        openaiToday: 0,
+        openaiLastDays: 0,
       },
     ]);
   });

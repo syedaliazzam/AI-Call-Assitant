@@ -1246,7 +1246,12 @@ export function LivePage({
       // instructions in force (a reconnect keeps its pin), so the warm-up writes the rules block its
       // answers will read; pinInstructions() never throws either.
       void pinInstructions(startedAtNow).then(() =>
-        warmSession(session, documents, { lessons, callStartedAt: startedAtNow }),
+        // ADR-0099: with the call's id (OpenAI's prompt_cache_key), as the call's answers send it.
+        warmSession(session, documents, {
+          lessons,
+          callStartedAt: startedAtNow,
+          ...(callIdRef.current ? { callId: callIdRef.current } : {}),
+        }),
       );
       // The status and activity time are bookkeeping: a failure must not stop the call.
       markSessionActive(session.id).catch(() => undefined);

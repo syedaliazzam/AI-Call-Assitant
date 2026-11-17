@@ -12,7 +12,7 @@ import { fakeMessageStream } from '../../helpers/fakeClaude';
 
 /** Spy standing in for countRequest(): allows every request. */
 const countRequestMock = vi.hoisted(() =>
-  vi.fn(async (_userId: string, _now?: Date, _options?: { groq?: boolean }) => ({
+  vi.fn(async (_userId: string, _now?: Date, _options?: { provider?: string }) => ({
     allowed: true,
     count: 1,
     limit: 300,
@@ -155,7 +155,7 @@ describe('POST /api/answer with Groq (ADR-0095)', () => {
     const systemText = input.system.map((block: { text: string }) => block.text).join(' ');
     expect(systemText).toContain('Company: Northwind Logistics');
     expect(input.messages[0].content.at(-1).text).toContain('Question typed by the user');
-    expect(countRequestMock).toHaveBeenLastCalledWith('u1', undefined, { groq: true });
+    expect(countRequestMock).toHaveBeenLastCalledWith('u1', undefined, { provider: 'groq' });
   });
 
   it('answers with Claude Haiku when Groq fails before any text, and records it', async () => {
@@ -181,7 +181,7 @@ describe('POST /api/answer with Groq (ADR-0095)', () => {
     expect(groqMock).not.toHaveBeenCalled();
     expect(streamMock.mock.calls[0]![0].model).toBe('claude-haiku-5-5');
     expect(text).toMatch(/"model":"fast"/);
-    expect(countRequestMock).toHaveBeenLastCalledWith('u1', undefined, { groq: false });
+    expect(countRequestMock).toHaveBeenLastCalledWith('u1', undefined, { provider: undefined });
   });
 
   it("warms Claude Haiku's cache for a Groq session (screenshots and the fallback read it)", async () => {

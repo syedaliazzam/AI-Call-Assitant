@@ -123,6 +123,31 @@ describe('summarizeCall', () => {
 });
 
 describe('cardTimings (1.5.2, ADR-0070)', () => {
+  it('ADR-0099: names the model that fell back to Claude Haiku (Groq in an older log)', () => {
+    const start = 1_700_000_000_000;
+    const t = createCallTimings({ read: () => null, write: () => undefined }, () => start);
+    t.start({
+      sessionId: 's',
+      startedAt: start,
+      platform: 'web',
+      accurate: true,
+      recording: 'off',
+      documentChars: 0,
+    });
+    t.noteAnswer({ answerId: 'a', trigger: 'auto', askedAt: start, sentAt: start });
+    t.noteAnswer({
+      answerId: 'a',
+      model: 'fast',
+      fallback: 'timeout',
+      fallbackFrom: 'gemini-lite',
+    });
+    t.noteAnswer({ answerId: 'b', trigger: 'auto', askedAt: start, sentAt: start });
+    t.noteAnswer({ answerId: 'b', model: 'fast', fallback: 'error' });
+    const cards = cardTimings(t.current()!);
+    expect(cards[0]!.flags).toEqual(['gemini-lite-fallback-timeout']);
+    expect(cards[1]!.flags).toEqual(['groq-fallback-error']);
+  });
+
   it('lists each card with its moments and intervals', () => {
     const start = 1_700_000_000_000;
     const t = createCallTimings({ read: () => null, write: () => undefined }, () => start);

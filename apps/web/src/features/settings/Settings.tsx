@@ -10,7 +10,8 @@
  * Depends on: src/core/storage (settings, wipe, db), src/core/sync/client.ts (Delete all my data,
  *             ADR-0049), src/platform (share protection),
  *             src/ui (Button, Dialog, Select, Textarea,
- *             Toggle), src/features/session-setup/labels.ts
+ *             Toggle), src/features/session-setup/labels.ts, src/core/session/modelAccess.ts (the
+ *             new-models rollout's list, ADR-0099)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Settings), §7.3 (default
  *               hotkeys), §8.1; day-03-sessions.md Stage 3
  */
@@ -28,9 +29,10 @@ import { deleteAllAccountData } from '@/core/sync/client';
 import {
   FORMAT_OPTIONS,
   LENGTH_OPTIONS,
-  MODEL_OPTIONS,
+  modelOptions,
   TONE_OPTIONS,
 } from '@/features/session-setup/labels';
+import { answerModelAccess } from '@/core/session/modelAccess';
 import { PRIVATE_LABEL, privateHint, usePrivate } from '@/features/privacy/usePrivate';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
@@ -109,6 +111,18 @@ export function Settings({ isAdmin }: SettingsProps) {
   const [deleting, setDeleting] = useState(false);
   const [deleted, setDeleted] = useState<DeletedCounts | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // ADR-0099: true once the server says this account is in the new-models rollout (the longer model list).
+  const [moreModels, setMoreModels] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void answerModelAccess().then((access) => {
+      if (!cancelled) setMoreModels(access.moreModels);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -182,7 +196,7 @@ export function Settings({ isAdmin }: SettingsProps) {
             </p>
             <Select
               label="Model"
-              options={MODEL_OPTIONS}
+              options={modelOptions(moreModels)}
               value={defaults.model}
               onChange={(model) => change({ model })}
             />

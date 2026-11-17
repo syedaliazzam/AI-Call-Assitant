@@ -140,3 +140,9 @@ describe('shouldDivert', () => {
     expect(shouldDivert(false, 'kite')).toBe(false);
   });
 });
+
+describe('ADR-0099: the pause that sends', () => {
+  it('is 1 second (it was 1.5 s)', () => {
+    expect(SEND_PAUSE_MS).toBe(1_000);
+  });
+});

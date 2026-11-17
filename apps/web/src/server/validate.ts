@@ -15,6 +15,9 @@ import 'server-only';
 import {
   cleanPersonName,
   AI_INSTRUCTIONS_PIN_PATTERN,
+  ANSWER_MODELS,
+  MAX_CALL_ID_CHARS,
+  type AnswerModel,
   ANSWER_STYLE_VERSIONS,
   parseKeyTerms,
   ANSWER_TYPES,
@@ -206,7 +209,14 @@ export const answerRequestSchema = z
   .object({
     mode: z.enum(['hello', 'warm', 'answer', 'chat', 'screenshot', 'kite']),
     // ADR-0095: the allow-list of answer models; anything else is rejected before any model is called.
-    model: z.enum(['fast', 'smart', 'groq']).optional(),
+    // ADR-0099: the Gemini and GPT models too (ANSWER_MODELS).
+    model: z.enum(ANSWER_MODELS as [AnswerModel, ...AnswerModel[]]).optional(),
+    // ADR-0099: the call's id, only ever sent to OpenAI as prompt_cache_key: an id's characters only.
+    callId: z
+      .string()
+      .max(MAX_CALL_ID_CHARS)
+      .regex(/^[A-Za-z0-9_-]+$/, 'must be an id')
+      .optional(),
     session: sessionSchema.optional(),
     conversation: conversationSchema.optional(),
     tail: z.array(callLineSchema).max(MAX_TAIL_LINES).optional(),

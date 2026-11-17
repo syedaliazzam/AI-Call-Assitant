@@ -6,6 +6,8 @@
  * the 20 answers there (the real client path), and prints p50/p95 for key press → request sent
  * → first word → headline → done, and the cache hits. Manual run only (never in CI); numbers
  * only. Run it alone with: pnpm --filter web test:e2e-prod latency.spec.ts
+ * ADR-0099: KITE_LATENCY_MODEL (an answer model, for example gemini-lite) and KITE_LATENCY_SESSION=cv choose
+ * what /dev/latency measures (the page reads them from its address); unset, it measures as before.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -45,6 +47,8 @@ interface Summary {
   serverToFirstText: Spread;
   /** Answers that read the cache. */
   cacheHits: number;
+  /** ADR-0099: answers that moved to Claude Haiku. */
+  fallbacks?: number;
 }
 
 /**
@@ -67,7 +71,12 @@ async function measure(page: Page, label: string): Promise<Summary> {
  * @returns When they are done.
  */
 async function runLatencyPage(page: Page): Promise<void> {
-  await page.goto(`${PRODUCTION_URL}/dev/latency`);
+  // ADR-0099: the model and session to measure, when given.
+  const query = new URLSearchParams({
+    ...(process.env.KITE_LATENCY_MODEL ? { model: process.env.KITE_LATENCY_MODEL } : {}),
+    ...(process.env.KITE_LATENCY_SESSION ? { session: process.env.KITE_LATENCY_SESSION } : {}),
+  }).toString();
+  await page.goto(`${PRODUCTION_URL}/dev/latency${query ? `?${query}` : ''}`);
   await page.getByRole('button', { name: 'Run 20 answers' }).click();
   await expect(page.getByText('Done: 20 answers.')).toBeVisible({ timeout: 300_000 });
 }
@@ -82,19 +91,24 @@ async function runLatencyPage(page: Page): Promise<void> {
 async function summarise(page: Page, label: string): Promise<Summary> {
   const text = (await page.getByLabel('Latency results').textContent()) ?? '';
   const { summary } = JSON.parse(text) as { summary: Summary };
-  report(`${label} latency (20 answers)`, summary.count === 20, {
-    sentP50: summary.toSent.p50,
-    sentP95: summary.toSent.p95,
-    firstWordP50: summary.toFirstWord.p50,
-    firstWordP95: summary.toFirstWord.p95,
-    headlineP50: summary.toHeadline.p50,
-    headlineP95: summary.toHeadline.p95,
-    doneP50: summary.toDone.p50,
-    doneP95: summary.toDone.p95,
-    serverFirstTextP50: summary.serverToFirstText.p50,
-    serverFirstTextP95: summary.serverToFirstText.p95,
-    cacheHits: summary.cacheHits,
-  });
+  report(
+    `${label} latency (20 answers, ${process.env.KITE_LATENCY_MODEL ?? 'fast'})`,
+    summary.count === 20,
+    {
+      sentP50: summary.toSent.p50,
+      sentP95: summary.toSent.p95,
+      firstWordP50: summary.toFirstWord.p50,
+      firstWordP95: summary.toFirstWord.p95,
+      headlineP50: summary.toHeadline.p50,
+      headlineP95: summary.toHeadline.p95,
+      doneP50: summary.toDone.p50,
+      doneP95: summary.toDone.p95,
+      serverFirstTextP50: summary.serverToFirstText.p50,
+      serverFirstTextP95: summary.serverToFirstText.p95,
+      cacheHits: summary.cacheHits,
+      fallbacks: summary.fallbacks ?? 0,
+    },
+  );
   return summary;
 }
 

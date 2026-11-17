@@ -131,6 +131,10 @@ describe('isCommand and isState', () => {
     // ADR-0095: Groq is a third choice; Voice mode and its tip are commands too.
     expect(isCommand({ type: 'model', model: 'groq' })).toBe(true);
     expect(isCommand({ type: 'model', model: 'gpt' })).toBe(false);
+    // ADR-0099: the Gemini and GPT models are known answer models (the live page checks the account's access).
+    expect(isCommand({ type: 'model', model: 'gemini-lite' })).toBe(true);
+    expect(isCommand({ type: 'model', model: 'gpt-terra' })).toBe(true);
+    expect(isCommand({ type: 'model', model: 'gemini-3.5-flash-lite' })).toBe(false);
     expect(isCommand({ type: 'voice-mode', on: true })).toBe(true);
     expect(isCommand({ type: 'voice-mode', on: 'yes' })).toBe(false);
     expect(isCommand({ type: 'voice-tip-seen' })).toBe(true);

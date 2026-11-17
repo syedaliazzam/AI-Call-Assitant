@@ -25,7 +25,12 @@ import {
 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { DEEP_MODEL_WARNING, documentWarnings } from '@/core/documents/limits';
-import { answerModelAccess, type AnswerModelAccess } from '@/core/session/modelAccess';
+import {
+  answerModelAccess,
+  DEFAULT_MODEL_ACCESS,
+  type AnswerModelAccess,
+} from '@/core/session/modelAccess';
+import { modelOff } from '@/core/session/modelChoices';
 import { ANSWER_LANGUAGES, type AnswerModel } from '@/core/storage/types';
 import { parseAddressList } from '@/core/drive/addresses';
 import { Button } from '@/ui/Button';
@@ -35,7 +40,7 @@ import { Switch } from '@/ui/Toggle';
 import { AiInstructionsDialog } from './AiInstructionsDialog';
 import { AnswerPreferencesDialog } from './AnswerPreferencesDialog';
 import { draftChars, type SessionDraft } from './draft';
-import { MODEL_OPTIONS } from './labels';
+import { modelOptions } from './labels';
 
 /** Props for PreferencesStep. */
 export interface PreferencesStepProps {
@@ -98,8 +103,9 @@ function Row({
 export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
   const { preferences } = draft;
   const [window, setWindow] = useState<'answers' | 'instructions' | null>(null);
-  // ADR-0095: Groq starts unavailable until the server says it has it.
-  const [access, setAccess] = useState<AnswerModelAccess>({ smart: true, groq: false });
+  // ADR-0095: Groq starts unavailable until the server says it has it. ADR-0099: the Gemini and GPT models
+  // too, and the list is the classic one until the server says this account is in their rollout.
+  const [access, setAccess] = useState<AnswerModelAccess>(DEFAULT_MODEL_ACCESS);
   const instructions = draft.instructions.trim();
   // The Sonnet line only: the size warning itself is on step 1, next to the documents.
   const deepModelWarning = documentWarnings(draftChars(draft), preferences.model).includes(
@@ -145,18 +151,17 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
           title="Select model"
           subtitle="Speed or depth"
           control={
-            <div className="w-56">
+            // ADR-0099: the rollout's names are longer, so its list is wider.
+            <div className={access.moreModels ? 'w-72' : 'w-56'}>
               <Select<AnswerModel>
                 label="Select model"
                 hideLabel
                 align="end"
-                options={MODEL_OPTIONS.map((option) => ({
+                options={modelOptions(access.moreModels).map((option) => ({
                   ...option,
                   icon: <Sparkles aria-hidden="true" size={16} className="text-ui-muted" />,
-                  ...((option.value === 'smart' && !access.smart) ||
-                  (option.value === 'groq' && !access.groq)
-                    ? { disabled: true, tag: 'Turned off' }
-                    : {}),
+                  // ADR-0099: any choice that is off for this account (modelOff()).
+                  ...(modelOff(option.value, access) ? { disabled: true, tag: 'Turned off' } : {}),
                 }))}
                 value={preferences.model}
                 onChange={(model) => onChange({ preferences: { ...preferences, model } })}

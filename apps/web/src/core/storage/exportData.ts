@@ -13,7 +13,13 @@
  *
  * The file holds the user's own call content; it is never logged or sent anywhere.
  */
-import { ANSWER_TYPES, normaliseKeyTerms, type AnswerType } from '@kite/shared';
+import {
+  ANSWER_MODELS,
+  ANSWER_TYPES,
+  normaliseKeyTerms,
+  type AnswerModel,
+  type AnswerType,
+} from '@kite/shared';
 import { z } from 'zod';
 import { getDb } from './db';
 import { currentSessionType, currentTone } from './migrate';
@@ -108,7 +114,8 @@ const SessionSchema = z.object({
   description: z.string(),
   preferences: z.object({
     language: z.string(),
-    model: z.enum(['fast', 'smart', 'groq']),
+    // ADR-0099: every answer model (the Gemini and GPT ones too).
+    model: z.enum(ANSWER_MODELS as [AnswerModel, ...AnswerModel[]]),
     style: z.object({
       format: z.enum(['headline+bullets', 'bullets', 'paragraph']),
       length: z.enum(['short', 'medium', 'detailed']),
@@ -175,7 +182,7 @@ const AnswerSchema = z.object({
   // v1.1.0: absent in older files.
   callStartedAt: z.number().optional(),
   text: z.string(),
-  model: z.enum(['fast', 'smart', 'groq']),
+  model: z.enum(ANSWER_MODELS as [AnswerModel, ...AnswerModel[]]),
   msFirstToken: z.number().nullable(),
   msTotal: z.number(),
   createdAt: z.number(),

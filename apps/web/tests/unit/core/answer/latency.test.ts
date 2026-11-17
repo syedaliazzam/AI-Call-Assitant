@@ -59,6 +59,9 @@ describe('runLatencyTest', () => {
     expect(onSample).toHaveBeenCalledTimes(3);
     expect(Object.keys(samples[0]!).sort()).toEqual(
       [
+        // ADR-0099: which model answered, and any fallback (no text).
+        'answeredBy',
+        'fallback',
         'cacheRead',
         'cacheWrite',
         'input',
@@ -99,10 +102,13 @@ describe('summarise', () => {
       output: 1,
       serverToFirstText: 500,
       serverToStreamOpen: 300,
+      answeredBy: 'fast' as const,
+      fallback: null,
     }));
     const summary = summarise(samples);
     expect(summary.toFirstWord).toEqual({ p50: 1_000, p95: 1_900 });
     expect(summary.cacheHits).toBe(19);
+    expect(summary.fallbacks).toBe(0);
   });
 });
 
@@ -110,5 +116,24 @@ describe('latencyDocuments', () => {
   it('is large enough for the prompt cache (about 2,000 words)', () => {
     const [document] = latencyDocuments();
     expect(document!.text.split(/\s+/).length).toBeGreaterThan(1_500);
+  });
+});
+
+describe('runLatencyTest with a model and the CV session (ADR-0099)', () => {
+  it('sends the chosen model, the CV as the resume, interview questions, and one call id throughout', async () => {
+    vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const { send, requests } = fakeSend();
+    await runLatencyTest({ count: 2, send, model: 'gemini-lite', fixture: 'cv' });
+    expect(requests.map((request) => request.model)).toEqual([
+      'gemini-lite',
+      'gemini-lite',
+      'gemini-lite',
+    ]);
+    const ids = new Set(requests.map((request) => request.callId));
+    expect(ids.size).toBe(1);
+    expect([...ids][0]).toMatch(/^latency-[a-z0-9]+$/);
+    expect(requests[0]!.session!.type).toBe('interview');
+    expect(requests[0]!.session!.documents[0]).toMatchObject({ kind: 'resume' });
+    expect(requests[1]!.question ?? JSON.stringify(requests[1]!.tail)).toContain('DATABASE');
   });
 });

@@ -8,7 +8,7 @@
  *          they stay a normal "You" line and are also used as the question. The question is sent
  *          when the user pauses, and listening then stops. During calls nothing is read aloud.
  *          ADR-0095 (Voice mode, hands-free): the same, over and over until turned off. Each pause of about
- *          1.5 s sends what was said as a question and listening goes on; while the other person speaks, and
+ *          1 s (ADR-0099; was 1.5 s) sends what was said as a question and listening goes on; while the other person speaks, and
  *          for VOICE_RESUME_MS after, it pauses (their voice coming through the user's speakers must not
  *          become a question). While Voice is on, none of the user's words become "You" lines.
  * Used by: src/features/live/LivePage.tsx (creates it and routes the "You" channel through it);

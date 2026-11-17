@@ -6,7 +6,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_ANSWER_MODEL_IDS,
   DEFAULT_GROQ_MODEL,
+  getGeminiEnv,
+  getOpenAIEnv,
   getAuthEnv,
   getClaudeEnv,
   getGroqEnv,
@@ -155,5 +158,40 @@ describe('getGroqEnv (ADR-0095)', () => {
     expect(getGroqEnv({ GROQ_API_KEY: 'k' })).toEqual({ apiKey: 'k', model: DEFAULT_GROQ_MODEL });
     expect(DEFAULT_GROQ_MODEL).toBe('openai/gpt-oss-120b');
     expect(getGroqEnv({ GROQ_API_KEY: 'k', GROQ_MODEL: 'other/model' })?.model).toBe('other/model');
+  });
+});
+
+describe('getGeminiEnv and getOpenAIEnv (ADR-0099)', () => {
+  it('are null without a key (the provider is then off)', () => {
+    expect(getGeminiEnv({})).toBeNull();
+    expect(getOpenAIEnv({ OPENAI_API_KEY: '' })).toBeNull();
+  });
+
+  it('use the default model ids unless their variables name others', () => {
+    expect(getGeminiEnv({ GEMINI_API_KEY: 'g' })).toEqual({
+      apiKey: 'g',
+      modelFast: 'gemini-3.5-flash-lite',
+      modelSmart: 'gemini-3.6-flash',
+    });
+    expect(getOpenAIEnv({ OPENAI_API_KEY: 'o' })).toEqual({
+      apiKey: 'o',
+      modelFast: 'gpt-5.6-luna',
+      modelSmart: 'gpt-5.6-terra',
+    });
+    expect(DEFAULT_ANSWER_MODEL_IDS.geminiLite).toBe('gemini-3.5-flash-lite');
+    expect(
+      getGeminiEnv({
+        GEMINI_API_KEY: 'g',
+        KITE_MODEL_GEMINI_LITE: 'x',
+        KITE_MODEL_GEMINI_FLASH: 'y',
+      }),
+    ).toMatchObject({ modelFast: 'x', modelSmart: 'y' });
+    expect(
+      getOpenAIEnv({
+        OPENAI_API_KEY: 'o',
+        KITE_MODEL_OPENAI_FAST: 'x',
+        KITE_MODEL_OPENAI_SMART: 'y',
+      }),
+    ).toMatchObject({ modelFast: 'x', modelSmart: 'y' });
   });
 });

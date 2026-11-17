@@ -112,6 +112,10 @@ describe('streamAnswer', () => {
     expect(
       (await run(fakeFetch([new TextEncoder().encode(withTier('smart'))]))).done,
     ).toMatchObject({ model: 'smart' });
+    // ADR-0099: the Gemini and GPT models are known too.
+    expect(
+      (await run(fakeFetch([new TextEncoder().encode(withTier('gemini-lite'))]))).done,
+    ).toMatchObject({ model: 'gemini-lite' });
     const odd = (await run(fakeFetch([new TextEncoder().encode(withTier('claude-x'))]))).done;
     expect(odd).toBeDefined();
     expect(odd).not.toHaveProperty('model');

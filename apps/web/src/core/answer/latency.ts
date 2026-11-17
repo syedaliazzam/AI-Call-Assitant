@@ -14,8 +14,13 @@
  *
  * Everything here is invented. Results hold numbers only (no question or answer text), so
  * they can be copied into docs/testing/benchmark-results.md.
+ *
+ * ADR-0099: a run can choose the answer model (to compare Gemini, GPT, Claude Haiku and Groq) and the
+ * session: the pilot review with a 2,000-word document (as before), or an interview with an invented CV.
+ * Each run is one invented call with its own call id (OpenAI's prompt_cache_key), and records which model
+ * really answered each request, so fallbacks to Claude Haiku are counted.
  */
-import type { Session, StoredDocument } from '../storage/types';
+import type { AnswerModel, Session, StoredDocument } from '../storage/types';
 import { percentile } from '../stt/metrics';
 import { createTranscript } from '../transcript/transcript';
 import { createAnswerRunner, type AnswerTimeline, type streamAnswer } from './answerClient';
@@ -38,6 +43,10 @@ export interface LatencySample extends AnswerTimeline {
   serverToFirstText: number;
   /** Server: request received → Claude's stream opened, in ms. */
   serverToStreamOpen: number;
+  /** ADR-0099: the model that really answered (as the server says), or null from an older server. */
+  answeredBy: AnswerModel | null;
+  /** ADR-0099: why the asked model's answer moved to Claude Haiku, or null when it did not. */
+  fallback: 'timeout' | 'error' | 'empty' | null;
 }
 
 /** p50 and p95 of one timing, in ms. */
@@ -67,7 +76,12 @@ export interface LatencySummary {
   serverToFirstText: Spread;
   /** Answers that read the cache (cacheRead > 0). */
   cacheHits: number;
+  /** ADR-0099: answers that moved to Claude Haiku (a fallback). */
+  fallbacks: number;
 }
+
+/** ADR-0099: which invented session a run uses. */
+export type LatencyFixture = 'pilot' | 'cv';
 
 /** Options for runLatencyTest(). */
 export interface LatencyOptions {
@@ -77,6 +91,10 @@ export interface LatencyOptions {
   onSample?: (sample: LatencySample) => void;
   /** Sends a request (tests replace it). Default streamAnswer(). */
   send?: typeof streamAnswer;
+  /** ADR-0099: the answer model (default the session's: Claude Haiku). */
+  model?: AnswerModel;
+  /** ADR-0099: the invented session: 'pilot' (default) or 'cv'. */
+  fixture?: LatencyFixture;
 }
 
 /** The invented session used for the measurement. */
@@ -150,6 +168,61 @@ const QUESTIONS = [
   'WHAT IS THE CANCELLATION NOTICE PERIOD',
 ];
 
+/** ADR-0099: the invented interview session with a CV. */
+export const LATENCY_CV_SESSION: Session = {
+  ...LATENCY_SESSION,
+  id: 'latency-test-cv',
+  type: 'interview',
+  company: 'Lakeshore Analytics (invented)',
+  role: 'Senior Backend Engineer',
+  description: 'Invented latency test interview.',
+  preferences: { ...LATENCY_SESSION.preferences, keyTerms: 'Lakeshore\nPostgreSQL\nKafka' },
+};
+
+/** The invented CV's sections, each a few sentences, as a real CV reads. */
+const CV_SECTIONS = [
+  'Alex Moreno (invented). Senior backend engineer, eight years of experience building data services in Python and Go.',
+  'Experience. Brightline Payments, Senior Engineer, 2022 to now: led the move of the ledger service from a single PostgreSQL instance to a partitioned cluster, cutting p95 query time from 900 ms to 140 ms; built the Kafka event pipeline that handles 40,000 events per second; mentored four engineers.',
+  'Northgate Retail, Backend Engineer, 2019 to 2022: rebuilt the order API in Go, reducing cloud spend by 30 percent; introduced contract tests between eleven services; owned the on-call rota for the checkout team.',
+  'Cobalt Health, Software Engineer, 2017 to 2019: wrote the appointment reminder service in Python, sending 2 million messages a month; added structured logging and dashboards that halved the time to find incidents.',
+  'Skills. Python, Go, PostgreSQL, Redis, Kafka, Kubernetes, Terraform, AWS, observability with OpenTelemetry, API design, incident response.',
+  'Education. BSc Computer Science, University of Leeds (invented), 2017. Certifications: AWS Solutions Architect Associate.',
+  'Projects. Open-source maintainer of a small PostgreSQL migration linter used by about 300 teams; speaker at a regional Go meetup on graceful service shutdown.',
+];
+
+/**
+ * ADR-0099: the invented CV (about 250 words, as the session's resume document).
+ *
+ * @returns The CV document.
+ * Called from: runLatencyTest()
+ */
+export function latencyCvDocuments(): StoredDocument[] {
+  const text = CV_SECTIONS.join('\n\n');
+  return [
+    {
+      id: 'latency-cv',
+      sessionId: LATENCY_CV_SESSION.id,
+      name: 'alex-moreno-cv.txt',
+      text,
+      chars: text.length,
+      addedAt: 0,
+      kind: 'resume',
+    },
+  ];
+}
+
+/** ADR-0099: the invented interview questions "Them" asks, in turn. */
+const CV_QUESTIONS = [
+  'TELL ME ABOUT A TIME YOU IMPROVED THE PERFORMANCE OF A DATABASE',
+  'HOW DID YOU DESIGN THE KAFKA PIPELINE',
+  'WHAT WOULD YOU DO IF A RELEASE BROKE CHECKOUT ON A FRIDAY EVENING',
+  'HOW DO YOU MENTOR JUNIOR ENGINEERS',
+  'WHY DO YOU WANT TO JOIN LAKESHORE',
+  'WHAT IS YOUR EXPERIENCE WITH KUBERNETES',
+  'HOW DO YOU APPROACH API DESIGN',
+  'TELL ME ABOUT A DISAGREEMENT WITH A COLLEAGUE AND HOW YOU RESOLVED IT',
+];
+
 /**
  * p50 and p95 of a list of timings.
  *
@@ -176,6 +249,7 @@ export function summarise(samples: readonly LatencySample[]): LatencySummary {
     toHeadline: spread(samples.map((s) => s.toHeadline)),
     toDone: spread(samples.map((s) => s.toDone)),
     cacheHits: samples.filter((s) => s.cacheRead > 0).length,
+    fallbacks: samples.filter((s) => s.fallback !== null).length,
     serverToFirstText: spread(samples.map((s) => s.serverToFirstText)),
   };
 }
@@ -194,8 +268,19 @@ export async function runLatencyTest(
   options: LatencyOptions = {},
 ): Promise<{ samples: LatencySample[]; summary: LatencySummary }> {
   const count = options.count ?? 20;
-  const documents = latencyDocuments();
-  await warmSession(LATENCY_SESSION, documents, options.send ? { send: options.send } : {});
+  // ADR-0099: the chosen session and model, and one call id for the run (OpenAI's prompt_cache_key).
+  const cv = options.fixture === 'cv';
+  const fixture = cv ? LATENCY_CV_SESSION : LATENCY_SESSION;
+  const session: Session = options.model
+    ? { ...fixture, preferences: { ...fixture.preferences, model: options.model } }
+    : fixture;
+  const questions = cv ? CV_QUESTIONS : QUESTIONS;
+  const documents = cv ? latencyCvDocuments() : latencyDocuments();
+  const callId = `latency-${Date.now().toString(36)}`;
+  await warmSession(session, documents, {
+    ...(options.send ? { send: options.send } : {}),
+    callId,
+  });
 
   // The invented call started an hour ago; each answer's lines sit a minute apart.
   const callStartedAt = Date.now() - 3_600_000;
@@ -213,7 +298,7 @@ export async function runLatencyTest(
       tStart: base,
       tEnd: base + 3_000,
     });
-    const question = QUESTIONS[(n - 1) % QUESTIONS.length]!;
+    const question = questions[(n - 1) % questions.length]!;
     transcript.addFinal({
       speaker: 'them',
       text: question,
@@ -224,7 +309,7 @@ export async function runLatencyTest(
     // The key press: from here the timeline is the one the live page measures.
     const keyPressAt = performance.now();
     const built = buildAnswerRequest({
-      session: LATENCY_SESSION,
+      session,
       documents,
       lines: transcript.lines(),
       answers,
@@ -236,7 +321,7 @@ export async function runLatencyTest(
     log = built.log;
     const askedAt = base + 12_000;
     const sample = await new Promise<LatencySample>((resolve, reject) => {
-      runner.run(built.request, keyPressAt, {
+      runner.run({ ...built.request, callId }, keyPressAt, {
         onText: () => undefined,
         onDone: (text, done, timeline) => {
           answers.push({ id: `a${n}`, mode: 'answer', question, text, askedAt });
@@ -249,6 +334,8 @@ export async function runLatencyTest(
             output: done.usage.output_tokens,
             serverToFirstText: done.serverMs.toFirstText,
             serverToStreamOpen: done.serverMs.toStreamOpen,
+            answeredBy: done.model ?? null,
+            fallback: done.fallback ?? null,
           });
         },
         onError: (failure) => reject(new Error(`ANSWER_FAILED: ${failure.code}`)),

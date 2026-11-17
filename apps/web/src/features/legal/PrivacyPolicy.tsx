@@ -3,10 +3,12 @@
  * Purpose: The public privacy policy (/privacy), in short plain words: what Paramount AI stores, what
  *          Google Drive saving can see and do (drive.file only), what the "call saved" email holds, who
  *          else handles data, and whom to contact. Google's OAuth consent screen links here. Keep it in
- *          step with how the app works (ADR-0049 encryption, ADR-0072 Drive and email).
+ *          step with how the app works (ADR-0049 encryption, ADR-0072 Drive and email, ADR-0095 Groq and
+ *          ADR-0099 Google's Gemini and OpenAI as answer providers).
  * Used by: app/privacy/page.tsx
  * Depends on: ./LegalPage.tsx
- * Architecture: ADR-0049 (encrypted call records), ADR-0072 (Google Drive saving, the saved email)
+ * Architecture: ADR-0049 (encrypted call records), ADR-0072 (Google Drive saving, the saved email),
+ *               ADR-0095 and ADR-0099 (the answer providers)
  */
 import { ContactLink, LegalPage, LegalSection } from './LegalPage';
 
@@ -57,8 +59,11 @@ export function PrivacyPolicy() {
       <LegalSection title="Answers and notes">
         <p>
           To write answers and notes, the relevant transcript and document text (and any screenshot
-          you ask about) is sent to Anthropic&apos;s Claude API. Call audio is never sent to
-          Anthropic.
+          you ask about) is sent to Anthropic&apos;s Claude API. When a session is set to another
+          answer model, its live answers (and, for Gemini and GPT models, its screenshots) go to
+          that model&apos;s provider instead: Google (Gemini API), OpenAI (OpenAI API) or Groq. If
+          that provider cannot answer quickly, the same request goes to Claude. Notes and Ask AI
+          always use Claude. Call audio is never sent to any of these providers.
         </p>
       </LegalSection>
 
@@ -90,8 +95,9 @@ export function PrivacyPolicy() {
         <p>
           We don&apos;t sell your data or share it with anyone. The only other services that handle
           it are the ones that do the work described above: our hosting and database providers,
-          Deepgram (speech to text), Anthropic&apos;s Claude API, and Google Drive when you turn it
-          on.
+          Deepgram (speech to text), Anthropic&apos;s Claude API, the other answer providers (Google
+          Gemini API, OpenAI API and Groq) when a session uses one of their models, and Google Drive
+          when you turn it on.
         </p>
       </LegalSection>
 
