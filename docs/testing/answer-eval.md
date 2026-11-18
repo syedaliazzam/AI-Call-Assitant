@@ -713,3 +713,18 @@ Version 4 writes no "[[" at all. The evaluation now also flags a copied placehol
 Per scenario (version 4), with the 16 Nov 9.30 run in brackets: 01 10.0 (9.0), 02 9.0 (9.0), 03 8.0 (9.5), 04 9.5 (10.0), 05 9.5 (9.0), 06 9.5 (9.5), 07 9.0 (9.5), 08 9.5 (8.5), 09 8.0 (10.0), 10 9.5 (9.5), 11 8.5 (8.0), 12 10.0 (10.0), 13 8.5 (8.0), 14 10.0 (10.0), 15 8.5 (10.0).
 
 With no placeholder in the editable prompt, the copies can only come from the app contract and the end reminder, which the current default sends too and which get 60/60 there. The difference is version 4's second line, which tells the model about "the hidden first line from the app contract"; the graded 09 replies open with self-talk about "the hidden line format". Only typed questions (09) were affected.
+
+### Version 5 (2026-11-18, ADR-0103): passes, released
+
+Version 5 drops the line about the hidden line and never mentions it. Same laptop and models; same strict placeholder check. Developer's cap $0.15; spend **$0.113** ($0.0149 for 60 ungraded replies, $0.0976 for the graded `answers` command).
+
+| Check | Current default (main) | Version 5 |
+|---|---|---|
+| Hidden line first, 60 ungraded replies | 60/60 | **60/60** |
+| Replies containing the placeholder | 0 | **0** |
+| Answer line ≤ 12 words as written, same 60 | 40/52 | 39/52 |
+| `answers` graded (15 × 2), gate 8.86 | 9.30 (16 Nov) | **9.37**; hidden line 30/30; placeholder 0; answer line ≤ 12 words as written 21/27, as shown 27/27; grader found nothing invented 26/30; 08 nothing invented (10.0, 8.0) |
+
+Per scenario, with the 16 Nov 9.30 run in brackets: 01 10.0 (9.0), 02 9.5 (9.0), 03 9.0 (9.5), 04 9.5 (10.0), 05 10.0 (9.0), 06 10.0 (9.5), 07 9.0 (9.5), 08 9.0 (8.5), 09 10.0 (10.0), 10 9.0 (9.5), 11 9.0 (8.0), 12 10.0 (10.0), 13 7.5 (8.0), 14 10.0 (10.0), 15 9.0 (10.0).
+
+Remaining deductions: small additions in 03 ("while we did it"), 04 ("before going live") and 07 (how re-routing works); 15 no longer invents a weekend but does not ask back; 13 lost facts and format in one run. Two replies ended with a malformed last line ("[[Tell me about a time…|]]"); the app now removes it (ADR-0103).

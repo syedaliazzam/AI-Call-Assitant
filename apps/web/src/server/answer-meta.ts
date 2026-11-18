@@ -248,11 +248,16 @@ export interface ContractStats {
 /** Longest stray tag held back while looking for its end ("[[" … "]]"). */
 const MAX_TAG_CHARS = 300;
 
-/** The start of a hidden line: "[[", a word, then "|". */
-const TAG_START = /^\[\[[a-z]{1,20}\|/i;
+/**
+ * The start of a hidden line: "[[", a first value, then "|". ADR-0103: the first value may be any
+ * words, not only one: a reply wrote its last line as "[[Tell me about a time…|]]" (the question in the
+ * wrong slot), which reached the card. Brackets, "|" and line breaks end the value, so code such as
+ * "[[1, 2], [3, 4]]" never matches.
+ */
+const TAG_START = /^\[\[[^[\]|\n]{1,240}\|/;
 
-/** Text that could still become TAG_START once more arrives ("[[", "[[cod", …). */
-const TAG_PREFIX = /^\[\[[a-z]{0,20}$/i;
+/** Text that could still become TAG_START once more arrives ("[[", "[[cod", "[[Tell me", …). */
+const TAG_PREFIX = /^\[\[[^[\]|\n]{0,240}$/;
 
 /**
  * Takes complete "[[…]]" tags out of streamed text, so a hidden line the model put in the wrong place

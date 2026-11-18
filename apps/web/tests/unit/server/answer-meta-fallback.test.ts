@@ -77,6 +77,15 @@ describe('createTagFilter', () => {
     expect(filter(['A [', '[sal', 'es|call|', 'docs]] B'])).toEqual({ text: 'A  B', removed: 1 });
   });
 
+  it('removes a malformed last line with the question in the first slot (ADR-0103)', () => {
+    expect(
+      filter([
+        'We cut latency.\n- On invoices.\n[[Tell me about a time you ',
+        'improved a system?|]]',
+      ]),
+    ).toEqual({ text: 'We cut latency.\n- On invoices.\n', removed: 1 });
+  });
+
   it('leaves code, single brackets and unfinished text alone', () => {
     expect(filter(['m = [[1, 2], [3, 4]]'])).toEqual({ text: 'm = [[1, 2], [3, 4]]', removed: 0 });
     expect(filter(['a[0] and [b]'])).toEqual({ text: 'a[0] and [b]', removed: 0 });
