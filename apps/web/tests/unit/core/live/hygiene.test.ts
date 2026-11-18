@@ -3,7 +3,12 @@
  * from the other person and no answers, ask; after 30, pause.
  */
 import { describe, expect, it } from 'vitest';
-import { HYGIENE_ASK_MS, HYGIENE_PAUSE_MS, hygieneState } from '@/core/live/hygiene';
+import {
+  beforeVoiceQuestion,
+  HYGIENE_ASK_MS,
+  HYGIENE_PAUSE_MS,
+  hygieneState,
+} from '@/core/live/hygiene';
 
 describe('hygieneState', () => {
   it('uses the limits of the brief', () => {
@@ -18,5 +23,14 @@ describe('hygieneState', () => {
     expect(hygieneState(start, start + HYGIENE_ASK_MS)).toBe('ask');
     expect(hygieneState(start, start + HYGIENE_PAUSE_MS - 1)).toBe('ask');
     expect(hygieneState(start, start + HYGIENE_PAUSE_MS)).toBe('paused');
+  });
+});
+
+describe('beforeVoiceQuestion (ADR-0101)', () => {
+  it('resumes a paused listen, answers "Still in a call?", and otherwise does nothing', () => {
+    expect(beforeVoiceQuestion('paused')).toBe('resume');
+    expect(beforeVoiceQuestion('ask')).toBe('still-here');
+    expect(beforeVoiceQuestion('ok')).toBeNull();
+    expect(beforeVoiceQuestion(undefined)).toBeNull();
   });
 });

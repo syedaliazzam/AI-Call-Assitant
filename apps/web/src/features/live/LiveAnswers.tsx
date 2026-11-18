@@ -62,7 +62,7 @@ import {
   type CompactState,
   type LiveChannel,
 } from '@/core/live/liveChannel';
-import type { HygieneState } from '@/core/live/hygiene';
+import { beforeVoiceQuestion, type HygieneState } from '@/core/live/hygiene';
 import type { AnswerModel, Session, StoredDocument } from '@/core/storage/types';
 import type { Transcript } from '@/core/transcript/transcript';
 import { getPlatform } from '@/platform';
@@ -286,6 +286,13 @@ export function LiveAnswers(props: LiveAnswersProps) {
       active = false;
     };
   }, []);
+  // ADR-0101: a session still set to Groq while Groq is off moves to Claude Haiku in its stored preferences
+  // (the overlay already shows Claude Haiku, and the server answers it with Claude Haiku, never asking Groq).
+  const sessionIdForModel = props.session.id;
+  useEffect(() => {
+    if (!accessKnown || access.groq || model !== 'groq') return;
+    updateSessionPreferences(sessionIdForModel, { model: 'fast' }).catch(() => undefined);
+  }, [accessKnown, access.groq, model, sessionIdForModel]);
   // The answers use the new style and model from the next answer: one already streaming keeps its request.
   const session = useMemo(
     () => ({ ...props.session, preferences: { ...props.session.preferences, style, model } }),
@@ -405,6 +412,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     !hintSeen('headphones');
   // Desktop 1.5.0 (ADR-0068): the recording's state for the bars (a plain value, for the memo below).
   const recordingCompact = props.recording?.compact;
+  // ADR-0101: where the voice shortcut works (browser only; the platform says).
+  const [voiceHint] = useState(() => getPlatform().voiceShortcutHint());
   const compactState = useMemo<CompactState>(() => {
     const parts = entry ? splitAnswer(entry.text) : null;
     const answeredIds = answeredGroupIds(
@@ -493,6 +502,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
       clickThrough,
       dictationSupported: props.dictation?.supported ?? false,
       dictating: props.dictation?.listening ?? false,
+      // ADR-0101: in a browser, where the voice shortcut works (shown while a voice question listens).
+      ...(voiceHint ? { voiceShortcutHint: voiceHint } : {}),
       dictationNotice: props.dictation?.notice ?? null,
       // ADR-0095: only where dictation works in this call (the microphone is running).
       ...(props.dictation?.supported
@@ -502,6 +513,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       ...(recordingCompact ? { recording: recordingCompact } : {}),
     };
   }, [
+    voiceHint,
     recordingCompact,
     groups,
     visibleLines,
@@ -599,6 +611,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const voiceQuestion = useRef(async (withScreenshot: boolean) => {
     const dictation = dictationRef.current;
     if (!dictation?.supported) return;
+    // ADR-0101: listening paused ("Still in a call?" went unanswered) is resumed for the question, and the
+    // question itself counts as being in the call.
+    resumeForVoice.current();
     // ADR-0095: Voice mode already listens for every question. Ctrl+Alt+Enter then takes the screenshot, and
     // the next question spoken goes with it; Ctrl+Shift+Space has nothing to start.
     if (dictation.voice !== 'off') {
@@ -633,6 +648,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
     const dictation = dictationRef.current;
     if (!dictation?.supported) return;
     voiceShot.current = null;
+    // ADR-0101: Voice mode turned on also resumes a paused listen.
+    if (on) resumeForVoice.current();
     if (!on) {
       dictation.setVoice(false, 'auto');
       setVoiceTip(false);
@@ -645,6 +662,28 @@ export function LiveAnswers(props: LiveAnswersProps) {
       markHintSeen('voice-mode');
       setVoiceTip(true);
     }
+  });
+  /**
+   * ADR-0101: before a voice question (or Voice mode) listens: a paused listen ("Still in a call?" went
+   * unanswered) is resumed, and the prompt counts as answered ("yes, still in a call").
+   */
+  const hygieneRef = useRef({
+    hygiene: props.hygiene,
+    onResume: props.onResume,
+    onStillHere: props.onStillHere,
+  });
+  useEffect(() => {
+    hygieneRef.current = {
+      hygiene: props.hygiene,
+      onResume: props.onResume,
+      onStillHere: props.onStillHere,
+    };
+  });
+  const resumeForVoice = useRef(() => {
+    const { hygiene, onResume, onStillHere } = hygieneRef.current;
+    const first = beforeVoiceQuestion(hygiene);
+    if (first === 'resume') onResume?.();
+    else if (first === 'still-here') onStillHere?.();
   });
   /** ADR-0082: Escape (or the shell's held Escape) while a voice question listens: stop, send nothing. */
   const cancelVoice = useRef(() => {
@@ -875,7 +914,53 @@ export function LiveAnswers(props: LiveAnswersProps) {
       if (image) actions.current.askAboutScreen(text, image);
       else actions.current.chat(text);
     });
-    return () => dictation.setOnText(null);
+    // ADR-0101: a voice question is answered as soon as the user stops: held hidden at the first
+    // end-of-speech signal, shown when they have really finished, cancelled silently if they go on, and asked
+    // again on the same card with the whole question if they go on just after it was shown. The screenshot
+    // taken before a Ctrl+Alt+Enter question goes with every one of these.
+    /** The card of the question being asked now, and whether its answer is still held hidden. */
+    let card: { id: string; held: boolean } | null = null;
+    dictation.setVoiceHandler({
+      speculate: (text, _target, timing) => {
+        const id = actions.current.voiceAsk(text, {
+          image: voiceShot.current,
+          held: true,
+          speechEnd: timing.speechEnd,
+        });
+        card = id ? { id, held: true } : null;
+      },
+      show: (text, _target, timing) => {
+        if (card?.held) {
+          actions.current.voiceShow(card.id);
+          card = { id: card.id, held: false };
+          return;
+        }
+        const id = actions.current.voiceAsk(text, {
+          image: voiceShot.current,
+          held: false,
+          speechEnd: timing.speechEnd,
+        });
+        card = id ? { id, held: false } : null;
+      },
+      cancel: () => {
+        if (card?.held) actions.current.voiceCancel(card.id);
+        card = null;
+      },
+      extend: (text, _target, timing) => {
+        const id = actions.current.voiceAsk(text, {
+          image: voiceShot.current,
+          held: false,
+          speechEnd: timing.speechEnd,
+          ...(card ? { replaces: card.id } : {}),
+        });
+        card = id ? { id, held: false } : null;
+      },
+      prewarm: () => actions.current.prewarm(),
+    });
+    return () => {
+      dictation.setOnText(null);
+      dictation.setVoiceHandler(null);
+    };
   }, [dictation]);
 
   // ADR-0082: listening ended without a question (nothing heard, cancelled): the screenshot is dropped.

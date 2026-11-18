@@ -493,6 +493,15 @@ export function createDesktopPlatform(bridge: KiteDesktopApi): DesktopPlatform {
     },
 
     /**
+     * ADR-0101: the desktop app holds the voice shortcut from every app: nothing to tell.
+     *
+     * @returns null.
+     */
+    voiceShortcutHint() {
+      return null;
+    },
+
+    /**
      * Tells the window which panels are open (older shells ignore it).
      *
      * @param layout The open panels.

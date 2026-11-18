@@ -1,17 +1,17 @@
 /**
  * File: apps/web/src/server/deepgram.ts
  * Purpose: Cloud speech-to-text settings and short-lived Deepgram tokens (ADR-0076). Reads the Deepgram
- *          settings (host, the model per channel), says which accounts have cloud transcription
- *          (KITE_STT_DEEPGRAM_USERS), and mints a 60-second token with Deepgram's /v1/auth/grant on the
+ *          settings (host, the model per channel), says whether cloud transcription is set up (ADR-0101: it is
+ *          on for every account; the KITE_STT_DEEPGRAM_USERS allowlist is gone), and mints a 60-second token
+ *          with Deepgram's /v1/auth/grant on the
  *          same host. The long-lived DEEPGRAM_API_KEY stays on the server: it is never returned, logged or
  *          sent to a browser; browsers only ever get the 60-second token.
- * Used by: app/api/stt/token/route.ts, app/(app)/live/[id]/page.tsx (the flag)
- * Depends on: src/server/userList.ts (parseUserList: the "ids or *" list format)
+ * Used by: app/api/stt/token/route.ts, app/(app)/live/[id]/page.tsx (whether it is set up)
+ * Depends on: nothing (the server's environment and fetch)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §6.1; docs/investigations/2026-11-13-production-
  *               readiness.md C2, C3; ADR-0076
  */
 import 'server-only';
-import { parseUserList } from './userList';
 
 /** Deepgram's EU endpoint: measured faster from Pakistan than the US one, and processing stays in the EU. */
 export const DEFAULT_DEEPGRAM_HOST = 'api.eu.deepgram.com';
@@ -104,20 +104,15 @@ export function getDeepgramConfig(
 }
 
 /**
- * Whether an account uses cloud transcription (the rollout switch). Everyone else keeps the on-device
- * engine and today's question rules.
+ * ADR-0101: whether calls use cloud transcription: for every account, whenever the server has a Deepgram key.
+ * There is no per-account list; the on-device engine is only each channel's automatic fallback.
  *
- * @param userId The signed-in account's id.
- * @param env    The environment (default process.env; tests pass their own).
- * @returns True when listed in KITE_STT_DEEPGRAM_USERS, or when it is `*`.
- * Called from: app/(app)/live/[id]/page.tsx, app/api/stt/token/route.ts; tests
+ * @param env The environment (default process.env; tests pass their own).
+ * @returns True when DEEPGRAM_API_KEY is set.
+ * Called from: app/(app)/live/[id]/page.tsx; tests
  */
-export function deepgramEnabledFor(
-  userId: string,
-  env: Record<string, string | undefined> = process.env,
-): boolean {
-  const users = parseUserList(env.KITE_STT_DEEPGRAM_USERS);
-  return users === 'everyone' || users.has(userId);
+export function cloudSttConfigured(env: Record<string, string | undefined> = process.env): boolean {
+  return (env.DEEPGRAM_API_KEY ?? '').trim() !== '';
 }
 
 /**

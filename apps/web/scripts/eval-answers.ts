@@ -32,6 +32,8 @@
  *            --max-dollars=<n>    stop before the next scenario once this much is spent
  *            --no-grade answers only, no grader requests (half the cost): the code checks are
  *                       reported and the grader's columns show "–"; read the answers with --show
+ *            --spoken   ADR-0101: typed (chat) questions are sent as spoken voice questions (the prompt's
+ *                       "spoken by the user (speech recognition…)" label)
  *            --model=<gemini-lite|gpt-luna|gemini-flash|gpt-terra>  ADR-0099: live answers from that
  *                       Gemini or GPT model (its id from KITE_MODEL_GEMINI_* / KITE_MODEL_OPENAI_*, its key
  *                       GEMINI_API_KEY / OPENAI_API_KEY), with the same prompt and latency settings as the
@@ -371,6 +373,7 @@ function providerModel(model: AnswerModel): ProviderModel {
  * @param earlier        Consistency scenarios: the first answer, in the conversation, and the
  *                       question asked again.
  * @param third          ADR-0099: the Gemini or GPT model live answers come from (--model), or null.
+ * @param spoken         ADR-0101: send a typed question as a spoken one (--spoken).
  * @returns The answer.
  * Called from: main()
  */
@@ -383,6 +386,7 @@ async function answerScenario(
   theirName: string | null,
   earlier?: { question: string; text: string },
   third: ProviderModel | null = null,
+  spoken = false,
 ): Promise<ScenarioAnswer> {
   const question = earlier ? (scenario.repeat ?? scenario.question) : scenario.question;
   const similar = earlier
@@ -417,6 +421,8 @@ async function answerScenario(
     ...(scenario.lessons?.length && !withoutLessons ? { lessons: scenario.lessons } : {}),
     ...(scenario.target ? { target: scenario.target } : {}),
     ...(style ? { styleVersion: style } : {}),
+    // ADR-0101: --spoken sends a typed question as a spoken one.
+    ...(spoken && scenario.mode === 'chat' ? { spoken: true } : {}),
     ...(similar
       ? { similar: { question: similar.question, text: similar.text, at: similar.at } }
       : {}),
@@ -697,6 +703,8 @@ async function main(): Promise<void> {
   const options = parseEvalArgs(process.argv.slice(2), 2);
   // ADR-0099: --model, the Gemini or GPT model live answers come from (null: Claude Haiku as before).
   const answerModel = parseAnswerModel(process.argv.slice(2));
+  // ADR-0101: --spoken, typed questions sent as spoken voice questions.
+  const spoken = process.argv.slice(2).includes('--spoken');
   // ADR-0093: cleaned as the app cleans it, so the prompt is the one a named call sends.
   const theirName = cleanPersonName(options.theirName) || null;
   const scenarios = loadScenarios(options.only);
@@ -746,6 +754,7 @@ async function main(): Promise<void> {
         theirName,
         undefined,
         third,
+        spoken,
       );
       // Consistency: the first answer goes into the conversation, and the question comes again.
       const first = scenario.repeat
@@ -761,6 +770,7 @@ async function main(): Promise<void> {
           theirName,
           first,
           third,
+          spoken,
         );
       const { text, meta } = answer;
       // A garbled line must get no answer at all (ADR-0043): nothing to grade, and no grader's request

@@ -61,6 +61,16 @@ export class RingBuffer {
     return first ? first.endTime - first.samples.length / 16_000 : null;
   }
 
+  /**
+   * ADR-0101: the end of the newest chunk kept.
+   *
+   * @returns Audio clock seconds, or null when empty.
+   * Called from: cloudStt.ts (the voice stream's backlog)
+   */
+  newestEnd(): number | null {
+    return this.chunks.at(-1)?.endTime ?? null;
+  }
+
   /** Drops everything. */
   clear(): void {
     this.chunks = [];

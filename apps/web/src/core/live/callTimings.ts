@@ -101,7 +101,10 @@ export type AnswerTrigger =
   | 'screenshot-chat'
   | 'reanswer'
   // 1.5.2 (ADR-0070): a press's card asked again because the person went on.
-  | 'rerun';
+  | 'rerun'
+  // ADR-0101: a voice question (Ctrl+Shift+Space, Voice mode), and one with a screenshot (Ctrl+Alt+Enter).
+  | 'voice'
+  | 'voice-screenshot';
 
 /** One line of the other side (times are Unix ms). */
 export interface LineTiming {

@@ -222,6 +222,28 @@ describe('buildPrompt', () => {
     expect(noQuestion.text).toContain('Answer the latest question from "Them".');
   });
 
+  it('ADR-0101: a spoken question says speech recognition wrote it (and a typed one stays typed)', () => {
+    const spoken = blocks(
+      buildPrompt({ mode: 'chat', session: SESSION, question: 'Seat price?', spoken: true }),
+    ).at(-1)!;
+    expect(spoken.text).toContain(
+      'Question spoken by the user (speech recognition; may contain misheard words): Seat price?',
+    );
+    expect(spoken.text).not.toContain('Question typed by the user');
+    const screen = blocks(
+      buildPrompt({
+        mode: 'screenshot',
+        session: SESSION,
+        question: 'Is this right?',
+        image: 'data:image/jpeg;base64,/9j/AAAA',
+        spoken: true,
+      }),
+    ).at(-1)!;
+    expect(screen.text).toContain(
+      'Question about the screenshot, spoken by the user (speech recognition; may contain misheard words): Is this right?',
+    );
+  });
+
   it('escapes tag-like text in lines, answers and the tail', () => {
     const prompt = buildPrompt({
       mode: 'answer',

@@ -220,6 +220,11 @@ export interface CompactState {
   dictationSupported?: boolean;
   /** True while a spoken question is being dictated. */
   dictating?: boolean;
+  /**
+   * ADR-0101: where the voice shortcut works, shown while a voice question listens (browser only: "keep this
+   * tab in front"); absent on the desktop app.
+   */
+  voiceShortcutHint?: string;
   /** Why the last dictation ended without a question (v1.0.3), or null. */
   dictationNotice?: string | null;
   /**

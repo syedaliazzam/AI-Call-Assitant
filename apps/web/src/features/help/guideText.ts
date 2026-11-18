@@ -56,7 +56,7 @@ When you start a session in the browser, **Choose platform** asks where to run i
 2. **Browser:** check the **You** level bar (it moves when you speak); press **Test microphone** first. **Desktop app:** the microphone is chosen on bar 1 (**▾**) once the call is on.
 3. Choose **Connect**. The call starts at once: the overlay opens and the transcript fills in, oldest at the top and newest at the bottom.
 4. When they ask a question, press **Ctrl+Enter** (Answer). The answer streams in: one line you can say as it is, 2 to 4 short points, and sometimes a **Tip**.
-5. To ask your own question, press **Ctrl+Shift+Space** and say it. The status bar shows **Listening…**; it is sent after about 1 second of silence, and **Esc** cancels. Your question is not added to the transcript and does not count as your reply. **Ctrl+Alt+Enter** does the same with a screenshot taken first, sent together with your question.
+5. To ask your own question, press **Ctrl+Shift+Space** and say it. The status bar shows **Listening…**; the answer starts as soon as you stop speaking, and **Esc** cancels. If you pause to think and then go on, the rest still belongs to the same question: the card is asked again with the whole question. Words you were saying just before the press stay in the transcript and are not part of the question. Your question is not added to the transcript and does not count as your reply. **Ctrl+Alt+Enter** does the same with a screenshot taken first, sent together with your question. If listening was paused ("Still in a call?"), the shortcut starts it again. In the desktop app the shortcut works from any app; in the browser, keep the Paramount AI tab in front.
 
 Paramount AI answers real questions. If the latest words are a greeting or "say yes when you're ready", it goes back to the last real question. If the words were noise, it says so: press **Ctrl+Enter** again, or ask the question with **Ctrl+Shift+Space**. To answer a greeting anyway, press **Answer this** on that line.
 
@@ -72,7 +72,7 @@ During a call the desktop app is a set of slim bars over your screen, with panel
 - **Rec** (desktop app 1.5.0): records the meeting; see **Recording a meeting**.
 - **Auto answer** turns on or off answering finished questions by itself.
 - **Model** (the chip next to Auto, or **⋮ → Model**): **Fast (Claude Haiku)**, the default; **Smart (Claude Sonnet)**, more thorough and slower; or **Fastest (Groq)**. It applies from the next answer. Answers from a screenshot always use Claude. If Groq doesn't start an answer within 4 seconds, Claude Haiku answers it instead. An admin can turn Smart or Groq off. Accounts in the new-models trial also see **Gemini 3.5 Flash Lite**, **GPT-5.6 Luna**, **Gemini 3.6 Flash** and **GPT-5.6 Terra** (these answer screenshots too, and fall back to Claude Haiku the same way).
-- **Voice** (the waveform, or **⋮ → Voice**): talk to Paramount AI hands-free. While it is on, each time you pause for about 1 second what you said is sent as a question and the answer shows; then it keeps listening. Your words aren't added to the transcript and don't count as your reply. It pauses while the other person speaks, and for 2 seconds after. It is off at the start of every call; **Esc** (with Paramount AI in front) or the toggle turns it off. **Mute yourself in the meeting first if others can hear you.**
+- **Voice** (the waveform, or **⋮ → Voice**): talk to Paramount AI hands-free. While it is on, each time you finish a question it is sent and the answer shows; then it keeps listening. Your words aren't added to the transcript and don't count as your reply. A short sound from the other side ("mm-hmm", a noise) changes nothing; when the other person really starts speaking, what you had already said is sent, and Voice pauses until 2 seconds after they finish. It is off at the start of every call; **Esc** (with Paramount AI in front) or the toggle turns it off. **Mute yourself in the meeting first if others can hear you.**
 - **Click-through** (**Ctrl+Alt+X**): when it is lit, clicks and typing outside the bars go to the app behind; see **Click-through**.
 - **Compact** shrinks everything to a small square with moving level bars. Drag it to move it; click it to bring the bars back. The shortcuts keep working, and an answer starting brings the bars back by itself.
 - The **timer**, **⋮**, and **Exit**, which ends the call and closes the bars at once.
@@ -201,7 +201,7 @@ With Google Drive connected (**Settings → Google Drive**), each call's folder 
 |---|---|---|
 | Answer | Ctrl+Enter | Any app, during a call |
 | Answer from a screenshot | Ctrl+Shift+Enter | Any app, during a call |
-| Voice question: speak, sent after 1 s of silence (Esc cancels) | Ctrl+Shift+Space | Any app, during a call |
+| Voice question: speak, sent as soon as you stop (Esc cancels) | Ctrl+Shift+Space | Any app, during a call (desktop app); the Paramount AI tab (browser) |
 | Screenshot and voice question | Ctrl+Alt+Enter | Any app, during a call |
 | Previous or next answer | Ctrl+Left / Right | Any app, during a call (desktop app 1.6.4) |
 | Clear answers | Ctrl+Backspace | Any app, during a call (desktop app 1.6.4) |

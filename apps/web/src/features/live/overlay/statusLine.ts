@@ -138,7 +138,10 @@ export function statusMessage(
   if (state.dictating) {
     return {
       key: 'listening',
-      text: LISTENING_TEXT,
+      // ADR-0101: in a browser, also where the shortcut works.
+      text: state.voiceShortcutHint
+        ? `${LISTENING_TEXT} ${state.voiceShortcutHint}`
+        : LISTENING_TEXT,
       tone: 'listening',
       action: { kind: 'command', command: { type: 'voice-cancel' }, label: 'Cancel' },
     };

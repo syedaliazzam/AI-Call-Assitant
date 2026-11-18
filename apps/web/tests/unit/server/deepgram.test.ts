@@ -1,6 +1,6 @@
 /**
  * Tests for apps/web/src/server/deepgram.ts (ADR-0076): the Deepgram settings (EU host and the per-channel
- * models by default, a bad host refused), the KITE_STT_DEEPGRAM_USERS rollout switch, and the 60-second
+ * models by default, a bad host refused), whether it is set up (ADR-0101: for every account, no list), and the 60-second
  * token grant (the key goes to Deepgram only and never into an error).
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -9,7 +9,7 @@ import {
   DEFAULT_THEM_MODEL,
   DEFAULT_YOU_MODEL,
   DeepgramGrantError,
-  deepgramEnabledFor,
+  cloudSttConfigured,
   getDeepgramConfig,
   mintDeepgramToken,
   TOKEN_TTL_SECONDS,
@@ -59,20 +59,14 @@ describe('getDeepgramConfig', () => {
   });
 });
 
-describe('deepgramEnabledFor (rollout switch)', () => {
-  it('is off for everyone when unset', () => {
-    expect(deepgramEnabledFor('u1', {})).toBe(false);
-  });
-
-  it('is on only for the listed accounts', () => {
-    const env = { KITE_STT_DEEPGRAM_USERS: ' u1 , u2' };
-    expect(deepgramEnabledFor('u1', env)).toBe(true);
-    expect(deepgramEnabledFor('u2', env)).toBe(true);
-    expect(deepgramEnabledFor('u3', env)).toBe(false);
-  });
-
-  it('is on for everyone with *', () => {
-    expect(deepgramEnabledFor('anyone', { KITE_STT_DEEPGRAM_USERS: '*' })).toBe(true);
+describe('cloudSttConfigured (ADR-0101: every account, no list)', () => {
+  it('is on whenever the server has a Deepgram key, whatever any list says', () => {
+    expect(cloudSttConfigured({})).toBe(false);
+    expect(cloudSttConfigured({ DEEPGRAM_API_KEY: '  ' })).toBe(false);
+    expect(cloudSttConfigured({ DEEPGRAM_API_KEY: 'k' })).toBe(true);
+    expect(
+      cloudSttConfigured({ DEEPGRAM_API_KEY: 'k', KITE_STT_DEEPGRAM_USERS: 'someone-else' }),
+    ).toBe(true);
   });
 });
 

@@ -232,3 +232,15 @@ describe('Voice mode on the status line (ADR-0095)', () => {
     expect(silent?.key).toBe('mic-silent');
   });
 });
+
+describe('ADR-0101: where the voice shortcut works', () => {
+  it('adds the browser hint to "Listening…", and nothing on the desktop app', () => {
+    const base = { ...QUIET, dictating: true };
+    expect(statusMessage(base, false)?.text).toBe(LISTENING_TEXT);
+    const hint =
+      'Voice shortcut works everywhere in the desktop app; in the browser, keep this tab in front.';
+    expect(statusMessage({ ...base, voiceShortcutHint: hint }, false)?.text).toBe(
+      `${LISTENING_TEXT} ${hint}`,
+    );
+  });
+});

@@ -442,6 +442,12 @@ export interface AnswerRequest {
    * sends it, so calls always use OpenAI's default tier.
    */
   serviceTier?: 'priority';
+  /**
+   * ADR-0101: the question (mode chat or screenshot) was spoken, not typed: speech recognition wrote it, so it
+   * may contain misheard words. The prompt says so, and the model reads through them instead of judging the
+   * question garbled. Absent: typed.
+   */
+  spoken?: boolean;
   /** Session details (modes `warm`, `answer`, `chat`, `screenshot`). */
   session?: SessionContext;
   /**

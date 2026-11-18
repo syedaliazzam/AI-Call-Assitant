@@ -39,7 +39,7 @@
  * Chrome 156: the picker still opens after picture-in-picture used the click). Then the capture,
  * then the live view. A capture that fails closes that overlay again and keeps the Connect card.
  *
- * ADR-0076 (cloud transcription, for the accounts in KITE_STT_DEEPGRAM_USERS): Connect streams both channels
+ * ADR-0076 (cloud transcription; ADR-0101: for every account): Connect streams both channels
  * to Deepgram (core/stt/cloudStt.ts); the on-device engine is still loaded as the page opens, but stays idle
  * as the per-channel fallback, without Accurate, the end-of-turn model or echo cancelling of its own (the
  * audio worker cleans the microphone before anything leaves). Presses and auto-answer use the newest-by-time
@@ -372,8 +372,19 @@ export function LivePage({
   const [connection, setConnection] = useState<ConnectionState>('idle');
   // Item 8 (ADR-0038): talking to Kite during the call uses the "You" channel; words dictated to
   // Kite are routed away from the transcript in the engine callbacks below (route is stable).
+  // ADR-0101: voice questions use the microphone's Flux voice stream when it is open (fast end-of-speech
+  // signals); a "You" line still being heard at a key press stays in the transcript as a normal line.
+  const cloudVoiceRef = useRef<CloudStt | null>(null);
+  const keepOpenYouLine = useCallback((): number => {
+    const open = transcript.lines().findLast((line) => line.speaker === 'you' && !line.final);
+    if (!open || open.text.trim() === '') return 0;
+    transcript.addFinal({ speaker: 'you', text: open.text, tStart: open.tStart, tEnd: open.tEnd });
+    return open.text.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
+  }, [transcript]);
   const { dictation, route: dictationRoute } = useCallDictation({
     available: connection === 'connected',
+    voiceReady: () => cloudVoiceRef.current?.voiceReady() === true,
+    keepOpenYouLine,
   });
   // v1.0.2: the transcript's "Answer this" buttons use the answers panel's guarded ask, and show
   // which questions were answered; the panel hands both over once it is mounted.
@@ -648,8 +659,8 @@ export function LivePage({
           // ADR-0082: words prove the channel hears sound (never a false "can't hear" warning).
           if (text.trim()) silence.current?.heard(channel, Date.now());
           // ADR-0095: Voice mode pauses while the other person speaks.
-          if (channel === 'them' && text.trim()) dictationRoute.them();
-          if (channel === 'you' && dictationRoute.partial(text)) {
+          if (channel === 'them' && text.trim()) dictationRoute.them(text, tStart, tEnd);
+          if (channel === 'you' && dictationRoute.partial(text, tEnd)) {
             // Words for Kite, not the call: clear any grey "You" line and show nothing.
             transcript.addPartial(channel, '', null);
             watchdog.current.noteProgress(performance.now());
@@ -699,8 +710,8 @@ export function LivePage({
         onFinal: ({ channel, text, tStart, tEnd, audio, confidence, recent, speechEnd }) => {
           if (!isActive()) return;
           if (text.trim()) silence.current?.heard(channel, Date.now());
-          if (channel === 'them' && text.trim()) dictationRoute.them();
-          if (channel === 'you' && dictationRoute.final(text)) {
+          if (channel === 'them' && text.trim()) dictationRoute.them(text, tStart, tEnd);
+          if (channel === 'you' && dictationRoute.final(text, tEnd)) {
             // A question dictated to Kite: never a transcript line, never saved or sent later.
             transcript.addPartial(channel, '', null);
             watchdog.current.noteProgress(performance.now());
@@ -838,11 +849,11 @@ export function LivePage({
       // ADR-0082: words prove the channel hears sound (never a false "can't hear" warning).
       if ((event.type === 'partial' || event.type === 'final') && event.text.trim()) {
         silence.current?.heard(channel, Date.now());
-        // ADR-0095: Voice mode pauses while the other person speaks.
-        if (channel === 'them') dictationRoute.them();
+        // ADR-0095: Voice mode pauses while the other person speaks (ADR-0101: real speech only).
+        if (channel === 'them') dictationRoute.them(event.text, event.tStart, event.tEnd);
       }
       if (event.type === 'partial') {
-        if (channel === 'you' && dictationRoute.partial(event.text)) {
+        if (channel === 'you' && dictationRoute.partial(event.text, event.tEnd)) {
           transcript.addPartial(channel, '', null);
           return;
         }
@@ -855,7 +866,7 @@ export function LivePage({
         return;
       }
       if (event.type === 'final') {
-        if (channel === 'you' && dictationRoute.final(event.text)) {
+        if (channel === 'you' && dictationRoute.final(event.text, event.tEnd)) {
           transcript.addPartial(channel, '', null);
           return;
         }
@@ -962,6 +973,7 @@ export function LivePage({
       // ADR-0076: the call's sockets and audio worker go with the page.
       cloudRef.current?.stop();
       cloudRef.current = null;
+      cloudVoiceRef.current = null;
       engine.stop();
       engineRef.current = null;
     };
@@ -1139,9 +1151,13 @@ export function LivePage({
             },
             onEcho: (state) => callTimings.noteEchoCancel(state),
             onTrace: (kind, fields) => callTimings.noteTrace(kind, fields),
+            // ADR-0101: the microphone's Flux voice stream, for voice questions only.
+            onVoiceEvent: (event) => dictationRoute.voice(event),
           },
         });
       }
+      // ADR-0101: voice questions ask this object whether the voice stream is open.
+      cloudVoiceRef.current = cloudRef.current;
       const cloud = cloudRef.current;
       const capture = await startCallCapture({
         engine: cloud ?? engine,
@@ -1412,6 +1428,7 @@ export function LivePage({
     // ADR-0076: the sockets have ended (endCall waited for them); the audio worker goes too.
     cloud?.stop();
     if (cloudRef.current === cloud) cloudRef.current = null;
+    if (cloudVoiceRef.current === cloud) cloudVoiceRef.current = null;
     setLocalChannels([]);
     // ADR-0066: the user's own saved lines are transcribed again after the call (on-device Accurate);
     // the Drive upload waits for that, three minutes at most.

@@ -13,6 +13,11 @@
  *            Deepgram is retried in the background and takes the channel back after 30 s healthy, at a
  *            pause.
  *          - Key press (catchUp): waits until the channel is processed up to the press, at most the cap.
+ *          - ADR-0101 voice stream: in English sessions the microphone's audio also goes to a second socket on
+ *            Flux, for voice questions only. Its turn events (EagerEndOfTurn, EndOfTurn, TurnResumed) and turn
+ *            text go to onVoiceEvent; the "You" transcript stays on Nova-3 (more accurate for the user's
+ *            speech, investigation C3). It opens with the microphone channel, reopens itself if it drops, and
+ *            never takes part in the failover.
  *          It implements attach/detach/drain, so core/audio/capture.ts and endCall.ts use it like the
  *          on-device engine. Text and audio are never logged; the trace gets codes and times only.
  * Used by: src/features/live/LivePage.tsx; tests/unit/core/stt/cloudStt.test.ts
@@ -86,7 +91,21 @@ export interface CloudSttHandlers {
   onEcho?: (state: 'on' | 'off' | 'failed') => void;
   /** A trace event (codes and times only). */
   onTrace?: (kind: string, fields: Record<string, TraceValue>) => void;
+  /**
+   * ADR-0101: an event of the microphone's Flux voice stream (turn text and turn events), for voice questions.
+   * Without this handler no voice stream is opened.
+   */
+  onVoiceEvent?: (event: CloudEvent) => void;
 }
+
+/** ADR-0101: after the voice stream failed to open or dropped, how long until it is tried again, ms. */
+export const VOICE_RETRY_MS = 10_000;
+
+/**
+ * ADR-0101: the most microphone audio sent to a voice stream when it opens, s (what was said while it
+ * opened). A reopened stream starts fresh.
+ */
+export const VOICE_BACKLOG_S = 3;
 
 /** The browser objects and server calls cloud transcription uses (tests replace them). */
 export interface CloudSttDeps {
@@ -195,6 +214,12 @@ export interface CloudStt {
    * @param keyterms The new list (never logged).
    */
   setKeyterms(keyterms: readonly string[]): void;
+  /**
+   * ADR-0101: whether the microphone's Flux voice stream is open (voice questions then use its turn events).
+   *
+   * @returns True when open.
+   */
+  voiceReady(): boolean;
   /** Stops everything. Cannot be used afterwards. */
   stop(): void;
 }
@@ -265,6 +290,12 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
   const finishing = new Set<Promise<void>>();
   /** Batch C (P1-3): the keyterms new sockets open with (setKeyterms() replaces them during a call). */
   let keyterms: readonly string[] = options.keyterms;
+  // ADR-0101: the microphone's Flux voice stream, whether it is being opened, and when to try again.
+  let voiceSocket: DeepgramChannel | null = null;
+  let voiceOpening = false;
+  let voiceRetryAt = 0;
+  // Whether the voice stream ever opened in this call (a first one gets the backlog, a reopened one not).
+  let voiceOpenedOnce = false;
 
   /**
    * A fresh channel state.
@@ -521,6 +552,87 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
       });
   }
 
+  /**
+   * ADR-0101: opens the microphone's Flux voice stream (English sessions only, when the page listens for its
+   * events). The first time it also sends what the microphone said while it opened (at most VOICE_BACKLOG_S).
+   * Failures are traced and retried after VOICE_RETRY_MS; they never affect the transcript.
+   */
+  function openVoice(): void {
+    if (stopped || voiceSocket || voiceOpening) return;
+    if (options.language !== 'en' || !handlers.onVoiceEvent || !channels.you.attached) return;
+    voiceOpening = true;
+    const startedAt = deps.now();
+    void (async () => {
+      try {
+        const reply = await getToken();
+        const model = reply.models.them;
+        if (kindOf(model) !== 'flux') {
+          // The server's "Them" model is not Flux: there are no turn events to use. Never retried.
+          voiceOpening = false;
+          voiceRetryAt = Number.POSITIVE_INFINITY;
+          return;
+        }
+        const socket: DeepgramChannel = new DeepgramChannel({
+          channel: 'you',
+          url: buildListenUrl({
+            host: reply.host,
+            model,
+            language: 'en',
+            keyterms,
+            optional: !channels.you.noOptional,
+          }),
+          kind: 'flux',
+          token: reply.token,
+          clockOffsetMs: () => clockOffset ?? 0,
+          now: deps.now,
+          ...(deps.createSocket ? { createSocket: deps.createSocket } : {}),
+          onEvent: (event) => {
+            if (!stopped && voiceSocket === socket) handlers.onVoiceEvent?.(event);
+          },
+          onMessage: () => undefined,
+          onClose: (closed) => {
+            trace('voice-socket-close', { code: closed.code, expected: closed.expected });
+            if (voiceSocket !== socket) return;
+            voiceSocket = null;
+            voiceRetryAt = deps.now() + VOICE_RETRY_MS;
+          },
+          onConfigured: () => undefined,
+        });
+        await socket.open(OPEN_TIMEOUT_MS);
+        voiceOpening = false;
+        if (stopped || !channels.you.attached) {
+          socket.close();
+          return;
+        }
+        if (!voiceOpenedOnce && clockOffset !== null) {
+          // What was said while it opened, so a question asked straight after Connect is heard whole.
+          const newest = channels.you.ring.newestEnd();
+          const from = Math.max(
+            channels.you.attachedFrom ?? 0,
+            newest === null ? 0 : newest - VOICE_BACKLOG_S,
+          );
+          for (const kept of channels.you.ring.since(from)) {
+            socket.send(toLinear16(kept.samples), kept.endTime);
+          }
+        }
+        voiceOpenedOnce = true;
+        voiceSocket = socket;
+        trace('voice-socket-open', { ms: deps.now() - startedAt });
+      } catch {
+        voiceOpening = false;
+        voiceRetryAt = deps.now() + VOICE_RETRY_MS;
+        trace('voice-socket-open-failed', { ms: deps.now() - startedAt });
+      }
+    })();
+  }
+
+  /** Closes the voice stream (the microphone stopped, or the call ended). */
+  function closeVoice(): void {
+    const socket = voiceSocket;
+    voiceSocket = null;
+    socket?.close();
+  }
+
   /** The once-a-second check: stalls, offline, backlog, retries, and switching back. */
   function tick(): void {
     if (stopped) return;
@@ -530,6 +642,8 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
       trace('clock', { offsetMs: Math.round(clockOffset) });
     }
     const online = deps.online();
+    // ADR-0101: the voice stream comes back by itself after a failure.
+    if (online && !voiceSocket && !voiceOpening && now >= voiceRetryAt) openVoice();
     for (const channel of ['them', 'you'] as const) {
       const state = channels[channel];
       if (!state.attached) continue;
@@ -583,6 +697,8 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
         return;
       }
     }
+    // ADR-0101: the microphone's audio also goes to the voice stream (whatever engine the transcript uses).
+    if (message.channel === 'you' && voiceSocket) voiceSocket.send(message.pcm, message.endTime);
     if (state.failover.engine === 'local') {
       options.local()?.accept(message.channel, message.samples, message.endTime);
     }
@@ -657,6 +773,8 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
       state.attachedFrom = null;
       state.failover = new ChannelFailover();
       state.opening = true;
+      // ADR-0101: the microphone's voice stream opens alongside (English sessions).
+      if (channel === 'you') openVoice();
       // Connect never waits for Deepgram: the socket opens in the background, and the audio of the
       // meantime is kept (ring buffer) and sent first once it is open.
       void openSocket(channel).then(
@@ -688,6 +806,7 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
       disconnect(channel);
       const state = channels[channel];
       if (!state.attached) return;
+      if (channel === 'you') closeVoice();
       state.attached = false;
       state.openSince = null;
       state.attachedFrom = null;
@@ -743,6 +862,8 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
         const sent = !state.noOptional && state.socket?.configure(keyterms) === true;
         trace('configure', { channel, terms: keyterms.length, sent });
       }
+      // ADR-0101: the voice stream (Flux) takes them the same way.
+      if (!channels.you.noOptional) voiceSocket?.configure(keyterms);
     },
 
     sound(channel) {
@@ -751,11 +872,16 @@ export function createCloudStt(options: CloudSttOptions): CloudStt {
       channels[channel].failover.sound(now);
     },
 
+    voiceReady() {
+      return voiceSocket?.isOpen() === true;
+    },
+
     stop() {
       if (stopped) return;
       stopped = true;
       clearInterval(timer);
       stopWatching();
+      closeVoice();
       for (const channel of ['them', 'you'] as const) {
         disconnect(channel);
         channels[channel].socket?.close();

@@ -225,6 +225,7 @@ function CallRig() {
       start: () => setListening(true),
       stop: () => setListening(false),
       setOnText,
+      setVoiceHandler: setOnText,
       voice,
       setVoice: (on: boolean) => setVoiceState(on ? 'listening' : 'off'),
     }),

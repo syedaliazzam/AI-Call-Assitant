@@ -108,6 +108,12 @@ function isNoAnswer(type: AnswerType | undefined): boolean {
  */
 export const WAITING_NOTICE = 'Listening for the question…';
 
+/**
+ * ADR-0101: a voice question warms the prompt cache at most once in this long, ms (the cache lives 5 min; the
+ * conversation grows by a chunk or two in between).
+ */
+export const PREWARM_GAP_MS = 20_000;
+
 /** ADR-0076 (G2): shown while a press waits for the other side's last words, after 150 ms. */
 export const FINISHING_NOTICE = 'Finishing the question…';
 
@@ -483,6 +489,36 @@ export interface LiveAnswers {
    * @param image    The prepared image.
    */
   askAboutScreen: (question: string, image: string) => void;
+  /**
+   * ADR-0101: asks a voice question, held hidden (speculative) or shown at once, or again on a card (extended).
+   *
+   * @param question The question.
+   * @param options  The screenshot, whether it is held, when the user stopped, the card to replace.
+   * @returns The card's id, or null when nothing was asked.
+   */
+  voiceAsk: (
+    question: string,
+    options: {
+      image?: string | null;
+      held: boolean;
+      speechEnd: number | null;
+      replaces?: string | null;
+    },
+  ) => string | null;
+  /**
+   * ADR-0101: shows a held voice answer.
+   *
+   * @param id The card.
+   */
+  voiceShow: (id: string) => void;
+  /**
+   * ADR-0101: cancels a held voice answer silently.
+   *
+   * @param id The card.
+   */
+  voiceCancel: (id: string) => void;
+  /** ADR-0101: warms the answer's prompt cache now (at most once in PREWARM_GAP_MS). */
+  prewarm: () => void;
 }
 
 /**
@@ -567,6 +603,15 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     show: () => void;
     cancel: () => void;
   } | null>(null);
+  // ADR-0101: a voice question's answer held hidden while the user may still go on (shown or cancelled by the
+  // call's dictation, not by a timer).
+  const voiceHeldRef = useRef<{ answerId: string; show: () => void; cancel: () => void } | null>(
+    null,
+  );
+  // ADR-0101: the card the last ask() put up (a voice question keeps it to show, cancel or extend).
+  const lastAskedIdRef = useRef<string | null>(null);
+  // ADR-0101: when the answer's prompt cache was last warmed for a voice question (Unix ms).
+  const lastPrewarmRef = useRef(0);
   // Batch C (P1-1): an answer's finishing work (save, history) when it finished while still held, by id;
   // run when it is shown, dropped when it is cancelled.
   const heldFinish = useRef(new Map<string, () => void>());
@@ -797,6 +842,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
          * SPECULATIVE_HOLD_MS, cancelled silently when the other person goes on within it.
          */
         speculative?: boolean;
+        /**
+         * ADR-0101: a voice question. held: start it hidden (the dictation shows or cancels it);
+         * speechEnd: when the user stopped speaking (Unix ms), for the timing trace.
+         */
+        voice?: {
+          /** True to start it hidden. */
+          held: boolean;
+          /** When the user stopped speaking (Unix ms), or null. */
+          speechEnd: number | null;
+        };
       } = {},
     ): boolean => {
       const { typed, image, auto = false, answerType } = options;
@@ -809,6 +864,12 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       // Batch C (P1-1): any other request replaces a held speculative answer: it is cancelled and its
       // speech counts as unanswered again (first, so this request is built on the restored state).
       if (heldRef.current) hold.activity();
+      // ADR-0101: and a held voice answer (a new voice ask is a new text, so the held one is wrong anyway).
+      if (voiceHeldRef.current) {
+        const heldVoice = voiceHeldRef.current;
+        voiceHeldRef.current = null;
+        heldVoice.cancel();
+      }
       // Lines Claude found to be noise are not part of any later question (ADR-0043).
       const lines = transcript.lines().filter((line) => !noiseLinesRef.current.has(line.id));
       // 1.5.2 (ADR-0070): what was answered, by the ids the lines have now (a grey line's words may have
@@ -966,7 +1027,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       }
       // Batch C (P1-1): a speculative answer (a new auto-answer, never a re-ask on a shown card) can be taken
       // back. What it changes below is noted first, so a cancel puts everything back as it was.
-      const speculative = options.speculative === true && mode === 'answer' && !replaces;
+      // ADR-0101: or a voice question held hidden until the user has really finished.
+      const voiceHeld = options.voice?.held === true && !replaces;
+      const speculative =
+        (options.speculative === true && mode === 'answer' && !replaces) || voiceHeld;
       // Batch D (P0-B, P0-C): a re-ask, in place (replaces) or on a new card (rerunOf).
       const reaskOf = replaces ?? options.rerunOf;
       const before = speculative
@@ -1017,6 +1081,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         // Batch D (P0-C): a new card that asks another card's question again.
         ...(!replaces && options.rerunOf ? { rerunOf: options.rerunOf } : {}),
       };
+      lastAskedIdRef.current = entry.id;
       // A new answer cancels the one still streaming (the runner does; mark it here). A rerun takes
       // the place of the answer it replaces.
       setEntries((current) => [
@@ -1115,7 +1180,8 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           (auto ? 'auto' : options.span ? 'answer-this' : mode === 'chat' ? 'chat' : 'hotkey'),
         mode,
         askedAt: Math.round(sentWall - (performance.now() - keyPressAt)),
-        speechEnd: span?.end ?? null,
+        // ADR-0101: a voice question's end of speech, so the trace shows stop speaking → sent → first word.
+        speechEnd: span?.end ?? options.voice?.speechEnd ?? null,
         sentAt: sentWall,
         status: 'streaming',
         bytes: JSON.stringify(built.request).length,
@@ -1132,7 +1198,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       });
       if (speculative && before) {
         const askedIds = pickedLines ?? [];
-        heldRef.current = {
+        const held = {
           answerId: entry.id,
           asked: {
             lineIds: askedIds,
@@ -1172,7 +1238,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             cancelEpochRef.current += 1;
           },
         };
-        callTimings.noteTrace('speculative', { state: 'sent', answerId: entry.id });
+        if (voiceHeld) {
+          // ADR-0101: the dictation shows it (voiceShow) or cancels it (voiceCancel); no timer here.
+          voiceHeldRef.current = { answerId: entry.id, show: held.show, cancel: held.cancel };
+          callTimings.noteTrace('voice', { state: 'held', answerId: entry.id });
+        } else {
+          heldRef.current = held;
+          callTimings.noteTrace('speculative', { state: 'sent', answerId: entry.id });
+        }
+      }
+      if (speculative && before && !voiceHeld) {
         hold.start(entry.id, {
           onShow: () => {
             const held = heldRef.current;
@@ -1194,13 +1269,20 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
        * @param finish The work.
        */
       const whenShown = (finish: () => void) => {
-        if (hold.holding(entry.id)) heldFinish.current.set(entry.id, finish);
-        else finish();
+        if (hold.holding(entry.id) || voiceHeldRef.current?.answerId === entry.id) {
+          heldFinish.current.set(entry.id, finish);
+        } else finish();
       };
       let retries = 0;
       let firstWordLogged = false;
       // ADR-0099: the call's id goes with the request (OpenAI's prompt_cache_key; nothing else reads it).
-      runner.run(callId ? { ...built.request, callId } : built.request, keyPressAt, {
+      // ADR-0101: a voice question is marked spoken (the prompt says speech recognition wrote it).
+      const sent = {
+        ...built.request,
+        ...(callId ? { callId } : {}),
+        ...(options.voice ? { spoken: true } : {}),
+      };
+      runner.run(sent, keyPressAt, {
         // ADR-0076 (timing trace): the request's phases.
         onPhase: (phase, at) =>
           callTimings.noteAnswer({
@@ -1247,6 +1329,11 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             if (hold.holding(entry.id)) {
               hold.drop();
               heldRef.current = null;
+              heldFinish.current.delete(entry.id);
+            }
+            // ADR-0101: a held voice answer the same way.
+            if (voiceHeldRef.current?.answerId === entry.id) {
+              voiceHeldRef.current = null;
               heldFinish.current.delete(entry.id);
             }
             setEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
@@ -1749,6 +1836,87 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     [ask],
   );
 
+  /**
+   * ADR-0101: asks a voice question (Ctrl+Shift+Space, Ctrl+Alt+Enter with its screenshot, Voice mode):
+   * held hidden when it is speculative, or shown at once; replaces asks again on that card (the question was
+   * extended).
+   *
+   * @param question The question (never logged).
+   * @param options  The screenshot, whether it is held, when the user stopped, and the card to replace.
+   * @returns The card's id, or null when nothing was asked (offline).
+   */
+  const voiceAsk = useCallback(
+    (
+      question: string,
+      options: {
+        /** The screenshot taken before the question (Ctrl+Alt+Enter), if any. */
+        image?: string | null;
+        /** True to hold it hidden. */
+        held: boolean;
+        /** When the user stopped speaking (Unix ms), if known. */
+        speechEnd: number | null;
+        /** The card to ask again on (an extended question). */
+        replaces?: string | null;
+      },
+    ): string | null => {
+      const voice = { held: options.held, speechEnd: options.speechEnd };
+      const asked = ask(options.image ? 'screenshot' : 'chat', {
+        typed: question,
+        ...(options.image ? { image: options.image } : {}),
+        pressedAt: performance.now(),
+        trigger: options.image ? 'voice-screenshot' : 'voice',
+        ...(options.replaces ? { replaces: options.replaces } : {}),
+        voice,
+      });
+      return asked ? lastAskedIdRef.current : null;
+    },
+    [ask],
+  );
+
+  /**
+   * ADR-0101: shows a held voice answer (the user has finished).
+   *
+   * @param id The card.
+   */
+  const voiceShow = useCallback((id: string) => {
+    const held = voiceHeldRef.current;
+    if (held?.answerId !== id) return;
+    voiceHeldRef.current = null;
+    callTimings.noteTrace('voice', { state: 'shown', answerId: id });
+    held.show();
+  }, []);
+
+  /**
+   * ADR-0101: cancels a held voice answer silently (the user went on).
+   *
+   * @param id The card.
+   */
+  const voiceCancel = useCallback((id: string) => {
+    const held = voiceHeldRef.current;
+    if (held?.answerId !== id) return;
+    voiceHeldRef.current = null;
+    callTimings.noteTrace('voice', { state: 'cancelled', answerId: id });
+    held.cancel();
+  }, []);
+
+  /**
+   * ADR-0101: warms the prompt cache with the conversation so far, as the idle re-warm does, at most once in
+   * PREWARM_GAP_MS (a voice question is about to be asked).
+   */
+  const prewarm = useCallback(() => {
+    const now = Date.now();
+    if (now - lastPrewarmRef.current < PREWARM_GAP_MS) return;
+    lastPrewarmRef.current = now;
+    callTimings.noteTrace('voice', { state: 'prewarm' });
+    const latest = warmInputRef.current;
+    void warmSession(latest.session, latest.documents, {
+      conversation: logRef.current.chunks,
+      lessons: latest.lessons,
+      callStartedAt,
+      callId: callIdRef.current,
+    });
+  }, [callStartedAt]);
+
   const reanswer = useCallback(
     (id: string, answerType: AnswerType) => {
       const entry = entries.find((candidate) => candidate.id === id);
@@ -1880,5 +2048,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     clearAnswers,
     captureScreen,
     askAboutScreen,
+    voiceAsk,
+    voiceShow,
+    voiceCancel,
+    prewarm,
   };
 }
