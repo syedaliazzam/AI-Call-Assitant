@@ -378,6 +378,14 @@ export interface Platform {
   setVoiceCancelHotkey(on: boolean): void;
 
   /**
+   * ADR-0101: what to tell the user about where the voice shortcut (Ctrl+Shift+Space) works, or null when it
+   * works from every app (the desktop app holds it globally).
+   *
+   * @returns The hint (browser), or null (desktop).
+   */
+  voiceShortcutHint(): string | null;
+
+  /**
    * Minimises the main window when a call starts in the overlay. Nothing happens in a browser
    * (a web page cannot minimise its window).
    */

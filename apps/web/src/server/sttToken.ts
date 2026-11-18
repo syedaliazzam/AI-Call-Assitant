@@ -15,7 +15,6 @@ import type { SttTokenErrorCode, SttTokenResponse } from '@kite/shared';
 import { getCachedSession } from './auth';
 import {
   DeepgramGrantError,
-  deepgramEnabledFor,
   getDeepgramConfig,
   mintDeepgramToken,
   type DeepgramConfig,
@@ -44,8 +43,6 @@ export interface SttTokenDeps {
   session: (headers: Headers) => Promise<{ user: TokenUser | null; setCookies: string[] }>;
   /** The Deepgram settings (null: not configured). */
   config: () => DeepgramConfig | null;
-  /** Whether the account has cloud transcription. */
-  enabled: (userId: string) => boolean;
   /** Mints a token. */
   mint: (config: DeepgramConfig) => Promise<MintedToken>;
   /** The per-account limiter. */
@@ -62,7 +59,6 @@ const DEFAULT_DEPS: SttTokenDeps = {
     return { user, setCookies };
   },
   config: () => getDeepgramConfig(),
-  enabled: (userId) => deepgramEnabledFor(userId),
   mint: (config) => mintDeepgramToken(config),
   limiter: createRateLimiter(TOKENS_PER_MINUTE, 60_000),
 };
@@ -93,8 +89,7 @@ async function answer(user: TokenUser | null, deps: SttTokenDeps): Promise<Respo
   if (user.mustChangePassword) {
     return refuse(401, 'unauthorized', 'Change your temporary password first');
   }
-  // Not rolled out to this account: the page keeps the on-device engine (no notice, nothing wrong).
-  if (!deps.enabled(user.id)) return refuse(404, 'not_enabled', 'Cloud transcription is not on');
+  // ADR-0101: every account may have a token; there is no per-account list.
   if (!deps.limiter.allow(`stt-token:${user.id}`)) {
     return refuse(429, 'rate_limited', 'Too many requests; try again in a minute');
   }

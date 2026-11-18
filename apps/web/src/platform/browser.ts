@@ -39,6 +39,13 @@ import type {
 } from './types';
 
 /**
+ * ADR-0101: where the voice shortcut works, told in the browser (Settings → Hotkeys, and the status bar while
+ * a voice question listens): a tab cannot hold a shortcut from other apps.
+ */
+export const VOICE_SHORTCUT_HINT =
+  'Voice shortcut works everywhere in the desktop app; in the browser, keep this tab in front.';
+
+/**
  * What the browser asks for when sharing the other side (Chrome's official screen-sharing
  * controls, checked 2026-10-27):
  * - video.displaySurface 'browser': opens the picker on the "Chrome Tab" pane, the only pane with
@@ -509,6 +516,15 @@ export const browserPlatform: Platform = {
    * @param _on Ignored.
    */
   setVoiceCancelHotkey(_on: boolean) {},
+
+  /**
+   * ADR-0101: a browser tab cannot hold a shortcut from other apps, so the user is told where it works.
+   *
+   * @returns VOICE_SHORTCUT_HINT.
+   */
+  voiceShortcutHint() {
+    return VOICE_SHORTCUT_HINT;
+  },
 
   /** Nothing to do: a web page cannot minimise its window. */
   minimizeMainWindow() {},

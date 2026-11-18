@@ -50,6 +50,8 @@ import { SessionCard } from './SessionCard';
 import { SessionSearch } from './SessionSearch';
 import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
 import { onSyncApplied } from '@/core/sync/events';
+import { answerModelAccess } from '@/core/session/modelAccess';
+import { moveOffGroq } from '@/core/session/retireModels';
 
 /** The type filter: one session type, or all of them. */
 type TypeFilter = SessionType | 'all';
@@ -169,6 +171,21 @@ export function Dashboard() {
       cancelled = true;
     };
   }, [version]);
+
+  // ADR-0101: while Groq is off, sessions and the defaults still set to it move to Claude Haiku (once per
+  // visit; the list reloads when anything moved).
+  useEffect(() => {
+    let cancelled = false;
+    void answerModelAccess()
+      .then((access) => moveOffGroq(access))
+      .then((moved) => {
+        if (!cancelled && moved.sessions > 0) setVersion((n) => n + 1);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ADR-0049: reload when sync brought changes from the account (another device, the one-time upload).
   useEffect(() => onSyncApplied(() => setVersion((n) => n + 1)), []);

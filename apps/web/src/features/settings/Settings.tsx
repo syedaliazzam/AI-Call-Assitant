@@ -33,6 +33,7 @@ import {
   TONE_OPTIONS,
 } from '@/features/session-setup/labels';
 import { answerModelAccess } from '@/core/session/modelAccess';
+import { getPlatform } from '@/platform';
 import { PRIVATE_LABEL, privateHint, usePrivate } from '@/features/privacy/usePrivate';
 import { Button } from '@/ui/Button';
 import { Dialog } from '@/ui/Dialog';
@@ -113,11 +114,16 @@ export function Settings({ isAdmin }: SettingsProps) {
   const [error, setError] = useState<string | null>(null);
   // ADR-0099: true once the server says this account is in the new-models rollout (the longer model list).
   const [moreModels, setMoreModels] = useState(false);
+  // ADR-0101: in a browser, where the voice shortcut works (null on the desktop app).
+  const [voiceHint, setVoiceHint] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void answerModelAccess().then((access) => {
-      if (!cancelled) setMoreModels(access.moreModels);
+      if (cancelled) return;
+      setMoreModels(access.moreModels);
+      // ADR-0101: read after the page is on screen (the platform is a browser thing).
+      setVoiceHint(getPlatform().voiceShortcutHint());
     });
     return () => {
       cancelled = true;
@@ -247,6 +253,8 @@ export function Settings({ isAdmin }: SettingsProps) {
       </Section>
 
       <Section title="Hotkeys" id="hotkeys">
+        {/* ADR-0101: in a browser, where the voice shortcut works. */}
+        {voiceHint && <p className="text-[13px] text-ui-muted">{voiceHint}</p>}
         <HotkeyList />
       </Section>
 

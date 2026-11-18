@@ -4,12 +4,19 @@
  * or going offline moves that channel alone to the on-device engine, with the audio Deepgram had not finished
  * replayed from the 10 s store on the call's one clock; a background probe takes the channel back after 30 s
  * healthy at a pause; a press waits for "processed up to" (or the on-device engine's drain); and a handshake
- * refused with the optional parameters is retried without them.
+ * refused with the optional parameters is retried without them. ADR-0101: the microphone's Flux voice stream
+ * opens with the microphone channel (English sessions, when the page listens for it), gets every microphone
+ * chunk, sends its events apart from the transcript's, reopens after a drop, and closes with the channel.
  */
 import type { SttTokenResponse } from '@kite/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FromAudioWorker } from '@/core/stt/audioProtocol';
-import { createCloudStt, type CloudSttDeps, type CloudSttHandlers } from '@/core/stt/cloudStt';
+import {
+  createCloudStt,
+  VOICE_RETRY_MS,
+  type CloudSttDeps,
+  type CloudSttHandlers,
+} from '@/core/stt/cloudStt';
 import type { CloudEvent, SocketLike } from '@/core/stt/deepgram';
 import { HEALTHY_MS } from '@/core/stt/failover';
 import type { ChannelId } from '@/core/stt/protocol';
@@ -61,9 +68,18 @@ const TOKEN: SttTokenResponse = {
  *
  * @param options.token    The token fetcher (default: a good reply).
  * @param options.autoOpen False to open sockets by hand.
+ * @param options.voice    ADR-0101: true to listen for the voice stream's events.
+ * @param options.language ADR-0101: the session's language (default 'en').
  * @returns The object under test and its fakes.
  */
-function setup(options: { token?: () => Promise<SttTokenResponse>; autoOpen?: boolean } = {}) {
+function setup(
+  options: {
+    token?: () => Promise<SttTokenResponse>;
+    autoOpen?: boolean;
+    voice?: boolean;
+    language?: 'en' | 'multi';
+  } = {},
+) {
   const sockets: FakeSocket[] = [];
   let clock = 1_700_000_000_000;
   let worker!: {
@@ -83,7 +99,10 @@ function setup(options: { token?: () => Promise<SttTokenResponse>; autoOpen?: bo
   const gaps: [ChannelId, number, number][] = [];
   // Batch D: the trace events (codes, counts and times only).
   const traces: [string, Record<string, unknown>][] = [];
+  // ADR-0101: the voice stream's events.
+  const voiceEvents: CloudEvent[] = [];
   const handlers: CloudSttHandlers = {
+    ...(options.voice ? { onVoiceEvent: (event: CloudEvent) => voiceEvents.push(event) } : {}),
     onTrace: (kind, fields) => traces.push([kind, fields]),
     onEvent: (channel, event) => events.push([channel, event]),
     onEngine: (channel, engine, reason) => engines.push([channel, engine, reason]),
@@ -127,7 +146,7 @@ function setup(options: { token?: () => Promise<SttTokenResponse>; autoOpen?: bo
   };
   const cloud = createCloudStt({
     local: () => local,
-    language: 'en',
+    language: options.language ?? 'en',
     keyterms: ['Northwind'],
     localIdle: () => idle,
     handlers,
@@ -157,6 +176,7 @@ function setup(options: { token?: () => Promise<SttTokenResponse>; autoOpen?: bo
     sockets,
     local,
     events,
+    voiceEvents,
     engines,
     gaps,
     traces,
@@ -495,5 +515,80 @@ describe('Batch C (P1-3): keyterms changed during the call', () => {
     const reopened = t.sockets.at(-1)!;
     expect(reopened).not.toBe(you);
     expect(new URL(reopened.url).searchParams.getAll('keyterm')).toEqual(['Northwind', 'Kafka']);
+  });
+});
+
+describe('ADR-0101: the microphone voice stream', () => {
+  it('opens a Flux stream on the microphone too, feeds it every microphone chunk, and keeps its events apart', async () => {
+    const t = setup({ voice: true });
+    await t.cloud.attach('you', stream);
+    await flush();
+    const paths = t.sockets.map((socket) => new URL(socket.url).pathname);
+    expect([...paths].sort()).toEqual(['/v1/listen', '/v2/listen']);
+    const voice = t.sockets.find((socket) => socket.url.includes('/v2/listen'))!;
+    const nova = t.sockets.find((socket) => socket.url.includes('/v1/listen'))!;
+    expect(new URL(voice.url).searchParams.get('model')).toBe('flux-general-en');
+    expect(t.cloud.voiceReady()).toBe(true);
+    t.chunk('you', 100.08);
+    expect(nova.sent).toHaveLength(1);
+    expect(voice.sent).toHaveLength(1);
+    voice.receive({
+      type: 'TurnInfo',
+      event: 'EagerEndOfTurn',
+      turn_index: 0,
+      audio_window_start: 0,
+      audio_window_end: 0.5,
+      transcript: 'What is the fee',
+      end_of_turn_confidence: 0.6,
+    });
+    expect(t.voiceEvents.some((event) => event.type === 'turn' && event.event === 'eager')).toBe(
+      true,
+    );
+    // The transcript's events never carry the voice stream's.
+    expect(t.events).toEqual([]);
+    t.cloud.stop();
+  });
+
+  it('is not opened without a listener, or in a session in another language (no Flux there)', async () => {
+    const plain = setup();
+    await plain.cloud.attach('you', stream);
+    await flush();
+    expect(plain.sockets).toHaveLength(1);
+    expect(plain.cloud.voiceReady()).toBe(false);
+    plain.cloud.stop();
+    const other = setup({ voice: true, language: 'multi' });
+    await other.cloud.attach('you', stream);
+    await flush();
+    expect(other.sockets).toHaveLength(1);
+    other.cloud.stop();
+  });
+
+  it('reopens by itself after a drop, never touching the transcript socket', async () => {
+    const t = setup({ voice: true });
+    await t.cloud.attach('you', stream);
+    await flush();
+    t.sockets.find((socket) => socket.url.includes('/v2/listen'))!.close(1011);
+    expect(t.cloud.voiceReady()).toBe(false);
+    expect(t.engines).toEqual([['you', 'deepgram', 'start']]);
+    t.advance(VOICE_RETRY_MS);
+    vi.advanceTimersByTime(1_000);
+    await flush();
+    expect(t.sockets.map((socket) => new URL(socket.url).pathname).sort()).toEqual([
+      '/v1/listen',
+      '/v2/listen',
+      '/v2/listen',
+    ]);
+    expect(t.cloud.voiceReady()).toBe(true);
+    t.cloud.stop();
+  });
+
+  it('closes with the microphone channel', async () => {
+    const t = setup({ voice: true });
+    await t.cloud.attach('you', stream);
+    await flush();
+    t.cloud.detach('you');
+    expect(t.sockets.find((socket) => socket.url.includes('/v2/listen'))!.readyState).toBe(3);
+    expect(t.cloud.voiceReady()).toBe(false);
+    t.cloud.stop();
   });
 });

@@ -219,6 +219,8 @@ export const answerRequestSchema = z
       .optional(),
     // ADR-0099 measurement only: OpenAI priority processing (the route honours it for admins only).
     serviceTier: z.enum(['priority']).optional(),
+    // ADR-0101: a spoken (voice) question rather than a typed one.
+    spoken: z.boolean().optional(),
     session: sessionSchema.optional(),
     conversation: conversationSchema.optional(),
     tail: z.array(callLineSchema).max(MAX_TAIL_LINES).optional(),

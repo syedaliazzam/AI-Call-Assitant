@@ -34,7 +34,6 @@ function deps(user: TokenUser | null, overrides: Partial<SttTokenDeps> = {}): St
   return {
     session: async () => ({ user, setCookies: ['kite.session=refreshed; Path=/'] }),
     config: () => CONFIG,
-    enabled: (userId) => userId === 'flagged',
     mint: async () => ({ token: 'short-token', expiresIn: 60 }),
     limiter: createRateLimiter(30, 60_000),
     ...overrides,
@@ -66,15 +65,14 @@ describe('POST /api/stt/token', () => {
     expect(temporary.status).toBe(401);
   });
 
-  it('answers 404 not_enabled for an account outside the rollout, without minting', async () => {
-    const mint = vi.fn();
+  it('gives any signed-in account a token: there is no per-account list (ADR-0101)', async () => {
+    const mint = vi.fn(async () => ({ token: 'short-token', expiresIn: 60 }));
     const response = await handleSttToken(
       request(),
-      deps({ id: 'other', mustChangePassword: false }, { mint }),
+      deps({ id: 'any-account', mustChangePassword: false }, { mint }),
     );
-    expect(response.status).toBe(404);
-    expect(await response.json()).toMatchObject({ code: 'not_enabled' });
-    expect(mint).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(mint).toHaveBeenCalledTimes(1);
   });
 
   it('rate-limits each account', async () => {

@@ -604,10 +604,17 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
   if (request.mode === 'screenshot') {
     parts.push(
       previous ? SCREENSHOT_RULES_PREVIOUS : SCREENSHOT_TAIL,
-      `Question about the screenshot: ${escapeTags(question || DEFAULT_SCREENSHOT_QUESTION)}`,
+      // ADR-0101: a spoken question says so (speech recognition may have misheard words).
+      request.spoken && question
+        ? `Question about the screenshot, ${SPOKEN_LABEL}: ${escapeTags(question)}`
+        : `Question about the screenshot: ${escapeTags(question || DEFAULT_SCREENSHOT_QUESTION)}`,
     );
   } else if (request.mode === 'chat') {
-    parts.push(`Question typed by the user: ${escapeTags(question)}`);
+    parts.push(
+      request.spoken
+        ? `Question ${SPOKEN_LABEL}: ${escapeTags(question)}`
+        : `Question typed by the user: ${escapeTags(question)}`,
+    );
   } else if (question) {
     parts.push(`Question to answer: ${escapeTags(question)}`);
   } else {
@@ -638,6 +645,12 @@ function imageBlock(dataUrl: string): Anthropic.ImageBlockParam {
     },
   };
 }
+
+/**
+ * ADR-0101: how a voice question is introduced in the request text (not the admin's prompt): it was spoken, so
+ * the model reads through misheard words rather than judging the question garbled.
+ */
+export const SPOKEN_LABEL = 'spoken by the user (speech recognition; may contain misheard words)';
 
 /** What buildPrompt() returns: the `system` and `messages` request parameters. */
 export interface BuiltPrompt {
