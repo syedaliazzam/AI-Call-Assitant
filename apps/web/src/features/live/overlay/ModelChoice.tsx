@@ -5,9 +5,9 @@
  *          and the toast's words. A choice that is off (an admin's switch, no server key) is shown disabled, with
  *          "Turned off by your admin" (the server enforces that on every answer anyway). Tooltips are drawn in
  *          the page (ADR-0042), so they stay inside the protected window. The list (core/session/modelChoices.ts,
- *          the same words as AI preferences): GPT-5.6 Luna (Fast), GPT-5.6 Terra, Claude Haiku, Claude Sonnet,
- *          Groq (Fastest) for every account (ADR-0102), with Gemini 3.5 Flash Lite (Recommended) for an account in
- *          the Gemini rollout (ADR-0099; ADR-0104 retired Gemini 3.6 Flash).
+ *          the same words as AI preferences): GPT-5.6 Luna (Fast), GPT-5.6 Terra, Claude Haiku (Recommended),
+ *          Claude Sonnet, Groq (Fastest) for every account (ADR-0102), with Gemini 3.5 Flash Lite for an account in
+ *          the Gemini rollout (ADR-0099; ADR-0104 retired Gemini 3.6 Flash and moved "Recommended" to Haiku).
  * Used by: src/features/live/overlay/LiveMenu.tsx, src/features/live/overlay/ControlBar.tsx,
  *          src/features/live/CompactView.tsx
  * Depends on: lucide-react, src/core/live/liveChannel.ts (CompactState), src/core/storage/types.ts

@@ -45,13 +45,14 @@ The measurements are recorded in `docs/testing/benchmark-results.md` and `docs/t
    - `eval-answers --model=gemini-flash` still works, to measure it again later.
 3. **Claude Haiku stays the default** for every new session. No model replaces it: Haiku had the quickest first word, the lowest cost and the highest score.
 4. **The GPT warm-up asks for a few tokens:** `OPENAI_WARM_MAX_TOKENS = 16` in `server/openai.ts`, which is about $0.00002 of output per warm-up. The route's fallback is unchanged.
+5. **"Recommended" moves to Claude Haiku** (the developer's decision, 18 Nov 2026, after the measurement). The lists read "Claude Haiku (Recommended)" and "Gemini 3.5 Flash Lite" with no tag. The names, the order and the chip are unchanged.
 
 ## Consequences
 
 - Sessions of rollout accounts that were set to Gemini 3.6 Flash now answer with Claude Haiku, and show and store it.
 - A GPT session's warm-up now succeeds and reports GPT's own usage. The first answer's cache reads are as before (measured: 5,624–5,626 of about 6,240 input tokens, both with the failed and with the fixed warm-up; 0 without any warm-up).
 - Gemini 3.5 Flash Lite, where used, costs about ten times Claude Haiku per answer while its cache does not hit.
-- The "Recommended" tag on Gemini 3.5 Flash Lite is the developer's wording from ADR-0099. This measurement does not support it; changing it is the developer's call.
+- The "Recommended" tag moved from Gemini 3.5 Flash Lite (ADR-0099's candidate) to Claude Haiku, by the developer's decision the same day (Decision 5).
 
 ## Alternatives considered
 
