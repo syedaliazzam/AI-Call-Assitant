@@ -144,6 +144,49 @@ export const OVERLAY_LAYOUT_MIN_HEIGHTS: Readonly<Record<OverlayLayoutKey, numbe
   both: 440,
 };
 
+/**
+ * 1.7.1 (ADR-0105): with the answer panel open, the window grows to fit the answer up to this share of the
+ * work area's height (it used to stop at half, so a normal answer scrolled). The answer scrolls only beyond it.
+ */
+export const ANSWER_MAX_SHARE = 0.7;
+
+/**
+ * 1.7.1 (ADR-0105): the window height a typical answer needs at 100 % zoom, in DIPs: measured on 18 Nov 2026
+ * with the real overlay (question, answer line, five bullets, Tip and Note) in a 640-wide window, the
+ * narrowest default width (it needs 480 from 768 wide). The cap is never below it where the screen allows,
+ * so on a 1080p laptop at 125 % scaling (work area about 826 DIPs, 70 % = 578) a typical answer still fits.
+ */
+export const ANSWER_TYPICAL_HEIGHT = 616;
+
+/**
+ * 1.7.1 (ADR-0105): on a short screen the typical-answer floor may take at most this share of the work area,
+ * so the overlay never covers the whole meeting.
+ */
+export const ANSWER_MAX_SHARE_SHORT = 0.8;
+
+/**
+ * 1.7.1 (ADR-0105): the version of the answer heights' reset. A store with a lower overlayAnswerFit forgets
+ * the answer heights the person gave before (they were set when the panels stopped at half the screen) once.
+ */
+export const OVERLAY_ANSWER_FIT_VERSION = 1;
+
+/**
+ * 1.7.1 (ADR-0105): the most the window may grow to fit an answer (with the answer panel open, alone or
+ * with the transcript): 70 % of the work area's height, but at least what a typical answer needs at this zoom
+ * (ANSWER_TYPICAL_HEIGHT) when that is no more than 80 % of it. A height the person gave the window takes
+ * its place (layoutHeight()), and the room below the window's top limits both.
+ *
+ * @param area  The display's work area.
+ * @param scale The page's UI zoom (default 1).
+ * @returns The height, in whole DIPs.
+ * Called from: createCompactWindows() (applyLayout); tests
+ */
+export function answerMaxHeight(area: Pick<Rectangle, 'height'>, scale = 1): number {
+  const share = area.height * ANSWER_MAX_SHARE;
+  const typical = Math.min(ANSWER_TYPICAL_HEIGHT * scale, area.height * ANSWER_MAX_SHARE_SHORT);
+  return Math.round(Math.max(share, typical));
+}
+
 /** The tallest a menu may ask the window to grow, in DIPs (a bad value cannot fill the screen). */
 const MAX_POPUP_HEIGHT = 900;
 
@@ -1088,8 +1131,9 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       deps.store.read().overlayHeights?.[key],
       bottomRow ? bounds.y + bounds.height - area.y : area.y + area.height - bounds.y,
       layout.scale,
-      // 1.6.4 (ADR-0082): with panels open, up to half the display's height by default.
-      overlayDefaultSize(area).height,
+      // 1.6.4 (ADR-0082): with panels open, up to half the display's height by default. 1.7.1 (ADR-0105):
+      // with the answer panel open, up to 70 % (answerMaxHeight()), so a normal answer shows whole.
+      layout.answer ? answerMaxHeight(area, layout.scale) : overlayDefaultSize(area).height,
     );
     // v1.3.2: no taller than the bars and panels the page shows.
     const fitted = fittedHeight(height, layout.contentHeight, layout.popupHeight, layout.scale);
@@ -1427,6 +1471,20 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
             : {},
         });
       }
+      // 1.7.1 (ADR-0105): once, the answer heights the person gave before are forgotten: they were set while
+      // the panels stopped at half the screen, and would keep a normal answer scrolling. Heights given after
+      // this stay.
+      if ((settings.overlayAnswerFit ?? 0) < OVERLAY_ANSWER_FIT_VERSION) {
+        const heights = deps.store.read().overlayHeights ?? {};
+        deps.store.write({
+          overlayAnswerFit: OVERLAY_ANSWER_FIT_VERSION,
+          // The bars and transcript-only heights are kept.
+          overlayHeights: {
+            ...(heights.bars !== undefined ? { bars: heights.bars } : {}),
+            ...(heights.transcript !== undefined ? { transcript: heights.transcript } : {}),
+          },
+        });
+      }
       // v1.3.0 (ADR-0056): the position last used on this display puts the window exactly there;
       // otherwise the nearest one only says which way it grows (the window stays where it was).
       const openArea =
@@ -1534,6 +1592,9 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
         return;
       }
       current.setPosition(x + dx, y + dy);
+      // 1.7.1 (ADR-0105): a nudge keeps the top where the person put it; the height is fitted again to the
+      // room left below it, so a tall answer never runs past the work area.
+      applyLayout();
     },
     setOpacity(value) {
       if (!current || current.isDestroyed() || typeof value !== 'number' || Number.isNaN(value)) {

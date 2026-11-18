@@ -51,6 +51,12 @@
  * next answers; once the live page has switched, a short toast says so under bar 1 (above it on the bottom
  * row), and the window grows for it as it does for a menu.
  *
+ * ADR-0105 (desktop 1.7.1): with an answer shown, the answer panel is at least its default height (a typical
+ * answer with no scrolling; overlay/answerHeight.ts), grows with a longer answer up to what the shell allows
+ * (70 % of the work area) and, while the same answer shows, never shrinks (no jumping as it streams); the next
+ * answer fits again. Any open menu closes on a press outside it (the closing press triggers nothing), when the
+ * window loses focus, on Esc, or when an item is chosen (overlay/usePopupDismiss.ts, LiveMenu.tsx).
+ *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
  * honours), and compact collapses to bar 1 where there is no icon.
@@ -80,6 +86,13 @@ import {
 } from '@/core/storage/overlayPrefs';
 import type { AnswerModel } from '@/core/storage/types';
 import { isTranscriptKey } from '@/platform/keymap';
+import {
+  answerHoldKey,
+  answerPanelMinHeight,
+  holdHeight,
+  neededPanelHeight,
+  type HeldHeight,
+} from './overlay/answerHeight';
 import { AnswerPreferencesSheet } from './overlay/AnswerPreferencesSheet';
 import { DisplaySheet } from './overlay/DisplaySheet';
 import { ControlBar, type DeviceList } from './overlay/ControlBar';
@@ -104,6 +117,7 @@ import { StatusBar } from './overlay/StatusBar';
 import { statusMessage } from './overlay/statusLine';
 import { TranscriptPanel } from './overlay/TranscriptPanel';
 import { BARS_ATTRIBUTE, GAP_ATTRIBUTE, useClickThrough } from './overlay/useClickThrough';
+import { usePopupDismiss } from './overlay/usePopupDismiss';
 
 /** The overlay's window-level settings (desktop app; a browser window cannot do these). */
 export interface OverlayWindowSettings {
@@ -253,8 +267,12 @@ function naturalExtentOf(panel: HTMLElement, up: boolean, height: number): numbe
     (sum, scroller) => sum + Math.max(0, scroller.scrollHeight - scroller.clientHeight),
     0,
   );
-  const extent = up ? height - topOf(panel) : topOf(panel) + panel.offsetHeight;
-  return extent + hidden;
+  // ADR-0105: the answer panel's default height (data-min-height), which a window still shorter than it
+  // cannot show yet: the window is asked for it too.
+  const minHeight = Number(panel.dataset.minHeight ?? 0) || 0;
+  // What lies between the panel and the edge the overlay grows from (the bars, the panels before it).
+  const before = up ? height - topOf(panel) - panel.offsetHeight : topOf(panel);
+  return before + neededPanelHeight(panel.offsetHeight, hidden, minHeight);
 }
 
 /**
@@ -323,6 +341,8 @@ export function CompactView(props: CompactViewProps) {
   // v1.3.2: the panels' area, measured for the window's height.
   const panelsArea = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState<number | undefined>(undefined);
+  // ADR-0105: the content height held for the answer shown (it only grows while that answer shows).
+  const answerHeld = useRef<HeldHeight | null>(null);
   // ADR-0056: the bottom row mirrors the overlay, so it grows upward from the bars.
   const up = props.position ? overlayRow(props.position) === 'bottom' : false;
 
@@ -493,7 +513,23 @@ export function CompactView(props: CompactViewProps) {
     );
     const needed = Math.max(0, ...panelExtents, ...pieces) + 2;
     const stepped = Math.ceil((needed * zoom) / CONTENT_STEP) * CONTENT_STEP;
-    setContentHeight((was) => (was === stepped ? was : stepped));
+    // ADR-0105: while the same answer shows, the height only grows (no jumping as it streams); a new answer,
+    // or a new width, zoom or text size, fits again.
+    const held = holdHeight(
+      answerHeld.current,
+      answerHoldKey({
+        answerId: panels.answer ? state?.answer?.id : null,
+        transcript: panels.transcript,
+        up,
+        zoom,
+        fontScale,
+        width: page.clientWidth,
+      }),
+      stepped,
+    );
+    answerHeld.current = held;
+    const reported = held?.height ?? stepped;
+    setContentHeight((was) => (was === reported ? was : reported));
     // Everything that changes what the panels hold or where they sit: each state update is new words.
   }, [state, panels, zoom, zoomPass, up, fontScale, collapsed, popup, icon, scriptBar]);
 
@@ -529,29 +565,15 @@ export function CompactView(props: CompactViewProps) {
     if (answerId && !panels.answer) onPanels({ ...panels, answer: true });
   }, [answerId, panels, onPanels]);
 
-  // A press anywhere else closes a menu.
-  useEffect(() => {
-    if (!popup) return;
-    const onPointer = (event: PointerEvent) => {
-      const target = event.target as Element;
-      if (popupElement.current?.contains(target)) return;
-      // The button that opened it toggles it; another one switches to its own.
-      if (target.closest?.('[data-popup-button]')) return;
-      setPopup(null);
-    };
-    // Escape closes it too, and focus goes back to where it was opened from.
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setPopup(null);
-      menuButton.current?.focus();
-    };
-    document.addEventListener('pointerdown', onPointer);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onPointer);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [popup]);
+  // ADR-0105: a press anywhere else (the bars, the panels, the button that opened it), the window losing focus
+  // (a click in another app) or Esc closes a menu; the closing press triggers nothing under it. (Until 1.7.1
+  // the opener's own button toggled it, a press on the bars' drag areas never arrived, and a click in another
+  // app left it open.)
+  usePopupDismiss(popup !== null, popupElement, (reason) => {
+    setPopup(null);
+    // Esc puts the focus back where the menu was opened from.
+    if (reason === 'escape') menuButton.current?.focus();
+  });
 
   // ADR-0056: Ctrl+Alt+T turns the transcript on or off, only while the bars have focus (the shell
   // never holds it, so other apps keep it).
@@ -585,6 +607,11 @@ export function CompactView(props: CompactViewProps) {
   // asked to keep. Not when the click opened a box to type in (the report box).
   const releaseFocus = props.onReleaseFocus;
   const releaseAfterBars = useRef(passAll);
+  // ADR-0105: whether a menu is open, read after a click (a layout effect: set before the click's timer).
+  const popupOpen = useRef(popup !== null);
+  useLayoutEffect(() => {
+    popupOpen.current = popup !== null;
+  });
   useEffect(() => {
     releaseAfterBars.current = passAll;
   });
@@ -601,6 +628,9 @@ export function CompactView(props: CompactViewProps) {
       setTimeout(() => {
         const active = document.activeElement;
         if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+        // ADR-0105: not while a menu is open (the click opened it, ⋮ in Click-through mode): losing focus
+        // would close it at once. It is given back when the menu closes (below).
+        if (popupOpen.current) return;
         releaseFocus();
       }, 0);
     };
@@ -611,6 +641,13 @@ export function CompactView(props: CompactViewProps) {
   useEffect(() => {
     if (passAll) releaseFocus?.();
   }, [passAll, releaseFocus]);
+  // ADR-0105: in Click-through mode a menu closing gives the keyboard back too (the overlay kept it only for
+  // the menu). After a click in another app it is already gone, and the shell does nothing.
+  const hadPopup = useRef(false);
+  useEffect(() => {
+    if (hadPopup.current && popup === null && passAll) releaseFocus?.();
+    hadPopup.current = popup !== null;
+  }, [popup, passAll, releaseFocus]);
 
   /** Opens the full call window (from ⋮ only since v1.1.0): the live page brings it forward. */
   const openCallWindow = () => {
@@ -670,6 +707,8 @@ export function CompactView(props: CompactViewProps) {
   }
 
   const both = panels.transcript && panels.answer;
+  // ADR-0105: the answer panel's default height, while an answer shows (none for the empty panel).
+  const answerMin = state?.answer ? answerPanelMinHeight(fontScale) : null;
 
   // ADR-0082: the one status bar (bar 2): the live words, or the current warning with its button.
   const statusBar = (
@@ -706,7 +745,9 @@ export function CompactView(props: CompactViewProps) {
       ref={root}
       {...{ [GAP_ATTRIBUTE]: '' }}
       data-row={up ? 'bottom' : 'top'}
-      className={`${themeClass} k-overlay-root k-zoom-screen @container relative flex ${up ? 'k-overlay-up flex-col-reverse' : 'flex-col'} gap-1.5 overflow-hidden text-[16px] text-ui-text`}
+      // ADR-0105: k-popup-open turns the drag areas off while a menu is open (theme.css), so a press on the
+      // bars reaches the page and closes it.
+      className={`${themeClass} k-overlay-root k-zoom-screen @container relative flex ${up ? 'k-overlay-up flex-col-reverse' : 'flex-col'} ${popup !== null ? 'k-popup-open' : ''} gap-1.5 overflow-hidden text-[16px] text-ui-text`}
       style={rootStyle}
     >
       {onResize && !collapsed && <ResizeGrips onResize={onResize} />}
@@ -980,6 +1021,12 @@ export function CompactView(props: CompactViewProps) {
               {panels.answer && (
                 <div
                   data-panel=""
+                  // ADR-0105: with an answer shown, at least the default height (a typical answer, no
+                  // scrolling), but never taller than the window allows (100 %): longer answers grow it.
+                  {...(answerMin === null ? {} : { 'data-min-height': answerMin })}
+                  style={
+                    answerMin === null ? undefined : { minHeight: `min(${answerMin}px, 100%)` }
+                  }
                   // ADR-0085: side by side it takes the rest, at least 340.
                   className={`${piece} flex max-h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${both ? '@min-[600px]:min-w-[340px]' : ''}`}
                 >

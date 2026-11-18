@@ -585,6 +585,14 @@ input:-webkit-autofill:focus {
   --k-slide-dir: 1;
 }
 
+/* ADR-0105 (desktop 1.7.1): while an overlay menu is open nothing is a window drag area. Windows sends the page
+   no pointer events over a drag area, so a press on the bars could not close the menu; this way it does
+   (overlay/usePopupDismiss.ts). Dragging works again as soon as the menu is closed. */
+.k-popup-open,
+.k-popup-open * {
+  -webkit-app-region: no-drag !important;
+}
+
 /* Modals and the desktop cards: fade in from 98 % size. */
 @keyframes k-modal-in {
   from {

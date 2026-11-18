@@ -266,7 +266,8 @@ export function ModelChip({
     <button
       ref={buttonRef}
       type="button"
-      // A click on it is not a click outside its popover (CompactView closes popups on outside clicks).
+      // It opens a popover (the marker only; ADR-0105: a press on it while the popover is open closes it, as
+      // any press outside does; overlay/usePopupDismiss.ts).
       data-popup-button
       aria-label={`Model: ${name}`}
       aria-haspopup="true"

@@ -11,6 +11,8 @@
  *          talking to the assistant, as bar 1's toggle) after Auto answer; the Model row also offers Fastest (Groq),
  *          and is one row showing the current model that opens its three choices in place. Desktop 1.5.0
  *          (ADR-0068): Recording type (Screen + audio / Audio only), where the app can record.
+ *          ADR-0105 (desktop 1.7.1): choosing an item (a switch, a recording type, a position, a link) closes
+ *          the menu; Display, Answer preferences and the Model row open more instead.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (ShareProtectionState), lucide-react, ./ModelChoice.tsx, src/core/storage (types),
  *             src/core/live/liveChannel.ts, src/features/privacy/usePrivate.ts,
@@ -157,7 +159,7 @@ export interface LiveMenuProps {
    * ADR-0094: switches this session's answer model (from the next answer). Absent: no Model row.
    */
   onModel?: ((model: AnswerModel) => void) | undefined;
-  /** ADR-0094: closes the menu (after a model is picked). */
+  /** ADR-0094: closes the menu (after a model is picked; ADR-0105: after any choice). */
   onClose?: (() => void) | undefined;
 }
 
@@ -175,6 +177,19 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
   const modelChoice = props.onModel ? modelOf(state) : null;
   // The Model row's three choices, open in place under it (one row while shut keeps the menu short).
   const [modelOpen, setModelOpen] = useState(false);
+  /**
+   * ADR-0105: a choice (a switch, a recording type, a position) is applied, then the menu closes. Rows that
+   * open more (Display, Answer preferences, the Model row) keep it open; the links close it in CompactView.
+   *
+   * @param apply Applies the choice.
+   * @returns The handler for the row.
+   */
+  const chosen =
+    <T,>(apply: (value: T) => void) =>
+    (value: T) => {
+      apply(value);
+      props.onClose?.();
+    };
   return (
     <div
       ref={ref}
@@ -202,7 +217,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           info={privateHint(protection)}
           checked={protection?.on ?? false}
           disabled={!protection?.supported || !props.onProtection}
-          onChange={(on) => props.onProtection?.(on)}
+          onChange={chosen((on: boolean) => props.onProtection?.(on))}
         />
         <MenuAction
           label="Display"
@@ -221,7 +236,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
             icon={<Video {...ICON} />}
             value={state.recording.kind}
             options={RECORDING_TYPE_OPTIONS}
-            onChange={(kind) => onCommand({ type: 'record-kind', kind })}
+            onChange={chosen((kind: RecordingKind) => onCommand({ type: 'record-kind', kind }))}
           />
         )}
         {modelChoice && props.onModel && (
@@ -267,7 +282,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
           checked={state?.autoAnswer ?? false}
           disabled={!state}
           info="Paramount AI answers a finished question by itself, at most once every 15 seconds. This call only."
-          onChange={(on) => onCommand({ type: 'auto-answer', on })}
+          onChange={chosen((on: boolean) => onCommand({ type: 'auto-answer', on }))}
         />
         {state?.voiceMode !== undefined && (
           // ADR-0095: the same as bar 1's Voice toggle (off by default in every call; Esc turns it off).
@@ -276,7 +291,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
             checked={state.voiceMode !== 'off'}
             disabled={state.ended}
             info="Talk to Paramount AI hands-free: each pause sends what you said as a question. Your words aren't sent to the interviewer transcript. It pauses while the other person speaks. Esc turns it off."
-            onChange={(on) => onCommand({ type: 'voice-mode', on })}
+            onChange={chosen((on: boolean) => onCommand({ type: 'voice-mode', on }))}
           />
         )}
         {props.onClickThrough && (
@@ -309,7 +324,7 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
       <MenuBlock>
         <MenuAction label="Open call window" icon={<MonitorIcon />} onSelect={props.onCallWindow} />
         {props.onPosition && (
-          <PositionGrid position={props.position ?? null} onSelect={props.onPosition} />
+          <PositionGrid position={props.position ?? null} onSelect={chosen(props.onPosition)} />
         )}
         {props.onResetPosition && (
           <MenuAction label="Reset position" onSelect={props.onResetPosition} />

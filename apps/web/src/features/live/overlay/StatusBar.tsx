@@ -122,7 +122,8 @@ function MessageLine({
       {action && (
         <button
           type="button"
-          // A device list it opens is a popup: a click on this button is not a click outside it.
+          // It opens a device list, a popup (the marker only; ADR-0105: a press on it while the list is open
+          // closes the list).
           {...(action.kind === 'list' ? { 'data-popup-button': '' } : {})}
           className={`${BUTTON} h-6 shrink-0 text-[13px]`}
           onClick={() => {

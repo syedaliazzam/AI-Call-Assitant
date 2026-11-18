@@ -81,7 +81,10 @@ export interface ControlBarProps {
   deviceList: DeviceList | null;
   /** Opens or closes a device list. */
   onDeviceList: (list: DeviceList | null) => void;
-  /** The ⋮ button: a click on it is not a click outside the menu. */
+  /**
+   * The ⋮ button: Esc gives it the focus back. (ADR-0105: a press on it while a menu is open closes that menu,
+   * like any press outside it; data-popup-button only marks the buttons that open one.)
+   */
   menuButton: RefObject<HTMLButtonElement | null>;
   /** Whether the transcript panel is open (the Transcript pill's switch). */
   transcriptOpen?: boolean;

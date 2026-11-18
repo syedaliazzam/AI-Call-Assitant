@@ -2,7 +2,7 @@
  * File: apps/desktop/src/protection.ts
  * Purpose: Screen-share protection for every Kite window (architecture §4, §7.3; all windows from
  *          v1.1.0, ADR-0042): `setContentProtection` only, applied when a window is created and
- *          re-applied every time it is shown; the user's setting is remembered by the shell on this
+ *          re-applied every time it is shown and (1.7.1, ADR-0105) resized; the user's setting is remembered by the shell on this
  *          device (off by default: the user turns it on) and reported to the page with whether this
  *          OS supports it.
  * Used by: src/windows.ts (the compact window), src/main.ts (every other window, IPC)
@@ -98,6 +98,11 @@ export function createProtection(store: ShellStore, platform: string, release: s
       window.setContentProtection(wanted());
       // Re-applied on every show: a hidden and shown window must never come back unprotected.
       window.on('show', () => window.setContentProtection(wanted()));
+      // 1.7.1 (ADR-0105): and after every resize (the overlay now grows and shrinks with each answer), so
+      // a resized window is never left unprotected. Only while it is on: turning it off is set() alone.
+      window.on('resize', () => {
+        if (wanted()) window.setContentProtection(true);
+      });
     },
   };
 }

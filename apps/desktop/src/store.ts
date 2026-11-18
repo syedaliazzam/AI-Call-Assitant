@@ -61,6 +61,11 @@ export interface ShellSettings {
    */
   overlayDefaultSized?: number;
   /**
+   * 1.7.1 (ADR-0105): set once the answer heights saved before the answer could grow to 70 % of the screen
+   * have been forgotten. Its value is the version of that reset (OVERLAY_ANSWER_FIT_VERSION in windows.ts).
+   */
+  overlayAnswerFit?: number;
+  /**
    * v1.3.0 (ADR-0056): the overlay's last position (one of the six) on each display, by display id. The
    * overlay opens there on that display.
    */
@@ -183,6 +188,9 @@ export function createStore(file: string): ShellStore {
       }
       if (typeof raw.overlayDefaultSized === 'number' && Number.isFinite(raw.overlayDefaultSized)) {
         settings.overlayDefaultSized = raw.overlayDefaultSized;
+      }
+      if (typeof raw.overlayAnswerFit === 'number' && Number.isFinite(raw.overlayAnswerFit)) {
+        settings.overlayAnswerFit = raw.overlayAnswerFit;
       }
       if (typeof raw.deviceId === 'string' && raw.deviceId.length <= 64)
         settings.deviceId = raw.deviceId;
