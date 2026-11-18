@@ -884,3 +884,14 @@ Same laptop (Pakistan); production after the ADR-0102 deploy; a Node script (no 
 | Client: request → first text | 4,504 ms (one cold request, sign-in just before) |
 
 One sample only: the times are not a latency measurement (see ADR-0099's runs for that). Within a call the warm-up and the call-id cache key make later answers' input mostly cache reads (0.1 × input price).
+
+### First answer word, old and new live prompt (ADR-0103, 18 Nov 2026)
+
+Same laptop (Pakistan); local Node script (no browser, no production): the 10 questions of ADR-0101's voice run, as spoken chat questions (`spoken: true`) through the real `buildPrompt()` and `streamReply()` with `claude-haiku-5-5`, in an invented session with ADR-0101's invented pilot document. One warm-up request per round writes the prompt cache; questions 1.5 s apart. Measured: request start → first answer word after the hidden line. Rounds alternated before, after, before, after (main's prompt files, then the branch's). This isolates the prompt; it is not ADR-0101's stop-speaking → first-word number, which also includes speech-to-text and the network to production. Spend about $0.01 (44 requests).
+
+| Prompt | Cached prefix | First answer word p50 / p95 (20 answers) | Round p50s |
+|---|---|---|---|
+| Before (current default) | 5,838 tokens | **862 / 1,098 ms** | 865, 844 |
+| After (natural-style default) | 7,244 tokens | **867 / 1,974 ms** | 845, 884 |
+
+The median is unchanged. The tail is longer: "What is the onboarding fee?" took 1,974 and 2,101 ms in both after rounds (before: 993 and 1,046), and two other questions the document does not cover took about 1.3 s. Not checked: whether those answers wrote text before the hidden line (the eval saw that in 6 of 30 answers).

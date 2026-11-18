@@ -25,6 +25,7 @@ Re-run only the groups a change touches. Run the full suite (`pnpm --filter web 
 | `screenshots` | 16–18 (Day 5) | `pnpm --filter web eval:answers --only=screenshots` | 3 × 2 × 2 = 12 | ≥ 8 |
 | `lessons` | 19–20 (Day 5 Stage 7: answers with an approved lesson) | `pnpm --filter web eval:answers --only=lessons`, then the same with `--without-lessons` | 2 × 2 × 2 = 8 per command, 16 for the pair | with lessons ≥ 8 and higher than without |
 | `preferences` | 21–24 (parity Phase 2: bullets only, an answer language, the technical tone; v1.2.0: STAR structure) | `pnpm --filter web eval:answers --only=preferences` | 4 × 2 × 2 = 16 | ≥ 8 |
+| `call-style` | 25–28 (ADR-0103: a general technical question the documents do not cover, a preference that cannot fit, a follow-up that builds on the last answer, a sales objection) | `pnpm --filter web eval:answers --only=call-style` | 4 × 2 × 2 = 16 | ≥ 8 (proposed) |
 | `notes` | n1–n3 (Day 5) | `pnpm --filter web eval:notes --only=notes` | 3 × 3 runs × (notes + grade) = 18 | ≥ 8 |
 | `adaptive` | 24, in `tests/eval/groups/adaptive.ts` (ADR-0030: 6 roles × 4 question types; code is run) | `pnpm --filter web eval:answers --only=adaptive` | 24 × 2 × 2 = 96 | ≥ 8 |
 | `missing-info` | 8, in `tests/eval/groups/quality.ts` (4 questions under both settings) | `--only=missing-info` | 8 × 2 × 2 = 32 | ≥ 8 |
@@ -649,3 +650,22 @@ Per scenario (`answers`): 01 9.0, 02 9.0, 03 9.5, 04 10.0, 05 9.0, 06 9.5, 07 9.
 | `claude-haiku-5-5` (16 Nov, 3 commands) | 9.30, 9.43, 9.30 | 30/30 each | — | 3, 2, 1 | 3, 2, 3 | $0.09 each |
 
 Both pass the gate with one command (the gate rule asks for a 3-command mean; this was a single reading, as the developer asked). Neither is below Claude Haiku on hidden-line compliance or invented facts. Gemini writes longer answer lines more often (6 of 28 over 12 words as written; the card's cut keeps all 28 within 12). The Gemini command twice failed on its first request with HTTP 429 straight after the latency runs, and ran a few minutes later; see `docs/testing/benchmark-results.md` (ADR-0099) for the rate limits.
+
+## Natural-style live prompt (2026-11-18, ADR-0103): fails the gate, not deployed
+
+The new default live prompt (natural call style, call kinds, a general-knowledge section, the examples removed), the new user-preferences heading, and the end reminder's general-knowledge limit. Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario; one command each. Developer's cap $0.15; spend **$0.137** (76 requests: $0.1043 and $0.0327).
+
+| Group | Gate | Result |
+|---|---|---|
+| `answers` (15 × 2) | ≥ 8.86 (baseline 9.30) | **8.67: fails**; hidden line 24/30; answer line ≤ 12 words as written 14/28, as shown 28/28; grader found nothing invented 19/30 |
+| `call-style` (4 × 2, new) | ≥ 8 (proposed) | **8.00**; hidden line 8/8; answer line ≤ 12 words as written 1/8, as shown 8/8 |
+
+Per scenario (`answers`), with the 16 Nov run of 9.30 in brackets: 01 10.0 (9.0), 02 9.0 (9.0), 03 8.0 (9.5), 04 9.0 (10.0), 05 8.5 (9.0), 06 9.0 (9.5), 07 9.0 (9.5), **08 5.0 (8.5)**, 09 8.5 (10.0), 10 8.0 (9.5), 11 8.0 (8.0), 12 10.0 (10.0), 13 8.0 (8.0), 14 10.0 (10.0), 15 10.0 (10.0). `call-style`: 25 7.5, 26 9.0, 27 7.5, 28 8.0.
+
+Why it dropped (grader reasons and code checks):
+- **08 (data in Germany, ISO certified):** both runs answered "yes" to both, inventing a hosting location and a certification, instead of the promise to confirm. The new prompt's "a yes-or-no question gets the yes, the no, or the condition as its first words", "never hold back, hedge or promise to confirm" and "never pass the question to a colleague: answer it" pull against ADR-0088's rule. Without 08 the mean would be 8.93.
+- **Hidden line missing in 6 of 30 answers** (07, 09 and 12, both runs each; 30/30 before). Two of the grader's reasons quote leaked self-correction before a stray hidden tag ("the answer line needs to come first"): the model starts with the answer line and writes the hidden line later.
+- **Longer answer lines:** 14 of 28 within 12 words as written (26 of 26 before). The card's cut keeps all within 12 as shown, but the Headline point (15 words) was lost in 03, 06, 08, 09, 10, 13.
+- **Small embellishments in Tip lines:** 03 (an ordering the notes do not state), 04 ("hands-on", "ready on day one"), 07, 09, 10 ("I'll confirm it with them today"), 11 ("halved", "per route").
+- **05:** no "as I mentioned" on the repeated answer; the new prompt asks for "a brief pointer back in natural words", while the scenario expects "as I mentioned".
+- **call-style:** 25 r2 claimed "either protocol works with Professional" (forbidden protocol claim); 27 restated the earlier steps in one run; 28 defended the price instead of accepting the concern in both runs. 26 (preference that cannot fit) did well (9.0) and never mentioned the conflict.

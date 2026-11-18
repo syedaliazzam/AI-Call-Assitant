@@ -428,7 +428,9 @@ describe('the rules block with the default prompt (ADR-0089)', () => {
     expect(SYSTEM_RULES).toContain(
       'Earlier questions and answers in this call are shown in the conversation, and they are a source: build on them.',
     );
-    expect(SYSTEM_RULES).toContain('Answer it from there, and do not repeat what was already said.');
+    expect(SYSTEM_RULES).toContain(
+      'Answer it from there, and do not repeat what was already said.',
+    );
     expect(SYSTEM_RULES).toContain(
       'Stay consistent with earlier answers: the same numbers, names and positions. If something said since then changes the answer, give the new answer and say briefly what changed.',
     );
