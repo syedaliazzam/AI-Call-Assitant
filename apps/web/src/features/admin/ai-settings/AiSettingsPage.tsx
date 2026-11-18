@@ -103,8 +103,10 @@ export function AiSettingsPage({
       <div className="flex flex-col gap-1">
         <h2 className="text-card-title text-ui-heading">AI settings</h2>
         <p className="text-[14px] text-ui-muted">
-          One prompt per tab for every user&apos;s new calls. The app contract always comes first,
-          and each user&apos;s own AI preferences win where they differ.
+          One prompt per tab for every user&apos;s new calls. The app contract always comes first.
+          Each user&apos;s own AI preferences decide format, length, tone, language and focus, and
+          win over your prompt on those. They never override the app contract or the never-invent
+          rules, and when one cannot fit a question, your prompt says how to apply it.
         </p>
       </div>
       <Tabs

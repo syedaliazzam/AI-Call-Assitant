@@ -19,6 +19,7 @@ import { notesPrompt } from '@/server/notes';
 import { buildPrompt, LEARNED_HEADING } from '@/server/prompt';
 import {
   ASK_CHAT_CONTRACT,
+  GENERAL_KNOWLEDGE_RULE,
   GLOBAL_HEADING,
   LIVE_CONTRACT,
   liveEndReminder,
@@ -113,15 +114,23 @@ describe('the order and who wins', () => {
     // The preferences, the lessons and the user's instructions sit under the override heading.
     const heading = session.indexOf(PREFERENCES_HEADING);
     expect(heading).toBeGreaterThan(0);
+    // ADR-0103: they win on format, length, tone, language and focus, never over the contract or the
+    // never-invent rules, and a preference that cannot fit is applied as the general rules say.
     expect(PREFERENCES_HEADING).toContain(
-      'These user preferences override the general rules above where they differ',
+      'These user preferences decide format, length, tone, language and focus, and win over the general rules above on those.',
+    );
+    expect(PREFERENCES_HEADING).toContain(
+      'They never override the app contract at the top or the never-invent rules',
+    );
+    expect(PREFERENCES_HEADING).toContain(
+      'when one cannot fit the question, the general rules say how to apply it.',
     );
     expect(session.indexOf('Answer format: paragraph')).toBeGreaterThan(heading);
     expect(session.indexOf(LEARNED_HEADING)).toBeGreaterThan(heading);
     expect(session.indexOf('Mention the free trial')).toBeGreaterThan(heading);
     // The question, then the reminder last.
     expect(tail.indexOf('Question to answer:')).toBeLessThan(tail.indexOf('Reminder from the app'));
-    expect(tail.trimEnd().endsWith(UNSUPPORTED_FACT_RULE)).toBe(true);
+    expect(tail.trimEnd().endsWith(GENERAL_KNOWLEDGE_RULE)).toBe(true);
   });
 
   it("lets the user's Short / paragraph preference win over an admin's detailed bullets", () => {

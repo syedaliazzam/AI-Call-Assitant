@@ -424,8 +424,17 @@ describe('the rules block with the default prompt (ADR-0089)', () => {
     expect(SYSTEM_RULES).toContain('[[type|for|source]]');
     expect(SYSTEM_RULES).toContain('often misheard');
     expect(SYSTEM_RULES).toContain('key terms, the company, the role or topic, and the documents');
+    // ADR-0103: earlier answers are a source to build on, and a follow-up does not repeat them.
     expect(SYSTEM_RULES).toContain(
-      'Earlier answers in this call are shown in the conversation. Stay consistent with them. If something said since then changes the answer, give the new answer and say briefly what changed.',
+      'Earlier questions and answers in this call are shown in the conversation, and they are a source: build on them.',
+    );
+    expect(SYSTEM_RULES).toContain('Answer it from there, and do not repeat what was already said.');
+    expect(SYSTEM_RULES).toContain(
+      'Stay consistent with earlier answers: the same numbers, names and positions. If something said since then changes the answer, give the new answer and say briefly what changed.',
+    );
+    // ADR-0103: general knowledge is answered fully; "I'll confirm" only for specific facts.
+    expect(SYSTEM_RULES).toContain(
+      'A general-knowledge question is never answered with a promise to confirm.',
     );
     expect(SYSTEM_RULES).toContain(
       "If the same or a similar question comes again, reuse the earlier answer's facts and, as closely as you can, its wording",

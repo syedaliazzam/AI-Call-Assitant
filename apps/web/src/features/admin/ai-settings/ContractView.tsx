@@ -40,8 +40,8 @@ export function ContractView({ parts }: ContractViewProps) {
       <div className="flex flex-col gap-5 border-t border-ui-border px-4 py-4">
         <p className="text-[13px] text-ui-muted">
           The app reads these lines to show answers, so they cannot be edited. Your prompt comes
-          after them, then each user&apos;s own preferences, which win over your prompt where they
-          differ.
+          after them, then each user&apos;s own preferences, which win over your prompt on format,
+          length, tone, language and focus.
         </p>
         {parts.map((part) => (
           <section key={part.title} aria-label={part.title}>

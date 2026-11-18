@@ -1,0 +1,61 @@
+{
+  "id": "27-follow-up-builds-on-answer",
+  "covers": "ADR-0103: a \"why\" follow-up that builds on the previous answer and gives the reasoning, without repeating that answer.",
+  "group": "call-style",
+  "session": {
+    "type": "interview",
+    "company": "Ledgerly (invented)",
+    "role": "Senior backend engineer interview (the user is the candidate)",
+    "description": "System design round.",
+    "instructions": "",
+    "keyTerms": ["Ledgerly", "Postgres", "Redis"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": []
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "HOW WOULD YOU CACHE THE PRODUCT CATALOGUE",
+        "at": 60
+      }
+    ],
+    [
+      {
+        "kind": "answer",
+        "mode": "answer",
+        "question": "HOW WOULD YOU CACHE THE PRODUCT CATALOGUE",
+        "text": "I'd use cache-aside with Redis and a short expiry.\n- Read from Redis first, and on a miss read Postgres and fill the cache.\n- Expire entries after five minutes.\n- Delete a product's key whenever that product changes.",
+        "at": 63
+      },
+      {
+        "kind": "line",
+        "speaker": "you",
+        "text": "I WOULD USE CACHE ASIDE WITH REDIS AND A SHORT EXPIRY",
+        "at": 70
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "OKAY BUT WHY NOT WRITE THROUGH",
+      "at": 84
+    }
+  ],
+  "mode": "answer",
+  "question": "OKAY BUT WHY NOT WRITE THROUGH",
+  "mustInclude": [
+    "the reason for cache-aside over write-through for this catalogue (for example: a read-heavy catalogue, only products that are actually read get cached, writes stay simple and do not pay the cache cost, and a cache outage does not block writes)",
+    "the downside or the case where write-through would be the better choice, in one line at most"
+  ],
+  "mustNotInclude": [
+    "restating the earlier steps (read Redis first, five-minute expiry, delete the key on change) as the answer",
+    "a different caching approach from the earlier answer without saying why it changed"
+  ]
+}

@@ -19,10 +19,14 @@ import type { SessionContext } from '@kite/shared';
 /**
  * The heading over the user's preferences in the session block. The order of the prompt is: app
  * contract, admin global prompt, these preferences, the conversation, the end reminder. This heading
- * is what makes the user's own choices win over the admin's general rules.
+ * is what makes the user's own choices win over the admin's general rules on format, length, tone,
+ * language and focus. It also keeps them below the app contract and the never-invent rules, and sends
+ * a preference that cannot fit a question back to the general rules (which say how to apply it), so a
+ * preference can shape an answer but never make it invented or unusable.
+ * Also used by src/server/kite-chat.ts (Ask AI), with only the coding language under it.
  */
 export const PREFERENCES_HEADING =
-  'User preferences (set by the user for this session). These user preferences override the general rules above where they differ; only the app contract at the top comes before them.';
+  'User preferences (set by the user for this session). These user preferences decide format, length, tone, language and focus, and win over the general rules above on those. They never override the app contract at the top or the never-invent rules, and when one cannot fit the question, the general rules say how to apply it.';
 
 /** What each answer format means (the value the user picked in the session). */
 export const FORMAT_MEANINGS: Readonly<Record<string, string>> = {

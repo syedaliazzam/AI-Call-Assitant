@@ -710,7 +710,7 @@ describe('POST /api/answer, global prompt (ADR-0089)', () => {
     expect(rules).toBe(`${LIVE_CONTRACT}\n\n${GLOBAL_HEADING}\nSay customers, never users.`);
     expect(params.system[0].cache_control).toEqual({ type: 'ephemeral' });
     // The session block (the user's preferences and instructions) comes after it.
-    expect(params.system[1].text).toContain('These user preferences override the general rules');
+    expect(params.system[1].text).toContain('These user preferences decide format, length, tone, language and focus');
     expect(params.system[1].text).toContain('Instructions from the user:');
   });
 
