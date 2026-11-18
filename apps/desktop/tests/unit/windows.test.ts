@@ -40,6 +40,10 @@ import {
 import { createProtection, installProtection, protectionSupported } from '../../src/protection';
 import { createStore, isBounds, type ShellSettings } from '../../src/store';
 import {
+  ANSWER_MAX_SHARE,
+  ANSWER_TYPICAL_HEIGHT,
+  answerMaxHeight,
+  OVERLAY_ANSWER_FIT_VERSION,
   compactUrl,
   compactWindowOptions,
   createCompactWindows,
@@ -356,7 +360,9 @@ describe('protection', () => {
     const shows: (() => void)[] = [];
     const window = {
       setContentProtection: vi.fn(),
-      on: vi.fn((_event: string, handler: () => void) => shows.push(handler)),
+      on: vi.fn((event: string, handler: () => void) => {
+        if (event === 'show') shows.push(handler);
+      }),
     };
     // Attached as it is created (browser-window-created) and again by its owner.
     protection.attach(window as never);
@@ -366,6 +372,31 @@ describe('protection', () => {
     expect(shows).toHaveLength(1);
     shows[0]!();
     expect(window.setContentProtection).toHaveBeenCalledTimes(2);
+  });
+
+  it('1.7.1 (ADR-0105): re-applies Private after every resize while it is on', () => {
+    const store = memoryStore({ shareProtection: true });
+    const protection = createProtection(store, 'win32', '10.0.26200');
+    const resizes: (() => void)[] = [];
+    const window = {
+      setContentProtection: vi.fn(),
+      on: vi.fn((event: string, handler: () => void) => {
+        if (event === 'resize') resizes.push(handler);
+      }),
+    };
+    protection.attach(window as never);
+    expect(resizes).toHaveLength(1);
+    window.setContentProtection.mockClear();
+    // The answer grows the window twice: applied each time.
+    resizes[0]!();
+    resizes[0]!();
+    expect(window.setContentProtection).toHaveBeenCalledTimes(2);
+    expect(window.setContentProtection).toHaveBeenLastCalledWith(true);
+    // Off: a resize leaves it off (set() alone changes it).
+    protection.set(false, [window]);
+    window.setContentProtection.mockClear();
+    resizes[0]!();
+    expect(window.setContentProtection).not.toHaveBeenCalled();
   });
 
   it('is off by default, remembers a change and applies it; IPC takes a boolean from Kite only', async () => {
@@ -840,8 +871,9 @@ describe('both panels (v1.2.0, spec S15; 1.6.4: no widening by default; 1.6.5, A
   it('keeps its width and place by default, growing only downward (1.6.4)', () => {
     const { compact, window } = openPanels();
     compact.setLayout(BOTH);
-    // Half the display's height by default (above the both-panels minimum, 440).
-    expect(window.bounds).toEqual({ x: 570, y: 24, width: 780, height: DEFAULT.height });
+    // Half the display's height by default (above the both-panels minimum, 440); 1.7.1 (ADR-0105): with the
+    // answer panel open, up to 70 % of it (728 of 1040).
+    expect(window.bounds).toEqual({ x: 570, y: 24, width: 780, height: answerMaxHeight(PRIMARY) });
     compact.setLayout(BARS);
     expect(window.bounds).toMatchObject({ x: 570, width: 780, y: 24 });
   });
@@ -1306,8 +1338,86 @@ describe('v1.3.2: the window is exactly its visible box', () => {
     compact.setLayout({ transcript: false, answer: true, popupHeight: 0, contentHeight: 300 });
     expect(window.bounds).toMatchObject({ y: 24, height: 300 });
     compact.setLayout({ transcript: false, answer: true, popupHeight: 0, contentHeight: 2_000 });
-    // 1.6.4 (ADR-0082): the layout height with panels open is half the display's height by default.
+    // 1.6.4 (ADR-0082): the layout height with panels open was half the display's height by default;
+    // 1.7.1 (ADR-0105): with the answer panel open it is 70 % (728 of 1040).
+    expect(window.bounds.height).toBe(728);
+    // The transcript alone still stops at half.
+    compact.setLayout({ transcript: true, answer: false, popupHeight: 0, contentHeight: 2_000 });
     expect(window.bounds.height).toBe(DEFAULT.height);
+  });
+});
+
+describe('1.7.1 (ADR-0105): the answer grows the window up to 70 % of the work area', () => {
+  it('answerMaxHeight: 70 %, but at least a typical answer where that is under 80 %', () => {
+    expect(ANSWER_MAX_SHARE).toBe(0.7);
+    // 1080p at 100 % (work area 1040): 70 % = 728.
+    expect(answerMaxHeight({ height: 1040 })).toBe(728);
+    // 1080p at 125 % (work area about 826 DIPs): 70 % = 578 is less than a typical answer (616): 616.
+    expect(answerMaxHeight({ height: 826 })).toBe(ANSWER_TYPICAL_HEIGHT);
+    // 1080p at 150 % (688): the typical answer would be 90 %; it stops at 80 % (550).
+    expect(answerMaxHeight({ height: 688 })).toBe(550);
+    // At 130 % zoom a typical answer needs 801: under 80 % of 1040 (832), so 801.
+    expect(answerMaxHeight({ height: 1040 }, 1.3)).toBe(801);
+    // A tall screen: 70 % wins.
+    expect(answerMaxHeight({ height: 1400 })).toBe(980);
+  });
+
+  it('grows with the answer, keeps the top, stays inside the work area and scrolls past the cap', () => {
+    const { compact } = setup({ ...SIZED, overlayAnswerFit: OVERLAY_ANSWER_FIT_VERSION });
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { x: 576, y: 16, width: 768, height: 136 };
+    const answer = { transcript: false, answer: true, popupHeight: 0 };
+    compact.setLayout({ ...answer, contentHeight: 488 });
+    expect(window.bounds).toMatchObject({ y: 16, height: 488 });
+    compact.setLayout({ ...answer, contentHeight: 616 });
+    expect(window.bounds).toMatchObject({ y: 16, height: 616 });
+    // Longer than the cap: 728, and the page scrolls the rest.
+    compact.setLayout({ ...answer, contentHeight: 1_500 });
+    expect(window.bounds).toMatchObject({ y: 16, height: 728 });
+    // A new, shorter answer: back to its height.
+    compact.setLayout({ ...answer, contentHeight: 488 });
+    expect(window.bounds).toMatchObject({ y: 16, height: 488 });
+    // Low on the screen: the top stays, and the window stops at the work area's bottom.
+    window.bounds = { x: 576, y: 700, width: 768, height: 300 };
+    compact.setLayout({ ...answer, contentHeight: 1_400 });
+    expect(window.bounds).toMatchObject({ y: 700, height: 340 });
+    expect(window.bounds.y + window.bounds.height).toBeLessThanOrEqual(PRIMARY.height);
+  });
+
+  it('a height the person gave the answer panel is its limit; a nudge refits to the room below', () => {
+    const { compact } = setup({ ...SIZED, overlayAnswerFit: OVERLAY_ANSWER_FIT_VERSION });
+    compact.open('s1');
+    const window = FakeWindow.created.at(-1)!;
+    window.bounds = { x: 576, y: 16, width: 768, height: 500 };
+    const answer = { transcript: false, answer: true, popupHeight: 0, contentHeight: 1_500 };
+    compact.setLayout(answer);
+    expect(window.bounds.height).toBe(728);
+    // The person drags the bottom edge up to 420.
+    compact.resize({ phase: 'start', edge: 's', dx: 0, dy: 0 });
+    compact.resize({ phase: 'end', edge: 's', dx: 0, dy: -308 });
+    expect(window.bounds.height).toBe(420);
+    compact.setLayout({ ...answer, contentHeight: 1_600 });
+    expect(window.bounds.height).toBe(420);
+    // Ctrl+Alt+Shift+Down nudges: the top moves; the height still fits the room below it.
+    window.bounds = { x: 576, y: 680, width: 768, height: 420 };
+    compact.move(0, 20);
+    expect(window.bounds).toMatchObject({ y: 700, height: 340 });
+  });
+
+  it('forgets the answer heights saved before 1.7.1 once, and keeps the others', () => {
+    const { compact, store } = setup({
+      ...SIZED,
+      overlayHeights: { answer: 300, both: 320, transcript: 400 },
+    });
+    compact.open('s1');
+    expect(store.read().overlayHeights).toEqual({ transcript: 400 });
+    expect(store.read().overlayAnswerFit).toBe(OVERLAY_ANSWER_FIT_VERSION);
+    // A height given after that stays.
+    store.write({ overlayHeights: { answer: 350 } });
+    compact.close();
+    compact.open('s1');
+    expect(store.read().overlayHeights).toEqual({ answer: 350 });
   });
 });
 

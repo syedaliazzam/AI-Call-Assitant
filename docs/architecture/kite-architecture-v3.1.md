@@ -1,8 +1,8 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "4.43.1"
+version: "4.44.0"
 status: "Current: the single document the team builds from"
-date: "2026-11-18"
+date: "2026-11-19"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 4.43.1, **Current**: the only document to build from |
+| Version | 4.44.0, **Current**: the only document to build from |
+| Changes in 4.44.0 | **The answer panel fits the answer; overlay menus close on any press outside** (ADR-0105; web and desktop 1.7.1). §5: with an answer shown, the answer panel opens at least 380 CSS px tall (a typical answer, no scrolling; only the text part follows the answer text size), grows with a longer answer while it streams and never shrinks during it (`overlay/answerHeight.ts`), and the next answer fits again. §7.3: with the answer panel open the window may grow to 70 % of the work area, at least 616 DIPs × zoom where that is under 80 % (`answerMaxHeight()`), from its top edge and inside the work area; a height the person gives it is the limit; answer heights saved before 1.7.1 are forgotten once (`overlayAnswerFit`); a nudge refits the height; Private is re-applied on every resize. §5: an open menu or list closes on a press outside it (also on the bars: drag areas are off while it is open, `k-popup-open`), when the window loses focus, on Esc, or when an item is chosen; the closing press triggers nothing (`overlay/usePopupDismiss.ts`). |
 | Changes in 4.43.1 | **"Recommended" on Claude Haiku** (ADR-0104, Decision 5; web only). §5: the model lists show "Claude Haiku (Recommended)" and "Gemini 3.5 Flash Lite" with no tag; names, order and default unchanged. |
 | Changes in 4.43.0 | **Gemini 3.5 Flash Lite stays in the rollout, Gemini 3.6 Flash retired, GPT warm-up fixed** (ADR-0104; web only, desktop unchanged). §5: the model lists no longer show Gemini 3.6 Flash; a session or default still set to it moves to Claude Haiku (dashboard and running call), and the server answers it with Claude Haiku whatever the switches say (`RETIRED_ANSWER_MODELS`, `isRetiredModel()` in packages/shared). Gemini 3.5 Flash Lite stays for the accounts in `KITE_ANSWER_MODELS_USERS` only; Claude Haiku stays the default. §7.2: an OpenAI warm-up asks for 16 output tokens (`OPENAI_WARM_MAX_TOKENS`), because GPT-5.6 Luna refuses 1 with HTTP 400. Measurements: Gemini on the paid tier against Haiku and Luna. |
 | Changes in 4.42.0 | **Natural-style live answers prompt; stray text before the hidden line never shown** (ADR-0103; web only, desktop unchanged). §7.2: the built-in default Live answers prompt is the developer's natural-style text (call kinds, general knowledge answered fully, no worked examples); it never mentions the hidden line. The user-preferences heading: preferences decide format, length, tone, language and focus and win over the general rules on those, never over the app contract or the never-invent rules. The end reminder limits "add no detail" to personal, company, offer and project details and keeps the "I'll confirm" promise to specific company or offer facts, never general knowledge. The answer route never shows text written before the hidden first line (a reply that opens with it streams as before; otherwise its first line is held, at most 500 characters), drops a copied `[[type|for|source]]`, takes out a leading `[[question|…]]` line and never uses a malformed one as the question, and removes a malformed last line; the log adds `droppedLeadingText`. Evaluation: group `call-style` (25–28) and a placeholder check. |
