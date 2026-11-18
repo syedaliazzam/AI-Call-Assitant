@@ -869,3 +869,18 @@ After, per question (stop → sent, ms): 451, 607, 548, 447, 777, 1,393, 337, 74
 `answers` evaluation with typed questions sent as spoken (`--spoken`, the new "Question spoken by the user (speech recognition; may contain misheard words)" label): **9.30 / 10** (gate 8.86); hidden line 30/30; the spoken scenario 09 scored 10. Spend $0.095.
 
 Cloud transcription: on 18 Nov a brand-new non-admin account received a Deepgram token from production (before ADR-0101's code change): `KITE_STT_DEEPGRAM_USERS` (re-created 14 Nov 13:43 UTC, never edited since) worked as `*`.
+
+### GPT-5.6 Luna for a non-rollout account (ADR-0102, 18 Nov 2026)
+
+Same laptop (Pakistan); production after the ADR-0102 deploy; a Node script (no browser) signed in as a brand-new non-admin test account that is not in `KITE_ANSWER_MODELS_USERS` (deleted afterwards). One typed question in a short invented session, model `gpt-luna`, a new call id (so no cached prefix), no warm-up first.
+
+| What | Result |
+|---|---|
+| `GET /api/models` | `{"deepModel":true,"groq":false,"openai":true}`: GPT on, no `moreModels`/`gemini` (no Gemini rows) |
+| Answered by | `gpt-luna`, no fallback |
+| Tokens | 4,132 input, 78 output, 0 cached |
+| Cost at Luna's list price ($0.20 / $1.20 per million) | **$0.00092** |
+| Server: received → stream open / first text / done | 2,465 / 2,538 / 3,207 ms |
+| Client: request → first text | 4,504 ms (one cold request, sign-in just before) |
+
+One sample only: the times are not a latency measurement (see ADR-0099's runs for that). Within a call the warm-up and the call-id cache key make later answers' input mostly cache reads (0.1 × input price).
