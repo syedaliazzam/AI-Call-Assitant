@@ -698,3 +698,18 @@ Same laptop and models. Developer's cap $0.18 for both steps; spend **$0.125** (
 Per scenario (version 3), with the 16 Nov 9.30 run in brackets: 01 10.0 (9.0), 02 9.0 (9.0), 03 8.5 (9.5), 04 9.0 (10.0), 05 9.5 (9.0), 06 10.0 (9.5), 07 10.0 (9.5), 08 8.5 (8.5), 09 9.0 (10.0), 10 9.5 (9.5), 11 9.5 (8.0), 12 10.0 (10.0), 13 10.0 (8.0), 14 10.0 (10.0), 15 9.0 (10.0).
 
 **Why 09 misses the hidden line.** Three ungraded re-runs of 09 (a typed question) showed the model copying the placeholder the version 3 prompt writes in its second line ("The hidden [[type|for|source]] line always comes first"): one reply opened "Hmm, the first line must be the hidden type line. Correct output:" and then the real line; one opened with the literal `[[type|for|source]]`, then a self-correction, then the real line; one had no hidden line. The earlier `[[question|for|source]]` reply is the same copy. The current default never writes the placeholder (a unit test used to forbid it in the editable text; it was relaxed for version 2 and is the guard that would have caught this).
+
+### Version 4 (2026-11-18, ADR-0103): placeholder copied in scenario 09, not deployed
+
+Version 4 writes no "[[" at all. The evaluation now also flags a copied placeholder (`[[type|for|source]]`, or the same slots under another first word) and no longer counts one as the hidden line, so these hidden-line counts are stricter than version 3's. Same laptop and models. Developer's cap $0.15; spend **$0.128** ($0.0149 version 4 ungraded, $0.0125 current default ungraded with the same check, $0.1002 graded `answers`).
+
+| Check | Current default (main) | Version 4 |
+|---|---|---|
+| Hidden line first, 60 ungraded replies (`answers` 15 × 4) | **60/60** | **56/60** (09, all four runs) |
+| Replies containing the placeholder, same 60 | **0** | **4** (09, all four) |
+| Answer line ≤ 12 words as written, same 60 | 40/52 | 41/55 |
+| `answers` graded (15 × 2), gate 8.86 | 9.30 (16 Nov) | **9.13**; hidden line 28/30 and placeholder in 2 (09 both runs); answer line ≤ 12 words as written 19/28; 08 nothing invented (10.0, 9.0) |
+
+Per scenario (version 4), with the 16 Nov 9.30 run in brackets: 01 10.0 (9.0), 02 9.0 (9.0), 03 8.0 (9.5), 04 9.5 (10.0), 05 9.5 (9.0), 06 9.5 (9.5), 07 9.0 (9.5), 08 9.5 (8.5), 09 8.0 (10.0), 10 9.5 (9.5), 11 8.5 (8.0), 12 10.0 (10.0), 13 8.5 (8.0), 14 10.0 (10.0), 15 8.5 (10.0).
+
+With no placeholder in the editable prompt, the copies can only come from the app contract and the end reminder, which the current default sends too and which get 60/60 there. The difference is version 4's second line, which tells the model about "the hidden first line from the app contract"; the graded 09 replies open with self-talk about "the hidden line format". Only typed questions (09) were affected.

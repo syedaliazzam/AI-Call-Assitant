@@ -1,6 +1,6 @@
 # ADR-0103: Natural-style live answers prompt and the reach of user preferences
 
-- **Status:** Proposed. Not deployed. First version: `answers` 8.67 (gate 8.86). Second version: 9.10, hidden line 28 of 30. Version 3: 9.43, but hidden line first in 58 of 60 ungraded replies against the current default's 59 of 60 (the developer's rule: no worse) (18 Nov 2026). The app side is done in the same branch: text before the hidden first line is never shown (`server/answer-meta.ts`).
+- **Status:** Proposed. Not deployed. First version: `answers` 8.67 (gate 8.86). Second: 9.10, hidden line 28 of 30. Version 3: 9.43, hidden line first 58 of 60 against 59 of 60. Version 4: 9.13, but hidden line first 56 of 60 and the placeholder copied in 4 (scenario 09), against 60 of 60 and none for the current default (18 Nov 2026). The app side is done in the same branch: text before the hidden first line is never shown (`server/answer-meta.ts`).
 - **Date:** 2026-11-18
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §7 (live answers prompt; unchanged until this is accepted)
 - **Supersedes / superseded by:** would change ADR-0089's default live prompt and preference heading; keeps ADR-0088's rule word for word
