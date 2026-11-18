@@ -4,11 +4,11 @@
  *          preferences and the overlay can show the others as unavailable. Never throws. When it cannot tell,
  *          it says yes to the deeper model and no to Groq (ADR-0095) and to the Gemini and GPT models
  *          (ADR-0099): the server enforces every switch on every answer anyway, and the third-party models need
- *          a server key (and, for Gemini and GPT, the rollout) this account may not have.
+ *          a server key (and, for Gemini, the rollout; ADR-0102) this account may not have.
  * Used by: src/features/session-setup/PreferencesStep.tsx, src/features/settings/Settings.tsx,
  *          src/features/live/LiveAnswers.tsx (the overlay's model switch, ADR-0094)
  * Depends on: @kite/shared (response type), the browser's fetch
- * Architecture: docs/design/paramount-ai-ui-spec.md §6; ADR-0095; ADR-0099
+ * Architecture: docs/design/paramount-ai-ui-spec.md §6; ADR-0095; ADR-0099; ADR-0102
  */
 import type { ModelAccessResponse } from '@kite/shared';
 
@@ -18,10 +18,7 @@ export interface AnswerModelAccess {
   smart: boolean;
   /** ADR-0095: true when the server has Groq and an admin has not turned it off. */
   groq: boolean;
-  /**
-   * ADR-0099: true when this account is in the new-models rollout: the lists show the Gemini and GPT models,
-   * in the rollout's order and words.
-   */
+  /** ADR-0099: true when this account is in the Gemini rollout: the lists show the Gemini rows (ADR-0102). */
   moreModels: boolean;
   /** ADR-0099: true when this account may choose the Gemini models. */
   gemini: boolean;
@@ -55,7 +52,8 @@ export async function answerModelAccess(
     return {
       smart: body.deepModel !== false,
       groq: body.groq === true,
-      // ADR-0099: an older server, or an account outside the rollout, sends none of these: all false.
+      // ADR-0099: an older server sends none of these, and (ADR-0102) an account outside the Gemini rollout no
+      // moreModels or gemini: false.
       moreModels: body.moreModels === true,
       gemini: body.gemini === true,
       openai: body.openai === true,

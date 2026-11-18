@@ -68,8 +68,10 @@ export function BrandLockup({
   // transparency: multiply blends that white into a light page (on the dark theme's white tile it
   // changes nothing).
   const height = BRAND_LOGO_HAS_NAME ? WORDMARK_HEIGHTS[size] : s.mark;
-  // eslint-disable-next-line @next/next/no-img-element
   const mark = (
+    // A plain img: the logo is a small static file that needs no optimising, and multiply blending
+    // applies to the img itself.
+    // eslint-disable-next-line @next/next/no-img-element
     <img src={BRAND_LOGO_SRC} alt="" className={`${height} w-auto mix-blend-multiply`} />
   );
   return (

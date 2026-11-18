@@ -366,7 +366,7 @@ export function CompactView(props: CompactViewProps) {
     setPendingModel(null);
     setToast((was) => ({
       id: (was?.id ?? 0) + 1,
-      text: modelSwitchToast(pendingModel, modelChoice?.moreModels),
+      text: modelSwitchToast(pendingModel),
     }));
   } else if (pendingModel && modelChoice && modelOff(pendingModel, modelChoice)) {
     // An admin turned Smart off between the menu opening and the pick: the model stays as it was. ADR-0095:
@@ -374,7 +374,7 @@ export function CompactView(props: CompactViewProps) {
     setPendingModel(null);
     setToast((was) => ({
       id: (was?.id ?? 0) + 1,
-      text: modelRefusedToast(pendingModel, modelChoice.moreModels),
+      text: modelRefusedToast(pendingModel),
     }));
   }
   // ADR-0095: Voice mode's one-time tip, where the toast shows (never both at once).

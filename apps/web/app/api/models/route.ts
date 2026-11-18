@@ -1,12 +1,12 @@
 /**
  * File: apps/web/app/api/models/route.ts
  * Purpose: GET /api/models: whether sessions may choose the deeper model and (ADR-0095) Groq, so the wizard
- *          and the overlay can say so; ADR-0099: whether this account is in the Gemini and GPT models' rollout,
- *          and whether each of those providers may be chosen. The answer route enforces all of them either way;
- *          this is only for showing the choice.
+ *          and the overlay can say so; ADR-0099: whether this account is in the Gemini rollout, and whether each
+ *          of Gemini and OpenAI may be chosen (ADR-0102: OpenAI is said for every account). The answer route
+ *          enforces all of them either way; this is only for showing the choice.
  * Used by: src/core/session/modelAccess.ts (browser)
  * Depends on: src/server/auth.ts (getCachedSession), src/server/modelAccess.ts
- * Architecture: docs/design/paramount-ai-ui-spec.md §6; ADR-0095; ADR-0099
+ * Architecture: docs/design/paramount-ai-ui-spec.md §6; ADR-0095; ADR-0099; ADR-0102
  */
 import type { ModelAccessResponse } from '@kite/shared';
 import { getCachedSession } from '@/server/auth';
@@ -37,17 +37,18 @@ export async function GET(request: Request): Promise<Response> {
     return refused;
   }
   const userId = session.user.id;
-  // ADR-0099: an account outside the rollout gets exactly the fields an older server sent.
+  // ADR-0102: every account is told whether it may choose the GPT models; only an account in the Gemini
+  // rollout gets moreModels and gemini (the browser then shows the Gemini rows).
   const more = moreModelsFor(userId);
   const [deepModel, groq, gemini, openai] = await Promise.all([
     getDeepModelEnabled(),
     getGroqEnabled(),
     more ? getProviderEnabled('gemini', userId) : Promise.resolve(false),
-    more ? getProviderEnabled('openai', userId) : Promise.resolve(false),
+    getProviderEnabled('openai', userId),
   ]);
   const body: ModelAccessResponse = more
     ? { deepModel, groq, moreModels: true, gemini, openai }
-    : { deepModel, groq };
+    : { deepModel, groq, openai };
   const response = Response.json(body);
   for (const cookie of setCookies) response.headers.append('set-cookie', cookie);
   return response;

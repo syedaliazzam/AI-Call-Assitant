@@ -131,9 +131,9 @@ export interface ModelAccessResponse {
    */
   groq?: boolean;
   /**
-   * ADR-0099: true when this account is in the new-models rollout (KITE_ANSWER_MODELS_USERS): the model list
-   * then shows the Gemini and GPT models too, in the rollout's order and words. Absent or false: the classic
-   * list (Fast, Smart, Fastest).
+   * ADR-0099: true when this account is in the Gemini rollout (KITE_ANSWER_MODELS_USERS): the model list then
+   * shows the Gemini rows too. Absent or false: the list without them (ADR-0102: GPT-5.6 Luna, GPT-5.6 Terra,
+   * Claude Haiku, Claude Sonnet, Groq).
    */
   moreModels?: boolean;
   /**
@@ -141,7 +141,10 @@ export interface ModelAccessResponse {
    * key, and an admin has not turned Gemini off).
    */
   gemini?: boolean;
-  /** ADR-0099: the same for the OpenAI (GPT) models. */
+  /**
+   * ADR-0099: true when this account may choose the OpenAI (GPT) models (the server has an OpenAI key and an
+   * admin has not turned OpenAI off). ADR-0102: sent for every account; absent from an older server: false.
+   */
   openai?: boolean;
 }
 

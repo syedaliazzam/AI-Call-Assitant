@@ -152,7 +152,7 @@ export function PreferencesStep({ draft, onChange }: PreferencesStepProps) {
           subtitle="Speed or depth"
           control={
             // ADR-0099: the rollout's names are longer, so its list is wider.
-            <div className={access.moreModels ? 'w-72' : 'w-56'}>
+            <div className="w-72">
               <Select<AnswerModel>
                 label="Select model"
                 hideLabel

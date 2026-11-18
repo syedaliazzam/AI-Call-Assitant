@@ -1,29 +1,29 @@
 /**
- * Tests apps/web/src/core/session/modelChoices.ts (ADR-0099): an account outside the rollout sees the classic
- * three choices exactly as before; one in the rollout sees the seven in the developer's order and words; a
- * Gemini or GPT model is always named by its own name; and a choice is off when its switch, key or rollout
- * says so.
+ * Tests apps/web/src/core/session/modelChoices.ts (ADR-0099, ADR-0102): an account outside the Gemini rollout
+ * sees the GPT models, Claude Haiku, Claude Sonnet and Groq; one in the rollout sees all seven in the
+ * developer's order and words; every model has one name for every account; and a choice is off when its
+ * switch, key or rollout says so.
  */
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_MODEL_ACCESS } from '@/core/session/modelAccess';
 import {
-  CLASSIC_MODEL_CHOICES,
   modelChoices,
   modelEntry,
   modelOff,
   ROLLOUT_MODEL_CHOICES,
+  STANDARD_MODEL_CHOICES,
 } from '@/core/session/modelChoices';
 
 describe('modelChoices', () => {
-  it('keeps the classic list for everyone outside the rollout', () => {
-    expect(modelChoices(false)).toBe(CLASSIC_MODEL_CHOICES);
-    expect(CLASSIC_MODEL_CHOICES.map((choice) => [choice.value, choice.label, choice.tag])).toEqual(
-      [
-        ['fast', 'Fast (Claude Haiku)', 'Recommended'],
-        ['smart', 'Smart (Claude Sonnet)', 'Deeper, slower'],
-        ['groq', 'Fastest (Groq)', 'Quickest'],
-      ],
-    );
+  it('shows everyone outside the Gemini rollout the same list without the Gemini rows (ADR-0102)', () => {
+    expect(modelChoices(false)).toBe(STANDARD_MODEL_CHOICES);
+    expect(STANDARD_MODEL_CHOICES.map((choice) => [choice.value, choice.label])).toEqual([
+      ['gpt-luna', 'GPT-5.6 Luna (Fast)'],
+      ['gpt-terra', 'GPT-5.6 Terra'],
+      ['fast', 'Claude Haiku'],
+      ['smart', 'Claude Sonnet'],
+      ['groq', 'Groq (Fastest)'],
+    ]);
   });
 
   it("lists the rollout's seven models in the developer's order and words", () => {
@@ -41,12 +41,11 @@ describe('modelChoices', () => {
 });
 
 describe('modelEntry', () => {
-  it('names a Gemini or GPT model by its own name in either list, the others by the list in use', () => {
-    expect(modelEntry('gemini-lite', false).title).toBe('Gemini 3.5 Flash Lite');
-    expect(modelEntry('gpt-luna', false).name).toBe('Luna');
-    expect(modelEntry('fast', false).name).toBe('Fast');
-    expect(modelEntry('fast', true).name).toBe('Haiku');
-    expect(modelEntry('groq', true).label).toBe('Groq (Fastest)');
+  it('names every model the same for every account (ADR-0102)', () => {
+    expect(modelEntry('gemini-lite').title).toBe('Gemini 3.5 Flash Lite');
+    expect(modelEntry('gpt-luna').name).toBe('Luna');
+    expect(modelEntry('fast').name).toBe('Haiku');
+    expect(modelEntry('groq').label).toBe('Groq (Fastest)');
   });
 });
 

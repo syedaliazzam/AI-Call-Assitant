@@ -4,8 +4,9 @@
  * that provider with the same prompt Claude gets, with the model id from the environment, and its done event
  * names the model; it is counted as that provider's request; a screenshot goes to the provider with its image;
  * OpenAI gets the call's id as the cache key; a failure before any text is answered by Claude Haiku and
- * recorded; a warm-up warms the provider and Claude Haiku together; an account outside the rollout, or a
- * provider turned off, answers with Claude Haiku; Ask AI keeps its Claude model; the call id is validated.
+ * recorded; a warm-up warms the provider and Claude Haiku together; a Gemini session of an account outside
+ * the Gemini rollout, or a provider turned off, answers with Claude Haiku (ADR-0102: a GPT session of any
+ * account answers with GPT); Ask AI keeps its Claude model; the call id is validated.
  * Logs carry ids, the reason and the model only, never text.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,7 +24,10 @@ const countRequestMock = vi.hoisted(() =>
 );
 vi.mock('@/server/usage', () => ({ countRequest: countRequestMock }));
 
-/** The providers' switches, and the accounts in the rollout (as the real getProviderEnabled() combines them). */
+/**
+ * The providers' switches, and the accounts in the Gemini rollout (as the real getProviderEnabled() combines
+ * them; ADR-0102: the rollout limits Gemini only).
+ */
 const access = vi.hoisted(() => ({
   gemini: true,
   openai: true,
@@ -35,7 +39,7 @@ vi.mock('@/server/modelAccess', async (importOriginal) => ({
   getDeepModelEnabled: async () => true,
   getGroqEnabled: async () => true,
   getProviderEnabled: async (provider: 'gemini' | 'openai', userId: string) =>
-    access.rollout.has(userId) && access[provider],
+    (provider === 'openai' || access.rollout.has(userId)) && access[provider],
 }));
 
 /** The default global prompt for every block. */
@@ -300,6 +304,16 @@ describe('POST /api/answer with Gemini and OpenAI (ADR-0099)', () => {
     expect(streamMock.mock.calls[0]![0].model).toBe('claude-haiku-5-5');
     expect(text).toMatch(/"model":"fast"/);
     expect(countRequestMock).toHaveBeenLastCalledWith('u1', undefined, { provider: undefined });
+  });
+
+  it('answers a GPT session with GPT for an account outside the Gemini rollout (ADR-0102)', async () => {
+    access.rollout = new Set(['someone-else']);
+    openaiMock.mockImplementation(() => reply('[[call|general]]', 'GPT says hi.'));
+    const text = await (await POST(post(chat('gpt-luna')))).text();
+    expect(openaiMock.mock.calls[0]![0].model).toBe('gpt-5.6-luna');
+    expect(streamMock).not.toHaveBeenCalled();
+    expect(text).toMatch(/"model":"gpt-luna"/);
+    expect(countRequestMock).toHaveBeenLastCalledWith('u1', undefined, { provider: 'openai' });
   });
 
   it('answers with Claude Haiku while the provider is turned off', async () => {

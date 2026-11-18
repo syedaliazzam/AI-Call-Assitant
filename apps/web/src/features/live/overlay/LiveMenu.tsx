@@ -231,14 +231,14 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
             <button
               type="button"
               aria-expanded={modelOpen}
-              aria-label={`Model: ${modelEntry(modelChoice.model, modelChoice.moreModels === true).label}`}
+              aria-label={`Model: ${modelEntry(modelChoice.model).label}`}
               onClick={() => setModelOpen((was) => !was)}
               className="flex min-h-10 w-full items-center gap-2.5 px-3 py-1 text-left text-input text-ui-text hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
             >
               <Sparkles {...ICON} />
               <span className="shrink-0">Model</span>
               <span className="min-w-0 flex-1 truncate text-right text-[13px] text-ui-muted">
-                {modelEntry(modelChoice.model, modelChoice.moreModels === true).label}
+                {modelEntry(modelChoice.model).label}
               </span>
               <ChevronDownIcon size={14} />
             </button>
