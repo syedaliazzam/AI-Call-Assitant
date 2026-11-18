@@ -429,14 +429,21 @@ describe('the rules block with the default prompt (ADR-0089)', () => {
       'Earlier questions and answers in this call are shown in the conversation, and they are a source: build on them.',
     );
     expect(SYSTEM_RULES).toContain(
-      'Answer it from there, and do not repeat what was already said.',
+      'Answer only the new part: never restate steps, numbers or points already given in this call.',
     );
     expect(SYSTEM_RULES).toContain(
       'Stay consistent with earlier answers: the same numbers, names and positions. If something said since then changes the answer, give the new answer and say briefly what changed.',
     );
-    // ADR-0103: general knowledge is answered fully; "I'll confirm" only for specific facts.
+    // ADR-0103: the spoken-answer rules never move the hidden first line.
     expect(SYSTEM_RULES).toContain(
-      'A general-knowledge question is never answered with a promise to confirm.',
+      'The hidden [[type|for|source]] line always comes first, before the answer line',
+    );
+    // ADR-0103: general knowledge is answered fully, but not where the answer turns on a company's facts.
+    expect(SYSTEM_RULES).toContain(
+      'General knowledge is answered fully and directly from what you know',
+    );
+    expect(SYSTEM_RULES).toContain(
+      'The moment it does, the next two sections decide the answer, however familiar the subject is.',
     );
     expect(SYSTEM_RULES).toContain(
       "If the same or a similar question comes again, reuse the earlier answer's facts and, as closely as you can, its wording",
