@@ -6,7 +6,8 @@
  * OpenAI gets the call's id as the cache key; a failure before any text is answered by Claude Haiku and
  * recorded; a warm-up warms the provider and Claude Haiku together; a Gemini session of an account outside
  * the Gemini rollout, or a provider turned off, answers with Claude Haiku (ADR-0102: a GPT session of any
- * account answers with GPT); Ask AI keeps its Claude model; the call id is validated.
+ * account answers with GPT); ADR-0104: a session still set to the retired Gemini 3.6 Flash answers with Claude
+ * Haiku; Ask AI keeps its Claude model; the call id is validated.
  * Logs carry ids, the reason and the model only, never text.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -193,13 +194,12 @@ describe('POST /api/answer with Gemini and OpenAI (ADR-0099)', () => {
     expect(countRequestMock).toHaveBeenLastCalledWith('u1', undefined, { provider: 'gemini' });
   });
 
-  it('uses the default model ids when their variables are not set, and Gemini 3.6 Flash for gemini-flash', async () => {
-    geminiMock.mockImplementation(() => reply('x'));
+  // ADR-0104: the Gemini model's id comes from the environment in this suite (KITE_MODEL_GEMINI_LITE); the
+  // retired Gemini 3.6 Flash is never asked (its own test).
+  it('uses the default GPT model ids when their variables are not set', async () => {
     openaiMock.mockImplementation(() => reply('x'));
-    await (await POST(post(chat('gemini-flash')))).text();
     await (await POST(post(chat('gpt-luna')))).text();
     await (await POST(post(chat('gpt-terra')))).text();
-    expect(geminiMock.mock.calls[0]![0].model).toBe('gemini-3.6-flash');
     expect(openaiMock.mock.calls[0]![0].model).toBe('gpt-5.6-luna');
     expect(openaiMock.mock.calls[1]![0].model).toBe('gpt-5.6-terra');
   });
@@ -294,6 +294,15 @@ describe('POST /api/answer with Gemini and OpenAI (ADR-0099)', () => {
     ).text();
     expect(text).toMatch(/event: done/);
     expect(text).toMatch(/"input_tokens":7/);
+  });
+
+  it('answers a session still set to the retired Gemini 3.6 Flash with Claude Haiku (ADR-0104)', async () => {
+    streamMock.mockReturnValue(fakeMessageStream());
+    const text = await (await POST(post(chat('gemini-flash')))).text();
+    expect(geminiMock).not.toHaveBeenCalled();
+    expect(streamMock.mock.calls[0]![0].model).toBe('claude-haiku-5-5');
+    expect(text).toMatch(/"model":"fast"/);
+    expect(countRequestMock).toHaveBeenLastCalledWith('u1', undefined, { provider: undefined });
   });
 
   it('answers with Claude Haiku for an account outside the rollout', async () => {

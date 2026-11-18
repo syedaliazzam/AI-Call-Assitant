@@ -42,7 +42,8 @@ export type ModelTier = 'fast' | 'smart';
  * (KITE_ANSWER_MODELS_USERS) while they are measured:
  * - `gemini-lite`: Google's Gemini 3.5 Flash Lite (KITE_MODEL_GEMINI_LITE on the server).
  * - `gpt-luna`: OpenAI's GPT-5.6 Luna (KITE_MODEL_OPENAI_FAST).
- * - `gemini-flash`: Google's Gemini 3.6 Flash (KITE_MODEL_GEMINI_FLASH).
+ * - `gemini-flash`: Google's Gemini 3.6 Flash (KITE_MODEL_GEMINI_FLASH). ADR-0104: retired (no longer offered;
+ *   see RETIRED_ANSWER_MODELS). The value stays so stored and synced sessions still read.
  * - `gpt-terra`: OpenAI's GPT-5.6 Terra (KITE_MODEL_OPENAI_SMART).
  * These four answer screenshots too; an answer one of them cannot start within 4 s is asked of Claude Haiku.
  * Ask AI and the call notes keep their own Claude models (ModelTier).
@@ -63,6 +64,26 @@ export const ANSWER_MODELS: readonly AnswerModel[] = [
   'smart',
   'groq',
 ];
+
+/**
+ * ADR-0104: answer models that are no longer offered. A stored or synced value still reads as an answer model
+ * (isAnswerModel), but the model lists leave it out, the app moves a session or default set to it to Claude
+ * Haiku ('fast'), and the server answers a request for it with Claude Haiku.
+ * - `gemini-flash`: Gemini 3.6 Flash failed the measurement of 18 Nov 2026 (hidden line, placeholder, speed).
+ */
+export const RETIRED_ANSWER_MODELS: readonly AnswerModel[] = ['gemini-flash'];
+
+/**
+ * ADR-0104: whether a model is retired (RETIRED_ANSWER_MODELS).
+ *
+ * @param model The answer model.
+ * @returns True when it is no longer offered.
+ * Called from: apps/web/src/server/modelAccess.ts (allowedModel()), apps/web/src/core/session/modelChoices.ts,
+ *              apps/web/src/core/session/retireModels.ts, apps/web/src/features/live/LiveAnswers.tsx; tests
+ */
+export function isRetiredModel(model: AnswerModel): boolean {
+  return RETIRED_ANSWER_MODELS.includes(model);
+}
 
 /**
  * ADR-0099: who serves an answer model. 'claude' is Anthropic (Haiku and Sonnet); the other three are the

@@ -40,6 +40,7 @@ import {
   type AnswerModelAccess,
 } from '@/core/session/modelAccess';
 import { modelOff } from '@/core/session/modelChoices';
+import { mustMoveToHaiku } from '@/core/session/retireModels';
 import { callTimings } from '@/core/live/callTimings';
 import {
   clampStep,
@@ -288,11 +289,12 @@ export function LiveAnswers(props: LiveAnswersProps) {
   }, []);
   // ADR-0101: a session still set to Groq while Groq is off moves to Claude Haiku in its stored preferences
   // (the overlay already shows Claude Haiku, and the server answers it with Claude Haiku, never asking Groq).
+  // ADR-0104: the same for a retired model (Gemini 3.6 Flash).
   const sessionIdForModel = props.session.id;
   useEffect(() => {
-    if (!accessKnown || access.groq || model !== 'groq') return;
+    if (!accessKnown || !mustMoveToHaiku(model, access)) return;
     updateSessionPreferences(sessionIdForModel, { model: 'fast' }).catch(() => undefined);
-  }, [accessKnown, access.groq, model, sessionIdForModel]);
+  }, [accessKnown, access, model, sessionIdForModel]);
   // The answers use the new style and model from the next answer: one already streaming keeps its request.
   const session = useMemo(
     () => ({ ...props.session, preferences: { ...props.session.preferences, style, model } }),

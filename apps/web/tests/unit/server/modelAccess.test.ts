@@ -192,7 +192,9 @@ describe('Gemini and OpenAI (ADR-0099)', () => {
     const allOn = { smart: true, groq: true, gemini: true, openai: true };
     expect(allowedModel('gemini-lite', allOn)).toBe('gemini-lite');
     expect(allowedModel('gpt-terra', allOn)).toBe('gpt-terra');
-    expect(allowedModel('gemini-flash', { ...allOn, gemini: false })).toBe('fast');
+    expect(allowedModel('gemini-lite', { ...allOn, gemini: false })).toBe('fast');
+    // ADR-0104: the retired Gemini 3.6 Flash is never used, even with every switch on.
+    expect(allowedModel('gemini-flash', allOn)).toBe('fast');
     expect(allowedModel('gpt-luna', { ...allOn, openai: false })).toBe('fast');
     expect(allowedModel('groq', { ...allOn, groq: false })).toBe('fast');
     expect(allowedModel('smart', { ...allOn, smart: false })).toBe('fast');

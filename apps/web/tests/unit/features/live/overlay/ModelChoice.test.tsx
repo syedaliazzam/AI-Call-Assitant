@@ -300,7 +300,7 @@ describe('Voice mode on bar 1 and in the ⋮ menu (ADR-0095)', () => {
 });
 
 describe('ADR-0099: the new-models rollout in the overlay', () => {
-  it("lists the rollout's seven choices in order, with their tags, and disables the providers that are off", () => {
+  it("lists the rollout's six choices in order, with their tags, and disables the providers that are off", () => {
     const html = renderToString(
       <ModelOptions
         label="Model"
@@ -317,7 +317,6 @@ describe('ADR-0099: the new-models rollout in the overlay', () => {
     const order = [
       'Gemini 3.5 Flash Lite (Recommended)',
       'GPT-5.6 Luna (Fast)',
-      'Gemini 3.6 Flash',
       'GPT-5.6 Terra',
       'Claude Haiku',
       'Claude Sonnet',
@@ -327,6 +326,8 @@ describe('ADR-0099: the new-models rollout in the overlay', () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(html).toMatch(/aria-disabled="true" data-model="gpt-luna"/);
     expect(html).not.toMatch(/aria-disabled="true" data-model="gemini-lite"/);
+    // ADR-0104: Gemini 3.6 Flash is retired.
+    expect(html).not.toContain('Gemini 3.6 Flash');
   });
 
   it('shows everyone else the GPT models and no Gemini rows (ADR-0102)', () => {
