@@ -7,7 +7,8 @@
  * Used by: app/api/answer/route.ts (through withFirstTokenFallback() in server/providerStream.ts)
  * Depends on: the server's fetch, src/server/providerStream.ts, src/server/claude.ts (ReplyResult),
  *             @anthropic-ai/sdk (prompt types only)
- * Architecture: docs/decisions/ADR-0099-gemini-and-openai-answer-models.md; architecture §6, §7.2
+ * Architecture: docs/decisions/ADR-0099-gemini-and-openai-answer-models.md; architecture §6, §7.2;
+ *               ADR-0104 (the warm-up's token limit)
  *
  * Plain fetch with the shared server-sent-events reader, so OpenAI needs no extra dependency (as Groq,
  * ADR-0095). Latency settings: reasoning_effort 'none' (the lowest these models take; 'minimal' is refused
@@ -29,6 +30,14 @@ export const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
  * 'none', 'low', 'medium', 'high' and 'xhigh' (17 Nov 2026); 'none' gives the quickest first word.
  */
 export const OPENAI_REASONING_EFFORT = 'none';
+
+/**
+ * ADR-0104: the most output tokens a warm-up asks for. GPT-5.6 Luna refuses a limit of 1 or 2 with HTTP 400
+ * ("Could not finish the message because max_tokens or model output limit was reached"), streamed or not, and
+ * accepts 4 and above (checked 18 Nov 2026, with a tiny prompt and with the real warm-up prompt). 16 leaves a
+ * margin; the warm-up stops there (finish reason 'length'), at about $0.00002 of output.
+ */
+export const OPENAI_WARM_MAX_TOKENS = 16;
 
 /** One part of an OpenAI user message. */
 export type OpenAIContentPart =
@@ -259,10 +268,11 @@ export async function* streamOpenAIReply(
 
 /**
  * Warms OpenAI's prompt cache for a call: the same prefix the answers send, with the warm-up placeholder,
- * asking for one token (OpenAI caches a prompt prefix of 1,024 tokens or more automatically, and the
- * prompt_cache_key sends the call's later requests to the same cache).
+ * asking for a few tokens (OPENAI_WARM_MAX_TOKENS; ADR-0104: one token is refused with HTTP 400). OpenAI caches
+ * a prompt prefix of 1,024 tokens or more automatically, and the prompt_cache_key sends the call's later
+ * requests to the same cache.
  *
- * @param input See OpenAIReplyInput (maxTokens is ignored: one token).
+ * @param input See OpenAIReplyInput (maxTokens is ignored: OPENAI_WARM_MAX_TOKENS).
  * @returns The usage (cache reads when it was already warm) and the stop reason.
  * @throws ProviderError for an HTTP error; the abort reason on abort.
  * Called from: app/api/answer/route.ts (mode 'warm')
@@ -272,7 +282,7 @@ export async function warmOpenAI(input: OpenAIReplyInput): Promise<ReplyResult> 
     fetchImpl: input.fetchImpl,
     url: OPENAI_CHAT_URL,
     headers: { authorization: `Bearer ${input.apiKey}` },
-    body: requestBody(input, 1),
+    body: requestBody(input, OPENAI_WARM_MAX_TOKENS),
     signal: input.signal ?? new AbortController().signal,
     provider: 'openai',
   });
