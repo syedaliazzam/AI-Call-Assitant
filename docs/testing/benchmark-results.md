@@ -854,3 +854,18 @@ Same laptop and method; Claude Haiku (`fast`), the CV session, 20 answers **20 s
 | After | 1,102 / 1,568 | 1,521 / 2,172 | 381 / 519 | 562 / 707 | 20/20 |
 
 No gain on the server side (the part the change touches), and the first word was not quicker, so the change was reverted (the developer's rule: keep only if faster or equal). Local check of the tested pool (tiny requests): OpenAI and Claude reused the connection after 20 s and 45 s idle and opened a new one after 65 s, with no errors. Spend about $0.01 (Haiku, 42 answers and 2 warm-ups, plus a few tiny checks).
+
+### Voice questions before and after (ADR-0101, 18 Nov 2026)
+
+Same laptop (Pakistan); production; Playwright Chromium (new headless); `tests/e2e-prod/voice-latency.spec.ts` as a disposable non-admin test account (deleted afterwards). A synthetic spoken track (Windows text-to-speech, invented questions) plays as the microphone through Web Audio; a near-silent tab is the shared meeting; Ctrl+Shift+Space is pressed 1.2 s before each of 10 questions. Four questions contain a thinking pause (1,310, 1,370, 1,450 and 2,260 ms). Stop speaking = the last word's end in Deepgram's own results on the page's Nova-3 socket; sent = the POST /api/answer carrying the whole question (sent after the last word, at most one word short); first word = the timing trace. Milliseconds. Before: production `dpl_jue4qd97e…` (fixed 1.0 s after the final line). After: `dpl_m3uzw8534…` (Flux voice stream, speculative send).
+
+| | Whole questions | Stop → sent p50 / p95 | Stop → first answer word p50 / p95 |
+|---|---|---|---|
+| Before | **7 / 10** (q2, q8, q9 sent as half questions) | 1,716 / 1,749 (the 7 whole) | 2,800 / 2,877 |
+| After | **10 / 10** | **451 / 1,393** | **1,669 / 2,692** |
+
+After, per question (stop → sent, ms): 451, 607, 548, 447, 777, 1,393, 337, 746, 208, 448. The pause questions sent 2–3 requests (a held answer cancelled when speech went on, or the same card asked again with the whole question); the p95 is q5, whose answer was shown in its thinking pause and asked again on the same card with the whole question. The end-of-speech signals themselves (same 10 questions, streamed from this laptop): Flux EagerEndOfTurn 379 / 849, Nova-3 speech_final 798 / 1,102, Flux EndOfTurn 697 / 1,514, Nova-3 UtteranceEnd 1,687 / 3,135.
+
+`answers` evaluation with typed questions sent as spoken (`--spoken`, the new "Question spoken by the user (speech recognition; may contain misheard words)" label): **9.30 / 10** (gate 8.86); hidden line 30/30; the spoken scenario 09 scored 10. Spend $0.095.
+
+Cloud transcription: on 18 Nov a brand-new non-admin account received a Deepgram token from production (before ADR-0101's code change): `KITE_STT_DEEPGRAM_USERS` (re-created 14 Nov 13:43 UTC, never edited since) worked as `*`.
