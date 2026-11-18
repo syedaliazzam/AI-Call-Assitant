@@ -51,7 +51,7 @@ import { SessionSearch } from './SessionSearch';
 import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
 import { onSyncApplied } from '@/core/sync/events';
 import { answerModelAccess } from '@/core/session/modelAccess';
-import { moveOffGroq } from '@/core/session/retireModels';
+import { moveOffUnavailableModels } from '@/core/session/retireModels';
 
 /** The type filter: one session type, or all of them. */
 type TypeFilter = SessionType | 'all';
@@ -173,11 +173,11 @@ export function Dashboard() {
   }, [version]);
 
   // ADR-0101: while Groq is off, sessions and the defaults still set to it move to Claude Haiku (once per
-  // visit; the list reloads when anything moved).
+  // visit; the list reloads when anything moved). ADR-0104: the same for a retired model (Gemini 3.6 Flash).
   useEffect(() => {
     let cancelled = false;
     void answerModelAccess()
-      .then((access) => moveOffGroq(access))
+      .then((access) => moveOffUnavailableModels(access))
       .then((moved) => {
         if (!cancelled && moved.sessions > 0) setVersion((n) => n + 1);
       })

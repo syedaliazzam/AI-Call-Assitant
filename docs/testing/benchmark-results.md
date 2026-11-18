@@ -907,3 +907,48 @@ Second version (the developer's revised text), same method, alternating main and
 In every answer of every version the hidden line was the first thing written and arrived in the same streamed chunk as the first answer word, so the slow answers were a late first token, not text before the hidden line. With the first version the slow ones were the questions the document does not answer (the onboarding fee; single sign-on on the Professional plan, 2,323 ms); the second version showed no such delay in 20 answers. Two of its 20 replies started with a malformed hidden line (`[[question|…]]` first; once `[[question|for|source]]`); main had one such reply in 20.
 
 Version 3: first-answer-word time was not re-measured. The app change in the same branch (text before the hidden line is never shown) holds nothing for a reply that opens with its hidden line, pinned by a unit test (`answer-meta-fallback.test.ts`, "adds no wait to a reply that opens with its hidden line"); a reply without it waits for its first line (at most 500 characters).
+
+### Gemini on the paid tier, four answer models compared (ADR-0104, 18 Nov 2026)
+
+Same laptop (Pakistan). Local Node scripts, no browser and no production, with the provider keys production uses: the Vercel variables were created on 17 Nov at 17:39 UTC and never updated; the local file holding them was last written two minutes before. Spend for the whole investigation: Claude $0.280 (Sonnet grading $0.274, Haiku $0.006); Gemini $0.40; OpenAI $0.03.
+
+**Paid tier.** 30 short requests per model, sent one every 1.8 s (53 s in all), thinking `minimal`:
+
+| Model | Answered | 429 / quota errors | Rate-limit headers | `x-gemini-service-tier` | Latency p50 / p95 |
+|---|---|---|---|---|---|
+| Gemini 3.5 Flash Lite | 30/30 (HTTP 200) | 0 | none sent | `standard` | 805 / 1,485 ms |
+| Gemini 3.6 Flash | 30/30 (HTTP 200) | 0 | none sent | `standard` | 1,393 / 1,671 ms |
+
+No 429 in about 230 Gemini requests (this table, the evaluations and the timing below). One HTTP 503 (Flash Lite, during an evaluation); the app would have answered it with Claude Haiku.
+
+**First answer word, four models.** ADR-0103's method:
+- ADR-0101's 10 questions, sent as spoken chat questions (`spoken: true`);
+- through the real `buildPrompt()` with the default live prompt version 5, and each provider's real stream function with the route's settings (Haiku thinking off, Luna `reasoning_effort: 'none'` with the call id as `prompt_cache_key`, Gemini `thinkingLevel: 'minimal'`);
+- in an invented session with ADR-0101's invented pilot document;
+- two rounds, each a new call (new session reference and call id), warmed for every model first;
+- each question asked of all four models in a rotating order, 1.5 s apart: 20 answers per model.
+
+Measured: request start → first answer word after the hidden line, and → last word. Cost from each answer's real token counts at the list prices (per million tokens: Haiku $0.10 input, $0.01 cache read, $0.50 output; Luna $0.20 / $0.02 / $1.20; Flash Lite $0.30 / $0.03 / $2.50; Flash $0.75 / $0.075 / $3.75 until 31 Dec 2026, then double).
+
+| Model | First word p50 / p95 | Round p50s | Whole answer p50 / p95 | First token over 4 s | Cache reads | Average input (uncached / cached), output | Cost per answer |
+|---|---|---|---|---|---|---|---|
+| Claude Haiku 5.5 | **903 / 1,065** | 926, 879 | 1,253 / 1,662 | 0 | 20/20 | 829 / 7,775, 126 | **$0.00022** |
+| GPT-5.6 Luna | 1,190 / 1,971 | 1,227, 1,081 | 1,601 / 2,532 | 0 | 20/20 | 619 / 5,627, 56 | $0.00030 |
+| Gemini 3.5 Flash Lite | 1,504 / 1,881 | 1,504, 1,462 | 1,590 / 1,947 | 0 (slowest 3,196) | **0/20** | 6,492 / 0, 62 | $0.0021 |
+| Gemini 3.6 Flash | 1,470 / 1,945 | 1,405, 1,470 | 1,869 / 2,391 | **1** (12,886 ms; the app would fall back to Haiku) | **1/20** | 6,296 / 196, 73 | $0.0050 ($0.0100 from 1 Jan 2027) |
+
+- Gemini's warm-ups were answered (HTTP 200), but Gemini's implicit cache was read on 1 of 40 Gemini answers, so each one read about 6,500 input tokens again. That explains most of Gemini's slower first word and about ten times Haiku's cost (Flash Lite).
+- The hidden line came first in every reply, except one Gemini 3.6 Flash reply that opened with the copied placeholder. 4 of 20 Flash Lite replies had no closing `[[question|…]]` line.
+- Thinking tokens: 0 on every Gemini reply.
+
+**GPT warm-up before and after (ADR-0104).** `warmOpenAI()` asked for 1 output token. GPT-5.6 Luna refuses 1 and 2 with HTTP 400 (`invalid_request_error`, "Could not finish the message because max_tokens or model output limit was reached"), streamed or not, and accepts 4 and above (a tiny prompt and the real warm-up prompt, 18 Nov 2026). The fix asks for 16.
+
+Same session and method as above, 3 rounds. Each round runs three new calls in a rotating order (new session reference and call id each): no warm-up, the old warm-up (1 token) and the fixed `warmOpenAI()`. Each is followed 1.5 s later by the call's first answer ("How long did the Harbor Lane pilot run?", spoken). Spend about $0.01 (OpenAI).
+
+| Warm-up | Warm-up result | First answer: input / cached / uncached tokens | First token (ms) |
+|---|---|---|---|
+| None | — | 6,244 / **0** / 6,244; 6,243 / 0 / 6,243; 6,241 / 0 / 6,241 | 1,260; 810; 802 |
+| Before (1 token) | **HTTP 400** (889, 946, 786 ms) | 6,243 / **5,626** / 617; 6,243 / 5,626 / 617; 6,242 / 5,625 / 617 | 806; 1,066; 761 |
+| After (16 tokens) | **HTTP 200**: 5,639–5,641 input, 16 output, stop `max_tokens` (966–1,382 ms) | 6,241 / **5,624** / 617; 6,241 / 5,624 / 617; 6,243 / 5,626 / 617 | 1,113; 781; 759 |
+
+OpenAI processed and cached the prompt before refusing the 1-token limit, so the first answer of a call already read the warm-up's prefix before the fix. The fix makes the warm-up itself succeed and report GPT's usage: the route no longer logs `ok: false` and returns Claude's usage for every GPT warm-up. Without a warm-up the first answer reads nothing from the cache, so with a per-call `prompt_cache_key` the rules block is not shared between calls.

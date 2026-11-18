@@ -2,8 +2,8 @@
  * File: apps/web/src/core/session/modelChoices.ts
  * Purpose: The answer-model choices as a person reads them, in one place, so the session wizard's AI
  *          preferences, Settings, the review and the overlay's chip and ⋮ Model row say the same thing. One list
- *          in the developer's order (ADR-0099): Gemini 3.5 Flash Lite (Recommended), GPT-5.6 Luna (Fast), Gemini
- *          3.6 Flash, GPT-5.6 Terra, Claude Haiku, Claude Sonnet, Groq (Fastest). ADR-0102: every account sees
+ *          in the developer's order (ADR-0099): Gemini 3.5 Flash Lite (Recommended), GPT-5.6 Luna (Fast),
+ *          GPT-5.6 Terra, Claude Haiku, Claude Sonnet, Groq (Fastest) (ADR-0104: Gemini 3.6 Flash retired). ADR-0102: every account sees
  *          it; the Gemini rows only the accounts in the Gemini rollout (KITE_ANSWER_MODELS_USERS). Also which
  *          choices are off for this account (an admin's switch, no server key).
  * Used by: src/features/session-setup/labels.ts, src/features/session-setup/PreferencesStep.tsx,
@@ -11,11 +11,12 @@
  *          src/features/live/overlay/ModelChoice.tsx, src/features/live/LiveAnswers.tsx
  * Depends on: @kite/shared (AnswerModel, providerOf), ./modelAccess.ts (AnswerModelAccess)
  * Architecture: docs/decisions/ADR-0099-gemini-and-openai-answer-models.md;
- *               docs/decisions/ADR-0102-gpt-answer-models-for-every-account.md; ADR-0094; ADR-0095
+ *               docs/decisions/ADR-0102-gpt-answer-models-for-every-account.md;
+ *               docs/decisions/ADR-0104-gemini-flash-lite-stays-in-rollout.md; ADR-0094; ADR-0095
  *
  * No React here (core/): plain data and pure functions.
  */
-import { providerOf, type AnswerModel } from '@kite/shared';
+import { isRetiredModel, providerOf, type AnswerModel } from '@kite/shared';
 import type { AnswerModelAccess } from './modelAccess';
 
 /** One model choice. */
@@ -49,12 +50,12 @@ function entry(value: AnswerModel, name: string, title: string, tag = ''): Model
 /**
  * ADR-0099: every choice, in the developer's order and words (ADR-0102: the Gemini rows only for the accounts in
  * the Gemini rollout; see STANDARD_MODEL_CHOICES). The default model stays Claude Haiku until the developer approves a change after the measurement; "Recommended" is the
- * candidate the measurement is for.
+ * candidate the measurement is for. ADR-0104: Gemini 3.6 Flash is retired and not listed (a session still set to
+ * it is named and answered as Claude Haiku).
  */
 export const ROLLOUT_MODEL_CHOICES: readonly ModelChoiceEntry[] = [
   entry('gemini-lite', 'Flash Lite', 'Gemini 3.5 Flash Lite', 'Recommended'),
   entry('gpt-luna', 'Luna', 'GPT-5.6 Luna', 'Fast'),
-  entry('gemini-flash', 'Gemini Flash', 'Gemini 3.6 Flash'),
   entry('gpt-terra', 'Terra', 'GPT-5.6 Terra'),
   entry('fast', 'Haiku', 'Claude Haiku'),
   entry('smart', 'Sonnet', 'Claude Sonnet'),
@@ -99,7 +100,8 @@ export function modelEntry(model: AnswerModel): ModelChoiceEntry {
 
 /**
  * Whether a choice is off for this account: Smart or a provider turned off by an admin, or (Groq, Gemini,
- * OpenAI) not configured on the server; for Gemini also outside the rollout (ADR-0102). The server enforces
+ * OpenAI) not configured on the server; for Gemini also outside the rollout (ADR-0102); ADR-0104: always for a
+ * retired model. The server enforces
  * every one of these on each answer anyway; this only shows it.
  *
  * @param model  The choice.
@@ -109,6 +111,7 @@ export function modelEntry(model: AnswerModel): ModelChoiceEntry {
  */
 export function modelOff(model: AnswerModel, access: AnswerModelAccess): boolean {
   const provider = providerOf(model);
+  if (isRetiredModel(model)) return true;
   if (model === 'smart') return !access.smart;
   if (provider === 'groq') return !access.groq;
   if (provider === 'gemini') return !access.gemini;

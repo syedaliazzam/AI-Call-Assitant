@@ -728,3 +728,53 @@ Version 5 drops the line about the hidden line and never mentions it. Same lapto
 Per scenario, with the 16 Nov 9.30 run in brackets: 01 10.0 (9.0), 02 9.5 (9.0), 03 9.0 (9.5), 04 9.5 (10.0), 05 10.0 (9.0), 06 10.0 (9.5), 07 9.0 (9.5), 08 9.0 (8.5), 09 10.0 (10.0), 10 9.0 (9.5), 11 9.0 (8.0), 12 10.0 (10.0), 13 7.5 (8.0), 14 10.0 (10.0), 15 9.0 (10.0).
 
 Remaining deductions: small additions in 03 ("while we did it"), 04 ("before going live") and 07 (how re-routing works); 15 no longer invents a weekend but does not ask back; 13 lost facts and format in one run. Two replies ended with a malformed last line ("[[Tell me about a time…|]]"); the app now removes it (ADR-0103).
+
+## Gemini on the paid tier and GPT-5.6 Luna on prompt version 5 (2026-11-18, ADR-0104)
+
+`eval-answers --only=answers --model=<model>`, one command each (15 scenarios × 2 runs), with the default Live answers prompt version 5. Answers come from the named model with the answer route's settings; the grader is `claude-sonnet-5-5`. The developer's cap was $0.45 of Claude spend. Spend: Claude $0.274 (grading: $0.096, $0.092, $0.086); Gemini $0.24 (with one ungraded Flash Lite command, $0.048); OpenAI $0.021. Claude Haiku's row is ADR-0103's version 5 command.
+
+| Answers by | Overall /10 (gate 8.86) | Hidden line first | Placeholder copied | Answer line ≤ 12 words as written / as shown | Grader found nothing invented | Scenario 08 (must invent nothing) |
+|---|---|---|---|---|---|---|
+| `claude-haiku-5-5` (ADR-0103, version 5) | 9.37 | 30/30 | 0 | 21/27 / 27/27 | 26/30 | 10.0, 8.0; nothing invented |
+| `gpt-5.6-luna` | **9.13** | 30/30 | 0 | 28/28 / 28/28 | 28/30 | **6.0, 6.0**; nothing invented, but both runs asked a clarifying question instead of the promise to confirm (Facts 0) |
+| `gemini-3.5-flash-lite` | **8.97** | 30/30 (ungraded command: 30/30) | 0 | 27/28 / 28/28 (ungraded: 24/28) | 25/30 | 9.0, 8.0; nothing invented |
+| `gemini-3.6-flash` | **9.00** | **28/30** | **2** (the eval's check flags 1; both opened with `[[type\|…]]`) | 24/26 / 26/26 | **17/30** | 9.0, 8.0; nothing invented |
+
+Per scenario (Luna / Flash Lite / Flash):
+- 01: 10.0 / 10.0 / 9.0
+- 02: 10.0 / 9.0 / 9.5
+- 03: 9.5 / 9.5 / 9.0
+- 04: 9.0 / 10.0 / 10.0
+- 05: 9.0 / 8.5 / 9.5
+- 06: 8.0 / 6.5 / 9.0
+- 07: 10.0 / 10.0 / 9.0
+- 08: 6.0 / 8.5 / 8.5
+- 09: 10.0 / 10.0 / 9.0
+- 10: 10.0 / 9.5 / 9.0
+- 11: 10.0 / 7.5 / 10.0
+- 12: 10.0 / 9.0 / 9.5
+- 13: 7.5 / 8.5 / 6.0
+- 14: 8.0 / 10.0 / 10.0
+- 15: 10.0 / 8.0 / 8.0
+
+**Closing `[[question|…]]` line**, read from the replies' shape only (no text kept): well formed in 30/30 for Luna and Gemini 3.6 Flash; 30/30 for Flash Lite in the ungraded command. No malformed closing line in any model.
+
+**What the grader found:**
+- **Gemini 3.6 Flash** invents more:
+  - 13: a restaurant by the station;
+  - 03: details of the CV project;
+  - 09: a renewal-window rule;
+  - 10: "I can check with our sales director";
+  - 07: how live tracking works.
+  - The two placeholder replies (01 r1, 11 r2) opened with the copied `[[type|for|source]]` and had no real hidden line.
+- **Gemini 3.5 Flash Lite:**
+  - 06: "covers up to 60 seats" (both runs);
+  - 10: assumed the Professional plan;
+  - 11: paragraph style lost facts;
+  - 15: "quiet and relaxing".
+- **GPT-5.6 Luna:**
+  - 08: a clarifying question with no promise, in both runs;
+  - 06: "supports up to your 60 people".
+  - Luna's earlier 9.37 (ADR-0099) was measured on the previous default prompt.
+
+Each is a single command (the gate rule asks for a 3-command mean). Decision: ADR-0104. Gemini 3.5 Flash Lite stays in the rollout only. Gemini 3.6 Flash is retired (hidden line 28/30, placeholder copied). Claude Haiku stays the default.

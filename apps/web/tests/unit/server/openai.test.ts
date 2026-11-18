@@ -3,13 +3,19 @@
  * rules in the same order, a screenshot as an image part; a streamed reply yields its text and finishes with the
  * usage (cached tokens as cache reads, the rest as input) and the stop reason; the request has reasoning off
  * ('none'), streaming on, the call id as prompt_cache_key and store false; an HTTP error is a ProviderError with
- * the status only; the warm-up asks for one token. fetch is faked: no network.
+ * the status only; the warm-up asks for a few tokens (ADR-0104: one is refused). fetch is faked: no network.
  */
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import { OPENAI_CHAT_URL, streamOpenAIReply, toOpenAIMessages, warmOpenAI } from '@/server/openai';
+import {
+  OPENAI_CHAT_URL,
+  OPENAI_WARM_MAX_TOKENS,
+  streamOpenAIReply,
+  toOpenAIMessages,
+  warmOpenAI,
+} from '@/server/openai';
 import { ProviderError } from '@/server/providerStream';
 
 /**
@@ -215,7 +221,8 @@ describe('streamOpenAIReply', () => {
 });
 
 describe('warmOpenAI', () => {
-  it('asks for one token, not streamed, with the cache key, and returns the usage', async () => {
+  // ADR-0104: OpenAI refuses a limit of 1 or 2 output tokens with HTTP 400, so the warm-up asks for a few.
+  it('asks for a few tokens (never 1 or 2), not streamed, with the cache key, and returns the usage', async () => {
     const calls: RequestInit[] = [];
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       calls.push(init);
@@ -238,10 +245,11 @@ describe('warmOpenAI', () => {
     });
     const body = JSON.parse(String(calls[0]!.body)) as Record<string, unknown>;
     expect(body).toMatchObject({
-      max_completion_tokens: 1,
+      max_completion_tokens: OPENAI_WARM_MAX_TOKENS,
       reasoning_effort: 'none',
       prompt_cache_key: 'call-1',
     });
+    expect(OPENAI_WARM_MAX_TOKENS).toBeGreaterThanOrEqual(4);
     expect(body).not.toHaveProperty('stream');
     expect(result.usage.input_tokens).toBe(3000);
     expect(result.stopReason).toBe('max_tokens');

@@ -1,8 +1,8 @@
 /**
- * Tests apps/web/src/core/session/modelChoices.ts (ADR-0099, ADR-0102): an account outside the Gemini rollout
- * sees the GPT models, Claude Haiku, Claude Sonnet and Groq; one in the rollout sees all seven in the
- * developer's order and words; every model has one name for every account; and a choice is off when its
- * switch, key or rollout says so.
+ * Tests apps/web/src/core/session/modelChoices.ts (ADR-0099, ADR-0102, ADR-0104): an account outside the Gemini
+ * rollout sees the GPT models, Claude Haiku, Claude Sonnet and Groq; one in the rollout also sees Gemini 3.5 Flash
+ * Lite, in the developer's order and words; Gemini 3.6 Flash is retired (in no list, named as Claude Haiku, always
+ * off); every model has one name for every account; and a choice is off when its switch, key or rollout says so.
  */
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_MODEL_ACCESS } from '@/core/session/modelAccess';
@@ -26,12 +26,11 @@ describe('modelChoices', () => {
     ]);
   });
 
-  it("lists the rollout's seven models in the developer's order and words", () => {
+  it("lists the rollout's six models in the developer's order and words, without Gemini 3.6 Flash (ADR-0104)", () => {
     expect(modelChoices(true)).toBe(ROLLOUT_MODEL_CHOICES);
     expect(ROLLOUT_MODEL_CHOICES.map((choice) => [choice.value, choice.label])).toEqual([
       ['gemini-lite', 'Gemini 3.5 Flash Lite (Recommended)'],
       ['gpt-luna', 'GPT-5.6 Luna (Fast)'],
-      ['gemini-flash', 'Gemini 3.6 Flash'],
       ['gpt-terra', 'GPT-5.6 Terra'],
       ['fast', 'Claude Haiku'],
       ['smart', 'Claude Sonnet'],
@@ -47,6 +46,10 @@ describe('modelEntry', () => {
     expect(modelEntry('fast').name).toBe('Haiku');
     expect(modelEntry('groq').label).toBe('Groq (Fastest)');
   });
+
+  it('names a session still set to the retired Gemini 3.6 Flash as Claude Haiku (ADR-0104)', () => {
+    expect(modelEntry('gemini-flash').name).toBe('Haiku');
+  });
 });
 
 describe('modelOff', () => {
@@ -56,7 +59,8 @@ describe('modelOff', () => {
     expect(modelOff('smart', { ...all, smart: false })).toBe(true);
     expect(modelOff('groq', { ...all, groq: false })).toBe(true);
     expect(modelOff('gemini-lite', { ...all, gemini: false })).toBe(true);
-    expect(modelOff('gemini-flash', { ...all, gemini: false })).toBe(true);
+    // ADR-0104: retired, so off even with every switch on.
+    expect(modelOff('gemini-flash', all)).toBe(true);
     expect(modelOff('gpt-terra', { ...all, openai: false })).toBe(true);
     expect(modelOff('gpt-luna', all)).toBe(false);
     // Until the server answers, every third-party model is off.

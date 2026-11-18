@@ -13,10 +13,10 @@
  * Depends on: drizzle-orm, src/server/db.ts, src/server/schema.ts (appSetting), src/server/env.ts (the provider
  *             keys), src/server/userList.ts (the rollout list)
  * Architecture: docs/design/paramount-ai-ui-spec.md §6; ADR-0036 (app_setting); ADR-0095 (Groq); ADR-0099
- *               (Gemini and OpenAI); ADR-0102 (GPT models for every account)
+ *               (Gemini and OpenAI); ADR-0102 (GPT models for every account); ADR-0104 (Gemini 3.6 Flash retired)
  */
 import 'server-only';
-import { providerOf, type AnswerModel } from '@kite/shared';
+import { isRetiredModel, providerOf, type AnswerModel } from '@kite/shared';
 import { eq } from 'drizzle-orm';
 import { db } from './db';
 import { getGeminiEnv, getGroqEnv, getOpenAIEnv } from './env';
@@ -248,7 +248,8 @@ export interface ModelAllowance {
 
 /**
  * ADR-0099: the model a session's request really uses: any model that is off (an admin's switch, no key, or,
- * for Gemini, not in the rollout) falls back to the fast one (Claude Haiku), so the call keeps working.
+ * for Gemini, not in the rollout) falls back to the fast one (Claude Haiku), so the call keeps working. ADR-0104: a
+ * retired model (Gemini 3.6 Flash) always does.
  *
  * @param requested The model the session asked for.
  * @param allowed   Which models are on.
@@ -257,6 +258,8 @@ export interface ModelAllowance {
  */
 export function allowedModel(requested: AnswerModel, allowed: ModelAllowance): AnswerModel {
   const provider = providerOf(requested);
+  // ADR-0104: no longer offered; an older session or page may still ask for it.
+  if (isRetiredModel(requested)) return 'fast';
   if (requested === 'smart' && !allowed.smart) return 'fast';
   if (provider === 'groq' && !allowed.groq) return 'fast';
   if (provider === 'gemini' && !allowed.gemini) return 'fast';

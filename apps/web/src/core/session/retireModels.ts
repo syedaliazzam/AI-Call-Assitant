@@ -3,13 +3,18 @@
  * Purpose: ADR-0101: while Groq is off for this account (the admin's switch, or no server key), no session and
  *          no default for new sessions stays set to it: each is moved to Claude Haiku ('fast'), on this device
  *          (account sync carries the change to the others). The server already answers such a session with
- *          Claude Haiku and never asks Groq; this makes the stored choice say so too.
- * Used by: src/features/dashboard/Dashboard.tsx (once when it opens)
- * Depends on: src/core/storage/sessions.ts, src/core/storage/settings.ts, ./modelAccess.ts (AnswerModelAccess)
- * Architecture: docs/decisions/ADR-0101-fast-voice-questions-for-everyone.md
+ *          Claude Haiku and never asks Groq; this makes the stored choice say so too. ADR-0104: the same, always,
+ *          for a retired model (Gemini 3.6 Flash).
+ * Used by: src/features/dashboard/Dashboard.tsx (once when it opens), src/features/live/LiveAnswers.tsx (a
+ *          running call)
+ * Depends on: @kite/shared (isRetiredModel), src/core/storage/sessions.ts, src/core/storage/settings.ts,
+ *             ./modelAccess.ts (AnswerModelAccess)
+ * Architecture: docs/decisions/ADR-0101-fast-voice-questions-for-everyone.md;
+ *               docs/decisions/ADR-0104-gemini-flash-lite-stays-in-rollout.md
  *
  * Ids and counts only; nothing is logged.
  */
+import { isRetiredModel, type AnswerModel } from '@kite/shared';
 import { getSessionDefaults, saveSessionDefaults } from '../storage/settings';
 import { listSessions, updateSessionPreferences } from '../storage/sessions';
 import type { AnswerModelAccess } from './modelAccess';
@@ -35,26 +40,42 @@ const STORAGE: RetireDeps = {
 };
 
 /**
- * Moves every session, and the defaults, that are set to Groq to Claude Haiku, when Groq is off.
+ * Whether a stored model must move to Claude Haiku: Groq while it is off (ADR-0101), or a retired model
+ * (ADR-0104), whatever the server says.
+ *
+ * @param model  The stored model.
+ * @param access What the server said this account may use.
+ * @returns True when it moves.
+ * Called from: moveOffUnavailableModels(); LiveAnswers.tsx (a running call); tests
+ */
+export function mustMoveToHaiku(
+  model: AnswerModel,
+  access: Pick<AnswerModelAccess, 'groq'>,
+): boolean {
+  return (model === 'groq' && !access.groq) || isRetiredModel(model);
+}
+
+/**
+ * Moves every session, and the defaults, that are set to Groq while Groq is off (ADR-0101), or to a retired
+ * model (ADR-0104), to Claude Haiku.
  *
  * @param access What the server said this account may use.
  * @param deps   Storage (tests pass fakes).
  * @returns How many sessions moved, and whether the defaults moved.
  * Called from: Dashboard.tsx; tests
  */
-export async function moveOffGroq(
+export async function moveOffUnavailableModels(
   access: Pick<AnswerModelAccess, 'groq'>,
   deps: RetireDeps = STORAGE,
 ): Promise<{ sessions: number; defaults: boolean }> {
-  if (access.groq) return { sessions: 0, defaults: false };
   let moved = 0;
   for (const session of await deps.listSessions()) {
-    if (session.preferences.model !== 'groq') continue;
+    if (!mustMoveToHaiku(session.preferences.model, access)) continue;
     await deps.updateSessionPreferences(session.id, { model: 'fast' });
     moved += 1;
   }
   const defaults = await deps.getSessionDefaults();
-  const defaultsMoved = defaults.model === 'groq';
+  const defaultsMoved = mustMoveToHaiku(defaults.model, access);
   if (defaultsMoved) await deps.saveSessionDefaults({ ...defaults, model: 'fast' });
   return { sessions: moved, defaults: defaultsMoved };
 }
