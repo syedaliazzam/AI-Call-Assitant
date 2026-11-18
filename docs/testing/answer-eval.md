@@ -684,3 +684,17 @@ Per scenario, with the 16 Nov 9.30 run in brackets: 01 9.5 (9.0), 02 9.5 (9.0), 
 - Hidden line missing: 07 run 2 (a stray tag after a one-word first line) and 09 run 1 (64 words of reasoning before the tag). Four ungraded re-runs of 07 and 09 had the hidden line first each time, so the miss is intermittent.
 - 08: both runs gave the promise to confirm and invented nothing; they lost the style and headline points (16-word answer lines, a Note line that repeats the headline).
 - Other drops are small embellishments the grader listed: 03 ("the primary handled only writes"), 04 ("before going live"), 07 (how re-routing works), 10 ("I'd put it in for you today"), 15 ("a quiet one").
+
+### Version 3 (2026-11-18, ADR-0103): score passes, hidden-line rate one worse, not deployed
+
+Same laptop and models. Developer's cap $0.18 for both steps; spend **$0.125** ($0.0124 and $0.0148 for 60 ungraded replies each, $0.0008 for 3 ungraded re-runs of 09, $0.0967 for the graded `answers` command).
+
+| Check | Current default (main) | Version 3 |
+|---|---|---|
+| Hidden line first, 60 ungraded replies (`answers` 15 × 4, `--no-grade`) | **59/60** (miss: 02) | **58/60** (misses: 09 twice) |
+| Answer line ≤ 12 words as written, same 60 | 44/52 | 36/54 |
+| `answers` graded (15 × 2), gate 8.86 | 9.30 (16 Nov) | **9.43**; hidden line 29/30 (09 run 2); answer line ≤ 12 words as written 20/27, as shown 27/27; 08 nothing invented (8.0 and 9.0) |
+
+Per scenario (version 3), with the 16 Nov 9.30 run in brackets: 01 10.0 (9.0), 02 9.0 (9.0), 03 8.5 (9.5), 04 9.0 (10.0), 05 9.5 (9.0), 06 10.0 (9.5), 07 10.0 (9.5), 08 8.5 (8.5), 09 9.0 (10.0), 10 9.5 (9.5), 11 9.5 (8.0), 12 10.0 (10.0), 13 10.0 (8.0), 14 10.0 (10.0), 15 9.0 (10.0).
+
+**Why 09 misses the hidden line.** Three ungraded re-runs of 09 (a typed question) showed the model copying the placeholder the version 3 prompt writes in its second line ("The hidden [[type|for|source]] line always comes first"): one reply opened "Hmm, the first line must be the hidden type line. Correct output:" and then the real line; one opened with the literal `[[type|for|source]]`, then a self-correction, then the real line; one had no hidden line. The earlier `[[question|for|source]]` reply is the same copy. The current default never writes the placeholder (a unit test used to forbid it in the editable text; it was relaxed for version 2 and is the guard that would have caught this).

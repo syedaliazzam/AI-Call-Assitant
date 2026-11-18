@@ -905,3 +905,5 @@ Second version (the developer's revised text), same method, alternating main and
 | First version (one round) | 864 / 2,323 ms | 1,381 (earlier rounds: 1,974, 2,101) |
 
 In every answer of every version the hidden line was the first thing written and arrived in the same streamed chunk as the first answer word, so the slow answers were a late first token, not text before the hidden line. With the first version the slow ones were the questions the document does not answer (the onboarding fee; single sign-on on the Professional plan, 2,323 ms); the second version showed no such delay in 20 answers. Two of its 20 replies started with a malformed hidden line (`[[question|…]]` first; once `[[question|for|source]]`); main had one such reply in 20.
+
+Version 3: first-answer-word time was not re-measured. The app change in the same branch (text before the hidden line is never shown) holds nothing for a reply that opens with its hidden line, pinned by a unit test (`answer-meta-fallback.test.ts`, "adds no wait to a reply that opens with its hidden line"); a reply without it waits for its first line (at most 500 characters).
