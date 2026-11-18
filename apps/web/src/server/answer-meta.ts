@@ -43,6 +43,13 @@ export type ReplyItem = string | ReplyMeta | ReplyQuestion;
  */
 export const MAX_LEADING_CHARS = 500;
 
+/**
+ * ADR-0103: the contract's own placeholder copied as the first line ("[[type|for|source]]"): its first
+ * value is the word "type", which no real line has. Measured: a reply opened with it, then wrote a
+ * self-correction and the real line. It is dropped, and the real line is looked for after it.
+ */
+const PLACEHOLDER_LINE = /^\[\[\s*type\s*\|[^[\]\n]*\]\][ \t]*(?:\n|$)/i;
+
 /** A complete hidden question line at the very start of the text, with the line break after it. */
 const LEADING_QUESTION_LINE = /^\[\[\s*question\s*\|([^[\]\n]*)\]\][ \t]*(?:\n|$)/i;
 
@@ -118,7 +125,8 @@ function leadingText(text: string, ended: boolean): LeadingDecision {
  * ADR-0103: nothing written before the hidden first line is shown. A reply that opens with it is
  * passed on exactly as before (no added wait). One that does not is held for its first line only
  * (at most MAX_LEADING_CHARS): when the hidden first line follows, the stray line is dropped and the
- * real meta is used; a leading "[[question|…]]" line is taken out (a malformed one,
+ * real meta is used; a copied placeholder first line ("[[type|for|source]]") is dropped and the real
+ * line looked for after it; a leading "[[question|…]]" line is taken out (a malformed one,
  * "[[question|for|source]]", never becomes the card's question); otherwise the text is the answer.
  *
  * @param source The reply's text pieces, finishing with its result.
@@ -161,6 +169,13 @@ export async function* withAnswerMeta<R>(
     const items: ReplyItem[] = [];
     for (;;) {
       held = held.trimStart();
+      const placeholder = PLACEHOLDER_LINE.exec(held);
+      if (placeholder) {
+        // The copied placeholder is not a meta line: drop it and keep looking.
+        held = held.slice(placeholder[0].length);
+        if (stats) stats.droppedLeadingText = true;
+        continue;
+      }
       const split = splitMetaLine(held);
       if (split.state === 'found') {
         items.push({ meta: split.meta });

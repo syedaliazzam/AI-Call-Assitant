@@ -156,6 +156,26 @@ describe('text before the hidden first line (ADR-0103)', () => {
     expect(stats.droppedLeadingText).toBe(true);
   });
 
+  it('drops a self-correction with a blank line before the hidden line (measured shape)', async () => {
+    const { items } = await collectWithLeading([
+      'Hmm, the first line must be the hidden type line. Correct output:\n\n',
+      '[[concept|kite|docs]]\nOur notice is 30 days.\n- In writing.',
+    ]);
+    expect(items[0]).toEqual({ meta: { type: 'concept', target: 'kite', source: 'docs' } });
+    expect(shownText(items)).toBe('Our notice is 30 days.\n- In writing.');
+  });
+
+  it('drops a copied "[[type|for|source]]" placeholder and the correction after it', async () => {
+    const { items, stats } = await collectWithLeading([
+      '[[type|for|source]]\n',
+      'Hmm, the first line has to be the hidden type line, not a placeholder. Correct version:\n\n',
+      '[[concept|kite|docs]]\nThe notice period is 30 days.',
+    ]);
+    expect(items[0]).toEqual({ meta: { type: 'concept', target: 'kite', source: 'docs' } });
+    expect(shownText(items)).toBe('The notice period is 30 days.');
+    expect(stats.droppedLeadingText).toBe(true);
+  });
+
   it('drops a one-word line before the hidden line, even split across pieces', async () => {
     const { items } = await collectWithLeading([
       'Re-routing',
