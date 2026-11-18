@@ -434,9 +434,12 @@ describe('the rules block with the default prompt (ADR-0089)', () => {
     expect(SYSTEM_RULES).toContain(
       'Stay consistent with earlier answers: the same numbers, names and positions. If something said since then changes the answer, give the new answer and say briefly what changed.',
     );
-    // ADR-0103: the spoken-answer rules never move the hidden first line.
+    // ADR-0103 (version 5): the editable prompt never mentions the hidden line (measured: lines that did
+    // made replies copy the contract's placeholder); the contract alone defines it.
+    expect(DEFAULT_LIVE_PROMPT.toLowerCase()).not.toContain('hidden');
+    // Numbers are said as given, never worked out into a new figure.
     expect(SYSTEM_RULES).toContain(
-      'The hidden first line from the app contract still opens every reply, and nothing is written before it',
+      'Say a number exactly as the session details, documents or conversation give it.',
     );
     // ADR-0103: general knowledge is answered fully, but not where the answer turns on a company's facts.
     expect(SYSTEM_RULES).toContain(
