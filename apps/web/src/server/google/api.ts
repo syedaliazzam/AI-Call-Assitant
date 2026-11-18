@@ -793,7 +793,7 @@ const driveName = z
   .string()
   .min(1)
   .max(MAX_SAVED_NAME_CHARS)
-  // eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
+  // Control characters (written as escapes, so no-control-regex does not apply) are refused.
   .refine((name) => !/[\u0000-\u001f\u007f]/.test(name));
 
 /** POST /api/drive/session-folder's body. */

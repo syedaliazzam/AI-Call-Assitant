@@ -1,7 +1,8 @@
 /**
  * Tests apps/web/app/api/models/route.ts (spec §6): it needs a signed-in user and reports the switch, and
- * (ADR-0095) whether Groq may be chosen. ADR-0099: an account in the new-models rollout also hears that it is
- * (moreModels) and whether Gemini and OpenAI may be chosen; anyone else gets exactly the older fields.
+ * (ADR-0095) whether Groq may be chosen. ADR-0099: an account in the Gemini rollout also hears that it is
+ * (moreModels) and whether Gemini may be chosen. ADR-0102: every account hears whether OpenAI may be chosen;
+ * no Gemini switch is read for an account outside the rollout.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -60,13 +61,17 @@ describe('GET /api/models', () => {
     deepModelMock.mockResolvedValueOnce(false);
     const response = await GET(request());
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ deepModel: false, groq: false });
+    expect(await response.json()).toEqual({ deepModel: false, groq: false, openai: false });
   });
 
   it('says when Groq may be chosen (ADR-0095)', async () => {
     getSessionMock.mockResolvedValue({ user: { id: 'u1' } });
     groqMock.mockResolvedValueOnce(true);
-    expect(await (await GET(request())).json()).toEqual({ deepModel: true, groq: true });
+    expect(await (await GET(request())).json()).toEqual({
+      deepModel: true,
+      groq: true,
+      openai: false,
+    });
   });
 
   it('tells an account in the rollout which providers it may use (ADR-0099)', async () => {
@@ -81,10 +86,17 @@ describe('GET /api/models', () => {
     });
   });
 
-  it('reads no provider switch for an account outside the rollout (ADR-0099)', async () => {
+  it('tells an account outside the rollout about OpenAI only, and reads no Gemini switch (ADR-0102)', async () => {
     getSessionMock.mockResolvedValue({ user: { id: 'u2' } });
     rollout.users = new Set(['u1']);
-    expect(await (await GET(request())).json()).toEqual({ deepModel: true, groq: false });
-    expect(providerMock).not.toHaveBeenCalled();
+    rollout.openai = true;
+    expect(await (await GET(request())).json()).toEqual({
+      deepModel: true,
+      groq: false,
+      openai: true,
+    });
+    expect(providerMock).toHaveBeenCalledTimes(1);
+    expect(providerMock).toHaveBeenCalledWith('openai', 'u2');
+    rollout.openai = false;
   });
 });

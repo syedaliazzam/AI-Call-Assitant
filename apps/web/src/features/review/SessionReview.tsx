@@ -447,7 +447,7 @@ export function SessionReview({ sessionId, onDeleted, accountFirstName = '' }: S
                   <dt className="text-[13px] text-ui-muted">Answers</dt>
                   <dd>
                     {/* ADR-0099: a Gemini or GPT model by its own name. */}
-                    {modelEntry(session.preferences.model, false).title};{' '}
+                    {modelEntry(session.preferences.model).title};{' '}
                     {labelOf(FORMAT_OPTIONS, style.format)},{' '}
                     {labelOf(LENGTH_OPTIONS, style.length).toLowerCase()},{' '}
                     {labelOf(TONE_OPTIONS, style.tone).toLowerCase()}

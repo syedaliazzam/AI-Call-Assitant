@@ -11,7 +11,7 @@
  *             ADR-0049), src/platform (share protection),
  *             src/ui (Button, Dialog, Select, Textarea,
  *             Toggle), src/features/session-setup/labels.ts, src/core/session/modelAccess.ts (the
- *             new-models rollout's list, ADR-0099)
+ *             Gemini rollout's rows, ADR-0099, ADR-0102)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (Settings), §7.3 (default
  *               hotkeys), §8.1; day-03-sessions.md Stage 3
  */
@@ -112,7 +112,7 @@ export function Settings({ isAdmin }: SettingsProps) {
   const [deleting, setDeleting] = useState(false);
   const [deleted, setDeleted] = useState<DeletedCounts | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // ADR-0099: true once the server says this account is in the new-models rollout (the longer model list).
+  // ADR-0099: true once the server says this account is in the Gemini rollout (the list shows the Gemini rows).
   const [moreModels, setMoreModels] = useState(false);
   // ADR-0101: in a browser, where the voice shortcut works (null on the desktop app).
   const [voiceHint, setVoiceHint] = useState<string | null>(null);

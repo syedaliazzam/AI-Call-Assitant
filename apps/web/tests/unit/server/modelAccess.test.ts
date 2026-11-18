@@ -161,10 +161,15 @@ describe('Gemini and OpenAI (ADR-0099)', () => {
     vi.stubEnv('KITE_ANSWER_MODELS_USERS', 'u1');
     rows.select.mockResolvedValue([]);
     expect(await getProviderEnabled('gemini', 'u1', 1_000)).toBe(true);
-    // Outside the rollout: off, and no setting is read.
+    // Outside the rollout: Gemini off, and no setting is read.
     rows.select.mockClear();
     expect(await getProviderEnabled('gemini', 'u2', 1_000)).toBe(false);
     expect(rows.select).not.toHaveBeenCalled();
+    // ADR-0102: OpenAI is on for an account outside the rollout too (key set, switch on).
+    expect(await getProviderEnabled('openai', 'u2', 1_000)).toBe(true);
+    vi.stubEnv('KITE_ANSWER_MODELS_USERS', '');
+    expect(await getProviderEnabled('openai', 'u3', 1_000)).toBe(true);
+    rows.select.mockClear();
     // No key: off, and no setting is read.
     providerKeys.openai = false;
     expect(await getProviderEnabled('openai', 'u1', 1_000)).toBe(false);

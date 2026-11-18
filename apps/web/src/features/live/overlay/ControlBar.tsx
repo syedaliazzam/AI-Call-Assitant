@@ -718,7 +718,6 @@ export function ControlBar(props: ControlBarProps) {
               disabled={ended}
               buttonRef={props.modelButton}
               onToggle={props.onModel}
-              moreModels={modelChoice.moreModels}
             />
           )}
           {voice !== null && props.onVoice && (

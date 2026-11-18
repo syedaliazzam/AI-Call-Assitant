@@ -43,20 +43,14 @@ export const STATUS_LABELS: Record<SessionStatus, string> = {
 };
 
 /**
- * The model choices (spec S5; ADR-0095 adds Groq and names each by its speed first). Stored as 'fast', 'smart'
- * and 'groq'; the server maps those to the real model names from its environment and rejects anything else.
- * These are the words a person reads, the same here, in AI preferences and in the overlay.
- */
-export const MODEL_OPTIONS: readonly { value: AnswerModel; label: string; tag: string }[] =
-  modelOptions(false);
-
-/**
- * ADR-0099: the model choices this account sees, as rows: the classic three, or (an account in the new-models
- * rollout) the longer list with the Gemini and GPT models first (core/session/modelChoices.ts).
+ * ADR-0099: the model choices this account sees, as rows (core/session/modelChoices.ts): ADR-0102: the GPT
+ * models, Claude Haiku, Claude Sonnet and Groq for every account, with the Gemini rows for an account in their
+ * rollout. The server maps each stored value to the real model name from its environment and rejects anything
+ * else. These are the words a person reads, the same here, in AI preferences and in the overlay.
  *
- * @param moreModels True for an account in the rollout.
+ * @param moreModels True for an account in the Gemini rollout.
  * @returns The rows: value, name and the tag at the row's end.
- * Called from: MODEL_OPTIONS; PreferencesStep.tsx, Settings.tsx
+ * Called from: PreferencesStep.tsx, Settings.tsx
  */
 export function modelOptions(
   moreModels: boolean,

@@ -7,7 +7,7 @@
  * Voice toggle and the ⋮ menu's Voice switch. 17 Nov 2026: the menu's Model entry is one row (choices open in
  * place) and Zoom, Theme, Opacity and Answer text size are in the Display sheet, so the menu fits a laptop.
  * Clicks, the popover, the toast and the fit rules are covered in tests/integration/live.spec.ts and
- * answers.spec.ts.
+ * answers.spec.ts. ADR-0102: every account's list has the GPT models; the Gemini rows only with moreModels.
  */
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -27,8 +27,6 @@ const {
   modelSwitchToast,
   modelName,
   modelRefusedToast,
-  GROQ_REFUSED_TOAST,
-  MODEL_CHOICES,
   SMART_OFF_TIP,
 } = await import('@/features/live/overlay/ModelChoice');
 const { ControlBar, voiceTip, VOICE_TIP } = await import('@/features/live/overlay/ControlBar');
@@ -102,21 +100,16 @@ function menu(state: CompactState): string {
 }
 
 describe('the model choice (ADR-0094)', () => {
-  it('offers Fast, Smart and Fastest with the words the wizard uses too (ADR-0095)', () => {
-    expect(MODEL_CHOICES.map((choice) => choice.label)).toEqual([
-      'Fast (Claude Haiku)',
-      'Smart (Claude Sonnet)',
-      'Fastest (Groq)',
-    ]);
-    expect(modelName('fast')).toBe('Fast');
-    expect(modelName('smart')).toBe('Smart');
-    expect(modelName('groq')).toBe('Fastest');
+  it('names each model by its short name (ADR-0102)', () => {
+    expect(modelName('fast')).toBe('Haiku');
+    expect(modelName('smart')).toBe('Sonnet');
+    expect(modelName('groq')).toBe('Groq');
   });
 
   it('says what the switch means in its toast', () => {
-    expect(modelSwitchToast('smart')).toBe('Smart model on — answers may take a bit longer');
-    expect(modelSwitchToast('fast')).toBe('Fast model on — quick answers');
-    expect(modelSwitchToast('groq')).toBe('Fastest model on (Groq)');
+    expect(modelSwitchToast('smart')).toBe('Claude Sonnet on');
+    expect(modelSwitchToast('fast')).toBe('Claude Haiku on');
+    expect(modelSwitchToast('groq')).toBe('Groq on');
   });
 
   it('offers no choice when the live page does not say its model (an older live page)', () => {
@@ -148,6 +141,7 @@ describe('the model choice (ADR-0094)', () => {
         model="smart"
         smartAllowed
         groqAllowed
+        openaiAllowed
         onSelect={() => undefined}
         onClose={() => undefined}
       />,
@@ -199,20 +193,20 @@ describe('bar 1 and the ⋮ menu (ADR-0094)', () => {
   it('puts the model chip right after Auto answer, with its name and tooltip', () => {
     const html = bar(STATE);
     const auto = html.indexOf('aria-label="Auto answer"');
-    const chip = html.indexOf('aria-label="Model: Fast"');
+    const chip = html.indexOf('aria-label="Model: Haiku"');
     expect(auto).toBeGreaterThan(-1);
     expect(chip).toBeGreaterThan(auto);
-    expect(html).toContain('data-tip="Model: Fast (Claude Haiku)"');
-    expect(bar({ ...STATE, model: 'smart' })).toContain('aria-label="Model: Smart"');
-    expect(bar({ ...STATE, model: 'groq', groqAllowed: true })).toContain(
-      'aria-label="Model: Fastest"',
+    expect(html).toContain('data-tip="Model: Claude Haiku"');
+    expect(bar({ ...STATE, model: 'smart' })).toContain('aria-label="Model: Sonnet"');
+    expect(bar({ ...STATE, model: 'gpt-luna', openaiAllowed: true })).toContain(
+      'aria-label="Model: Luna"',
     );
   });
 
   it('puts the chip in the part of the bar that gives way, never among the pinned controls', () => {
     const html = bar(STATE);
     const giving = html.indexOf('data-fit-step');
-    const chip = html.indexOf('aria-label="Model: Fast"');
+    const chip = html.indexOf('aria-label="Model: Haiku"');
     const pinnedRight = html.indexOf('aria-label="Overlay menu"');
     expect(chip).toBeGreaterThan(giving);
     expect(chip).toBeLessThan(pinnedRight);
@@ -227,13 +221,13 @@ describe('bar 1 and the ⋮ menu (ADR-0094)', () => {
 
   it('has a one-row Model entry in the ⋮ menu, before Auto answer, naming the model in use', () => {
     const html = menu(STATE);
-    expect(html).toContain('aria-label="Model: Fast (Claude Haiku)"');
+    expect(html).toContain('aria-label="Model: Claude Haiku"');
     expect(html.indexOf('data-menu-row="model"')).toBeLessThan(html.indexOf('Auto answer'));
     // Shut until clicked, so the menu stays one complete card (its choices open in place).
-    expect(html).toMatch(/aria-expanded="false"[^>]*aria-label="Model: Fast \(Claude Haiku\)"/);
+    expect(html).toMatch(/aria-expanded="false"[^>]*aria-label="Model: Claude Haiku"/);
     expect(html).not.toContain('aria-label="Answer model"');
     expect(menu({ ...STATE, model: 'groq', groqAllowed: true })).toContain(
-      'aria-label="Model: Fastest (Groq)"',
+      'aria-label="Model: Groq (Fastest)"',
     );
     const { model: _model, ...older } = STATE;
     expect(menu(older)).not.toContain('data-menu-row="model"');
@@ -335,27 +329,36 @@ describe('ADR-0099: the new-models rollout in the overlay', () => {
     expect(html).not.toMatch(/aria-disabled="true" data-model="gemini-lite"/);
   });
 
-  it('keeps the classic list for everyone else', () => {
+  it('shows everyone else the GPT models and no Gemini rows (ADR-0102)', () => {
     const html = renderToString(
       <ModelOptions
         label="Model"
         model="fast"
         smartAllowed
         groqAllowed
+        openaiAllowed
         onSelect={() => undefined}
         onClose={() => undefined}
       />,
     );
-    expect(html).toContain('Fast (Claude Haiku)');
+    const order = [
+      'GPT-5.6 Luna (Fast)',
+      'GPT-5.6 Terra',
+      'Claude Haiku',
+      'Claude Sonnet',
+      'Groq (Fastest)',
+    ].map((label) => html.indexOf(label));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(html).not.toContain('Gemini');
+    expect(html).not.toContain('aria-disabled');
   });
 
   it('names the new models in its toasts and on the chip', () => {
     expect(modelSwitchToast('gemini-lite')).toBe('Gemini 3.5 Flash Lite on');
-    expect(modelSwitchToast('fast', true)).toBe('Claude Haiku on');
-    expect(modelRefusedToast('gpt-terra', true)).toBe('GPT-5.6 Terra is turned off by your admin');
-    expect(modelRefusedToast('groq')).toBe(GROQ_REFUSED_TOAST);
+    expect(modelSwitchToast('gpt-luna')).toBe('GPT-5.6 Luna on');
+    expect(modelRefusedToast('gpt-terra')).toBe('GPT-5.6 Terra is turned off by your admin');
+    expect(modelRefusedToast('groq')).toBe('Groq is turned off by your admin');
     expect(modelName('gpt-luna')).toBe('Luna');
-    expect(modelName('fast', true)).toBe('Haiku');
   });
 });

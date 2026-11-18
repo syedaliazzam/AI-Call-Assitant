@@ -493,11 +493,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
       model: shownModel,
       smartAllowed: access.smart,
       groqAllowed: access.groq,
-      // ADR-0099: the longer list and the Gemini and GPT switches, only for an account in their rollout (an
-      // overlay then shows the classic list exactly as before for everyone else).
-      ...(access.moreModels
-        ? { moreModels: true, geminiAllowed: access.gemini, openaiAllowed: access.openai }
-        : {}),
+      // ADR-0102: the GPT models' switch for every account; the Gemini rows and switch only for an account in
+      // the Gemini rollout (ADR-0099).
+      openaiAllowed: access.openai,
+      ...(access.moreModels ? { moreModels: true, geminiAllowed: access.gemini } : {}),
       scriptBar,
       clickThrough,
       dictationSupported: props.dictation?.supported ?? false,

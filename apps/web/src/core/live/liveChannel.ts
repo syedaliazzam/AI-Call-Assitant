@@ -201,8 +201,8 @@ export interface CompactState {
    */
   groqAllowed?: boolean;
   /**
-   * ADR-0099: true for an account in the new-models rollout: the overlay shows the longer model list (the
-   * Gemini and GPT models first). Absent (an older live page) or false: the classic list.
+   * ADR-0099: true for an account in the Gemini rollout: the overlay's model list shows the Gemini rows.
+   * Absent or false: the list without them (ADR-0102).
    */
   moreModels?: boolean;
   /** ADR-0099: true when the Gemini models may be chosen. Absent or false: shown disabled. */

@@ -4,15 +4,16 @@
  *          per answer, and Groq ('groq', ADR-0095) is a third-party model, so an admin can turn either off in
  *          Admin → Usage (spec §6). A session set to one that is off then answers with Haiku, so its calls keep
  *          working (the developer's decision, Phase 0). Groq is also off when the server has no Groq key.
- *          ADR-0099: Gemini and OpenAI (the GPT models) get a switch each too, and are offered only to the
- *          accounts in the rollout list KITE_ANSWER_MODELS_USERS (account ids, or `*` for everyone), and only
- *          when the server has that provider's key.
+ *          ADR-0099: Gemini and OpenAI (the GPT models) get a switch each too, and are offered only when the
+ *          server has that provider's key. ADR-0102: the GPT models are offered to every account; Gemini only to
+ *          the accounts in the rollout list KITE_ANSWER_MODELS_USERS (account ids, or `*` for everyone) until
+ *          its key is on a paid tier.
  * Used by: app/api/answer/route.ts, app/api/models/route.ts, app/(app)/admin/usage/page.tsx,
  *          app/(app)/admin/usage/actions.ts
  * Depends on: drizzle-orm, src/server/db.ts, src/server/schema.ts (appSetting), src/server/env.ts (the provider
  *             keys), src/server/userList.ts (the rollout list)
  * Architecture: docs/design/paramount-ai-ui-spec.md §6; ADR-0036 (app_setting); ADR-0095 (Groq); ADR-0099
- *               (Gemini and OpenAI)
+ *               (Gemini and OpenAI); ADR-0102 (GPT models for every account)
  */
 import 'server-only';
 import { providerOf, type AnswerModel } from '@kite/shared';
@@ -194,8 +195,8 @@ export async function setProviderEnabled(
 }
 
 /**
- * ADR-0099: whether an account is in the rollout of the Gemini and GPT models (KITE_ANSWER_MODELS_USERS:
- * account ids, or `*` for everyone; unset means no one).
+ * ADR-0099: whether an account is in the Gemini rollout (KITE_ANSWER_MODELS_USERS: account ids, or `*` for
+ * everyone; unset means no one). ADR-0102: the list no longer limits the GPT models, only Gemini.
  *
  * @param userId The signed-in account's id.
  * @param env    The environment (default process.env; tests pass their own).
@@ -211,8 +212,9 @@ export function moreModelsFor(
 }
 
 /**
- * ADR-0099: whether an account may answer with Gemini or OpenAI: it is in the rollout, the server has the
- * provider's key, and the admin's switch is on. The switch is not read at all otherwise.
+ * ADR-0099: whether an account may answer with Gemini or OpenAI: the server has the provider's key and the
+ * admin's switch is on; for Gemini the account must also be in the rollout (ADR-0102: OpenAI is for every
+ * account). The switch is not read at all otherwise.
  *
  * @param provider Which provider.
  * @param userId   The signed-in account's id.
@@ -225,7 +227,8 @@ export async function getProviderEnabled(
   userId: string,
   now: number = Date.now(),
 ): Promise<boolean> {
-  if (!moreModelsFor(userId)) return false;
+  // ADR-0102: only Gemini is still limited to the rollout's accounts (its key is on a free tier).
+  if (provider === 'gemini' && !moreModelsFor(userId)) return false;
   const configured = provider === 'gemini' ? getGeminiEnv() : getOpenAIEnv();
   if (!configured) return false;
   return getProviderSwitch(provider, now);
@@ -244,8 +247,8 @@ export interface ModelAllowance {
 }
 
 /**
- * ADR-0099: the model a session's request really uses: any model that is off (an admin's switch, no key, or
- * not in the rollout) falls back to the fast one (Claude Haiku), so the call keeps working.
+ * ADR-0099: the model a session's request really uses: any model that is off (an admin's switch, no key, or,
+ * for Gemini, not in the rollout) falls back to the fast one (Claude Haiku), so the call keeps working.
  *
  * @param requested The model the session asked for.
  * @param allowed   Which models are on.
