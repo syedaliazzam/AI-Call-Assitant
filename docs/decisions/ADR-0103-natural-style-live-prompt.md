@@ -1,6 +1,6 @@
 # ADR-0103: Natural-style live answers prompt and the reach of user preferences
 
-- **Status:** Proposed. Not deployed: the `answers` evaluation scored 8.67 against the 8.86 gate (18 Nov 2026).
+- **Status:** Proposed. Not deployed. First version: `answers` 8.67 (gate 8.86). Second version: 9.10, but the hidden line was present in 28 of 30 answers, against the developer's pass rule of 30 of 30 (18 Nov 2026).
 - **Date:** 2026-11-18
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §7 (live answers prompt; unchanged until this is accepted)
 - **Supersedes / superseded by:** would change ADR-0089's default live prompt and preference heading; keeps ADR-0088's rule word for word

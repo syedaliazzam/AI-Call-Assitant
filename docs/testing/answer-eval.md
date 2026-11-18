@@ -669,3 +669,18 @@ Why it dropped (grader reasons and code checks):
 - **Small embellishments in Tip lines:** 03 (an ordering the notes do not state), 04 ("hands-on", "ready on day one"), 07, 09, 10 ("I'll confirm it with them today"), 11 ("halved", "per route").
 - **05:** no "as I mentioned" on the repeated answer; the new prompt asks for "a brief pointer back in natural words", while the scenario expects "as I mentioned".
 - **call-style:** 25 r2 claimed "either protocol works with Professional" (forbidden protocol claim); 27 restated the earlier steps in one run; 28 defended the price instead of accepting the concern in both runs. 26 (preference that cannot fit) did well (9.0) and never mentioned the conflict.
+
+### Revised natural-style prompt (2026-11-18, ADR-0103, second version): fails on the hidden line, not deployed
+
+The developer's revised text (a rule that the hidden line always comes first, the yes-or-no rule limited to supported answers, stricter Tip and objection lines, "Answer only the new part" for follow-ups, "As I mentioned" restored, general knowledge limited where a company's facts decide). Same laptop and models; one `answers` command (2 runs), `call-style` at 1 run (the cap). Developer's cap $0.12; spend **$0.118** ($0.1019 answers, $0.0148 call-style, $0.001 for 4 ungraded re-runs of 07 and 09).
+
+| Group | Gate | Result |
+|---|---|---|
+| `answers` (15 × 2) | ≥ 8.86, hidden line 30/30, 08 invents nothing | **9.10**; hidden line **28/30: fails**; 08 nothing invented in both runs; answer line ≤ 12 words as written 15/27, as shown 27/27; grader found nothing invented 22/30 |
+| `call-style` (4 × 1) | ≥ 8 (proposed) | **9.25** (25 10.0, 26 10.0, 27 8.0, 28 9.0); hidden line 4/4 |
+
+Per scenario, with the 16 Nov 9.30 run in brackets: 01 9.5 (9.0), 02 9.5 (9.0), 03 8.0 (9.5), 04 9.0 (10.0), 05 10.0 (9.0), 06 9.5 (9.5), 07 8.5 (9.5), 08 8.0 (8.5), 09 9.0 (10.0), 10 9.0 (9.5), 11 9.0 (8.0), 12 10.0 (10.0), 13 8.5 (8.0), 14 10.0 (10.0), 15 9.0 (10.0).
+
+- Hidden line missing: 07 run 2 (a stray tag after a one-word first line) and 09 run 1 (64 words of reasoning before the tag). Four ungraded re-runs of 07 and 09 had the hidden line first each time, so the miss is intermittent.
+- 08: both runs gave the promise to confirm and invented nothing; they lost the style and headline points (16-word answer lines, a Note line that repeats the headline).
+- Other drops are small embellishments the grader listed: 03 ("the primary handled only writes"), 04 ("before going live"), 07 (how re-routing works), 10 ("I'd put it in for you today"), 15 ("a quiet one").

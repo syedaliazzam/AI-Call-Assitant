@@ -895,3 +895,13 @@ Same laptop (Pakistan); local Node script (no browser, no production): the 10 qu
 | After (natural-style default) | 7,244 tokens | **867 / 1,974 ms** | 845, 884 |
 
 The median is unchanged. The tail is longer: "What is the onboarding fee?" took 1,974 and 2,101 ms in both after rounds (before: 993 and 1,046), and two other questions the document does not cover took about 1.3 s. Not checked: whether those answers wrote text before the hidden line (the eval saw that in 6 of 30 answers).
+
+Second version (the developer's revised text), same method, alternating main and the branch, two rounds each (20 answers each), plus one round of the first version. The script now also records when the hidden line arrives and whether anything comes before it. Spend about $0.013.
+
+| Prompt | First answer word p50 / p95 | "What is the onboarding fee?" (ms) |
+|---|---|---|
+| Before (current default) | **883 / 1,099 ms** | 1,099, 1,142 |
+| After (second version) | **839 / 958 ms** | 781, 859 |
+| First version (one round) | 864 / 2,323 ms | 1,381 (earlier rounds: 1,974, 2,101) |
+
+In every answer of every version the hidden line was the first thing written and arrived in the same streamed chunk as the first answer word, so the slow answers were a late first token, not text before the hidden line. With the first version the slow ones were the questions the document does not answer (the onboarding fee; single sign-on on the Professional plan, 2,323 ms); the second version showed no such delay in 20 answers. Two of its 20 replies started with a malformed hidden line (`[[question|…]]` first; once `[[question|for|source]]`); main had one such reply in 20.
