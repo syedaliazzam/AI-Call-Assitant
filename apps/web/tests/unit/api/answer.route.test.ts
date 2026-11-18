@@ -428,7 +428,9 @@ describe('POST /api/answer, modes answer and chat', () => {
     getSessionMock.mockResolvedValue(SIGNED_IN);
     streamMock.mockReturnValue(
       fakeMessageStream({
-        pieces: ['Ten dollars', ' per seat.', '\n- Billed monthly'],
+        // A reply that opens with its hidden line, as the contract asks (ADR-0103: one that does not
+        // has its first line held, so it would not stream piece by piece).
+        pieces: ['[[sales|call|docs]]\n', 'Ten dollars', ' per seat.', '\n- Billed monthly'],
         usage: {
           input_tokens: 30,
           output_tokens: 12,
@@ -487,7 +489,9 @@ describe('POST /api/answer, modes answer and chat', () => {
       undefined,
       new Headers(),
     );
-    streamMock.mockReturnValue(fakeMessageStream({ pieces: ['Fifty'], error: overloaded }));
+    streamMock.mockReturnValue(
+      fakeMessageStream({ pieces: ['[[sales|call|docs]]\nFifty'], error: overloaded }),
+    );
     const midStream = await (await POST(post(JSON.stringify(ANSWER_REQUEST)))).text();
     expect(midStream).toContain('event: delta');
     expect(midStream).toContain(CLAUDE_UNAVAILABLE_MESSAGES.overloaded);

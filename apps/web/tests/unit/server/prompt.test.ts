@@ -454,8 +454,11 @@ describe('the rules block with the default prompt (ADR-0089)', () => {
       'Each supporting line must state a fact from the session details',
     );
     expect(SYSTEM_RULES).toContain('Never offer or hint at a price, discount, exception');
-    // Round 3 (kept): a short answer line even when the session cannot answer.
-    expect(SYSTEM_RULES).toContain('The answer line is still 12 words or fewer');
+    // Round 3 (kept): a short answer line even when the session cannot answer. ADR-0103 version 3:
+    // the promise is 10 words or fewer and does not repeat the question.
+    expect(SYSTEM_RULES).toContain(
+      'in 10 words or fewer, that does not repeat the question and gives no explanation of why',
+    );
     // ADR-0089: the learned preferences moved to the user's preferences in the session block.
     expect(SYSTEM_RULES).not.toContain('Learned preferences');
   });
