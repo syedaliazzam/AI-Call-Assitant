@@ -12,6 +12,7 @@ import type {
   AccurateResult,
   AccurateStatus,
   DesktopNotice,
+  DriveQueueReport,
   DeviceIdentity,
   DriveUploadProgress,
   DriveUploadRequest,
@@ -691,4 +692,12 @@ export interface DriveHost {
    * @returns False when the system cannot show one.
    */
   notify(notice: DesktopNotice): Promise<boolean>;
+
+  /**
+   * Desktop 1.7.2 (ADR-0106): tells the shell how much Drive work this computer still has, so an exit with
+   * work left runs on (with the tray icon) until it is done. Absent on older shells.
+   *
+   * @param report Counts and bytes only.
+   */
+  reportQueue?(report: DriveQueueReport): void;
 }

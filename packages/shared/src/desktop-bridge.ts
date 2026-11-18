@@ -9,11 +9,13 @@
  *       the overlay's presets, page-driven resizing and modes (v1.0.2, ADR-0035); opening pages from
  *       the home panel, window controls and the stacked overlay's layout (v1.1.0, ADR-0041); meeting
  *       recording, the player, displays and this computer's name (desktop 1.5.0, ADR-0068); Drive
- *       uploads of recordings and native notifications (desktop 1.6.0, ADR-0072).
+ *       uploads of recordings and native notifications (desktop 1.6.0, ADR-0072); the Drive queue report
+ *       that keeps the app uploading after the user exits (desktop 1.7.2, ADR-0106).
  * Architecture: docs/architecture/kite-architecture-v3.1.md §3.3 and §7.3 (preload.ts)
  */
 import type {
   DesktopNotice,
+  DriveQueueReport,
   DriveUploadProgress,
   DriveUploadRequest,
   DriveUploadResult,
@@ -451,6 +453,13 @@ export interface KiteDesktopApi {
    * @returns False when the system cannot show notifications.
    */
   showNotice?: (notice: DesktopNotice) => Promise<boolean>;
+  /**
+   * Desktop 1.7.2 (ADR-0106): tells the shell how much Drive work this computer still has (sent after
+   * every change of the queue). When the user exits with work left, the shell closes its windows and
+   * keeps the app running, with its tray icon, until the work is done.
+   * @param report The counts and bytes (no ids, names or content).
+   */
+  reportDriveQueue?: (report: DriveQueueReport) => void;
 }
 
 /** A size the home panel can ask for (v1.3.0, ADR-0055). */

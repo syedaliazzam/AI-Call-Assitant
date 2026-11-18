@@ -12,8 +12,12 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { OVERLAY_OPACITY } from '@/core/storage/overlayPrefs';
+
+// The scans below read every source file synchronously. Alone they take about a second; in the full
+// suite (300 files in parallel on a Windows laptop) they passed the 5 s default (19 Nov 2026).
+vi.setConfig({ testTimeout: 30_000 });
 
 /** apps/web. */
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');

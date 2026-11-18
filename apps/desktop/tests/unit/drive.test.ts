@@ -20,6 +20,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DRIVE_PROGRESS_EVENT,
+  DRIVE_QUEUE_CHANNEL,
   DRIVE_UPLOAD_CHANNEL,
   SHOW_NOTICE_CHANNEL,
 } from '../../src/channels';
@@ -339,12 +340,15 @@ describe('installDrive', () => {
     const sender = {
       isDestroyed: () => false,
       send: (channel: string, value: unknown) => sent.push([channel, value]),
+      once: () => undefined,
+      removeListener: () => undefined,
     };
     const total = UNIT * 3 + UNIT / 2;
     const google = fakeGoogle(0, total);
     const host = installDrive({
       ipcMain: {
         handle: (channel: string, handler: never) => void handlers.set(channel, handler),
+        on: () => undefined,
       } as never,
       allowedOrigin: 'https://kite.example',
       recordings: { trackFileOf: (id) => (id === REC ? file : null) },
@@ -368,5 +372,69 @@ describe('installDrive', () => {
     expect(await handlers.get(DRIVE_UPLOAD_CHANNEL)!(kite, REQUEST)).toMatchObject({
       status: 'paused',
     });
+  });
+
+  it('1.7.2: stops an upload when its page goes, counts uploads sending, and passes on Kite reports only', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+    const listeners = new Map<string, (event: unknown, ...args: unknown[]) => void>();
+    const reports: unknown[] = [];
+    let changes = 0;
+    // Google answers the status question, then holds the first chunk until the request is cut off.
+    let release: (() => void) | null = null;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetch: DriveUploaderDeps['fetch'] = async (_url, init) => {
+      const range = (init.headers as Record<string, string>)['Content-Range']!;
+      if (range.startsWith('bytes */')) return new Response(null, { status: 308 });
+      release!();
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal!.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    };
+    const host = installDrive({
+      ipcMain: {
+        handle: (channel: string, handler: never) => void handlers.set(channel, handler),
+        on: (channel: string, listener: never) => void listeners.set(channel, listener),
+      } as never,
+      allowedOrigin: 'https://kite.example',
+      recordings: { trackFileOf: (id) => (id === REC ? file : null) },
+      fetch,
+      notices: {
+        supported: () => false,
+        create: () => ({ on: () => {}, show: () => {} }),
+        openExternal: () => {},
+      },
+      onQueueReport: (report) => reports.push(report),
+      onUploadsChanged: () => {
+        changes += 1;
+      },
+    });
+    let gone: (() => void) | null = null;
+    const sender = {
+      isDestroyed: () => false,
+      send: () => undefined,
+      once: (event: string, listener: () => void) => {
+        if (event === 'destroyed') gone = listener;
+      },
+      removeListener: () => undefined,
+    };
+    const kite = { senderFrame: { url: 'https://kite.example/home', parent: null }, sender };
+    const uploading = handlers.get(DRIVE_UPLOAD_CHANNEL)!(kite, REQUEST) as Promise<{
+      status: string;
+    }>;
+    await held;
+    expect(host.activeUploads()).toBe(1);
+    expect(changes).toBeGreaterThan(0);
+    // The page's window closes: the upload stops, so the page that takes over resumes it.
+    gone!();
+    expect((await uploading).status).toBe('failed');
+    expect(host.activeUploads()).toBe(0);
+
+    const other = { senderFrame: { url: 'https://evil.example/', parent: null }, sender };
+    const report = { calls: 1, recordings: 1, sent: 0, total: 10 };
+    listeners.get(DRIVE_QUEUE_CHANNEL)!(other, report);
+    listeners.get(DRIVE_QUEUE_CHANNEL)!(kite, report);
+    expect(reports).toEqual([report]);
   });
 });

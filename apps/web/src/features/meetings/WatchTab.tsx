@@ -137,9 +137,11 @@ function NotHere({
             ? 'The call is still being recorded.'
             : status.kind === 'uploading'
               ? 'The recording is being uploaded to Google Drive. Watch it here once it is saved.'
-              : 'Open Meetings in the desktop app on that computer to watch it there.'}
+              : status.kind === 'stalled'
+                ? 'The upload carries on as soon as the desktop app is open on that computer.'
+                : 'Open Meetings in the desktop app on that computer to watch it there.'}
       </p>
-      {browser && first && status.kind === 'device-only' && (
+      {browser && first && (status.kind === 'device-only' || status.kind === 'stalled') && (
         <Button
           variant="secondary"
           size="sm"

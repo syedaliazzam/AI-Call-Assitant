@@ -4,7 +4,8 @@
  *          files through the shell (which reads them from its Recordings index and sends them only to
  *          Google's upload address), the progress of those uploads, and native notifications. Present
  *          only when the shell has all three methods; otherwise null. 1.6.2 (ADR-0074): the file size, which
- *          also says the shell uploads without a token.
+ *          also says the shell uploads without a token. 1.7.2 (ADR-0106): the Drive queue report, for the
+ *          uploads that finish after the user exits.
  * Used by: src/platform/desktop.ts
  * Depends on: @kite/shared (KiteDesktopApi, the Drive contract), src/platform/types.ts
  * Architecture: ADR-0072, ADR-0074; architecture §3.3
@@ -40,6 +41,10 @@ export function desktopDriveHost(bridge: KiteDesktopApi): DriveHost | null {
     // 1.6.2 (ADR-0074): only a shell that uploads without a token has it.
     ...(bridge.driveFileSize
       ? { fileSize: (recordingId, track) => bridge.driveFileSize!(recordingId, track) }
+      : {}),
+    // 1.7.2 (ADR-0106): only a shell that finishes uploads after an exit has it.
+    ...(bridge.reportDriveQueue
+      ? { reportQueue: (report) => bridge.reportDriveQueue!(report) }
       : {}),
   };
 }

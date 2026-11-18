@@ -11,7 +11,8 @@
  * - each file on its own: a failing transcript PDF or recording file never stops the others; the next run
  *   uploads only what failed; nothing is uploaded twice (existing keys, the server's tags);
  * - recordings match their call by meeting id (a call record) or by time (a call made before records);
- * - the call record shows the job's state.
+ * - the call record shows the job's state; ADR-0106: a long recording upload tells it every MOVED_EVERY_MS
+ *   that it is still moving.
  * All values are invented; no real Google, shell or server is used.
  */
 import type {
@@ -25,6 +26,7 @@ import { describe, expect, it } from 'vitest';
 import { DriveApiError } from '@/core/drive/api';
 import type { CallFile } from '@/core/drive/callFiles';
 import {
+  MOVED_EVERY_MS,
   callSavedFiles,
   planCallFiles,
   recordingOfCall,
@@ -423,6 +425,34 @@ describe('per-call Drive upload (ADR-0077)', () => {
       expect(report.manualOnly).toBe(true);
       expect(report.emailRule).toBeUndefined();
     }
+  });
+});
+
+describe('ADR-0106: the call record hears from a long upload', () => {
+  it('shows "uploading" again every MOVED_EVERY_MS while a recording sends, not on every chunk', async () => {
+    const w = world();
+    let now = END + 60_000;
+    w.deps.now = () => now;
+    let shown = 0;
+    const callState = w.deps.calls!.callState;
+    w.deps.calls!.callState = async (job, drive) => {
+      if (drive.state === 'uploading') shown += 1;
+      return callState(job, drive);
+    };
+    const upload = w.deps.host!.upload;
+    w.deps.host!.upload = async (request, onProgress) => {
+      // Three chunks a minute apart, then one after MOVED_EVERY_MS: one refresh only.
+      for (const step of [60_000, 60_000, 60_000, MOVED_EVERY_MS]) {
+        now += step;
+        onProgress({ recordingId: request.recordingId, track: request.track, sent: 1, total: 500 });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      return upload(request, onProgress);
+    };
+    expect(await runDriveQueue(w.deps)).toBe('idle');
+    // Once when the job started, once from the long upload.
+    expect(shown).toBe(2);
+    expect(w.states.at(-1)).toBe('done');
   });
 });
 

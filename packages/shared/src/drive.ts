@@ -517,6 +517,47 @@ export interface DriveUploadProgress {
   total: number;
 }
 
+/**
+ * Desktop 1.7.2 (ADR-0106): the Drive work this computer still has to do by itself, as the page reports it
+ * to the shell. The shell keeps running in the background after the user exits until it is all done.
+ * Work that waits for the person (Drive not connected, a file that failed too often) is not counted.
+ */
+export interface DriveQueueReport {
+  /** Calls with work left: an upload queued or running, or a call whose notes and upload are still to come. */
+  calls: number;
+  /** Recording files among them still to go to Drive. */
+  recordings: number;
+  /** Bytes of those recording files already in Drive. */
+  sent: number;
+  /** Their total size in bytes (0 while not known yet). */
+  total: number;
+}
+
+/** The largest count a DriveQueueReport may carry (anything more is a damaged report). */
+const MAX_QUEUE_COUNT = 10_000;
+
+/**
+ * Whether a value is a well-formed DriveQueueReport (the shell does not trust the page).
+ *
+ * @param value What arrived over IPC.
+ * @returns True for four non-negative safe integers, sent no more than total when total is known.
+ * Called from: apps/desktop/src/drive/background.ts; tests
+ */
+export function isDriveQueueReport(value: unknown): value is DriveQueueReport {
+  const r = value as Partial<DriveQueueReport> | null;
+  const count = (n: unknown) =>
+    typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 && n <= MAX_QUEUE_COUNT;
+  const bytes = (n: unknown) => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0;
+  return (
+    !!r &&
+    count(r.calls) &&
+    count(r.recordings) &&
+    bytes(r.sent) &&
+    bytes(r.total) &&
+    (r.total === 0 || r.sent! <= r.total!)
+  );
+}
+
 /** A native notification the page asks the shell to show (1.6.0). */
 export interface DesktopNotice {
   /** The first line (for example "Recording and transcript saved"). */

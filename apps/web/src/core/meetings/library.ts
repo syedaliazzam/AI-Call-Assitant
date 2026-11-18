@@ -3,18 +3,21 @@
  * Purpose: The Meetings library's rules (ADR-0096), without React: the account's calls grouped into
  *          session folders named as in Google Drive ("<YYYY-MM-DD> <Company> – <Session>", named after the
  *          session's first call), newest first; search by company, session and the other person's name; the
- *          date filter; each call's recording status words ("Recorded", "Uploading…", "Saved on <computer>
- *          only", "Not recorded"); its small icons (recorded, notes, transcript); the "Questions & answers
+ *          date filter; each call's recording status words ("Recorded", "Waiting for the desktop app to
+ *          finish the upload" and, after a day without progress, "Upload paused: open the desktop app on the
+ *          computer used for this call" (ADR-0106), "Saved on <computer> only", "Not recorded"); its small icons (recorded, notes, transcript); the "Questions & answers
  *          only" view of a conversation; and the transcript search. Reads the synced call data only, so
  *          the same library shows in any browser and in the desktop app.
  * Used by: src/features/meetings/* (MeetingsPage, LibraryPane, CallPane and the tabs)
  * Depends on: src/core/review/calls.ts (CallView), src/core/review/conversation.ts (ConversationEntry),
- *             src/core/drive/names.ts (sessionFolderName, sessionTitle), src/core/transcript/theirName.ts,
+ *             src/core/drive/names.ts (sessionFolderName, sessionTitle), src/core/drive/waitWords.ts
+ *             (ADR-0106), src/core/transcript/theirName.ts,
  *             src/core/storage/types.ts
  * Architecture: docs/decisions/ADR-0096-meetings-library.md; architecture §5 (Meetings)
  *
  * Pure functions; nothing here is logged or sent.
  */
+import { pendingUpload, UPLOAD_PAUSED_OPEN_APP, WAITING_FOR_DESKTOP } from '../drive/waitWords';
 import { sessionFolderName, sessionTitle } from '../drive/names';
 import type { CallView } from '../review/calls';
 import type { ConversationEntry } from '../review/conversation';
@@ -175,11 +178,13 @@ export interface RecordingStatus {
   /**
    * - recording: a part is still being recorded;
    * - recorded: recorded and saved to Google Drive;
-   * - uploading: recorded, and its Drive upload is on its way;
+   * - uploading: recorded, and its Drive upload is on its way (ADR-0106: "Waiting for the desktop app to
+   *   finish the upload": only the computer that recorded it can);
+   * - stalled: on its way, but that computer's app has not worked on it for a day (ADR-0106);
    * - device-only: recorded, but only on the computer that recorded it;
    * - none: not recorded.
    */
-  kind: 'recording' | 'recorded' | 'uploading' | 'device-only' | 'none';
+  kind: 'recording' | 'recorded' | 'uploading' | 'stalled' | 'device-only' | 'none';
   /** The words to show. */
   label: string;
 }
@@ -188,10 +193,14 @@ export interface RecordingStatus {
  * A call's recording status.
  *
  * @param call The call (its recordings and its Drive state).
+ * @param now  The clock (Unix ms; ADR-0106: a day without progress reads as paused).
  * @returns The status.
  * Called from: CallPane.tsx, LibraryPane.tsx; tests
  */
-export function recordingStatus(call: Pick<CallView, 'recordings' | 'record'>): RecordingStatus {
+export function recordingStatus(
+  call: Pick<CallView, 'recordings' | 'record'>,
+  now: number = Date.now(),
+): RecordingStatus {
   if (call.recordings.length === 0) return { kind: 'none', label: 'Not recorded' };
   if (call.recordings.some((part) => part.status === 'recording')) {
     return { kind: 'recording', label: 'Recording…' };
@@ -199,12 +208,10 @@ export function recordingStatus(call: Pick<CallView, 'recordings' | 'record'>): 
   const drive = call.record?.drive.state;
   if (drive === 'done') return { kind: 'recorded', label: 'Recorded' };
   // 'waiting' with a reason waits for the person (Drive not connected, saving off): not on its way.
-  const onItsWay =
-    drive === 'queued' ||
-    drive === 'uploading' ||
-    drive === 'paused' ||
-    (drive === 'waiting' && !call.record?.drive.reason);
-  if (onItsWay) return { kind: 'uploading', label: 'Uploading…' };
+  // ADR-0106: the file is only on the computer that recorded it, so the words say who finishes it.
+  const pending = call.record ? pendingUpload(call.record, now) : null;
+  if (pending === 'stalled') return { kind: 'stalled', label: UPLOAD_PAUSED_OPEN_APP };
+  if (pending === 'waiting') return { kind: 'uploading', label: WAITING_FOR_DESKTOP };
   const device = call.recordings.find((part) => part.deviceName.trim())?.deviceName.trim();
   return {
     kind: 'device-only',

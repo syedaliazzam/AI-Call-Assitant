@@ -10,13 +10,18 @@
  *             src/store.ts, src/icon.ts, src/accurate/host.ts (accurate transcription, ADR-0034),
  *             src/recordings/host.ts (meeting recording and the player, 1.5.0, ADR-0068),
  *             src/drive/host.ts (Google Drive uploads and the saved notification, 1.6.0, ADR-0072),
- *             src/priority.ts (background priority and the call state on a closed window, 1.6.3, ADR-0077)
+ *             src/priority.ts (background priority and the call state on a closed window, 1.6.3, ADR-0077),
+ *             src/drive/background.ts and src/tray.ts (uploads finish after the user exits, with the
+ *             tray icon, 1.7.2, ADR-0106)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * The windows (v1.1.0): the home panel between calls; the main window for the dashboard, the wizard,
  * Settings and the call itself (it holds the audio and the speech engine, so it runs the call while
  * minimised); the overlay during a call; a side window for pages opened during a call, because
  * navigating the main window then would end the call; and the snap zones during a drag.
+ *
+ * 1.7.2 (ADR-0106): exiting with Drive uploads left closes every window but keeps the app running, with
+ * its tray icon, until they are done; the home panel's page stays open, hidden, to run them.
  *
  * Kite never hides from the taskbar, Dock or process lists, and does not try to evade
  * monitoring or proctoring software (CLAUDE.md).
@@ -39,13 +44,17 @@ import {
   dialog,
   globalShortcut,
   ipcMain,
+  Menu,
+  nativeImage,
   net,
   Notification,
+  powerMonitor,
   protocol,
   screen,
   session,
   shell,
   systemPreferences,
+  Tray,
   utilityProcess,
 } from 'electron';
 import { installAccurate, type WorkerProcess } from './accurate/host';
@@ -64,7 +73,7 @@ import { APP_NAME, loadConfig, pinnedDataFolder, type DesktopConfig } from './co
 const APP_USER_MODEL_ID = 'co.paramountintelligence.kite';
 import { linkFromArgv, routeDesktopLink, shouldRegisterProtocol } from './links';
 import { createHomeWindow, isPanelSize, type HomeWindow } from './home';
-import { startUpdater } from './updater';
+import { startUpdater, type Updater } from './updater';
 import { installHotkeys, isKiteSender, type HotkeyController } from './hotkeys';
 import { appIconPath } from './icon';
 import { endCallOnClose, runBelowNormal } from './priority';
@@ -79,6 +88,8 @@ import {
 } from './speechModel';
 import { installRecordings, type FinaliseProcess, type RecordingsHost } from './recordings/host';
 import { installDrive, type DriveHost } from './drive/host';
+import { createBackgroundExit, type BackgroundExit, type BackgroundView } from './drive/background';
+import { installTray, trayIconFile, type AppTray } from './tray';
 import { createStore } from './store';
 import {
   createCompactWindows,
@@ -140,6 +151,30 @@ let callWindowFromPanel = false;
 /** True once the app is quitting: closing the main window then really closes it. */
 let quitting = false;
 
+/** 1.7.2 (ADR-0106): the Drive work left, and the exit that waits for it. */
+let exitControl: BackgroundExit | null = null;
+
+/** 1.7.2 (ADR-0106): the tray icon (created when the app is ready). */
+let appTray: AppTray | null = null;
+
+/** 1.7.2 (ADR-0106): the updater's hook for "the uploads are done" (installed builds only). */
+let updater: Updater | null = null;
+
+/**
+ * 1.7.2 (ADR-0106): true while the app runs on after the user exited (windows closed, the panel's page
+ * hidden and uploading). Closing windows then never brings the panel back.
+ */
+let runningOn = false;
+
+/** 1.7.2 (ADR-0106): the quit was decided (work done, or "Quit now"): before-quit lets it through. */
+let quitAllowed = false;
+
+/**
+ * 1.7.2 (ADR-0106): Windows is shutting down or signing out (or macOS powering off): nothing may hold the
+ * app open; the queue resumes at the next start.
+ */
+let systemEnding = false;
+
 /**
  * How long Windows takes to apply protection before a capture leaves a window out, in ms. It takes
  * effect with the next desktop composition (protection.ts), a frame or two; the rest is margin.
@@ -160,9 +195,10 @@ function isWindowControl(value: unknown): value is WindowControlAction {
 /**
  * Brings up the first window a person should see: the overlay during a call, otherwise the panel.
  *
- * Called from: a second launch; the macOS Dock icon
+ * Called from: a second launch; the macOS Dock icon; the tray icon
  */
 function showFront(): void {
+  wakeFromBackground();
   const overlay = compact?.window();
   if (callActive && overlay) {
     overlay.showInactive();
@@ -184,6 +220,7 @@ function followLink(link: DesktopLink | null): void {
     earlyLink = link;
     return;
   }
+  wakeFromBackground();
   routeDesktopLink(link, callActive, {
     openSession: (sessionId, code) => panel.openSession(sessionId, code),
     openPlayer,
@@ -212,6 +249,77 @@ function openPlayer(page: string): void {
     if (playerWindow === window) playerWindow = null;
   });
   playerWindow = window;
+}
+
+/**
+ * 1.7.2 (ADR-0106): the user exited with Drive work left. Every window closes except the home panel, whose
+ * page keeps running (hidden, at full timer speed) to finish the after-call work and the uploads; the tray
+ * icon stays. The panel is the page kept because it runs both (the after-call runner and the uploader) and
+ * is light. A window that was uploading hands its upload over (drive/host.ts stops it as its page goes).
+ *
+ * @returns False when there is no panel to keep (the app then just quits).
+ * Called from: the background-exit controller (requestExit)
+ */
+function enterBackground(): boolean {
+  const keep = home?.window() ?? null;
+  if (!keep || keep.isDestroyed()) return false;
+  runningOn = true;
+  compact?.close();
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window !== keep && !window.isDestroyed()) window.close();
+  }
+  keep.hide();
+  // Hidden pages are throttled to one timer a minute after a while; the queue must keep its pace.
+  keep.webContents.setBackgroundThrottling(false);
+  return true;
+}
+
+/**
+ * 1.7.2 (ADR-0106): the user opened the app again while it was finishing uploads: it runs as usual from
+ * here (the uploads go on in the panel's page), and quitting is the user's again.
+ *
+ * Called from: showFront(), followLink(), a new window (a shortcut), the tray's Open
+ */
+function wakeFromBackground(): void {
+  if (!runningOn) return;
+  runningOn = false;
+  const panel = home?.window();
+  if (panel && !panel.isDestroyed()) panel.webContents.setBackgroundThrottling(true);
+  exitControl?.leave();
+}
+
+/**
+ * 1.7.2 (ADR-0106): whether closing the home panel now is the user exiting: no main window, and no other
+ * window on screen (closing the panel beside the player or a side window only closes the panel).
+ *
+ * @param panel The panel's window.
+ * @returns True for an exit.
+ * Called from: the panel's close event (its Exit button, Alt+F4, the taskbar's Close)
+ */
+function panelCloseIsExit(panel: BrowserWindow): boolean {
+  if (quitting || runningOn || systemEnding || mainWindow) return false;
+  return !BrowserWindow.getAllWindows().some(
+    (window) => window !== panel && !window.isDestroyed() && window.isVisible(),
+  );
+}
+
+/**
+ * 1.7.2 (ADR-0106): asks before "Quit now" stops an upload.
+ *
+ * @returns True when the user chose to quit now.
+ * Called from: the background-exit controller (quitNow)
+ */
+async function confirmQuitNow(): Promise<boolean> {
+  const { response } = await dialog.showMessageBox({
+    type: 'warning',
+    title: APP_NAME,
+    message: 'Quit now?',
+    detail: `The upload to Google Drive stops now. It resumes the next time you open ${APP_NAME}.`,
+    buttons: ['Quit now', 'Keep uploading'],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  return response === 0;
 }
 
 /**
@@ -297,7 +405,7 @@ function createMainWindow(config: DesktopConfig, page = '/', minimized = false):
   window.on('close', (event) => {
     // v1.1.0: closing this window would end a running call. It steps aside instead: End is on the
     // overlay. A quitting app (an update, or Windows shutting down) still closes it.
-    if (callActive && !quitting) {
+    if (callActive && !quitting && !runningOn) {
       event.preventDefault();
       window.minimize();
     }
@@ -311,8 +419,9 @@ function createMainWindow(config: DesktopConfig, page = '/', minimized = false):
     hotkeys?.disable();
     // 1.6.3 (ADR-0077): a call the window took with it has ended for Drive too (uploads resume).
     callActive = endCallOnClose(callActive, drive);
-    // v1.1.0: back to the panel. It has nothing to come back to only when the app is quitting.
-    if (!quitting) home?.open();
+    // v1.1.0: back to the panel. It has nothing to come back to only when the app is quitting (or, 1.7.2,
+    // runs on after an exit to finish its uploads).
+    if (!quitting && !runningOn) home?.open();
   });
   // A reload or navigation ends the page's call; the live page turns them on again if needed.
   window.webContents.on('did-navigate', () => hotkeys?.disable());
@@ -464,7 +573,14 @@ function start(): void {
   app.on('web-contents-created', (_event, contents) => {
     lockNavigation(contents, config.allowedOrigin);
   });
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    // 1.7.2 (ADR-0106): with Drive work left, an exit (the tray's Quit, Cmd+Q, the last window closing)
+    // closes the windows and runs on until the work is done; a second one asks "Quit now?". A shutdown
+    // or sign-out is never held up (the queue resumes at the next start).
+    if (!quitAllowed && !systemEnding && exitControl?.requestExit() === 'background') {
+      event.preventDefault();
+      return;
+    }
     quitting = true;
   });
 
@@ -531,7 +647,20 @@ function start(): void {
     // v1.3.0 (ADR-0055): every window, including any created later (by Electron itself or by future
     // code), gets the protection setting as it is created. Owners still attach their own windows too;
     // attaching twice changes nothing. Never hidden from the taskbar or process lists (CLAUDE.md).
-    app.on('browser-window-created', (_event, window) => shield.attach(window));
+    app.on('browser-window-created', (_event, window) => {
+      shield.attach(window);
+      // 1.7.2 (ADR-0106): Windows is shutting down or signing out: nothing holds the app open. (Not
+      // query-session-end: another app may still cancel the shutdown after it.)
+      window.on('session-end', () => {
+        systemEnding = true;
+      });
+      // A window opening while the app finishes its uploads (a shortcut, a link) means it is in use again.
+      if (runningOn && !quitting) wakeFromBackground();
+    });
+    // macOS and Linux: the system is powering off.
+    powerMonitor.on('shutdown', () => {
+      systemEnding = true;
+    });
     // Screenshot answers (Day 5): in memory only. During a call: the display under the overlay
     // (v1.1.0: the main window is minimised then, maybe on another display).
     installScreenshot({
@@ -674,7 +803,61 @@ function start(): void {
           openInSystemBrowser(url);
         },
       },
+      // 1.7.2 (ADR-0106): the page's report of the work left, and the shell's own uploads.
+      onQueueReport: (report) => exitControl?.report(report),
+      onUploadsChanged: () => exitControl?.uploadsChanged(),
     });
+    const driveHost = drive;
+    // 1.7.2 (ADR-0106): exiting with Drive work left runs on, with the tray icon, until it is done.
+    let hadWork = false;
+    const control = createBackgroundExit({
+      now: () => Date.now(),
+      activeUploads: () => driveHost.activeUploads(),
+      enterBackground,
+      notify: (title, body) => {
+        if (!Notification.isSupported()) return;
+        new Notification({ title, body, icon: appIconPath(__dirname) }).show();
+      },
+      quit: () => {
+        quitAllowed = true;
+        app.quit();
+      },
+      confirmQuitNow,
+      showView: (view: BackgroundView) => {
+        appTray?.update(view);
+        // The uploads are done: an update that waited for them may ask now (not while running on: the
+        // app then quits by itself and installs it).
+        const busy = control.hasWork();
+        if (hadWork && !busy && !view.background) updater?.uploadsIdle();
+        hadWork = busy;
+      },
+      startTimer: (run, ms) => setInterval(run, ms),
+      stopTimer: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+    });
+    exitControl = control;
+    const trayImage = nativeImage.createFromPath(
+      trayIconFile({
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        baseDir: __dirname,
+        platform: process.platform,
+      }),
+    );
+    if (trayImage.isEmpty()) console.warn('desktop: tray icon file missing');
+    appTray = installTray(
+      {
+        createTray: (image) => new Tray(image),
+        buildMenu: (template) => Menu.buildFromTemplate(template),
+        // The menu bar wants a small picture (the .ico on Windows already has every size).
+        image:
+          process.platform === 'win32' ? trayImage : trayImage.resize({ width: 18, height: 18 }),
+        onOpen: showFront,
+        // Through before-quit, which decides (runs on with work left).
+        onQuit: () => app.quit(),
+        onQuitNow: () => void control.quitNow(),
+      },
+      control.view(),
+    );
 
     // v1.1.0 (ADR-0041): the panel's own buttons, and the pages it opens. Each value is checked.
     ipcMain.handle(OPEN_PAGES_CHANNEL, (event, page: unknown) => {
@@ -727,6 +910,8 @@ function start(): void {
       callActive = next;
       // 1.6.0 (ADR-0072): a call stops every Drive upload at once; the page resumes them afterwards.
       drive?.setCallActive(next);
+      // 1.7.2 (ADR-0106): the call's page reports its upload in a moment; an exit meanwhile waits for it.
+      if (!next) exitControl?.callEnded();
       if (next) home?.hide();
       else home?.showInactive();
     });
@@ -735,6 +920,13 @@ function start(): void {
       createWindow: (options) => {
         const window = new BrowserWindow({ ...options, icon: appIconPath(__dirname) });
         shield.attach(window);
+        // 1.7.2 (ADR-0106): closing the panel with nothing else open is the user exiting (its Exit button,
+        // Alt+F4, the taskbar's Close). With Drive work left, the app runs on instead of losing it.
+        window.on('close', (event) => {
+          if (panelCloseIsExit(window) && exitControl?.requestExit() === 'background') {
+            event.preventDefault();
+          }
+        });
         return window;
       },
       screen,
@@ -772,10 +964,12 @@ function start(): void {
     // Updates (Day 6, ADR-0028): installed builds only; tests turn them off. Store builds
     // (process.windowsStore) are updated by the Microsoft Store, which forbids self-updating.
     if (app.isPackaged && !process.windowsStore && process.env.KITE_NO_UPDATE_CHECK !== '1') {
-      startUpdater({
+      updater = startUpdater({
         ipcMain,
         allowedOrigin: config.allowedOrigin,
         getWindow: () => mainWindow ?? home?.window() ?? null,
+        // 1.7.2 (ADR-0106): never restart into an update while Drive uploads are left.
+        uploadsBusy: () => runningOn || (exitControl?.hasWork() ?? false),
       });
     }
     // macOS convention: clicking the Dock icon re-opens a window if none is open.

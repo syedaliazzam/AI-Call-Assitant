@@ -176,3 +176,6 @@ export const DRIVE_PROGRESS_EVENT = 'kite:drive-progress';
 
 /** 1.6.0: show the native "saved to Google Drive" notification (invoke; a DesktopNotice). */
 export const SHOW_NOTICE_CHANNEL = 'kite:show-notice';
+
+/** 1.7.2 (ADR-0106): the page's Drive queue report, for the background upload on exit (send; a DriveQueueReport). */
+export const DRIVE_QUEUE_CHANNEL = 'kite:drive-queue';

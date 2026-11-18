@@ -12,7 +12,7 @@
  *          and meeting recording (1.5.0, ADR-0068: recordingOpen / Write / Close / List / Play / SaveAs /
  *          ShowInFolder / Delete, listDisplays, setRecordingDisplay, deviceIdentity, renameDevice),
  *          and Google Drive (1.6.0, ADR-0072: driveUpload, onDriveUploadProgress, showNotice; 1.6.2,
- *          ADR-0074: driveFileSize) }
+ *          ADR-0074: driveFileSize; 1.7.2, ADR-0106: reportDriveQueue) }
  *          (frozen). Nothing
  *          else is exposed: the two methods wrap two fixed IPC channels, never ipcRenderer.
  * Used by: src/security.ts secureWebPreferences() (loaded as the window's preload, dist/preload.js)
@@ -34,6 +34,7 @@ import {
   type OverlayPreset,
   type OverlayResizeStep,
   type DesktopNotice,
+  type DriveQueueReport,
   type DriveUploadProgress,
   type DriveUploadRequest,
   type RecordingOpenRequest,
@@ -91,6 +92,7 @@ import {
   RENAME_DEVICE_CHANNEL,
   DRIVE_PROGRESS_EVENT,
   DRIVE_FILE_SIZE_CHANNEL,
+  DRIVE_QUEUE_CHANNEL,
   DRIVE_UPLOAD_CHANNEL,
   SHOW_NOTICE_CHANNEL,
 } from './channels';
@@ -365,6 +367,14 @@ const kiteDesktop: KiteDesktopApi = Object.freeze({
       title: String(notice?.title ?? ''),
       body: String(notice?.body ?? ''),
       ...(notice?.url !== undefined ? { url: String(notice.url) } : {}),
+    }),
+  // 1.7.2 (ADR-0106): counts and bytes only, copied into plain numbers; main checks them again.
+  reportDriveQueue: (report: DriveQueueReport) =>
+    ipcRenderer.send(DRIVE_QUEUE_CHANNEL, {
+      calls: Number(report?.calls),
+      recordings: Number(report?.recordings),
+      sent: Number(report?.sent),
+      total: Number(report?.total),
     }),
 });
 

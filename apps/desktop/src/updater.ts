@@ -4,7 +4,9 @@
  *          the public releases-only repository on start and every 6 hours, downloads a new
  *          version in the background, and asks the user to restart, but never during a live
  *          call (the page says when one is live through window.kiteDesktop.setCallActive()).
- *          If the user chooses Later, the update is installed when Kite quits.
+ *          If the user chooses Later, the update is installed when Kite quits. 1.7.2 (ADR-0106): never
+ *          while a Drive upload is left either: the question waits until the queue is done, and an app
+ *          finishing its uploads after the user exited installs the update when it quits by itself.
  * Used by: src/main.ts (installed builds only)
  * Depends on: electron (app, dialog, ipcMain), electron-updater (autoUpdater; the feed is the
  *             "publish" setting in electron-builder.yml, written into the installed app),
@@ -31,19 +33,21 @@ export interface UpdateState {
   callActive: boolean;
   /** The user has already been asked about this version (and chose Later). */
   asked: boolean;
+  /** 1.7.2 (ADR-0106): Drive uploads are left on this computer (or the app runs on to finish them). */
+  uploading?: boolean;
 }
 
 /**
  * Whether to ask the user to restart now.
  *
  * @param state See UpdateState.
- * @returns 'ask' to show the restart question; 'wait' while a call is live (ask when it ends);
- *          'none' when there is nothing to ask.
+ * @returns 'ask' to show the restart question; 'wait' while a call is live or Drive uploads are left
+ *          (ask when they end); 'none' when there is nothing to ask.
  * Called from: startUpdater() (after a download, and when a call ends); tests
  */
 export function nextUpdateStep(state: UpdateState): 'ask' | 'wait' | 'none' {
   if (!state.downloaded || state.asked) return 'none';
-  return state.callActive ? 'wait' : 'ask';
+  return state.callActive || state.uploading ? 'wait' : 'ask';
 }
 
 /** What startUpdater() needs from main.ts. */
@@ -54,6 +58,17 @@ export interface UpdaterOptions {
   allowedOrigin: string;
   /** The main window, for the restart question (null when closed). */
   getWindow: () => BrowserWindow | null;
+  /**
+   * 1.7.2 (ADR-0106): true while Drive uploads are left or the app runs on in the background to finish
+   * them; a restart then waits.
+   */
+  uploadsBusy?: () => boolean;
+}
+
+/** What startUpdater() gives main.ts. */
+export interface Updater {
+  /** 1.7.2 (ADR-0106): the Drive uploads are done: ask now if an update was waiting for them. */
+  uploadsIdle(): void;
 }
 
 /**
@@ -63,10 +78,10 @@ export interface UpdaterOptions {
  * update test on Day 6 runs without anyone to click).
  *
  * @param options See UpdaterOptions.
- * @returns Nothing.
+ * @returns The hook main.ts calls when the Drive uploads are done.
  * Called from: main.ts (after the main window opens)
  */
-export function startUpdater(options: UpdaterOptions): void {
+export function startUpdater(options: UpdaterOptions): Updater {
   const state: UpdateState = { downloaded: false, callActive: false, asked: false };
   autoUpdater.autoDownload = true;
   // "Later": the downloaded version is installed when Kite quits.
@@ -76,6 +91,7 @@ export function startUpdater(options: UpdaterOptions): void {
 
   /** Asks to restart when the state allows it. */
   const maybeAsk = () => {
+    state.uploading = options.uploadsBusy?.() ?? false;
     if (nextUpdateStep(state) !== 'ask') return;
     state.asked = true;
     if (process.env.KITE_TEST_UPDATE_ACCEPT === '1') {
@@ -95,7 +111,14 @@ export function startUpdater(options: UpdaterOptions): void {
     };
     void (window ? dialog.showMessageBox(window, question) : dialog.showMessageBox(question)).then(
       ({ response }) => {
-        if (response === 0) autoUpdater.quitAndInstall(true, true);
+        if (response !== 0) return;
+        // 1.7.2 (ADR-0106): an upload that started while the question was open goes first; the
+        // question comes back when the queue is done.
+        if (options.uploadsBusy?.()) {
+          state.asked = false;
+          return;
+        }
+        autoUpdater.quitAndInstall(true, true);
       },
     );
   };
@@ -120,4 +143,5 @@ export function startUpdater(options: UpdaterOptions): void {
   const check = () => void autoUpdater.checkForUpdates().catch(() => undefined);
   check();
   setInterval(check, CHECK_EVERY_MS);
+  return { uploadsIdle: maybeAsk };
 }

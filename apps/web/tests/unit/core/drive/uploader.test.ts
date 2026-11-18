@@ -10,7 +10,8 @@
  *   a job that failed is queued again and finishes;
  * - idempotency: running again, or after this device lost its ids, never makes a folder or file twice;
  * - resume: a call starting mid-upload pauses it, and the next run continues the SAME upload session; a
- *   gone session gets a new one; a lost local file is skipped;
+ *   gone session gets a new one; a lost local file is skipped; ADR-0106: an expired ticket (a resume a
+ *   week later) gets a new session, and a finished file whose ticket expired is found, not sent again;
  * - reconnect: a refused token or a "reconnect" status makes jobs wait with their files untouched, and
  *   they finish once Drive works again; nothing runs while a call is live;
  * - a notification that could not reach the server is sent at the next run without uploading again;
@@ -413,6 +414,57 @@ describe('resume', () => {
     await runDriveQueue(w.deps);
     expect(w.job().state).toBe('done');
     expect(new Set(w.hostCalls.slice(0, 3).map((c) => c.uploadUrl)).size).toBe(3);
+  });
+
+  it('ADR-0106: resumed after its ticket ran out (a week later), starts a new session for the same file', async () => {
+    const w = world({
+      hostScript: [
+        (request) => {
+          w.state.callLive = true;
+          w.google.sessions.get(request.uploadUrl)!.got = 256 * 1024;
+          return { status: 'paused', offset: 256 * 1024, bytes: 1_000_000 };
+        },
+      ],
+    });
+    expect(await runDriveQueue(w.deps)).toBe('call');
+    const first = w.hostCalls[0]!.uploadUrl;
+    w.state.callLive = false;
+    // The server refuses the 6-day ticket (403 bad_ticket), as it does a week later.
+    const offset = w.deps.api.uploadOffset;
+    let refused = 0;
+    w.deps.api.uploadOffset = async (request) => {
+      if (refused === 0) {
+        refused += 1;
+        throw new DriveApiError(403, 'bad_ticket', 'This upload is not yours, or it expired.');
+      }
+      return offset(request);
+    };
+    const sessionsBefore = w.google.counts.sessions;
+    expect(await runDriveQueue(w.deps)).toBe('idle');
+    expect(refused).toBe(1);
+    expect(w.job().state).toBe('done');
+    expect(w.google.counts.sessions - sessionsBefore).toBe(1);
+    expect(w.hostCalls[1]!.uploadUrl).not.toBe(first);
+    expect(w.hostCalls[1]!.startOffset).toBe(0);
+  });
+
+  it('ADR-0106: a finished upload whose ticket ran out is found by its tag, never uploaded twice', async () => {
+    const w = world();
+    const complete = w.deps.api.completeUpload;
+    let refused = 0;
+    w.deps.api.completeUpload = async (request) => {
+      if (refused === 0) {
+        refused += 1;
+        throw new DriveApiError(403, 'bad_ticket', 'This upload is not yours, or it expired.');
+      }
+      return complete(request);
+    };
+    expect(await runDriveQueue(w.deps)).toBe('idle');
+    expect(refused).toBe(1);
+    expect(w.job().state).toBe('done');
+    expect(w.hostCalls).toHaveLength(1);
+    const main = w.job().files.find((file) => file.key.endsWith(':main'))!;
+    expect(main.driveFileId).toBeTruthy();
   });
 
   it('skips a recording whose file was deleted from this computer', async () => {

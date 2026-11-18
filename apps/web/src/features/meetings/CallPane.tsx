@@ -48,6 +48,8 @@ const TABS: readonly { value: TabName; label: string }[] = [
 const STATUS_TONES: Readonly<Record<ReturnType<typeof recordingStatus>['kind'], BadgeTone>> = {
   recorded: 'success',
   uploading: 'neutral',
+  // ADR-0106: the person has to open the desktop app on that computer.
+  stalled: 'warning',
   'device-only': 'warning',
   none: 'neutral',
   recording: 'danger',

@@ -724,6 +724,12 @@ export interface StoredCall {
     reason?: string;
     /** The session folder in Drive, once made (for "Saved to Drive ↗"). */
     folderId?: string;
+    /**
+     * ADR-0106: when the device uploading it last worked on it (Unix ms): each state change, and every
+     * few minutes while a recording uploads. A day without it means that device's app is closed ("Upload
+     * paused: open the desktop app…"). Absent on records written before; their updatedAt stands in.
+     */
+    movedAt?: number;
   };
   /**
    * While the call window still improves the user's lines after End (on-device Accurate, ADR-0066), the

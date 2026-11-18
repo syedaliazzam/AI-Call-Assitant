@@ -6,15 +6,18 @@
  *          in another window). One window of the profile uploads at a time (core/drive/runner.ts); while a
  *          call is live nothing is uploaded. ADR-0077: also asks for the Drive status once an hour, which
  *          has the server send any "saved" email that is due (24-hour fallbacks, failed emails tried again):
- *          the scheduled job runs only daily on the Vercel plan in use. Renders nothing.
+ *          the scheduled job runs only daily on the Vercel plan in use. Desktop 1.7.2 (ADR-0106): also tells
+ *          the shell how much Drive work is left (core/drive/localWork.ts), so an exit with work left runs
+ *          on until it is done. Renders nothing.
  * Used by: app/(app)/layout.tsx, app/home/page.tsx
- * Depends on: src/core/drive/{runner,queue}.ts, src/platform, src/features/shell/AccountName.tsx
+ * Depends on: src/core/drive/{runner,queue,localWork}.ts, src/platform, src/features/shell/AccountName.tsx
  * Architecture: ADR-0072
  */
 'use client';
 
 import { useEffect, useRef } from 'react';
 import { driveApi } from '@/core/drive/api';
+import { watchLocalDriveWork } from '@/core/drive/localWork';
 import { onDriveMessage } from '@/core/drive/queue';
 import { createUploaderDeps, runUploaderOnce } from '@/core/drive/runner';
 import { useAccountName } from '@/features/shell/AccountName';
@@ -41,6 +44,19 @@ export function DriveUploader() {
   useEffect(() => {
     nameRef.current = accountName;
   }, [accountName]);
+
+  // Desktop 1.7.2 (ADR-0106): the work left, for the shell (each window reports; they all read the same
+  // queue, so the shell keeps the latest).
+  useEffect(() => {
+    const platform = getPlatform();
+    const report = platform.drive?.reportQueue;
+    const recording = platform.recording;
+    if (!report || !recording) return;
+    return watchLocalDriveWork(
+      () => recording.list(),
+      (work) => report(work),
+    );
+  }, []);
 
   useEffect(() => {
     let running = false;

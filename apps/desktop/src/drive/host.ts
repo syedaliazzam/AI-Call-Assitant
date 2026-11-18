@@ -3,7 +3,8 @@
  * Purpose: Wires Google Drive saving into the shell (desktop 1.6.0, ADR-0072): the IPC calls for
  *          uploading a recording file (its progress goes back to the page that asked) and for the native
  *          "saved" notification, for Kite origin main frames only; and the call state, which pauses every
- *          upload the moment a call starts. 1.6.2 (ADR-0074): a recording file's size.
+ *          upload the moment a call starts. 1.6.2 (ADR-0074): a recording file's size. 1.7.2 (ADR-0106): the
+ *          page's Drive queue report and the count of uploads sending, for the background upload on exit.
  * Used by: src/main.ts
  * Depends on: electron (types), src/drive/{upload,notice}.ts, src/channels.ts, src/hotkeys.ts
  *             (isKiteSender), src/recordings/manager.ts (types)
@@ -15,6 +16,7 @@ import type { IpcMain, IpcMainInvokeEvent } from 'electron';
 import {
   DRIVE_FILE_SIZE_CHANNEL,
   DRIVE_PROGRESS_EVENT,
+  DRIVE_QUEUE_CHANNEL,
   DRIVE_UPLOAD_CHANNEL,
   SHOW_NOTICE_CHANNEL,
 } from '../channels';
@@ -26,7 +28,7 @@ import { createDriveUploader, type DriveUploader } from './upload';
 /** What installDrive() needs. */
 export interface DriveHostDeps {
   /** Electron's ipcMain. */
-  ipcMain: Pick<IpcMain, 'handle'>;
+  ipcMain: Pick<IpcMain, 'handle' | 'on'>;
   /** The Kite origin (only its main frames may call). */
   allowedOrigin: string;
   /** The recordings' index (files are taken from it only). */
@@ -39,6 +41,13 @@ export interface DriveHostDeps {
   fetch(url: string, init: RequestInit): Promise<Response>;
   /** Electron's Notification and shell, for the "saved" notification. */
   notices: NoticeDeps;
+  /**
+   * 1.7.2 (ADR-0106): a Kite page reported the Drive work left (checked by the receiver).
+   * @param report What arrived.
+   */
+  onQueueReport?(report: unknown): void;
+  /** 1.7.2 (ADR-0106): an upload started or ended. */
+  onUploadsChanged?(): void;
 }
 
 /** What installDrive() gives main.ts. */
@@ -50,6 +59,11 @@ export interface DriveHost {
    * @param active True while a call is live.
    */
   setCallActive(active: boolean): void;
+  /**
+   * 1.7.2 (ADR-0106): how many uploads are sending now.
+   * @returns The count.
+   */
+  activeUploads(): number;
 }
 
 /**
@@ -84,10 +98,23 @@ export function installDrive(deps: DriveHostDeps): DriveHost {
 
   handle(DRIVE_UPLOAD_CHANNEL, async (event, request) => {
     const started = Date.now();
-    const result = await uploader.upload(request, (progress) => {
-      // The page may have gone (closed, reloaded): the upload carries on, and the next run finds it done.
-      if (!event.sender.isDestroyed()) event.sender.send(DRIVE_PROGRESS_EVENT, progress);
-    });
+    // 1.7.2 (ADR-0106): the page that asked went away (a closed window, a reload): its upload stops, so
+    // the page that takes over (the panel, which keeps uploading after an exit) resumes it from where
+    // Google got to. Before 1.7.2 it carried on, and the next page found it busy and waited minutes.
+    const fields = (request ?? {}) as { recordingId?: unknown; track?: unknown };
+    const onGone = () => uploader.abort(String(fields.recordingId), String(fields.track));
+    event.sender.once('destroyed', onGone);
+    let result: Awaited<ReturnType<DriveUploader['upload']>>;
+    try {
+      result = await uploader.upload(request, (progress) => {
+        if (!event.sender.isDestroyed()) event.sender.send(DRIVE_PROGRESS_EVENT, progress);
+        // The first report comes once the upload is counted as sending.
+        deps.onUploadsChanged?.();
+      });
+    } finally {
+      if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', onGone);
+    }
+    deps.onUploadsChanged?.();
     console.info('drive: upload ended', {
       status: result.status,
       ...(result.status === 'failed' ? { reason: result.reason } : {}),
@@ -98,6 +125,11 @@ export function installDrive(deps: DriveHostDeps): DriveHost {
   handle(SHOW_NOTICE_CHANNEL, (_event, notice) => showNotice(deps.notices, notice));
   // 1.6.2 (ADR-0074): a recording file's size, for the server to start and verify its upload.
   handle(DRIVE_FILE_SIZE_CHANNEL, (_event, request) => uploader.fileSize(request));
+  // 1.7.2 (ADR-0106): the page's report of the Drive work left (send: the page does not wait).
+  deps.ipcMain.on(DRIVE_QUEUE_CHANNEL, (event, report: unknown) => {
+    if (!isKiteSender(event, deps.allowedOrigin)) return;
+    deps.onQueueReport?.(report);
+  });
 
   return {
     uploader,
@@ -105,5 +137,6 @@ export function installDrive(deps: DriveHostDeps): DriveHost {
       callActive = active;
       if (active) uploader.pauseAll();
     },
+    activeUploads: () => uploader.active(),
   };
 }

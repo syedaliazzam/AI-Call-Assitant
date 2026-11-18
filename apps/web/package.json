@@ -28,6 +28,7 @@
     "check:answer-shape": "tsx --env-file=.env.local --conditions=react-server scripts/check-answer-shape.ts",
     "record:streams": "tsx --env-file=.env.local --conditions=react-server scripts/record-answer-streams.ts",
     "drive-mark-reconnect": "tsx --env-file=.env.local --conditions=react-server scripts/drive-mark-reconnect.ts",
+    "drive-stuck-uploads": "tsx --env-file=.env.local --conditions=react-server scripts/drive-stuck-uploads.ts",
     "sync-user-ids": "tsx --env-file=.env.local --conditions=react-server scripts/sync-user-ids.ts",
     "delete-test-accounts": "tsx --env-file=.env.local --conditions=react-server scripts/delete-test-accounts.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",
