@@ -302,9 +302,17 @@ interface ScenarioAnswer {
   text: string;
   /** What the hidden line said, or null when it had none. */
   meta: AnswerMeta | null;
+  /** ADR-0103: true when the raw reply contains the contract's placeholder ("[[type|for|source]]"). */
+  placeholder: boolean;
   /** Token counts. */
   usage: AnswerUsage;
 }
+
+/**
+ * ADR-0103: the contract's placeholder copied into a reply, anywhere: "[[type|for|source]]", or the
+ * same slots under another first word ("[[question|for|source]]").
+ */
+const PLACEHOLDER = /\[\[\s*[a-z]+\s*\|\s*for\s*\|\s*source\s*\]\]/i;
 
 /**
  * ADR-0099: the third-party model a run's live answers come from (--model), with its key and model id.
@@ -457,9 +465,12 @@ async function answerScenario(
   for (; !next.done; next = await reply.next()) raw += next.value;
   meter.add(model, next.value.usage);
   const split = splitMetaLine(raw);
+  // ADR-0103: a copied placeholder as the first line is not a hidden line (its type is "type").
+  const realMeta = split.state === 'found' && !/^\s*\[\[\s*type\s*\|/i.test(raw);
   return {
     text: withoutQuestionLine(split.state === 'found' ? split.rest : raw.trim()),
-    meta: split.state === 'found' ? split.meta : null,
+    meta: realMeta && split.state === 'found' ? split.meta : null,
+    placeholder: PLACEHOLDER.test(raw),
     usage: next.value.usage,
   };
 }
@@ -629,6 +640,7 @@ async function extraChecks(
   const claims = needsClaimCheck(meta, scenario.mode) ? checkClaims(text, corpus) : [];
   return {
     hiddenLine: meta !== null,
+    placeholder: answer.placeholder,
     // v1.1.0 (item 16): reported beside the Headline point, which stays at 15 words so scores remain
     // comparable with the baselines.
     ...(callAnswerLine(text, scenario.session.style.format, meta) ?? {}),
@@ -674,6 +686,9 @@ function summariseChecks(results: readonly ScenarioResult[]): string[] {
   };
   return [
     ...line('Hidden line present', (checks) => checks.hiddenLine),
+    ...line('No copied placeholder', (checks) =>
+      checks.placeholder === undefined ? undefined : !checks.placeholder,
+    ),
     ...line('Question type as expected', (checks) => checks.typeOk),
     ...line('Answer line 12 words or fewer', (checks) =>
       checks.answerLineWords === undefined ? undefined : checks.answerLineWords <= 12,

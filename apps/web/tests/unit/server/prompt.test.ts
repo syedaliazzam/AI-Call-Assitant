@@ -436,7 +436,7 @@ describe('the rules block with the default prompt (ADR-0089)', () => {
     );
     // ADR-0103: the spoken-answer rules never move the hidden first line.
     expect(SYSTEM_RULES).toContain(
-      'The hidden [[type|for|source]] line always comes first, before the answer line',
+      'The hidden first line from the app contract still opens every reply, and nothing is written before it',
     );
     // ADR-0103: general knowledge is answered fully, but not where the answer turns on a company's facts.
     expect(SYSTEM_RULES).toContain(

@@ -27,8 +27,10 @@ export interface ScenarioRunResult {
 
 /** The checks made in code on one answer (ADR-0030). */
 export interface RunChecks {
-  /** True when the reply opened with its hidden line. */
+  /** True when the reply opened with its hidden line (ADR-0103: a copied placeholder does not count). */
   hiddenLine: boolean;
+  /** ADR-0103: true when the reply contains the copied placeholder ("[[type|for|source]]"); absent in older files. */
+  placeholder?: boolean;
   /** v1.1.0: how many words the model's answer line has, for an answer that has one. */
   answerLineWords?: number;
   /** v1.1.0: how many words the line has on the card, after its cut at a clause. */

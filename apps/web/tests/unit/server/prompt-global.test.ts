@@ -169,11 +169,16 @@ describe('the default prompts', () => {
     expect(live).not.toMatch(/Python unless/);
     expect(live).not.toMatch(/short is about 10 to 20 seconds/);
     expect(live).not.toMatch(/When the session's answer format is/);
-    // The contract's parts are not in the editable text. ADR-0103: the prompt may refer to the hidden
-    // line (it says the line comes first), but never defines it or its type list.
+    // The contract's parts are not in the editable text. ADR-0103: never the placeholder either
+    // (measured: a prompt that wrote "[[type|for|source]]" had replies copy it before the real line),
+    // so no "[[" at all.
+    expect(live).not.toContain('[[type|for|source]]');
+    expect(live).not.toContain('[[');
     expect(live).not.toContain('Every reply starts with one hidden line');
     expect(live).not.toContain('type is the kind of question');
-    expect(live).not.toContain('only the two hidden lines');
+    // The contract's garbled / none rule (ADR-0103: the prompt may say a reply holds "only the two
+    // hidden lines and the finished answer", which is not that rule).
+    expect(live).not.toContain('write only the two hidden lines');
     // The screenshot guidance moved into the editable prompt.
     expect(live).toContain('Code with an error (codefix)');
   });
