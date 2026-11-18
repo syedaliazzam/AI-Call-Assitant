@@ -196,7 +196,7 @@ describe('bar 1 and the ⋮ menu (ADR-0094)', () => {
     const chip = html.indexOf('aria-label="Model: Haiku"');
     expect(auto).toBeGreaterThan(-1);
     expect(chip).toBeGreaterThan(auto);
-    expect(html).toContain('data-tip="Model: Claude Haiku"');
+    expect(html).toContain('data-tip="Model: Claude Haiku (Recommended)"');
     expect(bar({ ...STATE, model: 'smart' })).toContain('aria-label="Model: Sonnet"');
     expect(bar({ ...STATE, model: 'gpt-luna', openaiAllowed: true })).toContain(
       'aria-label="Model: Luna"',
@@ -221,10 +221,12 @@ describe('bar 1 and the ⋮ menu (ADR-0094)', () => {
 
   it('has a one-row Model entry in the ⋮ menu, before Auto answer, naming the model in use', () => {
     const html = menu(STATE);
-    expect(html).toContain('aria-label="Model: Claude Haiku"');
+    expect(html).toContain('aria-label="Model: Claude Haiku (Recommended)"');
     expect(html.indexOf('data-menu-row="model"')).toBeLessThan(html.indexOf('Auto answer'));
     // Shut until clicked, so the menu stays one complete card (its choices open in place).
-    expect(html).toMatch(/aria-expanded="false"[^>]*aria-label="Model: Claude Haiku"/);
+    expect(html).toMatch(
+      /aria-expanded="false"[^>]*aria-label="Model: Claude Haiku \(Recommended\)"/,
+    );
     expect(html).not.toContain('aria-label="Answer model"');
     expect(menu({ ...STATE, model: 'groq', groqAllowed: true })).toContain(
       'aria-label="Model: Groq (Fastest)"',
@@ -315,10 +317,10 @@ describe('ADR-0099: the new-models rollout in the overlay', () => {
       />,
     );
     const order = [
-      'Gemini 3.5 Flash Lite (Recommended)',
+      'Gemini 3.5 Flash Lite',
       'GPT-5.6 Luna (Fast)',
       'GPT-5.6 Terra',
-      'Claude Haiku',
+      'Claude Haiku (Recommended)',
       'Claude Sonnet',
       'Groq (Fastest)',
     ].map((label) => html.indexOf(label));
@@ -345,7 +347,7 @@ describe('ADR-0099: the new-models rollout in the overlay', () => {
     const order = [
       'GPT-5.6 Luna (Fast)',
       'GPT-5.6 Terra',
-      'Claude Haiku',
+      'Claude Haiku (Recommended)',
       'Claude Sonnet',
       'Groq (Fastest)',
     ].map((label) => html.indexOf(label));

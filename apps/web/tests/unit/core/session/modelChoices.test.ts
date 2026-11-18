@@ -2,7 +2,8 @@
  * Tests apps/web/src/core/session/modelChoices.ts (ADR-0099, ADR-0102, ADR-0104): an account outside the Gemini
  * rollout sees the GPT models, Claude Haiku, Claude Sonnet and Groq; one in the rollout also sees Gemini 3.5 Flash
  * Lite, in the developer's order and words; Gemini 3.6 Flash is retired (in no list, named as Claude Haiku, always
- * off); every model has one name for every account; and a choice is off when its switch, key or rollout says so.
+ * off); "Recommended" is on Claude Haiku (ADR-0104); every model has one name for every account; and a choice
+ * is off when its switch, key or rollout says so.
  */
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_MODEL_ACCESS } from '@/core/session/modelAccess';
@@ -20,7 +21,7 @@ describe('modelChoices', () => {
     expect(STANDARD_MODEL_CHOICES.map((choice) => [choice.value, choice.label])).toEqual([
       ['gpt-luna', 'GPT-5.6 Luna (Fast)'],
       ['gpt-terra', 'GPT-5.6 Terra'],
-      ['fast', 'Claude Haiku'],
+      ['fast', 'Claude Haiku (Recommended)'],
       ['smart', 'Claude Sonnet'],
       ['groq', 'Groq (Fastest)'],
     ]);
@@ -29,10 +30,10 @@ describe('modelChoices', () => {
   it("lists the rollout's six models in the developer's order and words, without Gemini 3.6 Flash (ADR-0104)", () => {
     expect(modelChoices(true)).toBe(ROLLOUT_MODEL_CHOICES);
     expect(ROLLOUT_MODEL_CHOICES.map((choice) => [choice.value, choice.label])).toEqual([
-      ['gemini-lite', 'Gemini 3.5 Flash Lite (Recommended)'],
+      ['gemini-lite', 'Gemini 3.5 Flash Lite'],
       ['gpt-luna', 'GPT-5.6 Luna (Fast)'],
       ['gpt-terra', 'GPT-5.6 Terra'],
-      ['fast', 'Claude Haiku'],
+      ['fast', 'Claude Haiku (Recommended)'],
       ['smart', 'Claude Sonnet'],
       ['groq', 'Groq (Fastest)'],
     ]);
