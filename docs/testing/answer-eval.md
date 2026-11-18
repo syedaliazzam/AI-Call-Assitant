@@ -25,6 +25,7 @@ Re-run only the groups a change touches. Run the full suite (`pnpm --filter web 
 | `screenshots` | 16–18 (Day 5) | `pnpm --filter web eval:answers --only=screenshots` | 3 × 2 × 2 = 12 | ≥ 8 |
 | `lessons` | 19–20 (Day 5 Stage 7: answers with an approved lesson) | `pnpm --filter web eval:answers --only=lessons`, then the same with `--without-lessons` | 2 × 2 × 2 = 8 per command, 16 for the pair | with lessons ≥ 8 and higher than without |
 | `preferences` | 21–24 (parity Phase 2: bullets only, an answer language, the technical tone; v1.2.0: STAR structure) | `pnpm --filter web eval:answers --only=preferences` | 4 × 2 × 2 = 16 | ≥ 8 |
+| `call-style` | 25–28 (ADR-0103: a general technical question the documents do not cover, a preference that cannot fit, a follow-up that builds on the last answer, a sales objection) | `pnpm --filter web eval:answers --only=call-style` | 4 × 2 × 2 = 16 | ≥ 8 (proposed) |
 | `notes` | n1–n3 (Day 5) | `pnpm --filter web eval:notes --only=notes` | 3 × 3 runs × (notes + grade) = 18 | ≥ 8 |
 | `adaptive` | 24, in `tests/eval/groups/adaptive.ts` (ADR-0030: 6 roles × 4 question types; code is run) | `pnpm --filter web eval:answers --only=adaptive` | 24 × 2 × 2 = 96 | ≥ 8 |
 | `missing-info` | 8, in `tests/eval/groups/quality.ts` (4 questions under both settings) | `--only=missing-info` | 8 × 2 × 2 = 32 | ≥ 8 |
@@ -649,3 +650,81 @@ Per scenario (`answers`): 01 9.0, 02 9.0, 03 9.5, 04 10.0, 05 9.0, 06 9.5, 07 9.
 | `claude-haiku-5-5` (16 Nov, 3 commands) | 9.30, 9.43, 9.30 | 30/30 each | — | 3, 2, 1 | 3, 2, 3 | $0.09 each |
 
 Both pass the gate with one command (the gate rule asks for a 3-command mean; this was a single reading, as the developer asked). Neither is below Claude Haiku on hidden-line compliance or invented facts. Gemini writes longer answer lines more often (6 of 28 over 12 words as written; the card's cut keeps all 28 within 12). The Gemini command twice failed on its first request with HTTP 429 straight after the latency runs, and ran a few minutes later; see `docs/testing/benchmark-results.md` (ADR-0099) for the rate limits.
+
+## Natural-style live prompt (2026-11-18, ADR-0103): fails the gate, not deployed
+
+The new default live prompt (natural call style, call kinds, a general-knowledge section, the examples removed), the new user-preferences heading, and the end reminder's general-knowledge limit. Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario; one command each. Developer's cap $0.15; spend **$0.137** (76 requests: $0.1043 and $0.0327).
+
+| Group | Gate | Result |
+|---|---|---|
+| `answers` (15 × 2) | ≥ 8.86 (baseline 9.30) | **8.67: fails**; hidden line 24/30; answer line ≤ 12 words as written 14/28, as shown 28/28; grader found nothing invented 19/30 |
+| `call-style` (4 × 2, new) | ≥ 8 (proposed) | **8.00**; hidden line 8/8; answer line ≤ 12 words as written 1/8, as shown 8/8 |
+
+Per scenario (`answers`), with the 16 Nov run of 9.30 in brackets: 01 10.0 (9.0), 02 9.0 (9.0), 03 8.0 (9.5), 04 9.0 (10.0), 05 8.5 (9.0), 06 9.0 (9.5), 07 9.0 (9.5), **08 5.0 (8.5)**, 09 8.5 (10.0), 10 8.0 (9.5), 11 8.0 (8.0), 12 10.0 (10.0), 13 8.0 (8.0), 14 10.0 (10.0), 15 10.0 (10.0). `call-style`: 25 7.5, 26 9.0, 27 7.5, 28 8.0.
+
+Why it dropped (grader reasons and code checks):
+- **08 (data in Germany, ISO certified):** both runs answered "yes" to both, inventing a hosting location and a certification, instead of the promise to confirm. The new prompt's "a yes-or-no question gets the yes, the no, or the condition as its first words", "never hold back, hedge or promise to confirm" and "never pass the question to a colleague: answer it" pull against ADR-0088's rule. Without 08 the mean would be 8.93.
+- **Hidden line missing in 6 of 30 answers** (07, 09 and 12, both runs each; 30/30 before). Two of the grader's reasons quote leaked self-correction before a stray hidden tag ("the answer line needs to come first"): the model starts with the answer line and writes the hidden line later.
+- **Longer answer lines:** 14 of 28 within 12 words as written (26 of 26 before). The card's cut keeps all within 12 as shown, but the Headline point (15 words) was lost in 03, 06, 08, 09, 10, 13.
+- **Small embellishments in Tip lines:** 03 (an ordering the notes do not state), 04 ("hands-on", "ready on day one"), 07, 09, 10 ("I'll confirm it with them today"), 11 ("halved", "per route").
+- **05:** no "as I mentioned" on the repeated answer; the new prompt asks for "a brief pointer back in natural words", while the scenario expects "as I mentioned".
+- **call-style:** 25 r2 claimed "either protocol works with Professional" (forbidden protocol claim); 27 restated the earlier steps in one run; 28 defended the price instead of accepting the concern in both runs. 26 (preference that cannot fit) did well (9.0) and never mentioned the conflict.
+
+### Revised natural-style prompt (2026-11-18, ADR-0103, second version): fails on the hidden line, not deployed
+
+The developer's revised text (a rule that the hidden line always comes first, the yes-or-no rule limited to supported answers, stricter Tip and objection lines, "Answer only the new part" for follow-ups, "As I mentioned" restored, general knowledge limited where a company's facts decide). Same laptop and models; one `answers` command (2 runs), `call-style` at 1 run (the cap). Developer's cap $0.12; spend **$0.118** ($0.1019 answers, $0.0148 call-style, $0.001 for 4 ungraded re-runs of 07 and 09).
+
+| Group | Gate | Result |
+|---|---|---|
+| `answers` (15 × 2) | ≥ 8.86, hidden line 30/30, 08 invents nothing | **9.10**; hidden line **28/30: fails**; 08 nothing invented in both runs; answer line ≤ 12 words as written 15/27, as shown 27/27; grader found nothing invented 22/30 |
+| `call-style` (4 × 1) | ≥ 8 (proposed) | **9.25** (25 10.0, 26 10.0, 27 8.0, 28 9.0); hidden line 4/4 |
+
+Per scenario, with the 16 Nov 9.30 run in brackets: 01 9.5 (9.0), 02 9.5 (9.0), 03 8.0 (9.5), 04 9.0 (10.0), 05 10.0 (9.0), 06 9.5 (9.5), 07 8.5 (9.5), 08 8.0 (8.5), 09 9.0 (10.0), 10 9.0 (9.5), 11 9.0 (8.0), 12 10.0 (10.0), 13 8.5 (8.0), 14 10.0 (10.0), 15 9.0 (10.0).
+
+- Hidden line missing: 07 run 2 (a stray tag after a one-word first line) and 09 run 1 (64 words of reasoning before the tag). Four ungraded re-runs of 07 and 09 had the hidden line first each time, so the miss is intermittent.
+- 08: both runs gave the promise to confirm and invented nothing; they lost the style and headline points (16-word answer lines, a Note line that repeats the headline).
+- Other drops are small embellishments the grader listed: 03 ("the primary handled only writes"), 04 ("before going live"), 07 (how re-routing works), 10 ("I'd put it in for you today"), 15 ("a quiet one").
+
+### Version 3 (2026-11-18, ADR-0103): score passes, hidden-line rate one worse, not deployed
+
+Same laptop and models. Developer's cap $0.18 for both steps; spend **$0.125** ($0.0124 and $0.0148 for 60 ungraded replies each, $0.0008 for 3 ungraded re-runs of 09, $0.0967 for the graded `answers` command).
+
+| Check | Current default (main) | Version 3 |
+|---|---|---|
+| Hidden line first, 60 ungraded replies (`answers` 15 × 4, `--no-grade`) | **59/60** (miss: 02) | **58/60** (misses: 09 twice) |
+| Answer line ≤ 12 words as written, same 60 | 44/52 | 36/54 |
+| `answers` graded (15 × 2), gate 8.86 | 9.30 (16 Nov) | **9.43**; hidden line 29/30 (09 run 2); answer line ≤ 12 words as written 20/27, as shown 27/27; 08 nothing invented (8.0 and 9.0) |
+
+Per scenario (version 3), with the 16 Nov 9.30 run in brackets: 01 10.0 (9.0), 02 9.0 (9.0), 03 8.5 (9.5), 04 9.0 (10.0), 05 9.5 (9.0), 06 10.0 (9.5), 07 10.0 (9.5), 08 8.5 (8.5), 09 9.0 (10.0), 10 9.5 (9.5), 11 9.5 (8.0), 12 10.0 (10.0), 13 10.0 (8.0), 14 10.0 (10.0), 15 9.0 (10.0).
+
+**Why 09 misses the hidden line.** Three ungraded re-runs of 09 (a typed question) showed the model copying the placeholder the version 3 prompt writes in its second line ("The hidden [[type|for|source]] line always comes first"): one reply opened "Hmm, the first line must be the hidden type line. Correct output:" and then the real line; one opened with the literal `[[type|for|source]]`, then a self-correction, then the real line; one had no hidden line. The earlier `[[question|for|source]]` reply is the same copy. The current default never writes the placeholder (a unit test used to forbid it in the editable text; it was relaxed for version 2 and is the guard that would have caught this).
+
+### Version 4 (2026-11-18, ADR-0103): placeholder copied in scenario 09, not deployed
+
+Version 4 writes no "[[" at all. The evaluation now also flags a copied placeholder (`[[type|for|source]]`, or the same slots under another first word) and no longer counts one as the hidden line, so these hidden-line counts are stricter than version 3's. Same laptop and models. Developer's cap $0.15; spend **$0.128** ($0.0149 version 4 ungraded, $0.0125 current default ungraded with the same check, $0.1002 graded `answers`).
+
+| Check | Current default (main) | Version 4 |
+|---|---|---|
+| Hidden line first, 60 ungraded replies (`answers` 15 × 4) | **60/60** | **56/60** (09, all four runs) |
+| Replies containing the placeholder, same 60 | **0** | **4** (09, all four) |
+| Answer line ≤ 12 words as written, same 60 | 40/52 | 41/55 |
+| `answers` graded (15 × 2), gate 8.86 | 9.30 (16 Nov) | **9.13**; hidden line 28/30 and placeholder in 2 (09 both runs); answer line ≤ 12 words as written 19/28; 08 nothing invented (10.0, 9.0) |
+
+Per scenario (version 4), with the 16 Nov 9.30 run in brackets: 01 10.0 (9.0), 02 9.0 (9.0), 03 8.0 (9.5), 04 9.5 (10.0), 05 9.5 (9.0), 06 9.5 (9.5), 07 9.0 (9.5), 08 9.5 (8.5), 09 8.0 (10.0), 10 9.5 (9.5), 11 8.5 (8.0), 12 10.0 (10.0), 13 8.5 (8.0), 14 10.0 (10.0), 15 8.5 (10.0).
+
+With no placeholder in the editable prompt, the copies can only come from the app contract and the end reminder, which the current default sends too and which get 60/60 there. The difference is version 4's second line, which tells the model about "the hidden first line from the app contract"; the graded 09 replies open with self-talk about "the hidden line format". Only typed questions (09) were affected.
+
+### Version 5 (2026-11-18, ADR-0103): passes, released
+
+Version 5 drops the line about the hidden line and never mentions it. Same laptop and models; same strict placeholder check. Developer's cap $0.15; spend **$0.113** ($0.0149 for 60 ungraded replies, $0.0976 for the graded `answers` command).
+
+| Check | Current default (main) | Version 5 |
+|---|---|---|
+| Hidden line first, 60 ungraded replies | 60/60 | **60/60** |
+| Replies containing the placeholder | 0 | **0** |
+| Answer line ≤ 12 words as written, same 60 | 40/52 | 39/52 |
+| `answers` graded (15 × 2), gate 8.86 | 9.30 (16 Nov) | **9.37**; hidden line 30/30; placeholder 0; answer line ≤ 12 words as written 21/27, as shown 27/27; grader found nothing invented 26/30; 08 nothing invented (10.0, 8.0) |
+
+Per scenario, with the 16 Nov 9.30 run in brackets: 01 10.0 (9.0), 02 9.5 (9.0), 03 9.0 (9.5), 04 9.5 (10.0), 05 10.0 (9.0), 06 10.0 (9.5), 07 9.0 (9.5), 08 9.0 (8.5), 09 10.0 (10.0), 10 9.0 (9.5), 11 9.0 (8.0), 12 10.0 (10.0), 13 7.5 (8.0), 14 10.0 (10.0), 15 9.0 (10.0).
+
+Remaining deductions: small additions in 03 ("while we did it"), 04 ("before going live") and 07 (how re-routing works); 15 no longer invents a weekend but does not ask back; 13 lost facts and format in one run. Two replies ended with a malformed last line ("[[Tell me about a time…|]]"); the app now removes it (ADR-0103).

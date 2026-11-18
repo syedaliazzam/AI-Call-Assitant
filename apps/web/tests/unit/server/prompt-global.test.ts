@@ -19,6 +19,7 @@ import { notesPrompt } from '@/server/notes';
 import { buildPrompt, LEARNED_HEADING } from '@/server/prompt';
 import {
   ASK_CHAT_CONTRACT,
+  GENERAL_KNOWLEDGE_RULE,
   GLOBAL_HEADING,
   LIVE_CONTRACT,
   liveEndReminder,
@@ -113,15 +114,23 @@ describe('the order and who wins', () => {
     // The preferences, the lessons and the user's instructions sit under the override heading.
     const heading = session.indexOf(PREFERENCES_HEADING);
     expect(heading).toBeGreaterThan(0);
+    // ADR-0103: they win on format, length, tone, language and focus, never over the contract or the
+    // never-invent rules, and a preference that cannot fit is applied as the general rules say.
     expect(PREFERENCES_HEADING).toContain(
-      'These user preferences override the general rules above where they differ',
+      'These user preferences decide format, length, tone, language and focus, and win over the general rules above on those.',
+    );
+    expect(PREFERENCES_HEADING).toContain(
+      'They never override the app contract at the top or the never-invent rules',
+    );
+    expect(PREFERENCES_HEADING).toContain(
+      'when one cannot fit the question, the general rules say how to apply it.',
     );
     expect(session.indexOf('Answer format: paragraph')).toBeGreaterThan(heading);
     expect(session.indexOf(LEARNED_HEADING)).toBeGreaterThan(heading);
     expect(session.indexOf('Mention the free trial')).toBeGreaterThan(heading);
     // The question, then the reminder last.
     expect(tail.indexOf('Question to answer:')).toBeLessThan(tail.indexOf('Reminder from the app'));
-    expect(tail.trimEnd().endsWith(UNSUPPORTED_FACT_RULE)).toBe(true);
+    expect(tail.trimEnd().endsWith(GENERAL_KNOWLEDGE_RULE)).toBe(true);
   });
 
   it("lets the user's Short / paragraph preference win over an admin's detailed bullets", () => {
@@ -160,9 +169,16 @@ describe('the default prompts', () => {
     expect(live).not.toMatch(/Python unless/);
     expect(live).not.toMatch(/short is about 10 to 20 seconds/);
     expect(live).not.toMatch(/When the session's answer format is/);
-    // The contract's parts are not in the editable text.
+    // The contract's parts are not in the editable text. ADR-0103: never the placeholder either
+    // (measured: a prompt that wrote "[[type|for|source]]" had replies copy it before the real line),
+    // so no "[[" at all.
     expect(live).not.toContain('[[type|for|source]]');
-    expect(live).not.toContain('only the two hidden lines');
+    expect(live).not.toContain('[[');
+    expect(live).not.toContain('Every reply starts with one hidden line');
+    expect(live).not.toContain('type is the kind of question');
+    // The contract's garbled / none rule (ADR-0103: the prompt may say a reply holds "only the two
+    // hidden lines and the finished answer", which is not that rule).
+    expect(live).not.toContain('write only the two hidden lines');
     // The screenshot guidance moved into the editable prompt.
     expect(live).toContain('Code with an error (codefix)');
   });

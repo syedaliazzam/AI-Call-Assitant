@@ -11,7 +11,7 @@ import {
   splitMetaLine,
 } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
-import { withAnswerMeta, type ReplyItem } from '@/server/answer-meta';
+import { MAX_LEADING_CHARS, withAnswerMeta, type ReplyItem } from '@/server/answer-meta';
 
 vi.mock('server-only', () => ({}));
 
@@ -55,19 +55,21 @@ describe('withAnswerMeta', () => {
   });
 
   it('passes a reply with no line through whole', async () => {
+    // ADR-0103: its first line is held until it ends (it could be stray text before the hidden line).
     const { items } = await read(['Hello', ' there']);
-    expect(items).toEqual(['Hello', ' there']);
+    expect(items.join('')).toBe('Hello there');
   });
 
   it('passes through text that only looks like the line', async () => {
     const { items } = await read(['[[not a line, just text\n', 'more']);
-    expect(items).toEqual(['[[not a line, just text\n', 'more']);
+    expect(items.join('')).toBe('[[not a line, just text\nmore');
   });
 
   it('releases an unclosed line once it is too long to be one, without waiting for the end', async () => {
     // Fail safe (v1.0.0 review): a model that starts "[[" and never closes it must not hold the
     // answer back. Read piece by piece: text arrives before the reply ends.
-    const long = `[[coding|call|${'x'.repeat(80)}`;
+    // ADR-0103: the first line is held up to MAX_LEADING_CHARS, then released.
+    const long = `[[coding|call|${'x'.repeat(MAX_LEADING_CHARS)}`;
     const source = withAnswerMeta(reply([long, ' and the rest']));
     const first = await source.next();
     expect(first).toEqual({ done: false, value: long });
@@ -100,7 +102,8 @@ describe('withAnswerMeta', () => {
 
   it('keeps the question when a reply opens with the hidden question line', async () => {
     const { items } = await read(['[[question|What is the rate?]]\nAbout 40.']);
-    expect(items).toEqual(['About 40.', { question: 'What is the rate?' }]);
+    // ADR-0103: the leading question line is taken out first, then the answer follows.
+    expect(items).toEqual([{ question: 'What is the rate?' }, 'About 40.']);
   });
 
   it('stops the reply when the reader stops', async () => {

@@ -1,0 +1,53 @@
+{
+  "id": "25-general-technical-question",
+  "covers": "ADR-0103: a general technical question the documents say nothing about is answered fully from general knowledge, with no promise to confirm and no hedging.",
+  "group": "call-style",
+  "session": {
+    "type": "regular",
+    "company": "Northwind Logistics (invented)",
+    "role": "Solutions engineer",
+    "description": "Technical follow-up call with the customer's IT lead about the Professional plan.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Bluefin Route", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "price-list.txt",
+        "text": "Harbor Lane Freight price list (invented).\nStarter plan: 18 dollars per seat per month, up to 10 seats, no single sign-on.\nProfessional plan: 52 dollars per seat per month, billed yearly, includes single sign-on and live re-routing.\nEnterprise plan: custom price, from 200 seats, includes a dedicated support manager.\nOnboarding: a one-time fee of 1,500 dollars for any plan, covering setup and two training days.\nDiscounts: at most 10 percent, only for a yearly plan paid upfront, and only with approval from the sales director.\nContract: yearly, renews automatically; cancellation needs 30 days written notice before the renewal date."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "WE ARE STILL DECIDING HOW TO SET UP SINGLE SIGN ON ACROSS OUR TOOLS",
+        "at": 12
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "BEFORE WE GO ON WHAT IS ACTUALLY THE DIFFERENCE BETWEEN SAML AND OPEN ID CONNECT",
+      "at": 20
+    }
+  ],
+  "mode": "answer",
+  "question": "BEFORE WE GO ON WHAT IS ACTUALLY THE DIFFERENCE BETWEEN SAML AND OPEN ID CONNECT",
+  "mustInclude": [
+    "a direct answer to the difference, from general knowledge, stated with confidence",
+    "SAML passes signed XML assertions, usually through the browser, and is the older standard common in enterprise web apps",
+    "OpenID Connect is an identity layer on top of OAuth 2.0 that uses JSON web tokens and suits modern web and mobile apps"
+  ],
+  "mustNotInclude": [
+    "a promise to confirm, check or follow up after the call",
+    "hedging such as \"I think\", \"I believe\", \"I'm not sure\" or \"roughly speaking\"",
+    "any claim about which one Harbor Lane supports, since the documents only say single sign-on is included"
+  ]
+}

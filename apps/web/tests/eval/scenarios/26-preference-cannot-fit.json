@@ -1,0 +1,53 @@
+{
+  "id": "26-preference-cannot-fit",
+  "covers": "ADR-0103: a user instruction that cannot be met for this question (a STAR story for a concept question). The answer must still be correct and usable, invent no story, and never mention the conflict.",
+  "group": "call-style",
+  "session": {
+    "type": "interview",
+    "company": "Ledgerly (invented)",
+    "role": "Senior backend engineer interview (the user is the candidate)",
+    "description": "Second-round technical interview.",
+    "instructions": "Always answer as a STAR story from my own experience.",
+    "keyTerms": ["Ledgerly", "Postgres", "Redis"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "my-notes.txt",
+        "text": "My experience (invented).\nAt Copperleaf Payments (2021 to 2025) I led the move of the invoice API from one Postgres server to read replicas plus a Redis cache.\nResult: p95 latency fell from 900 ms to 250 ms and database CPU dropped by half.\nI also mentored two junior engineers and ran the on-call rota."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "OKAY LET US DO A FEW QUICK FUNDAMENTALS",
+        "at": 40
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "WHAT IS THE DIFFERENCE BETWEEN A PROCESS AND A THREAD",
+      "at": 46
+    }
+  ],
+  "mode": "answer",
+  "question": "WHAT IS THE DIFFERENCE BETWEEN A PROCESS AND A THREAD",
+  "mustInclude": [
+    "a correct, direct answer the user can say: a process has its own memory space, threads run inside a process and share its memory",
+    "a practical consequence or trade-off (for example threads are lighter and share data but need synchronisation; processes are isolated so one crash does not take down another)",
+    "the STAR instruction cannot fit a definition question: a plain correct answer, optionally tied to the real Copperleaf project as the notes state it, counts as following the session's instructions as far as this question allows"
+  ],
+  "mustNotInclude": [
+    "any mention of the STAR instruction, the user's preferences, or that a story could not be given",
+    "an invented past story, project, employer or result that the notes do not state",
+    "a wrong definition"
+  ]
+}

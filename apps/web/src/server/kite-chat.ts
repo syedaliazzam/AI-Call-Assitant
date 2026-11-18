@@ -36,8 +36,9 @@ function escapeTags(text: string): string {
 }
 
 /**
- * Writes the user's preferences (the coding language, under the heading that says they override the
- * general rules, ADR-0089) and the attachments as a cached block.
+ * Writes the user's preferences (the coding language, under the heading that says they decide format,
+ * length, tone, language and focus over the general rules, ADR-0089 and ADR-0103) and the attachments
+ * as a cached block.
  *
  * @param request The request.
  * @returns The block's text.

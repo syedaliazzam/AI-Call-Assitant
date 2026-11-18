@@ -11,7 +11,7 @@
 import type { AnswerRequest } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
 import { buildPrompt } from '@/server/prompt';
-import { UNSUPPORTED_FACT_RULE } from '@/server/prompts/contract';
+import { GENERAL_KNOWLEDGE_RULE, UNSUPPORTED_FACT_RULE } from '@/server/prompts/contract';
 import { CALL_REMINDER_PREVIOUS } from '@/server/prompts/rules-previous';
 
 /** An invented answer request. */
@@ -67,9 +67,29 @@ describe('the unsupported-fact sentence (ADR-0088)', () => {
   });
 
   it('is in the tail of a current-rules answer, and not in a rollback (v-previous) answer', () => {
-    expect(tail(REQUEST).trimEnd().endsWith(UNSUPPORTED_FACT_RULE)).toBe(true);
+    // ADR-0103: the general-knowledge limit follows it, so the ADR-0088 sentence stays word for word.
+    expect(
+      tail(REQUEST).trimEnd().endsWith(`${UNSUPPORTED_FACT_RULE} ${GENERAL_KNOWLEDGE_RULE}`),
+    ).toBe(true);
     const rollback = tail({ ...REQUEST, styleVersion: 'previous' });
     expect(rollback).toContain(CALL_REMINDER_PREVIOUS);
     expect(rollback).not.toContain('never answer yes or no');
+  });
+});
+
+describe('the general-knowledge limit on the promise (ADR-0103)', () => {
+  it('keeps "I\'ll confirm" to company or offer facts, never general knowledge', () => {
+    expect(GENERAL_KNOWLEDGE_RULE).toContain(
+      'That promise is only for a specific fact about your company or offer, never for a general-knowledge question',
+    );
+    expect(GENERAL_KNOWLEDGE_RULE).toContain('with no promise to confirm and no hedging');
+  });
+
+  it('limits "add no detail" to personal, company, offer and project facts', () => {
+    const text = tail(REQUEST);
+    expect(text).toContain(
+      'add no personal, company, offer or project detail the session, documents or call do not state',
+    );
+    expect(text).not.toContain('add no detail the session');
   });
 });

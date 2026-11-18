@@ -165,8 +165,8 @@ function escapeTags(text: string): string {
 /**
  * Writes a session's details (everything but the documents) as the `<session>` part of the session
  * block: the call's details, the experience rules where they apply (locked, ADR-0084), then the user's
- * preferences under PREFERENCES_HEADING (ADR-0089: they override the admin's general rules where they
- * differ): format and length with their meaning, tone, the optional lines, the coding language, the
+ * preferences under PREFERENCES_HEADING (ADR-0089, ADR-0103: they decide format, length, tone, language
+ * and focus over the admin's general rules, never over the contract or the never-invent rules): format and length with their meaning, tone, the optional lines, the coding language, the
  * approved lessons (live answers) and the user's instructions. Fixed order and labels; the same session
  * always gives the same lines.
  *

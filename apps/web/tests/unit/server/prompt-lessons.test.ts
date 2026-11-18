@@ -25,13 +25,12 @@ import { parseAnswerRequest } from '@/server/validate';
 
 /**
  * SHA-256 of the v-current rules block with the default global prompt (ADR-0089, 16 Nov 2026): the app
- * contract, then the default live prompt (the built-in rules of ADR-0086/0088 with the contract parts
- * moved to the contract and the preference values moved to the session's user preferences). Checked
- * with the answers group (answer-eval.md, 16 Nov 2026). Earlier history: ADR-0032, v1.0.1–v1.4,
- * ADR-0084 (unchanged), ADR-0086, ADR-0088 (see git history of this file). Changing it needs a re-run
- * of the answers group.
+ * contract, then the default live prompt. ADR-0103 (18 Nov 2026): the natural-style default prompt
+ * (call kinds, general knowledge, examples removed), checked with the answers group (answer-eval.md,
+ * 18 Nov 2026). Earlier history: ADR-0032, v1.0.1–v1.4, ADR-0084 (unchanged), ADR-0086, ADR-0088,
+ * ADR-0089 (see git history of this file). Changing it needs a re-run of the answers group.
  */
-const RULES_SHA256 = 'bbb2ca0d7b44d09ad26d17e53acacba2c8084b3115ebe91b43bc711aff451e0d';
+const RULES_SHA256 = 'd728efb4584f2e10ee36172af672d44d46202296364509f17dba479a0bff228f';
 
 /**
  * SHA-256 of the v-previous rules block (the rollback target, ADR-0032). It must stay byte-for-byte

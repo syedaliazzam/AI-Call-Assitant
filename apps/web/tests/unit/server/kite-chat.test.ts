@@ -67,7 +67,7 @@ describe('attachmentsBlock', () => {
   it('names the coding language under the user preferences, Python by default (ADR-0089)', () => {
     expect(attachmentsBlock({ mode: 'kite' })).toContain('Coding language: Python.');
     expect(attachmentsBlock({ mode: 'kite' })).toContain(
-      'These user preferences override the general rules',
+      'These user preferences decide format, length, tone, language and focus',
     );
     expect(attachmentsBlock({ mode: 'kite', codingLanguage: 'Go' })).toContain(
       'Coding language: Go',

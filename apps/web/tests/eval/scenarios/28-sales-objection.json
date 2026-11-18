@@ -1,0 +1,63 @@
+{
+  "id": "28-sales-objection",
+  "covers": "ADR-0103: a price objection on a sales call: accepted in a few words, answered with facts from the documents, and no concession offered.",
+  "group": "call-style",
+  "session": {
+    "type": "regular",
+    "company": "Northwind Logistics (invented)",
+    "role": "Account executive",
+    "description": "Pricing call with the operations lead about the Professional plan for the dispatch team.",
+    "instructions": "",
+    "keyTerms": ["Harbor Lane", "Bluefin Route", "Professional plan"],
+    "style": {
+      "format": "headline+bullets",
+      "length": "short",
+      "tone": "simple"
+    },
+    "documents": [
+      {
+        "name": "price-list.txt",
+        "text": "Harbor Lane Freight price list (invented).\nStarter plan: 18 dollars per seat per month, up to 10 seats, no single sign-on.\nProfessional plan: 52 dollars per seat per month, billed yearly, includes single sign-on and live re-routing.\nEnterprise plan: custom price, from 200 seats, includes a dedicated support manager.\nOnboarding: a one-time fee of 1,500 dollars for any plan, covering setup and two training days.\nDiscounts: at most 10 percent, only for a yearly plan paid upfront, and only with approval from the sales director.\nContract: yearly, renews automatically; cancellation needs 30 days written notice before the renewal date."
+      },
+      {
+        "name": "pilot-report.txt",
+        "text": "Bluefin Route pilot report (invented).\nBluefin Route is the live re-routing feature of the Harbor Lane platform.\nIn the 12-week pilot across four depots, Bluefin Route cut late deliveries by a third.\nAverage route planning time fell from 40 minutes to 18 minutes per dispatcher."
+      }
+    ]
+  },
+  "conversation": [
+    [
+      {
+        "kind": "line",
+        "speaker": "them",
+        "text": "OUR DISPATCHERS SPEND A LOT OF THE MORNING PLANNING ROUTES",
+        "at": 30
+      },
+      {
+        "kind": "line",
+        "speaker": "you",
+        "text": "THE PROFESSIONAL PLAN IS FIFTY TWO DOLLARS A SEAT PER MONTH BILLED YEARLY",
+        "at": 52
+      }
+    ]
+  ],
+  "tail": [
+    {
+      "speaker": "them",
+      "text": "HONESTLY FIFTY TWO A SEAT FEELS EXPENSIVE FOR WHAT WE PAY TODAY",
+      "at": 61
+    }
+  ],
+  "mode": "answer",
+  "question": "HONESTLY FIFTY TWO A SEAT FEELS EXPENSIVE FOR WHAT WE PAY TODAY",
+  "mustInclude": [
+    "accepts the concern in a few words, without arguing",
+    "answers it with a fact from the documents, such as planning time falling from 40 to 18 minutes per dispatcher or late deliveries cut by a third in the pilot, tied to their morning planning",
+    "a clear next step"
+  ],
+  "mustNotInclude": [
+    "any discount, price cut, free period or other concession",
+    "running down their current tool or supplier",
+    "any figure that the documents and call do not state"
+  ]
+}

@@ -536,8 +536,9 @@ async function respond(
     // ADR-0089: a reply that breaks the contract still shows cleanly: the default type when the hidden
     // first line is missing, stray tags taken out; the counts go in this request's log line. ADR-0095: the
     // same for a Groq reply.
+    // ADR-0103: text written before the hidden first line is never shown (flagged in the log).
     source = withContractFallback(
-      withAnswerMeta(reply),
+      withAnswerMeta(reply, contract),
       {
         type: 'other',
         target: mode === 'kite' || data.target === 'kite' ? 'kite' : 'call',

@@ -884,3 +884,26 @@ Same laptop (Pakistan); production after the ADR-0102 deploy; a Node script (no 
 | Client: request → first text | 4,504 ms (one cold request, sign-in just before) |
 
 One sample only: the times are not a latency measurement (see ADR-0099's runs for that). Within a call the warm-up and the call-id cache key make later answers' input mostly cache reads (0.1 × input price).
+
+### First answer word, old and new live prompt (ADR-0103, 18 Nov 2026)
+
+Same laptop (Pakistan); local Node script (no browser, no production): the 10 questions of ADR-0101's voice run, as spoken chat questions (`spoken: true`) through the real `buildPrompt()` and `streamReply()` with `claude-haiku-5-5`, in an invented session with ADR-0101's invented pilot document. One warm-up request per round writes the prompt cache; questions 1.5 s apart. Measured: request start → first answer word after the hidden line. Rounds alternated before, after, before, after (main's prompt files, then the branch's). This isolates the prompt; it is not ADR-0101's stop-speaking → first-word number, which also includes speech-to-text and the network to production. Spend about $0.01 (44 requests).
+
+| Prompt | Cached prefix | First answer word p50 / p95 (20 answers) | Round p50s |
+|---|---|---|---|
+| Before (current default) | 5,838 tokens | **862 / 1,098 ms** | 865, 844 |
+| After (natural-style default) | 7,244 tokens | **867 / 1,974 ms** | 845, 884 |
+
+The median is unchanged. The tail is longer: "What is the onboarding fee?" took 1,974 and 2,101 ms in both after rounds (before: 993 and 1,046), and two other questions the document does not cover took about 1.3 s. Not checked: whether those answers wrote text before the hidden line (the eval saw that in 6 of 30 answers).
+
+Second version (the developer's revised text), same method, alternating main and the branch, two rounds each (20 answers each), plus one round of the first version. The script now also records when the hidden line arrives and whether anything comes before it. Spend about $0.013.
+
+| Prompt | First answer word p50 / p95 | "What is the onboarding fee?" (ms) |
+|---|---|---|
+| Before (current default) | **883 / 1,099 ms** | 1,099, 1,142 |
+| After (second version) | **839 / 958 ms** | 781, 859 |
+| First version (one round) | 864 / 2,323 ms | 1,381 (earlier rounds: 1,974, 2,101) |
+
+In every answer of every version the hidden line was the first thing written and arrived in the same streamed chunk as the first answer word, so the slow answers were a late first token, not text before the hidden line. With the first version the slow ones were the questions the document does not answer (the onboarding fee; single sign-on on the Professional plan, 2,323 ms); the second version showed no such delay in 20 answers. Two of its 20 replies started with a malformed hidden line (`[[question|…]]` first; once `[[question|for|source]]`); main had one such reply in 20.
+
+Version 3: first-answer-word time was not re-measured. The app change in the same branch (text before the hidden line is never shown) holds nothing for a reply that opens with its hidden line, pinned by a unit test (`answer-meta-fallback.test.ts`, "adds no wait to a reply that opens with its hidden line"); a reply without it waits for its first line (at most 500 characters).

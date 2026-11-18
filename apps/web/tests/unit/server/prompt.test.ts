@@ -424,8 +424,29 @@ describe('the rules block with the default prompt (ADR-0089)', () => {
     expect(SYSTEM_RULES).toContain('[[type|for|source]]');
     expect(SYSTEM_RULES).toContain('often misheard');
     expect(SYSTEM_RULES).toContain('key terms, the company, the role or topic, and the documents');
+    // ADR-0103: earlier answers are a source to build on, and a follow-up does not repeat them.
     expect(SYSTEM_RULES).toContain(
-      'Earlier answers in this call are shown in the conversation. Stay consistent with them. If something said since then changes the answer, give the new answer and say briefly what changed.',
+      'Earlier questions and answers in this call are shown in the conversation, and they are a source: build on them.',
+    );
+    expect(SYSTEM_RULES).toContain(
+      'Answer only the new part: never restate steps, numbers or points already given in this call.',
+    );
+    expect(SYSTEM_RULES).toContain(
+      'Stay consistent with earlier answers: the same numbers, names and positions. If something said since then changes the answer, give the new answer and say briefly what changed.',
+    );
+    // ADR-0103 (version 5): the editable prompt never mentions the hidden line (measured: lines that did
+    // made replies copy the contract's placeholder); the contract alone defines it.
+    expect(DEFAULT_LIVE_PROMPT.toLowerCase()).not.toContain('hidden');
+    // Numbers are said as given, never worked out into a new figure.
+    expect(SYSTEM_RULES).toContain(
+      'Say a number exactly as the session details, documents or conversation give it.',
+    );
+    // ADR-0103: general knowledge is answered fully, but not where the answer turns on a company's facts.
+    expect(SYSTEM_RULES).toContain(
+      'General knowledge is answered fully and directly from what you know',
+    );
+    expect(SYSTEM_RULES).toContain(
+      'The moment it does, the next two sections decide the answer, however familiar the subject is.',
     );
     expect(SYSTEM_RULES).toContain(
       "If the same or a similar question comes again, reuse the earlier answer's facts and, as closely as you can, its wording",
@@ -436,8 +457,11 @@ describe('the rules block with the default prompt (ADR-0089)', () => {
       'Each supporting line must state a fact from the session details',
     );
     expect(SYSTEM_RULES).toContain('Never offer or hint at a price, discount, exception');
-    // Round 3 (kept): a short answer line even when the session cannot answer.
-    expect(SYSTEM_RULES).toContain('The answer line is still 12 words or fewer');
+    // Round 3 (kept): a short answer line even when the session cannot answer. ADR-0103 version 3:
+    // the promise is 10 words or fewer and does not repeat the question.
+    expect(SYSTEM_RULES).toContain(
+      'in 10 words or fewer, that does not repeat the question and gives no explanation of why',
+    );
     // ADR-0089: the learned preferences moved to the user's preferences in the session block.
     expect(SYSTEM_RULES).not.toContain('Learned preferences');
   });

@@ -345,7 +345,8 @@ export function PromptWorkspace({
         <div className="flex flex-col gap-4">
           <p className="text-[14px] text-ui-text">
             Calls started after saving use this version. Calls already running keep the version they
-            started with. Each user&apos;s own AI preferences still win where they differ.
+            started with. Each user&apos;s own AI preferences still decide format, length, tone,
+            language and focus.
           </p>
           <Input
             label="Note for the history (optional)"
