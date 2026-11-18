@@ -68,7 +68,8 @@ export function createUploaderDeps(
       files: (session, call, title) => buildCallViewFiles(session, call, title, accountName),
       callState: async (job, drive) => {
         // A legacy call (made before call records) has no record: updateCall() changes nothing then.
-        await updateCall(job.callId, { drive });
+        // ADR-0106: movedAt tells every device this app is working on it (a day without it: "paused").
+        await updateCall(job.callId, { drive: { ...drive, movedAt: Date.now() } });
       },
     },
     callActive: callIsLive,

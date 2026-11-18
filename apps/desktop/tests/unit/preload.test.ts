@@ -111,6 +111,8 @@ describe('the exposed bridge', () => {
       // v1.3.2: the keyboard back to the app behind the overlay.
       'releaseOverlayFocus',
       'renameDevice',
+      // 1.7.2 (ADR-0106): the Drive queue report, for the background upload on exit.
+      'reportDriveQueue',
       'resizeOverlay',
       'setCallActive',
       // v1.2.0 (spec S14): the chat bar's shortcut.

@@ -2,7 +2,8 @@
  * Tests for apps/web/src/core/drive/runner.ts, addresses.ts and picker.ts (ADR-0072):
  * - the uploader runs only in the window that gets the Web Lock (another window's run is "busy"), and in
  *   a browser it has no shell host (no recordings, no native notifications); ADR-0080: the recordings it
- *   tells the server to expect never have a stereo file;
+ *   tells the server to expect never have a stereo file; ADR-0106: the call record's Drive state carries
+ *   when this app last worked on it (movedAt);
  * - an "Also notify" list is lower-cased, de-duplicated, capped at 20, and names what is not an address;
  * - the Picker shows folders only (My Drive and Shared Drives), with setSelectFolderEnabled, the project
  *   number (setAppId) and a token Google Identity Services gives this browser (ADR-0074: never Kite's; the
@@ -10,13 +11,18 @@
  *   folder's id, or null on Cancel or when Google's popup is refused.
  * Google's script is a fake; no real Google call is made. All values are invented.
  */
+import 'fake-indexeddb/auto';
 import { DRIVE_FOLDER_MIME, type LocalRecording } from '@kite/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseAddressList } from '@/core/drive/addresses';
 import { preparePicker } from '@/core/drive/picker';
 import { UPLOADER_LOCK, createUploaderDeps, runUploaderOnce } from '@/core/drive/runner';
 import type { UploaderDeps } from '@/core/drive/uploader';
+import { getCall } from '@/core/storage/calls';
+import { getDb } from '@/core/storage/db';
+import type { DriveCallJob, StoredCall } from '@/core/storage/types';
 import type { Platform } from '@/platform/types';
+import { resetDb } from '../storage/helpers';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -76,6 +82,33 @@ describe('runUploaderOnce', () => {
     expect(await deps.expectedRecordings('session-1')).toEqual([
       { id: part.id, part: 1, stereo: false, startedAt: 1_000, meetingId: 'meeting-1' },
     ]);
+  });
+});
+
+describe('ADR-0106: the call record hears when this app worked on the upload', () => {
+  it('stamps movedAt with each state it shows', async () => {
+    await resetDb();
+    const record: StoredCall = {
+      id: 'call-1',
+      sessionId: 's',
+      startedAt: 1,
+      endedAt: 2,
+      durationMs: 1,
+      phase: 'ended',
+      deviceId: 'd',
+      saveTranscript: true,
+      recording: 'screen',
+      notesState: 'saved',
+      drive: { state: 'queued' },
+      updatedAt: 2,
+    };
+    await getDb().calls.put(record);
+    const deps = createUploaderDeps({ drive: null, recording: null }, null);
+    const before = Date.now();
+    await deps.calls!.callState({ callId: 'call-1' } as DriveCallJob, { state: 'uploading' });
+    const drive = (await getCall('call-1'))!.drive;
+    expect(drive.state).toBe('uploading');
+    expect(drive.movedAt).toBeGreaterThanOrEqual(before);
   });
 });
 

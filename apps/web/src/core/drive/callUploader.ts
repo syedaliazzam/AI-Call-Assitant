@@ -380,14 +380,26 @@ export async function processCallJob(
     job = { ...job, ...changes, updatedAt: deps.now() };
     await deps.calls.jobs.put(job);
   };
-  const show = (state: CallDriveState, reason?: string) =>
-    deps.calls
+  // ADR-0106: when the call record last heard from this upload (each show() stamps it, in the runner).
+  let shownAt = deps.now();
+  const show = (state: CallDriveState, reason?: string) => {
+    shownAt = deps.now();
+    return deps.calls
       .callState(job, {
         state,
         ...(reason ? { reason } : {}),
         ...(job.folderId ? { folderId: job.folderId } : {}),
       })
       .catch(() => undefined);
+  };
+  /**
+   * Saves a recording upload's progress and, every MOVED_EVERY_MS, tells the call record it is still
+   * moving, so a long upload never looks paused on the account's other devices.
+   */
+  const saveMoving = async () => {
+    await save();
+    if (deps.now() - shownAt >= MOVED_EVERY_MS) await show('uploading');
+  };
   const stopWith = async (
     state: 'waiting' | 'error' | 'paused',
     reason?: DriveReason,
@@ -478,7 +490,7 @@ export async function processCallJob(
           continue;
         }
         try {
-          const outcome = await uploadRecordingFile(deps, job.sessionId, file, () => save());
+          const outcome = await uploadRecordingFile(deps, job.sessionId, file, saveMoving);
           if (outcome.status === 'paused') return stopWith('paused');
           if (outcome.status === 'failed') {
             failure ??= { reason: outcome.reason, retryable: outcome.retryable };
@@ -616,6 +628,9 @@ function fileFailureOf(error: unknown): FileFailure {
   }
   return { reason: 'failed', retryable: false };
 }
+
+/** ADR-0106: how often a recording upload in progress refreshes its call record's movedAt, ms. */
+export const MOVED_EVERY_MS = 10 * 60_000;
 
 /** How long an error that may clear by itself waits before it is tried again, ms. */
 export const CALL_RETRY_MS = 2 * 60_000;

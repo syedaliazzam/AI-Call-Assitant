@@ -88,6 +88,18 @@ export interface DriveUploader {
    * @returns The size in bytes, or null when the request is not valid or the file is not here.
    */
   fileSize(request: unknown): Promise<number | null>;
+  /**
+   * 1.7.2 (ADR-0106): how many uploads are sending now (the background upload on exit waits for them).
+   * @returns The count.
+   */
+  active(): number;
+  /**
+   * 1.7.2 (ADR-0106): stops one upload now (its page went away: the page that takes over resumes it from
+   * where Google got to, instead of finding it busy). A chunk in flight is cut off; Google keeps what it got.
+   * @param recordingId The recording.
+   * @param track       Its file.
+   */
+  abort(recordingId: string, track: string): void;
 }
 
 /**
@@ -285,6 +297,12 @@ export function createDriveUploader(deps: DriveUploaderDeps): DriveUploader {
 
     pauseAll() {
       for (const controller of running.values()) controller.abort();
+    },
+
+    active: () => running.size,
+
+    abort(recordingId, track) {
+      running.get(`${recordingId}:${track}`)?.abort();
     },
 
     async fileSize(request) {

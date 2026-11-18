@@ -1,8 +1,9 @@
 /**
  * Tests for apps/web/src/core/meetings/library.ts (ADR-0096, the Meetings library): session folders named
  * as in Google Drive and sorted newest first (sessions without calls left out); search by company, session
- * and the other person's name; the date filter; the recording status words; the row marks; "Questions &
- * answers only"; the transcript search; finding a call. Invented sessions and calls only.
+ * and the other person's name; the date filter; the recording status words (ADR-0106: who finishes an
+ * upload, and a day without progress); the row marks; "Questions & answers only"; the transcript
+ * search; finding a call. Invented sessions and calls only.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -222,21 +223,25 @@ describe('callTheirName', () => {
 });
 
 describe('recordingStatus', () => {
-  it('says Not recorded, Recording…, Recorded, Uploading… or Saved on <computer> only', () => {
-    expect(recordingStatus(call('c', 's', NOW)).label).toBe('Not recorded');
+  it('says Not recorded, Recording…, Recorded, waiting for the desktop app, or Saved on <computer> only', () => {
+    expect(recordingStatus(call('c', 's', NOW), NOW).label).toBe('Not recorded');
     expect(
-      recordingStatus(call('c', 's', NOW, { recordings: [part({ status: 'recording' })] })).kind,
+      recordingStatus(call('c', 's', NOW, { recordings: [part({ status: 'recording' })] }), NOW)
+        .kind,
     ).toBe('recording');
     const recorded = (state: StoredCall['drive']['state']) =>
       recordingStatus(
         call('c', 's', NOW, { recordings: [part()], record: record({ drive: { state } }) }),
+        NOW,
       ).label;
+    const waiting = 'Waiting for the desktop app to finish the upload';
     expect(recorded('done')).toBe('Recorded');
-    expect(recorded('uploading')).toBe('Uploading…');
-    expect(recorded('queued')).toBe('Uploading…');
+    expect(recorded('uploading')).toBe(waiting);
+    expect(recorded('queued')).toBe(waiting);
+    expect(recorded('paused')).toBe(waiting);
     expect(recorded('off')).toBe('Saved on Office PC only');
     expect(recorded('error')).toBe('Saved on Office PC only');
-    expect(recorded('waiting')).toBe('Uploading…');
+    expect(recorded('waiting')).toBe(waiting);
     // Waiting for the person (Drive not connected): not on its way.
     expect(
       recordingStatus(
@@ -244,11 +249,38 @@ describe('recordingStatus', () => {
           recordings: [part()],
           record: record({ drive: { state: 'waiting', reason: 'not-connected' } }),
         }),
+        NOW,
       ).label,
     ).toBe('Saved on Office PC only');
     expect(
-      recordingStatus(call('c', 's', NOW, { recordings: [part({ deviceName: '' })] })).label,
+      recordingStatus(call('c', 's', NOW, { recordings: [part({ deviceName: '' })] }), NOW).label,
     ).toBe('Saved on one computer only');
+  });
+
+  it('ADR-0106: says to open the desktop app when its upload has not moved for a day', () => {
+    const withDrive = (drive: StoredCall['drive'], updatedAt = NOW) =>
+      recordingStatus(
+        call('c', 's', NOW, { recordings: [part()], record: record({ drive, updatedAt }) }),
+        NOW + DAY,
+      );
+    const paused = 'Upload paused: open the desktop app on the computer used for this call';
+    // The app last worked on it exactly a day ago.
+    expect(withDrive({ state: 'uploading', movedAt: NOW })).toEqual({
+      kind: 'stalled',
+      label: paused,
+    });
+    // An hour ago: still on its way.
+    expect(withDrive({ state: 'uploading', movedAt: NOW + DAY - 3_600_000 }).kind).toBe(
+      'uploading',
+    );
+    // A record from before movedAt: its last change stands in.
+    expect(withDrive({ state: 'queued' }).label).toBe(paused);
+    expect(withDrive({ state: 'queued' }, NOW + DAY - 60_000).kind).toBe('uploading');
+    // Saved, or waiting for the person: not "paused".
+    expect(withDrive({ state: 'done', movedAt: NOW - DAY }).kind).toBe('recorded');
+    expect(withDrive({ state: 'waiting', reason: 'reconnect', movedAt: NOW - DAY }).kind).toBe(
+      'device-only',
+    );
   });
 });
 

@@ -5,7 +5,8 @@
  *          there was nothing to write about), answers, transcript lines, recordings and Google Drive state.
  *          Picking a call shows its notes, transcript and details in the sections below.
  * Used by: src/features/review/SessionReview.tsx
- * Depends on: @kite/shared (driveFolderUrl), src/core/review/calls.ts (CallView), src/core/drive/reasons.ts
+ * Depends on: @kite/shared (driveFolderUrl), src/core/review/calls.ts (CallView), src/core/drive/reasons.ts,
+ *             src/core/drive/waitWords.ts (a recorded call's unfinished upload, ADR-0106)
  * Architecture: ADR-0077; docs/architecture/kite-architecture-v3.1.md §5 (Session review)
  *
  * Shows counts and states only; the call's words are in the sections below.
@@ -13,6 +14,7 @@
 'use client';
 
 import { driveFolderUrl } from '@kite/shared';
+import { pendingUpload, UPLOAD_PAUSED_OPEN_APP, WAITING_FOR_DESKTOP } from '@/core/drive/waitWords';
 import { driveReasonText } from '@/core/drive/reasons';
 import type { CallView } from '@/core/review/calls';
 
@@ -52,12 +54,22 @@ export function callNotesText(call: Pick<CallView, 'notes' | 'notesState'>): str
  * A call's Google Drive state, in a few words (a call made before call records has none).
  *
  * @param call The call.
+ * @param now  The clock (Unix ms; ADR-0106: a recorded call's upload silent for a day reads as paused).
  * @returns The words, or null when nothing is known.
  * Called from: CallsList, SessionReview.tsx; tests
  */
-export function callDriveText(call: Pick<CallView, 'record'>): string | null {
+export function callDriveText(
+  call: Pick<CallView, 'record' | 'recordings'>,
+  now: number = Date.now(),
+): string | null {
   const drive = call.record?.drive;
   if (!drive) return null;
+  // ADR-0106: a recording is only on the computer that made it, so only its desktop app can finish the
+  // upload: the words say so, and what to do when that app has not worked on it for a day.
+  const recorded = call.record!.recording !== 'off' || call.recordings.length > 0;
+  const pending = recorded ? pendingUpload(call.record!, now) : null;
+  if (pending === 'stalled') return UPLOAD_PAUSED_OPEN_APP;
+  if (pending === 'waiting' && drive.state !== 'paused') return WAITING_FOR_DESKTOP;
   switch (drive.state) {
     case 'waiting':
       return drive.reason ? driveReasonText(drive.reason) : 'Drive: after the notes';

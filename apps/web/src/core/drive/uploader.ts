@@ -46,6 +46,19 @@ const RECORDING_SLACK_MS = 60_000;
 /** How many times one file may get a new token or a new upload session before it stops. */
 const MAX_RESTARTS = 3;
 
+/**
+ * ADR-0106: whether a route refused an upload's ticket. Tickets last 6 days (the server's TICKET_TTL_MS,
+ * just under Google's week-long upload sessions), so an upload resumed later than that (the app was not
+ * opened for a week) is started again with a new session instead of failing for good.
+ *
+ * @param error What a route threw.
+ * @returns True for an expired (or otherwise refused) ticket.
+ * Called from: uploadRecordingFile(), verifyUpload(); tests
+ */
+export function isExpiredTicket(error: unknown): boolean {
+  return error instanceof DriveApiError && error.code === 'bad_ticket';
+}
+
 /** The desktop shell's part, through the platform. */
 export interface DriveRecordingHost {
   /** This computer's recordings (the shell's index). */
@@ -769,7 +782,17 @@ export async function uploadRecordingFile(
       await save();
     } else {
       // A restart or a resume: the server asks Google where this upload got to.
-      const where = await deps.api.uploadOffset({ uploadUrl: file.uploadUrl, ticket: file.ticket });
+      let where: Awaited<ReturnType<typeof deps.api.uploadOffset>>;
+      try {
+        where = await deps.api.uploadOffset({ uploadUrl: file.uploadUrl, ticket: file.ticket });
+      } catch (error) {
+        // ADR-0106: the ticket (6 days) or the session (about a week) ran out: a new session for the
+        // same file. A part Google already finished is found by its tag and never uploaded twice.
+        if (!isExpiredTicket(error)) throw error;
+        Object.assign(file, { uploadUrl: undefined, ticket: undefined, sent: 0 });
+        await save();
+        continue;
+      }
       if (where.state === 'expired') {
         Object.assign(file, { uploadUrl: undefined, ticket: undefined, sent: 0 });
         continue;
@@ -862,7 +885,12 @@ async function verifyUpload(
     await save();
     return true;
   } catch (error) {
-    if (error instanceof DriveApiError && error.code === 'verify_failed') {
+    // ADR-0106: an expired ticket too: the next try starts a new session, which finds the finished file by
+    // its tag ('exists') instead of uploading it again.
+    if (
+      (error instanceof DriveApiError && error.code === 'verify_failed') ||
+      isExpiredTicket(error)
+    ) {
       Object.assign(file, { uploadUrl: undefined, ticket: undefined, sent: 0 });
       return false;
     }

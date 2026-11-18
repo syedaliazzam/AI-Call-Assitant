@@ -31,6 +31,12 @@ extraResources:
   # updates reuse them (checked at each release from the installers' block maps).
   - from: native/stt-model
     to: stt-model
+  # 1.7.2 (ADR-0106): the tray icon (src/tray.ts trayIconFile): the .ico on Windows, the PNG on macOS.
+  # The app archive's own build/ folder is not shipped, so the tray reads them from resources/tray.
+  - from: build/icon.ico
+    to: tray/icon.ico
+  - from: build/icon.png
+    to: tray/icon.png
 extraMetadata:
   # The installed folder (%LOCALAPPDATA%Programskite) comes from the package name; the
   # workspace name "@kite/desktop" would give "@kitedesktop".
