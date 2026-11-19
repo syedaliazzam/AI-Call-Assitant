@@ -8,7 +8,7 @@
  *          scripts/eval-answers.ts --experience-model=sonnet uses it; later, typed questions only).
  * Used by: src/server/prompt.ts (tailText()), scripts/eval-answers.ts
  * Depends on: src/core/documents/chunks.ts (terms(), BM25 constants; pure functions, no browser APIs)
- * Architecture: docs/decisions/ADR-0108-live-prompt-v6-and-cv-match-signal.md; docs/testing/answer-eval.md
+ * Architecture: docs/decisions/ADR-0108-cv-match-signal.md; docs/testing/answer-eval.md
  */
 import 'server-only';
 import type { AnswerRequest, SessionContext } from '@kite/shared';

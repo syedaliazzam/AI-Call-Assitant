@@ -200,18 +200,24 @@ Approved by the developer as a third round, limited to the "can't answer from th
 
 **Still weak:** the headline in the interview answer (03) and the misheard-name answer (07), and the misheard-name answer's style.
 
-## Release gate (standing rule from 19 Nov 2026, second version)
+## Release gate (standing rule from 19 Nov 2026)
 
-Decided by the developer on 19 Nov 2026, with the fixed grader (Rubric above). It replaces every per-group gate for a change to the live answers' prompts or pipeline. A change ships when, measured with `eval:all` on production and on the change (same grader, same day):
+Decided by the developer on 19 Nov 2026 (third version, after the CV match signal's measurement), with the fixed grader (Rubric above). It replaces every per-group gate for a change to the live answers' prompts or pipeline. Measure with `eval:all` on production and on the change, the same day and grader, and split the scenarios in two:
 
-- **no group is worse than production**: worse means a score more than 0.15 below production's (the run-to-run noise, Gate rule from Day 5) or more runs with something invented (the grader's list) than production;
-- **the groups the change targets are better** than production;
-- **the hidden line is first in at least 99%** of replies across the suite;
-- **the code check finds zero invented prices or personal numbers** (sums on document prices and stated case assumptions are not invented).
+- **Scenarios whose prompt differs from production's:** no worse than production, in score and in runs with something invented (the grader's list).
+- **Scenarios with an identical prompt:** within run-to-run noise only (the same prompt measured twice on 19 Nov 2026 moved the mean of 101 scenarios by 0.15 and their invented runs from 50 to 56).
+
+Hard checks, across the suite:
+- the **hidden line first in at least 99%** of replies;
+- **zero invented prices or personal numbers** in the changed scenarios (the code check; sums on document prices and stated case assumptions are not invented).
 
 **Target, tracked but not a blocker:** at most 1 run in 4 with something invented in each group.
 
-**Why:** a fixed threshold per group failed production itself; a comparison with production on the same day and grader catches a regression, and the target keeps the direction.
+**Why:** comparing every group as a whole failed a change on scenarios whose prompt it did not touch; the same prompt twice moves that much on its own.
+
+**Follow-ups (open):**
+- `10-discount-pressure`: one reply worked out a discounted price ("about 47 dollars per seat per month", 52 less the 10 percent that needs the sales director's approval) and offered it. Seen with production's prompt too (an identical prompt in that scenario); the never-work-out-a-figure and never-offer-a-discount rules do not hold against a direct discount request.
+- The CV match signal's matching: a CV project worded differently from the question ("difficult client" against "retail customer") does not count, so the line fires wrongly (3 of 10 firings in the evaluation). For example, a short synonym step per session.
 
 ## Gate rule from Day 5
 
@@ -990,3 +996,5 @@ Hidden line first: production **217/222 (97.7%)**, version 5 + signal **222/222*
 **Where the signal acts.** The line fired in 20 of 222 replies (10 scenarios); every other prompt is byte for byte production's. In those 10 scenarios: invented runs 12 → 4; score up in 6, equal in 2, down in 2 (`a-backend-behavioural` 9.0 → 8.0 and `star-cv-match` 7.5 → 6.5: the two scenarios where the CV has a fitting project in other words, the misfires measured before). Across the other 101 scenarios, the same prompt twice: mean 8.62 → 8.77, invented runs 50 → 56. So every "worse" cell above, and the 47-dollar price, comes from scenarios with an identical prompt.
 
 **Result under the gate as written: fails** (five groups worse, one worked-out price). Not merged; the developer decides.
+
+**Under the release gate as decided afterwards** (changed scenarios against production; identical prompts within noise): the 10 changed scenarios are better (invented runs 12 → 4) with no invented price or personal number, the identical ones are within noise, hidden line 222/222. The developer approved it, and it shipped (ADR-0108).
