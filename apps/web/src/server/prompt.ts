@@ -61,6 +61,7 @@ import {
   withGlobalPrompt,
 } from './prompts/contract';
 import { DEFAULT_LIVE_PROMPT } from './prompts/defaults';
+import { noCvMatchLines, type PromptOptions } from './prompts/experience';
 import {
   DEFAULT_CODING_LANGUAGE,
   formatPreference,
@@ -449,7 +450,7 @@ function conversationBlocks(capped: CappedConversation, them: string): Anthropic
 }
 
 /** The session types the experience rules are for: interviews, mock interviews and a blank session (no type). */
-const EXPERIENCE_SESSION_TYPES: readonly string[] = ['interview', 'mock', ''];
+export const EXPERIENCE_SESSION_TYPES: readonly string[] = ['interview', 'mock', ''];
 
 /**
  * ADR-0084: the experience rules, a line of the session block in interview, mock and blank (no type)
@@ -596,10 +597,16 @@ export function isScreenOnly(request: AnswerRequest): boolean {
  *
  * @param request         The request (mode, tail, question, session).
  * @param hasConversation True when conversation blocks come before (their tag is closed here).
+ * @param options         ADR-0108: cvMatchSignal (on unless false) adds NO_CV_MATCH_LINE last when no CV
+ *                        project matches an own-experience question (prompts/experience.ts).
  * @returns The tail's text.
  * Called from: buildPromptParts()
  */
-function tailText(request: AnswerRequest, hasConversation: boolean): string {
+function tailText(
+  request: AnswerRequest,
+  hasConversation: boolean,
+  options: PromptOptions = {},
+): string {
   const previous = request.styleVersion === 'previous';
   // ADR-0107: a screen-only screenshot: no conversation, latest lines, earlier answer or document parts,
   // only the screen's own instruction and question, then the user's choices and the end reminder.
@@ -647,6 +654,10 @@ function tailText(request: AnswerRequest, hasConversation: boolean): string {
     ...choiceLines(request),
     previous || !request.session ? CALL_REMINDER_PREVIOUS : liveEndReminder(request.session),
     ...experienceReminder(request),
+    // ADR-0108: the CV match signal, last in the tail (uncached, so the cached parts are unchanged).
+    ...(options.cvMatchSignal !== false && request.session
+      ? noCvMatchLines(request, experienceApplies(request.session))
+      : []),
   );
   return parts.join('\n');
 }
@@ -697,6 +708,8 @@ export interface BuiltPrompt {
  * @param globalPrompt The admin's global prompt for live answers (ADR-0089): the version the call pinned
  *                     (DEFAULT_LIVE_PROMPT when none was saved), so every request of a call sends the
  *                     same rules block. '' sends the contract alone.
+ * @param options      ADR-0108: the app passes none (the CV match signal is on); the evaluation may turn it
+ *                     off to compare.
  * @returns The system blocks and the user turn.
  * @throws Error('SESSION_REQUIRED') when the request has no session (validation prevents this
  *         for every mode but hello).
@@ -706,13 +719,14 @@ export interface BuiltPrompt {
 export function buildPrompt(
   request: AnswerRequest,
   globalPrompt: string = DEFAULT_LIVE_PROMPT,
+  options: PromptOptions = {},
 ): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
   // Batch C (P2-1): under MAX_ANSWER_INPUT_TOKENS whatever the documents' size (server/budget.ts): the
   // session block has a fixed ceiling (the same bytes for every request of a session), and only in an
   // extreme case do the uncached and oldest parts go.
   const capped = { ...request, session: capSessionDocuments(request.session) };
-  return fitToBudget(capped, (next) => buildPromptParts(next, globalPrompt)).prompt;
+  return fitToBudget(capped, (next) => buildPromptParts(next, globalPrompt, options)).prompt;
 }
 
 /**
@@ -720,11 +734,16 @@ export function buildPrompt(
  *
  * @param request      A validated request with `session` set.
  * @param globalPrompt The admin's global prompt for live answers.
+ * @param options      ADR-0108 (see buildPrompt()).
  * @returns The system blocks and the user turn.
  * @throws Error('SESSION_REQUIRED') when the request has no session.
  * Called from: buildPrompt() (through fitToBudget())
  */
-function buildPromptParts(request: AnswerRequest, globalPrompt: string): BuiltPrompt {
+function buildPromptParts(
+  request: AnswerRequest,
+  globalPrompt: string,
+  options: PromptOptions = {},
+): BuiltPrompt {
   if (!request.session) throw new Error('SESSION_REQUIRED');
   const previous = request.styleVersion === 'previous';
   const lessons = request.lessons ?? [];
@@ -735,7 +754,8 @@ function buildPromptParts(request: AnswerRequest, globalPrompt: string): BuiltPr
   );
   const last: Anthropic.TextBlockParam = {
     type: 'text',
-    text: request.mode === 'warm' ? WARM_MESSAGE : tailText(request, conversation.length > 0),
+    text:
+      request.mode === 'warm' ? WARM_MESSAGE : tailText(request, conversation.length > 0, options),
   };
   // The screenshot is uncached and goes before the tail text that asks about it (Anthropic's
   // vision guidance: image first, then the question).

@@ -200,6 +200,19 @@ Approved by the developer as a third round, limited to the "can't answer from th
 
 **Still weak:** the headline in the interview answer (03) and the misheard-name answer (07), and the misheard-name answer's style.
 
+## Release gate (standing rule from 19 Nov 2026, second version)
+
+Decided by the developer on 19 Nov 2026, with the fixed grader (Rubric above). It replaces every per-group gate for a change to the live answers' prompts or pipeline. A change ships when, measured with `eval:all` on production and on the change (same grader, same day):
+
+- **no group is worse than production**: worse means a score more than 0.15 below production's (the run-to-run noise, Gate rule from Day 5) or more runs with something invented (the grader's list) than production;
+- **the groups the change targets are better** than production;
+- **the hidden line is first in at least 99%** of replies across the suite;
+- **the code check finds zero invented prices or personal numbers** (sums on document prices and stated case assumptions are not invented).
+
+**Target, tracked but not a blocker:** at most 1 run in 4 with something invented in each group.
+
+**Why:** a fixed threshold per group failed production itself; a comparison with production on the same day and grader catches a regression, and the target keeps the direction.
+
 ## Gate rule from Day 5
 
 Decided by the developer on Day 5, after measuring how much the score varies (below). It applies to every evaluation gate from Day 5 on, including the notes and lesson evaluations:
@@ -863,3 +876,117 @@ What was invented, in short:
 - STAR forced with no matching project: "Apply each one as far as this question allows … keep to its intent as closely as you can".
 
 **The code-error screenshot with no code.** Since version 5 the code-error screen (`st-code-error`, "Why does this fail?") is typed coding instead of codefix: 2/2 runs on b and 6/6 on a today, against 2/2 right on c and 12/12 before version 5. Under coding nothing asks for corrected code when the question is "why", and in 1 of 8 runs the answer gave only the cause in the session's headline-and-bullets format; "Keep to this question only" and "The length is a limit … never pad" allow that. The other 7 runs gave code that runs.
+
+## Live answers prompt version 6 (19 Nov 2026): fails the invented-detail gates, not deployed
+
+Same laptop; answers by `claude-haiku-5-5`, graded by `claude-sonnet-5-5`; 2 runs per scenario, one command per group. Production is main's default (version 5 with ADR-0107). Version 6 (branch `live-prompt-v6`) changes nine lines of the default prompt (own experience, a past-tense rule under "Never invent", interview, confidence, concrete detail, statistics, the behavioural shape, shape preferences, code errors are codefix with code). The revision round then changed five lines behind what was still invented: past tense includes "I've"; a CV project fits a behavioural question only when the CV states the event asked about, and no reason, feeling or purpose is added; a missing tool or number is never named, even as an example; no study, report or source; a fact about the other person's own company is asked for. Cells: score, then runs with invented details (the grader's `invented` list).
+
+| Group (gate) | Production | Version 6 | Version 6, revised |
+|---|---|---|---|
+| `missing-info` (≥ 8) | 7.38, 12/16 | 7.63, 8/16 | **7.19, 8/16: fails** |
+| `cv-embellishment` (nothing invented) | 6.75, 2/8 | 6.25, 4/8 | **6.63, 2/8: fails** |
+| `company-star` (nothing invented) | 8.17, 3/6 | 8.50, 3/6 | **8.33, 4/6: fails** |
+| `hallucination-bait` (no invented prices or personal numbers) | 7.17, 3/12; number check 12/12 | 7.75, 3/12; 12/12 | 7.33, 1/12; 12/12 |
+| `screenshot-types` (≥ 8, code runs) | 8.93; code 4/4; code error typed coding 2/2; one empty answer | **9.14**; code 4/4; code error typed codefix 2/2; one empty answer and hidden line 13/14 | not re-run (screenshot lines unchanged) |
+
+Not clearly better than production, so the full suite was not run and nothing was deployed (the developer's rule).
+
+**Still invented with the revised version 6:** a claimed lead role ("I led a migration", both runs of the team-lead story, although the prompt names exactly that case); "I've run Kubernetes in production"; an invented failure event ("a bad deploy pushed a change that broke a dependency"); past-tense rollback ("I rolled back by redeploying the previous version"); a tool named as approach ("a managed queue like SQS or RabbitMQ"); purpose clauses in the STAR story ("to keep us aligned", "so issues surfaced early"). The grader also lists some approach lines the prompt asks for ("I'd typically start with a small, low-risk service…", "run old and new in parallel") and general knowledge ("Routing cuts drive time and fuel").
+
+**First answer word** (ADR-0103's method: ADR-0101's 10 questions as spoken chat questions, rounds alternating production, version 6, production, version 6; 20 answers each): production **919 / 1,193 ms** (p50 / p95; round p50s 896, 919), version 6 **891 / 980 ms** (891, 853). Hidden line first: production 20/20, version 6 19/20.
+
+Spend: about **$0.60** (production $0.22, version 6 $0.20, revision $0.16, timing about $0.01).
+
+### Edit 9 alone, the fixed grader, and three options against claimed experience (19 Nov 2026)
+
+Same laptop; answers by `claude-haiku-5-5` unless named, graded by `claude-sonnet-5-5`; 2 runs per scenario. Spend about **$1.41** (cap $1.50).
+
+**Edit 9 alone** (branch `codefix-line`: production's prompt plus the code-error line): `screenshot-types` 9.64, code 4/4, but the code-error screen typed coding in 2/2; `screen-only` 9.50, hidden line 14/14, never empty, all private, **code 3/4: fails** (the code-error screen typed task, one answer with no code). Not merged.
+
+**Fixed grader** (the developer's definition of invented; Rubric above). On the same replies (`--compare-rubric`, production): `missing-info` 13/16 runs with something invented (previous rubric 12/16), `cv-embellishment` 3/8 (3/8). It stops listing approach lines and general knowledge; what it still lists is mostly claimed experience ("I've run Kubernetes in production", "The biggest outage I caused was…"). With it, the five weak groups (score, runs with something invented):
+
+| Group | Production | Version 6 |
+|---|---|---|
+| `missing-info` | 6.94, 13/16 | **7.94, 5/16** |
+| `cv-embellishment` | 6.25, 3/8 | 6.63, 2/8 |
+| `company-star` | 7.00, 6/6 | **8.50, 3/6** |
+| `hallucination-bait` | 7.33, 6/12 | 7.08, 4/12 |
+| `screenshot-types` | 9.50, 2/14 | 9.71, 1/14 |
+
+**Options on top of version 6** (`src/server/prompts/experience.ts`, off unless the evaluation turns them on: `--cv-match`, `--shape-examples`, `--experience-model=sonnet`). A: for an own-experience question in an interview, mock or blank session, a BM25 score of the CV's clauses (the document search's formula); under 0.5 (no specific word in common) the end reminder gets "No CV project matches this question: answer only with your approach (I would…), with no past-tense claims." Over the evaluation's 19 such questions it fires on 10, three of them wrongly (a fitting CV project in other words: "difficult client" against "retail customer"). B: those questions answered by `claude-sonnet-5-5`. C: three neutral shape examples after the locked experience rules.
+
+| Option | `missing-info` | `cv-embellishment` | `company-star` | Hidden line | First word p50 / p95 | Cost per answer |
+|---|---|---|---|---|---|---|
+| Version 6 | 7.94, 5/16 | 6.63, 2/8 | 8.50, 3/6 | 30/30 | 779 / 865 ms | $0.00023 |
+| A | **8.31, 3/16** (line in 8/16; 0/8 invented where it fired) | 7.13, 3/8 (never fired) | 8.33, 1/6 (fired 6/6) | 30/30 | 788 / 926 ms | $0.00024 |
+| B | **8.56, 2/16** | 7.83, 3/6 (3 scenarios; cost cap) | **9.17, 2/6** | 28/28 | **1,009 / 2,441 ms** | $0.0049 |
+| C | 7.19, 8/16 | 5.75, 5/8 | 7.83, 4/6 | 30/30 | 773 / 975 ms | $0.00023 |
+| A + C | 7.94, 6/16 | 6.25, 4/8 | 8.83, 2/6 | 30/30 | 764 / 840 ms | $0.00025 |
+
+First word: ADR-0103's local method with 10 invented own-experience interview questions, two rounds per option, 20 answers each. No option passes every nothing-invented gate. A's remaining `missing-info` details are all in "Full example story" sessions, where it does not apply ("I led a migration of our invoicing service"). C added invented details.
+
+### Release attempt: version 6 + the CV match signal (19 Nov 2026): gates fail, not deployed
+
+Branch `v6-cv-match`: version 6, the CV match signal on by default (`src/server/prompts/experience.ts`), the "Full example story" rule (an example story never uses the CV's employers, project names or roles, and keeps source example). Spend about **$1.04** (cap $1.50).
+
+**Edit 9 in the locked screenshot texts** (both tails): `screenshot-types` 9.29, code 4/4, code error typed codefix 2/2, but hidden line 12/14 (a chart and a document reply); `screen-only` 9.36, code 4/4, code error typed **coding** 2/2. Fails the developer's condition, so it is left out.
+
+**`missing-info` before the suite** (version 6 + signal + story rule): 7.63, 5/16 runs with something invented; the signal fired 8/16 (the approach sessions).
+
+**Full suite** (`eval:all`, 2 runs per scenario; notes 3), gates of 19 Nov 2026. Invented = runs with something in the grader's list.
+
+| Group | Score (gate) | Invented (≤ 1 in 4; production) | Other | Result |
+|---|---|---|---|---|
+| `answers` | 9.13 (≥ 8.86, one command) | 2/30 | hidden 27/30, 2 empty | hidden line |
+| `screenshots` | 8.33 (≥ 8) | 0/6 | hidden 5/6 | hidden line |
+| `lessons` | 8.75 (≥ 8) | 1/4 | | passes |
+| `preferences` | **7.25** (≥ 8) | **3/8** | hidden 6/8 | **fails** |
+| `call-style` | 8.25 | 1/8 | | passes |
+| `adaptive` | 8.52 | **13/48** | | **fails** (27%) |
+| `missing-info` | **7.75** | **5/16** (production 13/16) | signal 8/16 | **fails** |
+| `hallucination-bait` | 7.08 | **4/12** (6/12) | | **fails** (33%) |
+| `consistency` | 10.00 | 0/6 | | passes |
+| `ask-kite` | 9.75 | 2/12 | target 9/12 | target |
+| `cv-embellishment` | 6.50 | 2/8 (3/8) | | passes |
+| `answer-length` | 9.25 | **2/4** | | **fails** |
+| `question-detection` | 9.35 | 2/26 | | passes |
+| `screenshot-types` | 9.64 | 2/14 (2/14) | code 4/4 | passes |
+| `company-star` | 8.17 | **2/6** (6/6) | | **fails** (33%) |
+| `screen-only` | 9.14 | 2/14 | hidden 13/14, private 13/14, code **3/4** | **fails** |
+| `notes` | 9.89 | | | passes |
+
+Hidden line first **215/222 (96.8%; gate 99%)**. Code check: no invented price or personal number except "twenty" in one example story (`m-failure-story`) and "13" (times faster, worked out from the CV's 40 s and 3 s) in `c-report-speed`; the rest are sums on document prices and stated case assumptions. Spend $0.83 (one earlier start stopped after a minute with an unnamed error and was run again).
+
+**The hidden line.** Four of the seven misses copied the contract's placeholder: `09-typed-chat-question` and `22-answer-in-spanish`, both runs (09 empty both times). Not seen at the 1.7.3 release. Answers only, 4 runs each: production's prompt 7/8 with the hidden line, version 6 0/8. Each version 6 line alone on 09: none 4/4; edit 8 (shape preference) 0/4; behavioural 1/4; concrete detail 2/4; missing detail and fact to confirm 2/4; the rest 3–4/4. Version 6 without edit 8: 0/4 and 0/4; with only its five least harmful lines: 1/4. No single line causes it: the more of version 6's new text, the more a typed question copies the placeholder. Bisect spend $0.04.
+
+Follow-up (developer, not now): let the CV match signal count a CV project worded differently (for example a short synonym step per session).
+
+### The CV match signal on the version 5 prompt (19 Nov 2026): release gate, second version
+
+Branch `cv-match-v5`: production's prompt (version 5) plus the CV match signal; the fixed grader. `eval:all` twice on the same branch: production with `--no-cv-match` (the prompt production sends, byte for byte), then the signal on. Spend **$1.68** (cap $1.80). Cells: score, runs with something invented.
+
+| Group | Production | Version 5 + signal | Worse? |
+|---|---|---|---|
+| `answers` | 9.00, 5/30 | 9.33, 4/30 | no |
+| `screenshots` | 9.17, 0/6 | 9.33, 1/6 | one more invented run |
+| `lessons` | 9.25, 0/4 | 9.25, 0/4 | no |
+| `preferences` | 8.88, 4/8 | 8.88, 4/8 | no |
+| `call-style` | 8.00, 2/8 | 8.50, 1/8 | no |
+| `adaptive` | 8.33, 15/48 | 8.17, 19/48 | score −0.16, four more invented runs |
+| `missing-info` (targeted) | 6.25, 11/16 | **8.13, 8/16** | better |
+| `hallucination-bait` | 7.33, 2/12 | 7.33, 1/12 | no |
+| `consistency` | 9.83, 0/6 | 9.67, 0/6 | score −0.16 |
+| `ask-kite` | 9.50, 2/12 | 9.67, 2/12 | no |
+| `cv-embellishment` | 6.00, 4/8 | 6.63, 5/8 | one more invented run |
+| `answer-length` | 9.00, 3/4 | 9.25, 3/4 | no |
+| `question-detection` | 9.42, 4/26 | 9.50, 3/26 | no |
+| `screenshot-types` | 8.86, 5/14 | 9.21, 5/14 | no |
+| `company-star` (targeted) | 8.17, 3/6 | **8.67, 0/6** | better |
+| `screen-only` | 9.50, 2/14 | 9.29, 4/14 | score −0.21, two more invented runs |
+| `notes` | 9.67 | 9.67 | no |
+
+Hidden line first: production **217/222 (97.7%)**, version 5 + signal **222/222**. Code check, version 5 + signal: one worked-out price, "about 47 dollars per seat per month" (52 less the 10 percent that needs approval, `10-discount-pressure` run 1); the rest are sums on document prices and stated case assumptions. Production: "20" percent (a statistic, `b-statistics`) and "20" in an example story.
+
+**Where the signal acts.** The line fired in 20 of 222 replies (10 scenarios); every other prompt is byte for byte production's. In those 10 scenarios: invented runs 12 → 4; score up in 6, equal in 2, down in 2 (`a-backend-behavioural` 9.0 → 8.0 and `star-cv-match` 7.5 → 6.5: the two scenarios where the CV has a fitting project in other words, the misfires measured before). Across the other 101 scenarios, the same prompt twice: mean 8.62 → 8.77, invented runs 50 → 56. So every "worse" cell above, and the 47-dollar price, comes from scenarios with an identical prompt.
+
+**Result under the gate as written: fails** (five groups worse, one worked-out price). Not merged; the developer decides.

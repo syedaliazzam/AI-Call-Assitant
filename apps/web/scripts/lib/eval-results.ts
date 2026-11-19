@@ -11,6 +11,14 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+/** 19 Nov 2026: what the claimed-experience experiments did to one answer (scripts/eval-answers.ts). */
+export interface ExperimentFlags {
+  /** Option A: the "no CV project matches" line was in the prompt. */
+  cvMatchLine: boolean;
+  /** Option B: the smart model answered (an own-experience question). */
+  smartModel: boolean;
+}
+
 /** One graded run of one scenario. */
 export interface ScenarioRunResult {
   /** The run's number, from 1. */
@@ -45,6 +53,8 @@ export interface RunChecks {
   invented: string[];
   /** 19 Nov 2026, --compare-rubric only: what the rubric before that day found invented in the same answer. */
   inventedPrevious?: string[];
+  /** 19 Nov 2026 experiments only: option A's line was in the prompt; option B used the smart model. */
+  experiment?: ExperimentFlags;
   /** Numbers and prices the claim check could not find in the documents or the call. */
   unsupportedNumbers: string[];
   /** Dates and names the claim check could not find. */

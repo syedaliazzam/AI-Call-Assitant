@@ -34,6 +34,9 @@
  *                       reported and the grader's columns show "–"; read the answers with --show
  *            --compare-rubric  also grade each answer with the rubric before 19 Nov 2026 (its invented
  *                       list is saved as inventedPrevious), to compare the two on the same replies
+ *            --no-cv-match  ADR-0108: without the CV match signal (on in the app), to compare
+ *            --experience-model=sonnet  own-experience questions answered by the smart model (measured on
+ *                       19 Nov 2026, option B; off in the app)
  *            --spoken   ADR-0101: typed (chat) questions are sent as spoken voice questions (the prompt's
  *                       "spoken by the user (speech recognition…)" label)
  *            --model=<gemini-lite|gpt-luna|gemini-flash|gpt-terra>  ADR-0099: live answers from that
@@ -88,7 +91,18 @@ import { getClaudeEnv, getGeminiEnv, getOpenAIEnv } from '@/server/env';
 import { streamGeminiReply } from '@/server/gemini';
 import { streamOpenAIReply } from '@/server/openai';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
-import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
+import {
+  ANSWER_MAX_TOKENS,
+  buildPrompt,
+  experienceApplies,
+  EXPERIENCE_SESSION_TYPES,
+  sessionBlock,
+} from '@/server/prompt';
+import {
+  noCvMatchLines,
+  usesExperienceModel,
+  type PromptOptions,
+} from '@/server/prompts/experience';
 import { SCREEN_ONLY_QUESTION } from '@/server/prompts/contract';
 import { DEFAULT_ASK_PROMPT, DEFAULT_LIVE_PROMPT, LEGACY_HEADING } from '@/server/prompts/defaults';
 import { ADAPTIVE_SCENARIOS } from '../tests/eval/groups/adaptive';
@@ -105,6 +119,7 @@ import { createSpendMeter, type SpendMeter } from './lib/spend';
 import { estimateLine, parseEvalArgs, selectScenarios } from './lib/eval-options';
 import {
   saveEvalResults,
+  type ExperimentFlags,
   type RunChecks,
   type RunDepth,
   type ScenarioResult,
@@ -360,7 +375,23 @@ interface ScenarioAnswer {
   placeholder: boolean;
   /** Token counts. */
   usage: AnswerUsage;
+  /** ADR-0108: the CV match line was in the prompt; --experience-model=sonnet sent it to the smart model. */
+  experiment: ExperimentFlags;
 }
+
+/**
+ * ADR-0108: the CV match signal (on, as in the app, unless --no-cv-match) and the measured smart-model choice
+ * for own-experience questions (off unless --experience-model=sonnet).
+ */
+interface Experiment {
+  /** Prompt options for buildPrompt(). */
+  options: PromptOptions;
+  /** Option B: own-experience questions in interview, mock and blank sessions go to the smart model. */
+  smartForExperience: boolean;
+}
+
+/** No experiment: the prompt and model the app uses. */
+const NO_EXPERIMENT: Experiment = { options: {}, smartForExperience: false };
 
 /**
  * ADR-0103: the contract's placeholder copied into a reply, anywhere: "[[type|for|source]]", or the
@@ -436,6 +467,7 @@ function providerModel(model: AnswerModel): ProviderModel {
  *                       question asked again.
  * @param third          ADR-0099: the Gemini or GPT model live answers come from (--model), or null.
  * @param spoken         ADR-0101: send a typed question as a spoken one (--spoken).
+ * @param experiment     19 Nov 2026: the claimed-experience experiments (none by default).
  * @returns The answer.
  * Called from: main()
  */
@@ -449,6 +481,7 @@ async function answerScenario(
   earlier?: { question: string; text: string },
   third: ProviderModel | null = null,
   spoken = false,
+  experiment: Experiment = NO_EXPERIMENT,
 ): Promise<ScenarioAnswer> {
   const question = earlier ? (scenario.repeat ?? scenario.question) : scenario.question;
   const similar = earlier
@@ -507,11 +540,25 @@ async function answerScenario(
         target: scenario.target ?? 'kite',
       }
     : request;
-  const prompt = page ? buildKiteChatPrompt(sent, globalPrompt) : buildPrompt(sent, globalPrompt);
+  const prompt = page
+    ? buildKiteChatPrompt(sent, globalPrompt)
+    : buildPrompt(sent, globalPrompt, experiment.options);
+  // Option B: an own-experience question in an interview, mock or blank session (whatever its missing-information
+  // setting) goes to the smart model.
+  const smartModel =
+    !page &&
+    experiment.smartForExperience &&
+    sent.session !== undefined &&
+    usesExperienceModel(sent, EXPERIENCE_SESSION_TYPES.includes(sent.session.type));
+  const cvMatchLine =
+    !page &&
+    experiment.options.cvMatchSignal !== false &&
+    sent.session !== undefined &&
+    noCvMatchLines(sent, experienceApplies(sent.session)).length > 0;
   // ADR-0099: with --model, live answers come from that Gemini or GPT model (the route's latency settings);
   // Ask AI stays on Claude, as in the app.
   const viaThird = third !== null && !page;
-  const model = viaThird ? third.modelId : page ? models.smart : models.fast;
+  const model = viaThird ? third.modelId : page || smartModel ? models.smart : models.fast;
   let raw = '';
   const maxTokens = page ? KITE_CHAT_MAX_TOKENS : ANSWER_MAX_TOKENS;
   const reply = viaThird
@@ -542,6 +589,7 @@ async function answerScenario(
         : null,
     placeholder: PLACEHOLDER.test(raw),
     usage: next.value.usage,
+    experiment: { cvMatchLine, smartModel },
   };
 }
 
@@ -780,6 +828,11 @@ function summariseChecks(results: readonly ScenarioResult[]): string[] {
     ...line('For the call / Ask Kite as expected', (checks) => checks.targetOk),
     ...line('No comment on what Kite was given', (checks) => !checks.metaComment),
     ...line('Grader found nothing invented', (checks) => checks.invented.length === 0),
+    ...line('CV match line in the prompt (ADR-0108)', (checks) => checks.experiment?.cvMatchLine),
+    ...line(
+      'Answered by the smart model (--experience-model=sonnet)',
+      (checks) => checks.experiment?.smartModel,
+    ),
     ...line('Previous rubric found nothing invented (--compare-rubric)', (checks) =>
       checks.inventedPrevious === undefined ? undefined : checks.inventedPrevious.length === 0,
     ),
@@ -865,6 +918,11 @@ async function main(): Promise<void> {
   // 19 Nov 2026: --compare-rubric also grades each answer with the rubric before that day (one more grader
   // request per answer), to show what the new invented rule changes on the same replies.
   const compareRubric = process.argv.slice(2).includes('--compare-rubric');
+  // ADR-0108: the CV match signal as the app sends it, unless --no-cv-match; the smart model only on request.
+  const experiment: Experiment = {
+    options: { cvMatchSignal: !process.argv.slice(2).includes('--no-cv-match') },
+    smartForExperience: process.argv.slice(2).includes('--experience-model=sonnet'),
+  };
   // ADR-0093: cleaned as the app cleans it, so the prompt is the one a named call sends.
   const theirName = cleanPersonName(options.theirName) || null;
   const scenarios = loadScenarios(options.only);
@@ -925,6 +983,7 @@ async function main(): Promise<void> {
         undefined,
         third,
         spoken,
+        experiment,
       );
       // Consistency: the first answer goes into the conversation, and the question comes again.
       const first = scenario.repeat
@@ -941,6 +1000,7 @@ async function main(): Promise<void> {
           first,
           third,
           spoken,
+          experiment,
         );
       const { text, meta } = answer;
       // A garbled line must get no answer at all (ADR-0043): nothing to grade, and no grader's request
@@ -998,6 +1058,7 @@ async function main(): Promise<void> {
           },
           empty: !nothingToGrade && text.trim() === '',
           ...(previous ? { inventedPrevious: previous.invented } : {}),
+          experiment: answer.experiment,
         },
       });
       if (options.show) {
