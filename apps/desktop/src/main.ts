@@ -26,6 +26,7 @@
  * Kite never hides from the taskbar, Dock or process lists, and does not try to evade
  * monitoring or proctoring software (CLAUDE.md).
  */
+import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -73,7 +74,7 @@ import { APP_NAME, loadConfig, pinnedDataFolder, type DesktopConfig } from './co
 const APP_USER_MODEL_ID = 'co.paramountintelligence.kite';
 import { linkFromArgv, routeDesktopLink, shouldRegisterProtocol } from './links';
 import { createHomeWindow, isPanelSize, type HomeWindow } from './home';
-import { startUpdater, type Updater } from './updater';
+import { startUpdater, TEST_FEED_FILE, testUpdateFeed, type Updater } from './updater';
 import { installHotkeys, isKiteSender, type HotkeyController } from './hotkeys';
 import { appIconPath } from './icon';
 import { endCallOnClose, runBelowNormal } from './priority';
@@ -426,6 +427,21 @@ function createMainWindow(config: DesktopConfig, page = '/', minimized = false):
   // A reload or navigation ends the page's call; the live page turns them on again if needed.
   window.webContents.on('did-navigate', () => hotkeys?.disable());
   return window;
+}
+
+/**
+ * 1.8.0 (ADR-0109 §5): the text of the test-feed file in the app's data folder (the real-Mac update test),
+ * or null when there is none. testUpdateFeed() then accepts it only for an address on this computer.
+ *
+ * @returns The file's text, or null.
+ * Called from: start() (when the updater starts)
+ */
+function readTestFeedFile(): string | null {
+  try {
+    return readFileSync(path.join(app.getPath('userData'), TEST_FEED_FILE), 'utf8');
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -970,6 +986,8 @@ function start(): void {
         getWindow: () => mainWindow ?? home?.window() ?? null,
         // 1.7.2 (ADR-0106): never restart into an update while Drive uploads are left.
         uploadsBusy: () => runningOn || (exitControl?.hasWork() ?? false),
+        // 1.8.0 (ADR-0109 §5): the real-Mac update test's feed on this computer, if one is set.
+        testFeed: testUpdateFeed(process.env.KITE_TEST_UPDATE_FEED, readTestFeedFile()),
       });
     }
     // macOS convention: clicking the Dock icon re-opens a window if none is open.

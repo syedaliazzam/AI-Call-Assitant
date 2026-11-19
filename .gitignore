@@ -62,6 +62,14 @@ apps/desktop/release/
 # v1.0.1: the accurate-transcription native runtime, staged by apps/desktop/scripts/stage-native.mjs
 apps/desktop/native/
 
+# 1.8.0 (ADR-0109): the Mac signing certificate's private key never enters the repository, in any form;
+# only the public certificate.pem is committed. The bridge signing rule is written at build time.
+*.p12
+*.pfx
+*.key
+key.pem
+apps/desktop/build/mac-signing/requirements.txt
+
 # v1.1.0: copies of another company's screens, for side-by-side checks only. Never committed;
 # docs/design/reference-catalog.md describes them in words.
 docs/design/references/

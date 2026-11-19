@@ -1,0 +1,25 @@
+# File: apps/desktop/electron-builder.mac-developer-id.yml
+# Purpose: The Mac build with an Apple Developer ID certificate and notarization (ADR-0109 §6), for when
+#          the company has an Apple Developer account. Not used yet. It extends electron-builder.yml and
+#          changes only the signing settings, so the switch is a settings and credentials change.
+# Used by: the "dist:mac:developer-id" script in apps/desktop/package.json (by hand, on the build Mac)
+# Architecture: docs/decisions/ADR-0109-macos-internal-release.md §6
+#
+# Before the first Developer ID release:
+#   1. Ship ONE self-signed release built with apps/desktop/build/mac-signing/developer-id-team.txt holding
+#      the 10-character Team ID: its signing rule also accepts the Developer ID certificate, so installed
+#      apps update to the Developer ID release by themselves (scripts/mac/build.sh writes the rule).
+#   2. Set `identity` below to the certificate's name WITHOUT "Developer ID Application:" (electron-builder
+#      refuses the prefix), for example "Paramount Intelligence (AB12CD34EF").
+#   3. Put Apple's notarization key in the build Mac's environment, never in a file in the repository:
+#      APPLE_API_KEY (path to the .p8 key), APPLE_API_KEY_ID, APPLE_API_ISSUER.
+# macOS asks for the Microphone and Screen & System Audio Recording permissions once more after the switch
+# (it remembers the signing rule in force when they were granted).
+extends: ./electron-builder.yml
+mac:
+  # Step 2 above. The build stops with "identity not found" until this is a real certificate name.
+  identity: REPLACE-WITH-DEVELOPER-ID-NAME
+  # Notarization requires the hardened runtime; build/entitlements.mac.plist allows Electron's JIT and the
+  # microphone under it.
+  hardenedRuntime: true
+  notarize: true

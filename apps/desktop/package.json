@@ -15,7 +15,9 @@
     "test:unit": "vitest run",
     "test:manual": "pnpm electron:install && pnpm build && playwright test -c playwright.manual.config.ts",
     "dist:win": "pnpm electron:install && pnpm build && node scripts/stage-stt-model.mjs && electron-builder --win --publish never",
-    "dist:mac": "pnpm electron:install && pnpm build && node scripts/stage-stt-model.mjs && electron-builder --mac --publish never",
+    "mac:prepare": "pnpm electron:install && pnpm build && node scripts/stage-native.mjs --mac-universal && node scripts/stage-stt-model.mjs",
+    "dist:mac": "pnpm mac:prepare && electron-builder --mac --publish never",
+    "dist:mac:developer-id": "pnpm mac:prepare && electron-builder --mac --publish never -c electron-builder.mac-developer-id.yml",
     "dist:store": "pnpm electron:install && pnpm build && node scripts/stage-stt-model.mjs && electron-builder --win appx --publish never",
     "stage:model": "node scripts/stage-stt-model.mjs"
   },

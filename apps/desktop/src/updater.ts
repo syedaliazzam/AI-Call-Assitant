@@ -7,6 +7,9 @@
  *          If the user chooses Later, the update is installed when Kite quits. 1.7.2 (ADR-0106): never
  *          while a Drive upload is left either: the question waits until the queue is done, and an app
  *          finishing its uploads after the user exited installs the update when it quits by itself.
+ *          1.8.0 (ADR-0109): macOS reads its own channel (mac-latest, set in electron-builder.yml), and a
+ *          local test feed can be set for the real-Mac update test (testUpdateFeed()); only addresses on
+ *          this computer are accepted. Squirrel.Mac installs only a build signed with our certificate.
  * Used by: src/main.ts (installed builds only)
  * Depends on: electron (app, dialog, ipcMain), electron-updater (autoUpdater; the feed is the
  *             "publish" setting in electron-builder.yml, written into the installed app),
@@ -24,6 +27,43 @@ import { isKiteSender } from './hotkeys';
 
 /** How often to check for a new version, ms (6 hours). */
 export const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * 1.8.0 (ADR-0109 §5): the file in the app's data folder that points the updater at a test feed on this
+ * computer, for the real-Mac update test (docs/testing/mac-release-test.md). A file, not only a variable:
+ * on macOS an app started from Terminal has its permissions counted against Terminal, which would spoil a
+ * test of whether the app's own permissions survive an update. Outside the signed app, so writing it never
+ * changes the app's signature.
+ */
+export const TEST_FEED_FILE = 'test-update-feed.txt';
+
+/** The hosts a test feed may use: this computer only, so it can never point an installed app elsewhere. */
+const TEST_FEED_HOSTS = new Set(['127.0.0.1', 'localhost']);
+
+/**
+ * The local test feed to use instead of the release channel, when one is set and is on this computer.
+ *
+ * @param fromEnv  KITE_TEST_UPDATE_FEED, if set.
+ * @param fromFile The text of TEST_FEED_FILE, or null when there is none.
+ * @returns The feed's address, or null (no test feed, or one that is not http:// on this computer).
+ * Called from: start() in main.ts; tests
+ */
+export function testUpdateFeed(
+  fromEnv: string | undefined,
+  fromFile: string | null,
+): string | null {
+  const value = (fromEnv ?? fromFile ?? '').trim();
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' || !TEST_FEED_HOSTS.has(url.hostname)) return null;
+  if (url.username || url.password) return null;
+  return url.toString();
+}
 
 /** What the updater knows when deciding whether to ask the user to restart. */
 export interface UpdateState {
@@ -63,6 +103,8 @@ export interface UpdaterOptions {
    * them; a restart then waits.
    */
   uploadsBusy?: () => boolean;
+  /** 1.8.0 (ADR-0109): a local test feed (testUpdateFeed()), or null for the release channel. */
+  testFeed?: string | null;
 }
 
 /** What startUpdater() gives main.ts. */
@@ -88,6 +130,16 @@ export function startUpdater(options: UpdaterOptions): Updater {
   autoUpdater.autoInstallOnAppQuit = true;
   // electron-updater logs to the console by default; Kite logs versions only (below).
   autoUpdater.logger = null;
+  if (options.testFeed) {
+    // The real-Mac update test only (ADR-0109 §5): the same checks as the release channel (SHA-512 from the
+    // feed's update file; on macOS Squirrel.Mac's signature check), from a server on this computer.
+    autoUpdater.setFeedURL({
+      provider: 'generic',
+      url: options.testFeed,
+      useMultipleRangeRequest: false,
+    });
+    console.log('[kite] update feed: local test feed');
+  }
 
   /** Asks to restart when the state allows it. */
   const maybeAsk = () => {

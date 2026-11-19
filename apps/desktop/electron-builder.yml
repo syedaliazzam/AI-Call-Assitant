@@ -1,9 +1,12 @@
 # File: apps/desktop/electron-builder.yml
-# Purpose: How the Windows installer is built (Day 6 Stage 3): electron-builder, NSIS, per-user
+# Purpose: How the desktop app is built. Windows (Day 6 Stage 3): electron-builder, NSIS, per-user
 #          (no admin rights), "Paramount AI" by "Paramount Intelligence", the company icons, and a
-#          clean uninstall that asks whether to keep the user's local data.
-# Used by: the "dist:win" script in apps/desktop/package.json
-# Architecture: docs/architecture/kite-architecture-v3.1.md §10 (installation); ADR-0028;
+#          clean uninstall that asks whether to keep the user's local data. macOS (1.8.0, ADR-0109): one
+#          universal app signed with the company's self-signed certificate, as a .zip (installer and
+#          updater) and a .dmg (fallback), updated from its own channel (mac-latest).
+# Used by: the "dist:win" and "dist:mac" scripts in apps/desktop/package.json; scripts/mac/build.sh;
+#          electron-builder.mac-developer-id.yml (extends this file)
+# Architecture: docs/architecture/kite-architecture-v3.1.md §10 (installation); ADR-0028; ADR-0109;
 #               docs/design/paramount-ai-ui-spec.md §2 (the rename is display strings only)
 # Never changes: Windows and the updater know the installed app by it.
 appId: co.paramountintelligence.kite
@@ -77,31 +80,56 @@ publish:
   repo: kite-releases
   releaseType: release
 
-# macOS (Day 6 Stage 6, readiness only: no Mac to test on). Unsigned until the lead decides on an
-# Apple Developer account; testers open it with Privacy & Security → Open Anyway
-# (docs/testing/macos-checklist.md).
+# macOS (1.8.0, ADR-0109): an internal release, built on a teammate's Mac with scripts/mac/build.sh
+# (docs/deploy/mac-signing-certificate.md, docs/testing/mac-release-test.md). Not released until the
+# real-Mac test passes.
 mac:
+  # One universal app (Apple chip and Intel). The zip is what the updater and install-mac.sh use; the dmg
+  # is the manual fallback.
   target:
+    - target: zip
+      arch: universal
     - target: dmg
-      arch:
-        - arm64
-        - x64
+      arch: universal
+  # No spaces (GitHub renames them in release assets, and latest-mac.yml must match): the zip's name.
+  artifactName: Paramount-AI-${version}-${arch}-mac.${ext}
   # Placeholder: scaled up from the 304 px logo until the designer's vector arrives (Day 6 list).
   icon: build/icon-1024.png
   category: public.app-category.business
-  # Unsigned build: no signing identity is looked for.
-  identity: null
-  # Ready for signing later: the hardened runtime needs these entitlements (build/entitlements.mac.plist).
-  hardenedRuntime: true
+  # The company's self-signed certificate (ADR-0109). electron-builder finds it by this name in the keychain
+  # build.sh names (CSC_KEYCHAIN), where it is trusted for code signing. One certificate for every build keeps
+  # the app's signing rule the same, so macOS keeps its permissions and Squirrel.Mac accepts its updates.
+  identity: Paramount Intelligence Internal Code Signing
+  # A Mac build fails rather than come out unsigned (an unsigned build would lose every Mac's permissions).
+  forceCodeSigning: true
+  # Off with a self-signed certificate: the hardened runtime turns on library validation, which can refuse
+  # Electron's own frameworks without an Apple team (electron-builder 26.17.0 docs). Notarization needs it,
+  # so electron-builder.mac-developer-id.yml turns it on with the entitlements below.
+  hardenedRuntime: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  # Both Mac speech engines are in both halves of the universal app (scripts/stage-native.mjs --mac-universal),
+  # and each is built for one CPU, so the universal merge leaves them as they are; the engine loads the one
+  # for the Mac's CPU.
+  x64ArchFiles: '**/sherpa-onnx-darwin-*/**'
+  # ADR-0109: the Mac app's own update channel, one fixed release tag whose files each Mac release replaces
+  # (scripts/mac/publish-mac.mjs). Windows keeps reading the newest release (publish above), so Windows-only
+  # releases never leave Macs without an update file.
+  publish:
+    provider: generic
+    url: https://github.com/Zainpak123/kite-releases/releases/download/mac-latest
+    # GitHub's file servers are not known to answer several byte ranges in one request.
+    useMultipleRangeRequest: false
   extendInfo:
-    # The text macOS shows when Kite asks for the microphone.
-    NSMicrophoneUsageDescription: Paramount AI listens to your side of the call to write the live transcript. The audio stays on this Mac.
-    # The text macOS shows when Kite asks to record the other side of the call (system audio).
-    NSAudioCaptureUsageDescription: Paramount AI records the other side of the call (system audio) to write the live transcript. The audio stays on this Mac.
+    # The text macOS shows when Paramount AI asks for the microphone. ADR-0101: the audio goes to the
+    # transcription service during the call (cloud transcription), so it does not say "stays on this Mac".
+    NSMicrophoneUsageDescription: Paramount AI listens to your side of the call to write the live transcript. The audio is never stored.
+    # The text macOS shows when Paramount AI asks to record the other side of the call (system audio).
+    NSAudioCaptureUsageDescription: Paramount AI listens to the other side of the call (your computer's sound) to write the live transcript. The audio is never stored.
+    # Meeting recordings are saved in Documents/Paramount AI/Recordings (ADR-0068); macOS asks once.
+    NSDocumentsFolderUsageDescription: Paramount AI saves the meetings you record in Documents › Paramount AI › Recordings.
 dmg:
-  artifactName: Paramount-AI-${version}-${arch}.dmg
+  artifactName: Paramount-AI-${version}-${arch}.${ext}
 
 # Microsoft Store package (MSIX/AppX), POST-V1 (developer decision, 2 Nov): kept, not used for v1.
 # Investigated 2 Nov as the no-purchase alternative to code
