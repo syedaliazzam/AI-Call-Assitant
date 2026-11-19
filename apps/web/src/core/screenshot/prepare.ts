@@ -90,8 +90,15 @@ export interface ImageCodec {
  * Called from: prepareScreenshot(); tests
  */
 export async function shortHash(bytes: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes.slice()));
-  return Array.from(digest.slice(0, 8), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  // The hash is for the trace only: where Web Crypto is missing (a page that is not a secure context, such
+  // as a test harness) it is left empty rather than failing the screenshot.
+  if (typeof crypto === 'undefined' || !crypto.subtle) return '';
+  try {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes.slice()));
+    return Array.from(digest.slice(0, 8), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -213,7 +220,10 @@ export async function prepareScreenshot(
       const bytes = await codec.encode(decoded, attempt);
       if (!isJpeg(bytes)) break;
       if (bytes.length <= MAX_SCREENSHOT_BYTES) {
-        const share = codec.sameColourShare ? await codec.sameColourShare(decoded) : 0;
+        // ADR-0107: the blank check only decides a retake, so it never fails the screenshot.
+        const share = codec.sameColourShare
+          ? await codec.sameColourShare(decoded).catch(() => 0)
+          : 0;
         return {
           dataUrl: jpegDataUrl(bytes),
           width: attempt.width,

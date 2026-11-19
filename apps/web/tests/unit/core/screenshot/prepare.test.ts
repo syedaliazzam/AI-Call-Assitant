@@ -181,3 +181,15 @@ describe('prepareScreenshot hash and blank (ADR-0107)', () => {
     await expect(shortHash(new Uint8Array([1, 2, 3]))).resolves.toMatch(/^[0-9a-f]{16}$/);
   });
 });
+
+// ADR-0107: the hash is for the trace only, so a page without Web Crypto still gets its screenshot.
+describe('shortHash without Web Crypto (ADR-0107)', () => {
+  it('returns an empty hash instead of failing', async () => {
+    vi.stubGlobal('crypto', {});
+    try {
+      await expect(shortHash(new Uint8Array([1, 2, 3]))).resolves.toBe('');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
