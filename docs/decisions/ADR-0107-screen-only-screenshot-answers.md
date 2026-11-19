@@ -37,6 +37,15 @@ What the investigation measured (no code changed while measuring):
 9. **Per-press trace** (the call's timing trace, flags and ids only): `screenshot` (trigger, screenOnly, press, capture and prepare times, a 16-digit hash of the JPEG, bytes, retaken, queued), `screenshot-card` (the card id), `screenshot-done` (type, empty), `screenshot-queued`, `screenshot-failed`. The request carries the press's `traceId`, which the route writes next to its own request id with `screenOnly` and `emptyAnswer`.
 10. **Evaluation:** a "complete and useful" grader score (0–2, reported apart from the /10 total), a depth table per question type, an empty-answer check, `--model=sonnet` for comparisons, and a `screen-only` group of 7 scenarios.
 
+11. **Compact view fixes** (the same investigation's sweep; the answer panel's default height stays, as the developer decided):
+    - stacked panels (both open, under 600 CSS px): the window asks for every panel's hidden part, and the answer's default height leaves the transcript 7.5 rem (1.7.1 squeezed it to about 10 px);
+    - menus, sheets and toasts are measured by content and borders on both rows (the bottom-row ⋮ menu showed two rows; every menu showed a scrollbar at rest), and again when they grow after opening;
+    - Click-through: a new transcript line no longer gives the keyboard away and closes an open menu (stable callbacks);
+    - picture-in-picture: menus close on a press outside and on Esc, tooltips show, bar 1 refits and Ctrl+Alt+T works (the overlay's own document, window and ResizeObserver);
+    - long words and links wrap; one Esc closes a menu only; the Report box belongs to its answer; the footer's "·" wraps with its label; the model popover is clamped for its real width; no bar tooltip while a menu is open; the Voice tip takes its click in Click-through;
+    - desktop: a window the person drags fits its height to where it lands.
+    Left as they are: keyboard focus order in the ⋮ menu (Tab reaches Exit first), the 550-DIP cap at 150 % scaling (part of the answer-size question the developer kept as it is), and no visible tooltip on the answer arrows (the overlay uses no system tooltips).
+
 ## Consequences
 
 - `screen-only` (Haiku): 9.29–9.36; hidden line 14/14; never empty; all private; code runs 4/4; complete 1.7–1.9. The multiple-choice letter is still wrong in 1 of 2 Haiku runs. Sonnet on the same group: 9.86, types 14/14, letter 2/2, complete 2.0, about ten times the cost per answer and slower. Whether screenshots use a stronger model is the developer's decision; nothing changed.
