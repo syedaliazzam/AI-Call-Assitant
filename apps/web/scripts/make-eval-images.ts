@@ -112,6 +112,60 @@ ZeroDivisionError: division by zero</pre></div>`,
     html: `${STYLE}<div class="slide" style="filter:blur(26px)"><h1>Quarterly numbers</h1>
 <ul><li>First figure 1,284</li><li>Second figure 937</li><li>Third figure 2,410</li></ul></div>`,
   },
+  // ADR-0107: the screen-only group (Ctrl+Shift+Enter answers the screen alone).
+  {
+    name: 'screen-coding-slots.jpg',
+    html: `${STYLE}<div style="display:flex;height:720px;font-size:22px"><div style="width:52%;padding:32px">
+<h1 style="font-size:34px">Merge Overlapping Meeting Slots</h1><p>Given a list of meeting slots, each
+<code>[start, end]</code> in minutes, merge every pair of slots that overlap or touch and return the merged
+slots sorted by start time.</p><pre style="font-size:20px">slots = [[30,60],[0,15],[10,20],[55,90]]
+# returns [[0,20],[30,90]]
+slots = [[1,4],[4,5]]
+# returns [[1,5]]</pre></div><pre style="flex:1;margin:0;border-radius:0;font-size:20px">Python 3
+
+def merge_slots(slots):
+    # write your solution here
+    pass</pre></div>`,
+  },
+  {
+    name: 'screen-multiple-choice.jpg',
+    html: `${STYLE}<div class="slide"><p class="note" style="margin:0">Skill check (invented) · Question 7 of 20</p>
+<h1 style="font-size:36px">What does this code print?</h1><pre style="font-size:22px">console.log('A');
+setTimeout(() => console.log('B'), 0);
+Promise.resolve().then(() => console.log('C'));
+console.log('D');</pre><div style="font-size:24px">○ A) A B C D &nbsp;&nbsp; ○ B) A D C B &nbsp;&nbsp; ○ C) A D B C &nbsp;&nbsp; ○ D) A C D B</div></div>`,
+  },
+  {
+    name: 'screen-chat-question.jpg',
+    html: `${STYLE}<div style="display:flex;height:720px;font-size:22px"><div style="width:230px;background:#3b1f3f;color:#e8dce9;padding:20px">
+<b>Northwind Labs (invented)</b><p># general</p><p>● Dana Ortiz</p></div><div style="flex:1">
+<div style="border-bottom:2px solid #e2e8f0;padding:18px 24px;font-weight:bold">Dana Ortiz</div>
+<p style="padding:0 24px"><b>Dana Ortiz</b> 10:42<br>Thanks again for the chat yesterday.</p>
+<p style="padding:0 24px"><b>Dana Ortiz</b> 10:43<br>Quick one before the panel: how would you stop one noisy customer from
+overloading our public API? Just a few lines on the approach you'd take.</p></div></div>`,
+  },
+  {
+    name: 'screen-before-after.jpg',
+    html: `${STYLE}<div class="slide" style="padding:36px 56px"><h1 style="font-size:34px">Sessions screen: before 1.6.3 and after 1.6.4 (invented)</h1>
+<div style="display:flex;gap:28px;font-size:20px"><div style="flex:1;border:2px solid #cbd5e1;padding:16px">
+<b>BEFORE (1.6.3)</b><div style="display:flex;justify-content:space-between;background:#f1f5f9;padding:10px;margin:10px 0">
+<span>Sessions</span><span><button>Buy credits</button> <button>New session</button></span></div><p>Call list · filters</p></div>
+<div style="flex:1;border:2px solid #cbd5e1;padding:16px"><b>AFTER (1.6.4)</b>
+<div style="display:flex;justify-content:space-between;background:#f1f5f9;padding:10px;margin:10px 0">
+<span>Sessions</span><span><button>New session</button></span></div><p>Call list · filters</p></div></div>
+<h2 style="font-size:28px">No Buy credits button in the header</h2>
+<p style="font-size:22px">Credits moved to Settings → Billing in 1.6.4. Everything else in the header is unchanged.</p></div>`,
+  },
+  {
+    name: 'screen-dashboard.jpg',
+    html: `${STYLE}<div style="background:#f6f7f9;height:720px;font-size:20px"><div style="background:#fff;padding:14px 24px;border-bottom:2px solid #e2e8f0">
+<b>SiteLens Web Analytics (invented)</b> · example-shop.test · last 7 days vs the 7 days before</div>
+<div style="display:flex;gap:16px;padding:20px"><div style="flex:1;background:#fff;padding:14px">Visits<div style="font-size:34px"><b>48,210</b></div>up 12%</div>
+<div style="flex:1;background:#fff;padding:14px">Page views<div style="font-size:34px"><b>131,904</b></div>up 8%</div>
+<div style="flex:1;background:#fff;padding:14px">Load time<div style="font-size:34px"><b>4.8 s</b></div>up from 1.9 s</div>
+<div style="flex:1;background:#fff;padding:14px">Checkout conversions<div style="font-size:34px"><b>1.1%</b></div>down from 2.6%</div></div>
+<div style="margin:0 20px;background:#fff;padding:14px"><b>Slowest pages</b><br>/checkout 7.9 s · /pricing 3.1 s · / 1.4 s</div></div>`,
+  },
 ];
 
 /**
@@ -125,7 +179,9 @@ async function main(): Promise<void> {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-    for (const image of IMAGES) {
+    // ADR-0107: --only=<prefix> draws only the images whose name starts with it (the others stay as committed).
+    const only = process.argv.find((arg) => arg.startsWith('--only='))?.slice('--only='.length);
+    for (const image of IMAGES.filter((candidate) => !only || candidate.name.startsWith(only))) {
       await page.setContent(`<!doctype html><html><body>${image.html}</body></html>`);
       await page.screenshot({ path: path.join(OUT_DIR, image.name), type: 'jpeg', quality: 80 });
       console.log(`wrote ${image.name}`);

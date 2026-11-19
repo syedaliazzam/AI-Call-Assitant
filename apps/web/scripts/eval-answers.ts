@@ -87,11 +87,13 @@ import { streamGeminiReply } from '@/server/gemini';
 import { streamOpenAIReply } from '@/server/openai';
 import { buildKiteChatPrompt, KITE_CHAT_MAX_TOKENS } from '@/server/kite-chat';
 import { ANSWER_MAX_TOKENS, buildPrompt, sessionBlock } from '@/server/prompt';
+import { SCREEN_ONLY_QUESTION } from '@/server/prompts/contract';
 import { DEFAULT_ASK_PROMPT, DEFAULT_LIVE_PROMPT, LEGACY_HEADING } from '@/server/prompts/defaults';
 import { ADAPTIVE_SCENARIOS } from '../tests/eval/groups/adaptive';
 import { COMPANY_SCENARIOS } from '../tests/eval/groups/company';
 import { HONESTY_SCENARIOS } from '../tests/eval/groups/honesty';
 import { DETECTION_SCENARIOS } from '../tests/eval/groups/detection';
+import { SCREEN_ONLY_SCENARIOS } from '../tests/eval/groups/screen-only';
 import { callAnswerLine } from './lib/answer-line';
 import { QUALITY_SCENARIOS } from '../tests/eval/groups/quality';
 import type { Scenario } from '../tests/eval/groups/types';
@@ -203,6 +205,7 @@ function loadScenarios(only: string | null): Scenario[] {
       ...HONESTY_SCENARIOS,
       ...DETECTION_SCENARIOS,
       ...COMPANY_SCENARIOS,
+      ...SCREEN_ONLY_SCENARIOS,
     ],
     answerGroup,
     only,
@@ -452,9 +455,18 @@ async function answerScenario(
   const globalPrompt = scenario.company
     ? `${base}\n\n${LEGACY_HEADING}\n${scenario.company}`
     : base;
-  const prompt = page
-    ? buildKiteChatPrompt(request, globalPrompt)
-    : buildPrompt(request, globalPrompt);
+  // ADR-0107: a screen-only screenshot is sent as the app sends it (core/answer/context.ts
+  // screenOnlyRequest()): the session and the screen, private unless the scenario says otherwise.
+  const sent: AnswerRequest = scenario.screenOnly
+    ? {
+        mode: 'screenshot',
+        screenOnly: true,
+        ...(request.session ? { session: request.session } : {}),
+        ...(request.image ? { image: request.image } : {}),
+        target: scenario.target ?? 'kite',
+      }
+    : request;
+  const prompt = page ? buildKiteChatPrompt(sent, globalPrompt) : buildPrompt(sent, globalPrompt);
   // ADR-0099: with --model, live answers come from that Gemini or GPT model (the route's latency settings);
   // Ask AI stays on Claude, as in the app.
   const viaThird = third !== null && !page;
@@ -467,7 +479,8 @@ async function answerScenario(
       : streamOpenAIReply({ apiKey: third.apiKey, model: third.modelId, ...prompt, maxTokens })
     : streamReply({
         model,
-        tier: page ? 'smart' : 'fast',
+        // ADR-0107: --model=sonnet answers on the smart tier's settings (the API refuses thinking off for it).
+        tier: page || model === models.smart ? 'smart' : 'fast',
         ...prompt,
         maxTokens,
       });
@@ -479,7 +492,13 @@ async function answerScenario(
   const realMeta = split.state === 'found' && !/^\s*\[\[\s*type\s*\|/i.test(raw);
   return {
     text: withoutQuestionLine(split.state === 'found' ? split.rest : raw.trim()),
-    meta: realMeta && split.state === 'found' ? split.meta : null,
+    meta:
+      realMeta && split.state === 'found'
+        ? // ADR-0107: for a screen-only screenshot the route sets the user's chosen reader (withChosenTarget).
+          scenario.screenOnly && sent.target
+          ? { ...split.meta, target: sent.target }
+          : split.meta
+        : null,
     placeholder: PLACEHOLDER.test(raw),
     usage: next.value.usage,
   };
@@ -496,7 +515,13 @@ async function answerScenario(
  */
 function withoutQuestionLine(text: string): string {
   const filter = createQuestionLineFilter();
-  return `${filter.push(text).text}${filter.end().text}`.trim();
+  // ADR-0107: and a line that is only a stray [[…]] tag (a malformed last line), which the route's
+  // contract fallback takes out too (server/answer-meta.ts withContractFallback()).
+  return `${filter.push(text).text}${filter.end().text}`
+    .split('\n')
+    .filter((line) => !/^\s*\[\[[^\]]*\]\]\s*$/.test(line))
+    .join('\n')
+    .trim();
 }
 
 /** A comment about what Kite was given: never allowed in an answer's spoken part. */
@@ -590,7 +615,10 @@ async function grade(
       ? [`The answer was made from a screenshot that shows: ${scenario.imageDescription}`]
       : []),
     scenario.mode === 'screenshot'
-      ? `Question about the screenshot: ${scenario.question || DEFAULT_SCREENSHOT_QUESTION}`
+      ? // ADR-0107: a screen-only screenshot is asked what the app asks; it needs no advice on how to respond.
+        scenario.screenOnly
+        ? `Question about the screenshot (the user pressed the screenshot key; nothing from the call is the question): ${SCREEN_ONLY_QUESTION} A complete answer gives the answer or the key point itself; it needs no advice on how to respond.`
+        : `Question about the screenshot: ${scenario.question || DEFAULT_SCREENSHOT_QUESTION}`
       : `Question (${scenario.mode === 'answer' ? 'from the other person' : 'typed by the user'}): ${earlier ? (scenario.repeat ?? scenario.question) : scenario.question}`,
     '',
     'Must include:',
