@@ -1,6 +1,6 @@
 /**
  * Tests for apps/desktop/src/media.ts, with the `electron` module mocked:
- * - canCaptureSystemAudio(): Windows yes; macOS 13+ yes, macOS 12 and older no; Linux no;
+ * - canCaptureSystemAudio(): Windows yes; macOS 14.2+ yes (1.8.0, ADR-0111), macOS 14.1 and older no; Linux no;
  * - decideDisplayMedia(): only the Kite origin is granted, only when it asks for video; audio is
  *   'loopback' where the OS supports it and left out otherwise (the page then reports
  *   "not supported"); other origins are denied;
@@ -31,7 +31,13 @@ describe('canCaptureSystemAudio', () => {
   it('is supported on Windows and on macOS 13 or newer only', () => {
     expect(canCaptureSystemAudio('win32', '10.0.26200')).toBe(true);
     expect(canCaptureSystemAudio('darwin', '14.2.1')).toBe(true);
-    expect(canCaptureSystemAudio('darwin', '13.0')).toBe(true);
+    expect(canCaptureSystemAudio('darwin', '14.2')).toBe(true);
+    expect(canCaptureSystemAudio('darwin', '15.1')).toBe(true);
+    expect(canCaptureSystemAudio('darwin', '26.0')).toBe(true);
+    // ADR-0111: 13.0 to 14.1 have no loopback Electron 44 can use.
+    expect(canCaptureSystemAudio('darwin', '14.1.2')).toBe(false);
+    expect(canCaptureSystemAudio('darwin', '14')).toBe(false);
+    expect(canCaptureSystemAudio('darwin', '13.0')).toBe(false);
     expect(canCaptureSystemAudio('darwin', '12.7.6')).toBe(false);
     expect(canCaptureSystemAudio('darwin', 'garbage')).toBe(false);
     expect(canCaptureSystemAudio('linux', '6.8.0')).toBe(false);

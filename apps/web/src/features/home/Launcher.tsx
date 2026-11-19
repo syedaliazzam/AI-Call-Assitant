@@ -22,8 +22,9 @@
  *             ./DesktopFrame.tsx, ./LauncherConnect.tsx, ./LauncherSessions.tsx,
  *             ./RecordingSavedNotice.tsx, src/core/recording (handoff.ts, reconcile.ts)
  *             ADR-0098: src/core/live/liveLock.ts (Take over, "moved"), src/features/live/useLiveElsewhere.ts,
- *             ./CallMovedNotice.tsx
- * Architecture: ADR-0051, ADR-0052, ADR-0055, ADR-0068, ADR-0071, ADR-0098
+ *             ./CallMovedNotice.tsx; 1.8.0 (ADR-0111): src/features/permissions/MacPermissions.tsx (the Mac
+ *             permission card before the first call)
+ * Architecture: ADR-0051, ADR-0052, ADR-0055, ADR-0068, ADR-0071, ADR-0098, ADR-0111
  *
  * Session text is shown on screen only; it is never logged.
  */
@@ -41,6 +42,11 @@ import { useAppearance } from '@/features/appearance/useAppearance';
 import { DriveNotices } from '@/features/drive/DriveNotices';
 import { AcceptableUseNotice } from '@/features/notices/AcceptableUseNotice';
 import { useLiveElsewhere } from '@/features/live/useLiveElsewhere';
+import {
+  MacPermissionsCard,
+  macPermissionsReady,
+  useMacPermissions,
+} from '@/features/permissions/MacPermissions';
 import { LegacyUploadCard } from '@/features/sync/LegacyUploadCard';
 import { getPlatform } from '@/platform';
 import { AccurateDownload } from './AccurateDownload';
@@ -175,6 +181,12 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
   // ADR-0098: a call here was taken over by another device; the call window says so as it closes.
   const [callMoved, setCallMoved] = useState(false);
   useEffect(() => watchCallMoved(() => setCallMoved(true)), []);
+  // 1.8.0 (ADR-0111): on a Mac, the two macOS permissions before the first call (until both are on, or
+  // Later for this run; Connect checks again).
+  const permissions = useMacPermissions();
+  const [permissionsLater, setPermissionsLater] = useState(false);
+  const askPermissions =
+    permissions.state !== null && !macPermissionsReady(permissions.state) && !permissionsLater;
   const liveElsewhere = useLiveElsewhere();
   // Recordings this computer finalised after a crash or a quit get their length and size in the
   // account (the shell recovers them when it starts).
@@ -285,6 +297,14 @@ export function Launcher({ email, fromBrowserId }: LauncherProps) {
           }}
           notices={
             <>
+              {askPermissions && permissions.state && (
+                <MacPermissionsCard
+                  state={permissions.state}
+                  onChange={permissions.setState}
+                  reason="first-run"
+                  onLater={() => setPermissionsLater(true)}
+                />
+              )}
               {/* 1.6.1: Drive's notices in the card's flow, never over the bottom bar. */}
               <DriveNotices placement="inline" />
               {recordingSaved && <RecordingSavedNotice onClose={() => setRecordingSaved(false)} />}

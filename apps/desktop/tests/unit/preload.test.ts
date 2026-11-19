@@ -86,6 +86,8 @@ describe('the exposed bridge', () => {
       'getOverlayPreset',
       'getShareProtection',
       'listDisplays',
+      // 1.8.0 (ADR-0111): the macOS permissions.
+      'macPermissions',
       'minimizeMainWindow',
       // v1.2.0 (spec S13): dragging the icon.
       'moveOverlay',
@@ -97,6 +99,7 @@ describe('the exposed bridge', () => {
       // v1.3.0 (ADR-0055): the Connect card's call window.
       'openCallWindow',
       'openCompactView',
+      'openMacPrivacySettings',
       'openPagesWindow',
       'os',
       'placeOverlay',
@@ -108,11 +111,13 @@ describe('the exposed bridge', () => {
       'recordingSaveAs',
       'recordingShowInFolder',
       'recordingWrite',
+      'relaunchApp',
       // v1.3.2: the keyboard back to the app behind the overlay.
       'releaseOverlayFocus',
       'renameDevice',
       // 1.7.2 (ADR-0106): the Drive queue report, for the background upload on exit.
       'reportDriveQueue',
+      'requestMacPermission',
       'resizeOverlay',
       'setCallActive',
       // v1.2.0 (spec S14): the chat bar's shortcut.

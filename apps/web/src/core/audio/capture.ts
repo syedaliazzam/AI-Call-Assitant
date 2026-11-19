@@ -153,20 +153,36 @@ interface Meter {
 }
 
 /**
+ * The words for a refused microphone (1.8.0, ADR-0111: on a Mac they name macOS's own setting, where a
+ * refusal is kept even when the browser or the app would allow it).
+ *
+ * @param platform The platform that opened the microphone, if known.
+ * @returns The sentence.
+ * Called from: micError()
+ */
+function micRefusedWords(platform?: Partial<Platform>): string {
+  const mac = platform?.hotkeyModifier?.() === '⌘';
+  if (mac && platform?.kind === 'desktop') {
+    return 'Paramount AI can’t use your microphone. Turn on Paramount AI under System Settings → Privacy & Security → Microphone, then click Connect again.';
+  }
+  if (mac) {
+    return 'Your browser can’t use the microphone. Allow it for this site (the icon in the address bar), and turn on your browser under System Settings → Privacy & Security → Microphone, then click Connect again.';
+  }
+  return 'Paramount AI can’t use your microphone. Allow microphone access for Paramount AI, then click Connect again.';
+}
+
+/**
  * Turns a microphone failure into a CallCaptureError.
  *
- * @param error What getMicStream threw.
+ * @param error    What getMicStream threw.
+ * @param platform The platform that opened it (ADR-0111: a Mac's words name macOS's setting).
  * @returns A typed error with a message for the user.
  * Called from: startCallCapture() and changeMic() here; startMicPreview() in micPreview.ts (ADR-0053)
  */
-export function micError(error: unknown): CallCaptureError {
+export function micError(error: unknown, platform?: Partial<Platform>): CallCaptureError {
   const name = error instanceof Error ? error.name : '';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
-    return new CallCaptureError(
-      'you',
-      'permission-denied',
-      'Paramount AI can’t use your microphone. Allow microphone access for Paramount AI, then click Connect again.',
-    );
+    return new CallCaptureError('you', 'permission-denied', micRefusedWords(platform));
   }
   if (name === 'NotFoundError' || name === 'OverconstrainedError') {
     return new CallCaptureError(
@@ -217,7 +233,7 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
       : platform.getMicStream());
   } catch (error) {
     for (const track of them.stream.getTracks()) track.stop();
-    throw micError(error);
+    throw micError(error, platform);
   }
 
   const streams: Record<ChannelId, MediaStream> = { you: mic, them: them.stream };
@@ -345,7 +361,7 @@ export async function startCallCapture(options: CallCaptureOptions): Promise<Cal
       try {
         next = await (deviceId ? platform.getMicStream(deviceId) : platform.getMicStream());
       } catch (error) {
-        throw micError(error);
+        throw micError(error, platform);
       }
       const old = streams.you;
       streams.you = next;

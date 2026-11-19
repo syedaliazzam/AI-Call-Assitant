@@ -179,3 +179,15 @@ export const SHOW_NOTICE_CHANNEL = 'kite:show-notice';
 
 /** 1.7.2 (ADR-0106): the page's Drive queue report, for the background upload on exit (send; a DriveQueueReport). */
 export const DRIVE_QUEUE_CHANNEL = 'kite:drive-queue';
+
+/** 1.8.0 (ADR-0111): the macOS Microphone and Screen Recording permission states (invoke; a MacPermissionState or null). */
+export const MAC_PERMISSIONS_CHANNEL = 'kite:mac-permissions';
+
+/** 1.8.0 (ADR-0111): ask macOS for one permission (invoke; 'microphone' or 'screen'; the states afterwards). */
+export const MAC_PERMISSION_REQUEST_CHANNEL = 'kite:mac-permission-request';
+
+/** 1.8.0 (ADR-0111): open System Settings at one permission's page (invoke; 'microphone' or 'screen'). */
+export const MAC_PRIVACY_SETTINGS_CHANNEL = 'kite:mac-privacy-settings';
+
+/** 1.8.0 (ADR-0111): quit and reopen the app, through the usual exit (invoke; nothing). */
+export const RELAUNCH_CHANNEL = 'kite:relaunch';

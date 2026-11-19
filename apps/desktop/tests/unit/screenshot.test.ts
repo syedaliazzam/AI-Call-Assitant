@@ -6,10 +6,12 @@
  * Recording denied or restricted reports 'permission-denied' without capturing ('not-determined'
  * still captures); an empty thumbnail is 'no-screen' and a thrown error 'failed';
  * installScreenshot() answers only the Kite page's main frame and logs sizes and times only.
+ * 1.8.0 (ADR-0111): hideByOpacity() makes the shown windows see-through for the moment, then puts back
+ * each one's own opacity.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { CAPTURE_SCREENSHOT_CHANNEL } from '../../src/channels';
-import { captureScreenshot, installScreenshot } from '../../src/screenshot';
+import { captureScreenshot, hideByOpacity, installScreenshot } from '../../src/screenshot';
 
 /** A requested thumbnail size. */
 interface ThumbnailSize {
@@ -181,5 +183,42 @@ describe('installScreenshot', () => {
     await expect(
       handle({ senderFrame: { url: 'https://example.com/', parent: null } }),
     ).rejects.toThrow(/Kite page/);
+  });
+});
+
+describe('hideByOpacity (ADR-0111)', () => {
+  /**
+   * A fake window with an opacity.
+   *
+   * @param opacity Its opacity.
+   * @param visible Whether it is shown.
+   * @returns The fake.
+   */
+  const fakeWindow = (opacity: number, visible = true) => {
+    let current = opacity;
+    return {
+      getOpacity: () => current,
+      setOpacity: vi.fn((value: number) => {
+        current = value;
+      }),
+      isVisible: () => visible,
+      isDestroyed: () => false,
+    };
+  };
+
+  it('makes the shown windows see-through while it waits, then puts back each one\u2019s own opacity', async () => {
+    const overlay = fakeWindow(0.7);
+    const panel = fakeWindow(1);
+    const hidden = fakeWindow(1, false);
+    const wait = vi.fn(async () => {
+      expect(overlay.getOpacity()).toBe(0);
+      expect(panel.getOpacity()).toBe(0);
+    });
+    const restore = await hideByOpacity([overlay, panel, hidden], wait, 120);
+    expect(wait).toHaveBeenCalledWith(120);
+    expect(hidden.setOpacity).not.toHaveBeenCalled();
+    restore();
+    expect(overlay.getOpacity()).toBe(0.7);
+    expect(panel.getOpacity()).toBe(1);
   });
 });

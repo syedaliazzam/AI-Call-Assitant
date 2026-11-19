@@ -6,8 +6,15 @@
  */
 import path from 'node:path';
 import type { MenuItemConstructorOptions } from 'electron';
-import { describe, expect, it } from 'vitest';
-import { installTray, trayIconFile, trayItems, trayTooltip } from '../../src/tray';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  installTray,
+  MENU_BAR_ICON_POINTS,
+  menuBarImage,
+  trayIconFile,
+  trayItems,
+  trayTooltip,
+} from '../../src/tray';
 
 describe('trayItems and trayTooltip', () => {
   it('offers Open and Quit while the app runs as usual', () => {
@@ -82,5 +89,24 @@ describe('installTray', () => {
     (menus[1]![3]!.click as () => void)();
     expect(ran).toEqual(['open', 'quit', 'quit-now']);
     expect(tips.at(-1)).toBe('Paramount AI: Uploading 1 recording to Drive: 10%');
+  });
+});
+
+describe('menuBarImage (ADR-0111)', () => {
+  it('holds the logo at 18 px and at 36 px (Retina), from the best scaling', () => {
+    const sizes: number[] = [];
+    const source = {
+      resize: vi.fn((options: { width?: number; height?: number }) => {
+        sizes.push(options.width ?? 0);
+        return { toPNG: () => Buffer.from(`png-${options.width}`) } as never;
+      }),
+    };
+    const added: { scaleFactor: number; buffer?: Buffer }[] = [];
+    const image = { addRepresentation: vi.fn((rep: (typeof added)[number]) => added.push(rep)) };
+    expect(menuBarImage(source, () => image)).toBe(image);
+    expect(sizes).toEqual([MENU_BAR_ICON_POINTS, MENU_BAR_ICON_POINTS * 2]);
+    expect(added.map((rep) => rep.scaleFactor)).toEqual([1, 2]);
+    expect(added.map((rep) => rep.buffer?.toString())).toEqual(['png-18', 'png-36']);
+    expect(source.resize).toHaveBeenCalledWith({ width: 36, height: 36, quality: 'best' });
   });
 });

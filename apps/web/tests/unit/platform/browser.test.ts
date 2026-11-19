@@ -17,6 +17,7 @@ import {
   browserPlatform,
   NO_PIP_MESSAGE,
   NO_SHARE_MESSAGE,
+  MAC_NO_TAB_AUDIO_MESSAGE,
   NO_TAB_AUDIO_MESSAGE,
 } from '@/platform/browser';
 import { CaptureError } from '@/platform/errors';
@@ -138,6 +139,19 @@ describe('browserPlatform.getOtherSideStream', () => {
     expect(error).toMatchObject({ code: 'no-audio-track', message: NO_TAB_AUDIO_MESSAGE });
     expect(NO_TAB_AUDIO_MESSAGE).toMatch(/Also share tab audio/);
     expect(video.stop).toHaveBeenCalled();
+  });
+
+  it('ADR-0111: on a Mac, says only a browser tab shares its sound', async () => {
+    const video = fakeTrack('video', 'live', 'window');
+    const getDisplayMedia = vi.fn(async () => fakeStream([video]));
+    vi.stubGlobal('navigator', {
+      platform: 'MacIntel',
+      userAgent: '',
+      mediaDevices: { getDisplayMedia, getUserMedia: vi.fn() },
+    });
+    const error = await browserPlatform.getOtherSideStream().catch((e: unknown) => e);
+    expect(error).toMatchObject({ code: 'no-audio-track', message: MAC_NO_TAB_AUDIO_MESSAGE });
+    expect(MAC_NO_TAB_AUDIO_MESSAGE).toMatch(/On a Mac only a browser tab shares its sound/);
   });
 
   it('reports a closed picker as user-cancelled and an OS refusal as permission-denied', async () => {

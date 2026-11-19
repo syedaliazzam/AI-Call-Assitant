@@ -18,6 +18,8 @@ import type {
   DriveUploadRequest,
   DriveUploadResult,
   LocalRecording,
+  MacPermissionKind,
+  MacPermissionState,
   RecordingCloseResult,
   RecordingDisplay,
   RecordingOpenRequest,
@@ -452,6 +454,13 @@ export interface Platform {
   readonly recording: RecordingHost | null;
 
   /**
+   * Desktop 1.8.0 (ADR-0111): the macOS Microphone and Screen & System Audio Recording permissions, for the
+   * permission screen; null in the browser (the browser asks by itself), on Windows, and in a desktop app
+   * before 1.8.0.
+   */
+  readonly macPermissions: MacPermissionsHost | null;
+
+  /**
    * Desktop 1.6.0 (ADR-0072): uploading this computer's recordings to Google Drive straight from disk,
    * and native notifications; null in the browser and in a desktop app before 1.6.0.
    */
@@ -560,6 +569,34 @@ export interface AccurateEngine {
    * @returns The text, or why not (the page then keeps the live line).
    */
   transcribe(samples: Float32Array): Promise<AccurateResult>;
+}
+
+/**
+ * The macOS permissions Paramount AI needs (desktop 1.8.0, ADR-0111), over the shell's bridge. macOS shows
+ * its own questions only after the person presses a button on the permission screen.
+ */
+export interface MacPermissionsHost {
+  /**
+   * Both permissions as macOS reports them now.
+   *
+   * @returns The states (null if the shell could not tell).
+   */
+  read(): Promise<MacPermissionState | null>;
+  /**
+   * Asks macOS for one permission (its own question the first time).
+   *
+   * @param kind The permission.
+   * @returns The states afterwards.
+   */
+  request(kind: MacPermissionKind): Promise<MacPermissionState | null>;
+  /**
+   * Opens System Settings → Privacy & Security at that permission's page.
+   *
+   * @param kind The permission.
+   */
+  openSettings(kind: MacPermissionKind): Promise<void>;
+  /** Quits and reopens Paramount AI (macOS applies a new Screen Recording permission only then). */
+  relaunch(): Promise<void>;
 }
 
 /**

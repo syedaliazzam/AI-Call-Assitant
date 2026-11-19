@@ -16,6 +16,7 @@ export { CaptureError, NotImplementedError, type CaptureErrorCode } from './erro
 export type { MicDevice } from './media';
 export type {
   HotkeyAction,
+  MacPermissionsHost,
   OtherSideSource,
   OtherSideStream,
   Platform,

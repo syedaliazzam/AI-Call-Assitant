@@ -33,7 +33,7 @@ import { LifeBuoy, MonitorCog, SlidersHorizontal, Sparkles, User, Video } from '
 import { forwardRef, useState } from 'react';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import type { AnswerModel } from '@/core/storage/types';
-import { PRIVATE_LABEL, privateHint } from '@/features/privacy/usePrivate';
+import { PRIVATE_LABEL, privateHint, privateNote } from '@/features/privacy/usePrivate';
 import { ChevronDownIcon, GridIcon, MonitorIcon, PenIcon } from '@/ui/icons';
 import { MenuAction, MenuBlock, MenuList, MenuSwitch } from '@/ui/PanelMenu';
 import { modelEntry } from '@/core/session/modelChoices';
@@ -214,7 +214,9 @@ export const LiveMenu = forwardRef<HTMLDivElement, LiveMenuProps>(function LiveM
         )}
         <MenuSwitch
           label={PRIVATE_LABEL}
-          info={privateHint(protection)}
+          info={privateHint(protection, props.mac ?? false)}
+          // ADR-0111: on a Mac, while Private is on, the advice to share one window or tab.
+          note={privateNote(protection, props.mac ?? false)}
           checked={protection?.on ?? false}
           disabled={!protection?.supported || !props.onProtection}
           onChange={chosen((on: boolean) => props.onProtection?.(on))}

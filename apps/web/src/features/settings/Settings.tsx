@@ -34,8 +34,9 @@ import {
 } from '@/features/session-setup/labels';
 import { answerModelAccess } from '@/core/session/modelAccess';
 import { getPlatform } from '@/platform';
-import { PRIVATE_LABEL, privateHint, usePrivate } from '@/features/privacy/usePrivate';
+import { PRIVATE_LABEL, privateHint, privateNote, usePrivate } from '@/features/privacy/usePrivate';
 import { Button } from '@/ui/Button';
+import { useIsMac } from '@/ui/useIsMac';
 import { Dialog } from '@/ui/Dialog';
 import { Select } from '@/ui/Select';
 import { Textarea } from '@/ui/Textarea';
@@ -83,12 +84,19 @@ function Section({ title, children, id }: { title: string; children: ReactNode; 
  */
 function ShareProtectionSetting() {
   const { state, change } = usePrivate();
+  const mac = useIsMac();
   if (!state) return <p className="text-[13px] text-ui-muted">Checking…</p>;
   if (!state.supported) {
-    return <p className="text-[13px] text-ui-muted">{privateHint(state)}</p>;
+    return <p className="text-[13px] text-ui-muted">{privateHint(state, mac)}</p>;
   }
   return (
-    <Toggle label={PRIVATE_LABEL} hint={privateHint(state)} checked={state.on} onChange={change} />
+    <Toggle
+      label={PRIVATE_LABEL}
+      // ADR-0111: on a Mac, while Private is on, the advice to share one window or tab comes first.
+      hint={[privateNote(state, mac), privateHint(state, mac)].filter(Boolean).join(' ')}
+      checked={state.on}
+      onChange={change}
+    />
   );
 }
 

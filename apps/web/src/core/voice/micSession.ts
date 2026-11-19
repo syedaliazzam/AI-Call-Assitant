@@ -57,18 +57,23 @@ export interface MicSession {
  * A short sentence for a failure to start.
  *
  * @param error What start() caught.
+ * @param mac   True on a Mac (1.8.0, ADR-0111: the words name macOS's setting); default false.
  * @returns The sentence to show.
  * Called from: createMicSession(); tests
  */
-export function micErrorMessage(error: unknown): string {
+export function micErrorMessage(error: unknown, mac = false): string {
   const name = (error as { name?: string } | null)?.name;
   if (name === 'NotAllowedError' || name === 'SecurityError') {
-    return 'Paramount AI can’t use the microphone. Allow it for this site (or for Paramount AI in your system settings), then try again.';
+    return mac
+      ? 'Paramount AI can’t use the microphone. Turn it on under System Settings → Privacy & Security → Microphone (Paramount AI, or your browser), then try again.'
+      : 'Paramount AI can’t use the microphone. Allow it for this site (or for Paramount AI in your system settings), then try again.';
   }
   // v1.0.3: Windows reports a microphone that its privacy settings block, or that another app holds,
   // as NotReadableError; say where to look instead of the generic sentence.
   if (name === 'NotReadableError' || name === 'AbortError') {
-    return 'The microphone is blocked or busy. In Windows, check Settings → Privacy & security → Microphone (allow desktop apps), close other apps using it, then try again.';
+    return mac
+      ? 'The microphone is blocked or busy. Check System Settings → Privacy & Security → Microphone, close other apps using it, then try again.'
+      : 'The microphone is blocked or busy. In Windows, check Settings → Privacy & security → Microphone (allow desktop apps), close other apps using it, then try again.';
   }
   if (name === 'NotFoundError' || name === 'OverconstrainedError') {
     return 'No microphone was found. Connect one, then try again.';
@@ -141,7 +146,7 @@ export function createMicSession(
         if (state !== 'idle') {
           releaseMic();
           setState('idle');
-          options.onError(micErrorMessage(error));
+          options.onError(micErrorMessage(error, getPlatform().hotkeyModifier() === '⌘'));
         }
       },
     });
@@ -176,7 +181,7 @@ export function createMicSession(
         if (mine !== generation) return;
         releaseMic();
         setState('idle');
-        options.onError(micErrorMessage(error));
+        options.onError(micErrorMessage(error, getPlatform().hotkeyModifier() === '⌘'));
       }
     },
     stop() {

@@ -8,18 +8,25 @@
  * Used by: src/features/live/LivePage.tsx
  * Depends on: lucide-react, src/platform (listMicrophones), src/ui (Button, Dialog, LinkButton,
  *             ProgressBar, Select), src/features/live (AudioMeter, ConnectGuide, HealthNotice,
- *             useMicPreview), src/features/shell/MacInstall.tsx (ADR-0109)
+ *             useMicPreview), src/features/shell/MacInstall.tsx (ADR-0109),
+ *             src/features/permissions/MacPermissions.tsx (ADR-0111: Connect checks the Mac permissions)
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S11); docs/architecture/kite-architecture-v3.1.md
  *               §4, §5 (Connect); ADR-0053
  */
 'use client';
 
+import type { MacPermissionState } from '@kite/shared';
 import { ArrowLeft, Headphones, Mic, PlayCircle, Plug, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { DownloadProgress } from '@/core/stt/download';
 import type { SttHealthStatus } from '@/core/stt/health';
 import type { Speaker } from '@/core/transcript/transcript';
+import {
+  MacPermissionsCard,
+  macPermissionsReady,
+  missingMacPermissions,
+} from '@/features/permissions/MacPermissions';
 import { MacInstallLink } from '@/features/shell/MacInstall';
 import { getPlatform, type MicDevice } from '@/platform';
 import { Button } from '@/ui/Button';
@@ -171,6 +178,14 @@ export function ConnectPanel({
   const [mics, setMics] = useState<MicDevice[]>([]);
   const [why, setWhy] = useState(false);
   const [howTo, setHowTo] = useState(false);
+  // 1.8.0 (ADR-0111): in the Mac desktop app, the permissions Connect found missing.
+  const [permissions, setPermissions] = useState<MacPermissionState | null>(null);
+  /** Connect, after checking the two macOS permissions on a Mac (ADR-0111); elsewhere it connects. */
+  const connect = async () => {
+    const missing = await missingMacPermissions();
+    setPermissions(missing);
+    if (!missing) onConnect();
+  };
   const progress = model.progress;
   const downloading = model.status === 'loading' && progress !== null && progress.fraction < 1;
   const anyError = channelErrors.you !== undefined || channelErrors.them !== undefined;
@@ -313,7 +328,7 @@ export function ConnectPanel({
                   size="sm"
                   variant="secondary"
                   className="shrink-0 whitespace-nowrap"
-                  onClick={onConnect}
+                  onClick={() => void connect()}
                 >
                   Try again
                 </Button>
@@ -378,11 +393,19 @@ export function ConnectPanel({
           : 'No key terms for this session. Add names to listen for under Edit → Key terms.'}
       </p>
 
+      {permissions && (
+        <MacPermissionsCard
+          state={permissions}
+          reason="connect"
+          onChange={(next) => setPermissions(macPermissionsReady(next) ? null : next)}
+        />
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <LinkButton href="/" variant="secondary" size="lg">
           Back
         </LinkButton>
-        <Button size="lg" onClick={onConnect} disabled={connection !== 'idle'}>
+        <Button size="lg" onClick={() => void connect()} disabled={connection !== 'idle'}>
           <Plug aria-hidden="true" size={16} />
           {connection === 'idle' ? (anyError ? 'Try again' : 'Connect') : 'Connecting…'}
         </Button>

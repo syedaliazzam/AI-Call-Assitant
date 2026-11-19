@@ -460,6 +460,48 @@ export interface KiteDesktopApi {
    * @param report The counts and bytes (no ids, names or content).
    */
   reportDriveQueue?: (report: DriveQueueReport) => void;
+  /**
+   * Desktop 1.8.0 (ADR-0111): the macOS privacy permissions Paramount AI needs, as macOS reports them.
+   * @returns Both states, or null on Windows (no such permissions to check).
+   */
+  macPermissions?: () => Promise<MacPermissionState | null>;
+  /**
+   * Desktop 1.8.0 (ADR-0111): asks macOS for one permission. The microphone shows macOS's own question
+   * when it was never asked; screen recording adds Paramount AI to System Settings' list and shows macOS's
+   * prompt the first time.
+   * @param kind The permission.
+   * @returns Both states afterwards, or null on Windows.
+   */
+  requestMacPermission?: (kind: MacPermissionKind) => Promise<MacPermissionState | null>;
+  /**
+   * Desktop 1.8.0 (ADR-0111): opens System Settings → Privacy & Security at that permission's page.
+   * @param kind The permission.
+   */
+  openMacPrivacySettings?: (kind: MacPermissionKind) => Promise<void>;
+  /**
+   * Desktop 1.8.0 (ADR-0111): quits and reopens the app (macOS applies a new Screen Recording permission
+   * only to a freshly started app). Goes through the usual exit, so Drive uploads are never cut short.
+   */
+  relaunchApp?: () => Promise<void>;
+}
+
+/** Desktop 1.8.0 (ADR-0111): a macOS privacy permission Paramount AI needs. */
+export type MacPermissionKind = 'microphone' | 'screen';
+
+/**
+ * Desktop 1.8.0 (ADR-0111): what macOS reports for one permission (Electron's
+ * systemPreferences.getMediaAccessStatus): allowed, refused, blocked by a device policy, never asked, or
+ * not known.
+ */
+export type MacPermissionStatus =
+  'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown';
+
+/** Desktop 1.8.0 (ADR-0111): both permissions. */
+export interface MacPermissionState {
+  /** Microphone ("You"). */
+  microphone: MacPermissionStatus;
+  /** Screen & System Audio Recording ("Them", screenshots and screen recordings). */
+  screen: MacPermissionStatus;
 }
 
 /** A size the home panel can ask for (v1.3.0, ADR-0055). */

@@ -12,7 +12,7 @@
  *             src/drive/host.ts (Google Drive uploads and the saved notification, 1.6.0, ADR-0072),
  *             src/priority.ts (background priority and the call state on a closed window, 1.6.3, ADR-0077),
  *             src/drive/background.ts and src/tray.ts (uploads finish after the user exits, with the
- *             tray icon, 1.7.2, ADR-0106)
+ *             tray icon, 1.7.2, ADR-0106), src/macPermissions.ts (the macOS permissions, 1.8.0, ADR-0111)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3 (main.ts), §8.3
  *
  * The windows (v1.1.0): the home panel between calls; the main window for the dashboard, the wizard,
@@ -77,10 +77,12 @@ import { linkFromArgv, routeDesktopLink, shouldRegisterProtocol } from './links'
 import { createHomeWindow, isPanelSize, type HomeWindow } from './home';
 import { startUpdater, TEST_FEED_FILE, testUpdateFeed, type Updater } from './updater';
 import { installHotkeys, isKiteSender, type HotkeyController } from './hotkeys';
+import { installMacPermissions, logMacPermissions, type MacPermissionDeps } from './macPermissions';
 import { appIconPath } from './icon';
 import { endCallOnClose, runBelowNormal } from './priority';
 import { createProtection, installProtection, type Protection } from './protection';
-import { installScreenshot } from './screenshot';
+import { macMenuTemplate } from './macMenu';
+import { hideByOpacity, installScreenshot } from './screenshot';
 import { createSnapZones } from './snapZones';
 import {
   BUNDLED_MODEL_FOLDER,
@@ -91,7 +93,7 @@ import {
 import { installRecordings, type FinaliseProcess, type RecordingsHost } from './recordings/host';
 import { installDrive, type DriveHost } from './drive/host';
 import { createBackgroundExit, type BackgroundExit, type BackgroundView } from './drive/background';
-import { installTray, trayIconFile, type AppTray } from './tray';
+import { installTray, menuBarImage, trayIconFile, type AppTray } from './tray';
 import { createStore } from './store';
 import {
   createCompactWindows,
@@ -603,6 +605,11 @@ function start(): void {
 
   void app.whenReady().then(() => {
     allowOnlyOurPermissions(session.defaultSession, config.allowedOrigin);
+    // 1.8.0 (ADR-0111): on a Mac the app menu's shortcuts reach every window, the overlay too; this menu has
+    // no reload, close, minimise or developer tools. Windows keeps Electron's default.
+    if (process.platform === 'darwin') {
+      Menu.setApplicationMenu(Menu.buildFromTemplate(macMenuTemplate(APP_NAME)));
+    }
     // v1.3.1 (ADR-0059): the streaming speech model ships in the installer. Its exact addresses are
     // answered from the bundle (checked against SHA-256 first); anything missing or damaged still
     // downloads as before. KITE_BUNDLED_MODEL_DIR points tests at another folder (or none).
@@ -680,6 +687,22 @@ function start(): void {
     powerMonitor.on('shutdown', () => {
       systemEnding = true;
     });
+    // 1.8.0 (ADR-0111): the macOS permissions for the page's permission screen, and their states in the
+    // log at each start (ADR-0109 §5: the real-Mac test checks they survive an update). Nothing is asked
+    // here: macOS's questions come only after the person presses a button.
+    const macPermissionDeps: MacPermissionDeps = {
+      platform: process.platform,
+      systemPreferences,
+      desktopCapturer,
+      openExternal: (url) => shell.openExternal(url),
+      // Through before-quit, like any exit: with Drive work left the app finishes it first (ADR-0106).
+      relaunch: () => {
+        app.relaunch();
+        app.quit();
+      },
+    };
+    installMacPermissions(ipcMain, macPermissionDeps, config.allowedOrigin);
+    logMacPermissions(macPermissionDeps);
     // Screenshot answers (Day 5): in memory only. During a call: the display under the overlay
     // (v1.1.0: the main window is minimised then, maybe on another display).
     installScreenshot({
@@ -694,6 +717,15 @@ function start(): void {
       // protection on, its windows are already left out, so nothing changes.
       hideOwnWindows: async () => {
         const windows = BrowserWindow.getAllWindows();
+        // 1.8.0 (ADR-0111): on a Mac the screen capture ignores content protection (Private too), so the
+        // windows are made see-through for the moment instead, and put back as they were.
+        if (process.platform === 'darwin') {
+          return hideByOpacity(
+            windows,
+            (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+            PROTECTION_SETTLE_MS,
+          );
+        }
         const wanted = shield.state().on;
         if (wanted) return () => undefined;
         for (const window of windows) window.setContentProtection(true);
@@ -867,9 +899,12 @@ function start(): void {
       {
         createTray: (image) => new Tray(image),
         buildMenu: (template) => Menu.buildFromTemplate(template),
-        // The menu bar wants a small picture (the .ico on Windows already has every size).
+        // The menu bar wants a small picture (the .ico on Windows already has every size). 1.8.0
+        // (ADR-0111): 18 px and 36 px in one picture, so it is sharp on a Retina screen.
         image:
-          process.platform === 'win32' ? trayImage : trayImage.resize({ width: 18, height: 18 }),
+          process.platform === 'win32'
+            ? trayImage
+            : menuBarImage(trayImage, () => nativeImage.createEmpty()),
         onOpen: showFront,
         // Through before-quit, which decides (runs on with work left).
         onQuit: () => app.quit(),

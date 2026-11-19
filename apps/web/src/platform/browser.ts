@@ -72,6 +72,13 @@ export const NO_TAB_AUDIO_MESSAGE =
   'Paramount AI can’t hear the meeting: the share has no sound. Click Connect again, pick the meeting tab and tick “Also share tab audio” (Chrome or Edge).';
 
 /**
+ * 1.8.0 (ADR-0111): the same on a Mac, where a window or the whole screen never carries a meeting app's sound
+ * in the browser: only a browser tab does.
+ */
+export const MAC_NO_TAB_AUDIO_MESSAGE =
+  'Paramount AI can’t hear the meeting: the share has no sound. On a Mac only a browser tab shares its sound, so join the meeting in a Chrome tab (not the Zoom or Teams app), click Connect again, pick that tab and turn on “Also share tab audio”. To hear a meeting app, use the Paramount AI desktop app.';
+
+/**
  * Where the sound of a share comes from, from the video track's displaySurface setting.
  *
  * @param stream The shared stream.
@@ -176,11 +183,19 @@ export const browserPlatform: Platform = {
    * @returns The shared stream and which kind of surface was shared.
    */
   async getOtherSideStream() {
-    const stream = await requestDisplayMedia(BROWSER_DISPLAY_OPTIONS, 'browser');
+    // ADR-0111: on a Mac, the errors name macOS's own setting.
+    const stream = await requestDisplayMedia(
+      BROWSER_DISPLAY_OPTIONS,
+      'browser',
+      browserIsMac() ? 'mac' : undefined,
+    );
     if (stream.getAudioTracks().length === 0) {
       // Release the share right away: without sound it is of no use.
       stopAllTracks(stream);
-      throw new CaptureError('no-audio-track', NO_TAB_AUDIO_MESSAGE);
+      throw new CaptureError(
+        'no-audio-track',
+        browserIsMac() ? MAC_NO_TAB_AUDIO_MESSAGE : NO_TAB_AUDIO_MESSAGE,
+      );
     }
     // Kept for screenshots: the share's video track is the only way to see the meeting. Its
     // frames start playing now, so a screenshot is instant later.
@@ -289,6 +304,9 @@ export const browserPlatform: Platform = {
 
   /** No meeting recording in the browser yet (ADR-0068: Phase 1 records in the desktop app only). */
   recording: null,
+
+  /** ADR-0111: the browser asks for the microphone and the share by itself; no permission screen. */
+  macPermissions: null,
 
   /** No recordings to upload and no native notifications (ADR-0072); transcripts upload from the page. */
   drive: null,
