@@ -508,7 +508,7 @@ test('ADR-0094: the overlay switches the model mid-call; the streaming answer fi
   const compact = await page.context().newPage();
   await compact.goto(`${origin}/compact-harness`);
   const bar = compact.getByRole('toolbar', { name: 'Overlay controls' });
-  const chip = bar.getByRole('button', { name: 'Model: Fast' });
+  const chip = bar.getByRole('button', { name: 'Model: Haiku' });
   await expect(chip).toBeVisible();
   // Earlier tests saved answers for this session too: only the ones from here on are compared.
   const savedBefore = (await page.evaluate(() => window.kiteAnswerHarness.savedModels())).length;
@@ -524,16 +524,16 @@ test('ADR-0094: the overlay switches the model mid-call; the streaming answer fi
   const warmsBefore = received.filter((body) => body.mode === 'warm').length;
   await chip.click();
   const popover = compact.getByRole('group', { name: 'Model' });
-  await expect(popover.getByRole('radio', { name: 'Fast — quickest answers' })).toHaveAttribute(
+  await expect(popover.getByRole('radio', { name: 'Claude Haiku (Recommended)' })).toHaveAttribute(
     'aria-checked',
     'true',
   );
-  await popover.getByRole('radio', { name: 'Smart — more thorough, slower' }).click();
+  await popover.getByRole('radio', { name: 'Claude Sonnet' }).click();
   await expect(popover).toHaveCount(0);
-  await expect(compact.getByRole('status').filter({ hasText: 'Smart model on' })).toHaveText(
-    'Smart model on — answers may take a bit longer',
+  await expect(compact.getByRole('status').filter({ hasText: 'Claude Sonnet on' })).toHaveText(
+    'Claude Sonnet on',
   );
-  await expect(bar.getByRole('button', { name: 'Model: Smart' })).toBeVisible();
+  await expect(bar.getByRole('button', { name: 'Model: Sonnet' })).toBeVisible();
 
   // The answer that was streaming finishes, on Fast, and is saved as Fast.
   await expect(page.getByRole('list', { name: 'Answer details' }).getByRole('listitem')).toHaveText(
@@ -560,14 +560,16 @@ test('ADR-0094: the overlay switches the model mid-call; the streaming answer fi
   // Back to Fast from the ⋮ menu's Model row: the menu closes and the toast says so.
   await compact.getByRole('button', { name: 'Overlay menu' }).click();
   const menu = compact.getByRole('group', { name: 'Overlay settings' });
+  // The Model row opens its choices in place (17 Nov 2026).
+  await menu.getByRole('button', { name: 'Model: Claude Sonnet' }).click();
   const row = menu.getByRole('radiogroup', { name: 'Answer model' });
-  await expect(row.getByRole('radio', { name: 'Smart — more thorough, slower' })).toHaveAttribute(
+  await expect(row.getByRole('radio', { name: 'Claude Sonnet' })).toHaveAttribute(
     'aria-checked',
     'true',
   );
-  await row.getByRole('radio', { name: 'Fast — quickest answers' }).click();
+  await row.getByRole('radio', { name: 'Claude Haiku (Recommended)' }).click();
   await expect(menu).toHaveCount(0);
-  await expect(compact.getByRole('status').filter({ hasText: 'Fast model on' })).toBeVisible();
+  await expect(compact.getByRole('status').filter({ hasText: 'Claude Haiku on' })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => window.kiteAnswerHarness.sessionModel()))
     .toBe('fast');
@@ -576,13 +578,13 @@ test('ADR-0094: the overlay switches the model mid-call; the streaming answer fi
   // tooltip drawn in the page.
   smartOff = true;
   const warmsOff = received.filter((body) => body.mode === 'warm').length;
-  await bar.getByRole('button', { name: 'Model: Fast' }).click();
-  await popover.getByRole('radio', { name: 'Smart — more thorough, slower' }).click();
+  await bar.getByRole('button', { name: 'Model: Haiku' }).click();
+  await popover.getByRole('radio', { name: 'Claude Sonnet' }).click();
   await expect(
-    compact.getByRole('status').filter({ hasText: 'Smart model is turned off by your admin' }),
+    compact.getByRole('status').filter({ hasText: 'Claude Sonnet is turned off by your admin' }),
   ).toBeVisible();
-  await bar.getByRole('button', { name: 'Model: Fast' }).click();
-  const smart = popover.getByRole('radio', { name: 'Smart — more thorough, slower' });
+  await bar.getByRole('button', { name: 'Model: Haiku' }).click();
+  const smart = popover.getByRole('radio', { name: 'Claude Sonnet' });
   await expect(smart).toHaveAttribute('aria-disabled', 'true');
   await smart.hover();
   await expect(compact.getByRole('tooltip')).toHaveText('Turned off by your admin');
