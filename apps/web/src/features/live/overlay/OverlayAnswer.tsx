@@ -304,20 +304,23 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                     : {})}
                 />
                 {/* ADR-0107: the "·" wraps together with the label after it (a lone dot ended the line). */}
+                {/* The label keeps its own span, so its text still starts with how it was asked. */}
                 <span className="whitespace-nowrap">
                   {answer.meta && <span aria-hidden="true">· </span>}
-                  {answer.auto
-                    ? 'Auto'
-                    : answer.mode === 'answer'
-                      ? 'Answer'
-                      : answer.mode === 'chat'
-                        ? 'Chat'
-                        : 'Screenshot'}{' '}
-                  ·{' '}
-                  {new Date(answer.askedAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  <span>
+                    {answer.auto
+                      ? 'Auto'
+                      : answer.mode === 'answer'
+                        ? 'Answer'
+                        : answer.mode === 'chat'
+                          ? 'Chat'
+                          : 'Screenshot'}{' '}
+                    ·{' '}
+                    {new Date(answer.askedAt).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
                 </span>
               </div>
               {reporting && !answer.reported && (
