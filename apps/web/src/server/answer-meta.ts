@@ -18,6 +18,7 @@ import {
   MAX_QUESTION_LINE_CHARS,
   splitMetaLine,
   type AnswerMeta,
+  type AnswerTarget,
 } from '@kite/shared';
 
 /** What the hidden first line said, as one item of a reply. */
@@ -389,6 +390,34 @@ export async function* withContractFallback<R>(
       stats.strippedTags += cleaned.removed;
       yield* shown(cleaned.text);
     }
+  } finally {
+    await source.return(undefined as R);
+  }
+}
+
+/**
+ * ADR-0107: the user's own choice of who an answer is for (the chat switch, or a screen-only screenshot's
+ * private default) decides the card's reader, whatever the model wrote in its hidden line. Measured: with
+ * "The user chose: this is a private answer" in the request, Claude Haiku still wrote `call` in 5 of 14
+ * screen-only replies. Text and questions pass through unchanged.
+ *
+ * @param source The reply's items (after withContractFallback()).
+ * @param target The user's choice.
+ * @returns The same items, each meta with the chosen reader.
+ * Called from: app/api/answer/route.ts (when the request names a target); tests
+ */
+export async function* withChosenTarget<R>(
+  source: AsyncGenerator<ReplyItem, R, undefined>,
+  target: AnswerTarget,
+): AsyncGenerator<ReplyItem, R, undefined> {
+  try {
+    let next = await source.next();
+    while (!next.done) {
+      const item = next.value;
+      yield typeof item === 'object' && 'meta' in item ? { meta: { ...item.meta, target } } : item;
+      next = await source.next();
+    }
+    return next.value;
   } finally {
     await source.return(undefined as R);
   }

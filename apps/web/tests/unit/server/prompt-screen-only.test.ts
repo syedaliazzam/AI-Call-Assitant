@@ -139,13 +139,13 @@ describe('screen-only screenshots (ADR-0107)', () => {
     for (const text of [SCREENSHOT_TAIL, SCREEN_ONLY_TAIL]) {
       expect(text).not.toContain('[[');
       expect(text).toContain(
-        'coding, codefix, question, slide, table, document, webpage or unreadable; never garbled or none',
+        'coding, codefix, task, slide, table, document, webpage or unreadable; never garbled or none',
       );
     }
   });
 
   it('lists the question screen type in the contract, and never garbled or none for a screenshot', () => {
-    expect(LIVE_CONTRACT).toContain('question (a question or task on the screen');
+    expect(LIVE_CONTRACT).toContain('task (a question or task on the screen');
     expect(LIVE_CONTRACT).toContain('a screenshot is never garbled or none');
   });
 });

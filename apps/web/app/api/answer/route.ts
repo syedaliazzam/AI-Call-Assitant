@@ -46,6 +46,7 @@ import {
 } from '@/server/claude';
 import {
   withAnswerMeta,
+  withChosenTarget,
   withContractFallback,
   type ContractStats,
   type ReplyItem,
@@ -546,6 +547,8 @@ async function respond(
       },
       contract,
     );
+    // ADR-0107: the user's own choice of reader wins over the model's hidden line.
+    if (data.target && mode !== 'kite') source = withChosenTarget(source, data.target);
   }
 
   if (counting) {

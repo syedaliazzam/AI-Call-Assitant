@@ -30,7 +30,7 @@
  *   as "can you repeat that?" or "can you hear me?", or a remark that needs no reply), so there is
  *   nothing to answer either.
  * - v1.2.0: `other`: Claude named a type Kite does not know. The prompt never offers it.
- * - ADR-0107: `question`, what a screenshot shows: a question or task on the screen (a chat message that
+ * - ADR-0107: `task`, what a screenshot shows (not `question`, the hidden last line's tag): a question or task on the screen (a chat message that
  *   asks something, a quiz or multiple-choice question, a form question).
  */
 export type AnswerType =
@@ -49,7 +49,7 @@ export type AnswerType =
   | 'document'
   | 'webpage'
   | 'unreadable'
-  | 'question'
+  | 'task'
   | 'garbled'
   | 'none'
   | 'other';
@@ -76,7 +76,7 @@ export const ANSWER_TYPES: readonly AnswerType[] = [
   'document',
   'webpage',
   'unreadable',
-  'question',
+  'task',
   'garbled',
   'none',
   'other',
@@ -99,7 +99,7 @@ export const ANSWER_TYPE_LABELS: Readonly<Record<AnswerType, string>> = {
   document: 'Document',
   webpage: 'Web page',
   unreadable: 'Unreadable',
-  question: 'Question on screen',
+  task: 'Question on screen',
   garbled: 'Not understood',
   none: 'Nothing to answer',
   other: 'Other',
@@ -200,13 +200,14 @@ export const ANSWER_TYPE_ALIASES: Readonly<Record<string, AnswerType>> = {
   error: 'codefix',
   debug: 'codefix',
   codeerror: 'codefix',
-  mcq: 'question',
-  quiz: 'question',
-  multiplechoice: 'question',
-  chat: 'question',
-  message: 'question',
-  form: 'question',
-  task: 'question',
+  mcq: 'task',
+  quiz: 'task',
+  multiplechoice: 'task',
+  chat: 'task',
+  message: 'task',
+  form: 'task',
+  question: 'task',
+  onscreenquestion: 'task',
   chart: 'table',
   graph: 'table',
   dashboard: 'table',

@@ -530,7 +530,7 @@ describe('screenshot answers (Day 5)', () => {
 });
 
 describe('screenshot tail text (Day 5, ADR-0089)', () => {
-  it('starts with the hidden line, and the rules ask for the session style and no label', () => {
+  it('names the kinds of screen without pointing at the hidden line, and the rules ask for the session style and no label (ADR-0107)', () => {
     const prompt = buildPrompt({
       mode: 'screenshot',
       session: SESSION,
@@ -538,7 +538,11 @@ describe('screenshot tail text (Day 5, ADR-0089)', () => {
     });
     const tail = (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!;
     expect(tail.text).toContain(SCREENSHOT_TAIL);
-    expect(SCREENSHOT_TAIL).toContain('nothing comes before that line');
+    // ADR-0107: a sentence about the hidden line made Claude Haiku think aloud about it (measured).
+    expect(SCREENSHOT_TAIL).not.toContain('hidden');
+    expect(SCREENSHOT_TAIL).toContain('The kind of screen is one of');
+    // The contract (first in the rules block) still says nothing comes before the hidden line.
+    expect(SYSTEM_RULES).toContain('Nothing ever comes before it, for a screenshot too');
     expect(SCREENSHOT_RULES).toContain(
       "follow the user's answer format, length, tone and instructions",
     );
@@ -552,7 +556,7 @@ describe('screenshot tail text (Day 5, ADR-0089)', () => {
     for (const type of [
       'coding',
       'codefix',
-      'question',
+      'task',
       'slide',
       'document',
       'table',
