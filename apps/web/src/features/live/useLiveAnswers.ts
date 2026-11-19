@@ -52,7 +52,7 @@ import {
   type NewestAutoDecision,
 } from '@/core/answer/newestQuestion';
 import { createSpeculativeHold, themWentOn, type AskedSpeech } from '@/core/answer/speculative';
-import { pickQuestion, type PickedQuestion } from '@/core/transcript/questionKind';
+import { type PickedQuestion } from '@/core/transcript/questionKind';
 import { isOnline } from '@/core/net/online';
 import { prepareScreenshot } from '@/core/screenshot/prepare';
 import { rateAnswer, reportAnswer, saveAnswer, setAnswerNote } from '@/core/storage/answers';
@@ -90,6 +90,17 @@ export const GARBLED_NOTICE = "Didn't catch the question clearly — press Answe
  */
 export const NOTHING_TO_ANSWER_NOTICE =
   "That wasn't a question — press Answer when they ask one, or type it.";
+
+/** ADR-0107: shown when an answer came back empty twice; its card is removed (a card never stays "…"). */
+export const EMPTY_ANSWER_NOTICE = 'No answer came back — press the key again.';
+
+/** ADR-0107: what an empty answer is asked again with: the first request's options, as a re-ask on its card. */
+type AskAgainOptions = Record<string, unknown> & {
+  /** The card to ask again on. */
+  replaces: string;
+  /** Marks the second request, so a second empty reply ends with a notice. */
+  emptyRetry: true;
+};
 
 /**
  * Whether a reply's type means there is no answer to show: noise (garbled) or nothing asked (none).
@@ -136,10 +147,10 @@ export const NO_QUESTION_NOTICE =
   'No question to answer yet. Press Answer this on what they said, or type it.';
 
 /**
- * How long after the other person asked something a screenshot still counts as being about it, in ms
- * (v1.1.0, ADR-0043).
+ * ADR-0107: how long to wait before taking a blank capture again (a page still drawing after a tab switch;
+ * captures land 0.3–0.5 s after the press, measured on the developer's laptop).
  */
-const RECENT_QUESTION_MS = 120_000;
+const BLANK_RETAKE_MS = 300;
 
 /** One answer of this call, as the panel shows it. */
 export interface AnswerEntry {
@@ -553,6 +564,17 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const [notice, setNotice] = useState<string | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  // ADR-0107: the capture guard as a ref (state lags a render behind a fast second press), the newest press
+  // that came during a capture, and the latest screenshot() for taking it.
+  const capturingRef = useRef(false);
+  const queuedShotRef = useRef<{
+    question?: string;
+    trigger: AnswerTrigger;
+    pressedAt: number;
+  } | null>(null);
+  const screenshotRef = useRef<
+    (question?: string, trigger?: AnswerTrigger, queuedAt?: number) => void
+  >(() => undefined);
   const [runner] = useState(() => createAnswerRunner());
   // Ignores a repeat Answer for the same question (core/answer/repeatGuard.ts, v1.0.1), and
   // speech already answered (v1.0.2).
@@ -575,6 +597,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Retries the waiting press (set after ask is made, below).
   const retryPendingRef = useRef<() => void>(() => undefined);
+  /** ADR-0107: asks again (the latest ask()); set by an effect below, used for an answer that came back empty. */
+  const askAgainRef = useRef<(mode: AnswerEntry['mode'], options: AskAgainOptions) => void>(
+    () => undefined,
+  );
   // 1.5.2: when the last answer stopped streaming (auto-answer answers a question that came due meanwhile).
   const idleSinceRef = useRef<number | null>(null);
   // ADR-0076 (E3 rule 3): the end of the newest speech any answer covered (capture clock), or null.
@@ -852,6 +878,18 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           /** When the user stopped speaking (Unix ms), or null. */
           speechEnd: number | null;
         };
+        /**
+         * ADR-0107: a screen-only screenshot (Ctrl+Shift+Enter or the Screenshot button): the request
+         * carries the screen and the session only (core/answer/context.ts screenOnlyRequest()).
+         */
+        screenOnly?: boolean;
+        /**
+         * ADR-0107: this request asks again for an answer that came back with no text. A second empty reply
+         * removes the card with a notice instead of asking a third time.
+         */
+        emptyRetry?: boolean;
+        /** ADR-0107: the press's trace id (the screenshot trace), kept on the card's timing entry. */
+        traceId?: string;
       } = {},
     ): boolean => {
       const { typed, image, auto = false, answerType } = options;
@@ -989,11 +1027,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(answerType ? { answerType } : {}),
         ...(options.question ? { question: options.question } : {}),
         chunks: chunkIndex,
+        ...(options.screenOnly ? { screenOnly: true } : {}),
         // Found by looking back past a greeting or an instruction: asked as it is.
         ...(picked?.kind === 'question' && (picked.lookedBack || partOfLines)
           ? { question: picked.selected.text }
           : {}),
       });
+      // ADR-0107: the press's trace id goes to the server log, next to its own request id.
+      if (options.traceId) built.request.traceId = options.traceId;
       // Answer is idempotent (v1.0.1): the shortcut, the overlay, auto-answer and a bubble's
       // "Answer this" can all fire for one question. Decided before anything changes (the log,
       // the cards). A re-answer with a chosen type (a question without a span) is a deliberate
@@ -1082,6 +1123,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         ...(!replaces && options.rerunOf ? { rerunOf: options.rerunOf } : {}),
       };
       lastAskedIdRef.current = entry.id;
+      // ADR-0107: the screenshot trace links the press to its card (ids only).
+      if (options.traceId) {
+        callTimings.noteTrace('screenshot-card', {
+          traceId: options.traceId,
+          answerId: entry.id,
+          emptyRetry: options.emptyRetry === true,
+        });
+      }
       // A new answer cancels the one still streaming (the runner does; mark it here). A rerun takes
       // the place of the answer it replaces.
       setEntries((current) => [
@@ -1306,10 +1355,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           // technical question is not shown as behavioural or small talk. A type the user chose
           // on the card (answerType) is shown as chosen.
           // Not a screenshot's: the same words go with a different screen each time.
+          // ADR-0107: a screenshot is never "garbled" or "none": its card must stay (removing it showed the
+          // previous screenshot's answer in its place). Such a reply is shown as an unreadable screen.
           const type =
-            answerType || isNoAnswer(received.type) || mode === 'screenshot'
-              ? received.type
-              : settleAnswerType(entry.question, received.type, labelsRef.current);
+            mode === 'screenshot' && isNoAnswer(received.type)
+              ? 'unreadable'
+              : answerType || isNoAnswer(received.type) || mode === 'screenshot'
+                ? received.type
+                : settleAnswerType(entry.question, received.type, labelsRef.current);
           meta = { ...received, type };
           callTimings.noteAnswer({ answerId: timingId, metaAt: Date.now() });
           if (dropped(type)) callTimings.noteAnswer({ answerId: timingId, status: 'none' });
@@ -1382,7 +1435,37 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             ...(done.fallback ? { fallback: done.fallback, fallbackFrom: entry.model } : {}),
           });
           // Not an answer: nothing to keep, send later or save.
+          if (options.traceId) {
+            callTimings.noteTrace('screenshot-done', {
+              traceId: options.traceId,
+              answerId: entry.id,
+              type: meta?.type ?? 'none',
+              empty: text.trim() === '',
+            });
+          }
           if (dropped(meta?.type)) return;
+          // ADR-0107: a card never stays empty. A reply with no answer text (only its hidden lines) is asked
+          // again once on the same card; a second empty reply removes the card with a notice.
+          if (text.trim() === '') {
+            callTimings.noteTrace('empty-answer', {
+              answerId: entry.id,
+              retry: options.emptyRetry === true,
+            });
+            if (options.emptyRetry !== true) {
+              askAgainRef.current(mode, {
+                ...options,
+                pressedAt: keyPressAt,
+                replaces: entry.id,
+                emptyRetry: true,
+              });
+            } else {
+              setEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
+              setAnsweredSpans((current) => current.filter((item) => item.answerId !== entry.id));
+              setShownId(null);
+              setNotice(EMPTY_ANSWER_NOTICE);
+            }
+            return;
+          }
           // Batch C (P1-1): an answer that finished while still held is kept and saved once it is shown
           // (never when it is cancelled).
           whenShown(() => {
@@ -1624,6 +1707,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
 
   // 1.5.2 (ADR-0070): a press waiting for the question is tried again whenever the transcript changes (the
   // grey line grows into a question, or ends), and once more when PRESS_WAIT_MS is up (the timer in ask).
+  // ADR-0107: an empty answer is asked again through the latest ask() (a ref, so the answer's own handlers,
+  // created by an earlier render, never call a stale one).
+  useEffect(() => {
+    askAgainRef.current = (mode, options) => {
+      // The options are the first request's own (typed loosely only to pass them through).
+      ask(mode, options as Parameters<typeof ask>[1]);
+    };
+  });
   useEffect(() => {
     retryPendingRef.current = () => {
       const pending = pendingPressRef.current;
@@ -1730,16 +1821,54 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
     setShownId(list[Math.max(0, index - 1)]?.id ?? null);
   }, [list, index]);
 
+  /**
+   * Takes a screenshot and asks about it.
+   *
+   * ADR-0107 (replaces ADR-0043's "the screen goes with what the other person just asked"):
+   * - Ctrl+Shift+Enter and the Screenshot button (no question) are screen-only: the request carries the
+   *   screen and the session, never a spoken line, the transcript or an earlier answer.
+   * - With a typed question (Ask about the screen), the screen goes with that question as before.
+   * - A press while a capture is still running is kept (the newest only) and taken as soon as it ends,
+   *   never dropped: a dropped press left the card on the previous tab's answer.
+   * - A capture that is almost one colour (a page still drawing) is taken once more after BLANK_RETAKE_MS.
+   * - Each press is traced (flags, times and an image hash only): trigger, press, capture and prepare times,
+   *   hash, retake, queued, and later the card and the trace id the server logs.
+   *
+   * @param question The typed question about the screen, if any.
+   * @param trigger  What took it (the hotkey, the button, the chat).
+   * @param queuedAt A queued press's own press time (performance.now()), when it waited for a capture.
+   * Called from: LiveAnswers.tsx (hotkey, buttons, the overlay's commands); itself (a queued press)
+   */
   const screenshot = useCallback(
-    (question?: string, trigger: AnswerTrigger = 'screenshot-hotkey') => {
-      if (capturing) return;
-      const pressedAt = performance.now();
+    (question?: string, trigger: AnswerTrigger = 'screenshot-hotkey', queuedAt?: number) => {
+      const pressedAt = queuedAt ?? performance.now();
+      if (capturingRef.current) {
+        queuedShotRef.current = { ...(question ? { question } : {}), trigger, pressedAt };
+        callTimings.noteTrace('screenshot-queued', { trigger });
+        return;
+      }
+      capturingRef.current = true;
       setCapturing(true);
       setNotice(null);
+      const traceId = crypto.randomUUID();
+      const screenOnly =
+        !question && (trigger === 'screenshot-hotkey' || trigger === 'screenshot-button');
+      // Wall-clock time of the press, for the trace (performance.now() is the page's own clock).
+      const pressWall = Date.now() - Math.round(performance.now() - pressedAt);
       void (async () => {
         try {
-          const png = await getPlatform().captureScreenshot();
-          const prepared = await prepareScreenshot(png);
+          const capture = async () => {
+            const capturedFrom = Date.now();
+            const png = await getPlatform().captureScreenshot();
+            return { prepared: await prepareScreenshot(png), capturedFrom, capturedAt: Date.now() };
+          };
+          let shot = await capture();
+          const retaken = shot.prepared.blank;
+          if (retaken) {
+            await new Promise((resolve) => setTimeout(resolve, BLANK_RETAKE_MS));
+            shot = await capture();
+          }
+          const { prepared } = shot;
           // Sizes and times only; never the image.
           console.info('screenshot: prepared', {
             sessionId: session.id,
@@ -1748,40 +1877,48 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             bytes: prepared.bytes,
             ms: Math.round(performance.now() - pressedAt),
           });
-          // v1.1.0 (ADR-0043): without a typed question, the screen goes with what the other person
-          // just asked, so the answer is about that.
-          const lines = transcript.lines();
-          const picked = question ? null : pickQuestion(lines);
-          const span =
-            picked?.kind === 'question' ? themSpan(lines, picked.selected.lineIds) : null;
-          const recent =
-            picked?.kind === 'question' && span && Date.now() - span.end <= RECENT_QUESTION_MS
-              ? picked.selected.text
-              : undefined;
-          const about = question ?? recent;
+          callTimings.noteTrace('screenshot', {
+            traceId,
+            trigger,
+            screenOnly,
+            pressedAt: pressWall,
+            captureStartedAt: shot.capturedFrom,
+            capturedAt: shot.capturedAt,
+            preparedAt: Date.now(),
+            hash: prepared.hash,
+            bytes: prepared.bytes,
+            retaken,
+            queued: queuedAt !== undefined,
+          });
           ask('screenshot', {
-            ...(about ? { typed: about } : {}),
+            ...(question ? { typed: question } : {}),
             image: prepared.dataUrl,
             pressedAt,
             trigger,
-            // 1.5.1 (ADR-0069): a screenshot about what they just asked answers that speech too.
-            ...(!question && recent && span && picked?.kind === 'question'
-              ? { span, coveredLines: picked.selected.lineIds }
-              : {}),
+            traceId,
+            ...(screenOnly ? { screenOnly: true } : {}),
           });
         } catch (error) {
+          callTimings.noteTrace('screenshot-failed', { traceId, trigger });
           setNotice(
             error instanceof CaptureError
               ? error.message
               : 'Paramount AI could not take a screenshot. Try again.',
           );
         } finally {
+          capturingRef.current = false;
           setCapturing(false);
+          const queued = queuedShotRef.current;
+          queuedShotRef.current = null;
+          if (queued) screenshotRef.current(queued.question, queued.trigger, queued.pressedAt);
         }
       })();
     },
-    [ask, capturing, session.id, transcript],
+    [ask, session.id],
   );
+  useEffect(() => {
+    screenshotRef.current = screenshot;
+  });
 
   const next = useCallback(() => {
     setShownId(list[Math.min(list.length - 1, index + 1)]?.id ?? null);
@@ -1795,13 +1932,20 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   }, [clear]);
 
   const captureScreen = useCallback(async (): Promise<string | null> => {
-    if (capturing) return null;
+    // ADR-0107: the same ref guard as screenshot() (the Ctrl+Alt+Enter capture waits for no queue: the user
+    // speaks after it, and a second press while it runs cancels the voice question instead).
+    if (capturingRef.current) return null;
+    capturingRef.current = true;
     const pressedAt = performance.now();
     setCapturing(true);
     setNotice(null);
     try {
-      const png = await getPlatform().captureScreenshot();
-      const prepared = await prepareScreenshot(png);
+      let prepared = await prepareScreenshot(await getPlatform().captureScreenshot());
+      // ADR-0107: a page still drawing is taken once more, as for Ctrl+Shift+Enter.
+      if (prepared.blank) {
+        await new Promise((resolve) => setTimeout(resolve, BLANK_RETAKE_MS));
+        prepared = await prepareScreenshot(await getPlatform().captureScreenshot());
+      }
       // Sizes and times only; never the image.
       console.info('screenshot: prepared', {
         sessionId: session.id,
@@ -1819,9 +1963,10 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       );
       return null;
     } finally {
+      capturingRef.current = false;
       setCapturing(false);
     }
-  }, [capturing, session.id]);
+  }, [session.id]);
 
   const askAboutScreen = useCallback(
     (question: string, image: string) => {

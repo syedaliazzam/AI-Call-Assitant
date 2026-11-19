@@ -548,10 +548,11 @@ describe('screenshot tail text (Day 5, ADR-0089)', () => {
     );
   });
 
-  it('names a shape for each kind of screen, and joins the call and the documents (ADR-0043)', () => {
+  it('names a shape for each kind of screen, and joins the call and the documents (ADR-0043, ADR-0107)', () => {
     for (const type of [
       'coding',
       'codefix',
+      'question',
       'slide',
       'document',
       'table',
@@ -560,7 +561,13 @@ describe('screenshot tail text (Day 5, ADR-0089)', () => {
     ]) {
       expect(SCREENSHOT_RULES).toContain(`(${type})`);
     }
-    expect(SCREENSHOT_RULES).toContain('answer what the other person just asked about the screen');
+    // ADR-0107: the task on the screen is answered, never only described.
+    expect(SCREENSHOT_RULES).toContain('Find the question or task on the screen and answer it');
+    expect(SCREENSHOT_RULES).toContain('never only describe what the screen shows');
+    expect(SCREENSHOT_RULES).toContain(
+      'for multiple choice, the letter and the text of the correct option',
+    );
+    expect(SCREENSHOT_RULES).toContain('answer that question about the screen');
     expect(SCREENSHOT_RULES).toContain("the session's documents");
     // The guidance is in the cached rules block, so a screenshot's tail stays short.
     expect(SYSTEM_RULES).toContain(SCREENSHOT_RULES);

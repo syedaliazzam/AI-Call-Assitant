@@ -30,6 +30,8 @@
  *   as "can you repeat that?" or "can you hear me?", or a remark that needs no reply), so there is
  *   nothing to answer either.
  * - v1.2.0: `other`: Claude named a type Kite does not know. The prompt never offers it.
+ * - ADR-0107: `question`, what a screenshot shows: a question or task on the screen (a chat message that
+ *   asks something, a quiz or multiple-choice question, a form question).
  */
 export type AnswerType =
   | 'behavioural'
@@ -47,6 +49,7 @@ export type AnswerType =
   | 'document'
   | 'webpage'
   | 'unreadable'
+  | 'question'
   | 'garbled'
   | 'none'
   | 'other';
@@ -73,6 +76,7 @@ export const ANSWER_TYPES: readonly AnswerType[] = [
   'document',
   'webpage',
   'unreadable',
+  'question',
   'garbled',
   'none',
   'other',
@@ -95,6 +99,7 @@ export const ANSWER_TYPE_LABELS: Readonly<Record<AnswerType, string>> = {
   document: 'Document',
   webpage: 'Web page',
   unreadable: 'Unreadable',
+  question: 'Question on screen',
   garbled: 'Not understood',
   none: 'Nothing to answer',
   other: 'Other',
@@ -182,6 +187,54 @@ const META_LINE = /^\s*\[\[\s*(\p{L}[\p{L}\p{N}_ -]*?)\s*((?:\|[^[\]\n]*)?)\]\]/
 const ANSWER_SOURCES: readonly string[] = ['docs', 'call', 'general', 'example'];
 
 /**
+ * ADR-0107: type words the model writes instead of a Kite type, mapped to the type they mean (measured in
+ * screenshot replies: "code", "screen", "mcq"). Keys are lower case with spaces, hyphens and underscores
+ * removed. Without this map each of them showed "Other" on the card.
+ */
+export const ANSWER_TYPE_ALIASES: Readonly<Record<string, AnswerType>> = {
+  code: 'coding',
+  codingproblem: 'coding',
+  programming: 'coding',
+  algorithm: 'coding',
+  bug: 'codefix',
+  error: 'codefix',
+  debug: 'codefix',
+  codeerror: 'codefix',
+  mcq: 'question',
+  quiz: 'question',
+  multiplechoice: 'question',
+  chat: 'question',
+  message: 'question',
+  form: 'question',
+  task: 'question',
+  chart: 'table',
+  graph: 'table',
+  dashboard: 'table',
+  presentation: 'slide',
+  doc: 'document',
+  pdf: 'document',
+  page: 'webpage',
+  website: 'webpage',
+  site: 'webpage',
+  web: 'webpage',
+  screen: 'webpage',
+  screenshot: 'webpage',
+};
+
+/**
+ * ADR-0107: a type word as Kite reads it: a known type as it is, a known near-miss as the type it means,
+ * anything else as `other`.
+ *
+ * @param word The first value of the hidden line, cleaned up.
+ * @returns The type.
+ * Called from: metaFrom(); tests
+ */
+export function answerTypeOf(word: string): AnswerType {
+  if ((ANSWER_TYPES as readonly string[]).includes(word)) return word as AnswerType;
+  return ANSWER_TYPE_ALIASES[word.toLowerCase().replace(/[\s_-]+/g, '')] ?? 'other';
+}
+
+/**
  * Reads the hidden first line's values. Each unknown value falls back on its own, so one odd word
  * costs one label and not the whole answer. The answer's reader is looked for among all the values
  * after the type, and its source among those after that, so a line with an extra value still
@@ -198,7 +251,7 @@ function metaFrom(values: readonly string[]): AnswerMeta {
     .filter((value) => ANSWER_SOURCES.includes(value))
     .at(-1);
   return {
-    type: (ANSWER_TYPES as readonly string[]).includes(type) ? (type as AnswerType) : 'other',
+    type: answerTypeOf(type),
     target: rest.includes('kite') ? 'kite' : 'call',
     source: (source as AnswerSource | undefined) ?? 'general',
   };

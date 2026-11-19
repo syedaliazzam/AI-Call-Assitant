@@ -592,6 +592,13 @@ async function respond(
         ...(fallback ? { fallback } : {}),
         ...context,
         ...(mode === 'warm' || mode === 'hello' ? {} : { contract }),
+        // ADR-0107: the press's trace id from the browser (links this line to the call's screenshot trace),
+        // a screen-only screenshot, and a reply with no answer text at all (flags only, never text).
+        ...(data.traceId ? { traceId: data.traceId } : {}),
+        ...(data.screenOnly ? { screenOnly: true } : {}),
+        ...(mode !== 'warm' && mode !== 'hello' && stats.firstDeltaAt === undefined
+          ? { emptyAnswer: true }
+          : {}),
         stopReason: result.stopReason,
         ms,
         usage: result.usage,

@@ -472,6 +472,18 @@ export interface AnswerRequest {
    * question garbled. Absent: typed.
    */
   spoken?: boolean;
+  /**
+   * ADR-0107: a screen-only screenshot (Ctrl+Shift+Enter or the Screenshot button, mode `screenshot`): the
+   * answer is about the screen alone. The request carries no transcript, no earlier answers and no question
+   * from the call; the server asks the model to find the question or task on the screen and answer it.
+   * Absent: a screenshot that goes with a question (Ctrl+Alt+Enter, or a typed one).
+   */
+  screenOnly?: boolean;
+  /**
+   * ADR-0107: the browser's id for this press (a UUID), written to the server's log line next to its own
+   * request id, so the call's screenshot trace and the server log can be matched. Never shown or stored.
+   */
+  traceId?: string;
   /** Session details (modes `warm`, `answer`, `chat`, `screenshot`). */
   session?: SessionContext;
   /**
