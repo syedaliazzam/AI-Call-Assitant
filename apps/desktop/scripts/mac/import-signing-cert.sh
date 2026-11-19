@@ -5,7 +5,7 @@
 #          codesign use the key, and trusts the certificate for code signing only. It refuses a .p12 whose
 #          certificate is not the one committed in the repository (build/mac-signing/certificate.pem).
 #          Usage (from the repository folder): bash apps/desktop/scripts/mac/import-signing-cert.sh <file.p12>
-# Used by: the teammate who builds the Mac app (docs/deploy/mac-signing-certificate.md, part B)
+# Used by: the teammate who builds the Mac app (docs/deploy/mac-signing-certificate.md, part C)
 # Depends on: macOS's security tool, Node (scripts/mac/cert-tools.mjs), the committed certificate.pem
 # Architecture: docs/decisions/ADR-0109-macos-internal-release.md §1, §2
 #

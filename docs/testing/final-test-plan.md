@@ -313,4 +313,4 @@ ADR-0027 adopted nothing as the default engine; v1.0.1 adds Parakeet as a **seco
 
 ## 13. macOS (only if a Mac is available)
 
-Follow `docs/testing/macos-checklist.md` (Day 6 Stage 6).
+Follow `docs/testing/mac-release-test.md` (ADR-0109; it replaced the Day 6 `macos-checklist.md`).

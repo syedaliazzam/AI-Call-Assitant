@@ -55,7 +55,7 @@ node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)
   fail "Node 24 or later is needed (node --version)"
 command -v pnpm >/dev/null || fail "turn on pnpm: corepack enable"
 [ -f "$CERT" ] || fail "build/mac-signing/certificate.pem is not in the repository yet (git pull)."
-[ -e "$KEYCHAIN" ] || fail "the signing keychain is missing: run import-signing-cert.sh once (guide part B)."
+[ -e "$KEYCHAIN" ] || fail "the signing keychain is missing: run import-signing-cert.sh once (docs/deploy/mac-signing-certificate.md, part C)."
 
 cd "$REPO"
 if [ -n "$(git status --porcelain)" ] && [ "${KITE_ALLOW_DIRTY:-}" != "1" ]; then
