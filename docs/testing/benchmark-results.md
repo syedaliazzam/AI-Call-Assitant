@@ -977,3 +977,15 @@ OpenAI processed and cached the prompt before refusing the 1-token limit, so the
 | Not run | — | Smoke and end-to-end tests (the developer's instruction). `update-check.ts` (it shows the old app's window on the real screen) and the Windows install step. |
 | Web build and deploy | production deployed (`dpl_B6S9tcCLMR1eweHTjCXpdkAG557Z`) | Production smoke, signed out, codes only: `/` 307, `/login` 200, `/api/models` 401, `POST /api/answer` 401. |
 | `Paramount-AI-Setup-1.7.3.exe` | 288,992,910 bytes; SHA-256 `05cc5b6ad6e582e7a4eb699ef09860c4dd3ed33b42beab09d5e4b2b965e38ac0` | SHA-512 matches `latest.yml`. Published as Latest on `Zainpak123/kite-releases` with its blockmap, `latest.yml` and `SHA256SUMS.txt`; the public `latest.yml` says 1.7.3 and the installer and blockmap download (200). The packaged `app.asar` has the drag refit (`if (layout) applyLayout()`). |
+
+### First answer word, claimed-experience options (19 Nov 2026)
+
+Same laptop (Pakistan); local Node script (no browser, no production); ADR-0103's method with 10 invented own-experience interview questions (typed) in an invented interview session with an invented CV, through the real `buildPrompt()` and `streamReply()`. Two rounds per option, each a new session warmed first, option order reversed in round 2; questions 1.5 s apart. Measured: request start → first answer word after the hidden line. Spend $0.125.
+
+| Option | Model | First answer word p50 / p95 (20 answers) | Round p50s | Hidden line first | Cost per answer |
+|---|---|---|---|---|---|
+| Version 6 | `claude-haiku-5-5` | **779 / 865 ms** | 779, 778 | 20/20 | $0.00023 |
+| A (CV match line) | `claude-haiku-5-5` | 788 / 926 ms | 799, 777 | 20/20 | $0.00024 |
+| C (shape examples) | `claude-haiku-5-5` | 773 / 975 ms | 784, 762 | 20/20 | $0.00023 |
+| A + C | `claude-haiku-5-5` | 764 / 840 ms | 764, 762 | 20/20 | $0.00025 |
+| B | `claude-sonnet-5-5` | **1,009 / 2,441 ms** | 988, 1,009 | 20/20 | $0.0049 |
