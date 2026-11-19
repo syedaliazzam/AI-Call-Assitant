@@ -50,11 +50,13 @@ Re-run only the groups a change touches. Run the full suite (`pnpm --filter web 
 | Criterion | Points | Who scores it | Full marks when |
 |---|---|---|---|
 | Facts | 0–3 | Grader | Every "must include" point is in the answer, correctly |
-| Grounded | 0–2 | Grader | Every claim about the user, their company, offer, prices, dates or commitments comes from the session, documents or call; nothing from "must not include" |
+| Grounded | 0–2 | Grader | Every claim about the user, their company, offer, prices, dates or commitments comes from the session, documents or call; nothing from "must not include". From 19 Nov 2026, approach lines ("I would", "I'd typically") and general knowledge are not claims |
 | Consistent | 0–2 | Grader | Consistent with earlier answers in the call, or gives the new answer and says what changed when new information changes it. Full marks when there are no earlier answers |
 | Style | 0–1 | Grader | Follows the session's format, length, tone and instructions; no greeting or preamble |
 | Headline | 0–1 | Code | Headline+bullets: the first line has 1–15 words. Paragraph: no bullet lines |
 | Bullets | 0–1 | Code | Headline+bullets: at most 5 bullets. Paragraph: one paragraph |
+
+**Invented** (the grader's `invented` list, behind the nothing-invented gates; the developer's definition, 19 Nov 2026). Only: a claim about the user's past, role or results that the session, documents or call do not state; a company, price, client or number fact they do not give; a made-up statistic or source. Approach lines ("I would", "I'd typically") and general knowledge are never invented. When the session's "Missing information" setting asks for an example story, a generic story is what was asked for, and only a company name, number or named result in it is listed. Before 19 Nov the list took every unsupported "fact", so it also listed approach lines and general knowledge; `--compare-rubric` grades the same replies with both rules.
 
 ## Scenarios
 
