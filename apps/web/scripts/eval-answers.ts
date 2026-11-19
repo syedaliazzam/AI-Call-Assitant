@@ -102,6 +102,7 @@ import { estimateLine, parseEvalArgs, selectScenarios } from './lib/eval-options
 import {
   saveEvalResults,
   type RunChecks,
+  type RunDepth,
   type ScenarioResult,
   type ScenarioRunResult,
 } from './lib/eval-results';
@@ -125,6 +126,11 @@ interface Grade {
   consistent: number;
   /** Follows the session's format, length, tone and instructions: 0–1. */
   style: number;
+  /**
+   * ADR-0107: complete and useful for its kind of question, within the user's length: 0–2. Reported on its
+   * own, never added to the /10 total, so totals stay comparable with the baselines.
+   */
+  complete: number;
   /** One sentence on what cost points (printed only with --show). */
   reason: string;
   /** Every price, personal number, statistic or source the answer invented, in its own words. */
@@ -139,10 +145,11 @@ const GRADE_SCHEMA = {
     grounded: { type: 'integer', enum: [0, 1, 2] },
     consistent: { type: 'integer', enum: [0, 1, 2] },
     style: { type: 'integer', enum: [0, 1] },
+    complete: { type: 'integer', enum: [0, 1, 2] },
     reason: { type: 'string' },
     invented: { type: 'array', items: { type: 'string' } },
   },
-  required: ['facts', 'grounded', 'consistent', 'style', 'reason', 'invented'],
+  required: ['facts', 'grounded', 'consistent', 'style', 'complete', 'reason', 'invented'],
   additionalProperties: false,
 };
 
@@ -154,6 +161,7 @@ Rubric:
 - grounded (0-2): 2 = every claim about the user, their company, offer, prices, dates or commitments comes from the session details, documents or the call, and nothing from "must not include" appears; 1 = one small unsupported detail; 0 = an invented fact, a wrong number, or a "must not include" item.
 - consistent (0-2): if the call shows earlier Kite answers, 2 = consistent with them, or, when new information changes the answer, it gives the new answer and says briefly what changed; 1 = partly; 0 = contradicts them without saying why, or ignores new information. If there are no earlier answers, give 2.
 - style (0-1): 1 = follows the session's answer format (bullets: only short bullets with no headline line, the first giving the direct answer, optionally followed by the same two lines; headline+bullets: a headline line, which is one plain sentence of at most 15 words, then short bullets (a reply that needs nothing more may be the headline alone, and a brief "As I mentioned" may open a repeated answer), optionally followed by one closing line starting "Tip:" and one line starting "Note:" that is private to the user, both allowed only when they add something and do not repeat a bullet; paragraph: one short paragraph, no bullets), length, tone and instructions, with no greeting or preamble; 0 = it does not, or the spoken part says or implies that something is missing from the notes, CV or documents (a "Note:" line may name what to check). A coding answer has its own shape: an approach line, "Key steps:" with bullets, a code block, a "Complexity:" line and a "Say:" line, whatever the format. A screenshot answer follows what the screen shows: code with an error gives the cause, the fix and corrected code; a slide or document its key points and how to respond; a table or chart its takeaway and key numbers; a screen that cannot be read says so in one line. A private answer is free in shape, and only has to be direct and clear.
+- complete (0-2): is the answer complete and useful for this kind of question, within the user's length setting? 2 = it gives what this kind of question needs: a concept says what it is, how it works and why it matters or its main trade-off; a design names the main parts, how data flows and one trade-off; a behavioural answer says what I did and the result the CV gives; a sales or client answer meets the need with the facts that support it; a coding answer solves the problem with working code; a screenshot answer gives the key point or the solution (the answer to the question on the screen, the fix, the takeaway), never only a description of the screen. 1 = correct but thin: it leaves out part of what this kind of question needs, or stays vague where a concrete step, reason or example would help. 0 = it does not answer: it only describes, restates the question, or asks whether the user wants an answer. A fact the session, documents and call do not give is never counted as missing here, and a short answer that is complete for a simple question gets 2.
 - reason: one short sentence on what cost points ("none" when nothing did).
 - invented: every price, personal number, statistic, source or fact about a company that the answer states and that the session details, documents and call do not support, in the answer's own words. General technical knowledge, stated assumptions in an estimate and simple arithmetic on supported figures are not invented. Empty when there are none.`;
 
@@ -266,6 +274,7 @@ function noAnswerGrade(scenario: Scenario): Grade {
     grounded: 2,
     consistent: 2,
     style: right ? 1 : 0,
+    complete: right ? 2 : 0,
     reason: right ? 'none' : 'a real question got no answer',
     invented: [],
   };
@@ -280,6 +289,7 @@ const UNGRADED: Grade = {
   grounded: 0,
   consistent: 0,
   style: 0,
+  complete: 0,
   reason: 'not graded (--no-grade)',
   invented: [],
 };
@@ -705,6 +715,60 @@ function summariseChecks(results: readonly ScenarioResult[]): string[] {
     ),
     ...line('Code ran in the sandbox', (checks) => checks.codeRuns),
     ...line('Repeat states the same numbers', (checks) => checks.agreement?.numbers),
+    ...line('Answer not empty', (checks) =>
+      checks.empty === undefined ? undefined : !checks.empty,
+    ),
+  ];
+}
+
+/**
+ * ADR-0107: how full an answer is: its words outside code blocks and hidden lines, and its bullet lines.
+ *
+ * @param text The answer as the card shows it.
+ * @param type The question type from its hidden line, if any.
+ * @returns The depth (without the grader's score).
+ * Called from: main(); tests
+ */
+export function answerDepth(text: string, type: string | undefined): RunDepth {
+  const prose = text.replace(/```[\s\S]*?(```|$)/g, ' ').replace(/\[\[[^\]]*\]\]/g, ' ');
+  const words = prose.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
+  const bullets = prose
+    .split('\n')
+    .filter((line) => /^\s*(?:[-*•]|\d+[.)])\s+\S/.test(line)).length;
+  return { type: type ?? 'none', words, bullets };
+}
+
+/**
+ * ADR-0107: the depth table: per question type, the runs, mean words, mean bullets, the mean "complete and
+ * useful" score and how many runs scored it in full.
+ *
+ * @param results Every scenario's results.
+ * @returns The lines ([] when no run has a depth).
+ * Called from: main()
+ */
+function summariseDepth(results: readonly ScenarioResult[]): string[] {
+  const depths = results.flatMap((result) =>
+    result.runs.flatMap((run) => (run.checks?.depth ? [run.checks.depth] : [])),
+  );
+  if (depths.length === 0) return [];
+  const types = [...new Set(depths.map((depth) => depth.type))].sort();
+  const mean = (values: number[]) =>
+    values.length === 0 ? '–' : (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1);
+  const row = (label: string, group: RunDepth[]) => {
+    const graded = group.flatMap((depth) => (depth.complete === undefined ? [] : [depth.complete]));
+    const full = graded.filter((score) => score === 2).length;
+    return `| ${label} | ${group.length} | ${mean(group.map((d) => d.words))} | ${mean(group.map((d) => d.bullets))} | ${mean(graded)} | ${graded.length ? `${full}/${graded.length}` : '–'} |`;
+  };
+  return [
+    '| Type | Runs | Words | Bullets | Complete /2 | Full coverage |',
+    '|---|---|---|---|---|---|',
+    ...types.map((type) =>
+      row(
+        type,
+        depths.filter((depth) => depth.type === type),
+      ),
+    ),
+    row('all', depths),
   ];
 }
 
@@ -715,9 +779,13 @@ function summariseChecks(results: readonly ScenarioResult[]): string[] {
  * Called from: the bottom of this file
  */
 async function main(): Promise<void> {
-  const options = parseEvalArgs(process.argv.slice(2), 2);
+  // ADR-0107: --model=sonnet answers with the smart Claude model (thinking off, as the fast tier), for a
+  // comparison only; the app does not answer live questions with it.
+  const sonnet = process.argv.slice(2).includes('--model=sonnet');
+  const argv = process.argv.slice(2).filter((arg) => arg !== '--model=sonnet');
+  const options = parseEvalArgs(argv, 2);
   // ADR-0099: --model, the Gemini or GPT model live answers come from (null: Claude Haiku as before).
-  const answerModel = parseAnswerModel(process.argv.slice(2));
+  const answerModel = parseAnswerModel(argv);
   // ADR-0101: --spoken, typed questions sent as spoken voice questions.
   const spoken = process.argv.slice(2).includes('--spoken');
   // ADR-0093: cleaned as the app cleans it, so the prompt is the one a named call sends.
@@ -728,7 +796,9 @@ async function main(): Promise<void> {
     estimateLine(scenarios, answerGroup, options.runs, [
       {
         label: 'answers',
-        model: answerModel ?? (process.env.KITE_MODEL_FAST || 'the fast model'),
+        model: sonnet
+          ? process.env.KITE_MODEL_SMART || 'the smart model'
+          : (answerModel ?? (process.env.KITE_MODEL_FAST || 'the fast model')),
       },
       ...(options.grade
         ? [{ label: 'grades', model: process.env.KITE_MODEL_SMART || 'the smart model' }]
@@ -739,7 +809,7 @@ async function main(): Promise<void> {
   requireKey('eval-answers');
   const env = getClaudeEnv();
   const third = answerModel ? providerModel(answerModel) : null;
-  const answeredBy = third ? third.modelId : env.modelFast;
+  const answeredBy = third ? third.modelId : sonnet ? env.modelSmart : env.modelFast;
   console.log(
     `eval-answers: answers by ${answeredBy}, ${options.grade ? `graded by ${env.modelSmart}` : 'not graded'}; ${scenarios.length} scenarios × ${options.runs} runs`,
   );
@@ -759,7 +829,7 @@ async function main(): Promise<void> {
     const totals = { facts: 0, grounded: 0, consistent: 0, style: 0, headline: 0, bullets: 0 };
     const runs: ScenarioRunResult[] = [];
     for (let run = 1; run <= options.runs; run += 1) {
-      const models = { fast: env.modelFast, smart: env.modelSmart };
+      const models = { fast: sonnet ? env.modelSmart : env.modelFast, smart: env.modelSmart };
       let answer = await answerScenario(
         scenario,
         models,
@@ -824,12 +894,21 @@ async function main(): Promise<void> {
         headline: shape.headline,
         bullets: shape.bullets,
       };
+      const checks = await extraChecks(scenario, answer, graded, first);
       runs.push({
         run,
         scores,
         total: Object.values(scores).reduce((a, b) => a + b, 0),
         reason: graded.reason,
-        checks: await extraChecks(scenario, answer, graded, first),
+        checks: {
+          ...checks,
+          // ADR-0107: depth per question type, and empty answers (a card left with "…").
+          depth: {
+            ...answerDepth(text, meta?.type),
+            ...(options.grade && !nothingToGrade ? { complete: graded.complete } : {}),
+          },
+          empty: !nothingToGrade && text.trim() === '',
+        },
       });
       if (options.show) {
         console.log(`\n--- ${scenario.id} run ${run} ---\n${text}\n(grader: ${graded.reason})`);
@@ -858,6 +937,8 @@ async function main(): Promise<void> {
 Stopped at the --max-dollars cap: ${stopped} scenario(s) not run.`);
   const checkLines = summariseChecks(results);
   if (checkLines.length > 0) console.log(`\n${checkLines.join('\n')}`);
+  const depthLines = summariseDepth(results);
+  if (depthLines.length > 0) console.log(`\n${depthLines.join('\n')}`);
   console.log(
     options.grade
       ? `\nOverall: ${(sum / scenarios.length).toFixed(2)} / 10 (mean of ${scenarios.length} scenarios)`

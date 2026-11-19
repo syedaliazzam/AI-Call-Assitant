@@ -53,6 +53,22 @@ export interface RunChecks {
   codeRuns?: boolean;
   /** A repeat against the first answer: the same numbers, and the share of words in common. */
   agreement?: RunAgreement;
+  /** ADR-0107: the answer's depth, for the per-type depth table (absent in older files). */
+  depth?: RunDepth;
+  /** ADR-0107: true when a reply that should answer has no answer text (an empty card). */
+  empty?: boolean;
+}
+
+/** ADR-0107: how full one answer is. */
+export interface RunDepth {
+  /** The question type from the hidden line ('none' when it had none). */
+  type: string;
+  /** Words outside code blocks. */
+  words: number;
+  /** Bullet lines. */
+  bullets: number;
+  /** The grader's "complete and useful" score, 0–2 (absent when not graded). */
+  complete?: number;
 }
 
 /** What running an answer's code found. */
