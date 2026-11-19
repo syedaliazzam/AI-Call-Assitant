@@ -1,8 +1,14 @@
 # Using Paramount AI (version 1.5.0)
 
-Paramount AI listens to your call, shows a live transcript, and writes a short answer you can say when you press a key. It runs in the **desktop app** (Windows) or in **Chrome or Edge** at **call.paramountintelligence.co**. To install the desktop app, download it from [Paramount AI releases](https://github.com/Zainpak123/kite-releases/releases/latest).
+Paramount AI listens to your call, shows a live transcript, and writes a short answer you can say when you press a key. It runs in the **desktop app** (Windows and Mac) or in **Chrome or Edge** at **call.paramountintelligence.co**. To install the desktop app on Windows, download it from [Paramount AI releases](https://github.com/Zainpak123/kite-releases/releases/latest).
 
 **If you see "Windows protected your PC":** click **More info** → **Run anyway**. If Smart App Control blocks it, use the browser version at [https://call.paramountintelligence.co](https://call.paramountintelligence.co), or ask IT.
+
+**On a Mac:** open **Terminal** (Applications › Utilities), paste this line and press Return:
+
+`curl -fsSL https://call.paramountintelligence.co/install-mac.sh | bash`
+
+It downloads the app, checks that the file is complete and signed by Paramount Intelligence, puts it in Applications and opens it. The first time, allow the **Microphone** and **Screen & System Audio Recording** when Paramount AI asks, then quit and reopen it. The app updates itself. You need macOS 12 or later; hearing the other side of the call needs macOS 14.2 or later (on older versions, use Chrome and share the meeting tab with its audio). You can also download the .dmg from the [Mac release page](https://github.com/Zainpak123/kite-releases/releases/tag/mac-latest): open Paramount AI once, then **System Settings › Privacy & Security › Open Anyway**.
 
 **Your sessions are in your account:** the same sessions, documents, answers and notes on every browser and computer you sign in on, including the old address (sign in there once). The first time a browser or the desktop app still holds sessions from before, it asks **Add your sessions to <your email>?** once: **Add** copies them into your account.
 

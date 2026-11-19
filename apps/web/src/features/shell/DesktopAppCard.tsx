@@ -3,10 +3,11 @@
  * Purpose: The sidebar's desktop app card, in the browser (spec S2, and the developer's decision at
  *          Phase 0: a web page cannot tell whether the app is installed, so nothing is guessed). It
  *          always offers "Open desktop app", with a small download link under it, and can be hidden
- *          from its ⋮ menu.
+ *          from its ⋮ menu. 1.8.0 (ADR-0109): on a Mac it offers the Mac app and its install steps.
  * Used by: src/features/shell/AppShell.tsx
  * Depends on: @kite/shared (the link), lucide-react, src/core/storage/sidebarPrefs.ts,
- *             src/features/session-setup/labels.ts, src/ui (Button, Menu)
+ *             src/features/session-setup/labels.ts, src/features/shell/MacInstall.tsx,
+ *             src/ui (Button, Menu, useIsMac)
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S2), §6
  */
 'use client';
@@ -18,6 +19,12 @@ import { getDesktopCardHidden, setDesktopCardHidden } from '@/core/storage/sideb
 import { DESKTOP_DOWNLOAD_URL } from '@/features/session-setup/labels';
 import { buttonClasses } from '@/ui/Button';
 import { Menu } from '@/ui/Menu';
+import { useIsMac } from '@/ui/useIsMac';
+import { MacInstallDialog } from './MacInstall';
+
+/** The small download link's look. */
+const DOWNLOAD_LINK_CLASSES =
+  'self-center rounded-control text-center text-[12px] text-ui-muted underline hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]';
 
 /**
  * Nothing to subscribe to: only this component changes the choice, and it holds that in state.
@@ -35,6 +42,9 @@ const subscribeNever = () => () => undefined;
 export function DesktopAppCard() {
   const savedHidden = useSyncExternalStore(subscribeNever, getDesktopCardHidden, () => true);
   const [hidden, setHidden] = useState(false);
+  // ADR-0109: a Mac is offered the Mac app and its install steps.
+  const mac = useIsMac();
+  const [macSteps, setMacSteps] = useState(false);
   if (savedHidden || hidden) return null;
   return (
     // Not on a phone: the desktop app needs a computer.
@@ -61,20 +71,34 @@ export function DesktopAppCard() {
         />
       </div>
       <div>
-        <p className="text-[15px] font-medium text-ui-heading">Paramount AI for Windows</p>
-        <p className="text-helper text-ui-muted">Hidden from screen share, global hotkeys</p>
+        <p className="text-[15px] font-medium text-ui-heading">
+          Paramount AI for {mac ? 'Mac' : 'Windows'}
+        </p>
+        <p className="text-helper text-ui-muted">
+          {/* ADR-0109: on a Mac some capture apps can still show the windows (Private). */}
+          {mac
+            ? 'Hears any meeting app, global hotkeys'
+            : 'Hidden from screen share, global hotkeys'}
+        </p>
       </div>
       <a href={DESKTOP_OPEN_LINK} className={buttonClasses('primary', 'md', 'w-full')}>
         Open desktop app
       </a>
-      <a
-        href={DESKTOP_DOWNLOAD_URL}
-        target="_blank"
-        rel="noreferrer"
-        className="self-center rounded-control text-center text-[12px] text-ui-muted underline hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
-      >
-        Don’t have it? Download for Windows
-      </a>
+      {mac ? (
+        <button type="button" onClick={() => setMacSteps(true)} className={DOWNLOAD_LINK_CLASSES}>
+          Don’t have it? Get it for Mac
+        </button>
+      ) : (
+        <a
+          href={DESKTOP_DOWNLOAD_URL}
+          target="_blank"
+          rel="noreferrer"
+          className={DOWNLOAD_LINK_CLASSES}
+        >
+          Don’t have it? Download for Windows
+        </a>
+      )}
+      <MacInstallDialog open={macSteps} onClose={() => setMacSteps(false)} />
     </section>
   );
 }

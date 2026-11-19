@@ -68,3 +68,17 @@ export function getDesktopInfo(): DesktopInfo | null {
 export function isDesktop(): boolean {
   return getPlatform().kind === 'desktop';
 }
+
+/**
+ * 1.8.0 (ADR-0109): tells whether this computer is a Mac (the desktop app on macOS, or a browser on a
+ * Mac). For display and for which download or keys to show, like isDesktop(); never to branch capture or
+ * window behaviour (that belongs in the Platform implementations).
+ *
+ * @returns True on a Mac; false elsewhere and on the server.
+ * Called from: src/ui/useIsMac.ts
+ */
+export function isMacComputer(): boolean {
+  if (typeof window === 'undefined') return false;
+  // Both platforms already answer this for the shortcut labels: ⌘ on a Mac, Ctrl elsewhere.
+  return getPlatform().hotkeyModifier() === '⌘';
+}

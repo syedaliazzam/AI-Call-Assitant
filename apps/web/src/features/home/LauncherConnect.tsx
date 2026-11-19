@@ -18,7 +18,7 @@
  * Used by: src/features/home/Launcher.tsx
  * Depends on: lucide-react, src/core/live/callStart.ts, src/core/stt/prefetch.ts,
  *             src/features/sync/dashboardLink.ts, src/platform,
- *             src/ui (ProgressBar, Select, Tooltip, Chip)
+ *             src/ui (ProgressBar, Select), src/features/shell/MacInstall.tsx (ADR-0109)
  *          ADR-0098: a start refused because the session is live on another device of the account shows
  *          that with Take over, which asks first, then connects again taking the call over.
  *          (src/core/live/liveLock.ts, src/features/live/TakeOver.tsx)
@@ -34,12 +34,11 @@ import { TakeOverDialog } from '@/features/live/TakeOver';
 import { leaveRecordConsent } from '@/core/recording/handoff';
 import { NO_STEREO_WARNING } from '@/features/live/overlay/RecordControls';
 import { speechModelPrefetch, type PrefetchState } from '@/core/stt/prefetch';
+import { MacInstallLink } from '@/features/shell/MacInstall';
 import { openDashboard } from '@/features/sync/dashboardLink';
 import { getPlatform } from '@/platform';
-import { SOON_TOOLTIP } from '@/ui/Chip';
 import { ProgressBar } from '@/ui/ProgressBar';
 import { Select } from '@/ui/Select';
-import { Tooltip } from '@/ui/Tooltip';
 
 /** Props for LauncherConnect. */
 export interface LauncherConnectProps {
@@ -362,15 +361,8 @@ export function LauncherConnect({
       </div>
 
       <div className="flex flex-col items-center gap-3 pb-2 text-[15px] text-ui-muted">
-        <Tooltip content={SOON_TOOLTIP}>
-          <span tabIndex={0} className="inline-flex items-center">
-            Need it for&nbsp;
-            <span className="text-ui-heading underline decoration-1 underline-offset-[6px]">
-              macOS
-            </span>
-            ?
-          </span>
-        </Tooltip>
+        {/* ADR-0109: the Mac app's install steps, to pass on to Mac colleagues (hidden in the Mac app). */}
+        <MacInstallLink />
         <button
           type="button"
           onClick={() => openDashboard('/')}

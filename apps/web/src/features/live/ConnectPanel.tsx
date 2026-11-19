@@ -7,8 +7,8 @@
  *          Display only: LivePage owns the engine, the capture and the meter and passes their state in.
  * Used by: src/features/live/LivePage.tsx
  * Depends on: lucide-react, src/platform (listMicrophones), src/ui (Button, Dialog, LinkButton,
- *             ProgressBar, Select, Tooltip), src/features/live (AudioMeter, ConnectGuide, HealthNotice,
- *             useMicPreview)
+ *             ProgressBar, Select), src/features/live (AudioMeter, ConnectGuide, HealthNotice,
+ *             useMicPreview), src/features/shell/MacInstall.tsx (ADR-0109)
  * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S11); docs/architecture/kite-architecture-v3.1.md
  *               §4, §5 (Connect); ADR-0053
  */
@@ -20,14 +20,13 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { DownloadProgress } from '@/core/stt/download';
 import type { SttHealthStatus } from '@/core/stt/health';
 import type { Speaker } from '@/core/transcript/transcript';
+import { MacInstallLink } from '@/features/shell/MacInstall';
 import { getPlatform, type MicDevice } from '@/platform';
 import { Button } from '@/ui/Button';
-import { SOON_TOOLTIP } from '@/ui/Chip';
 import { Dialog } from '@/ui/Dialog';
 import { LinkButton } from '@/ui/LinkButton';
 import { ProgressBar } from '@/ui/ProgressBar';
 import { Select } from '@/ui/Select';
-import { Tooltip } from '@/ui/Tooltip';
 import { AudioMeter } from './AudioMeter';
 import { ConnectGuide } from './ConnectGuide';
 import { HealthNotice } from './HealthNotice';
@@ -397,11 +396,8 @@ export function ConnectPanel({
         >
           Ways of calling
         </button>
-        <Tooltip content={SOON_TOOLTIP}>
-          <span tabIndex={0} className="inline-flex items-center pointer-coarse:min-h-11">
-            Need it for macOS?
-          </span>
-        </Tooltip>
+        {/* ADR-0109: the Mac app's install steps (not shown inside the Mac desktop app). */}
+        <MacInstallLink />
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 rounded-control hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)] pointer-coarse:min-h-11"

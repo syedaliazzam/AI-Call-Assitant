@@ -22,6 +22,20 @@ import {
 /** Where the newest desktop installer is published (docs/user-guide; ADR-0028). */
 export const DESKTOP_DOWNLOAD_URL = 'https://github.com/Zainpak123/kite-releases/releases/latest';
 
+/**
+ * ADR-0109: the one-line Mac installer (apps/web/public/install-mac.sh), run in Terminal. It checks the
+ * download's SHA-512, the signature and the company certificate before installing.
+ */
+export const MAC_INSTALL_COMMAND =
+  'curl -fsSL https://call.paramountintelligence.co/install-mac.sh | bash';
+
+/** ADR-0109: the installer script itself, for "Read the script first". */
+export const MAC_INSTALL_SCRIPT_URL = 'https://call.paramountintelligence.co/install-mac.sh';
+
+/** ADR-0109: the Mac app's fixed release (the .dmg fallback is listed there). */
+export const MAC_RELEASE_PAGE_URL =
+  'https://github.com/Zainpak123/kite-releases/releases/tag/mac-latest';
+
 /** Display name of each session type. */
 export const SESSION_TYPE_LABELS: Record<SessionType, string> = {
   interview: 'Interview',
