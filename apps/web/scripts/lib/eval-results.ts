@@ -43,6 +43,8 @@ export interface RunChecks {
   metaComment: boolean;
   /** What the grader found invented. */
   invented: string[];
+  /** 19 Nov 2026, --compare-rubric only: what the rubric before that day found invented in the same answer. */
+  inventedPrevious?: string[];
   /** Numbers and prices the claim check could not find in the documents or the call. */
   unsupportedNumbers: string[];
   /** Dates and names the claim check could not find. */

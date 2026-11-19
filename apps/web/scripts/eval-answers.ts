@@ -32,6 +32,8 @@
  *            --max-dollars=<n>    stop before the next scenario once this much is spent
  *            --no-grade answers only, no grader requests (half the cost): the code checks are
  *                       reported and the grader's columns show "–"; read the answers with --show
+ *            --compare-rubric  also grade each answer with the rubric before 19 Nov 2026 (its invented
+ *                       list is saved as inventedPrevious), to compare the two on the same replies
  *            --spoken   ADR-0101: typed (chat) questions are sent as spoken voice questions (the prompt's
  *                       "spoken by the user (speech recognition…)" label)
  *            --model=<gemini-lite|gpt-luna|gemini-flash|gpt-terra>  ADR-0099: live answers from that
@@ -155,8 +157,47 @@ const GRADE_SCHEMA = {
   additionalProperties: false,
 };
 
-/** The grader's instructions: the rubric (the same as docs/testing/answer-eval.md). */
-const GRADER_SYSTEM = `You grade answers written by Kite, a live call assistant. Kite reads the session details, documents and the call so far, and writes an answer the user can say to the other person, or, when the question says it is private, a direct answer for the user to read. Grade strictly against the rubric. Score only what is written in the answer.
+/**
+ * The grader's grounded rule before 19 Nov 2026, kept for --compare-rubric (it counted approach lines and
+ * general knowledge about a real project as unsupported).
+ */
+const GROUNDED_RULE_PREVIOUS =
+  '- grounded (0-2): 2 = every claim about the user, their company, offer, prices, dates or commitments comes from the session details, documents or the call, and nothing from "must not include" appears; 1 = one small unsupported detail; 0 = an invented fact, a wrong number, or a "must not include" item.';
+
+/** The grader's invented rule before 19 Nov 2026, kept for --compare-rubric. */
+const INVENTED_RULE_PREVIOUS =
+  "- invented: every price, personal number, statistic, source or fact about a company that the answer states and that the session details, documents and call do not support, in the answer's own words. General technical knowledge, stated assumptions in an estimate and simple arithmetic on supported figures are not invented. Empty when there are none.";
+
+/**
+ * 19 Nov 2026 (the developer's definition): grounded scores only claims, never approach lines or general
+ * knowledge.
+ */
+const GROUNDED_RULE = `{grounded} An approach line ("I would", "I'd typically", "My approach would be") and general knowledge are not claims about the user or a company.`;
+
+/**
+ * 19 Nov 2026 (the developer's definition): invented is only a claim about the user's past, role or results,
+ * a company, price, client or number fact, or a made-up statistic or source. The example-story clause keeps
+ * the "Full example story" setting (missingInfo 'story'), which asks for a generic invented story, from
+ * counting every compliant answer.
+ */
+const INVENTED_RULE = `- invented: only these, in the answer's own words: a claim about the user's past, role or results that the session details, documents and call do not state; a fact about a company, a price, a client or a number that they do not give; a made-up statistic or source. Approach lines ("I would", "I'd typically", "My approach would be"), general knowledge, stated assumptions in an estimate and simple arithmetic on supported figures are never invented. When the session's "Missing information" line asks for an example story, a generic example story is what was asked for: list only a company name, a number or a named result in it. Empty when there are none.`;
+
+/**
+ * The grader's instructions: the rubric (the same as docs/testing/answer-eval.md).
+ *
+ * @param rubric 'current', or 'previous' for the rules before 19 Nov 2026 (--compare-rubric).
+ * @returns The system prompt.
+ * Called from: grade()
+ */
+function graderSystem(rubric: 'current' | 'previous'): string {
+  return GRADER_SYSTEM_TEMPLATE.replace(
+    '{grounded}',
+    rubric === 'previous' ? GROUNDED_RULE_PREVIOUS : GROUNDED_RULE,
+  ).replace('{invented}', rubric === 'previous' ? INVENTED_RULE_PREVIOUS : INVENTED_RULE);
+}
+
+/** The rubric with its grounded and invented rules left as {grounded} and {invented} (graderSystem()). */
+const GRADER_SYSTEM_TEMPLATE = `You grade answers written by Kite, a live call assistant. Kite reads the session details, documents and the call so far, and writes an answer the user can say to the other person, or, when the question says it is private, a direct answer for the user to read. Grade strictly against the rubric. Score only what is written in the answer.
 
 Rubric:
 - facts (0-3): how many of the "must include" points the answer contains, correctly. 3 = all, 2 = most, 1 = some, 0 = none or wrong.
@@ -165,7 +206,7 @@ Rubric:
 - style (0-1): 1 = follows the session's answer format (bullets: only short bullets with no headline line, the first giving the direct answer, optionally followed by the same two lines; headline+bullets: a headline line, which is one plain sentence of at most 15 words, then short bullets (a reply that needs nothing more may be the headline alone, and a brief "As I mentioned" may open a repeated answer), optionally followed by one closing line starting "Tip:" and one line starting "Note:" that is private to the user, both allowed only when they add something and do not repeat a bullet; paragraph: one short paragraph, no bullets), length, tone and instructions, with no greeting or preamble; 0 = it does not, or the spoken part says or implies that something is missing from the notes, CV or documents (a "Note:" line may name what to check). A coding answer has its own shape: an approach line, "Key steps:" with bullets, a code block, a "Complexity:" line and a "Say:" line, whatever the format. A screenshot answer follows what the screen shows: code with an error gives the cause, the fix and corrected code; a slide or document its key points and how to respond; a table or chart its takeaway and key numbers; a screen that cannot be read says so in one line. A private answer is free in shape, and only has to be direct and clear.
 - complete (0-2): is the answer complete and useful for this kind of question, within the user's length setting? 2 = it gives what this kind of question needs: a concept says what it is, how it works and why it matters or its main trade-off; a design names the main parts, how data flows and one trade-off; a behavioural answer says what I did and the result the CV gives; a sales or client answer meets the need with the facts that support it; a coding answer solves the problem with working code; a screenshot answer gives the key point or the solution (the answer to the question on the screen, the fix, the takeaway), never only a description of the screen. 1 = correct but thin: it leaves out part of what this kind of question needs, or stays vague where a concrete step, reason or example would help. 0 = it does not answer: it only describes, restates the question, or asks whether the user wants an answer. A fact the session, documents and call do not give is never counted as missing here, and a short answer that is complete for a simple question gets 2.
 - reason: one short sentence on what cost points ("none" when nothing did).
-- invented: every price, personal number, statistic, source or fact about a company that the answer states and that the session details, documents and call do not support, in the answer's own words. General technical knowledge, stated assumptions in an estimate and simple arithmetic on supported figures are not invented. Empty when there are none.`;
+{invented}`;
 
 /**
  * The group a scenario belongs to: 'lessons' for scenarios with approved lessons (Day 5
@@ -574,6 +615,7 @@ export function answerAgreement(
  * @param model    The smart model's name.
  * @param meter    Counts the spend.
  * @param earlier  Consistency scenarios: the first answer the grader compares with.
+ * @param rubric   'previous' grades with the rules before 19 Nov 2026 (--compare-rubric); default 'current'.
  * @returns The grade.
  * Called from: main()
  */
@@ -583,6 +625,7 @@ async function grade(
   model: string,
   meter: SpendMeter,
   earlier?: { question: string; text: string },
+  rubric: 'current' | 'previous' = 'current',
 ): Promise<Grade> {
   const prompt = [
     'Session details and documents:',
@@ -634,7 +677,7 @@ async function grade(
   const { value, usage } = await jsonReply({
     model,
     tier: 'smart',
-    system: GRADER_SYSTEM,
+    system: graderSystem(rubric),
     prompt,
     schema: GRADE_SCHEMA,
     maxTokens: 600,
@@ -737,6 +780,9 @@ function summariseChecks(results: readonly ScenarioResult[]): string[] {
     ...line('For the call / Ask Kite as expected', (checks) => checks.targetOk),
     ...line('No comment on what Kite was given', (checks) => !checks.metaComment),
     ...line('Grader found nothing invented', (checks) => checks.invented.length === 0),
+    ...line('Previous rubric found nothing invented (--compare-rubric)', (checks) =>
+      checks.inventedPrevious === undefined ? undefined : checks.inventedPrevious.length === 0,
+    ),
     ...line(
       'No number outside the documents and call',
       (checks) => checks.unsupportedNumbers.length === 0,
@@ -816,6 +862,9 @@ async function main(): Promise<void> {
   const answerModel = parseAnswerModel(argv);
   // ADR-0101: --spoken, typed questions sent as spoken voice questions.
   const spoken = process.argv.slice(2).includes('--spoken');
+  // 19 Nov 2026: --compare-rubric also grades each answer with the rubric before that day (one more grader
+  // request per answer), to show what the new invented rule changes on the same replies.
+  const compareRubric = process.argv.slice(2).includes('--compare-rubric');
   // ADR-0093: cleaned as the app cleans it, so the prompt is the one a named call sends.
   const theirName = cleanPersonName(options.theirName) || null;
   const scenarios = loadScenarios(options.only);
@@ -830,6 +879,14 @@ async function main(): Promise<void> {
       },
       ...(options.grade
         ? [{ label: 'grades', model: process.env.KITE_MODEL_SMART || 'the smart model' }]
+        : []),
+      ...(options.grade && compareRubric
+        ? [
+            {
+              label: 'grades by the previous rubric',
+              model: process.env.KITE_MODEL_SMART || 'the smart model',
+            },
+          ]
         : []),
     ]),
   );
@@ -923,6 +980,10 @@ async function main(): Promise<void> {
         bullets: shape.bullets,
       };
       const checks = await extraChecks(scenario, answer, graded, first);
+      const previous =
+        compareRubric && options.grade && !nothingToGrade
+          ? await grade(scenario, text, env.modelSmart, meter, first, 'previous')
+          : null;
       runs.push({
         run,
         scores,
@@ -936,6 +997,7 @@ async function main(): Promise<void> {
             ...(options.grade && !nothingToGrade ? { complete: graded.complete } : {}),
           },
           empty: !nothingToGrade && text.trim() === '',
+          ...(previous ? { inventedPrevious: previous.invented } : {}),
         },
       });
       if (options.show) {
