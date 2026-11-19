@@ -17,7 +17,7 @@
  */
 'use client';
 
-import { FOCUSED_HOTKEYS, hotkeyLabel } from '@kite/shared';
+import { focusedHotkeys, hotkeyLabel } from '@kite/shared';
 import type { CompactChip, CompactCommand, CompactState } from '@/core/live/liveChannel';
 import { CollapseIcon } from '@/ui/icons';
 import {
@@ -218,7 +218,8 @@ function WordsLine({
 export function StatusBar(props: StatusBarProps) {
   const { state, mac } = props;
   const message = statusMessage(state, props.privateOff, props.privateOffInCall ?? false);
-  const clearKey = FOCUSED_HOTKEYS['clear-transcript'];
+  // ADR-0110: a Mac's keys on a Mac.
+  const clearKey = focusedHotkeys(mac)['clear-transcript'];
   return (
     <div
       role="group"

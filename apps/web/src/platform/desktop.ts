@@ -109,6 +109,10 @@ export function acceleratorLabel(accelerator: string, os: DesktopOs): string {
   const keys: Record<string, string> = { Left: '←', Right: '→', Enter: 'Enter' };
   const parts = accelerator.split('+').map((part) => {
     if (part === 'CommandOrControl') return os === 'mac' ? '⌘' : 'Ctrl';
+    // ADR-0110: a Mac's keys name ⌃ (Control), ⌘ (Command) and ⌥ (Option) themselves.
+    if (part === 'Control') return os === 'mac' ? '⌃' : 'Ctrl';
+    if (part === 'Command') return '⌘';
+    if (part === 'Alt') return os === 'mac' ? '⌥' : 'Alt';
     if (part === 'Shift') return os === 'mac' ? '⇧' : 'Shift';
     return keys[part] ?? part;
   });

@@ -221,6 +221,10 @@ describe('desktop onHotkey with the Day 4 shell', () => {
     expect(acceleratorLabel('CommandOrControl+Enter', 'windows')).toBe('Ctrl+Enter');
     expect(acceleratorLabel('CommandOrControl+Shift+Enter', 'mac')).toBe('⌘⇧Enter');
     expect(acceleratorLabel('CommandOrControl+Right', 'mac')).toBe('⌘→');
+    // ADR-0110: the Mac keys name ⌃, ⌥ and ⌘ themselves.
+    expect(acceleratorLabel('Control+Alt+Left', 'mac')).toBe('⌃⌥←');
+    expect(acceleratorLabel('Control+Command+Right', 'mac')).toBe('⌃⌘→');
+    expect(acceleratorLabel('CommandOrControl+Alt+K', 'windows')).toBe('Ctrl+Alt+K');
   });
 });
 

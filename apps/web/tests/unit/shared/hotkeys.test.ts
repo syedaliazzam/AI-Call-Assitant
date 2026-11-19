@@ -2,18 +2,26 @@
  * Tests packages/shared/src/hotkeys.ts (v1.0.2, ADR-0035): no two Kite shortcuts share keys — the
  * call shortcuts, the focused ones and Ask Kite together — so adding the script bar (Ctrl+Alt+S)
  * cannot shadow another Kite shortcut; every global shortcut has a Settings row, and the script
- * bar is a page action the shell forwards (like Answer), not an overlay action.
+ * bar is a page action the shell forwards (like Answer), not an overlay action. ADR-0110: the Mac keys
+ * never hold a Mac text-editing or window key, change nothing else, never collide, and show ⌃ ⌥ / ⌃ ⌘.
  */
 import {
   ASK_KITE_HOTKEY,
   DEFAULT_GLOBAL_HOTKEYS,
   FOCUSED_HOTKEYS,
+  focusedHotkeys,
   GLOBAL_HOTKEYS,
+  globalHotkeys,
   HOTKEY_ACTIONS,
   hotkeyAccelerator,
+  hotkeyLabel,
+  hotkeyRows,
   keycapParts,
   HOTKEY_ROWS,
+  MAC_GLOBAL_HOTKEYS,
+  MAC_HOTKEY_CHANGES,
   SCREENSHOT_SEND_HOTKEY,
+  TRANSCRIPT_HOTKEY,
   VOICE_CANCEL_HOTKEY,
 } from '@kite/shared';
 import { describe, expect, it } from 'vitest';
@@ -127,5 +135,72 @@ describe('moving the overlay (ADR-0095)', () => {
   it('lists the move row with its new keys', () => {
     const row = HOTKEY_ROWS.find((candidate) => candidate.actions.includes('overlay-spot-left'));
     expect(row?.keysOverride).toBe('CommandOrControl+Shift+Arrows');
+  });
+});
+
+describe('the Mac keys (ADR-0110)', () => {
+  /** The Mac's text-editing and window keys a call must never take. */
+  const MAC_EDITING_KEYS = [
+    'CommandOrControl+Left',
+    'CommandOrControl+Right',
+    'CommandOrControl+Backspace',
+    'CommandOrControl+=',
+    'CommandOrControl+-',
+    'CommandOrControl+0',
+    'CommandOrControl+Shift+Left',
+    'CommandOrControl+Shift+Right',
+    'CommandOrControl+Shift+Up',
+    'CommandOrControl+Shift+Down',
+    'CommandOrControl+Alt+H',
+  ];
+
+  it('never holds a Mac text-editing or window key', () => {
+    const mac = Object.values(globalHotkeys(true));
+    for (const key of MAC_EDITING_KEYS) expect(mac).not.toContain(key);
+  });
+
+  it('changes only those keys, and keeps every other one as on Windows', () => {
+    for (const action of GLOBAL_HOTKEYS) {
+      if (action in MAC_HOTKEY_CHANGES) continue;
+      expect(MAC_GLOBAL_HOTKEYS[action]).toBe(DEFAULT_GLOBAL_HOTKEYS[action]);
+    }
+    expect(globalHotkeys(false)).toBe(DEFAULT_GLOBAL_HOTKEYS);
+  });
+
+  it('has no two Mac shortcuts on the same keys', () => {
+    const keys = [
+      ...Object.values(MAC_GLOBAL_HOTKEYS),
+      ASK_KITE_HOTKEY,
+      TRANSCRIPT_HOTKEY,
+      VOICE_CANCEL_HOTKEY,
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('shows ⌃ ⌥ and ⌃ ⌘ on a Mac and Ctrl elsewhere', () => {
+    expect(hotkeyAccelerator('clear', true)).toBe('Control+Alt+Backspace');
+    expect(hotkeyAccelerator('clear')).toBe('CommandOrControl+Backspace');
+    expect(keycapParts(hotkeyAccelerator('prev', true), true)).toEqual(['⌃', '⌥', '←']);
+    expect(keycapParts(hotkeyAccelerator('overlay-row-top', true), true)).toEqual(['⌃', '⌘', '↑']);
+    expect(keycapParts(hotkeyAccelerator('answer', true), true)).toEqual(['⌘', '↵']);
+    expect(hotkeyLabel('Control+Alt+Shift+Backspace', true)).toBe('⌃ ⌥ ⇧ ⌫');
+    expect(hotkeyLabel('Control+Command+Left', true)).toBe('⌃ ⌘ ←');
+    expect(hotkeyLabel('Control+Alt+Left', false)).toBe('Ctrl+Alt+←');
+    expect(focusedHotkeys(true).next).toBe('Control+Alt+Right');
+    expect(focusedHotkeys(false)).toEqual(FOCUSED_HOTKEYS);
+  });
+
+  it('lists the Mac keys in Settings on a Mac, and the same rows', () => {
+    const mac = hotkeyRows(true);
+    expect(mac.map((row) => row.label)).toEqual(HOTKEY_ROWS.map((row) => row.label));
+    expect(mac.find((row) => row.actions.includes('prev'))?.keysOverride).toBe(
+      'Control+Alt+Left / Right',
+    );
+    expect(mac.find((row) => row.actions.includes('overlay-row-top'))?.keysOverride).toBe(
+      'Control+Command+Arrows',
+    );
+    expect(mac.find((row) => row.actions.includes('answer'))?.accelerator).toBe(
+      'CommandOrControl+Enter',
+    );
   });
 });

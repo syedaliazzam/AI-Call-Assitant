@@ -32,6 +32,7 @@ import path from 'node:path';
 import {
   DESKTOP_PROTOCOL,
   RECORDING_SCHEME,
+  globalHotkeys,
   isSessionId,
   PAGES_WINDOW_PATH,
   parseDesktopLink,
@@ -654,6 +655,8 @@ function start(): void {
       // 1.6.4 (ADR-0082): Ctrl+Shift+Space is the voice question, so it no longer gives the overlay the
       // keyboard (v1.1.0 to 1.6.3 it did, for typing in the chat box): the meeting keeps it.
       allowedOrigin: config.allowedOrigin,
+      // 1.8.0 (ADR-0110): a Mac's keys leave its text-editing and window keys to other apps.
+      accelerators: globalHotkeys(process.platform === 'darwin'),
     });
     // The compact live window and screen-share protection (Day 5); the shell remembers the
     // window's position and size and the protection setting in its own small file.

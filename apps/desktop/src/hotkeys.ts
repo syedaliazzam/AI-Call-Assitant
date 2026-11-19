@@ -12,7 +12,8 @@
  *          (v1.3.2, ADR-0061: Ctrl+Alt+X) goes to the page like the script bar. 1.6.4 (ADR-0082): the
  *          screenshot and voice question (Ctrl+Alt+Enter), Clear answers, Clear transcript, previous / next
  *          answer and the zoom keys are held for the whole call too, and Escape only while a voice question
- *          listens.
+ *          listens. 1.8.0 (ADR-0110): on macOS main.ts passes the Mac keys (globalHotkeys(true)), which
+ *          leave the Mac's text-editing and window keys (⌘←/→, ⌘⌫, ⌘= / - / 0, ⌘⇧ arrows, ⌘⌥H) to other apps.
  * Used by: src/main.ts (installHotkeys)
  * Depends on: electron (globalShortcut, ipcMain types), @kite/shared (DEFAULT_GLOBAL_HOTKEYS,
  *             HOTKEY_ACTIONS, HotkeyStatus), src/channels.ts
@@ -254,6 +255,11 @@ export interface HotkeyDeps {
   showForAskKite?: () => void;
   /** The Kite origin. */
   allowedOrigin: string;
+  /**
+   * ADR-0110: the shortcuts to hold (globalHotkeys(true) on macOS, which leaves the Mac's text-editing and
+   * window keys alone); DEFAULT_GLOBAL_HOTKEYS when absent (Windows, tests).
+   */
+  accelerators?: Readonly<Record<CallHotkey, string>>;
 }
 
 /**
@@ -265,14 +271,18 @@ export interface HotkeyDeps {
  * Called from: start() in main.ts; tests
  */
 export function installHotkeys(deps: HotkeyDeps): HotkeyController {
-  const controller = createHotkeys(deps.globalShortcut, (action) => {
-    if (action.startsWith('overlay-')) deps.overlayAction?.(action);
-    else {
-      // The page has to be in view for Ask Kite: main.ts brings up the right window first.
-      if (action === 'ask-kite') deps.showForAskKite?.();
-      deps.sendToPage(HOTKEY_CHANNEL, action);
-    }
-  });
+  const controller = createHotkeys(
+    deps.globalShortcut,
+    (action) => {
+      if (action.startsWith('overlay-')) deps.overlayAction?.(action);
+      else {
+        // The page has to be in view for Ask Kite: main.ts brings up the right window first.
+        if (action === 'ask-kite') deps.showForAskKite?.();
+        deps.sendToPage(HOTKEY_CHANNEL, action);
+      }
+    },
+    deps.accelerators,
+  );
   const askKite = controller.enableAskKite();
   if (!askKite.registered) console.info('desktop: Ask Kite shortcut taken by another app');
   deps.ipcMain.handle(CHECK_HOTKEYS_CHANNEL, (event) => {

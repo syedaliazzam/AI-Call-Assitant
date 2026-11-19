@@ -193,26 +193,26 @@ With Google Drive connected (**Settings → Google Drive**), each call's folder 
 
 ## Hotkeys
 
-| Action | Keys | Works |
-|---|---|---|
-| Answer | Ctrl+Enter | Any app, during a call |
-| Answer from a screenshot | Ctrl+Shift+Enter | Any app, during a call |
-| Voice question: speak, sent as soon as you stop (Esc cancels) | Ctrl+Shift+Space | Any app, during a call (desktop app); the Paramount AI tab (browser) |
-| Screenshot and voice question | Ctrl+Alt+Enter | Any app, during a call |
-| Previous or next answer | Ctrl+Left / Right | Any app, during a call (desktop app 1.6.4) |
-| Clear answers | Ctrl+Backspace | Any app, during a call (desktop app 1.6.4) |
-| Clear transcript | Ctrl+Shift+Backspace | Any app, during a call (desktop app 1.6.4) |
-| Zoom the bars in, out, back to 100 % | Ctrl+= / Ctrl+- / Ctrl+0 | Any app, during a call (desktop app 1.6.4) |
-| Script bar | Ctrl+Alt+S | Any app, during a call |
-| Click-through on or off | Ctrl+Alt+X | Any app, during a call |
-| Start or stop recording (asks first) | Ctrl+Alt+R | Any app, during a call (desktop app 1.5.0) |
-| Show or hide the bars | Ctrl+Alt+H | Any app, during a call |
-| Move the bars to the next place (← → along the row, ↑ ↓ top or bottom row) | Ctrl+Shift+Arrows | Any app, during a call (desktop app 1.7.0; before it Ctrl+Alt+Arrows) |
-| Nudge the bars | Ctrl+Alt+Shift+Arrows | Any app, during a call |
-| Transcript on or off | Ctrl+Alt+T | While the bars have focus |
-| Open Ask AI | Ctrl+Alt+K | Any app, while the desktop app runs (during a call it opens in its own window) |
+| Action | Keys (Windows) | Keys (Mac) | Works |
+|---|---|---|---|
+| Answer | Ctrl+Enter | ⌘ ↵ | Any app, during a call |
+| Answer from a screenshot | Ctrl+Shift+Enter | ⌘ ⇧ ↵ | Any app, during a call |
+| Voice question: speak, sent as soon as you stop (Esc cancels) | Ctrl+Shift+Space | ⌘ ⇧ Space | Any app, during a call (desktop app); the Paramount AI tab (browser) |
+| Screenshot and voice question | Ctrl+Alt+Enter | ⌘ ⌥ ↵ | Any app, during a call |
+| Previous or next answer | Ctrl+Left / Right | ⌃ ⌥ ← / → | Any app, during a call (desktop app 1.6.4) |
+| Clear answers | Ctrl+Backspace | ⌃ ⌥ ⌫ | Any app, during a call (desktop app 1.6.4) |
+| Clear transcript | Ctrl+Shift+Backspace | ⌃ ⌥ ⇧ ⌫ | Any app, during a call (desktop app 1.6.4) |
+| Zoom the bars in, out, back to 100 % | Ctrl+= / Ctrl+- / Ctrl+0 | ⌃ ⌥ = / - / 0 | Any app, during a call (desktop app 1.6.4) |
+| Script bar | Ctrl+Alt+S | ⌘ ⌥ S | Any app, during a call |
+| Click-through on or off | Ctrl+Alt+X | ⌘ ⌥ X | Any app, during a call |
+| Start or stop recording (asks first) | Ctrl+Alt+R | ⌘ ⌥ R | Any app, during a call (desktop app 1.5.0) |
+| Show or hide the bars | Ctrl+Alt+H | ⌃ ⌥ H | Any app, during a call |
+| Move the bars to the next place (← → along the row, ↑ ↓ top or bottom row) | Ctrl+Shift+Arrows | ⌃ ⌘ arrows | Any app, during a call (desktop app 1.7.0; before it Ctrl+Alt+Arrows) |
+| Nudge the bars | Ctrl+Alt+Shift+Arrows | ⌘ ⌥ ⇧ arrows | Any app, during a call |
+| Transcript on or off | Ctrl+Alt+T | ⌘ ⌥ T | While the bars have focus |
+| Open Ask AI | Ctrl+Alt+K | ⌘ ⌥ K | Any app, while the desktop app runs (during a call it opens in its own window) |
 
-On macOS, Ctrl is ⌘. In a browser, all of them work while the tab has focus. While a call runs in the desktop app (1.6.4), the keys above belong to Paramount AI: for example **Ctrl+Backspace** does not delete a word in another app until the call ends. With an older desktop app, previous / next, the two Clears and zoom work only while Paramount AI is in front. **Ctrl+Shift+Arrows** selects text by word in other apps, so it too belongs to Paramount AI only while a call runs.
+On a Mac, Clear, previous / next, zoom, show or hide and the moves use ⌃ ⌥ (Control+Option) or ⌃ ⌘, so ⌘⌫, ⌘← / ⌘→, ⌘= / ⌘- / ⌘0, ⌘ ⇧ arrows and ⌘ ⌥ H keep their usual meaning in every app during a call (desktop app 1.8.0). In a browser, all of them work while the tab has focus. While a call runs in the desktop app (1.6.4), the keys above belong to Paramount AI: for example **Ctrl+Backspace** does not delete a word in another app until the call ends. With an older desktop app, previous / next, the two Clears and zoom work only while Paramount AI is in front. **Ctrl+Shift+Arrows** selects text by word in other apps, so it too belongs to Paramount AI only while a call runs.
 
 ## Settings
 

@@ -4,7 +4,7 @@
  * shortcuts never conflict; labels read correctly on Windows and macOS; v1.3.0 (ADR-0056): a desktop
  * app with the six positions (and the browser) gets the jump, nudge and Transcript rows, an older one
  * its own move row. Desktop 1.5.0 (ADR-0068): the recording row (Ctrl+Alt+R) only where meetings can be
- * recorded, and it reports a conflict when another app holds the keys.
+ * recorded, and it reports a conflict when another app holds the keys. ADR-0110: a Mac lists the Mac keys.
  */
 import { DEFAULT_GLOBAL_HOTKEYS, HOTKEY_ROWS, hotkeyLabel, type HotkeyStatus } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
@@ -95,5 +95,18 @@ describe('the keys a row shows (ADR-0095)', () => {
   it('shows a plain row as it is when the app holds the same keys', () => {
     const answer = HOTKEY_ROWS.find((row) => row.actions.includes('answer'))!;
     expect(rowKeys(answer, TAKEN)).toBe(DEFAULT_GLOBAL_HOTKEYS.answer);
+  });
+});
+
+describe('Settings on a Mac (ADR-0110)', () => {
+  it('lists the Mac keys, and a Mac app reporting them shows them as they are', () => {
+    const rows = hotkeyRowsFor(true, true, true);
+    const clear = rows.find((row) => row.actions.includes('clear'))!;
+    expect(clear.accelerator).toBe('Control+Alt+Backspace');
+    const held: HotkeyStatus[] = [
+      { action: 'clear', accelerator: 'Control+Alt+Backspace', registered: true },
+    ];
+    expect(rowKeys(clear, held, true)).toBe('Control+Alt+Backspace');
+    expect(hotkeyLabel(rowKeys(clear, held, true), true)).toBe('⌃ ⌥ ⌫');
   });
 });

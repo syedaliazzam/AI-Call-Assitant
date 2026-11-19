@@ -5,16 +5,18 @@
  *          jump and nudge keys, and Transcript (Ctrl+Alt+T, checked like the others), for a desktop app
  *          with the six positions and the browser; an older desktop app sees its own move row. ADR-0095: a row
  *          shows the keys the desktop app reports holding, so a 1.3.0–1.6.5 app still shows Ctrl+Alt+Arrows.
+ *          1.8.0 (ADR-0110): a Mac sees the Mac's keys (⌃⌥ for Clear, previous / next and zoom).
  * Used by: src/features/settings/Settings.tsx
- * Depends on: @kite/shared (HOTKEY_ROWS), src/platform, src/ui/KeyCap.tsx
+ * Depends on: @kite/shared (hotkeyRows), src/platform, src/ui/KeyCap.tsx, src/ui/useIsMac.ts
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.3; docs/design/parakeet-parity.md
  */
 'use client';
 
-import { HOTKEY_ROWS, hotkeyAccelerator, type HotkeyRow, type HotkeyStatus } from '@kite/shared';
+import { hotkeyAccelerator, hotkeyRows, type HotkeyRow, type HotkeyStatus } from '@kite/shared';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { getPlatform } from '@/platform';
 import { KeyCap } from '@/ui/KeyCap';
+import { useIsMac } from '@/ui/useIsMac';
 
 /**
  * Whether another app holds any of a row's global shortcuts.
@@ -36,11 +38,16 @@ export function rowHasConflict(row: HotkeyRow, statuses: readonly HotkeyStatus[]
  *
  * @param positions True for a desktop app from 1.3.0, or the browser.
  * @param recording True where meetings can be recorded (a desktop app from 1.5.0).
+ * @param mac       True on a Mac (ADR-0110: the Mac's keys).
  * @returns The rows to show.
  * Called from: HotkeyList; tests
  */
-export function hotkeyRowsFor(positions: boolean, recording = false): readonly HotkeyRow[] {
-  return HOTKEY_ROWS.filter(
+export function hotkeyRowsFor(
+  positions: boolean,
+  recording = false,
+  mac = false,
+): readonly HotkeyRow[] {
+  return hotkeyRows(mac).filter(
     (row) =>
       (row.shells === undefined || (row.shells === 'positions') === positions) &&
       (!row.recording || recording),
@@ -54,15 +61,20 @@ export function hotkeyRowsFor(positions: boolean, recording = false): readonly H
  *
  * @param row      The row.
  * @param statuses What the desktop app reported (null in a browser, or before it answers).
+ * @param mac      True on a Mac (ADR-0110: the Mac's keys are the row's own).
  * @returns The accelerator to show.
  * Called from: HotkeyList; tests
  */
-export function rowKeys(row: HotkeyRow, statuses: readonly HotkeyStatus[] | null): string {
+export function rowKeys(
+  row: HotkeyRow,
+  statuses: readonly HotkeyStatus[] | null,
+  mac = false,
+): string {
   const shown = row.keysOverride ?? row.accelerator;
   // Any of the row's shortcuts the app reports, compared with that shortcut's own keys.
   const status = statuses?.find((candidate) => row.actions.includes(candidate.action));
   const held = status?.accelerator;
-  if (!status || !held || held === hotkeyAccelerator(status.action)) return shown;
+  if (!status || !held || held === hotkeyAccelerator(status.action, mac)) return shown;
   // "CommandOrControl+Alt+Up" stands for the row's four arrows: "CommandOrControl+Alt+Arrows".
   if (row.keysOverride?.endsWith('+Arrows')) {
     return held.replace(/\+(Up|Down|Left|Right)$/, '+Arrows');
@@ -102,7 +114,8 @@ export function HotkeyList() {
     () => getPlatform().recording !== null,
     () => false,
   );
-  const rows = hotkeyRowsFor(positions, recording);
+  const mac = useIsMac();
+  const rows = hotkeyRowsFor(positions, recording, mac);
   const conflicts = rows.filter((row) => rowHasConflict(row, statuses));
   return (
     <>
@@ -133,7 +146,7 @@ export function HotkeyList() {
                 {row.label}
               </th>
               <td className="py-2 pr-4 text-ui-muted">
-                <KeyCap accelerator={rowKeys(row, statuses)} />
+                <KeyCap accelerator={rowKeys(row, statuses, mac)} />
               </td>
               <td className="py-2 text-ui-muted">
                 {row.scope === 'global' ? 'Any app' : 'Paramount AI in front'}
