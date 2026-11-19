@@ -1,0 +1,140 @@
+# ADR-0109: The Mac desktop app as an internal release (self-signed, Terminal installer, its own update channel)
+
+- **Status:** Accepted (19 Nov 2026, the developer's decisions: build on a teammate's Mac, a separate `mac-latest` channel, a custom signing rule for a later Developer ID switch). Not released until the real-Mac test (stage 6) passes.
+- **Date:** 2026-11-19
+- **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §4, §7.3, §10.3 (version 4.48.0)
+- **Supersedes / superseded by:** extends ADR-0028 (Windows installer and update host) to macOS; replaces the macOS column of §10.3 (unsigned `.dmg`, right-click → Open)
+
+## Context
+
+A teammate tried Paramount AI on a Mac and it did not work. The investigation (19 Nov 2026) found:
+
+- **No Mac app was ever published.** All 24 releases in `Zainpak123/kite-releases` hold Windows files only. One unsigned `.dmg` was built by a manual CI run on 2 Nov; it was a 14-day download and has expired.
+- **The Mac build settings were readiness only.** `identity: null` skipped signing, so:
+  - Gatekeeper blocks the app (since macOS 15, only System Settings → Privacy & Security → Open Anyway gets past it);
+  - every build had a new identity, so macOS would forget the Microphone and Screen & System Audio Recording permissions after each update;
+  - the updater could not work: it needs a `.zip` and a `latest-mac.yml`, and Squirrel.Mac (Apple's updater framework that electron-updater uses) installs an update only if it is signed like the running app.
+- **The Intel build would have carried the Apple-chip speech engine.** `scripts/stage-native.mjs` staged only the build machine's CPU.
+
+There is no Apple Developer account ($99 a year, the lead's decision). The app is for the team only.
+
+## Decision
+
+**1. One company self-signed code-signing certificate, for every build.**
+
+- Name: **"Paramount Intelligence Internal Code Signing"**. RSA 3072, valid for 100 years, marked for code signing only (`extendedKeyUsage = codeSigning`).
+- Created once, on a Mac, by the lead or the developer, with `apps/desktop/scripts/mac/make-signing-cert.sh`. Claude Code never creates, reads or handles the private key or its password.
+- **Where it lives:**
+  - **Master copy:** the certificate and private key as one password-protected `.p12` file, attached to an entry in the company password manager. Only the lead and the developer can open that entry. The `.p12` password is in a separate entry.
+  - **Backup:** the password manager is the backup. An optional second copy goes on an encrypted USB drive kept in the office.
+  - **The build Mac:** imported into a dedicated keychain (`paramount-signing.keychain-db`) with its own password, kept locked except while building, and trusted for code signing only (`apps/desktop/scripts/mac/import-signing-cert.sh`).
+  - **The repository:** only the **public** certificate (`apps/desktop/build/mac-signing/certificate.pem`) and its SHA-256 fingerprint. Neither is secret.
+  - **Never:** in the repository, chat, logs, email, Slack or a laptop's ordinary folders.
+- **Why it keeps permissions:** macOS remembers a granted permission against the app's *designated requirement*, a rule built from its signature. For a build signed with our certificate that rule is `identifier "co.paramountintelligence.kite" and certificate root = H"<our certificate's SHA-1>"`. Every build signed with the same certificate meets it, so Microphone and Screen & System Audio Recording stay granted across updates. (An ad-hoc or unsigned build's rule is the hash of that one build, so each update looked like a new app.)
+- **Hardened runtime off** in this mode. Notarization needs it, but with a non-Apple certificate it turns on library validation, which can refuse to load Electron's own frameworks (electron-builder 26.17.0 docs). The microphone and system-audio permission prompts work without it.
+- **If the certificate is ever lost:** make a new one. Every Mac then reinstalls once with the Terminal command (the updater would refuse the differently signed build) and grants the permissions once more.
+
+**2. The build: one universal app, on a teammate's Mac.**
+
+- `electron-builder --mac` makes **one universal app** (Apple chip and Intel in one): `Paramount-AI-<version>-universal.dmg`, `Paramount-AI-<version>-universal-mac.zip`, its `.blockmap`, and `latest-mac.yml`. The zip is what the updater and the Terminal installer use; the `.dmg` is the manual fallback.
+- **Both Mac speech engines are packed.** The build Mac installs both (`pnpm install --cpu=arm64,x64`), `stage-native.mjs --mac-universal` stages both, and `mac.x64ArchFiles` allows them as single-CPU files in the universal merge. The engine picks the right one by CPU at run time. This fixes the Intel problem.
+- `mac.forceCodeSigning: true`: a Mac build fails rather than come out unsigned.
+- **Where:** a teammate's Mac, with `apps/desktop/scripts/mac/build.sh`. The script:
+  - stops if the keychain's certificate is not the one committed in the repository;
+  - unlocks the signing keychain for the build only;
+  - checks the result with `verify-build.sh`.
+- GitHub Actions is not used: its minutes are used up until 1 Dec 2026, a Mac build costs about $1.25–$2 at $0.062 a minute (and 10× against included minutes), and the certificate would need to be stored in one more place. This can be revisited.
+- The Mac app only needs rebuilding when `apps/desktop` changes; the web app updates with every deploy.
+
+**3. Its own update channel: `mac-latest`.**
+
+- The Mac app reads updates from one fixed release tag, `https://github.com/Zainpak123/kite-releases/releases/download/mac-latest/` (electron-updater's generic provider, set in `mac.publish`). Windows keeps reading the newest release, unchanged.
+- **Why:** the GitHub provider looks in the newest release. Windows-only releases (four in three days, 17–19 Nov) would otherwise leave Macs finding no `latest-mac.yml`, and the updater would fail without telling anyone.
+- **Publishing** (by the developer, `apps/desktop/scripts/mac/publish-mac.mjs`):
+  1. it checks the zip's SHA-512 against `latest-mac.yml`;
+  2. it uploads the `.zip`, `.blockmap` and `.dmg` to `mac-latest` first, replacing the old ones;
+  3. it uploads `latest-mac.yml` last, so the updater never sees a half-published version.
+- **Downloads only take the changed parts.** Electron-updater fetches the changed blocks of the zip using the published `.blockmap`. `useMultipleRangeRequest: false`, because GitHub's file servers are not known to answer several byte ranges in one request.
+
+**4. Installation: a one-line Terminal installer, and a `.dmg` fallback.**
+
+- Mac users see, on every download place in the web app:
+
+  ```
+  curl -fsSL https://call.paramountintelligence.co/install-mac.sh | bash
+  ```
+
+  It comes with a Copy button and a link to read the script. The script (`apps/web/public/install-mac.sh`) is short and readable.
+- **What the script does:**
+  1. checks macOS 12 or later (Electron 44's minimum);
+  2. reads `latest-mac.yml` from `mac-latest` and downloads the zip;
+  3. **checks its SHA-512** against the file, and stops on a mismatch;
+  4. unpacks it with `ditto`;
+  5. **checks the signature** (`codesign --verify --deep --strict`), checks that the **signing certificate's SHA-256 fingerprint** equals the one written into the script, and checks the bundle id;
+  6. quits a running Paramount AI;
+  7. replaces the app in `/Applications`, or in `~/Applications` when `/Applications` is not writable (people without admin rights; it never uses `sudo`);
+  8. removes the quarantine attribute and opens the app.
+- **Why both checks:** the checksum and the zip come from the same GitHub release, so the checksum only proves the download is complete. The fingerprint is written into the script, which is served from our own site, not GitHub, so it also proves **who** built the app.
+- A file downloaded with `curl` is not marked as from the internet, so Gatekeeper's "Open Anyway" step does not appear on this path.
+- **Fallback:** "Download for Mac (.dmg)" with the one-time steps: open it once, then System Settings → Privacy & Security → **Open Anyway**.
+
+**5. Updates: the existing updater, with Squirrel.Mac.**
+
+- `src/updater.ts` is unchanged in behaviour on Mac: it never restarts during a call or while Drive uploads are left (ADR-0106), and asks "Restart now / Later".
+- **Two checks on every update:**
+  - electron-updater checks the download's SHA-512 against `latest-mac.yml`;
+  - Squirrel.Mac installs it only if it meets the running app's designated requirement, which only a build signed with our certificate does.
+- **If Squirrel.Mac refuses self-signed updates** in the stage-6 test, we write a small updater of our own (about 1 to 1.5 days):
+  - it downloads the zip and makes the same three checks as the installer;
+  - it unpacks the new app beside the old one;
+  - on quit (or Restart, same rules), a small detached script waits for the app to exit, swaps the folders, removes the quarantine attribute and reopens the app.
+- **For the stage-6 test only:** `KITE_TEST_UPDATE_FEED` points the updater at a feed on the same Mac. Only `http://127.0.0.1` and `http://localhost` addresses are accepted, so it can never point an installed app at another server.
+- **At each start on a Mac**, the app logs the Microphone and Screen Recording permission states, the words only (for example `granted`), never content. This lets the test confirm the permissions survived an update.
+
+**6. Switching to Apple Developer ID later.**
+
+- Changing to Developer ID is a settings and credentials change:
+  - the signing identity (`CSC_NAME`, the Developer ID Application certificate);
+  - hardened runtime and the existing entitlements on;
+  - `mac.notarize: true` with Apple's API key as environment variables (`APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`).
+
+  The override file `apps/desktop/electron-builder.mac-developer-id.yml` already holds these.
+- **The bridge (the custom signing rule).** A Developer ID build is signed differently, so an installed self-signed app's updater would refuse it. Before switching, we ship **one** self-signed release whose designated requirement accepts either certificate:
+
+  ```
+  designated => certificate root = H"<our certificate's SHA-1>" or (anchor apple generic and certificate leaf[subject.OU] = "<Team ID>")
+  ```
+
+  `build.sh` writes this rule when `apps/desktop/build/mac-signing/developer-id-team.txt` holds the Team ID. The rule leaves out the bundle id on purpose: electron-builder applies one requirements file to every signed file, including the helper apps, whose bundle ids differ. Once the bridge release is installed everywhere, the Developer ID release updates automatically.
+- **Correction to the plan sent on 19 Nov:** the bridge makes the *update* automatic, but **macOS will still ask once for Microphone and Screen & System Audio Recording after the switch**. macOS stores the signing rule that was in force when the permission was granted, and the Developer ID build does not meet that old rule. This cannot be avoided without knowing the Team ID before the first grant.
+
+## Consequences
+
+- **Gains:**
+  - Mac users get a one-command install.
+  - Updates arrive like on Windows, with permissions kept.
+  - Every install and update checks who built the app.
+  - Developer ID stays a settings change, plus one bridge release.
+- **The universal app is about 150–200 MB larger** than separate Apple-chip and Intel builds. The updater's block-level downloads take only the changed parts.
+- **A Mac release needs a person with the Mac and the keychain.** Mac releases are rare, because only `apps/desktop` changes need one.
+- **Gatekeeper still blocks the `.dmg` path** until Open Anyway is clicked once. The Terminal path avoids it.
+- **The certificate is a single point of failure.** Losing it means one reinstall per Mac, and permissions granted once more.
+
+## Alternatives considered
+
+- **Apple Developer ID now.** $99 a year and an account to keep; the lead has not decided. Kept possible (§6).
+- **Ad-hoc signing (`identity: "-"`).** Rejected: a new identity per build, so lost permissions and a refused updater on every release.
+- **Separate Apple-chip and Intel builds.** Smaller downloads, but two files to build, publish and pick. The developer asked for one universal app.
+- **GitHub Actions macOS runner.** See §2; can be revisited.
+- **Squirrel.Mac-free updater from the start.** More code to own. Kept as the fallback if stage 6 shows Squirrel.Mac refusing.
+- **A custom designated requirement with the bundle id.** It would apply to the helper apps too and break their signatures (see §6).
+
+## Validation
+
+- **Stage 5:** the certificate is created and stored. `security find-identity -v -p codesigning paramount-signing.keychain-db` lists it, and its SHA-1 matches `certificate.pem`.
+- **Stage 6, on a real Mac** (`docs/testing/mac-release-test.md`):
+  - `verify-build.sh` passes: signature, designated requirement, both CPUs in every binary, both speech engines, SHA-512 in `latest-mac.yml`, the usage texts;
+  - the Terminal installer installs and opens the app with no Gatekeeper warning;
+  - after granting the permissions, an update from a local test feed installs through Squirrel.Mac (or, if refused, we move to the custom updater);
+  - after the update, the log shows `granted` for both permissions, Connect hears both sides without any new prompt, and `codesign -dr -` shows the same designated requirement.
+- Nothing is merged, deployed or published to `mac-latest` before stage 6 passes.

@@ -1,6 +1,6 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "4.47.0"
+version: "4.48.0"
 status: "Current: the single document the team builds from"
 date: "2026-11-19"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 4.47.0, **Current**: the only document to build from |
+| Version | 4.48.0, **Current**: the only document to build from |
+| Changes in 4.48.0 | **The Mac desktop app as an internal release** (ADR-0109; desktop 1.8.0, not released until the real-Mac test passes). §10.3: one company self-signed code-signing certificate ("Paramount Intelligence Internal Code Signing", 100 years, in the company password manager; on the build Mac in its own keychain; only the public certificate in the repository) signs every Mac build, so macOS keeps the Microphone and Screen & System Audio Recording permissions across updates; hardened runtime off until Developer ID. One universal app (`.zip` for the updater and the installer, `.dmg` as the fallback) with both Mac speech engines, built on a teammate's Mac (`apps/desktop/scripts/mac/build.sh`). Its own update channel, the fixed release tag `mac-latest` (generic provider), so Windows-only releases never leave Macs without updates; `publish-mac.mjs` uploads the update file last. Install: `curl -fsSL https://call.paramountintelligence.co/install-mac.sh \| bash` (checks the SHA-512, the signature and the certificate's pinned SHA-256 fingerprint, installs to `/Applications` or `~/Applications`, removes the quarantine attribute), or the `.dmg` with Open Anyway. Developer ID later: settings and credentials (`electron-builder.mac-developer-id.yml`) plus one bridge release whose signing rule accepts both certificates; macOS asks for the permissions once more after that switch. |
 | Changes in 4.47.0 | **CV match signal** (ADR-0108; web only). §7.2: for a question about the user's own past in an interview, mock or blank session (not "Full example story"), the server scores the CV's clauses against the question with the document search's BM25 (`server/prompts/experience.ts`); with no clause sharing a specific word (score under 0.5), the tail ends with "No CV project matches this question: answer only with your approach (I would…), with no past-tense claims." The cached blocks are unchanged. The evaluation's grader counts as invented only claims about the user's past, role or results, company, price, client or number facts, and made-up statistics or sources; the release gate compares with production per scenario (`docs/testing/answer-eval.md`). |
 | Changes in 4.46.0 | **Ctrl+Shift+Enter answers the screen in front** (ADR-0107; web). §7.2: a screen-only screenshot (`screenOnly`, Ctrl+Shift+Enter and the Screenshot button) carries the session and the screen only, never the transcript, an earlier answer or a spoken question; its tail asks for the question or task on the screen to be answered, never described; private by default, and the user's chosen reader always wins over the hidden line (`withChosenTarget()`); new screen type `task` ("Question on screen"); near-miss type words map to Kite types; the screenshot tails never point at the hidden line; `traceId` from the browser is logged next to the request id, with `screenOnly` and `emptyAnswer`. §5: a screenshot card is never deleted (a garbled or none reply shows as Unreadable); a card never stays empty (asked again once, then removed with a notice); a press during a capture is queued; a nearly blank capture is taken again after 300 ms; Voice mode's Ctrl+Alt+Enter screenshot goes with the next question only; a per-press screenshot trace (ids, times, image hash). Ctrl+Alt+Enter keeps the spoken question. Compact view (§5): stacked panels never squeeze the transcript; menus are measured by content on both rows and when they grow; Click-through keeps an open menu; picture-in-picture menus, tooltips, bar fit and Ctrl+Alt+T use the overlay's own document and window; long words wrap; one Esc closes a menu only. §7.3 (desktop 1.7.3): a dragged overlay fits its height to where it lands. |
 | Changes in 4.45.0 | **Recording uploads finish after the user exits the desktop app** (ADR-0106; web and desktop 1.7.2). §7.3: the page reports the Drive work this computer still has (`reportDriveQueue`, a `DriveQueueReport` of counts and bytes, `core/drive/localWork.ts`); an exit with work left (the panel's Close, closing the panel's window with nothing else open, the tray's Quit, Cmd+Q) closes every window but keeps the home panel's page open, hidden and unthrottled, to finish the after-call work and the uploads, shows "Uploading 1 recording to Drive. Paramount AI will close when it's done." and quits by itself when nothing is left, or after 10 minutes without progress (`drive/background.ts`); a tray icon is always there (Open, Quit; the progress while work is left; **Quit now** with a warning after an exit; `tray.ts`); never hidden from the tray, Dock or process list, and a shutdown or sign-out is never held up; an upload whose page goes is stopped so the next page resumes it; the update restart waits for the queue. §7.2/§7.4: an expired upload ticket (`bad_ticket`, after 6 days) starts a new upload session for the same file (a finished file is found by its tag). §5, §7.4: a recorded call's unfinished upload reads "Waiting for the desktop app to finish the upload", and after 24 hours without progress "Upload paused: open the desktop app on the computer used for this call" (call record `drive.movedAt`, stamped by the uploading app; `core/drive/waitWords.ts`). Developer script `drive-stuck-uploads` (read-only). |
@@ -667,15 +668,18 @@ kite/
 
 Production answers on `https://call.paramountintelligence.co` and on `https://kite-call-assistant.vercel.app`, with no redirect, because installed desktop apps are locked to the second (ADR-0046). `BETTER_AUTH_URL` is the first, and `KITE_TRUSTED_ORIGINS` lists both. Each address has its own sign-in and its own local data. **The desktop app stays on the `*.vercel.app` address, which must never be removed or redirected** (ADR-0047). Steps, checks and rollback: `docs/deploy/subdomain.md`.
 
-### 10.3 Desktop app install (unsigned, free)
+### 10.3 Desktop app install (free; Windows unsigned, Mac self-signed)
 
-| | Windows | macOS |
+| | Windows | macOS (4.48.0, ADR-0109) |
 |---|---|---|
-| File | `Kite-Setup-x.y.z.exe` | `Kite-x.y.z-arm64.dmg` |
-| First launch | SmartScreen warning → More info → Run anyway | Right-click the app → Open (or System Settings → Privacy & Security → Open Anyway) |
-| Permissions | Microphone (Windows prompt) | Microphone + Screen & System Audio Recording (granted once). Requires macOS 14.2 or later. |
-| Keeping macOS permissions after updates | — | Sign every build with the same free self-signed certificate (created once in Keychain Access) |
-| Updates | The web app updates on every Vercel deploy. The shell only needs reinstalling when `apps/desktop` changes. | Same |
+| File | `Paramount-AI-Setup-x.y.z.exe` | `Paramount-AI-x.y.z-universal-mac.zip` (installer and updater) and `Paramount-AI-x.y.z-universal.dmg` (fallback): one universal app, Apple chip and Intel |
+| Signing | None | The company self-signed certificate "Paramount Intelligence Internal Code Signing" (100 years). Master copy in the company password manager; on the build Mac in its own keychain; only the public certificate (`apps/desktop/build/mac-signing/certificate.pem`) in the repository |
+| Install | Run the installer | `curl -fsSL https://call.paramountintelligence.co/install-mac.sh \| bash` (checks SHA-512, signature and the certificate's pinned fingerprint; `/Applications`, or `~/Applications` without admin rights). Fallback: the `.dmg`, then System Settings → Privacy & Security → Open Anyway once |
+| First launch | SmartScreen warning → More info → Run anyway | None with the Terminal installer |
+| Permissions | Microphone (Windows prompt) | Microphone + Screen & System Audio Recording, granted once and kept across updates (same certificate). The other side's sound needs macOS 14.2 or later; the app runs on macOS 12 or later |
+| Updates (shell) | electron-updater, newest release of `kite-releases` | electron-updater, the fixed tag `mac-latest` of `kite-releases` (generic provider); Squirrel.Mac installs only a build signed with our certificate |
+| Built on | The developer's laptop | A teammate's Mac (`apps/desktop/scripts/mac/build.sh`) |
+| Updates (web) | The web app updates on every Vercel deploy. The shell only needs a new build when `apps/desktop` changes. | Same |
 
 ### 10.4 Costs
 
