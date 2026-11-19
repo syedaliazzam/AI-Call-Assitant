@@ -166,6 +166,17 @@ describe('attachPopupDismiss: the close conditions', () => {
     expect(close).toHaveBeenCalledWith('escape');
   });
 
+  // ADR-0107: the menu's Escape is marked as used, so the overlay's voice Escape leaves it alone.
+  it('marks its Escape as used, and leaves other keys alone', () => {
+    const { doc } = setup();
+    const enter = event('keydown', { key: 'Enter' });
+    doc.dispatchEvent(enter);
+    expect(enter.defaultPrevented).toBe(false);
+    const escape = event('keydown', { key: 'Escape' });
+    doc.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(true);
+  });
+
   it('stops listening when the menu is closed', () => {
     const { doc, win, close, stop } = setup();
     stop();

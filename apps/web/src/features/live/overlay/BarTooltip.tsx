@@ -154,7 +154,10 @@ export function BarTooltip({ bar, up }: BarTooltipProps) {
       // ADR-0107: not `instanceof Element`: in the picture-in-picture window elements belong to another
       // window, whose Element is a different class, so no tooltip ever showed there.
       const control = isElement(target) ? target.closest<HTMLElement>('[data-tip]') : null;
-      if (!control || !element.contains(control)) {
+      // ADR-0107: no tooltip while a menu is open (k-popup-open, ADR-0105): the pointer still rests on ⋮
+      // after the click that opened it, and the "Menu" tooltip came back on top of the menu.
+      const menuOpen = element.closest('.k-popup-open') !== null;
+      if (!control || !element.contains(control) || menuOpen) {
         hide();
         return;
       }

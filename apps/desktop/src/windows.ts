@@ -1242,6 +1242,10 @@ export function createCompactWindows(deps: CompactDeps): CompactWindows {
       const snapped = snapBounds(bounds, areaFor(bounds));
       // Only when it changes: setBounds fires 'moved' again, and an unchanged window must not loop.
       if (snapped.x !== bounds.x || snapped.y !== bounds.y) current.setBounds(snapped);
+      // ADR-0107: a window the person dragged (to another display, or low on this one) fits its height to
+      // where it is now: the room left and that display's cap. It kept its old height until the content
+      // next changed, and could hang past the work area. applyLayout() leaves an unchanged window alone.
+      if (layout) applyLayout();
     }
     movedSinceSave = false;
     // 1.6.5 (ADR-0085): the width as it is at 100 % zoom, so a reset to 100 % (or the next call at another

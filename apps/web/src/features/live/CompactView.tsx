@@ -545,11 +545,23 @@ export function CompactView(props: CompactViewProps) {
     setRecLeft(Math.max(6, Math.min(recButton.current?.offsetLeft ?? 6, width - 326)));
   }, [popup]);
 
-  // ADR-0094: the model popover sits under its chip, inside the window (it is 256 wide).
+  // ADR-0107: an open menu that grows after it opens (the Model row expanded, a hint, the microphone list
+  // arriving) is measured again, so the window grows with it instead of the menu scrolling.
+  useEffect(() => {
+    const floating = popupElement.current;
+    const Observer = floating ? ownResizeObserver(floating) : undefined;
+    if (popup === null || !floating || !Observer) return;
+    const observer = new Observer(() => setZoomPass((count) => count + 1));
+    for (const child of floating.children) observer.observe(child);
+    return () => observer.disconnect();
+  }, [popup]);
+
+  // ADR-0094: the model popover sits under its chip, inside the window (ADR-0107: it is 288 wide, w-72;
+  // the old 256 let it run 26 px past the right edge at 480 px).
   useLayoutEffect(() => {
     if (popup !== 'model') return;
     const width = root.current?.clientWidth ?? 900;
-    setModelLeft(Math.max(6, Math.min(modelButton.current?.offsetLeft ?? 6, width - 262)));
+    setModelLeft(Math.max(6, Math.min(modelButton.current?.offsetLeft ?? 6, width - 294)));
   }, [popup]);
 
   // v1.3.2: with a panel open, how tall the bars and panels are, so the shell can fit the window to them.
@@ -989,6 +1001,9 @@ export function CompactView(props: CompactViewProps) {
             ref={toastElement}
             role="status"
             data-toast="voice-tip"
+            // ADR-0107: part of the bars for Click-through, so its "Got it" button takes the click (it went
+            // to the app behind).
+            {...{ [BARS_ATTRIBUTE]: '' }}
             className="k-overlay-menu absolute left-1/2 top-[calc(100%+6px)] z-40 flex w-max max-w-[calc(100%-12px)] -translate-x-1/2 items-center gap-3 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal [-webkit-app-region:no-drag]"
           >
             <span>Mute yourself in the meeting first if others can hear you.</span>

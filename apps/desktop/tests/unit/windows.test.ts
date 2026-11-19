@@ -1405,6 +1405,27 @@ describe('1.7.1 (ADR-0105): the answer grows the window up to 70 % of the work a
     expect(window.bounds).toMatchObject({ y: 700, height: 340 });
   });
 
+  // ADR-0107: a window dragged low on the screen (or to another display) fits the room where it lands.
+  it('refits its height after the person drags it, once the move settles', () => {
+    vi.useFakeTimers();
+    try {
+      const { compact } = setup({ ...SIZED, overlayAnswerFit: OVERLAY_ANSWER_FIT_VERSION });
+      compact.open('s1');
+      const window = FakeWindow.created.at(-1)!;
+      window.bounds = { x: 576, y: 16, width: 768, height: 136 };
+      compact.setLayout({ transcript: false, answer: true, popupHeight: 0, contentHeight: 1_500 });
+      expect(window.bounds.height).toBe(728);
+      // Dragged down: the 728-tall window now hangs past the work area's bottom.
+      window.bounds = { x: 576, y: 700, width: 768, height: 728 };
+      window.emit('moved');
+      vi.advanceTimersByTime(600);
+      expect(window.bounds.y + window.bounds.height).toBeLessThanOrEqual(PRIMARY.height);
+      expect(window.bounds.height).toBe(PRIMARY.height - window.bounds.y);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('forgets the answer heights saved before 1.7.1 once, and keeps the others', () => {
     const { compact, store } = setup({
       ...SIZED,

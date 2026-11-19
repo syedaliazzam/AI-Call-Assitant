@@ -13,7 +13,8 @@
  *
  * ADR-0082: Clear (and Ctrl+Backspace) clears the answers: they leave the screen until the next one (until
  * 1.6.3 it only stopped a stream and went back to the newest answer). The ← and → buttons show only the
- * arrows; their tooltips name the keys. Question and answer text is only rendered, and copied when the user
+ * arrows; their screen-reader descriptions name the keys (ADR-0107: no visible tooltip, as no `title`
+ * tooltips are used: the system draws them outside the protected window). Question and answer text is only rendered, and copied when the user
  * asks.
  */
 'use client';
@@ -63,7 +64,10 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
   const answer = state?.answer ?? null;
   const total = state?.total ?? 0;
   const index = state?.index ?? -1;
-  const [reporting, setReporting] = useState(false);
+  // ADR-0107: the answer the Report box is open on (null: closed). Open only while that answer shows, so
+  // it never carries over to another answer (sending it then reported the wrong one).
+  const [reportingId, setReportingId] = useState<string | null>(null);
+  const reporting = answer !== null && answer !== undefined && reportingId === answer.id;
   const [reportNote, setReportNote] = useState('');
   const [copied, setCopied] = useState(false);
   const copy = props.copy ?? ((text: string) => navigator.clipboard.writeText(text));
@@ -78,7 +82,7 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
   /** Sends the report, with what the user wrote. */
   const sendReport = () => {
     if (answer) onCommand({ type: 'report', id: answer.id, note: reportNote });
-    setReporting(false);
+    setReportingId(null);
     setReportNote('');
   };
 
@@ -279,7 +283,11 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                   aria-label={answer.reported ? 'Reported' : 'Report this answer'}
                   aria-pressed={reporting}
                   disabled={answer.reported}
-                  onClick={() => setReporting((open) => !open)}
+                  onClick={() => {
+                    // A box opened on another answer starts empty.
+                    setReportNote('');
+                    setReportingId((open) => (open === answer.id ? null : answer.id));
+                  }}
                 >
                   <FlagIcon />
                 </button>
@@ -295,8 +303,9 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                       }
                     : {})}
                 />
-                {answer.meta && <span aria-hidden="true">·</span>}
-                <span>
+                {/* ADR-0107: the "·" wraps together with the label after it (a lone dot ended the line). */}
+                <span className="whitespace-nowrap">
+                  {answer.meta && <span aria-hidden="true">· </span>}
                   {answer.auto
                     ? 'Auto'
                     : answer.mode === 'answer'
@@ -312,7 +321,7 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                 </span>
               </div>
               {reporting && !answer.reported && (
-                <div className="mt-1 flex gap-1.5">
+                <div className="mt-1 flex gap-1.5 pr-7">
                   <input
                     autoFocus
                     aria-label="What was wrong?"
@@ -323,7 +332,7 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                     onChange={(event) => setReportNote(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') sendReport();
-                      if (event.key === 'Escape') setReporting(false);
+                      if (event.key === 'Escape') setReportingId(null);
                     }}
                   />
                   <button type="button" className={BUTTON} onClick={sendReport}>

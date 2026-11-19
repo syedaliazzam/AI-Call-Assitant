@@ -122,16 +122,20 @@ export function attachPopupDismiss(
     if (pressClosesPopup(event, getPopup(), doc)) close('outside');
   };
   const onKey = (event: Event) => {
-    if ((event as KeyboardEvent).key === 'Escape') close('escape');
+    if ((event as KeyboardEvent).key !== 'Escape') return;
+    // ADR-0107: this Escape is the menu's (heard first, in the capture phase): marked as used, so the
+    // overlay's own Escape (cancel a voice question, turn Voice mode off) leaves it alone.
+    event.preventDefault();
+    close('escape');
   };
   // The window lost focus: the person clicked another app (or the overlay gave the keyboard back).
   const onBlur = () => close('blur');
   doc.addEventListener('pointerdown', onPointer, CAPTURE);
-  doc.addEventListener('keydown', onKey);
+  doc.addEventListener('keydown', onKey, CAPTURE);
   win.addEventListener('blur', onBlur);
   return () => {
     doc.removeEventListener('pointerdown', onPointer, CAPTURE);
-    doc.removeEventListener('keydown', onKey);
+    doc.removeEventListener('keydown', onKey, CAPTURE);
     win.removeEventListener('blur', onBlur);
   };
 }
