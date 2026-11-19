@@ -160,7 +160,9 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           // ADR-0085: room for the scrollbar is always kept, so the words wrap the same with or without it.
           // Otherwise a scrollbar that appeared once (a smaller zoom) narrowed the text, which then wrapped
           // onto one more line and kept the panel scrolling at its old height.
-          className="min-h-0 flex-auto overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2.5 [scrollbar-gutter:stable]"
+          // ADR-0107: a long word or link breaks onto the next line (it ran past the panel and the whole
+          // answer scrolled sideways); code blocks keep their own sideways scroll.
+          className="min-h-0 flex-auto overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2.5 [overflow-wrap:anywhere] [scrollbar-gutter:stable]"
           style={{ zoom: props.fontScale }}
         >
           {answer ? (

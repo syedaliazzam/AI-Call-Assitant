@@ -237,3 +237,19 @@ export function LevelButton({
     </span>
   );
 }
+
+/**
+ * ADR-0107: the ResizeObserver of the window an element is in. In the browser the overlay renders into the
+ * picture-in-picture window, and an observer created by the opener never reports that window's elements
+ * (bar 1 did not refit after the PiP window was resized).
+ *
+ * @param element The element to observe.
+ * @returns Its window's ResizeObserver, or undefined where there is none (jsdom in unit tests).
+ * Called from: ControlBar (the bar's fit), CompactView (the panels' content)
+ */
+export function ownResizeObserver(element: Element): typeof ResizeObserver | undefined {
+  const view = element.ownerDocument.defaultView as (Window & typeof globalThis) | null;
+  return (
+    view?.ResizeObserver ?? (typeof ResizeObserver === 'undefined' ? undefined : ResizeObserver)
+  );
+}

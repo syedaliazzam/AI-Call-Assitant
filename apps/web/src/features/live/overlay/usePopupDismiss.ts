@@ -155,9 +155,13 @@ export function usePopupDismiss(
   });
   useEffect(() => {
     if (!open) return;
+    // ADR-0107: the document the menu is in. In the browser's picture-in-picture window the overlay renders
+    // into the PiP document, so listening on the opener's document missed every press and Esc there.
+    const ownDocument = popup.current?.ownerDocument ?? document;
+    const ownWindow = ownDocument.defaultView ?? window;
     return attachPopupDismiss(
-      document,
-      window,
+      ownDocument,
+      ownWindow,
       () => popup.current,
       (reason) => close.current(reason),
     );
