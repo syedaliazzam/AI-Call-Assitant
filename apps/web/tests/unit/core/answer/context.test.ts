@@ -318,3 +318,61 @@ describe('Batch C (P2-1): the CV and summary in the prefix, matching document pa
     ).toBe('');
   });
 });
+
+// ADR-0107: a screen-only screenshot (Ctrl+Shift+Enter, the Screenshot button) carries the session and the
+// screen only, leaves the conversation log as it was, and is private unless the switch says "For the call".
+describe('buildAnswerRequest, screen-only screenshots (ADR-0107)', () => {
+  const IMAGE = 'data:image/jpeg;base64,/9j/4AAQ';
+  const ANSWERS: CallAnswer[] = [
+    {
+      id: 'a1',
+      mode: 'screenshot',
+      question: 'WHAT DOES THE BLUFF IN ROUTE COST',
+      text: 'This is a pricing page (an earlier tab).',
+      askedAt: START + 6_000,
+    },
+  ];
+
+  it('sends no conversation, latest lines, question, similar answer or document parts', () => {
+    const before = emptyLog();
+    const built = build(
+      {
+        mode: 'screenshot',
+        screenOnly: true,
+        image: IMAGE,
+        lines: FIRST,
+        answers: ANSWERS,
+        typedQuestion: 'WHAT DOES THE BLUFF IN ROUTE COST',
+        log: before,
+      },
+      30,
+    );
+    expect(built.request.mode).toBe('screenshot');
+    expect(built.request.screenOnly).toBe(true);
+    expect(built.request.image).toBe(IMAGE);
+    for (const field of [
+      'conversation',
+      'tail',
+      'question',
+      'similar',
+      'documentChunks',
+    ] as const) {
+      expect(built.request[field]).toBeUndefined();
+    }
+    expect(built.log).toBe(before);
+    expect(built.selected).toBeNull();
+  });
+
+  it('is private by default, and for the call when the switch says so', () => {
+    const base = { mode: 'screenshot' as const, screenOnly: true, image: IMAGE };
+    expect(build(base, 30).request.target).toBe('kite');
+    expect(build({ ...base, target: 'kite' }, 30).request.target).toBe('kite');
+    expect(build({ ...base, target: 'call' }, 30).request.target).toBe('call');
+  });
+
+  it('keeps the call for a screenshot that is not screen-only', () => {
+    const built = build({ mode: 'screenshot', image: IMAGE, lines: FIRST }, 30);
+    expect(built.request.screenOnly).toBeUndefined();
+    expect(built.request.conversation?.length ?? 0).toBeGreaterThan(0);
+  });
+});

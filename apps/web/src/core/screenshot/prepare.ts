@@ -40,7 +40,20 @@ export interface PreparedScreenshot {
   height: number;
   /** JPEG size in bytes. */
   bytes: number;
+  /**
+   * ADR-0107: the first 16 hex digits of the JPEG's SHA-256, for the call's screenshot trace: two presses
+   * that sent the same image have the same hash. Never the image itself.
+   */
+  hash: string;
+  /**
+   * ADR-0107: true when almost the whole image is one colour (a page that has not drawn yet, measured at
+   * +0.3 s after a tab switch): the caller takes it once more.
+   */
+  blank: boolean;
 }
+
+/** ADR-0107: the share of sample points in the most common colour from which an image counts as blank. */
+export const BLANK_SHARE = 0.97;
 
 /** The browser calls prepareScreenshot() uses (replaced in unit tests). */
 export interface ImageCodec {
@@ -59,6 +72,52 @@ export interface ImageCodec {
    * @returns The JPEG bytes.
    */
   encode: (decoded: unknown, attempt: EncodeAttempt) => Promise<Uint8Array>;
+  /**
+   * ADR-0107: how much of the image is its most common colour, 0–1 (from a small grid of sample points).
+   * Optional: without it no image counts as blank.
+   *
+   * @param decoded What decode() returned.
+   * @returns The share.
+   */
+  sameColourShare?: (decoded: unknown) => Promise<number>;
+}
+
+/**
+ * ADR-0107: the first 16 hex digits of the SHA-256 of some bytes.
+ *
+ * @param bytes The bytes (the JPEG).
+ * @returns The short hash.
+ * Called from: prepareScreenshot(); tests
+ */
+export async function shortHash(bytes: Uint8Array): Promise<string> {
+  // The hash is for the trace only: where Web Crypto is missing (a page that is not a secure context, such
+  // as a test harness) it is left empty rather than failing the screenshot.
+  if (typeof crypto === 'undefined' || !crypto.subtle) return '';
+  try {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes.slice()));
+    return Array.from(digest.slice(0, 8), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * ADR-0107: the share of pixels equal (within a small tolerance) to the most common colour.
+ *
+ * @param pixels RGBA bytes of a small sample of the image.
+ * @returns 0–1 (0 for no pixels).
+ * Called from: browserCodec().sameColourShare; tests
+ */
+export function sameColourShareOf(pixels: Uint8ClampedArray | Uint8Array): number {
+  const count = Math.floor(pixels.length / 4);
+  if (count === 0) return 0;
+  // Colours rounded to 16 levels per channel, so JPEG noise and anti-aliasing count as the same colour.
+  const tally = new Map<number, number>();
+  for (let at = 0; at < count * 4; at += 4) {
+    const key = ((pixels[at]! >> 4) << 8) | ((pixels[at + 1]! >> 4) << 4) | (pixels[at + 2]! >> 4);
+    tally.set(key, (tally.get(key) ?? 0) + 1);
+  }
+  return Math.max(...tally.values()) / count;
 }
 
 /**
@@ -125,6 +184,14 @@ export function browserCodec(): ImageCodec {
       const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: attempt.quality });
       return new Uint8Array(await blob.arrayBuffer());
     },
+    sameColourShare: async (decoded) => {
+      // A 48 × 27 sample is enough to tell a blank page from any real screen, and costs nothing.
+      const canvas = new OffscreenCanvas(48, 27);
+      const context = canvas.getContext('2d');
+      if (!context) return 0;
+      context.drawImage(decoded as ImageBitmap, 0, 0, 48, 27);
+      return sameColourShareOf(context.getImageData(0, 0, 48, 27).data);
+    },
   };
 }
 
@@ -153,11 +220,17 @@ export async function prepareScreenshot(
       const bytes = await codec.encode(decoded, attempt);
       if (!isJpeg(bytes)) break;
       if (bytes.length <= MAX_SCREENSHOT_BYTES) {
+        // ADR-0107: the blank check only decides a retake, so it never fails the screenshot.
+        const share = codec.sameColourShare
+          ? await codec.sameColourShare(decoded).catch(() => 0)
+          : 0;
         return {
           dataUrl: jpegDataUrl(bytes),
           width: attempt.width,
           height: attempt.height,
           bytes: bytes.length,
+          hash: await shortHash(bytes),
+          blank: share >= BLANK_SHARE,
         };
       }
     }

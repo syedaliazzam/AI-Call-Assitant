@@ -600,6 +600,8 @@ export function LiveAnswers(props: LiveAnswersProps) {
   });
   // ADR-0082 (Ctrl+Alt+Enter): the screenshot taken before the spoken question, sent with it.
   const voiceShot = useRef<string | null>(null);
+  // ADR-0107: the card that used voiceShot (Voice mode); a new question after it no longer carries the shot.
+  const voiceShotCard = useRef<string | null>(null);
   /**
    * ADR-0082: the voice question (Ctrl+Shift+Space) and the screenshot and voice question (Ctrl+Alt+Enter).
    * Listens to the microphone ("Listening…" on the overlay's status bar) and sends the question after a
@@ -620,7 +622,10 @@ export function LiveAnswers(props: LiveAnswersProps) {
     if (dictation.voice !== 'off') {
       if (!withScreenshot) return;
       const image = await actions.current.captureScreen();
-      if (image) voiceShot.current = image;
+      if (image) {
+        voiceShot.current = image;
+        voiceShotCard.current = null;
+      }
       return;
     }
     if (dictation.listening) {
@@ -634,6 +639,7 @@ export function LiveAnswers(props: LiveAnswersProps) {
       const image = await actions.current.captureScreen();
       if (!image) return;
       voiceShot.current = image;
+      voiceShotCard.current = null;
     }
     dictationRef.current?.start(voiceQuestionTarget(chatTargetRef.current));
   });
@@ -921,13 +927,38 @@ export function LiveAnswers(props: LiveAnswersProps) {
     // taken before a Ctrl+Alt+Enter question goes with every one of these.
     /** The card of the question being asked now, and whether its answer is still held hidden. */
     let card: { id: string; held: boolean } | null = null;
+    /**
+     * ADR-0107: the screenshot for a new question. In Voice mode the Ctrl+Alt+Enter screenshot belongs to the
+     * next question only: once a card has used it and a different question starts, it is dropped (before,
+     * every later voice question carried the old screen).
+     *
+     * @returns The screenshot to send with the new question, or null.
+     */
+    const shotForNewQuestion = () => {
+      if (voiceShotCard.current !== null && voiceShotCard.current !== card?.id) {
+        voiceShot.current = null;
+        voiceShotCard.current = null;
+      }
+      return voiceShot.current;
+    };
+    /**
+     * Notes which card used the screenshot.
+     *
+     * @param id    The card voiceAsk() made, or null when it made none.
+     * @param image The screenshot sent with it, or null.
+     */
+    const usedShot = (id: string | null, image: string | null) => {
+      if (id && image) voiceShotCard.current = id;
+    };
     dictation.setVoiceHandler({
       speculate: (text, _target, timing) => {
+        const image = shotForNewQuestion();
         const id = actions.current.voiceAsk(text, {
-          image: voiceShot.current,
+          image,
           held: true,
           speechEnd: timing.speechEnd,
         });
+        usedShot(id, image);
         card = id ? { id, held: true } : null;
       },
       show: (text, _target, timing) => {
@@ -936,24 +967,31 @@ export function LiveAnswers(props: LiveAnswersProps) {
           card = { id: card.id, held: false };
           return;
         }
+        const image = shotForNewQuestion();
         const id = actions.current.voiceAsk(text, {
-          image: voiceShot.current,
+          image,
           held: false,
           speechEnd: timing.speechEnd,
         });
+        usedShot(id, image);
         card = id ? { id, held: false } : null;
       },
       cancel: () => {
         if (card?.held) actions.current.voiceCancel(card.id);
+        // ADR-0107: the user went on speaking: the same question continues, so the screenshot stays free for it.
+        if (card && voiceShotCard.current === card.id) voiceShotCard.current = null;
         card = null;
       },
       extend: (text, _target, timing) => {
+        // The same question, asked again on its card: it keeps its screenshot.
+        const image = voiceShot.current;
         const id = actions.current.voiceAsk(text, {
-          image: voiceShot.current,
+          image,
           held: false,
           speechEnd: timing.speechEnd,
           ...(card ? { replaces: card.id } : {}),
         });
+        usedShot(id, image);
         card = id ? { id, held: false } : null;
       },
       prewarm: () => actions.current.prewarm(),

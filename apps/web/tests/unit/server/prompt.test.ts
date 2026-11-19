@@ -530,7 +530,7 @@ describe('screenshot answers (Day 5)', () => {
 });
 
 describe('screenshot tail text (Day 5, ADR-0089)', () => {
-  it('starts with the hidden line, and the rules ask for the session style and no label', () => {
+  it('names the kinds of screen without pointing at the hidden line, and the rules ask for the session style and no label (ADR-0107)', () => {
     const prompt = buildPrompt({
       mode: 'screenshot',
       session: SESSION,
@@ -538,7 +538,11 @@ describe('screenshot tail text (Day 5, ADR-0089)', () => {
     });
     const tail = (prompt.messages[0]!.content as Anthropic.TextBlockParam[]).at(-1)!;
     expect(tail.text).toContain(SCREENSHOT_TAIL);
-    expect(SCREENSHOT_TAIL).toContain('nothing comes before that line');
+    // ADR-0107: a sentence about the hidden line made Claude Haiku think aloud about it (measured).
+    expect(SCREENSHOT_TAIL).not.toContain('hidden');
+    expect(SCREENSHOT_TAIL).toContain('The kind of screen is one of');
+    // The contract (first in the rules block) still says nothing comes before the hidden line.
+    expect(SYSTEM_RULES).toContain('Nothing ever comes before it, for a screenshot too');
     expect(SCREENSHOT_RULES).toContain(
       "follow the user's answer format, length, tone and instructions",
     );
@@ -548,10 +552,11 @@ describe('screenshot tail text (Day 5, ADR-0089)', () => {
     );
   });
 
-  it('names a shape for each kind of screen, and joins the call and the documents (ADR-0043)', () => {
+  it('names a shape for each kind of screen, and joins the call and the documents (ADR-0043, ADR-0107)', () => {
     for (const type of [
       'coding',
       'codefix',
+      'task',
       'slide',
       'document',
       'table',
@@ -560,7 +565,13 @@ describe('screenshot tail text (Day 5, ADR-0089)', () => {
     ]) {
       expect(SCREENSHOT_RULES).toContain(`(${type})`);
     }
-    expect(SCREENSHOT_RULES).toContain('answer what the other person just asked about the screen');
+    // ADR-0107: the task on the screen is answered, never only described.
+    expect(SCREENSHOT_RULES).toContain('Find the question or task on the screen and answer it');
+    expect(SCREENSHOT_RULES).toContain('never only describe what the screen shows');
+    expect(SCREENSHOT_RULES).toContain(
+      'for multiple choice, the letter and the text of the correct option',
+    );
+    expect(SCREENSHOT_RULES).toContain('answer that question about the screen');
     expect(SCREENSHOT_RULES).toContain("the session's documents");
     // The guidance is in the cached rules block, so a screenshot's tail stays short.
     expect(SYSTEM_RULES).toContain(SCREENSHOT_RULES);

@@ -37,6 +37,7 @@ Re-run only the groups a change touches. Run the full suite (`pnpm --filter web 
 | `question-detection` | 11, in `tests/eval/groups/detection.ts` (ADR-0043: garbled lines and remarks are not answered as questions; real questions in messy transcripts still are) | `--only=question-detection` | at most 11 × 2 × 2 = 44 (a reply with no answer in it needs no grade) | ≥ 8 |
 | `company-star` | 3, in `tests/eval/groups/company.ts` (ADR-0084: a company "always use STAR" instruction with no CV, a CV with no matching project, a CV with one) | `--only=company-star` | 3 × 2 × 2 = 12 (`--no-grade`: 6) | **Nothing invented** in every run (the grader's `invented` list and the claim check); the matching case keeps the CV's story and result |
 | `screenshot-types` | 7, same file (ADR-0043: a coding problem, a code error, a slide, a chart, a document, a web page, an unreadable screen; code is run) | `--only=screenshot-types` | 7 × 2 × 2 = 28 | ≥ 8, and the code runs |
+| `screen-only` | 7, in `tests/eval/groups/screen-only.ts` (ADR-0107: Ctrl+Shift+Enter sends the screen alone; a coding problem, a multiple-choice question, a chat question, a before/after page, a dashboard, code with an error, an unreadable screen; code is run) | `--only=screen-only` (`--model=sonnet` or `--model=gpt-luna` to compare) | 7 × 2 × 2 = 28 | ≥ 8, hidden line 14/14, never empty, all private, and the code runs |
 
 `--only=<id>` runs one scenario; `--runs=N` sets the runs (default 2 for answers, 3 for notes). Which group a change touches: the rules block or the conversation part of `server/prompt.ts` → `answers` and `screenshots`; the screenshot tail only → `screenshots`; the learned-preferences part of the rules block (`rulesBlock()` with lessons) → `lessons` (a session without lessons sends the Day 4 rules block byte for byte, pinned by a unit test, so `answers` and `screenshots` need no re-run); `server/notes.ts` → `notes`.
 
@@ -778,3 +779,31 @@ Per scenario (Luna / Flash Lite / Flash):
   - Luna's earlier 9.37 (ADR-0099) was measured on the previous default prompt.
 
 Each is a single command (the gate rule asks for a 3-command mean). Decision: ADR-0104. Gemini 3.5 Flash Lite stays in the rollout only. Gemini 3.6 Flash is retired (hidden line 28/30, placeholder copied). Claude Haiku stays the default.
+
+
+## ADR-0107: screen-only screenshots, the "complete and useful" score (19 Nov 2026)
+
+Windows 11 laptop, Node 24.21.0; answers by `claude-haiku-5-5` unless named, graded by `claude-sonnet-5-5`.
+
+**New in the evaluation.** The grader also gives **complete and useful** (0–2: what the kind of question needs, never only a description), reported on its own and not in the /10 total, so totals stay comparable. Each run records words, bullets and that score per question type (a depth table), and an empty-answer check. `--model=sonnet` answers with the smart model on the smart tier, for comparisons.
+
+**Depth, before any change** (previous default prompt vs version 5, ADR-0103):
+
+| Group | Prompt | Overall | Words | Bullets | Complete /2 | Full coverage |
+|---|---|---|---|---|---|---|
+| `answers` | previous | 9.13 | 36.0 | 1.7 | 1.8 | 25/30 |
+| `answers` | version 5 | 9.50 | 39.9 | 1.7 | 1.9 | 28/30 |
+| `screenshots` | previous | 9.33 | 60.2 | 2.7 | 1.7 | 4/6 |
+| `screenshots` | version 5 | 9.00 | 64.5 | 3.0 | 1.8 | 5/6 |
+
+Version 5 is not thinner, so no general prompt change was made; the thin screenshot answers came from the screenshot pipeline (ADR-0107).
+
+**`screen-only` while tuning** (Haiku): 7.64 (the tail pointed at the hidden line: hidden line 7/14, empty 5/14) → 7.43 → 9.36 (type renamed from `question` to `task`: hidden line 14/14, never empty) → **9.29** (final: letter checked against the options, a cause only as a likely one, `task` only for a question the screen asks).
+
+| Answers by | Overall | Hidden line | Type as expected | Private | Not empty | Code runs | Complete /2 | Multiple-choice letter right | Spend |
+|---|---|---|---|---|---|---|---|---|---|
+| Claude Haiku | **9.29** | 14/14 | 8/14 | 14/14 | 14/14 | 4/4 | 1.9 | 1/2 | $0.05 |
+| Claude Sonnet (smart tier) | **9.86** | 14/14 | 14/14 | 14/14 | 14/14 | 4/4 | 2.0 | 2/2 | $0.19 |
+| GPT-5.6 Luna | not run: `OPENAI_API_KEY` is not in `.env.local` (a sensitive Vercel variable cannot be pulled) | | | | | | | | |
+
+**Regression after the change:** `answers` 9.27, 9.33, 9.17 (mean **9.26**, gate 8.86); `screenshots` 8.17 (16 at 6.0 in one run; 9.5 over 4 more runs); `screenshot-types` 9.14; `call-style` 9.00. Spend for ADR-0107's evaluations and probes: about $1.15 (cap $3).

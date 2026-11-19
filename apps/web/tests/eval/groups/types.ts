@@ -64,6 +64,11 @@ export interface Scenario {
   history?: KiteTurn[];
   /** Page scenarios: what is attached to the chat. */
   attachments?: SessionDocument[];
+  /**
+   * ADR-0107: a screen-only screenshot (Ctrl+Shift+Enter): sent as the app sends it, with the session and
+   * the image only (no conversation, tail or question), private unless `target` says otherwise.
+   */
+  screenOnly?: boolean;
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   createTagFilter,
   MAX_LEADING_CHARS,
   withAnswerMeta,
+  withChosenTarget,
   withContractFallback,
   type ContractStats,
   type ReplyItem,
@@ -276,5 +277,25 @@ describe('text before the hidden first line (ADR-0103)', () => {
       if (typeof item === 'string') order.push(`text:${item}`);
     }
     expect(order).toEqual(['piece 1', 'text:We', 'piece 2', 'text: ship in two days.']);
+  });
+});
+
+// ADR-0107: the user's choice of reader (the chat switch, or a screen-only screenshot's private default)
+// wins over the model's hidden line; text and the question pass through unchanged.
+describe('withChosenTarget (ADR-0107)', () => {
+  it('sets the chosen reader on the meta and leaves everything else as it was', async () => {
+    const stats: ContractStats = { missingMeta: false, missingQuestion: false, strippedTags: 0 };
+    const items: ReplyItem[] = [];
+    const reply = withContractFallback(
+      withAnswerMeta(
+        source(['[[coding|call|general]]\nSort, then sweep.\n[[question|How do I merge slots?]]']),
+      ),
+      FALLBACK,
+      stats,
+    );
+    for await (const item of withChosenTarget(reply, 'kite')) items.push(item);
+    expect(items[0]).toEqual({ meta: { type: 'coding', target: 'kite', source: 'general' } });
+    expect(items.filter((item) => typeof item === 'string').join('')).toBe('Sort, then sweep.\n');
+    expect(items).toContainEqual({ question: 'How do I merge slots?' });
   });
 });

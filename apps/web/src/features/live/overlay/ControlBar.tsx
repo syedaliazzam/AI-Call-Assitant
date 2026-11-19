@@ -52,7 +52,15 @@ import {
 } from '@/ui/icons';
 import { BarTooltip } from './BarTooltip';
 import { ModelChip, modelOf } from './ModelChoice';
-import { BUTTON_BASE, CHEVRON_BUTTON, ICON_BUTTON, PILL, StatusIcon, tipShortcut } from './parts';
+import {
+  BUTTON_BASE,
+  CHEVRON_BUTTON,
+  ICON_BUTTON,
+  ownResizeObserver,
+  PILL,
+  StatusIcon,
+  tipShortcut,
+} from './parts';
 import { RecPill } from './RecordControls';
 import { usePrivateOffWhileRecording } from '../PrivateOffWarning';
 
@@ -577,9 +585,11 @@ function useFitStep(key: string): {
   useEffect(() => {
     const roomBox = room.current;
     const contentBox = content.current;
-    // jsdom (unit tests) has no ResizeObserver: the bar then shows everything.
-    if (!roomBox || !contentBox || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => {
+    // jsdom (unit tests) has no ResizeObserver: the bar then shows everything. ADR-0107: the observer of
+    // the bar's own window (one from the opener never reports elements of the picture-in-picture window).
+    const Observer = roomBox ? ownResizeObserver(roomBox) : undefined;
+    if (!roomBox || !contentBox || !Observer) return;
+    const observer = new Observer(() => {
       const was = fitted.current;
       if (contentBox.offsetWidth === was.content && roomBox.clientWidth === was.room) return;
       // Synchronously, so the bar never paints a frame cut off (observers run before paint).

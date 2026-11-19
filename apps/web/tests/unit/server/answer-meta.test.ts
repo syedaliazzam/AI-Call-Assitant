@@ -8,6 +8,7 @@ import {
   ANSWER_TYPE_LABELS,
   ANSWER_TYPES,
   PICKABLE_ANSWER_TYPES,
+  answerTypeOf,
   splitMetaLine,
 } from '@kite/shared';
 import { describe, expect, it, vi } from 'vitest';
@@ -164,5 +165,30 @@ describe('splitMetaLine', () => {
   it('gives up on anything else', () => {
     expect(splitMetaLine('Hello').state).toBe('none');
     expect(splitMetaLine(`[[${'x'.repeat(80)}`).state).toBe('none');
+  });
+});
+
+// ADR-0107: the "task" screen type ("Question on screen"), and type words the model writes instead of a Kite type.
+describe('answerTypeOf (ADR-0107)', () => {
+  it('reads known types as they are and labels the new question type', () => {
+    expect(answerTypeOf('coding')).toBe('coding');
+    expect(answerTypeOf('task')).toBe('task');
+    expect(ANSWER_TYPE_LABELS.task).toBe('Question on screen');
+    expect(ANSWER_TYPES).toContain('task');
+    expect(PICKABLE_ANSWER_TYPES).not.toContain('task');
+  });
+
+  it('maps measured near-misses, and anything else to other', () => {
+    expect(answerTypeOf('code')).toBe('coding');
+    expect(answerTypeOf('Multiple-Choice')).toBe('task');
+    expect(answerTypeOf('mcq')).toBe('task');
+    expect(answerTypeOf('screen')).toBe('webpage');
+    expect(answerTypeOf('dashboard')).toBe('table');
+    expect(answerTypeOf('banana')).toBe('other');
+  });
+
+  it('applies the map when reading the hidden line', () => {
+    const split = splitMetaLine('[[code|kite|docs]]\nSort, then sweep.');
+    expect(split.state === 'found' && split.meta.type).toBe('coding');
   });
 });

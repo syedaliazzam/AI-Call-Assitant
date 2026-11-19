@@ -109,6 +109,13 @@ export interface AnswerContextInput {
    * the best ones go with it. Absent: none are sent.
    */
   chunks?: ChunkIndex;
+  /**
+   * ADR-0107: a screen-only screenshot (Ctrl+Shift+Enter or the Screenshot button): the request carries the
+   * session and the image only, never the call (no conversation, latest lines, question, earlier answer or
+   * document parts), and the conversation log is left as it was, so the next answer still sends every new
+   * line. Its answer is private unless the chat switch says "For the call".
+   */
+  screenOnly?: boolean;
 }
 
 /** What buildAnswerRequest() returns. */
@@ -129,6 +136,32 @@ export interface BuiltAnswerRequest {
  */
 export function emptyLog(): ConversationLog {
   return { chunks: [], sentLines: new Map(), sentAnswers: new Set() };
+}
+
+/**
+ * ADR-0107: the request for a screen-only screenshot: the session (with the user's preferences and the
+ * documents, as background), the image, the model and the cache-related fields of every request, and no
+ * part of the call. The log comes back unchanged: nothing of the call was sent.
+ *
+ * @param input The context (mode 'screenshot', screenOnly, with an image).
+ * @returns The request, the unchanged log and no selected question.
+ * Called from: buildAnswerRequest()
+ */
+function screenOnlyRequest(input: AnswerContextInput): BuiltAnswerRequest {
+  const pin = pinFor(input.callStartedAt);
+  const request: AnswerRequest = {
+    mode: 'screenshot',
+    screenOnly: true,
+    model: input.session.preferences.model,
+    session: toLiveSessionContext(input.session, input.documents),
+    ...(input.image ? { image: input.image } : {}),
+    ...(input.lessons?.length ? { lessons: [...input.lessons] } : {}),
+    // Private by default (ADR-0107); "For the call" on the chat switch still makes it a call answer.
+    target: input.target === 'call' ? 'call' : 'kite',
+    ...(getAnswerStyleVersion() === 'previous' ? { styleVersion: 'previous' as const } : {}),
+    ...(pin ? { instructionsVersion: pin.live } : {}),
+  };
+  return { request, log: input.log, selected: null };
 }
 
 /**
@@ -179,6 +212,8 @@ function trimToLimits(chunks: ConversationChunk[]): ConversationChunk[] {
  * Called from: the live page's Answer and Chat actions; tests
  */
 export function buildAnswerRequest(input: AnswerContextInput): BuiltAnswerRequest {
+  if (input.screenOnly && input.mode === 'screenshot' && input.image)
+    return screenOnlyRequest(input);
   const { stable, tail } = splitStable(input.lines, input.now);
   const sentLines = new Map(input.log.sentLines);
   const sentAnswers = new Set(input.log.sentAnswers);

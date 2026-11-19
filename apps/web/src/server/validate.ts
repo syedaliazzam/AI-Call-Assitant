@@ -221,6 +221,10 @@ export const answerRequestSchema = z
     serviceTier: z.enum(['priority']).optional(),
     // ADR-0101: a spoken (voice) question rather than a typed one.
     spoken: z.boolean().optional(),
+    // ADR-0107: a screen-only screenshot (no transcript, no question from the call).
+    screenOnly: z.boolean().optional(),
+    // ADR-0107: the browser's id for this press (a UUID), only ever written to the server log.
+    traceId: z.string().uuid().optional(),
     session: sessionSchema.optional(),
     conversation: conversationSchema.optional(),
     tail: z.array(callLineSchema).max(MAX_TAIL_LINES).optional(),

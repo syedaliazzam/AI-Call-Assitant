@@ -110,7 +110,7 @@ import {
 } from './overlay/ModelChoice';
 import { OverlayAnswer } from './overlay/OverlayAnswer';
 import { PanelSplit } from './overlay/PanelSplit';
-import { pieceClass, type LevelStore } from './overlay/parts';
+import { ownResizeObserver, pieceClass, type LevelStore } from './overlay/parts';
 import { ResizeGrips } from './overlay/ResizeGrips';
 import { ScriptBar } from './overlay/ScriptBar';
 import { StatusBar } from './overlay/StatusBar';
@@ -252,6 +252,24 @@ function extentOf(element: HTMLElement, up: boolean, height: number): number {
 }
 
 /**
+ * ADR-0107: how much of the window a floating menu, sheet or toast needs to show all it holds: its content
+ * (scrollHeight) and its borders, from the edge the overlay grows from. On the bottom row the visible box
+ * was measured before, which the menu's own max height had already squeezed (the ⋮ menu showed two rows),
+ * and the 2 px of borders were never counted (a scrollbar showed in every menu at rest).
+ *
+ * @param element The floating element (its own box scrolls when it is too tall).
+ * @param up      True on the bottom row.
+ * @param height  The page's height, in its own pixels.
+ * @returns The distance, in the page's own pixels (before the UI scale).
+ * Called from: CompactView (the popup height effect)
+ */
+export function popupExtentOf(element: HTMLElement, up: boolean, height: number): number {
+  const borders = element.offsetHeight - element.clientHeight;
+  const full = element.scrollHeight + Math.max(0, borders);
+  return up ? height - topOf(element) - element.offsetHeight + full : topOf(element) + full;
+}
+
+/**
  * How much of the window a panel would need to show everything it holds (v1.3.2): its extent now plus
  * what its scroll areas (data-scroll) hide. Measured from what is there, so a window that is already
  * smaller than the content still learns how tall it should be.
@@ -273,6 +291,45 @@ function naturalExtentOf(panel: HTMLElement, up: boolean, height: number): numbe
   // What lies between the panel and the edge the overlay grows from (the bars, the panels before it).
   const before = up ? height - topOf(panel) - panel.offsetHeight : topOf(panel);
   return before + neededPanelHeight(panel.offsetHeight, hidden, minHeight);
+}
+
+/**
+ * ADR-0107: whether the open panels are stacked one above the other (both open, under 600 CSS px).
+ *
+ * @param area   The panels' area.
+ * @param panels Its panels.
+ * @returns True when there are two panels in a column.
+ * Called from: CompactView (the height effect)
+ */
+function stackedPanels(area: HTMLElement, panels: readonly HTMLElement[]): boolean {
+  return panels.length > 1 && getComputedStyle(area).flexDirection.startsWith('column');
+}
+
+/**
+ * ADR-0107: how much of the window stacked panels need: from the edge the overlay grows from to the far
+ * edge of the farthest panel, plus what every panel still hides (each one's own need, its default height
+ * included). Measuring each panel alone and taking the largest left the stack short by the other panel's
+ * hidden part (the transcript was squeezed to ~10 px under a 1.7.1 answer).
+ *
+ * @param panels The stacked panels.
+ * @param up     True on the bottom row.
+ * @param height The page's height, in its own pixels.
+ * @returns The distance, in the page's own pixels (before the UI scale).
+ * Called from: CompactView (the height effect)
+ */
+function stackedExtentOf(panels: readonly HTMLElement[], up: boolean, height: number): number {
+  const far = Math.max(
+    ...panels.map((panel) => (up ? height - topOf(panel) : topOf(panel) + panel.offsetHeight)),
+  );
+  const missing = panels.reduce((sum, panel) => {
+    const hidden = [...panel.querySelectorAll<HTMLElement>('[data-scroll]')].reduce(
+      (total, scroller) => total + Math.max(0, scroller.scrollHeight - scroller.clientHeight),
+      0,
+    );
+    const minHeight = Number(panel.dataset.minHeight ?? 0) || 0;
+    return sum + neededPanelHeight(panel.offsetHeight, hidden, minHeight) - panel.offsetHeight;
+  }, 0);
+  return far + missing;
 }
 
 /**
@@ -453,9 +510,10 @@ export function CompactView(props: CompactViewProps) {
   const turnCount = state?.groups?.length;
   useEffect(() => {
     const area = panelsArea.current;
-    // jsdom (unit tests) has no ResizeObserver.
-    if (!area || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setZoomPass((count) => count + 1));
+    // jsdom (unit tests) has no ResizeObserver. ADR-0107: the observer of the area's own window.
+    const Observer = area ? ownResizeObserver(area) : undefined;
+    if (!area || !Observer) return;
+    const observer = new Observer(() => setZoomPass((count) => count + 1));
     for (const content of area.querySelectorAll('[data-scroll] > *')) observer.observe(content);
     return () => observer.disconnect();
     // The panels' content elements change when a panel opens or a new answer replaces the last one.
@@ -468,11 +526,11 @@ export function CompactView(props: CompactViewProps) {
   useLayoutEffect(() => {
     const height = root.current?.offsetHeight ?? 0;
     const floating = popupElement.current;
-    const forPopup = floating ? extentOf(floating, up, height) + 8 : 0;
+    const forPopup = floating ? popupExtentOf(floating, up, height) + 8 : 0;
     const forBars = noPanels && barsEnd.current ? extentOf(barsEnd.current, up, height) + 2 : 0;
     // ADR-0094: the model toast floats like a menu, so the window grows for it too while it shows (ADR-0095:
     // and Voice mode's tip, in the same place).
-    const forToast = toastElement.current ? extentOf(toastElement.current, up, height) + 8 : 0;
+    const forToast = toastElement.current ? popupExtentOf(toastElement.current, up, height) + 8 : 0;
     // Never more than the shell accepts (17 Nov 2026: a taller ⋮ menu made it refuse, and the menu was cut).
     setNeededHeight(
       Math.min(OVERLAY_MAX_POPUP_HEIGHT, Math.max(forPopup, forBars, forToast) * zoom),
@@ -487,11 +545,23 @@ export function CompactView(props: CompactViewProps) {
     setRecLeft(Math.max(6, Math.min(recButton.current?.offsetLeft ?? 6, width - 326)));
   }, [popup]);
 
-  // ADR-0094: the model popover sits under its chip, inside the window (it is 256 wide).
+  // ADR-0107: an open menu that grows after it opens (the Model row expanded, a hint, the microphone list
+  // arriving) is measured again, so the window grows with it instead of the menu scrolling.
+  useEffect(() => {
+    const floating = popupElement.current;
+    const Observer = floating ? ownResizeObserver(floating) : undefined;
+    if (popup === null || !floating || !Observer) return;
+    const observer = new Observer(() => setZoomPass((count) => count + 1));
+    for (const child of floating.children) observer.observe(child);
+    return () => observer.disconnect();
+  }, [popup]);
+
+  // ADR-0094: the model popover sits under its chip, inside the window (ADR-0107: it is 288 wide, w-72;
+  // the old 256 let it run 26 px past the right edge at 480 px).
   useLayoutEffect(() => {
     if (popup !== 'model') return;
     const width = root.current?.clientWidth ?? 900;
-    setModelLeft(Math.max(6, Math.min(modelButton.current?.offsetLeft ?? 6, width - 262)));
+    setModelLeft(Math.max(6, Math.min(modelButton.current?.offsetLeft ?? 6, width - 294)));
   }, [popup]);
 
   // v1.3.2: with a panel open, how tall the bars and panels are, so the shell can fit the window to them.
@@ -505,9 +575,10 @@ export function CompactView(props: CompactViewProps) {
       return;
     }
     const height = page.offsetHeight;
-    const panelExtents = [...area.querySelectorAll<HTMLElement>('[data-panel]')].map((panel) =>
-      naturalExtentOf(panel, up, height),
-    );
+    const panelElements = [...area.querySelectorAll<HTMLElement>('[data-panel]')];
+    const panelExtents = stackedPanels(area, panelElements)
+      ? [stackedExtentOf(panelElements, up, height)]
+      : panelElements.map((panel) => naturalExtentOf(panel, up, height));
     const pieces = [...page.querySelectorAll<HTMLElement>(`[${BARS_ATTRIBUTE}]`)].map((piece) =>
       extentOf(piece, up, height),
     );
@@ -587,8 +658,10 @@ export function CompactView(props: CompactViewProps) {
       event.preventDefault();
       transcriptKey.current();
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    // ADR-0107: the overlay's own document (Ctrl+Alt+T did nothing in the picture-in-picture window).
+    const ownDocument = root.current?.ownerDocument ?? document;
+    ownDocument.addEventListener('keydown', onKey);
+    return () => ownDocument.removeEventListener('keydown', onKey);
   }, [mac]);
 
   // ADR-0055: clicks pass through the gaps, except while a menu or list is open (a click beside it
@@ -928,6 +1001,9 @@ export function CompactView(props: CompactViewProps) {
             ref={toastElement}
             role="status"
             data-toast="voice-tip"
+            // ADR-0107: part of the bars for Click-through, so its "Got it" button takes the click (it went
+            // to the app behind).
+            {...{ [BARS_ATTRIBUTE]: '' }}
             className="k-overlay-menu absolute left-1/2 top-[calc(100%+6px)] z-40 flex w-max max-w-[calc(100%-12px)] -translate-x-1/2 items-center gap-3 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal [-webkit-app-region:no-drag]"
           >
             <span>Mute yourself in the meeting first if others can hear you.</span>
@@ -1024,11 +1100,17 @@ export function CompactView(props: CompactViewProps) {
                   // ADR-0105: with an answer shown, at least the default height (a typical answer, no
                   // scrolling), but never taller than the window allows (100 %): longer answers grow it.
                   {...(answerMin === null ? {} : { 'data-min-height': answerMin })}
+                  // ADR-0107 (fixes a 1.7.1 regression): stacked under the transcript (both open, under 600 CSS
+                  // px), the default height leaves the transcript 7.5 rem; it was squeezed to ~10 px.
                   style={
-                    answerMin === null ? undefined : { minHeight: `min(${answerMin}px, 100%)` }
+                    answerMin === null
+                      ? undefined
+                      : {
+                          minHeight: `min(${answerMin}px, calc(100% - var(--k-stack-reserve, 0px)))`,
+                        }
                   }
                   // ADR-0085: side by side it takes the rest, at least 340.
-                  className={`${piece} flex max-h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${both ? '@min-[600px]:min-w-[340px]' : ''}`}
+                  className={`${piece} flex max-h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${both ? '[--k-stack-reserve:7.5rem] @min-[600px]:min-w-[340px] @min-[600px]:[--k-stack-reserve:0px]' : ''}`}
                 >
                   <OverlayAnswer
                     state={state}

@@ -16,6 +16,9 @@ import {
   isJpeg,
   jpegDataUrl,
   prepareScreenshot,
+  BLANK_SHARE,
+  sameColourShareOf,
+  shortHash,
   type EncodeAttempt,
 } from '@/core/screenshot/prepare';
 import { CaptureError } from '@/platform/errors';
@@ -133,5 +136,60 @@ describe('isJpeg and jpegDataUrl', () => {
     expect(jpegDataUrl(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe(
       'data:image/jpeg;base64,/9j/4A==',
     );
+  });
+});
+
+// ADR-0107: the trace's image hash, and the blank check that makes a page still drawing be taken again.
+describe('prepareScreenshot hash and blank (ADR-0107)', () => {
+  it('gives a 16-digit hash that changes with the bytes, and is not blank without a colour check', async () => {
+    const first = await prepareScreenshot(
+      new Blob(),
+      codec({ width: 100, height: 50 }, () => 2_000).codec,
+    );
+    const second = await prepareScreenshot(
+      new Blob(),
+      codec({ width: 100, height: 50 }, () => 3_000).codec,
+    );
+    expect(first.hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(first.hash).not.toBe(second.hash);
+    expect(first.blank).toBe(false);
+  });
+
+  it('marks an image blank when the colour check finds one colour almost everywhere', async () => {
+    const make = (share: number) => ({
+      ...codec({ width: 100, height: 50 }, () => 2_000).codec,
+      sameColourShare: async () => share,
+    });
+    expect((await prepareScreenshot(new Blob(), make(BLANK_SHARE))).blank).toBe(true);
+    expect((await prepareScreenshot(new Blob(), make(0.6))).blank).toBe(false);
+  });
+
+  it('counts the share of the most common colour, ignoring small noise', async () => {
+    const pixels = (colours: [number, number, number][]) =>
+      new Uint8ClampedArray(colours.flatMap(([r, g, b]) => [r, g, b, 255]));
+    expect(
+      sameColourShareOf(
+        pixels([
+          [255, 255, 255],
+          [250, 252, 249],
+          [255, 254, 255],
+          [0, 0, 0],
+        ]),
+      ),
+    ).toBe(0.75);
+    expect(sameColourShareOf(pixels([]))).toBe(0);
+    await expect(shortHash(new Uint8Array([1, 2, 3]))).resolves.toMatch(/^[0-9a-f]{16}$/);
+  });
+});
+
+// ADR-0107: the hash is for the trace only, so a page without Web Crypto still gets its screenshot.
+describe('shortHash without Web Crypto (ADR-0107)', () => {
+  it('returns an empty hash instead of failing', async () => {
+    vi.stubGlobal('crypto', {});
+    try {
+      await expect(shortHash(new Uint8Array([1, 2, 3]))).resolves.toBe('');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

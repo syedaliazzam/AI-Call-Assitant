@@ -227,7 +227,8 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
     // ADR-0082: Escape with the overlay focused cancels a voice question while it listens (a menu that is
     // open closes first: CompactView's own Escape). ADR-0095: it also turns Voice mode off.
     const onKey = (event: KeyboardEvent) => {
-      if (!isVoiceCancelKey(event)) return;
+      // ADR-0107: an Escape that closed a menu is not also a voice cancel.
+      if (!isVoiceCancelKey(event) || event.defaultPrevented) return;
       const voice = stateRef.current?.voiceMode;
       if (voice === 'listening' || voice === 'paused') {
         channel.current?.send({ type: 'voice-mode', on: false });
@@ -254,6 +255,14 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
     setPanels(next);
     setOverlayPanels(next);
   }, []);
+  // ADR-0107: stable functions, so CompactView's Click-through effects (which list them) do not run on every
+  // state update: a new function each render gave the keyboard back on every new line, and the shell's
+  // blur then closed an open menu.
+  const clickThrough = useCallback(
+    (through: boolean) => getPlatform().setOverlayClickThrough(through),
+    [],
+  );
+  const releaseFocus = useCallback(() => getPlatform().releaseOverlayFocus(), []);
 
   return (
     <div ref={root} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
@@ -279,9 +288,9 @@ export function CompactLive({ sessionId, closeOnEnd = true, email }: CompactLive
         // ADR-0055: clicks pass through the gaps to the app behind (desktop 1.3.0).
         {...(windowControls
           ? {
-              onClickThrough: (through: boolean) => getPlatform().setOverlayClickThrough(through),
+              onClickThrough: clickThrough,
               // v1.3.2: a click on a panel's button gives the keyboard back to the app behind.
-              onReleaseFocus: () => getPlatform().releaseOverlayFocus(),
+              onReleaseFocus: releaseFocus,
             }
           : {})}
         {...(placement

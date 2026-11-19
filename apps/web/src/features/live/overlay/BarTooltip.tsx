@@ -151,8 +151,13 @@ export function BarTooltip({ bar, up }: BarTooltipProps) {
      * @param delay  How long to wait, in ms.
      */
     const show = (target: EventTarget | null, delay: number) => {
-      const control = target instanceof Element ? target.closest<HTMLElement>('[data-tip]') : null;
-      if (!control || !element.contains(control)) {
+      // ADR-0107: not `instanceof Element`: in the picture-in-picture window elements belong to another
+      // window, whose Element is a different class, so no tooltip ever showed there.
+      const control = isElement(target) ? target.closest<HTMLElement>('[data-tip]') : null;
+      // ADR-0107: no tooltip while a menu is open (k-popup-open, ADR-0105): the pointer still rests on ⋮
+      // after the click that opened it, and the "Menu" tooltip came back on top of the menu.
+      const menuOpen = element.closest('.k-popup-open') !== null;
+      if (!control || !element.contains(control) || menuOpen) {
         hide();
         return;
       }
@@ -167,29 +172,35 @@ export function BarTooltip({ bar, up }: BarTooltipProps) {
     const onOver = (event: Event) => show(event.target, TIP_DELAY_MS);
     // Only the keyboard's focus: a click focuses its button too, and closes the tooltip.
     const onFocus = (event: Event) => {
-      if (event.target instanceof Element && event.target.matches(':focus-visible')) {
+      if (isElement(event.target) && event.target.matches(':focus-visible')) {
         show(event.target, 0);
       }
     };
+    // ADR-0107: Enter or Space opens a menu from the keyboard; the tooltip goes with it (it sat on the menu).
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') hide();
+      if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') hide();
     };
+    // ADR-0107: the overlay's own document and window (the picture-in-picture window's, in the browser).
+    const ownDocument = element.ownerDocument;
+    const ownWindow = ownDocument.defaultView ?? window;
     element.addEventListener('pointerover', onOver);
     element.addEventListener('pointerleave', hide);
     element.addEventListener('pointerdown', hide);
+    element.addEventListener('click', hide);
     element.addEventListener('focusin', onFocus);
     element.addEventListener('focusout', hide);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('blur', hide);
+    ownDocument.addEventListener('keydown', onKey);
+    ownWindow.addEventListener('blur', hide);
     return () => {
       if (timer) clearTimeout(timer);
       element.removeEventListener('pointerover', onOver);
       element.removeEventListener('pointerleave', hide);
       element.removeEventListener('pointerdown', hide);
+      element.removeEventListener('click', hide);
       element.removeEventListener('focusin', onFocus);
       element.removeEventListener('focusout', hide);
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('blur', hide);
+      ownDocument.removeEventListener('keydown', onKey);
+      ownWindow.removeEventListener('blur', hide);
     };
   }, [bar]);
 
@@ -199,7 +210,8 @@ export function BarTooltip({ bar, up }: BarTooltipProps) {
     const tip = tipElement.current;
     const barBox = bar.current;
     if (text === null || !control || !tip || !barBox || !control.isConnected) return;
-    const root = barBox.closest<HTMLElement>('.k-overlay-root') ?? document.documentElement;
+    const root =
+      barBox.closest<HTMLElement>('.k-overlay-root') ?? barBox.ownerDocument.documentElement;
     const win = boxOf(root);
     // The page may be zoomed (the UI scale is CSS zoom on the root): client rectangles are in the
     // window's pixels, a fixed element's left and top in the page's own. Their ratio converts.
@@ -223,6 +235,19 @@ export function BarTooltip({ bar, up }: BarTooltipProps) {
     >
       {text}
     </div>,
-    document.body,
+    // ADR-0107: into the overlay's own document (the picture-in-picture window's, in the browser).
+    bar.current?.ownerDocument.body ?? document.body,
   );
+}
+
+/**
+ * ADR-0107: whether an event target is an element, from any window (an element of the picture-in-picture
+ * window is not an instance of this window's Element).
+ *
+ * @param target The event target.
+ * @returns True for an element.
+ * Called from: BarTooltip (show, onFocus)
+ */
+function isElement(target: EventTarget | null): target is Element {
+  return target !== null && typeof (target as Element).closest === 'function';
 }

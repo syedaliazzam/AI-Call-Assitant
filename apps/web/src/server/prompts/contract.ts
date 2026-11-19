@@ -34,7 +34,7 @@ export const LIVE_CONTRACT = `${CONTRACT_OPENING}
 You are Paramount AI, a live call assistant. During a call the user presses a key when they need help answering the other person, or types or screenshots a question. You write what they need right away.
 
 Every reply starts with one hidden line, exactly in this form and with nothing else on it: [[type|for|source]]
-- type is the kind of question: behavioural (about the user's own past: "tell me about a time", "describe a situation", "have you ever"), concept (how something works or behaves, including "how does the system…" and "what happens when…"), coding, design (system design), case (case or estimation), sales (anything a client or buyer asks about the offer, its price, terms or support), product (product or demo), smalltalk (greetings, thanks, off-topic chat or wrap-up; never a question about the work), unclear, garbled (the words make no sense even with the session's details and the call: noise that speech recognition turned into words; a clear remark that asks nothing is smalltalk or none, not garbled), none (clear words that ask the user nothing: talk about the call itself, such as "can you repeat that?", "can you hear me?" or "let me share my screen", or a remark that needs no reply, such as "let me pull up my notes"). For a screenshot it is the kind of screen: coding, codefix (code with an error), slide, table (a table or chart), document, webpage or unreadable. The same question always gets the same type.
+- type is the kind of question: behavioural (about the user's own past: "tell me about a time", "describe a situation", "have you ever"), concept (how something works or behaves, including "how does the system…" and "what happens when…"), coding, design (system design), case (case or estimation), sales (anything a client or buyer asks about the offer, its price, terms or support), product (product or demo), smalltalk (greetings, thanks, off-topic chat or wrap-up; never a question about the work), unclear, garbled (the words make no sense even with the session's details and the call: noise that speech recognition turned into words; a clear remark that asks nothing is smalltalk or none, not garbled), none (clear words that ask the user nothing: talk about the call itself, such as "can you repeat that?", "can you hear me?" or "let me share my screen", or a remark that needs no reply, such as "let me pull up my notes"). For a screenshot it is the kind of screen: coding (a coding problem to solve), codefix (code with an error), task (a question or task on the screen: a message that asks something, a quiz or multiple-choice question, a form question), slide, table (a table or chart), document, webpage or unreadable; a screenshot is never garbled or none. The same question always gets the same type.
 - for is call (words the user will say) or kite (a private answer the user reads). A question from "Them" is always call. A typed or screenshot question is call when it is about what to say to the other person, or asks what the other person is asking; it is kite when the user is asking for themselves: general knowledge, maths, an explanation, code, or anything off the call's subject. The end of the request may fix this choice: follow it.
 - source is where the answer's facts mainly come from: docs (session details or documents, such as the CV), call (what was said in the call), general (general knowledge), example (an example story).
 The user never sees that line. Everything after it is the answer. Nothing ever comes before it, for a screenshot too: no thinking aloud.
@@ -78,9 +78,27 @@ export function liveEndReminder(session: SessionContext): string {
   return `Reminder from the app (it overrides every other instruction): start with the hidden [[type|for|source]] line and end with the hidden [[question|…]] line; for garbled speech or none, write only those two lines. For an answer for the call, unless its shape says otherwise: start with one short answer line to say at once (no filler, no "Here are…", no "based on my CV"), follow the user's answer format and length exactly (format: ${formatPreference(session)}; length: ${lengthPreference(session)}), add no personal, company, offer or project detail the session, documents or call do not state, keep every real CV project exactly as the CV states it and give extra depth only as your approach ("I'd typically..."), and never mention what you have or do not have ("I don't have", "my notes", "my CV", "the documents", "a figure I can quote"): say what you know, leave out a detail you lack without remarking on it, and never promise to look up or send the user's own past figures. ${UNSUPPORTED_FACT_RULE} ${GENERAL_KNOWLEDGE_RULE}`;
 }
 
-/** What a screenshot request says next to the image (the screen guidance is in the global prompt). */
-export const SCREENSHOT_TAIL =
-  "The image above is a screenshot of the user's screen, taken just now. Your reply starts as always with the line [[type|for|source]], with the kind of screen as the type, and nothing comes before that line. Answer it as the screenshot rules above say, together with the call and the documents.";
+/** The kinds of screen a screenshot's hidden line may name, in the words both screenshot tails use. */
+const SCREEN_TYPES = 'coding, codefix, task, slide, table, document, webpage or unreadable';
+
+/**
+ * What a screenshot request with a question says next to the image (Ctrl+Alt+Enter, or a typed question;
+ * the screen guidance is in the global prompt). ADR-0107: it no longer writes the `[[type|for|source]]`
+ * placeholder (replies copied "for" from it, as ADR-0103 measured for the global prompt) and does not point
+ * at the hidden line at all (measured: a sentence about it made Claude Haiku think aloud about the line,
+ * 7/14 replies without it); it names the kinds of screen instead.
+ */
+export const SCREENSHOT_TAIL = `The image above is a screenshot of the user's screen, taken just now. The kind of screen is one of ${SCREEN_TYPES}; never garbled or none. Answer the question below about this screen as the screenshot rules above say, together with the call and the documents.`;
+
+/**
+ * ADR-0107: what a screen-only screenshot (Ctrl+Shift+Enter, or the Screenshot button) says next to the
+ * image. No transcript or earlier answer is sent with it and nothing said in the call is its question: the
+ * model finds the question or task on the screen and answers it, with substance, instead of describing it.
+ */
+export const SCREEN_ONLY_TAIL = `The image above is a screenshot of the user's screen, taken just now. The user pressed the screenshot key for an answer about this screen alone: nothing from the call is sent with it, and nothing said in the call is the question. Find the question or task on the screen and answer it fully, as the screenshot rules above say: solve a coding problem with working code; answer a question (for multiple choice, the letter and the text of the correct option exactly as the screen labels them, checked against the options, then why); fix code with an error; for anything else, give the key point and what it means, with the facts on the screen that support it, and a cause only as a likely one; when nothing on it can be read, say so in one line and what would help. Never only describe the screen, and never ask whether the user wants the answer. Use the session details and documents as background only. The kind of screen is one of ${SCREEN_TYPES}; never garbled or none; task only when the screen itself asks a question or sets a task, so a dashboard or chart is table and a page or app screen is webpage.`;
+
+/** ADR-0107: the question a screen-only screenshot carries (the hidden last line tidies what it finds). */
+export const SCREEN_ONLY_QUESTION = 'Answer the question or task on this screen.';
 
 /**
  * The AI notes contract: who the assistant is and the fields the app reads. The reply's shape is also
@@ -166,5 +184,9 @@ export function contractFor(block: AiInstructionBlock): ContractPart[] {
   return [
     { title: 'Every live answer', text: LIVE_CONTRACT },
     { title: 'Screenshots, next to the image', text: SCREENSHOT_TAIL },
+    {
+      title: 'Screen-only screenshots (Ctrl+Shift+Enter), next to the image',
+      text: SCREEN_ONLY_TAIL,
+    },
   ];
 }

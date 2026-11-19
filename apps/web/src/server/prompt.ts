@@ -55,6 +55,8 @@ import { cachedBlock } from './claude';
 import {
   LIVE_CONTRACT,
   liveEndReminder,
+  SCREEN_ONLY_QUESTION,
+  SCREEN_ONLY_TAIL,
   SCREENSHOT_TAIL,
   withGlobalPrompt,
 } from './prompts/contract';
@@ -576,6 +578,17 @@ function choiceLines(request: AnswerRequest): string[] {
 }
 
 /**
+ * ADR-0107: whether a request is a screen-only screenshot (Ctrl+Shift+Enter or the Screenshot button).
+ *
+ * @param request The request.
+ * @returns True for mode screenshot with screenOnly and an image.
+ * Called from: tailText(), buildPromptParts(); tests
+ */
+export function isScreenOnly(request: AnswerRequest): boolean {
+  return request.mode === 'screenshot' && request.screenOnly === true && Boolean(request.image);
+}
+
+/**
  * Writes the uncached tail: the end of the conversation, the lines that may still change, the question
  * (or the instruction to answer the latest question when there is none), the user's choices, and last
  * the automatic end reminder (ADR-0089: generated from the contract and the user's format and length,
@@ -588,6 +601,16 @@ function choiceLines(request: AnswerRequest): string[] {
  */
 function tailText(request: AnswerRequest, hasConversation: boolean): string {
   const previous = request.styleVersion === 'previous';
+  // ADR-0107: a screen-only screenshot: no conversation, latest lines, earlier answer or document parts,
+  // only the screen's own instruction and question, then the user's choices and the end reminder.
+  if (isScreenOnly(request) && !previous) {
+    return [
+      SCREEN_ONLY_TAIL,
+      `Question about the screenshot: ${SCREEN_ONLY_QUESTION}`,
+      ...choiceLines(request),
+      request.session ? liveEndReminder(request.session) : CALL_REMINDER_PREVIOUS,
+    ].join('\n');
+  }
   const tail = request.tail ?? [];
   const question = request.question?.trim() ?? '';
   const parts = hasConversation
@@ -705,8 +728,9 @@ function buildPromptParts(request: AnswerRequest, globalPrompt: string): BuiltPr
   if (!request.session) throw new Error('SESSION_REQUIRED');
   const previous = request.styleVersion === 'previous';
   const lessons = request.lessons ?? [];
+  // ADR-0107: a screen-only screenshot never carries the call, even if a client sent it.
   const conversation = conversationBlocks(
-    capConversation(request.conversation ?? []),
+    capConversation(isScreenOnly(request) && !previous ? [] : (request.conversation ?? [])),
     themSpeaker(request.session),
   );
   const last: Anthropic.TextBlockParam = {
