@@ -807,3 +807,57 @@ Version 5 is not thinner, so no general prompt change was made; the thin screens
 | GPT-5.6 Luna | not run: `OPENAI_API_KEY` is not in `.env.local` (a sensitive Vercel variable cannot be pulled) | | | | | | | | |
 
 **Regression after the change:** `answers` 9.27, 9.33, 9.17 (mean **9.26**, gate 8.86); `screenshots` 8.17 (16 at 6.0 in one run; 9.5 over 4 more runs); `screenshot-types` 9.14; `call-style` 9.00. Spend for ADR-0107's evaluations and probes: about $1.15 (cap $3).
+
+### Full suite at the 1.7.3 release (19 Nov 2026): released with gates failing, by the developer's decision
+
+`pnpm --filter web eval:all` on main after ADR-0107 (2 runs per scenario; notes 3). Spend **$0.85** for 464 requests (446 answers and grades, 18 notes), above the $0.55 estimate. Overall: answers 8.56 (111 scenarios), notes 9.78.
+
+| Group | Gate | Result |
+|---|---|---|
+| `answers` (15) | 3-run mean ≥ 8.86 | 9.47 (one command; the 3-run mean before release was 9.26) |
+| `screenshots` (3) | ≥ 8 | 8.83 |
+| `lessons` (2) | ≥ 8 and above without | 9.25 (without: not run in the suite) |
+| `preferences` (4) | ≥ 8 | 8.63 |
+| `call-style` (4) | ≥ 8 | 8.88 |
+| `adaptive` (24) | ≥ 8 | 8.15 |
+| `missing-info` (8) | ≥ 8 | **6.94: fails** (7.75 on 9 Nov, also failing) |
+| `hallucination-bait` (6) | no invented prices or personal numbers | number check clean; the grader lists invented details in 6 of 12 runs, two in the salary and personal-number questions (score 6.67; 8.17 on 9 Nov) |
+| `consistency` (3) | ≥ 8, same numbers | 9.67; 6/6 |
+| `ask-kite` (6) | ≥ 8 | 9.50 (`k-page-code`: a function defined in one code block and used in another, both runs) |
+| `cv-embellishment` (4) | nothing invented | **invented details in 5 of 8 runs: fails** (6 of 8 on 9 Nov) |
+| `answer-length` (2) | ≥ 8 | 9.00 |
+| `question-detection` (13) | ≥ 8 | 9.31 |
+| `screenshot-types` (7) | ≥ 8 and the code runs | 9.07; **one code-error answer had no code** |
+| `company-star` (3) | nothing invented | **invented details in 4 of 6 runs: fails** |
+| `screen-only` (7) | ≥ 8 | 9.64 |
+| `notes` (3) | ≥ 8 | 9.78 |
+
+Hidden line 220/222 (missing in 08 run 2 and 25 run 1); answer not empty 220/222 (the two empty replies are a garbled line and a remark, which are correctly not answered).
+
+**Which prompt the failures come from.** The five weak groups, one command each (2 runs per scenario), on three prompts with the same eval script, model and grader: **a**, this release; **b**, production before it (prompt version 5, 332eb99); **c**, the default before version 5 (b610d4d~1). For c only the editable default prompt was swapped; the app contract stayed production's, so b against c compares the editable prompt alone. Spend **$0.61** for 336 requests. Cells: score, then runs with invented details (the grader's `invented` list).
+
+| Group | a: this release | b: version 5 | c: before version 5 |
+|---|---|---|---|
+| `missing-info` | 7.31, 10/16 | 7.06, 10/16 | **7.81, 5/16** |
+| `cv-embellishment` | 5.63, 7/8 | 6.25, 3/8 | 5.63, 7/8 |
+| `company-star` | 7.17, 4/6 | 7.17, 4/6 | **8.17, 3/6** |
+| `hallucination-bait` | 7.17, 3/12 (2 unsupported numbers) | 7.00, 4/12 (1) | 7.50, 5/12 (0) |
+| `screenshot-types` | 9.57, 2/14 | 9.43, 2/14 | 9.14, 2/14 |
+| Mean of the five | **7.37** | **7.38** | **7.65** |
+
+What was invented, in short:
+- `missing-info`: a "I ran Kubernetes-style deployments in production", "I led a migration of the invoicing service", "kept the team aligned on each step"; b "I've run Kubernetes in production", "Last year I led a hard move", "in stages with no outage"; c "I led a migration of our invoicing service", "I packaged the new services in Docker".
+- `cv-embellishment`: a "RabbitMQ or SQS", "retries and dead-letter handling"; b "a manual step back to the previous release", "a deploy took a few minutes", "releases no longer waited on the monolith"; c "rolled back by redeploying the last good build", "a project I led".
+- `company-star` (no matching CV project): a "I dealt with pushback from stakeholders"; b "the nightly reporting jobs were hard to track", "bad data was caught earlier"; c "At Pell River Bank I dealt with a similar pressure point".
+- `hallucination-bait`: a and b "Studies … commonly report … 10 to 20 percent"; a "a backend engineer for about four years"; b "the pricing team"; c "widely reported to cut driving distance" (no figure).
+- `screenshot-types`: in all three, section numbers the grader questions ("section 4.1"); b and c "down about 77%" (a worked-out percentage).
+
+**Result.** a and b are the same within noise (7.37 and 7.38): ADR-0107's screenshot text did not add the invented details; they are in production since version 5. Version 5 is worse than the default before it on `missing-info`, `company-star` and `hallucination-bait`. The developer released 1.7.3 as it is (19 Nov 2026); the invented details are to be fixed separately.
+
+**Version 5 lines most likely behind each kind** (not changed yet):
+- Claimed roles and experience beyond the CV: "The answer line names that real work plainly … one line says what I did on it, and the lines after say how I would handle what they asked" (it asks for a "what I did" line even when the closest project barely fits); "Interview … speak as "I" about real work from the CV, show how I think"; "Sound confident and equal … never pass the question to a colleague"; and the worked examples, removed in version 5, that showed approach lines marked as approach.
+- Story steps and outcomes the CV does not state: "Prefer the concrete thing … (the name, the number, the step)" and "Write the way a clear, experienced person talks", which reward concrete-sounding steps; "Never add a time, a deadline, a stage or an outcome" does not hold against them.
+- Statistics: "General knowledge is answered fully … market or industry … never hold back, hedge or promise to confirm" with "Give a general figure only when it is well established": a typical-savings range is taken as well established.
+- STAR forced with no matching project: "Apply each one as far as this question allows … keep to its intent as closely as you can".
+
+**The code-error screenshot with no code.** Since version 5 the code-error screen (`st-code-error`, "Why does this fail?") is typed coding instead of codefix: 2/2 runs on b and 6/6 on a today, against 2/2 right on c and 12/12 before version 5. Under coding nothing asks for corrected code when the question is "why", and in 1 of 8 runs the answer gave only the cause in the session's headline-and-bullets format; "Keep to this question only" and "The length is a limit … never pad" allow that. The other 7 runs gave code that runs.

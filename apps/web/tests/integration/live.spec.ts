@@ -786,7 +786,7 @@ test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screen
     // 1.6.3 (ADR-0075): Auto answer moved here from its floating pill.
     'Auto answer',
     // ADR-0094: the model chip next to Auto.
-    'Model: Fast',
+    'Model: Haiku',
     'Drag here to move',
     'Shrink to an icon',
     'Call time',
@@ -807,7 +807,7 @@ test('S13: bar 1 in order, 44 tall, nothing cut off; ADR-0082: no Answer, Screen
     'Choose microphone',
     'Transcript',
     'Auto answer',
-    'Model: Fast',
+    'Model: Haiku',
     'Click-through',
     'Drag here to move',
     'Shrink to an icon',
@@ -1198,17 +1198,17 @@ test('S16: the ⋮ menu in order; Answer preferences as a sheet that fits the ov
     // ADR-0085: no Answer language in the compact view.
     // ADR-0094: the Model row (its group, and one row naming the model; its choices open in place).
     'Model',
-    'Model: Fast (Claude Haiku)',
+    'Model: Claude Haiku (Recommended)',
     'Auto answer',
     'Answer preferences',
     'Edit session',
     'Open call window',
     'Reset position',
   ]);
-  // The Model row opens its three choices in place, and shuts again after a pick.
-  await menu.getByRole('button', { name: 'Model: Fast (Claude Haiku)' }).click();
+  // The Model row opens its choices in place, and shuts again after a pick.
+  await menu.getByRole('button', { name: 'Model: Claude Haiku (Recommended)' }).click();
   await expect(menu.getByRole('radiogroup', { name: 'Answer model' })).toBeVisible();
-  await menu.getByRole('button', { name: 'Model: Fast (Claude Haiku)' }).click();
+  await menu.getByRole('button', { name: 'Model: Claude Haiku (Recommended)' }).click();
   await expect(menu.getByRole('radiogroup', { name: 'Answer model' })).toBeHidden();
 
   // Display: Zoom, Theme, Opacity and Answer text size, with Back to the menu.
@@ -1715,9 +1715,9 @@ function barControls(clickThrough: boolean): readonly BarControl[] {
     { role: 'button', name: /^Recording, /, tip: 'Stop recording · Ctrl+Alt+R' },
     { role: 'switch', name: 'Auto answer', tip: 'Auto answer: Off' },
     // ADR-0094: the model chip.
-    { role: 'button', name: 'Model: Fast', tip: 'Model: Fast — quickest answers' },
+    { role: 'button', name: 'Model: Haiku', tip: 'Model: Claude Haiku (Recommended)' },
     ...(clickThrough ? [CLICK_THROUGH_CONTROL] : []),
-    { role: 'img', name: 'Drag here to move', tip: 'Drag to move · Ctrl+Alt+Arrows' },
+    { role: 'img', name: 'Drag here to move', tip: 'Drag to move · Ctrl+Shift+Arrows' },
     { role: 'button', name: 'Shrink to an icon', tip: 'Shrink to an icon' },
     { role: 'button', name: 'Overlay menu', tip: 'Menu' },
     { role: 'button', name: 'Exit: end call', tip: 'Exit: end the call' },
@@ -1924,9 +1924,14 @@ test('1.6.3: the Opacity setting changes the panels’ background (40–100 %, a
     ]);
   expect(await backgrounds()).toEqual(['rgba(24, 24, 27, 0.82)']);
   await page.getByRole('button', { name: 'Overlay menu' }).click();
-  const menu = page.getByRole('group', { name: 'Overlay settings' });
-  const less = menu.getByRole('button', { name: 'Opacity: less' });
-  const more = menu.getByRole('button', { name: 'Opacity: more' });
+  // 17 Nov 2026: Opacity is in the ⋮ menu's Display sheet.
+  await page
+    .getByRole('group', { name: 'Overlay settings' })
+    .getByRole('button', { name: 'Display', exact: true })
+    .click();
+  const display = page.getByRole('group', { name: 'Display' });
+  const less = display.getByRole('button', { name: 'Opacity: less' });
+  const more = display.getByRole('button', { name: 'Opacity: more' });
   // Down to the minimum: the panels are 40 % opaque.
   while (await less.isEnabled()) await less.click();
   await expect.poll(backgrounds).toEqual(['rgba(24, 24, 27, 0.4)']);
@@ -2106,7 +2111,7 @@ test('ADR-0094: the model chip sits next to Auto and gives way without pushing o
         await page.goto(overlayUrl(`&position=top-center&model=${model}${extra}`));
         const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
         const chip = bar.getByRole('button', {
-          name: `Model: ${model === 'smart' ? 'Smart' : 'Fast'}`,
+          name: `Model: ${model === 'smart' ? 'Sonnet' : 'Haiku'}`,
         });
         await expect(chip, name).toBeVisible();
         await expect
@@ -2116,10 +2121,12 @@ test('ADR-0094: the model chip sits next to Auto and gives way without pushing o
         await expect(bar.getByRole('switch', { name: 'Transcript' }), name).toBeVisible();
         // The chip keeps its word until Auto gives way to its bolt; then both are icons.
         const { step } = await barFit(page);
-        await expect(chip, name).toHaveText(step >= 3 ? '' : model === 'smart' ? 'Smart' : 'Fast');
+        await expect(chip, name).toHaveText(
+          step >= 3 ? '' : model === 'smart' ? 'Sonnet' : 'Haiku',
+        );
         if (sizeName === 'default') {
           // The default window keeps the words, the chip's too.
-          await expect(chip, name).toHaveText(model === 'smart' ? 'Smart' : 'Fast');
+          await expect(chip, name).toHaveText(model === 'smart' ? 'Sonnet' : 'Haiku');
           await expect(bar.getByRole('switch', { name: 'Auto answer' }), name).toHaveText(/Auto/);
         }
       }
@@ -2150,14 +2157,14 @@ test('ADR-0094: the chip and ⋮ open the model choice; Smart off shows its tool
     const barBox = (await bar.boundingBox())!;
 
     // The chip's tooltip names the model, inside the window.
-    await bar.getByRole('button', { name: 'Model: Fast' }).hover();
-    await expect(page.getByRole('tooltip')).toHaveText('Model: Fast — quickest answers');
+    await bar.getByRole('button', { name: 'Model: Haiku' }).hover();
+    await expect(page.getByRole('tooltip')).toHaveText('Model: Claude Haiku (Recommended)');
 
     // The chip's popover: under the chip (above it on the bottom row), the current model checked.
-    await bar.getByRole('button', { name: 'Model: Fast' }).click();
+    await bar.getByRole('button', { name: 'Model: Haiku' }).click();
     const popover = page.getByRole('group', { name: 'Model' });
     await expect(popover.getByRole('radio', { checked: true })).toHaveAccessibleName(
-      'Fast — quickest answers',
+      'Claude Haiku (Recommended)',
     );
     const placed = await insideWindow(page, '[data-menu="model"]');
     expect(placed.inside, `${position}: the popover is inside the window`).toBe(true);
@@ -2167,11 +2174,11 @@ test('ADR-0094: the chip and ⋮ open the model choice; Smart off shows its tool
       await page.screenshot({ path: path.join(SHOT_DIR, `overlay-model-chip-${position}.png`) });
 
     // Picking Smart sends the command; once the live page has switched, the toast shows inside the window.
-    await popover.getByRole('radio', { name: 'Smart — more thorough, slower' }).click();
+    await popover.getByRole('radio', { name: 'Claude Sonnet' }).click();
     expect(await watched.log()).toContainEqual({ type: 'model', model: 'smart' });
-    const toast = page.getByRole('status').filter({ hasText: 'Smart model on' });
-    await expect(toast).toHaveText('Smart model on — answers may take a bit longer');
-    await expect(bar.getByRole('button', { name: 'Model: Smart' })).toBeVisible();
+    const toast = page.getByRole('status').filter({ hasText: 'Claude Sonnet on' });
+    await expect(toast).toHaveText('Claude Sonnet on');
+    await expect(bar.getByRole('button', { name: 'Model: Sonnet' })).toBeVisible();
     expect((await insideWindow(page, '[data-toast="model"]')).inside, `${position}: toast`).toBe(
       true,
     );
@@ -2187,12 +2194,11 @@ test('ADR-0094: the chip and ⋮ open the model choice; Smart off shows its tool
 
     // The ⋮ menu's Model row shows the same choice, Smart now checked.
     await page.getByRole('button', { name: 'Overlay menu' }).click();
-    const row = page
-      .getByRole('group', { name: 'Overlay settings' })
-      .getByRole('radiogroup', { name: 'Answer model' });
-    await expect(row.getByRole('radio', { checked: true })).toHaveAccessibleName(
-      'Smart — more thorough, slower',
-    );
+    const settings = page.getByRole('group', { name: 'Overlay settings' });
+    // The Model row opens its choices in place (17 Nov 2026).
+    await settings.getByRole('button', { name: 'Model: Claude Sonnet' }).click();
+    const row = settings.getByRole('radiogroup', { name: 'Answer model' });
+    await expect(row.getByRole('radio', { checked: true })).toHaveAccessibleName('Claude Sonnet');
     await row.scrollIntoViewIfNeeded();
     if (SHOT_DIR)
       await page.screenshot({ path: path.join(SHOT_DIR, `overlay-model-menu-${position}.png`) });
@@ -2207,10 +2213,10 @@ test('ADR-0094: the chip and ⋮ open the model choice; Smart off shows its tool
   );
   const { page } = watched;
   const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
-  await bar.getByRole('button', { name: 'Model: Fast' }).click();
+  await bar.getByRole('button', { name: 'Model: Haiku' }).click();
   const smart = page
     .getByRole('group', { name: 'Model' })
-    .getByRole('radio', { name: 'Smart — more thorough, slower' });
+    .getByRole('radio', { name: 'Claude Sonnet' });
   await expect(smart).toHaveAttribute('aria-disabled', 'true');
   await smart.hover();
   await expect(page.getByRole('tooltip')).toHaveText('Turned off by your admin');
@@ -2220,9 +2226,14 @@ test('ADR-0094: the chip and ⋮ open the model choice; Smart off shows its tool
   expect(await watched.log()).not.toContainEqual({ type: 'model', model: 'smart' });
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Overlay menu' }).click();
+  // The Model row opens its choices in place (17 Nov 2026).
+  await page
+    .getByRole('group', { name: 'Overlay settings' })
+    .getByRole('button', { name: 'Model: Claude Haiku (Recommended)' })
+    .click();
   const menuSmart = page
     .getByRole('radiogroup', { name: 'Answer model' })
-    .getByRole('radio', { name: 'Smart — more thorough, slower' });
+    .getByRole('radio', { name: 'Claude Sonnet' });
   await expect(menuSmart).toHaveAttribute('aria-disabled', 'true');
   await menuSmart.hover();
   await expect(page.getByRole('tooltip')).toHaveText('Turned off by your admin');
