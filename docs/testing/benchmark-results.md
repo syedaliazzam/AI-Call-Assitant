@@ -989,3 +989,16 @@ Same laptop (Pakistan); local Node script (no browser, no production); ADR-0103'
 | C (shape examples) | `claude-haiku-5-5` | 773 / 975 ms | 784, 762 | 20/20 | $0.00023 |
 | A + C | `claude-haiku-5-5` | 764 / 840 ms | 764, 762 | 20/20 | $0.00025 |
 | B | `claude-sonnet-5-5` | **1,009 / 2,441 ms** | 988, 1,009 | 20/20 | $0.0049 |
+
+### First answer word, hidden lines taught by example (ADR-0112's first attempt, reverted; 20 Nov 2026)
+
+The reworded contract measured here was not shipped (it regressed `hallucination-bait`; `docs/testing/answer-eval.md`). ADR-0112 shipped the guard alone, with production's prompt unchanged, so the first answer word is production's.
+
+Same laptop (Pakistan); local Node script (no browser, no production); ADR-0103's method: 10 invented spoken chat questions (`spoken: true`) through the real `buildPrompt()` and `streamReply()` with `claude-haiku-5-5`, in an invented sales session with ADR-0101's invented pilot document; a new session warmed once per round; questions 1.5 s apart. The 19 Nov question list was not kept, so the 10 questions were written again about the same document (including the onboarding fee and single sign-on on the Professional plan). Production's prompt is the branch's prompt with main's contract and end reminder put back, byte for byte. Two sets of four rounds, the second in reverse order (ADR-0112 first). Measured: request start → first answer word after the hidden line. Spend about $0.02 (88 requests).
+
+| Prompt | Set 1 p50 / p95 (20 answers) | Set 2 p50 / p95 (20 answers) | Round p50s | Hidden line first |
+|---|---|---|---|---|
+| Production (main) | 756 / 918 ms | 784 / 933 ms | 716, 775, 766, 784 | 39/40 |
+| ADR-0112 | 781 / 837 ms | 755 / 932 ms | 781, 772, 763, 736 | 40/40 |
+
+Not slower: the round medians overlap (median of the four: production 770 ms, ADR-0112 768 ms), and p95 is equal or lower.

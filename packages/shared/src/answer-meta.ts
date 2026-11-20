@@ -477,3 +477,101 @@ export function createQuestionLineFilter(): QuestionLineFilter {
     },
   };
 }
+
+/**
+ * ADR-0112: the words that name a hidden line's slots instead of filling them. No real hidden first
+ * line holds one: types, readers (call, kite) and sources (docs, call, general, example) never use
+ * them. A line with one was copied from the contract's own template ("[[type|for|source]]").
+ */
+const TEMPLATE_SLOT_WORDS: ReadonlySet<string> = new Set(['type', 'for', 'source']);
+
+/**
+ * ADR-0112: the real reader and source values. A line that names a slot but also holds one of these
+ * was filled in, only oddly ("[[calculation|for|kite|general]]", a real reply): metaFrom() reads it.
+ */
+const FILLED_VALUES: ReadonlySet<string> = new Set(['call', 'kite', ...ANSWER_SOURCES]);
+
+/**
+ * ADR-0112: values of a hidden question line that are a copied placeholder, not a question
+ * ("[[question|…]]", "[[question|the question you answered]]").
+ */
+const TEMPLATE_QUESTIONS: ReadonlySet<string> = new Set([
+  '…',
+  '...',
+  'the question you answered',
+  'the question',
+]);
+
+/**
+ * ADR-0112: a whole hidden-looking line at the start of the text: "[[", any values, "]]", then the end
+ * of the line (or of the text so far).
+ */
+const BRACKET_LINE_AT_START = /^\[\[([^[\]\n]*)\]\][ \t]*(?:\n|$)/;
+
+/** ADR-0112: every "[[…]]" in a text, for containsTemplateLine(). */
+const BRACKET_TAGS = /\[\[([^[\]\n]*)\]\]/g;
+
+/**
+ * ADR-0112: whether the inside of a "[[…]]" tag is a copied template rather than a real hidden line.
+ * A first-line shape is a template when its type is the word "type", or when it names a slot ("for",
+ * "source") and fills neither the reader nor the source ("[[concept|for|source]]"); a question line is
+ * one when its value is a placeholder ("…", "the question you answered") or holds more values
+ * ("[[question|for|source]]").
+ *
+ * @param inside The text between "[[" and "]]".
+ * @returns True for a copied template.
+ * Called from: leadingTemplateLine(), containsTemplateLine()
+ */
+function isTemplateInside(inside: string): boolean {
+  const values = inside.split('|').map((value) => value.replace(/\s+/g, ' ').trim().toLowerCase());
+  if (values.length < 2) return false;
+  if (values[0] === 'question') {
+    return values.length > 2 || TEMPLATE_QUESTIONS.has(values[1]!);
+  }
+  if (values[0] === 'type') return true;
+  const rest = values.slice(1);
+  return (
+    rest.some((value) => TEMPLATE_SLOT_WORDS.has(value)) &&
+    !rest.some((value) => FILLED_VALUES.has(value))
+  );
+}
+
+/**
+ * ADR-0112: whether a hidden question line's value is a copied placeholder ("…", "the question you
+ * answered"), so it is never shown as the card's question.
+ *
+ * @param question The question line's value.
+ * @returns True for a placeholder.
+ * Called from: apps/web/src/server/answer-meta.ts (withAnswerMeta()); tests
+ */
+export function isTemplateQuestion(question: string): boolean {
+  return TEMPLATE_QUESTIONS.has(question.replace(/\s+/g, ' ').trim().toLowerCase());
+}
+
+/**
+ * ADR-0112: the copied template line a reply opens with ("[[type|for|source]]", "[[concept|for|source]]",
+ * "[[question|…]]"), when its first line is one.
+ *
+ * @param text The reply so far (white space at the start is ignored).
+ * @returns The template line with the line break after it, or null when the reply does not open with
+ *          a complete template line.
+ * Called from: apps/web/src/server/answer-meta.ts (withAnswerMeta()); scripts/eval-answers.ts; tests
+ */
+export function leadingTemplateLine(text: string): string | null {
+  const match = BRACKET_LINE_AT_START.exec(text.trimStart());
+  return match && isTemplateInside(match[1]!) ? match[0] : null;
+}
+
+/**
+ * ADR-0112: whether a reply holds a copied template anywhere (first line, last line or between).
+ *
+ * @param text The whole reply.
+ * @returns True when any "[[…]]" in it is a template.
+ * Called from: scripts/eval-answers.ts; tests
+ */
+export function containsTemplateLine(text: string): boolean {
+  for (const match of text.matchAll(BRACKET_TAGS)) {
+    if (isTemplateInside(match[1]!)) return true;
+  }
+  return false;
+}

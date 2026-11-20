@@ -45,6 +45,7 @@ import { startKeepWarm, type KeepWarm } from '@/core/answer/keepWarm';
 import { startKeepAlive } from '@/core/answer/keepAlive';
 import { warmGroup, warmSession } from '@/core/answer/warm';
 import { answerFailureText, OFFLINE_TEXT, type AnswerProblem } from '@/core/answer/unavailable';
+import { finishedReplyAction } from '@/core/answer/finishedReply';
 import { choosePress, PRESS_WAIT_MS } from '@/core/answer/pressQuestion';
 import {
   chooseNewest,
@@ -91,8 +92,12 @@ export const GARBLED_NOTICE = "Didn't catch the question clearly — press Answe
 export const NOTHING_TO_ANSWER_NOTICE =
   "That wasn't a question — press Answer when they ask one, or type it.";
 
-/** ADR-0107: shown when an answer came back empty twice; its card is removed (a card never stays "…"). */
-export const EMPTY_ANSWER_NOTICE = 'No answer came back — press the key again.';
+/**
+ * ADR-0107: shown when an answer came back empty twice; its card is removed (a card never stays "…").
+ * ADR-0112: also when it came back as a copied template twice (the server stops such a reply, so it
+ * arrives with no text), for every kind of question; the words the developer chose.
+ */
+export const EMPTY_ANSWER_NOTICE = "Didn't catch that — press answer again.";
 
 /** ADR-0107: what an empty answer is asked again with: the first request's options, as a re-ask on its card. */
 type AskAgainOptions = Record<string, unknown> & {
@@ -395,8 +400,16 @@ export interface LiveAnswersInput {
 export interface LiveAnswers {
   /** This call's answers, oldest first: one entry per question (v1.0.4, ADR-0040). */
   entries: AnswerEntry[];
-  /** Index of the answer shown: the newest unless another is chosen; -1 only with no answers. */
+  /**
+   * Index of the answer shown: the newest unless another is chosen; -1 with no answers, and (ADR-0112)
+   * while the shown card is asked again silently.
+   */
   index: number;
+  /**
+   * ADR-0112: true while an empty or templated reply is asked again silently (its card is hidden, so the
+   * list shows nothing streaming; the page still shows that an answer is on its way).
+   */
+  retrying: boolean;
   /** A short notice for the user (for example "nothing to answer yet"), or null. */
   notice: string | null;
   /**
@@ -561,6 +574,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const [entries, setEntries] = useState<AnswerEntry[]>([]);
   // The answer shown, by id (null after Clear).
   const [shownId, setShownId] = useState<string | null>(null);
+  // ADR-0112: the card being asked again, silently, after an empty or templated reply. It is held out of
+  // every list and no card is shown in its place (not even an older one) until its first words arrive.
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const [capturing, setCapturing] = useState(false);
@@ -597,9 +613,12 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Retries the waiting press (set after ask is made, below).
   const retryPendingRef = useRef<() => void>(() => undefined);
-  /** ADR-0107: asks again (the latest ask()); set by an effect below, used for an answer that came back empty. */
-  const askAgainRef = useRef<(mode: AnswerEntry['mode'], options: AskAgainOptions) => void>(
-    () => undefined,
+  /**
+   * ADR-0107: asks again (the latest ask()); set by an effect below, used for an answer that came back
+   * empty. ADR-0112: returns whether the request was sent (false offline, for example).
+   */
+  const askAgainRef = useRef<(mode: AnswerEntry['mode'], options: AskAgainOptions) => boolean>(
+    () => false,
   );
   // 1.5.2: when the last answer stopped streaming (auto-answer answers a question that came due meanwhile).
   const idleSinceRef = useRef<number | null>(null);
@@ -1118,11 +1137,15 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
         note: '',
         ...(options.exact?.incomplete ? { incomplete: true } : {}),
         ...(options.exact?.audioLost ? { audioLost: true } : {}),
-        ...(speculative ? { held: true } : {}),
+        // ADR-0112: a silent retry is held hidden too, until its first words (onText below).
+        ...(speculative || options.emptyRetry === true ? { held: true } : {}),
         // Batch D (P0-C): a new card that asks another card's question again.
         ...(!replaces && options.rerunOf ? { rerunOf: options.rerunOf } : {}),
       };
       lastAskedIdRef.current = entry.id;
+      // ADR-0112: any other request cancels a silent retry still running (the runner stops it), so it is
+      // no longer waited for.
+      setRetryingId(options.emptyRetry === true ? entry.id : null);
       // ADR-0107: the screenshot trace links the press to its card (ids only).
       if (options.traceId) {
         callTimings.noteTrace('screenshot-card', {
@@ -1324,6 +1347,12 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
       };
       let retries = 0;
       let firstWordLogged = false;
+      // ADR-0112: whether this silent retry's card has been shown (with its first words).
+      let retryShown = false;
+      /** ADR-0112: this request no longer keeps the panel waiting for a silent retry. */
+      const endRetry = () => {
+        setRetryingId((current) => (current === entry.id ? null : current));
+      };
       // ADR-0099: the call's id goes with the request (OpenAI's prompt_cache_key; nothing else reads it).
       // ADR-0101: a voice question is marked spoken (the prompt says speech recognition wrote it).
       const sent = {
@@ -1378,6 +1407,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           // the same way; a press of Answer gets a short notice, auto-answer stays silent, and the lines
           // stay answered (they are not noise, but there is nothing to answer in them).
           if (dropped(type)) {
+            endRetry();
             // Batch C (P1-1): nothing to show, so nothing to hold either.
             if (hold.holding(entry.id)) {
               hold.drop();
@@ -1412,9 +1442,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
             firstWordLogged = true;
             callTimings.noteAnswer({ answerId: timingId, firstWordAt: Date.now() });
           }
-          if (!dropped(meta?.type)) update(entry.id, { text });
+          if (dropped(meta?.type)) return;
+          if (options.emptyRetry === true && !retryShown) {
+            // ADR-0112: a silent retry's card appears with its first words.
+            retryShown = true;
+            endRetry();
+            update(entry.id, { text, held: false });
+          } else update(entry.id, { text });
         },
         onDone: (text, done, timeline) => {
+          endRetry();
           idleSinceRef.current = Date.now();
           if (streamingIdRef.current === entry.id) streamingIdRef.current = null;
           if (!dropped(meta?.type)) {
@@ -1446,23 +1483,39 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           if (dropped(meta?.type)) return;
           // ADR-0107: a card never stays empty. A reply with no answer text (only its hidden lines) is asked
           // again once on the same card; a second empty reply removes the card with a notice.
-          if (text.trim() === '') {
+          // ADR-0112: for every kind of question (typed, spoken, screenshot, auto), and a reply the server
+          // stopped on a copied template comes here the same way (no text, done.templated). The retry is
+          // silent: no card shows until its first words (core/answer/finishedReply.ts decides).
+          const action = finishedReplyAction(text, done, options.emptyRetry === true);
+          if (action !== 'show') {
             callTimings.noteTrace('empty-answer', {
               answerId: entry.id,
               retry: options.emptyRetry === true,
+              ...(done.templated ? { templated: true } : {}),
             });
-            if (options.emptyRetry !== true) {
+            // Flags and ids only, never text.
+            console.info('answer: no answer text', {
+              sessionId: session.id,
+              answerId: entry.id,
+              mode,
+              retry: options.emptyRetry === true,
+              templated: done.templated === true,
+            });
+            const asked =
+              action === 'retry' &&
               askAgainRef.current(mode, {
                 ...options,
                 pressedAt: keyPressAt,
                 replaces: entry.id,
                 emptyRetry: true,
               });
-            } else {
+            if (!asked) {
               setEntries((current) => current.filter((candidate) => candidate.id !== entry.id));
               setAnsweredSpans((current) => current.filter((item) => item.answerId !== entry.id));
               setShownId(null);
-              setNotice(EMPTY_ANSWER_NOTICE);
+              // ADR-0112: a retry that could not be sent (offline, for example) keeps the notice ask() set.
+              if (action === 'give-up') setNotice(EMPTY_ANSWER_NOTICE);
+              else setNotice((current) => current ?? EMPTY_ANSWER_NOTICE);
             }
             return;
           }
@@ -1523,11 +1576,14 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
           });
         },
         onError: (failure) => {
+          endRetry();
           idleSinceRef.current = Date.now();
           if (streamingIdRef.current === entry.id) streamingIdRef.current = null;
           callTimings.noteAnswer({ answerId: timingId, status: 'error', doneAt: Date.now() });
           const shown = answerFailureText(failure);
           update(entry.id, {
+            // ADR-0112: a silent retry that failed shows its card with the error (never hidden for good).
+            ...(options.emptyRetry === true ? { held: false } : {}),
             status: 'error',
             error: shown.text,
             unavailable: shown.unavailable,
@@ -1710,10 +1766,9 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   // ADR-0107: an empty answer is asked again through the latest ask() (a ref, so the answer's own handlers,
   // created by an earlier render, never call a stale one).
   useEffect(() => {
-    askAgainRef.current = (mode, options) => {
+    askAgainRef.current = (mode, options) =>
       // The options are the first request's own (typed loosely only to pass them through).
       ask(mode, options as Parameters<typeof ask>[1]);
-    };
   });
   useEffect(() => {
     retryPendingRef.current = () => {
@@ -1815,7 +1870,16 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   // With nothing chosen, the newest answer that has something to show.
   const selected = list.findIndex((entry) => entry.id === selectedId);
   const newest = list.findLastIndex((entry) => !stoppedEmpty(entry));
-  const index = selected !== -1 ? selected : newest !== -1 ? newest : list.length - 1;
+  // ADR-0112: while the shown card is being asked again silently, no card is shown (never an older one,
+  // ADR-0107), until the retry's first words.
+  const waitingForRetry = retryingId !== null && selectedId === retryingId;
+  const index = waitingForRetry
+    ? -1
+    : selected !== -1
+      ? selected
+      : newest !== -1
+        ? newest
+        : list.length - 1;
 
   const prev = useCallback(() => {
     setShownId(list[Math.max(0, index - 1)]?.id ?? null);
@@ -2090,6 +2154,7 @@ export function useLiveAnswers(input: LiveAnswersInput): LiveAnswers {
   return {
     entries: list,
     index,
+    retrying: retryingId !== null,
     notice,
     answer: useCallback(
       (trigger?: AnswerTrigger) => {
