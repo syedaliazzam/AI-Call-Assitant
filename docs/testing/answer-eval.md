@@ -1104,3 +1104,69 @@ Raw hidden line first 216/222 (production 19 Nov: 217/222). Four of the six miss
 **Follow-ups for the version 6 round (developer):**
 - version 6's hidden-line gate should measure what the user sees after the guard (`--guard`: no broken card), not the model's raw output. Version 6 is unchanged;
 - a reply with no hidden line at all still shows as a card labelled "Other" (ADR-0103's fallback; `08` once in 60, `25-general-technical-question` in both `eval:all` runs): a separate bug, left as it is for now.
+
+## Version 6 on top of the guard (20 Nov 2026): gates fail, not deployed; production stays the base
+
+Version 6 (branch `v6-cv-match`) was merged onto main after ADR-0112 (local branch `v6-on-guard`: main plus version 6's prompt lines only) and measured with `eval:all --guard` against a same-day production run with `--guard`, the same grader (Sonnet). Two rounds; developer's caps $2.00 and $1.50.
+
+**Production stays the locked base:** the guard (ADR-0112) and the CV match line A (ADR-0108), both live. `v6-on-guard` is kept as a local branch, not merged. The developer's decision.
+
+### How `--guard` grades now (kept on main)
+
+Three changes to the evaluation, made during round 2, independent of version 6:
+
+- **The retry is graded when the page asked again.** Before, `--guard` graded the first reply even when the page threw it away and asked again. Now the score is the retry's (what the user sees); the discarded first reply is still graded, only to report the difference (`discardedFirstTotal` in the results file, and one summary line: "Guard: runs graded on the retry: N; mean X (the discarded first reply: Y)"). One more grader request per retried run.
+- **A removed card is graded as an empty answer.** When the retry also failed, the page removes the card and shows "Didn't catch that"; the evaluation now grades an empty answer, not the template text the page discarded.
+- **The grader asks once more when its reply has no JSON.** Handed the discarded template text, the grader sometimes returned no JSON at all, which stopped the whole run about a minute in (four times). The previous change removes the cause; this one stops a single bad grade from ending a paid run.
+
+Delta on version 6's run (round 2): 4 runs were asked again, all ending with the card removed (`09` runs 1 and 2, `22` run 1, `a-sales-unclear` run 1). Graded on what the user sees: mean **5.00**; on the discarded first reply: 6.50 (`09` r1 8 → 5, `22` r1 8 → 5, the other two 5 both ways). The old grading overstated what the user got. Screenshot `16` was not asked again in round 2, so it has no delta.
+
+### Round 1: version 6 as it was (graded on the first reply)
+
+Every group no worse failed: `screenshots` 7.17 (production 9.50), `lessons` 8.75 (10.00), `preferences` 7.63 (8.63), `company-star` 8.00, 2/6 invented (8.50, 1/6). Overall 8.60, invented runs 46/222 (production 8.65, 65/222). After the guard: no broken card 216/216, but 11 runs asked again and **6 cards removed** (production 0). Cause of the STAR drop: the new behavioural line was too strict and turned the CV's real story into "I'd…" approach lines.
+
+First word (ADR-0103's method, the same 10 spoken questions, sales session, alternating rounds plus a reversed set): production p50/p95 850/1,457 and 830/1,074 ms; version 6 822/982 and 840/1,067 ms. Not slower; hidden line first 20/20 each. Not re-measured in round 2.
+
+### Round 2: the STAR fix
+
+Three lines changed: a CV project about the same kind of event, even in other words, is told as the real STAR story with the CV's own result; "I would…" only when the CV has no related project; a result is never invented and a real one never withheld; the rule says line A's "no CV project matches" comes from a word match and never hides a related project. The statistics, past-tense and "Full example story" rules unchanged.
+
+Production is this morning's run (`--guard`, the same prompt as now, same grader). It was not re-run: that would have taken the round over its $1.50 cap, and none of the regressing groups had a retried run, so the change in grading does not affect the comparison. Score, then runs with something invented:
+
+| Group | Production, 20 Nov | Version 6, fixed | |
+|---|---|---|---|
+| `answers` | 9.10, 5/30 | 9.07, 1/30 | |
+| `screenshots` | 9.50, 0/6 | 9.17, 1/6 | worse |
+| `lessons` | 10.00, 0/4 | 9.25, 0/4 | worse score |
+| `preferences` | 8.63, 4/8 | 8.38, 3/8 | lower score |
+| `call-style` | 8.38, 0/8 | 8.25, 2/8 | worse (`27`: an invented "five minutes of staleness is acceptable") |
+| `adaptive` | 8.23, 21/48 | 8.33, 13/48 | |
+| `missing-info` (targeted) | 7.81, 10/16 | 7.56, 5/16 | half the invented runs, lower score |
+| `hallucination-bait` | 7.17, 6/12 | 7.67, 1/12 | |
+| `consistency` | 9.67, 0/6 | 9.67, 0/6 | |
+| `ask-kite` | 9.67, 2/12 | 9.67, 2/12 | code ran 4/4 → 2/4 |
+| `cv-embellishment` | 5.75, 5/8 | 6.13, 3/8 | |
+| `answer-length` | 9.00, 3/4 | 9.50, 2/4 | |
+| `question-detection` | 9.12, 5/26 | 9.62, 2/26 | |
+| `screenshot-types` | 9.36, 1/14 | 9.64, 1/14 | |
+| `company-star` (targeted) | 8.50, 1/6 | **7.67, 2/6** | worse |
+| `screen-only` | 9.50, 2/14 | 9.71, 2/14 | |
+| `notes` (prompt unchanged) | 9.33 | 9.89 | |
+| **Overall** | **8.65, 65/222** | **8.73, 40/222** | |
+
+After the guard: no broken card 216/216 for both; raw hidden line first 218/222 (production 219/222); 4 runs asked again, all 4 cards removed (production: 2 asked again, 0 removed); no "Other" card. Code check: no invented price or personal number; the only figure outside the documents and call is "13" in `c-report-speed`, worked out from the CV's 40 s and 3 s (as on 19 Nov); the rest are sums on document prices, case assumptions and the `k-maths` working.
+
+STAR, scenario by scenario:
+- `24-star-structure`: fixed, tells the CV's real story (9.0 and 8.0; production 8.0 and 8.0). Small details still added ("by hand", "I was asked to").
+- `star-cv-match`: still "I'd…" approach lines in both runs (7.0; production 8.0); one run invented "I can walk you through a real account I rescued, where this approach led to a renewal". Line A fires here ("difficult client" against "retail customer"), and its reminder at the end of the prompt wins over the new rule.
+- `star-cv-no-match` run 1: the Tip claims a past story the CV does not state (7.5; production 9.0).
+
+**Result: gates fail** (`company-star`, a targeted group, plus `screenshots`, `lessons`, `preferences` and `call-style`). Not merged, not deployed; production stays the base.
+
+**Conclusion.** Haiku (`claude-haiku-5-5`) is at its ceiling on near-miss CV-match behavioural cases: a CV project worded differently from the question, with line A's word match saying there is none. Prompt wording alone moves invented experience between groups rather than removing it (round 1 lost real stories; round 2 got `24` back but not `star-cv-match`, and raised `call-style`). Further reduction waits for real-call data and the learning-loop work, or a stronger model for own-experience questions (19 Nov's option B).
+
+Spend: about $1.15 in round 2 (the version 6 run $0.83, probes $0.17, about $0.15 for four failed starts not in the ledger).
+
+**Follow-ups:**
+- Typed questions (`09`, `22`, `a-sales-unclear`) copy the template twice under version 6, so the card is removed and the answer is lost. ADR-0103's "no hidden line" fallback territory; not fixed.
+- The CV match signal's matching (Release gate follow-ups above) is what keeps `star-cv-match` on approach lines; changing it changes the locked base, so it waits with the rest.
