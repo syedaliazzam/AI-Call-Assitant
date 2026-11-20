@@ -1,6 +1,7 @@
 /**
  * Tests: apps/web/scripts/lib/eval-results.ts. A run's scores and reasons reach a file with a safe,
- * sortable name, and nothing but the fields it was given.
+ * sortable name, and nothing but the fields it was given. The --guard retry line compares runs graded on the
+ * retry with their discarded first reply.
  */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,6 +11,7 @@ import {
   EVAL_RESULTS_DIR,
   evalResultsName,
   saveEvalResults,
+  summariseRetryGrading,
   type EvalResultsFile,
 } from '../../../scripts/lib/eval-results';
 
@@ -60,5 +62,33 @@ describe('saveEvalResults', () => {
     expect(written.startsWith(EVAL_RESULTS_DIR)).toBe(true);
     const saved = JSON.parse(readFileSync(path.join(root, written), 'utf8')) as EvalResultsFile;
     expect(saved).toEqual(RESULTS);
+  });
+});
+
+describe('summariseRetryGrading (--guard, graded on the retry)', () => {
+  /**
+   * One invented scenario with the given runs.
+   *
+   * @param runs Each run's total, and the discarded first reply's total when it was asked again.
+   * @returns The scenario's result.
+   */
+  const scenario = (runs: { total: number; discardedFirstTotal?: number }[]) => ({
+    id: 'x',
+    mean: 0,
+    runs: runs.map((run, index) => ({ run: index + 1, scores: {}, reason: 'none', ...run })),
+  });
+
+  it('is null when no run was asked again', () => {
+    expect(summariseRetryGrading([scenario([{ total: 9 }, { total: 8 }])])).toBeNull();
+  });
+
+  it('counts only retried runs and compares the retry with the discarded first reply', () => {
+    const line = summariseRetryGrading([
+      scenario([{ total: 9, discardedFirstTotal: 5 }, { total: 10 }]),
+      scenario([{ total: 8, discardedFirstTotal: 6 }]),
+    ]);
+    expect(line).toBe(
+      'Guard: runs graded on the retry: 2; mean 8.50 (the discarded first reply: 5.50)',
+    );
   });
 });

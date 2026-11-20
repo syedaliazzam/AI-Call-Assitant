@@ -41,7 +41,9 @@
  *                       "spoken by the user (speech recognition…)" label)
  *            --guard    ADR-0112: also check what the user sees after the server's template stop and the
  *                       page's silent retry (one more request only for a reply the page asks again;
- *                       scripts/lib/guard-view.ts)
+ *                       scripts/lib/guard-view.ts). From 20 Nov 2026 a run the page asked again is graded
+ *                       on the retry (what the user sees); the discarded first reply is graded too, only
+ *                       for the "runs graded on the retry" line
  *            --model=<gemini-lite|gpt-luna|gemini-flash|gpt-terra>  ADR-0099: live answers from that
  *                       Gemini or GPT model (its id from KITE_MODEL_GEMINI_* / KITE_MODEL_OPENAI_*, its key
  *                       GEMINI_API_KEY / OPENAI_API_KEY), with the same prompt and latency settings as the
@@ -125,6 +127,7 @@ import { estimateLine, parseEvalArgs, selectScenarios } from './lib/eval-options
 import { guardCheck } from './lib/guard-view';
 import {
   saveEvalResults,
+  summariseRetryGrading,
   type ExperimentFlags,
   type GuardCheck,
   type RunChecks,
@@ -389,6 +392,16 @@ interface ScenarioAnswer {
   experiment: ExperimentFlags;
   /** ADR-0112, --guard only: what the user would see after the guard. */
   guard?: GuardCheck;
+  /**
+   * --guard, when the page asked again: the first reply the user never saw (its card text and hidden line).
+   * The answer above is then the retry's; this is graded too, only to report the difference.
+   */
+  discardedFirst?: {
+    /** Its card text, without hidden lines. */
+    text: string;
+    /** Its hidden line, or null when it had none or copied a template. */
+    meta: AnswerMeta | null;
+  };
 }
 
 /**
@@ -594,30 +607,52 @@ async function answerScenario(
     meter.add(model, next.value.usage);
     return { raw: text, usage: next.value.usage };
   };
-  const { raw, usage } = await request_();
+  const first = await request_();
   // ADR-0112, --guard: what the user would see (live answers only; the Ask AI page has no retry). The
   // page's silent retry is a real second request, made only when the page would make it.
+  let retryRaw: string | null = null;
   const guard =
     experiment.guard && !page
-      ? await guardCheck(raw, async () => (await request_()).raw)
+      ? await guardCheck(first.raw, async () => {
+          retryRaw = (await request_()).raw;
+          return retryRaw;
+        })
       : undefined;
-  const split = splitMetaLine(raw);
-  // ADR-0103: a copied placeholder as the first line is not a hidden line (its type is "type"). ADR-0112:
-  // nor is any other copied template ("[[concept|for|source]]"), by the rule the server stops on.
-  const realMeta = split.state === 'found' && leadingTemplateLine(raw) === null;
+  // 20 Nov 2026 (developer): when the page asked again, the user sees the retry, so the retry is what is
+  // graded and checked; the discarded first reply is kept only to report what grading it would have given.
+  const shownRaw: string = retryRaw ?? first.raw;
+  /**
+   * The card text and hidden line of one raw reply.
+   *
+   * @param raw The raw reply.
+   * @returns Its text without hidden lines, and its hidden line (null when none or a copied template).
+   */
+  const shown = (raw: string): { text: string; meta: AnswerMeta | null } => {
+    const split = splitMetaLine(raw);
+    // ADR-0103: a copied placeholder as the first line is not a hidden line (its type is "type").
+    // ADR-0112: nor is any other copied template ("[[concept|for|source]]"), by the rule the server stops on.
+    const realMeta = split.state === 'found' && leadingTemplateLine(raw) === null;
+    return {
+      text: withoutQuestionLine(split.state === 'found' ? split.rest : raw.trim()),
+      meta:
+        realMeta && split.state === 'found'
+          ? // ADR-0107: for a screen-only screenshot the route sets the user's chosen reader
+            // (withChosenTarget).
+            scenario.screenOnly && sent.target
+            ? { ...split.meta, target: sent.target }
+            : split.meta
+          : null,
+    };
+  };
   return {
-    text: withoutQuestionLine(split.state === 'found' ? split.rest : raw.trim()),
-    meta:
-      realMeta && split.state === 'found'
-        ? // ADR-0107: for a screen-only screenshot the route sets the user's chosen reader (withChosenTarget).
-          scenario.screenOnly && sent.target
-          ? { ...split.meta, target: sent.target }
-          : split.meta
-        : null,
-    placeholder: containsTemplateLine(raw),
-    usage,
+    // When the guard removed the card (the retry failed too), the user sees the notice and no answer: an
+    // empty answer is graded, never the templated text the page threw away.
+    ...(guard?.outcome === 'notice' ? { text: '', meta: null } : shown(shownRaw)),
+    placeholder: containsTemplateLine(shownRaw),
+    usage: first.usage,
     experiment: { cvMatchLine, smartModel },
     ...(guard ? { guard } : {}),
+    ...(retryRaw !== null ? { discardedFirst: shown(first.raw) } : {}),
   };
 }
 
@@ -750,16 +785,33 @@ async function grade(
     text,
     '</answer>',
   ].join('\n');
-  const { value, usage } = await jsonReply({
-    model,
-    tier: 'smart',
-    system: graderSystem(rubric),
-    prompt,
-    schema: GRADE_SCHEMA,
-    maxTokens: 600,
-  });
-  meter.add(model, usage);
-  return value as Grade;
+  /**
+   * One grader request.
+   *
+   * @returns The grader's parsed reply and its token counts.
+   */
+  const ask = () =>
+    jsonReply({
+      model,
+      tier: 'smart',
+      system: graderSystem(rubric),
+      prompt,
+      schema: GRADE_SCHEMA,
+      maxTokens: 600,
+    });
+  let reply: Awaited<ReturnType<typeof ask>>;
+  try {
+    reply = await ask();
+  } catch (error) {
+    // 20 Nov 2026: a grader reply with no text (NO_JSON) stopped three full runs about a minute in; the same
+    // scenarios graded again passed. Ask once more, with the same settings, so one such reply does not lose
+    // the whole run; the scenario id is logged (never the answer). Any other error still stops the run.
+    if (!(error instanceof Error) || error.message !== 'NO_JSON') throw error;
+    console.log(`grader: no JSON for ${scenario.id}; asked once more`);
+    reply = await ask();
+  }
+  meter.add(model, reply.usage);
+  return reply.value as Grade;
 }
 
 /**
@@ -1093,10 +1145,36 @@ async function main(): Promise<void> {
         compareRubric && options.grade && !nothingToGrade
           ? await grade(scenario, text, env.modelSmart, meter, first, 'previous')
           : null;
+      // --guard, when the page asked again: the run is scored on the retry (what the user sees); grading the
+      // discarded first reply too only measures how much the old way of scoring it differed.
+      const discarded = answer.discardedFirst;
+      let discardedFirstTotal: number | undefined;
+      if (discarded && options.grade) {
+        const skip =
+          (discarded.meta?.type === 'garbled' || discarded.meta?.type === 'none') &&
+          discarded.text.trim() === '';
+        const g = skip
+          ? noAnswerGrade(scenario)
+          : await grade(
+              theirName
+                ? { ...scenario, session: { ...scenario.session, themName: theirName } }
+                : scenario,
+              discarded.text,
+              env.modelSmart,
+              meter,
+              first,
+            );
+        const s = skip
+          ? { headline: 1, bullets: 1 }
+          : shapeChecks(discarded.text, scenario.session.style.format, discarded.meta);
+        discardedFirstTotal =
+          g.facts + g.grounded + g.consistent + g.style + s.headline + s.bullets;
+      }
       runs.push({
         run,
         scores,
         total: Object.values(scores).reduce((a, b) => a + b, 0),
+        ...(discardedFirstTotal !== undefined ? { discardedFirstTotal } : {}),
         reason: graded.reason,
         checks: {
           ...checks,
@@ -1137,6 +1215,8 @@ async function main(): Promise<void> {
 Stopped at the --max-dollars cap: ${stopped} scenario(s) not run.`);
   const checkLines = summariseChecks(results);
   if (checkLines.length > 0) console.log(`\n${checkLines.join('\n')}`);
+  const retryLine = summariseRetryGrading(results);
+  if (retryLine !== null) console.log(retryLine);
   const depthLines = summariseDepth(results);
   if (depthLines.length > 0) console.log(`\n${depthLines.join('\n')}`);
   console.log(
