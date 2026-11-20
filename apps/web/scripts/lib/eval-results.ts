@@ -49,6 +49,11 @@ export interface ScenarioRunResult {
   scores: Record<string, number>;
   /** The run's total out of 10. */
   total: number;
+  /**
+   * --guard, when the page asked again (20 Nov 2026): `total` is the retry's (what the user sees); this is
+   * what the discarded first reply would have scored, kept only to report the difference. Absent otherwise.
+   */
+  discardedFirstTotal?: number;
   /** The grader's sentence on what cost points ("none" when nothing did). */
   reason: string;
   /** The checks made in code on top of the score (ADR-0030), when this evaluation has them. */
@@ -181,6 +186,26 @@ export function evalResultsName(results: EvalResultsFile): string {
   const only = (results.only ?? 'all').replace(/[^\w-]/g, '_');
   const lessons = results.withoutLessons ? '-without-lessons' : '';
   return `${results.evaluation}-${only}${lessons}-${time}.json`;
+}
+
+/**
+ * One summary line for --guard runs whose first reply the page asked again (20 Nov 2026): how many there
+ * were, and their mean score graded on the retry (what the user sees, the score used) against the
+ * discarded first reply (how they were scored before).
+ *
+ * @param results The scenarios' results.
+ * @returns The line, or null when no run was asked again (or the run was not graded).
+ * Called from: main() of scripts/eval-answers.ts; tests
+ */
+export function summariseRetryGrading(results: readonly ScenarioResult[]): string | null {
+  const retried = results.flatMap((scenario) =>
+    scenario.runs.filter((run) => run.discardedFirstTotal !== undefined),
+  );
+  if (retried.length === 0) return null;
+  const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+  const onRetry = mean(retried.map((run) => run.total));
+  const onFirst = mean(retried.map((run) => run.discardedFirstTotal as number));
+  return `Guard: runs graded on the retry: ${retried.length}; mean ${onRetry.toFixed(2)} (the discarded first reply: ${onFirst.toFixed(2)})`;
 }
 
 /**
