@@ -353,7 +353,9 @@ export function LiveAnswers(props: LiveAnswersProps) {
   const [answerTaken, setAnswerTaken] = useState<string | null>(null);
   const mac = useSyncExternalStore(subscribeNever, isMac, () => false);
   const entry = answers.index >= 0 ? (answers.entries[answers.index] ?? null) : null;
-  const answering = answers.entries.some((candidate) => candidate.status === 'streaming');
+  // ADR-0112: a silent retry's card is hidden, but an answer is still on its way.
+  const answering =
+    answers.retrying || answers.entries.some((candidate) => candidate.status === 'streaming');
   // Auto-answer (beta, off by default): answers a finished question from Them by itself.
   // The choice made in this call first; then this session's own switch; then the device's setting.
   const autoOn = autoChoice ?? props.autoAnswer ?? (props.session.autoAnswer || getAutoAnswer());

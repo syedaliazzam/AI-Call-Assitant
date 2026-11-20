@@ -19,6 +19,28 @@ export interface ExperimentFlags {
   smartModel: boolean;
 }
 
+/**
+ * ADR-0112, --guard only: what the user would see for one reply, after the live route's pipeline
+ * (server/answer-meta.ts, with the template stop) and the page's retry rule (core/answer/finishedReply.ts).
+ */
+export interface GuardCheck {
+  /** The first reply opened with a copied template (the server stopped it). */
+  firstTemplated: boolean;
+  /** The first reply had no answer text (templated or empty). */
+  firstEmpty: boolean;
+  /** The page asked again once, silently (one more real request). */
+  retried: boolean;
+  /**
+   * What reached the user: 'card' (an answer card), 'notice' (the card removed with "Didn't catch
+   * that"), or 'dropped' (garbled or none: no card by design, before the guard).
+   */
+  outcome: 'card' | 'notice' | 'dropped';
+  /** A card shown without a hidden line of its own (labelled with the default type, "Other"). */
+  cardWithoutMeta: boolean;
+  /** A card whose shown text still holds a template ("[[type|for|source]]"); must never happen. */
+  templateVisible: boolean;
+}
+
 /** One graded run of one scenario. */
 export interface ScenarioRunResult {
   /** The run's number, from 1. */
@@ -37,7 +59,10 @@ export interface ScenarioRunResult {
 export interface RunChecks {
   /** True when the reply opened with its hidden line (ADR-0103: a copied placeholder does not count). */
   hiddenLine: boolean;
-  /** ADR-0103: true when the reply contains the copied placeholder ("[[type|for|source]]"); absent in older files. */
+  /**
+   * ADR-0103: true when the reply contains the copied placeholder ("[[type|for|source]]"); absent in older
+   * files. ADR-0112: any copied template line, first or last ("[[question|…]]").
+   */
   placeholder?: boolean;
   /** v1.1.0: how many words the model's answer line has, for an answer that has one. */
   answerLineWords?: number;
@@ -55,6 +80,8 @@ export interface RunChecks {
   inventedPrevious?: string[];
   /** 19 Nov 2026 experiments only: option A's line was in the prompt; option B used the smart model. */
   experiment?: ExperimentFlags;
+  /** ADR-0112, --guard only: what the user would see after the guard. */
+  guard?: GuardCheck;
   /** Numbers and prices the claim check could not find in the documents or the call. */
   unsupportedNumbers: string[];
   /** Dates and names the claim check could not find. */

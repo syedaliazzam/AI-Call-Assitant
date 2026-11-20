@@ -15,6 +15,8 @@
 import 'server-only';
 import {
   createQuestionLineFilter,
+  isTemplateQuestion,
+  leadingTemplateLine,
   MAX_QUESTION_LINE_CHARS,
   splitMetaLine,
   type AnswerMeta,
@@ -44,12 +46,17 @@ export type ReplyItem = string | ReplyMeta | ReplyQuestion;
  */
 export const MAX_LEADING_CHARS = 500;
 
-/**
- * ADR-0103: the contract's own placeholder copied as the first line ("[[type|for|source]]"): its first
- * value is the word "type", which no real line has. Measured: a reply opened with it, then wrote a
- * self-correction and the real line. It is dropped, and the real line is looked for after it.
- */
-const PLACEHOLDER_LINE = /^\[\[\s*type\s*\|[^[\]\n]*\]\][ \t]*(?:\n|$)/i;
+/** ADR-0112: how withAnswerMeta() treats a reply that opens with a copied template. */
+export interface AnswerMetaOptions<R> {
+  /**
+   * Live answers: when given, a reply whose leading text holds a copied template line
+   * ("[[type|for|source]]", "[[question|…]]"; @kite/shared leadingTemplateLine()) ends at once, with no
+   * item sent, and returns this result (the model's stream is stopped, so its own result never comes).
+   * The browser then sees a reply with no text and asks again once (features/live/useLiveAnswers.ts).
+   * Without it (the Ask AI page), the template line is dropped and the real line looked for after it.
+   */
+  stopOnTemplate?: () => R;
+}
 
 /** A complete hidden question line at the very start of the text, with the line break after it. */
 const LEADING_QUESTION_LINE = /^\[\[\s*question\s*\|([^[\]\n]*)\]\][ \t]*(?:\n|$)/i;
@@ -130,16 +137,23 @@ function leadingText(text: string, ended: boolean): LeadingDecision {
  * line looked for after it; a leading "[[question|…]]" line is taken out (a malformed one,
  * "[[question|for|source]]", never becomes the card's question); otherwise the text is the answer.
  *
- * @param source The reply's text pieces, finishing with its result.
- * @param stats  Optional: `droppedLeadingText` is set when stray text before the hidden line was
- *               dropped (the route logs it; a flag only, never the text).
+ * ADR-0112: with `options.stopOnTemplate` (live answers), a copied template line in the leading text
+ * ends the reply at once instead (see AnswerMetaOptions). A hidden last line holding a placeholder
+ * ("[[question|…]]") is taken out but never becomes the card's question.
+ *
+ * @param source  The reply's text pieces, finishing with its result.
+ * @param stats   Optional: `droppedLeadingText` is set when stray text before the hidden line was
+ *                dropped; ADR-0112: `templatedReply` when the reply was stopped on a copied template
+ *                (the route logs both; flags only, never the text).
+ * @param options Optional: see AnswerMetaOptions.
  * @returns The same reply, with `{ meta }` as an item before the first word and `{ question }`
  *          where the last line completes.
  * Called from: POST handler in app/api/answer/route.ts; scripts; tests
  */
 export async function* withAnswerMeta<R>(
   source: AsyncGenerator<string, R, undefined>,
-  stats?: Pick<ContractStats, 'droppedLeadingText'>,
+  stats?: Pick<ContractStats, 'droppedLeadingText' | 'templatedReply'>,
+  options: AnswerMetaOptions<R> = {},
 ): AsyncGenerator<ReplyItem, R, undefined> {
   // 'looking' for the line; 'trimming' the white space after it, which can arrive in later
   // pieces; 'passing' everything else on as it comes.
@@ -156,8 +170,12 @@ export async function* withAnswerMeta<R>(
    */
   const filtered = (piece: string): ReplyItem[] => {
     const { text, question } = lastLine.push(piece);
-    return [...(text ? [text] : []), ...(question ? [{ question }] : [])];
+    // ADR-0112: a placeholder last line ("[[question|…]]") is no question: the page keeps its own.
+    const real = question && !isTemplateQuestion(question) ? question : undefined;
+    return [...(text ? [text] : []), ...(real ? [{ question: real }] : [])];
   };
+  // ADR-0112: set when the leading text held a copied template and the reply is to stop.
+  let templated = false;
   // try/finally: when the browser disconnects, the wrapped reply must stop too, or Claude keeps
   // writing (and billing) an answer nobody reads.
   /**
@@ -170,10 +188,15 @@ export async function* withAnswerMeta<R>(
     const items: ReplyItem[] = [];
     for (;;) {
       held = held.trimStart();
-      const placeholder = PLACEHOLDER_LINE.exec(held);
-      if (placeholder) {
+      const template = leadingTemplateLine(held);
+      if (template) {
+        // ADR-0112: live answers stop here (the browser asks again); nothing of this reply is shown.
+        if (options.stopOnTemplate) {
+          templated = true;
+          return { items: [], looking: false };
+        }
         // The copied placeholder is not a meta line: drop it and keep looking.
-        held = held.slice(placeholder[0].length);
+        held = held.slice(template.length);
         if (stats) stats.droppedLeadingText = true;
         continue;
       }
@@ -202,12 +225,17 @@ export async function* withAnswerMeta<R>(
         // The reply ended while it could still have been the line: what was held is the answer.
         if (state === 'looking') {
           const { items } = look(true);
+          // ADR-0112: a copied template that only completed at the very end: nothing is shown.
+          if (templated) {
+            if (stats) stats.templatedReply = true;
+            return next.value;
+          }
           yield* items;
           if (held.trim() !== '') yield* filtered(held.trim());
         }
         const { text, question } = lastLine.end();
         if (text) yield text;
-        if (question) yield { question };
+        if (question && !isTemplateQuestion(question)) yield { question };
         return next.value;
       }
       if (state === 'passing') {
@@ -217,6 +245,11 @@ export async function* withAnswerMeta<R>(
       held += next.value;
       if (state === 'looking') {
         const { items, looking } = look(false);
+        // ADR-0112: stop on a copied template; `finally` below stops the model's stream too.
+        if (templated && options.stopOnTemplate) {
+          if (stats) stats.templatedReply = true;
+          return options.stopOnTemplate();
+        }
         yield* items;
         if (looking) continue;
         state = 'trimming';
@@ -244,6 +277,11 @@ export interface ContractStats {
    * withAnswerMeta(); absent otherwise).
    */
   droppedLeadingText?: boolean;
+  /**
+   * ADR-0112: true when a live reply opened with a copied template line and was stopped there, so
+   * nothing of it was shown (set by withAnswerMeta(); absent otherwise).
+   */
+  templatedReply?: boolean;
 }
 
 /** Longest stray tag held back while looking for its end ("[[" … "]]"). */
