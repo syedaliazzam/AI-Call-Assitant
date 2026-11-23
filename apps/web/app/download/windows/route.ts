@@ -7,7 +7,7 @@
  * Used by: every "Download for Windows" link (src/features/session-setup/labels.ts DESKTOP_DOWNLOAD_URL)
  *          and the user guide
  * Depends on: src/server/desktopDownload.ts
- * Architecture: docs/architecture/kite-architecture-v3.1.md §10 (installation); ADR-0028
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §10.3 (installation); ADR-0114; ADR-0028
  */
 import { windowsDownloadResponse } from '@/server/desktopDownload';
 

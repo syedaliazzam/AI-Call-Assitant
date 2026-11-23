@@ -9,7 +9,7 @@
  *          instead, as before.
  * Used by: app/download/windows/route.ts
  * Depends on: nothing (fetch only; the releases repository is public, so no token)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §10 (installation); ADR-0028 (releases repository)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §10.3 (installation); ADR-0114; ADR-0028 (releases repository)
  */
 import 'server-only';
 
@@ -26,10 +26,12 @@ export const LATEST_YML_URL = `${LATEST_DOWNLOAD}/latest.yml`;
 export const RELEASES_PAGE_URL = LATEST_RELEASE;
 
 /**
- * How long one installer name is reused before latest.yml is read again, ms. A few minutes: one read
- * serves every click meanwhile, and right after a release the old name is used for at most this long.
+ * How long one installer name is reused before latest.yml is read again, ms (ADR-0114). One read serves
+ * every click meanwhile. Right after a release the old name is used for at most this long, and
+ * releases/latest/download/<old name> answers 404 then (the newest release has only the new file), so
+ * this is kept short: one minute.
  */
-export const INSTALLER_NAME_TTL_MS = 5 * 60_000;
+export const INSTALLER_NAME_TTL_MS = 60_000;
 
 /** How long to wait for GitHub before sending the release page instead, ms. */
 const FETCH_TIMEOUT_MS = 5_000;

@@ -1,7 +1,7 @@
 /**
  * Tests apps/web/src/server/desktopDownload.ts and its route, app/download/windows/route.ts: the installer
  * name is read from latest.yml's `path:` line, a click is redirected to that .exe in the newest release,
- * the name is reused for a few minutes, and when GitHub cannot be reached or latest.yml cannot be read
+ * the name is reused for one minute, and when GitHub cannot be reached or latest.yml cannot be read
  * the redirect goes to the release page instead. fetch is replaced; nothing goes to GitHub.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -92,7 +92,8 @@ describe('GET /download/windows', () => {
     expect(fetchMock.mock.calls[0]![0]).toBe(LATEST_YML_URL);
   });
 
-  it('reuses the name for a few minutes, then reads latest.yml again', async () => {
+  it('reuses the name for one minute, then reads latest.yml again', async () => {
+    expect(INSTALLER_NAME_TTL_MS).toBe(60_000);
     fetchMock.mockResolvedValue(new Response(LATEST_YML, { status: 200 }));
     const start = 1_000_000;
     await windowsDownloadResponse(start);

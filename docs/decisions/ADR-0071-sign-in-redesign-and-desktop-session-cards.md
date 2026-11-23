@@ -40,8 +40,11 @@ Web only. The desktop shell does not change: every link opens in the system brow
   the page is hydrated.
 - Autofill: an inset shadow in the field's own colour covers Chrome's blue, with the focus ring added
   back (global, so every form gets it).
-- Under the card, "Get the desktop app" opens the releases page (`releases/latest`; the installer's name
-  carries its version, so there is no stable direct file link). Hidden inside the desktop app.
+- Under the card, "Get the desktop app" downloads the newest Windows installer directly through
+  `/download/windows`, in the same tab (ADR-0114, 23 Nov 2026; the route reads the installer's
+  versioned name from the release's `latest.yml`). Until then it opened the releases page
+  (`releases/latest`), because the versioned name gives no stable direct file link. Hidden inside the
+  desktop app.
 - Below 900 px the left panel is hidden and the logo sits above the card.
 
 **Desktop "Your sessions"** (`src/features/home/LauncherSessions.tsx`)

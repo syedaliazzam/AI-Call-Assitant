@@ -227,7 +227,8 @@ test('the hand-off page: the link with a one-time code, its button, the download
     await route.fulfill({ json: { code: CODE, expiresAt: Date.now() + 60_000 } });
   });
   await page.evaluate((session) => window.kiteHandoffHarness.showHandoff(session), id);
-  await expect(page.getByText('Open Paramount AI')).toBeVisible();
+  // Exact: the download's "…open Paramount AI from the Start menu…" (ADR-0114) also contains the words.
+  await expect(page.getByText('Open Paramount AI', { exact: true })).toBeVisible();
   await expect(page.getByText('No prompt? Use the button below.')).toBeVisible();
   await expect.poll(followed).toEqual([`paramountai://session/${id}/${CODE}`]);
   // No session file any more (ADR-0092): nothing to save again.
