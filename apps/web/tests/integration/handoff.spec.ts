@@ -237,9 +237,12 @@ test('the hand-off page: the link with a one-time code, its button, the download
   expect(asked).toBe(2);
   const region = page.getByRole('region', { name: 'Get the desktop app' });
   await expect(region).toContainText('Don’t have the desktop app yet?');
-  await expect(region.getByRole('link', { name: 'Download for Windows' })).toHaveAttribute(
-    'href',
-    /kite-releases\/releases\/latest$/,
+  // The direct download, in the same tab (no empty tab), and what to do after it.
+  const download = region.getByRole('link', { name: 'Download for Windows' });
+  await expect(download).toHaveAttribute('href', '/download/windows');
+  await expect(download).not.toHaveAttribute('target', /./);
+  await expect(region).toContainText(
+    'Run the installer once. After that, open Paramount AI from the Start menu or the Desktop icon. You can delete the downloaded file.',
   );
   await region.getByText('Need it for macOS?').hover();
   await expect(page.getByRole('tooltip')).toHaveText('Coming soon');

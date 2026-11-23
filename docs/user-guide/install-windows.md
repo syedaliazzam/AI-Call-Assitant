@@ -4,12 +4,12 @@ Paramount AI is an internal Paramount Intelligence tool. You need an account fro
 
 ## Install
 
-1. Download the newest `Paramount-AI-Setup-<version>.exe` from [Paramount AI releases](https://github.com/Zainpak123/kite-releases/releases/latest).
+1. [Download Paramount AI for Windows](https://call.paramountintelligence.co/download/windows): the newest `Paramount-AI-Setup-<version>.exe` downloads straight away (if GitHub cannot be reached, the link opens [Paramount AI releases](https://github.com/Zainpak123/kite-releases/releases/latest), where it is under **Assets**).
 2. Open the file. Paramount AI installs for your Windows user only, so it does not ask for an administrator password.
 3. **If Windows shows "Windows protected your PC":** click **More info**, check that the app is `Paramount-AI-Setup-<version>.exe`, then click **Run anyway**. Windows shows this because the installer is not code-signed yet. It is the file from the link above.
 4. Paramount AI opens. Sign in with the email and password your administrator gave you; the first time, you choose a new password.
 
-Paramount AI is then in the Start menu as **Paramount AI**. To learn how to use it, see [Using Paramount AI](using-kite.md).
+Paramount AI is then in the Start menu and on the Desktop as **Paramount AI**. Run the installer once. After that, open Paramount AI from the Start menu or the Desktop icon. You can delete the downloaded file. To learn how to use it, see [Using Paramount AI](using-kite.md).
 
 ### Check the download (optional)
 

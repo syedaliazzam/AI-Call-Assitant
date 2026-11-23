@@ -1,7 +1,8 @@
 /**
  * Tests for apps/web/proxy.ts: without a session cookie, pages and the Google Drive connect and callback
  * addresses (ADR-0072) redirect to /login, other API routes answer 401 JSON, and the public /privacy and
- * /terms pages continue; with a cookie every request continues. No real session is used: the cookie's value is invented.
+ * /terms pages and the Windows download (/download/windows) continue; with a cookie every request
+ * continues. No real session is used: the cookie's value is invented.
  */
 import { NextRequest } from 'next/server';
 import { describe, expect, it } from 'vitest';
@@ -37,6 +38,15 @@ describe('proxy', () => {
     }
     // Only those exact pages: a path under them still needs sign-in.
     expect(proxy(request('/privacy/other')).status).toBe(307);
+  });
+
+  it('lets signed-out visitors download the Windows installer, not the sign-in page', () => {
+    const out = proxy(request('/download/windows'));
+    expect(out.status).toBe(200);
+    expect(out.headers.get('x-middleware-next')).toBe('1');
+    // Only that address: nothing else under /download opens signed out.
+    expect(proxy(request('/download/mac')).status).toBe(307);
+    expect(proxy(request('/download')).status).toBe(307);
   });
 
   it('answers 401 for other signed-out API routes, and lets signed-in requests through', async () => {

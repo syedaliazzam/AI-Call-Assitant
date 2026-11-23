@@ -69,8 +69,6 @@ export function DesktopAppCard() {
       </a>
       <a
         href={DESKTOP_DOWNLOAD_URL}
-        target="_blank"
-        rel="noreferrer"
         className="self-center rounded-control text-center text-[12px] text-ui-muted underline hover:text-ui-text focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
       >
         Don’t have it? Download for Windows

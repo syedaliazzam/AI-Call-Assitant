@@ -20,7 +20,7 @@ import { ArrowLeft, MonitorDown } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { requestLinkCode } from '@/core/auth/desktopLink';
-import { DESKTOP_DOWNLOAD_URL } from '@/features/session-setup/labels';
+import { DESKTOP_DOWNLOAD_URL, DESKTOP_INSTALL_ONCE_HINT } from '@/features/session-setup/labels';
 import { Button, buttonClasses } from '@/ui/Button';
 import { SOON_TOOLTIP } from '@/ui/Chip';
 import { Tooltip } from '@/ui/Tooltip';
@@ -101,14 +101,10 @@ export function DesktopHandoffPage({ sessionId }: DesktopHandoffPageProps) {
         className="flex w-full flex-col gap-3 rounded-card border border-ui-border p-5 text-left"
       >
         <h2 className="text-label text-ui-heading">Don’t have the desktop app yet?</h2>
-        <a
-          href={DESKTOP_DOWNLOAD_URL}
-          target="_blank"
-          rel="noreferrer"
-          className={buttonClasses('primary', 'lg', 'w-full')}
-        >
+        <a href={DESKTOP_DOWNLOAD_URL} className={buttonClasses('primary', 'lg', 'w-full')}>
           Download for Windows
         </a>
+        <p className="text-helper text-ui-muted">{DESKTOP_INSTALL_ONCE_HINT}</p>
         <Tooltip content={SOON_TOOLTIP} className="self-center">
           <span tabIndex={0} className="text-helper text-ui-muted">
             Need it for macOS?
