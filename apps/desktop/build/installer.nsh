@@ -1,5 +1,6 @@
 ; File: apps/desktop/build/installer.nsh
-; Purpose: Recreates a missing Start Menu shortcut at every install and update (1.5.1, ADR-0069).
+; Purpose: Recreates a missing Start Menu shortcut (1.5.1, ADR-0069) and a missing Desktop shortcut (1.7.4)
+;          at every install and update.
 ;          Registers the paramountai:// link at install (v1.2.0, spec S9), so it works before the app's
 ;          first start. Kite's uninstall step (Day 6 Stage 3): removes that link and asks whether to keep
 ;          the user's local data (sessions, transcripts, answers and settings in %APPDATA%\Kite, the
@@ -18,6 +19,20 @@
     ClearErrors
     WinShell::SetLnkAUMI "$newStartMenuLink" "${APP_ID}"
   ${EndIf}
+  ; 1.7.4: the Desktop shortcut, the same way. electron-builder creates it on a fresh install
+  ; (createDesktopShortcut: true) but on an update keeps only one that is still there, so an update from
+  ; 1.7.3 or earlier (which had none) would never add it. Skipped when the installer was run with
+  ; --no-desktop-shortcut (electron-builder's own switch, isNoDesktopShortcut).
+  !ifndef DO_NOT_CREATE_DESKTOP_SHORTCUT
+    ${IfNot} ${isNoDesktopShortcut}
+    ${AndIfNot} ${FileExists} "$newDesktopLink"
+      CreateShortCut "$newDesktopLink" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"
+      ClearErrors
+      WinShell::SetLnkAUMI "$newDesktopLink" "${APP_ID}"
+      ; Tells Explorer the Desktop changed, so the icon shows without a refresh.
+      System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
+    ${EndIf}
+  !endif
   WriteRegStr SHCTX "Software\Classes\paramountai" "" "URL:Paramount AI"
   WriteRegStr SHCTX "Software\Classes\paramountai" "URL Protocol" ""
   WriteRegStr SHCTX "Software\Classes\paramountai\DefaultIcon" "" "$appExe,0"

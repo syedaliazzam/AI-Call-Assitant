@@ -14,7 +14,10 @@
 #          H. (1.6.3, ADR-0077) the published 1.6.2, then this build by the updater;
 #          I. (1.6.4, ADR-0082) the published 1.6.3, then this build by the updater;
 #          J. (1.6.5, ADR-0085) the published 1.6.4, then this build by the updater;
-#          K. (1.7.0, ADR-0095) the published 1.6.5, what people have now, then this build by the updater.
+#          K. (1.7.0, ADR-0095) the published 1.6.5, then this build by the updater;
+#          L. (1.7.4) the published 1.7.3, what people have now (no Desktop icon), then this build by the
+#             updater, then by hand with the Desktop icon deleted.
+#          From 1.7.4 every scenario also expects one "Paramount AI" Desktop icon after this build.
 #          Finally the installed app is opened directly with a temporary profile and the runner's screen is
 #          captured (an artifact, with the report).
 # Used by: the developer before each desktop release (Actions → install-check → Run workflow), and pushes
@@ -61,7 +64,7 @@ jobs:
           $built = Get-ChildItem apps/desktop/release -Filter 'Paramount-AI-Setup-*.exe' | Select-Object -First 1
           Copy-Item $built.FullName "$dir\built.exe"
           "built: {0} {1} bytes" -f $built.Name, $built.Length
-          $assets = @{ '1.1.0' = 'Kite-Setup-1.1.0.exe'; '1.2.0' = 'Paramount-AI-Setup-1.2.0.exe'; '1.4.0' = 'Paramount-AI-Setup-1.4.0.exe'; '1.5.0' = 'Paramount-AI-Setup-1.5.0.exe'; '1.5.1' = 'Paramount-AI-Setup-1.5.1.exe'; '1.5.2' = 'Paramount-AI-Setup-1.5.2.exe'; '1.6.0' = 'Paramount-AI-Setup-1.6.0.exe'; '1.6.1' = 'Paramount-AI-Setup-1.6.1.exe'; '1.6.2' = 'Paramount-AI-Setup-1.6.2.exe'; '1.6.3' = 'Paramount-AI-Setup-1.6.3.exe'; '1.6.4' = 'Paramount-AI-Setup-1.6.4.exe'; '1.6.5' = 'Paramount-AI-Setup-1.6.5.exe' }
+          $assets = @{ '1.1.0' = 'Kite-Setup-1.1.0.exe'; '1.2.0' = 'Paramount-AI-Setup-1.2.0.exe'; '1.4.0' = 'Paramount-AI-Setup-1.4.0.exe'; '1.5.0' = 'Paramount-AI-Setup-1.5.0.exe'; '1.5.1' = 'Paramount-AI-Setup-1.5.1.exe'; '1.5.2' = 'Paramount-AI-Setup-1.5.2.exe'; '1.6.0' = 'Paramount-AI-Setup-1.6.0.exe'; '1.6.1' = 'Paramount-AI-Setup-1.6.1.exe'; '1.6.2' = 'Paramount-AI-Setup-1.6.2.exe'; '1.6.3' = 'Paramount-AI-Setup-1.6.3.exe'; '1.6.4' = 'Paramount-AI-Setup-1.6.4.exe'; '1.6.5' = 'Paramount-AI-Setup-1.6.5.exe'; '1.7.3' = 'Paramount-AI-Setup-1.7.3.exe' }
           foreach ($v in $assets.Keys) {
             Invoke-WebRequest -Uri "https://github.com/Zainpak123/kite-releases/releases/download/v$v/$($assets[$v])" -OutFile "$dir\$v.exe"
           }
@@ -86,12 +89,15 @@ jobs:
           # The Start Menu shortcuts of the app.
           function Links { Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter *.lnk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Kite|Paramount' } }
 
+          # The Desktop shortcuts of the app (1.7.4).
+          function DesktopLinks { Get-ChildItem ([Environment]::GetFolderPath('Desktop')) -Filter *.lnk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Kite|Paramount' } }
+
           # Records what Windows and the installer know about the app right now.
           function Snapshot([string]$label) {
             Say ""
             Say "===== $label ====="
             $shell = New-Object -ComObject WScript.Shell
-            $links = @(Links) + @(Get-ChildItem ([Environment]::GetFolderPath('Desktop')) -Filter *.lnk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Kite|Paramount' })
+            $links = @(Links) + @(DesktopLinks)
             if (-not $links) { Say "shortcuts: NONE" }
             foreach ($l in $links) { Say ("shortcut: {0} -> {1}" -f $l.FullName.Replace($env:USERPROFILE, '~'), $shell.CreateShortcut($l.FullName).TargetPath.Replace($env:USERPROFILE, '~')) }
             $apps = Get-StartApps | Where-Object { $_.Name -match 'Kite|Paramount' }
@@ -109,6 +115,10 @@ jobs:
             Expect ($links.Count -eq 1 -and $links[0].Name -eq 'Paramount AI.lnk') "$label : one 'Paramount AI' Start Menu shortcut"
             $apps = @(Get-StartApps | Where-Object { $_.Name -eq 'Paramount AI' })
             Expect ($apps.Count -eq 1 -and $apps[0].AppID -eq 'co.paramountintelligence.kite') "$label : Start lists 'Paramount AI' with AppID co.paramountintelligence.kite"
+            # 1.7.4: and one Desktop icon that opens the installed app (build/installer.nsh recreates it).
+            $desk = @(DesktopLinks)
+            $shell = New-Object -ComObject WScript.Shell
+            Expect ($desk.Count -eq 1 -and $desk[0].Name -eq 'Paramount AI.lnk' -and $shell.CreateShortcut($desk[0].FullName).TargetPath -like '*\Paramount AI.exe') "$label : one 'Paramount AI' Desktop icon to the app"
           }
 
           # Runs one installer silently and waits for it.
@@ -138,6 +148,7 @@ jobs:
               }
             }
             Links | Remove-Item -Force -ErrorAction SilentlyContinue
+            DesktopLinks | Remove-Item -Force -ErrorAction SilentlyContinue
             Get-ChildItem HKCU:\Software -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^[0-9a-f]{8}-' } | ForEach-Object {
               $v = Get-ItemProperty $_.PSPath; if ($v.InstallLocation -match 'kite|Paramount') { Remove-Item $_.PSPath -Recurse -Force }
             }
@@ -267,6 +278,21 @@ jobs:
           Install 'built' @('--updated')
           Snapshot 'K after the update to this build'
           ExpectFindable 'K update from 1.6.5'
+          CleanUninstall
+
+      - name: 'L: 1.7.3 by the updater to this build, then by hand with the Desktop icon deleted'
+        shell: pwsh
+        run: |
+          . "$env:RUNNER_TEMP\helpers.ps1"
+          Install '1.7.3' @()
+          Snapshot 'L 1.7.3 (no Desktop icon)'
+          Install 'built' @('--updated')
+          Snapshot 'L after the update to this build'
+          ExpectFindable 'L update from 1.7.3'
+          DesktopLinks | Remove-Item -Force
+          Install 'built' @()
+          Snapshot 'L after this build by hand, Desktop icon deleted'
+          ExpectFindable 'L by hand'
 
       - name: 'Open the app directly (temporary profile, runner screen captured)'
         shell: pwsh
