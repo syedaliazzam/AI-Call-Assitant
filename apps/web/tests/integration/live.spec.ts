@@ -1674,9 +1674,9 @@ test('1.6.3: ⋮ and Exit are always whole; bar 1 gives way in order at the defa
           await expect(bar.getByRole('img', { name: 'Drag here to move' })).toBeVisible();
           await expect(bar.getByRole('timer', { name: 'Call time' })).toHaveText(/^\d+:\d\d$/);
           if (sizeName === 'default') {
-            // The default window keeps the words on the Transcript and Auto answer switches.
+            // The default window keeps the Transcript switch's word; Auto answer reads "AA" (24 Nov 2026).
             await expect(bar.getByRole('switch', { name: 'Transcript' })).toHaveText(/Transcript/);
-            await expect(bar.getByRole('switch', { name: 'Auto answer' })).toHaveText(/Auto/);
+            await expect(bar.getByRole('switch', { name: 'Auto answer' })).toHaveText('AA');
           }
         }
       }
@@ -1866,7 +1866,7 @@ test('1.6.3: tooltips with Click-through on, in the light theme, over a dark pag
   await watched.context.close();
 });
 
-test('ADR-0082: the default window keeps the words on Transcript, Auto and Click-through in every state; bar 1 fits up to 130 % zoom', async () => {
+test('ADR-0082: the default window keeps the Transcript word and the "AA" and "W" labels in every state; bar 1 fits up to 130 % zoom', async () => {
   const watched = await openDesktopOverlay(DESKTOP_OVERLAY.default, '&position=top-center');
   const { page } = watched;
   const bar = page.getByRole('toolbar', { name: 'Overlay controls' });
@@ -1887,22 +1887,22 @@ test('ADR-0082: the default window keeps the words on Transcript, Auto and Click
         .poll(() => barFit(page), { message: name })
         .toMatchObject({ barFits: true, leftFits: true, exitInside: true, menuInside: true });
       // At 100 % the words stay; zoomed in, they may give way to icons (measured), but the bar still fits.
+      // Auto answer and Click-through show their short labels "AA" and "W" (24 Nov 2026), at any width.
       if (zoom !== 1) continue;
       await expect(bar.getByRole('switch', { name: 'Transcript' }), name).toHaveText(/Transcript/);
-      await expect(bar.getByRole('switch', { name: 'Auto answer' }), name).toHaveText(/Auto/);
+      await expect(bar.getByRole('switch', { name: 'Auto answer' }), name).toHaveText('AA');
       if (extra.includes('ct=on')) {
-        await expect(bar.getByRole('switch', { name: 'Click-through' }), name).toHaveText(
-          /Click-through/,
-        );
+        await expect(bar.getByRole('switch', { name: 'Click-through' }), name).toHaveText('W');
       }
     }
   }
-  // Narrower than the default, they do become icons (the narrowest window, everything on).
+  // Narrower than the default, they do become icons (the narrowest window, everything on); Click-through
+  // is a square that still reads "W".
   await page.setViewportSize(DESKTOP_OVERLAY.narrowest);
   await page.evaluate(() => {
     document.documentElement.style.zoom = '';
   });
-  await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveText('');
+  await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveText('W');
   await expect(bar.getByRole('switch', { name: 'Click-through' })).toHaveAttribute(
     'aria-checked',
     'true',
@@ -2028,8 +2028,11 @@ test('1.6.3: Auto answer is a toggle on bar 1; the recording warning shows once'
   await expect(page.getByRole('button', { name: /^Auto answer / })).toHaveCount(0);
   await expect(page.getByRole('switch', { name: 'Auto answer' })).toHaveCount(1);
   const auto = bar.getByRole('switch', { name: 'Auto answer' });
-  await expect(auto).toHaveText('Auto');
+  // 24 Nov 2026: it reads "AA"; its full name stays in aria-label (the locator above) and the tooltip.
+  await expect(auto).toHaveText('AA');
   await expect(auto).toHaveAttribute('aria-checked', 'false');
+  await auto.hover();
+  await expect(page.getByRole('tooltip')).toHaveText('Auto answer: Off');
   await auto.click();
   expect(await watched.log()).toContainEqual({ type: 'auto-answer', on: true });
 
@@ -2064,7 +2067,8 @@ test('ADR-0082: bar 1 has a Click-through switch where clicks can pass, which tu
   const toggle = bar.getByRole('switch', { name: 'Click-through' });
   // Off: the switch is there, unchecked, and a click asks for the mode on.
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
-  await expect(toggle).toHaveText('Click-through');
+  // 24 Nov 2026: it reads "W"; its full name stays in aria-label (the locator above) and the tooltip.
+  await expect(toggle).toHaveText('W');
   await toggle.hover();
   await expect(page.getByRole('tooltip')).toHaveText(
     'Click-through: Off (turn on to click the app behind the overlay) · Ctrl+Alt+X',
@@ -2129,9 +2133,9 @@ test('ADR-0094: the model chip sits next to Auto and gives way without pushing o
           step >= 3 ? '' : model === 'smart' ? 'Sonnet' : 'Haiku',
         );
         if (sizeName === 'default') {
-          // The default window keeps the words, the chip's too.
+          // The default window keeps the words, the chip's too; Auto answer reads "AA" (24 Nov 2026).
           await expect(chip, name).toHaveText(model === 'smart' ? 'Sonnet' : 'Haiku');
-          await expect(bar.getByRole('switch', { name: 'Auto answer' }), name).toHaveText(/Auto/);
+          await expect(bar.getByRole('switch', { name: 'Auto answer' }), name).toHaveText('AA');
         }
       }
     }
