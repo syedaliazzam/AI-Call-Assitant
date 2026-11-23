@@ -13,12 +13,16 @@ import { getDb } from './db';
 import type { SessionDefaults } from './types';
 
 /**
- * The defaults before the user saves any: the fast model, short headline-and-bullets answers in
- * simple language (what a live call needs), no extra instructions, transcript saved.
+ * The defaults before the user saves any: the fast model, headline-and-bullets answers of
+ * Balanced length ('medium') in simple language, no extra instructions, transcript saved.
+ * Only a device with no saved defaults uses these: once the user saves defaults (Settings, or
+ * "Set as default" in Answer preferences) their saved choice is used instead, and each existing
+ * session keeps the length stored on it.
  */
 export const BUILT_IN_DEFAULTS: SessionDefaults = {
   model: 'fast',
-  style: { format: 'headline+bullets', length: 'short', tone: 'simple' },
+  // Balanced ('medium') by default; Short was the default before (developer's decision, Nov 2026).
+  style: { format: 'headline+bullets', length: 'medium', tone: 'simple' },
   instructions: '',
   saveTranscript: true,
 };
