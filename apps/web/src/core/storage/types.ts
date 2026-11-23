@@ -46,7 +46,7 @@ export interface AnswerStyle {
    * labels changed, so existing sessions and the evaluation baselines stay valid (ADR-0029).
    */
   format: 'headline+bullets' | 'bullets' | 'paragraph';
-  /** Rough answer length: 'short' (the live default), 'medium' (shown as "Balanced") or 'detailed'. */
+  /** Rough answer length: 'short', 'medium' (shown as "Balanced"; the built-in default) or 'detailed'. */
   length: 'short' | 'medium' | 'detailed';
   /** Wording: 'simple' (shown as "Plain"), 'professional' or 'technical'. */
   tone: 'simple' | 'professional' | 'technical';

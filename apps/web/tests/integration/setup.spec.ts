@@ -709,7 +709,8 @@ test('Answer preferences: drill-in views, a static preview, STAR and Set as defa
   await expect(dialog.getByRole('button', { name: /^Format/ })).toContainText(
     'Opening line + bullets',
   );
-  await expect(dialog.getByRole('button', { name: /^Length/ })).toContainText('Short');
+  // A new session starts at the built-in Balanced length.
+  await expect(dialog.getByRole('button', { name: /^Length/ })).toContainText('Balanced');
   await expect(dialog.getByRole('button', { name: /^Tone/ })).toContainText('Plain');
   // Save waits for a change.
   await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled();
@@ -757,7 +758,8 @@ test('Answer preferences: drill-in views, a static preview, STAR and Set as defa
   await expect(length).toBeVisible();
   await shots('answer-preferences-length');
   await expect(length.getByRole('radio')).toHaveCount(3);
-  await length.getByRole('radio', { name: /Balanced/ }).click();
+  // Detailed, not Balanced: Balanced is already the default, so this still picks a different card.
+  await length.getByRole('radio', { name: /Detailed/ }).click();
   await length.getByRole('button', { name: 'Select' }).click();
   await dialog.getByRole('button', { name: /^Tone/ }).click();
   const tone = page.getByRole('dialog', { name: 'Tone' });
