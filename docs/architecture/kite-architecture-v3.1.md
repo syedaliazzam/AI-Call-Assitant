@@ -1,8 +1,8 @@
 ---
 title: "Kite — Architecture and 7-Day Build Plan"
-version: "4.49.0"
+version: "4.51.0"
 status: "Current: the single document the team builds from"
-date: "2026-11-20"
+date: "2026-11-23"
 supersedes: "v3.0 (sign-in changed to admin-created email + password accounts, ADR-0022)"
 authoritative_source: "docs/architecture/kite-architecture-v3.1.md"
 doc_label: "ARCHITECTURE AND BUILD PLAN"
@@ -16,7 +16,8 @@ page_breaks: "1,3,5,7,9,11,13"
 
 | Field | Value |
 |---|---|
-| Version | 4.50.0, **Current**: the only document to build from |
+| Version | 4.51.0, **Current**: the only document to build from |
+| Changes in 4.51.0 | **A direct Windows download and a Desktop icon** (ADR-0114; web, and desktop 1.7.4). §10.3: `GET /download/windows` reads the newest release's `latest.yml`, takes the installer's name from its `path:` line (a plain `.exe` name only) and redirects (302, `no-store`) to `releases/latest/download/<name>`, so a click downloads the installer with no GitHub page; when GitHub cannot be read it redirects to the releases page as before. The name is kept in the server's memory for one minute (right after a release the old name answers 404 for at most that long). Every download link (`DESKTOP_DOWNLOAD_URL`: sign-in page, sidebar card, desktop hand-off page) opens it in the same tab; the guide links to it on the company domain; the hand-off page and the guides say to run the installer once, then open the app from the Start menu or the Desktop icon. §8.3: `/download/windows` opens signed out (`PUBLIC_PAGE_PATHS`, with `/privacy` and `/terms`). Desktop 1.7.4: `createDesktopShortcut: true`, and the installer recreates a missing Desktop shortcut at every install and update, like the Start Menu one (ADR-0069). Windows only; a Mac download can follow on the Mac branch. |
 | Changes in 4.50.0 | **The answer panel has its own width; the bars keep theirs** (ADR-0113; web only, desktop unchanged; reverses ADR-0085's "one open panel fills the width" for the answer). §5: the overlay's pieces sit in one column as wide as bar 1's natural width (up to the window's); bar 1 no longer stretches and gives way only in a window narrower than it, never because the answer was resized; bar 2, the warnings and the panels' area are exactly bar 1's width. The answer panel's top strip keeps its buttons and labels at every width (Clear always shows its key), and the panel is never narrower than it. With the answer open the panels are one block with its own width, a share of the bars' width (`kite.overlayPanelsWidth`, 0.2–1, default 1), never wider than the bars, so the window never grows for it; the transcript beside it shares the block, the transcript alone fills the bars' width. The corner grip changes that share sideways (the window's width never changes) and the window's height up and down (edge `s`); on a right position it sits in the bottom left. The column and the block line up by the position's column: left, centred, right (`overlay/panelWidth.ts`). The window's width is still the shell's (a page-set width is a later desktop change). |
 | Changes in 4.49.0 | **No broken answer card** (ADR-0112; web only, desktop unchanged; 4.48.0 is the Mac release, on its own branch). §7.2: the live route stops a reply that opens with a copied hidden-line template (`[[type\|for\|source]]`, `[[question\|…]]`) before anything is shown, and the page asks a templated or empty reply (typed, spoken, screenshot, auto) again once, silently, with no card meanwhile; a second failure removes the card with "Didn't catch that — press answer again." (flags-only logs). The prompt's wording is unchanged: a rewording of how the contract describes the hidden lines was measured and reverted (it made `b-price` invent pricing), so every prompt change, however small, runs the full suite against same-day production. The evaluation gains `--guard` (what the user sees). |
 | Changes in 4.47.0 | **CV match signal** (ADR-0108; web only). §7.2: for a question about the user's own past in an interview, mock or blank session (not "Full example story"), the server scores the CV's clauses against the question with the document search's BM25 (`server/prompts/experience.ts`); with no clause sharing a specific word (score under 0.5), the tail ends with "No CV project matches this question: answer only with your approach (I would…), with no past-tense claims." The cached blocks are unchanged. The evaluation's grader counts as invented only claims about the user's past, role or results, company, price, client or number facts, and made-up statistics or sources; the release gate compares with production per scenario (`docs/testing/answer-eval.md`). |
@@ -550,7 +551,7 @@ Internal approval is needed that transcript text, documents and screenshots are 
 
 | Risk | Control |
 |---|---|
-| Strangers using the URL to spend Claude credits | Sign-in required on every page and API route; no public sign-up (admin-created accounts only); disabled accounts lose their sessions immediately; Claude Console monthly spend limit |
+| Strangers using the URL to spend Claude credits | Sign-in required on every page and API route, except the public `/privacy`, `/terms` (ADR-0072) and `/download/windows` (a redirect to the installer, ADR-0114), which read no account data and spend nothing; no public sign-up (admin-created accounts only); disabled accounts lose their sessions immediately; Claude Console monthly spend limit |
 | Key leakage | Key only on Vercel; never sent to the client; never logged |
 | Malicious page inside the desktop shell | Only the Kite URL can load; navigation to other origins blocked; minimal preload API. Every other origin is blocked, so any future payment or SSO origin must be added to the allowlist (`apps/desktop/src/config.ts` / `security.ts`) on purpose, with a review. |
 | Prompt injection from documents | Documents are placed in a clearly marked context block; the answer path has no tools and can take no actions |
@@ -679,6 +680,8 @@ Production answers on `https://call.paramountintelligence.co` and on `https://ki
 | Permissions | Microphone (Windows prompt) | Microphone + Screen & System Audio Recording (granted once). Requires macOS 14.2 or later. |
 | Keeping macOS permissions after updates | — | Sign every build with the same free self-signed certificate (created once in Keychain Access) |
 | Updates | The web app updates on every Vercel deploy. The shell only needs reinstalling when `apps/desktop` changes. | Same |
+| Download | `/download/windows` (ADR-0114): a redirect to the newest `Paramount-AI-Setup-<version>.exe`, named by the release's `latest.yml`; the releases page if GitHub cannot be read | Not yet (the Mac branch) |
+| Shortcuts | Start Menu and Desktop "Paramount AI", recreated at every install and update when missing (ADR-0069; Desktop from 1.7.4, ADR-0114) | — |
 
 ### 10.4 Costs
 

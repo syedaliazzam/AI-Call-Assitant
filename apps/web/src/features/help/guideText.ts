@@ -10,7 +10,7 @@
 /** The guide, as Markdown. */
 export const USER_GUIDE_MD = `# Using Paramount AI (version 1.5.0)
 
-Paramount AI listens to your call, shows a live transcript, and writes a short answer you can say when you press a key. It runs in the **desktop app** (Windows) or in **Chrome or Edge** at **call.paramountintelligence.co**. To install the desktop app, download it from [Paramount AI releases](https://github.com/Zainpak123/kite-releases/releases/latest).
+Paramount AI listens to your call, shows a live transcript, and writes a short answer you can say when you press a key. It runs in the **desktop app** (Windows) or in **Chrome or Edge** at **call.paramountintelligence.co**. To install the desktop app, [download it for Windows](https://call.paramountintelligence.co/download/windows). Run the installer once. After that, open Paramount AI from the Start menu or the Desktop icon. You can delete the downloaded file.
 
 **If you see "Windows protected your PC":** click **More info** → **Run anyway**. If Smart App Control blocks it, use the browser version at [https://call.paramountintelligence.co](https://call.paramountintelligence.co), or ask IT.
 
