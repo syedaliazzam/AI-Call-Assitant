@@ -3,7 +3,9 @@
  * status bar is one row (level button, one line, Clear, collapse; ADR-0085: no language control) whose line shows the live words
  * or the current warning with its button, never both and never a second warning bar; in the transcript
  * panel's header it shows only messages. Bar 1 has no Answer, Screenshot or Chat buttons any more, and a
- * Click-through switch with its state and tooltip where clicks can pass (none where they cannot).
+ * Click-through switch with its state and tooltip where clicks can pass (none where they cannot). The
+ * Auto answer and Click-through switches show the short labels "AA" and "W" (no icons) and keep their
+ * full names in aria-label and the tooltip.
  */
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
@@ -171,7 +173,69 @@ describe('ControlBar (bar 1)', () => {
     expect(html.indexOf('aria-label="Auto answer"')).toBeGreaterThan(fitting);
     expect(html.indexOf('aria-label="Click-through"')).toBeGreaterThan(fitting);
   });
+
+  it('labels Auto answer "AA" and Click-through "W", with no icon, keeping the full names for tooltips and screen readers', () => {
+    const html = bar1(QUIET, () => undefined);
+    const auto = switchMarkup(html, 'Auto answer');
+    const through = switchMarkup(html, 'Click-through');
+    // The only visible text is the short label: no bolt or pointer icon, no "Auto" or "Click-through" word.
+    expect(visibleText(auto)).toBe('AA');
+    expect(visibleText(through)).toBe('W');
+    expect(auto).not.toContain('<svg');
+    expect(through).not.toContain('<svg');
+    // The short label is hidden from screen readers, which read the full name from aria-label instead.
+    expect(auto).toContain('<span aria-hidden="true" class="inline-flex ">AA</span>');
+    expect(through).toContain('<span aria-hidden="true" class="inline-flex ">W</span>');
+    // The hover tooltip still names the control in full.
+    expect(auto).toContain('data-tip="Auto answer: Off"');
+    expect(through).toContain(
+      'data-tip="Click-through: Off (turn on to click the app behind the overlay)',
+    );
+  });
+
+  it('keeps the on/off styling of the "AA" and "W" toggles', () => {
+    const off = bar1(QUIET, () => undefined);
+    expect(switchMarkup(off, 'Auto answer')).toContain('text-ui-muted');
+    expect(switchMarkup(off, 'Click-through')).toContain('text-ui-muted');
+    const on = bar1({ ...QUIET, autoAnswer: true, clickThrough: true }, () => undefined);
+    const auto = switchMarkup(on, 'Auto answer');
+    const through = switchMarkup(on, 'Click-through');
+    expect(auto).toMatch(/aria-checked="true"/);
+    expect(auto).toContain('ring-ui-indicator');
+    expect(auto).toContain('class="inline-flex text-ui-indicator">AA</span>');
+    expect(through).toMatch(/aria-checked="true"/);
+    expect(through).toContain('ring-ui-accent-fill');
+    expect(through).toContain('class="inline-flex text-ui-accent">W</span>');
+  });
 });
+
+/**
+ * One switch's markup on bar 1, from its opening tag to its closing tag (the toggles hold no nested buttons).
+ *
+ * @param html The bar's markup.
+ * @param name The switch's aria-label.
+ * @returns The switch's markup.
+ * @throws Error when the bar has no such switch.
+ */
+function switchMarkup(html: string, name: string): string {
+  const label = html.indexOf(`aria-label="${name}"`);
+  if (label < 0) throw new Error(`no switch named ${name}`);
+  const start = html.lastIndexOf('<button', label);
+  return html.slice(start, html.indexOf('</button>', label) + '</button>'.length);
+}
+
+/**
+ * The text a sighted user sees in some markup: the tags (and React's text-joining comments) removed.
+ *
+ * @param markup Server-rendered HTML.
+ * @returns Its text, trimmed.
+ */
+function visibleText(markup: string): string {
+  return markup
+    .replace(/<!--.*?-->/g, '')
+    .replace(/<[^>]+>/g, '')
+    .trim();
+}
 
 describe('the rename offer on the status bar (ADR-0093)', () => {
   it('shows the question with its two buttons', () => {

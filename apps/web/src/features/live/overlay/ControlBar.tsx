@@ -3,8 +3,8 @@
  * Purpose: Bar 1 of the call bars (spec S13): the screen-audio and microphone icons, each with its ▾;
  *          the Transcript pill with its on/off switch (ADR-0055: it opens and closes the transcript panel,
  *          as the level button does); desktop 1.5.0 (ADR-0068): the Rec pill after the Transcript pill,
- *          where the app can record; 1.6.3 (ADR-0075): the Auto answer toggle; ADR-0082: the Click-through
- *          toggle (as Ctrl+Alt+X), where clicks can pass; ADR-0094: the model chip (Fast / Smart / Fastest) next to
+ *          where the app can record; 1.6.3 (ADR-0075): the Auto answer toggle (labelled "AA" since 24 Nov
+ *          2026); ADR-0082: the Click-through toggle (as Ctrl+Alt+X; labelled "W"), where clicks can pass; ADR-0094: the model chip (Fast / Smart / Fastest) next to
  *          Auto, which opens the model choice; ADR-0095: the Voice toggle (hands-free talking to the assistant)
  *          next to the model chip; then move and compact, the call timer, ⋮ and Exit
  *          (red; web 9 Nov 2026: one press ends the call). ADR-0082: no Answer, Screenshot or Chat buttons
@@ -14,7 +14,8 @@
  *          device icons, the Transcript switch (every account) and, while recording, the Rec pill are
  *          pinned on the left the same way: never hidden, never cut. When the bar has too little room, the
  *          rest gives way one step at a time, measured rather than guessed: first Rec's key-cap, then the
- *          words "Transcript" and "Click-through" and the timer's clock, then the word "Auto", the model chip's word (ADR-0094)
+ *          word "Transcript", the Click-through pill (it becomes a square "W") and the timer's clock, then the
+ *          Auto answer pill (it becomes a square "AA"), the model chip's word (ADR-0094)
  *          and the word "Voice" (ADR-0095); after that
  *          things go: the move icon (the whole bar drags), the Click-through toggle (⋮ and Ctrl+Alt+X still
  *          turn it on), and the timer last (only a picture-in-picture window is that narrow). Every control names itself and its shortcut in BarTooltip.tsx ("Click-through: Off ·
@@ -29,7 +30,7 @@
 'use client';
 
 import { DEFAULT_GLOBAL_HOTKEYS, hotkeyLabel } from '@kite/shared';
-import { AudioLines, Clock, MousePointerClick, ScrollText } from 'lucide-react';
+import { AudioLines, Clock, ScrollText } from 'lucide-react';
 import {
   useEffect,
   useLayoutEffect,
@@ -42,7 +43,6 @@ import { flushSync } from 'react-dom';
 import { callClock } from '@/features/live/callClock';
 import type { CompactCommand, CompactState } from '@/core/live/liveChannel';
 import {
-  BoltIcon,
   ChevronDownIcon,
   CollapseIcon,
   ExpandIcon,
@@ -136,9 +136,9 @@ export interface ControlBarProps {
 const FIT = {
   /** From here: no key-cap on the Rec pill. */
   noRecKey: 1,
-  /** From here: the Transcript and Click-through toggles' words give way to icons; no clock icon. */
+  /** From here: the Transcript word gives way to its icon, Click-through's "W" pill to a square; no clock icon. */
   noWords: 2,
-  /** From here: Auto answer is its bolt only, the model chip its icon (ADR-0094), Voice its waveform (ADR-0095). */
+  /** From here: Auto answer's "AA" pill is a square, the model chip its icon (ADR-0094), Voice its waveform (ADR-0095). */
   iconAuto: 3,
   /** From here: no move icon (the whole bar still drags the window). */
   noMove: 4,
@@ -298,13 +298,19 @@ function TranscriptPill({
   );
 }
 
+/** The short label the Auto answer toggle shows in place of a bolt (its full name is in the tooltip). */
+const AUTO_ANSWER_LABEL = 'AA';
+
 /**
- * 1.6.3 (ADR-0075): Auto answer on bar 1 (it had a floating pill of its own): a bolt and "Auto", green
- * when on, muted when off. Same command as before.
+ * 1.6.3 (ADR-0075): Auto answer on bar 1 (it had a floating pill of its own): green when on, muted when
+ * off. Same command as before. Since 24 Nov 2026 it shows the short label "AA" instead of a bolt and the
+ * word "Auto"; the full name "Auto answer" stays in its aria-label and tooltip, so screen readers and the
+ * hover tip still say what it is.
  *
  * @param props.on       True while auto answer is on.
  * @param props.disabled True before the live page answers.
- * @param props.word     False to show the bolt only.
+ * @param props.wide     True for the pill with the dot beside the label; false for the square button with
+ *                       the dot in its corner (when the bar has given way).
  * @param props.onToggle Turns it on or off.
  * @returns The toggle.
  * Rendered by: ControlBar
@@ -312,15 +318,15 @@ function TranscriptPill({
 function AutoAnswerToggle({
   on,
   disabled,
-  word,
+  wide,
   onToggle,
 }: {
   /** True while auto answer is on. */
   on: boolean;
   /** True before the live page answers. */
   disabled: boolean;
-  /** False to show the bolt only. */
-  word: boolean;
+  /** True for the pill shape (dot beside the label); false for the square (dot in the corner). */
+  wide: boolean;
   /** Turns it on or off. */
   onToggle: () => void;
 }) {
@@ -332,18 +338,19 @@ function AutoAnswerToggle({
       aria-label="Auto answer"
       data-tip={`Auto answer: ${on ? 'On' : 'Off'}`}
       data-auto-answer={on ? 'on' : 'off'}
-      className={`${word ? `${PILL} gap-1.5` : `${ICON_BUTTON} relative`} ${on ? 'text-ui-text ring-1 ring-inset ring-ui-indicator' : 'text-ui-muted'}`}
+      className={`${wide ? `${PILL} gap-1.5` : `${ICON_BUTTON} relative`} ${on ? 'text-ui-text ring-1 ring-inset ring-ui-indicator' : 'text-ui-muted'}`}
       onClick={onToggle}
       disabled={disabled}
     >
+      {/* Hidden from screen readers: they read the aria-label "Auto answer", not "AA". Green when on, as the
+          bolt was. */}
       <span aria-hidden="true" className={`inline-flex ${on ? 'text-ui-indicator' : ''}`}>
-        <BoltIcon size={15} />
+        {AUTO_ANSWER_LABEL}
       </span>
-      {word && 'Auto'}
-      {/* Beside the word; in the corner of the icon-only toggle, so it stays as wide as the others. */}
+      {/* Beside the label; in the corner of the square toggle, so it stays as wide as the others. */}
       <span
         aria-hidden="true"
-        className={`size-1.5 shrink-0 rounded-full ${word ? '' : 'absolute right-1 top-1'} ${on ? 'bg-ui-indicator' : 'bg-ui-muted opacity-60'}`}
+        className={`size-1.5 shrink-0 rounded-full ${wide ? '' : 'absolute right-1 top-1'} ${on ? 'bg-ui-indicator' : 'bg-ui-muted opacity-60'}`}
       />
     </button>
   );
@@ -352,14 +359,19 @@ function AutoAnswerToggle({
 /** Ctrl+Alt+X: Click-through on or off (v1.3.2). */
 const CLICK_THROUGH_ACCELERATOR = DEFAULT_GLOBAL_HOTKEYS['click-through'];
 
+/** The short label the Click-through toggle shows in place of a pointer (its full name is in the tooltip). */
+const CLICK_THROUGH_LABEL = 'W';
+
 /**
- * ADR-0082: Click-through on bar 1, as Ctrl+Alt+X and the ⋮ menu: a pointer and "Click-through", with a
- * dot that is lit while it is on. While on, every click and key outside the bars goes to the app behind
- * the overlay; the bars still take clicks, so this toggle can always turn it off.
+ * ADR-0082: Click-through on bar 1, as Ctrl+Alt+X and the ⋮ menu, with a dot that is lit while it is on.
+ * While on, every click and key outside the bars goes to the app behind the overlay; the bars still take
+ * clicks, so this toggle can always turn it off. Since 24 Nov 2026 it shows the short label "W" instead
+ * of a pointer and the word "Click-through"; the full name stays in its aria-label and tooltip.
  *
  * @param props.on       True while Click-through is on.
  * @param props.disabled True before the live page answers.
- * @param props.word     False to show the pointer only.
+ * @param props.wide     True for the pill with the dot beside the label; false for the square button with
+ *                       the dot in its corner (when the bar has given way).
  * @param props.mac      True on macOS (the shortcut's name).
  * @param props.onToggle Turns it on or off.
  * @returns The toggle.
@@ -368,7 +380,7 @@ const CLICK_THROUGH_ACCELERATOR = DEFAULT_GLOBAL_HOTKEYS['click-through'];
 function ClickThroughToggle({
   on,
   disabled,
-  word,
+  wide,
   mac,
   onToggle,
 }: {
@@ -376,8 +388,8 @@ function ClickThroughToggle({
   on: boolean;
   /** True before the live page answers. */
   disabled: boolean;
-  /** False to show the pointer only. */
-  word: boolean;
+  /** True for the pill shape (dot beside the label); false for the square (dot in the corner). */
+  wide: boolean;
   /** True on macOS (the shortcut's name). */
   mac: boolean;
   /** Turns it on or off. */
@@ -398,17 +410,18 @@ function ClickThroughToggle({
         mac,
       )}
       data-click-through={on ? 'on' : 'off'}
-      className={`${word ? `${PILL} gap-1.5` : `${ICON_BUTTON} relative`} ${on ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : 'text-ui-muted'}`}
+      className={`${wide ? `${PILL} gap-1.5` : `${ICON_BUTTON} relative`} ${on ? 'text-ui-text ring-1 ring-inset ring-ui-accent-fill' : 'text-ui-muted'}`}
       onClick={onToggle}
       disabled={disabled}
     >
+      {/* Hidden from screen readers: they read the aria-label "Click-through", not "W". Accent-coloured
+          when on, as the pointer was. */}
       <span aria-hidden="true" className={`inline-flex ${on ? 'text-ui-accent' : ''}`}>
-        <MousePointerClick size={15} />
+        {CLICK_THROUGH_LABEL}
       </span>
-      {word && 'Click-through'}
       <span
         aria-hidden="true"
-        className={`size-1.5 shrink-0 rounded-full ${word ? '' : 'absolute right-1 top-1'} ${on ? 'bg-ui-accent-fill' : 'bg-ui-muted opacity-60'}`}
+        className={`size-1.5 shrink-0 rounded-full ${wide ? '' : 'absolute right-1 top-1'} ${on ? 'bg-ui-accent-fill' : 'bg-ui-muted opacity-60'}`}
       />
     </button>
   );
@@ -736,7 +749,7 @@ export function ControlBar(props: ControlBarProps) {
           <AutoAnswerToggle
             on={autoOn}
             disabled={!state}
-            word={step < FIT.iconAuto}
+            wide={step < FIT.iconAuto}
             onToggle={() => onCommand({ type: 'auto-answer', on: !autoOn })}
           />
           {modelChoice && props.onModel && (
@@ -765,7 +778,7 @@ export function ControlBar(props: ControlBarProps) {
             <ClickThroughToggle
               on={clickThroughOn}
               disabled={!state}
-              word={words}
+              wide={words}
               mac={mac}
               onToggle={() => props.onClickThrough?.(!clickThroughOn)}
             />
