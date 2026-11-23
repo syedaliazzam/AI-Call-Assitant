@@ -3,9 +3,10 @@
  * engine, so widths are checked as the classes and styles that make them): the bars' column is as wide as
  * bar 1 (w-fit, never wider than the window) and lines up by the position's column (left, centre, right;
  * centred with no position); the pieces under bar 1 fill that column without widening it; with the answer
- * open the panels' block takes its remembered share of the bars' width (the bars' whole width by default),
- * and with the transcript alone it fills it; the answer's corner grip sits on the side that moves (bottom
- * left on a right position) and its Clear button always shows its key.
+ * open the panels' block takes its remembered share of the bars' width, and with the transcript alone it
+ * fills it; the answer's corner grip sits on the side that moves (bottom left on a right position) and its
+ * Clear button always shows its key. ADR-0115: before any drag the answer alone is 62 % of the bars' width
+ * and the pair beside the transcript the bars' whole width; the question carries a muted "Question:" label.
  */
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -132,8 +133,13 @@ describe('CompactView (ADR-0113)', () => {
     expect(classOf(overlay('bottom-left'), 'data-bars-column')).toContain('flex-col-reverse');
   });
 
-  it('gives the answer its remembered share of the bars, the bars whole by default', () => {
-    expect(overlay('top-left')).toMatch(/data-panels-block=""[^>]*style="width:100%"/);
+  it('gives the answer its remembered share of the bars, a reading column by default', () => {
+    // ADR-0115: never dragged, the answer alone is 62 % of the bars (it was 100 %), and beside the transcript
+    // the pair keeps the bars' whole width (so the two still sit side by side).
+    expect(overlay('top-left')).toMatch(/data-panels-block=""[^>]*style="width:62%"/);
+    expect(overlay('top-left', { transcript: true, answer: true })).toMatch(
+      /data-panels-block=""[^>]*style="width:100%"/,
+    );
     stored.set(OVERLAY_PANELS_WIDTH_KEY, '0.5');
     const html = overlay('top-right');
     expect(html).toMatch(/data-panels-block=""[^>]*style="width:50%"/);
@@ -162,6 +168,21 @@ describe('CompactView (ADR-0113)', () => {
     expect(clear).toContain('Clear');
     expect(clear).toContain('inline-flex');
     expect(clear).not.toMatch(/class="(?:[^"]* )?hidden[ "]/);
+  });
+
+  it('labels the question with a muted "Question:" before it, inside the accent bar (ADR-0115)', () => {
+    const html = overlay('top-left');
+    const card = html.match(/<p aria-label="Question"[^>]*>([\s\S]*?)<\/p>/);
+    expect(card?.[0]).toContain('border-l-2');
+    const label = card?.[1]?.match(/<span([^>]*)>([^<]*)<\/span>/);
+    expect(label?.[2]).toBe('Question:');
+    // Subtle: hidden from screen readers (the paragraph is named), smaller, lighter and grey.
+    expect(label?.[1]).toContain('aria-hidden="true"');
+    expect(label?.[1]).toContain('text-ui-muted');
+    expect(label?.[1]).toContain('font-medium');
+    // The question's words follow it, still the bold title.
+    expect(card?.[1]).toContain('How would you design it');
+    expect(card?.[0]).toMatch(/class="[^"]*font-semibold[^"]*text-ui-heading/);
   });
 
   it('puts the corner grip on the side that moves', () => {

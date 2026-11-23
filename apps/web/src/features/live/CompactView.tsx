@@ -66,6 +66,10 @@
  * up by the position's column: left positions on the left edge, centre ones centred, right ones on the right
  * edge (overlay/panelWidth.ts). The transcript open alone still fills the bars' width.
  *
+ * ADR-0115: until the user drags the grip, the answer open alone is 62 % of the bars' width (a reading
+ * column; it was the bars' whole width), and the transcript and the answer side by side keep the bars' width
+ * (overlay/panelWidth.ts panelsShare()). A dragged width is remembered and used for both, as before.
+ *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
  * honours), and compact collapses to bar 1 where there is no icon.
@@ -126,6 +130,7 @@ import {
   columnAlignClass,
   gripSide,
   overlayColumn,
+  panelsShare,
   panelsWidthStyle,
   widthShareAfterDrag,
 } from './overlay/panelWidth';
@@ -437,7 +442,8 @@ export function CompactView(props: CompactViewProps) {
   const [split, setSplit] = useState(getOverlaySplit);
   // ADR-0113: the panels' own width, a share of the bars' width (the answer's corner grip; remembered per
   // device), and the share the answer panel's button strip needs (measured; the width never goes under it).
-  const [panelsWidth, setPanelsWidth] = useState(getOverlayPanelsWidth);
+  // ADR-0115: null until the user drags the grip; the default then depends on the panels open (panelsShare()).
+  const [panelsWidth, setPanelsWidth] = useState<number | null>(getOverlayPanelsWidth);
   const [stripShare, setStripShare] = useState(0);
   // ADR-0113: the bars' column (as wide as bar 1), bar 1's own box (its lists float from it), the answer panel.
   const barsColumn = useRef<HTMLDivElement>(null);
@@ -732,7 +738,8 @@ export function CompactView(props: CompactViewProps) {
     }
     if (phase === 'end') {
       widthDragFrom.current = null;
-      setOverlayPanelsWidth(latestWidth.current);
+      // ADR-0115: null only if the bars had no width all drag long; then nothing was chosen to remember.
+      if (latestWidth.current !== null) setOverlayPanelsWidth(latestWidth.current);
     }
   };
 
@@ -1209,8 +1216,10 @@ export function CompactView(props: CompactViewProps) {
                   data-panels-block=""
                   className="@container flex min-h-0 max-w-full flex-1 flex-col"
                   style={{
+                    // ADR-0115: the user's width, else 62 % for the answer alone and the bars' width beside
+                    // the transcript (panelsShare()); never under the button strip.
                     width: panels.answer
-                      ? panelsWidthStyle(Math.max(panelsWidth, stripShare))
+                      ? panelsWidthStyle(Math.max(panelsShare(panelsWidth, both), stripShare))
                       : panelsWidthStyle(OVERLAY_PANELS_WIDTH.max),
                   }}
                 >

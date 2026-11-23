@@ -169,9 +169,11 @@ describe('overlay panels and split (ADR-0085)', () => {
     expect(getOverlaySplit()).toBe(OVERLAY_SPLIT.default);
   });
 
-  it("keeps the panels' width at the bars' width by default and within its limits (ADR-0113)", () => {
-    expect(getOverlayPanelsWidth()).toBe(OVERLAY_PANELS_WIDTH.default);
-    expect(OVERLAY_PANELS_WIDTH.default).toBe(1);
+  it("remembers the panels' width within its limits, and nothing until a drag (ADR-0113, ADR-0115)", () => {
+    // ADR-0115: nothing stored is null (the page picks the default for the panels open), and the answer
+    // alone defaults to 62 % of the bars' width (it was the bars' whole width).
+    expect(getOverlayPanelsWidth()).toBeNull();
+    expect(OVERLAY_PANELS_WIDTH.default).toBe(0.62);
     setOverlayPanelsWidth(0.4567);
     expect(stored.get(OVERLAY_PANELS_WIDTH_KEY)).toBe('0.457');
     expect(getOverlayPanelsWidth()).toBe(0.457);
@@ -181,7 +183,7 @@ describe('overlay panels and split (ADR-0085)', () => {
     setOverlayPanelsWidth(0);
     expect(getOverlayPanelsWidth()).toBe(OVERLAY_PANELS_WIDTH.min);
     stored.set(OVERLAY_PANELS_WIDTH_KEY, 'narrow');
-    expect(getOverlayPanelsWidth()).toBe(OVERLAY_PANELS_WIDTH.default);
+    expect(getOverlayPanelsWidth()).toBeNull();
   });
 
   it('with storage blocked: the transcript open, the default split, and no error', () => {
@@ -200,7 +202,7 @@ describe('overlay panels and split (ADR-0085)', () => {
     expect(getOverlaySplit()).toBe(OVERLAY_SPLIT.default);
     expect(() => setOverlayPanels({ transcript: false, answer: false })).not.toThrow();
     expect(() => setOverlaySplit(0.5)).not.toThrow();
-    expect(getOverlayPanelsWidth()).toBe(OVERLAY_PANELS_WIDTH.default);
+    expect(getOverlayPanelsWidth()).toBeNull();
     expect(() => setOverlayPanelsWidth(0.5)).not.toThrow();
   });
 });

@@ -64,11 +64,17 @@ export const OVERLAY_PANELS_WIDTH_KEY = 'kite.overlayPanelsWidth';
 
 /**
  * ADR-0113: the panels' width (the answer panel, or the transcript and the answer as one block) as a share
- * of the bars' width: as wide as the bars by default (1), never wider (ADR-0113 keeps the answer within the
- * bar, so the window never has to grow for it), and never under the smallest share a drag may store (the
- * answer panel's button strip is also kept whole in CSS, whatever the share).
+ * of the bars' width: never wider than the bars (ADR-0113 keeps the answer within the bar, so the window
+ * never has to grow for it), and never under the smallest share a drag may store (the answer panel's button
+ * strip is also kept whole in CSS, whatever the share).
+ *
+ * ADR-0115: `default` is the answer panel's width when it is open alone and the user has never dragged its
+ * grip: 62 % of the bars' width, a reading column (until ADR-0115 it was 1, the bars' whole width). With the
+ * transcript beside it the block keeps the bars' whole width until a drag (overlay/panelWidth.ts
+ * panelsShare()): the transcript's 40 % split already leaves the answer about 60 %, and a 62 % block would
+ * fall under the 600 px side-by-side width and stack the two panels.
  */
-export const OVERLAY_PANELS_WIDTH = { min: 0.2, max: 1, default: 1 } as const;
+export const OVERLAY_PANELS_WIDTH = { min: 0.2, max: 1, default: 0.62 } as const;
 
 /** v1.1.0: the key for the microphone chosen in the overlay's device list. */
 export const MIC_DEVICE_KEY = 'kite.micDevice';
@@ -213,17 +219,20 @@ export function clampSplit(ratio: number): number {
 }
 
 /**
- * ADR-0113: the panels' width as a share of the bars' width (the answer panel's corner grip sets it).
+ * ADR-0113: the panels' width as a share of the bars' width, as the user last set it with the answer panel's
+ * corner grip on this device.
  *
- * @returns A share inside OVERLAY_PANELS_WIDTH (the default, as wide as the bars, when unset or unreadable).
+ * ADR-0115: null when nothing usable is stored (never dragged, unreadable, or storage blocked), so the page
+ * can pick the default for the panels open now (overlay/panelWidth.ts panelsShare()). Until ADR-0115 this
+ * returned the single default (1) instead.
+ *
+ * @returns A share inside OVERLAY_PANELS_WIDTH, or null when the user has not chosen one.
  * Called from: CompactView.tsx; tests
  */
-export function getOverlayPanelsWidth(): number {
+export function getOverlayPanelsWidth(): number | null {
   const raw = read(OVERLAY_PANELS_WIDTH_KEY);
   const value = Number(raw);
-  return raw !== null && Number.isFinite(value)
-    ? clampPanelsWidth(value)
-    : OVERLAY_PANELS_WIDTH.default;
+  return raw !== null && Number.isFinite(value) ? clampPanelsWidth(value) : null;
 }
 
 /**
