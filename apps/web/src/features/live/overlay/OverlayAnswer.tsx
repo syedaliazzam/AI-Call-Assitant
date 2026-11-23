@@ -9,11 +9,13 @@
  *          key), and the panel is never narrower than that strip (the answer text below it does not set the
  *          panel's smallest width: it wraps). The corner grip changes the panels' own width sideways and the
  *          window's height up and down; on a right position it sits in the bottom left.
+ *          ADR-0115: the question starts with a small, muted "Question:" label (Parakeet's convention).
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys, AnswerType), src/core/answer/format.ts,
  *             src/core/live/liveChannel.ts, src/features/answers (AnswerBody, AnswerTags),
  *             src/ui/icons.tsx, ./parts.tsx, ./ResizeGrips.tsx
- * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S15); ADR-0037, ADR-0040, ADR-0041
+ * Architecture: docs/design/paramount-ai-ui-spec.md §3 (S15); ADR-0037, ADR-0040, ADR-0041,
+ *               ADR-0115
  *
  * ADR-0082: Clear (and Ctrl+Backspace) clears the answers: they leave the screen until the next one (until
  * 1.6.3 it only stopped a stream and went back to the newest answer). The ← and → buttons show only the
@@ -184,11 +186,21 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
         >
           {answer ? (
             <>
-              {/* Claude's cleaned question once it arrives; the raw words until then. */}
+              {/* Claude's cleaned question once it arrives; the raw words until then. ADR-0115: a muted
+                  "Question:" label before it (Parakeet's word), inside the accent bar: smaller, lighter and
+                  grey, so the question stays the title. The label is hidden from screen readers (the
+                  paragraph is already named "Question") and left out of a text selection (select-none). */}
               <p
                 aria-label="Question"
                 className="border-l-2 border-ui-accent-fill pl-2.5 text-[15px] font-semibold leading-snug text-ui-heading"
               >
+                <span
+                  aria-hidden="true"
+                  data-question-label=""
+                  className="mr-1.5 select-none text-[13px] font-medium text-ui-muted"
+                >
+                  Question:
+                </span>
                 {cardQuestion(answer.question, answer.cleanQuestion)}
               </p>
               {/* Batch C (P1-4): the press answered before their last words arrived. */}

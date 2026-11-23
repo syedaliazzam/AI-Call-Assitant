@@ -3,7 +3,8 @@
  * positions (and centred with none), the alignment class and the grip's side for each column, the panels'
  * width after a sideways drag of the corner grip (the grip's edge follows the pointer: the right edge on a
  * left position, the left edge on a right position, both edges centred; never under the button strip, never
- * wider than the bars), the share stored from it, and the CSS width of a share.
+ * wider than the bars), the share stored from it, and the CSS width of a share. ADR-0115: the default share
+ * before any drag (62 % for the answer alone, the bars' whole width beside the transcript); a stored share wins.
  */
 import { describe, expect, it } from 'vitest';
 import { OVERLAY_PRESETS } from '@kite/shared';
@@ -12,6 +13,7 @@ import {
   columnAlignClass,
   gripSide,
   overlayColumn,
+  panelsShare,
   panelsWidthStyle,
   widthAfterDrag,
   widthShareAfterDrag,
@@ -70,6 +72,19 @@ describe('panelWidth', () => {
     // A tiny strip and a long drag: the share's own floor.
     expect(widthShareAfterDrag({ ...base, min: 10, dx: -2000 })).toBe(OVERLAY_PANELS_WIDTH.min);
     expect(widthShareAfterDrag({ ...base, max: 0, dx: -100 })).toBeNull();
+  });
+
+  it('defaults the answer alone to a reading column, and keeps a dragged width (ADR-0115)', () => {
+    // Never dragged: the answer alone is 62 % of the bars; beside the transcript the block keeps the bars'
+    // whole width (the split already narrows the answer, and a narrower block would stack the two).
+    expect(panelsShare(null, false)).toBe(0.62);
+    expect(panelsWidthStyle(panelsShare(null, false))).toBe('62%');
+    expect(panelsShare(null, true)).toBe(OVERLAY_PANELS_WIDTH.max);
+    // The user's own width wins in both layouts, kept inside the limits.
+    expect(panelsShare(0.8, false)).toBe(0.8);
+    expect(panelsShare(0.8, true)).toBe(0.8);
+    expect(panelsShare(1.4, false)).toBe(OVERLAY_PANELS_WIDTH.max);
+    expect(panelsShare(0.05, true)).toBe(OVERLAY_PANELS_WIDTH.min);
   });
 
   it('writes a share as a percentage of the bars, clamped', () => {

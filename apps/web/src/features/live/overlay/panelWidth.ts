@@ -5,14 +5,16 @@
  *          block) have their own width, a share of the bars' width that the answer panel's corner grip sets.
  *          Both line up by the position's column, as the rows mirror top and bottom (ADR-0056): left
  *          positions on their left edges, the centre ones centred, right positions on their right edges.
+ *          ADR-0115: the default share when the user has not dragged (a reading column for the answer alone).
  * Used by: src/features/live/CompactView.tsx, src/features/live/overlay/OverlayAnswer.tsx
- * Depends on: @kite/shared (OverlayPreset), src/core/storage/overlayPrefs.ts (clampPanelsWidth)
- * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (compact view); ADR-0113
+ * Depends on: @kite/shared (OverlayPreset), src/core/storage/overlayPrefs.ts (clampPanelsWidth,
+ *             OVERLAY_PANELS_WIDTH)
+ * Architecture: docs/architecture/kite-architecture-v3.1.md §5 (compact view); ADR-0113, ADR-0115
  *
  * Pure functions only, so the unit tests can check every case without a layout engine (jsdom has none).
  */
 import type { OverlayPreset } from '@kite/shared';
-import { clampPanelsWidth } from '@/core/storage/overlayPrefs';
+import { clampPanelsWidth, OVERLAY_PANELS_WIDTH } from '@/core/storage/overlayPrefs';
 
 /** A column of the overlay's positions: which edge the pieces line up on. */
 export type OverlayColumn = 'start' | 'center' | 'end';
@@ -100,6 +102,23 @@ export function widthAfterDrag(input: {
 export function widthShareAfterDrag(input: Parameters<typeof widthAfterDrag>[0]): number | null {
   if (!(input.max > 0)) return null;
   return clampPanelsWidth(widthAfterDrag(input) / input.max);
+}
+
+/**
+ * ADR-0115: the panels' share of the bars' width with the answer open. The user's own width (a drag of the
+ * corner grip, remembered per device) always wins. Until there is one, the answer open alone is a reading
+ * column (OVERLAY_PANELS_WIDTH.default, 62 %), and the transcript and the answer side by side keep the bars'
+ * whole width: the transcript's split already narrows the answer there, and a narrower block would stack
+ * the two panels (they sit side by side only from 600 CSS px).
+ *
+ * @param stored           The remembered share (getOverlayPanelsWidth()), or null when there is none.
+ * @param besideTranscript True when the transcript panel is open beside the answer.
+ * @returns The share, inside OVERLAY_PANELS_WIDTH (CompactView still raises it to the button strip's share).
+ * Called from: CompactView.tsx; tests
+ */
+export function panelsShare(stored: number | null, besideTranscript: boolean): number {
+  if (stored !== null) return clampPanelsWidth(stored);
+  return besideTranscript ? OVERLAY_PANELS_WIDTH.max : OVERLAY_PANELS_WIDTH.default;
 }
 
 /**

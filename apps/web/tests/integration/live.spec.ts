@@ -1100,10 +1100,14 @@ test('S15: the panels sit side by side when wide, stack when narrow; bubbles and
   const clear = answer.getByRole('button', { name: 'Clear answers' });
   await expect(clear.locator('kbd')).toContainText('⌫');
   await expect(clear).toHaveAttribute('aria-description', 'Clear answers (Ctrl+Backspace)');
-  // The card: the question with a 2 px accent bar, then the bold line.
+  // The card: the question with a 2 px accent bar, then the bold line. ADR-0115: a muted "Question:" label
+  // starts the question (it had none from the call UI's rebuild until ADR-0115), lighter than the question.
   const question = answer.getByLabel('Question', { exact: true });
   await expect(question).toHaveCSS('border-left-width', '2px');
-  await expect(question).not.toContainText('Question:');
+  const questionLabel = question.locator('[data-question-label]');
+  await expect(questionLabel).toHaveText('Question:');
+  await expect(questionLabel).toHaveCSS('font-weight', '500');
+  await expect(question).toHaveCSS('font-weight', '600');
   await expect(answer.getByRole('heading', { name: 'Answer line' })).toHaveCSS(
     'font-weight',
     '700',
