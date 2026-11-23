@@ -18,7 +18,8 @@
  *          and the word "Voice" (ADR-0095); after that
  *          things go: the move icon (the whole bar drags), the Click-through toggle (⋮ and Ctrl+Alt+X still
  *          turn it on), and the timer last (only a picture-in-picture window is that narrow). Every control names itself and its shortcut in BarTooltip.tsx ("Click-through: Off ·
- *          Ctrl+Alt+X").
+ *          Ctrl+Alt+X"). ADR-0113: the bar keeps its natural width (it no longer stretches to the window),
+ *          so resizing the answer panel never makes it give way; only a window narrower than the bar does.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys), lucide-react, react-dom (flushSync), src/core/live/liveChannel.ts,
  *             ./parts.tsx, ./RecordControls.tsx, ./BarTooltip.tsx, src/features/live/callClock.ts,
@@ -533,7 +534,9 @@ function DeviceButton({
 }
 
 /**
- * 1.6.3 (ADR-0075): how far bar 1 gives way, measured. Steps up while the left side's content is wider
+ * 1.6.3 (ADR-0075): how far bar 1 gives way, measured. ADR-0113: bar 1 is as wide as everything it shows,
+ * up to the window's width, so it gives way only when the window is narrower than that (never because the
+ * answer panel was resized); a change in the window's width starts again from everything shown. Steps up while the left side's content is wider
  * than its room (in the layout effect, so before anything is painted); starts again from everything
  * shown when the room or the content changes for any other reason (a resized window, the Rec pill
  * starting, the timer reaching 10:00).
@@ -563,7 +566,9 @@ function useFitStep(key: string): {
     setStep(0);
   }
   // The widths at the last step that fitted, so the observer can ignore the changes the steps make.
-  const fitted = useRef({ content: -1, room: -1 });
+  // ADR-0113: and the page's width then (the bars are only as wide as they need, so a wider window no
+  // longer widens the room by itself: a new page width starts again from everything shown).
+  const fitted = useRef({ content: -1, room: -1, page: -1 });
 
   // After each new step, key or pass (a re-render that changes the content's width otherwise changes
   // the key or is seen by the observer below). A layout effect, so the steps happen before anything is
@@ -575,7 +580,11 @@ function useFitStep(key: string): {
     // The step the content was drawn at (data-fit-step), read from the page like its width.
     const drawnAt = Number(contentBox.dataset.fitStep ?? 0);
     if (contentBox.offsetWidth <= roomBox.clientWidth || drawnAt >= FIT_MOST) {
-      fitted.current = { content: contentBox.offsetWidth, room: roomBox.clientWidth };
+      fitted.current = {
+        content: contentBox.offsetWidth,
+        room: roomBox.clientWidth,
+        page: roomBox.ownerDocument.documentElement.clientWidth,
+      };
       return;
     }
     // Measured from the page, as CompactView's heights are: one more step, then measured again.
@@ -589,9 +598,16 @@ function useFitStep(key: string): {
     // the bar's own window (one from the opener never reports elements of the picture-in-picture window).
     const Observer = roomBox ? ownResizeObserver(roomBox) : undefined;
     if (!roomBox || !contentBox || !Observer) return;
+    const page = roomBox.ownerDocument.documentElement;
     const observer = new Observer(() => {
       const was = fitted.current;
-      if (contentBox.offsetWidth === was.content && roomBox.clientWidth === was.room) return;
+      if (
+        contentBox.offsetWidth === was.content &&
+        roomBox.clientWidth === was.room &&
+        page.clientWidth === was.page
+      ) {
+        return;
+      }
       // Synchronously, so the bar never paints a frame cut off (observers run before paint).
       flushSync(() => {
         setStep(0);
@@ -600,6 +616,8 @@ function useFitStep(key: string): {
     });
     observer.observe(roomBox);
     observer.observe(contentBox);
+    // ADR-0113: the window's width (the page's root follows it).
+    observer.observe(page);
     return () => observer.disconnect();
   }, []);
 

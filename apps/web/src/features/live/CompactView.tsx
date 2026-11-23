@@ -57,6 +57,15 @@
  * answer fits again. Any open menu closes on a press outside it (the closing press triggers nothing), when the
  * window loses focus, on Esc, or when an item is chosen (overlay/usePopupDismiss.ts, LiveMenu.tsx).
  *
+ * ADR-0113 (reverses ADR-0085's "a panel open alone fills the width"): the pieces sit in one column as wide as
+ * bar 1's natural width (up to the window's), so bar 1 never stretches and never gives way because the answer
+ * was resized; bar 2, the warnings and the panels' area are exactly that wide. The answer panel (with the
+ * transcript beside it, as one block) has its own width, a share of the bars' width (never wider, so the
+ * window never has to grow for it) and never narrower than its button strip; its corner grip changes it (the
+ * window's width never changes; up and down still sets the window's height). The column and the panels line
+ * up by the position's column: left positions on the left edge, centre ones centred, right ones on the right
+ * edge (overlay/panelWidth.ts). The transcript open alone still fills the bars' width.
+ *
  * An older desktop shell (1.1.0) has a fixed height for "no panels open" and cannot make an icon. So the
  * page tells every shell how tall its bars are (OverlayLayout.popupHeight, which any shell from 1.1.0
  * honours), and compact collapses to bar 1 where there is no icon.
@@ -79,8 +88,11 @@ import {
   type ThemeChoice,
 } from '@/core/storage/appearancePrefs';
 import {
+  getOverlayPanelsWidth,
   getOverlaySplit,
   OVERLAY_OPACITY,
+  OVERLAY_PANELS_WIDTH,
+  setOverlayPanelsWidth,
   setOverlaySplit,
   type OverlayPanels,
 } from '@/core/storage/overlayPrefs';
@@ -110,8 +122,15 @@ import {
 } from './overlay/ModelChoice';
 import { OverlayAnswer } from './overlay/OverlayAnswer';
 import { PanelSplit } from './overlay/PanelSplit';
+import {
+  columnAlignClass,
+  gripSide,
+  overlayColumn,
+  panelsWidthStyle,
+  widthShareAfterDrag,
+} from './overlay/panelWidth';
 import { ownResizeObserver, pieceClass, type LevelStore } from './overlay/parts';
-import { ResizeGrips } from './overlay/ResizeGrips';
+import { ResizeGrips, type WidthDrag } from './overlay/ResizeGrips';
 import { ScriptBar } from './overlay/ScriptBar';
 import { StatusBar } from './overlay/StatusBar';
 import { statusMessage } from './overlay/statusLine';
@@ -215,12 +234,45 @@ export const OVERLAY_MAX_POPUP_HEIGHT = 900;
 export const MODEL_TOAST_MS = 3_000;
 
 /**
- * The bars keep their own width; only the panels fill a window wider than this (spec S13): 980, the
- * reference look (ADR-0055: bar 1 also holds the Transcript pill; desktop 1.5.0, ADR-0068: and the
- * Rec pill, so a 1.5.0 overlay opens 980 wide and every key-cap shows; in a 900-wide window of an older
- * shell, which has no Rec pill, the bar fills the window as before).
+ * ADR-0113: a piece under bar 1 (bar 2, a warning, the panels' area) is exactly as wide as bar 1: it fills the
+ * bars' column without widening it (w-0: its own content never counts toward the column's width, which is
+ * bar 1's natural width up to the window's). Until ADR-0113 every bar filled the window up to 980 CSS px.
  */
-const BARS_WIDTH = 'mx-auto w-full max-w-[980px]';
+const UNDER_BAR = 'w-0 min-w-full';
+
+/**
+ * ADR-0113: how wide the answer panel must be to show its button strip whole, as a share of the bars'
+ * width: its max-content width (the strip; the text below it is size-contained and wraps), measured with both
+ * boxes in the page's client coordinates, so the share holds at any UI zoom.
+ *
+ * @param panel The answer panel.
+ * @param bars  The bars' column.
+ * @returns The share (0 when the bars have no width yet).
+ * Called from: CompactView (the minimum width effect, the grip's drag)
+ */
+function answerMinShare(panel: HTMLElement, bars: HTMLElement): number {
+  const barsWidth = bars.getBoundingClientRect().width;
+  if (!(barsWidth > 0)) return 0;
+  return answerMinWidth(panel) / barsWidth;
+}
+
+/**
+ * ADR-0113: the answer panel's smallest width (its button strip whole), in client coordinates: its
+ * max-content width, measured by sizing it so for one synchronous layout and putting it back.
+ *
+ * @param panel The answer panel.
+ * @returns The width.
+ * Called from: answerMinShare(), CompactView (the grip's drag)
+ */
+function answerMinWidth(panel: HTMLElement): number {
+  const { width, flex } = panel.style;
+  panel.style.width = 'max-content';
+  panel.style.flex = 'none';
+  const measured = panel.getBoundingClientRect().width;
+  panel.style.width = width;
+  panel.style.flex = flex;
+  return measured;
+}
 
 /**
  * How far an element's top is below the top of the page, whatever it sits inside.
@@ -383,6 +435,17 @@ export function CompactView(props: CompactViewProps) {
   const [neededHeight, setNeededHeight] = useState(0);
   // ADR-0085: the transcript's share of the width side by side (the divider; remembered per device).
   const [split, setSplit] = useState(getOverlaySplit);
+  // ADR-0113: the panels' own width, a share of the bars' width (the answer's corner grip; remembered per
+  // device), and the share the answer panel's button strip needs (measured; the width never goes under it).
+  const [panelsWidth, setPanelsWidth] = useState(getOverlayPanelsWidth);
+  const [stripShare, setStripShare] = useState(0);
+  // ADR-0113: the bars' column (as wide as bar 1), bar 1's own box (its lists float from it), the answer panel.
+  const barsColumn = useRef<HTMLDivElement>(null);
+  const barsBlock = useRef<HTMLDivElement>(null);
+  const answerPanel = useRef<HTMLDivElement>(null);
+  // ADR-0113: the grip's drag while it runs: where it started, the width then, and its limits.
+  const widthDragFrom = useRef<{ x: number; width: number; min: number; max: number } | null>(null);
+  const latestWidth = useRef(panelsWidth);
   const popupElement = useRef<HTMLDivElement>(null);
   const barsEnd = useRef<HTMLDivElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
@@ -402,6 +465,8 @@ export function CompactView(props: CompactViewProps) {
   const answerHeld = useRef<HeldHeight | null>(null);
   // ADR-0056: the bottom row mirrors the overlay, so it grows upward from the bars.
   const up = props.position ? overlayRow(props.position) === 'bottom' : false;
+  // ADR-0113: and its column lines the pieces up on the left, in the middle or on the right.
+  const column = overlayColumn(props.position);
 
   /**
    * Collapses the overlay to bar 1, or opens it again.
@@ -540,8 +605,9 @@ export function CompactView(props: CompactViewProps) {
   // Desktop 1.5.0 (ADR-0068): the Rec popover sits under its pill.
   useLayoutEffect(() => {
     if (popup !== 'record' && popup !== 'record-notice') return;
-    // Under the pill, but inside the window (the popover is 320 wide).
-    const width = root.current?.clientWidth ?? 900;
+    // Under the pill, but inside bar 1's box (the popover is 320 wide; ADR-0113: the bars may be narrower
+    // than the window and off its left edge, and the popover is placed from bar 1's left edge).
+    const width = barsBlock.current?.clientWidth ?? root.current?.clientWidth ?? 900;
     setRecLeft(Math.max(6, Math.min(recButton.current?.offsetLeft ?? 6, width - 326)));
   }, [popup]);
 
@@ -560,7 +626,8 @@ export function CompactView(props: CompactViewProps) {
   // the old 256 let it run 26 px past the right edge at 480 px).
   useLayoutEffect(() => {
     if (popup !== 'model') return;
-    const width = root.current?.clientWidth ?? 900;
+    // ADR-0113: inside bar 1's box, as the Rec popover.
+    const width = barsBlock.current?.clientWidth ?? root.current?.clientWidth ?? 900;
     setModelLeft(Math.max(6, Math.min(modelButton.current?.offsetLeft ?? 6, width - 294)));
   }, [popup]);
 
@@ -594,7 +661,8 @@ export function CompactView(props: CompactViewProps) {
         up,
         zoom,
         fontScale,
-        width: page.clientWidth,
+        // ADR-0113: the panels' own width (a drag of the corner grip fits the height again too).
+        width: area.clientWidth,
       }),
       stepped,
     );
@@ -602,7 +670,71 @@ export function CompactView(props: CompactViewProps) {
     const reported = held?.height ?? stepped;
     setContentHeight((was) => (was === reported ? was : reported));
     // Everything that changes what the panels hold or where they sit: each state update is new words.
-  }, [state, panels, zoom, zoomPass, up, fontScale, collapsed, popup, icon, scriptBar]);
+  }, [
+    state,
+    panels,
+    zoom,
+    zoomPass,
+    up,
+    fontScale,
+    collapsed,
+    popup,
+    icon,
+    scriptBar,
+    panelsWidth,
+  ]);
+
+  // ADR-0113: the share of the bars' width the answer panel's button strip needs, measured after every
+  // render that can change it (the panel opening, Stop while streaming, "1 of N", a new window width or zoom:
+  // zoomPass follows the panels' content changing size). A new value only when it moves by more than 0.5 %.
+  const streamingAnswer = state?.answer?.status === 'streaming';
+  const answerTotal = state?.total ?? 0;
+  useLayoutEffect(() => {
+    const panel = answerPanel.current;
+    const bars = barsColumn.current;
+    if (!panel || !bars) return;
+    const share = Math.min(1, answerMinShare(panel, bars));
+    setStripShare((was) => (Math.abs(was - share) > 0.005 ? share : was));
+  }, [panels.answer, streamingAnswer, answerTotal, zoom, zoomPass, collapsed, icon, scriptBar]);
+
+  /**
+   * ADR-0113: a drag of the answer panel's corner grip sideways: the panels' own width follows it (the
+   * window's does not), between the button strip and the bars' width, and is remembered when it ends.
+   *
+   * @param phase   'start', 'move' or 'end'.
+   * @param clientX The pointer's x, in the page's client coordinates.
+   */
+  const widthDrag: WidthDrag = (phase, clientX) => {
+    if (phase === 'start') {
+      const bars = barsColumn.current?.getBoundingClientRect().width ?? 0;
+      const block = panelsArea.current?.getBoundingClientRect().width ?? 0;
+      const panel = answerPanel.current;
+      widthDragFrom.current = {
+        x: clientX,
+        width: block,
+        min: panel ? answerMinWidth(panel) : 0,
+        max: bars,
+      };
+      return;
+    }
+    const from = widthDragFrom.current;
+    if (!from) return;
+    const share = widthShareAfterDrag({
+      startWidth: from.width,
+      dx: clientX - from.x,
+      column,
+      min: from.min,
+      max: from.max,
+    });
+    if (share !== null) {
+      latestWidth.current = share;
+      setPanelsWidth(share);
+    }
+    if (phase === 'end') {
+      widthDragFrom.current = null;
+      setOverlayPanelsWidth(latestWidth.current);
+    }
+  };
 
   useEffect(() => {
     onLayout.current?.({
@@ -820,313 +952,347 @@ export function CompactView(props: CompactViewProps) {
       data-row={up ? 'bottom' : 'top'}
       // ADR-0105: k-popup-open turns the drag areas off while a menu is open (theme.css), so a press on the
       // bars reaches the page and closes it.
-      className={`${themeClass} k-overlay-root k-zoom-screen @container relative flex ${up ? 'k-overlay-up flex-col-reverse' : 'flex-col'} ${popup !== null ? 'k-popup-open' : ''} gap-1.5 overflow-hidden text-[16px] text-ui-text`}
+      // ADR-0113: the bars' column lines up by the position's column (columnAlignClass), not always centred.
+      className={`${themeClass} k-overlay-root k-zoom-screen @container relative flex flex-col ${columnAlignClass(column)} ${up ? 'k-overlay-up' : ''} ${popup !== null ? 'k-popup-open' : ''} overflow-hidden text-[16px] text-ui-text`}
       style={rootStyle}
     >
       {onResize && !collapsed && <ResizeGrips onResize={onResize} />}
 
-      {/* Bar 1's lists float from its own edges, so they stay under their buttons in a wide window. */}
-      <div {...{ [GAP_ATTRIBUTE]: '' }} className={`relative shrink-0 ${BARS_WIDTH}`}>
-        {/* v1.3.2: bar 1 is one of the bars: it takes clicks even in Click-through mode. */}
-        <div className={piece} {...{ [BARS_ATTRIBUTE]: '' }}>
-          <ControlBar
-            state={state}
-            onCommand={onCommand}
-            mac={mac}
-            collapsed={collapsed}
-            onCollapse={collapse}
-            onIcon={
-              onMove
-                ? () => {
-                    setPopup(null);
-                    setIcon(true);
+      {/* ADR-0113: the bars' column: as wide as bar 1 needs (w-fit), never wider than the window; everything
+          under bar 1 fills it (UNDER_BAR). On the bottom row it is mirrored, as the whole page was before. */}
+      <div
+        ref={barsColumn}
+        {...{ [GAP_ATTRIBUTE]: '' }}
+        data-bars-column=""
+        className={`flex min-h-0 w-fit max-w-full flex-1 ${up ? 'flex-col-reverse' : 'flex-col'} gap-1.5`}
+      >
+        {/* Bar 1's lists float from its own edges, so they stay under their buttons in a wide window. */}
+        <div ref={barsBlock} {...{ [GAP_ATTRIBUTE]: '' }} className="relative shrink-0">
+          {/* v1.3.2: bar 1 is one of the bars: it takes clicks even in Click-through mode. */}
+          <div className={piece} {...{ [BARS_ATTRIBUTE]: '' }}>
+            <ControlBar
+              state={state}
+              onCommand={onCommand}
+              mac={mac}
+              collapsed={collapsed}
+              onCollapse={collapse}
+              onIcon={
+                onMove
+                  ? () => {
+                      setPopup(null);
+                      setIcon(true);
+                    }
+                  : undefined
+              }
+              menuOpen={popup === 'menu' || popup === 'preferences' || popup === 'display'}
+              onMenu={(open) => setPopup(open ? 'menu' : null)}
+              deviceList={popup === 'audio' || popup === 'mic' ? popup : null}
+              onDeviceList={setPopup}
+              menuButton={menuButton}
+              recordOpen={popup === 'record'}
+              // ADR-0082: starts at once when consent was ticked at Connect; otherwise asks.
+              onRecord={() => {
+                const ask = () => setPopup(popup === 'record' ? null : 'record');
+                if (state?.recording) pressRecPill(state.recording, onCommand, ask);
+                else ask();
+              }}
+              recButton={recButton}
+              up={up}
+              // ADR-0094: the model chip next to Auto, where the live page says its model.
+              {...(modelChoice
+                ? {
+                    modelOpen: popup === 'model',
+                    onModel: () => setPopup(popup === 'model' ? null : 'model'),
+                    modelButton,
                   }
-                : undefined
-            }
-            menuOpen={popup === 'menu' || popup === 'preferences' || popup === 'display'}
-            onMenu={(open) => setPopup(open ? 'menu' : null)}
-            deviceList={popup === 'audio' || popup === 'mic' ? popup : null}
-            onDeviceList={setPopup}
-            menuButton={menuButton}
-            recordOpen={popup === 'record'}
-            // ADR-0082: starts at once when consent was ticked at Connect; otherwise asks.
-            onRecord={() => {
-              const ask = () => setPopup(popup === 'record' ? null : 'record');
-              if (state?.recording) pressRecPill(state.recording, onCommand, ask);
-              else ask();
-            }}
-            recButton={recButton}
-            up={up}
-            // ADR-0094: the model chip next to Auto, where the live page says its model.
-            {...(modelChoice
-              ? {
-                  modelOpen: popup === 'model',
-                  onModel: () => setPopup(popup === 'model' ? null : 'model'),
-                  modelButton,
-                }
-              : {})}
-            {...(clickThrough && glass
-              ? {
-                  // ADR-0082: the Click-through toggle on bar 1 (as Ctrl+Alt+X and ⋮ do).
-                  onClickThrough: (on: boolean) => onCommand({ type: 'click-through', on }),
-                }
-              : {})}
-            // ADR-0095: the Voice toggle (hands-free talking to the assistant), where the live page says it.
-            onVoice={(on: boolean) => onCommand({ type: 'voice-mode', on })}
-            // ADR-0085: the Transcript switch for every account (it was only with account sync).
-            transcriptOpen={panels.transcript}
-            onTranscript={(open: boolean) => onPanels({ ...panels, transcript: open })}
-          />
-        </div>
-        {popup === 'menu' && (
-          <LiveMenu
-            ref={popupElement}
-            state={state}
-            onCommand={onCommand}
-            protection={props.protection}
-            onProtection={props.onProtection}
-            email={props.email}
-            onDisplay={() => setPopup('display')}
-            onPreferences={() => setPopup('preferences')}
-            onDashboard={
-              props.onDashboard
-                ? () => {
-                    setPopup(null);
-                    props.onDashboard?.();
+                : {})}
+              {...(clickThrough && glass
+                ? {
+                    // ADR-0082: the Click-through toggle on bar 1 (as Ctrl+Alt+X and ⋮ do).
+                    onClickThrough: (on: boolean) => onCommand({ type: 'click-through', on }),
                   }
-                : undefined
-            }
-            onHelp={
-              props.onHelp
-                ? () => {
-                    setPopup(null);
-                    props.onHelp?.();
-                  }
-                : undefined
-            }
-            onEditSession={
-              props.onEditSession
-                ? () => {
-                    setPopup(null);
-                    props.onEditSession?.();
-                  }
-                : undefined
-            }
-            onResetPosition={
-              props.onPlace && !props.onPosition
-                ? () => {
-                    setPopup(null);
-                    props.onPlace?.('top-center');
-                  }
-                : undefined
-            }
-            position={props.position ?? null}
-            onPosition={props.onPosition}
-            onCallWindow={openCallWindow}
-            mac={mac}
-            onModel={pickModel}
-            onClose={() => setPopup(null)}
-            onClickThrough={
-              clickThrough && glass
-                ? (on: boolean) => {
-                    setPopup(null);
-                    onCommand({ type: 'click-through', on });
-                  }
-                : undefined
-            }
-          />
-        )}
-        {popup === 'display' && (
-          // Zoom, Theme, Opacity and Answer text size: a sheet of their own keeps the ⋮ menu one complete card.
-          <DisplaySheet
-            ref={popupElement}
-            theme={props.theme ?? THEME_DEFAULTS.call}
-            zoom={zoom}
-            fontScale={fontScale}
-            opacity={props.windowSettings?.opacity}
-            onOpacity={props.windowSettings?.onOpacity}
-            onBack={() => setPopup('menu')}
-          />
-        )}
-        {popup === 'preferences' && state?.style && (
-          <AnswerPreferencesSheet
-            ref={popupElement}
-            style={state.style}
-            onCommand={onCommand}
-            onBack={() => setPopup('menu')}
-          />
-        )}
-        {(popup === 'record' || popup === 'record-notice') && state?.recording && (
-          <RecordPopover
-            ref={popupElement}
-            recording={state.recording}
-            mode={popup === 'record' ? 'question' : 'notice'}
-            onCommand={onCommand}
-            onClose={() => setPopup(null)}
-            left={recLeft}
-            up={up}
-          />
-        )}
-        {popup === 'model' && modelChoice && (
-          <ModelPopover
-            ref={popupElement}
-            model={modelChoice.model}
-            smartAllowed={modelChoice.smartAllowed}
-            groqAllowed={modelChoice.groqAllowed}
-            geminiAllowed={modelChoice.geminiAllowed}
-            openaiAllowed={modelChoice.openaiAllowed}
-            moreModels={modelChoice.moreModels}
-            left={modelLeft}
-            onSelect={pickModel}
-            onClose={() => setPopup(null)}
-          />
-        )}
-        {toast && (
-          // ADR-0094: the switch's toast, solid like the menus, centred under bar 1 (above it on the bottom
-          // row: k-overlay-menu). It takes no clicks; it hides after MODEL_TOAST_MS.
-          <p
-            ref={toastElement}
-            key={toast.id}
-            role="status"
-            data-toast="model"
-            className="k-overlay-menu pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 w-max max-w-[calc(100%-12px)] -translate-x-1/2 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal"
-          >
-            {toast.text}
-          </p>
-        )}
-        {voiceTipShown && (
-          // ADR-0095: shown once per device, the first time Voice mode is turned on; drawn in the page like the
-          // toast, so it stays inside the protected window. It hides by itself after a few seconds.
-          <p
-            ref={toastElement}
-            role="status"
-            data-toast="voice-tip"
-            // ADR-0107: part of the bars for Click-through, so its "Got it" button takes the click (it went
-            // to the app behind).
-            {...{ [BARS_ATTRIBUTE]: '' }}
-            className="k-overlay-menu absolute left-1/2 top-[calc(100%+6px)] z-40 flex w-max max-w-[calc(100%-12px)] -translate-x-1/2 items-center gap-3 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal [-webkit-app-region:no-drag]"
-          >
-            <span>Mute yourself in the meeting first if others can hear you.</span>
-            <button
-              type="button"
-              className="shrink-0 rounded-control px-2 py-0.5 text-[13px] font-semibold text-ui-accent hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
-              onClick={() => onCommand({ type: 'voice-tip-seen' })}
+                : {})}
+              // ADR-0095: the Voice toggle (hands-free talking to the assistant), where the live page says it.
+              onVoice={(on: boolean) => onCommand({ type: 'voice-mode', on })}
+              // ADR-0085: the Transcript switch for every account (it was only with account sync).
+              transcriptOpen={panels.transcript}
+              onTranscript={(open: boolean) => onPanels({ ...panels, transcript: open })}
+            />
+          </div>
+          {popup === 'menu' && (
+            <LiveMenu
+              ref={popupElement}
+              state={state}
+              onCommand={onCommand}
+              protection={props.protection}
+              onProtection={props.onProtection}
+              email={props.email}
+              onDisplay={() => setPopup('display')}
+              onPreferences={() => setPopup('preferences')}
+              onDashboard={
+                props.onDashboard
+                  ? () => {
+                      setPopup(null);
+                      props.onDashboard?.();
+                    }
+                  : undefined
+              }
+              onHelp={
+                props.onHelp
+                  ? () => {
+                      setPopup(null);
+                      props.onHelp?.();
+                    }
+                  : undefined
+              }
+              onEditSession={
+                props.onEditSession
+                  ? () => {
+                      setPopup(null);
+                      props.onEditSession?.();
+                    }
+                  : undefined
+              }
+              onResetPosition={
+                props.onPlace && !props.onPosition
+                  ? () => {
+                      setPopup(null);
+                      props.onPlace?.('top-center');
+                    }
+                  : undefined
+              }
+              position={props.position ?? null}
+              onPosition={props.onPosition}
+              onCallWindow={openCallWindow}
+              mac={mac}
+              onModel={pickModel}
+              onClose={() => setPopup(null)}
+              onClickThrough={
+                clickThrough && glass
+                  ? (on: boolean) => {
+                      setPopup(null);
+                      onCommand({ type: 'click-through', on });
+                    }
+                  : undefined
+              }
+            />
+          )}
+          {popup === 'display' && (
+            // Zoom, Theme, Opacity and Answer text size: a sheet of their own keeps the ⋮ menu one complete card.
+            <DisplaySheet
+              ref={popupElement}
+              theme={props.theme ?? THEME_DEFAULTS.call}
+              zoom={zoom}
+              fontScale={fontScale}
+              opacity={props.windowSettings?.opacity}
+              onOpacity={props.windowSettings?.onOpacity}
+              onBack={() => setPopup('menu')}
+            />
+          )}
+          {popup === 'preferences' && state?.style && (
+            <AnswerPreferencesSheet
+              ref={popupElement}
+              style={state.style}
+              onCommand={onCommand}
+              onBack={() => setPopup('menu')}
+            />
+          )}
+          {(popup === 'record' || popup === 'record-notice') && state?.recording && (
+            <RecordPopover
+              ref={popupElement}
+              recording={state.recording}
+              mode={popup === 'record' ? 'question' : 'notice'}
+              onCommand={onCommand}
+              onClose={() => setPopup(null)}
+              left={recLeft}
+              up={up}
+            />
+          )}
+          {popup === 'model' && modelChoice && (
+            <ModelPopover
+              ref={popupElement}
+              model={modelChoice.model}
+              smartAllowed={modelChoice.smartAllowed}
+              groqAllowed={modelChoice.groqAllowed}
+              geminiAllowed={modelChoice.geminiAllowed}
+              openaiAllowed={modelChoice.openaiAllowed}
+              moreModels={modelChoice.moreModels}
+              left={modelLeft}
+              onSelect={pickModel}
+              onClose={() => setPopup(null)}
+            />
+          )}
+          {toast && (
+            // ADR-0094: the switch's toast, solid like the menus, centred under bar 1 (above it on the bottom
+            // row: k-overlay-menu). It takes no clicks; it hides after MODEL_TOAST_MS.
+            <p
+              ref={toastElement}
+              key={toast.id}
+              role="status"
+              data-toast="model"
+              className="k-overlay-menu pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 w-max max-w-[calc(100%-12px)] -translate-x-1/2 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal"
             >
-              Got it
-            </button>
-          </p>
+              {toast.text}
+            </p>
+          )}
+          {voiceTipShown && (
+            // ADR-0095: shown once per device, the first time Voice mode is turned on; drawn in the page like the
+            // toast, so it stays inside the protected window. It hides by itself after a few seconds.
+            <p
+              ref={toastElement}
+              role="status"
+              data-toast="voice-tip"
+              // ADR-0107: part of the bars for Click-through, so its "Got it" button takes the click (it went
+              // to the app behind).
+              {...{ [BARS_ATTRIBUTE]: '' }}
+              className="k-overlay-menu absolute left-1/2 top-[calc(100%+6px)] z-40 flex w-max max-w-[calc(100%-12px)] -translate-x-1/2 items-center gap-3 rounded-control border border-ui-border px-3 py-2 text-[13px] font-medium text-ui-text shadow-modal [-webkit-app-region:no-drag]"
+            >
+              <span>Mute yourself in the meeting first if others can hear you.</span>
+              <button
+                type="button"
+                className="shrink-0 rounded-control px-2 py-0.5 text-[13px] font-semibold text-ui-accent hover:bg-ui-hover focus-visible:outline-none focus-visible:[box-shadow:var(--k-focus)]"
+                onClick={() => onCommand({ type: 'voice-tip-seen' })}
+              >
+                Got it
+              </button>
+            </p>
+          )}
+          {(popup === 'audio' || popup === 'mic') && (
+            <DevicePicker
+              ref={popupElement}
+              list={popup}
+              state={state}
+              onCommand={onCommand}
+              onClose={() => setPopup(null)}
+            />
+          )}
+        </div>
+
+        {/* ADR-0082: no warning bars of their own any more (the call notices, the Answer key held elsewhere, a
+          screen recording with Private off): the status bar's line shows the current one with its button. */}
+        {alertWhileCollapsed && !state?.ended && (
+          <div className={`${piece} shrink-0 ${UNDER_BAR}`} {...{ [BARS_ATTRIBUTE]: '' }}>
+            {statusBar}
+          </div>
         )}
-        {(popup === 'audio' || popup === 'mic') && (
-          <DevicePicker
-            ref={popupElement}
-            list={popup}
-            state={state}
-            onCommand={onCommand}
-            onClose={() => setPopup(null)}
-          />
+
+        {collapsed ? null : state?.ended ? (
+          <p className={`${piece} shrink-0 p-3 text-ui-muted ${UNDER_BAR}`}>The call has ended.</p>
+        ) : (
+          <>
+            {!panels.transcript && (
+              // 1.6.3 (ADR-0075): bar 2 alone; Auto answer is on bar 1.
+              <div
+                ref={barsEnd}
+                {...{ [GAP_ATTRIBUTE]: '' }}
+                className={`flex shrink-0 gap-1.5 ${up ? 'items-end' : 'items-start'} ${UNDER_BAR}`}
+              >
+                <div className={`${piece} min-w-0 flex-1`} {...{ [BARS_ATTRIBUTE]: '' }}>
+                  {statusBar}
+                </div>
+              </div>
+            )}
+            {(panels.transcript || panels.answer) && (
+              // v1.3.2: side by side the panels are as tall as their content (items-start), so the space
+              // under a shorter one is a gap; the window is fitted to the taller one (contentHeight).
+              // 1.6.3 (ADR-0075): on the bottom row they sit on the bars (items-end), and stacked panels
+              // are mirrored (flex-col-reverse: the transcript nearest the bars, the answer above it).
+              // ADR-0113: the panels are one block with its own width (with the answer open: its share of the
+              // bars' width, never under the button strip; the transcript alone fills it), lined up by the
+              // position's column. The block is a container, so side by side or stacked follows its own width.
+              <div
+                {...{ [GAP_ATTRIBUTE]: '' }}
+                className={`flex min-h-0 flex-1 flex-col ${columnAlignClass(column)} ${UNDER_BAR}`}
+              >
+                <div
+                  {...{ [GAP_ATTRIBUTE]: '' }}
+                  data-panels-block=""
+                  className="@container flex min-h-0 max-w-full flex-1 flex-col"
+                  style={{
+                    width: panels.answer
+                      ? panelsWidthStyle(Math.max(panelsWidth, stripShare))
+                      : panelsWidthStyle(OVERLAY_PANELS_WIDTH.max),
+                  }}
+                >
+                  <div
+                    ref={panelsArea}
+                    {...{ [GAP_ATTRIBUTE]: '' }}
+                    data-panels-area=""
+                    className={`flex min-h-0 flex-1 gap-1.5 ${panelsLayout(both, up)}`}
+                    style={{ '--k-split': `${Math.round(split * 1000) / 10}%` } as CSSProperties}
+                  >
+                    {panels.transcript && (
+                      <div
+                        data-panel=""
+                        // ADR-0085: side by side its width is the split (at least 240); alone it fills the width. A
+                        // container of its own, so its header's key-caps follow the panel's width, not the window's.
+                        className={`${piece} @container flex max-h-full min-h-0 flex-1 flex-col overflow-hidden ${both ? '@min-[600px]:min-w-[240px] @min-[600px]:grow-0 @min-[600px]:basis-(--k-split)' : ''}`}
+                      >
+                        <TranscriptPanel
+                          state={state}
+                          onCommand={onCommand}
+                          onClear={clearTranscript}
+                          onCollapse={() => onPanels({ ...panels, transcript: false })}
+                          mac={mac}
+                          levels={levels}
+                          fontScale={fontScale}
+                          onList={(list) => setPopup(list)}
+                          privateOff={privateOff.visible}
+                          onPrivateOn={privateOff.turnOn}
+                          privateOffInCall={privateOffInCall}
+                        />
+                      </div>
+                    )}
+                    {both && (
+                      <PanelSplit
+                        ratio={split}
+                        area={panelsArea}
+                        onMove={setSplit}
+                        onCommit={setOverlaySplit}
+                        up={up}
+                      />
+                    )}
+                    {panels.answer && (
+                      <div
+                        ref={answerPanel}
+                        data-panel=""
+                        data-answer-panel=""
+                        // ADR-0105: with an answer shown, at least the default height (a typical answer, no
+                        // scrolling), but never taller than the window allows (100 %): longer answers grow it.
+                        {...(answerMin === null ? {} : { 'data-min-height': answerMin })}
+                        // ADR-0107 (fixes a 1.7.1 regression): stacked under the transcript (both open, under 600 CSS
+                        // px), the default height leaves the transcript 7.5 rem; it was squeezed to ~10 px.
+                        style={
+                          answerMin === null
+                            ? undefined
+                            : {
+                                minHeight: `min(${answerMin}px, calc(100% - var(--k-stack-reserve, 0px)))`,
+                              }
+                        }
+                        // ADR-0085: side by side it takes the rest, at least 340. ADR-0113: otherwise never narrower
+                        // than its button strip (min-w-max: the text below the strip is size-contained).
+                        className={`${piece} flex max-h-full min-h-0 min-w-max flex-1 flex-col overflow-hidden ${both ? '[--k-stack-reserve:7.5rem] @min-[600px]:min-w-[340px] @min-[600px]:[--k-stack-reserve:0px]' : ''}`}
+                      >
+                        <OverlayAnswer
+                          state={state}
+                          onCommand={onCommand}
+                          onCollapse={() => onPanels({ ...panels, answer: false })}
+                          mac={mac}
+                          fontScale={fontScale}
+                          onResize={onResize}
+                          copy={copy}
+                          onWidthDrag={widthDrag}
+                          gripSide={gripSide(column)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
-
-      {/* ADR-0082: no warning bars of their own any more (the call notices, the Answer key held elsewhere, a
-          screen recording with Private off): the status bar's line shows the current one with its button. */}
-      {alertWhileCollapsed && !state?.ended && (
-        <div className={`${piece} shrink-0 ${BARS_WIDTH}`} {...{ [BARS_ATTRIBUTE]: '' }}>
-          {statusBar}
-        </div>
-      )}
-
-      {collapsed ? null : state?.ended ? (
-        <p className={`${piece} shrink-0 p-3 text-ui-muted ${BARS_WIDTH}`}>The call has ended.</p>
-      ) : (
-        <>
-          {!panels.transcript && (
-            // 1.6.3 (ADR-0075): bar 2 alone; Auto answer is on bar 1.
-            <div
-              ref={barsEnd}
-              {...{ [GAP_ATTRIBUTE]: '' }}
-              className={`flex shrink-0 gap-1.5 ${up ? 'items-end' : 'items-start'} ${BARS_WIDTH}`}
-            >
-              <div className={`${piece} min-w-0 flex-1`} {...{ [BARS_ATTRIBUTE]: '' }}>
-                {statusBar}
-              </div>
-            </div>
-          )}
-          {(panels.transcript || panels.answer) && (
-            // v1.3.2: side by side the panels are as tall as their content (items-start), so the space
-            // under a shorter one is a gap; the window is fitted to the taller one (contentHeight).
-            // 1.6.3 (ADR-0075): on the bottom row they sit on the bars (items-end), and stacked panels
-            // are mirrored (flex-col-reverse: the transcript nearest the bars, the answer above it).
-            <div
-              ref={panelsArea}
-              {...{ [GAP_ATTRIBUTE]: '' }}
-              data-panels-area=""
-              className={`flex min-h-0 flex-1 gap-1.5 ${panelsLayout(both, up)}`}
-              style={{ '--k-split': `${Math.round(split * 1000) / 10}%` } as CSSProperties}
-            >
-              {panels.transcript && (
-                <div
-                  data-panel=""
-                  // ADR-0085: side by side its width is the split (at least 240); alone it fills the width. A
-                  // container of its own, so its header's key-caps follow the panel's width, not the window's.
-                  className={`${piece} @container flex max-h-full min-h-0 flex-1 flex-col overflow-hidden ${both ? '@min-[600px]:min-w-[240px] @min-[600px]:grow-0 @min-[600px]:basis-(--k-split)' : ''}`}
-                >
-                  <TranscriptPanel
-                    state={state}
-                    onCommand={onCommand}
-                    onClear={clearTranscript}
-                    onCollapse={() => onPanels({ ...panels, transcript: false })}
-                    mac={mac}
-                    levels={levels}
-                    fontScale={fontScale}
-                    onList={(list) => setPopup(list)}
-                    privateOff={privateOff.visible}
-                    onPrivateOn={privateOff.turnOn}
-                    privateOffInCall={privateOffInCall}
-                  />
-                </div>
-              )}
-              {both && (
-                <PanelSplit
-                  ratio={split}
-                  area={panelsArea}
-                  onMove={setSplit}
-                  onCommit={setOverlaySplit}
-                  up={up}
-                />
-              )}
-              {panels.answer && (
-                <div
-                  data-panel=""
-                  // ADR-0105: with an answer shown, at least the default height (a typical answer, no
-                  // scrolling), but never taller than the window allows (100 %): longer answers grow it.
-                  {...(answerMin === null ? {} : { 'data-min-height': answerMin })}
-                  // ADR-0107 (fixes a 1.7.1 regression): stacked under the transcript (both open, under 600 CSS
-                  // px), the default height leaves the transcript 7.5 rem; it was squeezed to ~10 px.
-                  style={
-                    answerMin === null
-                      ? undefined
-                      : {
-                          minHeight: `min(${answerMin}px, calc(100% - var(--k-stack-reserve, 0px)))`,
-                        }
-                  }
-                  // ADR-0085: side by side it takes the rest, at least 340.
-                  className={`${piece} flex max-h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${both ? '[--k-stack-reserve:7.5rem] @min-[600px]:min-w-[340px] @min-[600px]:[--k-stack-reserve:0px]' : ''}`}
-                >
-                  <OverlayAnswer
-                    state={state}
-                    onCommand={onCommand}
-                    onCollapse={() => onPanels({ ...panels, answer: false })}
-                    mac={mac}
-                    fontScale={fontScale}
-                    onResize={onResize}
-                    copy={copy}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }

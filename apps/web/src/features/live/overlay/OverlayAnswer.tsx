@@ -5,6 +5,10 @@
  *          "Thinking…" until the first word, the answer (AnswerBody, shared with the call window), and a
  *          footer: copy, thumbs and report on the left; type, how and when on the right. A grip at the
  *          bottom right resizes the window.
+ *          ADR-0113: the top strip keeps the same buttons and labels at every width (Clear always shows its
+ *          key), and the panel is never narrower than that strip (the answer text below it does not set the
+ *          panel's smallest width: it wraps). The corner grip changes the panels' own width sideways and the
+ *          window's height up and down; on a right position it sits in the bottom left.
  * Used by: src/features/live/CompactView.tsx
  * Depends on: @kite/shared (hotkeys, AnswerType), src/core/answer/format.ts,
  *             src/core/live/liveChannel.ts, src/features/answers (AnswerBody, AnswerTags),
@@ -32,7 +36,7 @@ import { AnswerBody } from '@/features/answers/AnswerBody';
 import { AnswerTags } from '@/features/answers/AnswerTags';
 import { CollapseIcon, CopyIcon, FlagIcon, StopIcon, ThumbDownIcon, ThumbUpIcon } from '@/ui/icons';
 import { BUTTON, FOOTER_BUTTON, ICON_BUTTON, KeyChip, PILL, tipShortcut } from './parts';
-import { ResizeCorner } from './ResizeGrips';
+import { ResizeCorner, type WidthDrag } from './ResizeGrips';
 
 /** Props for OverlayAnswer. */
 export interface OverlayAnswerProps {
@@ -50,6 +54,10 @@ export interface OverlayAnswerProps {
   onResize?: ((step: OverlayResizeStep) => void) | undefined;
   /** Puts text on the clipboard (tests pass a fake). */
   copy?: ((text: string) => Promise<void>) | undefined;
+  /** ADR-0113: changes the panels' own width with the corner grip's sideways drag. */
+  onWidthDrag?: WidthDrag | undefined;
+  /** ADR-0113: the bottom corner the grip sits in ('left' on a right position). */
+  gripSide?: 'left' | 'right' | undefined;
 }
 
 /**
@@ -87,6 +95,8 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
   };
 
   const streaming = answer?.status === 'streaming';
+  // v1.3.2: room beside the footer for the corner grip; ADR-0113: on its side (left on a right position).
+  const gripRoom = props.onResize ? (props.gripSide === 'left' ? 'pl-7' : 'pr-7') : '';
   return (
     <section aria-label="Latest answer" className="relative flex min-h-0 flex-auto flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1 px-1.5 [-webkit-app-region:drag]">
@@ -143,7 +153,8 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           // as jsx-a11y's role list predates ARIA 1.3's aria-description (Chromium reads it).
           {...{ 'aria-description': `Clear answers (${tipShortcut(FOCUSED_HOTKEYS.clear, mac)})` }}
         >
-          Clear <KeyChip hotkey="clear" visibleAt="@min-[620px]:inline-flex" />
+          {/* ADR-0113: the key always shows: the strip never changes with the panel's width. */}
+          Clear <KeyChip hotkey="clear" />
         </button>
         <button
           type="button"
@@ -166,7 +177,9 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           // onto one more line and kept the panel scrolling at its old height.
           // ADR-0107: a long word or link breaks onto the next line (it ran past the panel and the whole
           // answer scrolled sideways); code blocks keep their own sideways scroll.
-          className="min-h-0 flex-auto overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2.5 [overflow-wrap:anywhere] [scrollbar-gutter:stable]"
+          // ADR-0113: inline-size containment, so the text (a code block's long line) never sets the panel's
+          // smallest width: the strip above does (CompactView gives the panel min-width: min-content).
+          className="min-h-0 flex-auto overflow-y-auto rounded-control bg-ui-overlay-button px-3 py-2.5 [contain:inline-size] [overflow-wrap:anywhere] [scrollbar-gutter:stable]"
           style={{ zoom: props.fontScale }}
         >
           {answer ? (
@@ -227,7 +240,7 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
               {/* The footer: the actions on the left; type, how and when on the right. v1.3.2: with the
                   panel as tall as the answer, the resize grip sits beside the footer: room is kept for it. */}
               <div
-                className={`mt-2.5 flex flex-wrap items-center gap-1 text-[12px] text-ui-muted ${props.onResize ? 'pr-7' : ''}`}
+                className={`mt-2.5 flex flex-wrap items-center gap-1 text-[12px] text-ui-muted ${gripRoom}`}
               >
                 {answer.text.trim() !== '' && (
                   <button
@@ -324,7 +337,7 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
                 </span>
               </div>
               {reporting && !answer.reported && (
-                <div className="mt-1 flex gap-1.5 pr-7">
+                <div className={`mt-1 flex gap-1.5 ${gripRoom}`}>
                   <input
                     autoFocus
                     aria-label="What was wrong?"
@@ -352,7 +365,13 @@ export function OverlayAnswer(props: OverlayAnswerProps) {
           )}
         </div>
       </div>
-      {props.onResize && <ResizeCorner onResize={props.onResize} />}
+      {props.onResize && (
+        <ResizeCorner
+          onResize={props.onResize}
+          onWidthDrag={props.onWidthDrag}
+          side={props.gripSide ?? 'right'}
+        />
+      )}
     </section>
   );
 }
