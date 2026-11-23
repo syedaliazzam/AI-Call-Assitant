@@ -1,6 +1,6 @@
 # ADR-0113: The answer panel has its own width; the bars keep theirs; both line up by the position's column
 
-- **Status:** Proposed (waiting for the developer's approval before merge and deploy)
+- **Status:** Accepted (23 Nov 2026, after review of the branch preview)
 - **Date:** 2026-11-23
 - **Architecture reference:** `docs/architecture/kite-architecture-v3.1.md` §5 (Overlay, compact view) (version 4.50.0)
 - **Supersedes / superseded by:** reverses ADR-0085's "one open panel fills the width" for the answer panel; keeps the rest of ADR-0085 (the split, side by side from 600 CSS px, the default size, the window's width never changed by the panels)
