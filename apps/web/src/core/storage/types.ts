@@ -182,6 +182,25 @@ export interface StoredDocumentsSummary {
   createdAt: number;
 }
 
+/**
+ * ADR-0116: a documents summary that could not be written, remembered on this device only (the
+ * `summaryFailures` store, version 13; never synced). While `retryAt` is in the future no page asks
+ * the server again for the same documents, so a failure that would repeat is not paid for again by
+ * every open, notes, Ask AI and Prepare request. Holds no document or summary text.
+ */
+export interface StoredSummaryFailure {
+  /** The fingerprint of the documents that failed (StoredDocumentsSummary.fingerprint); the key. */
+  fingerprint: string;
+  /** How many requests in a row failed for these documents (1 after the first). */
+  failures: number;
+  /** The last failure's HTTP status (for example 502 or 504). */
+  status: number;
+  /** When the last request failed (Unix ms). */
+  failedAt: number;
+  /** The earliest time to ask again (Unix ms): failedAt plus the backoff for `failures`. */
+  retryAt: number;
+}
+
 /** A document attached to a session, as extracted text (architecture §7.4 `documents`). */
 export interface StoredDocument {
   /** Random id (crypto.randomUUID()). */

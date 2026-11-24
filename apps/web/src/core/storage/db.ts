@@ -3,7 +3,8 @@
  * Purpose: Kite's local database on the user's device: one IndexedDB database ("kite") opened
  *          with Dexie, with the stores of architecture §7.4 (sessions, documents, utterances,
  *          answers, notes; settings from version 2; lessons from version 3; recording records from
- *          version 10, ADR-0068) and the indexes the dashboard and per-session lookups need.
+ *          version 10, ADR-0068; failed documents summaries from version 13, ADR-0116) and the
+ *          indexes the dashboard and per-session lookups need.
  * Used by: src/core/storage/sessions.ts, documents.ts, utterances.ts, lessons.ts, wipe.ts
  * Depends on: dexie; src/core/storage/types.ts; src/core/sync/capture.ts (account caches, ADR-0049)
  * Architecture: docs/architecture/kite-architecture-v3.1.md §7.4 (data model), §8.1;
@@ -44,6 +45,7 @@ import type {
   StoredQuestionBank,
   StoredRecording,
   StoredSettings,
+  StoredSummaryFailure,
   StoredUtterance,
 } from './types';
 import { captureMiddleware, type OutboxEntry } from '../sync/capture';
@@ -94,6 +96,8 @@ export class KiteDb extends Dexie {
   declare callNotes: EntityTable<StoredCallNotes, 'callId'>;
   /** Each call's Google Drive upload (version 12, ADR-0077); this device only. */
   declare driveCallJobs: EntityTable<DriveCallJob, 'callId'>;
+  /** Documents summaries that failed, by documents fingerprint (version 13, ADR-0116); this device only. */
+  declare summaryFailures: EntityTable<StoredSummaryFailure, 'fingerprint'>;
 
   /**
    * Declares the schema. Only indexed fields are listed (Dexie stores every field of a row);
@@ -243,6 +247,12 @@ export class KiteDb extends Dexie {
       calls: 'id, sessionId, startedAt',
       callNotes: 'callId, sessionId',
       driveCallJobs: 'callId, sessionId, state, updatedAt',
+    });
+    // Version 13 (ADR-0116): documents summaries that failed, on this device only (not in SYNCED_STORES,
+    // so never in the outbox), keyed by the documents' fingerprint (failedAt: removing old records). A
+    // new store only: nothing existing changes.
+    this.version(13).stores({
+      summaryFailures: 'fingerprint, failedAt',
     });
   }
 }

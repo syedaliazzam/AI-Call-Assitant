@@ -6,6 +6,8 @@
  * streaming, with the answers' thinking setting, and returns the cache usage; thinkingFor() turns
  * thinking off in the way each model accepts; jsonReply() asks for structured output with the
  * given schema and the tier's thinking setting, parses the reply, and throws NO_JSON without text;
+ * textReply() (ADR-0116) asks for plain text and returns a reply cut off at the token limit, with
+ * its stop reason, instead of throwing;
  * describeClaudeError() maps SDK errors to Kite error codes without leaking API text, and maps
  * the usage limit (HTTP 400, or billing_error) and an overload (529, or overloaded_error in the
  * stream) to claude_unavailable with the fixed message; a per-minute rate limit stays
@@ -37,8 +39,15 @@ vi.stubEnv('ANTHROPIC_API_KEY', 'test-key');
 vi.stubEnv('KITE_MODEL_FAST', 'claude-haiku-5-5');
 vi.stubEnv('KITE_MODEL_SMART', 'claude-sonnet-5-5');
 
-const { cachedBlock, describeClaudeError, jsonReply, streamReply, thinkingFor, warmCache } =
-  await import('@/server/claude');
+const {
+  cachedBlock,
+  describeClaudeError,
+  jsonReply,
+  streamReply,
+  textReply,
+  thinkingFor,
+  warmCache,
+} = await import('@/server/claude');
 
 /**
  * Reads a whole streamReply() generator.
@@ -233,6 +242,66 @@ describe('jsonReply', () => {
   it('throws NO_JSON when the reply has no text', async () => {
     createMock.mockResolvedValue({ content: [], usage: { input_tokens: 1, output_tokens: 0 } });
     await expect(jsonReply(JSON_INPUT)).rejects.toThrow('NO_JSON');
+  });
+});
+
+describe('textReply (ADR-0116)', () => {
+  /** Standard input. */
+  const TEXT_INPUT = {
+    model: 'claude-haiku-5-5',
+    tier: 'fast' as const,
+    system: 'SUMMARY RULES',
+    prompt: 'SUMMARISE THIS',
+    maxTokens: 5_000,
+    timeoutMs: 100_000,
+  };
+
+  it('asks for plain text (no output format), cached rules, thinking off, and the time limit', async () => {
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: '## a.txt\n- One.' }],
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 50, output_tokens: 9 },
+    });
+    const result = await textReply(TEXT_INPUT);
+    const [params, options] = createMock.mock.calls[0]!;
+    expect(params).toEqual({
+      model: 'claude-haiku-5-5',
+      max_tokens: 5_000,
+      system: [{ type: 'text', text: 'SUMMARY RULES', cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: 'SUMMARISE THIS' }],
+      thinking: { type: 'disabled' },
+    });
+    expect(options).toEqual({ timeout: 100_000 });
+    expect(result).toEqual({
+      text: '## a.txt\n- One.',
+      stopReason: 'end_turn',
+      usage: {
+        input_tokens: 50,
+        output_tokens: 9,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      },
+    });
+  });
+
+  it('returns a reply cut off at the token limit instead of throwing', async () => {
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: '## a.txt\n- One.\n- Tw' }],
+      stop_reason: 'max_tokens',
+      usage: { input_tokens: 50, output_tokens: 5_000 },
+    });
+    const result = await textReply(TEXT_INPUT);
+    expect(result.text).toBe('## a.txt\n- One.\n- Tw');
+    expect(result.stopReason).toBe('max_tokens');
+  });
+
+  it("gives '' for a reply with no text (a refusal)", async () => {
+    createMock.mockResolvedValue({
+      content: [],
+      stop_reason: 'refusal',
+      usage: { input_tokens: 50, output_tokens: 0 },
+    });
+    expect(await textReply(TEXT_INPUT)).toMatchObject({ text: '', stopReason: 'refusal' });
   });
 });
 
