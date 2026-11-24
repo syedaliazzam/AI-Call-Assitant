@@ -615,6 +615,19 @@ i5-8350U laptop, Node (no browser), `pnpm --filter web measure:large-docs`: the 
 - **Estimated 20-answer call:** 1 write + 19 reads = **$0.27**; each idle re-warm (4.5 min with no answer) adds about $0.008. For comparison, the old 150,000-character cap is about 51k tokens (under the 100k price line): about $0.02 for the same call.
 - In the app the warm-up at session open writes the cache, so the first answer normally reads it (about 1.1–1.4 s to the first word here); 2.9 s is the case with no warm-up.
 
+**24 Nov 2026, ADR-0116 (plain-text summary, 5,000-token limit), branch `summary-plain-text`.** Same laptop, Node (no browser), same command and invented 480,000-character set, real server code against the Claude API. The answers' cached prefix is now the CV and summary block (Batch C), so it is smaller than above. Total spend for the run: about $0.105.
+
+| Request | Model | Input / cache write / cache read / output tokens | First text | Total | Cost |
+|---|---|---|---|---|---|
+| Answer 1, no warm-up | Haiku 5.5 | 893 / 46,504 / 0 / 102 | 1,282 ms | 1,714 ms | $0.0060 |
+| Answer 2 | Haiku 5.5 | 890 / 178 / 46,504 / 84 | 805 ms | 1,188 ms | $0.0006 |
+| Answer 3 | Haiku 5.5 | 877 / 148 / 46,682 / 67 | 920 ms | 1,155 ms | $0.0006 |
+| Documents summary (plain text) | Haiku 5.5 | 159,709 / 0 / 0 / 1,111 | — | 5,761 ms | $0.0826 |
+| Notes now (CV + summary) | Sonnet 5.5 | 705 / 4,181 / 0 / 291 | — | 3,203 ms | $0.0148 |
+
+- The summary finished on its own (stop reason `end_turn`, not cut off): 3,406 characters, one "## " section for each of the 3 documents, no introduction, well under the 5,000-token limit. Answers 2 and 3 read the whole cached prefix.
+- The cut-off path was not reached with this set; it is covered by unit tests (`tests/unit/server/summary.test.ts`) and was checked by hand by passing this reply, cut mid-bullet, through `finishSummary()`: the unfinished bullet is dropped and the closing note added.
+
 ## Meeting recording: investigation and Phase 0 spike (10 Nov 2026, ADR-0068)
 
 i5-8350U laptop (4 cores / 8 threads, Intel UHD 620), Windows 11 Pro 10.0.26200, plugged in; one display, 1920 × 1080 at 150% (1280 × 720 DIPs). Electron 44.9.3 (Chromium 152), temporary profiles. A throwaway bench (not in the repository) recorded the screen with `getDisplayMedia` (granted by `setDisplayMediaRequestHandler`) and MediaRecorder, written to disk in pieces over IPC. **The real screen was never recorded:** a full-screen synthetic "meeting" window (static app chrome, four moving camera-like tiles, a changing caption line) covered the display, and the bench checked its corner markers before every capture. Files were deleted after measuring; no file was opened or viewed. CPU is CPU-seconds per second per process (1.0 = one core); system-wide CPU was not usable (other apps used about 40% at idle).
