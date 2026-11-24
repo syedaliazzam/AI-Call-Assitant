@@ -25,7 +25,7 @@ BUNDLE_ID="co.paramountintelligence.kite"
 APP_NAME="Paramount AI"
 # SHA-256 of the company's Mac signing certificate (public; ADR-0109 §1). Written by
 # `node apps/desktop/scripts/mac/cert-tools.mjs pin <certificate.pem> apps/web/public/install-mac.sh`.
-PINNED_CERT_SHA256="not-set"
+PINNED_CERT_SHA256="09c8478020d512e930d0186ae4317ff615ef5759e3ba24d7d57580a1b53602d8"
 
 main() {
   set -euo pipefail
