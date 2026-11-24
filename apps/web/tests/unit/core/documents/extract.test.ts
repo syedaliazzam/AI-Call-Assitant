@@ -4,8 +4,8 @@
  * vitest.config.ts) and mammoth (browser bundle): a two-page PDF, a DOCX with a table and a TXT
  * extract as expected, with whitespace normalised and paragraph breaks kept; an encrypted PDF
  * gives 'encrypted', an image-only PDF 'no-text' (with the OCR message), an unknown type
- * 'unsupported-type', a file over 20 MB 'too-large', a damaged file 'failed' and an empty file
- * 'no-text'. Also detectKind() and normalizeText() on their own.
+ * 'unsupported-type', a file over 20 MB 'too-large' (ADR-0117) while one of exactly 20 MB is read,
+ * a damaged file 'failed' and an empty file 'no-text'. Also detectKind() and normalizeText() on their own.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -121,6 +121,18 @@ describe('extractText: other errors', () => {
       }),
     );
     expect(error.code).toBe('too-large');
+    expect(error.message).toContain('the limit is 20 MB');
+  });
+
+  it('reads a file of exactly 20 MB: size is only gate 1, text is checked later (ADR-0117)', async () => {
+    const full = new File([new Uint8Array(MAX_FILE_BYTES)], 'full.pdf');
+    const document = ok(
+      await extractText(full, {
+        readPdf: () => Promise.resolve({ pages: ['A large scan with little text.'] }),
+        readDocx: () => Promise.reject(new Error('must not be read')),
+      }),
+    );
+    expect(document.chars).toBeLessThan(500_000);
   });
 
   it('reports a damaged PDF or DOCX as failed', async () => {

@@ -211,6 +211,8 @@ export async function extractText(
       `${name}: Paramount AI can read PDF, Word (.docx) and text (.txt) files. For an older .doc file, save it as .docx first.`,
     );
   }
+  // Gate 1 of two (ADR-0117): the file's size, before reading. A file under it may still hold too
+  // much text; that is gate 2 (MAX_SESSION_CHARS), checked on the extracted text by the wizard.
   if (file.size > MAX_FILE_BYTES) {
     return failure(
       name,
